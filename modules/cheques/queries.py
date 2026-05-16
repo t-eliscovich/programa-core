@@ -2421,10 +2421,25 @@ def reversar(
         # Historial unificado: registrar el reverso del cheque.
         # SKILL.md "Lo que NO hacer": no try/except: pass silencioso en
         # mov_doble.registrar — debe burbujear. TMT 2026-05-14.
+        #
+        # Bug A fix (TMT 2026-05-16): buscar el mov_doble original
+        # (`cheque_creado` activo) y pasarlo como `id_original` para que
+        # `mov_doble.registrar()` lo marque como `estado='reversado'` +
+        # `id_reverso=<id_nuevo>`. Antes el original quedaba `activo` y
+        # rompía la trazabilidad histórico→reverso (audit C 2026-05-16).
         import mov_doble as _md
         tipo_reverso = ("reverso_cheque_rebote" if es_rebote_real
                         else "reverso_cheque_administrativo")
         total_reversado = sum(float(a.get("importe") or 0) for a in aplic) or 1.0
+        md_orig_cheque = db.fetch_one(
+            """
+            SELECT id_mov_doble FROM scintela.mov_doble
+             WHERE origen_table='cheque' AND origen_id=%s
+               AND tipo='cheque_creado' AND estado='activo'
+             ORDER BY id_mov_doble DESC LIMIT 1
+            """,
+            (id_cheque,), conn=conn,
+        )
         _md.registrar(
             conn=conn,
             tipo=tipo_reverso,
@@ -2445,6 +2460,18 @@ def reversar(
                       "stop_aplicado": stop_aplicado,
                       "n_aplicaciones_reversadas": len(aplic),
                       "motivo": motivo or ""},
+            id_original=md_orig_cheque["id_mov_doble"] if md_orig_cheque else None,
+        )
+        # También marcar como reversadas las aplicaciones del cheque
+        # (`cheque_aplicado_a_factura`) que también seguían `activo`.
+        db.execute(
+            """
+            UPDATE scintela.mov_doble
+               SET estado='reversado'
+             WHERE origen_table='cheque' AND origen_id=%s
+               AND tipo='cheque_aplicado_a_factura' AND estado='activo'
+            """,
+            (id_cheque,), conn=conn,
         )
 
     return {

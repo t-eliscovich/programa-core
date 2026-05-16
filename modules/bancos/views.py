@@ -180,6 +180,11 @@ def transferir():
                 ]
             except Exception:
                 saldo_preview = None
+            # Bug C fix (TMT 2026-05-16): el template _confirmar_accion.html
+            # espera `extras_hidden` (list of {name,value}) y `accion_url`,
+            # no `hidden_fields` + `form_action`. Antes los hidden inputs no
+            # se renderizaban → el POST de confirm llegaba sin datos y volvía
+            # al form vacío con errores "Elegí banco origen", etc.
             return render_template(
                 "_confirmar_accion.html",
                 titulo="Confirmar transferencia entre bancos",
@@ -189,17 +194,18 @@ def transferir():
                          f"el {fecha.strftime('%d/%m/%Y')}."),
                 concepto=concepto,
                 saldo_preview=saldo_preview,
-                form_action=url_for("bancos.transferir"),
+                accion_url=url_for("bancos.transferir"),
                 cancel_url=url_for("bancos.transferir"),
-                hidden_fields={
-                    "no_banco_origen":  no_origen,
-                    "no_banco_destino": no_destino,
-                    "importe":          request.form.get("importe") or "",
-                    "fecha":            fecha.isoformat(),
-                    "concepto":         concepto,
-                    "confirmado":       "1",
-                },
+                extras_hidden=[
+                    {"name": "no_banco_origen",  "value": no_origen},
+                    {"name": "no_banco_destino", "value": no_destino},
+                    {"name": "importe",          "value": request.form.get("importe") or ""},
+                    {"name": "fecha",            "value": fecha.isoformat()},
+                    {"name": "concepto",         "value": concepto},
+                    {"name": "confirmado",       "value": "1"},
+                ],
                 motivo_obligatorio=False,
+                motivo_requerido=False,
                 confirm_label="Sí, transferir",
             )
 

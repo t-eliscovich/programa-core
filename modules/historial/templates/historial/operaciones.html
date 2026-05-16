@@ -41,12 +41,14 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.95rem 1.05rem;
+    min-height: 4.5rem;          /* todos los cards mismo alto */
     background: white;
     border: 1px solid rgb(226 232 240);
     border-radius: 0.75rem;
     transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
     text-decoration: none;
     overflow: hidden;
+    box-sizing: border-box;
   }
   /* Glow sutil arriba del card al hover (tono por sección via data-tono). */
   .op-card::before {

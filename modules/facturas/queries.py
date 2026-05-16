@@ -85,7 +85,12 @@ def crear(
             "SELECT pago FROM scintela.cliente WHERE codigo_cli = %s",
             (codigo_cli,),
         )
-        dias = int(row["pago"]) if row and row.get("pago") else 30
+        # Bug D fix (TMT 2026-05-16): 3545 clientes legacy tienen pago='C'
+        # (contado), 'X', '+', '.', '', etc. — strings que int() no parsea.
+        # Si no es numérico, fallback a 30 días.
+        _pago_raw = (row.get("pago") if row else None) or ""
+        _pago_str = str(_pago_raw).strip()
+        dias = int(_pago_str) if _pago_str.isdigit() else 30
         vencimiento = fecha + timedelta(days=dias)
 
     with db.tx() as conn:
@@ -399,17 +404,19 @@ def anular(id_factura: int, *, motivo: str, usuario: str = "web") -> int:
             "Anular las retenciones primero."
         )
 
-    obs_marca = f"[ELIM] {motivo[:120]}" if motivo else "[ELIM]"
+    # Bug E fix (TMT 2026-05-16): scintela.factura no tiene columna
+    # `observacion` — el motivo queda en bitácora vía registrar_bitacora()
+    # que llama el view, y en metadata del mov_doble de reverso (ver abajo).
     with db.tx() as conn:
         rc = db.execute(
             """
             UPDATE scintela.factura
                SET stat = 'X',
-                   observacion = COALESCE(observacion||' | ','')||%s,
-                   usuario_modifica = %s
+                   usuario_modifica = %s,
+                   fecha_modifica   = CURRENT_TIMESTAMP
              WHERE id_factura = %s
             """,
-            (obs_marca, usuario, id_factura),
+            (usuario, id_factura),
             conn=conn,
         )
         # Actualizar mov_doble — marcar el original como 'reversado' y

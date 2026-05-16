@@ -491,25 +491,66 @@ def crear(
         # Historial unificado: todo gasto queda registrado en mov_doble
         # como auto-referencia para que aparezca en /historial. Si falla,
         # rollback total. TMT 2026-05-13.
+        #
+        # Bug B fix (TMT 2026-05-16): cuando `pagado=True`, el flujo original
+        # creaba solo un mov_doble `gasto_simple` sin tocar caja. Resultado:
+        # el gasto se cargaba como pagado pero la caja seguía igual — pero al
+        # reversar, la lógica de `anular()` SÍ devolvía la plata a caja
+        # (línea 709-720), generando dinero de la nada. Asimétrico y
+        # peligroso. Ahora con `pagado=True` SIEMPRE creamos la caja salida
+        # correspondiente y linkeamos vía `caja_s_to_xgast`, así el ciclo
+        # alta + reverso es simétrico.
         if row.get("id_xgast"):
             import mov_doble as _md
-            tipo_md = "gasto_simple" if pagado else "gasto_a_posdat"
-            _md.registrar(
-                conn=conn,
-                tipo=tipo_md,
-                origen_table="xgast",
-                origen_id=row["id_xgast"],
-                destino_table="xgast",
-                destino_id=row["id_xgast"],
-                importe=importe_num,
-                fecha=fecha,
-                concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:200],
-                usuario=usuario,
-                metadata={"doc": doc_final,
-                          "prov": prov or "",
-                          "pagado": bool(pagado),
-                          "fechad": fechad_final.isoformat() if fechad_final else None},
-            )
+            if pagado:
+                # 1) caja salida real
+                import caja_helpers as _ch
+                caja_row = _ch.insert_movimiento_caja(
+                    conn,
+                    fecha=fecha,
+                    tipo="S",
+                    importe=importe_num,
+                    concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:100],
+                    clave="GAS",
+                    usuario=usuario,
+                )
+                id_caja = caja_row.get("id_caja") if caja_row else None
+                # 2) link caja → xgast vía mov_doble (mismo flujo histórico)
+                _md.registrar(
+                    conn=conn,
+                    tipo="caja_s_to_xgast",
+                    origen_table="caja",
+                    origen_id=id_caja,
+                    destino_table="xgast",
+                    destino_id=row["id_xgast"],
+                    importe=importe_num,
+                    fecha=fecha,
+                    concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:200],
+                    usuario=usuario,
+                    metadata={"doc": doc_final,
+                              "prov": prov or "",
+                              "pagado": True,
+                              "fechad": fechad_final.isoformat() if fechad_final else None},
+                )
+            else:
+                # Gasto a crédito (no pagado) — sigue creando un xgast→xgast
+                # self-loop + posdat aparte (lógica original sin cambios).
+                _md.registrar(
+                    conn=conn,
+                    tipo="gasto_a_posdat",
+                    origen_table="xgast",
+                    origen_id=row["id_xgast"],
+                    destino_table="xgast",
+                    destino_id=row["id_xgast"],
+                    importe=importe_num,
+                    fecha=fecha,
+                    concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:200],
+                    usuario=usuario,
+                    metadata={"doc": doc_final,
+                              "prov": prov or "",
+                              "pagado": False,
+                              "fechad": fechad_final.isoformat() if fechad_final else None},
+                )
     return row
 
 
