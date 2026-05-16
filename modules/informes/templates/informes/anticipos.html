@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Anticipos{% endblock %}
+{% block breadcrumb %}Informes / <strong>Anticipos</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-semibold">Anticipos en USD</h1>
+      <p class="text-sm text-slate-500 mt-0.5">scintela.dolares — anticipos vivos suman al campo ANTICIPOS del balance</p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('informes.anticipos_view', desde=desde, hasta=hasta, cta=cta, solo_vivos=('1' if solo_vivos else '0'), export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {% if resumen %}
+  <div class="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm border border-slate-200 dark:border-slate-800 rounded px-4 py-3 bg-white dark:bg-slate-900">
+    <div>
+      <span class="text-slate-500 text-xs uppercase tracking-wider">Vivos</span>
+      <span class="ml-2 font-semibold tabular-nums">$ {{ resumen.total_vivos | num_es(2) }}</span>
+      <span class="ml-1 text-slate-400 text-xs">({{ resumen.n_vivos }} partidas, {{ resumen.n_ctas_vivos }} ctas)</span>
+    </div>
+    <div>
+      <span class="text-slate-500 text-xs uppercase tracking-wider">Aplicados</span>
+      <span class="ml-2 tabular-nums text-slate-600 dark:text-slate-400">$ {{ resumen.total_aplicados | num_es(0) }}</span>
+      <span class="ml-1 text-slate-400 text-xs">({{ resumen.n_aplicados }})</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-3 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cuenta</label>
+      <input type="text" name="cta" value="{{ cta or '' }}" placeholder="ej: WE"
+             maxlength="3" class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm uppercase">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+    </div>
+    <label class="flex items-center gap-1 text-sm">
+      <input type="checkbox" name="solo_vivos" value="1" {% if solo_vivos %}checked{% endif %}>
+      Solo vivos
+    </label>
+    <button class="text-sm px-3 py-1 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {% if error %}
+    <div class="mb-4 px-3 py-2 rounded bg-red-50 text-red-800 border border-red-200 text-sm">{{ error }}</div>
+  {% endif %}
+
+  <div class="border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-2 text-left font-medium">Cuenta</th>
+          <th class="px-3 py-2 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2 text-right font-medium">Importe</th>
+          <th class="px-3 py-2 text-left font-medium">Estado</th>
+          <th class="px-3 py-2 text-left font-medium">Clave</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in filas %}
+        {% set vivo = (d.st in (none, '', ' ')) %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if not vivo %}text-slate-400{% endif %}">
+          <td class="px-3 py-1.5" style="white-space: nowrap;">{{ d.fecha | fecha_es }}</td>
+          <td class="px-3 py-1.5 font-mono text-xs">{{ d.cta }}</td>
+          <td class="px-3 py-1.5">{{ d.concepto | cleanstr }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ d.importe | num_es(2) }}</td>
+          <td class="px-3 py-1.5 text-xs">{% if vivo %}vivo{% else %}{{ d.st }}{% endif %}</td>
+          <td class="px-3 py-1.5 font-mono text-xs">{{ d.clave }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'Sin anticipos para el filtro.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

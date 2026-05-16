@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      # Postgres ephemeral para los tests marcados @pytest.mark.db.
+      # Los tests unitarios no lo necesitan pero arrancarlo igual es barato.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: programa_core_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U test -d programa_core_test"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    env:
+      # Para que create_app() no se queje por SECRET_KEY faltante
+      SECRET_KEY: ci-only-secret-key-must-be-at-least-32-chars-long-ok
+      ENV: development
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: programa_core_test
+      DB_USER: test
+      DB_PASSWORD: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ruff
+        run: |
+          python -m ruff check .
+
+      - name: Pytest (unit)
+        run: |
+          python -m pytest -q --tb=short
+
+      - name: Route smoke test
+        run: |
+          python tests/test_routes_smoke.py
+
+      # Pytest marcados con `@pytest.mark.db` contra la DB ephemeral.
+      # Por ahora OPT-IN: sólo corre si hay algún test marcado (pytest no falla
+      # si el filtro encuentra 0). Cuando batch 11 agregue tests `db`, esto
+      # los corre automáticamente.
+      - name: Pytest (db integration)
+        continue-on-error: true
+        run: |
+          python -m pytest -m db -q --tb=short
+
+  docker-build:
+    # Build de sanity — no pushea a ningún registry.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: programa-core:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

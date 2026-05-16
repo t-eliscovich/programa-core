@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Cargar compras desde CSV{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('compras.lista') }}" class="hover:underline">Compras</a> /
+  <span>Cargar CSV</span>
+{% endblock %}
+
+{% block content %}
+{% set titulo = "Cargar compras desde CSV" %}
+{% set subtitulo = "Mismos campos que el alta individual. Si la compra no es pagada de contado, se crea automáticamente la fila de posdat con el vencimiento del proveedor." %}
+{% set url_plantilla = url_for('compras.cargar_csv', plantilla=1) %}
+{% set url_volver = url_for('compras.lista') %}
+{% include "_csv_upload.html" %}
+{% endblock %}

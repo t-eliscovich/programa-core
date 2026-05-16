@@ -1,0 +1,931 @@
+{% extends "base.html" %}
+{% block title %}Nuevo cheque{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto py-4 px-4">
+  <h1 class="text-xl font-semibold mb-3">Nuevo cheque</h1>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" id="cheque-form" class="bg-white border rounded-lg p-3 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {# Layout 2 columnas: form a la izquierda, anticipo al costado.
+       Pensado para no tener que scrollear en la pantalla típica. #}
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-4">
+
+      {# ─── Columna izquierda: campos del cheque ───────────────────
+         TMT 2026-05-15: simplificado — única fecha de cabecera ("Recibido")
+         = cuándo entró al sistema. Internamente se usa también como
+         `fecha` (emisión) porque no nos interesa la fecha de emisión real
+         del cheque. La fecha de depósito (fechad) ahora vive POR cheque
+         en cada bloque, porque cada cheque puede tener fecha de depósito
+         distinta. #}
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <label class="flex flex-col">
+          <span class="text-xs text-slate-600">Fecha <span class="text-red-500">*</span></span>
+          <input type="text" name="fecha_recibido" value="{{ form.fecha_recibido or form.fecha or '' }}"
+                 placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off" autofocus
+                 oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+                 class="border rounded px-2 py-1 mt-0.5 font-mono text-sm" required>
+        </label>
+
+        <label class="flex flex-col">
+          <span class="text-xs text-slate-600">Cliente <span class="text-red-500">*</span></span>
+          {# TMT 2026-05-15: el datalist HTML nativo filtra sólo por value.
+             Cambiamos el value a "CODE — NOMBRE" así filtra por código
+             O por nombre (tipea "AND" y aparece "AND — ANDRES BUCHELI").
+             Un JS al blur extrae sólo el código para mandar al backend. #}
+          <input type="text" name="codigo_cli" id="codigo-cli-input"
+                 value="{{ form.codigo_cli or '' }}"
+                 list="clientes-list" autocomplete="off"
+                 placeholder="Tipeá código o nombre…"
+                 class="border rounded px-2 py-1 mt-0.5 font-mono text-sm" maxlength="60"
+                 required>
+          {% if clientes_datalist %}
+            <datalist id="clientes-list">
+              {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }} — {{ c.nombre }}"></option>{% endfor %}
+            </datalist>
+          {% endif %}
+        </label>
+
+        {# ─── Cheques (repetibles) ────────────────────────────────────
+           Cliente y banco se cargan UNA vez arriba; los cheques van como
+           bloques. Botón "+ Otro cheque" clona el bloque para cargar
+           varios del mismo cliente+banco en una sola operación.
+           TMT 2026-05-15. #}
+        <div id="cheques-multi" class="col-span-2 md:col-span-3">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-600 font-semibold">Cheques</span>
+            <button type="button" id="btn-add-cheque"
+                    class="text-xs px-2 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-300 hover:bg-sky-200">
+              + Otro cheque
+            </button>
+          </div>
+          <div id="cheques-list" class="space-y-2">
+            <div class="cheque-bloque border border-slate-200 rounded p-2 bg-slate-50/50">
+              {# header del bloque — JS lo rellena con "Cheque #N · × quitar"
+                 cuando hay más de un bloque. Vacío en el primero. #}
+              <div class="bloque-header hidden mb-1 text-[10px] text-slate-500 flex items-center justify-between"></div>
+              <div class="grid grid-cols-3 gap-2 items-end">
+                <label class="flex flex-col">
+                  <span class="text-xs text-slate-600">N° cheque <span class="text-red-500">*</span></span>
+                  <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
+                         class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
+                </label>
+                <label class="flex flex-col">
+                  <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
+                  <input type="text" name="importe[]" value="{{ form.importe or '' }}"
+                         class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm cheque-imp" required
+                         placeholder="0,00">
+                </label>
+                <label class="flex flex-col">
+                  <span class="text-xs text-slate-600">A depositar</span>
+                  <input type="date" name="fechad[]" value="{{ form.fechad_iso or form.fechad or '' }}"
+                         class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad">
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-baseline justify-between mt-1">
+            <p class="text-[10px] text-slate-500" id="cheques-multi-hint">
+              Cliente y banco son los mismos para todos los cheques. Al agregar
+              otro, el importe se preautocompleta con el del anterior.
+            </p>
+            <p class="text-xs text-slate-700" id="cheques-total-display">
+              Total cheques: <strong id="cheques-total-monto">$ 0,00</strong>
+              <span class="text-slate-500" id="cheques-total-n">(1)</span>
+            </p>
+          </div>
+        </div>
+
+        {# Banco emisor ahora obligatorio (pedido TMT 2026-05-14).
+           Antes era opcional dentro de un <details> colapsable; ahora
+           sale a la luz y bloquea el guardado si no se elige. #}
+        <label class="flex flex-col col-span-2 md:col-span-1">
+          <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
+          <select name="no_banco" required class="border rounded px-2 py-1 mt-0.5 text-sm">
+            <option value="">— Elegí un banco —</option>
+            {% for b in bancos %}
+              <option value="{{ b.no_banco }}"
+                      {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
+                {{ b.no_banco }} · {{ b.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        {# Resto de campos secundarios (texto libre + endoso) plegados. #}
+        <details class="col-span-2 md:col-span-3 -mt-1">
+          <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-700 select-none">
+            ▸ Más datos (banco texto libre, endosado a proveedor)
+          </summary>
+          <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="flex flex-col">
+              <span class="text-xs text-slate-600">Banco (texto libre)</span>
+              <input type="text" name="banco_texto" value="{{ form.banco_texto or '' }}"
+                     class="border rounded px-2 py-1 mt-0.5 text-sm" maxlength="30">
+            </label>
+            <label class="flex flex-col">
+              <span class="text-xs text-slate-600">Endosado a proveedor</span>
+              <input type="text" name="prov" value="{{ form.prov or '' }}"
+                     class="border rounded px-2 py-1 mt-0.5 uppercase font-mono text-sm" maxlength="5"
+                     oninput="this.value=this.value.toUpperCase()">
+            </label>
+          </div>
+        </details>
+      </div>
+
+      {# ─── Columna derecha: toggle "Es anticipo" (warning al costado) ─── #}
+      <label class="flex flex-col gap-1 p-3 rounded border border-amber-200 bg-amber-50 self-start">
+        <span class="flex items-center gap-2">
+          <input type="checkbox" name="es_anticipo" value="1" id="es-anticipo-chk"
+                 {% if form.es_anticipo %}checked{% endif %}
+                 class="rounded border-slate-300">
+          <strong class="text-sm">Es anticipo del cliente</strong>
+        </span>
+        <span class="text-xs text-amber-800 leading-snug">
+          Pago adelantado SIN factura emitida todavía. Crea un "espejo
+          negativo" que se aplica a la próxima factura.
+          (<code>CONCEPTO=9999</code> del dBase.)
+        </span>
+      </label>
+    </div>
+
+    {# ─── APLICACIÓN INLINE A FACTURAS ────────────────────────────────
+       Se carga vía JS cuando cambia el código de cliente. Cada fila tiene
+       un input "monto a aplicar" pre-cargado FIFO (factura más vieja primero)
+       o match exacto si hay una factura con saldo = importe del cheque.
+       Si "Es anticipo" está tildado, esta sección queda oculta. #}
+    <div id="aplicacion-facturas" class="mt-6 hidden">
+      {# Marca si la dueña usó el botón T en alguna fila — el backend
+         relaja la tolerancia de rounding cuando ve "1" acá. TMT 2026-05-16. #}
+      <input type="hidden" name="aplicar_t_used" id="aplic-t-used" value="">
+      <div class="flex items-baseline justify-between mb-2">
+        <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas</h3>
+        <div class="text-xs text-slate-500" id="aplic-summary">
+          Total cheques: <strong id="aplic-imp">—</strong> ·
+          Aplicado: <strong id="aplic-asignado">$ 0</strong> ·
+          Restante: <strong id="aplic-restante">—</strong> ·
+          Plazo: <strong id="aplic-plazo">—</strong>
+        </div>
+      </div>
+      <div class="mb-2">
+        <input type="text" id="aplic-buscar" placeholder="Buscar por N° de factura o saldo…"
+               class="w-full border rounded px-2 py-1 text-sm">
+      </div>
+      <div class="border rounded overflow-hidden">
+        <div class="max-h-72 overflow-y-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
+              <tr>
+                <th class="px-2 py-2 text-center font-medium w-10" title="Tickear cancela la factura entera (aplica el saldo completo).">
+                  <input type="checkbox" id="aplic-toggle-all" title="Seleccionar/deseleccionar todas">
+                </th>
+                <th class="px-3 py-2 text-left font-medium">N°</th>
+                <th class="px-3 py-2 text-left font-medium">Fecha</th>
+                <th class="px-3 py-2 text-left font-medium">Vence</th>
+                <th class="px-3 py-2 text-right font-medium">Saldo</th>
+                <th class="px-3 py-2 text-right font-medium w-32">A aplicar</th>
+                <th class="px-3 py-2 text-right font-medium w-32" title="Suma acumulada de A aplicar leída de arriba hacia abajo.">Acum.</th>
+              </tr>
+            </thead>
+            <tbody id="aplic-tbody">
+              <tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 text-xs">
+                Tipeá el código del cliente arriba para ver sus facturas abiertas.
+              </td></tr>
+            </tbody>
+            <tfoot id="aplic-tfoot" class="bg-slate-50 border-t-2 border-slate-300 font-medium hidden">
+              <tr>
+                <td class="px-2 py-2 text-center text-xs text-slate-500" id="aplic-foot-n">0</td>
+                <td class="px-3 py-2 text-xs text-slate-500" colspan="3">
+                  facturas seleccionadas
+                </td>
+                <td class="px-3 py-2 text-right text-xs text-slate-500">
+                  Total saldo: <span id="aplic-foot-saldo" class="font-mono tabular-nums">—</span>
+                </td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">
+        Tickeá el checkbox de una factura para <strong>cancelarla entera</strong> (aplica el saldo completo).
+        El header tiene un check para seleccionar/deseleccionar todas a la vez.
+        Sin checkbox, por defecto se reparte <strong>FIFO</strong>; si una factura tiene el
+        <strong>saldo exacto</strong> al importe del cheque, se asigna toda ahí.
+      </p>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      <a href="{{ url_for('cheques.lista') }}"
+         class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Guardar
+      </button>
+    </div>
+
+    <p class="text-xs text-slate-500 mt-4">
+      Se aplican reglas heredadas del dBase: <code>stat='Z'</code> (cartera) por defecto;
+      si <code>fechad &gt; fecha</code> → <code>'P'</code> (posdatado) y se agrega a
+      <code>posdat</code> para que aparezca en el flujo.
+    </p>
+  </form>
+</div>
+
+{# ─── JS: carga facturas pendientes + auto-distribución ────────────── #}
+<script>
+(function() {
+  const codigoInput   = document.querySelector('input[name="codigo_cli"]');
+  // TMT 2026-05-15: con el cambio a multi-cheque, el name pasó de
+  // "importe" a "importe[]". Apuntamos al PRIMER input de la lista —
+  // el JS de aplicaciones inline asume "un cheque" (se aplica al primero).
+  // Si hay más de un cheque, ocultamos el panel de aplicaciones (ver
+  // actualizarVisibilidadMultiCheques abajo).
+  const importeInput  = document.querySelector('input.cheque-imp');
+  const anticipoChk   = document.getElementById('es-anticipo-chk');
+  const panel         = document.getElementById('aplicacion-facturas');
+  const tbody         = document.getElementById('aplic-tbody');
+  const buscar        = document.getElementById('aplic-buscar');
+  const impSpan       = document.getElementById('aplic-imp');
+  const asignadoSpan  = document.getElementById('aplic-asignado');
+  const restanteSpan  = document.getElementById('aplic-restante');
+  const plazoSpan     = document.getElementById('aplic-plazo');
+  const tfoot         = document.getElementById('aplic-tfoot');
+  const footN         = document.getElementById('aplic-foot-n');
+  const footSaldo     = document.getElementById('aplic-foot-saldo');
+  const footAplicado  = document.getElementById('aplic-foot-aplicado');
+  const footAcum      = document.getElementById('aplic-foot-acum');
+  // TMT 2026-05-15: con multi-cheque, fechad vive por bloque. Para el
+  // cálculo de "Plazo" en el summary usamos la fechad del PRIMER cheque
+  // (como referencia). Si tenés cheques con fechas distintas, mirá
+  // el plazo de cada uno en el detalle individual después de guardar.
+  const fechadInput   = document.querySelector('input.cheque-fechad');
+  const FACT_URL_BASE = "{{ url_for('cheques.api_facturas_pendientes', codigo_cli='__CODIGO__') }}";
+
+  let facturas = [];
+  let codigoActual = "";
+
+  function fmt(n) {
+    return (n || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  function parseMonto(s) {
+    // TMT 2026-05-15: el parser anterior asumía SIEMPRE formato ES
+    // (puntos como miles, coma decimal). Pero cuando JS setea el value
+    // con `toFixed(2)` el separador decimal es PUNTO ("-3.75"), y el
+    // parser viejo lo destrozaba a -375. Ahora detectamos el formato:
+    //   - Si la última coma está más a la derecha que el último punto
+    //     → formato ES (1.234,56).
+    //   - Caso contrario → formato US (1,234.56 o 3.75).
+    if (s == null) return 0;
+    s = String(s).trim();
+    if (!s) return 0;
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      // ES: puntos = miles, coma = decimal
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (lastDot > -1 && lastComma === -1) {
+      // US: punto = decimal, sin comas (o comas = miles)
+      // Si hay UN solo punto y los dígitos después son ≤3, es decimal.
+      // Sino, podría ser separador de miles (raro, pero por las dudas
+      // dejamos parseFloat resolver).
+      s = s.replace(/,/g, '');
+    } else if (lastDot > -1 && lastComma > -1) {
+      // US con miles: coma = miles, punto = decimal
+      s = s.replace(/,/g, '');
+    }
+    // sino: sin separadores, parseFloat directo
+    const v = parseFloat(s);
+    return isNaN(v) ? 0 : v;
+  }
+
+  function render(filtro = "") {
+    // TMT 2026-05-15: usar la SUMA de todos los cheques (no sólo el primero)
+    // para que el FIFO y el match exacto funcionen con multi-cheque.
+    const importeCheque = sumaImporteCheques();
+    const q = filtro.trim().toLowerCase();
+
+    if (!facturas.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
+      updateSummary(0, importeCheque);
+      return;
+    }
+
+    // Auto-distribución FIFO incluyendo créditos negativos.
+    // TMT 2026-05-15: la dueña pidió que el FIFO recorra TODAS las facturas
+    // en orden cronológico, sin importar el signo. Las negativas (créditos
+    // a favor) "consumen" el crédito y AUMENTAN el restante disponible
+    // para aplicar a las positivas siguientes. Ejemplo cheque $2000:
+    //   Factura A -$3.75   → aplica -3.75, restante 2003.75
+    //   Factura B -$19.71  → aplica -19.71, restante 2023.46
+    //   Factura C $4554.29 → aplica min(2023.46, 4554.29) = 2023.46
+    //   Total neto aplicado = -3.75 + -19.71 + 2023.46 = 2000.00 ✓
+    const distribucion = {};  // id_factura → monto_a_aplicar
+    if (importeCheque > 0) {
+      // Match exacto sobre las positivas (caso típico cheque = saldo factura)
+      const exact = facturas.find(f =>
+        f.saldo > 0 && Math.abs(f.saldo - importeCheque) < 0.01,
+      );
+      if (exact) {
+        distribucion[exact.id_factura] = importeCheque;
+      } else {
+        let restante = importeCheque;
+        for (const f of facturas) {
+          if (Math.abs(restante) <= 0.005) break;
+          let aplicar = 0;
+          if (f.saldo > 0.005) {
+            aplicar = Math.min(restante, f.saldo);
+          } else if (f.saldo < -0.005) {
+            // Crédito a favor: absorbemos el saldo entero (negativo).
+            // Esto sube `restante` (porque restante - aplicar = restante - (-x) = restante + x).
+            aplicar = f.saldo;
+          }
+          if (Math.abs(aplicar) > 0.005) {
+            distribucion[f.id_factura] = aplicar;
+            restante -= aplicar;
+          }
+        }
+      }
+    }
+
+    // Preservar valores que el usuario haya editado manualmente
+    const existing = tbody.querySelectorAll('input[data-id]');
+    const userValues = {};
+    existing.forEach(inp => {
+      const wasUserEdited = inp.dataset.userEdited === '1';
+      if (wasUserEdited) {
+        userValues[inp.dataset.id] = parseMonto(inp.value);
+      }
+    });
+
+    // Render filas
+    const rowsHtml = facturas
+      .filter(f => {
+        if (!q) return true;
+        const num = String(f.numf || '').toLowerCase();
+        const saldo = String(f.saldo.toFixed(2));
+        return num.includes(q) || saldo.includes(q);
+      })
+      .map(f => {
+        const sugerido = userValues[f.id_factura] != null
+          ? userValues[f.id_factura]
+          : (distribucion[f.id_factura] || 0);
+        const fmtFecha = (s) => s ? s.split('-').reverse().join('/') : '';
+        const isExact = importeCheque > 0 && Math.abs(f.saldo - importeCheque) < 0.01;
+        // TMT 2026-05-15: saldo < 0 = devolución / sobre-aplicación = crédito a
+        // favor del cliente. La usuaria puede tildar la fila para "absorber"
+        // ese crédito (aplica un monto negativo al cheque, neteándolo). Las
+        // pintamos amber para que se distingan de las vivas.
+        const esCredito = f.saldo < -0.005;
+        // Checkbox queda tildado si el monto sugerido == saldo (cancela
+        // la factura entera). Para créditos también — el valor es negativo.
+        const cancelaEntera = Math.abs(sugerido) > 0.005
+          && Math.abs(sugerido - f.saldo) < 0.01;
+        const rowClass = isExact ? 'bg-emerald-50'
+                       : esCredito ? 'bg-amber-50' : '';
+        const saldoClass = esCredito ? 'text-amber-700 font-medium' : '';
+        const credBadge = esCredito
+          ? ' <span class="text-amber-700 text-[10px]">⚠ crédito</span>'
+          : '';
+        return `
+          <tr class="border-t ${rowClass}">
+            <td class="px-2 py-1.5 text-center">
+              <input type="checkbox" class="aplic-cancel" data-id="${f.id_factura}"
+                     data-saldo="${f.saldo}" ${cancelaEntera ? 'checked' : ''}
+                     title="${esCredito
+                              ? 'Tildear absorbe el crédito (aplica monto negativo al cheque)'
+                              : 'Cancela la factura entera (aplica el saldo completo)'}">
+            </td>
+            <td class="px-3 py-1.5 font-mono text-xs">${f.numf || '—'}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
+            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.fecha)}</td>
+            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.vencimiento)}</td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums ${saldoClass}">${fmt(f.saldo)}</td>
+            <td class="px-3 py-1.5 text-right">
+              <div class="inline-flex items-center gap-1 justify-end">
+                <input type="text" inputmode="decimal" name="aplicar[${f.id_factura}]"
+                       data-id="${f.id_factura}" data-saldo="${f.saldo}"
+                       value="${Math.abs(sugerido) > 0.005 ? sugerido.toFixed(2) : ''}"
+                       placeholder="0,00"
+                       class="w-24 border rounded px-2 py-1 text-right text-xs font-mono aplic-input">
+                <button type="button" class="aplic-total px-1.5 py-1 text-xs font-bold border border-slate-300 rounded text-violet-700 hover:bg-violet-50 hover:border-violet-400"
+                        data-id="${f.id_factura}"
+                        title="Aplicar TOTAL — usa todo lo que queda del cheque a esta factura (hasta su saldo). Diferencias chicas de redondeo se toleran.">
+                  T
+                </button>
+              </div>
+            </td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 acum-cell" data-id="${f.id_factura}">—</td>
+          </tr>
+        `;
+      }).join('');
+
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+
+    // Wire-up para tracking de "usuario editó" (input de monto)
+    tbody.querySelectorAll('input.aplic-input').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        e.target.dataset.userEdited = '1';
+        // Sync checkbox: si el monto == saldo, tickear; si no, destickear.
+        // TMT 2026-05-15: aceptamos saldos negativos (créditos) — `Math.abs(saldo) > 0.005`
+        // en vez de `saldo > 0`.
+        const id = e.target.dataset.id;
+        const saldo = parseFloat(e.target.dataset.saldo || 0);
+        const valor = parseMonto(e.target.value);
+        const chk = tbody.querySelector(`input.aplic-cancel[data-id="${id}"]`);
+        if (chk) chk.checked = Math.abs(valor - saldo) < 0.01 && Math.abs(saldo) > 0.005;
+        recalcAcum();
+        updateSummary();
+      });
+    });
+
+    // Wire-up de los checkboxes "cancelar entera".
+    // Click → si tildado, setea el monto al saldo de la factura;
+    //         si destildado, vacía el monto.
+    tbody.querySelectorAll('input.aplic-cancel').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const id = e.target.dataset.id;
+        const saldo = parseFloat(e.target.dataset.saldo || 0);
+        const inp = tbody.querySelector(`input.aplic-input[data-id="${id}"]`);
+        if (!inp) return;
+        if (e.target.checked) {
+          inp.value = saldo.toFixed(2);
+        } else {
+          inp.value = '';
+        }
+        inp.dataset.userEdited = '1';
+        recalcAcum();
+        updateSummary();
+      });
+    });
+
+    // ── Botón "T" (Total): aplica todo lo que queda del cheque a esta
+    // factura, hasta su saldo. TMT 2026-05-16. La dueña pidió un atajo
+    // para no tener que tipear el monto: T = "aplicá el resto acá".
+    //   monto_aplicar = min(saldo_factura, total_cheques - sum_aplicaciones_OTRAS)
+    // Si saldo > disponible → consume el disponible entero (cheque corto).
+    // Si disponible > saldo → consume el saldo entero (queda restante para otra).
+    tbody.querySelectorAll('button.aplic-total').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = btn.dataset.id;
+        const inp = tbody.querySelector(`input.aplic-input[data-id="${id}"]`);
+        if (!inp) return;
+        const saldo = parseFloat(inp.dataset.saldo || 0);
+        // Suma de los importes de TODOS los cheques del form (multi-cheque).
+        // Usamos el helper sumaImporteCheques() definido más abajo en el archivo.
+        const totalCheques = sumaImporteCheques();
+        // Suma aplicada en OTRAS facturas (no esta).
+        let aplicadoOtros = 0;
+        tbody.querySelectorAll('input.aplic-input').forEach(o => {
+          if (o.dataset.id !== id) aplicadoOtros += parseMonto(o.value) || 0;
+        });
+        const disponible = totalCheques - aplicadoOtros;
+        // saldo puede ser negativo (crédito), preservamos ese signo.
+        let toApply;
+        if (saldo > 0) {
+          toApply = Math.max(0, Math.min(saldo, disponible));
+        } else {
+          toApply = saldo;   // créditos se absorben enteros
+        }
+        inp.value = toApply.toFixed(2);
+        inp.dataset.userEdited = '1';
+        inp.dataset.appliedTotal = '1';  // marca para el backend
+        // Marca global: cuando T se usó, el backend afloja la tolerancia
+        // de rounding para que centavos del DBF legacy no rompan el submit.
+        const tUsed = document.getElementById('aplic-t-used');
+        if (tUsed) tUsed.value = '1';
+        // Sync checkbox si quedó == saldo.
+        const chk = tbody.querySelector(`input.aplic-cancel[data-id="${id}"]`);
+        if (chk) chk.checked = Math.abs(toApply - saldo) < 0.01 && Math.abs(saldo) > 0.005;
+        recalcAcum();
+        updateSummary();
+      });
+    });
+
+    recalcAcum();
+    updateSummary();
+    syncToggleAll();
+  }
+
+  // Sync del header "tick-all": tildado si TODOS están tildados, sino destildado.
+  function syncToggleAll() {
+    const toggleAll = document.getElementById('aplic-toggle-all');
+    if (!toggleAll) return;
+    const chks = tbody.querySelectorAll('input.aplic-cancel');
+    if (chks.length === 0) {
+      toggleAll.checked = false;
+      toggleAll.indeterminate = false;
+      return;
+    }
+    let nChecked = 0;
+    chks.forEach(c => { if (c.checked) nChecked++; });
+    toggleAll.checked = nChecked === chks.length;
+    toggleAll.indeterminate = nChecked > 0 && nChecked < chks.length;
+  }
+
+  // Recalcula la columna Acum (suma corrida de "A aplicar" leyendo
+  // top→bottom). La última fila visible muestra el total aplicado.
+  function recalcAcum() {
+    let acum = 0;
+    const rows = tbody.querySelectorAll('tr');
+    rows.forEach(tr => {
+      const inp = tr.querySelector('.aplic-input');
+      const cell = tr.querySelector('.acum-cell');
+      if (!inp || !cell) return;
+      const v = parseMonto(inp.value);
+      // TMT 2026-05-15: aceptar montos negativos (absorción de créditos
+      // a favor del cliente). Antes sólo sumaba > 0.
+      if (Math.abs(v) > 0.005) acum += v;
+      cell.textContent = Math.abs(acum) > 0.005 ? fmt(acum) : '—';
+    });
+  }
+
+  function updateSummary(asignadoOverride, importeOverride) {
+    // TMT 2026-05-15: recolectar info por fila (n facturas con monto != 0,
+    // suma de saldos seleccionados, suma aplicada, fechas) para footer +
+    // cálculo de plazo (fechad cheque - promedio fechas facturas).
+    let asignado = 0;
+    let nSel = 0;
+    let saldoSel = 0;
+    // TMT 2026-05-15: capturamos (fecha, importe_aplicado) para calcular
+    // el plazo ponderado por monto (no promedio simple). Una factura de
+    // $10.000 a 60 días pesa más que una de $100 a 10 días.
+    const fechasYMontosSel = [];
+    tbody.querySelectorAll('input.aplic-input').forEach(inp => {
+      const v = parseMonto(inp.value);
+      if (Math.abs(v) < 0.005) return;
+      asignado += v;
+      nSel++;
+      const saldo = parseFloat(inp.dataset.saldo || 0);
+      saldoSel += saldo;
+      // Fecha de la factura — buscar en el array `facturas` por id.
+      const id = parseInt(inp.dataset.id, 10);
+      const f = facturas.find(x => x.id_factura === id);
+      if (f && f.fecha) {
+        fechasYMontosSel.push({ fecha: f.fecha, monto: Math.abs(v) });
+      }
+    });
+    if (asignadoOverride != null) asignado = asignadoOverride;
+
+    // TMT 2026-05-15: el importe de referencia es la SUMA de TODOS los
+    // bloques cheque. Cuando hay UN solo cheque, si la usuaria no editó
+    // el importe y tildó facturas, auto-completamos con el total aplicado
+    // (UX que la dueña pidió de vuelta). Con multi-cheque NO auto-completa
+    // (sería ambiguo qué bloque actualizar).
+    let importeCheque;
+    if (importeOverride != null) {
+      importeCheque = importeOverride;
+    } else {
+      const bloques = document.querySelectorAll('.cheque-imp');
+      const esSingleCheque = bloques.length === 1;
+      const editedByUser = importeInput.dataset.userEdited === '1';
+      if (esSingleCheque && !editedByUser && nSel > 0 && Math.abs(asignado) > 0.005) {
+        importeInput.value = asignado.toFixed(2);
+        importeCheque = asignado;
+        actualizarTotalCheques();
+      } else {
+        importeCheque = sumaImporteCheques();
+      }
+    }
+
+    const restante = importeCheque - asignado;
+    impSpan.textContent      = '$ ' + fmt(importeCheque);
+    asignadoSpan.textContent = '$ ' + fmt(asignado);
+    restanteSpan.textContent = '$ ' + fmt(restante);
+    restanteSpan.className = restante < -0.005 ? 'text-red-600' : (restante > 0.005 ? 'text-amber-700' : 'text-emerald-700');
+
+    // Plazo en días = F. depósito cheque − promedio PONDERADO(fecha
+    // facturas, por monto aplicado). Una factura de $10K a 60 días pesa
+    // más que una de $100 a 10 días. TMT 2026-05-15.
+    const fechadStr = fechadInput ? fechadInput.value : '';
+    if (fechadStr && fechasYMontosSel.length > 0) {
+      const fechad = new Date(fechadStr + 'T00:00:00');
+      const totalPeso = fechasYMontosSel.reduce((a, r) => a + r.monto, 0);
+      if (totalPeso > 0.005) {
+        const sumaPesoFecha = fechasYMontosSel.reduce((a, r) => {
+          return a + new Date(r.fecha + 'T00:00:00').getTime() * r.monto;
+        }, 0);
+        const avgTs = sumaPesoFecha / totalPeso;
+        const diffMs = fechad.getTime() - avgTs;
+        const diasPlazo = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        plazoSpan.textContent = `${diasPlazo} días`;
+        plazoSpan.title = 'Promedio ponderado por monto (no simple)';
+        plazoSpan.className = diasPlazo > 60 ? 'text-red-600'
+                            : diasPlazo > 30 ? 'text-amber-700'
+                            : 'text-emerald-700';
+      } else {
+        plazoSpan.textContent = '—';
+        plazoSpan.className = '';
+      }
+    } else {
+      plazoSpan.textContent = '—';
+      plazoSpan.className = '';
+    }
+
+    // Footer totales — sólo visible si hay al menos una selección.
+    if (nSel > 0) {
+      tfoot.classList.remove('hidden');
+      footN.textContent = nSel;
+      footSaldo.textContent = fmt(saldoSel);
+      footAplicado.textContent = '$ ' + fmt(asignado);
+      footAcum.textContent = '$ ' + fmt(asignado);
+    } else {
+      tfoot.classList.add('hidden');
+    }
+  }
+
+  async function cargarFacturas() {
+    const codigo = (codigoInput.value || '').trim().toUpperCase();
+    if (!codigo || codigo.length < 1) {
+      facturas = [];
+      panel.classList.add('hidden');
+      return;
+    }
+    if (codigo === codigoActual) {
+      // Mismo cliente — sólo re-renderizar para refrescar FIFO con nuevo importe.
+      // TMT 2026-05-15: respetar el toggle "Es anticipo" — si está tildado,
+      // el panel queda oculto (anticipos no aplican a facturas).
+      if (!(anticipoChk && anticipoChk.checked)) {
+        panel.classList.remove('hidden');
+      }
+      render(buscar.value);
+      return;
+    }
+    codigoActual = codigo;
+    try {
+      const url = FACT_URL_BASE.replace('__CODIGO__', encodeURIComponent(codigo));
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        facturas = [];
+        panel.classList.add('hidden');
+        return;
+      }
+      const data = await resp.json();
+      facturas = data.facturas || [];
+      // TMT 2026-05-15: pre-cargar banco más usado por este cliente. Sólo
+      // si la usuaria todavía no eligió uno explícitamente (select vacío).
+      const bancoSel = document.querySelector('select[name="no_banco"]');
+      if (bancoSel && !bancoSel.value && data.banco_sugerido) {
+        const opt = bancoSel.querySelector(
+          `option[value="${data.banco_sugerido}"]`,
+        );
+        if (opt) {
+          bancoSel.value = String(data.banco_sugerido);
+          bancoSel.dispatchEvent(new Event('change'));
+        }
+      }
+      // TMT 2026-05-15: respetar toggle "Es anticipo" — anticipos no aplican.
+      if (!(anticipoChk && anticipoChk.checked)) {
+        panel.classList.remove('hidden');
+      }
+      render(buscar.value);
+    } catch (e) {
+      console.error('Error cargando facturas:', e);
+      facturas = [];
+    }
+  }
+
+  function actualizarVisibilidad() {
+    if (anticipoChk && anticipoChk.checked) {
+      panel.classList.add('hidden');
+      return;
+    }
+    // TMT 2026-05-15: con multi-cheque, el panel queda VISIBLE igual.
+    // La suma de los importes de todos los cheques se usa como total
+    // disponible; el backend distribuye las aplicaciones entre cheques
+    // FIFO al guardar.
+    if (facturas.length > 0) {
+      panel.classList.remove('hidden');
+    }
+  }
+
+  // Devuelve la suma de todos los importes ingresados en los bloques
+  // cheque (usado para FIFO + summary cuando hay multi-cheque).
+  function sumaImporteCheques() {
+    let s = 0;
+    document.querySelectorAll('.cheque-imp').forEach(inp => {
+      s += parseMonto(inp.value);
+    });
+    return s;
+  }
+
+  // Multi-cheque: botón "+ Otro cheque" clona el bloque, autocompleta el
+  // importe con el último valor, agrega botón "X" para sacar. TMT 2026-05-15.
+  const chequesList = document.getElementById('cheques-list');
+  const btnAddCheque = document.getElementById('btn-add-cheque');
+  const multiHint = document.getElementById('cheques-multi-hint');
+
+  function renumerarBloques() {
+    // TMT 2026-05-15: cada bloque ya tiene un <div.bloque-header> hidden.
+    // Sólo lo mostramos para bloques 2+ con el número y el botón quitar.
+    const bloques = chequesList.querySelectorAll('.cheque-bloque');
+    bloques.forEach((b, i) => {
+      const header = b.querySelector('.bloque-header');
+      if (!header) return;
+      if (i === 0) {
+        // primer bloque sin header (es el "principal")
+        header.classList.add('hidden');
+        header.innerHTML = '';
+        return;
+      }
+      header.classList.remove('hidden');
+      header.innerHTML = '';
+      const span = document.createElement('span');
+      span.textContent = `Cheque #${i + 1}`;
+      header.appendChild(span);
+      const btnRemove = document.createElement('button');
+      btnRemove.type = 'button';
+      btnRemove.className = 'text-rose-600 hover:text-rose-800 text-xs';
+      btnRemove.textContent = '× quitar';
+      btnRemove.addEventListener('click', () => {
+        b.remove();
+        renumerarBloques();
+        actualizarVisibilidad();
+        actualizarMultiHint();
+      });
+      header.appendChild(btnRemove);
+    });
+  }
+
+  function actualizarMultiHint() {
+    const n = chequesList.querySelectorAll('.cheque-bloque').length;
+    if (n > 1) {
+      // TMT 2026-05-15: el panel de aplicaciones SÍ queda visible con
+      // multi-cheque — el backend distribuye FIFO entre los cheques al
+      // guardar (cheque #1 cubre lo primero hasta agotarse, después #2, etc).
+      multiHint.innerHTML = `<strong>${n} cheques</strong> se van a crear. El total disponible para aplicar es la <strong>suma</strong> de los importes; al guardar se distribuye FIFO entre cheques.`;
+      multiHint.classList.add('text-amber-700');
+    } else {
+      multiHint.innerHTML = 'Cliente y banco son los mismos para todos los cheques. Al agregar otro, el importe se preautocompleta con el del anterior.';
+      multiHint.classList.remove('text-amber-700');
+    }
+    actualizarTotalCheques();
+  }
+
+  function actualizarTotalCheques() {
+    // TMT 2026-05-15: total de los importes de todos los bloques cheque.
+    const totalMonto = document.getElementById('cheques-total-monto');
+    const totalN = document.getElementById('cheques-total-n');
+    if (!totalMonto || !totalN) return;
+    const imps = chequesList.querySelectorAll('.cheque-imp');
+    let total = 0;
+    imps.forEach(inp => { total += parseMonto(inp.value); });
+    totalMonto.textContent = '$ ' + fmt(total);
+    totalN.textContent = `(${imps.length})`;
+  }
+
+  // Wire up: cualquier cambio en un .cheque-imp recalcula total + FIFO.
+  chequesList.addEventListener('input', (e) => {
+    if (e.target.classList.contains('cheque-imp')) {
+      actualizarTotalCheques();
+      // Re-renderizar facturas para que el FIFO use la suma actualizada.
+      if (facturas.length > 0) render(buscar.value);
+    }
+  });
+
+  if (btnAddCheque) {
+    btnAddCheque.addEventListener('click', () => {
+      const bloques = chequesList.querySelectorAll('.cheque-bloque');
+      const ultimo = bloques[bloques.length - 1];
+      const ultimoImp = ultimo.querySelector('.cheque-imp').value;
+      const ultimoFechad = ultimo.querySelector('.cheque-fechad')?.value || '';
+      const nuevo = ultimo.cloneNode(true);
+      // preservar importe y fechad del anterior; limpiar N°.
+      nuevo.querySelectorAll('input').forEach(inp => {
+        if (inp.classList.contains('cheque-imp')) {
+          inp.value = ultimoImp || '';
+        } else if (inp.classList.contains('cheque-fechad')) {
+          inp.value = ultimoFechad;
+        } else {
+          inp.value = '';
+        }
+      });
+      chequesList.appendChild(nuevo);
+      renumerarBloques();
+      // focus en el N° del nuevo bloque
+      const numInp = nuevo.querySelector('.cheque-num');
+      if (numInp) numInp.focus();
+      actualizarVisibilidad();
+      actualizarMultiHint();
+    });
+  }
+
+  // Cuando cambia cualquier fechad de cualquier bloque, recalcular plazo
+  // (que usa la fechad del PRIMER cheque).
+  chequesList.addEventListener('change', (e) => {
+    if (e.target.classList.contains('cheque-fechad')) {
+      updateSummary();
+    }
+  });
+
+  // Eventos
+  codigoInput.addEventListener('change', cargarFacturas);
+  codigoInput.addEventListener('blur',   cargarFacturas);
+  // TMT 2026-05-15: cuando la usuaria tipea el importe, marcamos
+  // userEdited=1 para que updateSummary() NO lo sobreescriba con la suma
+  // de facturas tildadas. Para destrabar (volver a auto-completar) basta
+  // dejarlo vacío.
+  importeInput.addEventListener('input', () => {
+    if ((importeInput.value || '').trim() === '') {
+      importeInput.dataset.userEdited = '';
+    } else {
+      importeInput.dataset.userEdited = '1';
+    }
+    render(buscar.value);
+  });
+  buscar.addEventListener('input', (e) => render(e.target.value));
+  // Cuando cambia la fecha de depósito, recalculamos el plazo.
+  if (fechadInput) fechadInput.addEventListener('change', () => updateSummary());
+
+  // Header "select all": tickea/destickea todos los checkboxes de la tabla
+  // y propaga al monto de cada fila.
+  const toggleAll = document.getElementById('aplic-toggle-all');
+  if (toggleAll) {
+    toggleAll.addEventListener('change', (e) => {
+      const wantChecked = e.target.checked;
+      tbody.querySelectorAll('input.aplic-cancel').forEach(chk => {
+        if (chk.checked !== wantChecked) {
+          chk.checked = wantChecked;
+          chk.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+  }
+  if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
+
+  // TMT 2026-05-15: al elegir un cliente del datalist, el value queda
+  // como "CODE — NOMBRE". Al blur/submit, extraemos sólo el código
+  // (lo que viene antes del primer espacio o em-dash).
+  function extraerCodigoCli() {
+    const v = (codigoInput.value || '').trim().toUpperCase();
+    if (!v) return;
+    // Patrón "CODE — NOMBRE" o "CODE NOMBRE" → primer token.
+    const m = v.match(/^([A-Z0-9]{1,5})(?:\s|—|-)/);
+    if (m) {
+      codigoInput.value = m[1];
+    } else if (v.length <= 5) {
+      codigoInput.value = v;
+    }
+  }
+  codigoInput.addEventListener('blur', extraerCodigoCli);
+  codigoInput.addEventListener('change', extraerCodigoCli);
+  // Antes de submit, garantizar que el value sea sólo código.
+  if (form) {
+    form.addEventListener('submit', extraerCodigoCli, true);
+  }
+
+  // Carga inicial si ya hay código (re-render por error de validación)
+  if (codigoInput.value && codigoInput.value.trim().length > 0) {
+    cargarFacturas();
+  }
+  // Inicializar el contador "Total cheques" al cargar la página.
+  actualizarTotalCheques();
+
+  // TMT 2026-05-15: en submit, si hay diferencia chica entre Aplicado y
+  // Total cheques (≤ $50), preguntar antes de bloquear (matchea el flow
+  // dBase legacy: "Faltan X centavos, OK?"). Si la diferencia es grande
+  // (> $50), el backend rechaza.
+  const TOLERANCIA_USD = 50.00;
+  const form = document.getElementById('cheque-form');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      if (anticipoChk && anticipoChk.checked) return;  // anticipos no aplican
+      const totalCheques = sumaImporteCheques();
+      let totalAplicado = 0;
+      tbody.querySelectorAll('input.aplic-input').forEach(inp => {
+        totalAplicado += parseMonto(inp.value);
+      });
+      const diff = totalAplicado - totalCheques;
+      // Si aplicaron MÁS que los cheques (positivo) y la diferencia es chica:
+      if (diff > 0.005 && diff <= TOLERANCIA_USD) {
+        const ok = confirm(
+          `La suma aplicada ($ ${totalAplicado.toFixed(2)}) supera el total ` +
+          `de cheques ($ ${totalCheques.toFixed(2)}) por $ ${diff.toFixed(2)}.\n\n` +
+          `¿Continuar de todas formas? Esa diferencia va a quedar como ` +
+          `sobre-aplicación.`
+        );
+        if (!ok) e.preventDefault();
+      }
+      // Si aplicaron MENOS, mostrar aviso también (queda en cartera):
+      else if (diff < -0.005 && diff >= -TOLERANCIA_USD) {
+        const restante = -diff;
+        const ok = confirm(
+          `Quedan $ ${restante.toFixed(2)} sin asignar de los cheques.\n\n` +
+          `¿Guardar igual? Esos cheques quedan en cartera para aplicar después.`
+        );
+        if (!ok) e.preventDefault();
+      }
+      // Diferencias > $50 las maneja el backend con error duro.
+    });
+  }
+})();
+</script>
+{% endblock %}

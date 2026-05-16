@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, empty_block %}
+{% block title %}Bandeja de rechazos{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-6">
+  {{ page_header("Bandeja — sospecha de rechazo",
+                 subtitulo="Cheques identificados como posibles rechazos en la última conciliación. "
+                           "Confirmá uno por uno.") }}
+
+  {% if sospechosos %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium">N° cheque</th>
+          <th class="px-3 py-2 text-left font-medium">Cliente</th>
+          <th class="px-3 py-2 text-left font-medium">F. depósito</th>
+          <th class="px-3 py-2 text-right font-medium">Importe</th>
+          <th class="px-3 py-2 text-right font-medium">Días</th>
+          <th class="px-3 py-2 text-left font-medium">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sospechosos %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-2 font-mono">{{ s.no_cheque | cleanstr or '—' }}</td>
+          <td class="px-3 py-2 font-mono">{{ s.codigo_cli }}</td>
+          <td class="px-3 py-2">{{ s.fechad }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ s.importe | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ s.dias }}</td>
+          <td class="px-3 py-2">
+            <form method="post" action="{{ url_for('conciliacion.confirmar_rebote') }}"
+                  onsubmit="return confirm('¿Marcar cheque {{ s.no_cheque }} como rebotado?');"
+                  class="inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="id_cheque" value="{{ s.id_cheque }}">
+              <button type="submit" class="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700">
+                Rebotado
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_block('No hay cheques en bandeja de rechazo.',
+                   sugerencia='Subí un estado de cuenta en /conciliacion para empezar.',
+                   accion_texto='Subir estado de cuenta',
+                   accion_url=url_for('conciliacion.index'),
+                   icono='chart') }}
+  {% endif %}
+</div>
+{% endblock %}

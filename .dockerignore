@@ -1,0 +1,47 @@
+# .dockerignore — lo que NO debe entrar en la imagen.
+
+# Venvs locales — ya instalamos las deps en el stage builder.
+.venv/
+venv/
+
+# Bytecode y caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.tw-build/
+
+# Git
+.git/
+.gitignore
+
+# Secrets — NUNCA en la imagen. El runtime lee de env vars / secrets manager.
+.env
+.env.*
+!.env.example
+
+# Datos de desarrollo
+preview/_flujo_real*.json
+intela12042026.sql
+INTELA.rar
+INTELA copy/
+
+# Tests no hacen falta en runtime (pero sí en el CI image si lo hacemos)
+tests/
+scripts/_archive/
+
+# Docs pesadas
+docs/SKILL_ADDENDUM_*.md
+PROPUESTA_*.md
+BACKLOG.md
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Artefactos de deploy local
+*.log
+*.pid

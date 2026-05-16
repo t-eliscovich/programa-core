@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% from "_ui.html" import stat_chip %}
+{% block title %}SRI {{ fe.clave_acceso[:8] }}…{% endblock %}
+{% block breadcrumb %}
+  {% if fact %}
+    <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+    <a href="{{ url_for('facturas.detalle', id_factura=fact.id_factura) }}" class="hover:underline">{{ fact.numf_completo or fact.numf }}</a> /
+  {% endif %}
+  <strong>Comprobante SRI</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Comprobante electrónico</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Generado {{ fe.fecha_crea | fecha_es }}
+        {% if fe.fecha_modifica %} · Modificado {{ fe.fecha_modifica | fecha_es }}{% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-2 no-print">
+      <a href="{{ url_for('sri.xml_raw', id_factura_electronica=fe.id_factura_electronica) }}"
+         target="_blank"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Ver XML
+      </a>
+      {% if fact %}
+        <a href="{{ url_for('facturas.detalle', id_factura=fact.id_factura) }}"
+           class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Volver a la factura
+        </a>
+      {% endif %}
+      {# Emitir NC sólo si es factura (no otra NC) y está autorizada. #}
+      {% if fe.estado == 'autorizado' and (fe.tipo_comprobante or '01') == '01'
+            and g.permisos and 'sri.emitir' in g.permisos %}
+        <a href="{{ url_for('sri.nc_form', id_factura_electronica=fe.id_factura_electronica) }}"
+           class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700">
+          Emitir nota de crédito
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# --- Estado + metadata --- #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 mb-6">
+    <div class="flex items-center gap-3 mb-4">
+      {% set tono = 'slate' %}
+      {% if fe.estado == 'autorizado' %}{% set tono = 'emerald' %}
+      {% elif fe.estado == 'rechazado' %}{% set tono = 'red' %}
+      {% elif fe.estado in ('firmado', 'enviado') %}{% set tono = 'blue' %}
+      {% elif fe.estado == 'anulado' %}{% set tono = 'amber' %}
+      {% endif %}
+      {{ stat_chip('Estado', fe.estado, tono) }}
+      {{ stat_chip('Ambiente', 'certificación' if fe.ambiente == '1' else 'producción',
+                   'amber' if fe.ambiente == '1' else 'emerald') }}
+      {{ stat_chip('Tipo emisión', 'normal' if fe.tipo_emision == '1' else 'contingencia') }}
+    </div>
+
+    <div class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+      <div class="text-slate-500">Clave de acceso</div>
+      <div class="font-mono text-xs break-all">{{ fe.clave_acceso }}</div>
+
+      <div class="text-slate-500">Secuencial</div>
+      <div class="font-mono">{{ fe.estab }}-{{ fe.pto_emi }}-{{ fe.secuencial }}</div>
+
+      <div class="text-slate-500">Fecha emisión</div>
+      <div>{{ fe.fecha_emision | fecha_es }}</div>
+
+      {% if fe.numero_autorizacion %}
+      <div class="text-slate-500">N° autorización</div>
+      <div class="font-mono text-xs break-all">{{ fe.numero_autorizacion }}</div>
+      {% endif %}
+
+      {% if fe.fecha_autorizacion %}
+      <div class="text-slate-500">F. autorización</div>
+      <div>{{ fe.fecha_autorizacion | fecha_es }}</div>
+      {% endif %}
+
+      {% if fe.intentos %}
+      <div class="text-slate-500">Intentos de envío</div>
+      <div>{{ fe.intentos }}{% if fe.ultimo_intento_en %} · último {{ fe.ultimo_intento_en | fecha_es }}{% endif %}</div>
+      {% endif %}
+    </div>
+
+    {% if fe.mensaje_error %}
+    <div class="mt-4 p-3 rounded bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+      <div class="text-xs font-semibold text-red-700 dark:text-red-300 uppercase tracking-wider mb-1">Error SRI</div>
+      <div class="text-sm text-red-700 dark:text-red-300">{{ fe.mensaje_error }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# --- Totales snapshot --- #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 mb-6">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">Totales</h2>
+    <div class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+      <div class="text-slate-500">Subtotal sin impuestos</div>
+      <div class="text-right text-mono">{{ fe.subtotal_sin_impuestos | money_es }}</div>
+      <div class="text-slate-500">Base IVA {{ fe.iva_porcentaje | money_es }}%</div>
+      <div class="text-right text-mono">{{ fe.subtotal_iva_grav | money_es }}</div>
+      {% if fe.subtotal_iva_0 and fe.subtotal_iva_0 > 0 %}
+      <div class="text-slate-500">Base IVA 0%</div>
+      <div class="text-right text-mono">{{ fe.subtotal_iva_0 | money_es }}</div>
+      {% endif %}
+      <div class="text-slate-500">IVA</div>
+      <div class="text-right text-mono">{{ fe.total_iva | money_es }}</div>
+      <div class="text-slate-500 font-semibold border-t border-slate-200 dark:border-slate-700 pt-2 mt-1">Total</div>
+      <div class="text-right text-mono font-semibold border-t border-slate-200 dark:border-slate-700 pt-2 mt-1">
+        {{ fe.importe_total | money_es }}
+      </div>
+    </div>
+  </div>
+
+  {# --- Errores estructurales del XML generado --- #}
+  {% if errores_estructurales %}
+  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded p-4 mb-6">
+    <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">Observaciones del XML</h3>
+    <ul class="list-disc ml-5 text-sm text-amber-800 dark:text-amber-200 space-y-1">
+      {% for err in errores_estructurales %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+    <p class="text-xs text-amber-700 dark:text-amber-300 mt-2">
+      Estas observaciones son estructurales (orden, elementos faltantes) — el SRI valida adicionalmente
+      contra el XSD oficial. Corregir antes de firmar y enviar.
+    </p>
+  </div>
+  {% endif %}
+
+  {# --- Next steps: firma + envío (pendientes) --- #}
+  <div class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded p-4 text-sm">
+    <h3 class="font-semibold mb-2">Próximos pasos</h3>
+    <ol class="list-decimal ml-5 space-y-1 text-slate-600 dark:text-slate-300">
+      <li>Firmar el XML con el certificado .p12 (pendiente de implementación).</li>
+      <li>Enviar al web service de recepción del SRI ({{ 'sandbox' if fe.ambiente == '1' else 'producción' }}).</li>
+      <li>Consultar autorización (respuesta AUTORIZADO o DEVUELTA).</li>
+      <li>Si DEVUELTA: corregir, regenerar, reenviar.</li>
+    </ol>
+  </div>
+</div>
+{% endblock %}

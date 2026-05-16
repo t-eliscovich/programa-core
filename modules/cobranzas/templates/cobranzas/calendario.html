@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+
+{% block title %}Calendario de cobranzas{% endblock %}
+
+{% block content %}
+  {{ page_header("Calendario de cobranzas",
+                 "Cheques posfechados + facturas que vencen, agrupado por día") }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {# --- KPI strip ------------------------------------------------------- #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+      <div class="text-xs text-emerald-700 uppercase tracking-wide">Cheques en cartera</div>
+      <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">
+        {{ (totales.total_cheques or 0) | num_es }}
+      </div>
+      <div class="text-xs text-emerald-700 text-right">{{ totales.n_cheques or 0 }} cheques</div>
+    </div>
+    <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+      <div class="text-xs text-amber-700 uppercase tracking-wide">Facturas a cobrar</div>
+      <div class="text-xl font-semibold text-amber-900 text-right tabular-nums">
+        {{ (totales.total_facturas or 0) | num_es }}
+      </div>
+      <div class="text-xs text-amber-700 text-right">{{ totales.n_facturas or 0 }} facturas</div>
+    </div>
+    <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+      <div class="text-xs text-red-700 uppercase tracking-wide">Ya vencido</div>
+      <div class="text-xl font-semibold text-red-900 text-right tabular-nums">
+        {{ (totales.vencidos_total or 0) | num_es }}
+      </div>
+      <div class="text-xs text-red-700 text-right">acumulado hasta hoy</div>
+    </div>
+    <div class="rounded-lg bg-slate-100 border border-slate-300 px-4 py-3">
+      <div class="text-xs text-slate-700 uppercase tracking-wide">Total ventana</div>
+      <div class="text-xl font-semibold text-slate-900 text-right tabular-nums">
+        {{ (totales.total_general or 0) | num_es }}
+      </div>
+      <div class="text-xs text-slate-500 text-right">
+        {{ totales.n_clientes or 0 }} clientes
+      </div>
+    </div>
+  </div>
+
+  {# --- Filtros de ventana ---------------------------------------------- #}
+  <form method="get" class="flex flex-wrap items-end gap-3 mb-4 no-print">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Días atrás (vencidos)</label>
+      <input type="number" name="atras" value="{{ dias_atras }}" min="0" max="90"
+             class="w-20 rounded border border-slate-300 px-2 py-1 text-sm text-right">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Días adelante</label>
+      <input type="number" name="adelante" value="{{ dias_adelante }}" min="1" max="180"
+             class="w-20 rounded border border-slate-300 px-2 py-1 text-sm text-right">
+    </div>
+    <button type="submit"
+            class="inline-flex items-center rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm hover:bg-slate-700">
+      Aplicar
+    </button>
+    <button type="button" onclick="window.print()"
+            class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Imprimir
+    </button>
+  </form>
+
+  {# --- Agenda — un bloque por día ------------------------------------- #}
+  {% if agenda %}
+    <div class="space-y-3">
+      {% for dia in agenda %}
+        {% set tono =
+             'red'    if dia.es_pasado
+             else 'sky' if dia.es_hoy
+             else 'slate' %}
+        <details class="bg-white border rounded-lg overflow-hidden
+                {% if dia.es_pasado %}border-red-200{% elif dia.es_hoy %}border-sky-300 ring-2 ring-sky-100{% else %}border-slate-200{% endif %}"
+                {% if dia.es_hoy or (dia.dias_relativo >= 0 and dia.dias_relativo <= 3) %}open{% endif %}>
+          <summary class="cursor-pointer flex flex-wrap items-center justify-between gap-3 px-4 py-3
+                  {% if dia.es_pasado %}bg-red-50{% elif dia.es_hoy %}bg-sky-50{% else %}bg-slate-50{% endif %}
+                  hover:opacity-90 transition-opacity">
+            <div class="flex items-center gap-3">
+              <div class="text-lg font-semibold tabular-nums
+                          {% if dia.es_pasado %}text-red-800{% elif dia.es_hoy %}text-sky-900{% else %}text-slate-800{% endif %}">
+                {{ dia.fecha.strftime('%d/%m') }}
+                <span class="text-xs font-normal opacity-70">
+                  {{ ['lun','mar','mié','jue','vie','sáb','dom'][dia.fecha.weekday()] }}
+                </span>
+              </div>
+              <span class="text-xs px-2 py-0.5 rounded-full
+                  {% if dia.es_hoy %}bg-sky-200 text-sky-900 font-semibold
+                  {% elif dia.es_pasado %}bg-red-200 text-red-900
+                  {% elif dia.dias_relativo == 1 %}bg-amber-200 text-amber-900
+                  {% else %}bg-slate-200 text-slate-700{% endif %}">
+                {% if dia.es_hoy %}HOY
+                {% elif dia.es_pasado %}vencido hace {{ -dia.dias_relativo }}d
+                {% elif dia.dias_relativo == 1 %}mañana
+                {% else %}+{{ dia.dias_relativo }}d{% endif %}
+              </span>
+              <span class="text-xs text-slate-500">
+                {{ dia.cheques | length }} cheque(s) · {{ dia.facturas | length }} factura(s)
+              </span>
+            </div>
+            <div class="text-lg font-semibold tabular-nums
+                {% if dia.es_pasado %}text-red-800{% elif dia.es_hoy %}text-sky-900{% else %}text-slate-800{% endif %}">
+              $ {{ (dia.total_dia or 0) | num_es }}
+            </div>
+          </summary>
+
+          <div class="px-4 py-3 space-y-3 text-sm">
+            {% if dia.cheques %}
+              <div>
+                <h3 class="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-1.5">
+                  Cheques posfechados — depositar
+                </h3>
+                <table class="w-full text-sm">
+                  <tbody class="divide-y divide-slate-100">
+                    {% for ch in dia.cheques %}
+                      <tr class="hover:bg-slate-50">
+                        <td class="py-1.5 pr-2 font-mono text-xs whitespace-nowrap">
+                          {{ ch.codigo_cli }}
+                          {% if ch.stop == 'S' %}
+                            <span class="ml-1 inline-block px-1 rounded bg-red-100 text-red-700 text-[10px] font-semibold">STOP</span>
+                          {% endif %}
+                        </td>
+                        <td class="py-1.5 pr-2">
+                          <a href="{{ url_for('informes.estado_cuenta_landing', codigo=ch.codigo_cli) }}"
+                             class="text-sky-700 hover:underline">{{ ch.cliente }}</a>
+                        </td>
+                        <td class="py-1.5 pr-2 text-xs text-slate-500 whitespace-nowrap">
+                          N° {{ ch.no_cheque or '#' ~ ch.id_cheque }}
+                          {% if ch.banco %}· {{ ch.banco }}{% endif %}
+                        </td>
+                        <td class="py-1.5 text-right tabular-nums font-medium text-emerald-800 whitespace-nowrap">
+                          $ {{ ch.importe | num_es }}
+                        </td>
+                        <td class="py-1.5 pl-2 text-xs text-slate-500 whitespace-nowrap">
+                          {% if ch.telefono %}<span title="{{ ch.telefono }}">📞</span>{% endif %}
+                          {% if ch.correo %}<span title="{{ ch.correo }}">✉</span>{% endif %}
+                        </td>
+                        <td class="py-1.5 pl-2 text-right">
+                          <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+                             class="text-xs text-slate-500 hover:text-sky-700 hover:underline">ver</a>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                    <tr class="bg-emerald-50/50">
+                      <td colspan="3" class="py-1 pr-2 text-xs text-emerald-800 text-right">
+                        Subtotal cheques
+                      </td>
+                      <td class="py-1 text-right tabular-nums font-semibold text-emerald-900">
+                        $ {{ dia.total_cheques | num_es }}
+                      </td>
+                      <td colspan="2"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+
+            {% if dia.facturas %}
+              <div>
+                <h3 class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-1.5">
+                  Facturas que vencen
+                </h3>
+                <table class="w-full text-sm">
+                  <tbody class="divide-y divide-slate-100">
+                    {% for fa in dia.facturas %}
+                      <tr class="hover:bg-slate-50">
+                        <td class="py-1.5 pr-2 font-mono text-xs whitespace-nowrap">
+                          {{ fa.codigo_cli }}
+                          {% if fa.stop == 'S' %}
+                            <span class="ml-1 inline-block px-1 rounded bg-red-100 text-red-700 text-[10px] font-semibold">STOP</span>
+                          {% endif %}
+                        </td>
+                        <td class="py-1.5 pr-2">
+                          <a href="{{ url_for('informes.estado_cuenta_landing', codigo=fa.codigo_cli) }}"
+                             class="text-sky-700 hover:underline">{{ fa.cliente }}</a>
+                        </td>
+                        <td class="py-1.5 pr-2 text-xs text-slate-500 whitespace-nowrap">
+                          Fact. {{ fa.numf_completo or fa.numf or '—' }}
+                        </td>
+                        <td class="py-1.5 text-right tabular-nums font-medium text-amber-800 whitespace-nowrap">
+                          $ {{ fa.saldo | num_es }}
+                        </td>
+                        <td class="py-1.5 pl-2 text-xs text-slate-500 whitespace-nowrap">
+                          {% if fa.telefono %}<span title="{{ fa.telefono }}">📞</span>{% endif %}
+                          {% if fa.correo %}<span title="{{ fa.correo }}">✉</span>{% endif %}
+                        </td>
+                        <td class="py-1.5 pl-2 text-right">
+                          <a href="{{ url_for('facturas.detalle', id_factura=fa.id_factura) }}"
+                             class="text-xs text-slate-500 hover:text-sky-700 hover:underline">ver</a>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                    <tr class="bg-amber-50/50">
+                      <td colspan="3" class="py-1 pr-2 text-xs text-amber-800 text-right">
+                        Subtotal facturas
+                      </td>
+                      <td class="py-1 text-right tabular-nums font-semibold text-amber-900">
+                        $ {{ dia.total_facturas | num_es }}
+                      </td>
+                      <td colspan="2"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-500">
+      No hay cheques posfechados ni facturas vencimientos en la ventana
+      ({{ dias_atras }}d atrás · {{ dias_adelante }}d adelante).
+    </div>
+  {% endif %}
+
+  <p class="mt-3 text-xs text-slate-500">
+    Cheques posfechados: <code>stat='Z'</code> (en cartera), filtrados por
+    <code>fechad</code>. Facturas: con <code>saldo &gt; 0</code>, filtradas por
+    <code>vencimiento</code>. Los días vencidos van en rojo, hoy en celeste.
+  </p>
+{% endblock %}

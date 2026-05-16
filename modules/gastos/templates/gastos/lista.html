@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_header %}
+
+{% block title %}Gastos{% endblock %}
+
+{% block content %}
+  {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
+     Misma fila en ambas pantallas. TMT 2026-05-16. #}
+  <div class="no-print flex items-end gap-1 mb-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+    <a href="{{ url_for('informes.gastos') }}"
+       class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+              {% if request.endpoint == 'informes.gastos' %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+      Reporte mensual
+      <span class="ml-1 text-xs text-slate-400">matriz V1..V9</span>
+    </a>
+    <a href="{{ url_for('gastos.lista') }}"
+       class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+              {% if request.endpoint == 'gastos.lista' %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+      Detalle
+      <span class="ml-1 text-xs text-slate-400">lista filtrable</span>
+    </a>
+  </div>
+
+  {{ page_header("Gastos generales", "Luz, agua, sueldos, contadora, mantenimiento, etc.") }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {# --- KPIs del periodo filtrado ---------------------------------------- #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+      <div class="text-xs text-amber-700 uppercase tracking-wide">Total gastado</div>
+      <div class="text-xl font-semibold text-amber-900 text-right tabular-nums">
+        {{ (resumen.total or 0) | num_es }}
+      </div>
+      <div class="text-xs text-amber-700 text-right">{{ resumen.n or 0 }} gastos</div>
+    </div>
+    <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+      <div class="text-xs text-red-700 uppercase tracking-wide">Saldo pendiente</div>
+      <div class="text-xl font-semibold text-red-900 text-right tabular-nums">
+        {{ (resumen.saldo_pendiente or 0) | num_es }}
+      </div>
+      <div class="text-xs text-red-700 text-right">aún sin pagar</div>
+    </div>
+    <div class="rounded-lg bg-slate-100 border border-slate-300 px-4 py-3">
+      <div class="text-xs text-slate-700 uppercase tracking-wide">Ticket promedio</div>
+      <div class="text-xl font-semibold text-slate-900 text-right tabular-nums">
+        {{ (resumen.ticket_promedio or 0) | num_es }}
+      </div>
+      <div class="text-xs text-slate-500 text-right">por gasto</div>
+    </div>
+    <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
+      <div class="text-xs text-sky-700 uppercase tracking-wide">Periodo</div>
+      <div class="text-sm text-sky-900 text-right">
+        {{ resumen.desde or '—' }}
+      </div>
+      <div class="text-xs text-sky-700 text-right">a {{ resumen.hasta or '—' }}</div>
+    </div>
+  </div>
+
+  {# --- Acciones --------------------------------------------------------- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+    <a href="{{ url_for('gastos.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Exportar CSV
+    </a>
+    <button onclick="window.print()"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Imprimir
+    </button>
+  </div>
+
+  {# --- Filtros --------------------------------------------------------- #}
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Concepto, proveedor, doc, número…"
+             class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {# --- Tabla ----------------------------------------------------------- #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-3 text-left">Doc</th>
+          <th class="px-3 py-3 text-left">Proveedor</th>
+          <th class="px-3 py-3 text-right">N°</th>
+          <th class="px-3 py-3 text-left">Concepto</th>
+          <th class="px-3 py-3 text-right">Importe</th>
+          <th class="px-3 py-3 text-right" title="Total gastado corrido por fecha (ascendente)">Acum.</th>
+          <th class="px-3 py-3 text-right">Saldo</th>
+          <th class="px-3 py-3 text-left">Estado</th>
+          <th class="px-3 py-3 text-left" style="white-space: nowrap;">F. dep.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in filas %}
+        {% set pendiente = (g.saldo or 0) > 0 %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ g.fecha | fecha_es }}</td>
+          <td class="px-3 py-2 font-mono text-xs">{{ g.doc or '' }}</td>
+          <td class="px-3 py-2">
+            <span class="font-mono text-xs text-slate-500">{{ g.prov or '' }}</span>
+            <span class="ml-1">{{ g.proveedor or '' }}</span>
+          </td>
+          <td class="px-3 py-2 text-right font-mono text-xs">{{ g.num or '' }}</td>
+          <td class="px-3 py-2 text-xs">{{ g.concepto or '' }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ g.importe | num_es if g.importe else '' }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-500">{{ g.saldo_acumulado | num_es if g.saldo_acumulado is not none else '' }}</td>
+          <td class="px-3 py-2 text-right tabular-nums {% if pendiente %}text-red-700 font-medium{% else %}text-slate-400{% endif %}">
+            {# saldo=0 (pagado) → guion para que no parezca dato faltante. TMT 2026-05-13. #}
+            {% if pendiente %}{{ g.saldo | num_es }}{% else %}<span title="Pagado — saldo $ 0">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {% if g.stat %}
+              <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium
+                          {% if pendiente %}bg-red-100 text-red-700{% else %}bg-emerald-100 text-emerald-700{% endif %}">
+                {{ g.stat }}
+              </span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ g.fechad | fecha_es if g.fechad else '' }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(9, 'Sin gastos en el filtro.', 'Ampliá el rango de fechas o quitá la búsqueda.') }}
+        {% endfor %}
+        {% if filas %}
+        <tr class="bg-slate-50 dark:bg-slate-800/40 font-semibold border-t-2 border-slate-300">
+          <td colspan="5" class="px-3 py-2 text-right text-xs text-slate-600">TOTALES VISIBLES</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ total_importe | num_es }}</td>
+          <td class="px-3 py-2 text-right tabular-nums {% if total_saldo %}text-red-700{% endif %}">{{ total_saldo | num_es }}</td>
+          <td colspan="2"></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    Lee <code>scintela.xgast</code>. <code>doc</code> es el tipo de comprobante,
+    <code>stat</code> el estado del gasto. Los gastos con <code>saldo &gt; 0</code> aún están pendientes de pago.
+  </p>
+{% endblock %}

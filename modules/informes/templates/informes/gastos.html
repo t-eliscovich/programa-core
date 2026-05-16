@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Gastos del mes{% endblock %}
+{% block breadcrumb %}Informes / <strong>Gastos del mes</strong>{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* Matriz 3×3 de gastos por rubro × tipo */
+  .gastos-matriz { font-feature-settings: "tnum" 1; }
+  .gastos-matriz .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .gastos-matriz table { border-collapse: separate; border-spacing: 0; width: 100%; }
+  .gastos-matriz th,
+  .gastos-matriz td { padding: 10px 14px; }
+  .gastos-matriz thead th {
+    background: rgb(241 245 249); color: rgb(71 85 105);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .dark .gastos-matriz thead th { background: rgb(30 41 59 / 0.6); color: rgb(148 163 184); }
+  .gastos-matriz td.row-label {
+    background: rgb(248 250 252); color: rgb(71 85 105);
+    font-weight: 500; font-size: 13px; text-transform: capitalize;
+  }
+  .dark .gastos-matriz td.row-label { background: rgb(30 41 59 / 0.4); color: rgb(203 213 225); }
+  .gastos-matriz td.cell {
+    background: rgb(255 255 255); color: rgb(15 23 42);
+    border-bottom: 1px solid rgb(241 245 249);
+  }
+  .dark .gastos-matriz td.cell {
+    background: rgb(15 23 42); color: rgb(241 245 249);
+    border-bottom-color: rgb(30 41 59);
+  }
+  .gastos-matriz td.cell .vcode {
+    display: inline-block; font-size: 9px; color: rgb(148 163 184);
+    margin-right: 6px; font-weight: 600; letter-spacing: 0.05em;
+    vertical-align: middle;
+  }
+  .gastos-matriz tr.subtotal td {
+    background: rgb(241 245 249); color: rgb(15 23 42);
+    font-weight: 600; border-top: 1px solid rgb(203 213 225);
+  }
+  .dark .gastos-matriz tr.subtotal td {
+    background: rgb(30 41 59 / 0.6); color: rgb(241 245 249);
+    border-top-color: rgb(71 85 105);
+  }
+  .gastos-matriz tr.amort td {
+    color: rgb(100 116 139); font-style: italic; font-size: 12px;
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .gastos-matriz tr.amort td {
+    color: rgb(148 163 184); border-bottom-color: rgb(51 65 85);
+  }
+  .gastos-matriz tr.grand td {
+    background: rgb(15 23 42); color: rgb(248 250 252);
+    font-weight: 700; font-size: 14px;
+  }
+  .dark .gastos-matriz tr.grand td {
+    background: rgb(241 245 249); color: rgb(15 23 42);
+  }
+  .gastos-matriz td.total-col {
+    background: rgb(248 250 252); color: rgb(15 23 42);
+    font-weight: 600;
+  }
+  .dark .gastos-matriz td.total-col {
+    background: rgb(30 41 59 / 0.4); color: rgb(241 245 249);
+  }
+
+  /* Tarjetas resumen arriba — los 3 grandes totales por rubro */
+  .gastos-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 800px) { .gastos-cards { grid-template-columns: 1fr; } }
+  .gastos-cards .card {
+    background: rgb(255 255 255); border: 1px solid rgb(226 232 240);
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .dark .gastos-cards .card { background: rgb(15 23 42); border-color: rgb(51 65 85); }
+  .gastos-cards .card .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: rgb(100 116 139); font-weight: 600;
+  }
+  .gastos-cards .card .value {
+    font-size: 22px; font-weight: 600; margin-top: 4px;
+    color: rgb(15 23 42); font-variant-numeric: tabular-nums;
+  }
+  .dark .gastos-cards .card .value { color: rgb(241 245 249); }
+  .gastos-cards .card .breakdown {
+    font-size: 11px; color: rgb(100 116 139); margin-top: 6px;
+    line-height: 1.5;
+  }
+  .gastos-cards .card.tej { border-left: 3px solid rgb(96 165 250); }
+  .gastos-cards .card.tin { border-left: 3px solid rgb(168 85 247); }
+  .gastos-cards .card.adm { border-left: 3px solid rgb(34 197 94); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
+     Misma fila en ambas pantallas. TMT 2026-05-16. #}
+  <div class="no-print flex items-end gap-1 mb-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+    <a href="{{ url_for('informes.gastos') }}"
+       class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+              {% if request.endpoint == 'informes.gastos' %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+      Reporte mensual
+      <span class="ml-1 text-xs text-slate-400">matriz V1..V9</span>
+    </a>
+    <a href="{{ url_for('gastos.lista') }}"
+       class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+              {% if request.endpoint == 'gastos.lista' %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+      Detalle
+      <span class="ml-1 text-xs text-slate-400">lista filtrable</span>
+    </a>
+  </div>
+
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Gastos del mes en curso</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Matriz por rubro × tipo (V1..V9 del PRG) + movimientos detallados de bancos
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="?export=csv" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# ─── 3 tarjetas resumen — totales por rubro (PRG: GTEJ / GTIN / GGF) ─── #}
+  <div class="gastos-cards mb-6">
+    <div class="card tej">
+      <div class="label">Tejeduría — GTEJ</div>
+      <div class="value">$ {{ col_total.tej | num_es(0) }}</div>
+      <div class="breakdown">
+        V1+V2+V3: $ {{ col_v.tej | num_es(0) }}
+        · Amort. máquinas (DTJ): $ {{ col_amort.tej | num_es(0) }}
+      </div>
+    </div>
+    <div class="card tin">
+      <div class="label">Tintorería — GTIN</div>
+      <div class="value">$ {{ col_total.tin | num_es(0) }}</div>
+      <div class="breakdown">
+        V4+V5+V6: $ {{ col_v.tin | num_es(0) }}
+        · Amort. máquinas (DCC): $ {{ col_amort.tin | num_es(0) }}
+      </div>
+    </div>
+    <div class="card adm">
+      <div class="label">Administración — GGF</div>
+      <div class="value">$ {{ col_total.adm | num_es(0) }}</div>
+      <div class="breakdown">
+        V7+V8+V9: $ {{ col_v.adm | num_es(0) }}
+        · Amort. otros (DEPRCAR): $ {{ col_amort.adm | num_es(0) }}
+      </div>
+    </div>
+  </div>
+
+  {# ─── Matriz 3×3 — el grid mismo ─── #}
+  <div class="gastos-matriz mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th class="text-left" style="width: 14%;">Rubro</th>
+          <th class="text-right" style="width: 22%;">Tejeduría</th>
+          <th class="text-right" style="width: 22%;">Tintorería</th>
+          <th class="text-right" style="width: 22%;">Administración</th>
+          <th class="text-right" style="width: 20%;">Total fila</th>
+        </tr>
+      </thead>
+      <tbody>
+        {# Cada celda V1..V9 es link al drill-down (DETALGAST del PRG). #}
+        {% for tipo, label, v_tej, num_tej, v_tin, num_tin, v_adm, num_adm in [
+            ('personal',  'Personal',  'V1', 1, 'V4', 4, 'V7', 7),
+            ('servicios', 'Servicios', 'V2', 2, 'V5', 5, 'V8', 8),
+            ('otros',     'Gastos generales', 'V3', 3, 'V6', 6, 'V9', 9),
+        ] %}
+        <tr>
+          <td class="row-label">{{ label }}</td>
+          <td class="cell num">
+            <a href="{{ url_for('informes.gastos_detalle', num=num_tej) }}" class="hover:underline hover:text-blue-600" title="Ver detalle {{ v_tej }}">
+              <span class="vcode">{{ v_tej }}</span>{{ matriz[tipo].tej | num_es(0) }}
+            </a>
+          </td>
+          <td class="cell num">
+            <a href="{{ url_for('informes.gastos_detalle', num=num_tin) }}" class="hover:underline hover:text-blue-600" title="Ver detalle {{ v_tin }}">
+              <span class="vcode">{{ v_tin }}</span>{{ matriz[tipo].tin | num_es(0) }}
+            </a>
+          </td>
+          <td class="cell num">
+            <a href="{{ url_for('informes.gastos_detalle', num=num_adm) }}" class="hover:underline hover:text-blue-600" title="Ver detalle {{ v_adm }}">
+              <span class="vcode">{{ v_adm }}</span>{{ matriz[tipo].adm | num_es(0) }}
+            </a>
+          </td>
+          <td class="total-col num">{{ fil_total[tipo] | num_es(0) }}</td>
+        </tr>
+        {% endfor %}
+
+        {# Subtotal V1-V9 antes de amortizaciones #}
+        <tr class="subtotal">
+          <td class="row-label">Subtotal V1..V9</td>
+          <td class="num">{{ col_v.tej | num_es(0) }}</td>
+          <td class="num">{{ col_v.tin | num_es(0) }}</td>
+          <td class="num">{{ col_v.adm | num_es(0) }}</td>
+          <td class="num">{{ suma_v_total | num_es(0) }}</td>
+        </tr>
+
+        {# Amortizaciones por rubro #}
+        <tr class="amort">
+          <td class="row-label" style="font-style:italic">+ Amortización</td>
+          <td class="num">DTJ {{ col_amort.tej | num_es(0) }}</td>
+          <td class="num">DCC {{ col_amort.tin | num_es(0) }}</td>
+          <td class="num">DEPRCAR {{ col_amort.adm | num_es(0) }}</td>
+          <td class="num">{{ suma_amort_total | num_es(0) }}</td>
+        </tr>
+
+        {# GRAND TOTAL — los GTEJ/GTIN/GGF que terminan en el panel Resultados #}
+        <tr class="grand">
+          <td class="row-label" style="text-transform:uppercase">Total con amort.</td>
+          <td class="num">{{ col_total.tej | num_es(0) }}</td>
+          <td class="num">{{ col_total.tin | num_es(0) }}</td>
+          <td class="num">{{ col_total.adm | num_es(0) }}</td>
+          <td class="num">{{ suma_grand | num_es(0) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-800">
+      <strong>Cómo se lee:</strong> cada celda es la suma del mes para esa combinación rubro × tipo
+      (ej: <code class="font-mono">V5 = Tintorería · Servicios</code>).
+      La fila <em>Subtotal V1..V9</em> es la suma directa de XGAST.
+      <em>Amortización</em> agrega la cuota mensual de los activos de esa área
+      (PRG líneas 211-213). El <em>Total con amort.</em> es lo que entra al
+      panel COSTOS de Resultados como <code class="font-mono">GTEJ / GTIN / GGF</code>.
+    </div>
+  </div>
+
+  {# ─── Detalle: lista plana de movimientos bancarios del mes ─── #}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-3">
+    Movimientos bancarios del mes
+  </h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Fecha</th>
+          <th class="px-4 py-3 text-left font-medium">Doc</th>
+          <th class="px-4 py-3 text-left font-medium">Banco</th>
+          <th class="px-4 py-3 text-left font-medium">Proveedor</th>
+          <th class="px-4 py-3 text-left font-medium">Concepto</th>
+          <th class="px-4 py-3 text-right font-medium">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ r.fecha | fecha_es }}</td>
+          <td class="px-4 py-2 font-mono text-xs">{{ r.documento }}</td>
+          <td class="px-4 py-2 text-slate-500">{{ r.banco or '' }}</td>
+          <td class="px-4 py-2">{{ r.proveedor }}</td>
+          <td class="px-4 py-2">{{ r.concepto | cleanstr }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ r.importe | money_es }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'Sin movimientos bancarios este mes.', 'Los gastos pueden estar registrados como xgast aunque no haya movimiento bancario aún.') }}
+        {% endfor %}
+      </tbody>
+      {% if filas %}
+      <tfoot class="bg-slate-50 dark:bg-slate-800/50 font-semibold">
+        <tr>
+          <td class="px-4 py-3" colspan="5">Total bancos</td>
+          <td class="px-4 py-3 text-right text-mono">{{ total | money_es }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

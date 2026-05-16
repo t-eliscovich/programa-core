@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Cargar cheques desde CSV{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
+  <span>Cargar CSV</span>
+{% endblock %}
+
+{% block content %}
+{% set titulo = "Cargar cheques desde CSV" %}
+{% set subtitulo = "Mismos campos que el alta individual. Si la fecha de depósito es posterior a la fecha, el cheque entra como postdatado (stat='P') y se crea automáticamente la fila en posdat." %}
+{% set url_plantilla = url_for('cheques.cargar_csv', plantilla=1) %}
+{% set url_volver = url_for('cheques.lista') %}
+{% include "_csv_upload.html" %}
+{% endblock %}

@@ -1,0 +1,257 @@
+{# Shared UI macros. Import via:
+   {% from "_ui.html" import empty_row, empty_block, saldo_pill, page_header,
+                              stat_chip, wizard_hero, wizard_info, wizard_footer,
+                              page_hero, kpi_card %}
+#}
+
+{# ─────────────── PAGE HERO + KPI CARDS — patrón canónico ───────────────
+   TMT 2026-05-13: estandarizar headers/KPIs cross-pantalla. Antes cada
+   pantalla tenía su propio sizing/colores y se veía desordenado.
+
+   page_hero(titulo, descripcion='', kpi_label='', kpi_valor='', kpi_extra='')
+       → header con título + descripción y un KPI grande estilo dashboard.
+         La fila de acciones (botones) va en un block separado abajo —
+         este macro solo renderiza el lado izquierdo.
+
+   kpi_card(label, valor, extra='', tono='slate', href=None)
+       → tarjeta KPI consistente. Tono slate por default (neutro), o
+         emerald (positivo), rose (negativo/alerta), amber (warning),
+         sky (info). Los principales SIEMPRE en slate — el color es
+         para alertas reales, no para "deuda" o "saldo" que ya tienen su
+         significado obvio en el contexto.
+#}
+
+{% macro page_hero(titulo, descripcion='', kpi_label='', kpi_valor='', kpi_extra='') %}
+<div class="flex-1 min-w-0">
+  <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{{ titulo }}</h1>
+  {% if descripcion %}
+    <p class="text-sm text-slate-500 mt-1">{{ descripcion }}</p>
+  {% endif %}
+  {% if kpi_valor %}
+    <div class="mt-2 flex items-baseline gap-2 flex-wrap">
+      {% if kpi_label %}
+        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold">{{ kpi_label }}</span>
+      {% endif %}
+      <span class="text-3xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">{{ kpi_valor }}</span>
+      {% if kpi_extra %}
+        <span class="text-sm text-slate-500">{{ kpi_extra }}</span>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% set _kpi_tonos = {
+  'slate':   {'bg': 'bg-white dark:bg-slate-900',
+              'border': 'border-slate-200 dark:border-slate-800',
+              'label': 'text-slate-500',
+              'valor': 'text-slate-900 dark:text-slate-100',
+              'extra': 'text-slate-500'},
+  'emerald': {'bg': 'bg-emerald-50 dark:bg-emerald-900/20',
+              'border': 'border-emerald-200 dark:border-emerald-800',
+              'label': 'text-emerald-700 dark:text-emerald-300',
+              'valor': 'text-emerald-900 dark:text-emerald-100',
+              'extra': 'text-emerald-700/80 dark:text-emerald-300/80'},
+  'rose':    {'bg': 'bg-rose-50 dark:bg-rose-900/20',
+              'border': 'border-rose-200 dark:border-rose-800',
+              'label': 'text-rose-700 dark:text-rose-300',
+              'valor': 'text-rose-900 dark:text-rose-100',
+              'extra': 'text-rose-700/80 dark:text-rose-300/80'},
+  'amber':   {'bg': 'bg-amber-50 dark:bg-amber-900/20',
+              'border': 'border-amber-200 dark:border-amber-800',
+              'label': 'text-amber-700 dark:text-amber-300',
+              'valor': 'text-amber-900 dark:text-amber-100',
+              'extra': 'text-amber-700/80 dark:text-amber-300/80'},
+  'sky':     {'bg': 'bg-sky-50 dark:bg-sky-900/20',
+              'border': 'border-sky-200 dark:border-sky-800',
+              'label': 'text-sky-700 dark:text-sky-300',
+              'valor': 'text-sky-900 dark:text-sky-100',
+              'extra': 'text-sky-700/80 dark:text-sky-300/80'},
+} %}
+
+{% macro kpi_card(label, valor, extra='', tono='slate', href=None) %}
+  {% set t = _kpi_tonos.get(tono, _kpi_tonos.slate) %}
+  {% if href %}<a href="{{ href }}" class="block group">{% endif %}
+  <div class="rounded-lg border {{ t.border }} {{ t.bg }} px-5 py-4
+              {% if href %}hover:shadow-sm transition{% endif %}">
+    <div class="text-xs uppercase tracking-wider {{ t.label }} font-semibold">{{ label }}</div>
+    <div class="text-2xl font-bold {{ t.valor }} tabular-nums mt-1">{{ valor }}</div>
+    {% if extra %}
+      <div class="text-xs {{ t.extra }} mt-1">{{ extra }}</div>
+    {% endif %}
+  </div>
+  {% if href %}</a>{% endif %}
+{% endmacro %}
+
+{# ---------- WIZARD MACROS (TMT 2026-05-12 — polish movimientos dobles) ----------
+   Estandariza el look de las pantallas tipo "wizard" (transferir, aportar,
+   endosar, etc.). Header con icono + título + descripción, banner informativo
+   con paleta de color semántica, footer con botones de cancelar/confirmar.
+   Uso:
+     {{ wizard_hero('emerald', 'Aporte de capital', 'descripción...', 'trending-up') }}
+     {{ wizard_info('emerald', 'Se va a hacer en una sola transacción: …') }}
+     {{ wizard_footer(url_cancelar, 'Registrar aporte →', 'emerald') }}
+#}
+
+{% set _wizard_colors = {
+  'emerald': {
+    'icon_bg': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    'btn':     'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500',
+    'info_bg': 'bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-200',
+  },
+  'sky': {
+    'icon_bg': 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+    'btn':     'bg-sky-600 hover:bg-sky-700 focus:ring-sky-500',
+    'info_bg': 'bg-sky-50 border-sky-200 text-sky-900 dark:bg-sky-900/20 dark:border-sky-800 dark:text-sky-200',
+  },
+  'indigo': {
+    'icon_bg': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+    'btn':     'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500',
+    'info_bg': 'bg-indigo-50 border-indigo-200 text-indigo-900 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-200',
+  },
+  'rose': {
+    'icon_bg': 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+    'btn':     'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500',
+    'info_bg': 'bg-rose-50 border-rose-200 text-rose-900 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200',
+  },
+  'amber': {
+    'icon_bg': 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    'btn':     'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500',
+    'info_bg': 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200',
+  },
+  'violet': {
+    'icon_bg': 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+    'btn':     'bg-violet-600 hover:bg-violet-700 focus:ring-violet-500',
+    'info_bg': 'bg-violet-50 border-violet-200 text-violet-900 dark:bg-violet-900/20 dark:border-violet-800 dark:text-violet-200',
+  },
+} %}
+
+{% macro wizard_hero(color, titulo, descripcion, icon_path='') %}
+  {% set wc = _wizard_colors.get(color, _wizard_colors.sky) %}
+  <div class="flex items-start gap-4 mb-6">
+    <div class="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center {{ wc.icon_bg }}">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        {{ icon_path | safe }}
+      </svg>
+    </div>
+    <div class="flex-1">
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
+        {{ titulo }}
+      </h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed max-w-2xl">
+        {{ descripcion }}
+      </p>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro wizard_info(color, contenido) %}
+  {% set wc = _wizard_colors.get(color, _wizard_colors.sky) %}
+  <div class="border rounded-lg px-4 py-3 text-sm {{ wc.info_bg }}">
+    <div class="flex items-start gap-2">
+      <svg class="w-4 h-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <div class="flex-1">{{ contenido | safe }}</div>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro wizard_footer(url_cancelar, texto_confirmar, color='sky') %}
+  {% set wc = _wizard_colors.get(color, _wizard_colors.sky) %}
+  <div class="flex items-center justify-between pt-5 mt-2 border-t border-slate-200 dark:border-slate-800">
+    <a href="{{ url_cancelar }}"
+       class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-3 py-2 rounded">
+      ← Cancelar
+    </a>
+    <button type="submit"
+            class="{{ wc.btn }} text-white px-6 py-2.5 rounded-lg font-semibold text-sm shadow-sm
+                   focus:outline-none focus:ring-2 focus:ring-offset-2 transition">
+      {{ texto_confirmar }}
+    </button>
+  </div>
+{% endmacro %}
+
+{# Consistent page header. `acciones` is a {% call %} slot for buttons/links. #}
+{% macro page_header(titulo, subtitulo=None) %}
+<div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ titulo }}</h1>
+    {% if subtitulo %}<p class="text-sm text-slate-500 mt-1">{{ subtitulo }}</p>{% endif %}
+  </div>
+  <div class="flex items-center gap-2">{{ caller() if kwargs and kwargs.get('_has_caller') else '' }}</div>
+</div>
+{% endmacro %}
+
+{# Small chip for showing count/summary in header. #}
+{% macro stat_chip(label, valor, tono='slate') %}
+<span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border
+  {% if tono == 'emerald' %}bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300
+  {% elif tono == 'red' %}bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300
+  {% elif tono == 'amber' %}bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300
+  {% elif tono == 'blue' %}bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300
+  {% else %}bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300{% endif %}">
+  <span class="text-slate-500 dark:text-slate-400">{{ label }}</span>
+  <span class="font-mono font-semibold">{{ valor }}</span>
+</span>
+{% endmacro %}
+
+{# A warmer empty-state row for data tables. Use inside <tbody> {% else %}. #}
+{% macro empty_row(colspan, mensaje, sugerencia=None, accion_texto=None, accion_url=None) %}
+<tr class="no-sort">
+  <td class="px-5 py-10 text-center" colspan="{{ colspan }}">
+    <div class="flex flex-col items-center gap-2 text-slate-500">
+      <svg class="w-8 h-8 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="4" width="18" height="16" rx="2"/>
+        <path d="M3 9h18" stroke-linecap="round"/>
+        <path d="M8 14h3" stroke-linecap="round"/>
+      </svg>
+      <div class="text-sm">{{ mensaje }}</div>
+      {% if sugerencia %}<div class="text-xs text-slate-400">{{ sugerencia }}</div>{% endif %}
+      {% if accion_texto and accion_url %}
+        <a href="{{ accion_url }}" class="mt-2 text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          {{ accion_texto }}
+        </a>
+      {% endif %}
+    </div>
+  </td>
+</tr>
+{% endmacro %}
+
+{# Block-style empty state for non-table contexts (cards, full panels). #}
+{% macro empty_block(mensaje, sugerencia=None, accion_texto=None, accion_url=None, icono='box') %}
+<div class="flex flex-col items-center justify-center py-12 px-6 text-center">
+  <svg class="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    {% if icono == 'chart' %}
+      <path d="M3 3v18h18" stroke-linecap="round"/>
+      <path d="M7 14l3-3 3 3 4-5" stroke-linecap="round" stroke-linejoin="round"/>
+    {% elif icono == 'search' %}
+      <circle cx="11" cy="11" r="7"/>
+      <path d="m20 20-4.3-4.3" stroke-linecap="round"/>
+    {% else %}
+      <rect x="3" y="4" width="18" height="16" rx="2"/>
+      <path d="M3 9h18" stroke-linecap="round"/>
+    {% endif %}
+  </svg>
+  <div class="text-sm text-slate-600 dark:text-slate-400">{{ mensaje }}</div>
+  {% if sugerencia %}<div class="mt-1 text-xs text-slate-400">{{ sugerencia }}</div>{% endif %}
+  {% if accion_texto and accion_url %}
+    <a href="{{ accion_url }}" class="mt-3 text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+      {{ accion_texto }}
+    </a>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{# Colored pill for saldo/delta values. Negative = red, positive = emerald, zero = slate. #}
+{% macro saldo_pill(valor, mostrar_cero=True) %}
+{% set v = (valor or 0) | float %}
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  {% if v > 0 %}bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  {% elif v < 0 %}bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300
+  {% else %}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400
+  {% endif %}">
+  {{ valor | money_es }}
+</span>
+{% endmacro %}

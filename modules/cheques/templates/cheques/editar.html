@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Editar cheque {{ ch.no_cheque or ch.id_cheque }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('cheques.lista') }}">Cheques</a> /
+  <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">{{ ch.no_cheque or ch.id_cheque }}</a> /
+  <strong>Editar</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Editar cheque</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Sólo edición blanda: concepto, observación{% if not is_depositado %}, fecha de depósito{% endif %}.
+      Para corregir importe, cliente o banco →
+      <a href="{{ url_for('cheques.anular_error_carga', id_cheque=ch.id_cheque) }}"
+         class="text-amber-600 dark:text-amber-400 hover:underline">anular por error de carga</a>.
+    </p>
+  </div>
+
+  {% if errores %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <p class="font-medium mb-1">Revisá:</p>
+      <ul class="list-disc list-inside space-y-0.5">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">N° cheque</div>
+      <div class="font-mono">{{ ch.no_cheque or '#' ~ ch.id_cheque }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Cliente</div>
+      <div class="font-mono">{{ ch.codigo_cli }}</div>
+      <div class="text-xs">{{ ch.cliente or '' }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Importe</div>
+      <div class="font-mono text-right">$ {{ ch.importe | num_es(2) }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Stat</div>
+      <div class="font-mono">{{ ch.stat or '—' }}{% if is_depositado %} <span class="text-amber-600">(depositado)</span>{% endif %}</div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('cheques.editar', id_cheque=ch.id_cheque) }}"
+        class="space-y-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Concepto</label>
+      <input name="concepto" type="text" maxlength="50" value="{{ form.concepto or '' }}"
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+    </div>
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">
+        Fecha de depósito {% if is_depositado %}<span class="text-amber-600">(lockeada — cheque depositado)</span>{% endif %}
+      </label>
+      <input name="fechad" type="text" placeholder="DD/MM/AAAA"
+             value="{{ form.fechad or '' }}"
+             {% if is_depositado %}disabled{% endif %}
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      <p class="text-xs text-slate-500 mt-1">
+        Si la fecha cae domingo, se mueve automáticamente al lunes (paridad
+        con dBase ALTAS.PRG L119).
+      </p>
+    </div>
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Observación (opcional)</label>
+      <input name="observacion" type="text" maxlength="120" value="{{ form.observacion or '' }}"
+             placeholder="Nota del ajuste..."
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+    </div>
+
+    <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+      <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
+      <button type="submit"
+              class="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium">
+        Guardar cambios
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

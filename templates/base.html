@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Intela{% endblock %} — Programa Core</title>
+  {# Precompiled Tailwind (built with `bash scripts/build-tailwind.sh`).
+     Falls back to the Play CDN if static/tailwind.css is missing — keeps dev loose. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+  <script defer src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="{{ url_for('static', filename='app.js') }}?v=14"></script>
+  <script defer src="{{ url_for('static', filename='sortable-tables.js') }}?v=1"></script>
+  <script>
+    // Theme init
+    (function () {
+      const saved = localStorage.getItem('intela-theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+    function toggleTheme() {
+      const html = document.documentElement;
+      html.classList.toggle('dark');
+      localStorage.setItem('intela-theme', html.classList.contains('dark') ? 'dark' : 'light');
+    }
+  </script>
+  <style>
+    /* TMT 2026-05-15 (v2): el font-size en html sólo escala las clases
+       rem-based de Tailwind, y de 16→18px (12.5%) apenas se notaba.
+       Cambiamos a `zoom: 1.18` en body — escala TODO visualmente (texto,
+       padding, iconos, bordes) +18% de forma uniforme. Bien soportado en
+       Chrome/Edge/Safari y desde Firefox 126. Si más adelante hace falta
+       subirlo o bajarlo, este es el único número a tocar. */
+    html { font-size: 16px; }
+    body { zoom: 1.18; }
+    @media print {
+      /* En impresión sí queremos el tamaño real para no romper layouts. */
+      body { zoom: 1 !important; }
+    }
+
+    .text-mono { font-variant-numeric: tabular-nums; }
+
+    /* ---- Print stylesheet ---- */
+    @media print {
+      /* Hide chrome (sidebar, topbar, breadcrumbs, action buttons). */
+      .no-print, aside, header, nav, form button, form input[type="submit"],
+      a.no-print, [role="navigation"] { display: none !important; }
+
+      /* Remove chrome body backgrounds and force white for ink saving. */
+      html, body { background: #fff !important; color: #000 !important; }
+      .bg-slate-50, .bg-slate-100, .bg-slate-800, .bg-slate-900, .bg-slate-950,
+      .bg-white, .dark\:bg-slate-900, .dark\:bg-slate-950 {
+        background: #fff !important;
+      }
+      .text-slate-500, .text-slate-400, .text-slate-300, .text-slate-100,
+      .dark\:text-slate-100 { color: #444 !important; }
+
+      /* Open up the main content area. */
+      main, .max-w-6xl, .max-w-7xl { max-width: 100% !important; padding: 0 !important; }
+
+      /* Tables: tighter rows, visible borders, no wrap on numbers. */
+      table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+      th, td { padding: 4px 6px !important; border-bottom: 1px solid #ddd; }
+      thead { background: #f5f5f5 !important; }
+      tr { page-break-inside: avoid; }
+      .text-right, td[align="right"] { text-align: right !important; }
+
+      /* Page setup. */
+      @page { margin: 14mm 12mm; }
+
+      /* Don't break headings away from their content. */
+      h1, h2, h3 { page-break-after: avoid; }
+
+      /* Links: show URL after the anchor text (for archival printouts). */
+      a[href]:not(.no-url)::after { content: " (" attr(href) ")"; font-size: 8pt; color: #888; }
+      a[href^="#"]:after, a[href^="/"]:after { content: ""; }
+
+      /* Saldo pills revert to plain text when printed. */
+      .saldo-pill, span[class*="rounded-full"] {
+        background: transparent !important; color: #000 !important;
+        padding: 0 !important; border: none !important;
+      }
+    }
+
+    /* Sidebar mobile — oculto por default en pantallas <md, slide-in al abrir. */
+    @media (max-width: 767px) {
+      #sidebar {
+        position: fixed; top: 0; left: 0; height: 100vh; z-index: 40;
+        transform: translateX(-100%); transition: transform 0.2s ease;
+        box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+      }
+      #sidebar.is-open { transform: translateX(0); }
+    }
+    body.no-scroll { overflow: hidden; }
+
+    /* Pulse one-shot para el botón de búsqueda global — se muestra en
+       usuarios nuevos (localStorage __gs_seen no seteado) hasta la primera
+       vez que abren el overlay. Deliberadamente suave: un ring azulado
+       que respira 3 veces, 2.2s cada ciclo. */
+    @keyframes gs-breathe {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);   }
+      50%      { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.35); }
+    }
+    .__gs_pulse { animation: gs-breathe 2.2s ease-in-out 0s 3; }
+    @media (prefers-reduced-motion: reduce) {
+      .__gs_pulse { animation: none; }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       PREMIUM DESIGN SYSTEM — TMT 2026-05-16
+       Paleta sobria (slate + sky), sombras suaves, tipografía afinada,
+       borders escasos. Todas las páginas heredan estos defaults.
+       ═══════════════════════════════════════════════════════════════ */
+
+    :root {
+      --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+      --shadow-md: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+      --shadow-lg: 0 4px 6px -1px rgb(15 23 42 / 0.06), 0 2px 4px -2px rgb(15 23 42 / 0.04);
+    }
+    body {
+      font-feature-settings: "cv11", "ss01";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    /* Números tabulares por default en tablas y celdas .num */
+    main table, .num, .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Sidebar colapsable ─────────────────────────────────────────
+       Cuando aside#sidebar tiene data-collapsed="1": ancho 56px,
+       muestra solo iconos. State persiste en localStorage. TMT 2026-05-16. */
+    aside#sidebar {
+      width: 15rem;                           /* w-60 */
+      transition: width 180ms ease;
+    }
+    aside#sidebar[data-collapsed="1"] {
+      width: 3.25rem;                         /* w-13ish */
+    }
+    /* Ocultar labels, search, recientes, footer y separadores cuando
+       está colapsado. Mantener icons + el chevron del "Más" oculto. */
+    aside#sidebar[data-collapsed="1"] #nav-search,
+    aside#sidebar[data-collapsed="1"] .sidebar-recientes,
+    aside#sidebar[data-collapsed="1"] .sidebar-footer,
+    aside#sidebar[data-collapsed="1"] .sidebar-brand-sub,
+    aside#sidebar[data-collapsed="1"] #nav-list a > span,
+    aside#sidebar[data-collapsed="1"] #nav-list summary span:not(:has(svg)),
+    aside#sidebar[data-collapsed="1"] #nav-list summary > svg:last-child,
+    aside#sidebar[data-collapsed="1"] details > div,
+    aside#sidebar[data-collapsed="1"] .sidebar-separator {
+      display: none !important;
+    }
+    aside#sidebar[data-collapsed="1"] .sidebar-brand-text {
+      font-size: 1rem;
+      text-align: center;
+    }
+    aside#sidebar[data-collapsed="1"] #nav-list a,
+    aside#sidebar[data-collapsed="1"] #nav-list summary {
+      justify-content: center;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
+    /* El botón toggle del sidebar (flecha) — visible en ambos estados */
+    #sidebar-toggle {
+      transition: transform 180ms ease;
+    }
+    aside#sidebar[data-collapsed="1"] #sidebar-toggle {
+      transform: rotate(180deg);
+    }
+
+    /* ── Action bar (top operations) ────────────────────────────────
+       Sticky entre el header y el main. Muestra accesos directos a
+       las operaciones más usadas. TMT 2026-05-16. */
+    /* Action bar — botones ghost con hover + activo refinado */
+    .action-bar {
+      box-shadow: var(--shadow-sm);
+    }
+    .action-bar a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.5rem 0.85rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;                     /* 14px */
+      font-weight: 500;
+      white-space: nowrap;
+      color: rgb(51 65 85);                    /* slate-700 */
+      transition: all 140ms ease;
+    }
+    .action-bar a:hover {
+      background: rgb(241 245 249);            /* slate-100 */
+      color: rgb(15 23 42);
+    }
+    .dark .action-bar a { color: rgb(203 213 225); }
+    .dark .action-bar a:hover { background: rgb(30 41 59); color: rgb(241 245 249); }
+    /* Activo — pinta sky suave en vez de slate-900 negro */
+    .action-bar a.primary {
+      background: rgb(186 230 253);            /* sky-200 */
+      color: rgb(7 89 133);                    /* sky-800 */
+    }
+    .action-bar a.primary:hover {
+      background: rgb(125 211 252);            /* sky-300 */
+      color: rgb(12 74 110);
+    }
+    .dark .action-bar a.primary { background: rgb(12 74 110); color: rgb(186 230 253); }
+    .dark .action-bar a.primary:hover { background: rgb(7 89 133); }
+    .action-bar a svg { width: 1.05rem; height: 1.05rem; }
+    /* Group divider sutil entre categorías */
+    .action-bar .group-divider {
+      width: 1px;
+      height: 1.5rem;
+      background: rgb(226 232 240);
+      margin: 0 0.25rem;
+    }
+    .dark .action-bar .group-divider { background: rgb(51 65 85); }
+
+    /* Sidebar section labels — uppercase, super sutiles, separadores */
+    .sidebar-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgb(148 163 184);                 /* slate-400 */
+      padding: 1rem 0.75rem 0.5rem;
+      user-select: none;
+    }
+    .dark .sidebar-section-label { color: rgb(100 116 139); }
+
+    /* Cuando sidebar colapsado, las section labels desaparecen */
+    aside#sidebar[data-collapsed="1"] .sidebar-section-label {
+      display: none;
+    }
+
+    /* ── Cards y containers — bordes más sutiles, sombras suaves ── */
+    main .rounded, main .rounded-md, main .rounded-lg {
+      transition: box-shadow 140ms ease;
+    }
+    /* Las tablas listadas — borde más sutil, esquinas redondeadas */
+    main table {
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    main table thead th {
+      background: rgb(248 250 252);             /* slate-50 */
+      border-bottom: 1px solid rgb(226 232 240);
+      color: rgb(100 116 139);
+      font-weight: 600;
+    }
+    .dark main table thead th {
+      background: rgb(15 23 42 / 0.6);
+      border-bottom-color: rgb(51 65 85);
+      color: rgb(148 163 184);
+    }
+    main table tbody tr {
+      border-bottom: 1px solid rgb(241 245 249);
+    }
+    .dark main table tbody tr {
+      border-bottom-color: rgb(30 41 59);
+    }
+    main table tbody tr:hover {
+      background: rgb(248 250 252 / 0.6);
+    }
+    .dark main table tbody tr:hover {
+      background: rgb(15 23 42 / 0.4);
+    }
+    /* Saca los border-t que ya están en cada <tr> de los templates,
+       porque ahora viven en CSS — pero por compatibilidad mantenelos
+       como override sutil. */
+    main table tbody tr.border-t { border-top: none; }
+
+    /* Header global — borde más fino */
+    body > div > div > div > header {
+      border-bottom-color: rgb(226 232 240 / 0.7) !important;
+    }
+
+    /* ── Tipografía global — TMT 2026-05-16. La dueña dijo "todo chiquito",
+       le subimos un escalón a tablas, headers y filtros. Solo afecta lo
+       que tenga text-xs/text-sm dentro de <main> (no rompe sidebar). */
+    main table thead th { font-size: 0.78rem !important; }       /* 12.5px en vez de 11.25 */
+    main table tbody td { font-size: 0.875rem !important; }      /* 14px */
+    main table tbody td.text-xs { font-size: 0.8125rem !important; } /* 13px en cellulas pequeñas */
+    main form label { font-size: 0.8125rem !important; }
+    main form input, main form select { font-size: 0.95rem !important; }
+    main h1 { font-size: 1.75rem !important; }                    /* títulos página */
+    /* KPI cards */
+    main .kpi-card .text-2xl, main .kpi-card .text-xl { font-size: 1.75rem !important; }
+    /* Padding de celdas — un poco más aire */
+    main table tbody td { padding-top: 0.55rem !important; padding-bottom: 0.55rem !important; }
+  </style>
+  {# Child templates can add extra <link>/<script>/<style> tags here. #}
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
+{% if g.user %}
+<div class="flex min-h-screen">
+  <aside id="sidebar" class="no-print shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden">
+    <div class="px-4 py-3.5 flex items-center justify-between gap-2">
+      <div class="min-w-0 flex items-center gap-2">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center text-sm font-bold shrink-0">I</div>
+        <div class="min-w-0">
+          <div class="text-sm font-semibold tracking-tight sidebar-brand-text leading-none">INTELA</div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400 sidebar-brand-sub mt-0.5">Programa Core</div>
+        </div>
+      </div>
+      <button id="sidebar-toggle" type="button" aria-label="Colapsar sidebar"
+              class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 text-slate-400 hover:text-slate-600">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+      </button>
+    </div>
+    {# ---------- nav link macro with active-state detection + inline icon ---------- #}
+    {% macro nav_link(endpoint, label, icon='dot') -%}
+      {#- Active match:
+          (a) endpoint exacto, o
+          (b) si este menú es ".lista", también activar en sus páginas de
+              detalle/edición/alta del mismo blueprint — pero NO en otras
+              entradas de menú del mismo blueprint (ej. historial.lista
+              no debe encenderse cuando estoy en historial.operaciones,
+              que es otro item del sidebar). TMT 2026-05-13. -#}
+      {% set _CRUD_SUFFIXES = ('.detalle', '.editar', '.nuevo', '.nueva',
+                               '.crear', '.confirmar_anulacion',
+                               '.anular', '.confirmar_reverso',
+                               '.reversar', '.ver') %}
+      {% set active = (request.endpoint == endpoint) or (
+            endpoint.endswith('.lista')
+            and request.endpoint
+            and request.endpoint.startswith(endpoint.split('.')[0] + '.')
+            and request.endpoint != endpoint
+            and (request.endpoint | string).endswith(_CRUD_SUFFIXES)
+          ) %}
+      <a href="{{ url_for(endpoint) }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
+         {% if active %}bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 font-medium
+         {% else %}hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300{% endif %}">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          {% if icon == 'home' %}<path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/>
+          {% elif icon == 'users' %}<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15 20a5 5 0 0 1 6 0"/>
+          {% elif icon == 'truck' %}<path d="M3 7h12v8H3z"/><path d="M15 10h4l2 3v2h-6"/><circle cx="7" cy="17" r="1.5"/><circle cx="17" cy="17" r="1.5"/>
+          {% elif icon == 'file' %}<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+          {% elif icon == 'shopping' %}<path d="M4 7h16l-2 11H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/>
+          {% elif icon == 'check' %}<path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/>
+          {% elif icon == 'receipt' %}<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h6"/>
+          {% elif icon == 'bank' %}<path d="M3 10 12 4l9 6"/><path d="M5 10v8m4-8v8m6-8v8m4-8v8"/><path d="M3 20h18"/>
+          {% elif icon == 'cash' %}<rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/>
+          {% elif icon == 'quote' %}<path d="M6 3h9l4 4v14H6z"/><path d="M9 13h6m-6 4h4"/>
+          {% elif icon == 'piggy' %}<rect x="3" y="8" width="14" height="8" rx="3"/><path d="M17 11h3v3h-3"/><circle cx="8" cy="11" r=".5"/><path d="M10 8V6"/>
+          {% elif icon == 'chart-pie' %}<path d="M12 2a10 10 0 1 0 10 10H12z"/><path d="M12 2v10l7.07-7.07"/>
+          {% elif icon == 'report' %}<path d="M4 4h12l4 4v12H4z"/><path d="M4 10h16M9 14h6M9 17h4"/>
+          {% elif icon == 'money' %}<rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/><path d="M7 9v6m10-6v6"/>
+          {% elif icon == 'trend' %}<path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h7v7"/>
+          {% elif icon == 'trend-down' %}<path d="M3 7l5 5 4-4 8 8"/><path d="M14 16h7V9"/>
+          {% elif icon == 'minus' %}<path d="M5 12h14"/>
+          {% elif icon == 'box' %}<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>
+          {% elif icon == 'history' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M3 12a9 9 0 0 1 3-6.7"/>
+          {% elif icon == 'target' %}<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>
+          {% elif icon == 'upload' %}<path d="M12 4v12"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/>
+          {% elif icon == 'arrow-swap' %}<path d="M7 16h13"/><path d="m17 13 3 3-3 3"/><path d="M17 8H4"/><path d="m7 11-3-3 3-3"/>
+          {% else %}<circle cx="12" cy="12" r="2"/>{% endif %}
+        </svg>
+        <span>{{ label }}</span>
+      </a>
+    {%- endmacro %}
+
+    {# ------ Buscador (filtra los links por texto) ------ #}
+    <div class="px-3 pt-3 pb-1">
+      <div class="relative">
+        <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+        <input id="nav-search" type="search" placeholder="Buscar…"
+               class="w-full pl-7 pr-2 py-1.5 text-sm rounded bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:outline-none placeholder-slate-400">
+      </div>
+    </div>
+
+    <nav id="nav-list" class="flex-1 px-3 py-2 overflow-y-auto text-sm">
+      {# IA minimalista — batch 20 (2026-04-29):
+         4 top-level entity-centric:
+            Tablero · Cheques · Facturas · Compras y producción
+         + bloque cartera/caja/posdat — accesos directos al día a día
+         + "Más ▾" con 6 ítems (sin sub-secciones, plano)
+         BASES DE DATOS y ADMIN viven en el menú del nombre arriba a la derecha.
+         BORRADOS: cartera por grupo, calendario, cobros recibidos, estado cuenta link,
+         resultados/balance link, historia, metas, proformas, retenciones del sidebar,
+         conciliación del sidebar, emitir cheque del sidebar, bitácora del UI,
+         imprimible del tablero, cargar flujo legacy. #}
+
+      {# "Menú" — entrada al landing con todas las operaciones (página con
+         cards). TMT 2026-05-16: renombrado de "Operaciones". #}
+      {{ nav_link('historial.operaciones', 'Menú', 'home') }}
+
+      <div class="sidebar-section-label sidebar-separator">Operación</div>
+      {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques', 'check') }}{% endif %}
+      {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
+      {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
+      {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras y producción', 'shopping') }}{% endif %}
+      {% if tiene_permiso('informes.ver') %}{{ nav_link('stock.lista', 'Stock', 'piggy') }}{% endif %}
+      {% if tiene_permiso('caja.ver') %}{{ nav_link('caja.lista', 'Caja', 'cash') }}{% endif %}
+      {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
+
+      <div class="sidebar-section-label sidebar-separator">Análisis</div>
+      {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.balance', 'Resultados', 'report') }}{% endif %}
+      {% if tiene_permiso('cartera.ver') or tiene_permiso('informes.ver') %}{{ nav_link('cartera.aging', 'Cartera', 'money') }}{% endif %}
+      {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_grafico', 'Flujo (gráfico)', 'trend') }}{% endif %}
+      {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.deudas', 'Deudas', 'trend-down') }}{% endif %}
+      {# "Gastos" → tab Reporte (primera). TMT 2026-05-16. #}
+      {% if tiene_permiso('gastos.ver') %}{{ nav_link('informes.gastos', 'Gastos', 'box') }}{% endif %}
+      {% if tiene_permiso('informes.ver') %}{{ nav_link('dolares.lista', 'Anticipos USD', 'cash') }}{% endif %}
+
+      <div class="sidebar-section-label sidebar-separator">Mantenimiento</div>
+      {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos fijos', 'target') }}{% endif %}
+      {% if tiene_permiso('provisiones.ver') %}{{ nav_link('provisiones.lista', 'Provisiones', 'piggy') }}{% endif %}
+      {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.index', 'Conciliar con banco', 'check') }}{% endif %}
+
+      {# ------ Recientes del usuario (últimos 5 tocados) — TMT 2026-05-13:
+              movido del header del sidebar al final para no competir con la nav principal. #}
+      {% if recientes_usuario %}
+      <div class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 sidebar-recientes">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400 mb-1 px-1">Recientes</div>
+        <div class="space-y-0.5">
+          {% for r in recientes_usuario %}
+            {% set url = None %}
+            {% if r.tipo == 'factura' %}
+              {% set url = url_for('facturas.detalle', id_factura=r.id_ref) %}
+            {% elif r.tipo == 'cheque' %}
+              {% set url = url_for('cheques.detalle', id_cheque=r.id_ref) %}
+            {% elif r.tipo == 'cliente' %}
+              {% set url = url_for('informes.estado_cuenta', codigo_cli=r.id_ref) %}
+            {% elif r.tipo == 'proveedor' %}
+              {% set url = url_for('proveedores.editar', codigo_prov=r.id_ref) %}
+            {% elif r.tipo == 'posdat' %}
+              {% set url = url_for('posdat.editar', id_posdat=r.id_ref) %}
+            {% elif r.tipo == 'retencion' %}
+              {% set url = url_for('retenciones.confirmar_anulacion', id_retencion=r.id_ref) %}
+            {% endif %}
+            {% if url %}
+              <a href="{{ url }}" class="flex items-center gap-2 px-2 py-1 rounded text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 truncate" title="{{ r.etiqueta or r.id_ref }}">
+                <span class="inline-block w-1.5 h-1.5 rounded-full shrink-0
+                  {% if r.tipo == 'factura' %}bg-blue-500
+                  {% elif r.tipo == 'cheque' %}bg-emerald-500
+                  {% elif r.tipo == 'cliente' %}bg-amber-500
+                  {% elif r.tipo == 'posdat' %}bg-orange-500
+                  {% elif r.tipo == 'retencion' %}bg-purple-500
+                  {% else %}bg-slate-400{% endif %}"></span>
+                <span class="truncate">{{ r.etiqueta or (r.tipo ~ ' ' ~ r.id_ref) }}</span>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </nav>
+
+    <script>
+      // Abrir/cerrar recuerda estado por grupo
+      document.querySelectorAll('#nav-list details[data-key]').forEach(d => {
+        const key = 'nav-' + d.dataset.key;
+        const saved = localStorage.getItem(key);
+        if (saved === 'open') d.open = true;
+        else if (saved === 'closed') d.open = false;
+        d.addEventListener('toggle', () => {
+          localStorage.setItem(key, d.open ? 'open' : 'closed');
+        });
+      });
+      // Rotar la chevron al abrir
+      const style = document.createElement('style');
+      style.textContent = '#nav-list details[open] > summary svg:last-child, #nav-list details[open] > summary svg:first-child { transform: rotate(180deg); }';
+      document.head.appendChild(style);
+
+      // Buscador: filtra links del nav por texto
+      const search = document.getElementById('nav-search');
+      if (search) {
+        search.addEventListener('input', () => {
+          const q = search.value.trim().toLowerCase();
+          document.querySelectorAll('#nav-list a').forEach(a => {
+            const match = a.textContent.toLowerCase().includes(q);
+            a.style.display = match || !q ? '' : 'none';
+          });
+          // Si hay búsqueda, abrir todos los details para que no queden escondidos
+          document.querySelectorAll('#nav-list details').forEach(d => {
+            if (q) d.open = true;
+          });
+        });
+      }
+
+      // Sidebar colapsable — toggle + state en localStorage. TMT 2026-05-16.
+      // Tooltip en cada link cuando está colapsado para no perder contexto.
+      (function() {
+        const aside = document.getElementById('sidebar');
+        const btn = document.getElementById('sidebar-toggle');
+        if (!aside || !btn) return;
+
+        const KEY = 'sidebar-collapsed';
+        function apply(collapsed) {
+          aside.dataset.collapsed = collapsed ? '1' : '0';
+          // Agregar/quitar title con el label original a cada link, así
+          // colapsado tiene tooltip nativo del browser.
+          aside.querySelectorAll('#nav-list a').forEach(a => {
+            const span = a.querySelector('span:last-of-type');
+            if (!span) return;
+            if (collapsed) {
+              if (!a.dataset.origTitle) a.dataset.origTitle = a.getAttribute('title') || '';
+              a.setAttribute('title', span.textContent.trim());
+            } else if (a.dataset.origTitle !== undefined) {
+              a.setAttribute('title', a.dataset.origTitle);
+              if (!a.dataset.origTitle) a.removeAttribute('title');
+            }
+          });
+        }
+        // Estado inicial — leer localStorage
+        apply(localStorage.getItem(KEY) === '1');
+        btn.addEventListener('click', () => {
+          const next = aside.dataset.collapsed !== '1';
+          localStorage.setItem(KEY, next ? '1' : '0');
+          apply(next);
+        });
+      })();
+    </script>
+    <div class="px-3 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 sidebar-footer">
+      v0.1 · read-only
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <header class="no-print h-14 flex items-center justify-between px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+      <div class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
+        <button id="nav-toggle" type="button" aria-label="Abrir menú"
+                class="md:hidden p-1.5 -ml-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <button id="__gs_trigger" type="button"
+                title="Búsqueda global — clientes, facturas, cheques, proveedores"
+                onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key:'k', ctrlKey:true}));"
+                class="hidden md:flex items-center gap-2 text-xs pl-2 pr-1.5 py-1 rounded-md border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 min-w-[280px] transition-colors">
+          <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
+          <span class="flex-1 text-left">Buscar cliente, factura, cheque…</span>
+          <kbd id="__gs_kbd" class="ml-2 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-300 shrink-0 border border-slate-200 dark:border-slate-700">Ctrl+K</kbd>
+        </button>
+        {% block breadcrumb %}{% endblock %}
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="toggleTheme()" class="text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Tema</button>
+
+        {# ---- Menú del nombre — Bases de datos / Admin / Salir ---- #}
+        <div class="relative" id="user-menu-wrap">
+          <button id="user-menu-btn" type="button"
+                  onclick="document.getElementById('user-menu-pop').classList.toggle('hidden')"
+                  class="text-sm flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+            <span class="font-medium">{{ g.user.username }}</span>
+            <span class="text-slate-500">· {{ g.user.nombre_rol }}</span>
+            <svg class="w-3 h-3 ml-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+
+          <div id="user-menu-pop"
+               class="hidden absolute right-0 mt-1 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50 py-1 text-sm">
+
+            {# --- Bases de datos --- #}
+            {% if tiene_permiso('clientes.ver') or tiene_permiso('proveedores.ver') or tiene_permiso('bancos.ver') %}
+            <div class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Bases de datos</div>
+            {% if tiene_permiso('clientes.ver') %}
+              <a href="{{ url_for('clientes.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Clientes</a>
+            {% endif %}
+            {% if tiene_permiso('proveedores.ver') %}
+              <a href="{{ url_for('proveedores.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Proveedores</a>
+            {% endif %}
+            {% if tiene_permiso('bancos.ver') %}
+              <a href="{{ url_for('bancos.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Bancos</a>
+            {% endif %}
+            {% if tiene_permiso('clientes.ver') %}
+              <a href="{{ url_for('clientes.contactos') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Contactos</a>
+            {% endif %}
+            {% endif %}
+
+            {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
+            {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') %}
+            <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
+            <div class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Administración</div>
+            {% if tiene_permiso('periodo.cerrar') %}
+              <a href="{{ url_for('periodos.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Periodos</a>
+            {% endif %}
+            {% if tiene_permiso('usuarios.admin') %}
+              <a href="{{ url_for('usuarios.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Usuarios</a>
+            {% endif %}
+            {% endif %}
+
+            {# --- Salir --- #}
+            <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
+            <form action="{{ url_for('auth.logout') }}" method="post" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="w-full text-left px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-red-600 dark:text-red-400">Salir</button>
+            </form>
+          </div>
+
+          <script>
+            // Cerrar el menú al hacer click afuera
+            document.addEventListener('click', function(e) {
+              const wrap = document.getElementById('user-menu-wrap');
+              const pop = document.getElementById('user-menu-pop');
+              if (wrap && pop && !wrap.contains(e.target)) {
+                pop.classList.add('hidden');
+              }
+            });
+          </script>
+        </div>
+      </div>
+    </header>
+
+    {# ── Top action bar — TODAS las operaciones a 1 click. TMT 2026-05-16.
+       Agrupada en categorías con dividers sutiles:
+         INGRESO (cobranza + aporte)
+         · EGRESO (gasto, factura, compra, emitir cheque, retiro)
+         · MOVIMIENTO (caja, depositar, transferir)
+         · VER (historial). #}
+    <div class="action-bar no-print flex flex-wrap items-center gap-1 px-6 py-2.5
+                bg-white dark:bg-slate-900 border-b border-slate-200/70 dark:border-slate-800">
+      {# ── GRUPO 1: INGRESO ─────────────────────────────────── #}
+      {% if tiene_permiso('cheques.crear') %}
+        <a href="{{ url_for('cheques.nuevo') }}"
+           class="{% if request.endpoint == 'cheques.nuevo' %}primary{% endif %}"
+           title="Cobranza — cliente paga con cheque(s)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/></svg>
+          Cobranza
+        </a>
+      {% endif %}
+      {% if tiene_permiso('capital.crear') %}
+        <a href="{{ url_for('capital.aportar') }}"
+           class="{% if request.endpoint == 'capital.aportar' %}primary{% endif %}"
+           title="Aporte de capital — dueño pone plata">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h7v7"/></svg>
+          Aporte
+        </a>
+      {% endif %}
+
+      <span class="group-divider"></span>
+
+      {# ── GRUPO 2: EGRESO ──────────────────────────────────── #}
+      {% if tiene_permiso('gastos.crear') %}
+        <a href="{{ url_for('gastos.nuevo') }}"
+           class="{% if request.endpoint == 'gastos.nuevo' %}primary{% endif %}"
+           title="Cargar un gasto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg>
+          Gasto
+        </a>
+      {% endif %}
+      {% if tiene_permiso('facturas.crear') %}
+        <a href="{{ url_for('facturas.nueva') }}"
+           class="{% if request.endpoint == 'facturas.nueva' %}primary{% endif %}"
+           title="Emitir nueva factura">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/></svg>
+          Factura
+        </a>
+      {% endif %}
+      {% if tiene_permiso('compras.crear') %}
+        <a href="{{ url_for('compras.nueva') }}"
+           class="{% if request.endpoint == 'compras.nueva' %}primary{% endif %}"
+           title="Cargar compra a proveedor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-2 11H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+          Compra
+        </a>
+      {% endif %}
+      {% if tiene_permiso('bancos.conciliar') %}
+        <a href="{{ url_for('bancos.emitir_cheque') }}"
+           class="{% if request.endpoint == 'bancos.emitir_cheque' %}primary{% endif %}"
+           title="Emitir cheque desde chequera de la empresa">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10 12 4l9 6"/><path d="M5 10v8m4-8v8m6-8v8m4-8v8"/><path d="M3 20h18"/></svg>
+          Emitir cheque
+        </a>
+      {% endif %}
+      {% if tiene_permiso('capital.crear') %}
+        <a href="{{ url_for('capital.retirar') }}"
+           class="{% if request.endpoint == 'capital.retirar' %}primary{% endif %}"
+           title="Retiro de socio — dueño saca plata">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l5 5 4-4 8 8"/><path d="M14 16h7V9"/></svg>
+          Retiro
+        </a>
+      {% endif %}
+
+      <span class="group-divider"></span>
+
+      {# ── GRUPO 3: MOVIMIENTO ─────────────────────────────── #}
+      {% if tiene_permiso('caja.crear') %}
+        <a href="{{ url_for('caja.nuevo') }}"
+           class="{% if request.endpoint == 'caja.nuevo' %}primary{% endif %}"
+           title="Movimiento de caja — entrada o salida de efectivo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/></svg>
+          Caja
+        </a>
+      {% endif %}
+      {% if tiene_permiso('cheques.crear') %}
+        <a href="{{ url_for('cheques.depositar_lote') }}"
+           class="{% if request.endpoint == 'cheques.depositar_lote' %}primary{% endif %}"
+           title="Depositar lote de cheques en Pichincha (Z → B)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/></svg>
+          Depositar
+        </a>
+      {% endif %}
+      {% if tiene_permiso('bancos.conciliar') %}
+        <a href="{{ url_for('bancos.transferir') }}"
+           class="{% if request.endpoint == 'bancos.transferir' %}primary{% endif %}"
+           title="Transferencia entre bancos (Pichincha ↔ Internacional)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16h13"/><path d="m17 13 3 3-3 3"/><path d="M17 8H4"/><path d="m7 11-3-3 3-3"/></svg>
+          Transferir
+        </a>
+      {% endif %}
+
+      <span class="group-divider"></span>
+
+      {# ── GRUPO 4: VER ──────────────────────────────────── #}
+      {% if tiene_permiso('informes.ver') %}
+        <a href="{{ url_for('historial.lista') }}"
+           class="{% if request.endpoint == 'historial.lista' %}primary{% endif %}"
+           title="Historial completo — todos los movimientos + sus reversos">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          Historial
+        </a>
+      {% endif %}
+    </div>
+
+    <main class="flex-1 p-6 overflow-x-auto">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mb-4 space-y-2">
+            {% for cat, msg in messages %}
+              <div class="px-4 py-2 rounded text-sm {% if cat == 'error' %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200{% else %}bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200{% endif %}">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% else %}
+  {% block unauth %}{% endblock %}
+{% endif %}
+</body>
+</html>

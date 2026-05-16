@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+{% block title %}Emitir nota de crédito{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('sri.detalle_comprobante', id_factura_electronica=fe.id_factura_electronica) }}"
+     class="hover:underline">Comprobante SRI</a> /
+  <span>Emitir NC</span>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-6">
+  {{ page_header("Emitir nota de crédito",
+                 subtitulo="Contra factura autorizada " ~ (fact.numf_completo or fact.numf) ~
+                           " — cliente " ~ (fact.codigo_cli or '') ~ ".") }}
+
+  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50
+              rounded p-4 mb-6 text-sm text-amber-900 dark:text-amber-200">
+    <strong>Importante:</strong> una factura electrónica autorizada por el SRI
+    NO se edita ni se anula directo. Si hay un error o devolución, se emite una
+    nota de crédito que compensa total o parcialmente la factura original. La NC
+    se envía al SRI como su propio comprobante independiente y requiere firma.
+  </div>
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-2 gap-3 mb-5 text-sm">
+      <div class="text-slate-500">Factura original</div>
+      <div class="text-mono">{{ fact.numf_completo or fact.numf }}</div>
+      <div class="text-slate-500">Fecha original</div>
+      <div>{{ fe.fecha_emision | fecha_es }}</div>
+      <div class="text-slate-500">Importe factura</div>
+      <div class="text-mono">${{ fact.importe | money_es }}</div>
+      <div class="text-slate-500">Clave SRI</div>
+      <div class="text-mono text-xs">{{ fe.clave_acceso[:8] }}…{{ fe.clave_acceso[-4:] }}</div>
+    </div>
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium text-slate-700 dark:text-slate-300">
+        Motivo <span class="text-red-600">*</span>
+      </span>
+      <textarea name="motivo" rows="3" required maxlength="300"
+                placeholder="Ej: Devolución de mercadería. Error en cantidad facturada."
+                class="mt-1 block w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700
+                       bg-white dark:bg-slate-800 text-sm"></textarea>
+      <span class="text-xs text-slate-400">Este texto aparece en el XML enviado al SRI.</span>
+    </label>
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium text-slate-700 dark:text-slate-300">
+        Valor a devolver (USD, incluye IVA) <span class="text-red-600">*</span>
+      </span>
+      <input type="text" name="valor_modificacion" required
+             inputmode="decimal" placeholder="0,00"
+             class="mt-1 block w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700
+                    bg-white dark:bg-slate-800 text-sm font-mono"
+             value="{{ fact.importe | money_es }}">
+      <span class="text-xs text-slate-400">
+        Por default se prellenó con el importe total de la factura (NC total).
+        Para NC parcial, bajá el monto al valor que corresponda.
+      </span>
+    </label>
+
+    <div class="mt-6 flex justify-between">
+      <a href="{{ url_for('sri.detalle_comprobante', id_factura_electronica=fe.id_factura_electronica) }}"
+         class="text-sm text-slate-500 hover:underline">Cancelar</a>
+      <button type="submit"
+              class="text-sm px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-700"
+              onclick="return confirm('Emitir nota de crédito? Esto crea un comprobante SRI nuevo en estado borrador — todavía requiere firmar y enviar.');">
+        Generar XML de NC
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Cuenta {{ data.cliente.codigo_cli }} — {{ data.cliente.nombre }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('clientes.lista') }}">Clientes</a> /
+  <strong>{{ data.cliente.codigo_cli }} — {{ data.cliente.nombre or '' }}</strong> /
+  Cuenta corriente
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">
+        Cuenta corriente · {{ data.cliente.codigo_cli }}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        {{ data.cliente.nombre or '—' }}
+        {% if data.cliente.stop == 'S' %}
+          · <span class="inline-block bg-red-100 text-red-800 px-2 py-0.5 rounded text-xs">STOP</span>
+        {% endif %}
+        {% if not data.cliente.activo %}
+          · <span class="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">INACTIVO</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        Ver estado de cuenta clásico
+      </a>
+      <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
+      <button onclick="window.print()"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        Imprimir
+      </button>
+    </div>
+  </div>
+
+  {# ─── KPIs ─────────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    <div class="rounded border bg-white dark:bg-slate-900 dark:border-slate-800 p-4">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Saldo actual</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1
+                  {{ 'text-red-600' if data.saldo_actual > 0.01
+                     else ('text-emerald-600' if data.saldo_actual < -0.01 else 'text-slate-700') }}">
+        $ {{ data.saldo_actual | num_es(2) }}
+      </div>
+      <div class="text-xs text-slate-400 mt-1">
+        {% if data.saldo_actual > 0.01 %}cliente debe
+        {% elif data.saldo_actual < -0.01 %}cliente tiene a favor
+        {% else %}al día{% endif %}
+      </div>
+    </div>
+    <div class="rounded border bg-white dark:bg-slate-900 dark:border-slate-800 p-4">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Facturado</div>
+      <div class="text-xl tabular-nums mt-1">$ {{ data.totales.facturado | num_es(2) }}</div>
+      <div class="text-xs text-slate-400 mt-1">neto de devoluciones</div>
+    </div>
+    <div class="rounded border bg-white dark:bg-slate-900 dark:border-slate-800 p-4">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Cobrado (cheques)</div>
+      <div class="text-xl tabular-nums mt-1">$ {{ data.totales.cobrado | num_es(2) }}</div>
+    </div>
+    <div class="rounded border bg-white dark:bg-slate-900 dark:border-slate-800 p-4">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Retenido</div>
+      <div class="text-xl tabular-nums mt-1">$ {{ data.totales.retenido | num_es(2) }}</div>
+      <div class="text-xs text-slate-400 mt-1">{{ data.totales.n_movimientos }} movimientos</div>
+    </div>
+  </div>
+
+  {# ─── FILTRO + LISTA ────────────────────────────────────── #}
+  <div class="mb-3 flex items-center gap-3 no-print">
+    <input type="text" id="filtro" placeholder="Filtrar por doc, concepto o monto…" autofocus
+           class="flex-1 max-w-md rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    <div class="flex items-center gap-1 text-xs">
+      <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" class="tipo-filter" value="FAC" checked> Facturas
+      </label>
+      <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" class="tipo-filter" value="ABO" checked> Abonos
+      </label>
+      <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" class="tipo-filter" value="RET" checked> Retenciones
+      </label>
+      <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" class="tipo-filter" value="DEV" checked> Devoluc.
+      </label>
+      <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" class="tipo-filter" value="ANUL" checked> Anuladas
+      </label>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm" id="tabla-cuenta">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500 sticky top-0">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium">Fecha</th>
+          <th class="px-3 py-2 text-left font-medium">Tipo</th>
+          <th class="px-3 py-2 text-left font-medium">Documento</th>
+          <th class="px-3 py-2 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2 text-right font-medium">Debe</th>
+          <th class="px-3 py-2 text-right font-medium">Haber</th>
+          <th class="px-3 py-2 text-right font-medium">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if data.movimientos %}
+          {% for m in data.movimientos %}
+            {% set tono = {
+              'FAC':  'bg-white',
+              'DEV':  'bg-amber-50',
+              'ABO':  'bg-emerald-50/40',
+              'RET':  'bg-sky-50/40',
+              'ANUL': 'bg-slate-100 line-through opacity-60',
+            }.get(m.tipo, 'bg-white') %}
+            <tr class="border-t border-slate-100 dark:border-slate-800 {{ tono }}"
+                data-tipo="{{ m.tipo }}"
+                data-text="{{ (m.doc ~ ' ' ~ m.concepto ~ ' ' ~ m.debe ~ ' ' ~ m.haber)|lower }}">
+              <td class="px-3 py-1.5 text-xs font-mono whitespace-nowrap">{{ m.fecha | fecha_es }}</td>
+              <td class="px-3 py-1.5">
+                <span class="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide font-semibold
+                  {% if m.tipo == 'FAC'  %}bg-slate-200 text-slate-700
+                  {% elif m.tipo == 'DEV'  %}bg-amber-200 text-amber-900
+                  {% elif m.tipo == 'ABO'  %}bg-emerald-200 text-emerald-900
+                  {% elif m.tipo == 'RET'  %}bg-sky-200 text-sky-900
+                  {% elif m.tipo == 'ANUL' %}bg-rose-200 text-rose-900
+                  {% else %}bg-slate-200 text-slate-700{% endif %}">
+                  {{ m.tipo }}
+                </span>
+              </td>
+              <td class="px-3 py-1.5 font-mono text-xs whitespace-nowrap">
+                {% if m.tipo in ['FAC','DEV','ANUL'] and m.ref_id %}
+                  <a href="{{ url_for('facturas.detalle', id_factura=m.ref_id) }}"
+                     class="text-sky-700 hover:underline">{{ m.doc }}</a>
+                {% elif m.tipo == 'ABO' and m.ref_id %}
+                  <a href="{{ url_for('cheques.detalle', id_cheque=m.ref_id) }}"
+                     class="text-sky-700 hover:underline">{{ m.doc }}</a>
+                {% else %}
+                  {{ m.doc }}
+                {% endif %}
+              </td>
+              <td class="px-3 py-1.5 text-xs text-slate-600">{{ m.concepto }}</td>
+              <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800">
+                {% if m.debe %}{{ m.debe | num_es(2) }}{% endif %}
+              </td>
+              <td class="px-3 py-1.5 text-right font-mono tabular-nums text-emerald-700">
+                {% if m.haber %}{{ m.haber | num_es(2) }}{% endif %}
+              </td>
+              <td class="px-3 py-1.5 text-right font-mono tabular-nums font-semibold
+                         {{ 'text-red-600' if m.saldo > 0.01 else ('text-emerald-700' if m.saldo < -0.01 else 'text-slate-500') }}">
+                {{ m.saldo | num_es(2) }}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="7" class="px-3 py-8 text-center text-sm text-slate-400">
+            Sin movimientos para este cliente.
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function() {
+  const filtro = document.getElementById('filtro');
+  const tabla = document.getElementById('tabla-cuenta');
+  const tipoChks = document.querySelectorAll('.tipo-filter');
+
+  function aplicar() {
+    const q = (filtro.value || '').toLowerCase().trim();
+    const tipos = new Set(
+      Array.from(tipoChks).filter(c => c.checked).map(c => c.value)
+    );
+    tabla.querySelectorAll('tbody tr[data-tipo]').forEach(tr => {
+      const tipo = tr.dataset.tipo;
+      const text = tr.dataset.text || '';
+      const matchTipo = tipos.has(tipo);
+      const matchTexto = !q || text.includes(q);
+      tr.style.display = (matchTipo && matchTexto) ? '' : 'none';
+    });
+  }
+  filtro.addEventListener('input', aplicar);
+  tipoChks.forEach(c => c.addEventListener('change', aplicar));
+})();
+</script>
+{% endblock %}

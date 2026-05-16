@@ -1,0 +1,32 @@
+.env
+.env.local
+.env.*.local
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+.vscode/
+.idea/
+*.log
+.DS_Store
+
+# Never commit DB dumps or rar archives in the repo
+intela*.sql
+INTELA.rar
+*.dbf
+*.DBF
+
+# Temp / cache / build artifacts
+.tmp_*
+.pytest_cache/
+.ruff_cache/
+.tw-build/
+node_modules/
+
+# Skill instructions / secrets
+secrets/
+*.pem
+*.key
+*_credentials.json
+*_token.txt

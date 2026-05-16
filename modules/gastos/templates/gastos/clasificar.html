@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Clasificar egreso como gasto{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-semibold mb-1">Clasificar egreso de caja como gasto</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    Este egreso ya está en caja. Asignale una categoría
+    <strong>V1..V9</strong> para que aparezca correctamente en el balance
+    (GTEJ / GTIN / GGF).
+  </p>
+
+  {# Detalle del movimiento ───────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    <div class="rounded-lg bg-slate-100 border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-600 uppercase">Fecha</div>
+      <div class="text-base font-medium">{{ caja.fecha | fecha_es }}</div>
+    </div>
+    <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+      <div class="text-xs text-red-700 uppercase">Importe</div>
+      <div class="text-base font-medium text-right">$ {{ caja.importe | num_es }}</div>
+    </div>
+    <div class="rounded-lg bg-slate-100 border border-slate-200 px-4 py-3 col-span-2">
+      <div class="text-xs text-slate-600 uppercase">Concepto original</div>
+      <div class="text-base font-medium">{{ caja.concepto or '—' }}</div>
+    </div>
+  </div>
+
+  {% if sugerido %}
+    <div class="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 mb-4 text-sm">
+      <strong>Sugerencia:</strong>
+      basado en el concepto, te propongo
+      <strong>V{{ sugerido }}</strong>.
+      Si está bien, sólo apretá <em>Guardar</em>; sino elegí otra abajo.
+    </div>
+  {% else %}
+    <div class="rounded-md bg-slate-50 border border-slate-200 px-4 py-3 mb-4 text-sm text-slate-600">
+      No reconocí palabras conocidas en el concepto — elegí la categoría manual.
+    </div>
+  {% endif %}
+
+  <form method="POST" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <fieldset class="space-y-2">
+      <legend class="text-sm font-medium text-slate-700 mb-2">Categoría</legend>
+      {% for n, label in categorias %}
+        <label class="flex items-center gap-3 px-3 py-2 rounded border
+                      {% if sugerido == n %}bg-amber-50 border-amber-300{% else %}border-slate-200 hover:bg-slate-50{% endif %}
+                      cursor-pointer">
+          <input type="radio" name="num" value="{{ n }}"
+                 {% if sugerido == n %}checked{% endif %}
+                 class="text-amber-600">
+          <span class="font-mono text-xs text-slate-500 w-8">V{{ n }}</span>
+          <span class="text-sm">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </fieldset>
+
+    <div class="flex items-center justify-between pt-4 border-t">
+      <a href="{{ url_for('caja.lista') }}" class="text-slate-500 hover:text-slate-700">
+        Cancelar
+      </a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Guardar clasificación
+      </button>
+    </div>
+  </form>
+
+  <p class="text-xs text-slate-500 mt-6">
+    Esta clasificación NO toca el saldo de caja — el egreso ya está
+    contado. Sólo crea la fila <code>xgast</code> + <code>mov_doble</code>
+    para que el balance lo categorice como GTEJ / GTIN / GGF.
+  </p>
+</div>
+{% endblock %}

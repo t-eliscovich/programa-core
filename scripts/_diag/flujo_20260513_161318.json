@@ -1,0 +1,410 @@
+{
+  "fecha": "2026-05-13T16:13:18.106794",
+  "queries": {
+    "posdat_por_banc": [
+      {
+        "banc": 0,
+        "n": 158,
+        "total": "1902262.52",
+        "futuros": 125,
+        "total_futuros": "1795268.85",
+        "vencidos": 33,
+        "total_vencidos": "106993.67",
+        "fechad_min": "2026-04-24",
+        "fechad_max": "2028-12-23"
+      },
+      {
+        "banc": 9,
+        "n": 41,
+        "total": "5932500.00",
+        "futuros": 20,
+        "total_futuros": "4633000.00",
+        "vencidos": 21,
+        "total_vencidos": "1299500.00",
+        "fechad_min": "2026-05-10",
+        "fechad_max": "2026-09-10"
+      }
+    ],
+    "plazos_forward": [
+      {
+        "metric": "DSO_factura_todas",
+        "dias": "-25.4",
+        "n": 3808,
+        "base": "5288033.96"
+      },
+      {
+        "metric": "DSO_factura_solo_futuras",
+        "dias": "13.3",
+        "n": 1685,
+        "base": "2317900.84"
+      },
+      {
+        "metric": "DPO_posdat_banc0_todas",
+        "dias": "278.9",
+        "n": 158,
+        "base": "1902262.52"
+      },
+      {
+        "metric": "DPO_posdat_banc0_solo_futuras",
+        "dias": "296.0",
+        "n": 125,
+        "base": "1795268.85"
+      }
+    ],
+    "plazos_backward": [
+      {
+        "metric": "DSO_clasico (hoy-fecha emision)",
+        "dias": "55.4"
+      },
+      {
+        "metric": "DPO_clasico_banc0",
+        "dias": "1166.5"
+      }
+    ],
+    "plazos_60dias": [
+      {
+        "metric": "DSO_60d_vencimiento_entre_hoy_y_60",
+        "dias": "13.3",
+        "n": 1685,
+        "base": "2317900.84"
+      },
+      {
+        "metric": "DPO_60d_banc0",
+        "dias": "19.3",
+        "n": 70,
+        "base": "509274.12"
+      },
+      {
+        "metric": "DPO_60d_banc_no_9 (incluye banc=9 futuros — BUG actual)",
+        "dias": "25.9",
+        "n": 86,
+        "base": "2892274.12"
+      }
+    ],
+    "plazo_otorgado_factura": [
+      {
+        "metric": "plazo_otorgado_facturas_abiertas",
+        "dias_ponderado": "30.0",
+        "dias_simple": "30.1",
+        "n": 3808,
+        "base": "5288033.96"
+      },
+      {
+        "metric": "plazo_otorgado_facturas_todas",
+        "dias_ponderado": "35.0",
+        "dias_simple": "32.0",
+        "n": 4917,
+        "base": "6129101.65"
+      },
+      {
+        "metric": "plazo_otorgado_factura_ult_12m",
+        "dias_ponderado": "35.1",
+        "dias_simple": "32.0",
+        "n": 4859,
+        "base": "6085495.91"
+      }
+    ],
+    "plazo_otorgado_posdat": [
+      {
+        "metric": "plazo_otorgado_posdat_banc0_todos",
+        "dias_ponderado": "1445.4",
+        "dias_simple": "452.1",
+        "n": 158,
+        "base": "1902262.52"
+      },
+      {
+        "metric": "plazo_otorgado_posdat_banc0_ult_12m",
+        "dias_ponderado": "265.2",
+        "dias_simple": "180.6",
+        "n": 133,
+        "base": "1217458.26"
+      },
+      {
+        "metric": "plazo_otorgado_posdat_todos",
+        "dias_ponderado": "412.5",
+        "dias_simple": "371.3",
+        "n": 199,
+        "base": "7834762.52"
+      },
+      {
+        "metric": "plazo_otorgado_posdat_banc0_sin_outliers (fechad-fecha entre 0 y 365)",
+        "dias_ponderado": "117.0",
+        "dias_simple": "99.7",
+        "n": 111,
+        "base": "662143.26"
+      }
+    ],
+    "plazo_deuda_variantes": [
+      {
+        "metric": "banc0_fechad_ult_180d",
+        "dias": "80.1",
+        "n": 89,
+        "base": "539292.26"
+      },
+      {
+        "metric": "banc0_fechad_ult_120d",
+        "dias": "38.1",
+        "n": 84,
+        "base": "373382.26"
+      },
+      {
+        "metric": "banc0_fecha_ult_6m",
+        "dias": "261.7",
+        "n": 108,
+        "base": "1197861.26"
+      },
+      {
+        "metric": "banc0_fecha_ult_3m",
+        "dias": "260.9",
+        "n": 106,
+        "base": "1194142.26"
+      },
+      {
+        "metric": "banc0_sin_YY_BP",
+        "dias": "271.5",
+        "n": 127,
+        "base": "564362.52"
+      },
+      {
+        "metric": "banc0+banc9_fechad_ult_180d",
+        "dias": "81.2",
+        "n": 130,
+        "base": "6471792.26"
+      },
+      {
+        "metric": "banc9_solo_futuros_fechad-hoy",
+        "dias": "50.2",
+        "n": 20,
+        "base": "4633000.00"
+      },
+      {
+        "metric": "banc0_fechad-hoy_futuros_sin_outliers",
+        "dias": "193.5",
+        "n": 109,
+        "base": "1468536.85"
+      }
+    ],
+    "plazo_otorgado_cheque": [
+      {
+        "metric": "plazo_otorgado_cheque_cartera",
+        "dias_ponderado": "3.9",
+        "dias_simple": "78.5",
+        "n": 1000,
+        "base": "1769085.31"
+      }
+    ],
+    "cheques_cobrables": [
+      {
+        "metric": "cheques_cartera_proximos_60d",
+        "n": 809,
+        "total": "1475873.90"
+      },
+      {
+        "metric": "cheques_cartera_todos",
+        "n": 1000,
+        "total": "1769085.31"
+      }
+    ],
+    "egresos_flujo_actual": [
+      {
+        "n": 119,
+        "total": "2999267.79",
+        "n_banc_0": 103,
+        "n_banc_9": 16,
+        "total_banc_0": "616267.79",
+        "total_banc_9": "2383000.00"
+      }
+    ],
+    "egresos_flujo_fix_propuesto": [
+      {
+        "n": 103,
+        "total": "616267.79"
+      }
+    ],
+    "cliente_pago_medio": [
+      {
+        "error": "invalid input syntax for type numeric: \".\"\n"
+      }
+    ],
+    "cliente_pago_muestra": [
+      {
+        "pago": "C",
+        "n": 3545
+      },
+      {
+        "pago": "",
+        "n": 293
+      },
+      {
+        "pago": "0",
+        "n": 11
+      },
+      {
+        "pago": "+",
+        "n": 3
+      },
+      {
+        "pago": "X",
+        "n": 3
+      },
+      {
+        "pago": ".",
+        "n": 2
+      },
+      {
+        "pago": "2",
+        "n": 2
+      },
+      {
+        "pago": "4",
+        "n": 2
+      },
+      {
+        "pago": "8",
+        "n": 2
+      },
+      {
+        "pago": "O",
+        "n": 1
+      },
+      {
+        "pago": "T",
+        "n": 1
+      }
+    ],
+    "proveedor_plazo_medio": [
+      {
+        "plazo_promedio_dias": "22.5",
+        "n": 64,
+        "min_plazo": "0",
+        "max_plazo": "60"
+      }
+    ],
+    "proveedor_plazo_muestra": [
+      {
+        "plazo": 0,
+        "n": 23
+      },
+      {
+        "plazo": 30,
+        "n": 15
+      },
+      {
+        "plazo": 60,
+        "n": 13
+      },
+      {
+        "plazo": 1,
+        "n": 6
+      },
+      {
+        "plazo": 45,
+        "n": 4
+      },
+      {
+        "plazo": 15,
+        "n": 1
+      },
+      {
+        "plazo": 2,
+        "n": 1
+      },
+      {
+        "plazo": 10,
+        "n": 1
+      }
+    ],
+    "posdat_banc0_top10_mas_viejos": [
+      {
+        "id_posdat": 153,
+        "fecha": "2009-01-19",
+        "fechad": "2026-12-10",
+        "prov": "YY",
+        "importe": "53100.00",
+        "dias_desde_emision": 6323,
+        "dias_hasta_vencimiento": 211
+      },
+      {
+        "id_posdat": 152,
+        "fecha": "2009-01-19",
+        "fechad": "2026-08-05",
+        "prov": "YY",
+        "importe": "28700.00",
+        "dias_desde_emision": 6323,
+        "dias_hasta_vencimiento": 84
+      },
+      {
+        "id_posdat": 154,
+        "fecha": "2010-12-16",
+        "fechad": "2027-01-10",
+        "prov": "YY",
+        "importe": "98600.00",
+        "dias_desde_emision": 5627,
+        "dias_hasta_vencimiento": 242
+      },
+      {
+        "id_posdat": 157,
+        "fecha": "2014-02-24",
+        "fechad": "2028-12-23",
+        "prov": "YY",
+        "importe": "151200.00",
+        "dias_desde_emision": 4461,
+        "dias_hasta_vencimiento": 955
+      },
+      {
+        "id_posdat": 155,
+        "fecha": "2021-04-15",
+        "fechad": "2027-04-20",
+        "prov": "YY",
+        "importe": "56100.00",
+        "dias_desde_emision": 1854,
+        "dias_hasta_vencimiento": 342
+      },
+      {
+        "id_posdat": 47,
+        "fecha": "2022-10-19",
+        "fechad": "2026-06-29",
+        "prov": "BP",
+        "importe": "17500.00",
+        "dias_desde_emision": 1302,
+        "dias_hasta_vencimiento": 47
+      },
+      {
+        "id_posdat": 51,
+        "fecha": "2022-10-19",
+        "fechad": "2026-09-27",
+        "prov": "BP",
+        "importe": "17500.00",
+        "dias_desde_emision": 1302,
+        "dias_hasta_vencimiento": 137
+      },
+      {
+        "id_posdat": 63,
+        "fecha": "2022-10-19",
+        "fechad": "2027-06-24",
+        "prov": "BP",
+        "importe": "17500.00",
+        "dias_desde_emision": 1302,
+        "dias_hasta_vencimiento": 407
+      },
+      {
+        "id_posdat": 56,
+        "fecha": "2022-10-19",
+        "fechad": "2026-12-26",
+        "prov": "BP",
+        "importe": "17500.00",
+        "dias_desde_emision": 1302,
+        "dias_hasta_vencimiento": 227
+      },
+      {
+        "id_posdat": 60,
+        "fecha": "2022-10-19",
+        "fechad": "2027-03-26",
+        "prov": "BP",
+        "importe": "17500.00",
+        "dias_desde_emision": 1302,
+        "dias_hasta_vencimiento": 317
+      }
+    ]
+  }
+}

@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, saldo_pill, stat_chip, page_hero, kpi_card %}
+
+{% block title %}Cartera — aging{% endblock %}
+{% block breadcrumb %}<strong>Cartera</strong>{% endblock %}
+
+{% block content %}
+  {# Header minimalista — patrón canónico TMT 2026-05-13. #}
+  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    {{ page_hero(
+        'Cartera',
+        kpi_valor='$ ' ~ ((totales.total or 0) | num_es(0)),
+        kpi_extra='· ' ~ ((totales.n_clientes or 0) | string) ~ ' clientes · '
+                  ~ ((totales.n_facturas or 0) | string) ~ ' facturas vivas'
+    ) }}
+    <div class="no-print flex items-center gap-2 shrink-0">
+      {% if tiene_permiso('stop_cliente.editar') %}
+        <form method="post" action="{{ url_for('cartera.stop_automatico') }}"
+              class="inline-flex items-center gap-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="text-xs text-slate-500">Umbral</label>
+          <input type="number" name="umbral_dias" value="90" min="1" max="365"
+                 class="w-16 rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1.5 text-sm text-right">
+          <button type="submit"
+                  class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 font-medium shadow-sm transition"
+                  title="Marcar STOP automático a clientes con mora ≥ umbral">
+            Stop automático
+          </button>
+        </form>
+      {% endif %}
+      <details class="relative">
+        <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Más
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="absolute right-0 mt-1 z-20 min-w-[240px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
+          <a href="{{ url_for('informes.cartera') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Cartera resumen</div>
+            <div class="text-xs text-slate-500">Sin buckets, sólo saldos</div>
+          </a>
+          {% if codigos_seleccionados %}
+            <a href="{{ url_for('cartera.aging') }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+              <div class="font-medium">Ver todos los clientes</div>
+              <div class="text-xs text-slate-500">{{ codigos_seleccionados | length }} filtrados actualmente</div>
+            </a>
+          {% endif %}
+          <a href="{{ url_for('cartera.aging', export='csv') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Exportar CSV</div>
+          </a>
+          <button onclick="window.print()"
+                  class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <div class="font-medium">Imprimir</div>
+          </button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {# KPIs por bucket de mora. Sólo 90+ tiene tono rojo (alerta real); los
+     otros 3 en slate uniforme para no parecer semáforo. #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    {{ kpi_card('0-30 días',  '$ ' ~ ((totales.b0_30 or 0) | num_es(0)),  '', tono='slate') }}
+    {{ kpi_card('31-60 días', '$ ' ~ ((totales.b31_60 or 0) | num_es(0)), '', tono='slate') }}
+    {{ kpi_card('61-90 días', '$ ' ~ ((totales.b61_90 or 0) | num_es(0)), '', tono='amber') }}
+    {{ kpi_card('90+ días',   '$ ' ~ ((totales.b90_plus or 0) | num_es(0)),
+                'cuentas críticas',
+                tono='rose') }}
+  </div>
+
+  {# Nota técnica colapsada — paridad con dBase. La info está pero no compite
+     visualmente con los datos importantes. #}
+  {% if totales.cheques_en_cartera and totales.cheques_en_cartera != 0 %}
+  <details class="mb-4">
+    <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+      Cómo se calcula el total ({{ totales.total | num_es(0) }})
+    </summary>
+    <div class="mt-2 px-3 py-2 rounded text-xs bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+      Cartera viva = facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(2) }}</span>
+      − cheques en cartera <span class="font-mono">{{ totales.cheques_en_cartera | num_es(2) }}</span>
+      = <strong class="font-mono text-slate-700 dark:text-slate-200">{{ totales.total | num_es(2) }}</strong>.
+      Los cheques en estados Z/1/2/3/P/D/A descuentan del saldo (paridad dBase).
+    </div>
+  </details>
+  {% endif %}
+
+  {# --- Quick filters (client-side, no recarga) -------------------------- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3 no-print" id="quick-filters">
+    <span class="text-xs text-slate-500 uppercase tracking-wide mr-1">Filtrar:</span>
+    <button type="button" data-qf="all"
+            class="qf-btn qf-active inline-flex items-center rounded-full bg-slate-900 text-white px-3 py-1 text-xs hover:bg-slate-700">
+      Todos <span class="qf-count ml-1.5 opacity-70"></span>
+    </button>
+    <button type="button" data-qf="critical"
+            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
+      Críticos 90+ <span class="qf-count ml-1.5 text-slate-400"></span>
+    </button>
+    <button type="button" data-qf="email"
+            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
+      Con email <span class="qf-count ml-1.5 text-slate-400"></span>
+    </button>
+    <button type="button" data-qf="tel"
+            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
+      Con teléfono <span class="qf-count ml-1.5 text-slate-400"></span>
+    </button>
+    <button type="button" data-qf="stop"
+            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
+      En STOP <span class="qf-count ml-1.5 text-slate-400"></span>
+    </button>
+    <button type="button" data-qf="sin-contacto"
+            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50"
+            title="Clientes sin email ni teléfono — hay que cargarles los datos antes de cobrar">
+      Sin contacto <span class="qf-count ml-1.5 text-slate-400"></span>
+    </button>
+  </div>
+
+  {# --- Tabla ------------------------------------------------------------ #}
+  <div class="overflow-x-auto border border-slate-200 rounded-lg bg-white">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+        <tr>
+          <th class="px-3 py-2 w-10 text-center no-print">
+            <input type="checkbox" id="sel-all"
+                   class="rounded border-slate-300"
+                   title="Seleccionar todos">
+          </th>
+          <th class="px-3 py-2 text-left" style="white-space: nowrap;">Código</th>
+          <th class="px-3 py-2 text-left">Cliente</th>
+          <th class="px-3 py-2 text-left" style="white-space: nowrap;">Vend.</th>
+          <th class="px-3 py-2 text-center" style="white-space: nowrap;">Stop</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">N° fact.</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">0-30</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">31-60</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">61-90</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">90+</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Saldo</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Mora máx.</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for f in filas %}
+          {% set critico = (f.b90_plus or 0) > 0 %}
+          <tr class="{% if critico %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-3 py-2 text-center no-print">
+              <input type="checkbox"
+                     class="sel-row rounded border-slate-300"
+                     data-codigo="{{ f.codigo_cli }}"
+                     data-nombre="{{ f.nombre }}"
+                     data-correo="{{ f.correo or '' }}"
+                     data-telefono="{{ f.telefono or '' }}"
+                     data-saldo="{{ f.saldo_total or 0 }}"
+                     data-b90="{{ f.b90_plus or 0 }}">
+            </td>
+            <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+              <a href="{{ url_for('informes.estado_cuenta_landing', codigo=f.codigo_cli) }}"
+                 class="text-sky-700 hover:underline">{{ f.codigo_cli }}</a>
+            </td>
+            <td class="px-3 py-2">{{ f.nombre }}</td>
+            <td class="px-3 py-2 text-xs text-slate-500">{{ f.vend or '' }}</td>
+            <td class="px-3 py-2 text-center">
+              {% if f.stop == 'S' %}
+                <span class="inline-flex items-center rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-xs font-medium">STOP</span>
+              {% else %}
+                <span class="text-slate-300">—</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ f.n_facturas }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+              {{ (f.b0_30 or 0) | num_es if (f.b0_30 or 0) else '' }}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+              {{ (f.b31_60 or 0) | num_es if (f.b31_60 or 0) else '' }}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums text-amber-700 dark:text-amber-400">
+              {{ (f.b61_90 or 0) | num_es if (f.b61_90 or 0) else '' }}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums font-medium {% if critico %}text-rose-700 dark:text-rose-400{% else %}text-slate-400{% endif %}">
+              {{ (f.b90_plus or 0) | num_es if (f.b90_plus or 0) else '' }}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums font-semibold">
+              {{ saldo_pill(f.saldo_total) }}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums text-xs text-slate-500">
+              {{ f.dias_mora_max }}d
+            </td>
+          </tr>
+        {% else %}
+          {{ empty_row(12, "No hay facturas con saldo vivo.",
+                       sugerencia="Cuando existan facturas sin cobrar aparecerán acá agrupadas por cliente.") }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    Los buckets se calculan sobre <code>CURRENT_DATE − COALESCE(vencimiento, fecha)</code>.
+    Sólo facturas con <code>saldo &gt; 0</code> y <code>stat</code> en Z/A/(nulo).
+  </p>
+
+  {# ========================= Bulk action bar ============================ #}
+  <div id="bulk-bar"
+       class="no-print fixed bottom-4 right-4 hidden z-40 rounded-lg shadow-xl bg-white border border-slate-300 px-4 py-3 flex-wrap items-center gap-3"
+       style="max-width: 760px;">
+    <div class="flex items-center gap-2">
+      <span class="inline-flex items-center rounded-full bg-sky-100 text-sky-800 px-2 py-0.5 text-xs font-medium">
+        <span id="bulk-count">0</span> seleccionados
+      </span>
+      <span class="text-xs text-slate-500">
+        Saldo: <strong id="bulk-saldo" class="text-slate-700">0,00</strong>
+        · Con email: <strong id="bulk-con-correo" class="text-slate-700">0</strong>
+        · Con tel: <strong id="bulk-con-tel" class="text-slate-700">0</strong>
+      </span>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" id="bulk-copy-emails"
+              class="inline-flex items-center rounded-md bg-sky-600 text-white px-3 py-1.5 text-xs hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+              title="Copia los emails al clipboard separados por ; para pegar en To/Cco de tu mail">
+        Copiar emails
+      </button>
+      <button type="button" id="bulk-copy-tels"
+              class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Copia los teléfonos al clipboard separados por ;">
+        Copiar tel.
+      </button>
+      <button type="button" id="bulk-export-csv"
+              class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-xs hover:bg-slate-50">
+        Exportar CSV
+      </button>
+      <button type="button" id="bulk-filter-view"
+              class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-xs hover:bg-slate-50"
+              title="Recargar la tabla mostrando sólo los seleccionados">
+        Ver solo seleccionados
+      </button>
+      <button type="button" id="bulk-clear"
+              class="inline-flex items-center rounded-md text-slate-500 px-2 py-1.5 text-xs hover:bg-slate-100">
+        Limpiar
+      </button>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    // --- Helpers -----------------------------------------------------------
+    const $bar = document.getElementById('bulk-bar');
+    const $all = document.getElementById('sel-all');
+    const $count = document.getElementById('bulk-count');
+    const $saldo = document.getElementById('bulk-saldo');
+    const $cEmail = document.getElementById('bulk-con-correo');
+    const $cTel = document.getElementById('bulk-con-tel');
+    const $btnMails = document.getElementById('bulk-copy-emails');
+    const $btnTels = document.getElementById('bulk-copy-tels');
+    const $btnCsv = document.getElementById('bulk-export-csv');
+    const $btnFilter = document.getElementById('bulk-filter-view');
+    const $btnClear = document.getElementById('bulk-clear');
+
+    function selected() {
+      return Array.from(document.querySelectorAll('.sel-row:checked'));
+    }
+
+    // --- Quick filters (client-side row hiding) -----------------------------
+    // Cada `.sel-row` está dentro de una `<tr>`. Marcamos la TR con dataset
+    // derivada para evitar reconsultar el DOM en cada toggle.
+    function rowMatchesFilter(tr, qf) {
+      const cb = tr.querySelector('.sel-row');
+      if (!cb) return true;
+      switch (qf) {
+        case 'all':       return true;
+        case 'critical':  return parseFloat(cb.dataset.b90 || 0) > 0;
+        case 'email':     return (cb.dataset.correo || '').trim() !== '';
+        case 'tel':       return (cb.dataset.telefono || '').trim() !== '';
+        case 'stop':      return tr.querySelector('.bg-red-100') !== null;  // chip STOP
+        case 'sin-contacto':
+          return !(cb.dataset.correo || '').trim() && !(cb.dataset.telefono || '').trim();
+        default: return true;
+      }
+    }
+
+    let currentFilter = 'all';
+
+    function applyQuickFilter(qf) {
+      currentFilter = qf;
+      const trs = document.querySelectorAll('tbody tr');
+      trs.forEach(tr => {
+        const ok = rowMatchesFilter(tr, qf);
+        tr.style.display = ok ? '' : 'none';
+        // Si la fila se oculta, deselecciona — evita que la barra cuente filas que no se ven
+        if (!ok) {
+          const cb = tr.querySelector('.sel-row');
+          if (cb && cb.checked) cb.checked = false;
+        }
+      });
+      // Estilo del botón activo
+      document.querySelectorAll('.qf-btn').forEach(b => {
+        const active = b.dataset.qf === qf;
+        b.classList.toggle('qf-active', active);
+        b.classList.toggle('bg-slate-900', active);
+        b.classList.toggle('text-white', active);
+        b.classList.toggle('bg-white', !active);
+        b.classList.toggle('text-slate-700', !active);
+        b.classList.toggle('border', !active);
+        b.classList.toggle('border-slate-300', !active);
+      });
+      updateBar();
+    }
+
+    // Computa N de cada filtro al cargar — para mostrar contador en el botón
+    function refreshQuickCounts() {
+      const trs = Array.from(document.querySelectorAll('tbody tr'));
+      const buckets = ['all', 'critical', 'email', 'tel', 'stop', 'sin-contacto'];
+      buckets.forEach(qf => {
+        const n = trs.filter(tr => rowMatchesFilter(tr, qf)).length;
+        const btn = document.querySelector(`.qf-btn[data-qf="${qf}"]`);
+        if (btn) {
+          const span = btn.querySelector('.qf-count');
+          if (span) span.textContent = '· ' + n;
+        }
+      });
+    }
+
+    document.querySelectorAll('.qf-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyQuickFilter(btn.dataset.qf));
+    });
+    refreshQuickCounts();
+    function fmtMoney(n) {
+      return (n || 0).toLocaleString('es-EC', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      });
+    }
+
+    // --- Update state + bar visibility ------------------------------------
+    function updateBar() {
+      const rows = selected();
+      const n = rows.length;
+      if (n === 0) {
+        $bar.style.display = 'none';
+        if ($all) $all.checked = false;
+        if ($all) $all.indeterminate = false;
+        return;
+      }
+      $bar.style.display = 'flex';
+      $count.textContent = n;
+      const saldo = rows.reduce((s, r) => s + parseFloat(r.dataset.saldo || 0), 0);
+      $saldo.textContent = fmtMoney(saldo);
+      $cEmail.textContent = rows.filter(r => (r.dataset.correo || '').trim()).length;
+      $cTel.textContent = rows.filter(r => (r.dataset.telefono || '').trim()).length;
+
+      const total = document.querySelectorAll('.sel-row').length;
+      if ($all) {
+        $all.checked = n === total;
+        $all.indeterminate = n > 0 && n < total;
+      }
+
+      // Habilitar/deshabilitar según haya datos para copiar
+      $btnMails.disabled = $cEmail.textContent === '0';
+      $btnTels.disabled = $cTel.textContent === '0';
+    }
+
+    // --- Row checkboxes ---------------------------------------------------
+    document.querySelectorAll('.sel-row').forEach(cb => {
+      cb.addEventListener('change', updateBar);
+    });
+
+    // --- Master checkbox --------------------------------------------------
+    if ($all) {
+      $all.addEventListener('change', () => {
+        const on = $all.checked;
+        document.querySelectorAll('.sel-row').forEach(cb => { cb.checked = on; });
+        updateBar();
+      });
+    }
+
+    // --- Copy helpers -----------------------------------------------------
+    async function copyToClipboard(text, okMsg) {
+      try {
+        await navigator.clipboard.writeText(text);
+        alert(okMsg + '\n\nYa los podés pegar en tu cliente de mail / WhatsApp.');
+      } catch (e) {
+        alert('No pude copiar al clipboard: ' + e.message);
+      }
+    }
+
+    $btnMails.addEventListener('click', () => {
+      const rows = selected();
+      const mails = rows.map(r => (r.dataset.correo || '').trim()).filter(Boolean);
+      if (mails.length === 0) { alert('Ningún cliente seleccionado tiene email.'); return; }
+      const faltan = rows.length - mails.length;
+      const msg = mails.length + ' email(s) copiado(s)' +
+                  (faltan > 0 ? ' — ' + faltan + ' cliente(s) sin email quedaron afuera.' : '.');
+      copyToClipboard(mails.join('; '), msg);
+    });
+
+    $btnTels.addEventListener('click', () => {
+      const rows = selected();
+      const tels = rows.map(r => (r.dataset.telefono || '').trim()).filter(Boolean);
+      if (tels.length === 0) { alert('Ningún cliente seleccionado tiene teléfono.'); return; }
+      const faltan = rows.length - tels.length;
+      const msg = tels.length + ' teléfono(s) copiado(s)' +
+                  (faltan > 0 ? ' — ' + faltan + ' sin teléfono quedaron afuera.' : '.');
+      copyToClipboard(tels.join('; '), msg);
+    });
+
+    $btnCsv.addEventListener('click', () => {
+      const rows = selected();
+      const codigos = rows.map(r => r.dataset.codigo).join(',');
+      const url = "{{ url_for('cartera.aging') }}" + '?codigos=' + encodeURIComponent(codigos) + '&export=csv';
+      window.location = url;
+    });
+
+    $btnFilter.addEventListener('click', () => {
+      const rows = selected();
+      const codigos = rows.map(r => r.dataset.codigo).join(',');
+      window.location = "{{ url_for('cartera.aging') }}" + '?codigos=' + encodeURIComponent(codigos);
+    });
+
+    $btnClear.addEventListener('click', () => {
+      document.querySelectorAll('.sel-row').forEach(cb => { cb.checked = false; });
+      updateBar();
+    });
+
+    // Primer render
+    updateBar();
+  })();
+  </script>
+{% endblock %}

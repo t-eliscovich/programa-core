@@ -1,0 +1,67 @@
+{
+  "fecha_snapshot": "2026-05-13T15:45:20.199544",
+  "utilidad_us": 82993.18804717436,
+  "patr": 20198880.188047174,
+  "patant": 20115887.0,
+  "patr_para_utilidad": 20198880.188047174,
+  "salcaj": 40073.19,
+  "salbanc": 2284667.38,
+  "salbanc1": 0.0,
+  "salbanc2": 0.0,
+  "pos1": 0.0,
+  "pos2": 0.0,
+  "antic": 1118797.4,
+  "uret": 85385.89,
+  "umaq": 985003.0,
+  "uact": 2417066.0,
+  "vsto": 8023892.918047176,
+  "vqx": 262753.0,
+  "cart": 6883503.93,
+  "subt": 9208244.5,
+  "totl": 22101142.708047174,
+  "totp": 1902262.52,
+  "stock_hilado_kg": 1839972.0,
+  "stock_hilado_us": 5383289.48908,
+  "stock_hilado_ukg": 2.925745331494175,
+  "stock_tejido_kg": 299501.0,
+  "stock_tejido_us": 1026014.1525278368,
+  "stock_tejido_ukg": 3.425745331494175,
+  "stock_terminado_kg": 314996.0,
+  "stock_terminado_us": 1614589.276439339,
+  "stock_terminado_ukg": 5.1257453314941746,
+  "stock_total_kg": 2454469.0,
+  "stock_total_us": 8023892.918047176,
+  "stock_total_ukg": 3.269095237319019,
+  "venta_us": 0.0,
+  "matpr_us": 261773.3,
+  "tejido_costo_us": 52726.219999999994,
+  "colqui_us": 49523.0,
+  "gsproc_us": 127618.38,
+  "gastos_us": 264471.07,
+  "utilidad_live_us": 82993.18804717436,
+  "utilidad_live_pct": -978.5634630202406,
+  "bancos_saldos_por_id": {
+    "10": {
+      "nombre": "PICHINCHA",
+      "saldo": 2280906.19
+    },
+    "32": {
+      "nombre": "INTERNACI",
+      "saldo": 3761.19
+    }
+  },
+  "mov_doble_por_estado": {
+    "activo": {
+      "n": 5426,
+      "total": 10079209.98
+    },
+    "reversado": {
+      "n": 3,
+      "total": 61409.93
+    },
+    "reverso": {
+      "n": 2,
+      "total": 11000.0
+    }
+  }
+}

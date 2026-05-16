@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Verificación 2FA{% endblock %}
+{% block unauth %}
+<div class="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+  <div class="w-full max-w-sm bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+    <div class="text-center mb-6">
+      <div class="text-2xl font-bold tracking-tight">INTELA</div>
+      <div class="text-xs text-slate-500 mt-1">Verificación en dos pasos</div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="mb-4 px-3 py-2 rounded text-sm bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <p class="text-sm text-slate-500 mb-4">
+      Abrí tu app de autenticación e ingresá el código de 6 dígitos.
+    </p>
+
+    <form method="post" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <input name="code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" autofocus
+               placeholder="123456"
+               class="w-full text-center rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-3 text-lg font-mono tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <button type="submit"
+              class="w-full rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 py-2 text-sm font-medium hover:opacity-90">
+        Verificar
+      </button>
+    </form>
+
+    <div class="mt-4 text-center">
+      <a href="{{ url_for('auth.logout') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+        Cancelar e ingresar con otro usuario
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

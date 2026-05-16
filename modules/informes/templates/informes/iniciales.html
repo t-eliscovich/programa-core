@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Iniciales mensuales{% endblock %}
+{% block breadcrumb %}Informes / <strong>Iniciales (metas)</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Iniciales mensuales</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Metas y valores de apertura por mes — INICIALES.DBF del programa original
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('informes.iniciales', anio=anio, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Año</label>
+      <input type="number" name="anio" value="{{ anio or '' }}" placeholder="Todos"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+    {% if anio %}
+      <a href="{{ url_for('informes.iniciales') }}" class="text-sm text-slate-500 hover:underline">Limpiar</a>
+    {% endif %}
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="text-xs" style="min-width: 1600px;">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr class="border-b-2 border-slate-200 dark:border-slate-700">
+          <th rowspan="2" class="px-3 py-2 text-center font-medium sticky left-0 bg-slate-50 dark:bg-slate-800/50 z-10">Año · Mes</th>
+          <th colspan="3" class="px-3 py-2 text-center font-semibold bg-slate-100 dark:bg-slate-800">Producción programada (kg)</th>
+          <th colspan="5" class="px-3 py-2 text-center font-semibold bg-emerald-50 dark:bg-emerald-900/20">Unidades (USD)</th>
+          <th colspan="3" class="px-3 py-2 text-center font-semibold bg-amber-50 dark:bg-amber-900/20">Programado</th>
+          <th colspan="2" class="px-3 py-2 text-center font-semibold bg-slate-100 dark:bg-slate-800">Notas</th>
+          <th colspan="4" class="px-3 py-2 text-center font-semibold bg-blue-50 dark:bg-blue-900/20">Precios</th>
+        </tr>
+        <tr>
+          <th class="px-2 py-2 text-right font-medium bg-slate-100 dark:bg-slate-800">Hilado</th>
+          <th class="px-2 py-2 text-right font-medium bg-slate-100 dark:bg-slate-800">Tejido</th>
+          <th class="px-2 py-2 text-right font-medium bg-slate-100 dark:bg-slate-800">Terminado</th>
+
+          <th class="px-2 py-2 text-right font-medium bg-emerald-50 dark:bg-emerald-900/20">VQ</th>
+          <th class="px-2 py-2 text-right font-medium bg-emerald-50 dark:bg-emerald-900/20">UM</th>
+          <th class="px-2 py-2 text-right font-medium bg-emerald-50 dark:bg-emerald-900/20">UK</th>
+          <th class="px-2 py-2 text-right font-medium bg-emerald-50 dark:bg-emerald-900/20">UF</th>
+          <th class="px-2 py-2 text-right font-medium bg-emerald-50 dark:bg-emerald-900/20">UQ</th>
+
+          <th class="px-2 py-2 text-right font-medium bg-amber-50 dark:bg-amber-900/20">Precio</th>
+          <th class="px-2 py-2 text-right font-medium bg-amber-50 dark:bg-amber-900/20">Kg prog.</th>
+          <th class="px-2 py-2 text-right font-medium bg-amber-50 dark:bg-amber-900/20">Gasto prog.</th>
+
+          <th class="px-2 py-2 text-right font-medium bg-slate-100 dark:bg-slate-800"># notas</th>
+          <th class="px-2 py-2 text-right font-medium bg-slate-100 dark:bg-slate-800">Dificultad</th>
+
+          <th class="px-2 py-2 text-right font-medium bg-blue-50 dark:bg-blue-900/20">Tejido</th>
+          <th class="px-2 py-2 text-right font-medium bg-blue-50 dark:bg-blue-900/20">Tintura</th>
+          <th class="px-2 py-2 text-right font-medium bg-blue-50 dark:bg-blue-900/20">Admin</th>
+          <th class="px-2 py-2 text-right font-medium bg-blue-50 dark:bg-blue-900/20">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono sticky left-0 bg-white dark:bg-slate-900 z-10" style="white-space: nowrap;">
+            <span class="text-slate-500">{{ r.yy }}</span>
+            <span class="ml-1 font-semibold">{{ r.mesnom }}</span>
+          </td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.hilado | kg_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.tejido | kg_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.terminado | kg_es }}</td>
+
+          <td class="px-2 py-2 text-right text-mono">{{ r.vq | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.um | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.uk | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.uf | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.uq | money_es }}</td>
+
+          <td class="px-2 py-2 text-right text-mono">{{ r.pre | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.kprog | kg_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.gprog | money_es }}</td>
+
+          <td class="px-2 py-2 text-right text-mono text-slate-500">{{ r.numnot }}</td>
+          <td class="px-2 py-2 text-right text-mono text-slate-500">{{ r.dificil }}</td>
+
+          <td class="px-2 py-2 text-right text-mono">{{ r.pretej | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.pretin | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono">{{ r.preadm | money_es }}</td>
+          <td class="px-2 py-2 text-right text-mono font-semibold">{{ r.pretot | money_es }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(18, 'Sin iniciales registradas.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Metas de producción (Hilado/Tejido/Terminado en kg), unidades en USD (VQ/UM/UK/UF/UQ),
+    programado del mes (precio, kg, gasto), número de notas y dificultad, precios por proceso.
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Movimientos · {{ banco.nombre if banco else 'Banco' }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> / <strong>{{ banco.nombre if banco else ('Banco ' ~ banco.no_banco) }}</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">
+        {{ banco.nombre if banco else ('Banco ' ~ banco.no_banco) }}
+        <span class="ml-2 text-sm font-mono text-slate-500">#{{ banco.no_banco if banco else '' }}</span>
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">Movimientos del banco (transacciones_bancarias)</p>
+    </div>
+    <button onclick="window.print()" class="no-print text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+    {% if desde or hasta %}
+      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco) }}" class="text-sm text-slate-500 hover:underline">Limpiar</a>
+    {% endif %}
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <p class="text-sm text-slate-500 mb-2">
+    Mostrando <strong>{{ filas | length }}</strong> movimiento{{ '' if filas|length == 1 else 's' }}
+    {% if filas|length == 500 %}<span class="text-amber-600">(tope de 500 — afina el rango de fechas)</span>{% endif %}
+  </p>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-3 text-left font-medium">Doc</th>
+          <th class="px-3 py-3 text-left font-medium">Concepto</th>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">F. dep.</th>
+          <th class="px-3 py-3 text-right font-medium">Importe</th>
+          <th class="px-3 py-3 text-right font-medium">Saldo</th>
+          <th class="px-3 py-3 text-left font-medium">Prov/Ref</th>
+          <th class="px-3 py-3 text-left font-medium">Usuario</th>
+          <th class="px-3 py-3 text-left font-medium">Stat</th>
+          <th class="px-3 py-3 text-left font-medium no-print"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in filas %}
+        {% set doc = (m.documento or '').strip() %}
+        {% set es_egreso = doc in ('CH','ND','DB') %}
+        {% set es_ingreso = doc in ('DE','AC','NC') %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ m.fecha | fecha_es }}</td>
+          <td class="px-3 py-2">
+            {% if es_egreso %}
+              <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs font-mono">{{ doc }}</span>
+            {% elif es_ingreso %}
+              <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 text-xs font-mono">{{ doc }}</span>
+            {% else %}
+              <span class="font-mono text-xs text-slate-500">{{ doc }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {# Badge de reverso (esta fila ES un reverso) o reversado (esta fila FUE reversada). #}
+            {% if m.mov_estado == 'reverso' %}
+              <span class="inline-block px-1.5 py-0.5 mr-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] font-mono"
+                    title="Esta fila reversa al mov #{{ m.mov_id_original }}">↺ reverso</span>
+            {% elif m.mov_estado == 'reversado' %}
+              <span class="inline-block px-1.5 py-0.5 mr-1 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 text-[10px] font-mono"
+                    title="Esta fila fue reversada por el mov #{{ m.mov_id_reverso }}">⊘ reversado</span>
+            {% endif %}
+            {{ m.concepto or '' }}
+            {% if m.mov_concepto and (m.mov_concepto | length) > (m.concepto | length if m.concepto else 0) %}
+              <div class="text-[11px] text-slate-500 mt-0.5">{{ m.mov_concepto }}</div>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ m.fechad | fecha_es if m.fechad else '' }}</td>
+          <td class="px-3 py-2 text-right text-mono {% if m.mov_estado in ('reverso','reversado') %}line-through text-slate-400{% elif es_egreso %}text-red-600{% elif es_ingreso %}text-emerald-700{% endif %}">
+            {# Mostrar SIEMPRE valor absoluto y prefijar "-" para egresos.
+               Algunas filas legacy guardan importe signed (negativo) — sin
+               este abs salía "--1.000,00". TMT 2026-05-13. #}
+            {% set imp_abs = m.importe if m.importe is none or m.importe >= 0 else -m.importe %}
+            {% if es_egreso %}-{% endif %}{{ imp_abs | money_es }}
+          </td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ m.saldo | money_es if m.saldo is not none else '' }}</td>
+          <td class="px-3 py-2 text-xs text-slate-500">
+            {% if m.prov %}<span class="font-mono">{{ m.prov }}</span>{% endif %}
+            {% if m.numreferencia %}<span class="ml-1">{{ m.numreferencia }}</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">
+            {{ m.mov_usuario or m.usuario_crea or '' }}
+          </td>
+          <td class="px-3 py-2"><span class="font-mono text-xs text-slate-500">{{ m.stat or '' }}</span></td>
+          <td class="px-3 py-2 no-print text-right">
+            {% if doc == 'CH' and tiene_permiso('bancos.conciliar') %}
+              <a href="{{ url_for('bancos.reversar_cheque_emitido', id_transaccion=m.id_transaccion) }}"
+                 class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                 title="Reversar este cheque emitido y deshacer su side effect">
+                ↺ reversar
+              </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(10, 'Sin movimientos en el rango seleccionado.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    <strong>DE/AC/NC</strong> suman al saldo · <strong>CH/ND/DB</strong> restan.
+    La columna "Saldo" es el valor histórico almacenado (a veces desconfiable — ver pantalla principal para saldo derivado).
+  </p>
+</div>
+{% endblock %}

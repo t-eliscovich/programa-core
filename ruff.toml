@@ -1,0 +1,42 @@
+# Linter + formatter for Programa Core.
+# Run:
+#   ruff check .
+#   ruff format .
+
+line-length = 110
+target-version = "py311"
+
+extend-exclude = [
+    "INTELA.rar",
+    ".venv",
+    "docs",
+    "migrations/_archive",
+]
+
+[lint]
+# Pick the important-but-quiet rule families.
+#  E  pycodestyle errors
+#  F  pyflakes (undefined names, unused imports)
+#  I  isort (import order)
+#  B  bugbear (likely bugs)
+#  UP pyupgrade (syntax modernization)
+#  SIM simplify (readable code)
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+ignore = [
+    "E501",   # long lines handled by the formatter
+    "B008",   # function calls in argument defaults (Flask pattern)
+    "SIM108", # ternary-vs-if — if/else is often clearer here
+]
+
+[lint.per-file-ignores]
+# Migrations intentionally duplicate DDL and use long SQL literals.
+"migrations/*.py" = ["E501", "F401"]
+# Seed scripts have long literal blocks.
+"scripts/*.py"    = ["E501"]
+# Tests can shadow names, use magic values, etc.
+"tests/*.py"      = ["E501", "F401", "F811"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

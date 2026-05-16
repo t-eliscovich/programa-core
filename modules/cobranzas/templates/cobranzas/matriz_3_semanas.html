@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+
+{% block title %}Cobros — matriz 3 semanas{% endblock %}
+{% block breadcrumb %}
+  <strong>Cobros: matriz 3 semanas</strong>
+{% endblock %}
+
+{% block content %}
+  {{ page_header(
+       "Cobros efectivos — últimas 3 semanas",
+       "Matriz diaria de cobros (cheques aplicados + entradas bancarias DE/AC). Replica MENU.PRG L1493 (EFECT)."
+  ) }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {# Filtro: ver matriz hasta una fecha histórica #}
+  <form method="get" class="flex flex-wrap items-end gap-3 mb-4 no-print">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Mirar hasta</label>
+      <input type="date" name="hasta" value="{{ hasta.isoformat() if hasta else '' }}"
+             class="rounded border border-slate-300 px-2 py-1 text-sm">
+    </div>
+    <button type="submit"
+            class="inline-flex items-center rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm hover:bg-slate-700">
+      Aplicar
+    </button>
+    <a href="{{ url_for('cobranzas.matriz_3_semanas') }}"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Hoy
+    </a>
+    <button type="button" onclick="window.print()"
+            class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Imprimir
+    </button>
+  </form>
+
+  {# KPIs #}
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+    <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+      <div class="text-xs text-emerald-700 uppercase tracking-wide">Total 3 semanas</div>
+      <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">
+        $ {{ '%.2f' | format(total_3sem) }}
+      </div>
+    </div>
+    <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
+      <div class="text-xs text-sky-700 uppercase tracking-wide">Promedio por día hábil</div>
+      <div class="text-xl font-semibold text-sky-900 text-right tabular-nums">
+        $ {{ '%.2f' | format(prom_3sem) }}
+      </div>
+      <div class="text-xs text-sky-700 text-right">15 días hábiles (3 sem × 5)</div>
+    </div>
+    <div class="rounded-lg bg-slate-100 border border-slate-300 px-4 py-3">
+      <div class="text-xs text-slate-700 uppercase tracking-wide">Semanas</div>
+      <div class="text-xl font-semibold text-slate-900 text-right tabular-nums">{{ semanas | length }}</div>
+      <div class="text-xs text-slate-500 text-right">lun-sáb</div>
+    </div>
+  </div>
+
+  <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-200">
+        <tr class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+          <th class="px-3 py-3 text-left">Semana del</th>
+          <th class="px-3 py-3 text-right">Lun</th>
+          <th class="px-3 py-3 text-right">Mar</th>
+          <th class="px-3 py-3 text-right">Mié</th>
+          <th class="px-3 py-3 text-right">Jue</th>
+          <th class="px-3 py-3 text-right">Vie</th>
+          <th class="px-3 py-3 text-right">Sáb</th>
+          <th class="px-3 py-3 text-right bg-emerald-50">Total</th>
+          <th class="px-3 py-3 text-right bg-sky-50">Prom/día hábil</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for s in semanas %}
+          <tr>
+            <td class="px-3 py-3 text-xs">
+              <div class="font-mono">{{ s.fecha_lunes | fecha_es }}</div>
+              <div class="text-slate-500">al {{ s.fecha_sabado | fecha_es }}</div>
+            </td>
+            <td class="px-3 py-3 text-right tabular-nums">{{ '%.2f' | format(s.lunes) }}</td>
+            <td class="px-3 py-3 text-right tabular-nums">{{ '%.2f' | format(s.martes) }}</td>
+            <td class="px-3 py-3 text-right tabular-nums">{{ '%.2f' | format(s.miercoles) }}</td>
+            <td class="px-3 py-3 text-right tabular-nums">{{ '%.2f' | format(s.jueves) }}</td>
+            <td class="px-3 py-3 text-right tabular-nums">{{ '%.2f' | format(s.viernes) }}</td>
+            <td class="px-3 py-3 text-right tabular-nums">{{ '%.2f' | format(s.sabado) }}</td>
+            <td class="px-3 py-3 text-right tabular-nums font-semibold text-emerald-700 bg-emerald-50/30">
+              $ {{ '%.2f' | format(s.total_semana) }}
+            </td>
+            <td class="px-3 py-3 text-right tabular-nums font-semibold text-sky-700 bg-sky-50/30">
+              $ {{ '%.2f' | format(s.prom_dia_habil) }}
+              <div class="text-[10px] text-slate-400">÷ {{ s.dias_para_prom }}d</div>
+            </td>
+          </tr>
+        {% endfor %}
+        {% if not semanas %}
+          <tr><td colspan="9" class="px-3 py-8 text-center text-slate-400">
+            Sin datos.
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-400 mt-3 leading-relaxed">
+    Cobros = aplicaciones cheque→factura (importe&gt;0) + entradas bancarias
+    (documentos <code class="px-1 py-0.5 rounded bg-slate-100 font-mono">DE</code> /
+    <code class="px-1 py-0.5 rounded bg-slate-100 font-mono">AC</code>) en el día.
+    Replica MENU.PRG L1493-1522 (PROCEDURE EFECT). Promedio dividido por días hábiles
+    transcurridos (semana en curso) o 5 (semanas pasadas).
+  </p>
+{% endblock %}

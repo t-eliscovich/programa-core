@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, saldo_pill %}
+{% block title %}Cartera — resumen{% endblock %}
+{% block breadcrumb %}Informes / <strong>Cartera — resumen</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Cartera — resumen</h1>
+      <p class="text-sm text-slate-500 mt-1">Saldos por cobrar a clientes (vista compacta)</p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('cartera.aging') }}"
+         class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90 inline-flex items-center gap-1.5">
+        Ver con buckets de mora
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {# Banner explicando la diferencia con la vista de aging — ayuda a no
+     confundir las dos pantallas (resumen ≠ aging por mora). #}
+  <div class="mb-4 px-4 py-3 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 max-w-2xl">
+    Esta vista lista <strong>quién te debe y cuánto</strong>, ordenado por
+    saldo. Para ver la antigüedad de la mora con buckets 0-30 / 31-60 /
+    61-90 / +90 días y la acción "stop automático", abrí
+    <a href="{{ url_for('cartera.aging') }}" class="text-blue-600 hover:underline">Cartera con aging</a>.
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-5 py-3 text-left font-medium" style="white-space: nowrap;">Código</th>
+          <th class="px-5 py-3 text-left font-medium">Cliente</th>
+          <th class="px-5 py-3 text-right font-medium">Facturas</th>
+          <th class="px-5 py-3 text-right font-medium">Más vieja</th>
+          <th class="px-5 py-3 text-right font-medium">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-5 py-2 font-mono text-xs" style="white-space: nowrap;">{{ f.codigo_cli }}</td>
+          <td class="px-5 py-2">{{ f.nombre }}</td>
+          <td class="px-5 py-2 text-right text-mono">{{ f.n_facturas }}</td>
+          <td class="px-5 py-2 text-right text-xs text-slate-500" style="white-space: nowrap;">{{ f.factura_mas_vieja | fecha_es }}</td>
+          <td class="px-5 py-2 text-right">{{ saldo_pill(f.saldo_total) }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(5, 'Sin saldos por cobrar.', 'Todas las facturas están pagadas.') }}
+        {% endfor %}
+      </tbody>
+      {% if filas %}
+      <tfoot class="bg-slate-50 dark:bg-slate-800/50 font-semibold">
+        <tr>
+          <td class="px-5 py-3" colspan="4">Total</td>
+          <td class="px-5 py-3 text-right text-mono">{{ total | money_es }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,746 @@
+{% extends "base.html" %}
+{% block title %}Informe Resultados{% endblock %}
+{% block breadcrumb %}Informes / <strong>Informe Resultados — Balance</strong>{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* ====== TIPOGRAFÍA UNIFORME — limpieza UX 2026-05-06 (TMT) ===========
+     Una sola familia, una sola tabla de tamaños:
+       11px  uppercase header sección
+       13px  body (filas comunes — labels y números)
+       14px  filas TOTAL/STOCK total (negrita)
+       17px  UTILIDAD ACTUAL + PATRIMONIO NETO (lo más importante, negrita)
+     Tabular-nums en TODA la tabla para alinear dígitos.
+     Cero barras de color, cero chips, cero pbars. La info importante se
+     marca con tamaño/peso, no con accesorios visuales.
+     ===================================================================== */
+  .informe-balance,
+  .informe-balance table.balance-table {
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .informe-balance table { width: 100%; }
+  .informe-balance th, .informe-balance td {
+    font-size: 13px;
+    line-height: 1.4;
+    vertical-align: baseline;
+  }
+  .informe-balance th.col-header {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: rgb(100 116 139);
+    padding: 10px 12px 8px;
+  }
+  .dark .informe-balance th.col-header { color: rgb(148 163 184); }
+  .informe-balance .seccion-header {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: rgb(71 85 105);
+    padding: 10px 14px 8px;
+    background: rgb(248 250 252);
+    border-top: 1px solid rgb(226 232 240);
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .informe-balance .seccion-header {
+    color: rgb(148 163 184);
+    background: rgb(30 41 59 / 0.4);
+    border-color: rgb(51 65 85);
+  }
+  .informe-balance td.label-cell { padding: 8px 14px; }
+  .informe-balance td.num-cell {
+    text-align: right; padding: 8px 12px;
+  }
+  .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
+  .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
+  /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
+  .informe-balance tr.fila-total td {
+    font-size: 14px;
+    font-weight: 600;
+    background: rgb(241 245 249);
+    color: rgb(15 23 42);
+    border-top: 1px solid rgb(203 213 225);
+  }
+  .dark .informe-balance tr.fila-total td {
+    background: rgb(30 41 59 / 0.55);
+    color: rgb(241 245 249);
+    border-top-color: rgb(71 85 105);
+  }
+  /* Filas KEY METRIC — UTILIDAD y PATRIMONIO NETO. Las más prominentes. */
+  .informe-balance tr.fila-key td {
+    font-size: 17px;
+    font-weight: 700;
+    background: rgb(15 23 42);
+    color: rgb(248 250 252);
+    padding-top: 12px; padding-bottom: 12px;
+  }
+  .dark .informe-balance tr.fila-key td {
+    background: rgb(248 250 252);
+    color: rgb(15 23 42);
+  }
+  .informe-balance tr.fila-key td.num-cell.pos { color: rgb(74 222 128); }
+  .informe-balance tr.fila-key td.num-cell.neg { color: rgb(248 113 113); }
+  .dark .informe-balance tr.fila-key td.num-cell.pos { color: rgb(22 163 74); }
+  .dark .informe-balance tr.fila-key td.num-cell.neg { color: rgb(220 38 38); }
+  /* Filas auxiliares (proyección, plazo cartera) — más chicas y mudas. */
+  .informe-balance tr.fila-aux td {
+    font-size: 12px;
+    color: rgb(100 116 139);
+    padding: 6px 14px;
+  }
+  .dark .informe-balance tr.fila-aux td { color: rgb(148 163 184); }
+  /* Etiqueta META/sin datos — texto inline, sin chip. */
+  .informe-balance .src-tag {
+    display: inline; font-size: 10px;
+    color: rgb(120 53 15); margin-left: 6px;
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500;
+  }
+  .dark .informe-balance .src-tag { color: rgb(245 158 11); }
+  .informe-balance .src-tag.none { color: rgb(220 38 38); }
+  .dark .informe-balance .src-tag.none { color: rgb(248 113 113); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-full informe-balance">
+  <div class="flex items-center justify-between mb-5 no-print">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Informe de Resultados</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>
+        {% if b and b.snapshot_historia_fecha %} · Último cierre <span class="text-slate-700 dark:text-slate-300">{{ b.snapshot_historia_fecha | fecha_es }}</span>{% endif %}
+        {% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}
+      </p>
+    </div>
+    <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+      Imprimir
+    </button>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if b %}
+  {# Panel de advertencias removido a pedido de TMT 2026-05-08 — el ruido de
+     mid-mes (PATR-PATANT fluctuando con cada cobranza) confundía más de lo
+     que ayudaba. Si en el futuro hace falta mostrar diagnóstico, viene en
+     `b.diagnostico.advertencias`. #}
+  {# Frame único, plano. Sin gradientes ni "TV ochentosa". #}
+  <div class="border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 overflow-hidden">
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
+    {# -------- I N F O R M E   D E   R E S U L T A D O S  (mes / proyección) --------
+       Mismo font-mono text-sm que el panel ACTIVO/PASIVO de la derecha.
+       Misma estructura de header rosa (dBase aesthetic). #}
+    {% if b.resultados %}
+    {% set r = b.resultados %}
+    {% set _costo_links = {
+      'MAT.PR.':  url_for('compras.lista', vista='compras'),
+      'TEJIDO':   url_for('compras.lista', vista='produccion'),
+      'COL.QUI.': url_for('informes.gastos'),
+      'GS.PROC.': url_for('informes.gastos'),
+      'GASTOS':   url_for('informes.gastos'),
+    } %}
+    <div class="border-r border-slate-200 dark:border-slate-800">
+      <table class="balance-table">
+        <thead>
+          {# Una sola fila de header — labels de columnas alineadas con
+             las celdas. RESULTADOS es sólo el label de la columna 1; las
+             columnas 2-5 son Kg / U$/kg / U$ / Proy. #}
+          <tr>
+            <th class="seccion-header" style="text-align:left">RESULTADOS</th>
+            <th class="col-header" style="text-align:right">Kg</th>
+            <th class="col-header" style="text-align:right">U$/kg</th>
+            <th class="col-header" style="text-align:right">U$</th>
+            <th class="col-header" style="text-align:right">Proy.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {# ─── VENTAS ─── #}
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('informes.ventas') }}" class="hover:text-blue-600 hover:underline">Venta</a></td>
+            <td class="num-cell">{{ r.ventas.kg | num_es(0) }}</td>
+            <td class="num-cell">{{ r.ventas.ukg | num_es(3) }}</td>
+            <td class="num-cell">{{ r.ventas.us | num_es(0) }}</td>
+            <td class="num-cell">{{ r.ventas.proy_us | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-aux">
+            <td class="label-cell"><a href="{{ url_for('informes.iniciales') }}" class="hover:text-blue-600 hover:underline">Proyección</a></td>
+            <td class="num-cell">{{ r.ventas.proy_kg | num_es(0) }}</td>
+            <td></td>
+            <td class="num-cell">{{ r.ventas.proy_us | num_es(0) }}</td>
+            <td></td>
+          </tr>
+          <tr class="fila-aux">
+            <td class="label-cell"><a href="{{ url_for('cartera.aging') }}" class="hover:text-blue-600 hover:underline">Plazo cartera (días)</a></td>
+            <td></td>
+            <td></td>
+            <td class="num-cell" style="font-weight:600">{{ r.cartera_dias | num_es(0) }}</td>
+            <td></td>
+          </tr>
+
+          {# ─── COSTOS — section divider que ocupa toda la fila ─── #}
+          <tr>
+            <th class="seccion-header" style="text-align:left" colspan="5">COSTOS</th>
+          </tr>
+          {% for c in r.costos %}
+          <tr class="fila-dato" title="{{ c.ayuda }}">
+            <td class="label-cell">
+              {% if c.label in _costo_links %}
+                <a href="{{ _costo_links[c.label] }}" class="hover:text-blue-600 hover:underline">{{ c.label }}</a>
+              {% else %}{{ c.label }}{% endif %}
+            </td>
+            <td class="num-cell">{% if c.kg is not none %}{{ c.kg | num_es(0) }}{% endif %}</td>
+            <td class="num-cell">{{ c.ukg | num_es(3) }}{% if c.src == 'meta' %}<span class="src-tag">meta</span>{% elif c.src == 'none' %}<span class="src-tag none">sin datos</span>{% endif %}</td>
+            <td class="num-cell">{{ c.us | num_es(0) }}</td>
+            <td class="num-cell">{{ c.proy | num_es(0) }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="fila-total" title="Total con desperdicio (DESP+DESK %) aplicado a MAT.PR. y COL.QUI., per PRG INFORMES.PRG líneas 404-413.">
+            <td class="label-cell">Total</td>
+            <td class="num-cell" style="font-size:11px;color:rgb(100 116 139);font-weight:500">
+              {% if r.costo_total.desperdicio_pct %}
+                {{ r.costo_total.desperdicio_pct | num_es(1) }} %
+              {% endif %}
+            </td>
+            <td class="num-cell">{{ r.costo_total.ukg | num_es(3) }}</td>
+            <td class="num-cell">{{ r.costo_total.us | num_es(0) }}</td>
+            <td class="num-cell">{{ r.costo_total.proy_us | num_es(0) }}</td>
+          </tr>
+
+          {# ─── UTILIDAD — la fila más importante. Bigger + bold. ─── #}
+          {# Ocultamos pct y proy_us — TMT 2026-05-08: el % es contra ventas
+             del mes (volátil, confunde) y la proyección dobla la fila
+             "Utilidad Proyectada" de abajo. #}
+          {% set ut_pos = r.utilidad.us >= 0 %}
+          <tr class="fila-key">
+            <td class="label-cell">Utilidad Actual</td>
+            <td></td>
+            <td class="num-cell">{{ r.utilidad.ukg | num_es(3) }}</td>
+            <td class="num-cell {{ 'pos' if ut_pos else 'neg' }}">{{ r.utilidad.us | num_es(0) }}</td>
+            <td></td>
+          </tr>
+          {# Cálculo expuesto: PATR (basado en historia.ustock) − PATANT.
+             No se usa el VSTO con override (= kg×rate) para esto, porque
+             la re-valuación de stock entre cierres NO es ganancia. #}
+          <tr class="fila-aux">
+            <td class="label-cell" colspan="5" style="font-size:11px;color:rgb(100 116 139)">
+              Utilidad = PATR ({{ b.patr_para_utilidad | num_es(0) }})
+              − PATANT ({{ b.patant | num_es(0) }})
+              = {{ r.utilidad.us | num_es(0) }}.
+              PATR usa <code style="font-family:ui-monospace,monospace;font-size:10px">historia.ustock</code> (= valor stock al cierre anterior),
+              no el stock con tarifas iniciales del display.
+            </td>
+          </tr>
+          {# Provisión pendiente del mes — PRG INFORMES.PRG línea 420.
+             PROVI = 80.000 * (1 - DAY(hoy)/30). El día 1 vale ~$77k, el día
+             15 vale $40k, el día 30 vale 0. Se RESTA de UT.PROY para reflejar
+             provisiones que todavía no se reservaron en el cierre. #}
+          <tr class="fila-aux" title="Provisión que falta amortizar este mes — PRG L420: PROVISIONES × (1 − día_del_mes/30). Hoy el sistema descuenta este monto de la Utilidad Proyectada porque todavía no quedó reservado en el cierre.">
+            <td class="label-cell">Provisión pendiente del mes</td>
+            <td></td><td></td>
+            <td class="num-cell">−</td>
+            <td class="num-cell">{{ r.utilidad.provision_pendiente | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-aux">
+            <td class="label-cell">Utilidad Proyectada</td>
+            <td></td><td></td><td class="num-cell">−</td>
+            <td class="num-cell">{{ r.utilidad.proy_us | num_es(0) }}</td>
+          </tr>
+
+          {# ─── STOCK ─── #}
+          <tr>
+            <th class="seccion-header" colspan="5">STOCK</th>
+          </tr>
+          {% for etapa, label in [('hilado','Hilado'),('tejido','Tejido'),('terminado','Terminado')] %}
+          {% set s = r.stock[etapa] %}
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('informes.historia') }}" class="hover:text-blue-600 hover:underline">{{ label }}</a></td>
+            <td class="num-cell">{{ s.kg | num_es(0) }}</td>
+            <td class="num-cell">{{ s.ukg | num_es(3) }}</td>
+            <td class="num-cell">{{ s.us | num_es(0) }}</td>
+            <td></td>
+          </tr>
+          {% endfor %}
+          <tr class="fila-total">
+            <td class="label-cell">Total</td>
+            <td class="num-cell">{{ r.stock.total.kg | num_es(0) }}</td>
+            <td class="num-cell">{{ r.stock.total.ukg | num_es(3) }}</td>
+            <td class="num-cell">{{ r.stock.total.us | num_es(0) }}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100 dark:border-slate-800 font-sans">
+        Utilidad = (PATR − PATANT) + dividendos del mes (delta patrimonio +
+        retiros). Proyección: <code class="font-mono">scintela.iniciales</code>.
+      </p>
+    </div>
+    {% endif %}
+
+    {# Col derecha: Balance + Detalle bancos apilados — wrapper para que ambos
+       compartan la columna 2 del grid. #}
+    <div>
+
+    {# -------- B A L A N C E (col derecha) — layout idéntico al dBase --------
+       Una sola tabla densa: ACTIVO en rojo, filas, SUBTOTAL/TOTAL destacados,
+       PASIVO en rojo, PASIVOS/PATRIM.NETO/DIVID. Igual que la foto. #}
+    <div>
+      <table class="balance-table">
+        <thead>
+          <tr>
+            <th class="seccion-header" style="text-align:left">ACTIVO</th>
+            <th class="col-header" style="text-align:right">U$</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('caja.lista') }}" class="hover:text-blue-600 hover:underline">Caja</a></td>
+            <td class="num-cell">{{ b.salcaj | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('bancos.lista') }}" class="hover:text-blue-600 hover:underline">Bancos</a></td>
+            <td class="num-cell">{{ b.salbanc | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('cheques.lista') }}" class="hover:text-blue-600 hover:underline">Cheques</a></td>
+            <td class="num-cell">{{ b.totc | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('facturas.lista') }}" class="hover:text-blue-600 hover:underline">Facturas</a></td>
+            <td class="num-cell">{{ b.totf | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-total">
+            <td class="label-cell">Subtotal</td>
+            <td class="num-cell">{{ b.subt | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('dolares.lista') }}" class="hover:text-blue-600 hover:underline">Anticipos</a></td>
+            <td class="num-cell">{{ b.antic | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('informes.historia') }}" class="hover:text-blue-600 hover:underline">Stock MP+Prod.</a></td>
+            <td class="num-cell">{{ b.vsto | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('informes.historia') }}" class="hover:text-blue-600 hover:underline">Stock Quí.</a></td>
+            <td class="num-cell">{{ b.vqx | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">Maq/Equip.</a></td>
+            <td class="num-cell">{{ b.umaq | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">Terr/Edif/Ins.</a></td>
+            <td class="num-cell">{{ b.uact | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-total">
+            <td class="label-cell">Total activo</td>
+            <td class="num-cell">{{ (b.totl - b.uret) | num_es(0) }}</td>
+          </tr>
+
+          <tr>
+            <th class="seccion-header" colspan="2" style="text-align:left">PASIVO</th>
+          </tr>
+          <tr class="fila-dato">
+            <td class="label-cell"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
+            <td class="num-cell">{{ b.totp | num_es(0) }}</td>
+          </tr>
+
+          {# ─── PATRIMONIO NETO — la fila más importante. Bigger + bold. ─── #}
+          <tr class="fila-key">
+            <td class="label-cell">Patrimonio neto</td>
+            <td class="num-cell pos">{{ (b.patr - b.uret) | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-aux">
+            <td class="label-cell" title="PATANT — historia.patrimonio del último cierre real. Es la base contra la que se compara el patrimonio actual para calcular UTILIDAD.">
+              Patrimonio neto último cierre
+              {% if b.snapshot_historia_fecha %}
+                <span class="text-[10px] text-slate-400">({{ b.snapshot_historia_fecha | fecha_es }})</span>
+              {% endif %}
+            </td>
+            <td class="num-cell">{{ b.patant | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-aux">
+            <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos del mes</a></td>
+            <td class="num-cell">{{ b.uret | num_es(0) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# -------- D E T A L L E   B A N C O S
+       Solo bancos con saldo > 0. Una columna saldo, sin per-bank posdat
+       (era frágil al hardcode no_banco=1/2). Los posfechados van como
+       una fila separada al final. TOTAL cuadra con BANCOS arriba. #}
+    {% set bancos_visibles = b.bancos_todos | selectattr('saldo') | list %}
+    {% if bancos_visibles %}
+    <div class="mt-2 border-t-2 border-emerald-600 dark:border-emerald-500 font-mono text-sm">
+      <div class="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
+        <span>Detalle bancos</span>
+        <span class="text-xs font-normal text-slate-500 font-sans">cada banco + posfechados pendientes = TOTAL</span>
+      </div>
+      <table class="w-full">
+        <tbody>
+          {% for bco in bancos_visibles %}
+          <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30">
+            <td class="px-4 py-1.5">
+              <a href="{{ url_for('bancos.movimientos', no_banco=bco.no_banco) }}" class="hover:text-blue-600 hover:underline">
+                {{ bco.nombre or ('Banco ' ~ bco.no_banco) }}
+              </a>
+              {% if bco.n_transacciones %}
+                <span class="text-[10px] text-slate-400 font-sans">· {{ bco.n_transacciones }} mov.</span>
+              {% endif %}
+              {# TMT 2026-05-14 (audit #45): si el running saldo está roto y
+                 caímos a SUM signed/raw, mostrar warning visible. La dueña
+                 puede correr POST /bancos/recompute-saldos para rebuilder. #}
+              {% if bco.usa_fallback %}
+                <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-sans bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                      title="El running saldo (stored) está NULL o cero. Se mostró el SUM '{{ bco.saldo_origen }}' como fallback. Considera recalcular saldos.">
+                  ⚠ fallback ({{ bco.saldo_origen }})
+                </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-1.5 text-right">{{ bco.saldo | money_es }}</td>
+          </tr>
+          {% endfor %}
+          {% set t_saldo = bancos_visibles | sum(attribute='saldo') %}
+          {% if (b.pos1 + b.pos2) %}
+          <tr class="border-b border-slate-100 dark:border-slate-800 text-slate-500">
+            <td class="px-4 py-1.5 italic">+ Posfechados pendientes (POS1+POS2)</td>
+            <td class="px-4 py-1.5 text-right">+ {{ (b.pos1 + b.pos2) | money_es }}</td>
+          </tr>
+          {% endif %}
+          {# El rojo previo se prestaba a confusión (parecía alarma). Cambiado
+             a slate/destacado — TMT 2026-05-12. #}
+          <tr class="border-t-2 border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800/60">
+            <td class="px-4 py-2 font-bold text-slate-900 dark:text-slate-100">TOTAL BANCOS</td>
+            <td class="px-4 py-2 text-right font-bold text-slate-900 dark:text-slate-100">{{ b.salbanc | num_es(0) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    </div>{# fin wrapper col derecha #}
+
+  </div>{# fin grid 2 cols #}
+  </div>{# fin marco #}
+
+  {# -------- K I L O S   Y   M O V I M I E N T O S   (último cierre) -------- #}
+  {% if b.kg %}
+  <div class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
+      <span>Kilos y movimientos — último cierre</span>
+      {% if b.snapshot_historia_fecha %}
+        <span class="text-xs font-normal text-slate-500">{{ b.snapshot_historia_fecha | fecha_es }}</span>
+      {% endif %}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-0">
+      <div class="px-5 py-3 border-r border-b md:border-b-0 border-slate-100 dark:border-slate-800">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Stock</div>
+        <div class="text-base mt-1 tabular-nums">{{ b.kg.stock_kg | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
+        {# Live: snapshot + compras - ventas desde el cierre. Sólo mostramos
+           si hay diferencia visible y ya pasaron al menos 2 días del snapshot
+           (si no, no vale la pena distraer al ojo). #}
+        {% if b.kg.stock_kg_dias and b.kg.stock_kg_dias >= 2
+              and (b.kg.stock_kg_diff | abs) >= 1 %}
+          <div class="text-xs text-slate-500 mt-1" title="Aproximado al día de hoy: último cierre + compras - ventas desde el cierre">
+            hoy:
+            <span class="text-mono text-slate-700 dark:text-slate-200">{{ b.kg.stock_kg_live | num_es(0) }}</span>
+            <span class="{{ 'text-emerald-600' if b.kg.stock_kg_diff >= 0 else 'text-rose-600' }}">
+              ({{ '+' if b.kg.stock_kg_diff >= 0 else '' }}{{ b.kg.stock_kg_diff | num_es(0) }})
+            </span>
+          </div>
+        {% endif %}
+      </div>
+      <div class="px-5 py-3 border-r border-b md:border-b-0 border-slate-100 dark:border-slate-800">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Compras</div>
+        <div class="text-base mt-1 tabular-nums">{{ b.kg.kcom | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
+        <div class="text-xs text-slate-400 mt-0.5">${{ b.kg.costo_kg | num_es(2) }}/kg</div>
+      </div>
+      <div class="px-5 py-3 border-r border-b md:border-b-0 border-slate-100 dark:border-slate-800">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Tejido</div>
+        <div class="text-base mt-1 tabular-nums">{{ b.kg.ktej | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
+        <div class="text-xs text-slate-400 mt-0.5">${{ b.kg.utej | num_es(0) }}</div>
+      </div>
+      <div class="px-5 py-3 border-r border-slate-100 dark:border-slate-800">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Tintura</div>
+        <div class="text-base mt-1 tabular-nums">{{ b.kg.ktin | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
+        <div class="text-xs text-slate-400 mt-0.5">${{ b.kg.utin | num_es(0) }}</div>
+      </div>
+      <div class="px-5 py-3">
+        <div class="text-xs uppercase tracking-wide text-slate-500">Ventas</div>
+        <div class="text-base mt-1 tabular-nums">{{ b.kg.kvent | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
+        <div class="text-xs text-slate-500 mt-0.5">${{ b.kg.precio_vta | num_es(2) }}/kg · ${{ b.kg.uvent | num_es(0) }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# -------- C O N C I L I A C I Ó N   con   los   M Ó D U L O S --------
+     Cada concepto del balance al lado del total que sale del módulo
+     correspondiente (cheques, facturas, posdat, caja, bancos, etc.).
+     Indica ✓ cuando coinciden o ✗ con la diff cuando no. Permite al
+     gerente auditar de dónde viene cada cifra. #}
+  {% if b.conciliacion %}
+  <details class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded" open>
+    <summary class="cursor-pointer px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
+      <span>Conciliación — totales del balance vs módulos</span>
+      <span class="text-xs font-normal text-slate-500">cheques · facturas · posdat · caja · bancos · activos · historia · retiros</span>
+    </summary>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm font-mono">
+        <thead class="bg-slate-50 dark:bg-slate-800/40 text-xs uppercase tracking-wider text-slate-500 font-sans">
+          <tr>
+            <th class="px-4 py-2 text-left font-medium">Concepto</th>
+            <th class="px-4 py-2 text-right font-medium">Balance</th>
+            <th class="px-4 py-2 text-right font-medium">Módulo</th>
+            <th class="px-4 py-2 text-center font-medium">Match</th>
+            <th class="px-4 py-2 text-right font-medium">Diferencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in b.conciliacion %}
+          <tr class="border-t border-slate-200 dark:border-slate-700">
+            <td class="px-4 py-2 font-semibold">{{ fila.concepto }}</td>
+            <td class="px-4 py-2 text-right font-semibold">{{ fila.balance | money_es }}</td>
+            <td class="px-4 py-2 text-right font-semibold">{{ fila.modulo | money_es }}</td>
+            <td class="px-4 py-2 text-center">
+              {% if fila.match %}
+                <span class="text-emerald-600 dark:text-emerald-400" title="Coincide">✓</span>
+              {% else %}
+                <span class="text-rose-600 dark:text-rose-400" title="No coincide">✗</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-right {{ 'text-rose-600 dark:text-rose-400' if not fila.match else 'text-slate-400' }}">
+              {% if fila.diff %}{{ '%+.2f'|format(fila.diff) }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {# Detalle expandible — siempre visible para que el gerente vea cómo se forma cada total #}
+          {% if fila.detalle %}
+          <tr class="bg-slate-50/30 dark:bg-slate-800/10">
+            <td colspan="5" class="px-4 py-2">
+              <div class="ml-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                {% for label, valor in fila.detalle %}
+                <div class="flex items-baseline justify-between border-b border-slate-100 dark:border-slate-800/40 py-0.5">
+                  <span class="text-slate-600 dark:text-slate-400 font-sans">{{ label }}</span>
+                  <span class="text-slate-700 dark:text-slate-300">
+                    {% if valor is number %}{{ valor | money_es }}{% else %}{{ valor }}{% endif %}
+                  </span>
+                </div>
+                {% endfor %}
+              </div>
+              {% if fila.nota %}
+              <p class="mt-2 ml-2 text-[11px] text-slate-500 dark:text-slate-400 italic font-sans">{{ fila.nota }}</p>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="px-5 py-2 text-xs text-slate-500 border-t border-slate-200 dark:border-slate-800">
+      Cada fila compara el componente del balance contra el total que sale de la query del módulo.
+      ✓ = coinciden exacto. ✗ = hay diferencia (la columna Diferencia muestra Balance − Módulo).
+      El detalle abajo de cada fila te muestra de qué se compone para que puedas auditar.
+    </p>
+  </details>
+  {% endif %}
+
+  {# -------- D I A G N Ó S T I C O   D E L   B A L A N C E -------- #}
+  {% if b.diagnostico %}
+  {% set d = b.diagnostico %}
+  <details class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <summary class="cursor-pointer px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
+      <span>Diagnóstico — qué suma a qué</span>
+      <span class="text-xs font-normal text-slate-500">cheques, snapshot, fórmula PATR=TOTL−TOTP</span>
+    </summary>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-0">
+      {# Componentes que entran al ACTIVO #}
+      <div class="border-r border-slate-100 dark:border-slate-800">
+        <div class="px-5 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100 dark:border-slate-800">Componentes del Activo (TOTL)</div>
+        <table class="w-full text-sm">
+          <tbody>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Caja (SALCAJ)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.salcaj | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Pichincha + POS1 (SALBANC1)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.salbanc1 | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Internacional + POS2 (SALBANC2)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.salbanc2 | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Cheques cartera (TOTC)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.totc | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Facturas cartera (TOTF)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.totf | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20">
+              <td class="px-5 py-1.5 font-semibold">Subtotal (SUBT)</td>
+              <td class="px-5 py-1.5 text-right text-mono font-semibold">{{ d.componentes.subt | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Stock MP+PT (VSTO)
+                {% if d.componentes.vsto == 0 %}<span class="text-xs text-amber-600 ml-1">⚠ en 0</span>{% endif %}
+              </td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.vsto | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Stock Colorantes (VQX)
+                {% if d.componentes.vqx == 0 %}<span class="text-xs text-amber-600 ml-1">⚠ en 0</span>{% endif %}
+              </td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.vqx | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Maquinaria (UMAQ)
+                {% if d.componentes.umaq == 0 %}<span class="text-xs text-amber-600 ml-1">⚠ en 0</span>{% endif %}
+              </td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.umaq | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Terrenos / Edif. (UACT)
+                {% if d.componentes.uact == 0 %}<span class="text-xs text-amber-600 ml-1">⚠ en 0</span>{% endif %}
+              </td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.uact | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Anticipos (ANTIC)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.antic | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5">Retiros del mes en curso (URET)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ d.componentes.uret | money_es }}</td>
+            </tr>
+            <tr class="bg-slate-100 dark:bg-slate-800/60 border-t border-slate-300 dark:border-slate-700">
+              <td class="px-5 py-2 font-semibold">Total Activo (TOTL)</td>
+              <td class="px-5 py-2 text-right text-mono font-bold">{{ d.componentes.totl | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5 text-rose-700 dark:text-rose-300">− Pasivos (TOTP)</td>
+              <td class="px-5 py-1.5 text-right text-mono text-rose-700 dark:text-rose-300">{{ d.componentes.totp | money_es }}</td>
+            </tr>
+            <tr class="bg-slate-100 dark:bg-slate-800/60 border-t border-slate-300 dark:border-slate-700">
+              <td class="px-5 py-2 font-semibold">= Patrimonio (PATR)</td>
+              <td class="px-5 py-2 text-right text-mono font-bold">{{ d.componentes.patr | money_es }}</td>
+            </tr>
+            <tr class="border-b border-slate-50 dark:border-slate-800/60">
+              <td class="px-5 py-1.5 text-slate-500">− Patrim. anterior (PATANT, snapshot)</td>
+              <td class="px-5 py-1.5 text-right text-mono text-slate-500">{{ d.componentes.patant | money_es }}</td>
+            </tr>
+            <tr class="bg-slate-50 dark:bg-slate-800/40">
+              <td class="px-5 py-1.5 font-semibold">= Utilidad del período</td>
+              <td class="px-5 py-1.5 text-right text-mono font-semibold {{ 'text-emerald-700 dark:text-emerald-300' if d.componentes.utilidad >= 0 else 'text-rose-700 dark:text-rose-300' }}">{{ d.componentes.utilidad | money_es }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {# Cheques desglose por stat — para confirmar que TOTC=Z+1+2+3+P+D coincide #}
+      <div>
+        <div class="px-5 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100 dark:border-slate-800">Cheques por estado</div>
+        <table class="w-full text-sm">
+          <thead class="text-xs uppercase text-slate-500">
+            <tr>
+              <th class="px-5 py-1 text-left font-medium">Stat</th>
+              <th class="px-5 py-1 text-left font-medium">Significado</th>
+              <th class="px-5 py-1 text-right font-medium">N°</th>
+              <th class="px-5 py-1 text-right font-medium">$ Importe</th>
+              <th class="px-5 py-1 text-center font-medium">¿Suma a TOTC?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set significados = {
+              'Z':'cartera (sin movimiento)',
+              '1':'rebotado 1ra · en gestión',
+              '2':'rebotado 2da · en gestión',
+              '3':'rebotado 3ra · en gestión',
+              'P':'postergado / posfechado',
+              'D':'en gestión Daniela',
+              'B':'depositado (suma a banco)',
+              'A':'legacy acreditado (suma a banco)',
+              'R':'rebotado terminal',
+              'V':'legacy banco Internacional',
+              'X':'eliminado por error',
+              'Y':'anulado',
+              'T':'cancelado',
+              '(vacío)':'(stat vacío — legacy)',
+            } %}
+            {% set en_totc = ['Z','1','2','3','P','D'] %}
+            {% set total_chq = namespace(suma=0, n=0) %}
+            {% for stat, info in d.cheques_breakdown.items() %}
+              {% set total_chq.suma = total_chq.suma + info.total %}
+              {% set total_chq.n = total_chq.n + info.n %}
+              <tr class="border-b border-slate-50 dark:border-slate-800/60">
+                <td class="px-5 py-1.5 font-mono">{{ stat }}</td>
+                <td class="px-5 py-1.5 text-slate-600 dark:text-slate-400 text-xs">{{ significados.get(stat, '—') }}</td>
+                <td class="px-5 py-1.5 text-right text-mono">{{ info.n }}</td>
+                <td class="px-5 py-1.5 text-right text-mono">{{ info.total | money_es }}</td>
+                <td class="px-5 py-1.5 text-center">
+                  {% if stat in en_totc %}
+                    <span class="text-emerald-600">✓</span>
+                  {% else %}
+                    <span class="text-slate-400">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="px-5 py-3 text-center text-slate-500">Sin cheques cargados.</td></tr>
+            {% endfor %}
+            <tr class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700 font-semibold">
+              <td class="px-5 py-1.5" colspan="2">Total cheques (todos los stats)</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ total_chq.n }}</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ total_chq.suma | money_es }}</td>
+              <td></td>
+            </tr>
+            <tr class="bg-slate-100 dark:bg-slate-800/60 font-semibold">
+              <td class="px-5 py-1.5" colspan="3">TOTC del balance =</td>
+              <td class="px-5 py-1.5 text-right text-mono">{{ b.totc | num_es(0) }}</td>
+              <td class="px-5 py-1.5 text-center text-xs text-slate-500">Z+1+2+3+P+D</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="px-5 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">
+          Los stats <strong>B</strong> y <strong>A</strong> (depositados / acreditados) ya están sumados al saldo bancario,
+          por eso no entran a TOTC. <strong>R/X/Y/T/V</strong> son terminales: salen del balance.
+        </p>
+      </div>
+    </div>
+
+    <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500">
+      Fórmula INFORMES.PRG (líneas 370-380):
+      <code class="font-mono">CART=TOTF+TOTC · SUBT=SALBANC+SALCAJ+CART · TOTL=SUBT+VSTO+VQX+UMAQ+UACT+URET+ANTIC · PATR=TOTL−TOTP · UTILIDAD=PATR−PATANT</code>
+      {% if d.snapshot_fecha %}
+        · Snapshot histórico del {{ d.snapshot_fecha | fecha_es }}
+        ({{ d.snapshot_dias }} día{{ '' if d.snapshot_dias == 1 else 's' }} de antigüedad)
+      {% endif %}
+    </div>
+  </details>
+  {% endif %}
+
+  <p class="mt-6 text-xs text-slate-400 no-print">
+    Nota: Kilos, compras, tejido, tintura y ventas son del último cierre mensual
+    (historia). La cifra <em>hoy</em> junto al stock es una aproximación:
+    snapshot + compras − ventas desde el cierre (no refleja movimientos
+    intra-mes de tejido/tintura).
+    Los bancos con saldo 0 quedan ocultos — verlos todos en <a class="underline" href="{{ url_for('bancos.lista') }}">Bancos</a>.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

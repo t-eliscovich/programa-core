@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Períodos contables{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">Períodos contables</h1>
+
+  {% if ultimo %}
+  <div class="bg-slate-50 border rounded p-3 mb-4 text-sm">
+    Último cierre:
+    <span class="font-mono font-semibold">{{ ultimo.anio }}-{{ '%02d' % ultimo.mes }}</span>
+    (hasta {{ ultimo.fecha_hasta | fecha_es }}) —
+    cerrado por <span class="font-medium">{{ ultimo.cerrado_por }}</span>.
+    Escrituras con fecha ≤ <strong>{{ ultimo.fecha_hasta | fecha_es }}</strong> están bloqueadas.
+  </div>
+  {% endif %}
+
+  <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 border-b text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Período</th>
+          <th class="px-3 py-2">Desde</th>
+          <th class="px-3 py-2">Hasta</th>
+          <th class="px-3 py-2">Estado</th>
+          <th class="px-3 py-2">Cerrado por</th>
+          <th class="px-3 py-2">Fecha cierre</th>
+          <th class="px-3 py-2">Acción</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for p in filas %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 font-mono">{{ p.anio }}-{{ '%02d' % p.mes }}</td>
+          <td class="px-3 py-2">{{ p.fecha_desde | fecha_es }}</td>
+          <td class="px-3 py-2">{{ p.fecha_hasta | fecha_es }}</td>
+          <td class="px-3 py-2">
+            {% if p.estado == 'C' %}
+              <span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700">Cerrado</span>
+            {% else %}
+              <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Abierto</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">{{ p.cerrado_por or '' }}</td>
+          <td class="px-3 py-2 text-xs">{{ p.fecha_cierre and p.fecha_cierre.strftime('%Y-%m-%d %H:%M') or '' }}</td>
+          <td class="px-3 py-2">
+            {% if p.estado == 'A' %}
+              <form method="post" action="{{ url_for('periodos.cerrar', id_periodo=p.id_periodo) }}"
+                    class="flex gap-1 items-center"
+                    onsubmit="return confirm('¿Cerrar definitivamente el período {{ p.anio }}-{{ '%02d' % p.mes }}? Esto bloquea nuevas escrituras con esa fecha o anterior.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="motivo" required maxlength="100"
+                       placeholder="Motivo" class="border rounded px-2 py-1 text-xs">
+                <button type="submit" class="text-red-700 hover:bg-red-50 border border-red-300 px-2 py-1 rounded text-xs">Cerrar</button>
+              </form>
+            {% else %}
+              <form method="post" action="{{ url_for('periodos.reabrir', id_periodo=p.id_periodo) }}"
+                    onsubmit="return confirm('¿Reabrir el período? (acción auditada)');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="text-amber-700 hover:bg-amber-50 border border-amber-300 px-2 py-1 rounded text-xs">Reabrir</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+          {{ empty_row(7, 'Sin períodos cargados.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

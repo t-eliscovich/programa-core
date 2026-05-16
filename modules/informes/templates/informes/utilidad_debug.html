@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Utilidad — debug{% endblock %}
+{% block breadcrumb %}Informes / Balance / <strong>Utilidad debug</strong>{% endblock %}
+
+{% block head_extra %}
+<style>
+  .ud { font-feature-settings: "tnum" 1; max-width: 1100px; }
+  .ud table { width: 100%; border-collapse: collapse; }
+  .ud th, .ud td { padding: 8px 12px; border-bottom: 1px solid rgb(226 232 240); font-size: 13px; }
+  .ud th { text-align: left; font-size: 11px; text-transform: uppercase; color: rgb(100 116 139); font-weight: 600; }
+  .ud td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ud .formula-card {
+    border: 2px solid rgb(226 232 240);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    background: rgb(255 255 255);
+  }
+  .ud .formula-card .label { font-weight: 600; font-size: 14px; }
+  .ud .formula-card .calc {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    color: rgb(71 85 105);
+    margin-top: 6px;
+  }
+  .ud .formula-card .result {
+    font-size: 22px;
+    font-weight: 700;
+    color: rgb(15 23 42);
+    margin-top: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ud .formula-card.target { border-color: rgb(16 185 129); background: rgb(236 253 245); }
+  .ud .formula-card.target .label::after { content: ' ← si esta da 133k, esta es la fórmula correcta'; color: rgb(5 150 105); font-weight: normal; font-size: 12px; }
+  .dark .ud .formula-card { background: rgb(15 23 42); border-color: rgb(51 65 85); }
+  .dark .ud .formula-card .result { color: rgb(241 245 249); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ud">
+  <h1 class="text-2xl font-semibold mb-2">Utilidad — diagnóstico</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    Página temporal para identificar por qué la utilidad no coincide con el dBase.
+    Comparame con vos la fila de <code class="font-mono">scintela.historia</code> y los componentes,
+    y decime cuál de las 4 fórmulas de abajo da <strong>$133.000</strong>.
+  </p>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2 mt-4">
+    scintela.historia — últimas 24 filas cargadas
+  </h2>
+  <p class="text-xs text-slate-500 mb-3">
+    Comparame con vos la columna <code class="font-mono">patrimonio</code> de cada fila
+    contra el dBase. Si una fila falta o tiene un valor distinto, el problema
+    está en la migración de HISTORIA.DBF. Si está todo ok, el bug está en
+    PATR_now (VSTO live, ver más abajo).
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-6 overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th style="text-align:right">Patrimonio</th>
+          <th style="text-align:right">USTOCK (VSTO)</th>
+          <th style="text-align:right">UQUI</th>
+          <th style="text-align:right">USRET</th>
+          <th style="text-align:right">USUTI</th>
+          <th style="text-align:right">KVENT</th>
+          <th style="text-align:right">UVENT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in hist_all %}
+        <tr>
+          <td class="font-mono text-xs">{{ h.fecha }}</td>
+          <td class="num">{{ h.patrimonio | num_es(0) if h.patrimonio else '—' }}</td>
+          <td class="num">{{ h.ustock | num_es(0) if h.ustock else '—' }}</td>
+          <td class="num">{{ h.uqui | num_es(0) if h.uqui else '—' }}</td>
+          <td class="num">{{ h.usret | num_es(0) if h.usret else '—' }}</td>
+          <td class="num">{{ h.usuti | num_es(0) if h.usuti else '—' }}</td>
+          <td class="num">{{ h.kvent | num_es(0) if h.kvent else '—' }}</td>
+          <td class="num">{{ h.uvent | num_es(0) if h.uvent else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-amber-700 p-4">
+          No hay filas en scintela.historia. Falta el sync de HISTORIA.DBF.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2 mt-4">
+    Fila de historia usada como PATANT
+  </h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-6 overflow-x-auto">
+    {% if hist_row %}
+    <table>
+      <tbody>
+        {% for k, v in hist_row.items() %}
+        <tr>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-xs">{{ k }}</td>
+          <td class="num">
+            {% if v is none %}—
+            {% elif v.__class__.__name__ in ('date','datetime','Decimal') %}{{ v }}
+            {% elif v is number %}{{ '%.2f' | format(v|float) }}
+            {% else %}{{ v }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="p-4 text-sm text-amber-700">
+      No se encontró fila de historia con fecha &lt; primer día del mes en curso.
+      Eso podría ser el problema en sí.
+    </div>
+    {% endif %}
+  </div>
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
+    Componentes de PATR
+  </h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-6">
+    <table>
+      <tbody>
+        {% for k, v in componentes.items() %}
+        <tr>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-xs">{{ k }}</td>
+          <td class="num">{{ v | num_es(2) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="bg-slate-50 dark:bg-slate-800/40">
+          <td class="font-semibold">PATR (pre-override) = subt + vsto_orig + vqx + umaq + uact + uret + antic − totp</td>
+          <td class="num font-bold">{{ patr_pre | num_es(2) }}</td>
+        </tr>
+        <tr class="bg-slate-50 dark:bg-slate-800/40">
+          <td class="font-semibold">PATR (post-override) = subt + vsto_display + vqx + umaq + uact + uret + antic − totp</td>
+          <td class="num font-bold">{{ patr_post | num_es(2) }}</td>
+        </tr>
+        <tr>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-xs">historia.patrimonio</td>
+          <td class="num">{{ patrimonio_hist | num_es(2) }}</td>
+        </tr>
+        <tr>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-xs">historia.usret</td>
+          <td class="num">{{ usret_hist | num_es(2) }}</td>
+        </tr>
+        <tr>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-xs">historia.usuti (= utilidad guardada en último cierre)</td>
+          <td class="num">{{ usuti_hist | num_es(2) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-3">
+    4 fórmulas alternativas — ¿cuál da $133.000?
+  </h2>
+  {% for f in formulas %}
+  <div class="formula-card target">
+    <div class="label">{{ f.label }}</div>
+    <div class="calc">PATR ({{ f.patr | num_es(2) }}) − PATANT ({{ f.patant | num_es(2) }})</div>
+    <div class="result">$ {{ f.result | num_es(2) }}</div>
+  </div>
+  {% endfor %}
+
+  <p class="text-xs text-slate-500 mt-6 mb-4">
+    <strong>Cómo usar:</strong> mirá cuál de las 4 da el número que esperás ($133.000 o cercano).
+    Avisame el resultado y aplico esa fórmula como la oficial. Si NINGUNA da 133k,
+    entonces el problema está en alguno de los componentes de PATR — comparame los
+    valores de <em>componentes</em> arriba con los del dBase y vemos cuál diverge.
+  </p>
+</div>
+{% endblock %}

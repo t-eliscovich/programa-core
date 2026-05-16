@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Bitácora{% endblock %}
+{% block content %}
+<div class="max-w-7xl">
+  <h1 class="text-xl font-semibold mb-4">Bitácora de acciones</h1>
+
+  {% if error %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-3">{{ error }}</div>
+  {% endif %}
+
+  <form method="get" class="flex flex-wrap gap-2 mb-3 items-end">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar ruta/resumen/id"
+           class="border rounded px-2 py-1 text-sm" size="24">
+    <input type="text" name="usuario" value="{{ usuario or '' }}" placeholder="Usuario"
+           class="border rounded px-2 py-1 text-sm" size="10">
+    <select name="modulo" class="border rounded px-2 py-1 text-sm">
+      <option value="">— módulo —</option>
+      {% for m in modulos %}
+        <option value="{{ m }}" {% if modulo==m %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="request_id" value="{{ request_id or '' }}"
+           placeholder="Request-Id (o prefijo)"
+           class="border rounded px-2 py-1 text-sm font-mono" size="16">
+    <label class="text-xs text-slate-600">Desde
+      <input type="date" name="desde" value="{{ desde or '' }}" class="border rounded px-2 py-1 text-sm">
+    </label>
+    <label class="text-xs text-slate-600">Hasta
+      <input type="date" name="hasta" value="{{ hasta or '' }}" class="border rounded px-2 py-1 text-sm">
+    </label>
+    <button type="submit" class="bg-slate-700 text-white px-3 py-1 rounded text-sm">Filtrar</button>
+    <a href="{{ url_for('bitacora.lista', q=q, usuario=usuario, modulo=modulo, request_id=request_id, desde=desde, hasta=hasta, export='csv') }}"
+       class="text-sm text-slate-500 hover:underline ml-auto">CSV</a>
+  </form>
+
+  <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 border-b text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Timestamp</th>
+          <th class="px-3 py-2">Usuario</th>
+          <th class="px-3 py-2">Rol</th>
+          <th class="px-3 py-2">Método</th>
+          <th class="px-3 py-2">Ruta</th>
+          <th class="px-3 py-2">Módulo</th>
+          <th class="px-3 py-2">Acción</th>
+          <th class="px-3 py-2">Status</th>
+          <th class="px-3 py-2">Req-Id</th>
+          <th class="px-3 py-2">IP</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for r in filas %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 font-mono text-xs">{{ r.ts | fecha_hora_es }}</td>
+          <td class="px-3 py-2 font-medium">{{ r.usuario }}</td>
+          <td class="px-3 py-2 text-xs text-slate-500">{{ r.rol }}</td>
+          <td class="px-3 py-2 font-mono text-xs">{{ r.metodo }}</td>
+          <td class="px-3 py-2 font-mono text-xs break-all">{{ r.ruta }}</td>
+          <td class="px-3 py-2 text-xs">{{ r.modulo }}</td>
+          <td class="px-3 py-2 text-xs">{{ r.accion }}</td>
+          <td class="px-3 py-2 font-mono text-xs">
+            {% if r.status_http and r.status_http >= 400 %}
+              <span class="text-red-600">{{ r.status_http }}</span>
+            {% else %}
+              {{ r.status_http }}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500">
+            {% if r.request_id %}
+              <a href="{{ url_for('bitacora.lista', request_id=r.request_id) }}"
+                 title="{{ r.request_id }}"
+                 class="hover:text-blue-600">{{ r.request_id[:8] }}</a>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500">{{ r.ip }}</td>
+        </tr>
+        {% else %}
+          {{ empty_row(10, 'Sin registros con los filtros actuales.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

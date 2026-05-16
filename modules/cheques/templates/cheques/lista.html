@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Cheques{% endblock %}
+{% block breadcrumb %}<strong>Cheques</strong>{% endblock %}
+
+{% block content %}
+{% set n_visibles = filas | length %}
+{% set n = n_total or n_visibles %}
+<div class="max-w-full">
+  {# Header limpio: título arriba, KPI grande abajo, acciones a la derecha
+     agrupadas por importancia (primarias destacadas + dropdown "Más" para
+     las menos usadas). TMT 2026-05-13 — antes había 8 botones de igual
+     peso visual + total flotando arriba en la misma línea, ilegible. #}
+  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-2xl font-semibold tracking-tight">Cheques</h1>
+      <div class="flex items-baseline gap-2 mt-1">
+        <span class="text-3xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+          $ {{ total | num_es(0) }}
+        </span>
+        <span class="text-sm text-slate-500">
+          · {{ n }} cheques
+        </span>
+      </div>
+    </div>
+
+    {# Acciones — sólo 2 primarias destacadas + dropdown "Más" con el resto. #}
+    <div class="no-print flex items-center gap-2 shrink-0">
+      {% if tiene_permiso('cheques.crear') %}
+        <a href="{{ url_for('cheques.nuevo') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo cheque
+        </a>
+      {% endif %}
+      {% if tiene_permiso('cheques.aplicar') %}
+        <a href="{{ url_for('cheques.depositar_lote') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-medium shadow-sm transition"
+           title="Depositar varios cheques en cartera al mismo banco en un solo paso">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/></svg>
+          Depositar lote
+        </a>
+      {% endif %}
+
+      <details class="relative">
+        <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Más
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="absolute right-0 mt-1 z-20 min-w-[240px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
+          {% if tiene_permiso('bancos.conciliar') %}
+            <a href="{{ url_for('bancos.emitir_cheque') }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+              <div class="font-medium">Emitir cheque propio</div>
+              <div class="text-xs text-slate-500">Chequera para proveedor / retiro / gasto</div>
+            </a>
+            <a href="{{ url_for('conciliacion.index') }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+              <div class="font-medium">Conciliar</div>
+              <div class="text-xs text-slate-500">Movimientos bancarios vs cheques</div>
+            </a>
+          {% endif %}
+          {% if tiene_permiso('cheques.crear') %}
+            <form method="post" enctype="multipart/form-data"
+                  action="{{ url_for('cheques.cargar_csv') }}" class="block border-b border-slate-100 dark:border-slate-800">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="cursor-pointer block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <div class="font-medium">Cargar desde CSV…</div>
+                <div class="text-xs text-slate-500">Importar varios cheques de una</div>
+                <input type="file" name="archivo" accept=".csv,text/csv" class="hidden"
+                       onchange="this.form.submit()">
+              </label>
+            </form>
+            <a href="{{ url_for('cheques.cargar_csv', plantilla=1) }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400">
+              <div class="font-medium">Descargar plantilla CSV</div>
+            </a>
+          {% endif %}
+          <a href="{{ url_for('cheques.lista', q=q, estado=estado, desde=desde, hasta=hasta, export='csv') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Exportar CSV</div>
+            <div class="text-xs text-slate-500">Filas visibles según filtros</div>
+          </a>
+          <button onclick="window.print()"
+                  class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <div class="font-medium">Imprimir</div>
+          </button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  {# KPIs del UNIVERSO completo — paridad con balance (TOTC).
+     TOTC del balance (INFORMES.PRG L24) = stat IN (Z,1,2,3,P,D). Suma:
+       - cartera (Z)
+       - devueltos EN GESTIÓN (1,2,3) — excluye 'R' = rebote terminal incobrable.
+       - postergados (P)
+       - daniela (D)
+     Depositados (B/A) ya se sumaron al saldo bancario, no acá.
+     TMT 2026-05-14 (#16): antes este KPI usaba `devueltos` (que incluye R)
+     y daba un total > TOTC. Ahora usa `devueltos_en_gestion`. #}
+  {% set c_cartera     = conteos.get('cartera', {}) %}
+  {% set c_devueltos   = conteos.get('devueltos', {}) %}
+  {% set c_dev_gest    = conteos.get('devueltos_en_gestion', {}) %}
+  {% set c_depositados = conteos.get('depositados', {}) %}
+  {% set c_postergados = conteos.get('postergados', {}) %}
+  {% set c_daniela     = conteos.get('daniela', {}) %}
+  {% set totc = (c_cartera.get('total', 0) | float)
+              + (c_dev_gest.get('total', 0) | float)
+              + (c_postergados.get('total', 0) | float)
+              + (c_daniela.get('total', 0) | float) %}
+  <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+    <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-br from-emerald-50 to-emerald-100/40 dark:from-emerald-900/30 dark:to-emerald-900/15 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Cheques en gestión</div>
+      <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">
+        $ {{ totc | num_es(0) }}
+      </div>
+      <div class="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
+        Z + (1,2,3 sin R) + P + D · = TOTC del balance
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">En cartera (Z)</div>
+      <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-1">
+        $ {{ c_cartera.get('total', 0) | float | num_es(0) }}
+      </div>
+      <div class="text-xs text-slate-500 mt-1">
+        {{ c_cartera.get('n', 0) }} cheques sin movimiento
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Depositados (B)</div>
+      <div class="text-2xl font-bold text-slate-700 dark:text-slate-200 tabular-nums mt-1">
+        $ {{ c_depositados.get('total', 0) | float | num_es(0) }}
+      </div>
+      <div class="text-xs text-slate-500 mt-1">
+        {{ c_depositados.get('n', 0) }} ya en banco · suman a SALBANC
+      </div>
+    </div>
+  </div>
+
+  {# Pestañas por estado (2026-04-29) — vocabulario canónico.
+     "Todos" primero por pedido de la dueña (29/abr): ver el universo completo
+     y después filtrar a un bucket específico. #}
+  {% set tabs = [
+    ('todos',       'Todos',       None),
+    ('cartera',     'En cartera',  'Z'),
+    ('depositados', 'Depositados', 'B'),
+    ('devueltos',   'Devueltos',   '1'),
+    ('daniela',     'Daniela',     'D'),
+    ('postergados', 'Postergados', 'P'),
+    ('eliminados',  'Eliminados',  'X'),
+  ] %}
+  <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+    {% for key, label, _ in tabs %}
+      {% set c = conteos.get(key, {}) %}
+      <a href="{{ url_for('cheques.lista', q=q, estado=key, desde=desde, hasta=hasta) }}"
+         class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+                {% if estado == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+        {{ label }}
+        {% if key != 'todos' and c %}
+          <span class="ml-1 text-xs text-slate-400">{{ c.n or 0 }}</span>
+          {% set monto_tab = c.get('total', 0) | float %}
+          {% if monto_tab %}
+            <span class="ml-1 text-xs text-slate-400 tabular-nums">· $ {{ monto_tab | num_es(0) }}</span>
+          {% endif %}
+        {% endif %}
+      </a>
+    {% endfor %}
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <input type="hidden" name="estado" value="{{ estado }}">
+    {# Grupo 1: Cliente (3 letras = match exacto) #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cliente</label>
+      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras (ej: PUE)"
+             maxlength="20" autocomplete="off" style="text-transform:uppercase"
+             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+    </div>
+    {# Grupo 2: Monto USD #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Monto USD desde</label>
+      <input type="number" step="0.01" name="monto_min" value="{{ monto_min if monto_min is not none else '' }}"
+             placeholder="0"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Monto USD hasta</label>
+      <input type="number" step="0.01" name="monto_max" value="{{ monto_max if monto_max is not none else '' }}"
+             placeholder="∞"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {# Grupo 3: Fecha de depósito #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">F. depósito desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">F. depósito hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {# Búsqueda libre — N° cheque o nombre cliente/prov endoso #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="N° cheque, nombre…"
+             class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm sortable">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">N°</th>
+          <th class="px-3 py-3 text-left font-medium" title="Día en que cargué el cheque en el sistema" data-sort-type="date">Cargado</th>
+          <th class="px-3 py-3 text-left font-medium" title="Día planificado de depósito (postdate / fechad). No cambia al depositar." data-sort-type="date" data-acum-driver>A depositar</th>
+          <th class="px-3 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
+          <th class="px-3 py-3 text-right font-medium" title="Días entre la carga y el depósito real (o el planificado si todavía no se depositó)" data-sort-type="number">Plazo</th>
+          <th class="px-3 py-3 text-left font-medium">Cliente</th>
+          <th class="px-3 py-3 text-left font-medium">Banco</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
+          <th class="px-3 py-3 text-right font-medium acum-col" title="Total $ corrido por F. depósito (ascendente)" data-no-sort>Acum.</th>
+          <th class="px-3 py-3 text-left font-medium">Stat</th>
+          <th class="px-3 py-3 text-right font-medium no-print" data-no-sort>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in filas %}
+        {# Fila clickeable entera → /cheques/<id>. Los <a> internos siguen
+           funcionando porque les ponemos data-stop=1 + JS abajo. TMT 2026-05-13. #}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+            data-href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            {# El dump migrado a veces tiene la string literal 'None' en vez de NULL.
+               Si el N° de cheque falta, mostramos #id_cheque (mismo fallback que
+               el header de endosar). TMT 2026-05-13. #}
+            {% set no_ch = c.no_cheque %}
+            {% if no_ch in (None, '', 'None', 'NONE', 'none') %}{% set no_ch = None %}{% endif %}
+            {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}
+          </td>
+          {# 3 fechas separadas — la dueña pidió diferenciarlas claro (TMT 2026-05-16):
+               Cargado     = fecha_recibido (cuándo entró al sistema)
+               A depositar = fechad         (postdate / fecha planificada)
+               Depositado  = fechaing       (SOLO si stat indica depositado/rebotado)
+             OJO: el legacy DBF setea fechaing para cheques en cartera con fecha de
+             ingreso al sistema — no es fecha de depósito. Sólo mostrarla cuando el
+             cheque pasó por el banco (stats B/A/1/2/3/R). #}
+          {% set fecha_cargado = c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
+          {% set stat_u = (c.stat or '').upper() %}
+          {% set ya_depositado = stat_u in ('B','A','1','2','3','R') %}
+          {% set fechaing_real = c.fechaing if ya_depositado else None %}
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '—' }}</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">
+            {% if fechaing_real %}
+              <span class="font-medium text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right text-mono text-xs text-slate-600">
+            {% set fecha_dep_efectiva = fechaing_real if fechaing_real else c.fechad %}
+            {% if fecha_cargado and fecha_dep_efectiva %}
+              {% set plazo_dias = (fecha_dep_efectiva - fecha_cargado).days %}
+              {{ plazo_dias }} d
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if c.codigo_cli %}
+            <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
+               data-stop="1"
+               class="hover:text-blue-600 hover:underline">
+              <span class="font-mono text-xs text-slate-500">{{ c.codigo_cli }}</span>
+              <span class="ml-1">{{ c.cliente }}</span>
+            </a>
+            {% endif %}
+            {# Si el cheque fue endosado, mostrar a qué proveedor.
+               TMT 2026-05-13. #}
+            {% if (c.stat or '') == 'E' and c.endoso_prov %}
+              <div class="text-[11px] text-slate-500 mt-0.5">
+                <span class="text-purple-600 dark:text-purple-400">→ endosado a</span>
+                <span class="font-mono text-slate-500">{{ c.endoso_prov }}</span>
+                {% if c.endoso_proveedor %}<span class="ml-1">{{ c.endoso_proveedor }}</span>{% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500">{{ c.banco or '' }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ c.importe | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ c.saldo_acumulado | money_es if c.saldo_acumulado is not none else '' }}</td>
+          <td class="px-3 py-2">
+            {# Vocabulario canónico (2026-04-29 — ver SKILL_ADDENDUM_BATCH_18.md) #}
+            {% set s = c.stat or '' %}
+            {% if s == 'Z' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs">En cartera</span>
+            {% elif s == 'B' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 text-xs">Depositado</span>
+            {% elif s == 'A' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 text-xs" title="Acreditado (legacy)">Depositado</span>
+            {% elif s == 'D' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-xs">Daniela</span>
+            {% elif s == 'P' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs">Postergado</span>
+            {% elif s == '1' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">Devuelto</span>
+            {% elif s == '2' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">Devuelto</span>
+            {% elif s == '3' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-200 text-xs">2do rechazo</span>
+            {% elif s == 'E' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 text-xs" title="Endosado a proveedor">Endosado</span>
+            {% elif s == 'X' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400 text-xs line-through" title="Reversado / eliminado por error">Reversado</span>
+            {% elif s == 'V' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-xs" title="Banco Internacional — legacy">V (legacy)</span>
+            {% elif s == 'R' %}
+              <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs" title="Rebotado (legacy)">Devuelto</span>
+            {% else %}
+              <span class="font-mono text-xs text-slate-500">{{ s }}</span>
+            {% endif %}
+          </td>
+          {# Columna de acciones: link directo a reversar para cheques activos.
+             Sólo aparece para stats que se pueden reversar (no X/R/3/E).
+             Pedido TMT 2026-05-14: la acción estaba escondida en el detalle
+             y costaba encontrarla. #}
+          <td class="px-3 py-2 text-right">
+            {% if s not in ('X', 'R', '3', 'E') and tiene_permiso('cheques.anular') %}
+              <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
+                 data-stop="1"
+                 class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                 title="Reversar este cheque">
+                ↺ <span class="hidden md:inline">reversar</span>
+              </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(8, 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Filas clickeables: navegar a la URL en data-href cuando se hace click,
+     respetando los <a data-stop="1"> internos. TMT 2026-05-13.
+
+     PATRÓN (#43, doc 2026-05-14): si agregás un <input>, <textarea>, <select>,
+     <a> o <button> DENTRO de la fila, el listener de abajo lo respeta (early
+     return). Pero si querés que un <div> u otro elemento NO clickeable
+     bloquee la navegación, ponele data-stop="1". Sin esa marca, clickear
+     dentro de la fila navega al detalle. #}
+  <script>
+    (function() {
+      document.querySelectorAll('tr[data-href]').forEach(function(tr) {
+        tr.addEventListener('click', function(e) {
+          // Si el click fue sobre un <a> (o un elemento adentro) con data-stop, no navegar.
+          var el = e.target;
+          while (el && el !== tr) {
+            if (el.tagName === 'A' || el.tagName === 'BUTTON' || el.tagName === 'INPUT' ||
+                el.dataset && el.dataset.stop === '1') {
+              return;
+            }
+            el = el.parentElement;
+          }
+          // Cmd/Ctrl+click → nueva pestaña; sino navegar normal.
+          if (e.metaKey || e.ctrlKey) {
+            window.open(tr.dataset.href, '_blank');
+          } else {
+            window.location.href = tr.dataset.href;
+          }
+        });
+      });
+    })();
+  </script>
+</div>
+{% endblock %}

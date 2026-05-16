@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero, kpi_card %}
+{% block title %}Compras{% endblock %}
+{% block breadcrumb %}<strong>Compras</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  {# Hero estandarizado — patrón page_hero + acciones primarias + dropdown "Más". #}
+  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    {{ page_hero(
+        'Compras',
+        kpi_valor='$ ' ~ (deuda.total | num_es(0)),
+        kpi_extra='· ' ~ (deuda.n_partidas | string) ~ ' partidas abiertas a proveedores'
+    ) }}
+
+    <div class="no-print flex items-center gap-2 shrink-0">
+      {% if tiene_permiso('compras.crear') %}
+        <a href="{{ url_for('compras.nueva') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Nueva compra
+        </a>
+      {% endif %}
+      <details class="relative">
+        <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Más
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="absolute right-0 mt-1 z-20 min-w-[240px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
+          {% if tiene_permiso('compras.crear') %}
+            <form method="post" enctype="multipart/form-data"
+                  action="{{ url_for('compras.cargar_csv') }}" class="block border-b border-slate-100 dark:border-slate-800">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="cursor-pointer block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <div class="font-medium">Cargar desde CSV…</div>
+                <div class="text-xs text-slate-500">Importar varias compras</div>
+                <input type="file" name="archivo" accept=".csv,text/csv" class="hidden"
+                       onchange="this.form.submit()">
+              </label>
+            </form>
+            <a href="{{ url_for('compras.cargar_csv', plantilla=1) }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400">
+              <div class="font-medium">Descargar plantilla CSV</div>
+            </a>
+          {% endif %}
+          <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta,
+                               anuladas=('0' if incluir_anuladas else '1')) }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">
+              {% if incluir_anuladas %}Ocultar anuladas{% else %}Ver anuladas{% endif %}
+            </div>
+          </a>
+          <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Exportar CSV</div>
+          </a>
+          <button onclick="window.print()"
+                  class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <div class="font-medium">Imprimir</div>
+          </button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  {# KPIs secundarios — solo alertas reales (vencido = rojo, vence próximos = amber).
+     "Deuda total" ya está en el hero arriba, no se repite. TMT 2026-05-13. #}
+  {% if deuda.vencido > 0 or deuda.vence_pronto > 0 %}
+  <div class="mb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+    {% if deuda.vencido > 0 %}
+      {{ kpi_card(
+          '⚠ Vencido',
+          '$ ' ~ (deuda.vencido | num_es(0)),
+          'fechad < hoy',
+          tono='rose'
+      ) }}
+    {% endif %}
+    {% if deuda.vence_pronto > 0 %}
+      {{ kpi_card(
+          'Vence próximos 7 días',
+          '$ ' ~ (deuda.vence_pronto | num_es(0)),
+          'ver detalle en /posdat',
+          tono='amber',
+          href=url_for('posdat.lista'),
+      ) }}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# Tabs canónicos (2026-04-29): "Todas" primero (default), después los
+     específicos. Cada tab muestra conteo + monto $ del filtro de fecha
+     activo (no del bucket activo — son contadores globales). #}
+  <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+    {% set tabs = [
+      ('todas', 'Todas', bucket_todas),
+      ('compras', 'Compras', bucket_compras),
+      ('produccion', 'Producción', bucket_produccion),
+      ('anticipos', 'Anticipos', bucket_anticipos),
+    ] %}
+    {% for key, label, b in tabs %}
+      <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta, vista=key, anuladas=('1' if incluir_anuladas else None)) }}"
+         class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+                {% if vista == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+        {{ label }}
+        <span class="ml-1 text-xs text-slate-400">{{ b.n }}</span>
+        {% if b.total > 0 %}
+          <span class="ml-1 text-xs tabular-nums {% if vista == key %}text-sky-600 dark:text-sky-400{% else %}text-slate-400{% endif %}">
+            · $ {{ b.total | num_es(0) }}
+          </span>
+        {% endif %}
+      </a>
+    {% endfor %}
+  </div>
+
+  {# Strip de contexto de la vista actual — sigue siendo útil para ver
+     kg + importe filtrados sin tener que sumar a mano. #}
+  <div class="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+    <div>{{ filas | length }} fila(s) en pantalla</div>
+    <div>Importe <span class="text-slate-700 dark:text-slate-300 font-medium tabular-nums">$ {{ total_importe | num_es(0) }}</span></div>
+    <div>Kg <span class="text-slate-700 dark:text-slate-300 font-medium tabular-nums">{{ total_kg | num_es(0) }}</span></div>
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Proveedor, comprobante, concepto, número…"
+             class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm sortable">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date" data-acum-driver>Fecha</th>
+          <th class="px-3 py-3 text-left font-medium">Proveedor</th>
+          <th class="px-3 py-3 text-left font-medium">Tipo</th>
+          <th class="px-3 py-3 text-left font-medium">Comprobante</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">N°</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Kg</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
+          <th class="px-3 py-3 text-right font-medium acum-col" title="Total comprado corrido por fecha (ascendente)" data-no-sort>Acum.</th>
+          <th class="px-3 py-3 text-left font-medium">Concepto</th>
+          <th class="px-3 py-3 text-left font-medium">Banco</th>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date">F. dep.</th>
+          {% if tiene_permiso('compras.anular') or tiene_permiso('compras.editar') %}
+            <th class="px-3 py-3 text-right font-medium no-print" data-no-sort>Acciones</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in filas %}
+        {% set anulada = (c.stat or '')|upper == 'Y' %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if anulada %} opacity-60{% endif %}">
+          <td class="px-3 py-2" style="white-space: nowrap;">
+            {{ c.fecha | fecha_es }}
+            {% if anulada %}
+              <span class="ml-2 inline-block px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 font-medium align-middle"
+                    title="{{ c.observacion or 'Anulada' }}">ANUL</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            <span class="font-mono text-xs text-slate-500">{{ c.codigo_prov }}</span>
+            <span class="ml-1">{{ c.proveedor }}</span>
+          </td>
+          <td class="px-3 py-2 font-mono text-xs">{{ c.tipo }}</td>
+          <td class="px-3 py-2 text-xs">{{ c.comprobante | cleanstr }}</td>
+          <td class="px-3 py-2 text-right font-mono text-xs">{{ c.numero or '' }}</td>
+          <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{{ c.kg | kg_es }}</td>
+          <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{{ c.importe | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ c.saldo_acumulado | money_es if c.saldo_acumulado is not none else '' }}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{{ c.concepto | cleanstr }}</td>
+          <td class="px-3 py-2 text-xs">{{ c.banco }}</td>
+          <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '' }}</td>
+          {% if tiene_permiso('compras.anular') or tiene_permiso('compras.editar') %}
+            <td class="px-3 py-2 text-right no-print" style="white-space: nowrap;">
+              {% if not anulada %}
+                {% if tiene_permiso('compras.editar') %}
+                  <a href="{{ url_for('compras.editar', id_compra=c.id_compra) }}"
+                     class="text-xs text-slate-500 hover:text-sky-600 hover:underline mr-2"
+                     title="Editar concepto, comprobante, fecha vencimiento o importe">Editar</a>
+                {% endif %}
+                {% if tiene_permiso('compras.anular') %}
+                  <a href="{{ url_for('compras.confirmar_anulacion', id_compra=c.id_compra) }}"
+                     class="text-xs text-red-600 dark:text-red-400 hover:underline">Anular</a>
+                {% endif %}
+              {% else %}
+                <span class="text-xs text-slate-400">—</span>
+              {% endif %}
+            </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        {{ empty_row(11, 'Sin compras en el filtro.', 'Ampliá el rango de fechas o quitá el proveedor.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

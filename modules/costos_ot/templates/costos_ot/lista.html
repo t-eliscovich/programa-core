@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, stat_chip %}
+{% block title %}Costos OT — {{ codigo_cli }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.cartera_view') if 'informes.cartera_view' in url_for.__doc__ else url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
+  <span>Costos OT {{ codigo_cli }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-6">
+  {{ page_header("Órdenes de tintura cerradas — " + codigo_cli,
+                 subtitulo="Costo acumulado por OT cerrada para este cliente, leído de " + fuente + ".") }}
+
+  <div class="grid grid-cols-4 gap-3 mb-6">
+    {{ stat_chip("N° de OTs", n_ordenes, tono='slate') }}
+    {{ stat_chip("Kg acumulados", "%.1f" % total_kg, tono='sky') }}
+    {{ stat_chip("Costo total", "$%s" % (total_costo | money_es), tono='amber') }}
+    {{ stat_chip("$/kg promedio", "$%.2f" % costo_promedio_kg, tono='emerald') }}
+  </div>
+
+  {% include "costos_ot/fragment.html" %}
+
+  <div class="text-xs text-slate-400 mt-4">
+    {% if fuente == 'fake' %}
+      <strong>Datos de demo.</strong> Este ambiente está configurado con el adapter <code>fake</code>:
+      los números son sintéticos para probar la UI. Cuando formulas_app migre al mismo RDS,
+      cambiar <code>COSTOS_OT_ADAPTER=postgres</code> en <code>.env</code> y la vista cross-schema
+      resuelve los costos en vivo. Alternativa: <code>COSTOS_OT_ADAPTER=metabase</code> con las vars
+      <code>METABASE_URL / METABASE_USERNAME / METABASE_PASSWORD / METABASE_QUESTION_ID_COSTOS_OT</code>.
+    {% elif fuente == 'metabase' %}
+      Los datos se leen de Metabase vía <code>METABASE_QUESTION_ID_COSTOS_OT</code>. Si ves algo raro, probá
+      ejecutar la pregunta directo en Metabase para descartar que sea el app el que está filtrando mal.
+    {% elif fuente == 'postgres' %}
+      Datos en vivo desde <code>scintela.vw_costos_ordenes</code>. Cualquier desfase contra formulas_app
+      es latencia de la vista o un cambio no-deployado en el schema de formulas_app.
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

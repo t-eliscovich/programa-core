@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Confirmar cheque{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-4 px-4">
+  <h1 class="text-xl font-semibold mb-1">Confirmá los cambios</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    Revisá el resumen antes de guardar. Para facturas con saldo residual
+    significativo podés decidir si la <strong>totalizás (T)</strong> o la dejás
+    <strong>acumulando (A)</strong>.
+  </p>
+
+  {# ─── Resumen del cheque ────────────────────────────────────────── #}
+  <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4 shadow-sm">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Cliente</div>
+        <div class="font-mono">{{ codigo_cli }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Fecha</div>
+        <div>{{ fecha_recibido | fecha_es }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Banco</div>
+        <div>
+          {% if no_banco %}#{{ no_banco }}{% elif banco_texto %}{{ banco_texto }}{% else %}—{% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Total cheques</div>
+        <div class="text-lg font-semibold tabular-nums">$ {{ total_cheques | num_es }}</div>
+      </div>
+    </div>
+
+    {# Lista de cheques #}
+    <div class="border rounded overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left">N° cheque</th>
+            <th class="px-3 py-2 text-right">Importe</th>
+            <th class="px-3 py-2 text-left">A depositar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cheques_in %}
+          <tr class="border-t border-slate-100">
+            <td class="px-3 py-2 font-mono">{{ c.no_cheque }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">$ {{ c.importe | num_es }}</td>
+            <td class="px-3 py-2">{{ c.fechad | fecha_es if c.fechad else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ─── Impacto en facturas ────────────────────────────────────────── #}
+  {% if impacto_facturas and impacto_facturas | length > 0 %}
+    <form method="post" id="confirmar-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="paso" value="ejecutar">
+
+      {# Re-enviar TODOS los datos del form original como hidden inputs #}
+      <input type="hidden" name="codigo_cli" value="{{ codigo_cli }}">
+      <input type="hidden" name="fecha_recibido" value="{{ fecha_recibido.isoformat() if fecha_recibido else '' }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco or '' }}">
+      <input type="hidden" name="banco_texto" value="{{ banco_texto }}">
+      <input type="hidden" name="prov" value="{{ prov }}">
+      {% if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
+      {% for c in cheques_in %}
+        <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
+        <input type="hidden" name="importe[]" value="{{ c.importe }}">
+        <input type="hidden" name="fechad[]" value="{{ c.fechad.isoformat() if c.fechad else '' }}">
+      {% endfor %}
+      {% for ap in aplicaciones_pre %}
+        <input type="hidden" name="aplicar[{{ ap.id_fact }}]" value="{{ ap.importe }}">
+      {% endfor %}
+
+      <h2 class="text-base font-semibold mb-2">Facturas afectadas ({{ impacto_facturas | length }})</h2>
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4 shadow-sm">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left">N°</th>
+              <th class="px-3 py-2 text-left">Vence</th>
+              <th class="px-3 py-2 text-right">Saldo antes</th>
+              <th class="px-3 py-2 text-right">Aplicación</th>
+              <th class="px-3 py-2 text-right">Saldo después</th>
+              <th class="px-3 py-2 text-center">Quedará</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in impacto_facturas %}
+              {% set t_class = 'bg-emerald-50' if f.stat_despues == 'T' else 'bg-amber-50' if f.stat_despues == 'A' else '' %}
+              <tr class="border-t border-slate-100 {{ t_class }}">
+                <td class="px-3 py-2 font-mono text-xs">{{ f.numf or f.id_factura }}</td>
+                <td class="px-3 py-2 text-xs">{{ f.vencimiento | fecha_es if f.vencimiento else '—' }}</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums">{{ f.saldo_antes | num_es }}</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums {% if f.aplicacion < 0 %}text-amber-700{% endif %}">{{ f.aplicacion | num_es }}</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums">{{ f.saldo_despues | num_es }}</td>
+                <td class="px-3 py-2 text-center">
+                  {% if f.decidible %}
+                    {# Radio T/A — la dueña puede cambiar en cualquier
+                       dirección. Default = stat_sugerido del sistema:
+                         saldo ≤ 0  → T sugerido (cubierto entero)
+                         |saldo| ≤ $0.50 → T sugerido (centavos olvidados)
+                         saldo > $0.50 → A sugerido (acumula)
+                       Si la dueña quiere lo opuesto, tilda la otra opción. #}
+                    <div class="inline-flex flex-col items-start gap-0.5 text-left">
+                      <label class="inline-flex items-center gap-1 cursor-pointer text-xs">
+                        <input type="radio"
+                               name="stat_final[{{ f.id_factura }}]" value="T"
+                               {% if f.stat_despues == 'T' %}checked{% endif %}
+                               class="text-emerald-600">
+                        <strong class="text-emerald-700">T</strong>
+                        <span class="text-slate-500">— olvidar saldo</span>
+                      </label>
+                      <label class="inline-flex items-center gap-1 cursor-pointer text-xs">
+                        <input type="radio"
+                               name="stat_final[{{ f.id_factura }}]" value="A"
+                               {% if f.stat_despues == 'A' %}checked{% endif %}
+                               class="text-amber-600">
+                        <strong class="text-amber-700">A</strong>
+                        <span class="text-slate-500">— mantener $ {{ f.saldo_despues | num_es }} pendiente</span>
+                      </label>
+                    </div>
+                    {% if f.stat_sugerido != f.stat_despues %}
+                      <div class="text-[10px] text-slate-400 mt-1">(sugerido: {{ f.stat_sugerido }})</div>
+                    {% endif %}
+                  {% elif f.stat_despues == 'T' %}
+                    <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-medium">
+                      T — Totalizada
+                    </span>
+                    <div class="text-[10px] text-slate-500">Saldo $ 0,00 (cubierto exacto)</div>
+                  {% elif f.stat_despues == 'A' %}
+                    <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-medium">
+                      A — Acumula
+                    </span>
+                  {% else %}
+                    <span class="text-xs text-slate-500">{{ f.stat_despues }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between mt-6 pt-4 border-t">
+        <a href="{{ url_for('cheques.nuevo') }}"
+           class="text-slate-500 hover:text-slate-700">
+          ← Volver al form (perder cambios)
+        </a>
+        <button type="submit"
+                class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow-sm">
+          ✓ Confirmar y guardar
+        </button>
+      </div>
+    </form>
+  {% else %}
+    {# Sin aplicaciones, sólo creación de cheques #}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="paso" value="ejecutar">
+      <input type="hidden" name="codigo_cli" value="{{ codigo_cli }}">
+      <input type="hidden" name="fecha_recibido" value="{{ fecha_recibido.isoformat() if fecha_recibido else '' }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco or '' }}">
+      <input type="hidden" name="banco_texto" value="{{ banco_texto }}">
+      <input type="hidden" name="prov" value="{{ prov }}">
+      {% if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
+      {% for c in cheques_in %}
+        <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
+        <input type="hidden" name="importe[]" value="{{ c.importe }}">
+        <input type="hidden" name="fechad[]" value="{{ c.fechad.isoformat() if c.fechad else '' }}">
+      {% endfor %}
+      <div class="bg-slate-50 border border-slate-200 rounded p-4 mb-4 text-sm">
+        Sin facturas seleccionadas — el(los) cheque(s) van a quedar en cartera.
+      </div>
+      <div class="flex items-center justify-between mt-6 pt-4 border-t">
+        <a href="{{ url_for('cheques.nuevo') }}" class="text-slate-500 hover:text-slate-700">
+          ← Volver al form
+        </a>
+        <button type="submit"
+                class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow-sm">
+          ✓ Confirmar y guardar
+        </button>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+
+{% block title %}Cartera × color × cliente{% endblock %}
+
+{% block content %}
+  {{ page_header("Cartera × color × cliente",
+                 "Cruce cartera viva con kg tinturados por color (INFORMES.PRG L830-918)") }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {% if necesita_decision %}
+    <div class="mb-4 rounded-md bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm">
+      <strong class="block mb-1">⚠ Necesita decisión humana sobre fuente de datos.</strong>
+      {{ nota_decision }}
+    </div>
+  {% endif %}
+
+  <div class="flex flex-wrap items-end gap-3 mb-4 no-print">
+    <form method="get" class="flex items-end gap-2">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Meses atrás</label>
+        <input type="number" name="meses" min="1" max="24" value="{{ meses_atras }}"
+               class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm w-20">
+      </div>
+      <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Ver</button>
+    </form>
+    <a href="{{ url_for('cartera.por_color', meses=meses_atras, export='csv') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+      Exportar CSV
+    </a>
+    <span class="text-xs text-slate-500 self-center">Desde: {{ fecha_desde }}</span>
+  </div>
+
+  {# Totales globales por color (lo que SÍ podemos calcular desde scintela.tinto). #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 mb-4">
+    <div class="text-xs text-slate-500 mb-2">Kg tinturados por color en la ventana (TOPER+JERSEY+PIQUE, scintela.tinto):</div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+      {% for col in colores_orden %}
+        <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-center">
+          <div class="text-[10px] text-slate-500 uppercase">{{ col }}</div>
+          <div class="text-sm font-mono tabular-nums">{{ (kg_por_color_global.get(col) or 0) | num_es }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] uppercase">
+        <tr>
+          <th class="text-left px-2 py-2 sticky left-0 bg-slate-100 dark:bg-slate-800">Cliente</th>
+          <th class="text-right px-2 py-2">Saldo</th>
+          {% for col in colores_orden %}
+            <th class="text-right px-2 py-2">{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-2 py-1 sticky left-0 bg-white dark:bg-slate-900">
+              <span class="font-mono">{{ r.codigo_cli }}</span>
+              <span class="text-slate-500 ml-1">{{ r.nombre[:30] }}</span>
+            </td>
+            <td class="px-2 py-1 text-right tabular-nums font-semibold">{{ r.saldo_total | num_es }}</td>
+            {% for col in colores_orden %}
+              {% set kg = r.colores.get(col, 0) %}
+              <td class="px-2 py-1 text-right tabular-nums {% if kg == 0 %}text-slate-300{% endif %}">
+                {% if kg %}{{ kg | round(0) | int }}{% else %}—{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        {% if not filas %}
+          <tr><td colspan="{{ 2 + colores_orden|length }}" class="px-3 py-6 text-center text-slate-500">
+            Sin clientes con saldo.
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Fuente del color: <code>{{ fuente_color }}</code>. Por ahora la columna por
+    cliente queda vacía — ver la nota de decisión arriba.
+  </p>
+{% endblock %}

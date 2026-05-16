@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nueva' if modo=='crear' else 'Editar' }} provisión{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">
+    {{ 'Nueva provisión' if modo=='crear' else 'Editar provisión' }}
+  </h1>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white border rounded-lg p-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Concepto <span class="text-red-500">*</span></span>
+        <input type="text" name="concepto" value="{{ form.concepto or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="80" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Importe <span class="text-red-500">*</span></span>
+        <input type="text" name="importe" value="{{ form.importe or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" required
+               placeholder="1.234,56">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Período <span class="text-red-500">*</span></span>
+        <select name="periodo_aplica" class="border rounded px-2 py-1 mt-1" required>
+          {% for p in ['MENSUAL','BIMESTRAL','TRIMESTRAL','SEMESTRAL','ANUAL'] %}
+            <option value="{{ p }}"
+                    {% if (form.periodo_aplica or '')|upper == p %}selected{% endif %}>
+              {{ p }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      <a href="{{ url_for('provisiones.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <div class="flex gap-2">
+        {% if modo=='editar' %}
+          <a href="{{ url_for('provisiones.confirmar_eliminacion', id_provisiones=form.id_provisiones) }}"
+             class="text-red-700 hover:bg-red-50 border border-red-300 px-4 py-2 rounded">
+            Eliminar...
+          </a>
+        {% endif %}
+        <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+          Guardar
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Proveedores{% endblock %}
+{% block breadcrumb %}<strong>Proveedores</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Proveedores</h1>
+      <p class="text-sm text-slate-500 mt-1">Listado con saldo pendiente de pago (posdat)</p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <form class="flex items-center gap-2">
+        <input type="text" name="q" value="{{ q }}" placeholder="Código, nombre o RUC…" autofocus
+               class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Buscar</button>
+      </form>
+      <a href="{{ url_for('proveedores.lista', q=q, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      {% if tiene_permiso('proveedores.crear') %}
+      <a href="{{ url_for('proveedores.nuevo') }}"
+         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
+        + Nuevo proveedor
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Nombre</th>
+          <th class="px-4 py-3 text-left font-medium">RUC</th>
+          <th class="px-4 py-3 text-left font-medium">Tel</th>
+          <th class="px-4 py-3 text-left font-medium">Representante</th>
+          <th class="px-4 py-3 text-right font-medium">Plazo</th>
+          <th class="px-4 py-3 text-right font-medium">Ret. base</th>
+          <th class="px-4 py-3 text-right font-medium">Ret. IVA</th>
+          <th class="px-4 py-3 text-right font-medium">Deuda</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if p.activo and p.activo != 'S' %}opacity-50{% endif %}">
+          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ p.codigo_prov }}</td>
+          <td class="px-4 py-2">{{ p.nombre }}</td>
+          <td class="px-4 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ p.ruc }}</td>
+          <td class="px-4 py-2 text-xs text-slate-500">{{ p.telefono }}</td>
+          <td class="px-4 py-2 text-xs">{{ p.representante }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ p.plazo or '' }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ p.retbase or '' }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
+          <td class="px-4 py-2 text-right text-mono {% if p.saldo_total and p.saldo_total > 0 %}font-semibold{% endif %}">{{ p.saldo_total | money_es }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(9, 'Sin proveedores.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-400 no-print">Mostrando {{ filas | length }} proveedores.</p>
+</div>
+{% endblock %}

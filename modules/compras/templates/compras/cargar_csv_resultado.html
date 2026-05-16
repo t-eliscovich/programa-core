@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Resultado carga CSV compras{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('compras.lista') }}" class="hover:underline">Compras</a> /
+  <a href="{{ url_for('compras.cargar_csv') }}" class="hover:underline">Cargar CSV</a> /
+  <span>Resultado</span>
+{% endblock %}
+
+{% block content %}
+{% set titulo = "Resultado carga CSV de compras" %}
+{% set url_cargar = url_for('compras.cargar_csv') %}
+{% set url_volver = url_for('compras.lista') %}
+{% set url_volver_text = "Ver listado de compras" %}
+{% include "_csv_upload_resultado.html" %}
+{% endblock %}

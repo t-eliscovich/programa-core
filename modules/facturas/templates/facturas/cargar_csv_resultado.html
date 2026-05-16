@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Resultado carga CSV facturas{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+  <a href="{{ url_for('facturas.cargar_csv') }}" class="hover:underline">Cargar CSV</a> /
+  <span>Resultado</span>
+{% endblock %}
+
+{% block content %}
+{% set titulo = "Resultado carga CSV de facturas" %}
+{% set url_cargar = url_for('facturas.cargar_csv') %}
+{% set url_volver = url_for('facturas.lista') %}
+{% set url_volver_text = "Ver listado de facturas" %}
+{% include "_csv_upload_resultado.html" %}
+{% endblock %}

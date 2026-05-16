@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Facturas — Programa Core</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
+    // Theme init
+    (function () {
+      const saved = localStorage.getItem('intela-theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+    function toggleTheme() {
+      const html = document.documentElement;
+      html.classList.toggle('dark');
+      localStorage.setItem('intela-theme', html.classList.contains('dark') ? 'dark' : 'light');
+    }
+  </script>
+  <style>
+    @media print {
+      .no-print, aside, header { display: none !important; }
+      main { padding: 0 !important; }
+    }
+    .text-mono { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
+
+<div class="flex min-h-screen">
+  <aside class="no-print w-60 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+    <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div class="text-xl font-bold tracking-tight">INTELA</div>
+      <div class="text-xs text-slate-500">Programa Core</div>
+    </div>
+    
+    
+
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      
+      <a href="index.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/>
+          
+        </svg>
+        <span>Tablero</span>
+      </a>
+
+      
+      <div class="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-slate-400">Gestión</div>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15 20a5 5 0 0 1 6 0"/>
+          
+        </svg>
+        <span>Clientes</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7h12v8H3z"/><path d="M15 10h4l2 3v2h-6"/><circle cx="7" cy="17" r="1.5"/><circle cx="17" cy="17" r="1.5"/>
+          
+        </svg>
+        <span>Proveedores</span>
+      </a>
+      
+      <a href="facturas.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium
+         ">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+          
+        </svg>
+        <span>Facturas</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h16l-2 11H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/>
+          
+        </svg>
+        <span>Compras</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/>
+          
+        </svg>
+        <span>Cheques</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h6"/>
+          
+        </svg>
+        <span>Retenciones</span>
+      </a>
+      
+      <a href="bancos.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 10 12 4l9 6"/><path d="M5 10v8m4-8v8m6-8v8m4-8v8"/><path d="M3 20h18"/>
+          
+        </svg>
+        <span>Bancos</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/>
+          
+        </svg>
+        <span>Caja</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3h9l4 4v14H6z"/><path d="M9 13h6m-6 4h4"/>
+          
+        </svg>
+        <span>Proformas</span>
+      </a>
+      
+
+      
+      <div class="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-slate-400">Contabilidad</div>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="8" width="14" height="8" rx="3"/><path d="M17 11h3v3h-3"/><circle cx="8" cy="11" r=".5"/><path d="M10 8V6"/>
+          
+        </svg>
+        <span>Provisiones</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10H12z"/><path d="M12 2v10l7.07-7.07"/>
+          
+        </svg>
+        <span>Capital</span>
+      </a>
+      
+
+      
+      <div class="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-slate-400">Informes</div>
+      
+      <a href="balance.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h12l4 4v12H4z"/><path d="M4 10h16M9 14h6M9 17h4"/>
+          
+        </svg>
+        <span>Informe Resultados</span>
+      </a>
+      
+      <a href="cartera.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/><path d="M7 9v6m10-6v6"/>
+          
+        </svg>
+        <span>Cartera</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7l5 5 4-4 8 8"/><path d="M14 16h7V9"/>
+          
+        </svg>
+        <span>Deudas</span>
+      </a>
+      
+      <a href="flujo.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h7v7"/>
+          
+        </svg>
+        <span>Flujo de caja</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10H12z"/><path d="M12 2v10l7.07-7.07"/>
+          
+        </svg>
+        <span>Ventas mensuales</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          
+        </svg>
+        <span>Gastos del mes</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          
+        </svg>
+        <span>Retiros</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>
+          
+        </svg>
+        <span>Activos fijos</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M3 12a9 9 0 0 1 3-6.7"/>
+          
+        </svg>
+        <span>Historia mensual</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>
+          
+        </svg>
+        <span>Iniciales (metas)</span>
+      </a>
+      
+    </nav>
+    <div class="px-3 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+      v0.1 · read-only
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <header class="no-print h-14 flex items-center justify-between px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+      <div class="text-sm text-slate-600 dark:text-slate-400">
+        <strong>Facturas</strong>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="toggleTheme()" class="text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Tema</button>
+        <span class="text-sm">
+          <span class="font-medium">tamara</span>
+          <span class="text-slate-500">· Dueño</span>
+        </span>
+        <form action="/logout" method="post">
+          <button class="text-xs px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90">Salir</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="flex-1 p-6 overflow-x-auto">
+      
+        
+      
+      
+<div class="max-w-7xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Facturas</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Mostrando 15 ·
+        Importe 91.650,00 ·
+        Saldo 76.650,00
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="facturas.html"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="" placeholder="Cliente, número, nombre…"
+             class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value=""
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value=""
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="abiertas" value="1" >
+      Sólo con saldo pendiente
+    </label>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">N°</th>
+          <th class="px-3 py-3 text-left font-medium">Fecha</th>
+          <th class="px-3 py-3 text-left font-medium">Vence</th>
+          <th class="px-3 py-3 text-left font-medium">Cliente</th>
+          <th class="px-3 py-3 text-right font-medium">Kg</th>
+          <th class="px-3 py-3 text-right font-medium">Importe</th>
+          <th class="px-3 py-3 text-right font-medium">Abonado</th>
+          <th class="px-3 py-3 text-right font-medium">Saldo</th>
+          <th class="px-3 py-3 text-left font-medium">Stat</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001000</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">16/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">16/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">TEX001</span>
+              <span class="ml-1">Textil Andina S.A.</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">120,00</td>
+          <td class="px-3 py-2 text-right text-mono">4.500,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">0,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.500,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001001</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">15/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">15/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">CON042</span>
+              <span class="ml-1">Confecciones del Valle</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">125,00</td>
+          <td class="px-3 py-2 text-right text-mono">4.730,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">200,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.530,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001002</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">14/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">14/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">IND018</span>
+              <span class="ml-1">Industrias El Sol</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">130,00</td>
+          <td class="px-3 py-2 text-right text-mono">4.960,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">400,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.560,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001003</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">13/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">13/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">MOD007</span>
+              <span class="ml-1">Modas Quito Centro</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">135,00</td>
+          <td class="px-3 py-2 text-right text-mono">5.190,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">0,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  5.190,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001004</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">12/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">12/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">TEL023</span>
+              <span class="ml-1">Telares Guayas</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">140,00</td>
+          <td class="px-3 py-2 text-right text-mono">5.420,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">800,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.620,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001005</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">11/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">11/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">DIS099</span>
+              <span class="ml-1">Distribuidora Rex</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">145,00</td>
+          <td class="px-3 py-2 text-right text-mono">5.650,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">1.000,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.650,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001006</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">10/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">10/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">HIL031</span>
+              <span class="ml-1">Hilados Premium</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">150,00</td>
+          <td class="px-3 py-2 text-right text-mono">5.880,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">0,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  5.880,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001007</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">09/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">09/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">VES055</span>
+              <span class="ml-1">Vestimentas Sierra</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">155,00</td>
+          <td class="px-3 py-2 text-right text-mono">6.110,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">1.400,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.710,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001008</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">08/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">08/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">TAL012</span>
+              <span class="ml-1">Taller La Merced</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">160,00</td>
+          <td class="px-3 py-2 text-right text-mono">6.340,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">1.600,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.740,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001009</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">07/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">07/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">CON020</span>
+              <span class="ml-1">Confex Import</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">165,00</td>
+          <td class="px-3 py-2 text-right text-mono">6.570,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">0,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  6.570,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001010</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">06/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">06/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">TEX001</span>
+              <span class="ml-1">Textil Andina S.A.</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">170,00</td>
+          <td class="px-3 py-2 text-right text-mono">6.800,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">2.000,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.800,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001011</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">05/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">05/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">CON042</span>
+              <span class="ml-1">Confecciones del Valle</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">175,00</td>
+          <td class="px-3 py-2 text-right text-mono">7.030,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">2.200,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.830,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001012</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">04/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">04/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">IND018</span>
+              <span class="ml-1">Industrias El Sol</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">180,00</td>
+          <td class="px-3 py-2 text-right text-mono">7.260,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">0,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  7.260,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001013</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">03/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">03/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">MOD007</span>
+              <span class="ml-1">Modas Quito Centro</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">185,00</td>
+          <td class="px-3 py-2 text-right text-mono">7.490,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">2.600,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.890,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="#" class="hover:text-blue-600">001014</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">02/04/2026</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">02/05/2026</td>
+          <td class="px-3 py-2">
+            <a href="#" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">TEL023</span>
+              <span class="ml-1">Telares Guayas</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">190,00</td>
+          <td class="px-3 py-2 text-right text-mono">7.720,00</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">2.800,00</td>
+          <td class="px-3 py-2 text-right">
+
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono
+  bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300
+  ">
+  4.920,00
+</span>
+</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500"></td>
+        </tr>
+        
+      </tbody>
+    </table>
+  </div>
+</div>
+
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

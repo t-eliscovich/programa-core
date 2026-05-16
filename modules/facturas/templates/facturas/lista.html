@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, saldo_pill, page_hero, kpi_card %}
+{% block title %}Facturas{% endblock %}
+{% block breadcrumb %}<strong>Facturas</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  {# Totales del universo completo — del bucket conteos. Lo que ve el balance. #}
+  {% set c_cartera = conteos.get('cartera', {}) %}
+  {% set c_canc    = conteos.get('canceladas', {}) %}
+  {% set c_elim    = conteos.get('eliminadas', {}) %}
+  {% set c_todas   = conteos.get('todas', {}) %}
+  {% set tot_cartera_saldo = c_cartera.get('total_saldo', 0) | float %}
+  {% set tot_cartera_imp   = c_cartera.get('total_importe', 0) | float %}
+  {% set tot_todas_imp     = c_todas.get('total_importe', 0) | float %}
+  {% set n_total           = c_todas.get('n', filas | length) %}
+  {% set _extra_fac = (filas | length | string) ~ ' de ' ~ (n_total | string) ~ ' visibles' %}
+  {% if (filas | length) < n_total %}{% set _extra_fac = _extra_fac ~ ' · acotá filtros' %}{% endif %}
+
+  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    {{ page_hero(
+        'Facturas',
+        kpi_valor='$ ' ~ (tot_cartera_saldo | num_es(0)),
+        kpi_extra='· ' ~ (c_cartera.get('n', 0) | string) ~ ' facturas vivas'
+    ) }}
+    <div class="no-print flex items-center gap-2 shrink-0">
+      {% if tiene_permiso('facturas.crear') %}
+        <a href="{{ url_for('facturas.nueva') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Nueva factura
+        </a>
+      {% endif %}
+      <details class="relative">
+        <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Más
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="absolute right-0 mt-1 z-20 min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
+          {% if tiene_permiso('retenciones.ver') %}
+            <a href="{{ url_for('retenciones.lista') }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+              <div class="font-medium">Retenciones</div>
+              <div class="text-xs text-slate-500">Retenciones emitidas a las facturas</div>
+            </a>
+          {% endif %}
+          {% if tiene_permiso('facturas.crear') %}
+            <form method="post" enctype="multipart/form-data"
+                  action="{{ url_for('facturas.cargar_csv') }}" class="block border-b border-slate-100 dark:border-slate-800">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="cursor-pointer block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <div class="font-medium">Cargar desde CSV…</div>
+                <div class="text-xs text-slate-500">Importar varias facturas</div>
+                <input type="file" name="archivo" accept=".csv,text/csv" class="hidden"
+                       onchange="this.form.submit()">
+              </label>
+            </form>
+            <a href="{{ url_for('facturas.cargar_csv', plantilla=1) }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400">
+              <div class="font-medium">Descargar plantilla CSV</div>
+            </a>
+          {% endif %}
+          <a href="{{ url_for('facturas.lista', q=q, desde=desde, hasta=hasta, abiertas=('1' if solo_abiertas else None), export='csv') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Exportar CSV</div>
+          </a>
+          <button onclick="window.print()"
+                  class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <div class="font-medium">Imprimir</div>
+          </button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  {# KPIs secundarios — facturado total y canceladas. Tono slate (neutro). #}
+  <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+    {{ kpi_card('Facturado total',
+                '$ ' ~ (tot_todas_imp | num_es(0)),
+                (n_total | string) ~ ' facturas (todas las stats)') }}
+    {{ kpi_card('Canceladas',
+                '$ ' ~ (c_canc.get('total_importe', 0) | float | num_es(0)),
+                (c_canc.get('n', 0) | string) ~ ' cobradas total (stat=T)') }}
+    {{ kpi_card('Eliminadas',
+                '$ ' ~ (c_elim.get('total_importe', 0) | float | num_es(0)),
+                (c_elim.get('n', 0) | string) ~ ' anuladas (stat=Y)') }}
+  </div>
+
+  {# Pestañas por estado (2026-04-29) — vocabulario canónico.
+     "Todas" primero por pedido de la dueña (29/abr). #}
+  {% set tabs = [
+    ('todas',      'Todas',      'total_importe'),
+    ('cartera',    'Cartera',    'total_saldo'),
+    ('canceladas', 'Canceladas', 'total_importe'),
+    ('eliminadas', 'Eliminadas', 'total_importe'),
+  ] %}
+  <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+    {% for key, label, monto_key in tabs %}
+      {% set c = conteos.get(key, {}) %}
+      {% set monto = c.get(monto_key, 0) | float %}
+      <a href="{{ url_for('facturas.lista', q=q, desde=desde, hasta=hasta, vista=key) }}"
+         class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+                {% if vista == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+        {{ label }}
+        {% if c %}
+          <span class="ml-1 text-xs text-slate-400">{{ c.n or 0 }}</span>
+          {% if monto %}
+            <span class="ml-1 text-xs text-slate-400 tabular-nums">· $ {{ monto | num_es(0) }}</span>
+          {% endif %}
+        {% endif %}
+      </a>
+    {% endfor %}
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    {# Grupo 1: Cliente (3 letras = match exacto) #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cliente</label>
+      <input type="text" name="cliente" value="{{ cliente or '' }}" placeholder="3 letras (ej: PUE)"
+             maxlength="20" autocomplete="off" style="text-transform:uppercase"
+             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
+    </div>
+    {# Grupo 2: Monto USD (desde — hasta) #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Monto USD desde</label>
+      <input type="number" step="0.01" name="monto_min" value="{{ monto_min if monto_min is not none else '' }}"
+             placeholder="0"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Monto USD hasta</label>
+      <input type="number" step="0.01" name="monto_max" value="{{ monto_max if monto_max is not none else '' }}"
+             placeholder="∞"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {# Grupo 3: Fecha (desde — hasta) #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Fecha desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Fecha hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {# Búsqueda libre (nombre, número de factura) — opcional, separada #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="N° factura, nombre…"
+             class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm sortable">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">N°</th>
+          <th class="px-3 py-3 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
+          <th class="px-3 py-3 text-left font-medium" data-sort-type="date">Vence</th>
+          <th class="px-3 py-3 text-left font-medium">Cliente</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Kg</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
+          <th class="px-3 py-3 text-right font-medium acum-col" title="Total facturado corrido por fecha (ascendente)" data-no-sort>Acum.</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Abonado</th>
+          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Saldo</th>
+          <th class="px-3 py-3 text-left font-medium">Stat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="{{ url_for('facturas.detalle', id_factura=f.id_factura) }}" class="hover:text-blue-600">{% if f.numf_completo %}{{ f.numf_completo }}{% elif f.numf and f.numf != 0 %}{{ f.numf }}{% else %}<span class="text-slate-400">#{{ f.id_factura }}</span>{% endif %}</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ f.vencimiento | fecha_es }}</td>
+          <td class="px-3 py-2">
+            <a href="{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}" class="hover:text-blue-600">
+              <span class="font-mono text-xs text-slate-500">{{ f.codigo_cli }}</span>
+              <span class="ml-1">{{ f.cliente }}</span>
+            </a>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
+          <td class="px-3 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(10, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

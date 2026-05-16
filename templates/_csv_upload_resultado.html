@@ -1,0 +1,58 @@
+{# Partial genérico de resultado de upload CSV.
+
+   Variables esperadas:
+       titulo          — "Resultado carga CSV facturas"
+       result          — objeto ResultadoUpload del helper
+       url_cargar      — url del form de upload (ej. url_for('facturas.cargar_csv'))
+       url_volver      — url del listado
+       url_volver_text — texto del botón de volver (ej. "Ver listado de facturas")
+#}
+{% from "_ui.html" import page_header, stat_chip %}
+
+<div class="max-w-5xl mx-auto px-4 py-6">
+  {{ page_header(titulo, subtitulo=(result.total|string) ~ " filas procesadas.") }}
+
+  <div class="grid grid-cols-3 gap-3 mb-6">
+    {{ stat_chip("Total", result.total, tono='slate') }}
+    {{ stat_chip("Creadas", result.ok, tono='emerald') }}
+    {{ stat_chip("Con error", result.error, tono='red' if result.error else 'slate') }}
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-right font-medium">Fila</th>
+          <th class="px-3 py-2 text-left font-medium">Estado</th>
+          <th class="px-3 py-2 text-left font-medium">Mensaje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in result.detalles %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-2 text-right font-mono">{{ d.linea }}</td>
+          <td class="px-3 py-2">
+            {% if d.ok %}
+              <span class="text-emerald-700 font-medium">OK</span>
+            {% else %}
+              <span class="text-red-700 font-medium">ERROR</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">{{ d.mensaje }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-4 flex gap-3">
+    <a href="{{ url_cargar }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+      Cargar otro CSV
+    </a>
+    <a href="{{ url_volver }}"
+       class="text-sm px-3 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">
+      {{ url_volver_text }}
+    </a>
+  </div>
+</div>

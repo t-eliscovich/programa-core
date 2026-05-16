@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Anular cheque por error de carga{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('cheques.lista') }}">Cheques</a> /
+  <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">{{ ch.no_cheque or ch.id_cheque }}</a> /
+  <strong>Anular por error</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Anular cheque por error de carga</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Marca el cheque como mal cargado y aplica las compensaciones
+      automáticamente. Distinto de "marcar rebotado": no marca el cliente
+      en STOP. Después podés crear el cheque correcto.
+    </p>
+  </div>
+
+  <div class="mb-6 px-4 py-3 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-sm">
+    <strong class="text-amber-700 dark:text-amber-300">Side-effects que se aplicarán:</strong>
+    <ul class="list-disc list-inside mt-1 space-y-0.5 text-amber-900 dark:text-amber-100">
+      <li>El cheque pasa a stat='X' con tag <code>[X] error de carga</code> en observación.</li>
+      {% set stat = (ch.stat or '')|upper %}
+      {% if stat in ['B', 'V', 'W', 'I', 'J', 'K', 'A'] %}
+        <li>Se inserta una compensación <strong>ND</strong> en el banco con saldo running recalculado.</li>
+      {% elif stat == 'C' %}
+        <li>Se inserta una salida en <strong>caja</strong> con saldo running recalculado.</li>
+      {% else %}
+        <li>No tenía movimiento en banco/caja — sólo se actualiza el cheque.</li>
+      {% endif %}
+      <li>Si tiene aplicaciones a facturas, se reversa el abono/saldo.</li>
+      <li>Si tiene posdat hermana, se elimina.</li>
+      <li><strong>NO</strong> marca al cliente en STOP (es error administrativo).</li>
+    </ul>
+  </div>
+
+  <div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">N° cheque</div>
+      <div class="font-mono">{{ ch.no_cheque or '#' ~ ch.id_cheque }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Cliente</div>
+      <div class="font-mono">{{ ch.codigo_cli }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Importe</div>
+      <div class="font-mono text-right">$ {{ ch.importe | num_es(2) }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Stat</div>
+      <div class="font-mono">{{ ch.stat or '—' }}</div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('cheques.anular_error_carga', id_cheque=ch.id_cheque) }}"
+        class="space-y-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">
+        Motivo <span class="text-slate-400 font-normal">(opcional)</span>
+      </label>
+      <textarea name="motivo" rows="3" maxlength="200"
+                placeholder="Ej: importe duplicado · cliente mal cargado · número de cheque equivocado..."
+                class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">{{ motivo or '' }}</textarea>
+    </div>
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">
+        ID del cheque correcto (opcional — si ya lo creaste)
+      </label>
+      <input name="id_reemplazo" type="number" min="1" step="1" value="{{ id_reemplazo or '' }}"
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      <p class="text-xs text-slate-500 mt-1">Se enlaza en la observación del cheque anulado.</p>
+    </div>
+
+    <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+      <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
+      <button type="submit"
+              class="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium">
+        Confirmar anulación por error
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

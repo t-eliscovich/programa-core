@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nuevo' if modo=='crear' else 'Editar' }} cliente{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">
+    {{ 'Nuevo cliente' if modo=='crear' else 'Editar cliente ' + (form.codigo_cli or '') }}
+  </h1>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white border rounded-lg p-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {# `next` viene cuando otro form (ej. facturas/nueva) redirigió acá
+       porque el cliente no existía. Tras guardar volvemos a esa URL. #}
+    {% if next_url %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <div class="mb-3 px-3 py-2 rounded bg-sky-50 border border-sky-200 text-sm text-sky-900">
+        Se te redirigió acá para crear el cliente
+        {% if pre_codigo %}<strong>{{ pre_codigo }}</strong>{% endif %}.
+        Cuando lo guardes, volvés automáticamente al formulario anterior.
+      </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Código <span class="text-red-500">*</span></span>
+        <input type="text" name="codigo_cli" value="{{ form.codigo_cli or '' }}"
+               class="border rounded px-2 py-1 mt-1 uppercase" maxlength="3"
+               oninput="this.value=this.value.toUpperCase()"
+               {% if modo=='editar' %}readonly{% endif %} required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">RUC / C.I.</span>
+        <input type="text" name="ruc" value="{{ form.ruc or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="16">
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Nombre / razón social <span class="text-red-500">*</span></span>
+        <input type="text" name="nombre" value="{{ form.nombre or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="200" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Teléfono</span>
+        <input type="text" name="telefono" value="{{ form.telefono or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="30">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Correo</span>
+        <input type="email" name="correo" value="{{ form.correo or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="50">
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Dirección 1</span>
+        <input type="text" name="direccion1" value="{{ form.direccion1 or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="200">
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Dirección 2</span>
+        <input type="text" name="direccion2" value="{{ form.direccion2 or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="200">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Plazo de pago (días)</span>
+        <input type="text" name="pago" value="{{ form.pago or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="2">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Cupo</span>
+        <input type="number" name="cupo" value="{{ form.cupo or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" min="0">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Vendedor</span>
+        <input type="text" name="vend" value="{{ form.vend or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="50">
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Observación</span>
+        <textarea name="observacion" class="border rounded px-2 py-1 mt-1"
+                  rows="2" maxlength="200">{{ form.observacion or '' }}</textarea>
+      </label>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      {# Cancelar respeta `next_url` cuando viene de otro form (ej.
+         facturas/nueva). Sin esto, el usuario pierde el progreso de la
+         factura si cancela la creación de cliente. #}
+      <a href="{{ next_url or url_for('clientes.lista') }}"
+         class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Guardar
+      </button>
+    </div>
+  </form>
+
+  {% if modo == 'editar' and tiene_permiso('clientes.editar') %}
+  <div class="mt-6 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2">Estado del cliente</h3>
+    <p class="text-xs text-slate-500 mb-3">
+      Marcar como inactivo (legacy <code>DIFUNTOS</code>) esconde el cliente
+      de autocompletes y de la lista por default. Las facturas históricas
+      y saldos vivos se preservan.
+    </p>
+    {% if form.activo == False %}
+      <form method="post" action="{{ url_for('clientes.toggle_activo', codigo_cli=form.codigo_cli) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="set" value="1">
+        <button type="submit"
+                class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+          Reactivar cliente
+        </button>
+      </form>
+      <span class="ml-3 text-xs text-slate-500">Actualmente: <strong class="text-slate-700">INACTIVO</strong></span>
+    {% else %}
+      <form method="post" action="{{ url_for('clientes.toggle_activo', codigo_cli=form.codigo_cli) }}" class="inline"
+            onsubmit="return confirm('¿Marcar este cliente como INACTIVO?\n\nQueda escondido de autocompletes/lista por default. No se borran sus datos históricos.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="set" value="0">
+        <button type="submit"
+                class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
+          Marcar como INACTIVO (difunto)
+        </button>
+      </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

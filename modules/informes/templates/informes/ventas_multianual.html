@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Ventas multi-año{% endblock %}
+{% block breadcrumb %}
+Informes /
+<a href="{{ url_for('informes.ventas') }}" class="hover:underline">Ventas</a> /
+<strong>Multi-año</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .vm-matriz { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .vm-matriz table { width: 100%; border-collapse: collapse; min-width: 900px; }
+  .vm-matriz th, .vm-matriz td { padding: 6px 10px; font-size: 12px; vertical-align: baseline; }
+  .vm-matriz thead th {
+    background: rgb(248 250 252); color: rgb(71 85 105);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    font-weight: 600; border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .vm-matriz thead th { background: rgb(30 41 59 / 0.4); color: rgb(148 163 184); border-bottom-color: rgb(51 65 85); }
+  .vm-matriz td.num { text-align: right; }
+  .vm-matriz td.mes-label {
+    font-weight: 600; color: rgb(71 85 105);
+    background: rgb(248 250 252);
+    border-right: 1px solid rgb(226 232 240);
+  }
+  .dark .vm-matriz td.mes-label { background: rgb(30 41 59 / 0.4); color: rgb(203 213 225); border-right-color: rgb(51 65 85); }
+  .vm-matriz tr.fila:nth-child(even) td:not(.mes-label) { background: rgb(250 250 250); }
+  .dark .vm-matriz tr.fila:nth-child(even) td:not(.mes-label) { background: rgb(15 23 42 / 0.4); }
+  .vm-matriz .var { font-size: 10px; margin-left: 4px; }
+  .vm-matriz .var-pos { color: rgb(22 163 74); }
+  .vm-matriz .var-neg { color: rgb(220 38 38); }
+  .vm-matriz tr.totales td {
+    font-weight: 700; background: rgb(241 245 249); color: rgb(15 23 42);
+    border-top: 2px solid rgb(203 213 225);
+  }
+  .dark .vm-matriz tr.totales td {
+    background: rgb(30 41 59 / 0.7); color: rgb(241 245 249); border-top-color: rgb(71 85 105);
+  }
+  .vm-matriz tr.precio td {
+    background: rgb(248 250 252); color: rgb(71 85 105);
+    font-size: 11px; font-style: italic;
+  }
+  .dark .vm-matriz tr.precio td {
+    background: rgb(30 41 59 / 0.4); color: rgb(148 163 184);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-2xl font-semibold">Ventas multi-año</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Comparación interanual mes a mes — replica MODIFICA.PRG PROCEDURE VENTAS.
+        ·
+        <a href="{{ url_for('informes.ventas') }}" class="underline hover:text-blue-600">Volver a Ventas</a>
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <form method="get" class="flex items-center gap-2 text-sm">
+        <label>Años:</label>
+        <select name="anios" onchange="this.form.submit()" class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900">
+          {% for opt in [2, 3, 4, 5, 6] %}
+          <option value="{{ opt }}" {% if data and data.n_anios == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if data and data.anios %}
+  {% set anios = data.anios %}
+  <div class="vm-matriz bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="text-align:left">Mes</th>
+          {% for a in anios %}
+          <th colspan="2" style="text-align:center">{{ a }}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for a in anios %}
+          <th class="num">Kg</th>
+          <th class="num">Importe U$</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in data.meses %}
+        <tr class="fila">
+          <td class="mes-label">{{ row.label }}</td>
+          {% for a in anios %}
+            {% set d = row.datos[a] %}
+            {% set v = row.datos.var_kg_pct[a] %}
+            <td class="num">
+              {{ d.kg | num_es(0) }}
+              {% if v is not none and d.kg > 0 %}
+                <span class="var var-{{ 'pos' if v >= 0 else 'neg' }}">{{ '%+.0f'|format(v) }}%</span>
+              {% endif %}
+            </td>
+            <td class="num">{{ d.importe | num_es(0) }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+
+        {# ─── Totales por año ─── #}
+        <tr class="totales">
+          <td class="mes-label">Total</td>
+          {% for a in anios %}
+            {% set t = data.totales_por_anio[a] %}
+            <td class="num">{{ t.kg | num_es(0) }}</td>
+            <td class="num">{{ t.importe | num_es(0) }}</td>
+          {% endfor %}
+        </tr>
+
+        {# ─── Precio promedio U$/kg ─── #}
+        <tr class="precio">
+          <td class="mes-label">Prec.prom. U$/kg</td>
+          {% for a in anios %}
+            {% set t = data.totales_por_anio[a] %}
+            <td class="num" colspan="2">{{ t.precio_prom | num_es(2) }}</td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Datos de <code class="font-mono">scintela.factura</code> filtrado por
+    <code class="font-mono">stat ∈ Z/A/T/P/blank</code> (excluye anuladas X/Y).
+    El <strong>%</strong> en cada celda es la variación de kg respecto al
+    mismo mes del año previo (PRG: PROCEDURE VENTAS MODIFICA.PRG líneas 144-217).
+  </p>
+  {% else %}
+    <div class="px-4 py-6 text-center text-slate-500 border border-slate-200 dark:border-slate-800 rounded">
+      Sin facturas en el rango de años solicitado.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

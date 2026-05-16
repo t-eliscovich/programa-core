@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Nuevo movimiento de caja{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">Nuevo movimiento de caja</h1>
+
+  <div class="bg-slate-50 border rounded p-3 mb-4 text-sm">
+    Saldo actual en caja:
+    <span class="font-mono font-semibold">{{ '%.2f' % (form.saldo_actual or 0) }}</span>
+  </div>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white border rounded-lg p-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Fecha <span class="text-red-500">*</span></span>
+        <input type="date" name="fecha" value="{{ form.fecha or '' }}"
+               class="border rounded px-2 py-1 mt-1" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Tipo <span class="text-red-500">*</span></span>
+        <select name="tipo" class="border rounded px-2 py-1 mt-1" required>
+          {# Convención legacy dBase: E=entrada (ingreso), S=salida (egreso). #}
+          <option value="E" {% if form.tipo=='E' %}selected{% endif %}>Entrada (ingreso)</option>
+          <option value="S" {% if form.tipo=='S' %}selected{% endif %}>Salida (egreso)</option>
+        </select>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Importe <span class="text-red-500">*</span></span>
+        <input type="text" name="importe" value="{{ form.importe or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" required
+               placeholder="1.234,56">
+      </label>
+
+      {# ──────── Atajos amigables (TMT 2026-05-12) ────────
+         Para quien no sabe los códigos legacy (RR / PICH / etc.), estos
+         botones rellenan el prefijo y dejan el foco listo para completar.
+         Quien ya conoce los códigos los puede ignorar y tipear directo. #}
+      <div class="md:col-span-2 -mb-2">
+        <div class="text-xs text-slate-500 mb-2 font-medium">
+          ¿Qué tipo de movimiento es? <span class="text-slate-400">(opcional — completá el concepto manualmente o usá un atajo)</span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="caja-atajos">
+          <button type="button" data-prefix="RR " data-needs="socio"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left text-xs transition">
+            <span class="text-lg">👤</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-rose-700">Retiro de socio</div>
+              <div class="text-[10px] text-slate-400">RR + código del socio</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="PICH " data-needs="ref"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
+            <span class="text-lg">🏦</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-sky-700">Depósito a {{ L.BANCO_PICHINCHA }}</div>
+              <div class="text-[10px] text-slate-400">PICH + nº depósito / referencia</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="INTER " data-needs="ref"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
+            <span class="text-lg">🏦</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-sky-700">Depósito a {{ L.BANCO_INTERNACIONAL }}</div>
+              <div class="text-[10px] text-slate-400">INTER + nº depósito / referencia</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="PR " data-needs="prov"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-left text-xs transition">
+            <span class="text-lg">🏭</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-violet-700">Pago a proveedor</div>
+              <div class="text-[10px] text-slate-400">PR + código del proveedor</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="IN." data-needs="cta"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-left text-xs transition">
+            <span class="text-lg">💵</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-emerald-700">Movimiento USD</div>
+              <div class="text-[10px] text-slate-400">IN. + código de la cuenta</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="INHB " data-needs=""
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-amber-300 hover:bg-amber-50 text-left text-xs transition">
+            <span class="text-lg">📋</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-amber-700">Caja chica / día inhábil</div>
+              <div class="text-[10px] text-slate-400">INHB + detalle libre</div>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600 flex items-baseline justify-between">
+          <span>Concepto <span class="text-red-500">*</span></span>
+          <span class="text-xs text-slate-400">o tipealo libre (ej. ALQUILER, SUELDOS, etc.)</span>
+        </span>
+        <input type="text" name="concepto" id="concepto-input" value="{{ form.concepto or '' }}"
+               list="conceptos-caja-list" autocomplete="off"
+               class="border rounded px-2 py-1 mt-1" maxlength="80" required
+               placeholder="Click un atajo arriba ↑ o tipeá manualmente">
+        {% if conceptos %}
+          <datalist id="conceptos-caja-list">
+            {% for c in conceptos %}
+              <option value="{{ c.concepto }}">{{ c.concepto }} · usado {{ c.usos }}×</option>
+            {% endfor %}
+          </datalist>
+        {% endif %}
+        {# Preview en vivo del side effect que va a disparar el concepto. #}
+        <div id="side-effect-preview" class="hidden mt-2 px-3 py-2 rounded-md bg-sky-50 border border-sky-200 text-sky-900 text-xs">
+          🔗 <strong>Movimiento doble automático:</strong>
+          <span id="side-effect-text"></span>
+          <span class="ml-2 text-sky-600">— se crea junto con el de caja, en una sola operación.</span>
+        </div>
+      </label>
+
+      {# Atajos clickeables para los conceptos top-12 (los más comunes). #}
+      {% if conceptos %}
+      <div class="md:col-span-2 -mt-2 flex flex-wrap gap-1.5" id="concepto-chips">
+        {% for c in conceptos[:12] %}
+          <button type="button" data-concepto="{{ c.concepto }}"
+                  class="text-xs px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700">
+            {{ c.concepto }}
+          </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# JS de atajos + preview en vivo — fuera del if porque los atajos
+         (RR/PICH/etc.) siempre se muestran aunque no haya conceptos históricos. #}
+      <script>
+        (function() {
+          const inp = document.querySelector('input[name="concepto"]');
+
+          // Atajos (los 6 botones grandes de arriba): rellenan prefijo + foco.
+          document.querySelectorAll('#caja-atajos button.atajo').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const prefix = btn.dataset.prefix || '';
+              const needs = btn.dataset.needs || '';
+              // Si ya hay algo escrito, no machacarlo — solo rotar prefijo.
+              const current = (inp.value || '').trim();
+              const hadPrefix = /^(RR|PICH|INTER|PR|IN\.|INHB)\b/i.test(current);
+              if (hadPrefix) {
+                // Reemplazar el prefijo viejo por el nuevo, dejando el resto.
+                inp.value = prefix + current.replace(/^(RR|PICH|INTER|PR|IN\.|INHB)\s*/i, '');
+              } else if (current) {
+                inp.value = prefix + current;
+              } else {
+                inp.value = prefix;
+              }
+              // Pista para el usuario: foco al final, "needs" si falta complemento.
+              inp.focus();
+              inp.setSelectionRange(inp.value.length, inp.value.length);
+              if (needs && !inp.value.slice(prefix.length).trim()) {
+                inp.placeholder = needs === 'socio'  ? 'Código del socio (ej. TMT)…' :
+                                  needs === 'ref'    ? 'N° de depósito o referencia…' :
+                                  needs === 'prov'   ? 'Código del proveedor (ej. ACR)…' :
+                                  needs === 'cta'    ? 'Código de la cuenta USD…' :
+                                  inp.placeholder;
+              }
+              actualizarPreview();
+            });
+          });
+
+          // Chips inferiores (conceptos históricos top-12).
+          document.querySelectorAll('#concepto-chips button[data-concepto]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              inp.value = btn.dataset.concepto;
+              inp.focus();
+              actualizarPreview();
+            });
+          });
+
+          // Preview en vivo del side effect — usa el endpoint del servidor
+          // para parsear (así reusamos exactamente la misma lógica de Python
+          // y no duplicamos el parser en JS).
+          const preview     = document.getElementById('side-effect-preview');
+          const previewText = document.getElementById('side-effect-text');
+          let inflight = null;
+          let lastValue = '';
+
+          async function actualizarPreview() {
+            const v = (inp.value || '').trim();
+            if (v === lastValue) return;
+            lastValue = v;
+            if (!v) {
+              preview.classList.add('hidden');
+              return;
+            }
+            if (inflight) inflight.abort();
+            const ctrl = new AbortController();
+            inflight = ctrl;
+            try {
+              const url = '/caja/_api/preview-concepto?concepto=' + encodeURIComponent(v);
+              const r = await fetch(url, {signal: ctrl.signal});
+              if (!r.ok) { preview.classList.add('hidden'); return; }
+              const j = await r.json();
+              if (j.descripcion) {
+                previewText.textContent = j.descripcion;
+                preview.classList.remove('hidden');
+              } else {
+                preview.classList.add('hidden');
+              }
+            } catch (e) {
+              // abortado por el siguiente cambio o falla — ignorar
+            }
+          }
+
+          // Debounce: 250ms tras dejar de tipear.
+          let timer = null;
+          inp.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(actualizarPreview, 250);
+          });
+          // Render inicial (si viene del form re-renderizado con error)
+          actualizarPreview();
+        })();
+      </script>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      <a href="{{ url_for('caja.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Registrar
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

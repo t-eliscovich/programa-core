@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Historia multi-año{% endblock %}
+{% block breadcrumb %}Informes / <strong>Historia multi-año</strong>{% endblock %}
+
+{% block head_extra %}
+<style>
+  .ha-matriz { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .ha-matriz table { width: 100%; border-collapse: collapse; min-width: 900px; }
+  .ha-matriz th, .ha-matriz td {
+    padding: 6px 10px; font-size: 12px; vertical-align: baseline;
+  }
+  .ha-matriz thead th {
+    background: rgb(248 250 252); color: rgb(71 85 105);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    font-weight: 600; border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .ha-matriz thead th { background: rgb(30 41 59 / 0.4); color: rgb(148 163 184); border-bottom-color: rgb(51 65 85); }
+  .ha-matriz td.num { text-align: right; }
+  .ha-matriz td.mes-label {
+    font-weight: 600; color: rgb(71 85 105);
+    background: rgb(248 250 252);
+    border-right: 1px solid rgb(226 232 240);
+  }
+  .dark .ha-matriz td.mes-label { background: rgb(30 41 59 / 0.4); color: rgb(203 213 225); border-right-color: rgb(51 65 85); }
+  .ha-matriz tr.fila:nth-child(even) td:not(.mes-label) {
+    background: rgb(250 250 250);
+  }
+  .dark .ha-matriz tr.fila:nth-child(even) td:not(.mes-label) {
+    background: rgb(15 23 42 / 0.4);
+  }
+  .ha-matriz tr.totales td {
+    font-weight: 700; background: rgb(241 245 249); color: rgb(15 23 42);
+    border-top: 2px solid rgb(203 213 225);
+  }
+  .dark .ha-matriz tr.totales td {
+    background: rgb(30 41 59 / 0.7); color: rgb(241 245 249); border-top-color: rgb(71 85 105);
+  }
+  .ha-matriz .var-pos { color: rgb(22 163 74); }
+  .ha-matriz .var-neg { color: rgb(220 38 38); }
+  .ha-matriz .var-cell { font-size: 11px; }
+  .ha-tabs button {
+    padding: 6px 12px; border: 1px solid rgb(203 213 225);
+    background: white; color: rgb(71 85 105);
+    border-radius: 4px; font-size: 13px;
+  }
+  .ha-tabs button.active {
+    background: rgb(15 23 42); color: white; border-color: rgb(15 23 42);
+  }
+  .dark .ha-tabs button { background: rgb(15 23 42); color: rgb(203 213 225); border-color: rgb(51 65 85); }
+  .dark .ha-tabs button.active { background: rgb(241 245 249); color: rgb(15 23 42); border-color: rgb(241 245 249); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-2xl font-semibold">Historia multi-año</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Matriz mes × año (corriente + 2 anteriores). Replica INFORMES.PRG modo "1/2/3".
+        ·
+        <a href="{{ url_for('informes.historia') }}" class="underline hover:text-blue-600">Volver a vista cronológica</a>
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if data and data.anios %}
+  {% set anios = data.anios %}
+  {% set anio_actual = anios[-1] %}
+  {% set anio_prev = anios[-2] %}
+
+  {# ─── Selector de métrica (pestañas) ─── #}
+  <div class="ha-tabs mb-3 flex gap-2 flex-wrap no-print">
+    <button data-metric="patrimonio" class="active">Patrimonio</button>
+    <button data-metric="uvent">Ventas U$</button>
+    <button data-metric="usuti">Utilidad U$</button>
+    <button data-metric="kvent">Kg vendidos</button>
+    <button data-metric="ustock">Stock MP+PT</button>
+    <button data-metric="cart">Cartera</button>
+    <button data-metric="deuda">Deuda</button>
+  </div>
+
+  <div class="ha-matriz bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="text-align:left">Mes</th>
+          {% for a in anios %}
+          <th colspan="2" style="text-align:center">{{ a }}</th>
+          {% endfor %}
+          <th rowspan="2" style="text-align:right" title="Variación % año actual vs año anterior">% vs {{ anio_prev }}</th>
+        </tr>
+        <tr>
+          {% for a in anios %}
+          <th class="num">Valor</th>
+          <th class="num" title="Kg vendidos">Kg</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody id="ha-tbody" data-metric="patrimonio">
+        {% for row in data.meses %}
+        <tr class="fila">
+          <td class="mes-label">{{ row.label }}</td>
+          {% for a in anios %}
+            {% set d = row.datos[a] %}
+            <td class="num metric-cell" data-val-patrimonio="{{ d.patrimonio }}" data-val-uvent="{{ d.uvent }}" data-val-usuti="{{ d.usuti }}" data-val-kvent="{{ d.kvent }}" data-val-ustock="{{ d.ustock }}" data-val-cart="{{ d.cart }}" data-val-deuda="{{ d.deuda }}">
+              {{ d.patrimonio | num_es(0) }}
+            </td>
+            <td class="num text-slate-500">{{ d.kvent | num_es(0) }}</td>
+          {% endfor %}
+          <td class="num var-cell">
+            {% set v = row.datos.var_patr_pct %}
+            {% if v is not none %}
+              <span class="var-{{ 'pos' if v >= 0 else 'neg' }}" data-var-patrimonio="{{ v }}" data-var-uvent="{{ row.datos.var_uvent_pct or '' }}" data-var-usuti="{{ row.datos.var_usuti_pct or '' }}" data-var-kvent="{{ row.datos.var_kvent_pct or '' }}">
+                {{ '%+.1f'|format(v) }} %
+              </span>
+            {% else %}
+              <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+
+        {# ─── Totales acumulados por año ─── #}
+        <tr class="totales">
+          <td class="mes-label">Total {{ data.n_meses }} m</td>
+          {% for a in anios %}
+            {% set t = data.totales_por_anio[a] %}
+            <td class="num">{{ t.uvent | num_es(0) }}</td>
+            <td class="num">{{ t.kvent | num_es(0) }}</td>
+          {% endfor %}
+          {% set t_act = data.totales_por_anio[anio_actual] %}
+          {% set t_prev = data.totales_por_anio[anio_prev] %}
+          <td class="num var-cell">
+            {% if t_prev.uvent %}
+              {% set vt = (t_act.uvent - t_prev.uvent) * 100.0 / t_prev.uvent %}
+              <span class="var-{{ 'pos' if vt >= 0 else 'neg' }}">{{ '%+.1f'|format(vt) }} %</span>
+            {% else %}
+              <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-4">
+    <strong>Cómo se lee:</strong> cada fila es un mes calendario; las columnas
+    muestran ese mes en los últimos 3 años. La columna "Kg" del lado de cada
+    año es siempre <code>kvent</code> (kg vendidos). La última columna
+    muestra la variación % de la métrica seleccionada entre {{ anio_actual }} y
+    {{ anio_prev }}. Datos del cierre mensual (<code>scintela.historia</code>).
+  </p>
+
+  <script>
+  (function () {
+    // Pestañas — cambian qué métrica se muestra en las celdas y la var %.
+    const tabs = document.querySelectorAll('.ha-tabs button');
+    const tbody = document.getElementById('ha-tbody');
+    function fmt(n) {
+      if (n === null || n === undefined || n === '') return '—';
+      const x = Number(n);
+      if (!Number.isFinite(x)) return '—';
+      return x.toLocaleString('es-EC', { maximumFractionDigits: 0 });
+    }
+    function fmtPct(n) {
+      if (n === null || n === undefined || n === '') return '—';
+      const x = Number(n);
+      if (!Number.isFinite(x)) return '—';
+      return (x >= 0 ? '+' : '') + x.toFixed(1) + ' %';
+    }
+    function setMetric(m) {
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.metric === m));
+      tbody.dataset.metric = m;
+      tbody.querySelectorAll('.metric-cell').forEach(c => {
+        c.textContent = fmt(c.dataset['val' + m.charAt(0).toUpperCase() + m.slice(1)]);
+      });
+      tbody.querySelectorAll('[data-var-patrimonio]').forEach(span => {
+        const v = span.dataset['var' + m.charAt(0).toUpperCase() + m.slice(1)];
+        if (v === '' || v === undefined) {
+          span.parentElement.innerHTML = '<span class="text-slate-400">—</span>';
+        } else {
+          const num = Number(v);
+          span.className = 'var-' + (num >= 0 ? 'pos' : 'neg');
+          span.textContent = fmtPct(v);
+        }
+      });
+    }
+    tabs.forEach(t => t.addEventListener('click', () => setMetric(t.dataset.metric)));
+  })();
+  </script>
+
+  {% else %}
+    <div class="px-4 py-6 text-center text-slate-500 border border-slate-200 dark:border-slate-800 rounded">
+      Sin datos de historia para los últimos 3 años.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

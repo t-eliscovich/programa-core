@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Reemplazar cheque{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
+  <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}" class="hover:underline">{{ ch.no_cheque or '#' ~ ch.id_cheque }}</a> /
+  <strong>Reemplazar</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-1">Reemplazar cheque</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    El cliente trae un cheque nuevo en lugar de éste — replicamos la lógica
+    legacy <code class="text-xs">PROV='XX'</code> de BANCOS.PRG. El cheque
+    actual queda marcado como reemplazado (stat='X') y se crea uno nuevo
+    con mismo cliente y banco. Si tenía aplicaciones a facturas vivas, se
+    migran al cheque nuevo.
+  </p>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {# Resumen del cheque viejo #}
+  <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-md p-4 mb-6">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Cheque a reemplazar</div>
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div>
+        <div class="text-xs text-slate-500">N° cheque</div>
+        <div class="font-mono">{{ ch.no_cheque or '#' ~ ch.id_cheque }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Cliente</div>
+        <div>{{ ch.cliente or ch.codigo_cli or '—' }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Importe</div>
+        <div class="font-mono">{{ ch.importe | money_es }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">F. depósito</div>
+        <div class="font-mono">{{ ch.fechad | fecha_es }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Banco emisor</div>
+        <div>{{ ch.banco or '—' }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Estado</div>
+        <div class="font-mono">{{ ch.stat }}</div>
+      </div>
+    </div>
+  </div>
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-5 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium">Nuevo N° de cheque <span class="text-red-500">*</span></span>
+      <input type="text" name="nuevo_no_cheque" value="{{ form.nuevo_no_cheque or '' }}"
+             maxlength="10" autofocus required
+             class="mt-1 block w-full border rounded px-3 py-2 font-mono">
+      <span class="text-xs text-slate-500 mt-1 block">
+        El cheque que trae ahora el cliente.
+      </span>
+    </label>
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium">Nuevo importe <span class="text-red-500">*</span></span>
+      <input type="text" name="nuevo_importe" value="{{ form.nuevo_importe or '' }}"
+             inputmode="decimal" required
+             class="mt-1 block w-full border rounded px-3 py-2 font-mono text-right">
+      <span class="text-xs text-slate-500 mt-1 block">
+        Si el importe cambió respecto del original ({{ ch.importe | money_es }}),
+        se registra la diferencia en la observación.
+      </span>
+    </label>
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium">Motivo <span class="text-slate-400 font-normal">(opcional)</span></span>
+      <textarea name="motivo" rows="2" maxlength="200"
+                class="mt-1 block w-full border rounded px-3 py-2"
+                placeholder="Ej: Cliente nos cambió el cheque porque venció.">{{ form.motivo or '' }}</textarea>
+    </label>
+
+    <div class="flex items-center gap-2 mt-6">
+      <button type="submit"
+              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded">
+        Confirmar reemplazo
+      </button>
+      <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+         class="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-sm">
+        Cancelar
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

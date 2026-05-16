@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Proformas{% endblock %}
+{% block breadcrumb %}<strong>Proformas</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Proformas</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Mostrando {{ filas | length }} · Total cotizado <strong>{{ total | money_es }}</strong>
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('proformas.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Cliente, número…"
+             class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-right font-medium">N°</th>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-3 text-left font-medium">Cliente</th>
+          <th class="px-3 py-3 text-right font-medium">Subtotal</th>
+          <th class="px-3 py-3 text-right font-medium">Desc. vol.</th>
+          <th class="px-3 py-3 text-right font-medium">Desc. contado</th>
+          <th class="px-3 py-3 text-right font-medium">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 text-right font-mono text-xs">
+            <a href="{{ url_for('proformas.detalle', id_proforma=p.id_proforma) }}" class="hover:text-blue-600">{{ p.id_proforma }}</a>
+          </td>
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ p.fecha_emision | fecha_es }}</td>
+          <td class="px-3 py-2">
+            <span class="font-mono text-xs text-slate-500">{{ p.codigo_cli }}</span>
+            <span class="ml-1">{{ p.cliente }}</span>
+          </td>
+          <td class="px-3 py-2 text-right text-mono">{{ p.subtotal | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ p.monto_descuento_volumen | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ p.monto_descuento_contado | money_es if p.aplica_descuento_contado else '' }}</td>
+          <td class="px-3 py-2 text-right text-mono font-semibold">{{ p.total_final | money_es }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(7, 'Sin proformas.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

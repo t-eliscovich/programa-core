@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
+{% block title %}Transferencia entre bancos{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('historial.operaciones') }}" class="hover:underline">Operaciones</a> /
+  <a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
+  <strong>Transferir</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  {% set ico %}<path d="M7 16h14M17 12l4 4-4 4"/><path d="M17 8H3M7 4l-4 4 4 4"/>{% endset %}
+  {{ wizard_hero('sky', 'Transferencia entre bancos',
+                 'Mueve plata de un banco al otro. Crea el egreso en el origen y la entrada en el destino en una sola operación atómica — los saldos se actualizan automáticamente.',
+                 ico) }}
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Banco origen <span class="text-rose-500">*</span>
+        </label>
+        <select name="no_banco_origen" required
+                class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                       focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+          <option value="">— elegir banco —</option>
+          {% for b in bancos %}
+            <option value="{{ b.no_banco }}">{{ b.no_banco }} · {{ b.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Banco destino <span class="text-rose-500">*</span>
+        </label>
+        <select name="no_banco_destino" required
+                class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                       focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+          <option value="">— elegir banco —</option>
+          {% for b in bancos %}
+            <option value="{{ b.no_banco }}">{{ b.no_banco }} · {{ b.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Importe <span class="text-rose-500">*</span>
+        </label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+          <input type="text" name="importe" inputmode="decimal" required
+                 class="w-full pl-7 pr-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right font-mono
+                        focus:outline-none focus:ring-2 focus:ring-sky-500"
+                 placeholder="0.00">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">Fecha</label>
+        <input type="date" name="fecha" value="{{ hoy }}"
+               class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                      focus:outline-none focus:ring-2 focus:ring-sky-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+        Concepto <span class="text-slate-400 normal-case tracking-normal">(opcional)</span>
+      </label>
+      <input type="text" name="concepto" maxlength="40"
+             placeholder="Ej. cubrir pagos del mes, depósito a cuenta operativa…"
+             class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                    focus:outline-none focus:ring-2 focus:ring-sky-500">
+    </div>
+
+    {% set info %}
+      Se crea <strong>CH</strong> en el banco origen y <strong>TR</strong> (transferencia
+      recibida) en el banco destino. Los saldos de ambos bancos se actualizan
+      automáticamente y queda registrado en el historial.
+    {% endset %}
+    {{ wizard_info('sky', info) }}
+
+    {{ wizard_footer(url_for('bancos.lista'), 'Transferir →', 'sky') }}
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nuevo' if modo=='crear' else 'Editar' }} pasivo{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">
+    {{ 'Nuevo pasivo (posdat)' if modo=='crear' else 'Editar pasivo N° ' + (form.num|string) }}
+  </h1>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white border rounded-lg p-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">N° correlativo</span>
+        <input type="number" name="num"
+               value="{{ form.num or form.num_sugerido or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right"
+               {% if modo=='editar' %}readonly{% endif %}>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Fecha <span class="text-red-500">*</span></span>
+        <input type="date" name="fecha" value="{{ form.fecha or '' }}"
+               class="border rounded px-2 py-1 mt-1" required
+               {% if modo=='editar' %}readonly{% endif %}>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Vencimiento</span>
+        <input type="date" name="fechad" value="{{ form.fechad or '' }}"
+               class="border rounded px-2 py-1 mt-1">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Proveedor (código) <span class="text-red-500">*</span></span>
+        <input type="text" name="prov" value="{{ form.prov or '' }}"
+               class="border rounded px-2 py-1 mt-1 uppercase" maxlength="5" required
+               oninput="this.value=this.value.toUpperCase()"
+               {% if modo=='editar' %}readonly{% endif %}>
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Concepto <span class="text-red-500">*</span></span>
+        <input type="text" name="concepto" value="{{ form.concepto or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="80" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Importe <span class="text-red-500">*</span></span>
+        <input type="text" name="importe" value="{{ form.importe or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Tipo</span>
+        <select name="tipo" class="border rounded px-2 py-1 mt-1">
+          <option value="">—</option>
+          {% for t in ['CM','FC','NV','RT','NC','ND'] %}
+            <option value="{{ t }}" {% if form.tipo==t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Comprobante</span>
+        <input type="text" name="compr" value="{{ form.compr or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="20">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">N° comprobante</span>
+        <input type="text" name="no_comp" value="{{ form.no_comp or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="20">
+      </label>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      <a href="{{ url_for('posdat.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Guardar
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

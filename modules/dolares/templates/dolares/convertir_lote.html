@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}BAP — Convertir anticipos USD a compra{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('dolares.lista') }}" class="hover:underline">Anticipos USD</a> /
+  <strong>BAP — Convertir lote</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto py-6 px-4">
+  <h1 class="text-2xl font-semibold text-slate-900 mb-1">BAP — Convertir anticipos a compra</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    Replica el procedure <code class="text-xs">BAP</code> de BANCOS.PRG. Elegí
+    un proveedor, marcá los anticipos a consumir y se crea una compra con
+    <code class="text-xs">cuenta_pagada='A'</code> (pagada con anticipo) y
+    comprobante <code class="text-xs">BAP&lt;N&gt;</code>.
+  </p>
+
+  {% if not prov_sel %}
+    {# ─── Lista por proveedor ──────────────────────────────────────────── #}
+    <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+            <th class="px-4 py-3 text-left">Proveedor</th>
+            <th class="px-4 py-3 text-right">Total USD</th>
+            <th class="px-4 py-3 text-right">Anticipos</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Primer fecha</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Última fecha</th>
+            <th class="px-4 py-3 text-center w-32"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% if not grupos %}
+            <tr>
+              <td colspan="6" class="px-4 py-12 text-center text-slate-400">
+                No hay anticipos vivos para convertir.
+              </td>
+            </tr>
+          {% endif %}
+          {% for g in grupos %}
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3">
+                <div class="font-mono text-xs text-slate-400">{{ g.codigo_prov }}</div>
+                <div class="text-sm text-slate-800">{{ g.nombre or '—' }}</div>
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
+                $ {{ '%.2f' | format(g.total_usd | float) }}
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums">{{ g.n_anticipos }}</td>
+              <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
+                {{ g.primer_fecha | fecha_es if g.primer_fecha else '—' }}
+              </td>
+              <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
+                {{ g.ult_fecha | fecha_es if g.ult_fecha else '—' }}
+              </td>
+              <td class="px-4 py-3 text-center">
+                <a href="{{ url_for('dolares.convertir_lote', prov=g.codigo_prov) }}"
+                   class="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white">
+                  Convertir →
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% else %}
+    {# ─── Selección por proveedor ─────────────────────────────────────── #}
+    <div class="mb-3 flex items-center gap-2">
+      <a href="{{ url_for('dolares.convertir_lote') }}"
+         class="text-sm text-sky-600 hover:underline">← Volver a la lista</a>
+      <span class="text-slate-300">·</span>
+      <span class="text-sm text-slate-700">
+        Proveedor: <strong class="font-mono">{{ prov_sel }}</strong>
+        {% if nombres.get(prov_sel) %} — {{ nombres.get(prov_sel) }}{% endif %}
+      </span>
+    </div>
+
+    {% if not anticipos %}
+      <div class="bg-white border border-slate-200 rounded-lg p-12 text-center text-slate-500">
+        Este proveedor no tiene anticipos vivos.
+      </div>
+    {% else %}
+      <form method="post" action="{{ url_for('dolares.convertir_lote') }}"
+            class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="codigo_prov" value="{{ prov_sel }}">
+
+        {# Sticky summary #}
+        <div class="sticky top-2 z-10 bg-emerald-50 border border-emerald-200 rounded-lg px-5 py-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+          <div class="flex items-baseline gap-4">
+            <div>
+              <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Anticipos a consumir</div>
+              <div class="text-2xl font-bold text-emerald-900 tabular-nums" id="contador">0</div>
+            </div>
+            <div class="h-10 w-px bg-emerald-200"></div>
+            <div>
+              <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Total USD</div>
+              <div class="text-2xl font-bold text-emerald-900 tabular-nums" id="suma">$ 0,00</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btn-todos"
+                    class="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100">
+              Marcar todos
+            </button>
+            <button type="button" id="btn-ninguno"
+                    class="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100">
+              Limpiar
+            </button>
+          </div>
+        </div>
+
+        {# Form fields para la compra #}
+        <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+          <h3 class="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Datos de la compra</h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label class="block">
+              <span class="text-xs font-medium text-slate-600">Fecha de compra</span>
+              <input type="date" name="fecha" value="{{ hoy }}"
+                     class="mt-1 block w-full border rounded px-3 py-2 text-sm">
+            </label>
+            <label class="block">
+              <span class="text-xs font-medium text-slate-600">Tipo</span>
+              <select name="tipo_compra"
+                      class="mt-1 block w-full border rounded px-3 py-2 text-sm">
+                <option value="H" selected>H — Hilado</option>
+                <option value="K">K — Tejeduría</option>
+                <option value="Q">Q — Químicos</option>
+                <option value="C">C — Fábrica</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="text-xs font-medium text-slate-600">Kg (opcional)</span>
+              <input type="text" name="kg" inputmode="decimal" placeholder="0.00"
+                     class="mt-1 block w-full border rounded px-3 py-2 text-sm text-right font-mono">
+            </label>
+            <label class="block md:col-span-3">
+              <span class="text-xs font-medium text-slate-600">Concepto (texto libre, ej. N° factura del proveedor)</span>
+              <input type="text" name="concepto" maxlength="50"
+                     placeholder="Ej: FAC 4231/A"
+                     class="mt-1 block w-full border rounded px-3 py-2 text-sm">
+            </label>
+            <label class="block md:col-span-3">
+              <span class="text-xs font-medium text-slate-600">Motivo / Notas <span class="text-slate-400 font-normal">(opcional)</span></span>
+              <textarea name="motivo" rows="2" maxlength="200"
+                        class="mt-1 block w-full border rounded px-3 py-2 text-sm"></textarea>
+            </label>
+          </div>
+        </div>
+
+        {# Tabla de anticipos #}
+        <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                <th class="px-4 py-3 text-center w-12">
+                  <input type="checkbox" id="check-all">
+                </th>
+                <th class="px-4 py-3 text-left">Fecha</th>
+                <th class="px-4 py-3 text-left">Concepto</th>
+                <th class="px-4 py-3 text-right whitespace-nowrap">Importe USD</th>
+                <th class="px-4 py-3 text-center">Clave</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100" id="filas-anticipos">
+              {% for a in anticipos %}
+                <tr data-importe="{{ a.importe or 0 }}" class="hover:bg-slate-50">
+                  <td class="px-4 py-3 text-center">
+                    <input type="checkbox" name="id_dolares" value="{{ a.id_dolares }}"
+                           data-importe="{{ a.importe or 0 }}" class="anti-check">
+                  </td>
+                  <td class="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
+                    {{ a.fecha | fecha_es if a.fecha else '—' }}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-slate-800">{{ a.concepto or '—' }}</td>
+                  <td class="px-4 py-3 text-right tabular-nums font-semibold">
+                    $ {{ '%.2f' | format(a.importe | float) }}
+                  </td>
+                  <td class="px-4 py-3 text-center text-xs text-slate-500">
+                    {{ a.clave or '—' }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-end gap-2">
+          <a href="{{ url_for('dolares.lista') }}"
+             class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-100 text-sm">
+            Cancelar
+          </a>
+          <button type="submit" id="btn-confirmar" disabled
+                  class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded
+                         disabled:opacity-40 disabled:cursor-not-allowed">
+            Convertir a compra →
+          </button>
+        </div>
+      </form>
+
+      <script>
+      (function() {
+        const checks = () => Array.from(document.querySelectorAll('.anti-check'));
+        const $count = document.getElementById('contador');
+        const $sum   = document.getElementById('suma');
+        const $btn   = document.getElementById('btn-confirmar');
+        const $all   = document.getElementById('check-all');
+
+        function actualizar() {
+          const sel = checks().filter(c => c.checked);
+          $count.textContent = sel.length;
+          const total = sel.reduce((s, c) => s + parseFloat(c.dataset.importe || 0), 0);
+          $sum.textContent = '$ ' + total.toLocaleString('es-EC',
+            {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          $btn.disabled = sel.length === 0;
+          const visSel = sel.length;
+          const all = checks();
+          $all.checked = all.length > 0 && visSel === all.length;
+          $all.indeterminate = visSel > 0 && visSel < all.length;
+        }
+        checks().forEach(c => c.addEventListener('change', actualizar));
+        $all.addEventListener('change', () => {
+          checks().forEach(c => c.checked = $all.checked);
+          actualizar();
+        });
+        document.getElementById('btn-todos').addEventListener('click', () => {
+          checks().forEach(c => c.checked = true);
+          actualizar();
+        });
+        document.getElementById('btn-ninguno').addEventListener('click', () => {
+          checks().forEach(c => c.checked = false);
+          actualizar();
+        });
+      })();
+      </script>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

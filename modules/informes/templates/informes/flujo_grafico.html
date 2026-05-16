@@ -1,0 +1,1344 @@
+{% extends "base.html" %}
+{% block title %}Flujo — gráfico{% endblock %}
+{% block breadcrumb %}Informes / <strong>Flujo (gráfico)</strong>{% endblock %}
+
+{% block head_extra %}
+{# Chart.js servido desde el propio servidor (static/vendor/) — antes lo
+   levantábamos del CDN cdnjs.cloudflare.com pero TMT 2026-05-06 reportó
+   que ese CDN estaba bloqueado (firewall fábrica / adblock / sin internet)
+   y el gráfico mostraba siempre el mensaje de error. Bundle local lo
+   elimina como dependencia externa. Si por alguna razón el static no
+   carga, hay un fallback al CDN como segunda opción. #}
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"
+        onerror="var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js';document.head.appendChild(s);"></script>
+<style>
+  /* Tokens de color theme-aware: clarito en modo light, suave en dark.
+     Antes era fondo negro hardcoded — el gerente pidió sacar eso para
+     respetar el tema de la app. */
+  .flujo-wrap {
+    --panel: #ffffff;
+    --panel-hi: #f8fafc;
+    --text: #0f172a;
+    --muted: #64748b;
+    --accent: #2563eb;
+    --good: #10b981;
+    --bad: #ef4444;
+    --warn: #f59e0b;
+    --grid: #e2e8f0;
+    --dbase-bg: #000033;
+    --dbase-text: #c0c0c0;
+    --dbase-axis: #ffff00;
+    --dbase-pos: #55ffff;
+    --dbase-neg: #ff5555;
+    --dbase-min: #ffffff;
+    --dbase-month: #55ff55;
+    color: var(--text);
+    border-radius: 14px;
+    padding: 0;
+  }
+  .dark .flujo-wrap {
+    --panel: #1e293b;
+    --panel-hi: #0f172a;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #60a5fa;
+    --good: #34d399;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --grid: #334155;
+  }
+  .flujo-wrap .grid2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  }
+  @media (max-width: 1100px) { .flujo-wrap .grid2 { grid-template-columns: 1fr; } }
+  .flujo-wrap .panel {
+    background: var(--panel); border: 1px solid var(--grid);
+    border-radius: 12px; padding: 20px 22px 24px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+  .dark .flujo-wrap .panel { box-shadow: none; }
+  .flujo-wrap .panel h2 {
+    margin: 0 0 2px; font-size: 13px; font-weight: 600; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .flujo-wrap .panel .caption { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .flujo-wrap .terminal {
+    background: var(--dbase-bg); color: var(--dbase-text);
+    font-family: "Menlo","Consolas","Courier New",monospace;
+    font-size: 12px; line-height: 1.1; padding: 14px;
+    white-space: pre; overflow-x: auto;
+    border: 2px solid #555; border-radius: 4px;
+    text-shadow: 0 0 1px currentColor;
+  }
+  .flujo-wrap .terminal .axis { color: var(--dbase-axis); }
+  .flujo-wrap .terminal .pos  { color: var(--dbase-pos); }
+  .flujo-wrap .terminal .neg  { color: var(--dbase-neg); }
+  .flujo-wrap .terminal .min  { color: var(--dbase-min); background: var(--dbase-neg); }
+  .flujo-wrap .terminal .mo   { color: var(--dbase-month); }
+  .flujo-wrap .terminal .pl   { color: var(--dbase-month); }
+  .flujo-wrap .kpis { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .flujo-wrap .kpi {
+    flex: 1 1 140px; background: var(--panel-hi); padding: 10px 14px;
+    border-radius: 8px; border: 1px solid var(--grid);
+  }
+  .flujo-wrap .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .flujo-wrap .kpi .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .flujo-wrap .kpi.good .value { color: var(--good); }
+  .flujo-wrap .kpi.bad  .value { color: var(--bad); }
+  .flujo-wrap .kpi.warn .value { color: var(--warn); }
+  .flujo-wrap .kpi .unit { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .flujo-wrap .zoom { display: flex; gap: 6px; margin: 6px 0 12px; align-items: center; }
+  .flujo-wrap .zoom span { font-size: 12px; color: var(--muted); margin-right: 6px; }
+  .flujo-wrap .zoom button {
+    background: var(--panel-hi); color: var(--text); border: 1px solid var(--grid);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  .flujo-wrap .zoom button.on { background: var(--accent); color: #ffffff; border-color: var(--accent); }
+  /* Chart.js 4.x con responsive:true + maintainAspectRatio:false toma la
+     altura del CONTENEDOR PADRE, no del canvas mismo. Si el padre no
+     tiene altura fija, queda circular (parent depende de child que
+     depende de parent) y el chart se renderiza a 0px → área negra
+     reportada por TMT 2026-05-06. Wrapper con altura fija lo arregla. */
+  .flujo-wrap .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 480px;
+  }
+  .flujo-wrap .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+  .flujo-wrap .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .flujo-wrap .legend span::before {
+    content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .flujo-wrap .legend .s-pos::before { background: var(--good); }
+  .flujo-wrap .legend .s-neg::before { background: var(--bad); }
+  .flujo-wrap .legend .s-min::before { background: var(--warn); }
+  .flujo-wrap .legend .s-egr::before {
+    background: var(--muted);
+    border-radius: 50%;
+    width: 9px; height: 9px; margin-bottom: 1px;
+    opacity: 0.7;
+  }
+  .flujo-wrap .vacio {
+    padding: 48px 20px; text-align: center; color: var(--muted); font-size: 14px;
+  }
+
+  /* Grid de paneles debajo del chart: egresos (2/3) + gastos forzados (1/3). */
+  .flujo-wrap .below-chart {
+    display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-top: 18px;
+  }
+  @media (max-width: 1100px) { .flujo-wrap .below-chart { grid-template-columns: 1fr; } }
+
+  /* Lista de egresos automáticos (posdat) — diseño limpio en grid multicolumna. */
+  .flujo-wrap .egresos-panel { padding: 0; display: flex; flex-direction: column; }
+  .flujo-wrap .egresos-panel .egr-head {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--grid);
+    background: linear-gradient(180deg, rgba(239,68,68,0.05), transparent);
+  }
+  .flujo-wrap .egresos-panel .egr-head h3 {
+    margin: 0 0 4px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text); font-weight: 600;
+  }
+  .flujo-wrap .egresos-panel .egr-head .sub {
+    font-size: 12px; color: var(--muted); line-height: 1.4;
+  }
+  .flujo-wrap .egresos-panel .egr-head-top {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  }
+  .flujo-wrap .egresos-panel .egr-controls {
+    display: flex; gap: 8px; flex-shrink: 0;
+  }
+  .flujo-wrap .egresos-panel .egr-controls input,
+  .flujo-wrap .egresos-panel .egr-controls select {
+    background: var(--panel-hi); border: 1px solid var(--grid); color: var(--text);
+    padding: 6px 10px; border-radius: 6px; font-size: 12px; font-family: inherit;
+  }
+  .flujo-wrap .egresos-panel .egr-controls input { width: 200px; }
+  .flujo-wrap .egresos-panel .egr-empty-msg {
+    padding: 30px; text-align: center; color: var(--muted); font-size: 13px;
+  }
+  @media (max-width: 700px) {
+    .flujo-wrap .egresos-panel .egr-head-top { flex-direction: column; }
+    .flujo-wrap .egresos-panel .egr-controls input { width: 100%; }
+  }
+  /* Grid de 2-3 columnas para que la lista no sea infinita verticalmente.
+     Cada egreso es una "card" compacta. Más fácil de escanear. */
+  .flujo-wrap .egresos-panel .egr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1px;
+    background: var(--grid);
+    max-height: 460px; overflow-y: auto;
+  }
+  .flujo-wrap .egresos-panel .egr-row {
+    display: grid; grid-template-columns: 50px 1fr auto; gap: 10px;
+    padding: 9px 14px;
+    background: var(--panel);
+    align-items: baseline;
+  }
+  .flujo-wrap .egresos-panel .egr-row:hover { background: var(--panel-hi); }
+  .flujo-wrap .egresos-panel .egr-row .d {
+    font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+  }
+  .flujo-wrap .egresos-panel .egr-row .d.venc { color: var(--warn); font-weight: 600; }
+  .flujo-wrap .egresos-panel .egr-row .desc { font-size: 12px; color: var(--text); min-width: 0; }
+  .flujo-wrap .egresos-panel .egr-row .desc .prov {
+    color: var(--muted); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 1px;
+  }
+  .flujo-wrap .egresos-panel .egr-row .desc .concept {
+    color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .flujo-wrap .egresos-panel .egr-row .imp {
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--bad); text-align: right;
+  }
+  .flujo-wrap .egresos-panel .egr-row .imp.cred { color: var(--good); }
+  .flujo-wrap .egresos-panel .egr-foot {
+    padding: 12px 20px; border-top: 1px solid var(--grid);
+    background: var(--panel-hi);
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .flujo-wrap .egresos-panel .egr-foot .lbl {
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .flujo-wrap .egresos-panel .egr-foot .total {
+    font-size: 16px; color: var(--bad); font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+
+  /* Gastos forzados — formato compacto (form inline en una fila). */
+  .flujo-wrap .gf-panel h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin: 0 0 4px; font-weight: 600;
+  }
+  .flujo-wrap .gf-panel .gf-sub {
+    font-size: 11px; color: var(--muted); margin: 0 0 12px; line-height: 1.4;
+  }
+  .flujo-wrap .gf-panel .gf-form-inline {
+    display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 14px;
+  }
+  .flujo-wrap .gf-panel .gf-form-inline input {
+    background: var(--panel-hi); border: 1px solid var(--grid); color: var(--text);
+    padding: 7px 10px; border-radius: 6px; font-size: 13px; font-family: inherit;
+  }
+  .flujo-wrap .gf-panel .gf-form-inline button {
+    background: var(--accent); color: #ffffff; border: none;
+    padding: 8px 12px; border-radius: 6px; font-weight: 600; font-size: 12px;
+    cursor: pointer;
+  }
+  .flujo-wrap .gf-panel .gf-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+  .flujo-wrap .gf-panel .gf-row {
+    background: var(--panel-hi); border: 1px solid var(--grid); border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; display: grid;
+    grid-template-columns: 1fr auto; gap: 4px 8px;
+  }
+  .flujo-wrap .gf-panel .gf-row .gf-fecha { color: var(--muted); font-size: 10px; }
+  .flujo-wrap .gf-panel .gf-row .gf-monto { color: var(--bad); text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .flujo-wrap .gf-panel .gf-row .gf-concepto { grid-column: 1; color: var(--text); font-size: 12px; word-break: break-word; }
+  .flujo-wrap .gf-panel .gf-row .gf-del {
+    grid-column: 2; background: transparent; color: var(--muted); border: none;
+    cursor: pointer; font-size: 14px; padding: 0; align-self: start;
+  }
+  .flujo-wrap .gf-panel .gf-row .gf-del:hover { color: var(--bad); }
+  .flujo-wrap .gf-panel .gf-empty { font-size: 11px; color: var(--muted); font-style: italic; text-align: center; padding: 16px 0; }
+  .flujo-wrap .gf-panel .gf-total {
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grid);
+    font-size: 12px; display: flex; justify-content: space-between; color: var(--muted);
+  }
+  .flujo-wrap .gf-panel .gf-total strong { color: var(--bad); font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Flujo de caja — proyección</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Historia reciente + proyección por postdatados y pagos programados ·
+        ventana de {{ ventana_dias }} días
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-3">
+      <form class="flex items-center gap-3">
+        <label class="text-xs text-slate-500">Días:</label>
+        <select name="ventana"
+                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm"
+                onchange="this.form.submit()">
+          {% for d in [30, 60, 70, 90, 180, 365] %}
+            <option value="{{ d }}" {% if d == ventana_dias %}selected{% endif %}>{{ d }} días</option>
+          {% endfor %}
+        </select>
+        {# Toggle "peor caso": ignora cheques en cartera. Útil si se sospecha
+           que hay cheques con stat=Z stale (cobrados sin marcar). #}
+        <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer"
+               title="Asume que ningún cheque en cartera se cobra. Sólo saldo inicial menos posdat.">
+          <input type="checkbox" name="ignorar_cheques" value="1"
+                 {% if ignorar_cheques %}checked{% endif %}
+                 onchange="this.form.submit()"
+                 class="accent-rose-600">
+          <span>Ignorar cheques (peor caso)</span>
+        </label>
+      </form>
+      <a href="{{ url_for('informes.flujo_cargar') }}"
+         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
+        Cargar datos
+      </a>
+      <button onclick="window.print()"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Imprimir
+      </button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      No pudimos cargar el flujo. Si persiste, avisá a soporte.
+    </div>
+  {% endif %}
+
+  <div class="flujo-wrap">
+    {% if datos|length == 0 %}
+      <div class="vacio">
+        <p class="text-base text-slate-200">Sin datos de flujo para mostrar.</p>
+        <p class="mt-2 text-xs">
+          No hay saldo bancario, cheques en cartera ni posdat con fecha futura.
+          Cargá movimientos para que aparezca la proyección.
+        </p>
+        <div class="mt-5 flex items-center justify-center gap-3">
+          <a href="{{ url_for('cheques.lista') }}"
+             class="inline-flex items-center gap-2 rounded-md bg-sky-500 hover:bg-sky-400 px-4 py-2 text-sm font-medium text-white">
+            Ir a cheques
+          </a>
+          <a href="{{ url_for('informes.flujo_cargar') }}"
+             class="inline-flex items-center gap-2 rounded-md border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700">
+            Cargar flujo manual (legacy)
+          </a>
+        </div>
+      </div>
+    {% else %}
+      <section class="panel">
+        <div class="kpis">
+          <div class="kpi good"><div class="label">Plazo cobro</div>
+            <div class="value" id="kpi-cobro">{{ plazos.cobro }}<span class="unit">días</span></div>
+          </div>
+          <div class="kpi bad"><div class="label">Plazo deuda</div>
+            <div class="value" id="kpi-deuda">{{ plazos.deuda }}<span class="unit">días</span></div>
+          </div>
+          <div class="kpi warn"><div class="label">Saldo mínimo</div>
+            <div class="value" id="kpi-min">—</div>
+          </div>
+          <div class="kpi"><div class="label">Día del mínimo</div>
+            <div class="value" id="kpi-mindate" style="font-size:16px">—</div>
+          </div>
+        </div>
+
+        <div class="zoom">
+          <span>Agrupación</span>
+          <button type="button" data-q="1" class="on">1 día</button>
+          <button type="button" data-q="3">3 días</button>
+          <button type="button" data-q="5">5 días</button>
+          <button type="button" data-q="7">1 semana</button>
+          <button type="button" data-q="14">2 semanas</button>
+        </div>
+
+        {# Chart full-width arriba — lo más importante visualmente. #}
+        <div class="chart-wrap">
+          <canvas id="chart"></canvas>
+        </div>
+
+        <div class="legend">
+          <span class="s-pos">saldo a favor</span>
+          <span class="s-neg">saldo en rojo</span>
+          <span class="s-min">mínimo del horizonte</span>
+          <span class="s-egr">egreso ese día (tamaño = magnitud)</span>
+        </div>
+      </section>
+
+      {# Debajo del chart, lado a lado: egresos automáticos (posdat) + gastos forzados manuales. #}
+      <div class="below-chart">
+        {% if egresos_lista and egresos_lista|length > 0 %}
+          {% set total_egresos = egresos_lista | sum(attribute='importe') %}
+          <section class="panel egresos-panel">
+            <div class="egr-head">
+              <div class="egr-head-top">
+                <div>
+                  <h3>Egresos del flujo</h3>
+                  <div class="sub">
+                    {{ egresos_lista|length }} obligaciones (posdat) que se restan del saldo.
+                    Vencidos imputados a hoy.
+                  </div>
+                </div>
+                <div class="egr-controls">
+                  <input type="search" id="egr-search" placeholder="Buscar proveedor o concepto…">
+                  <select id="egr-sort">
+                    <option value="fecha">Por fecha</option>
+                    <option value="importe">Por importe</option>
+                    <option value="prov">Por proveedor</option>
+                  </select>
+                  {# ITEM #2 — Editor inline de posdat banc=0/9 (PROCEDURE CAMBIA, MENU.PRG L725-803). #}
+                  {% if tiene_permiso('posdat.editar') or tiene_permiso('posdat.crear') or tiene_permiso('posdat.anular') %}
+                  <button type="button" id="btn-editar-deudas"
+                          class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium"
+                          onclick="abrirModalDeudas()">
+                    Editar deudas
+                  </button>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="egr-grid" id="egr-grid">
+              {% for e in egresos_lista[:200] %}
+                <div class="egr-row"
+                     data-fecha="{{ e.fecha_efectiva }}"
+                     data-importe="{{ e.importe }}"
+                     data-prov="{{ (e.prov or '')|lower }}"
+                     data-search="{{ ((e.prov or '') ~ ' ' ~ (e.concepto or ''))|lower }}">
+                  <div class="d {{ 'venc' if e.vencido else '' }}"
+                       title="{% if e.vencido %}Vencido — fechad original {{ e.fechad }}{% else %}Vence {{ e.fecha_efectiva }}{% endif %}">
+                    {{ e.fecha_efectiva[8:10] }}/{{ e.fecha_efectiva[5:7] }}
+                  </div>
+                  <div class="desc">
+                    <div class="prov">{{ e.prov or '—' }}</div>
+                    <div class="concept">{{ e.concepto or '—' }}</div>
+                  </div>
+                  <div class="imp {{ 'cred' if e.importe < 0 else '' }}">
+                    {% if e.importe >= 0 %}−{% else %}+{% endif %}$ {{ '{:,.0f}'.format(e.importe | abs) | replace(',', '.') }}
+                  </div>
+                </div>
+              {% endfor %}
+              {% if egresos_lista|length > 200 %}
+                <div class="egr-row egr-more" style="opacity:.6">
+                  <div class="desc" style="grid-column:1 / -1;text-align:center;font-style:italic;font-size:11px;color:var(--muted)">
+                    … {{ egresos_lista|length - 200 }} egresos más adelante
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+            <div class="egr-empty-msg" id="egr-empty-msg" style="display:none">
+              Sin resultados que coincidan con tu búsqueda.
+            </div>
+            <div class="egr-foot">
+              <span class="lbl">Total a restar</span>
+              <span class="total">−$ {{ '{:,.0f}'.format(total_egresos) | replace(',', '.') }}</span>
+            </div>
+          </section>
+        {% endif %}
+
+        {# Gastos forzados manual — en localStorage. Compacto. #}
+        <section class="panel gf-panel">
+          <h3>Gastos forzados</h3>
+          <p class="gf-sub">
+            Egresos extra que querés ver en la proyección, sin cargar en posdat.
+            Quedan en este navegador.
+          </p>
+          <form id="gf-form" class="gf-form-inline" onsubmit="return false">
+            <input type="date" id="gf-fecha" required title="Fecha">
+            <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
+            <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia)">
+            <button type="submit" id="gf-add">+ Agregar</button>
+          </form>
+          <div id="gf-list" class="gf-list"></div>
+          <div class="gf-total">
+            <span>Total forzados</span>
+            <strong id="gf-total">$ 0</strong>
+          </div>
+        </section>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if datos|length > 0 %}
+<script>
+/* ============================================================ *
+ *   Datos reales de scintela.flujo — inyectados server-side
+ * ============================================================ */
+const FLUJO_REAL    = {{ datos | tojson }};
+const HOY_ISO       = {{ hoy | tojson }};
+const VENTANA_DIAS  = {{ ventana_dias }};
+
+/* Defensa: si Chart.js no cargó (CDN bloqueado, sin internet, etc.),
+   mostrar un mensaje legible en vez de un canvas en blanco/negro. */
+if (typeof Chart === 'undefined') {
+  const wrap = document.querySelector('.flujo-wrap .chart-wrap');
+  if (wrap) {
+    wrap.innerHTML = (
+      '<div style="display:flex;align-items:center;justify-content:center;'
+      + 'height:100%;flex-direction:column;color:#9aa7b8;font-size:13px;'
+      + 'text-align:center;padding:24px;">'
+      + '<strong style="color:#f87171;font-size:14px;margin-bottom:8px">'
+      + 'Chart.js no se pudo cargar</strong>'
+      + '<span>El gráfico necesita la librería de cdnjs.cloudflare.com. '
+      + 'Verificá la conexión a internet o el adblock del navegador.</span>'
+      + '</div>'
+    );
+  }
+  console.error('[flujo_grafico] Chart is undefined — librería Chart.js no se cargó.');
+  throw new Error('Chart.js not loaded');
+}
+
+function _parseISO(s) {
+  // YYYY-MM-DD → Date local (mediodía para evitar saltos de DST)
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
+}
+
+const HOY          = _parseISO(HOY_ISO);
+const FECHA_FIN    = new Date(HOY); FECHA_FIN.setDate(HOY.getDate() + VENTANA_DIAS);
+// Historia reciente (hasta 14 días atrás) para dar contexto al ojo. Si la
+// base no tiene nada >= HOY, igual mostramos lo que hay.
+const FECHA_INICIO = new Date(HOY); FECHA_INICIO.setDate(HOY.getDate() - 14);
+
+const data = FLUJO_REAL
+  .map(r => {
+    const fecha    = _parseISO(r.fecha);
+    const cheques  = r.cheques  || 0;
+    const facturas = r.facturas || 0;
+    const gastos   = r.gastos   || 0;
+    const mprima   = r.mprima   || 0;
+    return {
+      fecha, saldo: r.saldo || 0,
+      cheques, facturas, gastos, mprima,
+      neto: cheques + facturas + gastos + mprima,
+      esPasado: fecha < HOY,
+    };
+  })
+  .filter(r => r.fecha >= FECHA_INICIO && r.fecha <= FECHA_FIN)
+  .sort((a, b) => a.fecha - b.fecha);
+
+/* ------------------------------------------------------------ *
+ *   PLAZ.COBR / PLAZ.DEUDA: ya vienen renderizados desde el server
+ *   en informes/queries.py::plazos_dbase(). Acá sólo derivamos el
+ *   saldo mínimo y la fecha del mínimo a partir de la ventana
+ *   visible del gráfico.
+ * ------------------------------------------------------------ */
+const fmt  = n => n.toLocaleString('es-EC', { maximumFractionDigits: 0 }).replace(/,/g, '.');
+const fmtD = d => d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' });
+
+let minRow = null;
+if (data.length > 0) {
+  minRow = data.reduce((a, b) => b.saldo < a.saldo ? b : a);
+  document.getElementById('kpi-min').innerHTML     = `$ ${fmt(minRow.saldo)}`;
+  document.getElementById('kpi-mindate').textContent = fmtD(minRow.fecha);
+}
+
+/* ------------------------------------------------------------ *
+ *   Chart.js moderno — con agrupador Q días
+ * ------------------------------------------------------------ */
+let chart;
+function bucket(rows, q) {
+  if (q === 1) return rows;
+  const out = [];
+  for (let i = 0; i < rows.length; i += q) {
+    const chunk = rows.slice(i, i + q);
+    out.push({
+      fecha: chunk[chunk.length - 1].fecha,
+      saldo: chunk[chunk.length - 1].saldo,
+      cheques: chunk.reduce((a, r) => a + r.cheques, 0),
+      facturas: chunk.reduce((a, r) => a + r.facturas, 0),
+      gastos: chunk.reduce((a, r) => a + r.gastos, 0),
+      mprima: chunk.reduce((a, r) => a + r.mprima, 0),
+      neto: chunk.reduce((a, r) => a + r.neto, 0),
+    });
+  }
+  return out;
+}
+
+function buildChart(q) {
+  // Aplicar gastos forzados primero (modifican saldo, gastos, neto día a día)
+  const dataConGF = gfApplyToData(data);
+  // Recalcular minRow sobre la data ya con gastos forzados aplicados
+  if (dataConGF.length > 0) {
+    minRow = dataConGF.reduce((a, b) => b.saldo < a.saldo ? b : a);
+    // Refrescar KPIs (Plazo cobro/deuda no cambian; saldo mínimo y día sí)
+    document.getElementById('kpi-min').innerHTML = '$ ' + fmt(minRow.saldo);
+    document.getElementById('kpi-mindate').textContent = fmtD(minRow.fecha);
+  }
+  const rows = bucket(dataConGF, q);
+  if (rows.length === 0) return;
+  const labels = rows.map(r => r.fecha.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' }));
+
+  const series = rows.map(r => r.saldo);
+
+  // Tema-aware color tokens leídos del DOM para que el chart se adapte
+  // si el usuario alterna light/dark.
+  const css = getComputedStyle(document.querySelector('.flujo-wrap'));
+  const txtMuted = (css.getPropertyValue('--muted') || '#64748b').trim();
+  const gridCol  = (css.getPropertyValue('--grid') || '#e2e8f0').trim();
+  const goodCol  = (css.getPropertyValue('--good') || '#10b981').trim();
+  const badCol   = (css.getPropertyValue('--bad')  || '#ef4444').trim();
+  const warnCol  = (css.getPropertyValue('--warn') || '#f59e0b').trim();
+  const panelCol = (css.getPropertyValue('--panel') || '#ffffff').trim();
+  const textCol  = (css.getPropertyValue('--text') || '#0f172a').trim();
+
+  const monthLines = [];
+  rows.forEach((r, i) => {
+    if (i > 0 && r.fecha.getMonth() !== rows[i - 1].fecha.getMonth()) {
+      monthLines.push({ index: i, label: r.fecha.toLocaleDateString('es-EC', { month: 'long' }) });
+    }
+  });
+
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('chart').getContext('2d');
+
+  // hex → rgba helper inline — declarado primero porque dotColors/gradient
+  // lo usan más abajo (era un "Cannot access before initialization").
+  const toRgba = (hex, a) => {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.slice(0,2), 16);
+    const g = parseInt(h.slice(2,4), 16);
+    const b = parseInt(h.slice(4,6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  };
+
+  // Egresos del día — markers sobre la línea para señalar magnitud.
+  // El tamaño crece con el % del egreso. El color depende del saldo
+  // de ese día: gris cuando todavía hay colchón (saldo > 0), rojo
+  // cuando el egreso te puso en rojo. Antes era siempre rojo y
+  // resultaba visualmente agresivo sobre zonas verdes.
+  const egresos = rows.map(r => Math.abs(r.gastos || 0));
+  const maxEgr = Math.max(1, ...egresos);
+  const dotSizes = egresos.map(e => e <= 0 ? 0 : 3 + 6 * Math.sqrt(e / maxEgr));
+  const dotData = rows.map((r, i) => egresos[i] > 0 ? r.saldo : null);
+  const dotColors = rows.map(r => r.saldo >= 0
+    ? toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.35)
+    : toRgba(badCol, 0.85)
+  );
+
+  // Gradiente anchored a la posición REAL del cero en el chart (no al
+  // centro del canvas). Antes lo computaba con stops fijos en 0.5 → pintaba
+  // de rojo cualquier zona "abajo del medio del canvas" aunque fuera
+  // positiva. Ahora le pregunto al scale.y dónde está el cero y armo
+  // el gradiente alrededor de ese pixel.
+  const buildGradient = (chart) => {
+    const { ctx: cc, chartArea, scales } = chart;
+    if (!chartArea) return toRgba(goodCol, 0.15);
+    const { top, bottom } = chartArea;
+    const y0 = scales.y.getPixelForValue(0);
+    const g = cc.createLinearGradient(0, top, 0, bottom);
+    const zRel = Math.max(0, Math.min(1, (y0 - top) / Math.max(1, bottom - top)));
+    if (zRel <= 0.001) {
+      // Todo negativo
+      g.addColorStop(0, toRgba(badCol, 0.05));
+      g.addColorStop(1, toRgba(badCol, 0.45));
+    } else if (zRel >= 0.999) {
+      // Todo positivo
+      g.addColorStop(0, toRgba(goodCol, 0.45));
+      g.addColorStop(1, toRgba(goodCol, 0.05));
+    } else {
+      g.addColorStop(0, toRgba(goodCol, 0.45));
+      g.addColorStop(Math.max(0, zRel - 0.001), toRgba(goodCol, 0.05));
+      g.addColorStop(Math.min(1, zRel + 0.001), toRgba(badCol, 0.05));
+      g.addColorStop(1, toRgba(badCol, 0.45));
+    }
+    return g;
+  };
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Saldo proyectado (USD)',
+        data: series,
+        fill: 'origin',
+        backgroundColor: (ctx2) => buildGradient(ctx2.chart),
+        borderColor: rows.map(r => r.saldo >= 0 ? goodCol : badCol),
+        segment: {
+          borderColor: ctx2 => {
+            const v0 = ctx2.p0.parsed.y, v1 = ctx2.p1.parsed.y;
+            // Coloreo el segmento según si AMBOS extremos son positivos/negativos.
+            // Cruces los pinto en gradiente neutro (gris) para no mentir.
+            if (v0 >= 0 && v1 >= 0) return goodCol;
+            if (v0 < 0 && v1 < 0)   return badCol;
+            return toRgba(warnCol, 0.9);
+          },
+        },
+        borderWidth: 2.5,
+        tension: 0.35,
+        pointRadius: rows.map(r => r === minRow ? 6 : 0),
+        pointBackgroundColor: rows.map(r => r === minRow ? warnCol : 'transparent'),
+        pointBorderColor: rows.map(r => r === minRow ? panelCol : 'transparent'),
+        pointBorderWidth: 2,
+        pointHoverRadius: 6,
+        pointHoverBackgroundColor: textCol,
+        pointHoverBorderColor: panelCol,
+        order: 2,
+      }, {
+        type: 'line',
+        label: 'Egreso del día',
+        data: dotData,
+        showLine: false,
+        pointBackgroundColor: dotColors,
+        pointBorderColor: panelCol,
+        pointBorderWidth: 1.5,
+        pointRadius: dotSizes,
+        pointHoverRadius: dotSizes.map(s => s + 2),
+        order: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: panelCol,
+          titleColor: textCol,
+          bodyColor: textCol,
+          borderColor: gridCol,
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          displayColors: false,
+          titleFont: { weight: '600', size: 12 },
+          bodyFont: { size: 12 },
+          callbacks: {
+            title: ctx => {
+              const row = rows[ctx[0].dataIndex];
+              return row.fecha.toLocaleDateString('es-EC', { weekday: 'short', day: '2-digit', month: 'long' });
+            },
+            label: ctx => {
+              const row = rows[ctx.dataIndex];
+              const lines = [
+                `Saldo: $ ${fmt(row.saldo)}`,
+              ];
+              if (row.cheques)  lines.push(`  + Cheques: $ ${fmt(row.cheques)}`);
+              if (row.gastos)   lines.push(`  − Egresos: $ ${fmt(Math.abs(row.gastos))}`);
+              if (row.facturas) lines.push(`  + Facturas: $ ${fmt(row.facturas)}`);
+              if (row === minRow) lines.unshift('⚠ Mínimo del horizonte');
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: txtMuted, maxRotation: 0, autoSkip: true,
+            maxTicksLimit: 12, font: { size: 11 },
+          },
+          border: { color: gridCol },
+        },
+        y: {
+          grid: { color: toRgba(gridCol.startsWith('#') ? gridCol : '#e2e8f0', 0.5), drawTicks: false },
+          ticks: {
+            color: txtMuted,
+            callback: v => '$ ' + (v / 1000).toFixed(0) + 'k',
+            font: { size: 11 }, padding: 10,
+          },
+          border: { display: false },
+        },
+      },
+    },
+    plugins: [{
+      id: 'extras',
+      beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        // Línea de cero más visible (sólida)
+        const y0 = scales.y.getPixelForValue(0);
+        ctx.save();
+        ctx.strokeStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.18);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, y0);
+        ctx.lineTo(chartArea.right, y0);
+        ctx.stroke();
+        // Separadores de mes (punteados suaves)
+        monthLines.forEach(m => {
+          const x = scales.x.getPixelForValue(m.index)
+                  - (scales.x.getPixelForValue(1) - scales.x.getPixelForValue(0)) / 2;
+          ctx.setLineDash([3, 5]);
+          ctx.strokeStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.10);
+          ctx.beginPath();
+          ctx.moveTo(x, chartArea.top);
+          ctx.lineTo(x, chartArea.bottom);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.55);
+          ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillText(m.label.toUpperCase(), x + 6, chartArea.top + 14);
+        });
+        ctx.restore();
+      },
+      afterDatasetsDraw(chart) {
+        const { ctx, scales } = chart;
+        const idx = rows.indexOf(minRow);
+        if (idx < 0 || !minRow) return;
+        const x = scales.x.getPixelForValue(idx);
+        const y = scales.y.getPixelForValue(minRow.saldo);
+        // Pill label "MÍN $X" arriba del punto
+        const label = `MÍN  $${fmt(minRow.saldo)}`;
+        ctx.save();
+        ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+        const padX = 8, padY = 5;
+        const w = ctx.measureText(label).width + padX * 2;
+        const h = 22;
+        const lx = Math.min(x + 12, chart.chartArea.right - w);
+        const ly = (minRow.saldo >= 0) ? Math.max(y - h - 8, chart.chartArea.top + 4)
+                                      :  Math.min(y + 12, chart.chartArea.bottom - h - 4);
+        // shadow
+        ctx.fillStyle = warnCol;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(lx, ly, w, h, 6);
+        else ctx.rect(lx, ly, w, h);
+        ctx.fill();
+        ctx.fillStyle = '#1a1300';
+        ctx.fillText(label, lx + padX, ly + h - padY - 1);
+        // Línea fina del label al punto
+        ctx.strokeStyle = toRgba(warnCol, 0.55);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(lx + w / 2, ly + (minRow.saldo >= 0 ? h : 0));
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.restore();
+      },
+    }],
+  });
+}
+/* ============================================================ *
+ *   Gastos forzados — sidebar + localStorage + chart integration
+ * ============================================================ */
+const GF_STORAGE_KEY = 'flujo_gastos_forzados_v1';
+
+function gfLoad() {
+  try {
+    const raw = localStorage.getItem(GF_STORAGE_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.warn('[gf] No pude leer localStorage:', e);
+    return [];
+  }
+}
+function gfSave(items) {
+  try {
+    localStorage.setItem(GF_STORAGE_KEY, JSON.stringify(items));
+  } catch (e) {
+    console.warn('[gf] No pude guardar en localStorage:', e);
+  }
+}
+
+function gfRender() {
+  const items = gfLoad();
+  const list = document.getElementById('gf-list');
+  const total = document.getElementById('gf-total');
+  if (!list || !total) return;
+  list.innerHTML = '';
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'gf-empty';
+    empty.textContent = 'Sin gastos forzados todavía.';
+    list.appendChild(empty);
+  } else {
+    items.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    items.forEach(it => {
+      const row = document.createElement('div');
+      row.className = 'gf-row';
+      const fechaTxt = (() => {
+        const d = _parseISO(it.fecha);
+        return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' });
+      })();
+      row.innerHTML = (
+        '<span class="gf-fecha">' + fechaTxt + '</span>'
+        + '<span class="gf-monto">$ ' + fmt(it.importe) + '</span>'
+        + '<span class="gf-concepto">' + (it.concepto || '(sin concepto)').replace(/[<>&]/g, '') + '</span>'
+      );
+      const del = document.createElement('button');
+      del.className = 'gf-del';
+      del.type = 'button';
+      del.textContent = '×';
+      del.title = 'Eliminar';
+      del.addEventListener('click', () => {
+        const cur = gfLoad().filter(x => x.id !== it.id);
+        gfSave(cur);
+        gfRender();
+        gfRebuildChart();
+      });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  const sum = items.reduce((acc, it) => acc + Number(it.importe || 0), 0);
+  total.textContent = '$ ' + fmt(sum);
+}
+
+function gfApplyToData(rows) {
+  /* Devuelve una copia de `rows` con los gastos forzados aplicados
+     como egresos adicionales (sumados a `gastos`) y restados del saldo
+     acumulado a partir de la fecha de cada gasto. */
+  const items = gfLoad();
+  if (items.length === 0) return rows;
+  // Map fecha ISO → suma de gastos forzados ese día
+  const porFecha = {};
+  items.forEach(it => {
+    porFecha[it.fecha] = (porFecha[it.fecha] || 0) + Number(it.importe || 0);
+  });
+  // Proyectar: cada gasto se RESTA del saldo de su día y de todos los
+  // posteriores, y se SUMA a `gastos` con signo negativo.
+  let acumNeg = 0;
+  const out = rows.map(r => {
+    const isoFecha = (() => {
+      const d = r.fecha;
+      const yyyy = d.getFullYear(), mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+      return yyyy + '-' + mm + '-' + dd;
+    })();
+    const gastoExtra = porFecha[isoFecha] || 0;
+    if (gastoExtra) acumNeg -= gastoExtra;
+    return {
+      ...r,
+      gastos: r.gastos - gastoExtra,
+      saldo: r.saldo + acumNeg,
+      neto: r.neto - gastoExtra,
+      forzado: gastoExtra,
+    };
+  });
+  return out;
+}
+
+function gfRebuildChart() {
+  // Buscar el botón activo de agrupación y rebuild
+  const onBtn = document.querySelector('.flujo-wrap .zoom button.on');
+  const q = onBtn ? parseInt(onBtn.dataset.q, 10) : 1;
+  try { buildChart(q); } catch (e) { console.error('[gf] rebuildChart falló:', e); }
+}
+
+document.getElementById('gf-form').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const fecha = document.getElementById('gf-fecha').value;
+  const importe = parseFloat(document.getElementById('gf-importe').value);
+  const concepto = (document.getElementById('gf-concepto').value || '').trim();
+  if (!fecha || !importe || importe <= 0) return;
+  const items = gfLoad();
+  items.push({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    fecha, importe, concepto,
+  });
+  gfSave(items);
+  document.getElementById('gf-importe').value = '';
+  document.getElementById('gf-concepto').value = '';
+  gfRender();
+  gfRebuildChart();
+});
+
+// Render inicial del sidebar (antes del primer buildChart)
+gfRender();
+
+try {
+  buildChart(1);
+} catch (e) {
+  console.error('[flujo_grafico] buildChart(1) falló:', e);
+  const wrap = document.querySelector('.flujo-wrap .chart-wrap');
+  if (wrap) {
+    wrap.innerHTML = (
+      '<div style="display:flex;align-items:center;justify-content:center;'
+      + 'height:100%;flex-direction:column;color:#9aa7b8;font-size:13px;'
+      + 'text-align:center;padding:24px;">'
+      + '<strong style="color:#f87171;font-size:14px;margin-bottom:8px">'
+      + 'Error al construir el gráfico</strong>'
+      + '<span>Detalle en la consola del navegador. '
+      + 'Recargá la página; si persiste, avisá a soporte.</span>'
+      + '<code style="margin-top:10px;font-size:11px;color:#fbbf24">'
+      + (e && e.message ? e.message : String(e))
+      + '</code></div>'
+    );
+  }
+}
+
+document.querySelectorAll('.flujo-wrap .zoom button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.flujo-wrap .zoom button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    try {
+      buildChart(parseInt(b.dataset.q, 10));
+    } catch (e) {
+      console.error('[flujo_grafico] buildChart(' + b.dataset.q + ') falló:', e);
+    }
+  });
+});
+
+/* ============================================================ *
+ *   Egresos: search + sort
+ *   Filtra/ordena en cliente — la lista ya viene del server
+ *   con sus data-attributes (data-search, data-fecha, etc.).
+ * ============================================================ */
+(function() {
+  const grid = document.getElementById('egr-grid');
+  const search = document.getElementById('egr-search');
+  const sort = document.getElementById('egr-sort');
+  const emptyMsg = document.getElementById('egr-empty-msg');
+  if (!grid || !search || !sort) return;
+
+  const rows = Array.from(grid.querySelectorAll('.egr-row:not(.egr-more)'));
+  const moreRow = grid.querySelector('.egr-row.egr-more');
+
+  function apply() {
+    const q = (search.value || '').toLowerCase().trim();
+    const mode = sort.value;
+    let visibleCount = 0;
+    rows.forEach(r => {
+      const match = !q || (r.dataset.search || '').includes(q);
+      r.style.display = match ? '' : 'none';
+      if (match) visibleCount++;
+    });
+    // Re-ordenar los visibles
+    const sorted = rows.slice().sort((a, b) => {
+      if (mode === 'importe') {
+        return parseFloat(b.dataset.importe || 0) - parseFloat(a.dataset.importe || 0);
+      }
+      if (mode === 'prov') {
+        return (a.dataset.prov || '').localeCompare(b.dataset.prov || '');
+      }
+      // default: fecha
+      return (a.dataset.fecha || '').localeCompare(b.dataset.fecha || '');
+    });
+    sorted.forEach(r => grid.appendChild(r));
+    if (moreRow) grid.appendChild(moreRow);
+    if (emptyMsg) emptyMsg.style.display = (visibleCount === 0 && q) ? 'block' : 'none';
+  }
+  search.addEventListener('input', apply);
+  sort.addEventListener('change', apply);
+})();
+</script>
+{% endif %}
+
+{# ============================================================ #}
+{# ITEM #2 — Modal de edición inline de posdats (PROCEDURE CAMBIA) #}
+{# Replica MENU.PRG L725-803: editar/agregar/borrar posdat sin     #}
+{# salir de la pantalla de flujo. Carga via fetch desde            #}
+{# /posdat/_api/lista-flujo y postea a /posdat/_api/<id>/...       #}
+{# ============================================================ #}
+{% if tiene_permiso('posdat.editar') or tiene_permiso('posdat.crear') or tiene_permiso('posdat.anular') %}
+<div id="modal-deudas" class="md-overlay" style="display:none;">
+  <div class="md-dialog" role="dialog" aria-modal="true" aria-labelledby="md-titulo">
+    <div class="md-head">
+      <h2 id="md-titulo">Editar deudas (posdatados)</h2>
+      <button type="button" class="md-close" onclick="cerrarModalDeudas()" aria-label="Cerrar">x</button>
+    </div>
+    <div class="md-sub">
+      <span>Editar / agregar / anular posdat banc=0/9 sin salir del flujo.</span>
+      <span id="md-status" class="md-status"></span>
+    </div>
+    <div class="md-body">
+      <div id="md-table-wrap">
+        <table class="md-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Prov</th><th>Fecha venc</th>
+              <th class="md-right">Importe</th><th>Concepto</th>
+              <th>Banco</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="md-tbody"></tbody>
+        </table>
+      </div>
+      <div id="md-empty" style="display:none;text-align:center;padding:24px;color:#888">
+        No hay posdats activas.
+      </div>
+
+      {% if tiene_permiso('posdat.crear') %}
+      <fieldset class="md-new">
+        <legend>Agregar nuevo</legend>
+        <div class="md-new-grid">
+          <input id="md-new-fechad" type="date" title="Vencimiento">
+          <input id="md-new-prov" type="text" maxlength="5" placeholder="PROV" style="text-transform:uppercase">
+          <input id="md-new-importe" type="number" step="0.01" min="0" placeholder="Importe">
+          <input id="md-new-concepto" type="text" maxlength="100" placeholder="Concepto">
+          <button type="button" class="md-btn md-btn-add" onclick="agregarPosdat()">+ Agregar</button>
+        </div>
+      </fieldset>
+      {% endif %}
+    </div>
+    <div class="md-foot">
+      <div class="md-foot-total">
+        Total visible: <strong id="md-total">$ 0</strong>
+      </div>
+      <button type="button" class="md-btn md-btn-ghost" onclick="cargarPosdats()">Refrescar</button>
+      <button type="button" class="md-btn md-btn-ghost" onclick="cerrarModalDeudas()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.md-overlay {
+  position:fixed; inset:0; background:rgba(15,23,42,0.78);
+  z-index:9999; display:flex; align-items:flex-start; justify-content:center;
+  padding:32px 16px; overflow-y:auto;
+}
+.md-dialog {
+  background:#fff; color:#0f172a; border-radius:10px;
+  width:100%; max-width:1100px; box-shadow:0 25px 50px rgba(0,0,0,.5);
+  display:flex; flex-direction:column; max-height:90vh;
+}
+.md-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px; border-bottom:1px solid #e2e8f0;
+}
+.md-head h2 { font-size:18px; font-weight:600; margin:0; }
+.md-close {
+  background:transparent; border:none; font-size:22px; cursor:pointer;
+  color:#64748b; padding:4px 10px;
+}
+.md-sub {
+  padding:8px 18px; font-size:12px; color:#64748b; border-bottom:1px solid #f1f5f9;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.md-status { font-style:italic; }
+.md-status.err { color:#dc2626; font-weight:500; }
+.md-status.ok { color:#059669; font-weight:500; }
+.md-body { padding:14px 18px; overflow-y:auto; flex:1; }
+.md-table { width:100%; border-collapse:collapse; font-size:12px; }
+.md-table th, .md-table td {
+  padding:6px 8px; border-bottom:1px solid #f1f5f9; text-align:left;
+  vertical-align:middle;
+}
+.md-table th { background:#f8fafc; font-weight:600; color:#334155; }
+.md-right { text-align:right !important; }
+.md-table input[type="text"], .md-table input[type="number"], .md-table input[type="date"] {
+  border:1px solid #cbd5e1; border-radius:4px; padding:3px 6px; font-size:12px;
+  width:100%; box-sizing:border-box; background:#fff;
+}
+.md-table input[type="number"] { text-align:right; }
+.md-table .vencido td { background:#fef2f2; }
+.md-btn {
+  font-size:12px; padding:4px 10px; border-radius:4px;
+  border:1px solid transparent; cursor:pointer; font-weight:500;
+}
+.md-btn-save { background:#0284c7; color:#fff; }
+.md-btn-save:hover { background:#0369a1; }
+.md-btn-cancel { background:#dc2626; color:#fff; }
+.md-btn-cancel:hover { background:#b91c1c; }
+.md-btn-add { background:#16a34a; color:#fff; }
+.md-btn-add:hover { background:#15803d; }
+.md-btn-ghost {
+  background:#fff; border-color:#cbd5e1; color:#334155;
+}
+.md-btn-ghost:hover { background:#f1f5f9; }
+.md-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.md-new {
+  border:1px solid #cbd5e1; border-radius:6px; padding:8px 12px; margin-top:14px;
+}
+.md-new legend { font-size:12px; color:#475569; padding:0 6px; }
+.md-new-grid {
+  display:grid; grid-template-columns:140px 90px 130px 1fr auto;
+  gap:8px; align-items:center;
+}
+.md-new-grid input {
+  border:1px solid #cbd5e1; border-radius:4px; padding:5px 8px; font-size:12px;
+}
+.md-foot {
+  display:flex; align-items:center; justify-content:flex-end; gap:8px;
+  padding:10px 18px; border-top:1px solid #e2e8f0; background:#f8fafc;
+}
+.md-foot-total { margin-right:auto; font-size:13px; color:#0f172a; }
+.md-badge {
+  display:inline-block; padding:1px 6px; border-radius:8px;
+  font-size:10px; font-weight:600;
+}
+.md-badge.b0 { background:#fef3c7; color:#92400e; }
+.md-badge.b9 { background:#dbeafe; color:#1e40af; }
+@media (prefers-color-scheme: dark) {
+  .md-dialog { background:#0f172a; color:#e2e8f0; }
+  .md-head, .md-sub, .md-table th, .md-foot { border-color:#334155; background:#1e293b; }
+  .md-table th { background:#0f172a; color:#cbd5e1; }
+  .md-table td { border-color:#334155; }
+  .md-table input { background:#0f172a; color:#e2e8f0; border-color:#475569; }
+  .md-btn-ghost { background:#1e293b; color:#cbd5e1; border-color:#475569; }
+  .md-table .vencido td { background:#451a1a; }
+}
+</style>
+
+<script>
+/* ============================================================
+ *  ITEM #2 — Editor de deudas (posdat) inline en /informes/flujo
+ *  Mirror de MENU.PRG L725-803 PROCEDURE CAMBIA.
+ * ============================================================ */
+const _PERMS = {
+  editar: {{ 'true' if tiene_permiso('posdat.editar') else 'false' }},
+  crear:  {{ 'true' if tiene_permiso('posdat.crear')  else 'false' }},
+  anular: {{ 'true' if tiene_permiso('posdat.anular') else 'false' }},
+};
+
+function _setStatus(msg, kind) {
+  const el = document.getElementById('md-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'md-status' + (kind ? ' ' + kind : '');
+}
+
+function abrirModalDeudas() {
+  document.getElementById('modal-deudas').style.display = 'flex';
+  cargarPosdats();
+}
+
+function cerrarModalDeudas() {
+  document.getElementById('modal-deudas').style.display = 'none';
+}
+
+function _fmtMoney(n) {
+  const v = Number(n || 0);
+  const s = Math.abs(v).toLocaleString('es-AR', {
+    minimumFractionDigits: 0, maximumFractionDigits: 0,
+  });
+  return (v < 0 ? '-$ ' : '$ ') + s;
+}
+
+async function cargarPosdats() {
+  _setStatus('Cargando…');
+  try {
+    const r = await fetch('/posdat/_api/lista-flujo', {
+      credentials: 'same-origin',
+      headers: {'Accept': 'application/json'},
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      _setStatus(data.error || 'Error al cargar.', 'err');
+      return;
+    }
+    _renderPosdats(data.posdats || []);
+    _setStatus(`${(data.posdats || []).length} posdats · total ${_fmtMoney(data.total)}`, 'ok');
+  } catch (e) {
+    _setStatus('Error de red: ' + e.message, 'err');
+  }
+}
+
+function _renderPosdats(posdats) {
+  const tbody = document.getElementById('md-tbody');
+  const empty = document.getElementById('md-empty');
+  tbody.innerHTML = '';
+  if (!posdats.length) {
+    empty.style.display = 'block';
+    document.getElementById('md-total').textContent = '$ 0';
+    return;
+  }
+  empty.style.display = 'none';
+  const hoy = new Date().toISOString().slice(0, 10);
+  let total = 0;
+  posdats.forEach((pd) => {
+    total += Number(pd.importe || 0);
+    const tr = document.createElement('tr');
+    tr.dataset.id = pd.id_posdat;
+    const vencido = pd.fechad && pd.fechad < hoy;
+    if (vencido) tr.classList.add('vencido');
+    const badge = pd.banc === 9
+      ? '<span class="md-badge b9" title="Cheque emitido (legacy)">9</span>'
+      : '<span class="md-badge b0" title="Deuda viva">0</span>';
+
+    tr.innerHTML = `
+      <td>${pd.num || pd.id_posdat}</td>
+      <td>${pd.prov || ''}<br><span style="font-size:10px;color:#888">${(pd.proveedor || '').slice(0, 24)}</span></td>
+      <td><input type="date" data-field="fechad" value="${pd.fechad || ''}" ${_PERMS.editar ? '' : 'disabled'}></td>
+      <td class="md-right"><input type="number" step="0.01" min="0" data-field="importe" value="${Number(pd.importe || 0).toFixed(2)}" ${_PERMS.editar ? '' : 'disabled'}></td>
+      <td><input type="text" maxlength="100" data-field="concepto" value="${(pd.concepto || '').replace(/"/g, '&quot;')}" ${_PERMS.editar ? '' : 'disabled'}></td>
+      <td>${badge}</td>
+      <td>
+        ${_PERMS.editar ? `<button type="button" class="md-btn md-btn-save" onclick="guardarFila(${pd.id_posdat})">Guardar</button>` : ''}
+        ${_PERMS.anular ? `<button type="button" class="md-btn md-btn-cancel" onclick="anularFila(${pd.id_posdat})">Anular</button>` : ''}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('md-total').textContent = _fmtMoney(total);
+}
+
+async function guardarFila(id) {
+  const tr = document.querySelector(`#md-tbody tr[data-id="${id}"]`);
+  if (!tr) return;
+  const fechad   = tr.querySelector('[data-field="fechad"]').value;
+  const importe  = tr.querySelector('[data-field="importe"]').value;
+  const concepto = tr.querySelector('[data-field="concepto"]').value;
+  _setStatus('Guardando…');
+  try {
+    const r = await fetch(`/posdat/_api/${id}/editar`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify({fechad, importe, concepto}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      _setStatus(data.error || 'Error al guardar.', 'err');
+      return;
+    }
+    _setStatus(`Posdat #${id} actualizado.`, 'ok');
+    cargarPosdats();
+  } catch (e) {
+    _setStatus('Error de red: ' + e.message, 'err');
+  }
+}
+
+async function anularFila(id) {
+  const motivo = prompt('Motivo de anulación (mínimo 10 caracteres):');
+  if (!motivo || motivo.trim().length < 10) {
+    _setStatus('Motivo obligatorio (>=10 chars). No se anuló nada.', 'err');
+    return;
+  }
+  _setStatus('Anulando…');
+  try {
+    const r = await fetch(`/posdat/_api/${id}/anular`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify({motivo: motivo.trim()}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      _setStatus(data.error || 'Error al anular.', 'err');
+      return;
+    }
+    _setStatus(`Posdat #${id} anulado.`, 'ok');
+    cargarPosdats();
+  } catch (e) {
+    _setStatus('Error de red: ' + e.message, 'err');
+  }
+}
+
+async function agregarPosdat() {
+  const fechad   = document.getElementById('md-new-fechad').value;
+  const prov     = (document.getElementById('md-new-prov').value || '').trim().toUpperCase();
+  const importe  = document.getElementById('md-new-importe').value;
+  const concepto = document.getElementById('md-new-concepto').value.trim();
+  if (!prov)     { _setStatus('Proveedor requerido.', 'err'); return; }
+  if (!importe || Number(importe) <= 0) { _setStatus('Importe > 0 requerido.', 'err'); return; }
+  if (!concepto) { _setStatus('Concepto requerido.', 'err'); return; }
+  _setStatus('Creando…');
+  try {
+    const r = await fetch('/posdat/_api/nuevo', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify({prov, importe, concepto, fechad}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      _setStatus(data.error || 'Error al crear.', 'err');
+      return;
+    }
+    _setStatus(`Posdat #${data.posdat?.num || ''} creado.`, 'ok');
+    document.getElementById('md-new-prov').value = '';
+    document.getElementById('md-new-importe').value = '';
+    document.getElementById('md-new-concepto').value = '';
+    document.getElementById('md-new-fechad').value = '';
+    cargarPosdats();
+  } catch (e) {
+    _setStatus('Error de red: ' + e.message, 'err');
+  }
+}
+
+/* Cerrar con Escape. */
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const m = document.getElementById('modal-deudas');
+    if (m && m.style.display !== 'none') cerrarModalDeudas();
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

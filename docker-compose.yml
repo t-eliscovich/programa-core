@@ -1,0 +1,85 @@
+# docker-compose.yml — entorno local completo de Programa Core.
+#
+# Uso:
+#     docker compose up -d        # levanta db + app
+#     docker compose logs -f app  # ver logs del app
+#     docker compose exec app python scripts/migrate.py  # aplicar migraciones
+#     docker compose exec app python scripts/seed_roles.py  # seed (interactivo)
+#     docker compose down -v      # parar y BORRAR el volumen de la DB
+#
+# El volumen `pgdata` persiste entre runs. Si querés empezar limpio:
+#     docker compose down -v
+#
+# Este compose es para desarrollo y evaluación. En producción la DB vive en
+# RDS y la app corre en ECS Fargate o EC2 Windows — no compose.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: programa-core-db
+    environment:
+      POSTGRES_DB:       programa_core
+      POSTGRES_USER:     app
+      POSTGRES_PASSWORD: app_local_only
+      # Locale tiene que matchear lo que usa el dump (Spanish_Ecuador.1252
+      # en Windows legacy; en postgres-alpine usamos es_EC.UTF-8 que es
+      # funcionalmente equivalente para nuestros queries).
+      LANG: es_EC.UTF-8
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Si tenés el dump a mano podés montar acá para auto-restore:
+      # - ./intela12042026.sql:/docker-entrypoint-initdb.d/01-dump.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d programa_core"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: programa-core-app
+    environment:
+      ENV: development
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: programa_core
+      DB_USER: app
+      DB_PASSWORD: app_local_only
+      # SECRET_KEY de desarrollo — cámbialo para prod.
+      SECRET_KEY: dev-only-secret-key-must-be-at-least-32-chars-okay
+      SESSION_COOKIE_SECURE: "0"
+      REQ_SLOW_MS: "500"
+      # Costos OT adapter — por default fake para que no haya dep externa.
+      COSTOS_OT_ADAPTER: fake
+    ports:
+      - "5050:5050"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Servicio opcional: correr los tests en un contenedor efímero.
+  # docker compose run --rm test
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    environment:
+      ENV: development
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: programa_core
+      DB_USER: app
+      DB_PASSWORD: app_local_only
+      SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
+    command: ["python", "-m", "pytest", "-q"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

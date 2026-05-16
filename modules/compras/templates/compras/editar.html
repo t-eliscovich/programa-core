@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Editar compra N° {{ compra.numero }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('compras.lista') }}">Compras</a> /
+  <strong>Editar N° {{ compra.numero }}</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Editar compra N° {{ compra.numero }}</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Edición permitida: concepto, comprobante, observación
+      {% if not pagada %}, importe y fechad (también propaga al posdat hermano){% endif %}.
+      {% if pagada %}<br><strong class="text-amber-600 dark:text-amber-400">Compra ya pagada</strong>: importe y fechad lockeados (anular y reemitir si hace falta).{% endif %}
+    </p>
+  </div>
+
+  {% if errores %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <ul class="list-disc list-inside">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <div class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Fecha</div>
+      <div class="font-mono">{{ compra.fecha | fecha_es }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Proveedor</div>
+      <div class="font-mono">{{ compra.codigo_prov }}</div>
+      <div class="text-xs">{{ compra.proveedor or '' }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Tipo</div>
+      <div class="font-mono">{{ compra.tipo or '—' }}</div>
+    </div>
+    <div class="bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded">
+      <div class="text-xs text-slate-500">Estado</div>
+      <div class="font-mono">{% if pagada %}Pagada{% else %}Pendiente{% endif %}</div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('compras.editar', id_compra=compra.id_compra) }}"
+        class="space-y-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">
+          Importe {% if pagada %}<span class="text-amber-600">(lockeada)</span>{% endif %}
+        </label>
+        <input name="importe" type="text" value="{{ form.importe or '' }}"
+               {% if pagada %}disabled{% endif %}
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono text-right">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">
+          Vencimiento {% if pagada %}<span class="text-amber-600">(lockeada)</span>{% endif %}
+        </label>
+        <input name="fechad" type="text" placeholder="DD/MM/AAAA"
+               value="{{ form.fechad or '' }}"
+               {% if pagada %}disabled{% endif %}
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Comprobante</label>
+        <input name="comprobante" type="text" maxlength="100" value="{{ form.comprobante or '' }}"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Concepto</label>
+        <input name="concepto" type="text" maxlength="200" value="{{ form.concepto or '' }}"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Observación (opcional)</label>
+      <input name="observacion" type="text" maxlength="120" value="{{ form.observacion or '' }}"
+             placeholder="Motivo del ajuste..."
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+    </div>
+
+    <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+      <a href="{{ url_for('compras.lista') }}"
+         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
+      <button type="submit"
+              class="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium">
+        Guardar cambios
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

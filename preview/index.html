@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tablero — Programa Core</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
+    // Theme init
+    (function () {
+      const saved = localStorage.getItem('intela-theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+    function toggleTheme() {
+      const html = document.documentElement;
+      html.classList.toggle('dark');
+      localStorage.setItem('intela-theme', html.classList.contains('dark') ? 'dark' : 'light');
+    }
+  </script>
+  <style>
+    @media print {
+      .no-print, aside, header { display: none !important; }
+      main { padding: 0 !important; }
+    }
+    .text-mono { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
+
+<div class="flex min-h-screen">
+  <aside class="no-print w-60 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+    <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div class="text-xl font-bold tracking-tight">INTELA</div>
+      <div class="text-xs text-slate-500">Programa Core</div>
+    </div>
+    
+    
+
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      
+      <a href="index.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium
+         ">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/>
+          
+        </svg>
+        <span>Tablero</span>
+      </a>
+
+      
+      <div class="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-slate-400">Gestión</div>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15 20a5 5 0 0 1 6 0"/>
+          
+        </svg>
+        <span>Clientes</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7h12v8H3z"/><path d="M15 10h4l2 3v2h-6"/><circle cx="7" cy="17" r="1.5"/><circle cx="17" cy="17" r="1.5"/>
+          
+        </svg>
+        <span>Proveedores</span>
+      </a>
+      
+      <a href="facturas.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+          
+        </svg>
+        <span>Facturas</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h16l-2 11H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/>
+          
+        </svg>
+        <span>Compras</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/>
+          
+        </svg>
+        <span>Cheques</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h6"/>
+          
+        </svg>
+        <span>Retenciones</span>
+      </a>
+      
+      <a href="bancos.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 10 12 4l9 6"/><path d="M5 10v8m4-8v8m6-8v8m4-8v8"/><path d="M3 20h18"/>
+          
+        </svg>
+        <span>Bancos</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/>
+          
+        </svg>
+        <span>Caja</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3h9l4 4v14H6z"/><path d="M9 13h6m-6 4h4"/>
+          
+        </svg>
+        <span>Proformas</span>
+      </a>
+      
+
+      
+      <div class="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-slate-400">Contabilidad</div>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="8" width="14" height="8" rx="3"/><path d="M17 11h3v3h-3"/><circle cx="8" cy="11" r=".5"/><path d="M10 8V6"/>
+          
+        </svg>
+        <span>Provisiones</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10H12z"/><path d="M12 2v10l7.07-7.07"/>
+          
+        </svg>
+        <span>Capital</span>
+      </a>
+      
+
+      
+      <div class="px-3 pt-4 pb-1 text-xs uppercase tracking-wider text-slate-400">Informes</div>
+      
+      <a href="balance.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h12l4 4v12H4z"/><path d="M4 10h16M9 14h6M9 17h4"/>
+          
+        </svg>
+        <span>Informe Resultados</span>
+      </a>
+      
+      <a href="cartera.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/><path d="M7 9v6m10-6v6"/>
+          
+        </svg>
+        <span>Cartera</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7l5 5 4-4 8 8"/><path d="M14 16h7V9"/>
+          
+        </svg>
+        <span>Deudas</span>
+      </a>
+      
+      <a href="flujo.html" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h7v7"/>
+          
+        </svg>
+        <span>Flujo de caja</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10H12z"/><path d="M12 2v10l7.07-7.07"/>
+          
+        </svg>
+        <span>Ventas mensuales</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          
+        </svg>
+        <span>Gastos del mes</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          
+        </svg>
+        <span>Retiros</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>
+          
+        </svg>
+        <span>Activos fijos</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M3 12a9 9 0 0 1 3-6.7"/>
+          
+        </svg>
+        <span>Historia mensual</span>
+      </a>
+      
+      <a href="#" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm
+         hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>
+          
+        </svg>
+        <span>Iniciales (metas)</span>
+      </a>
+      
+    </nav>
+    <div class="px-3 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+      v0.1 · read-only
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <header class="no-print h-14 flex items-center justify-between px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+      <div class="text-sm text-slate-600 dark:text-slate-400">
+        Tablero
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="toggleTheme()" class="text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Tema</button>
+        <span class="text-sm">
+          <span class="font-medium">tamara</span>
+          <span class="text-slate-500">· Dueño</span>
+        </span>
+        <form action="/logout" method="post">
+          <button class="text-xs px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90">Salir</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="flex-1 p-6 overflow-x-auto">
+      
+        
+      
+      
+<div class="max-w-7xl">
+  <div class="flex items-baseline justify-between mb-6">
+    <h1 class="text-2xl font-semibold">Tablero</h1>
+    <div class="text-sm text-slate-500">Rol: <strong>Dueño</strong></div>
+  </div>
+
+  
+
+  
+  
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="text-xs uppercase tracking-wider text-slate-500">Cartera (por cobrar)</div>
+    
+      
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+          <svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2 L10 8 L2 8 Z"/></svg>
+          3.0%
+        </span>
+      
+    
+  </div>
+  <div class="mt-2 text-3xl font-semibold text-mono
+    text-emerald-600 dark:text-emerald-400
+    ">148.321,50</div>
+  
+  
+    <div class="mt-1 text-[11px] text-slate-500">vs hace 7d</div>
+  
+</div>
+
+      
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="text-xs uppercase tracking-wider text-slate-500">Deudas (por pagar)</div>
+    
+  </div>
+  <div class="mt-2 text-3xl font-semibold text-mono
+    text-red-600 dark:text-red-400
+    ">42.180,30</div>
+  
+  
+</div>
+
+      
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="text-xs uppercase tracking-wider text-slate-500">Saldo bancos</div>
+    
+      
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+          <svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2 L10 8 L2 8 Z"/></svg>
+          1.3%
+        </span>
+      
+    
+  </div>
+  <div class="mt-2 text-3xl font-semibold text-mono
+    text-blue-600 dark:text-blue-400
+    ">398.241,05</div>
+  
+  
+    <div class="mt-1 text-[11px] text-slate-500">vs hace 7d</div>
+  
+</div>
+
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+      
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="text-xs uppercase tracking-wider text-slate-500">Cobranza esta semana</div>
+    
+  </div>
+  <div class="mt-2 text-3xl font-semibold text-mono
+    text-emerald-600 dark:text-emerald-400
+    ">47.500,00</div>
+  <div class="mt-1 text-xs text-slate-500">12 facturas vencen hoy..+7d</div>
+  
+</div>
+
+      
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="text-xs uppercase tracking-wider text-slate-500">Pagos a proveedores esta semana</div>
+    
+  </div>
+  <div class="mt-2 text-3xl font-semibold text-mono
+    text-amber-600 dark:text-amber-400
+    ">18.200,00</div>
+  <div class="mt-1 text-xs text-slate-500">4 posdatados</div>
+  
+</div>
+
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 font-medium">Saldos por banco</div>
+        <table class="w-full text-sm">
+          <tbody>
+          
+            <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td class="px-5 py-2">Pichincha Intela</td>
+              <td class="px-5 py-2 text-right text-mono">287.450,30</td>
+            </tr>
+          
+            <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td class="px-5 py-2">Internacional Intela</td>
+              <td class="px-5 py-2 text-right text-mono">98.340,00</td>
+            </tr>
+          
+            <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td class="px-5 py-2">Produbanco USD</td>
+              <td class="px-5 py-2 text-right text-mono">12.450,75</td>
+            </tr>
+          
+          </tbody>
+        </table>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 font-medium">Top 10 deudores</div>
+        <table class="w-full text-sm">
+          <thead class="text-xs text-slate-500">
+            <tr>
+              <th class="px-5 py-2 text-left font-normal">Cliente</th>
+              <th class="px-5 py-2 text-right font-normal">Saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">TEX001</span>
+                  <span class="ml-2">Textil Andina S.A.</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">45.780,50</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">CON042</span>
+                  <span class="ml-2">Confecciones del Valle</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">28.900,00</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">IND018</span>
+                  <span class="ml-2">Industrias El Sol</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">19.450,75</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">MOD007</span>
+                  <span class="ml-2">Modas Quito Centro</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">15.230,00</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">TEL023</span>
+                  <span class="ml-2">Telares Guayas</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">12.100,00</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">DIS099</span>
+                  <span class="ml-2">Distribuidora Rex</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">8.950,25</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">HIL031</span>
+                  <span class="ml-2">Hilados Premium</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">6.720,00</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">VES055</span>
+                  <span class="ml-2">Vestimentas Sierra</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">5.100,00</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">TAL012</span>
+                  <span class="ml-2">Taller La Merced</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">3.250,00</td>
+            </tr>
+          
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2" style="white-space: nowrap;">
+                <a href="#" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">CON020</span>
+                  <span class="ml-2">Confex Import</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">2.840,00</td>
+            </tr>
+          
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    
+    
+    <div class="mb-6 flex flex-wrap gap-2 items-center">
+      <span class="text-xs uppercase tracking-wider text-slate-500 mr-2">Últimos 7 días</span>
+      
+<span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border
+  bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300
+  ">
+  <span class="text-slate-500 dark:text-slate-400">Facturas emitidas</span>
+  <span class="font-mono font-semibold">14 · 82.450,00</span>
+</span>
+
+      
+<span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border
+  bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300
+  ">
+  <span class="text-slate-500 dark:text-slate-400">Cheques recibidos</span>
+  <span class="font-mono font-semibold">12 · 47.500,00</span>
+</span>
+
+      
+        
+<span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border
+  bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300">
+  <span class="text-slate-500 dark:text-slate-400">Rebotados</span>
+  <span class="font-mono font-semibold">0</span>
+</span>
+
+      
+    </div>
+    
+
+    
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-8">
+      <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div>
+          <div class="font-medium">Saldo bancario — últimos 30 días</div>
+          <div class="text-xs text-slate-500 mt-0.5">30 puntos · de 18/03/2026 a 16/04/2026</div>
+        </div>
+        <a href="flujo.html" class="text-xs text-blue-600 hover:underline">Ver completo →</a>
+      </div>
+
+      <div class="p-5">
+        
+        <div class="relative" style="height: 140px;">
+          <svg viewBox="0 0 800 120" preserveAspectRatio="none"
+               class="w-full h-full" style="overflow: visible;">
+            
+            <line x1="0" y1="60.0" x2="800" y2="60.0"
+                  stroke="currentColor" stroke-opacity="0.08" stroke-dasharray="4,4"/>
+            
+            <path d="M 8.0,87.4 L 35.0,104.4 L 62.1,112.0 L 89.1,110.1 L 116.1,98.8 L 143.2,78.0 L 170.2,47.7 L 197.2,74.2 L 224.3,91.2 L 251.3,98.8 L 278.3,96.9 L 305.4,85.5 L 332.4,64.7 L 359.4,34.5 L 386.5,60.9 L 413.5,78.0 L 440.6,85.5 L 467.6,83.6 L 494.6,72.3 L 521.7,51.5 L 548.7,21.2 L 575.7,47.7 L 602.8,64.7 L 629.8,72.3 L 656.8,70.4 L 683.9,59.1 L 710.9,38.3 L 737.9,8.0 L 765.0,34.5 L 792.0,51.5 L 792.0,112.0 L 8.0,112.0 Z" fill="currentColor" fill-opacity="0.10" class="text-blue-500"/>
+            
+            <path d="M 8.0,87.4 L 35.0,104.4 L 62.1,112.0 L 89.1,110.1 L 116.1,98.8 L 143.2,78.0 L 170.2,47.7 L 197.2,74.2 L 224.3,91.2 L 251.3,98.8 L 278.3,96.9 L 305.4,85.5 L 332.4,64.7 L 359.4,34.5 L 386.5,60.9 L 413.5,78.0 L 440.6,85.5 L 467.6,83.6 L 494.6,72.3 L 521.7,51.5 L 548.7,21.2 L 575.7,47.7 L 602.8,64.7 L 629.8,72.3 L 656.8,70.4 L 683.9,59.1 L 710.9,38.3 L 737.9,8.0 L 765.0,34.5 L 792.0,51.5" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400"/>
+            
+            
+              <circle cx="683.8620689655172" cy="59.05454545454546" r="3" fill="currentColor" class="text-blue-600 dark:text-blue-400"/>
+            
+              <circle cx="710.8965517241379" cy="38.25454545454545" r="3" fill="currentColor" class="text-blue-600 dark:text-blue-400"/>
+            
+              <circle cx="737.9310344827586" cy="8.0" r="3" fill="currentColor" class="text-blue-600 dark:text-blue-400"/>
+            
+              <circle cx="764.9655172413793" cy="34.47272727272727" r="3" fill="currentColor" class="text-blue-600 dark:text-blue-400"/>
+            
+              <circle cx="792.0" cy="51.49090909090909" r="3" fill="currentColor" class="text-blue-600 dark:text-blue-400"/>
+            
+          </svg>
+        </div>
+
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800 text-sm">
+          <div>
+            <div class="text-xs text-slate-500">Inicio</div>
+            <div class="mt-1 text-mono font-semibold">273.000,00</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Hoy</div>
+            <div class="mt-1 text-mono font-semibold">282.500,00</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Variación</div>
+            <div class="mt-1 text-mono font-semibold
+              text-emerald-600 dark:text-emerald-400
+              ">
+              +9.500,00
+            </div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Rango (mín → máx)</div>
+            <div class="mt-1 text-mono text-xs text-slate-600 dark:text-slate-400">
+              266.500,00 → 294.000,00
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+
+    
+    
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-8">
+      <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div class="font-medium">Actividad reciente</div>
+        <div class="text-xs text-slate-500">Últimos movimientos del sistema</div>
+      </div>
+      <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+            ">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+              
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Factura 001015</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Textil Andina S.A. · 16/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">7.850,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Cheque 8834522</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Confecciones del Valle · 16/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">4.500,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+            ">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+              
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Factura 001014</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Industrias El Sol · 15/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">6.200,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Cheque 8834521</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Modas Quito Centro · 15/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">3.800,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+            ">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+              
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Factura 001013</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Telares Guayas · 14/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">5.400,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+            ">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+              
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Factura 001012</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Distribuidora Rex · 13/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">2.100,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Cheque 8834520</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Hilados Premium · 13/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">2.950,00</div>
+        </li>
+        
+        <li class="px-5 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0
+            bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+            ">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>
+              
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">
+              
+                <a href="#" class="hover:text-blue-600">Factura 001011</a>
+              
+            </div>
+            <div class="text-xs text-slate-500 truncate">Vestimentas Sierra · 12/04/2026</div>
+          </div>
+          <div class="text-sm text-mono font-semibold shrink-0">3.900,00</div>
+        </li>
+        
+      </ul>
+    </div>
+    
+
+  
+  
+</div>
+
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

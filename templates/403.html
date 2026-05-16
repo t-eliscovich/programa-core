@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Sin permiso{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto mt-16 text-center">
+  <div class="text-6xl font-bold text-slate-300">403</div>
+  <h1 class="mt-4 text-xl font-semibold">No tenés permiso para esta acción</h1>
+  <p class="mt-2 text-slate-500 text-sm">Acción: <code class="font-mono">{{ accion }}</code></p>
+  <p class="mt-6"><a href="{{ url_for('historial.operaciones') }}" class="text-blue-600 hover:underline">Volver al inicio</a></p>
+</div>
+{% endblock %}

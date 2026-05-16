@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header, saldo_pill %}
+
+{% block title %}Stop automático — preview{% endblock %}
+
+{% block content %}
+  {{ page_header("Stop automático", "Confirmá antes de bloquear a estos clientes") }}
+
+  <div class="mb-4 rounded-md bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3">
+    <p class="font-medium">Va a marcarse <code>stop='S'</code> en {{ candidatos | length }} cliente(s)</p>
+    <p class="text-sm">Criterio: facturas con saldo vivo y mora mayor a <strong>{{ umbral_dias }} días</strong>.</p>
+    <p class="text-sm">Se agrega una traza en <code>cliente.observacion</code> con la fecha y el umbral.</p>
+  </div>
+
+  <div class="overflow-x-auto border border-slate-200 rounded-lg bg-white mb-4">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+        <tr>
+          <th class="px-3 py-2 text-left">Código</th>
+          <th class="px-3 py-2 text-left">Cliente</th>
+          <th class="px-3 py-2 text-right">N° fact.</th>
+          <th class="px-3 py-2 text-right">Mora máx.</th>
+          <th class="px-3 py-2 text-right">Saldo vencido</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in candidatos %}
+          <tr>
+            <td class="px-3 py-2 font-mono text-xs">{{ c.codigo_cli }}</td>
+            <td class="px-3 py-2">{{ c.nombre }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ c.n_facturas }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-red-700">{{ c.dias_mora_max }}d</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ saldo_pill(c.saldo_vencido) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="px-3 py-6 text-center text-slate-500">Ningún cliente cumple el criterio — nada que hacer.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('cartera.aging') }}"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-4 py-2 text-sm hover:bg-slate-50">
+      Cancelar
+    </a>
+    {% if candidatos %}
+      <form method="post" action="{{ url_for('cartera.stop_automatico') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="umbral_dias" value="{{ umbral_dias }}">
+        <input type="hidden" name="confirmar" value="1">
+        <button type="submit"
+                class="inline-flex items-center rounded-md bg-red-600 text-white px-4 py-2 text-sm hover:bg-red-700">
+          Sí, pasar {{ candidatos | length }} cliente(s) a STOP
+        </button>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}

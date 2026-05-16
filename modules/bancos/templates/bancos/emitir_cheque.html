@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+
+{% block title %}Emitir cheque (chequera){% endblock %}
+
+{% block content %}
+  {{ page_header("Emitir cheque propio", "Cheque que vos firmás para pagar a alguien — chequera") }}
+
+  <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4 text-sm text-amber-900">
+    <strong>Cómo funciona:</strong> tipeá el concepto y el sistema detecta el tipo
+    automáticamente (PR&nbsp;ACR&nbsp;… → proveedor, RR&nbsp;TMT&nbsp;… → retiro, etc.) — siempre
+    podés override-arlo manualmente. En una sola operación se registra el movimiento
+    bancario Y el efecto contable correspondiente (cierre de posdat / retiro de socio /
+    movimiento a caja / gasto registrado). Reemplaza <code>BANCOS.PRG &gt; CHEQUERA</code>
+    del legacy dBase.
+  </div>
+
+  <form method="post" action="{{ url_for('bancos.emitir_cheque') }}"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-6 max-w-4xl">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {# --- Step 1: tipo de cheque ---------------------------------------- #}
+    <div>
+      <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-2">
+        1. ¿Qué estás pagando?
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-2" id="tipo-grid">
+        <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
+          <input type="radio" name="tipo" value="proveedor" class="sr-only" data-target="campos-proveedor" required>
+          <div class="text-2xl">🏭</div>
+          <div class="font-medium text-sm mt-1">Proveedor</div>
+          <div class="text-xs text-slate-500 mt-0.5">Pagar materia prima / servicio</div>
+        </label>
+        <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
+          <input type="radio" name="tipo" value="retiro" class="sr-only" data-target="campos-retiro">
+          <div class="text-2xl">👤</div>
+          <div class="font-medium text-sm mt-1">Retiro dueño</div>
+          <div class="text-xs text-slate-500 mt-0.5">Plata para el socio</div>
+        </label>
+        <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
+          <input type="radio" name="tipo" value="caja" class="sr-only" data-target="campos-caja">
+          <div class="text-2xl">💵</div>
+          <div class="font-medium text-sm mt-1">A caja</div>
+          <div class="text-xs text-slate-500 mt-0.5">Banco → caja física</div>
+        </label>
+        <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
+          <input type="radio" name="tipo" value="gasto" class="sr-only" data-target="campos-gasto">
+          <div class="text-2xl">📋</div>
+          <div class="font-medium text-sm mt-1">Gasto</div>
+          <div class="text-xs text-slate-500 mt-0.5">Luz, contadora, mantenimiento</div>
+        </label>
+        <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
+          <input type="radio" name="tipo" value="otro" class="sr-only" data-target="campos-otro">
+          <div class="text-2xl">📝</div>
+          <div class="font-medium text-sm mt-1">Otro</div>
+          <div class="text-xs text-slate-500 mt-0.5">Solo movimiento banco</div>
+        </label>
+      </div>
+    </div>
+
+    {# --- Step 2: datos comunes ---------------------------------------- #}
+    <div class="border-t border-slate-200 pt-5">
+      <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-2">
+        2. Datos del cheque
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Banco origen <span class="text-red-500">*</span>
+          </label>
+          <select name="no_banco" required
+                  class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+            <option value="">— Elegí —</option>
+            {% for b in bancos %}
+              <option value="{{ b.no_banco }}">
+                {{ b.no_banco }} — {{ b.nombre or '(sin nombre)' }}
+                {% if b.saldo_stored %} · saldo $ {{ b.saldo_stored | num_es }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Importe <span class="text-red-500">*</span>
+          </label>
+          <input type="text" name="importe" required placeholder="0,00"
+                 class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">N° de cheque</label>
+          <input type="text" name="no_cheque" placeholder="ej. 1234"
+                 class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Fecha</label>
+          <input type="date" name="fecha" value="{{ hoy }}"
+                 class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Concepto
+            <span class="ml-1 normal-case text-slate-400 tracking-normal">— autocomplete de los más usados</span>
+          </label>
+          <input type="text" name="concepto" placeholder="Tipeá para autocomplete (PR ACR fact 12, RR TMT, ALQUILER, GS SRI IVA…)"
+                 list="conceptos-emitir-list" autocomplete="off" id="emit-concepto-input"
+                 class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900" maxlength="50">
+          <div id="emit-tipo-preview" class="mt-1 text-xs text-slate-500 hidden">
+            🤖 Detecté:
+            <span id="emit-tipo-preview-label" class="font-medium"></span>
+            <button type="button" id="emit-tipo-preview-apply"
+                    class="ml-2 underline hover:text-sky-600">aplicar</button>
+          </div>
+          {% if conceptos %}
+            <datalist id="conceptos-emitir-list">
+              {% for c in conceptos %}
+                <option value="{{ c.concepto }}">{{ c.concepto }} · {{ c.usos }}×</option>
+              {% endfor %}
+            </datalist>
+          {% endif %}
+          {% if conceptos %}
+          <div class="mt-2 flex flex-wrap gap-1.5" id="emit-concepto-chips">
+            {% for c in conceptos[:10] %}
+              <button type="button" data-concepto="{{ c.concepto }}"
+                      class="text-xs px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700">
+                {{ c.concepto }}
+              </button>
+            {% endfor %}
+          </div>
+          <script>
+          (function() {
+            const inp = document.querySelector('input[name="concepto"]');
+            document.querySelectorAll('#emit-concepto-chips button[data-concepto]').forEach(b => {
+              b.addEventListener('click', () => { inp.value = b.dataset.concepto; inp.focus(); });
+            });
+          })();
+          </script>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# --- Step 3: campos específicos por tipo (mostrados con JS) ------- #}
+    <div class="border-t border-slate-200 pt-5">
+      <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-2">
+        3. Detalles del destino
+      </h2>
+
+      <div id="campos-proveedor" class="campos-tipo hidden space-y-3">
+        <p class="text-xs text-slate-500">
+          Si el cheque cierra una posdat existente, seleccionala. Si querés generar
+          una nueva compra, primero creala en <a href="{{ url_for('compras.nueva') }}" class="text-sky-600 hover:underline">/compras/nueva</a>
+          y volvé acá.
+        </p>
+        <div class="flex items-center gap-2">
+          <input type="text" id="filtro-prov" placeholder="Filtrar por código de proveedor"
+                 class="px-3 py-1.5 text-sm rounded border border-slate-300 w-64 uppercase"
+                 oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded max-h-64 overflow-y-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-100 text-xs text-slate-500 uppercase tracking-wide sticky top-0">
+              <tr>
+                <th class="px-2 py-1 w-8"></th>
+                <th class="px-2 py-1 text-left">Proveedor</th>
+                <th class="px-2 py-1 text-left">Vence</th>
+                <th class="px-2 py-1 text-right">Importe</th>
+                <th class="px-2 py-1 text-left">Concepto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in posdats %}
+                <tr class="border-t border-slate-100 hover:bg-slate-50 fila-posdat" data-prov="{{ p.prov }}">
+                  <td class="px-2 py-1">
+                    <input type="radio" name="id_posdat" value="{{ p.id_posdat }}" class="rounded">
+                  </td>
+                  <td class="px-2 py-1">
+                    <span class="font-mono text-xs text-slate-500">{{ p.prov }}</span>
+                    <span class="ml-1">{{ p.proveedor or '' }}</span>
+                  </td>
+                  <td class="px-2 py-1 text-xs">{{ p.fechad | fecha_es if p.fechad else '' }}</td>
+                  <td class="px-2 py-1 text-right tabular-nums font-medium">{{ p.importe | num_es }}</td>
+                  <td class="px-2 py-1 text-xs text-slate-500">{{ p.concepto or '' }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="5" class="px-2 py-4 text-center text-slate-500 text-xs">
+                  No hay posdats abiertas. Si el cheque es para un proveedor sin posdat previa,
+                  podés dejar esto en blanco — sólo se registrará el movimiento bancario.
+                </td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Código de proveedor (si NO hay posdat)
+          </label>
+          <input type="text" name="beneficiario" placeholder="Ej. ACR" maxlength="5"
+                 list="proveedores-list" autocomplete="off"
+                 class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
+                 oninput="this.value=this.value.toUpperCase()">
+          <p class="text-xs text-slate-400 mt-1">Tipeá el código (autocomplete contra <code>scintela.proveedor</code>).</p>
+        </div>
+      </div>
+
+      <div id="campos-retiro" class="campos-tipo hidden space-y-3">
+        <p class="text-xs text-slate-500">
+          Indicá el código del socio que retira (legacy: 2 letras tipo TM, GH).
+        </p>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Código del socio
+          </label>
+          <input type="text" name="de_socio" placeholder="Ej. TM" maxlength="5"
+                 class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
+                 oninput="this.value=this.value.toUpperCase()">
+        </div>
+      </div>
+
+      <div id="campos-caja" class="campos-tipo hidden">
+        <p class="text-xs text-slate-500">
+          Se registra como entrada de caja física (<code>caja.tipo='E'</code>).
+          No hace falta más datos.
+        </p>
+      </div>
+
+      <div id="campos-gasto" class="campos-tipo hidden space-y-3">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Proveedor del gasto (opcional)
+          </label>
+          <input type="text" name="beneficiario" placeholder="Ej. CNEL" maxlength="5"
+                 list="proveedores-list" autocomplete="off"
+                 class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
+                 oninput="this.value=this.value.toUpperCase()">
+          <p class="text-xs text-slate-400 mt-1">El gasto se registra como pagado. Autocomplete contra <code>scintela.proveedor</code>.</p>
+        </div>
+      </div>
+
+      {# Datalist compartida — usada por los dos inputs name="beneficiario". #}
+      {% if proveedores %}
+        <datalist id="proveedores-list">
+          {% for p in proveedores %}
+            <option value="{{ p.codigo_prov }}">{{ p.codigo_prov }} — {{ p.nombre }}</option>
+          {% endfor %}
+        </datalist>
+      {% endif %}
+
+      <div id="campos-otro" class="campos-tipo hidden">
+        <p class="text-xs text-slate-500">
+          Sólo se registra el movimiento bancario, sin tocar otras tablas.
+          Útil para impuestos, transferencias entre cuentas propias, etc.
+        </p>
+      </div>
+    </div>
+
+    {# --- Footer ------------------------------------------------------ #}
+    <div class="flex items-center justify-between pt-4 border-t border-slate-200">
+      <a href="{{ url_for('bancos.lista') }}"
+         class="text-sm px-4 py-2 rounded border border-slate-300 hover:bg-slate-50">
+        Cancelar
+      </a>
+      <button type="submit"
+              class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium">
+        Emitir cheque
+      </button>
+    </div>
+  </form>
+
+  <script>
+  (function() {
+    // Mostrar el bloque de campos según el radio "tipo" seleccionado
+    const radios = document.querySelectorAll('input[name="tipo"]');
+    const bloques = document.querySelectorAll('.campos-tipo');
+    function mostrar() {
+      const sel = document.querySelector('input[name="tipo"]:checked');
+      bloques.forEach(b => b.classList.add('hidden'));
+      if (sel && sel.dataset.target) {
+        const target = document.getElementById(sel.dataset.target);
+        if (target) target.classList.remove('hidden');
+      }
+    }
+    radios.forEach(r => r.addEventListener('change', mostrar));
+    mostrar();
+
+    // Filtrar posdats por código de proveedor (en proveedor)
+    const filtro = document.getElementById('filtro-prov');
+    if (filtro) {
+      filtro.addEventListener('input', () => {
+        const v = filtro.value.trim().toUpperCase();
+        document.querySelectorAll('.fila-posdat').forEach(tr => {
+          tr.style.display = (!v || (tr.dataset.prov || '').includes(v)) ? '' : 'none';
+        });
+      });
+    }
+
+    // Auto-detect tipo desde el concepto (Fase A — concept-driven).
+    // Llama a /bancos/_api/preview-concepto y sugiere el radio adecuado.
+    const cinp = document.getElementById('emit-concepto-input');
+    const cbox = document.getElementById('emit-tipo-preview');
+    const clbl = document.getElementById('emit-tipo-preview-label');
+    const cbtn = document.getElementById('emit-tipo-preview-apply');
+    let cTimer = null;
+    let cLastSugerencia = null;
+    const tipoLabels = {
+      proveedor: 'Proveedor', retiro: 'Retiro dueño',
+      caja: 'A caja', gasto: 'Gasto', otro: 'Otro',
+    };
+    function setRadio(tipo, extras) {
+      const radio = document.querySelector(`input[name="tipo"][value="${tipo}"]`);
+      if (radio) {
+        radio.checked = true;
+        mostrar();
+      }
+      if (extras && extras.beneficiario) {
+        const inputs = document.querySelectorAll('input[name="beneficiario"]');
+        inputs.forEach(i => { if (!i.value) i.value = extras.beneficiario; });
+      }
+      if (extras && extras.de_socio) {
+        const i = document.querySelector('input[name="de_socio"]');
+        if (i && !i.value) i.value = extras.de_socio;
+      }
+    }
+    function debouncePreview() {
+      if (cTimer) clearTimeout(cTimer);
+      cTimer = setTimeout(async () => {
+        const q = (cinp.value || '').trim();
+        if (q.length < 3) {
+          cbox.classList.add('hidden');
+          return;
+        }
+        try {
+          const r = await fetch(`/bancos/_api/preview-concepto?concepto=${encodeURIComponent(q)}`);
+          if (!r.ok) return;
+          const j = await r.json();
+          if (!j.tipo_sugerido) { cbox.classList.add('hidden'); return; }
+          // No empujamos si ya está el radio seleccionado y coincide.
+          const cur = document.querySelector('input[name="tipo"]:checked');
+          if (cur && cur.value === j.tipo_sugerido) {
+            cbox.classList.add('hidden');
+            return;
+          }
+          cLastSugerencia = j;
+          const label = tipoLabels[j.tipo_sugerido] || j.tipo_sugerido;
+          clbl.textContent = label + (j.descripcion ? ' — ' + j.descripcion : '');
+          cbox.classList.remove('hidden');
+        } catch (_) { /* silencioso */ }
+      }, 350);
+    }
+    if (cinp) {
+      cinp.addEventListener('input', debouncePreview);
+      cbtn.addEventListener('click', () => {
+        if (!cLastSugerencia) return;
+        setRadio(cLastSugerencia.tipo_sugerido, cLastSugerencia.extras);
+        cbox.classList.add('hidden');
+      });
+    }
+  })();
+  </script>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Ventas mensuales{% endblock %}
+{% block breadcrumb %}Informes / <strong>Ventas mensuales</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Ventas mensuales</h1>
+      <p class="text-sm text-slate-500 mt-1">Últimos {{ meses }} meses</p>
+    </div>
+    <div class="no-print flex items-center gap-3">
+      <a href="{{ url_for('informes.ventas_multianual') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+         title="Comparar ventas mes a mes entre múltiples años — replica MODIFICA.PRG PROCEDURE VENTAS">Vista multi-año</a>
+      <form class="flex items-center gap-2">
+        <label class="text-xs text-slate-500">Meses:</label>
+        <input type="number" name="meses" value="{{ meses }}" min="1" max="60"
+               class="w-20 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+        <button class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Ver</button>
+      </form>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-5 py-3 text-left font-medium">Mes</th>
+          <th class="px-5 py-3 text-right font-medium">Facturas</th>
+          <th class="px-5 py-3 text-right font-medium">Kg</th>
+          <th class="px-5 py-3 text-right font-medium">Importe</th>
+          <th class="px-5 py-3 text-right font-medium">Abonado</th>
+          <th class="px-5 py-3 text-right font-medium">% cobrado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-5 py-2" style="white-space: nowrap;">{{ r.mes | fecha_es }}</td>
+          <td class="px-5 py-2 text-right text-mono">{{ r.n_facturas }}</td>
+          <td class="px-5 py-2 text-right text-mono">{{ r.kg_total | kg_es }}</td>
+          <td class="px-5 py-2 text-right text-mono">{{ r.importe_total | money_es }}</td>
+          <td class="px-5 py-2 text-right text-mono">{{ r.abonado_total | money_es }}</td>
+          <td class="px-5 py-2 text-right text-mono text-slate-500">
+            {% if r.importe_total and r.importe_total > 0 %}
+              {{ (r.abonado_total * 100 / r.importe_total) | num_es(1) }} %
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'Sin datos.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

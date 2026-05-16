@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, kpi_card, empty_row %}
+{% block title %}Stock{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-start justify-between gap-4 flex-wrap mb-6">
+    {{ page_hero(
+        "Stock",
+        "Inventario por etapa — kg y valor en U$.",
+        kpi_label="VALOR TOTAL",
+        kpi_valor="US$ " ~ (stock.total_con_quimicos | num_es(0)),
+        kpi_extra=("al " ~ stock.snapshot_fecha) if stock.snapshot_fecha else "al último snapshot"
+    ) }}
+    <a href="{{ url_for('informes.balance') }}"
+       class="text-sm text-slate-500 hover:text-sky-600 hover:underline">
+      ver balance completo →
+    </a>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# ─── 4 KPI cards por etapa ─── #}
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    {% set h = stock.hilado or {"kg":0,"ukg":0,"us":0} %}
+    {% set k = stock.tejido or {"kg":0,"ukg":0,"us":0} %}
+    {% set f = stock.terminado or {"kg":0,"ukg":0,"us":0} %}
+    {% set q = stock.quimicos or {"kg":0,"ukg":0,"us":0} %}
+
+    {{ kpi_card(
+        "Hilado",
+        (h.kg | num_es(0)) ~ " kg",
+        extra=("US$ " ~ (h.us | num_es(0)) ~ " · " ~ (h.ukg | num_es(2)) ~ " U$/kg"),
+        tono="slate"
+    ) }}
+    {{ kpi_card(
+        "Tejido",
+        (k.kg | num_es(0)) ~ " kg",
+        extra=("US$ " ~ (k.us | num_es(0)) ~ " · " ~ (k.ukg | num_es(2)) ~ " U$/kg"),
+        tono="slate"
+    ) }}
+    {{ kpi_card(
+        "Terminado",
+        (f.kg | num_es(0)) ~ " kg",
+        extra=("US$ " ~ (f.us | num_es(0)) ~ " · " ~ (f.ukg | num_es(2)) ~ " U$/kg"),
+        tono="slate"
+    ) }}
+    {{ kpi_card(
+        "Químicos",
+        "US$ " ~ (q.us | num_es(0)),
+        extra="sin trackeo de kg (valor del snapshot)",
+        tono="slate"
+    ) }}
+  </div>
+
+  {# ─── Tabla resumen por etapa con totales ─── #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-8">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Etapa</th>
+          <th class="px-4 py-3 text-right font-medium">Kg</th>
+          <th class="px-4 py-3 text-right font-medium">U$/kg ponderado</th>
+          <th class="px-4 py-3 text-right font-medium">Valor U$</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-3 font-medium">Hilado</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ h.kg | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ h.ukg | num_es(2) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ h.us | num_es(0) }}</td>
+        </tr>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-3 font-medium">Tejido</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ k.kg | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ k.ukg | num_es(2) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ k.us | num_es(0) }}</td>
+        </tr>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-3 font-medium">Terminado</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ f.kg | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ f.ukg | num_es(2) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ f.us | num_es(0) }}</td>
+        </tr>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-3 font-medium">Químicos</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ q.us | num_es(0) }}</td>
+        </tr>
+        {% set tot = stock.total or {"kg":0,"ukg":0,"us":0} %}
+        <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30">
+          <td class="px-4 py-3 font-bold">Total (sin químicos)</td>
+          <td class="px-4 py-3 text-right tabular-nums font-bold">{{ tot.kg | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ tot.ukg | num_es(2) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-bold">{{ tot.us | num_es(0) }}</td>
+        </tr>
+        <tr class="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30">
+          <td class="px-4 py-3 font-bold">Total con químicos</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-3 text-right tabular-nums font-bold text-emerald-700 dark:text-emerald-300">
+            {{ stock.total_con_quimicos | num_es(0) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# ─── Compras últimos 3 meses por tipo ─── #}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">
+    Compras últimos 3 meses por tipo
+  </h2>
+  <p class="text-xs text-slate-500 mb-3">
+    Qué entró a stock recientemente (ayuda a entender la composición actual).
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Tipo</th>
+          <th class="px-4 py-3 text-right font-medium">N° compras</th>
+          <th class="px-4 py-3 text-right font-medium">Kg total</th>
+          <th class="px-4 py-3 text-right font-medium">Importe total $</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in compras_recientes %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-3">
+            <a href="{{ url_for('compras.lista') }}?q={{ c.tipo }}"
+               class="hover:text-sky-600 hover:underline">
+              <span class="font-mono text-xs text-slate-500 mr-1">{{ c.tipo }}</span>
+              <span>{{ label_tipo(c.tipo) }}</span>
+            </a>
+          </td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ c.n_compras }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ c.kg_total | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ c.importe_total | num_es(0) }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(4, 'Sin compras en los últimos 3 meses.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-4">
+    El kg y U$/kg ponderado salen del último snapshot mensual de <code>scintela.historia</code>
+    (al {{ stock.snapshot_fecha or '—' }}) + ajustes live de compras / facturas creadas en Programa Core.
+    Las fórmulas de tarifa (UMX, UKK, UFF) replican INFORMES.PRG línea 337.
+  </p>
+</div>
+{% endblock %}

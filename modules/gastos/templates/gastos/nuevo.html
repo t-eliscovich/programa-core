@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Nuevo gasto{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('gastos.lista') }}" class="hover:underline">Gastos</a> /
+  <strong>Nuevo</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-1">Nuevo gasto</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    Servicios, sueldos, honorarios, mantenimiento, etc. Si es algo que se compra
+    para producir (hilado, químicos), va por <a href="{{ url_for('compras.nueva') }}" class="text-sky-600 hover:underline">Compras</a>.
+  </p>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-5 shadow-sm space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col">
+        <span class="text-sm font-medium">Fecha <span class="text-red-500">*</span></span>
+        <input type="text" name="fecha" value="{{ form.fecha or '' }}"
+               placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off" autofocus
+               oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+               class="mt-1 block w-full border rounded px-3 py-2 font-mono" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm font-medium">Categoría <span class="text-red-500">*</span></span>
+        <select name="doc" required
+                class="mt-1 block w-full border rounded px-3 py-2 bg-white dark:bg-slate-900">
+          {% for k, label in categorias %}
+            <option value="{{ k }}" {% if form.doc == k %}selected{% endif %}>{{ k }} — {{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <label class="flex flex-col">
+      <span class="text-sm font-medium">Concepto <span class="text-red-500">*</span></span>
+      <input type="text" name="concepto" value="{{ form.concepto or '' }}"
+             maxlength="100" required
+             placeholder="Ej: Luz marzo / Sueldo Daniela / Honorarios contadora"
+             class="mt-1 block w-full border rounded px-3 py-2">
+    </label>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col">
+        <span class="text-sm font-medium">Importe <span class="text-red-500">*</span></span>
+        <input type="text" name="importe" value="{{ form.importe or '' }}"
+               required
+               placeholder="1.234,56 o 1234.56"
+               class="mt-1 block w-full border rounded px-3 py-2 text-right font-mono">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm font-medium">Proveedor (opcional)</span>
+        <input type="text" name="prov" value="{{ form.prov or '' }}"
+               list="proveedores-list" autocomplete="off"
+               maxlength="5"
+               oninput="this.value=this.value.toUpperCase()"
+               class="mt-1 block w-full border rounded px-3 py-2 uppercase font-mono">
+        {% if proveedores_datalist %}
+          <datalist id="proveedores-list">
+            {% for p in proveedores_datalist %}<option value="{{ p.codigo_prov }}">{{ p.nombre }}</option>{% endfor %}
+          </datalist>
+        {% endif %}
+        <span class="text-xs text-slate-500 mt-1">
+          Sólo si lo querés enlazar a un proveedor cargado (ej: empresa eléctrica).
+        </span>
+      </label>
+    </div>
+
+    {# --- Pagado / Postdatado --- #}
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" name="pagado" value="1"
+               {% if form.pagado %}checked{% endif %}
+               onchange="document.getElementById('fechad-wrap').style.display = this.checked ? 'none' : 'block'"
+               class="rounded">
+        <span class="text-sm font-medium">Pagado al contado</span>
+        <span class="text-xs text-slate-500">(saldo = 0)</span>
+      </label>
+
+      <div id="fechad-wrap" style="display: {% if form.pagado %}none{% else %}block{% endif %};" class="mt-3">
+        <label class="flex flex-col">
+          <span class="text-sm font-medium">Fecha de pago <span class="text-red-500">*</span></span>
+          <input type="text" name="fechad" value="{{ form.fechad or '' }}"
+                 placeholder="DD/MM/AAAA"
+                 inputmode="numeric" maxlength="10"
+                 oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+                 class="mt-1 block w-full border rounded px-3 py-2 font-mono">
+          <span class="text-xs text-slate-500 mt-1">
+            Cuándo lo vas a pagar. Aparece como obligación pendiente.
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
+      <a href="{{ url_for('gastos.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit"
+              class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded shadow-sm font-medium">
+        Cargar gasto
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

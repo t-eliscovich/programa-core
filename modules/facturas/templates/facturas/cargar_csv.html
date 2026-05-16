@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Cargar facturas desde CSV{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+  <span>Cargar CSV</span>
+{% endblock %}
+
+{% block content %}
+{% set titulo = "Cargar facturas desde CSV" %}
+{% set subtitulo = "Mismas columnas que el alta individual. Las reglas de negocio (saldo=importe, stat='A', vencimiento por plazo del cliente) se aplican por fila." %}
+{% set url_plantilla = url_for('facturas.cargar_csv', plantilla=1) %}
+{% set url_volver = url_for('facturas.lista') %}
+{% include "_csv_upload.html" %}
+{% endblock %}

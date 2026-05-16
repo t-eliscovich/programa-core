@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Flujo de caja — original vs moderno</title>
+<meta name="viewport" content="width=1200">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #141a22;
+    --panel-hi: #1b2330;
+    --text: #e7ecf3;
+    --muted: #9aa7b8;
+    --accent: #4db8ff;
+    --good: #34d399;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --grid: #22303f;
+    --dbase-bg: #000033;
+    --dbase-text: #c0c0c0;
+    --dbase-axis: #ffff00;
+    --dbase-pos: #55ffff;
+    --dbase-neg: #ff5555;
+    --dbase-min: #ffffff;
+    --dbase-month: #55ff55;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 22px 32px 10px; display: flex; align-items: baseline; gap: 18px;
+    border-bottom: 1px solid var(--grid);
+  }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 32px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--grid);
+    border-radius: 10px; padding: 18px 20px 22px;
+  }
+  .panel h2 {
+    margin: 0 0 2px; font-size: 14px; font-weight: 600; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .panel .caption { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+  /* Original dBase look */
+  .terminal {
+    background: var(--dbase-bg); color: var(--dbase-text);
+    font-family: "Menlo", "Consolas", "Courier New", monospace;
+    font-size: 12px; line-height: 1.1; padding: 16px;
+    white-space: pre; overflow-x: auto;
+    border: 2px solid #555; border-radius: 4px;
+    /* glow simulation */
+    text-shadow: 0 0 1px currentColor;
+  }
+  .terminal .axis { color: var(--dbase-axis); }
+  .terminal .pos  { color: var(--dbase-pos); }
+  .terminal .neg  { color: var(--dbase-neg); }
+  .terminal .min  { color: var(--dbase-min); background: var(--dbase-neg); }
+  .terminal .mo   { color: var(--dbase-month); }
+  .terminal .pl   { color: var(--dbase-month); }
+
+  /* Modern */
+  .kpis { display: flex; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .kpi {
+    flex: 1 1 150px; background: var(--panel-hi); padding: 10px 14px;
+    border-radius: 8px; border: 1px solid var(--grid);
+  }
+  .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .kpi.good .value { color: var(--good); }
+  .kpi.bad  .value { color: var(--bad); }
+  .kpi.warn .value { color: var(--warn); }
+  .kpi .unit { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+  .zoom {
+    display: flex; gap: 6px; margin: 6px 0 12px; align-items: center;
+  }
+  .zoom span { font-size: 12px; color: var(--muted); margin-right: 6px; }
+  .zoom button {
+    background: var(--panel-hi); color: var(--text); border: 1px solid var(--grid);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  .zoom button.on { background: var(--accent); color: #001020; border-color: var(--accent); }
+
+  .notes { padding: 20px 32px 32px; color: var(--muted); font-size: 13px; }
+  .notes ul { margin: 8px 0 0 0; padding-left: 20px; }
+  .notes li { margin: 4px 0; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend span::before {
+    content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .legend .s-pos::before { background: var(--good); }
+  .legend .s-neg::before { background: var(--bad); }
+  .legend .s-min::before { background: var(--warn); }
+
+  canvas { width: 100% !important; height: 320px !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Flujo de caja proyectado — 60 días</h1>
+  <span class="sub">El gráfico de siempre, modernizado · Programa Core</span>
+</header>
+
+<div class="grid">
+
+  <!-- ========================= ORIGINAL ========================= -->
+  <section class="panel">
+    <h2>Lo que se ve hoy en dBase</h2>
+    <div class="caption">
+      80 × 25 caracteres, CGA 16 colores, <code>MENU.PRG → PROCEDURE GRAFICO</code>.
+      Cada barra = un día. PLAZ.COBR / PLAZ.DEUDA arriba, "MIN" marcado en rojo.
+    </div>
+    <div class="terminal" id="terminal"></div>
+    <div class="legend" style="margin-top:14px">
+      <span style="color:var(--dbase-pos)">▌</span>&nbsp;saldo positivo
+      <span style="color:var(--dbase-neg)">▌</span>&nbsp;saldo negativo
+      <span style="color:var(--dbase-month)">▌</span>&nbsp;inicio de mes
+    </div>
+  </section>
+
+  <!-- ========================= MODERNO ========================= -->
+  <section class="panel">
+    <h2>Versión moderna</h2>
+    <div class="caption">Mismos datos, mismas reglas. Hover para ver detalle por día.</div>
+
+    <div class="kpis">
+      <div class="kpi good"><div class="label">Plazo cobro</div>
+        <div class="value" id="kpi-cobro">—<span class="unit">días</span></div>
+      </div>
+      <div class="kpi bad"><div class="label">Plazo deuda</div>
+        <div class="value" id="kpi-deuda">—<span class="unit">días</span></div>
+      </div>
+      <div class="kpi warn"><div class="label">Saldo mínimo</div>
+        <div class="value" id="kpi-min">—</div>
+      </div>
+      <div class="kpi"><div class="label">Día del mínimo</div>
+        <div class="value" id="kpi-mindate" style="font-size:16px">—</div>
+      </div>
+    </div>
+
+    <div class="zoom">
+      <span>Agrupación</span>
+      <button data-q="1" class="on">1 día</button>
+      <button data-q="3">3 días</button>
+      <button data-q="5">5 días</button>
+      <button data-q="7">1 semana</button>
+      <button data-q="14">2 semanas</button>
+    </div>
+
+    <canvas id="chart"></canvas>
+
+    <div class="legend">
+      <span class="s-pos">saldo a favor</span>
+      <span class="s-neg">saldo en rojo</span>
+      <span class="s-min">mínimo del horizonte</span>
+    </div>
+  </section>
+</div>
+
+<div class="notes">
+  <strong>Qué cambió respecto al original, sin perder lo que el gerente ya sabe leer:</strong>
+  <ul>
+    <li>Eje vertical escalado en <em>miles de USD</em> y con separador de miles a la ecuatoriana (<code>1.234</code>). En dBase venía sin unidad.</li>
+    <li>Hover muestra descomposición: ingresos del día (cheques + facturas) vs egresos (gastos + materia prima). Antes era solo un número.</li>
+    <li>Los <strong>KPI</strong> quedan arriba como cards, no incrustados en la esquina del gráfico — se lee sin buscar.</li>
+    <li>El día del <strong>mínimo</strong> queda resaltado con punto y etiqueta, visible en cualquier zoom — antes requería hacerle zoom y buscar el <code>MIN</code>.</li>
+    <li>Los cambios de mes siguen marcados, pero ahora como línea vertical punteada con el nombre del mes arriba, no como color del label.</li>
+    <li>El <strong>agrupador</strong> reemplaza las opciones 1..5 del menú original por botones explícitos (1 día, 3, 5, 1 semana, 2 semanas).</li>
+    <li>Se preservan las semánticas originales: signo de saldo, min del horizonte, plazo ponderado por monto × días.</li>
+  </ul>
+</div>
+
+<script>
+/* ------------------------------------------------------------------ *
+ *   Datos reales de scintela.flujo — extraídos del dump intela12042026.
+ *   En la ruta Flask /flujo/grafico viene directo de la DB; acá viven
+ *   embebidos para que este preview funcione sin backend.
+ * ------------------------------------------------------------------ */
+const FLUJO_REAL = [{"fecha": "2026-03-13", "saldo": 1859254.0, "cheques": 5436.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-20", "saldo": 1853654.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -5600.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-23", "saldo": 1853932.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 278.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-24", "saldo": 1852506.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1426.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-25", "saldo": 1851793.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -713.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-26", "saldo": 1850367.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1426.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-27", "saldo": 1697108.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -153259.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-29", "saldo": 1695991.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1117.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-30", "saldo": 1694956.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1035.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-03-31", "saldo": 1695241.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 285.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-01", "saldo": 1695676.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 435.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-06", "saldo": 1691734.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -3942.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-09", "saldo": 1691630.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -104.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-10", "saldo": 1520309.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -171321.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-11", "saldo": 1521125.0, "cheques": 816.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-12", "saldo": 1524766.0, "cheques": 2500.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 1141.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-13", "saldo": 1423743.0, "cheques": 49182.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -140000.0, "gastos": -10205.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-14", "saldo": 1253852.0, "cheques": 26530.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -192500.0, "gastos": -3921.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-15", "saldo": 857744.0, "cheques": 50892.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -447000.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-16", "saldo": 915102.0, "cheques": 70775.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -13417.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-17", "saldo": 899549.0, "cheques": 47583.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -60000.0, "gastos": -3136.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-18", "saldo": 900012.0, "cheques": 463.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-19", "saldo": 902512.0, "cheques": 2500.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-20", "saldo": 786105.0, "cheques": 93476.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -140000.0, "gastos": -69882.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-21", "saldo": 814798.0, "cheques": 35340.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -6647.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-22", "saldo": 843090.0, "cheques": 28292.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-23", "saldo": 863943.0, "cheques": 23429.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -2576.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-24", "saldo": 885380.0, "cheques": 44793.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -15000.0, "gastos": -8356.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-25", "saldo": 907381.0, "cheques": 22001.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-26", "saldo": 907515.0, "cheques": 134.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-27", "saldo": 809291.0, "cheques": 101370.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -179174.0, "gastos": -20419.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-28", "saldo": 810560.0, "cheques": 31269.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -30000.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-29", "saldo": 836116.0, "cheques": 25556.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-04-30", "saldo": 681388.0, "cheques": 110272.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -265000.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-01", "saldo": 472640.0, "cheques": 61931.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -250000.0, "gastos": -20679.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-02", "saldo": 472640.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-03", "saldo": 472640.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-04", "saldo": 374818.0, "cheques": 73146.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -146869.0, "gastos": -24100.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-05", "saldo": 370968.0, "cheques": 27910.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -30000.0, "gastos": -1760.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-06", "saldo": 392590.0, "cheques": 21622.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-07", "saldo": 407620.0, "cheques": 15030.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-08", "saldo": 435372.0, "cheques": 27752.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-09", "saldo": 435372.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-10", "saldo": 428847.0, "cheques": 5450.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11975.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-11", "saldo": 521391.0, "cheques": 101271.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -8726.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-12", "saldo": 536781.0, "cheques": 15390.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-13", "saldo": 558169.0, "cheques": 21388.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-14", "saldo": 609112.0, "cheques": 50943.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-15", "saldo": 439754.0, "cheques": 43244.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -212602.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-16", "saldo": 425454.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -14300.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-17", "saldo": 425454.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-18", "saldo": 489554.0, "cheques": 64100.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-19", "saldo": 493264.0, "cheques": 10037.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -6327.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-20", "saldo": 502962.0, "cheques": 39698.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -30000.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-21", "saldo": 521697.0, "cheques": 18735.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-22", "saldo": 561285.0, "cheques": 39588.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-23", "saldo": 561285.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-24", "saldo": 561285.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-25", "saldo": 598664.0, "cheques": 56538.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -14663.0, "gastos": -4496.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-26", "saldo": 587282.0, "cheques": 15811.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -14990.0, "gastos": -12202.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-27", "saldo": 607949.0, "cheques": 20667.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-28", "saldo": 624412.0, "cheques": 16463.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-29", "saldo": 649103.0, "cheques": 24691.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-30", "saldo": 650202.0, "cheques": 1099.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-05-31", "saldo": 650202.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-01", "saldo": -780441.0, "cheques": 118357.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -1485000.0, "gastos": -64000.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-02", "saldo": -758027.0, "cheques": 22414.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-03", "saldo": -741656.0, "cheques": 16371.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-04", "saldo": -724368.0, "cheques": 17288.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-05", "saldo": -701025.0, "cheques": 23343.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-06", "saldo": -701025.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-07", "saldo": -701025.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-08", "saldo": -665657.0, "cheques": 35368.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-09", "saldo": -641749.0, "cheques": 23908.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-10", "saldo": -635393.0, "cheques": 18231.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-11", "saldo": -620739.0, "cheques": 15662.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-12", "saldo": -598970.0, "cheques": 21769.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-13", "saldo": -598970.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-14", "saldo": -598970.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-15", "saldo": -685712.0, "cheques": 18258.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -105000.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-16", "saldo": -687604.0, "cheques": 16125.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -18017.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-17", "saldo": -679233.0, "cheques": 8371.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-18", "saldo": -669051.0, "cheques": 10182.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-19", "saldo": -654954.0, "cheques": 14097.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-20", "saldo": -654954.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-21", "saldo": -654954.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-22", "saldo": -615269.0, "cheques": 39685.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-23", "saldo": -595559.0, "cheques": 19710.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-24", "saldo": -581601.0, "cheques": 6713.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 7245.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-25", "saldo": -572125.0, "cheques": 9476.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-26", "saldo": -560668.0, "cheques": 11457.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-27", "saldo": -560668.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-28", "saldo": -560668.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-29", "saldo": -568046.0, "cheques": 10122.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -17500.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-06-30", "saldo": -552750.0, "cheques": 15296.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-01", "saldo": -613750.0, "cheques": 3000.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -64000.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-02", "saldo": -611916.0, "cheques": 1834.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-03", "saldo": -604458.0, "cheques": 7458.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-06", "saldo": -593409.0, "cheques": 11049.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-07", "saldo": -590819.0, "cheques": 2590.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-08", "saldo": -586654.0, "cheques": 4165.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-09", "saldo": -582002.0, "cheques": 4652.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-10", "saldo": -591391.0, "cheques": 2486.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-11", "saldo": -592399.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-13", "saldo": -589004.0, "cheques": 3395.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-14", "saldo": -586613.0, "cheques": 2391.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-15", "saldo": -551489.0, "cheques": 35124.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-16", "saldo": -502507.0, "cheques": 4886.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 44096.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-17", "saldo": -502223.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-20", "saldo": -2171795.0, "cheques": 30428.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": -1700000.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-21", "saldo": -2171474.0, "cheques": 321.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-22", "saldo": -2168306.0, "cheques": 3168.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-23", "saldo": -2163718.0, "cheques": 4588.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-24", "saldo": -2163394.0, "cheques": 324.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-27", "saldo": -2158635.0, "cheques": 4759.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-29", "saldo": -2154160.0, "cheques": 4475.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-30", "saldo": -2150218.0, "cheques": 3942.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-07-31", "saldo": -2147218.0, "cheques": 3000.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-05", "saldo": -2169918.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -22700.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-10", "saldo": -2181509.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-11", "saldo": -2182517.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-16", "saldo": -2196677.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -14160.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-24", "saldo": -2196393.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-28", "saldo": -2194647.0, "cheques": 1746.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-08-31", "saldo": -2190705.0, "cheques": 3942.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-09", "saldo": -2206905.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -16200.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-10", "saldo": -2218780.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-11", "saldo": -2219788.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-14", "saldo": -2219504.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-16", "saldo": -2230504.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11000.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-21", "saldo": -2230754.0, "cheques": -250.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-27", "saldo": -2248254.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -17500.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-28", "saldo": -2245470.0, "cheques": 2784.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-09-30", "saldo": -2241528.0, "cheques": 3942.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-10-04", "saldo": -2371528.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -130000.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-10-10", "saldo": -2383403.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-10-11", "saldo": -2384411.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-10-12", "saldo": -2384127.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-10-26", "saldo": -2383843.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-10-30", "saldo": -2379901.0, "cheques": 3942.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-11-10", "saldo": -2391776.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-11-11", "saldo": -2392784.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-11-16", "saldo": -2406500.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -14000.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-11-30", "saldo": -2402273.0, "cheques": 4227.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-10", "saldo": -2447248.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -44975.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-11", "saldo": -2448256.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-14", "saldo": -2447972.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-26", "saldo": -2465472.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -17500.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-28", "saldo": -2465188.0, "cheques": 284.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-30", "saldo": -2470695.0, "cheques": 212.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -5719.0, "pagos": 0, "dolares": 0}, {"fecha": "2026-12-31", "saldo": -2461168.0, "cheques": 9527.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": 0.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-01-10", "saldo": -2547643.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -86475.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-01-11", "saldo": -2548651.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-02-10", "saldo": -2560526.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-02-11", "saldo": -2561534.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-02-16", "saldo": -2575434.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -13900.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-03-09", "saldo": -2591034.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -15600.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-03-10", "saldo": -2602909.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-03-11", "saldo": -2603917.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-03-26", "saldo": -2621417.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -17500.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-04-10", "saldo": -2633292.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-04-11", "saldo": -2634300.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-04-20", "saldo": -2634400.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -100.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-05-10", "saldo": -2646275.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-05-11", "saldo": -2647283.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-05-16", "saldo": -2660983.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -13700.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-06-10", "saldo": -2672858.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-06-11", "saldo": -2673866.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-06-24", "saldo": -2691366.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -17500.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-07-10", "saldo": -2703241.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-08-10", "saldo": -2715116.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-08-16", "saldo": -2728616.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -13500.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-09-09", "saldo": -2743616.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -15000.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-09-10", "saldo": -2755491.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-09-11", "saldo": -2756499.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-09-22", "saldo": -2773999.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -17500.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-10-10", "saldo": -2785874.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-10-11", "saldo": -2786882.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-11-10", "saldo": -2798757.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11875.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-11-11", "saldo": -2799765.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -1008.0, "pagos": 0, "dolares": 0}, {"fecha": "2027-11-16", "saldo": -2813165.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -13400.0, "pagos": 0, "dolares": 0}, {"fecha": "2028-02-16", "saldo": -2826365.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -13200.0, "pagos": 0, "dolares": 0}, {"fecha": "2028-02-22", "saldo": -2857165.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -30800.0, "pagos": 0, "dolares": 0}, {"fecha": "2028-05-16", "saldo": -2868465.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -11300.0, "pagos": 0, "dolares": 0}, {"fecha": "2028-08-16", "saldo": -2881365.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -12900.0, "pagos": 0, "dolares": 0}, {"fecha": "2028-11-16", "saldo": -2894065.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -12700.0, "pagos": 0, "dolares": 0}, {"fecha": "2028-12-23", "saldo": -3037265.0, "cheques": 0.0, "facturas": 0.0, "posdat1": 0.0, "posdat2": 0.0, "pichincha": 1839438.0, "inter": 3761.0, "mprima": 0.0, "gastos": -143200.0, "pagos": 0, "dolares": 0}];
+
+// Parse ISO date strings (JS Date desde YYYY-MM-DD respeta local timezone si
+// le agregamos la hora). Montamos objetos con el mismo shape que antes.
+const _parseISO = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+
+// Tomamos como "hoy" la menor fecha disponible en los datos (13-mar-2026 en el
+// dump). En producción esto sería CURRENT_DATE. Recortamos a una ventana
+// razonable (próximos 60 días) para que el chart sea legible.
+const FECHA_INICIO = _parseISO('2026-04-16');
+const VENTANA_DIAS = 60;
+const FECHA_FIN    = new Date(FECHA_INICIO); FECHA_FIN.setDate(FECHA_INICIO.getDate() + VENTANA_DIAS);
+const HOY = FECHA_INICIO;
+
+const data = FLUJO_REAL
+  .map(r => {
+    const fecha = _parseISO(r.fecha);
+    const cheques  = r.cheques  || 0;
+    const facturas = r.facturas || 0;
+    const gastos   = r.gastos   || 0;
+    const mprima   = r.mprima   || 0;
+    return {
+      fecha, saldo: r.saldo || 0,
+      cheques, facturas, gastos, mprima,
+      neto: cheques + facturas + gastos + mprima,
+    };
+  })
+  .filter(r => r.fecha >= FECHA_INICIO && r.fecha <= FECHA_FIN)
+  .sort((a, b) => a.fecha - b.fecha);
+
+/* ------------------------------------------------------------------ *
+ *   KPIs idénticos al cálculo de dBase:
+ *     PLAZO = SUM((cheques+facturas) * (fecha-hoy)) / SUM(cheques+facturas)
+ *     PLAZG = SUM((gastos+mprima)    * (fecha-hoy)) / SUM(gastos+mprima)
+ * ------------------------------------------------------------------ */
+function plazoPromedio(rows, kind) {
+  let numer = 0, denom = 0;
+  for (const row of rows) {
+    const m = kind === 'cobro' ? (row.cheques + row.facturas)
+                               : (row.gastos  + row.mprima);
+    if (kind === 'deuda' && m >= 0) continue;
+    if (kind === 'cobro' && m <= 0) continue;
+    const dias = Math.round((row.fecha - HOY) / 86400000);
+    numer += m * dias;
+    denom += m;
+  }
+  return denom === 0 ? 0 : Math.round(numer / denom);
+}
+const plazoCobro = plazoPromedio(data, 'cobro');
+const plazoDeuda = plazoPromedio(data, 'deuda');
+
+const minRow = data.reduce((a, b) => b.saldo < a.saldo ? b : a);
+
+const fmt  = n => n.toLocaleString('es-EC', { maximumFractionDigits: 0 }).replace(/,/g, '.');
+const fmtD = d => d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' });
+
+document.getElementById('kpi-cobro').innerHTML   = `${plazoCobro}<span class="unit">días</span>`;
+document.getElementById('kpi-deuda').innerHTML   = `${plazoDeuda}<span class="unit">días</span>`;
+document.getElementById('kpi-min').innerHTML     = `$ ${fmt(minRow.saldo)}`;
+document.getElementById('kpi-mindate').textContent = fmtD(minRow.fecha);
+
+/* ------------------------------------------------------------------ *
+ *   Recreación ASCII del gráfico de dBase
+ * ------------------------------------------------------------------ */
+function renderDbase(rows) {
+  const COLS = 78;
+  const ROWS = 22;
+  const AX   = 13;                        // eje x
+  const BARS = Math.min(rows.length, 35); // ~35 barras en los 78 cols
+  const sub  = rows.slice(0, BARS);
+
+  // escala del eje: ajustar al rango
+  const maxAbs = Math.max(...sub.map(r => Math.abs(r.saldo)));
+  const esc    = maxAbs / 10 || 1;
+
+  // matriz de chars
+  const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
+  const col  = Array.from({ length: ROWS }, () => Array(COLS).fill(''));
+
+  // eje vertical con valores
+  for (let x = 0; x < ROWS; x++) {
+    const val = (AX - x) * esc;
+    const s   = Math.round(val / 1000) + 'k';
+    for (let i = 0; i < s.length; i++) grid[x][i] = s[i];
+    for (let i = 0; i < s.length; i++) col[x][i] = 'axis';
+    grid[x][4] = '│';
+  }
+  // eje horizontal
+  for (let y = 5; y < COLS; y++) { grid[AX][y] = '─'; }
+  grid[AX][4] = '┼';
+
+  // PLAZOS arriba
+  const pc = `PLAZ.COBR: ${String(plazoCobro).padStart(3)} d`;
+  const pd = `PLAZ.DEUDA: ${String(plazoDeuda).padStart(3)} d`;
+  for (let i = 0; i < pc.length; i++) { grid[18][6+i] = pc[i]; col[18][6+i] = 'pl'; }
+  for (let i = 0; i < pd.length; i++) { grid[19][6+i] = pd[i]; col[19][6+i] = 'pl'; }
+
+  // barras
+  const Z = 2; // separación horizontal
+  for (let i = 0; i < sub.length; i++) {
+    const x = i * Z + 6;
+    if (x >= COLS - 1) break;
+    const s = sub[i].saldo;
+    const altura = Math.round(-s / esc);
+    const y = Math.max(0, Math.min(ROWS - 1, AX + altura));
+
+    const kind = s >= 0 ? 'pos' : 'neg';
+    const ymin = Math.min(y, AX);
+    const ymax = Math.max(y, AX);
+    for (let yy = ymin; yy <= ymax; yy++) {
+      grid[yy][x] = '█';
+      col[yy][x]  = kind;
+    }
+
+    // label mes en primer día del mes
+    const d = sub[i].fecha;
+    if (d.getDate() <= Z || i === 0) {
+      const mes = d.toLocaleDateString('es-EC', { month: 'short' }).slice(0, 3).toUpperCase();
+      for (let j = 0; j < 3 && x - 1 + j < COLS; j++) {
+        grid[AX + 1][x - 1 + j] = mes[j];
+        col[AX + 1][x - 1 + j] = 'mo';
+      }
+    } else if (i % 5 === 0) {
+      const dd = String(d.getDate()).padStart(2, ' ');
+      for (let j = 0; j < 2 && x + j < COLS; j++) {
+        grid[AX + 1][x + j] = dd[j];
+      }
+    }
+
+    // marcador MIN
+    if (sub[i] === minRow) {
+      const txt = 'MIN';
+      const ly  = Math.min(y + 1, ROWS - 1);
+      for (let j = 0; j < txt.length && x - 1 + j < COLS; j++) {
+        grid[ly][x - 1 + j] = txt[j];
+        col[ly][x - 1 + j] = 'min';
+      }
+    }
+  }
+
+  // serialize con spans de color
+  let out = '';
+  for (let x = 0; x < ROWS; x++) {
+    let cur = '';
+    let line = '';
+    for (let y = 0; y < COLS; y++) {
+      const c = col[x][y] || '';
+      const ch = grid[x][y];
+      if (c !== cur) {
+        if (cur) line += '</span>';
+        if (c)   line += `<span class="${c}">`;
+        cur = c;
+      }
+      line += ch === ' ' ? '&nbsp;' : ch;
+    }
+    if (cur) line += '</span>';
+    out += line + '\n';
+  }
+  return out;
+}
+
+document.getElementById('terminal').innerHTML = renderDbase(data);
+
+/* ------------------------------------------------------------------ *
+ *   Chart.js moderno — con agrupador Q días
+ * ------------------------------------------------------------------ */
+let chart;
+function bucket(rows, q) {
+  if (q === 1) return rows;
+  const out = [];
+  for (let i = 0; i < rows.length; i += q) {
+    const chunk = rows.slice(i, i + q);
+    out.push({
+      fecha: chunk[chunk.length - 1].fecha, // saldo al final del bucket
+      saldo: chunk[chunk.length - 1].saldo,
+      cheques: chunk.reduce((a, r) => a + r.cheques, 0),
+      facturas: chunk.reduce((a, r) => a + r.facturas, 0),
+      gastos: chunk.reduce((a, r) => a + r.gastos, 0),
+      mprima: chunk.reduce((a, r) => a + r.mprima, 0),
+      neto: chunk.reduce((a, r) => a + r.neto, 0),
+    });
+  }
+  return out;
+}
+
+function buildChart(q) {
+  const rows = bucket(data, q);
+  const labels = rows.map(r => r.fecha.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' }));
+
+  const bars = rows.map(r => r.saldo);
+  const bg   = rows.map(r =>
+    r === minRow                     ? '#fbbf24'
+    : r.saldo >= 0 && q === 1 && rows.includes(minRow) === false ? '#34d399'
+    : r.saldo >= 0                   ? '#34d399'
+    : '#f87171'
+  );
+
+  const monthLines = [];
+  rows.forEach((r, i) => {
+    if (i > 0 && r.fecha.getMonth() !== rows[i - 1].fecha.getMonth()) {
+      monthLines.push({ index: i, label: r.fecha.toLocaleDateString('es-EC', { month: 'long' }) });
+    }
+  });
+
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('chart').getContext('2d');
+
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Saldo proyectado (USD)',
+        data: bars,
+        backgroundColor: bg,
+        borderColor: bg,
+        borderWidth: 1,
+        borderRadius: 3,
+        barPercentage: 0.85,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0b0f14',
+          borderColor: '#22303f',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            title: ctx => {
+              const row = rows[ctx[0].dataIndex];
+              return row.fecha.toLocaleDateString('es-EC', { weekday: 'short', day: '2-digit', month: 'long' });
+            },
+            label: ctx => {
+              const row = rows[ctx.dataIndex];
+              const lines = [
+                `Saldo: $ ${fmt(row.saldo)}`,
+                `  Cheques:   $ ${fmt(row.cheques)}`,
+                `  Facturas:  $ ${fmt(row.facturas)}`,
+                `  Gastos:    $ ${fmt(row.gastos)}`,
+                `  M.prima:   $ ${fmt(row.mprima)}`,
+                `  Neto día:  $ ${fmt(row.neto)}`,
+              ];
+              if (row === minRow) lines.unshift('⚠ Mínimo del horizonte');
+              return lines;
+            },
+          },
+        },
+        annotation: false,
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)', drawTicks: false },
+          ticks: { color: '#9aa7b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)', drawTicks: false },
+          ticks: {
+            color: '#9aa7b8',
+            callback: v => '$ ' + (v / 1000).toFixed(0) + 'k',
+          },
+        },
+      },
+    },
+    plugins: [{
+      id: 'zeroLine',
+      beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const y0 = scales.y.getPixelForValue(0);
+        ctx.save();
+        ctx.strokeStyle = '#e7ecf3';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, y0);
+        ctx.lineTo(chartArea.right, y0);
+        ctx.stroke();
+        // month separators
+        monthLines.forEach(m => {
+          const x = scales.x.getPixelForValue(m.index) - (scales.x.getPixelForValue(1) - scales.x.getPixelForValue(0)) / 2;
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = 'rgba(231,236,243,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(x, chartArea.top);
+          ctx.lineTo(x, chartArea.bottom);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = 'rgba(231,236,243,0.55)';
+          ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillText(m.label, x + 4, chartArea.top + 12);
+        });
+        // MIN marker label
+        const idx = rows.indexOf(minRow);
+        if (idx >= 0) {
+          const x = scales.x.getPixelForValue(idx);
+          const y = scales.y.getPixelForValue(minRow.saldo);
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#0b0f14';
+          ctx.fillRect(x + 6, y - 10, 42, 16);
+          ctx.fillStyle = '#fbbf24';
+          ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillText('MÍN', x + 10, y + 2);
+        }
+        ctx.restore();
+      },
+    }],
+  });
+}
+buildChart(1);
+
+document.querySelectorAll('.zoom button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.zoom button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    buildChart(parseInt(b.dataset.q, 10));
+  });
+});
+</script>
+
+</body>
+</html>

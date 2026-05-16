@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_header %}
+
+{% block title %}Cartera por grupo{% endblock %}
+
+{% block content %}
+  {{ page_header("Cartera por grupo de cliente",
+                 "Consolida los saldos de clientes que pertenecen a la misma casa matriz") }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+    <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+      <div class="text-xs text-emerald-700 uppercase tracking-wide">Cartera total</div>
+      <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">
+        {{ total | num_es }}
+      </div>
+      <div class="text-xs text-emerald-700 text-right">{{ filas | length }} grupos con saldo</div>
+    </div>
+    <div class="rounded-lg bg-slate-100 border border-slate-300 px-4 py-3 md:col-span-2">
+      <div class="text-xs text-slate-700 uppercase tracking-wide">Cómo funciona</div>
+      <div class="text-sm text-slate-600 mt-1">
+        Lee <code>scintela.grupo_cliente</code> (codigo_padre → codigo_hijo). Si un
+        cliente tiene varios códigos (ej. una empresa con divisiones), los
+        saldos se suman en el código padre. Los clientes sin grupo aparecen
+        cada uno como su propio grupo.
+      </div>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+    <a href="{{ url_for('cartera.grupos', export='csv') }}"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Exportar CSV
+    </a>
+    <button onclick="window.print()"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Imprimir
+    </button>
+    <a href="{{ url_for('cartera.aging') }}"
+       class="text-xs text-slate-500 hover:underline self-center ml-2">
+      ← Volver a aging por cliente
+    </a>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left" style="white-space: nowrap;">Cód. grupo</th>
+          <th class="px-3 py-3 text-left">Cliente padre</th>
+          <th class="px-3 py-3 text-right">N° hijos</th>
+          <th class="px-3 py-3 text-left">Códigos hijos</th>
+          <th class="px-3 py-3 text-right">Saldo total</th>
+          <th class="px-3 py-3 text-right">% del total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        {% set pct = ((f.saldo_total / total * 100) if total else 0) %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <a href="{{ url_for('informes.estado_cuenta_landing', codigo=f.codigo_grupo) }}"
+               class="text-sky-700 hover:underline">{{ f.codigo_grupo }}</a>
+          </td>
+          <td class="px-3 py-2">{{ f.nombre_padre }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if f.n_hijos > 1 %}
+              <span class="inline-block px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-medium">
+                {{ f.n_hijos }}
+              </span>
+            {% else %}
+              <span class="text-slate-400">{{ f.n_hijos }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs font-mono text-slate-500">{{ f.hijos }}</td>
+          <td class="px-3 py-2 text-right tabular-nums font-medium">{{ f.saldo_total | num_es }}</td>
+          <td class="px-3 py-2 w-24">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div class="h-full bg-emerald-500" style="width: {{ pct }}%"></div>
+              </div>
+              <span class="text-xs text-slate-500 tabular-nums w-9 text-right">{{ '%.0f' | format(pct) }}%</span>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'Sin cartera viva — no hay grupos para mostrar.', 'Cuando haya facturas con saldo aparecen acá.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    Para definir grupos: insertá filas en <code>scintela.grupo_cliente</code>
+    con (codigo_padre, codigo_hijo). El padre suele ser el código que querés
+    como "consolidador"; los hijos son los códigos divisionales/sucursales.
+    Reemplaza la opción <code>INFORMES &gt; GRUPOS</code> del menú dBase legacy.
+  </p>
+{% endblock %}

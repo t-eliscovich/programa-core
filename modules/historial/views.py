@@ -1,0 +1,601 @@
+"""Historial unificado de movimientos dobles."""
+from datetime import date
+
+from flask import (
+    Blueprint, abort, flash, g, redirect, render_template, request, url_for,
+)
+
+import db
+from auth import requiere_login, requiere_permiso
+from error_messages import flash_exc
+from exports import csv_response
+
+from . import queries
+
+historial_bp = Blueprint("historial", __name__, template_folder="templates")
+
+
+@historial_bp.route("/operaciones")
+@requiere_login
+def operaciones():
+    """Landing con cards para todas las operaciones (movimientos dobles).
+
+    Cada card lleva al wizard correspondiente. Agrupa por categoría:
+    Movimientos entre cuentas / Cheques / Compras y proveedores / Capital /
+    Caja / Auditoría.
+
+    Las cards muestran solo si el usuario tiene el permiso necesario.
+    """
+    aviso_migracion = None
+    try:
+        kpis = queries.conteos()
+    except Exception as e:
+        msg = str(e).lower()
+        if "mov_doble" in msg and ("does not exist" in msg
+                                   or "no existe" in msg
+                                   or "relation" in msg):
+            aviso_migracion = (
+                "Tip: aún no se aplicó la migración del historial "
+                "(scintela.mov_doble). Las operaciones funcionan igual, "
+                "pero no se registran en el historial unificado hasta "
+                "correr: python scripts/migrate.py"
+            )
+        kpis = {}
+    return render_template(
+        "historial/operaciones.html",
+        kpis=kpis, aviso_migracion=aviso_migracion,
+    )
+
+
+@historial_bp.route("/historial")
+@requiere_login
+@requiere_permiso("informes.ver")
+def lista():
+    """Timeline unificado de movimientos dobles.
+
+    Filtros: ?tipo=... ?estado=activo|reverso|reversado ?desde=YYYY-MM-DD
+    ?hasta=YYYY-MM-DD ?q=texto.
+    """
+    desde = request.args.get("desde") or None
+    hasta = request.args.get("hasta") or None
+    tipo = request.args.get("tipo") or None
+    estado = request.args.get("estado") or None
+    q = (request.args.get("q") or "").strip() or None
+
+    try:
+        filas = queries.listar(
+            desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, limite=1000,
+        )
+        kpis = queries.conteos(desde=desde, hasta=hasta)
+        error = None
+    except Exception as e:
+        msg = str(e).lower()
+        if "mov_doble" in msg and ("does not exist" in msg
+                                   or "no existe" in msg
+                                   or "relation" in msg):
+            # Tabla aún no creada — guiar al usuario a correr la migración.
+            error = (
+                "Falta correr la migración 0023 (tabla scintela.mov_doble no existe). "
+                "Abrí una terminal en la carpeta del proyecto y corré: "
+                "python scripts/migrate.py"
+            )
+        else:
+            error = str(e)
+        filas, kpis = [], {}
+
+    # Enriquecer filas con label + links para el template.
+    # TMT 2026-05-15: batch-lookup de no_cheque (scintela.cheque) y numf
+    # (scintela.factura) para que las etiquetas digan "Cheque #001" en vez
+    # de "Cheque #1905" (id interno).
+    # TMT 2026-05-16: además, lookup de banco para transacciones_bancarias
+    # (mostrar "Dep. Pichincha" en lugar de "Banco mov #5774", la dueña pidió
+    # menos noise de IDs en el historial).
+    id_cheques: set[int] = set()
+    id_facturas: set[int] = set()
+    id_txbanco:  set[int] = set()
+    for r in filas:
+        ot, oid = r.get("origen_table"), r.get("origen_id")
+        dt, did = r.get("destino_table"), r.get("destino_id")
+        if ot == "cheque" and oid:
+            id_cheques.add(int(oid))
+        if dt == "cheque" and did:
+            id_cheques.add(int(did))
+        if ot == "factura" and oid:
+            id_facturas.add(int(oid))
+        if dt == "factura" and did:
+            id_facturas.add(int(did))
+        if ot == "transacciones_bancarias" and oid:
+            id_txbanco.add(int(oid))
+        if dt == "transacciones_bancarias" and did:
+            id_txbanco.add(int(did))
+    cheque_labels: dict[int, str] = {}
+    if id_cheques:
+        placeholder = ",".join(["%s"] * len(id_cheques))
+        rows_ch = db.fetch_all(
+            f"SELECT id_cheque, COALESCE(no_cheque::text, '') AS no_cheque "
+            f"FROM scintela.cheque WHERE id_cheque IN ({placeholder})",
+            tuple(id_cheques),
+        ) or []
+        for rc in rows_ch:
+            no = (rc.get("no_cheque") or "").strip()
+            cheque_labels[int(rc["id_cheque"])] = no or f"#{rc['id_cheque']}"
+    factura_labels: dict[int, str] = {}
+    if id_facturas:
+        # TMT 2026-05-15: cast a text — `numf` puede ser INTEGER en data
+        # legacy, y COALESCE(integer, '') crashea con InvalidTextRepresentation.
+        placeholder = ",".join(["%s"] * len(id_facturas))
+        rows_f = db.fetch_all(
+            f"SELECT id_factura, COALESCE(numf::text, '') AS numf "
+            f"FROM scintela.factura WHERE id_factura IN ({placeholder})",
+            tuple(id_facturas),
+        ) or []
+        for rf in rows_f:
+            num = (rf.get("numf") or "").strip()
+            factura_labels[int(rf["id_factura"])] = num or f"#{rf['id_factura']}"
+    banco_labels: dict[int, str] = {}
+    if id_txbanco:
+        placeholder = ",".join(["%s"] * len(id_txbanco))
+        rows_b = db.fetch_all(
+            f"SELECT t.id_transaccion, t.documento, "
+            f"       COALESCE(b.nombre, '') AS nombre "
+            f"  FROM scintela.transacciones_bancarias t "
+            f"  LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco "
+            f" WHERE t.id_transaccion IN ({placeholder})",
+            tuple(id_txbanco),
+        ) or []
+        for rb in rows_b:
+            nm = (rb.get("nombre") or "").strip().title()  # PICHINCHA → Pichincha
+            doc = (rb.get("documento") or "").upper().strip()
+            # Etiqueta corta — la dueña pidió "Pichincha", no "Banco mov #X".
+            # Si el banco no tiene nombre, fallback al id.
+            if nm:
+                banco_labels[int(rb["id_transaccion"])] = nm
+            else:
+                banco_labels[int(rb["id_transaccion"])] = f"Banco #{rb['id_transaccion']}"
+
+    def _override_label(t: str | None, rid, default_label: str) -> str:
+        if t == "cheque" and rid and int(rid) in cheque_labels:
+            return f"Cheque {cheque_labels[int(rid)]}"
+        if t == "factura" and rid and int(rid) in factura_labels:
+            return f"Factura {factura_labels[int(rid)]}"
+        if t == "transacciones_bancarias" and rid and int(rid) in banco_labels:
+            return banco_labels[int(rid)]
+        return default_label
+
+    for r in filas:
+        r["label"] = queries.label(r.get("tipo") or "")
+        u, t = queries.link_origen(r)
+        r["origen_url"] = u
+        r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
+        u, t = queries.link_destino(r)
+        r["destino_url"] = u
+        r["destino_label"] = _override_label(r.get("destino_table"), r.get("destino_id"), t)
+        # row_url = a dónde va el click de la fila entera. Preferimos
+        # origen_url; si no hay, destino_url.
+        r["row_url"] = r["origen_url"] or r["destino_url"]
+
+    # ──────────────────────────────────────────────────────────────────
+    # Construir `items` — una lista de "tarjetas" para el template.
+    # Cada item es uno de:
+    #   {"type": "batch", "batch_id": str, "count": int, "total": float,
+    #    "fecha": date, "estado_global": str, "rows": [filas...]}
+    #   {"type": "single", "row": fila}
+    # Los hijos del batch se renderean adentro del card; las rows sueltas
+    # van en su propio tbody. TMT 2026-05-16 — antes marcábamos head/child
+    # en una lista plana y eso quedaba como filas separadas sin agrupación
+    # visual fuerte. Ahora el template puede dibujar un card violeta por
+    # batch con header propio.
+    # ──────────────────────────────────────────────────────────────────
+    from collections import defaultdict as _dd
+    groups: dict = _dd(list)
+    for r in filas:
+        bid = r.get("batch_id")
+        if bid:
+            groups[str(bid)].append(r)
+
+    # Helper para evitar doble-conteo en el total del batch.
+    # Caso típico: /cheques/nuevo multi genera N cheque_creado + M
+    # cheque_aplicado_a_factura. La suma literal cuenta dos veces la
+    # plata (alta + aplicación a la misma plata). Mostramos sólo la
+    # cuenta primaria (altas si existen, si no aplicaciones, si no todo).
+    # TMT 2026-05-16: bug detectado por la dueña — batch de "5 movs · $6000"
+    # cuando realmente entraron $4000 (2 cheques × $2000), las aplicaciones
+    # sumaban otros $2000 de la misma plata.
+    def _primary_rows(siblings: list[dict]) -> tuple[list[dict], str]:
+        creados = [x for x in siblings if x.get("tipo") == "cheque_creado"]
+        if creados:
+            return creados, "cheque" if len(creados) == 1 else "cheques"
+        aplics = [x for x in siblings
+                  if x.get("tipo") == "cheque_aplicado_a_factura"]
+        if aplics:
+            return aplics, ("aplicación" if len(aplics) == 1
+                            else "aplicaciones")
+        return siblings, ("movimiento" if len(siblings) == 1
+                          else "movimientos")
+
+    items: list[dict] = []
+    seen_batches: set = set()
+    for r in filas:
+        bid = r.get("batch_id")
+        if not bid:
+            items.append({"type": "single", "row": r})
+            continue
+        bid_str = str(bid)
+        if bid_str in seen_batches:
+            continue   # ya emitido como parte del batch
+        seen_batches.add(bid_str)
+        siblings = groups[bid_str]
+        # Determinar el "estado global" del batch — si todas activas,
+        # activo; si todas reverso/reversado, reversado; si mezcla, mixto.
+        estados = {x.get("estado") for x in siblings}
+        if estados == {"activo"}:
+            estado_global = "activo"
+        elif estados <= {"reverso", "reversado"}:
+            estado_global = "reversado"
+        else:
+            estado_global = "mixto"
+        primary, label_primary = _primary_rows(siblings)
+        items.append({
+            "type": "batch",
+            "batch_id": bid_str,
+            # `count`/`total` = plata real (sin double-counting).
+            "count": len(primary),
+            "total": sum(float(x.get("importe") or 0) for x in primary),
+            "label_primary": label_primary,
+            # `count_full` = N de mov_doble en el batch (para nota chiquita).
+            "count_full": len(siblings),
+            "fecha": siblings[0].get("fecha_operacion"),
+            "estado_global": estado_global,
+            "rows": siblings,
+        })
+
+    if request.args.get("export") == "csv":
+        # Aplanar metadata para CSV
+        for r in filas:
+            r["meta"] = str(r.get("metadata") or "")
+        return csv_response(
+            filas,
+            columnas=[
+                ("fecha_operacion", "Fecha"),
+                ("tipo", "Tipo"),
+                ("origen_table", "Origen tabla"),
+                ("origen_id", "Origen id"),
+                ("destino_table", "Destino tabla"),
+                ("destino_id", "Destino id"),
+                ("importe", "Importe"),
+                ("concepto", "Concepto"),
+                ("estado", "Estado"),
+                ("usuario", "Usuario"),
+                ("id_reverso", "Reversado por id"),
+                ("id_original", "Reversa al id"),
+                ("meta", "Metadata"),
+            ],
+            filename=f"historial_{desde or 'all'}_{hasta or 'now'}.csv",
+        )
+
+    return render_template(
+        "historial/lista.html",
+        filas=filas, items=items, kpis=kpis,
+        desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q or "",
+        error=error,
+    )
+
+
+# =====================================================================
+# Reverso central — punto único para deshacer cualquier mov_doble activo.
+# TMT 2026-05-13. Antes cada flujo tenía su propio botón disperso (caja,
+# cheques, bancos). El dispatcher route según tipo al handler existente
+# y, si no hay handler específico, redirige al caller con instrucciones.
+# =====================================================================
+
+def _row_md(id_mov_doble: int) -> dict | None:
+    return db.fetch_one(
+        """
+        SELECT id_mov_doble, tipo, origen_table, origen_id,
+               destino_table, destino_id, importe, concepto, fecha_operacion,
+               estado, id_reverso, id_original, metadata, usuario
+          FROM scintela.mov_doble
+         WHERE id_mov_doble = %s
+        """,
+        (id_mov_doble,),
+    )
+
+
+# Mapeo tipo → (endpoint_de_confirmacion, kwargs builder).
+# El builder recibe la fila mov_doble y devuelve dict de kwargs para url_for.
+#
+# AUDIT 2026-05-13: cada entrada acá tiene que reversar TODO lo que hizo
+# el alta — saldos, side-effects, tablas linked. Los handlers que NO
+# cumplen están comentados con una nota _BLOQUEADO_ y disparan un mensaje
+# al usuario explicando dónde reversar manualmente. La regla es:
+# **mejor mostrar mensaje claro que romper saldos silenciosamente**.
+_REVERSO_DISPATCH = {
+    # ── OK validados ─────────────────────────────────────────────────
+    # Cheque emitido por bancos — bancos.reversar_cheque_emitido sí
+    # inserta ND compensatorio Y reabre posdat / inserta caja S /
+    # inserta retiro negativo / marca xgast='Y'. Verificado audit #1-4.
+    "cheque_emitido_proveedor": (
+        "bancos.reversar_cheque_emitido",
+        lambda r: {"id_transaccion": r["origen_id"]},
+    ),
+    "cheque_emitido_retiro": (
+        "bancos.reversar_cheque_emitido",
+        lambda r: {"id_transaccion": r["origen_id"]},
+    ),
+    "cheque_emitido_caja": (
+        "bancos.reversar_cheque_emitido",
+        lambda r: {"id_transaccion": r["origen_id"]},
+    ),
+    "cheque_emitido_gasto": (
+        "bancos.reversar_cheque_emitido",
+        lambda r: {"id_transaccion": r["origen_id"]},
+    ),
+    # Caja con side effect — caja.reversar deshace los side-effects vía
+    # aplicar_side_effect(inverso=True). Verificado audit #5,6,7,9,10.
+    "caja_s_to_transfer_banco":   ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    "caja_s_to_retiro_socio":     ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    "caja_s_to_dolares":          ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    # caja → compra_proveedor: ahora anula la compra original en lugar de
+    # crear una compensación negativa. TMT 2026-05-13.
+    "caja_s_to_compra_proveedor": ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    "caja_e_to_transfer_banco":   ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    "caja_e_to_dolares":          ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    # Caja simple — sin side effect, sólo compensación en caja. Verificado #11,12.
+    "caja_e_simple":              ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    "caja_s_simple":              ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    # Caja CB (cobro con cheque) — ahora marca nota en el cheque + caja S
+    # compensa. La dueña tiene que revisar el stat del cheque manualmente
+    # (no sabemos el stat previo al cobro). TMT 2026-05-13.
+    "caja_cb_simple":             ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),
+    # Compra a crédito sin pago — anular borra posdat. No hay side-effect
+    # bancario que reversar. Verificado audit #20.
+    "compra_a_posdat":            ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    # Endoso de cheque — wizard dedicado nuevo. Anula la compra hermana
+    # + restaura cheque a Z + linkea mov_doble. TMT 2026-05-13.
+    "endoso_cheque_a_proveedor":  ("cheques.confirmar_reverso_endoso", lambda r: {"id_cheque": r["origen_id"]}),
+    # Factura emitida/devolución — ahora facturas.anular linkea mov_doble
+    # como reversado. TMT 2026-05-13.
+    "factura_emitida":   ("facturas.confirmar_anulacion", lambda r: {"id_factura": r["origen_id"]}),
+    "factura_devolucion":("facturas.confirmar_anulacion", lambda r: {"id_factura": r["origen_id"]}),
+    # Gastos — anular marca stat='Y' + linkea mov_doble. La compensación
+    # del pago (caja/banco) si era pagado al contado queda a cargo del
+    # usuario en el módulo correspondiente. TMT 2026-05-13.
+    "gasto_simple":              ("gastos.confirmar_anulacion", lambda r: {"id_xgast": r["origen_id"]}),
+    "gasto_a_posdat":            ("gastos.confirmar_anulacion", lambda r: {"id_xgast": r["origen_id"]}),
+    "gasto_pagado_caja":         ("gastos.confirmar_anulacion", lambda r: {"id_xgast": r["origen_id"]}),
+    "gasto_pagado_pichincha":    ("gastos.confirmar_anulacion", lambda r: {"id_xgast": r["origen_id"]}),
+    "gasto_pagado_internacional":("gastos.confirmar_anulacion", lambda r: {"id_xgast": r["origen_id"]}),
+    # Compras pagadas — compras.anular ahora compensa caja/banco/dolares
+    # según cuenta_pagada + id_transaccion. TMT 2026-05-13.
+    "compra_pagada_caja":         ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    "compra_pagada_pichincha":    ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    "compra_pagada_internacional":("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    "compra_pago_parcial":        ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    "compra_anticipo_dolares":    ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    "compra_saldo_a_posdat":      ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    "compra_backfill":            ("compras.confirmar_anulacion", lambda r: {"id_compra": r["origen_id"]}),
+    # Aplicación de cheque a factura — desaplicar granular (sin reversar
+    # el cheque entero). Borra la chequesxfact específica y recalcula
+    # factura.abono/saldo/stat. TMT 2026-05-13.
+    "cheque_aplicado_a_factura":  ("cheques.confirmar_desaplicar",
+                                   lambda r: {"id_cheque": r["origen_id"],
+                                              "id_factura": r["destino_id"]}),
+    # Transferencia banco↔banco — wizard nuevo, NC en origen + CH en
+    # destino, atómico. TMT 2026-05-13.
+    "transfer_banco_banco":       ("bancos.reversar_transferencia",
+                                   lambda r: {"id_mov_doble": r["id_mov_doble"]}),
+    # Capital aporte/retiro — wizards nuevos atómicos. TMT 2026-05-13.
+    "aporte_capital_a_caja":          ("capital.reversar_aporte",
+                                       lambda r: {"id_capital": r["origen_id"]}),
+    "aporte_capital_a_pichincha":     ("capital.reversar_aporte",
+                                       lambda r: {"id_capital": r["origen_id"]}),
+    "aporte_capital_a_internacional": ("capital.reversar_aporte",
+                                       lambda r: {"id_capital": r["origen_id"]}),
+    "retiro_socio_de_caja":           ("capital.reversar_retiro",
+                                       lambda r: {"id_retiro": r["origen_id"]}),
+    "retiro_socio_de_pichincha":      ("capital.reversar_retiro",
+                                       lambda r: {"id_retiro": r["origen_id"]}),
+    "retiro_socio_de_internacional":  ("capital.reversar_retiro",
+                                       lambda r: {"id_retiro": r["origen_id"]}),
+    # Cheque creado (alta) — mapea a anular_error_carga, que borra el
+    # cheque + sus aplicaciones + posdat hermana atómicamente.
+    # TMT 2026-05-15: agregado para deshacer creaciones erradas desde
+    # el historial (el flujo de multi-cheque puede dejar 4 cheques
+    # colgados que la usuaria necesita anular todos juntos).
+    "cheque_creado":              ("cheques.anular_error_carga",
+                                   lambda r: {"id_cheque": r["origen_id"]}),
+    "cheque_anticipo_espejo":     ("cheques.anular_error_carga",
+                                   lambda r: {"id_cheque": r["origen_id"]}),
+    # Clasificación de caja S como gasto V1..V9 — el reverso desclasifica
+    # el xgast (lo anula) y deja la caja S libre para re-asignar. NO toca
+    # la caja S misma (la plata sí salió). TMT 2026-05-16: handler agregado
+    # para cerrar el único tipo huérfano del dispatcher (113 filas activas
+    # eran de este tipo, sin botón de reverso). Cierra el flow que la dueña
+    # más usaba diariamente y antes no se podía deshacer.
+    "caja_s_to_xgast":            ("gastos.confirmar_desclasificar",
+                                   lambda r: {"id_xgast": r["destino_id"]}),
+}
+
+# Tipos que NO se reversan desde acá — el dispatcher muestra un toast
+# claro al usuario con la ruta correcta. Audit 2026-05-13: estos handlers
+# no deshacen completamente la operación (dejan saldos inconsistentes,
+# compras fantasma, etc.). Los manejamos manualmente hasta que cada uno
+# tenga un reverso atómico.
+_REVERSO_BLOQUEADO = {
+}
+
+
+@historial_bp.route("/historial/<int:id_mov_doble>/reverso", methods=["GET"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def reversar_mov(id_mov_doble: int):
+    """Dispatcher central: route al wizard de reverso correspondiente.
+
+    Mira el `tipo` del mov_doble y redirige a su endpoint de confirmación.
+    Si no hay handler para ese tipo, muestra un aviso explicando dónde
+    hacerlo manualmente.
+    """
+    r = _row_md(id_mov_doble)
+    if not r:
+        abort(404)
+    if r["estado"] in ("reverso", "reversado"):
+        flash(
+            f"Este movimiento ya está {r['estado']} — no se puede volver a reversar.",
+            "warn",
+        )
+        return redirect(url_for("historial.lista"))
+
+    tipo = r.get("tipo") or ""
+    # Si está bloqueado explícitamente — mostrar mensaje específico.
+    if tipo in _REVERSO_BLOQUEADO:
+        mensaje = _REVERSO_BLOQUEADO[tipo].format(
+            origen_id=r.get("origen_id") or "?",
+            destino_id=r.get("destino_id") or "?",
+        )
+        flash(f"Reverso no automatizado para este tipo. {mensaje}", "warn")
+        return redirect(url_for("historial.lista"))
+
+    handler = _REVERSO_DISPATCH.get(tipo)
+    if not handler:
+        # Sin handler específico Y no en lista de bloqueados — guía genérica.
+        sugerencia = {
+            "transfer_usd_cuenta_cuenta":"Reversa desde /dolares.",
+            "gasto_simple":             "Reversa desde /gastos (anular).",
+            "gasto_a_posdat":           "Reversa desde /gastos (anular).",
+            "gasto_pagado_caja":        "Reversa desde /gastos (anular).",
+            "gasto_pagado_pichincha":   "Reversa desde /gastos (anular).",
+            "gasto_pagado_internacional":"Reversa desde /gastos (anular).",
+        }.get(tipo, f"Tipo '{tipo}' aún no tiene reverso automatizado.")
+        flash(
+            f"Reverso no disponible desde acá. {sugerencia}",
+            "warn",
+        )
+        return redirect(url_for("historial.lista"))
+
+    endpoint, kwargs_fn = handler
+    try:
+        kwargs = kwargs_fn(r)
+        return redirect(url_for(endpoint, **kwargs))
+    except Exception as e:
+        flash_exc("No pude armar el reverso", e)
+        return redirect(url_for("historial.lista"))
+
+
+# =====================================================================
+# Reverso ATÓMICO de batch — TMT 2026-05-15.
+#
+# Cuando una operación de UI generó >1 mov_doble (multi-cheque aplicado a
+# varias facturas, transferencia que cruzó múltiples destinos, etc.), todos
+# comparten un `batch_id` UUID. Este endpoint los reversa JUNTOS dentro de
+# una sola transacción: si cualquiera falla, rollback total.
+#
+# Por ahora soporta tipos:
+#   - cheque_creado
+#   - cheque_aplicado_a_factura
+#   - cheque_anticipo_espejo
+# (que son los que genera /cheques/nuevo en modo multi-cheque). Para otros
+# tipos en un batch, el endpoint aborta con un mensaje claro.
+# =====================================================================
+
+# Tipos que sabemos reversar atómicamente desde batch (sin pasar por wizard).
+_TIPOS_BATCH_REVERSABLES = {
+    "cheque_creado",
+    "cheque_aplicado_a_factura",
+    "cheque_anticipo_espejo",
+}
+
+
+@historial_bp.route(
+    "/historial/batch/<batch_id>/reverso", methods=["GET", "POST"]
+)
+@requiere_login
+@requiere_permiso("informes.ver")
+def reversar_batch(batch_id: str):
+    """Reverso atómico de TODAS las filas de un batch_id.
+
+    GET: muestra confirmación con resumen del batch + textarea de motivo.
+    POST: ejecuta los reversos dentro de una sola transacción.
+    """
+    import mov_doble as _md
+
+    # 1. Leer las filas del batch. Sin tx — solo lectura.
+    rows = _md.buscar_por_batch(batch_id=batch_id, incluir_reversos=False)
+    if not rows:
+        flash("Este batch no existe o ya está totalmente reversado.", "warn")
+        return redirect(url_for("historial.lista"))
+
+    # 2. Validar que todos los tipos sean reversables atómicamente.
+    tipos_en_batch = {r.get("tipo") for r in rows}
+    no_soportados = tipos_en_batch - _TIPOS_BATCH_REVERSABLES
+    if no_soportados:
+        flash(
+            "Reverso de batch no disponible: contiene tipos sin handler atómico "
+            f"({', '.join(sorted(no_soportados))}). Reversá las filas una por una "
+            "desde sus wizards correspondientes.",
+            "warn",
+        )
+        return redirect(url_for("historial.lista"))
+
+    if request.method == "GET":
+        return render_template(
+            "historial/batch_reverso_confirmar.html",
+            batch_id=batch_id,
+            rows=rows,
+            total=sum(float(r.get("importe") or 0) for r in rows),
+        )
+
+    # POST → ejecutar reverso atómico.
+    motivo = (request.form.get("motivo") or "").strip()
+    # anular_por_error_de_carga requiere motivo ≥10 chars; pedimos lo mismo
+    # para batch (consistencia).
+    if len(motivo) < 10:
+        flash("Motivo obligatorio (mínimo 10 caracteres).", "warn")
+        return redirect(url_for("historial.reversar_batch", batch_id=batch_id))
+
+    usuario = (g.user or {}).get("username", "web")
+
+    # Import acá para evitar import circular en módulo.
+    from modules.cheques import queries as _ch_q
+
+    try:
+        with db.tx() as conn:
+            # Orden INVERSO de creación — primero deshacer las aplicaciones,
+            # después anular el cheque (si anulamos el cheque antes, las
+            # aplicaciones ya no estarían "vivas" para desaplicar).
+            rows_sorted = sorted(
+                rows, key=lambda r: int(r["id_mov_doble"]), reverse=True,
+            )
+
+            for r in rows_sorted:
+                tipo = r.get("tipo")
+                if tipo == "cheque_aplicado_a_factura":
+                    _ch_q.desaplicar_factura(
+                        id_cheque=int(r["origen_id"]),
+                        id_factura=int(r["destino_id"]),
+                        usuario=usuario,
+                        motivo=f"{motivo} (batch {batch_id[:8]})",
+                        conn=conn,
+                    )
+                elif tipo == "cheque_creado":
+                    # Las aplicaciones ya se desaplicaron arriba — acá podemos
+                    # anular el cheque entero limpio. anular_por_error_de_carga
+                    # también borra la posdat hermana si era postdatado.
+                    _ch_q.anular_por_error_de_carga(
+                        int(r["origen_id"]),
+                        motivo=f"{motivo} (batch {batch_id[:8]})",
+                        usuario=usuario,
+                        conn=conn,
+                    )
+                elif tipo == "cheque_anticipo_espejo":
+                    # El espejo se anula con el cheque padre (anular_por_error_de_carga
+                    # ya cascadea). Saltamos acá.
+                    continue
+
+            flash(
+                f"Batch reversado: {len(rows)} movimientos anulados juntos.",
+                "ok",
+            )
+    except Exception as e:
+        flash_exc("No pude reversar el batch (rollback total)", e)
+
+    return redirect(url_for("historial.lista"))

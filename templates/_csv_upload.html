@@ -1,0 +1,78 @@
+{# Partial genérico para upload de CSV — cualquier módulo lo include.
+
+   Variables esperadas (pasarlas desde el caller):
+       titulo        — "Cargar facturas desde CSV"
+       subtitulo     — texto descriptivo
+       cols          — list of (campo, header, required)
+       url_plantilla — url de descarga de la plantilla (ej. url_for('facturas.cargar_csv', plantilla=1))
+       url_volver    — url del listado (ej. url_for('facturas.lista'))
+#}
+{% from "_ui.html" import page_header %}
+
+<div class="max-w-3xl mx-auto px-4 py-6">
+  {{ page_header(titulo, subtitulo=subtitulo) }}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6 mb-6">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">Plantilla</h2>
+    <p class="text-sm mb-3">Descargá el CSV vacío con los headers correctos, editalo en Excel / Numbers / texto plano y volvelo a subir.</p>
+    <a href="{{ url_plantilla }}"
+       class="inline-block text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+      Descargar plantilla CSV
+    </a>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6 mb-6">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">Columnas</h2>
+    <table class="w-full text-sm">
+      <thead class="text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="py-1 text-left">Columna</th>
+          <th class="py-1 text-left">Formato</th>
+          <th class="py-1 text-left">Requerido</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for campo, header, required in cols %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="py-1 font-mono">{{ header }}</td>
+          <td class="py-1 text-slate-500">
+            {% if campo in ('fecha', 'fechad', 'vencimiento', 'fecha_emision') %}DD/MM/YYYY
+            {% elif campo in ('importe', 'valor', 'saldo') %}1.234,56 o 1234.56
+            {% elif campo == 'kg' %}número decimal
+            {% elif campo in ('numf', 'numero', 'no_banco') %}entero
+            {% elif campo == 'pagada' %}SI o NO
+            {% else %}texto{% endif %}
+          </td>
+          <td class="py-1">
+            {% if required %}<span class="text-red-600 font-semibold">SÍ</span>{% else %}<span class="text-slate-400">opcional</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" enctype="multipart/form-data"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="block mb-4">
+      <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Archivo CSV</span>
+      <input type="file" name="archivo" accept=".csv,text/csv" required
+             class="mt-2 block w-full text-sm text-slate-600 dark:text-slate-300
+                    file:mr-4 file:py-2 file:px-3 file:rounded file:border-0
+                    file:bg-sky-100 file:text-sky-700 file:font-medium
+                    hover:file:bg-sky-200">
+    </label>
+    <div class="flex justify-between">
+      <a href="{{ url_volver }}" class="text-sm text-slate-500 hover:underline">Cancelar</a>
+      <button type="submit" class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700">
+        Procesar
+      </button>
+    </div>
+  </form>
+
+  <div class="mt-4 text-xs text-slate-400">
+    Encoding UTF-8 o CP1252. Separador <code>;</code> o <code>,</code>. Una fila por registro.
+    Filas con error no afectan al resto.
+  </div>
+</div>

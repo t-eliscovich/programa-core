@@ -1,0 +1,329 @@
+"""Corre el ciclo mensual de procedures contables.
+
+Hace dos cosas y las trackea en `scintela.ejecuciones_tareas`:
+
+    1. CALL scintela.procesa_provisiones(CURRENT_DATE)
+    2. SELECT scintela.actualizar_amortizacion()
+
+Diseño:
+
+- Idempotente. El mismo mes puede llamarse N veces — sólo la primera
+  ejecución exitosa registra estado='O'. Las siguientes ven el UNIQUE
+  (tarea, periodo) y salen en silencio con exit 0.
+- Cada tarea corre en su propia tx con su propia fila en
+  ejecuciones_tareas. Si procesa_provisiones falla, actualizar_amortizacion
+  todavía se intenta. El reporte final lista qué quedó verde / rojo.
+- Exit 0 si todas las tareas están terminadas con 'O' al final (incluyendo
+  las que ya corrieron antes). Exit 1 si alguna tarea quedó en 'E' este
+  run. Cualquier exit != 0 es una señal al scheduler / a cron para que
+  alerte.
+- Si las procedures no existen todavía (DB nuevita, migración no corrió,
+  schema viejo), exit 2 con mensaje claro. Distinguible de "algo se rompió"
+  (exit 1) y de "todo OK" (exit 0).
+
+Uso desde cron / Windows Task Scheduler:
+
+    python scripts/procesa_provisiones_mensual.py            # estándar
+    python scripts/procesa_provisiones_mensual.py --periodo 2026-03
+    python scripts/procesa_provisiones_mensual.py --force    # re-intenta aunque ya haya 'O'
+
+Ver `intela-aws-deploy` skill para la config del Scheduled Task en Windows.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import socket
+import sys
+from datetime import date, datetime
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from psycopg2.extras import RealDictCursor  # noqa: E402
+
+import db  # noqa: E402
+
+# Exit codes — los usa el scheduler para saber si alertar.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_MISSING_PROC = 2
+
+# Las tareas que este script corre, en orden. Cada entrada es
+# (nombre_tarea, sql_call). Si sumás una tarea nueva, acá es el único
+# lugar que toca — la lógica de tracking es genérica.
+TAREAS = (
+    ("procesa_provisiones",    "CALL scintela.procesa_provisiones(%s)"),
+    ("actualizar_amortizacion", "SELECT scintela.actualizar_amortizacion()"),
+    ("snapshot_historia",       "PYTHON:snapshot_historia"),
+)
+
+log = logging.getLogger("procesa_provisiones_mensual")
+
+
+def _periodo_de(fecha: date) -> str:
+    """Formato 'YYYY-MM' usado como UNIQUE key en ejecuciones_tareas."""
+    return fecha.strftime("%Y-%m")
+
+
+def _host() -> str:
+    """Host donde corre el proceso — útil para el postmortem si hay varios runners."""
+    try:
+        return socket.gethostname()[:60]
+    except Exception:
+        return "desconocido"
+
+
+def _intentar_reservar(tarea: str, periodo: str, host: str) -> int | None:
+    """INSERT ... ON CONFLICT DO NOTHING RETURNING id_ejecucion.
+
+    Devuelve el id si este proceso se adueñó del slot, None si ya existía
+    (es decir: otra corrida en el mismo periodo con estado O, E o R).
+    """
+    row = db.execute_returning(
+        """
+        INSERT INTO scintela.ejecuciones_tareas (tarea, periodo, estado, host)
+        VALUES (%s, %s, 'R', %s)
+        ON CONFLICT ON CONSTRAINT uq_ejecuciones_tareas_periodo DO NOTHING
+        RETURNING id_ejecucion
+        """,
+        (tarea, periodo, host),
+    )
+    return row["id_ejecucion"] if row else None
+
+
+def _estado_actual(tarea: str, periodo: str) -> dict | None:
+    """Estado actual del slot (cuando ya estaba reservado)."""
+    return db.fetch_one(
+        """
+        SELECT id_ejecucion, estado, iniciado_en, terminado_en, mensaje
+          FROM scintela.ejecuciones_tareas
+         WHERE tarea = %s AND periodo = %s
+        """,
+        (tarea, periodo),
+    )
+
+
+def _reset_slot(tarea: str, periodo: str, host: str) -> int:
+    """Borrar el slot existente y reservar uno nuevo (usado con --force).
+
+    Devuelve el id_ejecucion del slot recién creado. Hace el DELETE + INSERT
+    en la misma transacción para que nunca queden filas huérfanas si algo
+    revienta entre medio.
+    """
+    with db.tx() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            "DELETE FROM scintela.ejecuciones_tareas WHERE tarea = %s AND periodo = %s",
+            (tarea, periodo),
+        )
+        cur.execute(
+            """
+            INSERT INTO scintela.ejecuciones_tareas (tarea, periodo, estado, host)
+            VALUES (%s, %s, 'R', %s)
+            RETURNING id_ejecucion
+            """,
+            (tarea, periodo, host),
+        )
+        row = cur.fetchone()
+    return int(row["id_ejecucion"])
+
+
+def _marcar_ok(id_ejecucion: int) -> None:
+    db.execute(
+        """
+        UPDATE scintela.ejecuciones_tareas
+           SET estado = 'O',
+               terminado_en = CURRENT_TIMESTAMP,
+               mensaje = NULL
+         WHERE id_ejecucion = %s
+        """,
+        (id_ejecucion,),
+    )
+
+
+def _marcar_error(id_ejecucion: int, mensaje: str) -> None:
+    # No usar db.tx aquí — el tx de la tarea probablemente ya murió.
+    # execute() abre su propio conn del pool.
+    db.execute(
+        """
+        UPDATE scintela.ejecuciones_tareas
+           SET estado = 'E',
+               terminado_en = CURRENT_TIMESTAMP,
+               mensaje = %s
+         WHERE id_ejecucion = %s
+        """,
+        (mensaje[:2000], id_ejecucion),
+    )
+
+
+def _ejecutar_tarea(tarea: str, sql_call: str, fecha: date) -> None:
+    """Corre la procedure/function PostgreSQL que corresponde a la tarea.
+
+    Usa db.tx() para aislar el call en su propia transacción. Si la procedure
+    levanta, la tx se rollbackea y propagamos la excepción. db.tx() yields
+    a raw psycopg2 connection, por eso abrimos el cursor a mano en vez de
+    usar db.execute() (que tomaría un conn distinto del pool y no
+    participaría de esta misma transacción).
+
+    Casos especiales:
+    - "PYTHON:snapshot_historia" → invoca el Python helper en vez de SQL.
+    """
+    # Caso especial: snapshot historia es Python, no SQL
+    if sql_call == "PYTHON:snapshot_historia":
+        # Asegurar que scripts/ esté en sys.path — corremos desde varios
+        # contextos (cron Windows, pytest, manual) y no siempre lo está.
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from snapshot_historia_mensual import _ultimo_dia_mes_anterior, ejecutar
+        fecha_cierre = _ultimo_dia_mes_anterior(fecha)
+        result = ejecutar(fecha_cierre, force=False, usuario=f"cron_{tarea}")
+        log.info("snapshot_historia %s → %s (id=%s)", fecha_cierre, result["accion"], result["id_historia"])
+        return
+
+    # procesa_provisiones toma (fecha); actualizar_amortizacion no toma args.
+    params = (fecha,) if "%s" in sql_call else ()
+    with db.tx() as conn, conn.cursor() as cur:
+        cur.execute(sql_call, params)
+
+
+def correr(
+    *, periodo: str, fecha: date, force: bool = False
+) -> tuple[int, list[tuple[str, str, str]]]:
+    """Corre todas las TAREAS. Devuelve (exit_code, [(tarea, estado, mensaje)])."""
+    host = _host()
+    resultados: list[tuple[str, str, str]] = []
+    hubo_error = False
+
+    for tarea, sql_call in TAREAS:
+        id_ejec = _intentar_reservar(tarea, periodo, host)
+
+        if id_ejec is None:
+            # Ya existe un slot — mirar su estado.
+            slot = _estado_actual(tarea, periodo)
+            if slot is None:
+                # Race condition rarísima: el INSERT falló el CONFLICT pero
+                # la fila desapareció antes del SELECT. Tratar como error suave.
+                resultados.append((tarea, "E", "slot desapareció"))
+                hubo_error = True
+                continue
+
+            if slot["estado"] == "O" and not force:
+                resultados.append(
+                    (tarea, "O", f"ya corrió ({slot['terminado_en']})")
+                )
+                continue
+
+            if force:
+                log.info("forzando re-ejecución de %s %s (estado previo=%s)",
+                         tarea, periodo, slot["estado"])
+                id_ejec = _reset_slot(tarea, periodo, host)
+            else:
+                # estado R (colgado) o E (error previo) — no pisamos sin --force.
+                resultados.append(
+                    (tarea, slot["estado"],
+                     f"quedó en estado '{slot['estado']}' — usar --force para reintentar")
+                )
+                hubo_error = True
+                continue
+
+        # Llegamos acá con un slot nuestro (id_ejec) en estado R.
+        try:
+            log.info("ejecutando %s para periodo %s", tarea, periodo)
+            _ejecutar_tarea(tarea, sql_call, fecha)
+            _marcar_ok(id_ejec)
+            resultados.append((tarea, "O", "ok"))
+        except Exception as exc:
+            detalle = f"{type(exc).__name__}: {exc}"
+            log.exception("falló %s", tarea)
+            # Intentar marcar el error — si falla también, seguimos igual.
+            try:
+                _marcar_error(id_ejec, detalle)
+            except Exception:
+                log.exception("no se pudo marcar el error en ejecuciones_tareas")
+            resultados.append((tarea, "E", detalle))
+            hubo_error = True
+
+            # Si la procedure no existe, avisamos distinto al scheduler.
+            lower = detalle.lower()
+            if "does not exist" in lower or "no existe" in lower:
+                return EXIT_MISSING_PROC, resultados
+
+    return (EXIT_ERROR if hubo_error else EXIT_OK), resultados
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Corre procesa_provisiones + actualizar_amortizacion del mes."
+    )
+    p.add_argument(
+        "--periodo",
+        help="Periodo YYYY-MM a procesar (default: mes actual).",
+    )
+    p.add_argument(
+        "--fecha",
+        help="Fecha exacta YYYY-MM-DD a pasar a procesa_provisiones (default: hoy).",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-ejecutar aunque haya una corrida previa ok/error en este periodo.",
+    )
+    p.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Log DEBUG.",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv or sys.argv[1:])
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s  %(levelname)-5s  %(name)s: %(message)s",
+    )
+
+    hoy = date.today()
+    if args.fecha:
+        fecha = datetime.strptime(args.fecha, "%Y-%m-%d").date()
+    else:
+        fecha = hoy
+
+    if args.periodo:
+        # Validar forma YYYY-MM.
+        datetime.strptime(args.periodo, "%Y-%m")
+        periodo = args.periodo
+    else:
+        periodo = _periodo_de(fecha)
+
+    log.info("periodo=%s  fecha=%s  host=%s  force=%s",
+             periodo, fecha.isoformat(), _host(), args.force)
+
+    db.init_pool()
+
+    exit_code, resultados = correr(periodo=periodo, fecha=fecha, force=args.force)
+
+    # Resumen legible en stdout para el log del scheduler.
+    print()
+    print(f"  periodo: {periodo}")
+    print(f"  fecha:   {fecha.isoformat()}")
+    print(f"  host:    {_host()}")
+    print(f"  force:   {args.force}")
+    print()
+    for tarea, estado, mensaje in resultados:
+        icono = "OK" if estado == "O" else ("ER" if estado == "E" else estado)
+        print(f"  [{icono}]  {tarea}: {mensaje}")
+    print()
+    print(f"  exit {exit_code}")
+
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

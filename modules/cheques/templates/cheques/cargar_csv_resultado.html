@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Resultado carga CSV cheques{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
+  <a href="{{ url_for('cheques.cargar_csv') }}" class="hover:underline">Cargar CSV</a> /
+  <span>Resultado</span>
+{% endblock %}
+
+{% block content %}
+{% set titulo = "Resultado carga CSV de cheques" %}
+{% set url_cargar = url_for('cheques.cargar_csv') %}
+{% set url_volver = url_for('cheques.lista') %}
+{% set url_volver_text = "Ver listado de cheques" %}
+{% include "_csv_upload_resultado.html" %}
+{% endblock %}

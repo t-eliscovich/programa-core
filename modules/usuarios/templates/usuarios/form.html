@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nuevo' if modo=='crear' else 'Editar' }} usuario{% endblock %}
+{% block content %}
+<div class="max-w-xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">
+    {{ 'Nuevo usuario' if modo=='crear' else 'Editar ' + form.username }}
+  </h1>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white border rounded-lg p-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="flex flex-col mb-3">
+      <span class="text-sm text-slate-600">Username <span class="text-red-500">*</span></span>
+      <input type="text" name="username" value="{{ form.username or '' }}"
+             class="border rounded px-2 py-1 mt-1" maxlength="40" required
+             {% if modo=='editar' %}readonly{% endif %}>
+    </label>
+
+    <label class="flex flex-col mb-3">
+      <span class="text-sm text-slate-600">Rol <span class="text-red-500">*</span></span>
+      <select name="id_rol" class="border rounded px-2 py-1 mt-1" required>
+        <option value="">— elegir —</option>
+        {% for r in roles %}
+          <option value="{{ r.id_rol }}"
+                  {% if (form.id_rol|string) == (r.id_rol|string) %}selected{% endif %}>
+            {{ r.nombre_rol }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="flex flex-col mb-3">
+      <span class="text-sm text-slate-600">Clave corta (3 letras, opcional)</span>
+      <input type="text" name="clave" value="{{ form.clave or '' }}"
+             class="border rounded px-2 py-1 mt-1 uppercase" maxlength="3"
+             oninput="this.value=this.value.toUpperCase()">
+    </label>
+
+    {% if modo=='editar' %}
+    <label class="flex items-center gap-2 mb-3">
+      <input type="hidden" name="activo" value="0">
+      <input type="checkbox" name="activo" value="1" {% if form.activo %}checked{% endif %}>
+      <span class="text-sm">Usuario activo</span>
+    </label>
+    {% endif %}
+
+    <div class="border-t mt-4 pt-4">
+      <label class="flex flex-col mb-3">
+        <span class="text-sm text-slate-600">
+          {{ 'Contraseña' if modo=='crear' else 'Cambiar contraseña (opcional)' }}
+          {% if modo=='crear' %}<span class="text-red-500">*</span>{% endif %}
+        </span>
+        <input type="password" name="password" class="border rounded px-2 py-1 mt-1"
+               minlength="6" {% if modo=='crear' %}required{% endif %}>
+      </label>
+
+      <label class="flex flex-col mb-3">
+        <span class="text-sm text-slate-600">Repetir contraseña</span>
+        <input type="password" name="password_confirm" class="border rounded px-2 py-1 mt-1"
+               minlength="6" {% if modo=='crear' %}required{% endif %}>
+      </label>
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      <a href="{{ url_for('usuarios.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Guardar
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

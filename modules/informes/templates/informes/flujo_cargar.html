@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Flujo — cargar datos{% endblock %}
+{% block breadcrumb %}Informes / <a href="{{ url_for('informes.flujo_grafico') }}">Flujo</a> / <strong>Cargar</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Cargar datos de flujo</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Poblá la tabla <code>scintela.flujo</code> día por día o subí un CSV.
+      Si la fecha ya existe, los valores cargados la actualizan; el resto
+      queda como está.
+    </p>
+  </div>
+
+  {% if errores %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <p class="font-medium mb-1">Hay problemas con los datos:</p>
+      <ul class="list-disc list-inside space-y-0.5">
+        {% for err in errores %}<li>{{ err }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if resultado %}
+    <div class="mb-6 px-4 py-3 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 text-sm">
+      {{ resultado.inserted }} fila(s) insertada(s) ·
+      {{ resultado.updated }} actualizada(s).
+    </div>
+  {% endif %}
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <!-- ================= Carga manual (una fila) ================= -->
+    <section class="rounded-lg border border-slate-200 dark:border-slate-700 p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+        Cargar una sola fecha
+      </h2>
+      <form method="POST" action="{{ url_for('informes.flujo_cargar') }}" class="space-y-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Fecha <span class="text-red-500">*</span></label>
+          <input name="fecha" type="date" value="{{ hoy }}" required
+                 class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          {% for col in cols %}
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">{{ col }}</label>
+              <input name="{{ col }}" type="text" inputmode="decimal"
+                     placeholder="0.00"
+                     class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-right font-mono">
+            </div>
+          {% endfor %}
+        </div>
+
+        <button type="submit"
+                class="w-full mt-2 rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
+          Guardar fila
+        </button>
+        <p class="text-xs text-slate-500">
+          Dejá en blanco los montos que no aplican — no se sobrescriben.
+        </p>
+      </form>
+    </section>
+
+    <!-- ================= Upload CSV ================= -->
+    <section class="rounded-lg border border-slate-200 dark:border-slate-700 p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+        Subir CSV (varias fechas)
+      </h2>
+      <form method="POST" action="{{ url_for('informes.flujo_cargar') }}"
+            enctype="multipart/form-data" class="space-y-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Archivo CSV</label>
+          <input name="archivo" type="file" accept=".csv,text/csv" required
+                 class="block w-full text-sm text-slate-700 dark:text-slate-200
+                        file:mr-3 file:py-2 file:px-3 file:rounded file:border-0
+                        file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200
+                        dark:file:bg-slate-800 dark:file:text-sky-300">
+        </div>
+
+        <div class="text-xs text-slate-500 space-y-1">
+          <p>Columnas aceptadas (la primera fila debe ser cabecera):</p>
+          <code class="block break-all text-[11px] bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+            {{ headers | join(';') }}
+          </code>
+          <p>Separador <code>;</code> o <code>,</code>. Fecha en <code>AAAA-MM-DD</code> o <code>DD/MM/AAAA</code>.</p>
+        </div>
+
+        <button type="submit"
+                class="w-full mt-2 rounded-md bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium text-white">
+          Subir CSV
+        </button>
+
+        <a href="{{ url_for('informes.flujo_cargar', plantilla=1) }}"
+           class="block text-center text-xs text-sky-600 hover:underline mt-2">
+          Descargar plantilla CSV (con fila de ejemplo)
+        </a>
+      </form>
+    </section>
+
+  </div>
+
+  <div class="mt-6">
+    <a href="{{ url_for('informes.flujo_grafico') }}"
+       class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+      ← Volver al gráfico
+    </a>
+  </div>
+</div>
+{% endblock %}

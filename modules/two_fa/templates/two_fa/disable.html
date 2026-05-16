@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Desactivar 2FA{% endblock %}
+{% block breadcrumb %}Seguridad / Desactivar 2FA{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto space-y-6">
+  <div>
+    <h1 class="text-2xl font-semibold">Desactivar segundo factor</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Después de confirmar, tu cuenta vuelve a pedir sólo usuario y contraseña.
+      Podés volver a activar 2FA cuando quieras.
+    </p>
+  </div>
+
+  <div class="px-4 py-3 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
+    Para confirmar que sos vos, ingresá tu contraseña actual.
+  </div>
+
+  <form method="post" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Contraseña actual</label>
+      <input name="password" type="password" required autofocus autocomplete="current-password"
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div class="flex gap-2">
+      <button type="submit"
+              class="flex-1 rounded bg-red-600 text-white py-2 text-sm font-medium hover:bg-red-700">
+        Desactivar 2FA
+      </button>
+      <a href="{{ url_for('dashboard.index') }}"
+         class="flex-1 text-center rounded border border-slate-300 dark:border-slate-700 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+        Cancelar
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

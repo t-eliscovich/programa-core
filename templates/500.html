@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Error interno{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto mt-16 text-center">
+  <div class="text-6xl font-bold text-slate-300 dark:text-slate-700">500</div>
+  <h1 class="mt-4 text-xl font-semibold">Hubo un problema del lado del sistema</h1>
+  <p class="mt-2 text-slate-500 text-sm">
+    Ya quedó registrado. Si necesitás ayuda, pasá el ID de error a soporte
+    para que lo puedan buscar en la bitácora.
+  </p>
+  <p class="mt-6">
+    <a href="{{ url_for('historial.operaciones') }}" class="text-blue-600 hover:underline">
+      Volver al inicio
+    </a>
+  </p>
+  {% if g.request_id %}
+    <div class="mt-10 text-xs text-slate-400">ID de error: {{ g.request_id[:8] }}</div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block unauth %}
+<div class="max-w-lg mx-auto mt-16 text-center px-6">
+  <div class="text-6xl font-bold text-slate-300">500</div>
+  <h1 class="mt-4 text-xl font-semibold">Hubo un problema del lado del sistema</h1>
+  <p class="mt-2 text-slate-500 text-sm">Ya quedó registrado.</p>
+  <p class="mt-6">
+    <a href="{{ url_for('auth.login') }}" class="text-blue-600 hover:underline">
+      Ir al login
+    </a>
+  </p>
+  {% if g.request_id %}
+    <div class="mt-10 text-xs text-slate-400">ID de error: {{ g.request_id[:8] }}</div>
+  {% endif %}
+</div>
+{% endblock %}

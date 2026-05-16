@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Detalle gastos {{ data.label if data else '' }}{% endblock %}
+{% block breadcrumb %}
+Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Gastos</a> /
+<strong>{{ data.label if data else 'Detalle' }}</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .gd-tabla { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .gd-tabla table { width: 100%; border-collapse: collapse; }
+  .gd-tabla th, .gd-tabla td { padding: 6px 12px; font-size: 13px; }
+  .gd-tabla thead th {
+    background: rgb(248 250 252); color: rgb(71 85 105);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    font-weight: 600; text-align: left; border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .gd-tabla thead th { background: rgb(30 41 59 / 0.4); color: rgb(148 163 184); border-bottom-color: rgb(51 65 85); }
+  .gd-tabla td.num { text-align: right; }
+  .gd-tabla tr.grupo-header td {
+    background: rgb(241 245 249); color: rgb(15 23 42);
+    font-weight: 700; font-size: 13px; padding-top: 8px; padding-bottom: 8px;
+    border-top: 2px solid rgb(203 213 225);
+  }
+  .dark .gd-tabla tr.grupo-header td {
+    background: rgb(30 41 59 / 0.7); color: rgb(241 245 249); border-top-color: rgb(71 85 105);
+  }
+  .gd-tabla tr.subtotal td {
+    background: rgb(248 250 252); color: rgb(15 23 42);
+    font-weight: 600; font-size: 12px;
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .dark .gd-tabla tr.subtotal td {
+    background: rgb(30 41 59 / 0.5); color: rgb(241 245 249); border-bottom-color: rgb(51 65 85);
+  }
+  .gd-tabla tr.fila:hover { background: rgb(248 250 252); }
+  .dark .gd-tabla tr.fila:hover { background: rgb(30 41 59 / 0.3); }
+  .gd-tabla tr.total td {
+    background: rgb(15 23 42); color: rgb(248 250 252);
+    font-weight: 700; font-size: 14px;
+    padding-top: 12px; padding-bottom: 12px;
+  }
+  .dark .gd-tabla tr.total td {
+    background: rgb(241 245 249); color: rgb(15 23 42);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-2xl font-semibold">{{ data.label if data else 'Detalle gastos' }}</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Mes en curso — drill-down de XGAST agrupado por concepto.
+        ·
+        <a href="{{ url_for('informes.gastos') }}" class="underline hover:text-blue-600">Volver a Gastos</a>
+      </p>
+    </div>
+    <div class="no-print">
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if data and data.n_filas %}
+  <div class="gd-tabla bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 14%">Fecha</th>
+          <th style="width: 10%">Doc</th>
+          <th style="width: 10%">Prov</th>
+          <th>Concepto</th>
+          <th style="width: 10%" class="text-right">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in data.grupos %}
+        <tr class="grupo-header">
+          <td colspan="4">{{ g.grupo }} ({{ g.filas|length }} mov.)</td>
+          <td class="num">{{ g.subtotal | num_es(2) }}</td>
+        </tr>
+        {% for f in g.filas %}
+        <tr class="fila">
+          <td>{{ f.fecha | fecha_es if f.fecha else '' }}</td>
+          <td class="font-mono text-xs">{{ f.doc }}</td>
+          <td class="font-mono text-xs">{{ f.prov }}</td>
+          <td>{{ f.concepto | cleanstr }}</td>
+          <td class="num">{{ f.importe | num_es(2) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="subtotal">
+          <td colspan="4">Subtotal {{ g.grupo }}</td>
+          <td class="num">{{ g.subtotal | num_es(2) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total">
+          <td colspan="4">TOTAL {{ data.label }} — {{ data.n_filas }} movimientos</td>
+          <td class="num">{{ data.total | num_es(2) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-slate-500 mt-3">
+    Replica de <code class="font-mono">PROCEDURE DETALGAST</code> (INFORMES.PRG L1266-1334).
+    El grouping de V5 (Gas/Comb. tintorería) usa EEQ/CMB/EMAAP/AGUA como en el legacy;
+    para el resto de categorías se agrupa por la primera palabra del concepto.
+  </p>
+  {% else %}
+    <div class="px-4 py-6 text-center text-slate-500 border border-slate-200 dark:border-slate-800 rounded">
+      Sin gastos cargados para {{ data.label if data else 'esta categoría' }} en el mes en curso.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

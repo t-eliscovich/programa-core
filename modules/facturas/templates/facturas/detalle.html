@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Factura {{ fact.numf_completo or fact.numf }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+  <strong>{{ fact.numf_completo or fact.numf }}</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">
+        Factura {{ fact.numf_completo or ('N° ' ~ fact.numf) }}
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        {{ fact.fecha | fecha_es }}
+        {% if fact.vencimiento %} · vence {{ fact.vencimiento | fecha_es }}{% endif %}
+        {# Vocabulario canónico (2026-04-29) — ver docs/SKILL_ADDENDUM_BATCH_18.md #}
+        {% if fact.stat == 'Z' %}
+          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Emitida</span>
+        {% elif fact.stat == 'A' %}
+          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Abonada parcial</span>
+        {% elif fact.stat == 'T' %}
+          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Cancelada total</span>
+        {% elif fact.stat == 'X' %}
+          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Eliminada por error</span>
+        {% elif fact.stat == 'Y' %}
+          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Anulada (legacy)</span>
+        {% elif fact.stat %}
+          · <span class="font-mono">{{ fact.stat }}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-2 no-print">
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+      {% if g.permisos and 'sri.emitir' in g.permisos and fact.stat and fact.stat not in ('X', 'Y') %}
+        <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"
+              onsubmit="return confirm('Generar XML SRI para la factura {{ fact.numf_completo or fact.numf }}? Se creará un comprobante electrónico en estado borrador (aún sin firmar ni enviar al SRI).');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="text-sm px-3 py-1.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30">
+            Generar XML SRI
+          </button>
+        </form>
+      {% endif %}
+      {% if g.permisos and 'facturas.editar' in g.permisos and fact.stat and fact.stat not in ('X', 'Y') %}
+        <a href="{{ url_for('facturas.editar', id_factura=fact.id_factura) }}"
+           class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30">
+          Editar...
+        </a>
+      {% endif %}
+      {% if g.permisos and 'facturas.anular' in g.permisos and fact.stat and fact.stat not in ('X', 'Y') %}
+        <a href="{{ url_for('facturas.confirmar_anulacion', id_factura=fact.id_factura) }}"
+           class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
+          Eliminar...
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 mb-6">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Cliente</div>
+      <a href="{{ url_for('informes.estado_cuenta', codigo_cli=fact.codigo_cli) }}" class="block hover:text-blue-600">
+        <div class="font-semibold">{{ fact.cliente }}</div>
+        <div class="text-xs text-slate-500">
+          <span class="font-mono">{{ fact.codigo_cli }}</span> ·
+          {{ fact.ruc | cleanstr }} · Tel {{ fact.telefono | cleanstr }}
+        </div>
+      </a>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Importes</div>
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div class="text-slate-500">Kg</div><div class="text-right text-mono">{{ fact.kg | kg_es }}</div>
+        <div class="text-slate-500">Importe</div><div class="text-right text-mono">{{ fact.importe | money_es }}</div>
+        <div class="text-slate-500">Abono</div><div class="text-right text-mono text-emerald-700">{{ fact.abono | money_es }}</div>
+        <div class="text-slate-500 font-semibold">Saldo</div>
+        <div class="text-right text-mono font-semibold {% if fact.saldo and fact.saldo > 0 %}text-red-600{% endif %}">{{ fact.saldo | money_es }}</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+    Aplicaciones de cheques ({{ aplicaciones | length }} · total aplicado {{ total_aplicado | money_es }})
+  </h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-6">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">F. aplic.</th>
+          <th class="px-3 py-3 text-left font-medium">N° cheque</th>
+          <th class="px-3 py-3 text-left font-medium">F. cheque</th>
+          <th class="px-3 py-3 text-left font-medium">Banco</th>
+          <th class="px-3 py-3 text-right font-medium">Importe cheque</th>
+          <th class="px-3 py-3 text-right font-medium">Aplicado</th>
+          <th class="px-3 py-3 text-right font-medium">Abono fact.</th>
+          <th class="px-3 py-3 text-right font-medium">Saldo fact.</th>
+          <th class="px-3 py-3 text-left font-medium">Stat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in aplicaciones %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ a.fechaing | fecha_es }}</td>
+          <td class="px-3 py-2 font-mono text-xs">
+            {% if a.id_cheque %}
+              <a href="{{ url_for('cheques.detalle', id_cheque=a.id_cheque) }}" class="hover:text-blue-600">{{ a.no_cheque or a.id_cheque }}</a>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500">{{ a.cheque_fecha | fecha_es }}</td>
+          <td class="px-3 py-2 text-xs">{{ a.cheque_banco }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.cheque_importe | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ a.aplicado | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.abono_f | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.saldo_f | money_es }}</td>
+          <td class="px-3 py-2 font-mono text-xs">
+            {% if a.stat_f == 'R' %}<span class="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">R</span>
+            {% elif a.stat_f == 'A' %}<span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">A</span>
+            {% else %}<span class="text-slate-500">{{ a.stat_f }}</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(9, 'Sin cheques aplicados.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+    Retenciones ({{ retenciones | length }} · total {{ total_retenido | money_es }})
+  </h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">Fecha</th>
+          <th class="px-3 py-3 text-right font-medium">Retenido</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in retenciones %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-2">{{ r.fecha | fecha_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ r.rete | money_es }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(2, 'Sin retenciones emitidas para esta factura.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Puente con formulas_app — OTs cerradas del cliente. El fragment es
+     resiliente: si el adapter está caído, renderiza la tabla vacía con
+     un mensaje amigable, nunca rompe el detalle de factura. #}
+  {% if fact.codigo_cli %}
+    <div hx-get="{{ url_for('costos_ot.por_cliente_fragment', codigo_cli=fact.codigo_cli) }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-4 py-3 mb-6 text-sm text-slate-400">
+        Cargando órdenes de tintura del cliente…
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

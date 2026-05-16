@@ -1,0 +1,85 @@
+{# Macros compartidas para inputs de formularios.
+
+   - `fecha_input`: text input con parser DD/MM/YYYY, auto-inserta barras,
+     acepta también DDMMYYYY pegado o tipeado. La contadora viene del dBase
+     donde tipeaba sin separadores.
+   - `monto_input`: text input con `inputmode="decimal"`, tolerante a punto
+     o coma decimal.
+   - `codigo_input`: text input con upper-case al vuelo para códigos como
+     "JTX", "TEX" — la DB guarda mayúscula.
+   - `cliente_autocomplete`: input + <datalist> con todos los clientes para
+     que el browser sugiera mientras tipea.
+#}
+
+{% macro fecha_input(name, value=None, required=False, autofocus=False, label=None, placeholder="DD/MM/AAAA") -%}
+  {% if label %}
+    <label class="block text-xs font-medium text-slate-500 mb-1">{{ label }}{% if required %} *{% endif %}</label>
+  {% endif %}
+  <input type="text" name="{{ name }}"
+         value="{{ _fecha_format(value) if value else '' }}"
+         placeholder="{{ placeholder }}"
+         inputmode="numeric"
+         pattern="\d{2}/\d{2}/\d{4}"
+         maxlength="10"
+         {% if required %}required{% endif %}
+         {% if autofocus %}autofocus{% endif %}
+         class="input-fecha w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700
+                bg-white dark:bg-slate-800 text-sm font-mono"
+         oninput="fechaAutoFormat(this)"
+         onblur="fechaValidar(this)">
+{%- endmacro %}
+
+{% macro monto_input(name, value=None, required=False, autofocus=False, label=None, placeholder="0,00", step="0.01") -%}
+  {% if label %}
+    <label class="block text-xs font-medium text-slate-500 mb-1">{{ label }}{% if required %} *{% endif %}</label>
+  {% endif %}
+  <input type="text" name="{{ name }}"
+         value="{{ value if value is not none else '' }}"
+         placeholder="{{ placeholder }}"
+         inputmode="decimal"
+         {% if required %}required{% endif %}
+         {% if autofocus %}autofocus{% endif %}
+         class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700
+                bg-white dark:bg-slate-800 text-sm text-right font-mono">
+{%- endmacro %}
+
+{% macro codigo_input(name, value=None, required=False, autofocus=False, label=None, placeholder="", maxlength=3, datalist_id=None) -%}
+  {% if label %}
+    <label class="block text-xs font-medium text-slate-500 mb-1">{{ label }}{% if required %} *{% endif %}</label>
+  {% endif %}
+  <input type="text" name="{{ name }}"
+         value="{{ value or '' }}"
+         placeholder="{{ placeholder }}"
+         maxlength="{{ maxlength }}"
+         {% if required %}required{% endif %}
+         {% if autofocus %}autofocus{% endif %}
+         {% if datalist_id %}list="{{ datalist_id }}"{% endif %}
+         oninput="this.value=this.value.toUpperCase()"
+         class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700
+                bg-white dark:bg-slate-800 text-sm font-mono uppercase">
+{%- endmacro %}
+
+{% macro datalist_clientes(clientes, id="clientes-list") -%}
+  <datalist id="{{ id }}">
+    {% for c in clientes %}
+      <option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>
+    {% endfor %}
+  </datalist>
+{%- endmacro %}
+
+{% macro datalist_proveedores(proveedores, id="proveedores-list") -%}
+  <datalist id="{{ id }}">
+    {% for p in proveedores %}
+      <option value="{{ p.codigo_prov }}">{{ p.nombre }}</option>
+    {% endfor %}
+  </datalist>
+{%- endmacro %}
+
+{# Helper interno — formatea Python date a DD/MM/YYYY para value del input. #}
+{% macro _fecha_format(value) -%}
+  {%- if value.__class__.__name__ in ('date', 'datetime') -%}
+    {{ '%02d/%02d/%04d' | format(value.day, value.month, value.year) }}
+  {%- else -%}
+    {{ value }}
+  {%- endif -%}
+{%- endmacro %}

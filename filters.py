@@ -1,0 +1,107 @@
+"""Jinja filters. Spanish/Ecuadorian number formatting to match formulas_app."""
+from datetime import date, datetime
+from decimal import Decimal
+
+from error_messages import humanize as _humanize
+
+
+def num_es(value, decimales: int = 2) -> str:
+    """Format number with comma decimal and dot thousands (es-EC)."""
+    if value is None or value == "":
+        return ""
+    try:
+        d = Decimal(str(value))
+    except Exception:
+        return str(value)
+    # Format with US locale then swap separators
+    s = f"{d:,.{decimales}f}"
+    # '1,234,567.89' -> '1.234.567,89'
+    return s.replace(",", "@").replace(".", ",").replace("@", ".")
+
+
+def kg_es(value) -> str:
+    """Format kilos: 2 decimales."""
+    return num_es(value, 2)
+
+
+def money_es(value) -> str:
+    """Money: 2 decimales con símbolo implícito (dólar)."""
+    if value is None or value == "":
+        return ""
+    return num_es(value, 2)
+
+
+def fecha_es(value) -> str:
+    """Render date as dd/mm/yyyy.
+
+    Acepta `date` o `datetime`. Si recibe un datetime, descarta la hora
+    (usar `fecha_hora_es` si querés ver el time).
+    """
+    if value is None or value == "":
+        return ""
+    if isinstance(value, datetime | date):
+        return value.strftime("%d/%m/%Y")
+    return str(value)
+
+
+def fecha_hora_es(value) -> str:
+    """Render datetime as dd/mm/yyyy HH:MM:SS.
+
+    Para timestamps de bitácora, audit logs, ejecuciones de tareas, etc.
+    Si recibe un `date` (sin hora), devuelve sólo la fecha (compatible
+    con `fecha_es` para evitar 00:00:00 inútil).
+    """
+    if value is None or value == "":
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%d/%m/%Y")
+    return str(value)
+
+
+def humanizar(value) -> str:
+    """Convierte una excepción (u objeto tipo excepción) en mensaje legible.
+
+    Acepta también strings (los devuelve tal cual) para que el filter sea
+    seguro aún si el template le pasa un str por error.
+    """
+    if value is None or value == "":
+        return ""
+    if isinstance(value, Exception):
+        return _humanize(value)
+    return str(value)
+
+
+# Strings que el dump dBase→Postgres dejó como literal "None" cuando
+# debería haber sido NULL. Cualquier comparación de string contra estos
+# valores debería tratarse como vacío.
+_NONE_LIKE = frozenset({"none", "null", "nan"})
+
+
+def cleanstr(value, fallback: str = "") -> str:
+    """Devuelve string sano:
+
+    - None / "" / "None" / "NULL" / "NaN" → fallback (vacío por default)
+    - Cualquier otra cosa → str(value).strip()
+
+    El dump del dBase legacy a veces guardó "None" literal (con N mayúscula)
+    en vez de NULL — este filtro lo cubre. Aplicar en todos los lugares donde
+    el campo no es identificador clave (no tocar codigo_cli o id_*).
+    """
+    if value is None:
+        return fallback
+    s = str(value).strip()
+    if not s or s.lower() in _NONE_LIKE:
+        return fallback
+    return s
+
+
+def register(app):
+    app.jinja_env.filters["num_es"] = num_es
+    app.jinja_env.filters["kg_es"] = kg_es
+    app.jinja_env.filters["money_es"] = money_es
+    app.jinja_env.filters["fecha_es"] = fecha_es
+    app.jinja_env.filters["fecha_hora_es"] = fecha_hora_es
+    app.jinja_env.filters["humanizar"] = humanizar
+    app.jinja_env.filters["cleanstr"] = cleanstr

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nuevo' if modo=='crear' else 'Editar' }} proveedor{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-4">
+    {{ 'Nuevo proveedor' if modo=='crear' else 'Editar proveedor ' + (form.codigo_prov or '') }}
+  </h1>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="bg-white border rounded-lg p-4 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Código <span class="text-red-500">*</span></span>
+        <input type="text" name="codigo_prov" value="{{ form.codigo_prov or '' }}"
+               class="border rounded px-2 py-1 mt-1 uppercase" maxlength="5"
+               oninput="this.value=this.value.toUpperCase()"
+               {% if modo=='editar' %}readonly{% endif %} required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">RUC</span>
+        <input type="text" name="ruc" value="{{ form.ruc or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="16">
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Nombre / razón social <span class="text-red-500">*</span></span>
+        <input type="text" name="nombre" value="{{ form.nombre or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="200" required>
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Representante</span>
+        <input type="text" name="representante" value="{{ form.representante or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="100">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Teléfono</span>
+        <input type="text" name="telefono" value="{{ form.telefono or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="30">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Correo</span>
+        <input type="email" name="correo" value="{{ form.correo or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="80">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Tipo</span>
+        <select name="tipo" class="border rounded px-2 py-1 mt-1">
+          <option value="">—</option>
+          {% for t in ['B','S','M','I'] %}
+            <option value="{{ t }}" {% if form.tipo==t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">Dirección</span>
+        <input type="text" name="direccion" value="{{ form.direccion or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="200">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Plazo (días)</span>
+        <input type="number" name="plazo" value="{{ form.plazo or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" min="0">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Retención base %</span>
+        <input type="text" name="retbase" value="{{ form.retbase or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" placeholder="1,75">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Retención IVA %</span>
+        <input type="text" name="retiva" value="{{ form.retiva or '' }}"
+               class="border rounded px-2 py-1 mt-1 text-right" placeholder="30">
+      </label>
+
+      {% if modo=='editar' %}
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Activo</span>
+        <select name="activo" class="border rounded px-2 py-1 mt-1">
+          <option value="1" {% if form.activo=='1' %}selected{% endif %}>Sí</option>
+          <option value="0" {% if form.activo=='0' %}selected{% endif %}>No</option>
+        </select>
+      </label>
+      {% endif %}
+    </div>
+
+    <div class="flex items-center justify-between mt-6 pt-4 border-t">
+      <a href="{{ next_url if next_url else url_for('proveedores.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">
+        Guardar
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

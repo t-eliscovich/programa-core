@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_header %}
+
+{% block title %}Depositar cheques en lote{% endblock %}
+
+{% block content %}
+<style>
+  /* Checkbox custom — el default de Tailwind/Chrome es muy chico.
+     Hacemos uno cuadrado 20×20, con borde definido, fácil de clickear. */
+  .dl-check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px; height: 20px;
+    border: 2px solid rgb(203 213 225);  /* slate-300 */
+    border-radius: 5px;
+    background: white;
+    cursor: pointer;
+    transition: all .12s ease;
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+  .dl-check:hover { border-color: rgb(100 116 139); }  /* slate-500 */
+  .dl-check:checked {
+    background: rgb(5 150 105);  /* emerald-600 */
+    border-color: rgb(5 150 105);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z' clip-rule='evenodd' /%3E%3C/svg%3E");
+    background-size: 16px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .dl-check:indeterminate {
+    background: rgb(5 150 105);
+    border-color: rgb(5 150 105);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Crect x='4' y='9' width='12' height='2' rx='1'/%3E%3C/svg%3E");
+    background-size: 16px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  /* Fila seleccionada — feedback visual claro */
+  tr.dl-row { transition: background-color .12s ease; }
+  tr.dl-row:hover { background: rgb(241 245 249); }   /* slate-100 */
+  tr.dl-row.is-selected {
+    background: rgb(236 253 245);   /* emerald-50 */
+    box-shadow: inset 3px 0 0 rgb(16 185 129);  /* emerald-500 accent */
+  }
+  tr.dl-row.is-selected:hover { background: rgb(209 250 229); }  /* emerald-100 */
+  tr.dl-row.is-future {
+    background: rgb(255 251 235 / 0.5);  /* amber-50/50 */
+  }
+  tr.dl-row.is-future.is-selected {
+    background: rgb(236 253 245);
+  }
+  /* Status pills */
+  .dl-pill {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .dl-pill-z { background: rgb(241 245 249); color: rgb(71 85 105); }   /* slate */
+  .dl-pill-p { background: rgb(254 243 199); color: rgb(146 64 14); }   /* amber */
+  /* Top summary card */
+  .dl-summary {
+    background: linear-gradient(135deg, rgb(236 253 245), rgb(209 250 229));
+    border: 1px solid rgb(167 243 208);
+  }
+  .dl-summary-dark {
+    background: rgb(15 23 42);  /* slate-900 */
+    border: 1px solid rgb(30 41 59);
+  }
+  .dl-btn-primary {
+    background: rgb(5 150 105);
+    color: white; font-weight: 600;
+    padding: 10px 20px; border-radius: 8px;
+    font-size: 14px;
+    transition: all .12s ease;
+    box-shadow: 0 1px 2px rgba(5,150,105,0.2);
+  }
+  .dl-btn-primary:hover:not(:disabled) {
+    background: rgb(4 120 87);
+    box-shadow: 0 2px 8px rgba(5,150,105,0.35);
+    transform: translateY(-1px);
+  }
+  .dl-btn-primary:disabled {
+    background: rgb(203 213 225); color: rgb(148 163 184);
+    cursor: not-allowed; box-shadow: none;
+  }
+  .dl-btn-secondary {
+    background: white; color: rgb(71 85 105);
+    border: 1px solid rgb(203 213 225);
+    padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; font-weight: 500;
+    transition: all .12s ease;
+  }
+  .dl-btn-secondary:hover {
+    background: rgb(248 250 252);
+    border-color: rgb(148 163 184);
+  }
+</style>
+
+<div class="max-w-7xl mx-auto py-4 px-4">
+  <div class="mb-4">
+    <h1 class="text-2xl font-semibold text-slate-900">Depositar cheques</h1>
+    <p class="text-sm text-slate-500 mt-0.5">
+      Marcá los cheques que vas a llevar al banco.
+      {% set _bn = bancos[0].nombre if bancos else 'Pichincha' %}
+      Destino:
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-100 text-sky-800 font-semibold text-xs">
+        {{ _bn }}
+      </span>
+      <span class="mx-1.5">·</span>
+      Fecha:
+      <input type="date" name="fecha_deposito" value="{{ hoy }}" form="form-deposito"
+             class="inline-block px-2 py-0.5 text-xs rounded border border-slate-300 bg-white">
+      <span class="mx-1.5">·</span>
+      <a href="#" onclick="document.getElementById('concepto-extra').classList.toggle('hidden');return false;"
+         class="text-sky-600 hover:text-sky-700 text-xs">+ concepto</a>
+    </p>
+    <div id="concepto-extra" class="hidden mt-2">
+      <input type="text" name="concepto" form="form-deposito"
+             placeholder="Boleta de depósito (opcional, ej. N° 12345)" maxlength="50"
+             class="w-80 px-3 py-1.5 text-sm rounded border border-slate-300 bg-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none">
+    </div>
+  </div>
+
+  {% if not cheques %}
+    <div class="bg-white border border-slate-200 rounded-xl p-12 text-center">
+      <div class="text-4xl mb-3">📭</div>
+      <p class="text-lg text-slate-700 font-medium mb-1">Sin cheques para depositar</p>
+      <p class="text-sm text-slate-500">
+        Cuando recibas cheques los vas a ver acá listos para depositar.
+      </p>
+      <a href="{{ url_for('cheques.lista', estado='cartera') }}"
+         class="inline-block mt-5 text-sm text-sky-600 hover:text-sky-700 hover:underline">
+        ← Volver a cheques
+      </a>
+    </div>
+  {% else %}
+
+  <form method="post" id="form-deposito" action="{{ url_for('cheques.depositar_lote') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if bancos %}
+      <input type="hidden" name="no_banco" value="{{ bancos[0].no_banco }}"
+             data-nombre="{{ bancos[0].nombre | title }}">
+    {% endif %}
+
+    {# ─── Summary card sticky — total + acciones ──────────────────────── #}
+    <div class="sticky top-2 z-10 dl-summary rounded-xl px-5 py-4 flex flex-wrap items-center justify-between gap-4 mb-4 shadow-sm">
+      <div class="flex items-baseline gap-4">
+        <div>
+          <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Seleccionados</div>
+          <div class="text-2xl font-bold text-emerald-900 tabular-nums leading-tight" id="contador">0</div>
+        </div>
+        <div class="h-10 w-px bg-emerald-200"></div>
+        <div>
+          <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Total a depositar</div>
+          <div class="text-2xl font-bold text-emerald-900 tabular-nums leading-tight" id="suma">$ 0,00</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn-todos" class="dl-btn-secondary">Marcar visibles</button>
+        <button type="button" id="btn-ninguno" class="dl-btn-secondary">Limpiar</button>
+        <button type="submit" class="dl-btn-primary" id="btn-confirmar" disabled>
+          Depositar cheques →
+        </button>
+      </div>
+    </div>
+
+    {# ─── Filtros — barra única ─────────────────────────────────────── #}
+    <div class="bg-white border border-slate-200 rounded-xl p-3 mb-3 flex items-center gap-3 flex-wrap shadow-sm">
+      <div class="flex-1 min-w-[280px] relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M16.5 10.5a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+        <input type="text" id="filtro-texto"
+               placeholder="Buscar por cliente, código, N° de cheque o banco emisor…"
+               autofocus
+               class="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none">
+      </div>
+      <div class="flex items-center gap-2 text-xs text-slate-500">
+        <span class="font-medium">Importe:</span>
+        <input type="text" id="filtro-min" inputmode="decimal" placeholder="mín"
+               class="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-right font-mono text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none">
+        <span class="text-slate-300">→</span>
+        <input type="text" id="filtro-max" inputmode="decimal" placeholder="máx"
+               class="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-right font-mono text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none">
+      </div>
+      <div class="text-xs text-slate-500 ml-auto">
+        <span id="contador-visibles" class="font-semibold text-slate-700">{{ cheques | length }}</span>
+        de {{ cheques | length }} visibles
+      </div>
+    </div>
+
+    {# ─── Tabla de cheques ────────────────────────────────────────────── #}
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr class="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
+            <th class="px-4 py-3 text-center w-12">
+              <input type="checkbox" id="check-all" class="dl-check">
+            </th>
+            <th class="px-4 py-3 text-left">N°</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap" title="Día en que cargué el cheque al sistema">Cargado</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap" title="Fecha planificada de depósito (postdate)">A depositar</th>
+            <th class="px-4 py-3 text-left">Código</th>
+            <th class="px-4 py-3 text-left">Cliente</th>
+            <th class="px-4 py-3 text-left">Banco emisor</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Importe</th>
+            <th class="px-4 py-3 text-center w-20">Estado</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for c in cheques %}
+            {% set ya = c.fechad and c.fechad.strftime('%Y-%m-%d') > hoy if c.fechad else false %}
+            {% set no_ch = c.no_cheque %}
+            {% if no_ch in (None, '', 'None', 'NONE', 'none') %}{% set no_ch = None %}{% endif %}
+            <tr data-cheque-row
+                data-text="{{ ((c.codigo_cli or '') ~ ' ' ~ (c.cliente or '') ~ ' ' ~ (c.no_cheque or '') ~ ' ' ~ (c.banco or '')) | lower }}"
+                data-importe="{{ c.importe or 0 }}"
+                data-fechad="{{ c.fechad.strftime('%Y-%m-%d') if c.fechad else '' }}"
+                class="dl-row {% if ya %}is-future{% endif %}">
+              <td class="px-4 py-3 text-center">
+                <label class="inline-flex items-center justify-center cursor-pointer w-full">
+                  <input type="checkbox" name="id_cheque" value="{{ c.id_cheque }}"
+                         data-importe="{{ c.importe or 0 }}"
+                         class="cheque-check dl-check"
+                         {% if ya %}title="Postdatado a futuro — verificá fecha"{% endif %}>
+                </label>
+              </td>
+              <td class="px-4 py-3 font-mono text-xs text-slate-700" data-col="no_cheque">
+                {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}
+              </td>
+              {# Cargado — preferimos fecha_recibido (cuándo lo cargó al sistema). Fallback fecha. #}
+              <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{{ (c.fecha_recibido or c.fecha) | fecha_es }}</td>
+              <td class="px-4 py-3 text-xs whitespace-nowrap {% if ya %}text-amber-700 font-semibold{% else %}text-slate-600{% endif %}">
+                {{ c.fechad | fecha_es if c.fechad else '—' }}
+                {% if ya %}
+                  <span class="ml-1 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">⚠ futuro</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3 font-mono text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap">
+                {{ c.codigo_cli or '—' }}
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-800" data-col="cliente">
+                {{ c.cliente or '—' }}
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-600" data-col="banco">{{ c.banco or '—' }}</td>
+              <td class="px-4 py-3 text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                {{ c.importe | num_es }}
+              </td>
+              <td class="px-4 py-3 text-center">
+                <span class="dl-pill dl-pill-{{ c.stat | lower }}">{{ c.stat }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-xs text-slate-400 mt-3 leading-relaxed">
+      Al depositar, cada cheque pasa a estado <code class="px-1 py-0.5 rounded bg-slate-100 font-mono">B</code> (depositado)
+      y se crea un movimiento bancario (<code class="px-1 py-0.5 rounded bg-slate-100 font-mono">DE</code>) en
+      <code class="px-1 py-0.5 rounded bg-slate-100 font-mono">scintela.transacciones_bancarias</code>. El trigger
+      auto-actualiza el saldo del banco. Si algo falla, no se aplica nada (transacción atómica).
+    </p>
+
+  </form>
+
+  <script>
+  (function() {
+    const checks = () => Array.from(document.querySelectorAll('.cheque-check'));
+    const $count = document.getElementById('contador');
+    const $sum   = document.getElementById('suma');
+    const $btn   = document.getElementById('btn-confirmar');
+    const $all   = document.getElementById('check-all');
+
+    function actualizarFila(chk) {
+      const tr = chk.closest('tr');
+      if (tr) tr.classList.toggle('is-selected', chk.checked);
+    }
+    function actualizar() {
+      const sel = checks().filter(c => c.checked);
+      $count.textContent = sel.length;
+      const total = sel.reduce((s, c) => s + parseFloat(c.dataset.importe || 0), 0);
+      $sum.textContent = '$ ' + total.toLocaleString('es-EC',
+        {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      $btn.disabled = sel.length === 0;
+      const vis = visibleChecks();
+      const visSel = vis.filter(c => c.checked).length;
+      $all.checked = vis.length > 0 && visSel === vis.length;
+      $all.indeterminate = visSel > 0 && visSel < vis.length;
+      checks().forEach(actualizarFila);
+    }
+
+    checks().forEach(c => c.addEventListener('change', actualizar));
+    $all.addEventListener('change', () => {
+      visibleChecks().forEach(c => c.checked = $all.checked);
+      actualizar();
+    });
+    document.getElementById('btn-todos').addEventListener('click', () => {
+      visibleChecks().forEach(c => c.checked = true);
+      actualizar();
+    });
+    document.getElementById('btn-ninguno').addEventListener('click', () => {
+      checks().forEach(c => c.checked = false);
+      actualizar();
+    });
+
+    // Click en la fila también tildea (más fácil de usar)
+    document.querySelectorAll('tr[data-cheque-row]').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        // Ignorar clicks en el checkbox mismo (ya lo maneja el navegador)
+        if (e.target.tagName === 'INPUT' || e.target.closest('label')) return;
+        const chk = tr.querySelector('.cheque-check');
+        if (chk) {
+          chk.checked = !chk.checked;
+          actualizar();
+        }
+      });
+    });
+
+    // --- Filtros cliente-side --------------------------------------
+    const $texto = document.getElementById('filtro-texto');
+    const $min   = document.getElementById('filtro-min');
+    const $max   = document.getElementById('filtro-max');
+    const $vis   = document.getElementById('contador-visibles');
+    const $fdep  = document.querySelector('input[name="fecha_deposito"]');
+    const rows   = Array.from(document.querySelectorAll('tr[data-cheque-row]'));
+
+    function parseMonto(s) {
+      if (!s) return null;
+      s = String(s).trim().replace(/\./g,'').replace(',', '.');
+      const v = parseFloat(s);
+      return isNaN(v) ? null : v;
+    }
+    function visibleChecks() {
+      return rows.filter(r => r.style.display !== 'none')
+                 .map(r => r.querySelector('.cheque-check'))
+                 .filter(Boolean);
+    }
+    function aplicarFiltro() {
+      const q = ($texto.value || '').toLowerCase().trim();
+      const min = parseMonto($min.value);
+      const max = parseMonto($max.value);
+      // Fecha de depósito elegida: oculta cheques con fechad posterior
+      // (no se pueden depositar todavía — la fecha del banco sería antes
+      // del fechad del cheque, que no tiene sentido).
+      const fdep = ($fdep && $fdep.value) || '';
+      let n = 0;
+      rows.forEach(r => {
+        const text    = r.dataset.text || '';
+        const importe = parseFloat(r.dataset.importe || 0);
+        const fechad  = r.dataset.fechad || '';
+        let visible = true;
+        if (q && !text.includes(q)) visible = false;
+        if (min != null && importe < min) visible = false;
+        if (max != null && importe > max) visible = false;
+        // Cheque postdatado > fecha del depósito: ocultarlo.
+        if (fdep && fechad && fechad > fdep) visible = false;
+        r.style.display = visible ? '' : 'none';
+        if (visible) n++;
+        if (!visible) {
+          const chk = r.querySelector('.cheque-check');
+          if (chk && chk.checked) chk.checked = false;
+        }
+      });
+      $vis.textContent = n;
+      actualizar();
+    }
+    [$texto, $min, $max].forEach(el => el.addEventListener('input', aplicarFiltro));
+    if ($fdep) $fdep.addEventListener('change', aplicarFiltro);
+
+    // Aplicar el filtro inicial (oculta postdatados > fecha hoy default)
+    aplicarFiltro();
+
+    // ── Confirmación previa al depósito. TMT 2026-05-16.
+    // confirm() nativo (robusto). Resumen incluye banco con NOMBRE,
+    // total formateado y la lista de cheques con su N° + cliente.
+    const $form = document.getElementById('form-deposito');
+    let userConfirmed = false;
+    $form.addEventListener('submit', (e) => {
+      if (userConfirmed) return;
+      const sel = checks().filter(c => c.checked);
+      if (sel.length === 0) return;
+      e.preventDefault();
+
+      const total = sel.reduce((s, c) => s + parseFloat(c.dataset.importe || 0), 0);
+      const fmtMoney = (n) => '$ ' + n.toLocaleString('es-EC', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      });
+      const fdep = ($fdep && $fdep.value) || new Date().toISOString().slice(0,10);
+      const partes = fdep.split('-');
+      const fechaES = partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : fdep;
+
+      // Banco destino — preferimos el data-nombre del hidden/select; fallback al select.options
+      const $nb = document.querySelector('input[name="no_banco"], select[name="no_banco"]');
+      let nbNombre = '';
+      if ($nb) {
+        nbNombre = $nb.dataset.nombre || '';
+        if (!nbNombre && $nb.options && $nb.options.length) {
+          const opt = Array.from($nb.options).find(o => o.value === $nb.value);
+          if (opt) nbNombre = opt.textContent.trim();
+        }
+      }
+      if (!nbNombre) nbNombre = '—';
+
+      // Detalle por cheque: N° (o #id) + cliente + importe
+      const lineas = sel.map(c => {
+        const tr   = c.closest('tr');
+        const noCh = (tr.querySelector('[data-col="no_cheque"]')?.textContent || '').trim() || '—';
+        const cli  = (tr.querySelector('[data-col="cliente"]')?.textContent || '').trim() || '—';
+        const imp  = parseFloat(c.dataset.importe || 0);
+        return `  • ${noCh.padEnd(8)}  ${cli.padEnd(28).slice(0,28)}  ${fmtMoney(imp)}`;
+      }).join('\n');
+
+      const ok = window.confirm(
+        `Confirmar depósito\n` +
+        `─────────────────────────\n` +
+        `Banco:  ${nbNombre}\n` +
+        `Fecha:  ${fechaES}\n` +
+        `─────────────────────────\n` +
+        lineas + '\n' +
+        `─────────────────────────\n` +
+        `Total ${sel.length} cheque${sel.length === 1 ? '' : 's'}:  ${fmtMoney(total)}\n\n` +
+        `¿Mandar al banco?`
+      );
+      if (ok) {
+        userConfirmed = true;
+        $form.submit();
+      }
+    });
+  })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}

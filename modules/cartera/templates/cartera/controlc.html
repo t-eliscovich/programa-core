@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_header %}
+
+{% block title %}CONTROLC — cartera vs snapshot{% endblock %}
+
+{% block content %}
+  {{ page_header("CONTROLC — cartera hoy vs snapshot",
+                 "Reemplazo del legacy F:\\LUNES\\FACTURAS (MENU.PRG PROCEDURE CONTROLC L1582-1660)") }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <div class="flex flex-wrap items-end gap-3 mb-4 no-print">
+    <form method="get" class="flex items-end gap-2">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Snapshot</label>
+        <select name="fecha_snap" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+          <option value="">— último disponible —</option>
+          {% for s in snapshots %}
+            <option value="{{ s.isoformat() if s.isoformat is defined else s }}"
+                    {% if (s.isoformat() if s.isoformat is defined else s) == fecha_snapshot %}selected{% endif %}>
+              {{ s.strftime('%d/%m/%Y') if s.strftime is defined else s }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Ver</button>
+    </form>
+
+    {% if fecha_snapshot %}
+      <a href="{{ url_for('cartera.controlc', fecha_snap=fecha_snapshot, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Exportar CSV
+      </a>
+    {% endif %}
+
+    <a href="{{ url_for('cartera.aging') }}" class="text-xs text-slate-500 hover:underline self-center ml-auto">
+      ← Cartera (aging)
+    </a>
+  </div>
+
+  {% if not snapshots %}
+    <div class="rounded-md bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2 text-sm">
+      No hay snapshots cargados todavía. Corré
+      <code>python scripts/tomar_snapshot_cartera.py</code> al menos una vez para empezar
+      a comparar.
+    </div>
+  {% endif %}
+
+  {% if fecha_snapshot %}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
+        <div class="text-xs text-sky-700 uppercase tracking-wide">Saldo snapshot ({{ fecha_snapshot }})</div>
+        <div class="text-lg font-semibold text-right tabular-nums">{{ totales.saldo_snapshot | num_es }}</div>
+      </div>
+      <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+        <div class="text-xs text-emerald-700 uppercase tracking-wide">Saldo hoy</div>
+        <div class="text-lg font-semibold text-right tabular-nums">{{ totales.saldo_hoy | num_es }}</div>
+      </div>
+      <div class="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
+        <div class="text-xs text-rose-700 uppercase tracking-wide">Cobrado / Bajó</div>
+        <div class="text-lg font-semibold text-right tabular-nums">{{ totales.cobrado_o_bajo | num_es }}</div>
+      </div>
+      <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+        <div class="text-xs text-amber-700 uppercase tracking-wide">Aumentado</div>
+        <div class="text-lg font-semibold text-right tabular-nums">+ {{ totales.aumentado | num_es }}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs uppercase">
+        <tr>
+          <th class="text-left px-3 py-2">Código</th>
+          <th class="text-left px-3 py-2">Cliente</th>
+          <th class="text-right px-3 py-2">Snapshot</th>
+          <th class="text-right px-3 py-2">Hoy</th>
+          <th class="text-right px-3 py-2">Δ Importe</th>
+          <th class="text-right px-3 py-2"># fact snap</th>
+          <th class="text-right px-3 py-2"># fact hoy</th>
+          <th class="text-right px-3 py-2">Δ N°</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+          {% set dif = r.diferencia | float %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if dif > 0 %}bg-rose-50 dark:bg-rose-900/10{% elif dif < 0 %}bg-emerald-50 dark:bg-emerald-900/10{% endif %}">
+            <td class="px-3 py-1.5 font-mono text-xs">{{ r.codigo_cli }}</td>
+            <td class="px-3 py-1.5">{{ r.nombre }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ r.saldo_snapshot | num_es }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ r.saldo_hoy | num_es }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums font-semibold {% if dif > 0 %}text-rose-700{% elif dif < 0 %}text-emerald-700{% endif %}">
+              {% if dif > 0 %}+ {% endif %}{{ dif | num_es }}
+            </td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ r.n_facturas_snapshot }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ r.n_facturas_hoy }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{% if r.delta_n != 0 %}{{ r.delta_n }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        {% if not filas %}
+          <tr><td colspan="8" class="px-3 py-6 text-center text-slate-500">
+            {% if fecha_snapshot %}Sin diferencias entre snapshot y hoy.{% else %}Elegí un snapshot para comparar.{% endif %}
+          </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Diferencia &gt; 0 = la deuda del cliente aumentó (más facturas / saldo mayor).
+    Diferencia &lt; 0 = cobramos / bajó. Para tomar un snapshot manual hoy:
+    <code>python scripts/tomar_snapshot_cartera.py</code>.
+  </p>
+{% endblock %}

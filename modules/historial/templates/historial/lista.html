@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Historial de movimientos dobles{% endblock %}
+{% block breadcrumb %}<strong>Historial</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-full">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-semibold">Historial de movimientos dobles</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Cada operación que cruza tabla (caja↔banco, compra↔banco, transferencias,
+        endosos, etc.) queda registrada acá. Los reversos también se guardan —
+        marcados con un link al original.
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('historial.lista', desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-900 mb-4">
+      Error: {{ error }}
+    </div>
+  {% endif %}
+
+  {# KPIs #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="bg-white border border-slate-200 rounded-lg p-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Movimientos</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">{{ kpis.n or 0 }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">Total $ {{ kpis.total | float | num_es(0) }}</div>
+    </div>
+    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+      <div class="text-xs uppercase tracking-wider text-emerald-700">Activos</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1 text-emerald-900">
+        {{ kpis.n_activos or 0 }}
+      </div>
+      <div class="text-[11px] text-emerald-700 mt-0.5">
+        $ {{ kpis.total_activos | float | num_es(0) }}
+      </div>
+    </div>
+    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+      <div class="text-xs uppercase tracking-wider text-amber-700">Reversados</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1 text-amber-900">
+        {{ kpis.n_reversados or 0 }}
+      </div>
+      <div class="text-[11px] text-amber-700 mt-0.5">tienen un reverso aplicado</div>
+    </div>
+    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
+      <div class="text-xs uppercase tracking-wider text-slate-700">Reversos emitidos</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">
+        {{ kpis.n_reversos or 0 }}
+      </div>
+      <div class="text-[11px] text-slate-500 mt-0.5">filas que anulan otras</div>
+    </div>
+  </div>
+
+  {# Filtros #}
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-3 bg-white border border-slate-200 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo, usuario…"
+             class="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+      <select name="tipo" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">— Todos —</option>
+        {% for t in kpis.por_tipo %}
+          <option value="{{ t.tipo }}" {% if tipo == t.tipo %}selected{% endif %}>
+            {{ t.tipo }} ({{ t.n }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Estado</label>
+      <select name="estado" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+        <option value="">Todos</option>
+        <option value="activo"    {% if estado == 'activo' %}selected{% endif %}>Activos</option>
+        <option value="reverso"   {% if estado == 'reverso' %}selected{% endif %}>Reversos</option>
+        <option value="reversado" {% if estado == 'reversado' %}selected{% endif %}>Reversados</option>
+      </select>
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
+    <a href="{{ url_for('historial.lista') }}"
+       class="text-sm text-slate-500 hover:text-slate-700 ml-2">limpiar</a>
+  </form>
+
+  {# Tabla #}
+  <div class="bg-white border border-slate-200 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium">Fecha</th>
+          <th class="px-3 py-2 text-left font-medium">Tipo</th>
+          <th class="px-3 py-2 text-left font-medium">Origen</th>
+          <th class="px-3 py-2 text-left font-medium">Destino</th>
+          <th class="px-3 py-2 text-right font-medium">Importe</th>
+          <th class="px-3 py-2 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2 text-left font-medium">Estado</th>
+          <th class="px-3 py-2 text-left font-medium">Usuario</th>
+          <th class="px-3 py-2 text-right font-medium no-print">Acciones</th>
+        </tr>
+      </thead>
+      {# TMT 2026-05-16: la tabla usa MÚLTIPLES <tbody>, uno por item.
+         Esto permite agrupar visualmente las filas de un batch dentro de
+         una "card" violeta (borde lateral + fondo lila + header con resumen)
+         sin romper la grilla. Cada batch se renderea expandido por default
+         con N+1 filas (1 header + N hijos). Los items "single" mantienen
+         el look estándar. #}
+      {% macro render_estado(r) %}
+        {% if r.estado == 'activo' %}
+          <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 text-xs">Activo</span>
+        {% elif r.estado == 'reversado' %}
+          <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs"
+                title="Existe un reverso (id #{{ r.id_reverso }}) que anuló esta operación">
+            Reversado{% if r.id_reverso %} → <a href="{{ url_for('historial.lista', q='') }}#{{ r.id_reverso }}" class="underline">#{{ r.id_reverso }}</a>{% endif %}
+          </span>
+        {% elif r.estado == 'reverso' %}
+          <span class="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-xs"
+                title="Esta fila reversa al id #{{ r.id_original }}">
+            Reverso{% if r.id_original %} ← <a href="{{ url_for('historial.lista', q='') }}#{{ r.id_original }}" class="underline">#{{ r.id_original }}</a>{% endif %}
+          </span>
+        {% else %}
+          <span class="font-mono text-xs text-slate-500">{{ r.estado }}</span>
+        {% endif %}
+      {% endmacro %}
+
+      {% for item in items %}
+        {% if item.type == 'batch' %}
+          {# ── BATCH CARD ─────────────────────────────────────────── #}
+          <tbody class="batch-card">
+            {# Header del batch: spanning row con resumen + reverso. #}
+            <tr class="border-l-4 border-violet-400 bg-violet-100/80">
+              <td colspan="9" class="px-4 py-2.5">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-violet-900 font-semibold text-sm">
+                      ⊞ Operación compuesta
+                    </span>
+                    <span class="text-violet-700 text-sm">
+                      <strong class="tabular-nums">{{ item.count }} {{ item.label_primary }}</strong>
+                      · <span class="tabular-nums font-mono">$ {{ item.total | num_es }}</span>
+                    </span>
+                    <span class="text-xs text-violet-600">
+                      {{ item.fecha | fecha_es }}
+                    </span>
+                    {% if item.count_full != item.count %}
+                      <span class="text-[10px] text-violet-500"
+                            title="El batch tiene {{ item.count_full }} mov_doble en total — incluyendo aplicaciones que asignan la misma plata. Sumamos solo las altas para no double-counting.">
+                        ({{ item.count_full }} mov_doble)
+                      </span>
+                    {% endif %}
+                    {% if item.estado_global == 'reversado' %}
+                      <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs">Reversado entero</span>
+                    {% elif item.estado_global == 'mixto' %}
+                      <span class="inline-block px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-xs" title="Algunas filas reversadas, otras no">Mixto</span>
+                    {% endif %}
+                  </div>
+                  <div class="no-print">
+                    {% if item.estado_global == 'activo' %}
+                      <a href="{{ url_for('historial.reversar_batch', batch_id=item.batch_id) }}"
+                         class="text-sm text-rose-600 hover:text-rose-800 hover:underline font-medium"
+                         title="Reversar TODA la operación ({{ item.count }} movs juntos, atómico).">
+                        ↺ reversar todo el batch
+                      </a>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {# Hijos del batch (sin acciones). #}
+            {% for r in item.rows %}
+              <tr class="border-l-4 border-violet-400 bg-violet-50/40 hover:bg-violet-100/40
+                         {% if r.estado == 'reversado' %}opacity-70{% endif %}
+                         {% if r.estado == 'reverso' %}italic opacity-70{% endif %}
+                         {% if r.row_url %}cursor-pointer{% endif %}"
+                  {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
+                <td class="px-3 py-2 whitespace-nowrap pl-8">
+                  <div class="text-xs text-violet-700">↳</div>
+                  <div class="text-[10px] text-slate-400">#{{ r.id_mov_doble }}</div>
+                </td>
+                <td class="px-3 py-2">
+                  <div class="font-medium">{{ r.label }}</div>
+                  </td>
+                <td class="px-3 py-2 text-xs">
+                  {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
+                  {% else %}{{ r.origen_label }}{% endif %}
+                </td>
+                <td class="px-3 py-2 text-xs">
+                  {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
+                  {% else %}{{ r.destino_label }}{% endif %}
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums font-mono">
+                  {{ r.importe | money_es }}
+                </td>
+                <td class="px-3 py-2 text-xs text-slate-600 max-w-md truncate" title="{{ r.concepto or '' }}">
+                  {{ r.concepto or '' }}
+                </td>
+                <td class="px-3 py-2">{{ render_estado(r) }}</td>
+                <td class="px-3 py-2 text-xs text-slate-500">{{ r.usuario or '' }}</td>
+                <td class="px-3 py-2 text-right no-print">
+                  <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        {% else %}
+          {# ── ROW SINGLE ─────────────────────────────────────────── #}
+          {% set r = item.row %}
+          <tbody>
+            <tr class="border-t border-slate-100 hover:bg-slate-50
+                       {% if r.estado == 'reversado' %}bg-amber-50/40{% endif %}
+                       {% if r.estado == 'reverso' %}bg-slate-50/60 italic{% endif %}
+                       {% if r.row_url %}cursor-pointer{% endif %}"
+                {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
+              <td class="px-3 py-2 whitespace-nowrap">
+                {{ r.fecha_operacion | fecha_es }}
+                <div class="text-[10px] text-slate-400">#{{ r.id_mov_doble }}</div>
+              </td>
+              <td class="px-3 py-2">
+                <div class="font-medium">{{ r.label }}</div>
+              </td>
+              <td class="px-3 py-2 text-xs">
+                {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
+                {% else %}{{ r.origen_label }}{% endif %}
+              </td>
+              <td class="px-3 py-2 text-xs">
+                {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
+                {% else %}{{ r.destino_label }}{% endif %}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums font-mono">
+                {{ r.importe | money_es }}
+              </td>
+              <td class="px-3 py-2 text-xs text-slate-600 max-w-md truncate" title="{{ r.concepto or '' }}">
+                {{ r.concepto or '' }}
+              </td>
+              <td class="px-3 py-2">{{ render_estado(r) }}</td>
+              <td class="px-3 py-2 text-xs text-slate-500">{{ r.usuario or '' }}</td>
+              <td class="px-3 py-2 text-right no-print">
+                {% if r.estado == 'activo' %}
+                  <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
+                     class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                     title="Reversar este movimiento (te lleva al wizard correspondiente con motivo)">
+                    ↺ reversar
+                  </a>
+                {% else %}
+                  <span class="text-xs text-slate-300">—</span>
+                {% endif %}
+              </td>
+            </tr>
+          </tbody>
+        {% endif %}
+      {% else %}
+        <tbody>
+          {{ empty_row(9, 'Sin movimientos en este filtro.',
+                       'Probá ampliar fechas o limpiar filtros.') }}
+        </tbody>
+      {% endfor %}
+    </table>
+  </div>
+
+  {% if filas | length >= 1000 %}
+    <p class="text-xs text-slate-500 mt-2">
+      Mostrando las 1.000 filas más recientes. Acotá las fechas para ver más viejas.
+    </p>
+  {% endif %}
+</div>
+
+{# TMT 2026-05-16: el toggle expand/collapse se removió — los batches ahora
+   siempre se renderean expandidos como un card violeta (ver render arriba).
+   Lo único que queda es el click-to-navigate por fila para los rows con
+   data-row-url (lleva al origen del movimiento). Clicks en <a>/<button>/etc
+   dejan ganar al handler nativo. #}
+<script>
+(function() {
+  document.querySelectorAll('tr[data-row-url]').forEach(tr => {
+    tr.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t.closest('a, button, input, label, select')) return;
+      const url = tr.getAttribute('data-row-url');
+      if (url) window.location.href = url;
+    });
+  });
+})();
+</script>
+{% endblock %}

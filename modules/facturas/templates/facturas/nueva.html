@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Nueva factura{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('facturas.lista') }}">Facturas</a> / <strong>Nueva</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Nueva factura de venta</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Los campos obligatorios están marcados con <span class="text-red-500">*</span>.
+      Si dejás el N° en blanco se asigna automáticamente el siguiente.
+    </p>
+  </div>
+
+  {% if errores %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <p class="font-medium mb-1">Revisá estos datos:</p>
+      <ul class="list-disc list-inside space-y-0.5">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('facturas.nueva') }}"
+        class="space-y-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Fecha <span class="text-red-500">*</span></label>
+        <input name="fecha" type="text" required value="{{ form.fecha or '' }}"
+               placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10"
+               autofocus autocomplete="off"
+               oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">N° factura</label>
+        <input name="numf" type="number" min="1" step="1"
+               value="{{ form.numf or '' }}"
+               placeholder="{{ form.numf_sugerido or 'auto' }}"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+        {% if form.numf_sugerido %}
+          <p class="text-xs text-slate-400 mt-1">Sugerido: {{ form.numf_sugerido }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">N° SRI (completo)</label>
+        <input name="numf_completo" type="text" maxlength="20" value="{{ form.numf_completo or '' }}"
+               placeholder="001-001-000012345"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cliente (código) <span class="text-red-500">*</span></label>
+      <input name="codigo_cli" type="text" required maxlength="5"
+             value="{{ form.codigo_cli or '' }}"
+             placeholder="JTX"
+             list="clientes-list" autocomplete="off"
+             class="w-full md:w-48 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono uppercase"
+             oninput="this.value=this.value.toUpperCase()">
+      {% if clientes_datalist %}
+      <datalist id="clientes-list">
+        {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>{% endfor %}
+      </datalist>
+      {% endif %}
+      <p class="text-xs text-slate-400 mt-1">
+        ¿No te acordás? Mirá la
+        <a href="{{ url_for('clientes.lista') }}" class="underline">lista de clientes</a>.
+      </p>
+    </div>
+
+    {# Toggle Devolución — el dBase trata las devoluciones como facturas
+       con kg/importe negativos (MODIFICA.PRG línea 1195: NT.DEVOL =
+       facturas con NUMF>0 .AND. IMPORTE<0). Cuando está tildado:
+        - se permiten valores negativos en kg/importe
+        - el stock de terminado SUMA en vez de restar (la mercadería vuelve)
+        - se sugiere ingresar los kg/importe como positivos; el form les pone
+          el signo menos al enviar. Más cómodo de tipear. #}
+    <label class="flex items-center gap-2 px-3 py-2 rounded border border-amber-200 bg-amber-50 text-sm text-amber-900 cursor-pointer">
+      <input type="checkbox" name="devolucion" value="1" id="devolucion-chk"
+             {% if form.devolucion %}checked{% endif %}
+             onchange="document.body.classList.toggle('is-devolucion', this.checked)">
+      <span><strong>Es devolución</strong> — la mercadería vuelve al stock. El sistema graba kg e importe con signo negativo automáticamente.</span>
+    </label>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Kg <span class="text-red-500">*</span></label>
+        <input name="kg" type="text" inputmode="decimal" required
+               value="{{ form.kg or '' }}"
+               placeholder="0.00"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-right font-mono">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Importe (USD) <span class="text-red-500">*</span></label>
+        <input name="importe" type="text" inputmode="decimal" required
+               value="{{ form.importe or '' }}"
+               placeholder="0.00"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-right font-mono">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Vencimiento</label>
+        <input name="vencimiento" type="text" value="{{ form.vencimiento or '' }}"
+               placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off"
+               oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+        <p class="text-xs text-slate-400 mt-1">Si lo dejás vacío: fecha + plazo del cliente.</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Condición</label>
+        <input name="condic" type="text" maxlength="2" value="{{ form.condic or '' }}"
+               placeholder="Ej: CR / CT"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+        <input name="tipo" type="text" maxlength="2" value="{{ form.tipo or '' }}"
+               placeholder=""
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+      <a href="{{ url_for('facturas.lista') }}"
+         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+        ← Cancelar
+      </a>
+      <button type="submit"
+              class="rounded-md bg-sky-600 hover:bg-sky-500 px-5 py-2 text-sm font-medium text-white">
+        Guardar factura
+      </button>
+    </div>
+  </form>
+
+  <p class="mt-3 text-xs text-slate-400">
+    Al guardar: se inserta con <code>stat='A'</code>, <code>abono=0</code>, <code>saldo=importe</code>.
+    Las reglas siguen a <code>ALTAS.PRG</code> del dBase original.
+  </p>
+</div>
+{% endblock %}

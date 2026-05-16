@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero, kpi_card %}
+{% block title %}Movimientos del dueño{% endblock %}
+{% block breadcrumb %}<strong>Movimientos del dueño</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl">
+  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    {% set _kpi_valor = ('$ ' ~ (estado.patri | num_es(0))) if (estado and estado.patri is not none) else '' %}
+    {% set _kpi_extra = ('· patrimonio al ' ~ (estado.fecha | fecha_es)) if (estado and estado.fecha) else '· patrimonio' %}
+    {{ page_hero(
+        'Movimientos del dueño',
+        kpi_valor=_kpi_valor,
+        kpi_extra=_kpi_extra
+    ) }}
+    <div class="no-print flex items-center gap-2 shrink-0">
+      {% if tiene_permiso('capital.crear') %}
+        <a href="{{ url_for('capital.aportar') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm transition"
+           title="Aporte del dueño con link automático a banco/caja">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Aporte
+        </a>
+        <a href="{{ url_for('capital.retirar') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-sm transition"
+           title="Retiro de socio con link automático a banco/caja">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+          Retiro
+        </a>
+      {% endif %}
+      <details class="relative">
+        <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Más
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="absolute right-0 mt-1 z-20 min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
+          {% if tiene_permiso('capital.crear') %}
+            <a href="{{ url_for('capital.nuevo') }}"
+               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+              <div class="font-medium">Asiento manual…</div>
+              <div class="text-xs text-slate-500">Sin link automático a banco/caja</div>
+            </a>
+          {% endif %}
+          <a href="{{ url_for('capital.lista', filtro=filtro, desde=desde, hasta=hasta, export='csv') }}"
+             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
+            <div class="font-medium">Exportar CSV</div>
+          </a>
+          <button onclick="window.print()"
+                  class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <div class="font-medium">Imprimir</div>
+          </button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  {# Tabs todos / aportes / retiros #}
+  {% set tabs = [
+    ('todos',   'Todos',   conteos.get('todos',   {})),
+    ('aportes', 'Aportes', conteos.get('aportes', {})),
+    ('retiros', 'Retiros', conteos.get('retiros', {})),
+  ] %}
+  <div class="no-print flex items-end gap-1 mb-4 border-b border-slate-200 dark:border-slate-800">
+    {% for key, label, c in tabs %}
+      <a href="{{ url_for('capital.lista', filtro=key, desde=desde, hasta=hasta) }}"
+         class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+                {% if filtro == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+        {{ label }}
+        {% if c %}<span class="ml-1 text-xs text-slate-400">{{ c.get('n', 0) }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if estado %}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    {{ kpi_card('Capital',           '$ ' ~ (estado.capital  | num_es(0)) if estado.capital  is not none else '—') }}
+    {{ kpi_card('Utilidad acumulada','$ ' ~ (estado.util     | num_es(0)) if estado.util     is not none else '—') }}
+    {{ kpi_card('Patrimonio',        '$ ' ~ (estado.patri    | num_es(0)) if estado.patri    is not none else '—') }}
+    {{ kpi_card('Inv. anual',
+                '$ ' ~ (estado.invanual | num_es(0)) if estado.invanual is not none else '—',
+                ('al ' ~ (estado.fecha | fecha_es)) if estado.fecha else '') }}
+  </div>
+  {% endif %}
+
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <input type="hidden" name="filtro" value="{{ filtro }}">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-3 text-left font-medium">Tipo</th>
+          <th class="px-3 py-3 text-left font-medium">Concepto</th>
+          <th class="px-3 py-3 text-left font-medium">Persona / Doc</th>
+          <th class="px-3 py-3 text-left font-medium">Banco</th>
+          <th class="px-3 py-3 text-right font-medium">Importe</th>
+          <th class="px-3 py-3 text-right font-medium" title="Aportes − retiros, corrido por fecha">Saldo acum.</th>
+          <th class="px-3 py-3 text-left font-medium">Clave</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ m.fecha | fecha_es }}</td>
+          <td class="px-3 py-2">
+            {% if m.tipo == 'aporte' %}
+              <span class="inline-block px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Aporte</span>
+            {% elif m.tipo == 'retiro' %}
+              <span class="inline-block px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Retiro</span>
+            {% else %}
+              <span class="font-mono text-xs">{{ m.tipo }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">{{ m.concepto | cleanstr }}</td>
+          <td class="px-3 py-2 text-xs text-slate-500">
+            {% if m.persona %}<span class="font-mono">{{ m.persona }}</span>{% endif %}
+            {% if m.doc %}<span class="font-mono">{{ m.doc }}</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500">{{ m.banco or '' }}</td>
+          <td class="px-3 py-2 text-right text-mono
+              {% if m.tipo == 'aporte' %}text-emerald-700 dark:text-emerald-400
+              {% elif m.tipo == 'retiro' %}text-amber-700 dark:text-amber-400{% endif %}">
+            {% if m.tipo == 'retiro' %}−{% endif %}{{ m.importe | money_es }}
+          </td>
+          <td class="px-3 py-2 text-right text-mono text-slate-600 dark:text-slate-400 font-medium">
+            {{ m.saldo_acumulado | money_es }}
+          </td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ m.clave }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(8, 'Sin movimientos en el filtro actual.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

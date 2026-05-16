@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, saldo_pill %}
+{% block title %}Estado de cuenta — {{ data.cliente.codigo_cli }}{% endblock %}
+{% block breadcrumb %}Informes / Cartera / <strong>{{ data.cliente.codigo_cli }}</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">{{ data.cliente.nombre }}</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        <span class="font-mono">{{ data.cliente.codigo_cli }}</span>
+        {% if data.cliente.ruc %} · RUC: {{ data.cliente.ruc }}{% endif %}
+        {% if data.cliente.telefono %} · Tel: {{ data.cliente.telefono }}{% endif %}
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli) }}"
+         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
+        Cuenta corriente (timeline)
+      </a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
+  {# Cuánto nos debe — la pregunta principal del gerente. Tile grande primero. #}
+  {% set t = data.totales %}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+    <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if t.saldo_vivo > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Nos debe</div>
+      <div class="mt-1 text-3xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo_vivo > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
+        {{ t.saldo_vivo | money_es }}
+      </div>
+      {% if t.saldo_vencido > 0 %}
+        <div class="mt-1 text-xs text-red-600 dark:text-red-400">
+          {{ t.saldo_vencido | money_es }} vencido ({{ t.n_vencidas }} factura{{ '' if t.n_vencidas == 1 else 's' }})
+        </div>
+      {% else %}
+        <div class="mt-1 text-xs text-slate-500">Sin facturas vencidas.</div>
+      {% endif %}
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Cheques en cartera</div>
+      <div class="mt-1 text-xl font-semibold text-mono">{{ t.cheques_cartera | money_es }}</div>
+      <div class="mt-1 text-xs text-slate-500">posfechados / sin depositar</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Cupo</div>
+      <div class="mt-1 text-xl font-semibold text-mono">{{ data.cliente.cupo | money_es }}</div>
+      {% set cupo = (data.cliente.cupo or 0) | float %}
+      {% if cupo > 0 %}
+        {% set pct = (t.saldo_vivo / cupo * 100) %}
+        <div class="mt-1 text-xs {{ 'text-red-600' if pct >= 100 else ('text-amber-600' if pct >= 80 else 'text-slate-500') }}">
+          {{ pct | num_es(0) }} % usado
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Estado / forma de pago / descuento — secundario #}
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Stop</div>
+      <div class="mt-1">
+        {% if data.cliente.stop == 'S' %}
+          <span class="text-red-600 font-semibold">Bloqueado</span>
+        {% else %}
+          <span class="text-emerald-600">OK</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Forma de pago</div>
+      <div class="mt-1">{{ data.cliente.pago or '—' }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Descuento</div>
+      <div class="mt-1 text-mono">{{ data.cliente.descuento | num_es(1) }} %</div>
+    </div>
+  </div>
+
+  {# Facturas #}
+  <h2 class="text-lg font-semibold mb-2">Facturas</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-8">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">N°</th>
+          <th class="px-4 py-3 text-left font-medium">Fecha</th>
+          <th class="px-4 py-3 text-left font-medium">Vence</th>
+          <th class="px-4 py-3 text-right font-medium">Kg</th>
+          <th class="px-4 py-3 text-right font-medium">Importe</th>
+          <th class="px-4 py-3 text-right font-medium">Abonado</th>
+          <th class="px-4 py-3 text-right font-medium">Saldo</th>
+          <th class="px-4 py-3 text-right font-medium" title="Saldo acumulado leído de arriba hacia abajo (sumando esta factura y todas las anteriores en la lista).">Acum.</th>
+          <th class="px-4 py-3 text-left font-medium">Stat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {# Saldo acumulado: corre top-down. La lista viene DESC por fecha,
+           así que la fila 1 es la más nueva. El acum suma esta fila + todas
+           las anteriores ya mostradas → el total al final de la lista
+           cuadra con el TOTAL del tfoot. TMT 2026-05-11. #}
+        {% set acum = namespace(s=0) %}
+        {% for f in data.facturas %}
+        {% set acum.s = acum.s + (f.saldo or 0) %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ f.numf_completo or f.numf }}</td>
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ f.vencimiento | fecha_es }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
+          <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
+          <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
+          <td class="px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s > 0 else 'text-slate-500' }}">{{ acum.s | money_es }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(9, 'Sin facturas para este cliente.') }}
+        {% endfor %}
+      </tbody>
+      {% if data.facturas %}
+      <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
+        <tr class="font-semibold">
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="3">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
+          <td class="px-4 py-3 text-right text-mono">{{ t.kg | kg_es }}</td>
+          <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo > 0 else '' }}">{{ t.saldo | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo > 0 else '' }}">{{ t.saldo | money_es }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+  {# Cheques #}
+  <h2 class="text-lg font-semibold mb-2">Cheques</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">N° Cheque</th>
+          <th class="px-4 py-3 text-left font-medium" title="Día en que cargué el cheque al sistema">Cargado</th>
+          <th class="px-4 py-3 text-left font-medium" title="Día planificado de depósito (fechad)">A depositar</th>
+          <th class="px-4 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera.">Depositado</th>
+          <th class="px-4 py-3 text-left font-medium">Banco</th>
+          <th class="px-4 py-3 text-right font-medium">Importe</th>
+          <th class="px-4 py-3 text-left font-medium">Stat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in data.cheques %}
+        {# N° de cheque — si no_cheque está NULL (data legacy o anticipo),
+           cae a #id_cheque para que la dueña pueda identificarlo. TMT 2026-05-16. #}
+        {% set no_ch_str = (c.no_cheque | cleanstr) if c.no_cheque else None %}
+        {% set fecha_cargado = c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
+        {# fechaing es válida sólo si el cheque pasó por el banco (B/A) o
+           rebotó (1/2/3/R). En cartera/postergado (Z/P) el legacy DBF la
+           setea con la fecha de ingreso al sistema — no es fecha de depósito.
+           TMT 2026-05-16. #}
+        {% set stat_u = (c.stat or '').upper() %}
+        {% set fechaing_real = c.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2 font-mono text-xs">
+            <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
+               class="text-sky-700 hover:underline">
+              {% if no_ch_str %}{{ no_ch_str }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}
+            </a>
+          </td>
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '—' }}</td>
+          <td class="px-4 py-2" style="white-space: nowrap;">
+            {% if fechaing_real %}
+              <span class="font-medium text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-slate-500">{{ c.nombre_banco or c.banco }}</td>
+          <td class="px-4 py-2 text-right text-mono">{{ c.importe | money_es }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ c.stat }}</td>
+        </tr>
+        {% else %}
+        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="7">Sin cheques.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if data.cheques %}
+      <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
+        <tr class="font-semibold">
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="5">Total ({{ data.cheques | length }} cheque{{ '' if data.cheques|length == 1 else 's' }})</td>
+          <td class="px-4 py-3 text-right text-mono">{{ t.cheques_total | money_es }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+    {% if data.cheques %}
+      <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-600 dark:text-slate-400 grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div>Cartera <span class="text-slate-400">(Z/P)</span>: <span class="text-mono font-semibold">{{ t.cheques_cartera | money_es }}</span></div>
+        <div>Depositados <span class="text-slate-400">(B/A)</span>: <span class="text-mono font-semibold text-emerald-700">{{ t.cheques_depositados | money_es }}</span></div>
+        <div>Rebotados <span class="text-slate-400">(1/2/3/R)</span>: <span class="text-mono font-semibold {{ 'text-red-600' if t.cheques_rebotados > 0 else '' }}">{{ t.cheques_rebotados | money_es }}</span></div>
+        <div>Endosados <span class="text-slate-400">(E)</span>: <span class="text-mono font-semibold">{{ t.cheques_endosados | money_es }}</span></div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

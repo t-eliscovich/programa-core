@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Estado de cuenta{% endblock %}
+{% block breadcrumb %}Informes / <strong>Estado de cuenta</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Estado de cuenta de cliente</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Buscá por código o nombre, o elegí entre los mayores deudores.
+    </p>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      No pudimos cargar la lista. Detalle: <code>{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="grid md:grid-cols-2 gap-6">
+    <section class="rounded-lg border border-slate-200 dark:border-slate-700 p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+        Buscar
+      </h2>
+      <form method="GET" action="{{ url_for('informes.estado_cuenta_landing') }}" class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Por código exacto</label>
+          <div class="flex gap-2">
+            <input name="codigo" type="text" placeholder="JTX" maxlength="6"
+                   class="flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono uppercase">
+            <button type="submit"
+                    class="rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
+              Ir
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <form method="GET" action="{{ url_for('informes.estado_cuenta_landing') }}" class="mt-5 space-y-3">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">O por nombre / código parcial</label>
+          <div class="flex gap-2">
+            <input name="q" type="text" value="{{ q or '' }}" placeholder="Ej: textil, ABC, García"
+                   class="flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
+            <button type="submit"
+                    class="rounded-md bg-slate-600 hover:bg-slate-500 px-4 py-2 text-sm font-medium text-white">
+              Buscar
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {% if q %}
+        <div class="mt-5">
+          <div class="text-xs text-slate-500 mb-2">Resultados para "{{ q }}"</div>
+          {% if matches %}
+            <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+              {% for m in matches %}
+                <li>
+                  <a href="{{ url_for('informes.estado_cuenta', codigo_cli=m.codigo_cli) }}"
+                     class="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 rounded">
+                    <span>
+                      <span class="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded mr-2">{{ m.codigo_cli }}</span>
+                      <span class="text-sm">{{ m.nombre or '—' }}</span>
+                    </span>
+                    <span class="text-mono text-sm {% if m.saldo and m.saldo > 0 %}text-red-600 dark:text-red-300{% else %}text-slate-400{% endif %}">
+                      {{ m.saldo | money_es }}
+                    </span>
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-slate-400">Sin coincidencias.</p>
+          {% endif %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="rounded-lg border border-slate-200 dark:border-slate-700 p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+        Top 10 deudores (atajo)
+      </h2>
+      {% if top %}
+        <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+          {% for r in top %}
+            <li>
+              <a href="{{ url_for('informes.estado_cuenta', codigo_cli=r.codigo_cli) }}"
+                 class="flex items-center justify-between py-2 hover:bg-slate-50 dark:hover:bg-slate-800 -mx-2 px-2 rounded">
+                <span class="truncate">
+                  <span class="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded mr-2">{{ r.codigo_cli }}</span>
+                  <span class="text-sm">{{ r.nombre or '—' }}</span>
+                </span>
+                <span class="text-mono text-sm text-red-600 dark:text-red-300">
+                  {{ r.saldo_total | money_es }}
+                </span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-sm text-slate-400">Sin deudores pendientes. 🎉</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
+{% block title %}Aporte de capital{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('historial.operaciones') }}" class="hover:underline">Operaciones</a> /
+  <a href="{{ url_for('capital.lista') }}" class="hover:underline">Movimientos del dueño</a> /
+  <strong>Aportar</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  {% set ico %}<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>{% endset %}
+  {{ wizard_hero('emerald', 'Aporte de capital',
+                 'El dueño aporta plata a una cuenta. Sube el capital y la cuenta destino en la misma transacción atómica.',
+                 ico) }}
+
+  {% if errores %}
+  <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg p-3 mb-4 text-sm text-rose-900 dark:text-rose-200">
+    {% for e in errores %}<div>· {{ e }}</div>{% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Importe <span class="text-rose-500">*</span>
+        </label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+          <input type="text" name="importe" inputmode="decimal" required
+                 value="{{ form.importe }}" placeholder="0.00"
+                 class="w-full pl-7 pr-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right font-mono
+                        focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">Fecha</label>
+        <input type="date" name="fecha" value="{{ form.fecha }}"
+               class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                      focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Cuenta destino <span class="text-rose-500">*</span>
+        </label>
+        <select name="cuenta" required
+                class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                       focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          {% for key in L.CUENTAS_PAGO_VALIDAS %}
+            <option value="{{ key }}" {% if form.cuenta == key %}selected{% endif %}>
+              {{ L.label_cuenta_pago(key) }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Socio que aporta <span class="text-slate-400 normal-case tracking-normal">(opcional)</span>
+        </label>
+        <input type="text" name="socio" maxlength="5"
+               value="{{ form.socio }}" placeholder="TMT, RR, etc."
+               class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-mono uppercase
+                      focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+        Concepto <span class="text-slate-400 normal-case tracking-normal">(opcional)</span>
+      </label>
+      <input type="text" name="concepto" maxlength="40"
+             value="{{ form.concepto }}"
+             placeholder="Ej. aumento de capital, refuerzo operativo…"
+             class="w-full px-3 py-2.5 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950
+                    focus:outline-none focus:ring-2 focus:ring-emerald-500">
+    </div>
+
+    {% set info %}
+      Se registra en una sola transacción: <strong>capital</strong> sube (doc 'APOR') y
+      entra el mismo importe en la cuenta elegida. Queda en el historial con la
+      opción de reversar.
+    {% endset %}
+    {{ wizard_info('emerald', info) }}
+
+    {{ wizard_footer(url_for('capital.lista'), 'Registrar aporte →', 'emerald') }}
+  </form>
+</div>
+{% endblock %}

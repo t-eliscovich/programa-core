@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Proforma #{{ cabecera.id_proforma }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('proformas.lista') }}" class="hover:underline">Proformas</a> / <strong>#{{ cabecera.id_proforma }}</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Proforma #{{ cabecera.id_proforma }}</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Emitida el {{ cabecera.fecha_emision | fecha_es }} ·
+        <a href="{{ url_for('informes.estado_cuenta', codigo_cli=cabecera.codigo_cli) }}" class="hover:text-blue-600">
+          <span class="font-mono text-xs">{{ cabecera.codigo_cli }}</span> {{ cabecera.cliente }}
+        </a>
+      </p>
+    </div>
+    <button onclick="window.print()" class="no-print text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 mb-6 text-sm">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs text-slate-500">Cliente</div>
+      <div class="font-semibold">{{ cabecera.cliente }}</div>
+      <div class="text-xs text-slate-500">RUC {{ cabecera.ruc }} · Tel {{ cabecera.telefono }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs text-slate-500">Observaciones</div>
+      <div class="text-sm">{{ cabecera.observaciones or '—' }}</div>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-6">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">Producto</th>
+          <th class="px-3 py-3 text-left font-medium">Color</th>
+          <th class="px-3 py-3 text-right font-medium">Kg</th>
+          <th class="px-3 py-3 text-right font-medium">P. unit.</th>
+          <th class="px-3 py-3 text-right font-medium">P. total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in items %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-2">{{ i.nombre_producto }}</td>
+          <td class="px-3 py-2">{{ i.color }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ i.cantidad_kilos | kg_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ i.precio_unitario | num_es(4) }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ i.precio_total | money_es }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(5, 'Sin ítems.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="ml-auto max-w-sm text-sm space-y-1">
+    <div class="flex justify-between"><span class="text-slate-500">Subtotal</span><span class="text-mono">{{ cabecera.subtotal | money_es }}</span></div>
+    {% if cabecera.monto_descuento_volumen and cabecera.monto_descuento_volumen > 0 %}
+    <div class="flex justify-between text-slate-500">
+      <span>Descuento por volumen{% if cabecera.porcentaje_descuento_volumen %} ({{ cabecera.porcentaje_descuento_volumen | num_es(2) }}%){% endif %}</span>
+      <span class="text-mono">-{{ cabecera.monto_descuento_volumen | money_es }}</span>
+    </div>
+    <div class="flex justify-between"><span class="text-slate-500">Subtotal c/desc</span><span class="text-mono">{{ cabecera.subtotal_con_descuento | money_es }}</span></div>
+    {% endif %}
+    {% if cabecera.aplica_descuento_contado and cabecera.monto_descuento_contado and cabecera.monto_descuento_contado > 0 %}
+    <div class="flex justify-between text-slate-500">
+      <span>Descuento por pronto pago</span>
+      <span class="text-mono">-{{ cabecera.monto_descuento_contado | money_es }}</span>
+    </div>
+    {% endif %}
+    <div class="flex justify-between text-lg font-semibold border-t border-slate-200 dark:border-slate-800 pt-2 mt-2">
+      <span>Total</span><span class="text-mono">{{ cabecera.total_final | money_es }}</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

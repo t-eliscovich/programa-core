@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Postergar cheque{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
+  <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}" class="hover:underline">{{ ch.no_cheque or '#' ~ ch.id_cheque }}</a> /
+  <strong>Postergar</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 px-4">
+  <h1 class="text-xl font-semibold mb-1">Postergar cheque</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    Sólo cheques en cartera (Z) o ya postergados (P) se pueden postergar.
+    El cliente nos pidió que esperemos.
+  </p>
+
+  {% if errores %}
+    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
+      <ul class="list-disc pl-6">
+        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {# Resumen del cheque actual #}
+  <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-md p-4 mb-6">
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide">N° cheque</div>
+        <div class="font-mono">{{ ch.no_cheque or '#' ~ ch.id_cheque }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide">Cliente</div>
+        <div>{{ ch.cliente or ch.codigo_cli or '—' }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide">Importe</div>
+        <div class="font-mono">{{ ch.importe | money_es }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide">Fecha depósito actual</div>
+        <div class="font-mono">{{ ch.fechad | fecha_es }}</div>
+      </div>
+      {% if ch.fechad_original and ch.fechad_original != ch.fechad %}
+      <div class="col-span-2">
+        <div class="text-xs text-slate-500 uppercase tracking-wide">Fechad original</div>
+        <div class="font-mono text-amber-700">{{ ch.fechad_original | fecha_es }}
+          <span class="text-xs text-slate-500">(ya fue postergado antes)</span>
+        </div>
+      </div>
+      {% endif %}
+      {% if ch.fecha_postergacion %}
+      <div class="col-span-2">
+        <div class="text-xs text-slate-500 uppercase tracking-wide">Última postergación</div>
+        <div class="font-mono text-slate-600">{{ ch.fecha_postergacion | fecha_es }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-5 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium">Nueva fecha de depósito <span class="text-red-500">*</span></span>
+      <input type="text" name="nueva_fechad" value="{{ form.nueva_fechad or '' }}"
+             placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off" autofocus
+             oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+             class="mt-1 block w-full border rounded px-3 py-2 font-mono" required>
+      <span class="text-xs text-slate-500 mt-1 block">
+        Tiene que ser posterior a {{ ch.fechad | fecha_es }}.
+      </span>
+    </label>
+
+    <label class="block mb-4">
+      <span class="text-sm font-medium">Motivo <span class="text-slate-400 font-normal">(opcional)</span></span>
+      <textarea name="motivo" rows="2" maxlength="200"
+                class="mt-1 block w-full border rounded px-3 py-2"
+                placeholder="Ej: Cliente pidió esperar 30 días — coordinado por teléfono">{{ form.motivo or '' }}</textarea>
+      <span class="text-xs text-slate-500 mt-1 block">
+        Para auditoría — queda registrado quién y cuándo lo postergó. Podés dejarlo vacío.
+      </span>
+    </label>
+
+    <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
+      <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}"
+         class="text-slate-500 hover:text-slate-700">Cancelar</a>
+      <button type="submit"
+              class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded shadow-sm">
+        Postergar cheque
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

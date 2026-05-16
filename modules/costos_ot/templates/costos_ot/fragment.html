@@ -1,0 +1,67 @@
+{# Partial — se embebe en detalle de factura / estado de cuenta.
+   Muestra las OTs cerradas del cliente con totales y promedio $/kg.
+   No extiende base.html — es un fragmento. #}
+{% from "_ui.html" import empty_row, stat_chip %}
+
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-6">
+  <div class="px-4 py-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+    <div>
+      <div class="text-sm font-semibold uppercase tracking-wider text-slate-500">
+        Órdenes de tintura — {{ codigo_cli }}
+      </div>
+      <div class="text-xs text-slate-400 mt-0.5">
+        {{ n_ordenes }} OT{{ 's' if n_ordenes != 1 }} ·
+        {{ total_kg | kg_es }} kg ·
+        total ${{ total_costo | money_es }} ·
+        promedio ${{ '%.2f' % costo_promedio_kg }}/kg
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if fuente == 'fake' %}
+        <span class="text-[10px] uppercase tracking-widest px-2 py-1 rounded bg-amber-100 text-amber-800 border border-amber-200">
+          Datos de demo
+        </span>
+      {% elif fuente == 'metabase' %}
+        <span class="text-[10px] uppercase tracking-widest px-2 py-1 rounded bg-sky-100 text-sky-800 border border-sky-200">
+          Metabase
+        </span>
+      {% elif fuente == 'postgres' %}
+        <span class="text-[10px] uppercase tracking-widest px-2 py-1 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+          En vivo
+        </span>
+      {% endif %}
+      <a href="{{ url_for('costos_ot.por_cliente', codigo_cli=codigo_cli) }}"
+         class="text-xs text-sky-700 hover:underline">
+        Ver todas →
+      </a>
+    </div>
+  </div>
+
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+      <tr>
+        <th class="px-3 py-2 text-left font-medium">OT</th>
+        <th class="px-3 py-2 text-left font-medium">F. cierre</th>
+        <th class="px-3 py-2 text-left font-medium">Descripción</th>
+        <th class="px-3 py-2 text-right font-medium">Kg</th>
+        <th class="px-3 py-2 text-right font-medium">$/kg</th>
+        <th class="px-3 py-2 text-right font-medium">Costo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <td class="px-3 py-2 font-mono" style="white-space: nowrap;">{{ r.n_orden }}</td>
+        <td class="px-3 py-2" style="white-space: nowrap;">{{ r.fecha_cierre | fecha_es if r.fecha_cierre else '—' }}</td>
+        <td class="px-3 py-2">{{ r.descripcion or '' }}</td>
+        <td class="px-3 py-2 text-right text-mono">{{ r.kg | kg_es }}</td>
+        <td class="px-3 py-2 text-right text-mono text-slate-500">${{ '%.2f' % r.costo_kg }}</td>
+        <td class="px-3 py-2 text-right text-mono font-semibold">${{ r.costo_total | money_es }}</td>
+      </tr>
+      {% else %}
+        {{ empty_row(6, 'Este cliente no tiene OTs cerradas en el período consultado.',
+                    sugerencia='Si esperabas ver órdenes acá, revisá el adapter configurado y que formulas_app haya registrado el cierre.') }}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

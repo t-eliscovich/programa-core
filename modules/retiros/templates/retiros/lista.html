@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_header %}
+
+{% block title %}Retiros del dueño{% endblock %}
+
+{% block content %}
+  {{ page_header("Retiros del dueño", "Plata que el dueño saca de la empresa") }}
+
+  {% if error %}
+    <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {# --- KPIs del periodo ------------------------------------------------- #}
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+    <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+      <div class="text-xs text-red-700 uppercase tracking-wide">Total retirado</div>
+      <div class="text-xl font-semibold text-red-900 text-right tabular-nums">
+        {{ (resumen.total or 0) | num_es }}
+      </div>
+      <div class="text-xs text-red-700 text-right">{{ resumen.n or 0 }} retiros</div>
+    </div>
+    <div class="rounded-lg bg-slate-100 border border-slate-300 px-4 py-3">
+      <div class="text-xs text-slate-700 uppercase tracking-wide">Ticket promedio</div>
+      <div class="text-xl font-semibold text-slate-900 text-right tabular-nums">
+        {{ (resumen.ticket_promedio or 0) | num_es }}
+      </div>
+      <div class="text-xs text-slate-500 text-right">por retiro</div>
+    </div>
+    <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
+      <div class="text-xs text-sky-700 uppercase tracking-wide">Periodo</div>
+      <div class="text-sm text-sky-900 text-right">{{ resumen.desde or '—' }}</div>
+      <div class="text-xs text-sky-700 text-right">a {{ resumen.hasta or '—' }}</div>
+    </div>
+  </div>
+
+  {# --- Resumen por categoría/código (col `de` del legacy dBase).
+       En el dBase original `de` guarda un código de 2 letras tipo "FE",
+       "LC", "RR" que históricamente se usó como destino/categoría/socio.
+       Hoy con un solo dueño, sirve más como "tipo de retiro".
+       Solo se muestra si hay >1 valor distinto — si es uno solo, no aporta. #}
+  {% if por_persona and por_persona | length > 1 %}
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <span class="text-xs text-slate-500 uppercase tracking-wide mr-1">Por código:</span>
+    {% for p in por_persona %}
+      <a href="{{ url_for('retiros.lista', desde=desde, hasta=hasta, de=p.de) }}"
+         class="inline-flex items-center rounded-full
+                {% if de == p.de %}bg-red-600 text-white{% else %}bg-white border border-slate-300 text-slate-700 hover:bg-slate-50{% endif %}
+                px-3 py-1 text-xs">
+        <strong class="mr-1">{{ p.de }}</strong>
+        <span class="tabular-nums">$ {{ p.total | num_es }}</span>
+        <span class="ml-1 opacity-60">· {{ p.n_retiros }}</span>
+      </a>
+    {% endfor %}
+    {% if de %}
+      <a href="{{ url_for('retiros.lista', desde=desde, hasta=hasta) }}"
+         class="text-xs text-slate-500 hover:underline ml-2">limpiar</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# --- Acciones --------------------------------------------------------- #}
+  <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+    <a href="{{ url_for('retiros.lista', q=q, desde=desde, hasta=hasta, de=de, export='csv') }}"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Exportar CSV
+    </a>
+    <button onclick="window.print()"
+       class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
+      Imprimir
+    </button>
+  </div>
+
+  {# --- Filtros --------------------------------------------------------- #}
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Concepto, socio…"
+             class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {% if de %}<input type="hidden" name="de" value="{{ de }}">{% endif %}
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  </form>
+
+  {# --- Tabla ----------------------------------------------------------- #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left" style="white-space: nowrap;">Fecha</th>
+          <th class="px-3 py-3 text-left" title="Código de 2 letras (categoría/destino del legacy dBase)">Cód.</th>
+          <th class="px-3 py-3 text-left">Banco</th>
+          <th class="px-3 py-3 text-right">Importe</th>
+          <th class="px-3 py-3 text-left">Concepto</th>
+          <th class="px-3 py-3 text-left">Clave</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ r.fecha | fecha_es }}</td>
+          <td class="px-3 py-2 font-mono text-xs">
+            {% if r.de %}
+              <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium" title="Código del legacy">
+                {{ r.de }}
+              </span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            <span class="font-mono text-xs text-slate-500">{{ r.nb or '' }}</span>
+            <span class="ml-1">{{ r.banco or '' }}</span>
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums font-medium text-red-700">{{ r.ret | num_es if r.ret else '' }}</td>
+          <td class="px-3 py-2 text-xs">{{ r.concepto or '' }}</td>
+          <td class="px-3 py-2 text-xs font-mono text-slate-400">{{ r.clave or '' }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'Sin retiros en el filtro.', 'Ampliá el rango de fechas.') }}
+        {% endfor %}
+        {% if filas %}
+        <tr class="bg-slate-50 dark:bg-slate-800/40 font-semibold border-t-2 border-slate-300">
+          <td colspan="3" class="px-3 py-2 text-right text-xs text-slate-600">TOTAL VISIBLE</td>
+          <td class="px-3 py-2 text-right tabular-nums text-red-700">{{ total | num_es }}</td>
+          <td colspan="2"></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    Lee <code>scintela.retiros</code>. La columna <code>de</code> es un código legacy de 2 letras
+    (originalmente identificaba destino/categoría del retiro). Para aportes de capital ver
+    <code>/capital</code>.
+  </p>
+{% endblock %}

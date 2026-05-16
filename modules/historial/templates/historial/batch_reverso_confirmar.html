@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Reversar operación batch{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto py-4 px-4">
+  <h1 class="text-xl font-semibold mb-1">Reversar operación completa</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    Esta operación contiene <strong>{{ rows | length }}</strong> movimientos
+    que se ejecutaron juntos. El reverso los anula <strong>todos al mismo
+    tiempo</strong> dentro de una sola transacción — si cualquiera falla,
+    no se anula nada.
+  </p>
+
+  <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4 shadow-sm">
+    <div class="text-xs text-slate-500 uppercase mb-2">Batch ID</div>
+    <div class="font-mono text-xs text-slate-700 mb-3">{{ batch_id }}</div>
+    <div class="grid grid-cols-3 gap-3 text-sm">
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Movimientos</div>
+        <div class="font-semibold text-lg tabular-nums">{{ rows | length }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Total bruto</div>
+        <div class="font-semibold text-lg tabular-nums">$ {{ total | num_es }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase">Fecha</div>
+        <div>{{ rows[0].fecha_operacion | fecha_es }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4 shadow-sm">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">#</th>
+          <th class="px-3 py-2 text-left">Tipo</th>
+          <th class="px-3 py-2 text-left">Origen → Destino</th>
+          <th class="px-3 py-2 text-right">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2 font-mono text-xs">#{{ r.id_mov_doble }}</td>
+          <td class="px-3 py-2 text-xs">
+            <div class="font-medium">{{ r.tipo.replace('_', ' ').title() }}</div>
+            <div class="text-[10px] text-slate-400 font-mono">{{ r.tipo }}</div>
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {{ r.origen_table }}#{{ r.origen_id }} → {{ r.destino_table }}#{{ r.destino_id }}
+          </td>
+          <td class="px-3 py-2 text-right font-mono tabular-nums">
+            {{ r.importe | num_es }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post" class="bg-amber-50 border border-amber-200 rounded p-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="block">
+      <span class="text-sm font-semibold text-amber-900">
+        Motivo del reverso <span class="text-red-500">*</span>
+      </span>
+      <span class="block text-xs text-amber-700 mb-1">
+        Mínimo 10 caracteres. Queda en el historial de auditoría.
+      </span>
+      <textarea name="motivo" required minlength="10" rows="3"
+                placeholder="Ej: cliente cambió de opinión, importe equivocado, etc."
+                class="w-full border border-amber-300 rounded px-2 py-1.5 text-sm
+                       focus:border-amber-500 focus:outline-none"></textarea>
+    </label>
+
+    <div class="flex items-center justify-between mt-4 pt-3 border-t border-amber-200">
+      <a href="{{ url_for('historial.lista') }}"
+         class="text-sm text-slate-500 hover:text-slate-700">
+        ← Volver al historial
+      </a>
+      <button type="submit"
+              class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded shadow-sm font-medium text-sm">
+        ↺ Reversar los {{ rows | length }} movimientos
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

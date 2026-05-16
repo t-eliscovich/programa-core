@@ -1,0 +1,122 @@
+{# Partial para confirmación de acciones destructivas — pattern "2 pasos".
+
+Se espera un `{% extends "base.html" %}` en el caller; este template ES la
+página entera (extiende base), no un include. Por eso no se pueden mezclar
+variables con un render parcial — cada view lo renderiza directamente.
+
+Variables:
+    titulo            (str)   — p.ej. "Anular factura 001-001-000000123"
+    mensaje           (str)   — línea principal ("Vas a anular...")
+    detalle_registro  (dict)  — key/value para mostrar detalles (opcional)
+    accion_url        (str)   — URL del POST que efectivamente ejecuta la acción
+    volver_url        (str)   — URL del "Cancelar"
+    motivo_requerido  (bool)  — si True, MUESTRA el campo `motivo` (default True).
+                                Si False, no se muestra el input.
+    motivo_obligatorio (bool) — si True, agrega `required` al input (default False).
+                                Para casos críticos (rebote de cheque, etc.) donde
+                                el motivo es imprescindible. La validación final
+                                está del lado servidor.
+    confirm_label     (str)   — label del botón "Confirmar" (default "Confirmar")
+    extras_hidden     (list)  — [{name,value}] hidden inputs adicionales
+    saldo_preview     (dict)  — opcional: muestra "Saldo banco antes: $X → después: $Y".
+                                Formato esperado:
+                                  {"label": "Pichincha", "antes": 12345.67, "despues": 9876.54}
+                                También puede ser una lista de dichos dicts (varios bancos).
+                                TMT 2026-05-14 (#39).
+#}
+{% extends "base.html" %}
+{% block title %}{{ titulo or "Confirmar acción" }}{% endblock %}
+{% block breadcrumb %}Confirmar acción{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto mt-8">
+  <div class="bg-white dark:bg-slate-900 border border-red-300 dark:border-red-800 rounded-lg overflow-hidden">
+    <div class="px-6 py-4 bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 flex items-center gap-3">
+      <svg class="w-6 h-6 text-red-600 dark:text-red-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <h1 class="text-lg font-semibold text-red-800 dark:text-red-200">{{ titulo }}</h1>
+    </div>
+
+    <div class="px-6 py-5">
+      <p class="text-sm text-slate-700 dark:text-slate-300 mb-4">{{ mensaje }}</p>
+
+      {% if detalle_registro %}
+        <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1.5 text-sm mb-5 bg-slate-50 dark:bg-slate-800/50 px-4 py-3 rounded">
+          {% for k, v in detalle_registro.items() %}
+            <dt class="text-slate-500">{{ k }}</dt>
+            <dd class="text-slate-800 dark:text-slate-200 font-medium">{{ v }}</dd>
+          {% endfor %}
+        </dl>
+      {% endif %}
+
+      {# Saldo proyectado — opcional. Acepta dict (un banco) o list (varios). #}
+      {% if saldo_preview %}
+        {% set _previews = saldo_preview if saldo_preview is iterable and saldo_preview is not mapping else [saldo_preview] %}
+        <div class="mb-5 px-4 py-3 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <div class="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2">
+            Impacto en saldo
+          </div>
+          <ul class="text-sm space-y-1">
+            {% for p in _previews %}
+              <li class="flex items-baseline gap-2">
+                <span class="text-slate-600 dark:text-slate-300">{{ p.label or "Saldo" }}:</span>
+                <span class="font-mono text-slate-500">${{ "%.2f"|format(p.antes|float) }}</span>
+                <span class="text-slate-400">→</span>
+                <span class="font-mono font-semibold {% if (p.despues|float) < (p.antes|float) %}text-red-600 dark:text-red-400{% else %}text-emerald-700 dark:text-emerald-400{% endif %}">
+                  ${{ "%.2f"|format(p.despues|float) }}
+                </span>
+                <span class="text-xs text-slate-400 ml-1">
+                  ({{ "%+.2f"|format((p.despues|float) - (p.antes|float)) }})
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <p class="text-xs text-slate-500 mb-5">
+        Esta acción queda registrada en bitácora y <strong>no se puede deshacer automáticamente</strong>.
+      </p>
+
+      <form method="post" action="{{ accion_url }}" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {# `extras_hidden` permite pasar campos hidden adicionales — útil para
+           transiciones donde el caller necesita mandar stat_destino, no_banco, etc.
+           Cada item: {"name": "...", "value": "..."}. TMT 2026-05-13. #}
+        {% if extras_hidden %}
+          {% for h in extras_hidden %}
+            <input type="hidden" name="{{ h.name }}" value="{{ h.value }}">
+          {% endfor %}
+        {% endif %}
+
+        {% if motivo_requerido is not defined or motivo_requerido %}
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+              Motivo {% if motivo_obligatorio %}<span class="text-red-500">*</span>{% else %}<span class="text-slate-400 normal-case">(opcional)</span>{% endif %}
+            </label>
+            <input type="text" name="motivo" maxlength="200"
+                   {% if motivo_obligatorio %}required{% endif %}
+                   placeholder="p.ej. error de carga, cliente solicitó devolución"
+                   class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 focus:outline-none focus:border-slate-500">
+            <p class="text-xs text-slate-400 mt-1">Queda en la bitácora junto con tu usuario.</p>
+          </div>
+        {% endif %}
+
+        <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+          <a href="{{ volver_url }}"
+             class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+            Cancelar
+          </a>
+          <button type="submit"
+                  class="text-sm px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white font-medium">
+            {{ confirm_label or "Confirmar" }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

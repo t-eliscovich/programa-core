@@ -1,0 +1,696 @@
+{% extends "base.html" %}
+{% from "_ui.html" import stat_chip %}
+{% block title %}Tablero{% endblock %}
+{% block breadcrumb %}Tablero{% endblock %}
+
+{% macro kpi_card(titulo, valor, subtitulo=None, tono='slate', tendencia=None, tend_label='vs hace 7d') %}
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="text-xs uppercase tracking-wider text-slate-500">{{ titulo }}</div>
+    {% if tendencia %}
+      {% if tendencia.dir == 'up' %}
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+          <svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2 L10 8 L2 8 Z"/></svg>
+          {{ '%.1f' % tendencia.pct }}%
+        </span>
+      {% elif tendencia.dir == 'down' %}
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          <svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10 L10 4 L2 4 Z"/></svg>
+          {{ '%.1f' % tendencia.pct }}%
+        </span>
+      {% else %}
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded text-slate-400 dark:text-slate-500"
+              title="Sin variación significativa">
+          —
+        </span>
+      {% endif %}
+    {% endif %}
+  </div>
+  <div class="mt-2 text-3xl font-semibold text-mono
+    {% if tono == 'emerald' %}text-emerald-600 dark:text-emerald-400
+    {% elif tono == 'red' %}text-red-600 dark:text-red-400
+    {% elif tono == 'amber' %}text-amber-600 dark:text-amber-400
+    {% elif tono == 'blue' %}text-blue-600 dark:text-blue-400
+    {% endif %}">{{ valor }}</div>
+  {% if subtitulo %}<div class="mt-1 text-xs text-slate-500">{{ subtitulo }}</div>{% endif %}
+  {% if tendencia %}
+    <div class="mt-1 text-[11px] text-slate-500">{{ tend_label }}</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{# KPI gigante — 4 tarjetas principales en "vista simple" del Dueño.
+   Más grande que kpi_card normal (font 4xl) y con comparativo vs periodo previo. #}
+{% macro big_kpi(titulo, valor, tono='slate', tendencia=None, subtitulo=None) %}
+{# Card grande del dashboard. Estructura defensiva contra overflow:
+   - parent del grid: `min-w-0` + `overflow-hidden` para forzar shrink
+   - 2-line layout: header (titulo + trend), valor, subtítulo
+   - el valor NO usa clamp() (no funcionó confiablemente en Tailwind+grid):
+     usa text-2xl en mobile, text-3xl en md, text-4xl sólo en xl. Así
+     un número de 12 dígitos siempre entra en el card a cualquier breakpoint.
+   - tabular-nums + tracking-tight para que los dígitos ocupen menos.
+   - truncate (overflow-hidden + text-ellipsis + whitespace-nowrap) cubre
+     el caso extremo si el número fuese aún más largo. #}
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 flex flex-col gap-3 min-w-0 overflow-hidden">
+  <div class="flex items-center justify-between gap-2 min-w-0">
+    <div class="text-xs uppercase tracking-wider text-slate-500 truncate">{{ titulo }}</div>
+    {% if tendencia %}
+      {% if tendencia.dir == 'up' %}
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 shrink-0">
+          <svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2 L10 8 L2 8 Z"/></svg>
+          {{ '%.1f' % tendencia.pct }}%
+        </span>
+      {% elif tendencia.dir == 'down' %}
+        <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300 shrink-0">
+          <svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10 L10 4 L2 4 Z"/></svg>
+          {{ '%.1f' % tendencia.pct }}%
+        </span>
+      {% else %}
+        <span class="inline-flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded text-slate-400 dark:text-slate-500 shrink-0"
+              title="Sin variación significativa">—</span>
+      {% endif %}
+    {% endif %}
+  </div>
+  {# Font fijo a 1.5rem (24px) — entra "4.768.248,88" en cards de 250px+
+     y se ve igual en cualquier viewport. Inline style asegura que NO
+     se pisa con classes Tailwind cacheadas (la app no recompila el CSS
+     en cada cambio de template). truncate cubre overflow extremo. #}
+  <div class="font-semibold leading-tight tracking-tight tabular-nums truncate
+      {% if tono == 'emerald' %}text-emerald-600 dark:text-emerald-400
+      {% elif tono == 'red' %}text-red-600 dark:text-red-400
+      {% elif tono == 'amber' %}text-amber-600 dark:text-amber-400
+      {% elif tono == 'blue' %}text-blue-600 dark:text-blue-400
+      {% endif %}"
+      style="font-size: 1.5rem; line-height: 1.2;"
+      title="{{ valor }}">{{ valor }}</div>
+  {% if subtitulo %}<div class="text-xs text-slate-500 truncate">{{ subtitulo }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+{# Saludo según hora — para que la app no abra fría. #}
+{% set _h = (g.now.hour if g.get('now') else 9) %}
+{% set saludo =
+     'Buenos días' if _h < 12
+     else 'Buenas tardes' if _h < 19
+     else 'Buenas noches' %}
+{% set _dias_es = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'] %}
+{% set _meses_es = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'] %}
+{% set _hoy = g.get('now') %}
+
+<div class="max-w-7xl">
+  <div class="flex items-baseline justify-between mb-6 gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-semibold">
+        {{ saludo }}, {{ g.user.username }}
+      </h1>
+      {% if _hoy %}
+        <p class="text-sm text-slate-500 mt-1 capitalize">
+          {{ _dias_es[_hoy.weekday()] }} {{ _hoy.day }} de {{ _meses_es[_hoy.month - 1] }} de {{ _hoy.year }}
+        </p>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-3 text-sm text-slate-500">
+      <span>Rol: <strong>{{ rol }}</strong></span>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 text-sm">
+      No pude cargar todos los números: <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# =========================================================
+     DUEÑO — Tablero como MENÚ (2026-04-29 batch 22)
+     Sin info financiera en pantalla pública. Grid de accesos
+     directos a las acciones más comunes. La privacidad importa:
+     alguien que mira de costado ve nombres de pantalla, no plata.
+     ========================================================= #}
+  {% if rol == 'Dueño' %}
+
+    {# ---- Empezar a trabajar — acciones de carga rápida ---- #}
+    <div class="mb-6">
+      <h2 class="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 font-medium mb-3">
+        Empezar a trabajar
+      </h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {# + Cheque #}
+        <a href="{{ url_for('cheques.nuevo') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-emerald-400 dark:hover:border-emerald-700 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">+ Cheque</div>
+          <div class="text-xs text-slate-500 mt-0.5">recibir uno nuevo</div>
+        </a>
+
+        {# + Factura #}
+        <a href="{{ url_for('facturas.nueva') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-blue-400 dark:hover:border-blue-700 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">+ Factura</div>
+          <div class="text-xs text-slate-500 mt-0.5">emitir a cliente</div>
+        </a>
+
+        {# + Compra #}
+        <a href="{{ url_for('compras.nueva') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-amber-400 dark:hover:border-amber-700 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-2 11H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">+ Compra</div>
+          <div class="text-xs text-slate-500 mt-0.5">o producción</div>
+        </a>
+
+        {# + Gasto #}
+        <a href="{{ url_for('gastos.nuevo') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-rose-400 dark:hover:border-rose-700 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">+ Gasto</div>
+          <div class="text-xs text-slate-500 mt-0.5">servicio, sueldo, etc.</div>
+        </a>
+      </div>
+    </div>
+
+    {# ---- Ir a — pantallas más usadas ---- #}
+    <div class="mb-6">
+      <h2 class="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 font-medium mb-3">
+        Ir a
+      </h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <a href="{{ url_for('cheques.lista') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center mb-2">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">Cheques</div>
+          <div class="text-xs text-slate-500 mt-0.5">cartera, depositados, devueltos</div>
+        </a>
+
+        <a href="{{ url_for('cartera.aging') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center mb-2">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">Cartera</div>
+          <div class="text-xs text-slate-500 mt-0.5">qué te deben</div>
+        </a>
+
+        <a href="{{ url_for('caja.lista') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center mb-2">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">Caja</div>
+          <div class="text-xs text-slate-500 mt-0.5">entradas y salidas</div>
+        </a>
+
+        <a href="{{ url_for('informes.balance') }}"
+           class="group flex flex-col items-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md transition-all">
+          <div class="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center mb-2">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12l4 4v12H4z"/><path d="M4 10h16M9 14h6M9 17h4"/></svg>
+          </div>
+          <div class="text-sm font-medium text-slate-900 dark:text-slate-100">Resultados</div>
+          <div class="text-xs text-slate-500 mt-0.5">activos · pasivos · patrimonio</div>
+        </a>
+      </div>
+    </div>
+
+    {# ---- Nota de privacidad sutil ---- #}
+    <div class="mt-8 p-4 bg-slate-50 dark:bg-slate-900/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg flex items-start gap-3 max-w-2xl">
+      <svg class="w-5 h-5 text-slate-400 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <div class="text-xs text-slate-500 leading-relaxed">
+        Los números financieros (saldos, patrimonio, cobranza) viven en sus propias pantallas.
+        Esto evita que aparezcan en pantalla cada vez que entrás — útil cuando hay alguien al lado tuyo.
+      </div>
+    </div>
+
+  {% endif %}
+
+  {# =========================================================
+     GERENTE — operativo
+     ========================================================= #}
+  {% if rol == 'Gerente' and kpis %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      {{ kpi_card('Cartera',       kpis.cartera      | money_es, tono='emerald') }}
+      {{ kpi_card('Deudas',        kpis.deudas       | money_es, tono='red') }}
+      {{ kpi_card('Saldo bancos',  kpis.total_bancos | money_es, tono='blue') }}
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      {{ kpi_card('Cobranza esta semana',
+                  cobranza_semana.total | money_es,
+                  (cobranza_semana.n|string) ~ ' facturas', 'emerald') }}
+      {{ kpi_card('Pagos a proveedores esta semana',
+                  compras_pagar.total | money_es,
+                  (compras_pagar.n|string) ~ ' posdatados', 'amber') }}
+      {{ kpi_card('Facturas vencidas',
+                  facturas_vencidas.total | money_es,
+                  (facturas_vencidas.n|string) ~ ' sin cobrar', 'red') }}
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-8">
+      <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 font-medium">Top deudores</div>
+      <table class="w-full text-sm">
+        <tbody>
+        {% for d in deudores %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-5 py-2">
+              <a href="{{ url_for('informes.estado_cuenta', codigo_cli=d.codigo_cli) }}" class="hover:text-blue-600">
+                <span class="font-mono text-xs text-slate-500">{{ d.codigo_cli }}</span>
+                <span class="ml-2">{{ d.nombre }}</span>
+              </a>
+            </td>
+            <td class="px-5 py-2 text-right text-mono">{{ d.total | money_es }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% endif %}
+
+  {# =========================================================
+     CONTABILIDAD — pendientes operativos
+     ========================================================= #}
+  {% if rol == 'Contabilidad' %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {{ kpi_card('Cheques en cartera (sin depositar)',
+                  cheques_cartera.total | money_es,
+                  (cheques_cartera.n|string) ~ ' cheques', 'blue') }}
+      {{ kpi_card('Cheques rebotados (últ. 30d)',
+                  cheques_rebotados.total | money_es,
+                  (cheques_rebotados.n|string) ~ ' cheques', 'red') }}
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+      {{ kpi_card('Facturas vencidas',
+                  facturas_vencidas.total | money_es,
+                  (facturas_vencidas.n|string) ~ ' pendientes', 'red') }}
+      {{ kpi_card('Cobranza esperada esta semana',
+                  cobranza_semana.total | money_es,
+                  (cobranza_semana.n|string) ~ ' facturas', 'emerald') }}
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5">
+      <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">Accesos rápidos:</p>
+      <div class="flex flex-wrap gap-2">
+        <a href="{{ url_for('cheques.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cheques</a>
+        <a href="{{ url_for('facturas.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Facturas</a>
+        <a href="{{ url_for('bancos.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Bancos</a>
+        <a href="{{ url_for('retenciones.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Retenciones</a>
+        <a href="{{ url_for('caja.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Caja</a>
+      </div>
+    </div>
+
+  {% endif %}
+
+  {# =========================================================
+     VENTAS — foco en cobranza y recientes
+     ========================================================= #}
+  {% if rol == 'Ventas' %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {{ kpi_card('Cobros últimos 7 días',
+                  cobros_semana.total | money_es,
+                  (cobros_semana.n|string) ~ ' cheques', 'emerald') }}
+      {{ kpi_card('Clientes con saldo',
+                  deudores|length,
+                  'Top 10 abajo', 'blue') }}
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 font-medium">Facturas recientes</div>
+        <table class="w-full text-xs">
+          <tbody>
+          {% for f in facturas_recientes %}
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-3 py-1.5 font-mono">
+                <a href="{{ url_for('facturas.detalle', id_factura=f.id_factura) }}" class="hover:text-blue-600">{{ f.numf_completo or f.numf }}</a>
+              </td>
+              <td class="px-3 py-1.5">{{ f.fecha | fecha_es }}</td>
+              <td class="px-3 py-1.5">{{ f.cliente }}</td>
+              <td class="px-3 py-1.5 text-right text-mono">{{ f.importe | money_es }}</td>
+              <td class="px-3 py-1.5 text-right text-mono {% if f.saldo and f.saldo > 0 %}font-semibold{% endif %}">{{ f.saldo | money_es }}</td>
+            </tr>
+          {% else %}
+            <tr><td class="px-5 py-4 text-slate-500" colspan="5">Sin facturas.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+        <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 font-medium">Top deudores</div>
+        <table class="w-full text-sm">
+          <tbody>
+          {% for d in deudores %}
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-5 py-2">
+                <a href="{{ url_for('informes.estado_cuenta', codigo_cli=d.codigo_cli) }}" class="hover:text-blue-600">
+                  <span class="font-mono text-xs text-slate-500">{{ d.codigo_cli }}</span>
+                  <span class="ml-2">{{ d.nombre }}</span>
+                </a>
+              </td>
+              <td class="px-5 py-2 text-right text-mono">{{ d.total | money_es }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  {% endif %}
+
+  {# =========================================================
+     Cobranzas — foco en cartera y cheques rebotados
+     ========================================================= #}
+  {% if rol == 'Cobranzas' %}
+    <p class="text-sm text-slate-500 mb-4">
+      Tu día empieza acá: clientes con plata adeudada y cheques que rebotaron.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <a href="{{ url_for('cartera.aging') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Cartera por edades</div>
+        <div class="mt-2 text-2xl font-semibold text-emerald-600">Aging →</div>
+        <div class="mt-1 text-xs text-slate-500">Clientes con saldo + buckets de mora</div>
+      </a>
+      <a href="{{ url_for('cobranzas.calendario') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Calendario</div>
+        <div class="mt-2 text-2xl font-semibold text-amber-600">Cobranzas →</div>
+        <div class="mt-1 text-xs text-slate-500">Cheques posfechados + facturas que vencen</div>
+      </a>
+      <a href="{{ url_for('cheques.lista', estado='rebotados') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Cheques</div>
+        <div class="mt-2 text-2xl font-semibold text-red-600">Rebotados →</div>
+        <div class="mt-1 text-xs text-slate-500">Para hablar con los clientes</div>
+      </a>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <a href="{{ url_for('cheques.nuevo') }}" class="block bg-sky-50 border border-sky-200 rounded p-4 hover:bg-sky-100 transition">
+        <div class="text-sm font-semibold text-sky-900">+ Cargar cheque recibido</div>
+        <div class="text-xs text-sky-700 mt-1">Cuando un cliente te trae un cheque</div>
+      </a>
+      <a href="{{ url_for('clientes.contactos') }}" class="block bg-violet-50 border border-violet-200 rounded p-4 hover:bg-violet-100 transition">
+        <div class="text-sm font-semibold text-violet-900">📞 Directorio de contactos</div>
+        <div class="text-xs text-violet-700 mt-1">Llamar / mandar mail a clientes</div>
+      </a>
+    </div>
+  {% endif %}
+
+  {# =========================================================
+     Compras — foco en posdat y pagos a proveedores
+     ========================================================= #}
+  {% if rol == 'Compras' %}
+    <p class="text-sm text-slate-500 mb-4">
+      Pagos pendientes a proveedores y registros de compra.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <a href="{{ url_for('posdat.lista', solo_abiertas='1') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Pasivos abiertos</div>
+        <div class="mt-2 text-2xl font-semibold text-red-600">Posdat →</div>
+        <div class="mt-1 text-xs text-slate-500">Lo que falta pagar (banc≠9)</div>
+      </a>
+      <a href="{{ url_for('compras.lista') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Compras</div>
+        <div class="mt-2 text-2xl font-semibold text-blue-600">Histórico →</div>
+        <div class="mt-1 text-xs text-slate-500">Facturas de proveedor</div>
+      </a>
+      <a href="{{ url_for('proveedores.lista') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Proveedores</div>
+        <div class="mt-2 text-2xl font-semibold text-slate-700">Lista →</div>
+        <div class="mt-1 text-xs text-slate-500">Datos y plazos</div>
+      </a>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <a href="{{ url_for('compras.nueva') }}" class="block bg-sky-50 border border-sky-200 rounded p-4 hover:bg-sky-100 transition">
+        <div class="text-sm font-semibold text-sky-900">+ Nueva compra</div>
+        <div class="text-xs text-sky-700 mt-1">Registrar factura de proveedor</div>
+      </a>
+      <a href="{{ url_for('provisiones.lista') }}" class="block bg-amber-50 border border-amber-200 rounded p-4 hover:bg-amber-100 transition">
+        <div class="text-sm font-semibold text-amber-900">⏰ Provisiones recurrentes</div>
+        <div class="text-xs text-amber-700 mt-1">Alquiler, servicios, sueldos</div>
+      </a>
+    </div>
+  {% endif %}
+
+  {# =========================================================
+     Bodega — foco en compras (ingreso de mercadería)
+     ========================================================= #}
+  {% if rol == 'Bodega' %}
+    <p class="text-sm text-slate-500 mb-4">
+      Recepción de mercadería e inventario.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <a href="{{ url_for('compras.lista') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Compras</div>
+        <div class="mt-2 text-2xl font-semibold text-blue-600">Histórico →</div>
+        <div class="mt-1 text-xs text-slate-500">Mercadería recibida</div>
+      </a>
+      <a href="{{ url_for('proveedores.lista') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Proveedores</div>
+        <div class="mt-2 text-2xl font-semibold text-slate-700">Lista →</div>
+      </a>
+    </div>
+  {% endif %}
+
+  {# =========================================================
+     QC / Tintura — foco en cómo se ven los productos y costos
+     ========================================================= #}
+  {% if rol == 'QC' %}
+    <p class="text-sm text-slate-500 mb-4">
+      Productos, costos y precios. La tintura misma se gestiona en
+      <a href="https://intela.formulas_app" class="text-sky-600 hover:underline">formulas_app</a>.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <a href="{{ url_for('proveedores.lista') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Proveedores</div>
+        <div class="mt-2 text-2xl font-semibold text-slate-700">Lista →</div>
+      </a>
+      <div class="bg-slate-50 border border-slate-200 rounded p-5">
+        <div class="text-sm text-slate-600">
+          Para fórmulas, batches, kgs por jet, etc. usá <strong>formulas_app</strong>.
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# =========================================================
+     Lectura — vista solo-leer
+     ========================================================= #}
+  {% if rol == 'Lectura' %}
+    <p class="text-sm text-slate-500 mb-4">
+      Tenés acceso de sólo lectura. Usá el menú lateral para navegar los informes.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <a href="{{ url_for('cartera.aging') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Cartera</div>
+        <div class="mt-2 text-2xl font-semibold text-emerald-600">Aging →</div>
+      </a>
+      <a href="{{ url_for('bancos.lista') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Bancos</div>
+        <div class="mt-2 text-2xl font-semibold text-blue-600">Saldos →</div>
+      </a>
+      <a href="{{ url_for('informes.flujo') }}" class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 hover:border-sky-400 transition">
+        <div class="text-xs uppercase tracking-wider text-slate-500">Flujo</div>
+        <div class="mt-2 text-2xl font-semibold text-amber-600">Caja →</div>
+      </a>
+    </div>
+  {% endif %}
+
+  {# =========================================================
+     Otros roles no listados — placeholder
+     ========================================================= #}
+  {% if rol not in ('Dueño', 'Gerente', 'Contabilidad', 'Ventas',
+                    'Cobranzas', 'Compras', 'Bodega', 'QC', 'Lectura',
+                    'Administrador') %}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
+      <p class="text-slate-600 dark:text-slate-400">
+        Bienvenido, <strong>{{ g.user.username }}</strong>. Tu rol es <strong>{{ rol }}</strong>.
+      </p>
+      <p class="mt-3 text-sm text-slate-500">
+        Usá el menú lateral para navegar los informes a los que tengas acceso.
+      </p>
+    </div>
+  {% endif %}
+</div>
+
+{# =========================================================================
+   Chart.js para evolución de cartera vs deuda y saldo bancario 30 días.
+   Se carga el script y luego, en `onload`, dispara los inits de cada chart.
+   Cada init está en try/catch — si uno rompe, los otros igual cargan.
+   Si Chart.js no descarga (offline / firewall / CDN caído), el canvas
+   queda en blanco con un mensaje en el alt-text.
+   ========================================================================= #}
+{% if rol == 'Dueño' and vista == 'completa' and (
+        (evolucion_cartera and evolucion_cartera|length > 1)
+        or flujo_30d) %}
+<script>
+window._fmtMoneyEC = new Intl.NumberFormat('es-EC', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+window._dashCharts = [];
+</script>
+
+{# --- Chart saldo bancario últimos 30 días --------------------------------
+     Se inicializa después de cargar Chart.js (ver el init runner al final). #}
+{% if flujo_30d %}
+<script>
+window._dashCharts.push(function initChartSaldo() {
+  const flujo = {{ flujo_30d | tojson }};
+  if (!flujo || flujo.length < 2) {
+    console.warn('[chart-saldo] menos de 2 puntos, no renderizo');
+    return;
+  }
+  const ctx = document.getElementById('chart-saldo-30d');
+  if (!ctx) { console.warn('[chart-saldo] canvas no encontrado'); return; }
+
+  const fmtFecha = new Intl.DateTimeFormat('es-EC', { day: '2-digit', month: '2-digit' });
+  const labels = flujo.map(d => {
+    if (!d.fecha) return '';
+    const f = new Date(d.fecha + 'T00:00:00');
+    return isNaN(f.getTime()) ? '' : fmtFecha.format(f);
+  });
+  const saldos = flujo.map(d => parseFloat(d.saldo || 0));
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Saldo bancario',
+        data: saldos,
+        borderColor: '#0284c7',
+        backgroundColor: 'rgba(2, 132, 199, 0.10)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#0284c7',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => 'Saldo: $ ' + window._fmtMoneyEC.format(ctx.parsed.y),
+          }
+        }
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback: v => '$ ' + window._fmtMoneyEC.format(v),
+            font: { size: 10 },
+          },
+          grid: { color: 'rgba(148, 163, 184, 0.15)' },
+        },
+        x: {
+          ticks: { font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+          grid: { display: false },
+        }
+      }
+    }
+  });
+});
+</script>
+{% endif %}
+
+{# --- Chart evolución cartera vs deuda ---------------------------------- #}
+{% if evolucion_cartera and evolucion_cartera|length > 1 %}
+<script>
+window._dashCharts.push(function initChartEvolucion() {
+  const datos = {{ evolucion_cartera | tojson }};
+  if (!datos || datos.length < 2) return;
+
+  // Etiquetas: "Abr 2025" estilo es-EC
+  const fmtMes = new Intl.DateTimeFormat('es-EC', { month: 'short', year: '2-digit' });
+  const labels = datos.map((d, i) => {
+    const fecha = new Date(d.mes + 'T00:00:00');
+    const lbl = fmtMes.format(fecha).replace('.', '');
+    // El último punto es HOY en vivo — lo marcamos
+    return i === datos.length - 1 ? lbl + ' ●' : lbl;
+  });
+  const cartera = datos.map(d => parseFloat(d.cartera || 0));
+  const deuda = datos.map(d => parseFloat(d.deuda || 0));
+
+  const fmtMoney = window._fmtMoneyEC;
+
+  const ctx = document.getElementById('chart-evolucion-cartera');
+  if (!ctx) return;
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Cartera (cobrar)',
+          data: cartera,
+          borderColor: '#059669',  // emerald-600
+          backgroundColor: 'rgba(5, 150, 105, 0.10)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#059669',
+        },
+        {
+          label: 'Deuda (pagar)',
+          data: deuda,
+          borderColor: '#dc2626',  // red-600
+          backgroundColor: 'rgba(220, 38, 38, 0.08)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#dc2626',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.dataset.label + ': $ ' + fmtMoney.format(ctx.parsed.y);
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: v => '$ ' + fmtMoney.format(v),
+            font: { size: 10 },
+          },
+          grid: { color: 'rgba(148, 163, 184, 0.15)' },
+        },
+        x: {
+          ticks: { font: { size: 10 } },
+          grid: { display: false },
+        }
+      }
+    }
+  });
+});
+</script>
+{% endif %}
+
+{# --- Cargar Chart.js (local primero, CDN como fallback) ------------------
+     Bundle servido desde static/vendor/ para no depender de cdnjs.
+     `onload` dispara los inits ya colectados en window._dashCharts. Si el
+     local falla por algún motivo (deploy malo), cae al CDN. #}
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"
+        onload="(window._dashCharts || []).forEach(function(fn){ try { fn(); } catch (e) { console.error('[dashboard chart]', fn.name, e); } });"
+        onerror="var s=document.createElement('script');s.onload=function(){(window._dashCharts || []).forEach(function(fn){ try { fn(); } catch (e) { console.error('[dashboard chart]', fn.name, e); } });};s.onerror=function(){console.error('[dashboard] No pude cargar Chart.js (local ni CDN).');};s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js';document.head.appendChild(s);"></script>
+{% endif %}
+{% endblock %}

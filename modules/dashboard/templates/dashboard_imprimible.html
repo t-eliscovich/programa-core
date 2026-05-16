@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Tablero — imprimible{% endblock %}
+{% block breadcrumb %}Tablero · imprimible{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* En pantalla: centrado, márgenes generosos. En print: full page. */
+  .imp-sheet {
+    max-width: 900px; margin: 0 auto; padding: 1.5rem;
+  }
+  .imp-title { font-size: 20pt; font-weight: 600; }
+  .imp-sub { font-size: 10pt; color: #666; }
+  .imp-kpi-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1rem; margin: 1.5rem 0;
+  }
+  .imp-kpi {
+    border: 1px solid #ddd; padding: 1.25rem; border-radius: 6px;
+    break-inside: avoid;
+  }
+  .imp-kpi-label {
+    font-size: 9pt; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #666;
+  }
+  .imp-kpi-value {
+    font-size: 28pt; font-weight: 600; font-variant-numeric: tabular-nums;
+    margin-top: 0.25rem;
+  }
+  .imp-kpi-sub { font-size: 9pt; color: #888; margin-top: 0.25rem; }
+  .imp-foot { margin-top: 2rem; font-size: 9pt; color: #888; }
+  @media print {
+    body { background: #fff !important; }
+    .imp-kpi-grid { gap: 0.75rem; }
+    .imp-kpi-value { font-size: 24pt; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="imp-sheet">
+  <div class="flex items-start justify-between gap-4 flex-wrap">
+    <div>
+      <div class="imp-title">Intela — Resumen al {{ _now.strftime('%d/%m/%Y %H:%M') }}</div>
+      <div class="imp-sub">Generado por {{ g.user.username if g.user else '—' }}</div>
+    </div>
+    <div class="no-print flex items-center gap-2">
+      <button onclick="window.print()"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+      <a href="{{ url_for('dashboard.index') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Volver</a>
+    </div>
+  </div>
+
+  <div class="imp-kpi-grid">
+    <div class="imp-kpi">
+      <div class="imp-kpi-label">Cartera (cuánto me deben)</div>
+      <div class="imp-kpi-value" style="color: #047857;">{{ kpis.cartera | money_es }}</div>
+    </div>
+    <div class="imp-kpi">
+      <div class="imp-kpi-label">Deudas (cuánto debo)</div>
+      <div class="imp-kpi-value" style="color: #b91c1c;">{{ kpis.deudas | money_es }}</div>
+    </div>
+    <div class="imp-kpi">
+      <div class="imp-kpi-label">Bancos (liquidez hoy)</div>
+      <div class="imp-kpi-value" style="color: #1d4ed8;">{{ kpis.total_bancos | money_es }}</div>
+    </div>
+    <div class="imp-kpi">
+      <div class="imp-kpi-label">Facturado mes</div>
+      <div class="imp-kpi-value" style="color: #b45309;">{{ (mes_actual.facturado or 0) | money_es }}</div>
+      {% if mes_actual and mes_actual.mes_desde %}
+        <div class="imp-kpi-sub">desde {{ mes_actual.mes_desde.strftime('%d/%m/%Y') }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="imp-foot">
+    Documento generado el {{ _now.strftime('%d/%m/%Y') }} a las {{ _now.strftime('%H:%M') }}.
+    ID: {{ g.request_id[:8] if g.request_id else '—' }}
+  </div>
+</div>
+
+<script>
+  // Facilitar Cmd/Ctrl+P abriendo directamente el diálogo de impresión.
+  // Comentado por default — algunos usuarios prefieren revisar antes.
+  // window.addEventListener('load', () => setTimeout(() => window.print(), 250));
+</script>
+{% endblock %}

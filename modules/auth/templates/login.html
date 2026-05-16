@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Ingreso{% endblock %}
+{% block unauth %}
+<div class="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+  <div class="w-full max-w-sm bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+    <div class="text-center mb-6">
+      <div class="text-2xl font-bold tracking-tight">INTELA</div>
+      <div class="text-xs text-slate-500 mt-1">Programa Core</div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="mb-4 px-3 py-2 rounded text-sm bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Usuario</label>
+        <input name="username" required autofocus autocomplete="username"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Contraseña</label>
+        <input name="password" type="password" required autocomplete="current-password"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <button type="submit"
+              class="w-full rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 py-2 text-sm font-medium hover:opacity-90">
+        Ingresar
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
