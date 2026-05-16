@@ -119,7 +119,7 @@ def main():
 
     print()
     print(f"═══ Plan de restauración ({'APLY' if args.apply else 'DRY RUN'}) ═══")
-    for no_banco, esperado in zip(args.banco, args.saldo_esperado):
+    for no_banco, esperado in zip(args.banco, args.saldo_esperado, strict=False):
         actual, n_filas = saldo_actual(no_banco)
         nombre = nombre_banco(no_banco)
         offset = esperado - actual

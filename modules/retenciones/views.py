@@ -151,7 +151,7 @@ def confirmar_anulacion(id_retencion: int):
 @requiere_login
 @requiere_permiso("retenciones.anular")
 def anular(id_retencion: int):
-    motivo = (request.form.get("motivo") or "").strip()  # opcional. TMT 2026-05-13.
+    (request.form.get("motivo") or "").strip()  # opcional. TMT 2026-05-13.
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.anular(id_retencion, usuario=usuario)

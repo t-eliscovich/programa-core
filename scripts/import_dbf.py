@@ -84,7 +84,7 @@ def _str(v, max_len=None):
 
 def _date(v):
     """dbfread devuelve datetime.date para campos D. Pass-through con guard."""
-    if isinstance(v, (date, datetime)):
+    if isinstance(v, date | datetime):
         return v if not isinstance(v, datetime) else v.date()
     return None
 

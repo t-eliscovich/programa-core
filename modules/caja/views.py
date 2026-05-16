@@ -29,7 +29,8 @@ def preview_concepto():
     Usado por el form de nuevo movimiento de caja para mostrar al usuario
     qué movimiento doble se va a crear (ej. "+ entrada en Pichincha").
     """
-    import concepto_parser, db as _db
+    import concepto_parser
+    import db as _db
     concepto = (request.args.get("concepto") or "").strip()
     if not concepto:
         return {"descripcion": ""}

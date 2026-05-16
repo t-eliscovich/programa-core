@@ -250,7 +250,7 @@ def test_balance_y_modulo_son_numericos(fake_balance_db):
     for fila in conciliacion_balance():
         for k in ("balance", "modulo", "diff"):
             v = fila[k]
-            assert isinstance(v, (int, float)), (
+            assert isinstance(v, int | float), (
                 f"Fila '{fila['concepto']}' tiene {k}={v!r} ({type(v).__name__}); "
                 "debe ser numérico"
             )

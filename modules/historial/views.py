@@ -1,8 +1,14 @@
 """Historial unificado de movimientos dobles."""
-from datetime import date
 
 from flask import (
-    Blueprint, abort, flash, g, redirect, render_template, request, url_for,
+    Blueprint,
+    abort,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    url_for,
 )
 
 import db
@@ -145,7 +151,7 @@ def lista():
         ) or []
         for rb in rows_b:
             nm = (rb.get("nombre") or "").strip().title()  # PICHINCHA → Pichincha
-            doc = (rb.get("documento") or "").upper().strip()
+            (rb.get("documento") or "").upper().strip()
             # Etiqueta corta — la dueña pidió "Pichincha", no "Banco mov #X".
             # Si el banco no tiene nombre, fallback al id.
             if nm:

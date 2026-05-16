@@ -33,7 +33,6 @@ sys.path.insert(0, str(ROOT))
 
 import db  # noqa: E402
 
-
 ID_CHEQUE = 977
 
 
@@ -58,7 +57,7 @@ def main() -> int:
     if not ch:
         print(f"ERROR: cheque #{ID_CHEQUE} no existe.")
         return 1
-    print(f"\nCheque actual:")
+    print("\nCheque actual:")
     print(f"  stat={ch['stat']}  prov={ch.get('prov')}  fechaout={ch.get('fechaout')}")
     print(f"  cliente original={ch.get('codigo_cli')}  importe={ch.get('importe')}")
 
@@ -74,13 +73,13 @@ def main() -> int:
         """,
         (ID_CHEQUE,),
     )
-    print(f"\nmov_doble endoso original:")
+    print("\nmov_doble endoso original:")
     if md_endoso:
         print(f"  id={md_endoso['id_mov_doble']}  estado={md_endoso['estado']}  "
               f"dest=({md_endoso['destino_table']} #{md_endoso['destino_id']})  "
               f"importe={md_endoso['importe']}")
     else:
-        print(f"  NO ENCONTRADO — uy.")
+        print("  NO ENCONTRADO — uy.")
 
     # 3) Buscar compra hermana
     id_compra = md_endoso.get("destino_id") if md_endoso and md_endoso.get("destino_table") == "compra" else None
@@ -97,7 +96,7 @@ def main() -> int:
         )
         if row:
             id_compra = row["id_compra"]
-            print(f"\nCompra hermana (encontrada por comprobante):")
+            print("\nCompra hermana (encontrada por comprobante):")
             print(f"  id={id_compra}  stat={row['stat']}  prov={row['codigo_prov']}  importe={row['importe']}")
     else:
         compra_data = db.fetch_one(
@@ -120,19 +119,19 @@ def main() -> int:
         """,
         (ID_CHEQUE,),
     )
-    print(f"\nmov_doble del reverso (creado por el bug):")
+    print("\nmov_doble del reverso (creado por el bug):")
     if md_reverso_actual:
         print(f"  id={md_reverso_actual['id_mov_doble']}  tipo={md_reverso_actual['tipo']}  "
               f"estado={md_reverso_actual['estado']}  id_original={md_reverso_actual['id_original']}")
     else:
-        print(f"  no hay reverso registrado — solo el cheque cambió de stat.")
+        print("  no hay reverso registrado — solo el cheque cambió de stat.")
 
     if dry:
         print("\n┌─ ACCIONES A APLICAR (dry):")
         if id_compra:
             print(f"│  1. UPDATE compra #{id_compra} SET stat='Y'  + observación 'REVERSO endoso ch{ID_CHEQUE}'")
         else:
-            print(f"│  1. (no hay compra que anular)")
+            print("│  1. (no hay compra que anular)")
         print(f"│  2. UPDATE cheque #{ID_CHEQUE} SET stat='Z', prov=NULL, fechaout=NULL")
         if md_reverso_actual:
             print(f"│  3. UPDATE mov_doble #{md_reverso_actual['id_mov_doble']} SET tipo='reverso_endoso_cheque'")

@@ -190,9 +190,9 @@ def imprimir_facturas_drift(rows: list[dict]) -> None:
               f"{_money(diff):>11}  "
               f"{_trunc((r['cliente'] or r['codigo_cli']), 25)}")
     print(f"\n  Suma absoluta de drifts: {_money(total_diff).strip()}")
-    print(f"  Hint SQL para una fila:")
-    print(f"    SELECT cf.* FROM scintela.chequesxfact cf "
-          f"WHERE cf.id_fact = <id_factura>;")
+    print("  Hint SQL para una fila:")
+    print("    SELECT cf.* FROM scintela.chequesxfact cf "
+          "WHERE cf.id_fact = <id_factura>;")
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ def imprimir_caja_huerfanas(rows: list[dict]) -> None:
         print(f"  caja#{r['id_caja']:<5} {r['fecha']}  "
               f"{_money(r['imp']):>11}  user={r['usuario']:<10}  "
               f"{(r['concepto'] or '')[:55]}")
-    print(f"\n  Andá a /gastos/clasificar/<id_caja> para cada una.")
+    print("\n  Andá a /gastos/clasificar/<id_caja> para cada una.")
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ def export_csv(path: Path, data: dict[str, list[dict]]) -> None:
         for r in lst:
             rows.append({"seccion": sec, **{k: v for k, v in r.items()}})
     if not rows:
-        print(f"\nNo hay filas para exportar.")
+        print("\nNo hay filas para exportar.")
         return
     # Union de claves para el header
     keys = ["seccion"]
@@ -289,7 +289,7 @@ def main() -> int:
                   f"Válidos: {','.join(SECCIONES)}")
             return 2
 
-    print(f"=== listar_inconsistencias — Programa Core ===")
+    print("=== listar_inconsistencias — Programa Core ===")
     datos: dict[str, list[dict]] = {}
     for s in sel:
         fetch, show = SECCIONES[s]
@@ -300,8 +300,8 @@ def main() -> int:
     print(f"\n{'═' * 72}")
     n_total = sum(len(v) for v in datos.values())
     print(f"  Total filas listadas: {n_total}")
-    print(f"  Cuando arregles algo, re-corré `check_salud_dia.py` para "
-          f"confirmar que bajó el contador.")
+    print("  Cuando arregles algo, re-corré `check_salud_dia.py` para "
+          "confirmar que bajó el contador.")
 
     if args.csv:
         export_csv(Path(args.csv), datos)

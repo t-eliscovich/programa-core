@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT))
 import db  # noqa: E402
 
 # Importar los dispatches del módulo historial.
-from modules.historial.views import _REVERSO_DISPATCH, _REVERSO_BLOQUEADO  # noqa: E402
+from modules.historial.views import _REVERSO_BLOQUEADO, _REVERSO_DISPATCH  # noqa: E402
 
 
 def _separator(title: str = "") -> None:
@@ -291,7 +291,7 @@ def main() -> int:
                   f"running cuadra desde la fila ancla (id={ancla['id_transaccion']}, "
                   f"fecha={ancla['fecha']}).")
     if inconsistencias_saldo == 0:
-        print(f"\n  → Todos los saldos bancarios cuadran (delta interno consistente).")
+        print("\n  → Todos los saldos bancarios cuadran (delta interno consistente).")
     else:
         print(f"\n  → {inconsistencias_saldo} bancos con desfase. Corregir con bank_helpers.recompute_saldos_desde.")
 

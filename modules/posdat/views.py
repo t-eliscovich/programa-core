@@ -1,5 +1,6 @@
 """Posdat — vista/CRUD de pasivos abiertos con proveedores."""
-from datetime import date as _date, datetime
+from datetime import date as _date
+from datetime import datetime
 
 from flask import (
     Blueprint,

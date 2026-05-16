@@ -28,8 +28,8 @@ load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import db  # noqa: E402
 import bank_helpers  # noqa: E402
+import db  # noqa: E402
 
 
 def main() -> int:

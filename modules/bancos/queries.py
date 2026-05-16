@@ -641,7 +641,7 @@ def reversar_transferencia(
             destino_id=comp_destino["id_transaccion"],
             importe=importe_abs,
             fecha=fecha_rev,
-            concepto=(f"REVERSO transferencia banco→banco"
+            concepto=("REVERSO transferencia banco→banco"
                       + (f" — {motivo}" if motivo else ""))[:200],
             usuario=usuario,
             metadata={"motivo": motivo or "",

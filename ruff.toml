@@ -27,15 +27,19 @@ ignore = [
     "E501",   # long lines handled by the formatter
     "B008",   # function calls in argument defaults (Flask pattern)
     "SIM108", # ternary-vs-if — if/else is often clearer here
+    "B904",   # raise without `from` — innecesario en handlers angostos
+    "SIM105", # contextlib.suppress — try/except/pass es más legible acá
 ]
 
 [lint.per-file-ignores]
 # Migrations intentionally duplicate DDL and use long SQL literals.
-"migrations/*.py" = ["E501", "F401"]
-# Seed scripts have long literal blocks.
-"scripts/*.py"    = ["E501"]
+"migrations/*.py" = ["E501", "F401", "E402"]
+# Seed/audit scripts: literales largos + semicolons inline + imports tardíos.
+"scripts/*.py"    = ["E501", "E702", "E402", "F821", "F841"]
 # Tests can shadow names, use magic values, etc.
-"tests/*.py"      = ["E501", "F401", "F811"]
+"tests/*.py"      = ["E501", "F401", "F811", "E702"]
+# Modulos con late-import legitimate (config sin top-level circular).
+"modules/compras/queries.py" = ["E402"]
 
 [format]
 quote-style = "double"

@@ -13,6 +13,7 @@ Uso:
 Integrar en CI (.github/workflows/) o pre-commit (.pre-commit-config.yaml).
 """
 from __future__ import annotations
+
 import argparse
 import re
 import sys

@@ -37,7 +37,6 @@ sys.path.insert(0, str(ROOT))
 
 import db  # noqa: E402
 
-
 CATEGORIAS_V19 = (
     (1, "V1 — Personal tejeduría"),
     (2, "V2 — Gas/Comb. tejeduría"),

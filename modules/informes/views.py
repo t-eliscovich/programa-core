@@ -51,9 +51,9 @@ def balance():
     # inicializada todavía. Decorador defensivo.
     try:
         from modules.iniciales.views import auto_cerrar_mes_si_corresponde
-        cierre_result = auto_cerrar_mes_si_corresponde()
+        auto_cerrar_mes_si_corresponde()
     except Exception as e:  # noqa: BLE001
-        cierre_result = {"aplicado": False, "error": str(e)}
+        {"aplicado": False, "error": str(e)}
 
     data, error = _safe(queries.informe_balance, {})
     return render_template(

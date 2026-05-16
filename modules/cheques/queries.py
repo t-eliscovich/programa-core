@@ -666,7 +666,7 @@ def reemplazar(
         aplicaciones_migradas = 0
         # Agrupar aplicaciones por id_fact preservando el orden estable.
         from collections import OrderedDict
-        por_factura: "OrderedDict[int, list[dict]]" = OrderedDict()
+        por_factura: OrderedDict[int, list[dict]] = OrderedDict()
         for ap in aplicaciones:
             id_fact = ap.get("id_fact")
             imp_ap = float(ap.get("importe") or 0)
@@ -684,7 +684,7 @@ def reemplazar(
             )
             if not f:
                 continue
-            sum_imp = sum(float(a.get("importe") or 0) for a in aps)
+            sum(float(a.get("importe") or 0) for a in aps)
             # Borrar TODAS las aplicaciones del viejo a esta factura en
             # un solo statement (más limpio que N DELETEs por id).
             id_chequesxfact = [int(a["id_chequexfact"]) for a in aps]

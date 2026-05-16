@@ -28,7 +28,6 @@ NUNCA toca los saldos, importes ni nada que afecte el balance.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -40,7 +39,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import db  # noqa: E402
-
 
 # ─────────────────────────── Helpers ───────────────────────────
 

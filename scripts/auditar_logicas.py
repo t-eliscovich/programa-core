@@ -31,7 +31,6 @@ sys.path.insert(0, str(ROOT))
 
 import db  # noqa: E402
 
-
 # ─────────────────────────── Helpers ───────────────────────────
 
 GREEN = "\033[32m"
@@ -456,7 +455,7 @@ def check_posdat_negativos() -> dict:
     if rows:
         total = sum(float(r.get("importe") or 0) for r in rows)
         return warn(
-            f"Posdat con importe ≤ 0",
+            "Posdat con importe ≤ 0",
             f"{len(rows)} partida(s) con importe ≤ 0 (total ${total:,.2f}). "
             "Son anticipos/ajustes contables — reducen el PASIVO del balance. "
             "Ahora aparecen en /posdat con badge 'ajuste/anticipo'.",
@@ -689,7 +688,7 @@ def main():
     if args.json:
         # Limpiar detalles que pueden tener objetos no-serializables (date, decimal).
         def _clean(v):
-            if isinstance(v, (list, tuple)):
+            if isinstance(v, list | tuple):
                 return [_clean(x) for x in v]
             if isinstance(v, dict):
                 return {k: _clean(val) for k, val in v.items()}

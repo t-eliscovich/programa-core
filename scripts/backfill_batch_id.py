@@ -29,7 +29,6 @@ import argparse
 import os
 import sys
 import uuid
-from collections import defaultdict
 from pathlib import Path
 
 from dotenv import load_dotenv

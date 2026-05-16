@@ -42,7 +42,6 @@ sys.path.insert(0, str(ROOT))
 
 import db  # noqa: E402
 
-
 TABLAS = [
     # (display_name, query_listado, query_count, sql_delete, tabla_postfix_recompute)
     (
@@ -134,7 +133,7 @@ def imprimir_plan(fecha: _date, plan: dict) -> int:
             keys = ", ".join(
                 f"{k}={r[k]!r}"
                 for k in r
-                if r[k] is not None and not isinstance(r[k], (bytes, bytearray))
+                if r[k] is not None and not isinstance(r[k], bytes | bytearray)
             )
             print(f"   • {keys}")
         if len(filas) > 30:

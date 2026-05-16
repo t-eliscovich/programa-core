@@ -154,15 +154,15 @@ def imprimir_plan_A(linkables, cosmeticos, sospechosos) -> None:
         f"{len(sospechosos)} sospechosos"
     )
     if linkables:
-        print(f"  ↳ LINKEAR (existe reverso candidato → UPDATE alta.id_reverso):")
+        print("  ↳ LINKEAR (existe reverso candidato → UPDATE alta.id_reverso):")
         for r in linkables[:10]:
             print(f"     #{r['id_mov_doble']:<5} {r['tipo']:<28} "
                   f"{_money(r['importe'])}  → id_reverso={r['reverso_candidato']}")
         if len(linkables) > 10:
             print(f"     ... y {len(linkables) - 10} más")
     if cosmeticos:
-        print(f"  ↳ COSMÉTICO (la entidad ya está anulada — el mov_doble "
-              f"dice la verdad, sólo falta el reverso del audit):")
+        print("  ↳ COSMÉTICO (la entidad ya está anulada — el mov_doble "
+              "dice la verdad, sólo falta el reverso del audit):")
         for r in cosmeticos[:10]:
             ent = (f"cheque#{r['origen_id']}" if r["origen_table"] == "cheque"
                    else f"{r['origen_table']}#{r['origen_id']}")
@@ -170,17 +170,17 @@ def imprimir_plan_A(linkables, cosmeticos, sospechosos) -> None:
                   f"{_money(r['importe'])}  ({ent} stat='X')")
         if len(cosmeticos) > 10:
             print(f"     ... y {len(cosmeticos) - 10} más")
-        print(f"  · Para los cosméticos, este script NO toca data (sería "
-              f"peor crearles un 'activo'). Sólo se reporta.")
+        print("  · Para los cosméticos, este script NO toca data (sería "
+              "peor crearles un 'activo'). Sólo se reporta.")
     if sospechosos:
-        print(f"  ↳ SOSPECHOSO (mov_doble dice reversado pero la entidad "
-              f"sigue activa — bug real):")
+        print("  ↳ SOSPECHOSO (mov_doble dice reversado pero la entidad "
+              "sigue activa — bug real):")
         for r in sospechosos:
             print(f"     #{r['id_mov_doble']:<5} {r['tipo']:<28} "
                   f"{_money(r['importe'])}  "
                   f"orig:{r['origen_table']}#{r['origen_id']}  "
                   f"dest:{r['destino_table']}#{r['destino_id']}")
-        print(f"  · REVISAR a mano antes de aplicar. No automatizo.")
+        print("  · REVISAR a mano antes de aplicar. No automatizo.")
 
 
 def aplicar_seccion_A(linkables, cosmeticos, sospechosos) -> int:
@@ -353,7 +353,7 @@ def imprimir_plan_C(rows, auditoria: bool) -> None:
     if len(rows) > 20:
         print(f"  ... y {len(rows) - 20} más")
     print(f"  · {cambios_stat} cambios de stat, {cambios_solo_saldo} sólo saldo.")
-    print(f"  · NO se toca `abono` — mantiene sobre-pagos legacy intactos.")
+    print("  · NO se toca `abono` — mantiene sobre-pagos legacy intactos.")
 
 
 def aplicar_seccion_C(rows) -> int:
@@ -466,8 +466,8 @@ def main() -> int:
     print("═" * 70)
     if args.apply:
         print(f"  Total actualizado: {total_aplicado} filas.")
-        print(f"  Re-corré `python scripts/check_salud_dia.py` para "
-              f"verificar que los contadores bajaron.")
+        print("  Re-corré `python scripts/check_salud_dia.py` para "
+              "verificar que los contadores bajaron.")
     else:
         print("  DRY-RUN — nada modificado. Para aplicar:")
         print("    python scripts/fix_inconsistencias.py --apply           "

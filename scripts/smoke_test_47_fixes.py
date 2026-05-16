@@ -29,7 +29,6 @@ from __future__ import annotations
 import argparse
 import sys
 import traceback
-from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -547,8 +546,8 @@ def test_13b_cheque_anticipo_espejo_registra_mov_doble() -> int:
 
 def test_14_deudas_por_proveedor_banc_0() -> int:
     """FIX #14: deudas_por_proveedor + compras.deuda_proveedores usan banc=0."""
-    from modules.informes import queries as qi
     from modules.compras import queries as qc
+    from modules.informes import queries as qi
     # Insertar dos posdats: una banc=0, una banc=10. Sólo la primera debe contar.
     crear_posdat(importe=11.11, banc=0)
     crear_posdat(importe=22.22, banc=10)
@@ -561,7 +560,7 @@ def test_14_deudas_por_proveedor_banc_0() -> int:
         f"saldo_total esperado 11.11 (sólo banc=0), vi {fila['saldo_total']}"
     # compras.deuda_proveedores (total agregado).
     r = qc.deuda_proveedores()
-    assert r["total"] >= 11.11, f"deuda_proveedores total no incluye la posdat banc=0"
+    assert r["total"] >= 11.11, "deuda_proveedores total no incluye la posdat banc=0"
     return 3
 
 
@@ -1065,7 +1064,7 @@ def test_E5_flujo_cheque_cartera_a_factura() -> int:
             aplicaciones=[{"id_fact": id_factura, "importe": 100.0}],
             usuario=SMOKE_TAG,
         )
-        assert False, "debió rechazar — factura ya cancelada (saldo=0)"
+        raise AssertionError("debió rechazar — factura ya cancelada (saldo=0)")
     except ValueError as e:
         assert "excede el saldo" in str(e).lower() or "saldo" in str(e).lower(), \
             f"error inesperado: {e}"
@@ -1116,7 +1115,7 @@ def test_E5_flujo_cheque_cartera_a_factura() -> int:
             aplicaciones=[{"id_fact": id_factura3, "importe": 200.0}],
             usuario=SMOKE_TAG,
         )
-        assert False, "debió rechazar — importe > saldo factura"
+        raise AssertionError("debió rechazar — importe > saldo factura")
     except ValueError as e:
         assert "excede el saldo" in str(e).lower(), f"error inesperado: {e}"
         asserts += 1

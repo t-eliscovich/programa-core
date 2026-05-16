@@ -131,8 +131,8 @@ def crear(
                 destino_id=row["id_factura"],
                 importe=float(importe or 0),
                 fecha=fecha,
-                concepto=((("DEVOLUCION " if es_devolucion else "")
-                           + f"Factura #{numf} {codigo_cli.upper().strip()}"))[:200],
+                concepto=(("DEVOLUCION " if es_devolucion else "")
+                           + f"Factura #{numf} {codigo_cli.upper().strip()}")[:200],
                 usuario=usuario,
                 metadata={"codigo_cli": codigo_cli.upper().strip(),
                           "numf": numf,

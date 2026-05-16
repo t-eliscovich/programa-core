@@ -277,7 +277,7 @@ def test_06b_boleta_no_banco_dinamico() -> int:
     # No debe quedar la línea original "parse_int(...) or 1\n    try:" pegada.
     bad = 'parse_int(request.args.get("no_banco")) or 1\n    try:\n        boleta'
     assert bad not in fuente, (
-        f"boleta_deposito sigue con default no_banco=1 hardcodeado."
+        "boleta_deposito sigue con default no_banco=1 hardcodeado."
     )
     asserts += 1
     return asserts
@@ -380,7 +380,7 @@ def test_01_provision_pendiente() -> int:
     assert "provision_pendiente" in b, \
         "informe_balance no expone provision_pendiente al top level"
     asserts += 1
-    assert isinstance(b["provision_pendiente"], (int, float)), \
+    assert isinstance(b["provision_pendiente"], int | float), \
         f"provision_pendiente no es numérico: {type(b['provision_pendiente'])}"
     asserts += 1
     assert "resultados" in b and "utilidad" in b["resultados"], \
@@ -549,7 +549,7 @@ def test_12_ventas_multianual() -> int:
     # Sumar una factura nueva al mes actual y ver que entra en el total
     # del año actual. Usamos fechas spread por mes.
     hoy = date.today()
-    id_f = _crear_factura(kg=100.0, importe=1234.56, fecha=hoy)
+    _crear_factura(kg=100.0, importe=1234.56, fecha=hoy)
     data2 = qi.ventas_multianual(4)
     anio_actual = data2["anios"][-1]
     t_act = data2["totales_por_anio"][anio_actual]
@@ -665,8 +665,8 @@ def test_04_cartera_snapshot() -> int:
       - comparar_contra_snapshot() devuelve dict con filas/totales.
       - Si no hay snapshots, devuelve `error` con mensaje informativo.
     """
-    from modules.cartera import queries as qc
     import db as _db
+    from modules.cartera import queries as qc
     asserts = 0
 
     # 1. Si no hay snapshots, devuelve error informativo.
@@ -723,8 +723,8 @@ def test_05_cierre_mes_auto() -> int:
       - Si scintela.iniciales está vacía, no crashea — devuelve aplicado=False
         con razon explicativa.
     """
-    from modules.iniciales import queries as qi
     import db as _db
+    from modules.iniciales import queries as qi
     asserts = 0
 
     # Resetear marker para forzar que el test corra.
@@ -842,7 +842,7 @@ def test_06_boleta_deposito() -> int:
     # Banco inexistente → ValueError.
     try:
         qc.boleta_deposito(fecha=date.today(), no_banco=9999)
-        assert False, "no levantó ValueError con banco inexistente"
+        raise AssertionError("no levantó ValueError con banco inexistente")
     except ValueError:
         pass
     except Exception as e:
@@ -869,7 +869,7 @@ def test_06_boleta_deposito() -> int:
     asserts += 1
     assert isinstance(boleta["cheques"], list), "cheques debe ser lista"
     asserts += 1
-    assert isinstance(boleta["total"], (int, float)), \
+    assert isinstance(boleta["total"], int | float), \
         f"total debe ser numérico, vi {type(boleta['total'])}"
     asserts += 1
 
@@ -1005,7 +1005,7 @@ def test_07_cheque_reemplazo() -> int:
             nuevo_importe=100.0,
             usuario="auto-smoke",
         )
-        assert False, "no levantó ValueError reemplazando cheque en X"
+        raise AssertionError("no levantó ValueError reemplazando cheque en X")
     except ValueError:
         pass
     asserts += 1
@@ -1064,7 +1064,7 @@ def test_08_bap_anticipos_a_compra() -> int:
         None,
     )
     assert mi_grupo is not None, \
-        f"PROV_TEST no aparece en anticipos_pendientes_por_proveedor"
+        "PROV_TEST no aparece en anticipos_pendientes_por_proveedor"
     asserts += 1
     assert float(mi_grupo["total_usd"]) >= 1500.0 - 0.01, \
         f"total_usd esperado >=1500, vi {mi_grupo['total_usd']}"
@@ -1074,7 +1074,7 @@ def test_08_bap_anticipos_a_compra() -> int:
     try:
         qd.convertir_a_compra(codigo_prov=PROV_TEST, ids_anticipos=[],
                               usuario="auto-smoke")
-        assert False, "no levantó ValueError con ids vacíos"
+        raise AssertionError("no levantó ValueError con ids vacíos")
     except ValueError:
         pass
     asserts += 1
@@ -1083,7 +1083,7 @@ def test_08_bap_anticipos_a_compra() -> int:
     try:
         qd.convertir_a_compra(codigo_prov=PROV_TEST,
                               ids_anticipos=[9999999], usuario="auto-smoke")
-        assert False, "no levantó ValueError con IDs inexistentes"
+        raise AssertionError("no levantó ValueError con IDs inexistentes")
     except ValueError:
         pass
     asserts += 1
@@ -1156,7 +1156,7 @@ def test_08_bap_anticipos_a_compra() -> int:
     try:
         qd.convertir_a_compra(codigo_prov=PROV_TEST, ids_anticipos=ids,
                               usuario="auto-smoke")
-        assert False, "no levantó ValueError con anticipos ya consumidos"
+        raise AssertionError("no levantó ValueError con anticipos ya consumidos")
     except ValueError:
         pass
     asserts += 1
@@ -1199,7 +1199,7 @@ def test_10_cobros_matriz_3_semanas() -> int:
             assert k in s, f"falta clave {k} en semana {s.get('semana')}"
         # Cada día es numérico.
         for d in dias_keys:
-            assert isinstance(s[d], (int, float)), \
+            assert isinstance(s[d], int | float), \
                 f"día {d} no es numérico: {type(s[d])}"
         # total_semana = suma de los 6 días.
         suma = sum(float(s[d] or 0) for d in dias_keys)

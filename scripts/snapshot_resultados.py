@@ -43,8 +43,8 @@ def _num(x) -> float:
 
 def tomar_snapshot() -> dict:
     """Lee informe_balance() y pliega los valores claves en un dict plano."""
-    from modules.informes import queries as inf
     import db
+    from modules.informes import queries as inf
 
     bal = inf.informe_balance() or {}
 
@@ -164,7 +164,7 @@ def cargar(label: str) -> dict:
 
 
 def _es_numero(x) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool)
+    return isinstance(x, int | float) and not isinstance(x, bool)
 
 
 def diff(snap_a: dict, snap_b: dict, *, tol: float = 0.01) -> dict:

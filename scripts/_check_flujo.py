@@ -65,7 +65,7 @@ if __name__ == "__main__":
     saldo_70 = saldo_hoy + cheq_70 - egr_70
     print(f"= Saldo proyectado a 70d      : ${saldo_70:>15,.0f}")
     print()
-    print(f"dBase chart MIN (20-jul ≈ 68d): $    -2,276,000")
+    print("dBase chart MIN (20-jul ≈ 68d): $    -2,276,000")
 
     out = ROOT / "scripts" / "_diag" / "flujo_check.json"
     out.write_text(json.dumps({

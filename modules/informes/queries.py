@@ -26,7 +26,6 @@ Schema realities (verified against intela12042026.sql):
 from datetime import date
 
 import db
-
 from modules.posdat import (
     POSDAT_DEUDA_VIVA_WHERE,
     POSDAT_EGRESO_FLUJO_WHERE,
@@ -767,7 +766,8 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
           "ult_fecha_nueva": str,
         }
     """
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
+    from datetime import timedelta as _td
 
     hoy = _date.today()
     hoy_iso = hoy.isoformat()
@@ -2249,7 +2249,7 @@ def informe_balance() -> dict:
     mesnum_actual = int(inic.get("mesnum") or 0)
     yy_actual     = int(inic.get("yy") or 0)
     um_anterior   = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "um")
-    uf_anterior   = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "uf")
+    tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "uf")
 
     # Tarifas live (ratio de datos del mes; pueden ser 0 si no hay datos).
     precio = _safe_div(h_uvent, h_kvent)
@@ -2366,7 +2366,7 @@ def informe_balance() -> dict:
     h_usuti = float(hist.get("usuti") or 0)
 
     # Tarifas legacy heredadas del último cierre, para diagnóstico.
-    ukk    = _safe_div(h_utej,  h_ktej)              # U$/kg tejido (histórico)
+    _safe_div(h_utej,  h_ktej)              # U$/kg tejido (histórico)
     iqx_legacy = _safe_div(h_utin, h_ktin)           # U$/kg gs.proceso (histórico)
 
     # Recomputar iqx con tin.itin/KR ahora que tin está disponible —

@@ -357,9 +357,9 @@ def reversar_aporte(
     Regla de signos: cada operación de alta tenía signo +, su reverso es −.
     TMT 2026-05-13.
     """
-    import mov_doble as _md
-    import caja_helpers
     import bank_helpers
+    import caja_helpers
+    import mov_doble as _md
 
     motivo = (motivo or "").strip()
     fecha_rev = date.today()
@@ -526,9 +526,9 @@ def reversar_retiro(
 
     TMT 2026-05-13.
     """
-    import mov_doble as _md
-    import caja_helpers
     import bank_helpers
+    import caja_helpers
+    import mov_doble as _md
 
     motivo = (motivo or "").strip()
     fecha_rev = date.today()

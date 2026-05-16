@@ -171,7 +171,7 @@ def eliminar(id_provisiones: int):
     prov = queries.por_id(id_provisiones)
     if not prov:
         abort(404)
-    motivo = (request.form.get("motivo") or "").strip()  # opcional. TMT 2026-05-13.
+    (request.form.get("motivo") or "").strip()  # opcional. TMT 2026-05-13.
     try:
         queries.eliminar(id_provisiones)
         flash("Provisión eliminada.", "ok")

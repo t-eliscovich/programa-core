@@ -4,14 +4,15 @@ Uso: python scripts/fix_saldo_pichincha.py
 """
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import db  # noqa: E402
 import bank_helpers  # noqa: E402
+import db  # noqa: E402
 
 bad = db.fetch_one(
     "SELECT id_transaccion, fecha, importe, documento "

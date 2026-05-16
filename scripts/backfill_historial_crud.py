@@ -51,7 +51,6 @@ sys.path.insert(0, str(ROOT))
 import db  # noqa: E402
 import mov_doble as _md  # noqa: E402
 
-
 # ─────────────────────── Helpers ───────────────────────
 
 

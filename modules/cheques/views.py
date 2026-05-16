@@ -115,7 +115,7 @@ def nuevo():
     # canónico — se usa para flash, restore-on-error, y aplicaciones.
     primero = cheques_in[0] if cheques_in else {}
     no_cheque = primero.get("no_cheque", "")
-    importe = primero.get("importe")
+    primero.get("importe")
     no_banco = parse_int(request.form.get("no_banco"))
     banco_texto = (request.form.get("banco_texto") or "").strip()[:30] or None
     prov = (request.form.get("prov") or "").strip()[:5] or None

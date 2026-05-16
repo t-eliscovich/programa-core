@@ -59,7 +59,8 @@ def preview_concepto():
       - PICH / INTER (transfer entre bancos) → caja (genérico) o proveedor
       - cualquier otro    → otro (sólo movimiento banco)
     """
-    import concepto_parser, db as _db
+    import concepto_parser
+    import db as _db
     concepto = (request.args.get("concepto") or "").strip()
     if not concepto:
         return {"tipo_sugerido": None, "descripcion": "", "extras": {}}

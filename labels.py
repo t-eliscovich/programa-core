@@ -28,7 +28,6 @@ Reglas decididas con TMT (2026-05-12):
 """
 from __future__ import annotations
 
-
 # ─────────────────────────── BANCOS ────────────────────────────────
 # Nombres canónicos para mostrar en UI.
 

@@ -4,10 +4,8 @@ Lee de scintela.mov_doble + enriquece con info de las tablas origen/destino
 para que el timeline muestre nombres legibles (banco "Pichincha" en vez de
 "transacciones_bancarias #12345").
 """
-from datetime import date
 
 import db
-
 
 # Etiquetas legibles de tipos — uno por línea para que sea fácil agregar.
 TIPOS_LABEL = {
@@ -357,7 +355,7 @@ def link_origen(row: dict) -> tuple[str | None, str]:
     if t == "retiros":
         return "/capital?filtro=retiros", f"Retiro #{rid}"
     if t == "dolares":
-        return f"/dolares?cta=", f"USD #{rid}"
+        return "/dolares?cta=", f"USD #{rid}"
     if t == "posdat":
         return "/proveedores", f"Posdat #{rid}"
     if t == "xgast":

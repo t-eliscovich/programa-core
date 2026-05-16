@@ -49,7 +49,7 @@ def _normalize(rows):
         for k, v in r.items():
             if hasattr(v, "isoformat"):
                 rr[k] = v.isoformat()
-            elif isinstance(v, (int, float, str, bool)) or v is None:
+            elif isinstance(v, int | float | str | bool) or v is None:
                 rr[k] = v
             else:
                 rr[k] = str(v)

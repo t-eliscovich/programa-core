@@ -28,6 +28,7 @@ TIPOS_VALIDOS = ("K", "H", "Q", "C", "A")
 # Etiquetas legibles para la UI — fuente única en labels.py para mantener
 # consistencia con todo el resto del programa (TMT 2026-05-12).
 import labels as _L
+
 TIPOS_LABEL = {k: _L.TIPOS_COMPRA_LABEL[k] for k in TIPOS_VALIDOS}
 
 
