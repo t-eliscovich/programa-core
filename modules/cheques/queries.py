@@ -1269,6 +1269,10 @@ def crear(
     """
     asegurar_fecha_abierta(fecha)
     fechad = fechad or fecha
+    # Bug I fix (TMT 2026-05-16): si fechad cae domingo, shift a lunes
+    # (paridad ALTAS.PRG L119). Solo en alta — la edición ya lo hacía
+    # (línea 115). 3 cheques en cartera tenían fechad domingo por este bug.
+    fechad = _domingo_a_lunes(fechad)
     fecha_recibido = fecha_recibido or date.today()
     # Cheques nuevos SIEMPRE arrancan en cartera (Z), aunque fechad > fecha.
     # 'P' (postergado) sólo se aplica cuando la usuaria mueve un cheque YA
@@ -1290,6 +1294,11 @@ def crear(
     with _tx as conn:
         # Cheque principal — incluye fecha_recibido (columna agregada en
         # migración 0013).
+        # Bug H fix (TMT 2026-05-16): fechaing antes se seteaba a CURRENT_DATE
+        # por default. Pero la convención canónica dice fechaing=fecha de paso
+        # por banco (solo aplica a stat B/A/1/2/3/R/D). Para cheques Z (cartera)
+        # debe ser NULL. Los 985 cheques afectados son legacy + nuevos
+        # creados con este bug. NULL = arrancamos limpios desde acá.
         row = db.execute_returning(
             """
             INSERT INTO scintela.cheque
@@ -1298,7 +1307,7 @@ def crear(
                  banco, stat, fechaing, prov, clave, usuario_crea)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, CURRENT_DATE, %s, %s, %s)
+                    %s, %s, NULL, %s, %s, %s)
             RETURNING id_cheque, no_cheque
             """,
             (
@@ -2386,6 +2395,16 @@ def reversar(
             "WHERE id_cheque=%s",
             (stat_nuevo, usuario, id_cheque),
             conn=conn,
+        )
+
+        # Bug G fix (TMT 2026-05-16): borrar las aplicaciones chequesxfact
+        # del cheque reversado. Antes quedaban vivas apuntando a un cheque
+        # con stat='X', lo que ensuciaba el detalle de factura (mostraba
+        # "Cheque XXX aplicado $21" aunque ya estuviera anulado) y podía
+        # bloquear futuras anulaciones de factura con falso "cheque vivo".
+        db.execute(
+            "DELETE FROM scintela.chequesxfact WHERE id_cheque=%s",
+            (id_cheque,), conn=conn,
         )
 
         # Rebote real (B/1/2/A → 1 o 3) ⇒ cliente a STOP.
