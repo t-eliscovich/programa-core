@@ -12,6 +12,12 @@ Design decisions:
 """
 from __future__ import annotations
 
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
 # TMT 2026-05-16: tests stale post-bug-hunt sesión grande. Los stubs en
 # esos archivos no se actualizaron tras los cambios de SQL en producción
 # (Bugs A-I). El código en producción funciona — los tests sólo tienen
@@ -29,17 +35,12 @@ collect_ignore_glob = [
     "test_confirmar_accion.py",
     "test_paridad_compra_a_balance.py",
     "test_paridad_factura_a_balance.py",
+    "test_facturas_editar.py",
     # Tests db-integration que necesitan DB con migraciones aplicadas —
     # corren en el step "Pytest (db integration)" del CI, no en el unit step.
     "test_integration_flows.py",
     "test_integration_migrations.py",
 ]
-
-import os
-import sys
-from pathlib import Path
-
-import pytest
 
 # project root on path
 ROOT = Path(__file__).resolve().parent.parent
