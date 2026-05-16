@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row %}
-{% block title %}Cheque {{ ch.no_cheque }}{% endblock %}
+{% block title %}Cheque {{ ch.no_cheque or ('#' ~ ch.id_cheque) }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
   <strong>{{ ch.no_cheque or ch.id_cheque }}</strong>

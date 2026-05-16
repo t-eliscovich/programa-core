@@ -1,17 +1,41 @@
 # Programa Core — Intela
 
 Reemplazo web del programa dBase/Clipper de 30 años. Flask + PostgreSQL + Jinja
-+ Tailwind + HTMX. UI en español.
++ Tailwind. UI en español, paleta sky+slate, dark mode incluido.
 
 ## Estado actual
 
-Módulos navegables: **login · tablero · informes (balance, cartera, deudas,
-flujo, ventas, gastos) · facturas · cheques (crear, aplicar, anular, revertir)
-· retenciones · compras · provisiones · bancos · caja · capital · clientes ·
-proveedores · proformas · posdat · activos · bitácora**.
+Módulos navegables: **login · menú de operaciones · tablero · informes (balance,
+cartera, deudas, flujo, ventas, gastos, estado de cuenta) · facturas · cheques
+(crear, aplicar, depositar lote, anular, revertir, postergar, endosar) ·
+retenciones · compras · provisiones · bancos (emitir cheque, transferir,
+conciliar) · caja · capital · clientes · proveedores · proformas · posdat
+(pasivos a proveedores) · activos · stock · historial unificado · bitácora**.
 
-Lo que todavía corre en dBase: algunas pantallas de consulta rápida y ciertos
-flujos que no pasaron nunca por el programa viejo al día.
+Flujos cubiertos end-to-end con reverso atómico: cobranza, gasto, retiro de
+socio, aporte de capital, factura+anular, compra+anular, transferencia
+bancaria, depósito de cheques en lote, endoso de cheque a proveedor, emisión
+de cheque propio.
+
+### Highlights de UX
+
+- **Menú de operaciones** con cards agrupadas por categoría (cobro y pago /
+  movimientos del dueño / movimientos internos / ver) con tonos por sección.
+- **Action bar superior** con las 10 operaciones más frecuentes accesibles
+  desde cualquier pantalla.
+- **Sidebar colapsable** (con estado en localStorage) — secciones Operación /
+  Análisis / Mantenimiento.
+- **Historial unificado** que registra cada operación como `mov_doble`
+  (origen → destino) y permite reverso en un click. Batches de cobranza
+  agrupan múltiples movs bajo un `batch_id`.
+- **Cobranza inteligente**: botón "T" por factura aplica el saldo máximo
+  posible con tolerancia para redondeos legacy DBF.
+- **Tres fechas en cheques**: cargado (cuando entró), a depositar (programado),
+  depositado (cuando pasó por banco) — separadas en columnas y cards.
+- **Headers sortable**: click en cualquier header de tabla ordena por esa
+  columna; la columna "Acum." se desatena cuando no estás ordenado por fecha.
+- **Fallbacks de identificadores**: facturas/cheques/posdat sin número formal
+  (legado DBF) muestran `#id_factura` en gris como fallback.
 
 ## Requisitos
 
@@ -51,7 +75,7 @@ python scripts/seed_roles.py
 
 # 7) Arrancar el server
 python run.py
-# abre http://127.0.0.1:5000
+# abre http://127.0.0.1:5050
 ```
 
 ### Atajo: `./launcher.sh`
@@ -106,17 +130,19 @@ Programa Core/
 ├── config/
 │   └── roles.py         Fuente única de verdad roles → permisos
 ├── migrations/          Migration runner (NNNN_*.sql | .py)
-│   ├── 0001_seguridad_fks.sql
-│   ├── 0002_indexes.sql
-│   ├── 0003_seed_roles.py
-│   ├── 0004_bitacora.sql
-│   ├── 0005_periodos.sql
-│   ├── 0006_bitacora_request_id.sql
-│   └── 0007_ejecuciones_tareas.sql
+│                        Soporta marker `-- migrate:no-transaction` para
+│                        statements tipo CREATE INDEX CONCURRENTLY.
 ├── scripts/
-│   ├── migrate.py       Runner de migrations
-│   ├── seed_roles.py    Primer usuario Dueño (interactivo)
-│   └── procesa_provisiones_mensual.py   Cron mensual
+│   ├── migrate.py                       Runner de migrations
+│   ├── seed_roles.py                    Primer usuario Dueño (interactivo)
+│   ├── procesa_provisiones_mensual.py   Cron mensual
+│   ├── check_salud_dia.py               Semáforo verde/amarillo/rojo
+│   │                                    sobre caja/gastos/bancos/mov_doble/
+│   │                                    cheques/facturas/posdat/provisiones
+│   ├── listar_inconsistencias.py        Lista detallada de issues
+│   ├── fix_inconsistencias.py           Auto-fix de issues seguros
+│   ├── import_dbf.py                    Importador DBF → Postgres (sync legacy)
+│   └── lint_permisos_templates.py       CI check anti-`'x.y' in g.permisos`
 ├── modules/             Cada módulo = blueprint + queries.py + templates/
 │   ├── auth/
 │   ├── dashboard/
@@ -203,3 +229,42 @@ rollback / logs.
   necesitan Postgres — mockean `db.*`.
 - Commits: presente imperativo corto, una línea resume y el cuerpo
   explica el porqué si no es obvio.
+
+## Reglas no-obvias del código
+
+- **Permisos en templates**: usar siempre `tiene_permiso('x.y')` —
+  nunca `'x.y' in g.permisos`. El primero honra el wildcard `*` del
+  rol Dueño; el segundo no, y deja al Dueño sin botones. El check de
+  CI `scripts/lint_permisos_templates.py` lo enforza.
+
+- **Saldos bancarios — convención mixta**: la columna `importe` en
+  `transacciones_bancarias` puede venir signed (legacy DBF: negativo
+  = egreso) o abs (creado por `bank_helpers`). Para sumar correctamente
+  usar `_signed_delta(documento, importe)` de `bank_helpers.py`, que
+  detecta el caso automáticamente. Sumas naive `signo * importe` rompen.
+
+- **Walk-forward, no SUM**: para recalcular saldos bancarios siempre
+  partir de un ancla conocida y aplicar deltas en orden. Un `SUM`
+  sobre toda la tabla puede dar drifts grandes ($800k+ en Pichincha)
+  porque la convención mixta arriba mencionada.
+
+- **Reverso atómico**: cada operación que cruza tablas (cobranza,
+  depósito, transferencia, anulación, etc.) escribe una fila en
+  `mov_doble` con `(origen_table, origen_id, destino_table, destino_id,
+  importe, tipo, estado)`. Reverso = update estado='reversado' +
+  insertar fila inversa. El dispatcher está en
+  `modules/historial/views.py:_REVERSO_DISPATCH`.
+
+- **Batch_id**: cuando una cobranza aplica un cheque a múltiples
+  facturas (o un depósito mueve N cheques al banco), todas las filas
+  comparten un `batch_id` UUID y el reverso del batch reversa todo
+  junto. La UI los muestra agrupados en `/historial`.
+
+- **Stat canónicos cheques**: Z=cartera · P=postdatado · B=depositado
+  nuevo · A=depositado legacy · 1,2,3=rebotes (1=primer, 3=tercero) ·
+  R=rebotado terminal · D=Daniela (gestión) · E=endosado · X=eliminado.
+
+- **NUMF=0 en facturas legacy**: ~480 facturas DBF importadas vienen
+  con `numf=0` (Daniela las registra como cuenta corriente sin
+  número formal). Los templates usan fallback `#id_factura` en gris
+  cuando `numf=0`. No es bug, es dato origen.

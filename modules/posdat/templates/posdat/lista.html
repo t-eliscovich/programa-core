@@ -13,7 +13,7 @@
         kpi_extra=_e
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if g.permisos and 'posdat.crear' in g.permisos %}
+      {% if tiene_permiso('posdat.crear') %}
         <a href="{{ url_for('posdat.nueva') }}"
            class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-medium shadow-sm transition">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
@@ -97,7 +97,7 @@
             {% endif %}
           </td>
           <td class="px-3 py-2 text-right whitespace-nowrap">
-            {% if g.permisos and 'posdat.editar' in g.permisos %}
+            {% if tiene_permiso('posdat.editar') %}
               <a href="{{ url_for('posdat.editar', id_posdat=f.id_posdat) }}"
                  class="text-sky-600 hover:underline text-xs">Editar</a>
               {% if f.banc != 9 %}

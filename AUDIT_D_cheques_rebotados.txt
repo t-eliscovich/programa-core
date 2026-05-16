@@ -1,0 +1,32 @@
+====================================================================================================
+AUDIT D — CHEQUES REBOTADOS SIN GESTIÓN
+====================================================================================================
+
+10 cheques rebotados sin gestión hace >60 días
+
+stat   descripción                         n          monto
+-----------------------------------------------------------------
+1      1er rebote                         10      34,923.64
+2      2do rebote                          0           0.00
+3      3er rebote                          0           0.00
+R      rebotado terminal                   0           0.00
+-----------------------------------------------------------------
+TOTAL                                     10      34,923.64
+
+TOP 20 por monto:
+   id         N° cliente                   stat        monto  días banco               
+----------------------------------------------------------------------------------------------------
+ 1212      #1212 MIRIAN MARGOTH TOAPANTA V 1        6,058.56  1496 PICHINCHA           
+ 1210      #1210 MIRIAN MARGOTH TOAPANTA V 1        4,402.00  1516 PICHINCHA           
+ 1215      #1215 MIRIAN MARGOTH TOAPANTA V 1        3,862.81  1453 PICHINCHA           
+ 1216      #1216 MIRIAN MARGOTH TOAPANTA V 1        3,862.81  1444 PICHINCHA           
+ 1217      #1217 MIRIAN MARGOTH TOAPANTA V 1        3,632.01  1444 PICHINCHA           
+ 1820      #1820 MARIA MARCALLA            1        3,100.00   802 PICHINCHA           
+ 1803      #1803 MARIA MARCALLA            1        3,100.00   768 PICHINCHA           
+ 1798      #1798 MARIA MARCALLA            1        3,100.00   740 PICHINCHA           
+ 1257      #1257 MORETA SOLANO JOSELYN MAB 1        3,000.00   129                     
+ 1278      #1278 RUSH CORPORATIONRUSH DAVI 1          805.45    99 GUAYAQUIL           
+
+  ⚠️  8 cheques rebotados hace >1 año — probable que ya nadie los reclame
+
+=== FIN AUDIT D ===

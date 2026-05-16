@@ -32,7 +32,7 @@ class _Cur:
     def __exit__(self, *a):
         return False
 
-    def execute(self, sql, params=None):
+    def execute(self, sql, params=None, conn=None):
         self.parent.executes.append((sql, tuple(params or ())))
         s = " ".join(sql.split()).lower()
         if "insert into scintela.transacciones_bancarias" in s:
@@ -57,13 +57,17 @@ class _DBStub:
         self.cheques = cheques or []
         self.executes: list[tuple] = []
 
-    def fetch_one(self, sql, params=None):
+    def fetch_one(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
-        if "from scintela.banco" in s:
+        if "from scintela.banco" in s and "where no_banco" in s:
             return self.banco_row
-        raise AssertionError(f"fetch_one inesperado: {s[:80]}")
+        if "select saldo from scintela.transacciones_bancarias" in s:
+            return {"saldo": 0}
+        if "from scintela.transacciones_bancarias" in s and "coalesce(sum" in s:
+            return {"sum_signed": 0}
+        return None
 
-    def fetch_all(self, sql, params=None):
+    def fetch_all(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
         if "from scintela.cheque" in s and "where id_cheque in" in s:
             ids_query = set(params or ())

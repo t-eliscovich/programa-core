@@ -29,7 +29,7 @@ class _DBStub:
         self.execute_returning_calls: list[tuple] = []
         self._next_id = 100
 
-    def fetch_one(self, sql, params=None):
+    def fetch_one(self, sql, params=None, conn=None):
         return None
 
     def execute(self, sql, params=None, conn=None):

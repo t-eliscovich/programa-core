@@ -34,7 +34,7 @@
     </div>
     <div class="flex items-center gap-2 no-print">
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-      {% if g.permisos and 'sri.emitir' in g.permisos and fact.stat and fact.stat not in ('X', 'Y') %}
+      {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat not in ('X', 'Y') %}
         <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"
               onsubmit="return confirm('Generar XML SRI para la factura {{ fact.numf_completo or fact.numf }}? Se creará un comprobante electrónico en estado borrador (aún sin firmar ni enviar al SRI).');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -43,13 +43,13 @@
           </button>
         </form>
       {% endif %}
-      {% if g.permisos and 'facturas.editar' in g.permisos and fact.stat and fact.stat not in ('X', 'Y') %}
+      {% if tiene_permiso('facturas.editar') and fact.stat and fact.stat not in ('X', 'Y') %}
         <a href="{{ url_for('facturas.editar', id_factura=fact.id_factura) }}"
            class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30">
           Editar...
         </a>
       {% endif %}
-      {% if g.permisos and 'facturas.anular' in g.permisos and fact.stat and fact.stat not in ('X', 'Y') %}
+      {% if tiene_permiso('facturas.anular') and fact.stat and fact.stat not in ('X', 'Y') %}
         <a href="{{ url_for('facturas.confirmar_anulacion', id_factura=fact.id_factura) }}"
            class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
           Eliminar...

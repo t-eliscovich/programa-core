@@ -1,0 +1,92 @@
+====================================================================================================
+AUDIT C — mov_doble (completo)
+====================================================================================================
+
+--- POR ESTADO ---
+  activo: 5554
+  reversado: 30
+  reverso: 4
+
+--- TOP TIPOS ---
+  factura_emitida: 4917
+  compra_backfill: 184
+  gasto_a_posdat: 177
+  compra_a_posdat: 129
+  caja_s_to_xgast: 113
+  cheque_creado: 17
+  cheque_aplicado_a_factura: 15
+  caja_s_to_retiro_socio: 13
+  cheque_depositado: 7
+  caja_s_to_transfer_banco: 6
+  caja_s_to_compra_proveedor: 2
+  reverso_endoso_cheque: 1
+  caja_e_to_transfer_banco: 1
+  cheque_emitido_retiro: 1
+  endoso_cheque_a_proveedor: 1
+  reverso_caja_e_to_transfer_banco: 1
+  reverso_cheque_aplicacion: 1
+  reverso_cheque_emitido: 1
+  caja_e_simple: 1
+
+--- ORIGEN HUÉRFANOS ---
+   Total origen: 0
+
+--- DESTINO HUÉRFANOS ---
+   ? tabla desconocida: retiros
+   ⚠️  posdat: 1 huérfanos
+   Total destino: 1
+
+--- ESTADO vs REVERSO ---
+    ✓ rev_orig_inexistente: 0
+    ✓ orig_rev_inexistente: 0
+    ⚠️ reversado_sin_id_reverso: 26
+    ✓ reverso_sin_id_original: 0
+
+--- IMPORTE MISMATCH ORIG↔REV: 1 ---
+  orig 5434: $ 50,409.93   rev 5437: $      1.00   tipo=endoso_cheque_a_proveedor
+
+--- BATCH_ID ---
+  con_batch: 30
+  sin_batch: 5558
+  batch_solo_1: 0
+
+  Batches >10 movs:
+    a448b828-396d-4321-9358-26653751613b: 12 movs, tipo=cheque_aplicado_a_factura, f=2026-05-15 14:05:20.434777-03:00
+
+====================================================================================================
+RESUMEN AUDIT C
+====================================================================================================
+  Huérfanos origen: 0
+  Huérfanos destino: 1
+  → script: /sessions/inspiring-pensive-gauss/mnt/Programa Core/AUDIT_C_mov_doble.txt
+
+=== FIN AUDIT C ===
+====================================================================================================
+DETALLE AUDIT C
+====================================================================================================
+
+--- 1. POSDAT HUÉRFANO ---
+  {'id_mov_doble': 339, 'fecha_creacion': datetime.datetime(2026, 5, 13, 12, 32, 49, 248684, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=75600))), 'tipo': 'compra_a_posdat', 'estado': 'activo', 'destino_id': 200, 'importe': Decimal('20000.00'), 'concepto': '[backfill] Compra #10000 ACR'}
+
+--- 2. REVERSADO SIN id_reverso (26) ---
+  id=5592 cheque_aplicado_a_factura      f=2026-05-15 imp=$67.00
+  id=5591 cheque_aplicado_a_factura      f=2026-05-15 imp=$1375.90
+  id=5590 cheque_aplicado_a_factura      f=2026-05-15 imp=$624.10
+  id=5589 cheque_aplicado_a_factura      f=2026-05-15 imp=$2000.00
+  id=5587 cheque_aplicado_a_factura      f=2026-05-15 imp=$-46.35
+  id=5588 cheque_aplicado_a_factura      f=2026-05-15 imp=$1930.19
+  id=5586 cheque_aplicado_a_factura      f=2026-05-15 imp=$-19.71
+  id=5585 cheque_aplicado_a_factura      f=2026-05-15 imp=$-3.75
+  id=5584 cheque_creado                  f=2026-05-15 imp=$67.00
+  id=5583 cheque_creado                  f=2026-05-15 imp=$2000.00
+
+  Breakdown:
+    otros: 26
+
+--- 3. ENDOSO 5434 ↔ REVERSO 5437 ($50409 vs $1) ---
+  id=5434: tipo=endoso_cheque_a_proveedor      estado=reversado imp=$ 50,409.93
+     origen=cheque#977 → destino=compra#395
+     concepto=test
+  id=5437: tipo=reverso_endoso_cheque          estado=reverso imp=$      1.00
+     origen=cheque#977 → destino=cheque#977
+     concepto=REVERSO cheque 977 E→X — aaaaa

@@ -33,7 +33,7 @@
       {% endif %}
       {# Emitir NC sólo si es factura (no otra NC) y está autorizada. #}
       {% if fe.estado == 'autorizado' and (fe.tipo_comprobante or '01') == '01'
-            and g.permisos and 'sri.emitir' in g.permisos %}
+            and tiene_permiso('sri.emitir') %}
         <a href="{{ url_for('sri.nc_form', id_factura_electronica=fe.id_factura_electronica) }}"
            class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700">
           Emitir nota de crédito

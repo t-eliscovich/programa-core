@@ -1,0 +1,103 @@
+====================================================================================================
+AUDIT F — PERFORMANCE
+====================================================================================================
+
+--- TAMAÑO DE TABLAS ---
+  xfactura                          32 MB         0 filas
+  producto                        3616 kB         0 filas
+  mov_doble                       2616 kB       157 filas
+  cliente                         1360 kB      3866 filas
+  factura                         1144 kB      4925 filas
+  transacciones_bancarias          776 kB       663 filas
+  cheque                           680 kB      1917 filas
+  dolares                          392 kB         0 filas
+  cartera_snapshots                312 kB       521 filas
+  caja                             232 kB       520 filas
+  compra                           216 kB       396 filas
+  retiros                          176 kB         0 filas
+  bitacora_acciones                144 kB        15 filas
+  posdat                           144 kB       199 filas
+  caja_backup_pre_0017             128 kB         0 filas
+
+--- ÍNDICES EN TABLAS CLAVE ---
+
+  caja:
+    · caja_pkey                                        (id_caja)
+    · idx_caja_fecha                                   (fecha)
+    · idx_caja_running_saldo                           (fecha, id_caja)
+    · idx_caja_walk_forward                            (fecha, id_caja)
+    · pkey_caja                                        (id_caja)
+
+  cheque:
+    · cheque_id_cheque_padre_idx                       (id_cheque_padre)
+    · cheque_pkey1                                     (id_cheque)
+    · idx_cheque_cli_stat                              (codigo_cli, stat)
+    · idx_cheque_codigo_cli                            (codigo_cli)
+    · idx_cheque_fecha                                 (fecha)
+    · idx_cheque_fecha_postergacion                    (fecha_postergacion)
+    · idx_cheque_fecha_recibido                        (fecha_recibido)
+    · idx_cheque_no_banco                              (no_banco)
+    · idx_cheque_stat                                  (stat)
+    · pkey_cheque                                      (id_cheque)
+
+  compra:
+    · compra_pkey                                      (id_compra)
+    · idx_compra_codigo_prov                           (codigo_prov)
+    · idx_compra_fecha                                 (fecha)
+    · idx_compra_id_transaccion                        (id_transaccion)
+    · idx_compra_stat                                  (stat)
+    · pkey_compra                                      (id_compra)
+
+  factura:
+    · factura_pkey                                     (id_factura)
+    · idx_factura_codigo_cli                           (codigo_cli)
+    · idx_factura_fecha                                (fecha)
+    · idx_factura_stat                                 (stat)
+    · pkey_factura                                     (id_factura)
+    · uq_factura_numf_completo                         (numf_completo)
+
+  mov_doble:
+    · idx_mov_doble_batch_id                           (batch_id)
+    · idx_mov_doble_destino                            (destino_table, destino_id)
+    · idx_mov_doble_estado                             (estado)
+    · idx_mov_doble_fecha                              (fecha_operacion, id_mov_doble)
+    · idx_mov_doble_origen                             (origen_table, origen_id)
+    · idx_mov_doble_tipo                               (tipo)
+    · mov_doble_pkey                                   (id_mov_doble)
+
+  posdat:
+    · idx_posdat_anulada                               (anulada)
+    · idx_posdat_banc                                  (banc)
+    · idx_posdat_fecha                                 (fecha)
+    · idx_posdat_fechad                                (fechad)
+    · idx_posdat_prov                                  (prov)
+    · pkey_posdat                                      (id_posdat)
+
+  transacciones_bancarias:
+    · idx_tbanc_documento                              (documento)
+    · idx_tbanc_fecha                                  (fecha)
+    · idx_tbanc_no_banco                               (no_banco)
+    · idx_tbanc_stat                                   (stat)
+    · idx_txbanc_running_saldo                         (no_banco, fecha, id_transaccion)
+    · idx_txbanc_walk_forward                          (no_banco, no_cta, fecha, id_transaccion)
+    · pkey_transaccion                                 (id_transaccion)
+    · transacciones_bancarias_pkey                     (id_transaccion)
+    · tx_bancarias_fecha_doc_banco_idx                 (fecha, documento, no_banco)
+
+--- TIMING DE QUERIES TÍPICAS ---
+  cheques: lista Todos (LIMIT 500)                        exec=    6.5ms plan=  5.7ms rows=500  (Seq Scan: cheque)
+  cheques: cartera (stat='Z')                             exec=    0.7ms plan=  0.2ms rows=500  (Seq Scan: cheque)
+  cheques: cartera con LIKE no_cheque                     exec=    1.2ms plan=  0.2ms rows=0  (Seq Scan: cheque)
+  facturas: cartera abierta                               exec=    0.2ms plan=  2.1ms rows=500  (Seq Scan: factura)
+  facturas: por cliente BED                               exec=    2.1ms plan=  0.4ms rows=144
+  bancos: Pichincha últimos 100                           exec=    0.8ms plan=  2.3ms rows=100
+  mov_doble: historial último mes                         exec=    1.3ms plan=  2.2ms rows=500
+  posdat: deuda abierta                                   exec=    0.1ms plan=  2.6ms rows=158  (Seq Scan: posdat)
+  stock: snapshot último mes                              ERROR: column "producto" does not exist
+LINE 1: EXPLAIN (ANALYZE, B
+  estado_cuenta: cheques cliente BED                      ERROR: current transaction is aborted, commands ignored until end o
+  calendario: cheques próximos 30 días                    ERROR: current transaction is aborted, commands ignored until end o
+  chequesxfact: pagos cliente                             ERROR: current transaction is aborted, commands ignored until end o
+  informes: gastos último mes                             ERROR: current transaction is aborted, commands ignored until end o
+
+=== FIN AUDIT F ===

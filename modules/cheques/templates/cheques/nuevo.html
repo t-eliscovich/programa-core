@@ -404,7 +404,7 @@
                               ? 'Tildear absorbe el crédito (aplica monto negativo al cheque)'
                               : 'Cancela la factura entera (aplica el saldo completo)'}">
             </td>
-            <td class="px-3 py-1.5 font-mono text-xs">${f.numf || '—'}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
+            <td class="px-3 py-1.5 font-mono text-xs">${f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : `<span class="text-slate-400">#${f.id_factura}</span>`)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
             <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.fecha)}</td>
             <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.vencimiento)}</td>
             <td class="px-3 py-1.5 text-right font-mono tabular-nums ${saldoClass}">${fmt(f.saldo)}</td>
