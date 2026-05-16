@@ -442,7 +442,15 @@ def crear(
         raise ValueError("Importe debe ser mayor que cero.")
 
     if num is None:
-        num = proximo_numero()
+        # Bug F fix (TMT 2026-05-16): `xgast.num` debe ser la categoría
+        # V1..V9 que el balance usa para armar GTEJ/GTIN/GGF. Antes acá
+        # poníamos `proximo_numero()` (correlativo 12,13,…) que rompía el
+        # cálculo del balance. Ahora pasamos por `sugerir_categoria()`
+        # que matchea el concepto contra KEYWORDS_TO_CATEGORIA. Si no
+        # matchea, fallback a V9 (gastos varios admin) como categoría
+        # neutral del balance.
+        sugerido = sugerir_categoria(concepto)
+        num = sugerido if sugerido is not None else 9
 
     # Normalizar categoría
     doc_norm = (doc or "").upper().strip()
