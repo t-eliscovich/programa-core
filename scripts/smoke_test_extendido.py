@@ -1317,13 +1317,13 @@ def test_DB1_plazos_cobro_server_side_consistente() -> int:
         raise SkipTest("informes.queries no expone plazo_promedio_cobranza/plazo_cobro")
     res = fn() if fn.__code__.co_argcount == 0 else fn(date.today())
     # Tolerante con shape: dict con 'plazo_cobro' o número directo.
-    plazo = res if isinstance(res, (int, float)) else \
+    plazo = res if isinstance(res, int | float) else \
             res.get("plazo_cobro", res.get("dias", 0)) if isinstance(res, dict) \
             else 0
     asserts += 1
     # Cualquier valor razonable indica que la función corre — el test verifica
     # que no crashea + devuelve numérico.
-    assert isinstance(plazo, (int, float)), f"plazo no es numérico: {plazo!r}"
+    assert isinstance(plazo, int | float), f"plazo no es numérico: {plazo!r}"
     asserts += 1
     return asserts
 
