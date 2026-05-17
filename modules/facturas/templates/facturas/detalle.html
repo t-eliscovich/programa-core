@@ -91,6 +91,8 @@
           <th class="px-3 py-3 text-left font-medium">F. aplic.</th>
           <th class="px-3 py-3 text-left font-medium">N° cheque</th>
           <th class="px-3 py-3 text-left font-medium">F. cheque</th>
+          {# TMT 2026-05-17: F. depósito (original + postergada en sub-line si postergó). #}
+          <th class="px-3 py-3 text-left font-medium" title="Fecha a depositar. Si el cheque fue postergado, abajo muestra la última postergación.">A depositar</th>
           <th class="px-3 py-3 text-left font-medium">Banco</th>
           <th class="px-3 py-3 text-right font-medium">Importe cheque</th>
           <th class="px-3 py-3 text-right font-medium">Aplicado</th>
@@ -109,6 +111,19 @@
             {% endif %}
           </td>
           <td class="px-3 py-2 text-xs text-slate-500">{{ a.cheque_fecha | fecha_es }}</td>
+          {# TMT 2026-05-17: F. depósito — original arriba, postergada
+             abajo en chico/amber si fue postergado. #}
+          <td class="px-3 py-2 text-xs">
+            {% set fechad_orig = a.fechad_original or a.fechad %}
+            {% if a.fechad_original and a.fechad and a.fechad != a.fechad_original %}
+              <div class="leading-tight">
+                <div class="text-slate-600">{{ fechad_orig | fecha_es }}</div>
+                <div class="text-[10px] text-amber-700" title="Última postergación{% if a.fecha_postergacion %} ({{ a.fecha_postergacion | fecha_es }}){% endif %}">↪ {{ a.fechad | fecha_es }}</div>
+              </div>
+            {% else %}
+              <span class="text-slate-600">{{ fechad_orig | fecha_es if fechad_orig else '—' }}</span>
+            {% endif %}
+          </td>
           <td class="px-3 py-2 text-xs">{{ a.cheque_banco }}</td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.cheque_importe | money_es }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ a.aplicado | money_es }}</td>
@@ -121,7 +136,7 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin cheques aplicados.') }}
+        {{ empty_row(10, 'Sin cheques aplicados.') }}
         {% endfor %}
       </tbody>
     </table>

@@ -161,7 +161,7 @@ CONCEPTO_LEGACY_LABEL = {
     "PICH":  f"Depósito a banco {BANCO_PICHINCHA}",
     "INTER": f"Depósito a banco {BANCO_INTERNACIONAL}",
     "PR":    "Pago a proveedor",
-    "RR":    "Retiro de socio",
+    "RR":    "Retiro de capital",
     "IN":    "Movimiento de cuenta dólares",
     "INHB":  "Caja chica / día inhábil",
 }

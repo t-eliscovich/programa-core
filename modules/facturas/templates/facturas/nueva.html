@@ -1,28 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Nueva factura{% endblock %}
-{% block breadcrumb %}<a href="{{ url_for('facturas.lista') }}">Facturas</a> / <strong>Nueva</strong>{% endblock %}
+{% block title %}Ventas — Nueva factura{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('facturas.lista') }}" class="hover:underline text-slate-500">Facturas</a> / <strong>Nueva</strong>{% endblock %}
 
 {% block content %}
-<div class="max-w-3xl">
-  <div class="mb-6">
-    <h1 class="text-2xl font-semibold">Nueva factura de venta</h1>
-    <p class="text-sm text-slate-500 mt-1">
+{# TMT 2026-05-17 — patrón estándar (ver .page-shell en base.html). #}
+<div class="page-shell page-shell--md">
+  <header class="page-header">
+    <h1 class="page-title">Ventas — nueva factura</h1>
+    <p class="page-subtitle">
       Los campos obligatorios están marcados con <span class="text-red-500">*</span>.
       Si dejás el N° en blanco se asigna automáticamente el siguiente.
     </p>
-  </div>
+  </header>
 
   {% if errores %}
-    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
-      <p class="font-medium mb-1">Revisá estos datos:</p>
-      <ul class="list-disc list-inside space-y-0.5">
-        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
-      </ul>
+    <div class="page-error">
+      <p>Revisá estos datos:</p>
+      <ul>{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
     </div>
   {% endif %}
 
-  <form method="POST" action="{{ url_for('facturas.nueva') }}"
-        class="space-y-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6">
+  <form method="POST" action="{{ url_for('facturas.nueva') }}" class="page-card space-y-5">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -101,29 +99,23 @@
                class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-right font-mono">
       </div>
       <div>
-        <label class="block text-xs text-slate-500 mb-1">Vencimiento</label>
+        <label class="block text-xs text-slate-500 mb-1">Vencimiento <span class="text-slate-400 normal-case">(por defecto + 30 días)</span></label>
+        {# TMT 2026-05-17: default = fecha + 30 días, autocompletado al cargar.
+           Si la dueña lo deja vacío, el backend usa fecha + plazo del cliente
+           como antes — pero la mayoría de las facturas son +30, así que prellenamos. #}
         <input name="vencimiento" type="text" value="{{ form.vencimiento or '' }}"
                placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off"
                oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
+               data-default-plus-days="30"
                class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
-        <p class="text-xs text-slate-400 mt-1">Si lo dejás vacío: fecha + plazo del cliente.</p>
+        <p class="text-xs text-slate-400 mt-1">Cargado con +30 días desde hoy. Editá si va a ser otro plazo.</p>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Condición</label>
-        <input name="condic" type="text" maxlength="2" value="{{ form.condic or '' }}"
-               placeholder="Ej: CR / CT"
-               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
-      </div>
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Tipo</label>
-        <input name="tipo" type="text" maxlength="2" value="{{ form.tipo or '' }}"
-               placeholder=""
-               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
-      </div>
-    </div>
+    {# TMT 2026-05-17: campos "Condición" y "Tipo" sacados a pedido — la dueña
+       nunca los usa y el backend los acepta como NULL. Sigue en la DB para
+       compat con dBase. Si en algún momento se quieren volver a editar,
+       el detalle de factura los sigue mostrando. #}
 
     <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
       <a href="{{ url_for('facturas.lista') }}"
@@ -142,4 +134,54 @@
     Las reglas siguen a <code>ALTAS.PRG</code> del dBase original.
   </p>
 </div>
+
+<script>
+  // TMT 2026-05-17: auto-prellenar Vencimiento = fecha + 30 días si está vacío.
+  // Si la dueña tipea otra fecha, no la pisamos. Si edita la "Fecha" emisión,
+  // recalculamos sólo si el vencimiento sigue siendo el auto-default.
+  (function () {
+    const venc = document.querySelector('input[name="vencimiento"][data-default-plus-days]');
+    const fecha = document.querySelector('input[name="fecha"]');
+    if (!venc) return;
+
+    function toDDMMAAAA(d) {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = d.getFullYear();
+      return `${dd}/${mm}/${yy}`;
+    }
+    function parseDDMMAAAA(s) {
+      const m = (s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) return null;
+      const [_, dd, mm, yy] = m;
+      const d = new Date(+yy, +mm - 1, +dd);
+      return isNaN(d) ? null : d;
+    }
+    function calcular(base) {
+      const d = parseDDMMAAAA(base) || new Date();
+      d.setDate(d.getDate() + 30);
+      return toDDMMAAAA(d);
+    }
+
+    // Al cargar la página — sólo si está vacío.
+    if (!venc.value.trim()) {
+      venc.value = calcular(fecha ? fecha.value : '');
+      venc.dataset.wasAutoFilled = '1';
+    }
+
+    // Si la usuaria cambia la fecha emisión y el venc todavía es auto,
+    // recalculamos. Si ya lo editó manualmente, dejamos lo suyo.
+    if (fecha) {
+      fecha.addEventListener('blur', () => {
+        if (venc.dataset.wasAutoFilled === '1') {
+          venc.value = calcular(fecha.value);
+        }
+      });
+    }
+    // Cuando la dueña toca vencimiento, deja de ser auto.
+    venc.addEventListener('input', () => {
+      venc.dataset.wasAutoFilled = '0';
+    });
+  })();
+</script>
 {% endblock %}

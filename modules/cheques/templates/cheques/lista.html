@@ -6,7 +6,8 @@
 {% block content %}
 {% set n_visibles = filas | length %}
 {% set n = n_total or n_visibles %}
-<div class="max-w-full">
+{# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
+<div class="page-shell page-shell--full">
   {# Header limpio: título arriba, KPI grande abajo, acciones a la derecha
      agrupadas por importancia (primarias destacadas + dropdown "Más" para
      las menos usadas). TMT 2026-05-13 — antes había 8 botones de igual
@@ -109,23 +110,22 @@
               + (c_dev_gest.get('total', 0) | float)
               + (c_postergados.get('total', 0) | float)
               + (c_daniela.get('total', 0) | float) %}
-  <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+  {# TMT 2026-05-17: simplificado de 3 KPIs a 2.
+     Antes había "Cheques en gestión" + "En cartera (Z)" + "Depositados (B)".
+     Los tabs de abajo ya muestran el detalle por estado — el KPI "(Z)" era
+     subset redundante del de gestión. Quedan 2 grandes:
+       - "Cheques en cartera" = todos los vivos (Z+1,2,3-R+P+D) = TOTC balance.
+       - "Depositados (B)" = ya en banco. #}
+  <div class="no-print grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
     <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-br from-emerald-50 to-emerald-100/40 dark:from-emerald-900/30 dark:to-emerald-900/15 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Cheques en gestión</div>
+      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Cheques en cartera</div>
       <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">
         $ {{ totc | num_es(0) }}
       </div>
-      <div class="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
-        Z + (1,2,3 sin R) + P + D · = TOTC del balance
-      </div>
-    </div>
-    <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">En cartera (Z)</div>
-      <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-1">
-        $ {{ c_cartera.get('total', 0) | float | num_es(0) }}
-      </div>
-      <div class="text-xs text-slate-500 mt-1">
-        {{ c_cartera.get('n', 0) }} cheques sin movimiento
+      <div class="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1"
+           title="Cheques vivos (Z = limpia, 1/2/3 = devueltos sin R, P = postergados, D = Daniela). Coincide con TOTC del balance.">
+        {{ (c_cartera.get('n', 0) or 0) + (c_dev_gest.get('n', 0) or 0)
+           + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) }} cheques
       </div>
     </div>
     <div class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-3">
@@ -223,7 +223,13 @@
         <tr>
           <th class="px-3 py-3 text-left font-medium">N°</th>
           <th class="px-3 py-3 text-left font-medium" title="Día en que cargué el cheque en el sistema" data-sort-type="date">Cargado</th>
-          <th class="px-3 py-3 text-left font-medium" title="Día planificado de depósito (postdate / fechad). No cambia al depositar." data-sort-type="date" data-acum-driver>A depositar</th>
+          {# TMT 2026-05-17: split "A depositar" en dos columnas. La original
+             nunca cambia; "Postergada" se llena con la última fecha cuando
+             el cheque fue postergado (1ra postergar() snapshotea fechad
+             en fechad_original; postergaciones siguientes pisan fechad
+             pero NO fechad_original). #}
+          <th class="px-3 py-3 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. depósito (orig.)</th>
+          <th class="px-3 py-3 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
           <th class="px-3 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
           <th class="px-3 py-3 text-right font-medium" title="Días entre la carga y el depósito real (o el planificado si todavía no se depositó)" data-sort-type="number">Plazo</th>
           <th class="px-3 py-3 text-left font-medium">Cliente</th>
@@ -260,7 +266,20 @@
           {% set ya_depositado = stat_u in ('B','A','1','2','3','R') %}
           {% set fechaing_real = c.fechaing if ya_depositado else None %}
           <td class="px-3 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
-          <td class="px-3 py-2" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '—' }}</td>
+          {# TMT 2026-05-17: fechad_original NULL = no fue postergado → la
+             fechad actual ES la original. NOT NULL = fue postergado y
+             fechad_original guarda la 1ra. #}
+          {% set fechad_original = c.fechad_original or c.fechad %}
+          <td class="px-3 py-2" style="white-space: nowrap;">{{ fechad_original | fecha_es if fechad_original else '—' }}</td>
+          <td class="px-3 py-2" style="white-space: nowrap;">
+            {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
+              <span class="text-amber-700 dark:text-amber-400 font-medium" title="Última fecha postergada (postergación del {{ c.fecha_postergacion | fecha_es if c.fecha_postergacion else '?' }})">
+                {{ c.fechad | fecha_es }}
+              </span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
           <td class="px-3 py-2" style="white-space: nowrap;">
             {% if fechaing_real %}
               <span class="font-medium text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>

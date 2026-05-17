@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero, kpi_card %}
-{% block title %}Movimientos del dueño{% endblock %}
-{% block breadcrumb %}<strong>Movimientos del dueño</strong>{% endblock %}
+{% block title %}Movimientos de capital{% endblock %}
+{% block breadcrumb %}<strong>Movimientos de capital</strong>{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl">
@@ -9,7 +9,7 @@
     {% set _kpi_valor = ('$ ' ~ (estado.patri | num_es(0))) if (estado and estado.patri is not none) else '' %}
     {% set _kpi_extra = ('· patrimonio al ' ~ (estado.fecha | fecha_es)) if (estado and estado.fecha) else '· patrimonio' %}
     {{ page_hero(
-        'Movimientos del dueño',
+        'Movimientos de capital',
         kpi_valor=_kpi_valor,
         kpi_extra=_kpi_extra
     ) }}
@@ -17,13 +17,13 @@
       {% if tiene_permiso('capital.crear') %}
         <a href="{{ url_for('capital.aportar') }}"
            class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm transition"
-           title="Aporte del dueño con link automático a banco/caja">
+           title="Aporte de capital con link automático a banco/caja">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
           Aporte
         </a>
         <a href="{{ url_for('capital.retirar') }}"
            class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-sm transition"
-           title="Retiro de socio con link automático a banco/caja">
+           title="Retiro de capital / dividendos — con link automático a banco/caja">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
           Retiro
         </a>

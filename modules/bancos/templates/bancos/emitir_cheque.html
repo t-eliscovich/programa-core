@@ -10,7 +10,7 @@
     <strong>Cómo funciona:</strong> tipeá el concepto y el sistema detecta el tipo
     automáticamente (PR&nbsp;ACR&nbsp;… → proveedor, RR&nbsp;TMT&nbsp;… → retiro, etc.) — siempre
     podés override-arlo manualmente. En una sola operación se registra el movimiento
-    bancario Y el efecto contable correspondiente (cierre de posdat / retiro de socio /
+    bancario Y el efecto contable correspondiente (cierre de posdat / retiro de capital /
     movimiento a caja / gasto registrado). Reemplaza <code>BANCOS.PRG &gt; CHEQUERA</code>
     del legacy dBase.
   </div>
@@ -24,22 +24,34 @@
       <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-2">
         1. ¿Qué estás pagando?
       </h2>
-      <div class="grid grid-cols-1 md:grid-cols-5 gap-2" id="tipo-grid">
+      {# TMT 2026-05-17 — 6 cards (era 5). Agregada "Anticipo USD" para
+         que el flujo de pagar materia prima en cuenta dólares (IN.<CT>)
+         tenga su card propia y registre la fila en scintela.dolares.
+         Si la URL trae ?tipo=<X>, ese radio queda pre-seleccionado. #}
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="tipo-grid">
         <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
-          <input type="radio" name="tipo" value="proveedor" class="sr-only" data-target="campos-proveedor" required>
+          <input type="radio" name="tipo" value="proveedor" class="sr-only" data-target="campos-proveedor"
+                 {% if tipo_inicial == 'proveedor' %}checked{% endif %} required>
           <div class="text-2xl">🏭</div>
           <div class="font-medium text-sm mt-1">Proveedor</div>
           <div class="text-xs text-slate-500 mt-0.5">Pagar materia prima / servicio</div>
         </label>
         <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
+          <input type="radio" name="tipo" value="anticipo_usd" class="sr-only" data-target="campos-anticipo_usd"
+                 {% if tipo_inicial == 'anticipo_usd' %}checked{% endif %}>
+          <div class="text-2xl">💵</div>
+          <div class="font-medium text-sm mt-1">Anticipo USD</div>
+          <div class="text-xs text-slate-500 mt-0.5">Pago en cuenta dólares (IN.&lt;CT&gt;)</div>
+        </label>
+        <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
           <input type="radio" name="tipo" value="retiro" class="sr-only" data-target="campos-retiro">
           <div class="text-2xl">👤</div>
-          <div class="font-medium text-sm mt-1">Retiro dueño</div>
-          <div class="text-xs text-slate-500 mt-0.5">Plata para el socio</div>
+          <div class="font-medium text-sm mt-1">Retiro de capital</div>
+          <div class="text-xs text-slate-500 mt-0.5">Pago de dividendos al accionista</div>
         </label>
         <label class="cursor-pointer border rounded-lg p-3 hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50">
           <input type="radio" name="tipo" value="caja" class="sr-only" data-target="campos-caja">
-          <div class="text-2xl">💵</div>
+          <div class="text-2xl">💴</div>
           <div class="font-medium text-sm mt-1">A caja</div>
           <div class="text-xs text-slate-500 mt-0.5">Banco → caja física</div>
         </label>
@@ -204,11 +216,11 @@
 
       <div id="campos-retiro" class="campos-tipo hidden space-y-3">
         <p class="text-xs text-slate-500">
-          Indicá el código del socio que retira (legacy: 2 letras tipo TM, GH).
+          Indicá el código del accionista que retira (legacy: 2 letras tipo TM, GH).
         </p>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-            Código del socio
+            Código del accionista
           </label>
           <input type="text" name="de_socio" placeholder="Ej. TM" maxlength="5"
                  class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
@@ -221,6 +233,26 @@
           Se registra como entrada de caja física (<code>caja.tipo='E'</code>).
           No hace falta más datos.
         </p>
+      </div>
+
+      {# TMT 2026-05-17 — Anticipo USD: pago a proveedor en cuenta dólares.
+         La cuenta (2 letras, ej. MP) se mapea a scintela.dolares.cta. Si
+         tipeaste IN.<CT> en concepto, ya viene pre-cargado. #}
+      <div id="campos-anticipo_usd" class="campos-tipo hidden space-y-3">
+        <p class="text-xs text-slate-500">
+          Equivale al legacy <code>IN.&lt;CT&gt;</code> de <code>BANCOS.PRG</code>.
+          Crea la fila en <code>scintela.dolares</code> con la cuenta indicada;
+          cuando llegue la factura del proveedor se aplica vía BAP.
+        </p>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Código de cuenta USD <span class="text-rose-500">*</span>
+          </label>
+          <input type="text" name="beneficiario" placeholder="Ej. MP" maxlength="5"
+                 class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
+                 oninput="this.value=this.value.toUpperCase()">
+          <p class="text-xs text-slate-400 mt-1">2 letras — coincide con la cuenta dólares del proveedor.</p>
+        </div>
       </div>
 
       <div id="campos-gasto" class="campos-tipo hidden space-y-3">
@@ -302,8 +334,10 @@
     let cTimer = null;
     let cLastSugerencia = null;
     const tipoLabels = {
-      proveedor: 'Proveedor', retiro: 'Retiro dueño',
-      caja: 'A caja', gasto: 'Gasto', otro: 'Otro',
+      proveedor: 'Proveedor', retiro: 'Retiro de capital',
+      caja: 'A caja', gasto: 'Gasto',
+      anticipo_usd: 'Anticipo USD',  // TMT 2026-05-17
+      otro: 'Otro',
     };
     function setRadio(tipo, extras) {
       const radio = document.querySelector(`input[name="tipo"][value="${tipo}"]`);

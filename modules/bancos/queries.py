@@ -179,7 +179,7 @@ def banco_info(no_banco: int) -> dict | None:
 #
 # TODOS comparten: INSERT en transacciones_bancarias con documento='CH'.
 
-TIPOS_CHEQUE_EMITIDO = ("proveedor", "retiro", "caja", "gasto", "otro")
+TIPOS_CHEQUE_EMITIDO = ("proveedor", "retiro", "caja", "gasto", "anticipo_usd", "otro")
 
 
 def emitir_cheque(
@@ -330,6 +330,36 @@ def emitir_cheque(
             )
             extras["id_xgast"] = id_xgast
 
+        elif tipo == "anticipo_usd":
+            # TMT 2026-05-17: paridad dBase BANCOS.PRG > CHEQUERA con concepto
+            # `IN.<CT>` o `IN <CT>` — emite un cheque a un proveedor en cuenta
+            # dólares. La fila en `scintela.dolares` representa el anticipo
+            # entregado (cuando llegue la factura del proveedor, se aplica vía
+            # BAP). `beneficiario` es el código de cuenta USD (2 letras, ej. MP).
+            cta_usd = (beneficiario or "")[:5].upper()
+            if not cta_usd:
+                raise ValueError(
+                    "Anticipo USD requiere código de cuenta dólares (2 letras, "
+                    "ej. MP). Usá el campo beneficiario o tipeá IN.<CT> en concepto."
+                )
+            cur.execute(
+                """
+                INSERT INTO scintela.dolares
+                    (fecha, cta, importe, concepto, usuario_crea)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id_dolares
+                """,
+                (
+                    fecha, cta_usd, importe_f,
+                    (concepto or f"Anticipo USD cta {cta_usd}")[:50],
+                    usuario[:50],
+                ),
+            )
+            dr = cur.fetchone()
+            id_dolares = dr[0] if isinstance(dr, list | tuple) else (dr.get("id_dolares") if dr else None)
+            side_effect = f"Anticipo USD #{id_dolares} (cuenta {cta_usd})"
+            extras["id_dolares"] = id_dolares
+
         # tipo == "otro" → no side-effect (el INSERT en transacciones_bancarias ya alcanza)
 
         # Registrar movimiento doble si tuvo side effect (TMT 2026-05-12).
@@ -344,6 +374,8 @@ def emitir_cheque(
                 destino_table, destino_id = "caja", extras["id_caja"]
             elif tipo == "gasto" and extras.get("id_xgast"):
                 destino_table, destino_id = "xgast", extras["id_xgast"]
+            elif tipo == "anticipo_usd" and extras.get("id_dolares"):
+                destino_table, destino_id = "dolares", extras["id_dolares"]
             if destino_table:
                 import mov_doble as _md
                 id_mov_doble = _md.registrar(

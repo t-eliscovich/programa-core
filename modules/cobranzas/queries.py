@@ -28,6 +28,9 @@ def cheques_proximos(dias_atras: int = 7, dias_adelante: int = 30) -> list[dict]
                ch.no_cheque,
                ch.fecha,
                ch.fechad,
+               -- TMT 2026-05-17: fechad_original NULL = sin postergar.
+               ch.fechad_original,
+               ch.fecha_postergacion,
                ch.importe,
                ch.codigo_cli,
                ch.banco,

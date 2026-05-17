@@ -4,7 +4,8 @@
 {% block breadcrumb %}<strong>Bancos</strong>{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl">
+{# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
+<div class="page-shell page-shell--full">
   {# Total general de bancos — el número que todos vienen a ver.
      Bug histórico (2026-05-06): `{% set var = var + x %}` dentro de un
      `{% for %}` NO acumula en Jinja2 — usar namespace. #}

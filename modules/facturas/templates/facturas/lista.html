@@ -4,7 +4,8 @@
 {% block breadcrumb %}<strong>Facturas</strong>{% endblock %}
 
 {% block content %}
-<div class="max-w-full">
+{# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
+<div class="page-shell page-shell--full">
   {# Totales del universo completo — del bucket conteos. Lo que ve el balance. #}
   {% set c_cartera = conteos.get('cartera', {}) %}
   {% set c_canc    = conteos.get('canceladas', {}) %}
@@ -73,26 +74,27 @@
     </div>
   </div>
 
-  {# KPIs secundarios — facturado total y canceladas. Tono slate (neutro). #}
-  <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-    {{ kpi_card('Facturado total',
-                '$ ' ~ (tot_todas_imp | num_es(0)),
-                (n_total | string) ~ ' facturas (todas las stats)') }}
-    {{ kpi_card('Canceladas',
-                '$ ' ~ (c_canc.get('total_importe', 0) | float | num_es(0)),
-                (c_canc.get('n', 0) | string) ~ ' cobradas total (stat=T)') }}
-    {{ kpi_card('Eliminadas',
-                '$ ' ~ (c_elim.get('total_importe', 0) | float | num_es(0)),
-                (c_elim.get('n', 0) | string) ~ ' anuladas (stat=Y)') }}
+  {# TMT 2026-05-17: simplificado. La dueña pidió quitar el resumen
+     redundante y dejar el dato que importa: "Facturas en cartera" = lo
+     vivo, lo que falta cobrar. Antes había 3 KPIs (Facturado total /
+     Canceladas / Eliminadas); las stats secundarias siguen visibles en
+     los tabs de abajo. #}
+  {% set c_cartera = conteos.get('cartera', {}) %}
+  <div class="no-print grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+    {{ kpi_card('Facturas en cartera',
+                '$ ' ~ (c_cartera.get('total_saldo', 0) | float | num_es(0)),
+                (c_cartera.get('n', 0) | string) ~ ' facturas vivas con saldo > 0') }}
+    {{ kpi_card('Facturado en el período',
+                '$ ' ~ (c_cartera.get('total_importe', 0) | float | num_es(0)),
+                'importe total emitido (sin abonos)') }}
   </div>
 
-  {# Pestañas por estado (2026-04-29) — vocabulario canónico.
-     "Todas" primero por pedido de la dueña (29/abr). #}
+  {# Pestañas por estado — TMT 2026-05-17: removidas "Canceladas" y
+     "Eliminadas" del header (sólo importan en auditoría puntual).
+     Quedan "Todas" + "Cartera" + un enlace explícito a auditoría. #}
   {% set tabs = [
     ('todas',      'Todas',      'total_importe'),
-    ('cartera',    'Cartera',    'total_saldo'),
-    ('canceladas', 'Canceladas', 'total_importe'),
-    ('eliminadas', 'Eliminadas', 'total_importe'),
+    ('cartera',    'En cartera', 'total_saldo'),
   ] %}
   <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     {% for key, label, monto_key in tabs %}

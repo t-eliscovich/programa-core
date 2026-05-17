@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_header %}
 
-{% block title %}Retiros del dueño{% endblock %}
+{% block title %}Retiros de capital{% endblock %}
 
 {% block content %}
-  {{ page_header("Retiros del dueño", "Plata que el dueño saca de la empresa") }}
+  {{ page_header("Retiros de capital", "Movimientos de salida de patrimonio (dividendos / retiros)") }}
 
   {% if error %}
     <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
@@ -76,7 +76,7 @@
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="Concepto, socio…"
+      <input type="text" name="q" value="{{ q }}" placeholder="Concepto, accionista…"
              class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     <div>

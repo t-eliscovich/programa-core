@@ -36,17 +36,22 @@ import db
 # el dump histórico — la búsqueda es case-insensitive.
 _CATEGORIA_CASE_SQL = """
     CASE
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('TER','TERRENO','PRED','PROP','TERRENOS')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(TERRENO|PREDIO|LOTE|PROPIEDAD|FINCA)'
+      -- Inmuebles: terreno, edificio, instalaciones.
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('TER','EDF','INS','TERRENO','PRED','PROP','TERRENOS','EDIFICIO','INSTALACIONES')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(TERRENO|PREDIO|LOTE|PROPIEDAD|FINCA|EDIFICIO|INSTALAC|BODEGA)'
         THEN 1
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('MAQ','MAQUINARIA','MAQUINA','MAQUINAS')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(MAQUINA|TELAR|TINTE|RAMA|TERMOFI)'
+      -- Producción: incluye secciones específicas (HIL/TEJ/TIN/QUI/ACA) +
+      -- maquinaria genérica + herramientas. TMT 2026-05-17.
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('MAQ','HER','EQO','HIL','TEJ','TIN','QUI','ACA','MAQUINARIA','MAQUINA','MAQUINAS','HERRAMIENTAS','EQUIPOS','HILADO','TEJEDURIA','TINTURA','QUIMICOS','ACABADO')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(MAQUINA|TELAR|TINTE|RAMA|TERMOFI|HERRAMIENT|HILADO|TEJED|TINTUR|QUIMIC|ACABAD)'
         THEN 2
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('VEH','VEHICULO','AUTO','CAMION','CAMIONETA','VEHICULOS')
+      -- Vehículos.
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('VEH','CAR','VEHICULO','AUTO','CAMION','CAMIONETA','VEHICULOS')
         OR UPPER(COALESCE(a.concepto, '')) ~ '(VEHICULO|CAMION|AUTO|CAMIONETA|MOTO)'
         THEN 3
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('OFI','OFICINA','COMP','COMPUTO','EQO','EQUIPOS')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(COMPUTAD|IMPRESORA|MUEBLE|OFICINA)'
+      -- Oficina: cómputo, muebles, software.
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('OFI','MUE','SFW','OFICINA','COMP','COMPUTO','MUEBLES','SOFTWARE')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(COMPUTAD|IMPRESORA|MUEBLE|OFICINA|SOFTWARE|INTANGIB)'
         THEN 4
       ELSE 5
     END
@@ -210,6 +215,81 @@ def resumen() -> dict:
         "amortizado":   float(row.get("amortizado") or 0),
         "cuota_mes":    float(row.get("cuota_mes") or 0),
         "valor_libros": float(row.get("valor_libros") or 0),
+    }
+
+
+def crear(
+    *,
+    fecha: date,
+    concepto: str,
+    tipo: str,
+    inicial,
+    vida_util_meses: int,
+    cuota=None,
+    id_proveedor: int | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Alta de un activo fijo.
+
+    Args:
+        fecha: fecha de compra (usada como base para amortización).
+        concepto: descripción del activo (ej. "Telar Sulzer #3").
+        tipo: código de 3 letras (TER/MAQ/VEH/OFI/OTR).
+        inicial: valor de compra en USD.
+        vida_util_meses: meses de vida útil.
+        cuota: depreciación mensual fija. Si None, se calcula =
+               inicial / vida_util (cuotas iguales mes a mes).
+        id_proveedor: FK opcional a scintela.proveedor.
+
+    Crea con amortizac=0, amortimes=0, valor=inicial, ult_mes_amortizado=NULL.
+    La proc `actualizar_amortizacion()` aplica la cuota mensual desde el
+    próximo cierre de mes. TMT 2026-05-17.
+    """
+    concepto = (concepto or "").strip()
+    if not concepto:
+        raise ValueError("El concepto/descripción es obligatorio.")
+    tipo = (tipo or "").strip().upper()[:3]
+    if not tipo:
+        raise ValueError("Elegí un tipo (Maquinaria / Vehículo / etc).")
+    importe_inicial = float(inicial or 0)
+    if importe_inicial <= 0:
+        raise ValueError("El valor inicial debe ser mayor a cero.")
+    vida_util_meses = int(vida_util_meses or 0)
+    if vida_util_meses <= 0:
+        raise ValueError("La vida útil (meses) debe ser mayor a cero.")
+
+    # Cuota: si no viene, calcular = inicial / vida_util.
+    if cuota is None or float(cuota or 0) <= 0:
+        cuota_f = round(importe_inicial / vida_util_meses, 2)
+    else:
+        cuota_f = float(cuota)
+        if cuota_f * vida_util_meses < importe_inicial * 0.5:
+            raise ValueError(
+                f"La cuota ${cuota_f:.2f} × {vida_util_meses} meses = "
+                f"${cuota_f * vida_util_meses:.2f}, menos de la mitad del "
+                f"valor inicial ${importe_inicial:.2f}. Revisá."
+            )
+
+    row = db.execute_returning(
+        """
+        INSERT INTO scintela.activos
+            (fecha, concepto, tipo, inicial, amortizac, amortimes, valor,
+             cuota, vida_util, id_proveedor, usuario_crea)
+        VALUES (%s, %s, %s, %s, 0, 0, %s, %s, %s, %s, %s)
+        RETURNING id_activos
+        """,
+        (
+            fecha, concepto[:100], tipo, importe_inicial,
+            importe_inicial, cuota_f, vida_util_meses,
+            id_proveedor, usuario[:50],
+        ),
+    )
+    return {
+        "id_activos":   int(row["id_activos"]) if row else 0,
+        "concepto":     concepto,
+        "cuota":        cuota_f,
+        "vida_util":    vida_util_meses,
+        "inicial":      importe_inicial,
     }
 
 

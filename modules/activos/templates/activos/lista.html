@@ -46,6 +46,13 @@
 
   {# --- Acciones --------------------------------------------------------- #}
   <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+    {% if tiene_permiso('activos.crear') %}
+      <a href="{{ url_for('activos.nuevo') }}"
+         class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-emerald-500 shadow-sm">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Nuevo activo
+      </a>
+    {% endif %}
     <a href="{{ url_for('activos.lista', q=q, tipo=tipo, solo_activos=('1' if solo_activos else None), export='csv') }}"
        class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">
       Exportar CSV

@@ -1,18 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Nuevo cheque{% endblock %}
+{% block title %}Cobranza — Nuevo cheque{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('cheques.lista') }}" class="hover:underline text-slate-500">Cheques</a> / <strong>Cobranza</strong>{% endblock %}
+
 {% block content %}
-<div class="max-w-6xl mx-auto py-4 px-4">
-  <h1 class="text-xl font-semibold mb-3">Nuevo cheque</h1>
+{# TMT 2026-05-17 — patrón estándar de página (ver .page-shell en base.html). #}
+<div class="page-shell page-shell--xl">
+  <header class="page-header">
+    <h1 class="page-title">Cobranza — nuevo cheque</h1>
+    <p class="page-subtitle">
+      Cargá el cheque (o varios del mismo cliente) y opcionalmente aplicalo a
+      facturas abiertas. Los campos obligatorios están marcados con
+      <span class="text-red-500">*</span>.
+    </p>
+  </header>
 
   {% if errores %}
-    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
-      <ul class="list-disc pl-6">
-        {% for e in errores %}<li>{{ e }}</li>{% endfor %}
-      </ul>
+    <div class="page-error">
+      <p>Revisá estos datos:</p>
+      <ul>{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul>
     </div>
   {% endif %}
 
-  <form method="post" id="cheque-form" class="bg-white border rounded-lg p-3 shadow-sm">
+  <form method="post" id="cheque-form" class="page-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {# Layout 2 columnas: form a la izquierda, anticipo al costado.
@@ -190,13 +199,17 @@
                 <th class="px-3 py-2 text-left font-medium">N°</th>
                 <th class="px-3 py-2 text-left font-medium">Fecha</th>
                 <th class="px-3 py-2 text-left font-medium">Vence</th>
-                <th class="px-3 py-2 text-right font-medium">Saldo</th>
+                {# TMT 2026-05-17 — saldo de la factura en 3 columnas separadas (pedido cobranza):
+                   TOTAL = importe original; ABONADO = lo ya cobrado antes; SALDO = lo que queda vivo. #}
+                <th class="px-3 py-2 text-right font-medium" title="Importe total de la factura (cara).">Total</th>
+                <th class="px-3 py-2 text-right font-medium" title="Lo que ya se cobró antes de esta operación.">Abonado</th>
+                <th class="px-3 py-2 text-right font-medium" title="Saldo vivo = total − abonado. Lo que queda por cobrar.">Saldo</th>
                 <th class="px-3 py-2 text-right font-medium w-32">A aplicar</th>
-                <th class="px-3 py-2 text-right font-medium w-32" title="Suma acumulada de A aplicar leída de arriba hacia abajo.">Acum.</th>
+                <th class="px-3 py-2 text-right font-medium w-32" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
               </tr>
             </thead>
             <tbody id="aplic-tbody">
-              <tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 text-xs">
+              <tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 text-xs">
                 Tipeá el código del cliente arriba para ver sus facturas abiertas.
               </td></tr>
             </tbody>
@@ -206,9 +219,10 @@
                 <td class="px-3 py-2 text-xs text-slate-500" colspan="3">
                   facturas seleccionadas
                 </td>
-                <td class="px-3 py-2 text-right text-xs text-slate-500">
-                  Total saldo: <span id="aplic-foot-saldo" class="font-mono tabular-nums">—</span>
-                </td>
+                {# 3 totales — Total/Abonado/Saldo de las facturas seleccionadas. TMT 2026-05-17. #}
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-total">—</td>
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-abonado">—</td>
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
               </tr>
@@ -260,6 +274,9 @@
   const plazoSpan     = document.getElementById('aplic-plazo');
   const tfoot         = document.getElementById('aplic-tfoot');
   const footN         = document.getElementById('aplic-foot-n');
+  // TMT 2026-05-17 — 3 totales por columna (Total/Abonado/Saldo).
+  const footTotal     = document.getElementById('aplic-foot-total');
+  const footAbonado   = document.getElementById('aplic-foot-abonado');
   const footSaldo     = document.getElementById('aplic-foot-saldo');
   const footAplicado  = document.getElementById('aplic-foot-aplicado');
   const footAcum      = document.getElementById('aplic-foot-acum');
@@ -314,7 +331,7 @@
     const q = filtro.trim().toLowerCase();
 
     if (!facturas.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
       updateSummary(0, importeCheque);
       return;
     }
@@ -407,7 +424,10 @@
             <td class="px-3 py-1.5 font-mono text-xs">${f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : `<span class="text-slate-400">#${f.id_factura}</span>`)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
             <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.fecha)}</td>
             <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.vencimiento)}</td>
-            <td class="px-3 py-1.5 text-right font-mono tabular-nums ${saldoClass}">${fmt(f.saldo)}</td>
+            {# TMT 2026-05-17 — 3 columnas separadas: Total / Abonado / Saldo. #}
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(f.importe)}</td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${f.abono && Math.abs(f.abono) > 0.005 ? fmt(f.abono) : '—'}</td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
             <td class="px-3 py-1.5 text-right">
               <div class="inline-flex items-center gap-1 justify-end">
                 <input type="text" inputmode="decimal" name="aplicar[${f.id_factura}]"
@@ -427,7 +447,7 @@
         `;
       }).join('');
 
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
 
     // Wire-up para tracking de "usuario editó" (input de monto)
     tbody.querySelectorAll('input.aplic-input').forEach(inp => {
@@ -531,20 +551,25 @@
     toggleAll.indeterminate = nChecked > 0 && nChecked < chks.length;
   }
 
-  // Recalcula la columna Acum (suma corrida de "A aplicar" leyendo
-  // top→bottom). La última fila visible muestra el total aplicado.
+  // Recalcula la columna Resta — TMT 2026-05-17: cambiado de "suma
+  // corrida de A aplicar" a "saldo de deuda restante POR FILA"
+  // (saldo de la factura − importe a aplicar). Lo que queda debiendo
+  // esa factura después de aplicar el cheque. Pedido en cobranza:
+  // antes mostraba el acumulado de lo aplicado, ahora muestra la
+  // deuda residual por factura para que la dueña vea qué queda vivo.
   function recalcAcum() {
-    let acum = 0;
     const rows = tbody.querySelectorAll('tr');
     rows.forEach(tr => {
       const inp = tr.querySelector('.aplic-input');
       const cell = tr.querySelector('.acum-cell');
       if (!inp || !cell) return;
       const v = parseMonto(inp.value);
-      // TMT 2026-05-15: aceptar montos negativos (absorción de créditos
-      // a favor del cliente). Antes sólo sumaba > 0.
-      if (Math.abs(v) > 0.005) acum += v;
-      cell.textContent = Math.abs(acum) > 0.005 ? fmt(acum) : '—';
+      const saldo = parseFloat(inp.dataset.saldo || '0') || 0;
+      // Resta = saldo de la factura − lo que se aplica.
+      // Si v=0, resta = saldo (toda la deuda sigue viva).
+      // Si v=saldo, resta = 0 (cancelada).
+      const resta = saldo - v;
+      cell.textContent = Math.abs(resta) > 0.005 ? fmt(resta) : '—';
     });
   }
 
@@ -555,6 +580,10 @@
     let asignado = 0;
     let nSel = 0;
     let saldoSel = 0;
+    // TMT 2026-05-17: totales por columna también — importe original y
+    // abono previo de las facturas seleccionadas. Se muestran en el footer.
+    let totalSel = 0;
+    let abonadoSel = 0;
     // TMT 2026-05-15: capturamos (fecha, importe_aplicado) para calcular
     // el plazo ponderado por monto (no promedio simple). Una factura de
     // $10.000 a 60 días pesa más que una de $100 a 10 días.
@@ -566,11 +595,15 @@
       nSel++;
       const saldo = parseFloat(inp.dataset.saldo || 0);
       saldoSel += saldo;
-      // Fecha de la factura — buscar en el array `facturas` por id.
+      // Fecha de la factura + importe/abono — buscar en `facturas` por id.
       const id = parseInt(inp.dataset.id, 10);
       const f = facturas.find(x => x.id_factura === id);
-      if (f && f.fecha) {
-        fechasYMontosSel.push({ fecha: f.fecha, monto: Math.abs(v) });
+      if (f) {
+        totalSel   += parseFloat(f.importe || 0);
+        abonadoSel += parseFloat(f.abono   || 0);
+        if (f.fecha) {
+          fechasYMontosSel.push({ fecha: f.fecha, monto: Math.abs(v) });
+        }
       }
     });
     if (asignadoOverride != null) asignado = asignadoOverride;
@@ -631,12 +664,18 @@
     }
 
     // Footer totales — sólo visible si hay al menos una selección.
+    // TMT 2026-05-17: 3 columnas separadas → 3 totales (Total / Abonado /
+    // Saldo). "Resta" del footer = deuda total que queda VIVA sobre las
+    // facturas seleccionadas = sum(saldo − aplicado).
     if (nSel > 0) {
       tfoot.classList.remove('hidden');
       footN.textContent = nSel;
-      footSaldo.textContent = fmt(saldoSel);
+      footTotal.textContent   = fmt(totalSel);
+      footAbonado.textContent = Math.abs(abonadoSel) > 0.005 ? fmt(abonadoSel) : '—';
+      footSaldo.textContent   = fmt(saldoSel);
       footAplicado.textContent = '$ ' + fmt(asignado);
-      footAcum.textContent = '$ ' + fmt(asignado);
+      const restaTotal = saldoSel - asignado;
+      footAcum.textContent = '$ ' + fmt(restaTotal);
     } else {
       tfoot.classList.add('hidden');
     }

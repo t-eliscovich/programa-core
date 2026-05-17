@@ -1,9 +1,17 @@
-"""Vistas de activos fijos — listado + acción de amortización mensual."""
+"""Vistas de activos fijos — listado + acción de amortización mensual.
+
+TMT 2026-05-17: agregado endpoint /activos/nuevo para dar de alta activos
+fijos desde la UI (antes sólo se podían cargar via DBF dump). Cuota mensual
+se autocalcula como inicial/vida_util si la dueña no la especifica.
+"""
+from datetime import date
+
 from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from parsers import parse_date, parse_int, parse_monto
 
 from . import queries
 
@@ -50,6 +58,85 @@ def lista():
         filas=filas, q=q, tipo=tipo, solo_activos=solo_activos,
         resumen=resumen, tipos=tipos,
         error=error,
+    )
+
+
+@activos_bp.route("/activos/nuevo", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("activos.crear")
+def nuevo():
+    """Alta de un activo fijo con cuota de depreciación.
+
+    GET: muestra el form (con autocomplete de proveedores).
+    POST: crea el activo en scintela.activos. La cuota se autocalcula como
+    inicial/vida_util si no se especifica. La proc actualizar_amortizacion()
+    aplica la cuota mes a mes a partir del próximo cierre.
+    """
+    form = {
+        "fecha":           date.today().isoformat(),
+        "concepto":        "",
+        "tipo":            "MAQ",
+        "inicial":         "",
+        "vida_util_meses": "60",  # 5 años default razonable
+        "cuota":           "",
+        "id_proveedor":    "",
+    }
+    if request.method == "POST":
+        fecha           = parse_date(request.form.get("fecha")) or date.today()
+        concepto        = (request.form.get("concepto") or "").strip()
+        tipo            = (request.form.get("tipo") or "").strip().upper()
+        inicial         = parse_monto(request.form.get("inicial"))
+        vida_util_meses = parse_int(request.form.get("vida_util_meses")) or 0
+        cuota           = parse_monto(request.form.get("cuota"))
+        id_proveedor    = parse_int(request.form.get("id_proveedor"))
+
+        form.update({
+            "fecha":           fecha.isoformat(),
+            "concepto":        concepto,
+            "tipo":            tipo,
+            "inicial":         request.form.get("inicial") or "",
+            "vida_util_meses": str(vida_util_meses or 60),
+            "cuota":           request.form.get("cuota") or "",
+            "id_proveedor":    str(id_proveedor or ""),
+        })
+
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            r = queries.crear(
+                fecha=fecha, concepto=concepto, tipo=tipo,
+                inicial=inicial, vida_util_meses=vida_util_meses,
+                cuota=cuota, id_proveedor=id_proveedor,
+                usuario=usuario,
+            )
+            flash(
+                f"Activo \"{r['concepto']}\" creado · valor ${r['inicial']:.2f} · "
+                f"cuota mensual ${r['cuota']:.2f} ({r['vida_util']} meses).",
+                "ok",
+            )
+            return redirect(url_for("activos.lista"))
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude crear el activo", e)
+
+    # Lista de proveedores para el autocomplete (defensivo si la tabla no existe).
+    proveedores = []
+    try:
+        import db as _db
+        proveedores = _db.fetch_all(
+            "SELECT id_proveedor, codigo_prov, nombre "
+            "FROM scintela.proveedor "
+            "WHERE COALESCE(activo, '1') NOT IN ('0', 'N') "
+            "ORDER BY nombre LIMIT 500"
+        ) or []
+    except Exception:
+        proveedores = []
+
+    return render_template(
+        "activos/nuevo.html",
+        form=form,
+        proveedores=proveedores,
+        hoy=date.today().isoformat(),
     )
 
 

@@ -3,7 +3,7 @@
 {% block title %}Aporte de capital{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('historial.operaciones') }}" class="hover:underline">Operaciones</a> /
-  <a href="{{ url_for('capital.lista') }}" class="hover:underline">Movimientos del dueño</a> /
+  <a href="{{ url_for('capital.lista') }}" class="hover:underline">Movimientos de capital</a> /
   <strong>Aportar</strong>
 {% endblock %}
 
@@ -11,7 +11,7 @@
 <div class="max-w-2xl mx-auto py-6 px-4">
   {% set ico %}<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>{% endset %}
   {{ wizard_hero('emerald', 'Aporte de capital',
-                 'El dueño aporta plata a una cuenta. Sube el capital y la cuenta destino en la misma transacción atómica.',
+                 'Aporte de capital a una cuenta. Sube el patrimonio y la cuenta destino en la misma transacción atómica.',
                  ico) }}
 
   {% if errores %}

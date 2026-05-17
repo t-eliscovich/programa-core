@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
-{% block title %}Retiro de socio{% endblock %}
+{% block title %}Retiro de capital{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('historial.operaciones') }}" class="hover:underline">Operaciones</a> /
-  <a href="{{ url_for('capital.lista') }}" class="hover:underline">Movimientos del dueño</a> /
+  <a href="{{ url_for('capital.lista') }}" class="hover:underline">Movimientos de capital</a> /
   <strong>Retirar</strong>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-2xl mx-auto py-6 px-4">
   {% set ico %}<polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/>{% endset %}
-  {{ wizard_hero('rose', 'Retiro de socio',
-                 'Un socio saca plata de una cuenta. Se crea la fila de retiro y el movimiento bancario o de caja en una sola transacción.',
+  {{ wizard_hero('rose', 'Retiro de capital',
+                 'Retiro de capital / pago de dividendos. Se registra la salida y el movimiento bancario o de caja en una sola transacción.',
                  ico) }}
 
   {% if errores %}
@@ -26,7 +26,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
-          Socio que retira <span class="text-rose-500">*</span>
+          Accionista <span class="text-rose-500">*</span>
         </label>
         <input type="text" name="socio" required maxlength="5"
                value="{{ form.socio }}" placeholder="TMT, RR, etc."

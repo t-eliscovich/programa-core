@@ -4,7 +4,8 @@
 {% block breadcrumb %}<strong>Compras</strong>{% endblock %}
 
 {% block content %}
-<div class="max-w-full">
+{# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
+<div class="page-shell page-shell--full">
   {# Hero estandarizado — patrón page_hero + acciones primarias + dropdown "Más". #}
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
     {{ page_hero(

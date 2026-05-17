@@ -939,26 +939,13 @@ def depositar_lote(
             f"{len(no_depositables)} cheque(s) no son depositables: {ejemplos}"
             f"{'…' if len(no_depositables) > 3 else ''}"
         )
-    # Validación de fechad ≤ fecha_deposito (server-side). Antes esto sólo
-    # se validaba en el JS del template — pasaba a la query un cheque
-    # cuya fechad era posterior al depósito y se asentaba sin más.
-    # TMT 2026-05-14 (#44).
-    no_vencidos = [
-        r for r in rows
-        if r.get("fechad") and r["fechad"] > fecha_deposito
-    ]
-    if no_vencidos:
-        ejemplos = ", ".join(
-            f"#{r['id_cheque']} (fechad={r['fechad'].isoformat()})"
-            for r in no_vencidos[:3]
-        )
-        raise ValueError(
-            f"{len(no_vencidos)} cheque(s) tienen fechad posterior al depósito "
-            f"({fecha_deposito.isoformat()}): {ejemplos}"
-            f"{'…' if len(no_vencidos) > 3 else ''}. "
-            "Postergá esos cheques o esperá su fecha."
-        )
-
+    # TMT 2026-05-17: la validación que bloqueaba `fechad > fecha_deposito`
+    # fue removida. La dueña depósita cuando quiere — el banco acepta
+    # cheques con fechad posterior (algunos clientes aceptan, otros lo
+    # rebotan, pero esa es decisión de campo, no nuestra). Si igual querés
+    # ver cuáles eran post-fechados, quedan registrados en el cheque con
+    # `fechad` original (que ahora se ve en la lista junto a "Postergada").
+    # Antes el código lanzaba ValueError; ahora deja seguir.
     total = sum(float(r.get("importe") or 0) for r in rows)
     id_transacciones: list[int] = []
 
@@ -1299,6 +1286,12 @@ def crear(
         # por banco (solo aplica a stat B/A/1/2/3/R/D). Para cheques Z (cartera)
         # debe ser NULL. Los 985 cheques afectados son legacy + nuevos
         # creados con este bug. NULL = arrancamos limpios desde acá.
+        # NOTA TMT 2026-05-17: NO seteamos fechad_original al alta. El
+        # diseño canónico de la migración 0014 dice: fechad_original IS NULL
+        # cuando el cheque NUNCA se postergó. La primera postergar() lo
+        # snapshotea con COALESCE(fechad_original, fechad). Re-postergar no
+        # lo toca (queda la 1ra fechad). Los displays usan NULL = "no
+        # postergado".
         row = db.execute_returning(
             """
             INSERT INTO scintela.cheque
@@ -2640,6 +2633,10 @@ def buscar(
     sql_buscar_cheques = """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
                c.fecha_recibido, c.fecha_crea,
+               -- TMT 2026-05-17: fechad_original NULL = no fue postergado;
+               -- NOT NULL = la primera postergación snapshoteó la fechad
+               -- previa acá. fecha_postergacion = cuándo se postergó (última).
+               c.fechad_original, c.fecha_postergacion,
                c.codigo_cli, COALESCE(cli.nombre, '') AS cliente,
                c.importe, c.stat,
                c.no_banco, c.banco AS banco_nombre,

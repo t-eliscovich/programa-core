@@ -200,7 +200,9 @@
             </th>
             <th class="px-4 py-3 text-left">N°</th>
             <th class="px-4 py-3 text-left whitespace-nowrap" title="Día en que cargué el cheque al sistema">Cargado</th>
-            <th class="px-4 py-3 text-left whitespace-nowrap" title="Fecha planificada de depósito (postdate)">A depositar</th>
+            {# TMT 2026-05-17: dos columnas — original + postergada. #}
+            <th class="px-4 py-3 text-left whitespace-nowrap" title="Fecha ORIGINAL de depósito (pactada al alta). NUNCA cambia.">F. depósito (orig.)</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap" title="Última fecha postergada (vacío si nunca se postergó).">Postergada</th>
             <th class="px-4 py-3 text-left">Código</th>
             <th class="px-4 py-3 text-left">Cliente</th>
             <th class="px-4 py-3 text-left">Banco emisor</th>
@@ -231,10 +233,19 @@
               </td>
               {# Cargado — preferimos fecha_recibido (cuándo lo cargó al sistema). Fallback fecha. #}
               <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{{ (c.fecha_recibido or c.fecha) | fecha_es }}</td>
+              {# TMT 2026-05-17: original (fechad_original o fechad si nunca se postergó). #}
+              {% set fechad_original = c.fechad_original or c.fechad %}
+              <td class="px-4 py-3 text-xs whitespace-nowrap text-slate-600">
+                {{ fechad_original | fecha_es if fechad_original else '—' }}
+              </td>
               <td class="px-4 py-3 text-xs whitespace-nowrap {% if ya %}text-amber-700 font-semibold{% else %}text-slate-600{% endif %}">
-                {{ c.fechad | fecha_es if c.fechad else '—' }}
-                {% if ya %}
-                  <span class="ml-1 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">⚠ futuro</span>
+                {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
+                  <span class="text-amber-700 font-medium" title="Última postergación{% if c.fecha_postergacion %} ({{ c.fecha_postergacion | fecha_es }}){% endif %}">{{ c.fechad | fecha_es }}</span>
+                  {% if ya %}
+                    <span class="ml-1 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">⚠ futuro</span>
+                  {% endif %}
+                {% else %}
+                  <span class="text-slate-300">—</span>
                 {% endif %}
               </td>
               <td class="px-4 py-3 font-mono text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap">
@@ -341,21 +352,19 @@
       const q = ($texto.value || '').toLowerCase().trim();
       const min = parseMonto($min.value);
       const max = parseMonto($max.value);
-      // Fecha de depósito elegida: oculta cheques con fechad posterior
-      // (no se pueden depositar todavía — la fecha del banco sería antes
-      // del fechad del cheque, que no tiene sentido).
-      const fdep = ($fdep && $fdep.value) || '';
+      // TMT 2026-05-17: ya NO ocultamos cheques con fechad > fecha_dep.
+      // Antes el filtro client-side los escondía y la dueña no veía sus
+      // cheques recién cargados al buscar por cliente. Ahora se muestran
+      // siempre con badge ⚠ futuro; el backend valida server-side al
+      // intentar depositarlos y bloquea con mensaje claro.
       let n = 0;
       rows.forEach(r => {
         const text    = r.dataset.text || '';
         const importe = parseFloat(r.dataset.importe || 0);
-        const fechad  = r.dataset.fechad || '';
         let visible = true;
         if (q && !text.includes(q)) visible = false;
         if (min != null && importe < min) visible = false;
         if (max != null && importe > max) visible = false;
-        // Cheque postdatado > fecha del depósito: ocultarlo.
-        if (fdep && fechad && fechad > fdep) visible = false;
         r.style.display = visible ? '' : 'none';
         if (visible) n++;
         if (!visible) {
@@ -367,9 +376,8 @@
       actualizar();
     }
     [$texto, $min, $max].forEach(el => el.addEventListener('input', aplicarFiltro));
-    if ($fdep) $fdep.addEventListener('change', aplicarFiltro);
 
-    // Aplicar el filtro inicial (oculta postdatados > fecha hoy default)
+    // Filtro inicial — sólo texto/monto si vinieron del query string.
     aplicarFiltro();
 
     // ── Confirmación previa al depósito. TMT 2026-05-16.

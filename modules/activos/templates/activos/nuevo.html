@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Nuevo activo fijo{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('activos.lista') }}" class="hover:underline text-slate-500">Activos fijos</a> / <strong>Nuevo</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-05-17 — patrón estándar (.page-shell). #}
+<div class="page-shell page-shell--md">
+  <header class="page-header">
+    <h1 class="page-title">Nuevo activo fijo</h1>
+    <p class="page-subtitle">
+      Cargá un activo (maquinaria, vehículo, equipo) con su valor inicial y
+      vida útil. La cuota mensual de depreciación se calcula automáticamente
+      (valor ÷ meses), o podés tipearla manual si tu plan contable es otro.
+    </p>
+  </header>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      <div class="page-error">
+        <ul>{% for cat, m in msgs %}<li>{{ m }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <form method="post" class="page-card space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Fecha de compra <span class="text-red-500">*</span>
+        </label>
+        <input type="date" name="fecha" value="{{ form.fecha }}" required
+               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Tipo <span class="text-red-500">*</span>
+        </label>
+        {# TMT 2026-05-17 — lista ampliada de tipos. Códigos de 3 letras
+           consistentes con el dBase legacy. Agrupados por categoría contable. #}
+        <select name="tipo" required
+                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+          <optgroup label="Inmuebles">
+            <option value="TER" {% if form.tipo == 'TER' %}selected{% endif %}>Terreno</option>
+            <option value="EDF" {% if form.tipo == 'EDF' %}selected{% endif %}>Edificio / construcción</option>
+            <option value="INS" {% if form.tipo == 'INS' %}selected{% endif %}>Instalaciones / mejoras</option>
+          </optgroup>
+          {# TMT 2026-05-17 — secciones específicas de la fábrica textil
+             para que la amortización se distribuya por área de producción.
+             Los códigos coinciden con dBase: K=Tejeduría legacy. Compras
+             usa los mismos códigos (H/K/T/Q en scintela.compra.tipo). #}
+          <optgroup label="Producción — sección">
+            <option value="HIL" {% if form.tipo == 'HIL' %}selected{% endif %}>Hilado</option>
+            <option value="TEJ" {% if form.tipo == 'TEJ' %}selected{% endif %}>Tejeduría</option>
+            <option value="TIN" {% if form.tipo == 'TIN' %}selected{% endif %}>Tintura</option>
+            <option value="QUI" {% if form.tipo == 'QUI' %}selected{% endif %}>Químicos</option>
+            <option value="ACA" {% if form.tipo == 'ACA' %}selected{% endif %}>Acabado</option>
+          </optgroup>
+          <optgroup label="Producción — general">
+            <option value="MAQ" {% if form.tipo == 'MAQ' %}selected{% endif %}>Maquinaria (sin sección específica)</option>
+            <option value="HER" {% if form.tipo == 'HER' %}selected{% endif %}>Herramientas</option>
+            <option value="EQO" {% if form.tipo == 'EQO' %}selected{% endif %}>Equipos de producción</option>
+          </optgroup>
+          <optgroup label="Vehículos y transporte">
+            <option value="VEH" {% if form.tipo == 'VEH' %}selected{% endif %}>Vehículo</option>
+            <option value="CAR" {% if form.tipo == 'CAR' %}selected{% endif %}>Carros / camionetas (legacy CAR)</option>
+          </optgroup>
+          <optgroup label="Oficina">
+            <option value="OFI" {% if form.tipo == 'OFI' %}selected{% endif %}>Equipo de oficina / cómputo</option>
+            <option value="MUE" {% if form.tipo == 'MUE' %}selected{% endif %}>Muebles y enseres</option>
+            <option value="SFW" {% if form.tipo == 'SFW' %}selected{% endif %}>Software / intangibles</option>
+          </optgroup>
+          <optgroup label="Otros">
+            <option value="OTR" {% if form.tipo == 'OTR' %}selected{% endif %}>Otros activos</option>
+          </optgroup>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+        Descripción del activo <span class="text-red-500">*</span>
+      </label>
+      <input type="text" name="concepto" value="{{ form.concepto }}" required
+             maxlength="100" placeholder="Ej. Telar Sulzer #3 / Camioneta Hilux placa XYZ-123"
+             class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Valor inicial USD <span class="text-red-500">*</span>
+        </label>
+        <input type="text" inputmode="decimal" name="inicial" value="{{ form.inicial }}" required
+               placeholder="0.00" id="f-inicial"
+               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right font-mono">
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Vida útil <span class="text-red-500">*</span>
+        </label>
+        <div class="relative">
+          <input type="number" name="vida_util_meses" value="{{ form.vida_util_meses }}" required
+                 min="1" max="600" id="f-vida"
+                 class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right pr-14 font-mono">
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">meses</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">60 = 5 años · 120 = 10 años · 240 = 20 años</p>
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+          Cuota mensual <span class="text-slate-400 normal-case">(opcional)</span>
+        </label>
+        <input type="text" inputmode="decimal" name="cuota" value="{{ form.cuota }}"
+               placeholder="auto" id="f-cuota"
+               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right font-mono">
+        <p class="text-xs text-slate-400 mt-1" id="cuota-hint">Si la dejás vacía: valor ÷ meses.</p>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1 font-semibold">
+        Proveedor <span class="text-slate-400 normal-case">(opcional)</span>
+      </label>
+      <input type="text" name="id_proveedor_label" list="proveedores-list"
+             value="{{ form.id_proveedor }}"
+             placeholder="Tipeá nombre del proveedor o dejalo en blanco"
+             class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900"
+             id="f-proveedor-input">
+      <input type="hidden" name="id_proveedor" id="f-proveedor-id" value="{{ form.id_proveedor }}">
+      {% if proveedores %}
+        <datalist id="proveedores-list">
+          {% for p in proveedores %}
+            <option value="{{ p.nombre }}" data-id="{{ p.id_proveedor }}">{{ p.codigo_prov }} · {{ p.nombre }}</option>
+          {% endfor %}
+        </datalist>
+      {% endif %}
+    </div>
+
+    <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+      <a href="{{ url_for('activos.lista') }}"
+         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+        ← Cancelar
+      </a>
+      <button type="submit"
+              class="rounded-md bg-emerald-600 hover:bg-emerald-500 px-5 py-2 text-sm font-medium text-white shadow-sm">
+        Crear activo
+      </button>
+    </div>
+  </form>
+
+  <p class="mt-3 text-xs text-slate-400">
+    Al guardar: <code>amortizac=0</code>, <code>amortimes=0</code>,
+    <code>valor=inicial</code>. La proc <code>actualizar_amortizacion()</code>
+    aplica la cuota mes a mes desde el próximo cierre.
+  </p>
+</div>
+
+<script>
+  // Preview de cuota auto-calculada. Si la dueña deja "cuota" vacía,
+  // muestro la cuota sugerida (inicial / meses) en el hint para feedback.
+  (function () {
+    const fInicial = document.getElementById('f-inicial');
+    const fVida    = document.getElementById('f-vida');
+    const fCuota   = document.getElementById('f-cuota');
+    const hint     = document.getElementById('cuota-hint');
+    function fmt(n) {
+      return '$ ' + n.toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+    function parseNum(s) {
+      if (!s) return 0;
+      // Acepta "1.234,56" o "1234.56"
+      s = String(s).trim().replace(/\./g, '').replace(',', '.');
+      const v = parseFloat(s);
+      return isNaN(v) ? 0 : v;
+    }
+    function update() {
+      const inicial = parseNum(fInicial.value);
+      const vida    = parseInt(fVida.value, 10) || 0;
+      if (inicial > 0 && vida > 0) {
+        const c = inicial / vida;
+        const cuotaPropia = parseNum(fCuota.value);
+        if (cuotaPropia > 0) {
+          hint.textContent = 'Sugerido si fuera lineal: ' + fmt(c) + '/mes';
+        } else {
+          hint.textContent = 'Auto-calculado: ' + fmt(c) + '/mes (' + vida + ' meses)';
+          fCuota.placeholder = c.toFixed(2);
+        }
+      } else {
+        hint.textContent = 'Si la dejás vacía: valor ÷ meses.';
+        fCuota.placeholder = 'auto';
+      }
+    }
+    [fInicial, fVida, fCuota].forEach(el => el.addEventListener('input', update));
+    update();
+  })();
+
+  // Resolver id_proveedor desde el label tipeado (datalist value=nombre).
+  (function () {
+    const inp = document.getElementById('f-proveedor-input');
+    const hid = document.getElementById('f-proveedor-id');
+    const opts = document.querySelectorAll('#proveedores-list option');
+    function resolve() {
+      const v = (inp.value || '').trim().toLowerCase();
+      if (!v) { hid.value = ''; return; }
+      for (const o of opts) {
+        if (o.value.toLowerCase() === v) {
+          hid.value = o.dataset.id || '';
+          return;
+        }
+      }
+      hid.value = '';  // sin match
+    }
+    inp.addEventListener('change', resolve);
+    inp.addEventListener('blur', resolve);
+  })();
+</script>
+{% endblock %}

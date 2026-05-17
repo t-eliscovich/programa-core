@@ -102,8 +102,11 @@ def preview_concepto():
         tipo_sugerido = "otro"
         extras = {}
     elif parsed_tipo == "dolares":
-        tipo_sugerido = "otro"
-        extras = {}
+        # TMT 2026-05-17: antes mapeaba a "otro" (no creaba el anticipo).
+        # Ahora va a la card dedicada `anticipo_usd` y pasa la cuenta de
+        # 2 letras como beneficiario para el INSERT en scintela.dolares.
+        tipo_sugerido = "anticipo_usd"
+        extras = {"beneficiario": parsed.get("cuenta")}
     else:
         tipo_sugerido = "gasto"  # default razonable: gasto pagado con cheque
         extras = {}
@@ -301,11 +304,20 @@ def emitir_cheque():
     with _ctx.suppress(Exception):
         proveedores = queries.proveedores_activos(limite=500)
 
+    # TMT 2026-05-17: si la URL trae ?tipo=anticipo_usd (acceso directo
+    # desde sidebar), el template pre-selecciona esa card. Aceptamos los
+    # 6 tipos válidos; cualquier otro valor se ignora.
+    tipo_inicial = (request.args.get("tipo") or "").strip().lower()
+    if tipo_inicial not in ("proveedor", "retiro", "caja", "gasto",
+                            "anticipo_usd", "otro"):
+        tipo_inicial = ""
+
     return render_template(
         "bancos/emitir_cheque.html",
         bancos=bancos,
         posdats=posdats,
         prov_filter=prov_filter,
+        tipo_inicial=tipo_inicial,
         hoy=date.today().isoformat(),
         conceptos=conceptos,
         proveedores=proveedores,

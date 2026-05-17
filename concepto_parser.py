@@ -19,6 +19,7 @@ Las reglas vienen del PRG legacy y del feedback de TMT 2026-05-12:
   INTER<resto>    → transfer al banco Internacional
   RR<XX>          → retiro al socio XX
   IN.<CT><resto>  → movimiento en cuenta de dólares CT (anticipo)
+  IN <CT><resto>  → idem (tolerante: punto o espacio como separador) TMT 2026-05-17
   INHB<resto>     → caja HB / capital / retiro especial (variante INHB)
   <PR> <resto>    → compra al proveedor PR (2 letras + espacio)
                     sólo si PR está en la lista de provs válidos
@@ -114,11 +115,20 @@ def parse_concepto(concepto: str, ctx: dict | None = None) -> dict:
 
     # ────────────────────────────────────────────────────────────────
     # IN.<CT><resto> — dólares (anticipo). CT son 2 chars.
+    # TMT 2026-05-17 (decisión Tamara): acepta tanto `IN.MP` con punto
+    # como `IN MP` con espacio. El dBase original usa el punto pero la
+    # dueña tipea cualquiera de los dos — relajamos para que sea robusto.
+    # INHB ya matcheó antes (línea ~112), así que `IN HB` no colisiona.
     # ────────────────────────────────────────────────────────────────
+    sep_idx = None
     if upper.startswith("IN.") and len(s) >= 5:
-        cuenta = upper[3:5]
+        sep_idx = 3  # IN.<CT> → cuenta arranca en pos 3
+    elif upper.startswith("IN ") and len(s) >= 5:
+        sep_idx = 3  # IN <CT> → idem
+    if sep_idx is not None:
+        cuenta = upper[sep_idx:sep_idx + 2]
         if cuenta.isalpha():
-            resto = s[5:].strip()
+            resto = s[sep_idx + 2:].strip()
             return {
                 "tipo": "dolares",
                 "cuenta": cuenta,

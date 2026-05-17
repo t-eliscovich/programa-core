@@ -319,6 +319,9 @@ def cheques_aplicados(id_factura: int) -> list[dict]:
         SELECT cxf.id_chequexfact, cxf.fechaing, cxf.tipo, cxf.importe AS aplicado,
                cxf.abono_f, cxf.saldo_f, cxf.stat_f, cxf.no_banco,
                ch.id_cheque, ch.no_cheque, ch.fecha AS cheque_fecha, ch.fechad,
+               -- TMT 2026-05-17: fechad_original/fecha_postergacion para
+               -- mostrar "original X · postergado Y" si el cheque fue postergado.
+               ch.fechad_original, ch.fecha_postergacion,
                ch.importe AS cheque_importe, ch.stat AS cheque_stat,
                ch.banco AS cheque_banco
         FROM scintela.chequesxfact cxf

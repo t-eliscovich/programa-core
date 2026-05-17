@@ -23,11 +23,12 @@
     </div>
   </div>
 
-  {# Cuánto nos debe — la pregunta principal del gerente. Tile grande primero. #}
+  {# TMT 2026-05-17: tile principal — saldo del cliente.
+     Antes decía "Nos debe", cambiado a "Saldo cliente" para tono profesional. #}
   {% set t = data.totales %}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
     <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if t.saldo_vivo > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Nos debe</div>
+      <div class="text-xs uppercase tracking-wider text-slate-500">Saldo cliente</div>
       <div class="mt-1 text-3xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo_vivo > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
         {{ t.saldo_vivo | money_es }}
       </div>
@@ -143,7 +144,10 @@
         <tr>
           <th class="px-4 py-3 text-left font-medium">N° Cheque</th>
           <th class="px-4 py-3 text-left font-medium" title="Día en que cargué el cheque al sistema">Cargado</th>
-          <th class="px-4 py-3 text-left font-medium" title="Día planificado de depósito (fechad)">A depositar</th>
+          {# TMT 2026-05-17: dos columnas — original (inmutable) + postergada
+             (última si fue postergado). NULL en postergada = nunca se postergó. #}
+          <th class="px-4 py-3 text-left font-medium" title="Fecha original de depósito (la pactada al alta). NUNCA cambia.">F. depósito (orig.)</th>
+          <th class="px-4 py-3 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó.">Postergada</th>
           <th class="px-4 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera.">Depositado</th>
           <th class="px-4 py-3 text-left font-medium">Banco</th>
           <th class="px-4 py-3 text-right font-medium">Importe</th>
@@ -170,7 +174,15 @@
             </a>
           </td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
-          <td class="px-4 py-2" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '—' }}</td>
+          {% set fechad_original = c.fechad_original or c.fechad %}
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ fechad_original | fecha_es if fechad_original else '—' }}</td>
+          <td class="px-4 py-2" style="white-space: nowrap;">
+            {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
+              <span class="text-amber-700 dark:text-amber-400 font-medium" title="Última postergación{% if c.fecha_postergacion %} ({{ c.fecha_postergacion | fecha_es }}){% endif %}">{{ c.fechad | fecha_es }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
           <td class="px-4 py-2" style="white-space: nowrap;">
             {% if fechaing_real %}
               <span class="font-medium text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>
@@ -183,13 +195,13 @@
           <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ c.stat }}</td>
         </tr>
         {% else %}
-        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="7">Sin cheques.</td></tr>
+        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="8">Sin cheques.</td></tr>
         {% endfor %}
       </tbody>
       {% if data.cheques %}
       <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
-          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="5">Total ({{ data.cheques | length }} cheque{{ '' if data.cheques|length == 1 else 's' }})</td>
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="6">Total ({{ data.cheques | length }} cheque{{ '' if data.cheques|length == 1 else 's' }})</td>
           <td class="px-4 py-3 text-right text-mono">{{ t.cheques_total | money_es }}</td>
           <td></td>
         </tr>

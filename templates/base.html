@@ -129,25 +129,98 @@
 
     /* ── Sidebar colapsable ─────────────────────────────────────────
        Cuando aside#sidebar tiene data-collapsed="1": ancho 56px,
-       muestra solo iconos. State persiste en localStorage. TMT 2026-05-16. */
+       muestra solo iconos. State persiste en localStorage. TMT 2026-05-16.
+       TMT 2026-05-17: ancho expandido de 15→18rem y tipografía +2pts
+       a pedido de la dueña ("agrandar el sidebar, letras más grandes"). */
     aside#sidebar {
-      width: 15rem;                           /* w-60 */
+      width: 18rem;                           /* w-72 (era 15rem) */
       transition: width 180ms ease;
     }
     aside#sidebar[data-collapsed="1"] {
-      width: 3.25rem;                         /* w-13ish */
+      width: 3.5rem;                          /* algo más para el icon */
     }
-    /* Ocultar labels, search, recientes, footer y separadores cuando
-       está colapsado. Mantener icons + el chevron del "Más" oculto. */
+    /* Links del sidebar — TMT 2026-05-17 bump #2: 16px → 17px (~1.05rem). */
+    aside#sidebar #nav-list a,
+    aside#sidebar #nav-list summary {
+      font-size: 1.05rem !important;          /* 16.8px */
+      padding-top: 0.6rem;
+      padding-bottom: 0.6rem;
+    }
+    aside#sidebar #nav-list a svg,
+    aside#sidebar #nav-list summary svg {
+      width: 1.2rem !important;
+      height: 1.2rem !important;
+    }
+    /* Brand "INTELA" más grande — TMT 2026-05-17 bump #3 (1.5 → 1.75rem). */
+    aside#sidebar .sidebar-brand-text {
+      font-size: 1.75rem;
+      letter-spacing: -0.015em;
+    }
+    aside#sidebar .sidebar-brand-sub {
+      font-size: 0.8rem !important;
+      letter-spacing: 0.02em;
+    }
+    /* Section headers — TMT 2026-05-17 ahora son <summary> clickeables.
+       Tamaño visible (12px), padding cómodo, chevron a la derecha que
+       rota cuando la sección está abierta. Default: todas abiertas. */
+    aside#sidebar details.sidebar-section > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px !important;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgb(100 116 139);                 /* slate-500 */
+      padding: 0.85rem 0.75rem 0.5rem;
+      user-select: none;
+    }
+    aside#sidebar details.sidebar-section > summary::-webkit-details-marker { display: none; }
+    /* Chevron como SVG inline via background-image — más confiable que el
+       carácter `⌃` que en algunos browsers se rendereaba como cuadrado. */
+    aside#sidebar details.sidebar-section > summary::after {
+      content: '';
+      width: 12px;
+      height: 12px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-size: contain;
+      background-repeat: no-repeat;
+      transform: rotate(-90deg);
+      transition: transform 180ms ease;
+    }
+    aside#sidebar details.sidebar-section[open] > summary::after {
+      transform: rotate(0deg);
+    }
+    aside#sidebar details.sidebar-section[open] > summary {
+      color: rgb(51 65 85);                    /* slate-700 — más fuerte cuando abierta */
+    }
+    .dark aside#sidebar details.sidebar-section > summary {
+      color: rgb(148 163 184);
+    }
+    .dark aside#sidebar details.sidebar-section[open] > summary {
+      color: rgb(203 213 225);
+    }
+    /* Cuando sidebar colapsado las sections también se ocultan */
+    aside#sidebar[data-collapsed="1"] details.sidebar-section > summary {
+      display: none;
+    }
+    /* Buscador del sidebar */
+    aside#sidebar #nav-search {
+      font-size: 0.95rem;
+      padding-top: 0.55rem;
+      padding-bottom: 0.55rem;
+    }
+    /* Ocultar labels, search, summaries, footer cuando está colapsado.
+       TMT 2026-05-17: limpiado. Las clases viejas `.sidebar-recientes` y
+       `.sidebar-separator` ya no existen en el HTML — referencias
+       removidas. Recientes ahora es un <details class="sidebar-section">. */
     aside#sidebar[data-collapsed="1"] #nav-search,
-    aside#sidebar[data-collapsed="1"] .sidebar-recientes,
     aside#sidebar[data-collapsed="1"] .sidebar-footer,
     aside#sidebar[data-collapsed="1"] .sidebar-brand-sub,
     aside#sidebar[data-collapsed="1"] #nav-list a > span,
-    aside#sidebar[data-collapsed="1"] #nav-list summary span:not(:has(svg)),
-    aside#sidebar[data-collapsed="1"] #nav-list summary > svg:last-child,
-    aside#sidebar[data-collapsed="1"] details > div,
-    aside#sidebar[data-collapsed="1"] .sidebar-separator {
+    aside#sidebar[data-collapsed="1"] #nav-list summary > * {
       display: none !important;
     }
     aside#sidebar[data-collapsed="1"] .sidebar-brand-text {
@@ -214,22 +287,97 @@
     }
     .dark .action-bar .group-divider { background: rgb(51 65 85); }
 
-    /* Sidebar section labels — uppercase, super sutiles, separadores */
-    .sidebar-section-label {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: rgb(148 163 184);                 /* slate-400 */
-      padding: 1rem 0.75rem 0.5rem;
-      user-select: none;
-    }
-    .dark .sidebar-section-label { color: rgb(100 116 139); }
+    /* TMT 2026-05-17: las clases legacy `.sidebar-section-label` /
+       `.sidebar-separator` / `.sidebar-recientes` fueron removidas —
+       cada sección del sidebar ahora es un <details class="sidebar-section">
+       con summary clickeable. El estilo del summary está más arriba. */
 
-    /* Cuando sidebar colapsado, las section labels desaparecen */
-    aside#sidebar[data-collapsed="1"] .sidebar-section-label {
-      display: none;
+    /* ═══════════════════════════════════════════════════════════════
+       SISTEMA DE DISEÑO — clases reutilizables para todas las páginas.
+       Documentado TMT 2026-05-17. Usá estas clases en lugar de copiar
+       max-w/padding/etc en cada template.
+
+       Patrón estándar de página:
+         <div class="page-shell page-shell--md">
+           <header class="page-header">
+             <h1 class="page-title">…</h1>
+             <p class="page-subtitle">…</p>
+           </header>
+           {% if errores %}<div class="page-error">…</div>{% endif %}
+           <div class="page-card">…</div>  ← form o tabla
+         </div>
+
+       Anchos disponibles:
+         page-shell--sm   = max-w-2xl  (formularios cortos)
+         page-shell--md   = max-w-3xl  (forms estándar — facturas, compras)
+         page-shell--lg   = max-w-5xl  (tablas medianas)
+         page-shell--xl   = max-w-6xl  (cheques.nuevo, listas con varias cols)
+         page-shell--full = max-w-7xl  (tablas anchas, dashboards)
+       ════════════════════════════════════════════════════════════════ */
+    .page-shell {
+      margin-left: auto;
+      margin-right: auto;
+      padding: 1.5rem 1rem 2rem;
     }
+    .page-shell--sm { max-width: 42rem; }   /* 2xl */
+    .page-shell--md { max-width: 48rem; }   /* 3xl */
+    .page-shell--lg { max-width: 64rem; }   /* 5xl */
+    .page-shell--xl { max-width: 72rem; }   /* 6xl */
+    .page-shell--full { max-width: 80rem; } /* 7xl */
+
+    .page-header {
+      margin-bottom: 1.5rem;
+    }
+    .page-title {
+      font-size: 1.6rem !important;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: rgb(15 23 42);
+      margin: 0;
+    }
+    .dark .page-title { color: rgb(241 245 249); }
+    .page-subtitle {
+      font-size: 0.9rem;
+      color: rgb(100 116 139);
+      margin: 0.4rem 0 0;
+      line-height: 1.45;
+    }
+    .dark .page-subtitle { color: rgb(148 163 184); }
+
+    .page-card {
+      background: rgb(255 255 255);
+      border: 1px solid rgb(226 232 240);
+      border-radius: 0.625rem;
+      padding: 1.5rem;
+      box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+    }
+    .dark .page-card {
+      background: rgb(15 23 42);
+      border-color: rgb(30 41 59);
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+    }
+    .page-card + .page-card { margin-top: 1rem; }
+
+    .page-error {
+      margin-bottom: 1.5rem;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      background: rgb(254 226 226);
+      color: rgb(127 29 29);
+      font-size: 0.875rem;
+      border: 1px solid rgb(252 165 165 / 0.5);
+    }
+    .dark .page-error {
+      background: rgb(127 29 29 / 0.3);
+      color: rgb(254 226 226);
+      border-color: rgb(220 38 38 / 0.4);
+    }
+    .page-error p { font-weight: 500; margin: 0 0 0.25rem; }
+    .page-error ul { list-style: disc; list-style-position: inside; }
+
+    /* Tabla dentro de page-card sin padding interno extra. */
+    .page-card--table { padding: 0; overflow-x: auto; }
+    .page-card--table > table { width: 100%; margin: 0; }
 
     /* ── Cards y containers — bordes más sutiles, sombras suaves ── */
     main .rounded, main .rounded-md, main .rounded-lg {
@@ -295,11 +443,12 @@
 <div class="flex min-h-screen">
   <aside id="sidebar" class="no-print shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden">
     <div class="px-4 py-3.5 flex items-center justify-between gap-2">
+      {# TMT 2026-05-17 — brand más grande pedido por la dueña. #}
       <div class="min-w-0 flex items-center gap-2">
-        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center text-sm font-bold shrink-0">I</div>
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center text-base font-bold shrink-0">I</div>
         <div class="min-w-0">
-          <div class="text-sm font-semibold tracking-tight sidebar-brand-text leading-none">INTELA</div>
-          <div class="text-[11px] text-slate-500 dark:text-slate-400 sidebar-brand-sub mt-0.5">Programa Core</div>
+          <div class="font-semibold tracking-tight sidebar-brand-text leading-none">INTELA</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 sidebar-brand-sub mt-1">Programa Core</div>
         </div>
       </div>
       <button id="sidebar-toggle" type="button" aria-label="Colapsar sidebar"
@@ -383,69 +532,122 @@
          conciliación del sidebar, emitir cheque del sidebar, bitácora del UI,
          imprimible del tablero, cargar flujo legacy. #}
 
-      {# "Menú" — entrada al landing con todas las operaciones (página con
-         cards). TMT 2026-05-16: renombrado de "Operaciones". #}
-      {{ nav_link('historial.operaciones', 'Menú', 'home') }}
+      {# TMT 2026-05-17 — Sidebar reorganizado al estilo del menú dBase
+         original (MENU.PRG). Agrupado en 5 secciones claras: Ingreso
+         diario / Bancos y caja / Listas y modificar / Informes / Datos
+         base + Admin (sólo permiso dueña) + Recientes al final.
+         Sin "Más ▾" — todo visible al primer vistazo. #}
 
-      <div class="sidebar-section-label sidebar-separator">Operación</div>
-      {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques', 'check') }}{% endif %}
-      {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
-      {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
-      {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras y producción', 'shopping') }}{% endif %}
-      {% if tiene_permiso('informes.ver') %}{{ nav_link('stock.lista', 'Stock', 'piggy') }}{% endif %}
-      {% if tiene_permiso('caja.ver') %}{{ nav_link('caja.lista', 'Caja', 'cash') }}{% endif %}
-      {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
+      {# TMT 2026-05-17: "Menú" link removido a pedido de la dueña — el
+         landing /operaciones quedó como fallback minimalista (sólo el
+         logo Intela) pero ya no hay link explícito en el sidebar. Cada
+         sección abajo es un <details> colapsable con estado persistente
+         en localStorage por data-key. Reduce scroll si cierra las que
+         no usa frecuentemente. #}
 
-      <div class="sidebar-section-label sidebar-separator">Análisis</div>
-      {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.balance', 'Resultados', 'report') }}{% endif %}
-      {% if tiene_permiso('cartera.ver') or tiene_permiso('informes.ver') %}{{ nav_link('cartera.aging', 'Cartera', 'money') }}{% endif %}
-      {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_grafico', 'Flujo (gráfico)', 'trend') }}{% endif %}
-      {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.deudas', 'Deudas', 'trend-down') }}{% endif %}
-      {# "Gastos" → tab Reporte (primera). TMT 2026-05-16. #}
-      {% if tiene_permiso('gastos.ver') %}{{ nav_link('informes.gastos', 'Gastos', 'box') }}{% endif %}
-      {% if tiene_permiso('informes.ver') %}{{ nav_link('dolares.lista', 'Anticipos USD', 'cash') }}{% endif %}
+      <details class="sidebar-section" data-key="ingreso">
+        <summary>Ingreso diario</summary>
+        {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
+        {% if tiene_permiso('facturas.crear') %}{{ nav_link('facturas.nueva', 'Ventas (factura)', 'file') }}{% endif %}
+        {% if tiene_permiso('compras.crear') %}{{ nav_link('compras.nueva', 'Compras', 'shopping') }}{% endif %}
+      </details>
 
-      <div class="sidebar-section-label sidebar-separator">Mantenimiento</div>
-      {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos fijos', 'target') }}{% endif %}
-      {% if tiene_permiso('provisiones.ver') %}{{ nav_link('provisiones.lista', 'Provisiones', 'piggy') }}{% endif %}
-      {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.index', 'Conciliar con banco', 'check') }}{% endif %}
+      <details class="sidebar-section" data-key="bancos">
+        <summary>Bancos y caja</summary>
+        {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
+        {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('bancos.emitir_cheque', 'Emitir cheque propio', 'check') }}{% endif %}
+        {% if tiene_permiso('bancos.conciliar') %}
+          {# TMT 2026-05-17: estructura idéntica al macro nav_link para que
+             se vea CONSISTENTE con los demás items. Active state matchea el
+             ?tipo=anticipo_usd querystring para distinguirlo de "Emitir
+             cheque propio" que apunta al mismo endpoint. #}
+          {% set active_au = request.endpoint == 'bancos.emitir_cheque' and request.args.get('tipo') == 'anticipo_usd' %}
+          <a href="{{ url_for('bancos.emitir_cheque', tipo='anticipo_usd') }}"
+             class="flex items-center gap-2.5 px-3 py-2 rounded
+                    {% if active_au %}bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-medium
+                    {% else %}hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300{% endif %}">
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/><path d="M7 9v6m10-6v6"/>
+            </svg>
+            <span>Pagar Anticipo USD</span>
+          </a>
+        {% endif %}
+        {% if tiene_permiso('caja.ver') %}{{ nav_link('caja.lista', 'Caja', 'cash') }}{% endif %}
+        {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.index', 'Conciliar con banco', 'check') }}{% endif %}
+      </details>
 
-      {# ------ Recientes del usuario (últimos 5 tocados) — TMT 2026-05-13:
-              movido del header del sidebar al final para no competir con la nav principal. #}
+      <details class="sidebar-section" data-key="listas">
+        <summary>Listas y modificar</summary>
+        {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques de clientes', 'check') }}{% endif %}
+        {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
+        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
+        {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados a proveedores', 'receipt') }}{% endif %}
+      </details>
+
+      <details class="sidebar-section" data-key="informes">
+        <summary>Informes</summary>
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.balance', 'Resultados', 'report') }}{% endif %}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}{% endif %}
+        {% if tiene_permiso('cartera.ver') or tiene_permiso('informes.ver') %}{{ nav_link('cartera.aging', 'Cartera', 'money') }}{% endif %}
+        {% if tiene_permiso('gastos.ver') %}{{ nav_link('informes.gastos', 'Gastos', 'box') }}{% endif %}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.deudas', 'Deudas con proveedores', 'trend-down') }}{% endif %}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('stock.lista', 'Stock', 'piggy') }}{% endif %}
+        {# TMT 2026-05-17: aclarado — para CREAR anticipos USD se usa el
+           item "Pagar Anticipo USD" en Bancos y caja. Acá es sólo VER. #}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('dolares.lista', 'Ver anticipos USD', 'cash') }}{% endif %}
+        {% if tiene_permiso('capital.ver') %}{{ nav_link('capital.lista', 'Movimientos de capital', 'chart-pie') }}{% endif %}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('historial.lista', 'Historial movimientos', 'history') }}{% endif %}
+      </details>
+
+      <details class="sidebar-section" data-key="datos">
+        <summary>Datos base</summary>
+        {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
+        {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
+      </details>
+
+      {% if tiene_permiso('activos.ver') or tiene_permiso('provisiones.ver') %}
+        <details class="sidebar-section" data-key="provisiones">
+          <summary>Provisiones y depreciaciones</summary>
+          {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos fijos', 'target') }}{% endif %}
+          {% if tiene_permiso('provisiones.ver') %}{{ nav_link('provisiones.lista', 'Provisiones', 'piggy') }}{% endif %}
+        </details>
+      {% endif %}
+
+      {# TMT 2026-05-17: Recientes ahora es una sección colapsable más
+         (igual que Ingreso, Bancos, etc.). Antes era un bloque suelto
+         con border-top — quedaba "afuera" del menú visualmente. #}
       {% if recientes_usuario %}
-      <div class="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 sidebar-recientes">
-        <div class="text-[10px] uppercase tracking-wider text-slate-400 mb-1 px-1">Recientes</div>
-        <div class="space-y-0.5">
-          {% for r in recientes_usuario %}
-            {% set url = None %}
-            {% if r.tipo == 'factura' %}
-              {% set url = url_for('facturas.detalle', id_factura=r.id_ref) %}
-            {% elif r.tipo == 'cheque' %}
-              {% set url = url_for('cheques.detalle', id_cheque=r.id_ref) %}
-            {% elif r.tipo == 'cliente' %}
-              {% set url = url_for('informes.estado_cuenta', codigo_cli=r.id_ref) %}
-            {% elif r.tipo == 'proveedor' %}
-              {% set url = url_for('proveedores.editar', codigo_prov=r.id_ref) %}
-            {% elif r.tipo == 'posdat' %}
-              {% set url = url_for('posdat.editar', id_posdat=r.id_ref) %}
-            {% elif r.tipo == 'retencion' %}
-              {% set url = url_for('retenciones.confirmar_anulacion', id_retencion=r.id_ref) %}
-            {% endif %}
-            {% if url %}
-              <a href="{{ url }}" class="flex items-center gap-2 px-2 py-1 rounded text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 truncate" title="{{ r.etiqueta or r.id_ref }}">
-                <span class="inline-block w-1.5 h-1.5 rounded-full shrink-0
-                  {% if r.tipo == 'factura' %}bg-blue-500
-                  {% elif r.tipo == 'cheque' %}bg-emerald-500
-                  {% elif r.tipo == 'cliente' %}bg-amber-500
-                  {% elif r.tipo == 'posdat' %}bg-orange-500
-                  {% elif r.tipo == 'retencion' %}bg-purple-500
-                  {% else %}bg-slate-400{% endif %}"></span>
-                <span class="truncate">{{ r.etiqueta or (r.tipo ~ ' ' ~ r.id_ref) }}</span>
-              </a>
-            {% endif %}
-          {% endfor %}
-        </div>
-      </div>
+      <details class="sidebar-section" data-key="recientes">
+        <summary>Recientes</summary>
+        {% for r in recientes_usuario %}
+          {% set url = None %}
+          {% if r.tipo == 'factura' %}
+            {% set url = url_for('facturas.detalle', id_factura=r.id_ref) %}
+          {% elif r.tipo == 'cheque' %}
+            {% set url = url_for('cheques.detalle', id_cheque=r.id_ref) %}
+          {% elif r.tipo == 'cliente' %}
+            {% set url = url_for('informes.estado_cuenta', codigo_cli=r.id_ref) %}
+          {% elif r.tipo == 'proveedor' %}
+            {% set url = url_for('proveedores.editar', codigo_prov=r.id_ref) %}
+          {% elif r.tipo == 'posdat' %}
+            {% set url = url_for('posdat.editar', id_posdat=r.id_ref) %}
+          {% elif r.tipo == 'retencion' %}
+            {% set url = url_for('retenciones.confirmar_anulacion', id_retencion=r.id_ref) %}
+          {% endif %}
+          {% if url %}
+            <a href="{{ url }}" class="flex items-center gap-2.5 px-3 py-2 rounded text-sm hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 truncate" title="{{ r.etiqueta or r.id_ref }}">
+              <span class="inline-block w-2 h-2 rounded-full shrink-0
+                {% if r.tipo == 'factura' %}bg-blue-500
+                {% elif r.tipo == 'cheque' %}bg-emerald-500
+                {% elif r.tipo == 'cliente' %}bg-amber-500
+                {% elif r.tipo == 'posdat' %}bg-orange-500
+                {% elif r.tipo == 'retencion' %}bg-purple-500
+                {% else %}bg-slate-400{% endif %}"></span>
+              <span class="truncate">{{ r.etiqueta or (r.tipo ~ ' ' ~ r.id_ref) }}</span>
+            </a>
+          {% endif %}
+        {% endfor %}
+      </details>
       {% endif %}
     </nav>
 
@@ -520,8 +722,10 @@
   </aside>
 
   <div class="flex-1 flex flex-col min-w-0">
-    <header class="no-print h-14 flex items-center justify-between px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-      <div class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
+    {# TMT 2026-05-17: topbar más alto (h-16) y tipografía base 1rem para
+       que el breadcrumb + el buscador se vean a tono con el sidebar grande. #}
+    <header class="no-print h-16 flex items-center justify-between px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+      <div class="flex items-center gap-4 text-base text-slate-600 dark:text-slate-400">
         <button id="nav-toggle" type="button" aria-label="Abrir menú"
                 class="md:hidden p-1.5 -ml-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -531,12 +735,14 @@
         <button id="__gs_trigger" type="button"
                 title="Búsqueda global — clientes, facturas, cheques, proveedores"
                 onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key:'k', ctrlKey:true}));"
-                class="hidden md:flex items-center gap-2 text-xs pl-2 pr-1.5 py-1 rounded-md border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 min-w-[280px] transition-colors">
-          <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
+                class="hidden md:flex items-center gap-2 text-sm pl-3 pr-2 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 min-w-[320px] transition-colors">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
           <span class="flex-1 text-left">Buscar cliente, factura, cheque…</span>
-          <kbd id="__gs_kbd" class="ml-2 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-300 shrink-0 border border-slate-200 dark:border-slate-700">Ctrl+K</kbd>
+          <kbd id="__gs_kbd" class="ml-2 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-300 shrink-0 border border-slate-200 dark:border-slate-700">Ctrl+K</kbd>
         </button>
-        {% block breadcrumb %}{% endblock %}
+        <span class="text-base font-medium text-slate-700 dark:text-slate-200">
+          {% block breadcrumb %}{% endblock %}
+        </span>
       </div>
       <div class="flex items-center gap-3">
         <button onclick="toggleTheme()" class="text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Tema</button>
@@ -625,7 +831,7 @@
       {% if tiene_permiso('capital.crear') %}
         <a href="{{ url_for('capital.aportar') }}"
            class="{% if request.endpoint == 'capital.aportar' %}primary{% endif %}"
-           title="Aporte de capital — dueño pone plata">
+           title="Aporte de capital a una cuenta (banco o caja)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h7v7"/></svg>
           Aporte
         </a>
@@ -669,7 +875,7 @@
       {% if tiene_permiso('capital.crear') %}
         <a href="{{ url_for('capital.retirar') }}"
            class="{% if request.endpoint == 'capital.retirar' %}primary{% endif %}"
-           title="Retiro de socio — dueño saca plata">
+           title="Retiro de capital / pago de dividendos">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l5 5 4-4 8 8"/><path d="M14 16h7V9"/></svg>
           Retiro
         </a>

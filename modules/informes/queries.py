@@ -3666,7 +3666,13 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                kg, importe, abono, saldo, stat, condic, tipo
         FROM scintela.factura
         WHERE codigo_cli = %s
-        ORDER BY fecha DESC, numf DESC
+        -- TMT 2026-05-17: cuando hay facturas con la misma fecha, las
+        -- ABONADAS van primero (abono > 0). Acelera la lectura: lo que
+        -- está cobrándose se ve arriba, lo virgen abajo. Tie-break por
+        -- numf DESC dentro de cada grupo.
+        ORDER BY fecha DESC,
+                 CASE WHEN COALESCE(abono, 0) > 0 THEN 0 ELSE 1 END,
+                 numf DESC
         """,
         (codigo_cli,),
     )
@@ -3674,6 +3680,10 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing,
                c.fecha_recibido, c.fecha_crea,
+               -- TMT 2026-05-17: fechad_original NULL = sin postergar; NOT NULL
+               -- = fue postergado, snapshot de la 1ra fechad. fecha_postergacion
+               -- = cuándo se postergó (última si hay varias).
+               c.fechad_original, c.fecha_postergacion,
                c.importe, c.stat, c.banco, b.nombre AS nombre_banco
         FROM scintela.cheque c
         LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco

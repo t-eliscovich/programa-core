@@ -2,215 +2,76 @@
 {% block title %}Menú{% endblock %}
 {% block breadcrumb %}<strong>Menú</strong>{% endblock %}
 
-{# Estilos del menú — cards compactas, secciones con label sutil. TMT 2026-05-16. #}
-{% block head_extra %}
-<style>
-  .op-section-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgb(100 116 139);
-    margin: 1.5rem 0 0.625rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .op-section-label::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(to right, rgb(226 232 240), transparent);
-    max-width: 12rem;
-  }
-  .dark .op-section-label::after {
-    background: linear-gradient(to right, rgb(51 65 85), transparent);
-  }
-  /* Grid uniforme: 3 columnas a >=640px, mismo tamaño en todas las secciones.
-     max-width limita el ancho total para que los cards no se estiren al borde. */
-  .op-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.625rem;
-    max-width: 68rem;
-  }
-  @media (min-width: 640px)  { .op-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  .op-card {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.95rem 1.05rem;
-    min-height: 4.5rem;          /* todos los cards mismo alto */
-    background: white;
-    border: 1px solid rgb(226 232 240);
-    border-radius: 0.75rem;
-    transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
-    text-decoration: none;
-    overflow: hidden;
-    box-sizing: border-box;
-  }
-  /* Glow sutil arriba del card al hover (tono por sección via data-tono). */
-  .op-card::before {
-    content: '';
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 2px;
-    background: var(--op-tono, rgb(125 211 252));
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .op-card:hover::before { transform: scaleX(1); }
-  .dark .op-card { background: rgb(15 23 42); border-color: rgb(30 41 59); }
-  .op-card:hover {
-    border-color: var(--op-tono, rgb(125 211 252));
-    background: var(--op-bg-hover, rgb(240 249 255));
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px -6px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.04);
-  }
-  .dark .op-card:hover { background: rgb(12 74 110 / 0.25); }
-  .op-icon {
-    flex-shrink: 0;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 0.625rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgb(71 85 105);
-    background: rgb(248 250 252);
-    transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .dark .op-icon { color: rgb(203 213 225); background: rgb(30 41 59); }
-  .op-card:hover .op-icon {
-    color: var(--op-icon-color, rgb(7 89 133));
-    background: var(--op-icon-bg, rgb(186 230 253));
-    transform: scale(1.05);
-  }
-  .dark .op-card:hover .op-icon { color: rgb(186 230 253); background: rgb(12 74 110); }
-  .op-title  {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: rgb(15 23 42);
-    line-height: 1.2;
-    letter-spacing: -0.005em;
-  }
-  .dark .op-title { color: rgb(241 245 249); }
-  .op-subtitle {
-    font-size: 0.75rem;
-    color: rgb(100 116 139);
-    margin-top: 0.2rem;
-    line-height: 1.25;
-  }
-  .dark .op-subtitle { color: rgb(148 163 184); }
-  /* Tonos por sección. */
-  .op-grid--cobro    { --op-tono: rgb(56 189 248);  --op-bg-hover: rgb(240 249 255); --op-icon-color: rgb(7 89 133);   --op-icon-bg: rgb(186 230 253); }
-  .op-grid--dueno    { --op-tono: rgb(168 85 247);  --op-bg-hover: rgb(250 245 255); --op-icon-color: rgb(107 33 168); --op-icon-bg: rgb(233 213 255); }
-  .op-grid--internos { --op-tono: rgb(16 185 129);  --op-bg-hover: rgb(236 253 245); --op-icon-color: rgb(6 95 70);    --op-icon-bg: rgb(167 243 208); }
-  .op-grid--ver      { --op-tono: rgb(100 116 139); --op-bg-hover: rgb(248 250 252); --op-icon-color: rgb(51 65 85);   --op-icon-bg: rgb(226 232 240); }
-</style>
-{% endblock %}
-
-{% macro op(url, titulo, descripcion, icono) %}
-  <a href="{{ url }}" class="op-card">
-    <div class="op-icon">{{ icono | safe }}</div>
-    <div class="min-w-0 flex-1">
-      <div class="op-title">{{ titulo }}</div>
-      <div class="op-subtitle">{{ descripcion }}</div>
-    </div>
-  </a>
-{% endmacro %}
-
-{# Iconos compactos. #}
-{% set ico_dollar %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>{% endset %}
-{% set ico_check %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/></svg>{% endset %}
-{% set ico_swap %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16h13"/><path d="m17 13 3 3-3 3"/><path d="M17 8H4"/><path d="m7 11-3-3 3-3"/></svg>{% endset %}
-{% set ico_shopping %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16l-2 11H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>{% endset %}
-{% set ico_pencil %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>{% endset %}
-{% set ico_up %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h7v7"/></svg>{% endset %}
-{% set ico_down %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l5 5 4-4 8 8"/><path d="M14 16h7V9"/></svg>{% endset %}
-{% set ico_users %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>{% endset %}
-{% set ico_bank %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10 12 4l9 6"/><path d="M5 10v8m4-8v8m6-8v8m4-8v8"/><path d="M3 20h18"/></svg>{% endset %}
-{% set ico_clock %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>{% endset %}
-{% set ico_deposit %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/></svg>{% endset %}
+{# TMT 2026-05-17: landing simplificado a sólo el logo + saludo. Antes
+   tenía 4 secciones con cards de operaciones, pero todo eso ya está
+   accesible desde el sidebar (que cuando estás en este landing aparece
+   más ancho — ver base.html .route-landing). #}
 
 {% block content %}
-<div>
-  {% if aviso_migracion %}
-  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4 flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
-    <svg class="w-4 h-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    {{ aviso_migracion }}
-  </div>
+<div class="landing-wrap">
+  <img src="{{ url_for('static', filename='intela-logo.png') }}"
+       alt="Intela"
+       class="landing-logo">
+  {% if g.user and g.user.username %}
+    <p class="landing-greeting">
+      Hola, <strong>{{ g.user.username }}</strong>.
+      Elegí una opción del menú de la izquierda.
+    </p>
+  {% else %}
+    <p class="landing-greeting">Elegí una opción del menú de la izquierda.</p>
   {% endif %}
-
-  <div class="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
-    <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Menú de operaciones</h1>
-    {% if kpis and kpis.n %}
-    <div class="text-xs text-slate-500">
-      <strong class="text-slate-700 dark:text-slate-200 tabular-nums">{{ kpis.n_activos or 0 }}</strong> activas
-      {% if kpis.n_reversados %}
-      · <strong class="text-amber-700 tabular-nums">{{ kpis.n_reversados }}</strong> reversadas
-      {% endif %}
-      · <a href="{{ url_for('historial.lista') }}" class="text-sky-600 hover:underline">ver historial →</a>
-    </div>
-    {% endif %}
-  </div>
-
-  <div class="op-section-label">Cobro y pago</div>
-  <div class="op-grid op-grid--cobro">
-    {% if tiene_permiso('cheques.crear') %}
-      {{ op(url_for('cheques.nuevo'), 'Cobranza', 'Cheque de cliente', ico_check) }}
-    {% endif %}
-    {% if tiene_permiso('gastos.crear') %}
-      {{ op(url_for('gastos.nuevo'), 'Gasto', 'Servicios, sueldos, etc.', ico_dollar) }}
-    {% endif %}
-    {% if tiene_permiso('facturas.crear') %}
-      {{ op(url_for('facturas.nueva'), 'Factura', 'Emitir a cliente', ico_pencil) }}
-    {% endif %}
-    {% if tiene_permiso('compras.crear') %}
-      {{ op(url_for('compras.nueva'), 'Compra', 'Factura de proveedor', ico_shopping) }}
-    {% endif %}
-    {% if tiene_permiso('posdat.crear') %}
-      {{ op(url_for('posdat.nueva'), 'Posdatado', 'Deuda a proveedor (manual)', ico_pencil) }}
-    {% endif %}
-    {% if tiene_permiso('bancos.conciliar') %}
-      {{ op(url_for('bancos.emitir_cheque'), 'Emitir cheque', 'Chequera propia', ico_check) }}
-    {% endif %}
-  </div>
-
-  <div class="op-section-label">Movimientos del dueño</div>
-  <div class="op-grid op-grid--dueno">
-    {% if tiene_permiso('capital.crear') %}
-      {{ op(url_for('capital.aportar'), 'Aporte de capital', 'Dueño pone plata', ico_up) }}
-      {{ op(url_for('capital.retirar'), 'Retiro de socio', 'Dueño saca plata', ico_down) }}
-    {% endif %}
-    {% if tiene_permiso('capital.ver') %}
-      {{ op(url_for('capital.lista'), 'Movimientos del dueño', 'Historial aportes + retiros', ico_users) }}
-    {% endif %}
-  </div>
-
-  <div class="op-section-label">Movimientos internos</div>
-  <div class="op-grid op-grid--internos">
-    {% if tiene_permiso('caja.crear') %}
-      {{ op(url_for('caja.nuevo'), 'Caja', 'Movimiento de efectivo', ico_dollar) }}
-    {% endif %}
-    {% if tiene_permiso('cheques.aplicar') %}
-      {{ op(url_for('cheques.depositar_lote'), 'Depositar cheques', 'Lote a Pichincha', ico_deposit) }}
-    {% endif %}
-    {% if tiene_permiso('bancos.conciliar') %}
-      {{ op(url_for('bancos.transferir'), 'Transferir bancos', 'Banco ↔ banco', ico_swap) }}
-    {% endif %}
-  </div>
-
-  <div class="op-section-label">Ver</div>
-  <div class="op-grid op-grid--ver">
-    {% if tiene_permiso('bancos.ver') %}
-      {{ op(url_for('bancos.lista'), 'Bancos', 'Saldos + movimientos', ico_bank) }}
-    {% endif %}
-    {% if tiene_permiso('informes.ver') %}
-      {{ op(url_for('historial.lista'), 'Historial', 'Todo + reversos', ico_clock) }}
-    {% endif %}
-  </div>
+  {% if aviso_migracion %}
+    <div class="landing-warn">{{ aviso_migracion }}</div>
+  {% endif %}
 </div>
+
+<style>
+  /* Landing — TMT 2026-05-17: logo arriba (no centrado vertical).
+     Antes usaba `justify-content: center` + min-height 100vh y el logo
+     quedaba en el medio de la pantalla. Ahora padding-top fijo así está
+     a unos 4rem del header y queda visible sin scrollear. */
+  .landing-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    /* TMT 2026-05-17 bump #2: bajamos el logo ~2cm (3rem → 7rem). */
+    padding-top: 7rem;
+    padding-bottom: 2rem;
+  }
+  .landing-logo {
+    max-width: min(640px, 75%);
+    height: auto;
+    user-select: none;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.04));
+  }
+  .landing-greeting {
+    font-size: 1.15rem;
+    color: rgb(100 116 139);
+    margin: 0;
+    text-align: center;
+  }
+  .dark .landing-greeting { color: rgb(148 163 184); }
+  .landing-greeting strong {
+    color: rgb(15 23 42);
+    font-weight: 600;
+  }
+  .dark .landing-greeting strong { color: rgb(241 245 249); }
+  .landing-warn {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgb(254 252 232);
+    border: 1px solid rgb(234 179 8 / 0.4);
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+    color: rgb(133 77 14);
+    max-width: 40rem;
+    text-align: center;
+  }
+  .dark .landing-warn {
+    background: rgb(133 77 14 / 0.15);
+    color: rgb(254 240 138);
+    border-color: rgb(234 179 8 / 0.3);
+  }
+</style>
 {% endblock %}
