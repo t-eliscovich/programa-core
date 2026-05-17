@@ -291,6 +291,14 @@ def registrar_bitacora_after_request(response):
     error_message="Demasiados intentos. Esperá unos minutos y volvé a probar.",
 )
 def login():
+    # Cuando Google OAuth está activo en este deploy, el POST de user/pass
+    # queda apagado — la única forma de loguearse es por el botón de Google.
+    # El template render del GET ya muestra el botón en lugar del form.
+    from flask import current_app as _ca
+    if _ca.config.get("GOOGLE_OAUTH_ENABLED") and request.method == "POST":
+        flash("El login con usuario y contraseña está deshabilitado en este servidor.", "error")
+        return render_template("login.html"), 410
+
     if request.method == "POST":
         username = (request.form.get("username") or "").strip().lower()
         password = request.form.get("password") or ""
