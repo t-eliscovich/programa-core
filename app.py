@@ -168,6 +168,19 @@ def create_app() -> Flask:
     # Blueprints
     app.register_blueprint(auth_bp)
 
+    # Google OAuth — activo sólo si GOOGLE_CLIENT_ID está en env.
+    # init_oauth() es no-op si la env var falta (útil para dev local
+    # sin OAuth configurado). Cuando está activo, el template del login
+    # muestra el botón Google y `auth.login` POST devuelve 410 Gone.
+    from modules.auth_google.views import (
+        auth_google_bp,
+        google_oauth_enabled,
+        init_oauth,
+    )
+    init_oauth(app)
+    app.register_blueprint(auth_google_bp)
+    app.jinja_env.globals["google_oauth_enabled"] = google_oauth_enabled
+
     from modules.two_fa.views import two_fa_bp
     app.register_blueprint(two_fa_bp)
 
