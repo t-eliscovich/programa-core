@@ -35,13 +35,11 @@ sin tocar prod sensible, marcalo [SKIP] con razón clara.
 from __future__ import annotations
 
 import argparse
-import os
-import re
 import sys
 import threading
 import traceback
 import uuid as _uuid
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,7 +52,6 @@ except ImportError:
     pass
 
 import db  # noqa: E402
-
 
 # ----------------------------------------------------------------------------
 # Constantes de prueba
@@ -331,8 +328,8 @@ def test_E1_factura_cobrar_depositar_conciliar() -> int:
     6. mov_doble registra cheque_aplicado + cheque_depositado.
     """
     no_banco = _banco_existente()
-    from modules.cheques import queries as qch
     import bank_helpers as bh
+    from modules.cheques import queries as qch
 
     id_factura = _crear_factura(importe=1000.0)
     asserts = 1
@@ -865,8 +862,9 @@ def test_P1_rol_admin_factura_403_no_500() -> int:
     asserts = 1
 
     # Verificación dinámica: tiene_permiso devuelve False para permiso ausente.
-    from auth import tiene_permiso
     from flask import g
+
+    from auth import tiene_permiso
     try:
         # Patch g.permisos a un set vacío y verificar.
         import flask
@@ -903,7 +901,7 @@ def test_P2_rol_lectura_endpoints_post_protegidos() -> int:
     ]
     asserts = 0
     n_skip = 0
-    for archivo, fn, perm in endpoints_post:
+    for archivo, fn, _perm in endpoints_post:
         p = ROOT / archivo
         if not p.exists():
             continue
@@ -1055,7 +1053,7 @@ def test_R2_race_convertir_a_compra_bap() -> int:
     # Crear 2 lotes separados de anticipos.
     def _crear_lote() -> list[int]:
         ids = []
-        for i in range(2):
+        for _i in range(2):
             r = db.execute_returning(
                 """INSERT INTO scintela.dolares
                       (fecha, cta, importe, concepto, usuario_crea)
@@ -1208,7 +1206,6 @@ def test_REG3_balance_excluye_facturas_anuladas() -> int:
 
     Inyecta una factura stat='X' con $50K — la SUM de ventas del mes NO debe contarla.
     """
-    from modules.informes import queries as qi
     asserts = 0
 
     # Crear factura del mes en curso STAT='X' (anulada).
@@ -1336,7 +1333,7 @@ def test_DB2_signo_documento_canonico() -> int:
 
     Tabla de la verdad del PRG INSPECCIONA.PRG, escapular regresiones.
     """
-    from bank_helpers import signo_documento, DOCS_ENTRADA
+    from bank_helpers import DOCS_ENTRADA, signo_documento
     asserts = 0
     casos = [
         ("NC", +1, "nota de crédito = entrada"),
