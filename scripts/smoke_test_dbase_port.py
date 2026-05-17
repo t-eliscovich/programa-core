@@ -1023,7 +1023,9 @@ def test_08_bap_anticipos_a_compra() -> int:
     Crea 3 anticipos en USD para PROV_TEST, los convierte a una compra
     vía BAP, y verifica:
       - Compra creada con comprobante='BAP<n>' + cuenta_pagada='A'.
-      - Anticipos marcados con st='X' (consumidos).
+      - Anticipos marcados con st='B' (consumidos) — paridad dBase
+        BANCOS.PRG L803-816 `REPLA ALL ST WITH 'B'`. TMT 2026-05-15
+        (decisión #8): antes esperábamos 'X', revertido a 'B'.
       - importe de la compra = suma de los anticipos.
       - mov_doble registra tipo='bap_anticipo_a_compra'.
       - Selección con anticipos de OTRO proveedor → ValueError.
@@ -1124,7 +1126,9 @@ def test_08_bap_anticipos_a_compra() -> int:
         f"importe en compra esperado 1500, vi {comp.get('importe')}"
     asserts += 1
 
-    # Anticipos: todos st='X'
+    # Anticipos: todos st='B' (paridad dBase BANCOS.PRG L803-816 —
+    # `REPLA ALL ST WITH 'B'`). TMT 2026-05-15 (decisión #8): antes el
+    # smoke esperaba 'X'; revertido a 'B' al alinearnos con dBase.
     placeholder = ",".join(["%s"] * len(ids))
     rows_a = db.fetch_all(
         f"SELECT id_dolares, st FROM scintela.dolares "
@@ -1132,8 +1136,8 @@ def test_08_bap_anticipos_a_compra() -> int:
         tuple(ids),
     ) or []
     for ra in rows_a:
-        assert (ra.get("st") or "").upper() == "X", \
-            f"anticipo {ra['id_dolares']} no tiene st='X': {ra.get('st')}"
+        assert (ra.get("st") or "").upper() == "B", \
+            f"anticipo {ra['id_dolares']} no tiene st='B': {ra.get('st')}"
     asserts += 1
 
     # mov_doble registrado

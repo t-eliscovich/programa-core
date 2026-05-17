@@ -600,13 +600,16 @@ def gastos():
 @requiere_login
 @requiere_permiso("informes.ver")
 def gastos_detalle(num):
-    """Drill-down de una categoría V1..V9 — DETALGAST del PRG.
+    """Drill-down de una categoría V1..V12 — DETALGAST del PRG.
 
     Lista las filas de `scintela.xgast` para esa categoría (mes en curso)
     agrupadas por concepto (EEQ/CMB/EMAAP/etc).
     """
-    if num < 1 or num > 9:
-        abort(404)
+    # TMT 2026-05-15: decisión #3 — antes era `abort(404)` para num fuera de
+    # rango. La dueña pidió un 400 explícito con el rango válido y el valor
+    # recibido, para que se entienda qué pasó al tipear una URL inválida.
+    if num < 1 or num > 12:
+        abort(400, description=f"categoría debe estar entre 1 y 12, recibido {num}")
     data, error = _safe(lambda: queries.gastos_detalle_categoria(num), {})
     return render_template(
         "informes/gastos_detalle.html",

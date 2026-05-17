@@ -13,7 +13,9 @@
 --
 -- ITEM #8 (BAP, BANCOS.PRG L733-819).
 --     No requiere DDL. Reusa scintela.compra (cuenta_pagada='A',
---     comprobante='BAP<n>') + scintela.dolares (UPDATE st='X').
+--     comprobante='BAP<n>') + scintela.dolares (UPDATE st='B' — paridad
+--     dBase `REPLA ALL ST WITH 'B'`. TMT 2026-05-15 decisión #8 revirtió
+--     una intermedia que usaba 'X').
 --
 -- ITEM #10 (EFECT cobros 3 semanas, MENU.PRG L1493-1522).
 --     No requiere DDL. Lee de scintela.chequesxfact (fechaing) +

@@ -208,7 +208,12 @@ def convertir_a_compra(
     En PG:
         1. Validar proveedor + IDs (todos del mismo proveedor, vivos).
         2. Sumar importes.
-        3. Marcar anticipos seleccionados con `st='X'` (consumidos por BAP).
+        3. Marcar anticipos seleccionados con `st='B'` (consumidos por BAP) —
+           paridad exacta con dBase BANCOS.PRG:803-816. TMT 2026-05-15
+           (decisión #8): antes habíamos puesto `'X'` para alinear con el
+           vocabulario interno, pero la dueña pidió volver a `'B'` porque
+           rompía la lectura cruzada con dBase y con scripts de auditoría
+           que comparan dBase ↔ PC.
         4. Crear compra:
             - `comprobante = 'BAP<seq>'` con seq = MAX(numero)+1 sobre BAP.
             - `cuenta_pagada = 'A'` (pagada con anticipo previo).
@@ -300,14 +305,17 @@ def convertir_a_compra(
                 f"{importe_total:.2f}."
             )
 
-        # 3) Marcar anticipos como consumidos (st='X').
-        # En dBase la marca es 'B' pero acá usamos 'X' para alinearnos con
-        # el resto del vocabulario (X = eliminado/consumido). Si la dueña
-        # filtra "no vacío" lo mismo, lo ve aplicado. TMT 2026-05-15.
+        # 3) Marcar anticipos como consumidos con st='B' — paridad dBase
+        # BANCOS.PRG:803-816 (`REPLA ALL ST WITH 'B'`).
+        # TMT 2026-05-15 (decisión #8): revertido de 'X' a 'B' para mantener
+        # paridad exacta con dBase. Los listados/reportes filtran por
+        # `st IS NULL OR st = ''` para "vivos", así que cualquier valor
+        # no-vacío marca consumido — pero la dueña usa la base con dBase y
+        # con scripts de audit cross-DB que esperan 'B'.
         db.execute(
             f"""
             UPDATE scintela.dolares
-               SET st = 'X',
+               SET st = 'B',
                    usuario_modifica = %s,
                    fecha_modifica = CURRENT_TIMESTAMP
              WHERE id_dolares IN ({placeholder})
