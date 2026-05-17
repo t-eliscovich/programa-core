@@ -52,7 +52,6 @@ from flask import (
     current_app,
     flash,
     redirect,
-    request,
     session,
     url_for,
 )
@@ -61,7 +60,7 @@ import db
 
 _log = logging.getLogger("programa_core.oauth")
 
-UTC = timezone.utc
+UTC = timezone.utc  # noqa: UP017 — auth.py mantiene esto para compat py3.10
 
 auth_google_bp = Blueprint("auth_google", __name__, url_prefix="/auth/google")
 
