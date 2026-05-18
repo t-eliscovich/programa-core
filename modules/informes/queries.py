@@ -3783,3 +3783,159 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         "cheques_daniela":       float(tot_che.get("daniela") or 0),
     }
     return {"cliente": cliente, "facturas": facturas, "cheques": cheques, "totales": totales}
+
+
+# ---------------------------------------------------------------------------
+# Cuadro de Fuentes y Usos — pedido dueña 2026-05-18 (docx "Para Claude").
+# ---------------------------------------------------------------------------
+#
+# Compara DOS snapshots de scintela.historia (mes anterior vs mes elegido).
+# Cada cuenta cuya Δ sea +/-:
+#   - Activos: Δ>0 = USO (puse plata ahí); Δ<0 = FUENTE (saqué plata de ahí).
+#   - Pasivos: Δ>0 = FUENTE (me prestaron); Δ<0 = USO (devolví).
+#   - Aportes / Retiros: fuente / uso directos.
+#
+# Total Fuentes − Total Usos ≈ Δ caja + bancos (verificación).
+# ---------------------------------------------------------------------------
+
+def _historia_en_mes(yy: int, mm: int) -> dict:
+    """Devuelve la última fila de historia DEL mes (o {} si no hay).
+
+    Si en el mes hay varios snapshots, toma el de fecha más alta.
+    """
+    return db.fetch_one(
+        """
+        SELECT *
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         ORDER BY fecha DESC, id_historia DESC
+         LIMIT 1
+        """,
+        (int(yy), int(mm)),
+    ) or {}
+
+
+def _mes_anterior(yy: int, mm: int) -> tuple[int, int]:
+    """(yy, mm) del mes anterior."""
+    mm = int(mm)
+    yy = int(yy)
+    if mm == 1:
+        return yy - 1, 12
+    return yy, mm - 1
+
+
+def fuentes_y_usos(anio: int, mes: int) -> dict:
+    """Cuadro de Fuentes y Usos del mes elegido vs mes anterior.
+
+    Devuelve:
+        {
+          "anio": int, "mes": int,
+          "h_ini": <historia mes anterior>,
+          "h_fin": <historia mes elegido>,
+          "fuentes": [(label, monto), ...],
+          "usos":    [(label, monto), ...],
+          "total_fuentes": float,
+          "total_usos":    float,
+          "delta_liquido": float,  # total_fuentes - total_usos
+          "delta_banco":   float,
+          "error": str | None,
+        }
+    """
+    yy, mm = int(anio), int(mes)
+    yy_ant, mm_ant = _mes_anterior(yy, mm)
+
+    h_fin = _historia_en_mes(yy, mm)
+    h_ini = _historia_en_mes(yy_ant, mm_ant)
+
+    if not h_fin or not h_ini:
+        return {
+            "anio": yy, "mes": mm,
+            "h_ini": h_ini, "h_fin": h_fin,
+            "fuentes": [], "usos": [],
+            "total_fuentes": 0.0, "total_usos": 0.0,
+            "delta_liquido": 0.0, "delta_banco": 0.0,
+            "error": (
+                "No hay snapshot mensual en scintela.historia para "
+                f"{mm_ant:02d}/{yy_ant} y/o {mm:02d}/{yy}. "
+                "El balance debe cerrarse mensualmente para generar este cuadro."
+            ),
+        }
+
+    def f(row: dict, col: str) -> float:
+        v = row.get(col)
+        return float(v) if v is not None else 0.0
+
+    # Δ por cuenta (fin - ini). Activos: + = uso. Pasivos: + = fuente.
+    delta = {
+        # Activos
+        "cart":       f(h_fin, "cart")       - f(h_ini, "cart"),
+        "stock":      f(h_fin, "stock")      - f(h_ini, "stock"),
+        "uqui":       f(h_fin, "uqui")       - f(h_ini, "uqui"),
+        "maquinaria": f(h_fin, "maquinaria") - f(h_ini, "maquinaria"),
+        "realty":     f(h_fin, "realty")     - f(h_ini, "realty"),
+        "anticipos":  f(h_fin, "anticipos")  - f(h_ini, "anticipos"),
+        # Pasivos
+        "deuda":      f(h_fin, "deuda")      - f(h_ini, "deuda"),
+        # Cuasi-líquidos (control)
+        "banco":      f(h_fin, "banco")      - f(h_ini, "banco"),
+        # Resultados
+        "usuti":      f(h_fin, "usuti")      - f(h_ini, "usuti"),
+        # Retiros (acum del año)
+        "usret":      f(h_fin, "usret")      - f(h_ini, "usret"),
+    }
+
+    fuentes: list[tuple[str, float]] = []
+    usos:    list[tuple[str, float]] = []
+
+    # Utilidad del período (la del mes) → fuente si positiva, uso si pérdida.
+    utilidad_mes = delta["usuti"]
+    if utilidad_mes >= 0:
+        fuentes.append(("Utilidad del mes", utilidad_mes))
+    else:
+        usos.append(("Pérdida del mes", abs(utilidad_mes)))
+
+    # Retiros del mes → uso (USRET es acumulado anual; Δ del mes son los del mes).
+    retiros_mes = delta["usret"]
+    if retiros_mes > 0:
+        usos.append(("Retiros del mes", retiros_mes))
+    elif retiros_mes < 0:
+        # Δ negativo = reversa de retiros (raro) → fuente
+        fuentes.append(("Reverso de retiros", abs(retiros_mes)))
+
+    # Activos: Δ>0 = uso, Δ<0 = fuente.
+    activos_labels = {
+        "cart":       "Cartera (clientes)",
+        "stock":      "Stock de productos",
+        "uqui":       "Stock de químicos",
+        "maquinaria": "Maquinaria",
+        "realty":     "Terrenos y edificios",
+        "anticipos":  "Anticipos USD a proveedores",
+    }
+    for k, label in activos_labels.items():
+        d = delta[k]
+        if d > 0.5:
+            usos.append((f"Aumento {label.lower()}", d))
+        elif d < -0.5:
+            fuentes.append((f"Disminución {label.lower()}", abs(d)))
+
+    # Pasivos: Δ>0 = fuente, Δ<0 = uso.
+    if delta["deuda"] > 0.5:
+        fuentes.append(("Aumento de deuda con proveedores", delta["deuda"]))
+    elif delta["deuda"] < -0.5:
+        usos.append(("Disminución de deuda con proveedores", abs(delta["deuda"])))
+
+    total_fuentes = sum(m for _, m in fuentes)
+    total_usos    = sum(m for _, m in usos)
+
+    return {
+        "anio": yy, "mes": mm,
+        "anio_ini": yy_ant, "mes_ini": mm_ant,
+        "h_ini": h_ini, "h_fin": h_fin,
+        "fuentes": fuentes, "usos": usos,
+        "total_fuentes": total_fuentes,
+        "total_usos":    total_usos,
+        "delta_liquido": total_fuentes - total_usos,
+        "delta_banco":   delta["banco"],
+        "error":         None,
+    }

@@ -46,7 +46,14 @@ def lista():
         filas = queries.lista(anio=yy, mes=mm)
         error = None
     except Exception as e:
-        filas, error = [], str(e)
+        filas = []
+        msg = str(e)
+        # TMT 2026-05-18 — mensaje legible si la migración 0032 no corrió.
+        if 'scintela.vendedor' in msg and 'does not exist' in msg:
+            error = ("La tabla scintela.vendedor todavía no existe. "
+                     "Aplicá la migración: python scripts/migrate.py")
+        else:
+            error = msg
 
     if request.args.get("export") == "csv":
         return csv_response(

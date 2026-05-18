@@ -222,6 +222,42 @@ def deudas():
     return render_template("informes/deudas.html", filas=filas, total=total, error=error)
 
 
+@informes_bp.route("/fuentes-y-usos")
+@requiere_login
+@requiere_permiso("informes.ver")
+def fuentes_y_usos():
+    """Cuadro de Fuentes y Usos del mes elegido vs mes anterior.
+
+    Pedido dueña 2026-05-18 (docx "Para Claude"): existe en su PRG viejo
+    y le sirve para presentar a banco/socios.
+    """
+    from datetime import date
+    hoy = date.today()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+    except (TypeError, ValueError):
+        anio = hoy.year
+    try:
+        mes = int(request.args.get("mes") or hoy.month)
+    except (TypeError, ValueError):
+        mes = hoy.month
+    mes = max(1, min(mes, 12))
+
+    try:
+        data = queries.fuentes_y_usos(anio=anio, mes=mes)
+    except Exception as e:
+        data = {
+            "anio": anio, "mes": mes,
+            "fuentes": [], "usos": [],
+            "total_fuentes": 0, "total_usos": 0,
+            "delta_liquido": 0, "delta_banco": 0,
+            "h_ini": {}, "h_fin": {},
+            "error": str(e),
+        }
+    return render_template("informes/fuentes_usos.html",
+                           data=data, anio=anio, mes=mes)
+
+
 @informes_bp.route("/flujo")
 @requiere_login
 @requiere_permiso("informes.ver")

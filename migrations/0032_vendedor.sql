@@ -34,3 +34,18 @@ FROM scintela.cliente
 WHERE vend IS NOT NULL
   AND TRIM(vend) <> ''
 ON CONFLICT (codigo) DO NOTHING;
+
+-- TMT 2026-05-18 — si el runner corre como postgres pero la app usa otro
+-- user, hay que pasarle ownership. El SKILL.md (migrate.py) documenta
+-- exactamente este caso: "must be owner" → ALTER OWNER. Acá lo hacemos
+-- automático para el user actual de la sesión (current_user devuelve
+-- quien corre el script — si fue postgres, el ALTER es no-op; si fue
+-- otro user, se le pasa al app user). Idempotente.
+DO $$
+DECLARE
+    app_user TEXT := current_user;
+BEGIN
+    IF app_user <> 'postgres' THEN
+        EXECUTE format('ALTER TABLE scintela.vendedor OWNER TO %I', app_user);
+    END IF;
+END $$;
