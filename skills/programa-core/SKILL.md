@@ -596,7 +596,27 @@ aws ssm get-command-invocation --region us-east-2 \
   --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}' --output json
 ```
 
-### Error 2 — Migración que crea tablas SIN garantizar el owner correcto
+### Error 2 — deploy.yml excluía `*.sql` (incluyendo migrations)
+
+**Lo que pasó:** las migrations nunca llegaban a EC2 porque `deploy.yml`
+línea 50 tenía `--exclude='*.sql'` para no shipear dumps grandes como
+`intela12042026.sql`. Pero el glob también barría todo `migrations/*.sql`.
+Resultado: migrations 0001-0031 estaban en EC2 sólo porque las habían
+copiado a mano alguna vez; cualquier migración nueva que agregáramos
+quedaba sólo en la Mac. La diagnosis se hizo con
+`Get-ChildItem C:\programa-core\migrations\` desde SSM — sin 0032 en
+la lista.
+
+**Fix:** cambiar el exclude a `--exclude='./*.sql'` para que sólo aplique
+a `.sql` en el ROOT del repo (los dumps grandes viven ahí), no a
+subdirectorios como `migrations/`.
+
+**Regla:** cuando agregás un workflow de deploy con exclusiones por glob,
+**siempre verificá qué archivos quedan afuera del tarball**. Lo más
+sencillo es `tar -tzf /tmp/deploy.tar.gz | grep migrations` antes de
+considerarlo done.
+
+### Error 3 — Migración que crea tablas SIN garantizar el owner correcto
 
 **Lo que pasó:** la 0032 inicialmente hacía `CREATE TABLE scintela.vendedor`
 sin un `ALTER ... OWNER TO`. Si el runner corre con un user (postgres) pero
