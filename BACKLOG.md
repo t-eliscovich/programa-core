@@ -2,6 +2,69 @@
 
 _Ultima actualización: 2026-05-18_
 
+## Pedido dueña 2026-05-18 — UI cleanup pendiente
+
+Cosas que la dueña marcó después del primer batch y todavía no están
+hechas. Cada item debe pasar las 3 reglas canónicas del skill antes de
+mergear (R1 vocabulario · R2 no scroll en altas · R3 cero redundancia).
+
+### [S] /cartera/aging: sacar los chips "Con email / Con teléfono / Sin contacto"
+- **Qué**: en la barra de filtros chip ("Todos · Críticos 90+ · Con email
+  · Con teléfono · En STOP · Sin contacto") tres chips no aportan nada
+  útil para auditar cartera: la dueña no filtra por presencia de email
+  para tomar decisiones de cobranza.
+- **Dejar**: "Todos", "Críticos 90+", "En STOP".
+- **Sacar**: "Con email", "Con teléfono", "Sin contacto".
+- **Dónde**: `modules/cartera/templates/cartera/aging.html`, bloque
+  `#quick-filters` (línea ~96). También sacar los handlers JS asociados
+  en el `<script>` del mismo archivo.
+- **Por qué**: violación de Regla 3 (info que no aporta para la tarea
+  principal de la pantalla).
+
+### [M] Consistencia de UI entre formularios de alta
+- **Qué**: Compras (Nueva Compra), Ventas (Nueva Factura) y Cobranza
+  (Nuevo Cheque) tienen layouts visualmente distintos — distinto header
+  (algunos `page_header`, otros `page_hero`, otros `<h1>` plano), distinta
+  altura de inputs, distinto patrón de subtítulo, distinto patrón de
+  botones de "Cancelar / Guardar".
+- **Por qué**: la dueña los usa todos los días; saltar entre ellos no
+  debería requerir reorientarse visualmente.
+- **Plan**:
+  1. Definir patrón canónico (probablemente `.page-shell` + `page-header`
+     sin subtítulo + grid 2 cols + footer con Cancelar a la izquierda y
+     Guardar a la derecha).
+  2. Aplicar a los 3 forms: `compras/nueva.html`, `facturas/nueva.html`,
+     `cheques/nuevo.html`.
+  3. Considerar bonus: `posdat/form.html`, `gastos/nuevo.html`, `caja/nuevo.html`,
+     `capital/aportar.html`, `capital/retirar.html` también deberían
+     adoptar el patrón.
+- **Riesgo**: tocar `cheques/nuevo.html` (970 líneas con JS complejo)
+  puede romper el flujo de aplicación inline a facturas. Testear el
+  smoke completo + un alta real antes de mergear.
+
+### [XS] Confirmar atribución de "Me sobran los 2 cuadros de la derecha"
+- **Qué**: la frase en la docx aparece entre el párrafo de provisiones y
+  el de stock, sin atribución clara. Yo la apliqué a **provisiones** (3
+  KPI cards → 1). Pero pudo haber sido **stock** (4 KPI cards: Hilado,
+  Tejido, Terminado, Químicos).
+- **Plan**: preguntarle a la dueña a cuál se refería. Si era stock,
+  reducir las 4 cards a 1 (probablemente "Valor total US$" con
+  desglose en tooltip).
+
+### [S] Auditoría completa de botones "Volver"
+- **Qué**: en la docx la dueña dijo "así debería haber en todas las
+  pantallas, volver a la anterior". El batch inicial cubrió las que
+  reportó explícitamente (posdat, compras, estado_cuenta, deudas →
+  posdat). Pero quedan muchas detail pages sin "← Volver" explícito:
+  factura detalle, cheque detalle, compra editar, posdat editar, cliente
+  cuenta corriente, activo editar, etc. La mayoría sólo tienen el
+  breadcrumb del header — funciona pero no es el patrón explícito.
+- **Plan**: auditoría 1× sobre todos los templates `templates/**/detalle.html`
+  y `templates/**/editar.html`, agregar el botón "← Volver" canónico
+  cuando falte.
+
+---
+
 ## Pedido dueña 2026-05-18 — Features faltantes vs PRG viejo
 
 Estos 4 items fueron pedidos en la docx "Para Claude". Los UI fixes ya

@@ -26,13 +26,18 @@
         {% elif fact.stat == 'X' %}
           · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Eliminada por error</span>
         {% elif fact.stat == 'Y' %}
-          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Anulada (legacy)</span>
+          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Anulada</span>
         {% elif fact.stat %}
           · <span class="font-mono">{{ fact.stat }}</span>
         {% endif %}
       </p>
     </div>
     <div class="flex items-center gap-2 no-print">
+      {# TMT 2026-05-18 — botón Volver canónico #}
+      <a href="{{ url_for('facturas.lista') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
+        ← Volver a Facturas
+      </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
       {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat not in ('X', 'Y') %}
         <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"

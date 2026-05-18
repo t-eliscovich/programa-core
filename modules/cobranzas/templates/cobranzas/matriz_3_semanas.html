@@ -7,10 +7,7 @@
 {% endblock %}
 
 {% block content %}
-  {{ page_header(
-       "Cobros efectivos — últimas 3 semanas",
-       "Matriz diaria de cobros (cheques aplicados + entradas bancarias DE/AC). Replica MENU.PRG L1493 (EFECT)."
-  ) }}
+  {{ page_header("Cobros efectivos — últimas 3 semanas", "") }}
 
   {% if error %}
     <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
@@ -107,11 +104,4 @@
     </table>
   </div>
 
-  <p class="text-xs text-slate-400 mt-3 leading-relaxed">
-    Cobros = aplicaciones cheque→factura (importe&gt;0) + entradas bancarias
-    (documentos <code class="px-1 py-0.5 rounded bg-slate-100 font-mono">DE</code> /
-    <code class="px-1 py-0.5 rounded bg-slate-100 font-mono">AC</code>) en el día.
-    Replica MENU.PRG L1493-1522 (PROCEDURE EFECT). Promedio dividido por días hábiles
-    transcurridos (semana en curso) o 5 (semanas pasadas).
-  </p>
 {% endblock %}

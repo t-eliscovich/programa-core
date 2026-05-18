@@ -5,10 +5,10 @@
 {% block content %}
 {# TMT 2026-05-17 — patrón estándar de página (ver .page-shell en base.html). #}
 <div class="page-shell page-shell--xl">
-  {# TMT 2026-05-18 — subtitle removida (Regla 3: cero info redundante).
-     "campos obligatorios marcados con *" se ve directamente en el form. #}
+  {# TMT 2026-05-18 — patrón canónico (page-shell--xl + header sin subtitle).
+     Coincide con compra/nueva y factura/nueva. #}
   <header class="page-header">
-    <h1 class="page-title">Cobranza — nuevo cheque</h1>
+    <h1 class="page-title">Nuevo cheque (cobranza)</h1>
   </header>
 
   {% if errores %}

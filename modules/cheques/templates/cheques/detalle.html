@@ -18,7 +18,7 @@
         {% elif ch.stat == 'B' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Depositado (Pichincha)</span>
         {% elif ch.stat == 'A' %}
-          <span class="ml-2 text-sm px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Acreditado <span class="text-[10px] opacity-60">(legacy)</span></span>
+          <span class="ml-2 text-sm px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Acreditado</span>
         {% elif ch.stat == 'D' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Daniela</span>
         {% elif ch.stat == 'P' %}
@@ -34,7 +34,7 @@
         {% elif ch.stat == 'V' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 font-mono" title="Banco Internacional — legacy, deprecado">V (legacy)</span>
         {% elif ch.stat == 'R' %}
-          <span class="ml-2 text-sm px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">Rebotado <span class="text-[10px] opacity-60">(legacy)</span></span>
+          <span class="ml-2 text-sm px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">Rebotado</span>
         {% elif ch.stat %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-mono">{{ ch.stat }}</span>
         {% endif %}
@@ -59,6 +59,12 @@
        (antes eran 5-7 botones inline). Las acciones que NO son
        transiciones (Editar, Imprimir) quedan como botones planos. #}
     <div class="no-print flex items-center gap-2 justify-end">
+      {# TMT 2026-05-18 — botón Volver canónico (Regla R2 pero también aplica
+         a pantallas de detalle: la dueña quiere volver siempre con 1 click). #}
+      <a href="{{ url_for('cheques.lista') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
+        ← Volver a Cheques
+      </a>
       {# === CAMBIAR ESTADO === #}
       {# Calculamos qué transiciones son válidas según el stat actual. #}
       {% set puede_depositar    = (ch.stat == 'Z' and tiene_permiso('cheques.transicionar')) %}

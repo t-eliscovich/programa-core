@@ -92,7 +92,8 @@
   </details>
   {% endif %}
 
-  {# --- Quick filters (client-side, no recarga) -------------------------- #}
+  {# TMT 2026-05-18 — Chips "Con email", "Con teléfono", "Sin contacto"
+     sacados a pedido de la dueña (no aportan a la tarea de cobranza). #}
   <div class="flex flex-wrap items-center gap-2 mb-3 no-print" id="quick-filters">
     <span class="text-xs text-slate-500 uppercase tracking-wide mr-1">Filtrar:</span>
     <button type="button" data-qf="all"
@@ -103,22 +104,9 @@
             class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
       Críticos 90+ <span class="qf-count ml-1.5 text-slate-400"></span>
     </button>
-    <button type="button" data-qf="email"
-            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
-      Con email <span class="qf-count ml-1.5 text-slate-400"></span>
-    </button>
-    <button type="button" data-qf="tel"
-            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
-      Con teléfono <span class="qf-count ml-1.5 text-slate-400"></span>
-    </button>
     <button type="button" data-qf="stop"
             class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50">
       En STOP <span class="qf-count ml-1.5 text-slate-400"></span>
-    </button>
-    <button type="button" data-qf="sin-contacto"
-            class="qf-btn inline-flex items-center rounded-full bg-white border border-slate-300 text-slate-700 px-3 py-1 text-xs hover:bg-slate-50"
-            title="Clientes sin email ni teléfono — hay que cargarles los datos antes de cobrar">
-      Sin contacto <span class="qf-count ml-1.5 text-slate-400"></span>
     </button>
   </div>
 
@@ -275,11 +263,7 @@
       switch (qf) {
         case 'all':       return true;
         case 'critical':  return parseFloat(cb.dataset.b90 || 0) > 0;
-        case 'email':     return (cb.dataset.correo || '').trim() !== '';
-        case 'tel':       return (cb.dataset.telefono || '').trim() !== '';
         case 'stop':      return tr.querySelector('.bg-red-100') !== null;  // chip STOP
-        case 'sin-contacto':
-          return !(cb.dataset.correo || '').trim() && !(cb.dataset.telefono || '').trim();
         default: return true;
       }
     }
@@ -315,7 +299,7 @@
     // Computa N de cada filtro al cargar — para mostrar contador en el botón
     function refreshQuickCounts() {
       const trs = Array.from(document.querySelectorAll('tbody tr'));
-      const buckets = ['all', 'critical', 'email', 'tel', 'stop', 'sin-contacto'];
+      const buckets = ['all', 'critical', 'stop'];
       buckets.forEach(qf => {
         const n = trs.filter(tr => rowMatchesFilter(tr, qf)).length;
         const btn = document.querySelector(`.qf-btn[data-qf="${qf}"]`);

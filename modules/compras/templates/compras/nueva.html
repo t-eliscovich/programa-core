@@ -3,14 +3,11 @@
 {% block breadcrumb %}<a href="{{ url_for('compras.lista') }}" class="hover:underline text-slate-500">Compras</a> / <strong>Nueva</strong>{% endblock %}
 
 {% block content %}
-{# TMT 2026-05-17 — patrón estándar (ver .page-shell en base.html). #}
-<div class="page-shell page-shell--md">
+{# TMT 2026-05-18 — patrón canónico unificado con factura y cobranza:
+   page-shell--xl + page-header sin subtitle. (Regla 3 + consistencia UI.) #}
+<div class="page-shell page-shell--xl">
   <header class="page-header">
-    <h1 class="page-title">Compras — nueva compra</h1>
-    <p class="page-subtitle">
-      Cargá una compra a proveedor. Los campos obligatorios están marcados con
-      <span class="text-red-500">*</span>.
-    </p>
+    <h1 class="page-title">Nueva compra</h1>
   </header>
 
   {% if errores %}
