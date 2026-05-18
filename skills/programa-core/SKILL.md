@@ -686,6 +686,41 @@ Cobros semana actual + 3 anteriores (parcial — ya existe matriz_3_semanas),
 Historia con cuadros mensuales (parcial), y Cuadro de Fuentes y Usos.
 Cada uno necesita decisión de negocio antes de implementar.
 
+## Módulo comisiones (TMT 2026-05-18)
+
+Replica `MODIFICA.PRG PROCEDURE COMISION` (línea 1770) que listaba
+cobranzas del mes filtradas por `cliente.vend`. dBase NO guardaba el
+% de comisión; acá lo agregamos en `scintela.vendedor` (migración 0032)
+para calcular el monto a pagar automáticamente.
+
+**Modelo:**
+```
+scintela.vendedor  → (codigo PK, nombre, pct_comision, activo,
+                      fecha_crea, fecha_actualiza, usuario_actualiza)
+```
+Backfill automático en la 0032: un `INSERT` por cada `vend` distinct
+no-nulo de `scintela.cliente`. Idempotente vía `ON CONFLICT DO NOTHING`.
+
+**Stat de "cobrado":** dBase usaba `cheque.stat $ "BWVCIK"`. En PC:
+`stat IN ('B', 'A')` cubre el caso (B = depositado Pichincha moderno,
+A = acreditado legacy). Si aparece algún caso de cheques cobrados con
+stat distinto, ampliar el filtro en `comisiones.queries`.
+
+**Cálculo de comisión:**
+```sql
+comision_mes = SUM(cheque.importe) * (vendedor.pct_comision / 100)
+WHERE cheque.stat IN ('B', 'A')
+  AND MONTH(cheque.fechad) = mes
+  AND YEAR(cheque.fechad)  = anio
+  AND cliente.vend         = vendedor.codigo
+```
+
+**Ventas mes (bonus PC, no del PRG):** suma de `factura.importe` del
+mes para clientes del vendedor, excluyendo `stat IN ('X', 'Y')`.
+
+**Permiso:** todas las rutas usan `informes.ver` (mismo nivel que otros
+informes — el dueño ve todo, contabilidad/cobranzas no).
+
 ## Setup local
 
 Postgres en Homebrew@17 (base `intela`):

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Comisiones · {{ vendedor.codigo }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('comisiones.lista', anio=anio, mes=mes) }}" class="hover:underline">Comisiones</a> /
+  <strong>{{ vendedor.codigo }}</strong>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--xl">
+  <header class="page-header flex items-start justify-between">
+    <div>
+      <h1 class="page-title">{{ vendedor.nombre or vendedor.codigo }}</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Código <span class="font-mono">{{ vendedor.codigo }}</span> ·
+        {{ pct }}% de comisión sobre cobranzas
+      </p>
+    </div>
+    <a href="{{ url_for('comisiones.lista', anio=anio, mes=mes) }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
+      ← Volver a Comisiones
+    </a>
+  </header>
+
+  {% if error %}
+    <div class="page-error"><p>{{ error }}</p></div>
+  {% endif %}
+
+  {# Resumen del mes #}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Ventas {{ mes }}/{{ anio }}</div>
+      <div class="text-xl font-bold tabular-nums mt-1">$ {{ total_vent | num_es(0) }}</div>
+      <div class="text-xs text-slate-500 mt-1">{{ ventas | length }} facturas</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cobranzas {{ mes }}/{{ anio }}</div>
+      <div class="text-xl font-bold tabular-nums mt-1">$ {{ total_cobr | num_es(0) }}</div>
+      <div class="text-xs text-slate-500 mt-1">{{ cobranzas | length }} cheques acreditados</div>
+    </div>
+    <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Comisión a pagar</div>
+      <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">$ {{ comision | num_es(2) }}</div>
+      <div class="text-xs text-emerald-700 dark:text-emerald-300 mt-1">{{ pct }}% × cobranzas</div>
+    </div>
+  </div>
+
+  {# Cobranzas — la métrica principal del PRG (PROCEDURE COMISION) #}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">Cheques cobrados del mes</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-6">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left">F. depósito</th>
+          <th class="px-4 py-3 text-left">Cliente</th>
+          <th class="px-4 py-3 text-left">N°</th>
+          <th class="px-4 py-3 text-left">Banco</th>
+          <th class="px-4 py-3 text-right">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cobranzas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2" style="white-space:nowrap;">{{ c.fechad | fecha_es }}</td>
+          <td class="px-4 py-2">
+            <span class="font-mono text-xs text-slate-500">{{ c.codigo_cli }}</span>
+            <span class="ml-1">{{ c.cliente }}</span>
+          </td>
+          <td class="px-4 py-2 font-mono text-xs">{{ c.no_cheque or '#' ~ c.id_cheque }}</td>
+          <td class="px-4 py-2 text-xs text-slate-500">{{ c.banco or '' }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ c.importe | num_es(2) }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(5, 'Sin cobranzas en este mes.',
+                     sugerencia='Cheques acreditados (stat B/A) cuya fecha de depósito caiga en el mes.') }}
+        {% endfor %}
+      </tbody>
+      {% if cobranzas %}
+      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
+        <tr>
+          <td class="px-4 py-3 text-base font-bold" colspan="4">Total cobrado</td>
+          <td class="px-4 py-3 text-right tabular-nums text-lg font-bold">{{ total_cobr | num_es(2) }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+  {# Ventas del mes — bonus PC #}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">Facturas emitidas del mes</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left">Fecha</th>
+          <th class="px-4 py-3 text-left">Cliente</th>
+          <th class="px-4 py-3 text-left">N°</th>
+          <th class="px-4 py-3 text-right">Importe</th>
+          <th class="px-4 py-3 text-right">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in ventas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2" style="white-space:nowrap;">{{ v.fecha | fecha_es }}</td>
+          <td class="px-4 py-2">
+            <span class="font-mono text-xs text-slate-500">{{ v.codigo_cli }}</span>
+            <span class="ml-1">{{ v.cliente }}</span>
+          </td>
+          <td class="px-4 py-2 font-mono text-xs">{{ v.numf_completo or v.numf or '#' ~ v.id_factura }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ v.importe | num_es(2) }}</td>
+          <td class="px-4 py-2 text-right tabular-nums text-slate-500">{{ v.saldo | num_es(2) if v.saldo is not none else '—' }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(5, 'Sin ventas en este mes.') }}
+        {% endfor %}
+      </tbody>
+      {% if ventas %}
+      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
+        <tr>
+          <td class="px-4 py-3 text-base font-bold" colspan="3">Total facturado</td>
+          <td class="px-4 py-3 text-right tabular-nums text-lg font-bold">{{ total_vent | num_es(2) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

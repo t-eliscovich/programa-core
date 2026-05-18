@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+{% block title %}Comisiones de vendedores{% endblock %}
+{% block breadcrumb %}<strong>Comisiones</strong>{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--xl">
+  <header class="page-header">
+    <h1 class="page-title">Comisiones de vendedores</h1>
+  </header>
+
+  {% if error %}
+    <div class="page-error"><p>{{ error }}</p></div>
+  {% endif %}
+
+  {# Selector de mes — patrón cobranza/factura #}
+  <form method="get" class="flex items-end gap-3 mb-4">
+    <label class="flex flex-col">
+      <span class="text-xs text-slate-600">Año</span>
+      <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
+             class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
+    </label>
+    <label class="flex flex-col">
+      <span class="text-xs text-slate-600">Mes</span>
+      <select name="mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
+        {% set meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'] %}
+        {% for m in range(1, 13) %}
+          <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ m }} — {{ meses[m-1] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Ver</button>
+    <a href="{{ url_for('comisiones.lista', anio=anio, mes=mes, export='csv') }}"
+       class="text-sm text-slate-500 hover:underline self-center ml-auto">Exportar CSV</a>
+  </form>
+
+  {# Card grande con totales del mes #}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Ventas del mes</div>
+      <div class="text-xl font-bold tabular-nums mt-1">$ {{ totales.ventas | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cobranzas del mes</div>
+      <div class="text-xl font-bold tabular-nums mt-1">$ {{ totales.cobranzas | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Comisión total a pagar</div>
+      <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">$ {{ totales.comision | num_es(2) }}</div>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Vendedor</th>
+          <th class="px-4 py-3 text-right font-medium" style="white-space:nowrap;">% Comisión</th>
+          <th class="px-4 py-3 text-right font-medium" style="white-space:nowrap;">N° clientes</th>
+          <th class="px-4 py-3 text-right font-medium">Ventas mes</th>
+          <th class="px-4 py-3 text-right font-medium">Cobranzas mes</th>
+          <th class="px-4 py-3 text-right font-medium">Comisión $</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2 font-mono text-xs">
+            <a href="{{ url_for('comisiones.detalle', codigo=f.codigo, anio=anio, mes=mes) }}"
+               class="text-sky-700 hover:underline">{{ f.codigo }}</a>
+          </td>
+          <td class="px-4 py-2">
+            {# Inline edit del nombre #}
+            <form method="post" action="{{ url_for('comisiones.actualizar_nombre', codigo=f.codigo) }}"
+                  class="inline-flex items-center gap-1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="anio" value="{{ anio }}">
+              <input type="hidden" name="mes" value="{{ mes }}">
+              <input type="text" name="nombre" value="{{ f.nombre or '' }}" maxlength="100"
+                     class="bg-transparent border border-transparent hover:border-slate-200 focus:bg-white focus:border-sky-400 rounded px-2 py-0.5 text-sm w-64">
+              <button class="text-xs text-sky-600 hover:text-sky-800 opacity-0 group-hover:opacity-100" title="Guardar">✓</button>
+            </form>
+          </td>
+          <td class="px-4 py-2 text-right">
+            {# Inline edit del % #}
+            <form method="post" action="{{ url_for('comisiones.actualizar_pct', codigo=f.codigo) }}"
+                  class="inline-flex items-center gap-1 justify-end">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="anio" value="{{ anio }}">
+              <input type="hidden" name="mes" value="{{ mes }}">
+              <input type="number" step="0.01" min="0" max="100" name="pct_comision"
+                     value="{{ f.pct_comision or 0 }}"
+                     class="border border-slate-200 hover:border-slate-300 focus:border-sky-400 rounded px-2 py-0.5 text-right text-sm w-20 tabular-nums">
+              <span class="text-slate-400">%</span>
+              <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nuevo %">✓</button>
+            </form>
+          </td>
+          <td class="px-4 py-2 text-right tabular-nums text-slate-500">{{ f.n_clientes or '—' }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
+          <td class="px-4 py-2 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
+          <td class="px-4 py-2 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
+            {{ (f.comision_mes or 0) | num_es(2) }}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(7, 'Sin vendedores cargados.',
+                     sugerencia='El backfill inicial debería haber traído los códigos desde cliente.vend.') }}
+        {% endfor %}
+      </tbody>
+      {% if filas %}
+      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
+        <tr>
+          <td class="px-4 py-3" colspan="4">
+            <span class="text-base font-bold">Total</span>
+            <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} vendedores)</span>
+          </td>
+          <td class="px-4 py-3 text-right tabular-nums text-base font-semibold">{{ totales.ventas | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-base font-semibold">{{ totales.cobranzas | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-lg font-bold text-emerald-900 dark:text-emerald-100">{{ totales.comision | num_es(2) }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

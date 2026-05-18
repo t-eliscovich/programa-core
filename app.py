@@ -241,6 +241,9 @@ def create_app() -> Flask:
     from modules.cobranzas.views import cobranzas_bp
     app.register_blueprint(cobranzas_bp)
 
+    from modules.comisiones.views import comisiones_bp
+    app.register_blueprint(comisiones_bp)
+
     from modules.gastos.views import gastos_bp
     app.register_blueprint(gastos_bp)
 
