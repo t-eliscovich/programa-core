@@ -1,0 +1,166 @@
+name: Deploy to EC2
+
+# Cuando se ejecuta:
+#   - push a main → deploy automático
+#   - manual desde la UI de Actions ("Run workflow") → útil para redeploy
+#
+# Cómo funciona:
+#   1. Empaqueta el repo en tarball (excluye .venv, .git, *.sql, etc.)
+#   2. Sube el tarball a S3 (en s3://intela-deploy-<acct>/programa_core_deploy/)
+#   3. Manda SSM al EC2 que descarga, extrae, pip install -r requirements.txt,
+#      reinicia el Scheduled Task ProgramaCoreApp, y hace health check.
+#
+# Auth: asume el IAM role `programa-core-deploy` via OIDC (sin keys hardcodeadas).
+# El role ARN está en el secret AWS_DEPLOY_ROLE_ARN del repo.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # necesario para OIDC
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Package repo
+        run: |
+          # Exclusiones: deps locales, git, dumps SQL, archives, caches.
+          # NO incluímos .env (no existe en el repo, vive en el server).
+          tar --exclude='./.venv' --exclude='./venv' \
+              --exclude='./__pycache__' --exclude='./.git' \
+              --exclude='./.pytest_cache' --exclude='./.ruff_cache' \
+              --exclude='./.tw-build' \
+              --exclude='./node_modules' \
+              --exclude='./.github' \
+              --exclude='*.rar' --exclude='*.sql' \
+              --exclude='*.pyc' --exclude='*.pyo' \
+              --exclude='./AUDIT_*' --exclude='./BUG_HUNT_*' \
+              --exclude='./E2E_TESTS_*' --exclude='./HALLAZGOS_*' \
+              --exclude='./SMOKE_TEST_*' --exclude='./PLAN_BUG_*' \
+              -czf /tmp/programa_core.tar.gz .
+          ls -lh /tmp/programa_core.tar.gz
+
+      - name: Upload to S3
+        id: upload
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          S3_KEY="programa_core_deploy/programa_core.tar.gz"
+          aws s3 cp /tmp/programa_core.tar.gz "s3://intela-deploy-${ACCT}/${S3_KEY}" --region us-east-2
+          # Generamos presigned URL para que el EC2 lo descargue (más simple que IAM rol en EC2)
+          URL=$(aws s3 presign "s3://intela-deploy-${ACCT}/${S3_KEY}" --expires-in 1800 --region us-east-2)
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy via SSM (download + extract + pip + restart + healthcheck)
+        id: deploy
+        env:
+          DOWNLOAD_URL: ${{ steps.upload.outputs.url }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # Construímos el PowerShell que va a correr en el EC2.
+          # Pasamos URL y SHA como vars al script.
+          SCRIPT=$(cat <<PSEOF
+          \$ErrorActionPreference = 'Continue'
+          \$env:PYTHONIOENCODING = 'utf-8'
+          \$url = '${DOWNLOAD_URL}'
+          \$sha = '${COMMIT_SHA}'
+
+          Write-Output "=== Deploy commit \$sha ==="
+          \$ProgressPreference = 'SilentlyContinue'
+
+          # 1. Backup del previous .env (por las dudas, aunque no lo deberíamos tocar).
+          if (Test-Path C:\programa-core\.env) { Copy-Item C:\programa-core\.env C:\tmp\dotenv.backup -Force }
+
+          # 2. Descargar tarball
+          (New-Object System.Net.WebClient).DownloadFile(\$url, 'C:\tmp\deploy.tar.gz')
+          Write-Output "Downloaded \$((Get-Item C:\tmp\deploy.tar.gz).Length) bytes"
+
+          # 3. Extraer en sitio. tar -xzf overwrites pero no borra archivos sueltos —
+          #    pero como excluímos .git/.env/etc del tarball, lo importante (.env)
+          #    no se pisa.
+          if (-not (Test-Path C:\programa-core)) { New-Item -ItemType Directory -Path C:\programa-core | Out-Null }
+          tar -xzf C:\tmp\deploy.tar.gz -C C:\programa-core
+          if (\$LASTEXITCODE -ne 0) { Write-Output "ERROR: tar exit \$LASTEXITCODE"; exit 1 }
+
+          # 4. pip install (silencioso, solo lo que cambió)
+          Set-Location C:\programa-core
+          & C:\Python312\python.exe -m pip install -r requirements.txt --quiet --disable-pip-version-check 2>&1 | Select -Last 3
+
+          # 5. Restart task
+          Stop-ScheduledTask -TaskName ProgramaCoreApp -ErrorAction SilentlyContinue
+          Start-Sleep 3
+          Start-ScheduledTask -TaskName ProgramaCoreApp
+          Start-Sleep 6
+
+          # 6. Health check
+          \$state = (Get-ScheduledTask -TaskName ProgramaCoreApp).State
+          Write-Output "Task state: \$state"
+          try {
+              \$code = (Invoke-WebRequest -UseBasicParsing http://localhost:5002/login -TimeoutSec 10).StatusCode
+              Write-Output "Health: HTTP \$code"
+              if (\$code -ne 200) { exit 1 }
+          } catch {
+              Write-Output "Health FAIL: \$_"
+              exit 1
+          }
+          Write-Output "=== Deploy OK ==="
+          PSEOF
+          )
+
+          # Encode en base64 y mandar via SSM con file://
+          B64=$(printf '%s' "$SCRIPT" | base64 -w0)
+          cat > /tmp/p.json <<JSONEOF
+          {"commands":["[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${B64}')) | Invoke-Expression"]}
+          JSONEOF
+
+          CMD_ID=$(aws ssm send-command \
+            --region us-east-2 \
+            --instance-ids i-0fcca4d7029f08489 \
+            --document-name AWS-RunPowerShellScript \
+            --parameters file:///tmp/p.json \
+            --query Command.CommandId --output text)
+
+          echo "Command ID: $CMD_ID"
+
+          # Poll cada 5s, máximo 4 minutos
+          for i in {1..48}; do
+            sleep 5
+            STATUS=$(aws ssm get-command-invocation \
+              --region us-east-2 \
+              --instance-id i-0fcca4d7029f08489 \
+              --command-id "$CMD_ID" \
+              --query Status --output text 2>/dev/null || echo "Pending")
+            echo "Attempt $i: $STATUS"
+            if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then
+              break
+            fi
+          done
+
+          # Mostrar el output completo
+          echo "=== SSM output ==="
+          aws ssm get-command-invocation \
+            --region us-east-2 \
+            --instance-id i-0fcca4d7029f08489 \
+            --command-id "$CMD_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+
+          # Fallar el step si el SSM no terminó OK
+          if [ "$STATUS" != "Success" ]; then
+            echo "Deploy failed (final status: $STATUS)"
+            exit 1
+          fi
