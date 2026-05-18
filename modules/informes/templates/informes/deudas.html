@@ -19,34 +19,38 @@
     </div>
   {% endif %}
 
+  {# TMT 2026-05-18: pedido dueña.
+     - Columnas "Compras" y "Más vieja" removidas (inútiles).
+     - Cada proveedor es un link a /posdat?prov=XX (que tiene su botón
+       "← Volver a todos" para regresar a la lista de deudas). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-5 py-3 text-left font-medium" style="white-space: nowrap;">Código</th>
           <th class="px-5 py-3 text-left font-medium">Proveedor</th>
-          <th class="px-5 py-3 text-right font-medium">Compras</th>
-          <th class="px-5 py-3 text-right font-medium">Más vieja</th>
           <th class="px-5 py-3 text-right font-medium">Saldo</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+            onclick="window.location='{{ url_for('posdat.lista', prov=f.codigo_prov) }}'">
           <td class="px-5 py-2 font-mono text-xs" style="white-space: nowrap;">{{ f.codigo_prov }}</td>
-          <td class="px-5 py-2">{{ f.nombre }}</td>
-          <td class="px-5 py-2 text-right text-mono">{{ f.n_compras }}</td>
-          <td class="px-5 py-2 text-right text-xs text-slate-500" style="white-space: nowrap;">{{ f.compra_mas_vieja | fecha_es }}</td>
+          <td class="px-5 py-2">
+            <a href="{{ url_for('posdat.lista', prov=f.codigo_prov) }}"
+               class="hover:text-sky-600 hover:underline">{{ f.nombre }}</a>
+          </td>
           <td class="px-5 py-2 text-right text-mono">{{ f.saldo_total | money_es }}</td>
         </tr>
         {% else %}
-        {{ empty_row(5, 'Sin deudas pendientes.', 'No hay posdatados a pagar.') }}
+        {{ empty_row(3, 'Sin deudas pendientes.', 'No hay posdatados a pagar.') }}
         {% endfor %}
       </tbody>
       {% if filas %}
       <tfoot class="bg-slate-50 dark:bg-slate-800/50 font-semibold">
         <tr>
-          <td class="px-5 py-3" colspan="4">Total</td>
+          <td class="px-5 py-3" colspan="2">Total</td>
           <td class="px-5 py-3 text-right text-mono">{{ total | money_es }}</td>
         </tr>
       </tfoot>

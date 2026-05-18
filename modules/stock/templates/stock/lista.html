@@ -112,48 +112,14 @@
     </table>
   </div>
 
-  {# ─── Compras últimos 3 meses por tipo ─── #}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">
-    Compras últimos 3 meses por tipo
-  </h2>
-  <p class="text-xs text-slate-500 mb-3">
-    Qué entró a stock recientemente (ayuda a entender la composición actual).
-  </p>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3 text-left font-medium">Tipo</th>
-          <th class="px-4 py-3 text-right font-medium">N° compras</th>
-          <th class="px-4 py-3 text-right font-medium">Kg total</th>
-          <th class="px-4 py-3 text-right font-medium">Importe total $</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in compras_recientes %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-3">
-            <a href="{{ url_for('compras.lista') }}?q={{ c.tipo }}"
-               class="hover:text-sky-600 hover:underline">
-              <span class="font-mono text-xs text-slate-500 mr-1">{{ c.tipo }}</span>
-              <span>{{ label_tipo(c.tipo) }}</span>
-            </a>
-          </td>
-          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ c.n_compras }}</td>
-          <td class="px-4 py-3 text-right tabular-nums">{{ c.kg_total | num_es(0) }}</td>
-          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ c.importe_total | num_es(0) }}</td>
-        </tr>
-        {% else %}
-        {{ empty_row(4, 'Sin compras en los últimos 3 meses.') }}
-        {% endfor %}
-      </tbody>
-    </table>
+  {# TMT 2026-05-18: pedido de la dueña — eliminar info redundante de abajo
+     (tabla "Compras últimos 3 meses" + nota técnica). #}
+  {% if f.kg == 0 %}
+  <div class="px-4 py-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+    <strong>⚠ Terminado en 0:</strong> esto pasa cuando las facturas YTD exceden
+    (opening terminado + compras tipo T). El opening del año debería incluir
+    tejido producido — revisar <code>scintela.iniciales</code> del mes 1.
   </div>
-
-  <p class="text-xs text-slate-500 mt-4">
-    El kg y U$/kg ponderado salen del último snapshot mensual de <code>scintela.historia</code>
-    (al {{ stock.snapshot_fecha or '—' }}) + ajustes live de compras / facturas creadas en Programa Core.
-    Las fórmulas de tarifa (UMX, UKK, UFF) replican INFORMES.PRG línea 337.
-  </p>
+  {% endif %}
 </div>
 {% endblock %}

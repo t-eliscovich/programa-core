@@ -1,6 +1,51 @@
 # Backlog — Programa Core
 
-_Ultima actualización: 2026-04-16_
+_Ultima actualización: 2026-05-18_
+
+## Pedido dueña 2026-05-18 — Features faltantes vs PRG viejo
+
+Estos 4 items fueron pedidos en la docx "Para Claude". Los UI fixes ya
+están aplicados; estos quedan en backlog porque cada uno requiere diseño
+de datos + decisión de negocio.
+
+### [M] Comisión de vendedores
+- **Qué**: módulo que calcule la comisión mensual de cada vendedor según
+  las facturas cobradas y un % por vendedor (o por cliente).
+- **Por qué**: existe en el PRG viejo, se usa para liquidar a los vendedores.
+- **Dónde**: nuevo blueprint `modules/comisiones/`. Lee `scintela.factura`
+  (con stat='T' / saldo<importe) + `scintela.cliente.vend` (campo que ya
+  existe). El % por vendedor probablemente vive en una tabla nueva
+  `scintela.vendedor` con `(codigo, nombre, pct_comision)`.
+- **Dependencia**: confirmar con dueña cómo se calcula hoy (qué % aplica,
+  si se cobra al facturar o al cobrar, si hay base de exclusiones).
+
+### [S] Efectivo / cheques semana actual + últimas 3 semanas
+- **Qué**: pantalla mostrando ingresos (cheques + efectivo) de la semana
+  en curso + las 3 anteriores, agregadas por día/cliente.
+- **Estado actual**: ya existe `cobranzas.matriz_3_semanas`
+  (`modules/cobranzas/templates/cobranzas/matriz_3_semanas.html`) —
+  verificar con dueña si cumple, y si no, qué falta.
+
+### [M] Historia: cuadros de resultados/balances de meses anteriores
+- **Qué**: ver los balances y P&L de cada mes pasado (drill-down desde
+  la lista mensual).
+- **Estado actual**: existen `informes/historia.html` y
+  `historia_multianual.html`. Verificar si renderizan los cuadros como
+  los espera la dueña; si no, agregar la vista "cuadro mensual" (mismo
+  layout que /informes/balance pero contra un snapshot histórico).
+
+### [L] Cuadro de Fuentes y Usos
+- **Qué**: estado de flujo de fondos clásico — fuentes (utilidad,
+  amortización, aumentos de pasivos, disminuciones de activos) vs usos
+  (dividendos, disminución de pasivos, aumentos de activos). Período
+  configurable (mes/año).
+- **Por qué**: dueña usa esto en el PRG viejo para presentar a banco /
+  socios.
+- **Dónde**: nueva ruta `/informes/fuentes_usos`. Necesita 2 snapshots
+  de balance (inicio y fin del período) + el P&L del período. Replica
+  INFORMES.PRG sección de fuentes y usos.
+
+---
 
 Esta es la lista completa de lo que falta, ordenada por impacto.  Cada item tiene: **qué**, **por qué**, **dónde**, y un **estimado grueso** (XS <1h · S 1-3h · M 3-8h · L >1 día).
 

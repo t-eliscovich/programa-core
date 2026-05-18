@@ -550,7 +550,7 @@
         <summary>Ingreso diario</summary>
         {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
         {% if tiene_permiso('facturas.crear') %}{{ nav_link('facturas.nueva', 'Ventas (factura)', 'file') }}{% endif %}
-        {% if tiene_permiso('compras.crear') %}{{ nav_link('compras.nueva', 'Compras', 'shopping') }}{% endif %}
+        {% if tiene_permiso('compras.crear') %}{{ nav_link('compras.nueva', 'Nueva Compra', 'shopping') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="bancos">
@@ -570,7 +570,7 @@
         <summary>Listas y modificar</summary>
         {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques de clientes', 'check') }}{% endif %}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
-        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
+        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Historial de Compras', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados a proveedores', 'receipt') }}{% endif %}
       </details>
 

@@ -32,8 +32,13 @@ def aging_buckets() -> list[dict]:
     via SUM.
 
     Orden: peor primero (90+ descendente, luego saldo total).
+
+    TMT 2026-05-18: aplica la misma allocation que aging_totales para que
+    la suma de buckets de cada fila coincida con su saldo_total
+    (saldo_facturas − cheques_en_cartera). Los cheques se asignan a los
+    buckets más jóvenes primero.
     """
-    return db.fetch_all(
+    rows = db.fetch_all(
         """
         WITH cheques_cli AS (
             SELECT codigo_cli,
@@ -77,7 +82,19 @@ def aging_buckets() -> list[dict]:
         GROUP BY f.codigo_cli, c.nombre, c.stop, c.cupo, c.vend, c.telefono, c.correo
         ORDER BY b90_plus DESC, saldo_total DESC
         """
-    )
+    ) or []
+
+    # Asignar cheques_en_cartera por cliente contra sus buckets (jóvenes primero)
+    for r in rows:
+        pendiente = float(r.get("cheques_en_cartera") or 0)
+        for k in ("b0_30", "b31_60", "b61_90", "b90_plus"):
+            actual = float(r.get(k) or 0)
+            toma = min(actual, pendiente)
+            r[k] = actual - toma
+            pendiente -= toma
+            if pendiente <= 0:
+                break
+    return rows
 
 
 def aging_totales() -> dict:
@@ -125,11 +142,35 @@ def aging_totales() -> dict:
             "total": 0.0, "saldo_facturas": 0.0, "cheques_en_cartera": 0.0,
             "n_facturas": 0, "n_clientes": 0,
         }
+
+    # TMT 2026-05-18 — Bug "0-30 días > total": los buckets sumaban
+    # f.saldo bruto, pero `total = saldo_facturas - cheques_en_cartera`.
+    # Quedaba mathematically inconsistent: sum(buckets) = saldo_facturas
+    # > total. Asignamos los cheques en cartera contra los buckets desde
+    # el más joven (los cheques posdatados típicamente cancelan facturas
+    # recientes). Con esto sum(buckets) == total siempre.
+    b0_30    = float(row["b0_30"] or 0)
+    b31_60   = float(row["b31_60"] or 0)
+    b61_90   = float(row["b61_90"] or 0)
+    b90_plus = float(row["b90_plus"] or 0)
+    pendiente = float(row.get("cheques_en_cartera") or 0)
+    for label in ("b0_30", "b31_60", "b61_90", "b90_plus"):
+        actual = {"b0_30": b0_30, "b31_60": b31_60,
+                  "b61_90": b61_90, "b90_plus": b90_plus}[label]
+        toma = min(actual, pendiente)
+        if label == "b0_30":    b0_30    -= toma
+        if label == "b31_60":   b31_60   -= toma
+        if label == "b61_90":   b61_90   -= toma
+        if label == "b90_plus": b90_plus -= toma
+        pendiente -= toma
+        if pendiente <= 0:
+            break
+
     return {
-        "b0_30":              float(row["b0_30"] or 0),
-        "b31_60":             float(row["b31_60"] or 0),
-        "b61_90":             float(row["b61_90"] or 0),
-        "b90_plus":           float(row["b90_plus"] or 0),
+        "b0_30":              b0_30,
+        "b31_60":             b31_60,
+        "b61_90":             b61_90,
+        "b90_plus":           b90_plus,
         "total":              float(row["total"] or 0),
         "saldo_facturas":     float(row.get("saldo_facturas") or 0),
         "cheques_en_cartera": float(row.get("cheques_en_cartera") or 0),

@@ -1,18 +1,15 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row %}
-{% block title %}Historial de movimientos dobles{% endblock %}
+{% block title %}Historial de movimientos{% endblock %}
 {% block breadcrumb %}<strong>Historial</strong>{% endblock %}
 
 {% block content %}
 <div class="max-w-full">
+  {# TMT 2026-05-18: simplificado — sacamos "dobles" del título (la dueña
+     no entiende qué significa) y la descripción larga. #}
   <div class="flex items-center justify-between mb-4">
     <div>
-      <h1 class="text-2xl font-semibold">Historial de movimientos dobles</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        Cada operación que cruza tabla (caja↔banco, compra↔banco, transferencias,
-        endosos, etc.) queda registrada acá. Los reversos también se guardan —
-        marcados con un link al original.
-      </p>
+      <h1 class="text-2xl font-semibold">Historial de movimientos</h1>
     </div>
     <div class="no-print flex items-center gap-2">
       <a href="{{ url_for('historial.lista', desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, export='csv') }}"
@@ -26,13 +23,9 @@
     </div>
   {% endif %}
 
-  {# KPIs #}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-    <div class="bg-white border border-slate-200 rounded-lg p-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Movimientos</div>
-      <div class="text-2xl font-semibold tabular-nums mt-1">{{ kpis.n or 0 }}</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">Total $ {{ kpis.total | float | num_es(0) }}</div>
-    </div>
+  {# TMT 2026-05-18: 4 KPIs reducidos a 2 — la dueña dijo que sobra info.
+     Activos = lo que cuenta ahora; Reversos = filas que anulan otras. #}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 max-w-xl">
     <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
       <div class="text-xs uppercase tracking-wider text-emerald-700">Activos</div>
       <div class="text-2xl font-semibold tabular-nums mt-1 text-emerald-900">
@@ -42,15 +35,8 @@
         $ {{ kpis.total_activos | float | num_es(0) }}
       </div>
     </div>
-    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
-      <div class="text-xs uppercase tracking-wider text-amber-700">Reversados</div>
-      <div class="text-2xl font-semibold tabular-nums mt-1 text-amber-900">
-        {{ kpis.n_reversados or 0 }}
-      </div>
-      <div class="text-[11px] text-amber-700 mt-0.5">tienen un reverso aplicado</div>
-    </div>
     <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-      <div class="text-xs uppercase tracking-wider text-slate-700">Reversos emitidos</div>
+      <div class="text-xs uppercase tracking-wider text-slate-700">Reversos</div>
       <div class="text-2xl font-semibold tabular-nums mt-1">
         {{ kpis.n_reversos or 0 }}
       </div>

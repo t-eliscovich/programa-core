@@ -162,7 +162,7 @@
 
   {# ----- KPI hero — 4 tarjetas ----- #}
   {% if resumen %}
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
     <div class="kpi-card">
       <div class="kpi-label">Total vivo</div>
       <div class="kpi-value kpi-accent">$ {{ resumen.total_vivos | num_es(0) }}</div>
@@ -176,12 +176,7 @@
     <div class="kpi-card">
       <div class="kpi-label">Cuentas con saldo</div>
       <div class="kpi-value">{{ resumen.n_ctas_vivos | num_es(0) }}</div>
-      <div class="kpi-meta">clientes con anticipo</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Histórico aplicado</div>
-      <div class="kpi-value text-slate-500 dark:text-slate-400">$ {{ resumen.total_aplicados | num_es(0) }}</div>
-      <div class="kpi-meta">{{ resumen.n_aplicados | num_es(0) }} movimientos</div>
+      <div class="kpi-meta">proveedores con anticipo</div>
     </div>
   </div>
   {% endif %}

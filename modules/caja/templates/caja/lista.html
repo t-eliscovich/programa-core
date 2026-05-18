@@ -55,28 +55,9 @@
 
   {% if resumen %}
   <div class="mb-6">
-    {# Strip de contexto secundario — el desglose del saldo. #}
-    <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-      {% if opening %}
-      <div class="text-slate-500">
-        Saldo inicial <span class="text-slate-700 dark:text-slate-300 font-medium tabular-nums">$ {{ opening | num_es(0) }}</span>
-      </div>
-      <div class="text-slate-400">+</div>
-      {% endif %}
-      <div class="text-slate-500">
-        Entradas <span class="text-emerald-700 dark:text-emerald-400 font-medium tabular-nums">+ $ {{ ingresos | num_es(0) }}</span>
-      </div>
-      <div class="text-slate-500">
-        Salidas <span class="text-rose-700 dark:text-rose-400 font-medium tabular-nums">− $ {{ egresos_abs | num_es(0) }}</span>
-      </div>
-      <div class="text-slate-400">=</div>
-      <div class="text-slate-500">
-        Saldo <span class="text-slate-900 dark:text-slate-100 font-semibold tabular-nums">$ {{ saldo_esperado | num_es(0) }}</span>
-      </div>
-      <div class="text-slate-400 text-xs">
-        ({{ resumen.n_movimientos or filas | length }} movimientos)
-      </div>
-    </div>
+    {# TMT 2026-05-18: strip Saldo-inicial/Entradas/Salidas removida a pedido
+       de la dueña. El hero ya muestra saldo + N movs; los detalles los ve
+       directamente en la lista de filas. #}
 
     {# Warning REAL — sólo si saldo running ≠ opening + Σ E − Σ S.
        Con la query corregida, el caso normal es drift=0 (no aparece). #}

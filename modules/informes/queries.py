@@ -2698,23 +2698,48 @@ def informe_balance() -> dict:
 # ---------------------------------------------------------------------------
 
 def cartera_por_cliente() -> list[dict]:
-    """Agregado por cliente (facturas vivas con saldo > 0)."""
-    return db.fetch_all(
+    """Agregado por cliente: cheques + facturas + total + % del total.
+
+    TMT 2026-05-18 — Pedido dueña: vista de 5 columnas
+    CLIENTE | CHEQUES | FACTURAS | TOTAL | % DEL TOTAL, orden desc por %.
+
+    - CHEQUES  = cheques en cartera del cliente (stat Z/1/2/3/P/D/A)
+    - FACTURAS = SUM(factura.saldo) viva
+    - TOTAL    = FACTURAS − CHEQUES (paridad dBase, lo neto a cobrar)
+    """
+    rows = db.fetch_all(
         """
+        WITH cheques_cli AS (
+            SELECT codigo_cli,
+                   COALESCE(SUM(importe), 0) AS cheques
+              FROM scintela.cheque
+             WHERE stat IN ('Z','1','2','3','P','D','A')
+               AND codigo_cli IS NOT NULL
+             GROUP BY codigo_cli
+        )
         SELECT f.codigo_cli,
-               COALESCE(c.nombre, '(sin nombre)') AS nombre,
-               COUNT(f.id_factura)                AS n_facturas,
-               COALESCE(SUM(f.saldo), 0)          AS saldo_total,
-               MIN(f.fecha)                       AS factura_mas_vieja,
-               MIN(f.vencimiento)                 AS vence_mas_viejo
+               COALESCE(c.nombre, '(sin nombre)')          AS nombre,
+               COUNT(f.id_factura)                         AS n_facturas,
+               COALESCE(SUM(f.saldo), 0)                   AS facturas,
+               COALESCE(MAX(cc.cheques), 0)                AS cheques,
+               COALESCE(SUM(f.saldo), 0)
+                 - COALESCE(MAX(cc.cheques), 0)            AS saldo_total,
+               MIN(f.fecha)                                AS factura_mas_vieja,
+               MIN(f.vencimiento)                          AS vence_mas_viejo
         FROM scintela.factura f
         LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+        LEFT JOIN cheques_cli cc      ON cc.codigo_cli = f.codigo_cli
         WHERE COALESCE(f.saldo, 0) > 0
           AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         GROUP BY f.codigo_cli, c.nombre
-        ORDER BY saldo_total DESC
         """
-    )
+    ) or []
+
+    total = sum(float(r.get("saldo_total") or 0) for r in rows) or 1.0
+    for r in rows:
+        r["pct"] = round(float(r.get("saldo_total") or 0) / total * 100, 1)
+    rows.sort(key=lambda r: r.get("pct", 0), reverse=True)
+    return rows
 
 
 # ---------------------------------------------------------------------------

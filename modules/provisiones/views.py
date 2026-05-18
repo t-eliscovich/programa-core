@@ -136,6 +136,31 @@ def editar(id_provisiones: int):
         )
 
 
+@provisiones_bp.route("/provisiones/<int:id_provisiones>/importe", methods=["POST"])
+@requiere_login
+@requiere_permiso("provisiones.editar")
+def actualizar_importe(id_provisiones: int):
+    """TMT 2026-05-18 — quick inline edit del importe desde la lista.
+
+    La dueña dijo que "esto cambia con cierta frecuencia" y abrir el form
+    completo para cambiar un número es engorroso.
+    """
+    prov = queries.por_id(id_provisiones)
+    if not prov:
+        abort(404)
+    importe = parse_monto(request.form.get("importe"))
+    if importe is None:
+        flash("Importe inválido.", "error")
+        return redirect(url_for("provisiones.lista"))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        queries.editar(id_provisiones, importe=importe, usuario=usuario)
+        flash(f"Importe de '{prov.get('concepto') or ''}' actualizado a $ {importe}.", "ok")
+    except Exception as e:
+        flash_exc("No pude actualizar", e)
+    return redirect(url_for("provisiones.lista"))
+
+
 @provisiones_bp.route("/provisiones/<int:id_provisiones>/confirmar-eliminacion", methods=["GET"])
 @requiere_login
 @requiere_permiso("provisiones.editar")

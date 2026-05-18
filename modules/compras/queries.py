@@ -857,6 +857,7 @@ def buscar(
     limite: int = 500,
     incluir_anuladas: bool = False,
     vista: str = "todas",
+    kg_filter: str | None = None,
 ) -> list[dict]:
     """Histórico de compras filtrable por proveedor/concepto/comprobante + fecha.
 
@@ -868,6 +869,11 @@ def buscar(
         'compras'    → tipos H, Q, C, K-sin-kg
         'produccion' → tipo K con kg > 0
         'anticipos'  → tipo A
+
+    TMT 2026-05-18 — `kg_filter`:
+        'gt0' → solo filas con kg > 0 (producción diaria)
+        'eq0' → solo filas con kg = 0 (compras sin kg)
+        None  → sin restricción
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -893,6 +899,12 @@ def buscar(
                OR CAST(c.numero AS TEXT) LIKE %(like)s)
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          -- TMT 2026-05-18 — filtro KG (>0 producción, =0 compras sin kg)
+          AND (
+                %(kg_filter)s IS NULL
+             OR (%(kg_filter)s = 'gt0' AND COALESCE(c.kg, 0) > 0.01)
+             OR (%(kg_filter)s = 'eq0' AND COALESCE(c.kg, 0) <= 0.01)
+          )
           -- Filtro por vista (compras / producción / anticipos)
           AND (
                 %(vista)s = 'todas'
@@ -916,6 +928,7 @@ def buscar(
             "limite": limite,
             "incluir_anuladas": bool(incluir_anuladas),
             "vista": vista,
+            "kg_filter": (kg_filter or None),
         },
     ) or []
 

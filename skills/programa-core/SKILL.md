@@ -560,6 +560,87 @@ Más limpio: dejar que las corridas diarias converjan solas (1-3 días).
 
 `scripts/smoke_test_dbase_port.py` cubre los 12 items del port + 4 regression guards del re-audit (R5–R8 — A,E,C matcher, boleta no_banco dinámico, reemplazar no zeroa importe, BAP advisory lock). Antes de cualquier deploy: 16/16 OK obligatorio. Setup usa SELECT-then-INSERT (no `ON CONFLICT (codigo_cli)`) porque `scintela.cliente.codigo_cli` y `scintela.proveedor.codigo_prov` no tienen UNIQUE constraint en la data legacy.
 
+## Pedido de la dueña 2026-05-18 — UX cleanup batch
+
+Pasada grande de UI a pedido directo de Tamara (docx "Para Claude"). Lo
+que importa que NO se pierda:
+
+### Botón "Volver" como patrón canónico
+La dueña odia quedar "atrapada" en una pantalla filtrada. Cualquier vista
+con filtros (prov, q, fecha, etc.) debe mostrar un botón "← Volver" a la
+lista completa cuando el filtro está activo. Implementado en:
+- `posdat/lista.html` — `prov`/`q`/`desde`/`hasta` activos → "← Volver a todos"
+- `compras/lista.html` — idem
+- `informes/estado_cuenta.html` — "← Volver a Cartera"
+- `deudas.html` → cada proveedor es link a `/posdat?prov=XX` (que tiene Volver)
+
+Patrón a copiar:
+```jinja
+{% if prov or q or desde or hasta %}
+  <a href="{{ url_for('blueprint.lista') }}"
+     class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+    ← Volver
+  </a>
+{% endif %}
+```
+
+### KPI hero filtrado vs global
+Para `/posdat?prov=XX`, el hero ahora muestra el total del **proveedor
+filtrado**, no la deuda global. Patrón: la query de resumen acepta el
+mismo filtro que la query de listado:
+```python
+def resumen(prov: str | None = None) -> dict:
+    return db.fetch_one(
+        "... WHERE (%(prov)s IS NULL OR UPPER(prov) = UPPER(%(prov)s))",
+        {"prov": prov or None},
+    )
+```
+
+### Cartera: bug histórico `buckets > total` (fix 2026-05-18)
+`aging_totales()` y `aging_buckets()` sumaban `b0_30 + b31_60 + b61_90 +
+b90_plus = saldo_facturas`, pero `total = saldo_facturas −
+cheques_en_cartera`. Resultado: el bucket 0-30 podía dar > total
+("$3.5M > $3.4M"). Fix: asignar `cheques_en_cartera` contra los buckets
+desde el más joven (los cheques posdatados cancelan facturas recientes).
+Con esto `sum(buckets) == total` por construcción.
+
+### Cartera por cliente — vista 5-columnas (`/informes/cartera`)
+Pedido literal de la dueña: vista compacta `CLIENTE | CHEQUES | FACTURAS
+| TOTAL | % DEL TOTAL`, ordenada por % desc (mayores deudores primero).
+Implementado en `informes.queries.cartera_por_cliente()` + template
+`informes/cartera.html`. `%` se calcula post-fetch para no complicar la
+query.
+
+### Mismatch facturas $5.3M vs cartera $3.4M
+La dueña los ve como "distintos" pero son válidos por diseño:
+- Facturas/lista hero → `SUM(factura.saldo)` bruto
+- /cartera (aging) → `SUM(saldo) − cheques_en_cartera` (paridad dBase)
+La diferencia siempre = cheques en cartera (Z/1/2/3/P/D/A). Si Tamara
+vuelve a preguntar, mostrar la fórmula explícita.
+
+### Gastos forzados en /informes/flujo
+- localStorage key `flujo_gastos_forzados_v1`. Cada item:
+  `{id, fecha (YYYY-MM-DD), importe, concepto}`.
+- Edit + delete ya disponibles en el panel — `prompt()` triple (importe,
+  concepto, fecha) para mantener UX simple sin un modal completo.
+- El panel "Egresos del flujo" (lista larga de posdat) se sacó del area
+  bajo el chart; quedó sólo el botón "Editar deudas (posdat banc 0/9)"
+  que abre el modal.
+
+### Provisiones inline edit
+`/provisiones` ahora permite editar el importe inline (sin pasar por el
+form completo). Endpoint nuevo: `provisiones.actualizar_importe` POST
+sólo recibe `importe` y llama `queries.editar(id, importe=...)` que ya
+soporta partial updates. La dueña dijo "esto cambia con cierta
+frecuencia" — opening el form completo es overkill.
+
+### Features faltantes vs PRG viejo (en BACKLOG)
+4 items quedaron documentados en `BACKLOG.md` (sección "Pedido dueña
+2026-05-18 — Features faltantes vs PRG viejo"): Comisión de vendedores,
+Cobros semana actual + 3 anteriores (parcial — ya existe matriz_3_semanas),
+Historia con cuadros mensuales (parcial), y Cuadro de Fuentes y Usos.
+Cada uno necesita decisión de negocio antes de implementar.
+
 ## Setup local
 
 Postgres en Homebrew@17 (base `intela`):

@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero, kpi_card %}
 {% block title %}Compras{% endblock %}
-{% block breadcrumb %}<strong>Compras</strong>{% endblock %}
+{% block breadcrumb %}
+  {% if q or desde or hasta or kg_filter or vista != 'todas' %}
+    <a href="{{ url_for('compras.lista') }}" class="hover:underline">Compras</a> /
+    <strong>Filtro activo</strong>
+  {% else %}
+    <strong>Compras</strong>
+  {% endif %}
+{% endblock %}
 
 {% block content %}
 {# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
@@ -15,6 +22,13 @@
     ) }}
 
     <div class="no-print flex items-center gap-2 shrink-0">
+      {% if q or desde or hasta or kg_filter or vista != 'todas' %}
+        <a href="{{ url_for('compras.lista') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+           title="Volver al listado completo, sin filtros">
+          ← Volver
+        </a>
+      {% endif %}
       {% if tiene_permiso('compras.crear') %}
         <a href="{{ url_for('compras.nueva') }}"
            class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">
@@ -137,6 +151,15 @@
       <label class="block text-xs text-slate-500 mb-1">Hasta</label>
       <input type="date" name="hasta" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {# TMT 2026-05-18 — filtro KG (útil cuando se filtra por PROV: kg>0 = producción diaria, kg=0 = compras sin kg) #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Kg</label>
+      <select name="kg" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
+        <option value=""    {% if not kg_filter %}selected{% endif %}>(todos)</option>
+        <option value="gt0" {% if kg_filter == 'gt0' %}selected{% endif %}>Kg &gt; 0 (producción)</option>
+        <option value="eq0" {% if kg_filter == 'eq0' %}selected{% endif %}>Kg = 0 (sin kg)</option>
+      </select>
     </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
   </form>

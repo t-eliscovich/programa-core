@@ -74,20 +74,12 @@
     </div>
   </div>
 
-  {# TMT 2026-05-17: simplificado. La dueña pidió quitar el resumen
-     redundante y dejar el dato que importa: "Facturas en cartera" = lo
-     vivo, lo que falta cobrar. Antes había 3 KPIs (Facturado total /
-     Canceladas / Eliminadas); las stats secundarias siguen visibles en
-     los tabs de abajo. #}
+  {# TMT 2026-05-18: la dueña pidió quitar "Facturado en el período"
+     (confunde porque suma importes brutos sin abonos) y dejar sólo el
+     KPI de cartera viva. La cifra "Facturas en cartera" coincide con la
+     suma de saldos en /informes/cartera; si en /cartera (aging) ves un
+     número menor es porque ese descuenta los cheques en cartera. #}
   {% set c_cartera = conteos.get('cartera', {}) %}
-  <div class="no-print grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-    {{ kpi_card('Facturas en cartera',
-                '$ ' ~ (c_cartera.get('total_saldo', 0) | float | num_es(0)),
-                (c_cartera.get('n', 0) | string) ~ ' facturas vivas con saldo > 0') }}
-    {{ kpi_card('Facturado en el período',
-                '$ ' ~ (c_cartera.get('total_importe', 0) | float | num_es(0)),
-                'importe total emitido (sin abonos)') }}
-  </div>
 
   {# Pestañas por estado — TMT 2026-05-17: removidas "Canceladas" y
      "Eliminadas" del header (sólo importan en auditoría puntual).

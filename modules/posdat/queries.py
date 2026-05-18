@@ -378,10 +378,13 @@ def buscar(
     return rows
 
 
-def resumen() -> dict:
+def resumen(prov: str | None = None) -> dict:
     """Total de deuda abierta (banc<>9) y número de partidas.
 
     Excluye anuladas (soft-delete) — migración 0027.
+
+    TMT 2026-05-18: si pasa `prov`, filtra por proveedor — para que el
+    KPI hero refleje el total del filtro activo en /posdat?prov=XX.
     """
     row = db.fetch_one(
         """
@@ -391,6 +394,8 @@ def resumen() -> dict:
         WHERE COALESCE(banc, 0) <> 9
           AND COALESCE(importe, 0) > 0
           AND (anulada IS NOT TRUE OR anulada IS NULL)
-        """
+          AND (%(prov)s IS NULL OR UPPER(prov) = UPPER(%(prov)s))
+        """,
+        {"prov": prov or None},
     )
     return row or {"total_abierto": 0, "partidas_abiertas": 0}

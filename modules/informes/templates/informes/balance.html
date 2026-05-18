@@ -491,7 +491,7 @@
      Indica ✓ cuando coinciden o ✗ con la diff cuando no. Permite al
      gerente auditar de dónde viene cada cifra. #}
   {% if b.conciliacion %}
-  <details class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded" open>
+  <details class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <summary class="cursor-pointer px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
       <span>Conciliación — totales del balance vs módulos</span>
       <span class="text-xs font-normal text-slate-500">cheques · facturas · posdat · caja · bancos · activos · historia · retiros</span>
@@ -734,13 +734,6 @@
   </details>
   {% endif %}
 
-  <p class="mt-6 text-xs text-slate-400 no-print">
-    Nota: Kilos, compras, tejido, tintura y ventas son del último cierre mensual
-    (historia). La cifra <em>hoy</em> junto al stock es una aproximación:
-    snapshot + compras − ventas desde el cierre (no refleja movimientos
-    intra-mes de tejido/tintura).
-    Los bancos con saldo 0 quedan ocultos — verlos todos en <a class="underline" href="{{ url_for('bancos.lista') }}">Bancos</a>.
-  </p>
   {% endif %}
 </div>
 {% endblock %}

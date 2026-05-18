@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, saldo_pill %}
 {% block title %}Estado de cuenta — {{ data.cliente.codigo_cli }}{% endblock %}
-{% block breadcrumb %}Informes / Cartera / <strong>{{ data.cliente.codigo_cli }}</strong>{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
+  <strong>{{ data.cliente.codigo_cli }}</strong>
+{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl">
@@ -15,6 +18,12 @@
       </p>
     </div>
     <div class="no-print flex items-center gap-2">
+      {# TMT 2026-05-18 — volver a la cartera total (pedido de la dueña) #}
+      <a href="{{ url_for('cartera.aging') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+         title="Volver al listado de la cartera">
+        ← Volver a Cartera
+      </a>
       <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli) }}"
          class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
         Cuenta corriente (timeline)

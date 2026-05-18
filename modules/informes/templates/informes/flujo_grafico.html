@@ -357,74 +357,21 @@
         </div>
       </section>
 
-      {# Debajo del chart, lado a lado: egresos automáticos (posdat) + gastos forzados manuales. #}
+      {# TMT 2026-05-18 — Pedido dueña: el editor de "Egresos del flujo" debe
+         incluir SOLO los gastos forzados (manuales), no la larga lista de
+         posdat. El acceso a editar deudas vive en el botón abajo. #}
       <div class="below-chart">
-        {% if egresos_lista and egresos_lista|length > 0 %}
-          {% set total_egresos = egresos_lista | sum(attribute='importe') %}
-          <section class="panel egresos-panel">
-            <div class="egr-head">
-              <div class="egr-head-top">
-                <div>
-                  <h3>Egresos del flujo</h3>
-                  <div class="sub">
-                    {{ egresos_lista|length }} obligaciones (posdat) que se restan del saldo.
-                    Vencidos imputados a hoy.
-                  </div>
-                </div>
-                <div class="egr-controls">
-                  <input type="search" id="egr-search" placeholder="Buscar proveedor o concepto…">
-                  <select id="egr-sort">
-                    <option value="fecha">Por fecha</option>
-                    <option value="importe">Por importe</option>
-                    <option value="prov">Por proveedor</option>
-                  </select>
-                  {# ITEM #2 — Editor inline de posdat banc=0/9 (PROCEDURE CAMBIA, MENU.PRG L725-803). #}
-                  {% if tiene_permiso('posdat.editar') or tiene_permiso('posdat.crear') or tiene_permiso('posdat.anular') %}
-                  <button type="button" id="btn-editar-deudas"
-                          class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium"
-                          onclick="abrirModalDeudas()">
-                    Editar deudas
-                  </button>
-                  {% endif %}
-                </div>
-              </div>
-            </div>
-            <div class="egr-grid" id="egr-grid">
-              {% for e in egresos_lista[:200] %}
-                <div class="egr-row"
-                     data-fecha="{{ e.fecha_efectiva }}"
-                     data-importe="{{ e.importe }}"
-                     data-prov="{{ (e.prov or '')|lower }}"
-                     data-search="{{ ((e.prov or '') ~ ' ' ~ (e.concepto or ''))|lower }}">
-                  <div class="d {{ 'venc' if e.vencido else '' }}"
-                       title="{% if e.vencido %}Vencido — fechad original {{ e.fechad }}{% else %}Vence {{ e.fecha_efectiva }}{% endif %}">
-                    {{ e.fecha_efectiva[8:10] }}/{{ e.fecha_efectiva[5:7] }}
-                  </div>
-                  <div class="desc">
-                    <div class="prov">{{ e.prov or '—' }}</div>
-                    <div class="concept">{{ e.concepto or '—' }}</div>
-                  </div>
-                  <div class="imp {{ 'cred' if e.importe < 0 else '' }}">
-                    {% if e.importe >= 0 %}−{% else %}+{% endif %}$ {{ '{:,.0f}'.format(e.importe | abs) | replace(',', '.') }}
-                  </div>
-                </div>
-              {% endfor %}
-              {% if egresos_lista|length > 200 %}
-                <div class="egr-row egr-more" style="opacity:.6">
-                  <div class="desc" style="grid-column:1 / -1;text-align:center;font-style:italic;font-size:11px;color:var(--muted)">
-                    … {{ egresos_lista|length - 200 }} egresos más adelante
-                  </div>
-                </div>
-              {% endif %}
-            </div>
-            <div class="egr-empty-msg" id="egr-empty-msg" style="display:none">
-              Sin resultados que coincidan con tu búsqueda.
-            </div>
-            <div class="egr-foot">
-              <span class="lbl">Total a restar</span>
-              <span class="total">−$ {{ '{:,.0f}'.format(total_egresos) | replace(',', '.') }}</span>
-            </div>
-          </section>
+        {% if tiene_permiso('posdat.editar') or tiene_permiso('posdat.crear') or tiene_permiso('posdat.anular') %}
+        <section class="panel egresos-panel" style="display:flex;align-items:center;justify-content:center;padding:24px">
+          <button type="button" id="btn-editar-deudas"
+                  class="text-sm px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium"
+                  onclick="abrirModalDeudas()">
+            Editar deudas (posdat banc 0/9)
+          </button>
+          <span style="margin-left:12px;font-size:12px;color:var(--muted)">
+            {{ egresos_lista|length if egresos_lista else 0 }} obligaciones registradas — modal con buscador
+          </span>
+        </section>
         {% endif %}
 
         {# Gastos forzados manual — en localStorage. Compacto. #}
@@ -851,12 +798,39 @@ function gfRender() {
         + '<span class="gf-monto">$ ' + fmt(it.importe) + '</span>'
         + '<span class="gf-concepto">' + (it.concepto || '(sin concepto)').replace(/[<>&]/g, '') + '</span>'
       );
+      // TMT 2026-05-18 — botón editar (la dueña pidió poder editar, no sólo agregar/eliminar)
+      const ed = document.createElement('button');
+      ed.className = 'gf-del';
+      ed.type = 'button';
+      ed.textContent = '✎';
+      ed.title = 'Editar';
+      ed.style.marginRight = '4px';
+      ed.addEventListener('click', () => {
+        const nuevoImp = prompt('Importe USD para "' + (it.concepto || '(sin concepto)') + '":', it.importe);
+        if (nuevoImp === null) return;
+        const n = parseFloat(nuevoImp);
+        if (!isFinite(n) || n <= 0) { alert('Importe inválido.'); return; }
+        const nuevoCpt = prompt('Concepto:', it.concepto || '');
+        if (nuevoCpt === null) return;
+        const nuevaFecha = prompt('Fecha (YYYY-MM-DD):', it.fecha);
+        if (nuevaFecha === null) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(nuevaFecha)) { alert('Fecha inválida.'); return; }
+        const cur = gfLoad().map(x => x.id === it.id
+          ? { ...x, importe: n, concepto: (nuevoCpt || '').trim(), fecha: nuevaFecha }
+          : x);
+        gfSave(cur);
+        gfRender();
+        gfRebuildChart();
+      });
+      row.appendChild(ed);
+
       const del = document.createElement('button');
       del.className = 'gf-del';
       del.type = 'button';
       del.textContent = '×';
       del.title = 'Eliminar';
       del.addEventListener('click', () => {
+        if (!confirm('¿Eliminar "' + (it.concepto || '(sin concepto)') + '"?')) return;
         const cur = gfLoad().filter(x => x.id !== it.id);
         gfSave(cur);
         gfRender();

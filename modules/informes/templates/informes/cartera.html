@@ -35,25 +35,42 @@
     </div>
   {% endif %}
 
+  {# TMT 2026-05-18 — Pedido dueña: 5 columnas CLIENTE | CHEQUES | FACTURAS
+     | TOTAL | % DEL TOTAL, ordenado por % desc (mayores deudores primero). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-5 py-3 text-left font-medium" style="white-space: nowrap;">Código</th>
           <th class="px-5 py-3 text-left font-medium">Cliente</th>
+          <th class="px-5 py-3 text-right font-medium">Cheques</th>
           <th class="px-5 py-3 text-right font-medium">Facturas</th>
-          <th class="px-5 py-3 text-right font-medium">Más vieja</th>
-          <th class="px-5 py-3 text-right font-medium">Saldo</th>
+          <th class="px-5 py-3 text-right font-medium">Total</th>
+          <th class="px-5 py-3 text-right font-medium">% del total</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-5 py-2 font-mono text-xs" style="white-space: nowrap;">{{ f.codigo_cli }}</td>
-          <td class="px-5 py-2">{{ f.nombre }}</td>
-          <td class="px-5 py-2 text-right text-mono">{{ f.n_facturas }}</td>
-          <td class="px-5 py-2 text-right text-xs text-slate-500" style="white-space: nowrap;">{{ f.factura_mas_vieja | fecha_es }}</td>
-          <td class="px-5 py-2 text-right">{{ saldo_pill(f.saldo_total) }}</td>
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+            onclick="window.location='{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}'">
+          <td class="px-5 py-2">
+            <a href="{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}"
+               class="hover:text-sky-600 hover:underline">
+              <span class="font-mono text-xs text-slate-500">{{ f.codigo_cli }}</span>
+              <span class="ml-1">{{ f.nombre }}</span>
+            </a>
+          </td>
+          <td class="px-5 py-2 text-right text-mono text-slate-500">
+            {{ (f.cheques or 0) | money_es if (f.cheques or 0) > 0 else '—' }}
+          </td>
+          <td class="px-5 py-2 text-right text-mono">{{ (f.facturas or 0) | money_es }}</td>
+          <td class="px-5 py-2 text-right text-mono font-semibold">{{ (f.saldo_total or 0) | money_es }}</td>
+          <td class="px-5 py-2 text-right text-mono">
+            <span class="inline-block min-w-[3.5rem] {% if (f.pct or 0) >= 10 %}font-semibold text-rose-700 dark:text-rose-400
+                  {% elif (f.pct or 0) >= 5 %}text-amber-700 dark:text-amber-400
+                  {% else %}text-slate-500{% endif %}">
+              {{ f.pct }}%
+            </span>
+          </td>
         </tr>
         {% else %}
         {{ empty_row(5, 'Sin saldos por cobrar.', 'Todas las facturas están pagadas.') }}
@@ -62,8 +79,11 @@
       {% if filas %}
       <tfoot class="bg-slate-50 dark:bg-slate-800/50 font-semibold">
         <tr>
-          <td class="px-5 py-3" colspan="4">Total</td>
+          <td class="px-5 py-3">Total ({{ filas | length }} clientes)</td>
+          <td class="px-5 py-3 text-right text-mono">{{ filas | sum(attribute='cheques') | money_es }}</td>
+          <td class="px-5 py-3 text-right text-mono">{{ filas | sum(attribute='facturas') | money_es }}</td>
           <td class="px-5 py-3 text-right text-mono">{{ total | money_es }}</td>
+          <td class="px-5 py-3 text-right text-mono">100%</td>
         </tr>
       </tfoot>
       {% endif %}

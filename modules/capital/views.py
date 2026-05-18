@@ -361,11 +361,20 @@ def lista():
     """
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
-    filtro = (request.args.get("filtro") or "todos").lower()
+    # TMT 2026-05-18: default a "retiros" — la dueña abre esta pantalla
+    # para ver retiros, no para auditar capital.
+    filtro = (request.args.get("filtro") or "retiros").lower()
     if filtro not in ("todos", "aportes", "retiros"):
-        filtro = "todos"
+        filtro = "retiros"
+    q = (request.args.get("q") or "").strip()
     try:
         filas = queries.movimientos_unificados(filtro, desde, hasta)
+        if q:
+            ql = q.lower()
+            filas = [m for m in filas
+                     if ql in (m.get("concepto") or "").lower()
+                     or ql in (m.get("persona") or "").lower()
+                     or ql in (m.get("doc") or "").lower()]
         conteos = queries.conteos_unificados(desde, hasta)
         estado = queries.estado_actual()
         error = None
@@ -391,5 +400,5 @@ def lista():
     return render_template(
         "capital/lista.html",
         filas=filas, estado=estado, conteos=conteos,
-        filtro=filtro, desde=desde, hasta=hasta, error=error,
+        filtro=filtro, desde=desde, hasta=hasta, q=q, error=error,
     )

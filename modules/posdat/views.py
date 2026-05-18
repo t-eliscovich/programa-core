@@ -313,7 +313,9 @@ def lista():
             prov=prov, q=q, solo_abiertas=solo_abiertas,
             desde=desde, hasta=hasta,
         )
-        resumen = queries.resumen()
+        # TMT 2026-05-18 — si hay filtro de proveedor, el KPI del hero
+        # refleja el total filtrado (la dueña quería verlo así).
+        resumen = queries.resumen(prov=prov)
         error = None
     except Exception as e:
         filas, resumen, error = [], {}, str(e)

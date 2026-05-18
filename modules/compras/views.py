@@ -380,11 +380,16 @@ def lista():
     vista = request.args.get("vista", "todas").lower()
     if vista not in ("todas", "compras", "produccion", "anticipos"):
         vista = "todas"
+    # TMT 2026-05-18 — filtro KG: 'gt0' (producción) o 'eq0' (compras sin kg).
+    kg_filter = (request.args.get("kg") or "").strip().lower() or None
+    if kg_filter not in ("gt0", "eq0", None):
+        kg_filter = None
     try:
         filas = queries.buscar(
             q, desde, hasta,
             incluir_anuladas=incluir_anuladas,
             vista=vista,
+            kg_filter=kg_filter,
         )
         error = None
     except Exception as e:
@@ -442,6 +447,7 @@ def lista():
         total_importe=total_importe, total_kg=total_kg,
         incluir_anuladas=incluir_anuladas,
         vista=vista,
+        kg_filter=kg_filter,
         bucket_todas=conteos.get("todas", _empty_bucket),
         bucket_compras=conteos.get("compras", _empty_bucket),
         bucket_produccion=conteos.get("produccion", _empty_bucket),

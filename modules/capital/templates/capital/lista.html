@@ -71,19 +71,17 @@
     {% endfor %}
   </div>
 
-  {% if estado %}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-    {{ kpi_card('Capital',           '$ ' ~ (estado.capital  | num_es(0)) if estado.capital  is not none else '—') }}
-    {{ kpi_card('Utilidad acumulada','$ ' ~ (estado.util     | num_es(0)) if estado.util     is not none else '—') }}
-    {{ kpi_card('Patrimonio',        '$ ' ~ (estado.patri    | num_es(0)) if estado.patri    is not none else '—') }}
-    {{ kpi_card('Inv. anual',
-                '$ ' ~ (estado.invanual | num_es(0)) if estado.invanual is not none else '—',
-                ('al ' ~ (estado.fecha | fecha_es)) if estado.fecha else '') }}
-  </div>
-  {% endif %}
+  {# TMT 2026-05-18: la dueña pidió simplificar a "sólo la lista de retiros".
+     KPI grid (Capital/Utilidad/Patrimonio/Inv. anual) removido — el hero
+     ya muestra patrimonio. Se agrega filtro de texto sobre la descripción. #}
 
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <input type="hidden" name="filtro" value="{{ filtro }}">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar en descripción</label>
+      <input type="text" name="q" value="{{ q or '' }}" placeholder='ej. "AMA", "OP"'
+             class="w-56 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
       <input type="date" name="desde" value="{{ desde or '' }}"
@@ -95,6 +93,9 @@
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+    {% if q or desde or hasta %}
+      <a href="{{ url_for('capital.lista', filtro=filtro) }}" class="text-sm text-slate-500 hover:underline">Limpiar</a>
+    {% endif %}
   </form>
 
   {% if error %}

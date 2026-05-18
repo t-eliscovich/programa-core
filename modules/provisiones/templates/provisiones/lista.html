@@ -26,26 +26,13 @@
     </div>
   </div>
 
-  {# --- KPIs corregidos: 3 cards con scope claro ---------------------------- #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
+  {# TMT 2026-05-18 — Dueña: "Me sobran los 2 cuadros de la derecha, alcanza
+     con la información del cuadro izquierdo." 3 KPIs → 1. #}
+  <div class="mb-6">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 max-w-md">
       <div class="text-xs text-slate-500 uppercase tracking-wide">Total cargado</div>
       <div class="text-xl font-semibold tabular-nums">{{ (resumen.total_general or 0) | num_es }}</div>
       <div class="text-xs text-slate-400 mt-0.5">{{ resumen.n_total or 0 }} provisiones registradas</div>
-    </div>
-    <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 rounded p-4">
-      <div class="text-xs text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Costo mensual estimado</div>
-      <div class="text-xl font-semibold text-emerald-900 dark:text-emerald-200 tabular-nums">
-        {{ (resumen.prorrateado_mensual or 0) | num_es }}
-      </div>
-      <div class="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
-        prorrateando bimestrales ÷2, anuales ÷12, etc.
-      </div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
-      <div class="text-xs text-slate-500 uppercase tracking-wide">Solo mensuales</div>
-      <div class="text-xl font-semibold tabular-nums">{{ resumen.n_mensual or 0 }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">con período "MENSUAL" exacto</div>
     </div>
   </div>
 
@@ -93,7 +80,20 @@
               {{ p.concepto }}
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-right text-mono tabular-nums">{{ p.importe | money_es }}</td>
+          <td class="px-4 py-2 text-right text-mono tabular-nums">
+            {% if tiene_permiso('provisiones.editar') %}
+              {# TMT 2026-05-18 — inline edit, la dueña edita importe seguido #}
+              <form method="post" action="{{ url_for('provisiones.actualizar_importe', id_provisiones=p.id_provisiones) }}"
+                    class="inline-flex items-center gap-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="number" step="0.01" name="importe" value="{{ p.importe }}"
+                       class="w-28 rounded border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-0.5 text-right text-sm focus:bg-white focus:border-sky-400">
+                <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nuevo importe">✓</button>
+              </form>
+            {% else %}
+              {{ p.importe | money_es }}
+            {% endif %}
+          </td>
           <td class="px-4 py-2 text-xs">
             {% if p.periodo_aplica %}
               <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-medium">
