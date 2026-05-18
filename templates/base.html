@@ -27,12 +27,13 @@
   <style>
     /* TMT 2026-05-15 (v2): el font-size en html sólo escala las clases
        rem-based de Tailwind, y de 16→18px (12.5%) apenas se notaba.
-       Cambiamos a `zoom: 1.18` en body — escala TODO visualmente (texto,
-       padding, iconos, bordes) +18% de forma uniforme. Bien soportado en
+       Cambiamos a `zoom` en body — escala TODO visualmente (texto,
+       padding, iconos, bordes) de forma uniforme. Bien soportado en
        Chrome/Edge/Safari y desde Firefox 126. Si más adelante hace falta
-       subirlo o bajarlo, este es el único número a tocar. */
+       subirlo o bajarlo, este es el único número a tocar.
+       2026-05-17: volvimos a 1.0 porque a 1.18 había scroll horizontal. */
     html { font-size: 16px; }
-    body { zoom: 1.18; }
+    body { zoom: 1.0; }
     @media print {
       /* En impresión sí queremos el tamaño real para no romper layouts. */
       body { zoom: 1 !important; }
