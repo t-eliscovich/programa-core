@@ -5,13 +5,10 @@
 {% block content %}
 {# TMT 2026-05-17 — patrón estándar de página (ver .page-shell en base.html). #}
 <div class="page-shell page-shell--xl">
+  {# TMT 2026-05-18 — subtitle removida (Regla 3: cero info redundante).
+     "campos obligatorios marcados con *" se ve directamente en el form. #}
   <header class="page-header">
     <h1 class="page-title">Cobranza — nuevo cheque</h1>
-    <p class="page-subtitle">
-      Cargá el cheque (o varios del mismo cliente) y opcionalmente aplicalo a
-      facturas abiertas. Los campos obligatorios están marcados con
-      <span class="text-red-500">*</span>.
-    </p>
   </header>
 
   {% if errores %}
@@ -103,8 +100,8 @@
           </div>
           <div class="flex items-baseline justify-between mt-1">
             <p class="text-[10px] text-slate-500" id="cheques-multi-hint">
-              Cliente y banco son los mismos para todos los cheques. Al agregar
-              otro, el importe se preautocompleta con el del anterior.
+              {# TMT 2026-05-18 — hint corto (Regla 3) #}
+              + agrega bloques; importe se autocompleta del anterior.
             </p>
             <p class="text-xs text-slate-700" id="cheques-total-display">
               Total cheques: <strong id="cheques-total-monto">$ 0,00</strong>
@@ -159,9 +156,7 @@
           <strong class="text-sm">Es anticipo del cliente</strong>
         </span>
         <span class="text-xs text-amber-800 leading-snug">
-          Pago adelantado SIN factura emitida todavía. Crea un "espejo
-          negativo" que se aplica a la próxima factura.
-          (<code>CONCEPTO=9999</code> del dBase.)
+          Pago adelantado, sin factura emitida. Se aplica a la próxima.
         </span>
       </label>
     </div>
@@ -230,12 +225,8 @@
           </table>
         </div>
       </div>
-      <p class="text-xs text-slate-500 mt-2">
-        Tickeá el checkbox de una factura para <strong>cancelarla entera</strong> (aplica el saldo completo).
-        El header tiene un check para seleccionar/deseleccionar todas a la vez.
-        Sin checkbox, por defecto se reparte <strong>FIFO</strong>; si una factura tiene el
-        <strong>saldo exacto</strong> al importe del cheque, se asigna toda ahí.
-      </p>
+      {# TMT 2026-05-18 — instrucciones largas movidas a tooltips de los
+         headers de columna (Regla 3). #}
     </div>
 
     <div class="flex items-center justify-between mt-6 pt-4 border-t">
@@ -245,12 +236,8 @@
         Guardar
       </button>
     </div>
-
-    <p class="text-xs text-slate-500 mt-4">
-      Se aplican reglas heredadas del dBase: <code>stat='Z'</code> (cartera) por defecto;
-      si <code>fechad &gt; fecha</code> → <code>'P'</code> (posdatado) y se agrega a
-      <code>posdat</code> para que aparezca en el flujo.
-    </p>
+    {# TMT 2026-05-18 — nota técnica removida (Regla 3). El stat='Z'/'P' es
+       implementación, no UX. #}
   </form>
 </div>
 

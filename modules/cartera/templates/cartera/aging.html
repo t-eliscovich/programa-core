@@ -122,7 +122,12 @@
     </button>
   </div>
 
-  {# --- Tabla ------------------------------------------------------------ #}
+  {# TMT 2026-05-18 — Pedido dueña (docx "Para Claude"):
+     "una lista con 5 columnas: CLIENTE CHEQUES FACTURAS TOTAL % DEL TOTAL.
+      Ordenados por % de mayor a menor. Este dato es importante para ver
+      nuestros mayores deudores."
+     Las 4 KPI de buckets arriba se mantienen (no son "la lista interminable"
+     que ella quería sacar). #}
   <div class="overflow-x-auto border border-slate-200 rounded-lg bg-white">
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
@@ -132,17 +137,11 @@
                    class="rounded border-slate-300"
                    title="Seleccionar todos">
           </th>
-          <th class="px-3 py-2 text-left" style="white-space: nowrap;">Código</th>
           <th class="px-3 py-2 text-left">Cliente</th>
-          <th class="px-3 py-2 text-left" style="white-space: nowrap;">Vend.</th>
-          <th class="px-3 py-2 text-center" style="white-space: nowrap;">Stop</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">N° fact.</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">0-30</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">31-60</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">61-90</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">90+</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Saldo</th>
-          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Mora máx.</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Cheques</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Facturas</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">Total</th>
+          <th class="px-3 py-2 text-right" style="white-space: nowrap;">% del total</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -159,51 +158,53 @@
                      data-saldo="{{ f.saldo_total or 0 }}"
                      data-b90="{{ f.b90_plus or 0 }}">
             </td>
-            <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            <td class="px-3 py-2">
               <a href="{{ url_for('informes.estado_cuenta_landing', codigo=f.codigo_cli) }}"
-                 class="text-sky-700 hover:underline">{{ f.codigo_cli }}</a>
+                 class="hover:text-sky-700 hover:underline"
+                 title="{% if f.stop == 'S' %}STOP · {% endif %}vend {{ f.vend or '—' }} · {{ f.n_facturas }} fact · mora máx {{ f.dias_mora_max }}d">
+                <span class="font-mono text-xs text-slate-500">{{ f.codigo_cli }}</span>
+                <span class="ml-1">{{ f.nombre }}</span>
+                {% if f.stop == 'S' %}
+                  <span class="ml-1 inline-flex items-center rounded-full bg-red-100 text-red-800 px-1.5 py-0.5 text-[10px] font-medium">STOP</span>
+                {% endif %}
+              </a>
             </td>
-            <td class="px-3 py-2">{{ f.nombre }}</td>
-            <td class="px-3 py-2 text-xs text-slate-500">{{ f.vend or '' }}</td>
-            <td class="px-3 py-2 text-center">
-              {% if f.stop == 'S' %}
-                <span class="inline-flex items-center rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-xs font-medium">STOP</span>
-              {% else %}
-                <span class="text-slate-300">—</span>
-              {% endif %}
+            <td class="px-3 py-2 text-right tabular-nums text-slate-500">
+              {{ (f.cheques_en_cartera or 0) | num_es if (f.cheques_en_cartera or 0) > 0 else '—' }}
             </td>
-            <td class="px-3 py-2 text-right tabular-nums">{{ f.n_facturas }}</td>
-            <td class="px-3 py-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
-              {{ (f.b0_30 or 0) | num_es if (f.b0_30 or 0) else '' }}
-            </td>
-            <td class="px-3 py-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
-              {{ (f.b31_60 or 0) | num_es if (f.b31_60 or 0) else '' }}
-            </td>
-            <td class="px-3 py-2 text-right tabular-nums text-amber-700 dark:text-amber-400">
-              {{ (f.b61_90 or 0) | num_es if (f.b61_90 or 0) else '' }}
-            </td>
-            <td class="px-3 py-2 text-right tabular-nums font-medium {% if critico %}text-rose-700 dark:text-rose-400{% else %}text-slate-400{% endif %}">
-              {{ (f.b90_plus or 0) | num_es if (f.b90_plus or 0) else '' }}
+            <td class="px-3 py-2 text-right tabular-nums">
+              {{ (f.saldo_facturas or 0) | num_es }}
             </td>
             <td class="px-3 py-2 text-right tabular-nums font-semibold">
-              {{ saldo_pill(f.saldo_total) }}
+              {{ (f.saldo_total or 0) | num_es }}
             </td>
-            <td class="px-3 py-2 text-right tabular-nums text-xs text-slate-500">
-              {{ f.dias_mora_max }}d
+            <td class="px-3 py-2 text-right tabular-nums">
+              <span class="inline-block min-w-[3.5rem] {% if (f.pct or 0) >= 10 %}font-semibold text-rose-700 dark:text-rose-400
+                    {% elif (f.pct or 0) >= 5 %}text-amber-700 dark:text-amber-400
+                    {% else %}text-slate-500{% endif %}">
+                {{ f.pct }}%
+              </span>
             </td>
           </tr>
         {% else %}
-          {{ empty_row(12, "No hay facturas con saldo vivo.",
+          {{ empty_row(6, "No hay facturas con saldo vivo.",
                        sugerencia="Cuando existan facturas sin cobrar aparecerán acá agrupadas por cliente.") }}
         {% endfor %}
       </tbody>
+      {% if filas %}
+      <tfoot class="bg-slate-50 font-semibold">
+        <tr>
+          <td class="no-print"></td>
+          <td class="px-3 py-2">Total ({{ filas | length }} clientes)</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ totales.cheques_en_cartera | num_es(0) if totales.cheques_en_cartera else '—' }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ totales.saldo_facturas | num_es(0) if totales.saldo_facturas else '—' }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ totales.total | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">100%</td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
-
-  <p class="mt-3 text-xs text-slate-500">
-    Los buckets se calculan sobre <code>CURRENT_DATE − COALESCE(vencimiento, fecha)</code>.
-    Sólo facturas con <code>saldo &gt; 0</code> y <code>stat</code> en Z/A/(nulo).
-  </p>
 
   {# ========================= Bulk action bar ============================ #}
   <div id="bulk-bar"

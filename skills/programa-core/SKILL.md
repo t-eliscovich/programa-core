@@ -560,6 +560,51 @@ Más limpio: dejar que las corridas diarias converjan solas (1-3 días).
 
 `scripts/smoke_test_dbase_port.py` cubre los 12 items del port + 4 regression guards del re-audit (R5–R8 — A,E,C matcher, boleta no_banco dinámico, reemplazar no zeroa importe, BAP advisory lock). Antes de cualquier deploy: 16/16 OK obligatorio. Setup usa SELECT-then-INSERT (no `ON CONFLICT (codigo_cli)`) porque `scintela.cliente.codigo_cli` y `scintela.proveedor.codigo_prov` no tienen UNIQUE constraint en la data legacy.
 
+## Reglas de UX canónicas — la dueña es muy exigente
+
+Estas tres reglas son **no-negociables** y aplican tanto a pantallas
+existentes (corregir lo que tenemos) como a cualquier feature nuevo
+(antes de pedir merge). Si una pantalla las viola, es bug.
+
+### Regla 1 — Vocabulario: "Historial", no "Historial de movimientos dobles"
+La dueña no entiende "dobles" y la confunde. En títulos, breadcrumbs,
+sidebars, headers, URLs visibles y cualquier copy user-facing, decir
+**Historial** a secas. "mov_doble" sí puede vivir en código/comentarios
+(es el nombre real de la tabla `scintela.mov_doble`), pero NUNCA en
+texto que vea Tamara.
+
+### Regla 2 — No scrollear para ingresar datos
+Las pantallas de alta (Nueva compra, Nueva factura, Cobranza, Nuevo
+gasto, Aporte, Retiro, Emitir cheque propio, Nuevo posdat, etc.) deben
+caber **enteras en un viewport de laptop** (~720px de alto útiles
+después del header + sidebar + breadcrumb). Si no entran:
+- Sacar campos opcionales a un `<details>` colapsado abajo.
+- Reducir altura de inputs (`py-1` en vez de `py-2`).
+- Layout en 2 columnas en vez de 1.
+- Sacar copy explicativo (la regla 3 también lo manda).
+El "diario" del sidebar tiene 3 tabs (Cobranza / Ventas / Compras),
+cada uno con su pantalla — ese patrón está bien porque cada tab es un
+form chico y dedicado.
+
+### Regla 3 — Cero información redundante
+Si un dato ya está visible en otro lugar de la misma pantalla (hero,
+KPI, badge, tooltip), **NO repetirlo** en otro componente. Casos
+canónicos a evitar:
+- Total en el hero + card "Total" + footer "Total" → quedarse con uno.
+- KPI grid arriba + strip horizontal abajo mostrando lo mismo desglosado.
+- Explicaciones largas debajo de cuadros ("Cómo se calcula", "Nota:")
+  cuando la fórmula ya es visible en headers de columnas.
+- Mismo botón en sidebar + dropdown "Más" + acción primaria.
+Aplicación retroactiva: cualquier pantalla con KPI hero + cards
+duplicados, o con párrafos explicativos largos, se simplifica.
+
+**Cómo aplicar al revisar una pantalla nueva:**
+1. ¿El título mantiene vocabulario humano? (Regla 1)
+2. ¿Si es un alta, entra sin scroll en laptop? (Regla 2)
+3. ¿Cada dato visible aparece UNA sola vez? (Regla 3)
+
+Si las 3 dan sí, mandar PR. Si alguna da no, refactorear antes.
+
 ## Pedido de la dueña 2026-05-18 — UX cleanup batch
 
 Pasada grande de UI a pedido directo de Tamara (docx "Para Claude"). Lo

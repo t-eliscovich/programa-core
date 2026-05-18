@@ -94,6 +94,15 @@ def aging_buckets() -> list[dict]:
             pendiente -= toma
             if pendiente <= 0:
                 break
+
+    # TMT 2026-05-18 — Pedido dueña (docx "Para Claude"): la pantalla
+    # principal /cartera/aging usa una tabla de 5 columnas (CLIENTE,
+    # CHEQUES, FACTURAS, TOTAL, % DEL TOTAL) ordenada por % desc.
+    # Calculamos % en Python y re-sorteamos.
+    total_general = sum(float(r.get("saldo_total") or 0) for r in rows) or 1.0
+    for r in rows:
+        r["pct"] = round(float(r.get("saldo_total") or 0) / total_general * 100, 1)
+    rows.sort(key=lambda r: (r.get("pct") or 0), reverse=True)
     return rows
 
 
