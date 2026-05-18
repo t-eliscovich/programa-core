@@ -42,14 +42,9 @@
                placeholder="1.234,56">
       </label>
 
-      {# ──────── Atajos amigables (TMT 2026-05-12) ────────
-         Para quien no sabe los códigos legacy (RR / PICH / etc.), estos
-         botones rellenan el prefijo y dejan el foco listo para completar.
-         Quien ya conoce los códigos los puede ignorar y tipear directo. #}
+      {# TMT 2026-05-18 — hint largo arriba removido (Regla 3).
+         Las cards de atajo se autoexplican. #}
       <div class="md:col-span-2 -mb-2">
-        <div class="text-xs text-slate-500 mb-2 font-medium">
-          ¿Qué tipo de movimiento es? <span class="text-slate-400">(opcional — completá el concepto manualmente o usá un atajo)</span>
-        </div>
         <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="caja-atajos">
           <button type="button" data-prefix="RR " data-needs="socio"
                   class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left text-xs transition">
@@ -103,9 +98,8 @@
       </div>
 
       <label class="flex flex-col md:col-span-2">
-        <span class="text-sm text-slate-600 flex items-baseline justify-between">
-          <span>Concepto <span class="text-red-500">*</span></span>
-          <span class="text-xs text-slate-400">o tipealo libre (ej. ALQUILER, SUELDOS, etc.)</span>
+        <span class="text-sm text-slate-600">
+          Concepto <span class="text-red-500">*</span>
         </span>
         <input type="text" name="concepto" id="concepto-input" value="{{ form.concepto or '' }}"
                list="conceptos-caja-list" autocomplete="off"

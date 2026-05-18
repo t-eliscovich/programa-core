@@ -4,16 +4,9 @@
 {% block title %}Emitir cheque (chequera){% endblock %}
 
 {% block content %}
-  {{ page_header("Emitir cheque propio", "Cheque que vos firmás para pagar a alguien — chequera") }}
-
-  <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4 text-sm text-amber-900">
-    <strong>Cómo funciona:</strong> tipeá el concepto y el sistema detecta el tipo
-    automáticamente (PR&nbsp;ACR&nbsp;… → proveedor, RR&nbsp;TMT&nbsp;… → retiro, etc.) — siempre
-    podés override-arlo manualmente. En una sola operación se registra el movimiento
-    bancario Y el efecto contable correspondiente (cierre de posdat / retiro de capital /
-    movimiento a caja / gasto registrado). Reemplaza <code>BANCOS.PRG &gt; CHEQUERA</code>
-    del legacy dBase.
-  </div>
+  {{ page_header("Emitir cheque propio", "") }}
+  {# TMT 2026-05-18 — banner "Cómo funciona" removido (Regla 3). El
+     auto-detect del concepto ya tiene su preview UI inline. #}
 
   <form method="post" action="{{ url_for('bancos.emitir_cheque') }}"
         class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-6 max-w-4xl">
@@ -158,11 +151,6 @@
       </h2>
 
       <div id="campos-proveedor" class="campos-tipo hidden space-y-3">
-        <p class="text-xs text-slate-500">
-          Si el cheque cierra una posdat existente, seleccionala. Si querés generar
-          una nueva compra, primero creala en <a href="{{ url_for('compras.nueva') }}" class="text-sky-600 hover:underline">/compras/nueva</a>
-          y volvé acá.
-        </p>
         <div class="flex items-center gap-2">
           <input type="text" id="filtro-prov" placeholder="Filtrar por código de proveedor"
                  class="px-3 py-1.5 text-sm rounded border border-slate-300 w-64 uppercase"
@@ -203,24 +191,18 @@
           </table>
         </div>
         <div>
-          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-            Código de proveedor (si NO hay posdat)
-          </label>
-          <input type="text" name="beneficiario" placeholder="Ej. ACR" maxlength="5"
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Código de proveedor (si NO hay posdat)</label>
+          <input type="text" name="beneficiario" placeholder="ACR" maxlength="5"
                  list="proveedores-list" autocomplete="off"
                  class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
                  oninput="this.value=this.value.toUpperCase()">
-          <p class="text-xs text-slate-400 mt-1">Tipeá el código (autocomplete contra <code>scintela.proveedor</code>).</p>
         </div>
       </div>
 
       <div id="campos-retiro" class="campos-tipo hidden space-y-3">
-        <p class="text-xs text-slate-500">
-          Indicá el código del accionista que retira (legacy: 2 letras tipo TM, GH).
-        </p>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-            Código del accionista
+            Código del accionista (2 letras: TM, GH…)
           </label>
           <input type="text" name="de_socio" placeholder="Ej. TM" maxlength="5"
                  class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
@@ -229,42 +211,28 @@
       </div>
 
       <div id="campos-caja" class="campos-tipo hidden">
-        <p class="text-xs text-slate-500">
-          Se registra como entrada de caja física (<code>caja.tipo='E'</code>).
-          No hace falta más datos.
-        </p>
+        <p class="text-xs text-slate-500">Entra como E en caja. Sin datos extra.</p>
       </div>
 
-      {# TMT 2026-05-17 — Anticipo USD: pago a proveedor en cuenta dólares.
-         La cuenta (2 letras, ej. MP) se mapea a scintela.dolares.cta. Si
-         tipeaste IN.<CT> en concepto, ya viene pre-cargado. #}
       <div id="campos-anticipo_usd" class="campos-tipo hidden space-y-3">
-        <p class="text-xs text-slate-500">
-          Equivale al legacy <code>IN.&lt;CT&gt;</code> de <code>BANCOS.PRG</code>.
-          Crea la fila en <code>scintela.dolares</code> con la cuenta indicada;
-          cuando llegue la factura del proveedor se aplica vía BAP.
-        </p>
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
             Código de cuenta USD <span class="text-rose-500">*</span>
+            <span class="ml-1 normal-case text-slate-400">— 2 letras, ej. MP</span>
           </label>
-          <input type="text" name="beneficiario" placeholder="Ej. MP" maxlength="5"
+          <input type="text" name="beneficiario" placeholder="MP" maxlength="5"
                  class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
                  oninput="this.value=this.value.toUpperCase()">
-          <p class="text-xs text-slate-400 mt-1">2 letras — coincide con la cuenta dólares del proveedor.</p>
         </div>
       </div>
 
       <div id="campos-gasto" class="campos-tipo hidden space-y-3">
         <div>
-          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
-            Proveedor del gasto (opcional)
-          </label>
-          <input type="text" name="beneficiario" placeholder="Ej. CNEL" maxlength="5"
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Proveedor del gasto (opcional)</label>
+          <input type="text" name="beneficiario" placeholder="CNEL" maxlength="5"
                  list="proveedores-list" autocomplete="off"
                  class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
                  oninput="this.value=this.value.toUpperCase()">
-          <p class="text-xs text-slate-400 mt-1">El gasto se registra como pagado. Autocomplete contra <code>scintela.proveedor</code>.</p>
         </div>
       </div>
 
@@ -278,10 +246,7 @@
       {% endif %}
 
       <div id="campos-otro" class="campos-tipo hidden">
-        <p class="text-xs text-slate-500">
-          Sólo se registra el movimiento bancario, sin tocar otras tablas.
-          Útil para impuestos, transferencias entre cuentas propias, etc.
-        </p>
+        <p class="text-xs text-slate-500">Solo movimiento bancario (impuestos, transferencias entre cuentas propias).</p>
       </div>
     </div>
 

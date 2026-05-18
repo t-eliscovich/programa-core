@@ -63,10 +63,7 @@
              value="{{ form.fechad or '' }}"
              {% if is_depositado %}disabled{% endif %}
              class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
-      <p class="text-xs text-slate-500 mt-1">
-        Si la fecha cae domingo, se mueve automáticamente al lunes (paridad
-        con dBase ALTAS.PRG L119).
-      </p>
+      <p class="text-xs text-slate-500 mt-1">Domingos se mueven al lunes.</p>
     </div>
 
     <div>

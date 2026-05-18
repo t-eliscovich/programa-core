@@ -112,11 +112,7 @@
   {% if modo == 'editar' and tiene_permiso('clientes.editar') %}
   <div class="mt-6 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2">Estado del cliente</h3>
-    <p class="text-xs text-slate-500 mb-3">
-      Marcar como inactivo (legacy <code>DIFUNTOS</code>) esconde el cliente
-      de autocompletes y de la lista por default. Las facturas históricas
-      y saldos vivos se preservan.
-    </p>
+    <p class="text-xs text-slate-500 mb-3">Inactivo: oculto de autocompletes y listas. Historial preservado.</p>
     {% if form.activo == False %}
       <form method="post" action="{{ url_for('clientes.toggle_activo', codigo_cli=form.codigo_cli) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -108,11 +108,6 @@ Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Ga
       </tbody>
     </table>
   </div>
-  <p class="text-xs text-slate-500 mt-3">
-    Replica de <code class="font-mono">PROCEDURE DETALGAST</code> (INFORMES.PRG L1266-1334).
-    El grouping de V5 (Gas/Comb. tintorería) usa EEQ/CMB/EMAAP/AGUA como en el legacy;
-    para el resto de categorías se agrupa por la primera palabra del concepto.
-  </p>
   {% else %}
     <div class="px-4 py-6 text-center text-slate-500 border border-slate-200 dark:border-slate-800 rounded">
       Sin gastos cargados para {{ data.label if data else 'esta categoría' }} en el mes en curso.

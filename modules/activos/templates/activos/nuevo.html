@@ -5,13 +5,10 @@
 {% block content %}
 {# TMT 2026-05-17 — patrón estándar (.page-shell). #}
 <div class="page-shell page-shell--md">
+  {# TMT 2026-05-18 — subtitle removida (Regla 3). La cuota auto se
+     explica sola en el hint del campo "Cuota mensual". #}
   <header class="page-header">
     <h1 class="page-title">Nuevo activo fijo</h1>
-    <p class="page-subtitle">
-      Cargá un activo (maquinaria, vehículo, equipo) con su valor inicial y
-      vida útil. La cuota mensual de depreciación se calcula automáticamente
-      (valor ÷ meses), o podés tipearla manual si tu plan contable es otro.
-    </p>
   </header>
 
   {% with msgs = get_flashed_messages(with_categories=true) %}
@@ -150,11 +147,7 @@
     </div>
   </form>
 
-  <p class="mt-3 text-xs text-slate-400">
-    Al guardar: <code>amortizac=0</code>, <code>amortimes=0</code>,
-    <code>valor=inicial</code>. La proc <code>actualizar_amortizacion()</code>
-    aplica la cuota mes a mes desde el próximo cierre.
-  </p>
+  {# TMT 2026-05-18 — nota técnica removida (Regla 3). Detalles internos. #}
 </div>
 
 <script>

@@ -55,10 +55,7 @@
         <label class="block text-xs text-slate-500 mb-1">Abono manual</label>
         <input name="abono" type="text" value="{{ form.abono or '0' }}"
                class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono text-right">
-        <p class="text-xs text-slate-500 mt-1">
-          Saldo se recalcula automáticamente como <code>importe - abono</code>.
-          Si el saldo llega a 0, la factura pasa a stat=T (cancelada).
-        </p>
+        <p class="text-xs text-slate-500 mt-1">Saldo = importe − abono (auto).</p>
       </div>
       <div>
         <label class="block text-xs text-slate-500 mb-1">Condición</label>
@@ -67,10 +64,7 @@
           <option value="" {% if not form.condic %}selected{% endif %}>Sin descuento</option>
           <option value="C" {% if form.condic == 'C' %}selected{% endif %}>C — Pronto pago (5% off)</option>
         </select>
-        <p class="text-xs text-slate-500 mt-1">
-          Cambiar a "C" multiplica el importe por 0.95 (pronto pago).
-          Volver a "Sin descuento" lo restituye dividiendo por 0.95.
-        </p>
+        <p class="text-xs text-slate-500 mt-1">"C" aplica 5% off al importe.</p>
       </div>
     </div>
 
@@ -79,9 +73,6 @@
       <input name="observacion" type="text" maxlength="120" value="{{ form.observacion or '' }}"
              placeholder="Motivo del ajuste..."
              class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
-      <p class="text-xs text-slate-500 mt-1">
-        Si se completa, se appendea al campo <code>observacion</code> con tag <code>[E]</code>.
-      </p>
     </div>
 
     <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
@@ -92,10 +83,6 @@
         Guardar cambios
       </button>
     </div>
-    <p class="text-xs text-slate-400 mt-2">
-      Paridad: MODIFICA.PRG L406-443 + RETENCIO.PRG.RECUP. Recompute
-      <code>saldo = importe - abono</code> + stat dinámico (Z/A/T).
-    </p>
   </form>
 </div>
 {% endblock %}
