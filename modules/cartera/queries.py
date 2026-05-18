@@ -158,28 +158,25 @@ def aging_totales() -> dict:
     # > total. Asignamos los cheques en cartera contra los buckets desde
     # el más joven (los cheques posdatados típicamente cancelan facturas
     # recientes). Con esto sum(buckets) == total siempre.
-    b0_30    = float(row["b0_30"] or 0)
-    b31_60   = float(row["b31_60"] or 0)
-    b61_90   = float(row["b61_90"] or 0)
-    b90_plus = float(row["b90_plus"] or 0)
+    buckets = {
+        "b0_30":    float(row["b0_30"] or 0),
+        "b31_60":   float(row["b31_60"] or 0),
+        "b61_90":   float(row["b61_90"] or 0),
+        "b90_plus": float(row["b90_plus"] or 0),
+    }
     pendiente = float(row.get("cheques_en_cartera") or 0)
     for label in ("b0_30", "b31_60", "b61_90", "b90_plus"):
-        actual = {"b0_30": b0_30, "b31_60": b31_60,
-                  "b61_90": b61_90, "b90_plus": b90_plus}[label]
-        toma = min(actual, pendiente)
-        if label == "b0_30":    b0_30    -= toma
-        if label == "b31_60":   b31_60   -= toma
-        if label == "b61_90":   b61_90   -= toma
-        if label == "b90_plus": b90_plus -= toma
+        toma = min(buckets[label], pendiente)
+        buckets[label] -= toma
         pendiente -= toma
         if pendiente <= 0:
             break
 
     return {
-        "b0_30":              b0_30,
-        "b31_60":             b31_60,
-        "b61_90":             b61_90,
-        "b90_plus":           b90_plus,
+        "b0_30":              buckets["b0_30"],
+        "b31_60":             buckets["b31_60"],
+        "b61_90":             buckets["b61_90"],
+        "b90_plus":           buckets["b90_plus"],
         "total":              float(row["total"] or 0),
         "saldo_facturas":     float(row.get("saldo_facturas") or 0),
         "cheques_en_cartera": float(row.get("cheques_en_cartera") or 0),

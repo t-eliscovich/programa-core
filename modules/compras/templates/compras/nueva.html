@@ -17,53 +17,53 @@
     </div>
   {% endif %}
 
-  <form method="post" class="page-card">
+  <form method="post" class="page-card space-y-5">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Fecha <span class="text-red-500">*</span></span>
+    {# TMT 2026-05-18 — patrón canónico (mismo que factura/nueva y cheques/nuevo):
+       grid-cols-3, labels text-xs text-slate-500, inputs px-3 py-1.5 #}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Fecha <span class="text-red-500">*</span></label>
         <input type="text" name="fecha" value="{{ form.fecha or '' }}"
                placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off" autofocus
                oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
-               class="border rounded px-2 py-1 mt-1 font-mono" required>
-      </label>
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono" required>
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Vencimiento</span>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Vencimiento</label>
         <input type="text" name="fechad" value="{{ form.fechad or '' }}"
                placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off"
                oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
-               class="border rounded px-2 py-1 mt-1 font-mono">
-        <span class="text-xs text-slate-500 mt-1">Default: fecha + proveedor.plazo (o 30 días).</span>
-      </label>
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono">
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Proveedor (código) <span class="text-red-500">*</span></span>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Proveedor (código) <span class="text-red-500">*</span></label>
         <input type="text" name="codigo_prov" value="{{ form.codigo_prov or '' }}"
                list="proveedores-list" autocomplete="off"
-               class="border rounded px-2 py-1 mt-1 uppercase font-mono" maxlength="3"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono uppercase" maxlength="3"
                oninput="this.value=this.value.toUpperCase()" required>
         {% if proveedores_datalist %}
           <datalist id="proveedores-list">
             {% for p in proveedores_datalist %}<option value="{{ p.codigo_prov }}">{{ p.nombre }}</option>{% endfor %}
           </datalist>
         {% endif %}
-      </label>
+      </div>
 
       <label class="flex flex-col">
         <span class="text-sm text-slate-600">N° (interno)</span>
         <input type="text" name="numero" value="{{ form.numero or '' }}"
-               class="border rounded px-2 py-1 mt-1"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono"
                placeholder="{{ form.numero_sugerido or 'auto' }}">
-      </label>
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Tipo <span class="text-red-500">*</span></span>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Tipo <span class="text-red-500">*</span></label>
         <select name="tipo" required
-                class="border rounded px-2 py-1 mt-1 bg-white dark:bg-slate-900">
+                class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
           <option value="">— elegir —</option>
-          {# Vocabulario central — L.TIPOS_COMPRA_LABEL. TMT 2026-05-12. #}
           {% for k in ['K', 'H', 'Q', 'C', 'A'] %}
             <option value="{{ k }}" {% if form.tipo and form.tipo|upper == k %}selected{% endif %}
                     title="{{ L.TIPOS_COMPRA_DESCRIPCION.get(k, '') }}">
@@ -71,39 +71,36 @@
             </option>
           {% endfor %}
         </select>
-        <span class="text-xs text-slate-500 mt-1">
-          K + kg &gt; 0 = producción. K sin kg = compra de tejeduría.
-        </span>
-      </label>
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Comprobante (SRI)</span>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Comprobante (SRI)</label>
         <input type="text" name="comprobante" value="{{ form.comprobante or '' }}"
-               class="border rounded px-2 py-1 mt-1" maxlength="100">
-      </label>
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm" maxlength="100">
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Importe <span class="text-red-500">*</span></span>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Importe <span class="text-red-500">*</span></label>
         <input type="text" name="importe" value="{{ form.importe or '' }}"
-               class="border rounded px-2 py-1 mt-1 text-right" required
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono text-right" required
                placeholder="1.234,56">
-      </label>
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Kg</span>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Kg</label>
         <input type="text" name="kg" value="{{ form.kg or '' }}"
-               class="border rounded px-2 py-1 mt-1 text-right">
-      </label>
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono text-right">
+      </div>
 
-      <label class="flex flex-col md:col-span-2">
-        <span class="text-sm text-slate-600">Concepto</span>
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-500 mb-1">Concepto</label>
         <input type="text" name="concepto" value="{{ form.concepto or '' }}"
-               class="border rounded px-2 py-1 mt-1" maxlength="200">
-      </label>
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm" maxlength="200">
+      </div>
 
-      <label class="flex flex-col">
-        <span class="text-sm text-slate-600">Banco (si es débito)</span>
-        <select name="no_banco" class="border rounded px-2 py-1 mt-1">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Banco (si es débito)</label>
+        <select name="no_banco" class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
           <option value="">—</option>
           {% for b in bancos %}
             <option value="{{ b.no_banco }}"
@@ -112,7 +109,7 @@
             </option>
           {% endfor %}
         </select>
-      </label>
+      </div>
 
       <label class="flex items-center gap-2 mt-6">
         <input type="checkbox" name="pagada" value="1"
