@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Cheques{% endblock %}
 {% block breadcrumb %}<strong>Cheques</strong>{% endblock %}
 
@@ -12,12 +12,25 @@
      agrupadas por importancia (primarias destacadas + dropdown "Más" para
      las menos usadas). TMT 2026-05-13 — antes había 8 botones de igual
      peso visual + total flotando arriba en la misma línea, ilegible. #}
+  {# TMT 2026-05-18 — header con page_hero, consistente con facturas/lista,
+     compras/lista y posdat/lista. El KPI muestra la cartera. #}
+  {% set c_cartera     = conteos.get('cartera', {}) %}
+  {% set c_dev_gest    = conteos.get('devueltos_en_gestion', {}) %}
+  {% set c_postergados = conteos.get('postergados', {}) %}
+  {% set c_daniela     = conteos.get('daniela', {}) %}
+  {% set c_depositados = conteos.get('depositados', {}) %}
+  {% set totc = (c_cartera.get('total', 0) | float)
+              + (c_dev_gest.get('total', 0) | float)
+              + (c_postergados.get('total', 0) | float)
+              + (c_daniela.get('total', 0) | float) %}
+  {% set _n_cartera = (c_cartera.get('n', 0) or 0) + (c_dev_gest.get('n', 0) or 0)
+                    + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) %}
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
-    <div class="flex-1 min-w-0">
-      <h1 class="text-2xl font-semibold tracking-tight">Cheques</h1>
-      {# TMT 2026-05-18: el "total" general (cartera+depositados) se removió.
-         La dueña sólo quiere ver la cartera — el dato vive en la tile de abajo. #}
-    </div>
+    {{ page_hero(
+        'Cheques',
+        kpi_valor='$ ' ~ (totc | num_es(0)),
+        kpi_extra='· ' ~ (_n_cartera | string) ~ ' cheques en cartera'
+    ) }}
 
     {# Acciones — sólo 2 primarias destacadas + dropdown "Más" con el resto. #}
     <div class="no-print flex items-center gap-2 shrink-0">
@@ -85,41 +98,9 @@
     </div>
   </div>
 
-  {# KPIs del UNIVERSO completo — paridad con balance (TOTC).
-     TOTC del balance (INFORMES.PRG L24) = stat IN (Z,1,2,3,P,D). Suma:
-       - cartera (Z)
-       - devueltos EN GESTIÓN (1,2,3) — excluye 'R' = rebote terminal incobrable.
-       - postergados (P)
-       - daniela (D)
-     Depositados (B/A) ya se sumaron al saldo bancario, no acá.
-     TMT 2026-05-14 (#16): antes este KPI usaba `devueltos` (que incluye R)
-     y daba un total > TOTC. Ahora usa `devueltos_en_gestion`. #}
-  {% set c_cartera     = conteos.get('cartera', {}) %}
-  {% set c_devueltos   = conteos.get('devueltos', {}) %}
-  {% set c_dev_gest    = conteos.get('devueltos_en_gestion', {}) %}
-  {% set c_depositados = conteos.get('depositados', {}) %}
-  {% set c_postergados = conteos.get('postergados', {}) %}
-  {% set c_daniela     = conteos.get('daniela', {}) %}
-  {% set totc = (c_cartera.get('total', 0) | float)
-              + (c_dev_gest.get('total', 0) | float)
-              + (c_postergados.get('total', 0) | float)
-              + (c_daniela.get('total', 0) | float) %}
-  {# TMT 2026-05-18 — simplificado a 1 KPI sólo. La dueña pidió ver
-     solamente la cartera. "Depositados (B)" se sacó (ya están en banco,
-     se ven en /bancos). #}
-  <div class="no-print mb-5">
-    <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-br from-emerald-50 to-emerald-100/40 dark:from-emerald-900/30 dark:to-emerald-900/15 px-5 py-3 max-w-md">
-      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Cheques en cartera</div>
-      <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">
-        $ {{ totc | num_es(0) }}
-      </div>
-      <div class="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1"
-           title="Cheques vivos (Z = limpia, 1/2/3 = devueltos sin R, P = postergados, D = Daniela). Coincide con TOTC del balance.">
-        {{ (c_cartera.get('n', 0) or 0) + (c_dev_gest.get('n', 0) or 0)
-           + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) }} cheques
-      </div>
-    </div>
-  </div>
+  {# TMT 2026-05-18 — KPI card 'Cheques en cartera' removida (el dato ya
+     está en el page_hero arriba). Consistencia con facturas/lista,
+     compras/lista, posdat/lista — ninguna tiene cards extras. #}
 
   {# Pestañas por estado (2026-04-29) — vocabulario canónico.
      "Todos" primero por pedido de la dueña (29/abr): ver el universo completo

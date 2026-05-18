@@ -121,13 +121,13 @@
     <table class="w-full text-sm sortable">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
+          {# TMT 2026-05-18 — columnas N° cheque y Cliente removidas (no se usan).
+             Clave se mantiene a pedido de la dueña. #}
           <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;" data-sort-type="date">Fecha</th>
           <th class="px-3 py-3 text-left font-medium">Tipo</th>
           <th class="px-3 py-3 text-left font-medium">Concepto</th>
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-3 py-3 text-right font-medium" title="Saldo running por orden de inserción — pierde sentido si ordenás por otra cosa" data-no-sort>Saldo</th>
-          <th class="px-3 py-3 text-left font-medium">N° cheque</th>
-          <th class="px-3 py-3 text-left font-medium">Cliente</th>
+          <th class="px-3 py-3 text-right font-medium" title="Saldo running por orden de inserción" data-no-sort>Saldo</th>
           <th class="px-3 py-3 text-left font-medium">Clave</th>
           <th class="px-3 py-3 text-left font-medium no-print" data-no-sort></th>
         </tr>
@@ -154,14 +154,6 @@
             {% if m.tipo == 'S' %}− {% endif %}{{ m.importe | abs | money_es }}
           </td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ m.saldo | money_es if m.saldo is not none else '' }}</td>
-          <td class="px-3 py-2 font-mono text-xs">
-            {% if m.id_cheque %}
-              <a href="{{ url_for('cheques.detalle', id_cheque=m.id_cheque) }}" class="hover:text-blue-600">{{ m.no_cheque or m.id_cheque }}</a>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 text-xs">
-            {% if m.codigo_cli %}<a href="{{ url_for('informes.estado_cuenta', codigo_cli=m.codigo_cli) }}" class="hover:text-blue-600"><span class="font-mono text-slate-500">{{ m.codigo_cli }}</span> {{ m.cliente }}</a>{% endif %}
-          </td>
           <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ m.clave }}</td>
           <td class="px-3 py-2 text-right no-print">
             <div class="flex items-center gap-1.5 justify-end flex-wrap">

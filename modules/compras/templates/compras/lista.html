@@ -78,29 +78,10 @@
     </div>
   </div>
 
-  {# KPIs secundarios — solo alertas reales (vencido = rojo, vence próximos = amber).
-     "Deuda total" ya está en el hero arriba, no se repite. TMT 2026-05-13. #}
-  {% if deuda.vencido > 0 or deuda.vence_pronto > 0 %}
-  <div class="mb-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-    {% if deuda.vencido > 0 %}
-      {{ kpi_card(
-          '⚠ Vencido',
-          '$ ' ~ (deuda.vencido | num_es(0)),
-          'fechad < hoy',
-          tono='rose'
-      ) }}
-    {% endif %}
-    {% if deuda.vence_pronto > 0 %}
-      {{ kpi_card(
-          'Vence próximos 7 días',
-          '$ ' ~ (deuda.vence_pronto | num_es(0)),
-          'ver detalle en /posdat',
-          tono='amber',
-          href=url_for('posdat.lista'),
-      ) }}
-    {% endif %}
-  </div>
-  {% endif %}
+  {# TMT 2026-05-18 — KPI cards 'Vencido' / 'Vence próximos 7 días' removidas
+     a pedido de la dueña (consistencia entre listados: ninguno tiene
+     cards extras encima de la tabla). El detalle de vencidos vive en
+     /posdat. #}
 
   {# Tabs canónicos (2026-04-29): "Todas" primero (default), después los
      específicos. Cada tab muestra conteo + monto $ del filtro de fecha
