@@ -47,7 +47,7 @@ jobs:
               --exclude='./.tw-build' \
               --exclude='./node_modules' \
               --exclude='./.github' \
-              --exclude='*.rar' --exclude='./*.sql' \
+              --exclude='*.rar' --exclude='./intela12042026.sql' \
               --exclude='*.pyc' --exclude='*.pyo' \
               --exclude='./AUDIT_*' --exclude='./BUG_HUNT_*' \
               --exclude='./E2E_TESTS_*' --exclude='./HALLAZGOS_*' \
