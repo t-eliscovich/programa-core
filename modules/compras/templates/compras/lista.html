@@ -117,12 +117,8 @@
          class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
                 {% if vista == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
         {{ label }}
+        {# TMT 2026-05-18 — solo conteo (R3) #}
         <span class="ml-1 text-xs text-slate-400">{{ b.n }}</span>
-        {% if b.total > 0 %}
-          <span class="ml-1 text-xs tabular-nums {% if vista == key %}text-sky-600 dark:text-sky-400{% else %}text-slate-400{% endif %}">
-            · $ {{ b.total | num_es(0) }}
-          </span>
-        {% endif %}
       </a>
     {% endfor %}
   </div>

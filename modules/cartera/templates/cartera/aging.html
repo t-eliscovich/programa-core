@@ -180,14 +180,17 @@
         {% endfor %}
       </tbody>
       {% if filas %}
-      <tfoot class="bg-slate-50 font-semibold">
+      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
         <tr>
           <td class="no-print"></td>
-          <td class="px-3 py-2">Total ({{ filas | length }} clientes)</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ totales.cheques_en_cartera | num_es(0) if totales.cheques_en_cartera else '—' }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ totales.saldo_facturas | num_es(0) if totales.saldo_facturas else '—' }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ totales.total | num_es(0) }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">100%</td>
+          <td class="px-3 py-3 text-base font-bold text-slate-900 dark:text-slate-100">
+            Total
+            <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} clientes)</span>
+          </td>
+          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold">{{ totales.cheques_en_cartera | num_es(0) if totales.cheques_en_cartera else '—' }}</td>
+          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold">{{ totales.saldo_facturas | num_es(0) if totales.saldo_facturas else '—' }}</td>
+          <td class="px-3 py-3 text-right tabular-nums text-lg font-bold text-slate-900 dark:text-slate-100">{{ totales.total | num_es(0) }}</td>
+          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold text-slate-500">100%</td>
         </tr>
       </tfoot>
       {% endif %}

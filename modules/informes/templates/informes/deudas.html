@@ -48,10 +48,12 @@
         {% endfor %}
       </tbody>
       {% if filas %}
-      <tfoot class="bg-slate-50 dark:bg-slate-800/50 font-semibold">
+      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
         <tr>
-          <td class="px-5 py-3" colspan="2">Total</td>
-          <td class="px-5 py-3 text-right text-mono">{{ total | money_es }}</td>
+          <td class="px-5 py-3 text-base font-bold text-slate-900 dark:text-slate-100" colspan="2">
+            Total <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} proveedores)</span>
+          </td>
+          <td class="px-5 py-3 text-right text-mono text-lg font-bold text-slate-900 dark:text-slate-100">{{ total | money_es }}</td>
         </tr>
       </tfoot>
       {% endif %}

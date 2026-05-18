@@ -24,38 +24,12 @@
     </div>
   {% endif %}
 
-  {# ─── 4 KPI cards por etapa ─── #}
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    {% set h = stock.hilado or {"kg":0,"ukg":0,"us":0} %}
-    {% set k = stock.tejido or {"kg":0,"ukg":0,"us":0} %}
-    {% set f = stock.terminado or {"kg":0,"ukg":0,"us":0} %}
-    {% set q = stock.quimicos or {"kg":0,"ukg":0,"us":0} %}
-
-    {{ kpi_card(
-        "Hilado",
-        (h.kg | num_es(0)) ~ " kg",
-        extra=("US$ " ~ (h.us | num_es(0)) ~ " · " ~ (h.ukg | num_es(2)) ~ " U$/kg"),
-        tono="slate"
-    ) }}
-    {{ kpi_card(
-        "Tejido",
-        (k.kg | num_es(0)) ~ " kg",
-        extra=("US$ " ~ (k.us | num_es(0)) ~ " · " ~ (k.ukg | num_es(2)) ~ " U$/kg"),
-        tono="slate"
-    ) }}
-    {{ kpi_card(
-        "Terminado",
-        (f.kg | num_es(0)) ~ " kg",
-        extra=("US$ " ~ (f.us | num_es(0)) ~ " · " ~ (f.ukg | num_es(2)) ~ " U$/kg"),
-        tono="slate"
-    ) }}
-    {{ kpi_card(
-        "Químicos",
-        "US$ " ~ (q.us | num_es(0)),
-        extra="sin trackeo de kg (valor del snapshot)",
-        tono="slate"
-    ) }}
-  </div>
+  {# TMT 2026-05-18 — Pedido dueña: "alcanza con la información del cuadro
+     izquierdo". Las 4 KPI cards duplicaban la tabla de abajo. Removidas. #}
+  {% set h = stock.hilado or {"kg":0,"ukg":0,"us":0} %}
+  {% set k = stock.tejido or {"kg":0,"ukg":0,"us":0} %}
+  {% set f = stock.terminado or {"kg":0,"ukg":0,"us":0} %}
+  {% set q = stock.quimicos or {"kg":0,"ukg":0,"us":0} %}
 
   {# ─── Tabla resumen por etapa con totales ─── #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-8">
@@ -94,17 +68,17 @@
           <td class="px-4 py-3 text-right tabular-nums font-medium">{{ q.us | num_es(0) }}</td>
         </tr>
         {% set tot = stock.total or {"kg":0,"ukg":0,"us":0} %}
-        <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30">
-          <td class="px-4 py-3 font-bold">Total (sin químicos)</td>
-          <td class="px-4 py-3 text-right tabular-nums font-bold">{{ tot.kg | num_es(0) }}</td>
+        <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60">
+          <td class="px-4 py-3 text-base font-bold">Total <span class="text-xs font-normal text-slate-500">(sin químicos)</span></td>
+          <td class="px-4 py-3 text-right tabular-nums text-base font-bold">{{ tot.kg | num_es(0) }}</td>
           <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ tot.ukg | num_es(2) }}</td>
-          <td class="px-4 py-3 text-right tabular-nums font-bold">{{ tot.us | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-base font-bold">{{ tot.us | num_es(0) }}</td>
         </tr>
-        <tr class="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30">
-          <td class="px-4 py-3 font-bold">Total con químicos</td>
-          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
-          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
-          <td class="px-4 py-3 text-right tabular-nums font-bold text-emerald-700 dark:text-emerald-300">
+        <tr class="border-t border-slate-200 dark:border-slate-700 bg-emerald-50 dark:bg-emerald-900/20">
+          <td class="px-4 py-4 text-lg font-bold text-emerald-900 dark:text-emerald-100">Total con químicos</td>
+          <td class="px-4 py-4 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-4 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-4 text-right tabular-nums text-xl font-bold text-emerald-900 dark:text-emerald-100">
             {{ stock.total_con_quimicos | num_es(0) }}
           </td>
         </tr>
