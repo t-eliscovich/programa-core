@@ -560,6 +560,68 @@ Más limpio: dejar que las corridas diarias converjan solas (1-3 días).
 
 `scripts/smoke_test_dbase_port.py` cubre los 12 items del port + 4 regression guards del re-audit (R5–R8 — A,E,C matcher, boleta no_banco dinámico, reemplazar no zeroa importe, BAP advisory lock). Antes de cualquier deploy: 16/16 OK obligatorio. Setup usa SELECT-then-INSERT (no `ON CONFLICT (codigo_cli)`) porque `scintela.cliente.codigo_cli` y `scintela.proveedor.codigo_prov` no tienen UNIQUE constraint en la data legacy.
 
+## ⚠ Errores 2026-05-18 — NO repetir
+
+### Error 1 — Suponer que `python scripts/migrate.py` arregla prod
+
+**Lo que pasó:** la dueña reportó `relation "scintela.vendedor" does not exist`
+en `/comisiones`. Yo le dije que corriera `python scripts/migrate.py` en su Mac.
+Lo corrió, dijo "Todas las migraciones están aplicadas" — pero la URL que ella
+ve es la de prod (EC2 → RDS), no su laptop. La 0032 quedó aplicada local pero
+NO en RDS. Una hora perdida diagnosticando antes de caer en cuenta.
+
+**Regla:** Programa Core **vive en producción** (EC2 `i-0fcca4d7029f08489` + RDS
+`intela-db.c988ucsko537.us-east-2.rds.amazonaws.com`). Cuando la dueña reporta
+algo roto en una URL real (no localhost:5000):
+
+1. Antes de pedirle correr migrate.py local, preguntar **¿es local o prod?**
+   En general la dueña usa prod.
+2. Para aplicar una migración a RDS, hay que mandar SSM Run Command al EC2.
+   El patrón está en la skill `intela-aws-deploy`.
+3. GitHub Actions tiene `deploy.yml` que **NO corre migraciones automáticamente**
+   — sólo copia el código y reinicia el task. Las migraciones son manuales.
+
+Patrón canónico para aplicar migración a RDS (desde CloudShell):
+
+```bash
+export AWS_PAGER=""
+CMD_ID=$(aws ssm send-command --region us-east-2 \
+  --instance-ids i-0fcca4d7029f08489 \
+  --document-name AWS-RunPowerShellScript \
+  --parameters 'commands=["cd C:\\programa-core; & C:\\Python312\\python.exe scripts\\migrate.py"]' \
+  --query Command.CommandId --output text)
+sleep 10
+aws ssm get-command-invocation --region us-east-2 \
+  --instance-id i-0fcca4d7029f08489 --command-id "$CMD_ID" \
+  --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}' --output json
+```
+
+### Error 2 — Migración que crea tablas SIN garantizar el owner correcto
+
+**Lo que pasó:** la 0032 inicialmente hacía `CREATE TABLE scintela.vendedor`
+sin un `ALTER ... OWNER TO`. Si el runner corre con un user (postgres) pero
+la app usa otro (postgres también, en este caso, pero podría ser distinto),
+la app ve "relation does not exist" porque PG oculta tablas que el user
+no puede ver.
+
+**Regla:** toda migración que crea tablas/funciones debe terminar con un
+bloque `DO $$ ALTER ... OWNER TO current_user $$` (idempotente) para que
+quede del user correcto. Patrón canónico:
+
+```sql
+CREATE TABLE IF NOT EXISTS scintela.<tabla> ( ... );
+DO $$
+DECLARE u TEXT := current_user;
+BEGIN
+    IF u <> 'postgres' THEN
+        EXECUTE format('ALTER TABLE scintela.<tabla> OWNER TO %I', u);
+    END IF;
+END $$;
+```
+
+Ya implementado al final de `migrations/0032_vendedor.sql` como referencia.
+Copiarlo en cualquier migration nueva que cree tablas.
+
 ## Reglas de UX canónicas — la dueña es muy exigente
 
 Estas tres reglas son **no-negociables** y aplican tanto a pantallas
