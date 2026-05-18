@@ -137,12 +137,9 @@
               <input type="text" name="banco_texto" value="{{ form.banco_texto or '' }}"
                      class="border rounded px-2 py-1 mt-0.5 text-sm" maxlength="30">
             </label>
-            <label class="flex flex-col">
-              <span class="text-xs text-slate-600">Endosado a proveedor</span>
-              <input type="text" name="prov" value="{{ form.prov or '' }}"
-                     class="border rounded px-2 py-1 mt-0.5 uppercase font-mono text-sm" maxlength="5"
-                     oninput="this.value=this.value.toUpperCase()">
-            </label>
+            {# TMT 2026-05-18 — campo "Endosado a proveedor" removido al
+               alta. El endoso es una operación posterior (cheques.endosar);
+               no tiene sentido cargar aquí. #}
           </div>
         </details>
       </div>
