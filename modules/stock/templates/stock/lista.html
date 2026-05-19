@@ -63,8 +63,8 @@
         </tr>
         <tr class="border-t border-slate-100 dark:border-slate-800">
           <td class="px-4 py-3 font-medium">Químicos</td>
-          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
-          <td class="px-4 py-3 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ (q.kg or 0) | num_es(0) if (q.kg or 0) > 0 else '—' }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ (q.ukg or 0) | num_es(2) if (q.ukg or 0) > 0 else '—' }}</td>
           <td class="px-4 py-3 text-right tabular-nums font-medium">{{ q.us | num_es(0) }}</td>
         </tr>
         {% set tot = stock.total or {"kg":0,"ukg":0,"us":0} %}
@@ -74,12 +74,14 @@
           <td class="px-4 py-3 text-right tabular-nums text-slate-500">{{ tot.ukg | num_es(2) }}</td>
           <td class="px-4 py-3 text-right tabular-nums text-base font-bold">{{ tot.us | num_es(0) }}</td>
         </tr>
+        {% set tot_kg_con_q = (tot.kg or 0) + (q.kg or 0) %}
+        {% set tot_us_con_q = stock.total_con_quimicos or 0 %}
         <tr class="border-t border-slate-200 dark:border-slate-700 bg-emerald-50 dark:bg-emerald-900/20">
           <td class="px-4 py-4 text-lg font-bold text-emerald-900 dark:text-emerald-100">Total con químicos</td>
-          <td class="px-4 py-4 text-right tabular-nums text-slate-400">—</td>
-          <td class="px-4 py-4 text-right tabular-nums text-slate-400">—</td>
+          <td class="px-4 py-4 text-right tabular-nums text-base font-bold text-emerald-900 dark:text-emerald-100">{{ tot_kg_con_q | num_es(0) }}</td>
+          <td class="px-4 py-4 text-right tabular-nums text-slate-500">{{ (tot_us_con_q / tot_kg_con_q) | num_es(2) if tot_kg_con_q > 0 else '—' }}</td>
           <td class="px-4 py-4 text-right tabular-nums text-xl font-bold text-emerald-900 dark:text-emerald-100">
-            {{ stock.total_con_quimicos | num_es(0) }}
+            {{ tot_us_con_q | num_es(0) }}
           </td>
         </tr>
       </tbody>

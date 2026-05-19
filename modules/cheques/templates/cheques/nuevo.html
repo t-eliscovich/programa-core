@@ -47,10 +47,17 @@
              Cambiamos el value a "CODE — NOMBRE" así filtra por código
              O por nombre (tipea "AND" y aparece "AND — ANDRES BUCHELI").
              Un JS al blur extrae sólo el código para mandar al backend. #}
+          {# TMT 2026-05-19 — item 1: al focusear, seleccionamos todo el texto
+             para que la dueña pueda re-elegir sin tener que borrar primero.
+             Un click extra (focus+click) abre el datalist con todas las
+             opciones porque el value queda seleccionado y la primera tecla
+             lo reemplaza. #}
           <input type="text" name="codigo_cli" id="codigo-cli-input"
                  value="{{ form.codigo_cli or '' }}"
                  list="clientes-list" autocomplete="off"
                  placeholder="Tipeá código o nombre…"
+                 onfocus="this.select()"
+                 onclick="this.select()"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm" maxlength="60"
                  required>
           {% if clientes_datalist %}
@@ -78,17 +85,19 @@
               {# header del bloque — JS lo rellena con "Cheque #N · × quitar"
                  cuando hay más de un bloque. Vacío en el primero. #}
               <div class="bloque-header hidden mb-1 text-[10px] text-slate-500 flex items-center justify-between"></div>
+              {# TMT 2026-05-19 — orden Importe → N° cheque → A depositar
+                 (pedido dueña item 3: ver importe primero). #}
               <div class="grid grid-cols-3 gap-2 items-end">
-                <label class="flex flex-col">
-                  <span class="text-xs text-slate-600">N° cheque <span class="text-red-500">*</span></span>
-                  <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
-                </label>
                 <label class="flex flex-col">
                   <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
                   <input type="text" name="importe[]" value="{{ form.importe or '' }}"
                          class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm cheque-imp" required
                          placeholder="0,00">
+                </label>
+                <label class="flex flex-col">
+                  <span class="text-xs text-slate-600">N° cheque <span class="text-red-500">*</span></span>
+                  <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
+                         class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
                 </label>
                 <label class="flex flex-col">
                   <span class="text-xs text-slate-600">A depositar</span>
@@ -180,16 +189,20 @@
                 <th class="px-3 py-2 text-left font-medium">Fecha</th>
                 <th class="px-3 py-2 text-left font-medium">Vence</th>
                 {# TMT 2026-05-17 — saldo de la factura en 3 columnas separadas (pedido cobranza):
-                   TOTAL = importe original; ABONADO = lo ya cobrado antes; SALDO = lo que queda vivo. #}
+                   TOTAL = importe original; ABONADO = lo ya cobrado antes; SALDO = lo que queda vivo.
+                   TMT 2026-05-19 — agregada columna "Acum. saldo" (item 4): running total
+                   de saldos para que la dueña vea de un vistazo si X facturas acumulan
+                   el monto que está cobrando. #}
                 <th class="px-3 py-2 text-right font-medium" title="Importe total de la factura (cara).">Total</th>
                 <th class="px-3 py-2 text-right font-medium" title="Lo que ya se cobró antes de esta operación.">Abonado</th>
                 <th class="px-3 py-2 text-right font-medium" title="Saldo vivo = total − abonado. Lo que queda por cobrar.">Saldo</th>
+                <th class="px-3 py-2 text-right font-medium" title="Saldo acumulado corrido de arriba hasta esta fila (suma de saldos de todas las facturas anteriores + esta).">Acum. saldo</th>
                 <th class="px-3 py-2 text-right font-medium w-32">A aplicar</th>
                 <th class="px-3 py-2 text-right font-medium w-32" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
               </tr>
             </thead>
             <tbody id="aplic-tbody">
-              <tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 text-xs">
+              <tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">
                 Tipeá el código del cliente arriba para ver sus facturas abiertas.
               </td></tr>
             </tbody>
@@ -203,6 +216,7 @@
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-total">—</td>
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-abonado">—</td>
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
+                <td></td>{# col Acum. saldo — vacía en footer #}
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
               </tr>
@@ -303,46 +317,27 @@
     const q = filtro.trim().toLowerCase();
 
     if (!facturas.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
       updateSummary(0, importeCheque);
       return;
     }
 
-    // Auto-distribución FIFO incluyendo créditos negativos.
-    // TMT 2026-05-15: la dueña pidió que el FIFO recorra TODAS las facturas
-    // en orden cronológico, sin importar el signo. Las negativas (créditos
-    // a favor) "consumen" el crédito y AUMENTAN el restante disponible
-    // para aplicar a las positivas siguientes. Ejemplo cheque $2000:
-    //   Factura A -$3.75   → aplica -3.75, restante 2003.75
-    //   Factura B -$19.71  → aplica -19.71, restante 2023.46
-    //   Factura C $4554.29 → aplica min(2023.46, 4554.29) = 2023.46
-    //   Total neto aplicado = -3.75 + -19.71 + 2023.46 = 2000.00 ✓
+    // TMT 2026-05-19 — item 5: NO autoasignar el importe a la primera factura.
+    // La dueña decide manualmente dónde aplicar tildeando los checkboxes.
+    // Excepción: si el importe matchea EXACTAMENTE el saldo de UNA factura,
+    // la dejamos preseleccionada (caso típico cheque = saldo factura).
+    //
+    // Antes había un FIFO que distribuía automáticamente recorriendo todas
+    // las facturas en orden cronológico — quitado a pedido explícito.
     const distribucion = {};  // id_factura → monto_a_aplicar
     if (importeCheque > 0) {
-      // Match exacto sobre las positivas (caso típico cheque = saldo factura)
       const exact = facturas.find(f =>
         f.saldo > 0 && Math.abs(f.saldo - importeCheque) < 0.01,
       );
       if (exact) {
         distribucion[exact.id_factura] = importeCheque;
-      } else {
-        let restante = importeCheque;
-        for (const f of facturas) {
-          if (Math.abs(restante) <= 0.005) break;
-          let aplicar = 0;
-          if (f.saldo > 0.005) {
-            aplicar = Math.min(restante, f.saldo);
-          } else if (f.saldo < -0.005) {
-            // Crédito a favor: absorbemos el saldo entero (negativo).
-            // Esto sube `restante` (porque restante - aplicar = restante - (-x) = restante + x).
-            aplicar = f.saldo;
-          }
-          if (Math.abs(aplicar) > 0.005) {
-            distribucion[f.id_factura] = aplicar;
-            restante -= aplicar;
-          }
-        }
       }
+      // Sin match exacto: distribucion queda vacío, la dueña tildea a mano.
     }
 
     // Preservar valores que el usuario haya editado manualmente
@@ -354,6 +349,17 @@
         userValues[inp.dataset.id] = parseMonto(inp.value);
       }
     });
+
+    // TMT 2026-05-19 — item 4: running total de saldos a lo largo del orden
+    // visual (facturas ya vienen ordenadas por fecha asc desde el backend).
+    // Lo computamos ANTES de filtrar por búsqueda para que el acumulado
+    // refleje el universo completo, no sólo lo visible.
+    const acumPorFactura = {};
+    let _acum = 0;
+    for (const f of facturas) {
+      _acum += parseFloat(f.saldo) || 0;
+      acumPorFactura[f.id_factura] = _acum;
+    }
 
     // Render filas
     const rowsHtml = facturas
@@ -400,6 +406,8 @@
             <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(f.importe)}</td>
             <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${f.abono && Math.abs(f.abono) > 0.005 ? fmt(f.abono) : '—'}</td>
             <td class="px-3 py-1.5 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
+            {# TMT 2026-05-19 — Acum. saldo (item 4): running total de saldos. #}
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(acumPorFactura[f.id_factura] || 0)}</td>
             <td class="px-3 py-1.5 text-right">
               <div class="inline-flex items-center gap-1 justify-end">
                 <input type="text" inputmode="decimal" name="aplicar[${f.id_factura}]"
@@ -419,7 +427,7 @@
         `;
       }).join('');
 
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
 
     // Wire-up para tracking de "usuario editó" (input de monto)
     tbody.querySelectorAll('input.aplic-input').forEach(inp => {
@@ -458,49 +466,10 @@
       });
     });
 
-    // ── Botón "T" (Total): aplica todo lo que queda del cheque a esta
-    // factura, hasta su saldo. TMT 2026-05-16. La dueña pidió un atajo
-    // para no tener que tipear el monto: T = "aplicá el resto acá".
-    //   monto_aplicar = min(saldo_factura, total_cheques - sum_aplicaciones_OTRAS)
-    // Si saldo > disponible → consume el disponible entero (cheque corto).
-    // Si disponible > saldo → consume el saldo entero (queda restante para otra).
-    tbody.querySelectorAll('button.aplic-total').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const id = btn.dataset.id;
-        const inp = tbody.querySelector(`input.aplic-input[data-id="${id}"]`);
-        if (!inp) return;
-        const saldo = parseFloat(inp.dataset.saldo || 0);
-        // Suma de los importes de TODOS los cheques del form (multi-cheque).
-        // Usamos el helper sumaImporteCheques() definido más abajo en el archivo.
-        const totalCheques = sumaImporteCheques();
-        // Suma aplicada en OTRAS facturas (no esta).
-        let aplicadoOtros = 0;
-        tbody.querySelectorAll('input.aplic-input').forEach(o => {
-          if (o.dataset.id !== id) aplicadoOtros += parseMonto(o.value) || 0;
-        });
-        const disponible = totalCheques - aplicadoOtros;
-        // saldo puede ser negativo (crédito), preservamos ese signo.
-        let toApply;
-        if (saldo > 0) {
-          toApply = Math.max(0, Math.min(saldo, disponible));
-        } else {
-          toApply = saldo;   // créditos se absorben enteros
-        }
-        inp.value = toApply.toFixed(2);
-        inp.dataset.userEdited = '1';
-        inp.dataset.appliedTotal = '1';  // marca para el backend
-        // Marca global: cuando T se usó, el backend afloja la tolerancia
-        // de rounding para que centavos del DBF legacy no rompan el submit.
-        const tUsed = document.getElementById('aplic-t-used');
-        if (tUsed) tUsed.value = '1';
-        // Sync checkbox si quedó == saldo.
-        const chk = tbody.querySelector(`input.aplic-cancel[data-id="${id}"]`);
-        if (chk) chk.checked = Math.abs(toApply - saldo) < 0.01 && Math.abs(saldo) > 0.005;
-        recalcAcum();
-        updateSummary();
-      });
-    });
+    // TMT 2026-05-19 — wire-up del botón MAX removido (item 6). Si la dueña
+    // necesita "aplicar el resto a esta factura", tildea el checkbox de la
+    // fila (que aplica el saldo entero) y edita manualmente si quiere
+    // partir. El control queda 100% explícito.
 
     recalcAcum();
     updateSummary();
@@ -840,6 +809,21 @@
   // Eventos
   codigoInput.addEventListener('change', cargarFacturas);
   codigoInput.addEventListener('blur',   cargarFacturas);
+  // TMT 2026-05-19 — item 2: cargar facturas ni bien la dueña termina de
+  // tipear/elegir el cliente, sin esperar al blur (que se dispara recién
+  // cuando se tabula al siguiente campo). Debounce 300ms para no martillar
+  // la API mientras se tipea. Antes facturas aparecían recién al ingresar
+  // el N° de cheque (porque ahí ocurría el blur del cliente).
+  let _facturasTimer = null;
+  codigoInput.addEventListener('input', () => {
+    if (_facturasTimer) clearTimeout(_facturasTimer);
+    _facturasTimer = setTimeout(() => {
+      // Aplicar extracción de código si el value tiene formato "CODE — NOMBRE".
+      const m = (codigoInput.value || '').toUpperCase().match(/^([A-Z0-9]{1,5})\s*[—\-]/);
+      if (m) codigoInput.value = m[1];
+      cargarFacturas();
+    }, 300);
+  });
   // TMT 2026-05-15: cuando la usuaria tipea el importe, marcamos
   // userEdited=1 para que updateSummary() NO lo sobreescriba con la suma
   // de facturas tildadas. Para destrabar (volver a auto-completar) basta
