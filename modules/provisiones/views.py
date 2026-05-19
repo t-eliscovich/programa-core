@@ -161,6 +161,50 @@ def actualizar_importe(id_provisiones: int):
     return redirect(url_for("provisiones.lista"))
 
 
+@provisiones_bp.route("/provisiones/_api/<int:id_provisiones>/quick-edit",
+                      methods=["POST"])
+@requiere_login
+@requiere_permiso("provisiones.editar")
+def api_quick_edit(id_provisiones: int):
+    """TMT 2026-05-19 v8 — inline edit JSON para concepto/importe/periodo
+    desde la lista. Pedido dueña: "se edita en la plantilla".
+
+    Acepta JSON {concepto?, importe?, periodo_aplica?}. Cualquier campo
+    que no venga, no se toca. Devuelve {ok, prov} con la fila actualizada.
+    """
+    from flask import jsonify
+    prov = queries.por_id(id_provisiones)
+    if not prov:
+        return jsonify({"ok": False, "error": "Provisión no encontrada."}), 404
+    data = request.get_json(silent=True) or request.form
+    concepto = data.get("concepto")
+    periodo = data.get("periodo_aplica")
+    importe_raw = data.get("importe")
+    importe = parse_monto(importe_raw) if importe_raw is not None else None
+    if importe is not None and importe < 0:
+        return jsonify({"ok": False, "error": "Importe inválido."}), 400
+    if concepto is not None and not (concepto or "").strip():
+        return jsonify({"ok": False, "error": "Concepto vacío."}), 400
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        queries.editar(
+            id_provisiones,
+            concepto=(concepto or "").strip() if concepto is not None else None,
+            importe=importe,
+            periodo_aplica=(periodo or "").strip() if periodo is not None else None,
+            usuario=usuario,
+        )
+        actualizado = queries.por_id(id_provisiones)
+        return jsonify({"ok": True, "prov": {
+            "id_provisiones": actualizado.get("id_provisiones"),
+            "concepto": actualizado.get("concepto"),
+            "importe": float(actualizado.get("importe") or 0),
+            "periodo_aplica": actualizado.get("periodo_aplica"),
+        }})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @provisiones_bp.route("/provisiones/<int:id_provisiones>/confirmar-eliminacion", methods=["GET"])
 @requiere_login
 @requiere_permiso("provisiones.editar")

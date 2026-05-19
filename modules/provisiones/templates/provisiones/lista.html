@@ -9,27 +9,27 @@
     <div>
       <h1 class="text-2xl font-semibold">Provisiones</h1>
       <p class="text-sm text-slate-500 mt-1">
-        Acumulaciones recurrentes (alquileres, servicios, sueldos provisionados, etc.)
+        Cuota mensual de gastos recurrentes (alquileres, servicios, sueldos provisionados, etc.).
+        <br>
+        <span class="text-xs">
+          Valor del mes actual = valor_inicio_mes + (día/30) × cuota mensual.
+          A fin de mes ajusta a valor_inicio + cuota.
+          Editá el valor real del posdat en
+          <a href="{{ url_for('posdat.lista') }}" class="text-sky-700 hover:underline">Posdatados</a>.
+        </span>
       </p>
     </div>
     <div class="no-print flex items-center gap-2">
-      {% if tiene_permiso('provisiones.crear') %}
-        <a href="{{ url_for('provisiones.nueva') }}"
-           class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          Nueva provisión
-        </a>
-      {% endif %}
       <a href="{{ url_for('provisiones.lista', q=q, export='csv') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
+      <button onclick="window.print()"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
     </div>
   </div>
 
-  {# TMT 2026-05-18 — Dueña: "Me sobran los 2 cuadros de la derecha, alcanza
-     con la información del cuadro izquierdo." 3 KPIs → 1. #}
+  {# TMT 2026-05-18 — KPI único. #}
   <div class="mb-6">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 max-w-md">
+    <div class="bg-white border border-slate-200 rounded p-4 max-w-md">
       <div class="text-xs text-slate-500 uppercase tracking-wide">Total cargado</div>
       <div class="text-xl font-semibold tabular-nums">{{ (resumen.total_general or 0) | num_es }}</div>
       <div class="text-xs text-slate-400 mt-0.5">{{ resumen.n_total or 0 }} provisiones registradas</div>
@@ -37,66 +37,76 @@
   </div>
 
   {% if error %}
-    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 text-sm">
       <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
     </div>
   {% endif %}
 
-  {# --- Buscador --------------------------------------------------------- #}
-  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  {# --- Buscador + adicionar al lado --- #}
+  <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
       <input type="text" name="q" value="{{ q }}" placeholder="Concepto, período…"
-             class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+             class="w-72 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm">
     </div>
-    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
     {% if q %}
       <a href="{{ url_for('provisiones.lista') }}" class="text-xs text-slate-500 hover:underline self-center">limpiar</a>
     {% endif %}
   </form>
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  {# TMT 2026-05-19 v8 — pedido dueña: "se edita en la plantilla, usuario
+     no necesitamos, y falta boton adicionar". Tabla con inputs inline
+     en concepto/importe/período. Onchange POSTea al endpoint
+     /provisiones/_api/<id>/quick-edit. Columna usuario removida.
+     Última fila es el form de "Adicionar" (estilo gastos forzados). #}
+  <div class="bg-white border border-slate-200 rounded overflow-x-auto">
+    <table class="w-full text-sm" id="prov-tabla">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3 text-left font-medium">Concepto</th>
           <th class="px-4 py-3 text-right font-medium">Importe</th>
           <th class="px-4 py-3 text-left font-medium">Período</th>
           <th class="px-4 py-3 text-left font-medium" style="white-space: nowrap;">Última actualización</th>
-          <th class="px-4 py-3 text-left font-medium">Usuario</th>
           {% if tiene_permiso('provisiones.editar') %}
-            <th class="px-4 py-3 text-right font-medium no-print">Acciones</th>
+            <th class="px-4 py-3 text-right font-medium no-print" style="width:32px;"></th>
           {% endif %}
         </tr>
       </thead>
       <tbody>
         {% for p in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <tr data-id-prov="{{ p.id_provisiones }}"
+            class="border-t border-slate-100 hover:bg-slate-50">
           <td class="px-4 py-2">
             {% if tiene_permiso('provisiones.editar') %}
-              <a href="{{ url_for('provisiones.editar', id_provisiones=p.id_provisiones) }}"
-                 class="hover:text-sky-700 hover:underline">{{ p.concepto }}</a>
+              <input type="text" maxlength="50"
+                     class="prov-edit-concepto w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-2 py-0.5 text-sm"
+                     value="{{ p.concepto or '' }}"
+                     data-orig="{{ p.concepto or '' }}">
             {% else %}
               {{ p.concepto }}
             {% endif %}
           </td>
           <td class="px-4 py-2 text-right text-mono tabular-nums">
             {% if tiene_permiso('provisiones.editar') %}
-              {# TMT 2026-05-18 — inline edit, la dueña edita importe seguido #}
-              <form method="post" action="{{ url_for('provisiones.actualizar_importe', id_provisiones=p.id_provisiones) }}"
-                    class="inline-flex items-center gap-1">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="number" step="0.01" name="importe" value="{{ p.importe }}"
-                       class="w-28 rounded border border-slate-200 dark:border-slate-700 bg-transparent px-2 py-0.5 text-right text-sm focus:bg-white focus:border-sky-400">
-                <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nuevo importe">✓</button>
-              </form>
+              <input type="number" step="0.01" min="0"
+                     class="prov-edit-importe w-32 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-2 py-0.5 text-right text-sm tabular-nums"
+                     value="{{ p.importe }}"
+                     data-orig="{{ p.importe }}">
             {% else %}
               {{ p.importe | money_es }}
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-xs">
-            {% if p.periodo_aplica %}
-              <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-medium">
+          <td class="px-4 py-2">
+            {% if tiene_permiso('provisiones.editar') %}
+              <select class="prov-edit-periodo bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-2 py-0.5 text-xs"
+                      data-orig="{{ p.periodo_aplica or '' }}">
+                {% for opt in ['MENSUAL', 'BIMESTRAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'] %}
+                  <option value="{{ opt }}" {% if (p.periodo_aplica or '')|upper == opt %}selected{% endif %}>{{ opt|capitalize }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-medium">
                 {{ p.periodo_aplica }}
               </span>
             {% endif %}
@@ -104,23 +114,168 @@
           <td class="px-4 py-2 text-xs text-slate-500" style="white-space: nowrap;">
             {{ p.fecha_actualiza | fecha_es if p.fecha_actualiza else (p.fecha_crea | fecha_es if p.fecha_crea else '') }}
           </td>
-          <td class="px-4 py-2 text-xs text-slate-500">{{ p.usuario_actualiza or p.usuario_crea or '' }}</td>
           {% if tiene_permiso('provisiones.editar') %}
-            <td class="px-4 py-2 text-right no-print">
-              <a href="{{ url_for('provisiones.editar', id_provisiones=p.id_provisiones) }}"
-                 class="text-xs text-slate-500 hover:text-sky-700 hover:underline mr-3">Editar</a>
-              <a href="{{ url_for('provisiones.confirmar_eliminacion', id_provisiones=p.id_provisiones) }}"
-                 class="text-xs text-red-600 hover:underline">Eliminar</a>
+            <td class="px-2 py-2 text-right no-print">
+              <button type="button" class="prov-del-btn text-red-600 hover:bg-red-50 px-2 py-1 rounded"
+                      title="Eliminar">×</button>
             </td>
           {% endif %}
         </tr>
         {% else %}
-        {{ empty_row(6 if tiene_permiso('provisiones.editar') else 5,
+        {{ empty_row(5 if tiene_permiso('provisiones.editar') else 4,
                      'Sin provisiones en el filtro.' if q else 'Sin provisiones registradas.',
-                     sugerencia='Probá quitar el filtro.' if q else 'Empezá creando una con "Nueva provisión".') }}
+                     sugerencia='Probá quitar el filtro.' if q else 'Cargá una con el form de abajo.') }}
         {% endfor %}
       </tbody>
+      {# Fila de "Adicionar" — form en la última fila. #}
+      {% if tiene_permiso('provisiones.crear') %}
+      <tfoot class="bg-emerald-50/30 border-t-2 border-emerald-300">
+        <tr>
+          <td class="px-4 py-2">
+            <input type="text" id="prov-new-concepto" maxlength="50"
+                   placeholder="Nueva provisión…"
+                   class="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm">
+          </td>
+          <td class="px-4 py-2 text-right">
+            <input type="number" step="0.01" min="0" id="prov-new-importe"
+                   placeholder="0,00"
+                   class="w-32 rounded border border-slate-300 bg-white px-2 py-1 text-right text-sm tabular-nums">
+          </td>
+          <td class="px-4 py-2">
+            <select id="prov-new-periodo"
+                    class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
+              {% for opt in ['MENSUAL', 'BIMESTRAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'] %}
+                <option value="{{ opt }}" {% if opt == 'MENSUAL' %}selected{% endif %}>{{ opt|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td></td>
+          <td class="px-2 py-2 text-right no-print">
+            <button type="button" id="prov-add-btn"
+                    class="bg-emerald-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-emerald-700">
+              + Adicionar
+            </button>
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
+
+  {% if tiene_permiso('provisiones.editar') %}
+  <style>
+    .prov-saved { background: rgba(34,197,94,0.15) !important; }
+    .prov-error { background: rgba(248,113,113,0.20) !important; }
+  </style>
+
+  <script>
+    (function() {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                 || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+
+      function postUpdate(id, payload, inputEl) {
+        fetch('/provisiones/_api/' + id + '/quick-edit', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify(payload),
+        }).then(r => r.json()).then(j => {
+          if (j && j.ok) {
+            inputEl.classList.remove('prov-error');
+            inputEl.classList.add('prov-saved');
+            inputEl.dataset.orig = inputEl.value;
+            setTimeout(() => inputEl.classList.remove('prov-saved'), 1200);
+          } else {
+            inputEl.classList.add('prov-error');
+            alert('No se pudo guardar: ' + (j.error || 'error'));
+            inputEl.value = inputEl.dataset.orig;
+          }
+        }).catch(e => {
+          inputEl.classList.add('prov-error');
+          alert('Error de red: ' + e.message);
+          inputEl.value = inputEl.dataset.orig;
+        });
+      }
+
+      // Inline edit por fila.
+      document.querySelectorAll('#prov-tabla tbody tr[data-id-prov]').forEach(tr => {
+        const id = tr.dataset.idProv;
+        const conInp = tr.querySelector('.prov-edit-concepto');
+        const impInp = tr.querySelector('.prov-edit-importe');
+        const perInp = tr.querySelector('.prov-edit-periodo');
+        const delBtn = tr.querySelector('.prov-del-btn');
+
+        if (conInp) conInp.addEventListener('change', () => {
+          if (!(conInp.value || '').trim()) {
+            alert('Concepto requerido.');
+            conInp.value = conInp.dataset.orig;
+            return;
+          }
+          postUpdate(id, { concepto: conInp.value.trim() }, conInp);
+        });
+        if (impInp) impInp.addEventListener('change', () => {
+          const n = parseFloat(impInp.value);
+          if (!isFinite(n) || n < 0) {
+            alert('Importe inválido.');
+            impInp.value = impInp.dataset.orig;
+            return;
+          }
+          postUpdate(id, { importe: n }, impInp);
+        });
+        if (perInp) perInp.addEventListener('change', () => {
+          postUpdate(id, { periodo_aplica: perInp.value }, perInp);
+        });
+        if (delBtn) delBtn.addEventListener('click', () => {
+          const desc = (conInp.value || '').trim() || 'esta provisión';
+          if (!confirm('¿Eliminar "' + desc + '"?')) return;
+          // El endpoint actual /provisiones/<id>/eliminar es POST con
+          // confirmación; lo invocamos directo con fetch a /eliminar.
+          const fd = new FormData();
+          fd.append('csrf_token', csrf);
+          fetch('/provisiones/' + id + '/eliminar', {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd,
+          }).then(r => {
+            if (r.ok || r.redirected) {
+              tr.style.transition = 'opacity .3s';
+              tr.style.opacity = '0';
+              setTimeout(() => tr.remove(), 300);
+            } else {
+              alert('No se pudo eliminar (HTTP ' + r.status + ').');
+            }
+          }).catch(e => alert('Error: ' + e.message));
+        });
+      });
+
+      // Adicionar nueva provisión.
+      const addBtn = document.getElementById('prov-add-btn');
+      if (addBtn) addBtn.addEventListener('click', () => {
+        const concepto = (document.getElementById('prov-new-concepto').value || '').trim();
+        const importe = parseFloat(document.getElementById('prov-new-importe').value);
+        const periodo = document.getElementById('prov-new-periodo').value;
+        if (!concepto) { alert('Concepto requerido.'); return; }
+        if (!isFinite(importe) || importe < 0) { alert('Importe inválido.'); return; }
+        const fd = new FormData();
+        fd.append('csrf_token', csrf);
+        fd.append('concepto', concepto);
+        fd.append('importe', importe);
+        fd.append('periodo_aplica', periodo);
+        fetch('/provisiones/nueva', {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: fd,
+        }).then(r => {
+          if (r.ok || r.redirected) {
+            // Recarga la lista para mostrar la nueva.
+            window.location.reload();
+          } else {
+            alert('No se pudo crear (HTTP ' + r.status + ').');
+          }
+        }).catch(e => alert('Error: ' + e.message));
+      });
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}
