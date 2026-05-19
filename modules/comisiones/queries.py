@@ -30,13 +30,34 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
     return db.fetch_all(
         """
         WITH
+        -- TMT 2026-05-19 v8 — dueña: "N° clientes tiene que decir num
+        -- de clientes que se estan sumando para esa comisión". Antes
+        -- contaba todos los clientes con cliente.vend = código. Ahora
+        -- cuenta solo los clientes DISTINCT que cobraron este mes
+        -- (sea cheque o efectivo) y que tienen el vendedor asignado.
+        cobros_mes AS (
+            SELECT UPPER(TRIM(c.vend))        AS codigo,
+                   ch.codigo_cli              AS codigo_cli
+              FROM scintela.cheque ch
+              JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
+             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+               AND ch.stat IN ('B', 'A')
+               AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
+            UNION
+            SELECT UPPER(TRIM(c.vend))        AS codigo,
+                   co.codigo_cli              AS codigo_cli
+              FROM scintela.cobro co
+              JOIN scintela.cliente c ON c.codigo_cli = co.codigo_cli
+             WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
+               AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
+               AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
+               AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
+        ),
         clientes_por_vend AS (
-            SELECT UPPER(TRIM(vend))    AS codigo,
-                   COUNT(*)             AS n_clientes,
-                   ARRAY_AGG(codigo_cli) AS codigos_cli
-              FROM scintela.cliente
-             WHERE vend IS NOT NULL AND TRIM(vend) <> ''
-             GROUP BY UPPER(TRIM(vend))
+            SELECT codigo, COUNT(DISTINCT codigo_cli) AS n_clientes
+              FROM cobros_mes
+             GROUP BY codigo
         ),
         cobranzas_mes AS (
             -- TMT 2026-05-19 v8 — dueña: "todas las cobranzas (cheques o

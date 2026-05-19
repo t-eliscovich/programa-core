@@ -50,11 +50,13 @@
     </div>
   </div>
 
+  {# TMT 2026-05-19 v8 — dueña: "solo dejar codigo de vendedor, la columna
+     nombre no sirve". Sacada la columna Vendedor (nombre + inline edit).
+     El link del código lleva al detalle (con tabs Cobranza | Ventas). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3 text-left font-medium">Código</th>
           <th class="px-4 py-3 text-left font-medium">Vendedor</th>
           <th class="px-4 py-3 text-right font-medium" style="white-space:nowrap;">% Comisión</th>
           <th class="px-4 py-3 text-right font-medium" style="white-space:nowrap;">N° clientes</th>
@@ -66,21 +68,9 @@
       <tbody>
         {% for f in filas %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2 font-mono text-xs">
+          <td class="px-4 py-2 font-mono text-base font-semibold">
             <a href="{{ url_for('comisiones.detalle', codigo=f.codigo, anio=anio, mes=mes) }}"
-               class="text-sky-700 hover:underline">{{ f.codigo }}</a>
-          </td>
-          <td class="px-4 py-2">
-            {# Inline edit del nombre #}
-            <form method="post" action="{{ url_for('comisiones.actualizar_nombre', codigo=f.codigo) }}"
-                  class="inline-flex items-center gap-1">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="anio" value="{{ anio }}">
-              <input type="hidden" name="mes" value="{{ mes }}">
-              <input type="text" name="nombre" value="{{ f.nombre or '' }}" maxlength="100"
-                     class="bg-transparent border border-transparent hover:border-slate-200 focus:bg-white focus:border-sky-400 rounded px-2 py-0.5 text-sm w-64">
-              <button class="text-xs text-sky-600 hover:text-sky-800 opacity-0 group-hover:opacity-100" title="Guardar">✓</button>
-            </form>
+               class="text-sky-700 hover:underline" title="Ver cobranzas y ventas del vendedor">{{ f.codigo }}</a>
           </td>
           <td class="px-4 py-2 text-right">
             {# Inline edit del % #}
@@ -96,7 +86,8 @@
               <button class="text-xs text-sky-600 hover:text-sky-800" title="Guardar nuevo %">✓</button>
             </form>
           </td>
-          <td class="px-4 py-2 text-right tabular-nums text-slate-500">{{ f.n_clientes or '—' }}</td>
+          <td class="px-4 py-2 text-right tabular-nums text-slate-500"
+              title="Clientes distintos que cobraron este mes (sumando a la comisión)">{{ f.n_clientes or '—' }}</td>
           <td class="px-4 py-2 text-right tabular-nums">{{ (f.ventas_mes or 0) | num_es(0) }}</td>
           <td class="px-4 py-2 text-right tabular-nums font-medium">{{ (f.cobranzas_mes or 0) | num_es(0) }}</td>
           <td class="px-4 py-2 text-right tabular-nums font-bold {% if (f.comision_mes or 0) > 0 %}text-emerald-700 dark:text-emerald-400{% else %}text-slate-400{% endif %}">
@@ -104,14 +95,14 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(7, 'Sin vendedores cargados.',
+        {{ empty_row(6, 'Sin vendedores cargados.',
                      sugerencia='El backfill inicial debería haber traído los códigos desde cliente.vend.') }}
         {% endfor %}
       </tbody>
       {% if filas %}
       <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
         <tr>
-          <td class="px-4 py-3" colspan="4">
+          <td class="px-4 py-3" colspan="3">
             <span class="text-base font-bold">Total</span>
             <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} vendedores)</span>
           </td>

@@ -10,33 +10,40 @@
 <div class="page-shell page-shell--xl">
   <header class="page-header flex items-start justify-between">
     <div>
-      <h1 class="page-title">{{ vendedor.nombre or vendedor.codigo }}</h1>
+      <h1 class="page-title font-mono">{{ vendedor.codigo }}</h1>
       <p class="text-sm text-slate-500 mt-1">
-        Código <span class="font-mono">{{ vendedor.codigo }}</span> ·
-        {{ pct }}% de comisión sobre cobranzas
+        {{ '%02d' % mes }}/{{ anio }} · {{ pct }}% de comisión sobre cobranzas
       </p>
     </div>
-    <a href="{{ url_for('comisiones.lista', anio=anio, mes=mes) }}"
-       class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
-      ← Volver a Comisiones
-    </a>
+    <div class="flex gap-2">
+      <a href="{{ url_for('comisiones.exportar_excel', codigo=vendedor.codigo, anio=anio, mes=mes) }}"
+         class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-medium inline-flex items-center gap-1.5"
+         title="Descargar XLSX con cobranzas + ventas">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Excel
+      </a>
+      <a href="{{ url_for('comisiones.lista', anio=anio, mes=mes) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
+        ← Volver
+      </a>
+    </div>
   </header>
 
   {% if error %}
     <div class="page-error"><p>{{ error }}</p></div>
   {% endif %}
 
-  {# Resumen del mes #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+  {# Resumen del mes — siempre visible #}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cobranzas {{ mes }}/{{ anio }}</div>
+      <div class="text-xl font-bold tabular-nums mt-1">$ {{ total_cobr | num_es(0) }}</div>
+      <div class="text-xs text-slate-500 mt-1">{{ cobranzas | length }} cobros</div>
+    </div>
     <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
       <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Ventas {{ mes }}/{{ anio }}</div>
       <div class="text-xl font-bold tabular-nums mt-1">$ {{ total_vent | num_es(0) }}</div>
       <div class="text-xs text-slate-500 mt-1">{{ ventas | length }} facturas</div>
-    </div>
-    <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Cobranzas {{ mes }}/{{ anio }}</div>
-      <div class="text-xl font-bold tabular-nums mt-1">$ {{ total_cobr | num_es(0) }}</div>
-      <div class="text-xs text-slate-500 mt-1">{{ cobranzas | length }} cheques acreditados</div>
     </div>
     <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 px-5 py-3">
       <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Comisión a pagar</div>
@@ -45,98 +52,168 @@
     </div>
   </div>
 
-  {# Cobranzas — la métrica principal del PRG (PROCEDURE COMISION) #}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">Cheques cobrados del mes</h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-6">
-    <table class="w-full text-sm">
-      {# TMT 2026-05-19 v8 — incluye cheques (CHE) y cobros no-cheque
-         (EFE/transferencia). Campos vienen como `fecha`, `doc`, `origen`,
-         `id_origen` (no `fechad`, `no_cheque`, `id_cheque`). #}
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3 text-left">Fecha</th>
-          <th class="px-4 py-3 text-left">Tipo</th>
-          <th class="px-4 py-3 text-left">Cliente</th>
-          <th class="px-4 py-3 text-left">N°/Doc</th>
-          <th class="px-4 py-3 text-left">Banco</th>
-          <th class="px-4 py-3 text-right">Importe</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in cobranzas %}
-        {% set _es_cheque = (c.origen or '') == 'CHE' %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2" style="white-space:nowrap;">{{ c.fecha | fecha_es }}</td>
-          <td class="px-4 py-2 text-xs">
-            {% if _es_cheque %}
-              <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 font-mono">CHE</span>
-            {% else %}
-              <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 font-mono">{{ c.origen or 'EFE' }}</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-2">
-            <span class="font-mono text-xs text-slate-500">{{ c.codigo_cli }}</span>
-            <span class="ml-1">{{ c.cliente }}</span>
-          </td>
-          <td class="px-4 py-2 font-mono text-xs">{{ c.doc or ('#' ~ c.id_origen) }}</td>
-          <td class="px-4 py-2 text-xs text-slate-500">{{ c.banco or '' }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ c.importe | num_es(2) }}</td>
-        </tr>
-        {% else %}
-        {{ empty_row(6, 'Sin cobranzas en este mes.',
-                     sugerencia='Cheques acreditados (stat B/A) o cobros no-cheque (efectivo/transferencia) con fecha del mes.') }}
-        {% endfor %}
-      </tbody>
-      {% if cobranzas %}
-      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
-        <tr>
-          <td class="px-4 py-3 text-base font-bold" colspan="5">Total cobrado</td>
-          <td class="px-4 py-3 text-right tabular-nums text-lg font-bold">{{ total_cobr | num_es(2) }}</td>
-        </tr>
-      </tfoot>
-      {% endif %}
-    </table>
+  {# TMT 2026-05-19 v8 — pedido dueña: tabs Cobranza | Ventas.
+     Default = cobranza. URL: ?tab=cobranza|ventas. #}
+  {% set tab = (request.args.get('tab') or 'cobranza') | lower %}
+  {% if tab not in ('cobranza', 'ventas') %}{% set tab = 'cobranza' %}{% endif %}
+  <div class="no-print flex items-end gap-1 mb-3 border-b border-slate-200 dark:border-slate-800">
+    <a href="{{ url_for('comisiones.detalle', codigo=vendedor.codigo, anio=anio, mes=mes, tab='cobranza') }}"
+       class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+              {% if tab == 'cobranza' %}border-sky-600 text-sky-700 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+      Cobranza
+      <span class="ml-1 text-xs text-slate-400">{{ cobranzas | length }}</span>
+    </a>
+    <a href="{{ url_for('comisiones.detalle', codigo=vendedor.codigo, anio=anio, mes=mes, tab='ventas') }}"
+       class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+              {% if tab == 'ventas' %}border-sky-600 text-sky-700 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+      Ventas
+      <span class="ml-1 text-xs text-slate-400">{{ ventas | length }}</span>
+    </a>
   </div>
 
-  {# Ventas del mes — bonus PC #}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">Facturas emitidas del mes</h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3 text-left">Fecha</th>
-          <th class="px-4 py-3 text-left">Cliente</th>
-          <th class="px-4 py-3 text-left">N°</th>
-          <th class="px-4 py-3 text-right">Importe</th>
-          <th class="px-4 py-3 text-right">Saldo</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for v in ventas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2" style="white-space:nowrap;">{{ v.fecha | fecha_es }}</td>
-          <td class="px-4 py-2">
-            <span class="font-mono text-xs text-slate-500">{{ v.codigo_cli }}</span>
-            <span class="ml-1">{{ v.cliente }}</span>
-          </td>
-          <td class="px-4 py-2 font-mono text-xs">{{ v.numf_completo or v.numf or '#' ~ v.id_factura }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ v.importe | num_es(2) }}</td>
-          <td class="px-4 py-2 text-right tabular-nums text-slate-500">{{ v.saldo | num_es(2) if v.saldo is not none else '—' }}</td>
-        </tr>
-        {% else %}
-        {{ empty_row(5, 'Sin ventas en este mes.') }}
-        {% endfor %}
-      </tbody>
-      {% if ventas %}
-      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
-        <tr>
-          <td class="px-4 py-3 text-base font-bold" colspan="3">Total facturado</td>
-          <td class="px-4 py-3 text-right tabular-nums text-lg font-bold">{{ total_vent | num_es(2) }}</td>
-          <td></td>
-        </tr>
-      </tfoot>
-      {% endif %}
-    </table>
-  </div>
+  {% if tab == 'cobranza' %}
+    {# Tab Cobranza: cheques arriba, caja debajo (pedido dueña). #}
+    {% set cheques = cobranzas | selectattr('origen', 'equalto', 'CHE') | list %}
+    {% set otros = cobranzas | rejectattr('origen', 'equalto', 'CHE') | list %}
+    {% set tot_cheq = cheques | sum(attribute='importe') %}
+    {% set tot_otros = otros | sum(attribute='importe') %}
+
+    {# Cheques cobrados — siempre primero #}
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2 mt-3 flex items-baseline gap-2">
+      <span>Cheques cobrados</span>
+      <span class="text-xs font-normal text-slate-400">{{ cheques | length }} · $ {{ tot_cheq | num_es(0) }}</span>
+    </h2>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-5">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left">Fecha</th>
+            <th class="px-4 py-3 text-left">Cliente</th>
+            <th class="px-4 py-3 text-left">N°</th>
+            <th class="px-4 py-3 text-left">Banco</th>
+            <th class="px-4 py-3 text-right">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cheques %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50">
+            <td class="px-4 py-2" style="white-space:nowrap;">{{ c.fecha | fecha_es }}</td>
+            <td class="px-4 py-2">
+              <span class="font-mono text-xs text-slate-500">{{ c.codigo_cli }}</span>
+              <span class="ml-1">{{ c.cliente }}</span>
+            </td>
+            <td class="px-4 py-2 font-mono text-xs">{{ c.doc or ('#' ~ c.id_origen) }}</td>
+            <td class="px-4 py-2 text-xs text-slate-500">{{ c.banco or '' }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ c.importe | num_es(2) }}</td>
+          </tr>
+          {% else %}
+          {{ empty_row(5, 'Sin cheques acreditados en este mes.') }}
+          {% endfor %}
+        </tbody>
+        {% if cheques %}
+        <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
+          <tr>
+            <td class="px-4 py-3 text-sm font-bold" colspan="4">Subtotal cheques</td>
+            <td class="px-4 py-3 text-right tabular-nums font-bold">{{ tot_cheq | num_es(2) }}</td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+
+    {# Cobros con caja / efectivo / transferencia — debajo de cheques #}
+    {% if otros %}
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2 flex items-baseline gap-2">
+      <span>Cobros con caja / efectivo</span>
+      <span class="text-xs font-normal text-slate-400">{{ otros | length }} · $ {{ tot_otros | num_es(0) }}</span>
+    </h2>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-3">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left">Fecha</th>
+            <th class="px-4 py-3 text-left">Tipo</th>
+            <th class="px-4 py-3 text-left">Cliente</th>
+            <th class="px-4 py-3 text-left">N° Doc</th>
+            <th class="px-4 py-3 text-left">Banco/cuenta</th>
+            <th class="px-4 py-3 text-right">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in otros %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50">
+            <td class="px-4 py-2" style="white-space:nowrap;">{{ c.fecha | fecha_es }}</td>
+            <td class="px-4 py-2 text-xs">
+              <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-mono">{{ c.origen or 'EFE' }}</span>
+            </td>
+            <td class="px-4 py-2">
+              <span class="font-mono text-xs text-slate-500">{{ c.codigo_cli }}</span>
+              <span class="ml-1">{{ c.cliente }}</span>
+            </td>
+            <td class="px-4 py-2 font-mono text-xs">{{ c.doc or '—' }}</td>
+            <td class="px-4 py-2 text-xs text-slate-500">{{ c.banco or '' }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ c.importe | num_es(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
+          <tr>
+            <td class="px-4 py-3 text-sm font-bold" colspan="5">Subtotal caja / efectivo</td>
+            <td class="px-4 py-3 text-right tabular-nums font-bold">{{ tot_otros | num_es(2) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% endif %}
+
+    {# Total general (cheques + caja) #}
+    {% if cobranzas %}
+    <div class="text-right text-sm border-t-2 border-slate-300 pt-2">
+      <span class="font-bold text-base">Total cobrado mes:</span>
+      <span class="ml-2 font-bold tabular-nums text-lg">$ {{ total_cobr | num_es(2) }}</span>
+    </div>
+    {% endif %}
+
+  {% else %}
+    {# Tab Ventas — facturas emitidas #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left">Fecha</th>
+            <th class="px-4 py-3 text-left">Cliente</th>
+            <th class="px-4 py-3 text-left">N°</th>
+            <th class="px-4 py-3 text-right">Importe</th>
+            <th class="px-4 py-3 text-right">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in ventas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50">
+            <td class="px-4 py-2" style="white-space:nowrap;">{{ v.fecha | fecha_es }}</td>
+            <td class="px-4 py-2">
+              <span class="font-mono text-xs text-slate-500">{{ v.codigo_cli }}</span>
+              <span class="ml-1">{{ v.cliente }}</span>
+            </td>
+            <td class="px-4 py-2 font-mono text-xs">{{ v.numf_completo or v.numf or '#' ~ v.id_factura }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ v.importe | num_es(2) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums text-slate-500">{{ v.saldo | num_es(2) if v.saldo is not none else '—' }}</td>
+          </tr>
+          {% else %}
+          {{ empty_row(5, 'Sin ventas en este mes.') }}
+          {% endfor %}
+        </tbody>
+        {% if ventas %}
+        <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
+          <tr>
+            <td class="px-4 py-3 text-base font-bold" colspan="3">Total facturado</td>
+            <td class="px-4 py-3 text-right tabular-nums text-lg font-bold">{{ total_vent | num_es(2) }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  {% endif %}
 </div>
 {% endblock %}
