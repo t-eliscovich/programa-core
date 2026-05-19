@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Cobranza — Nuevo cheque{% endblock %}
+{% block title %}Nueva Cobranza{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('cheques.lista') }}" class="hover:underline text-slate-500">Cheques</a> / <strong>Cobranza</strong>{% endblock %}
 
 {% block content %}
@@ -8,7 +8,7 @@
   {# TMT 2026-05-18 — patrón canónico (page-shell--xl + header sin subtitle).
      Coincide con compra/nueva y factura/nueva. #}
   <header class="page-header">
-    <h1 class="page-title">Nuevo cheque (cobranza)</h1>
+    <h1 class="page-title">Nueva Cobranza</h1>
   </header>
 
   {% if errores %}
@@ -130,7 +130,7 @@
            sale a la luz y bloquea el guardado si no se elige. #}
         <label class="flex flex-col col-span-2 md:col-span-1">
           <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
-          <select name="no_banco" required class="border rounded px-2 py-1 mt-0.5 text-sm">
+          <select name="no_banco" id="no-banco-select" required class="border rounded px-2 py-1 mt-0.5 text-sm">
             <option value="">— Elegí un banco —</option>
             {% for b in bancos %}
               <option value="{{ b.no_banco }}"
@@ -139,6 +139,12 @@
               </option>
             {% endfor %}
           </select>
+          {# TMT 2026-05-19 v8 — hint contextual cuando se elige banco>=90.
+             Aparece dinámicamente abajo del select con la explicación de
+             qué side-effect dispara cada código. Pedido dueña:
+             "Asegurate que en cobranza funcionen las logicas de
+             seleccionar opciones de banco >90". #}
+          <span id="banco-hint" class="hidden mt-1 text-xs px-2 py-1 rounded border border-sky-300 bg-sky-50 text-sky-900 leading-snug"></span>
         </label>
 
         {# TMT 2026-05-19 — bloque "Más datos" removido (pedido dueña item 7).
@@ -892,6 +898,43 @@
     });
   }
   if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
+
+  // TMT 2026-05-19 v8 — banco>=90: side-effects y hint contextual.
+  // Pedido literal dueña: "Asegurate que en cobranza funcionen las
+  // logicas de seleccionar opciones de banco >90 ejemplo anticipos,
+  // efectivo etc". El backend ya aplica los side-effects en
+  // queries.crear(); acá solo guiamos visualmente y tickeamos
+  // es_anticipo cuando corresponda.
+  const bancoSelEl = document.getElementById('no-banco-select');
+  const bancoHint  = document.getElementById('banco-hint');
+  const HINTS_BANCO = {
+    '90': 'DEP. PICH — el cheque se marca como cobrado (B). La plata ya está en Pichincha.',
+    '91': 'DEP. INTER — el cheque se marca como cobrado (B). La plata ya está en Internacional.',
+    '95': 'CANCELA ANTICIPO — registro contable, queda en cartera para aplicar manual.',
+    '97': 'ANTICIPO — se va a marcar como anticipo automáticamente (genera espejo negativo).',
+    '98': 'UKN (legacy) — sin side-effect, queda en cartera.',
+    '99': 'EFECTIVO — cobro inmediato: el cheque queda como cobrado (B) y entra a CAJA.',
+  };
+  function actualizarHintBanco() {
+    if (!bancoSelEl || !bancoHint) return;
+    const v = bancoSelEl.value;
+    const hint = HINTS_BANCO[v];
+    if (hint) {
+      bancoHint.textContent = hint;
+      bancoHint.classList.remove('hidden');
+    } else {
+      bancoHint.classList.add('hidden');
+    }
+    // Auto-tick es_anticipo cuando se elige 97 (paridad con el view).
+    if (v === '97' && anticipoChk && !anticipoChk.checked) {
+      anticipoChk.checked = true;
+      anticipoChk.dispatchEvent(new Event('change'));
+    }
+  }
+  if (bancoSelEl) {
+    bancoSelEl.addEventListener('change', actualizarHintBanco);
+    actualizarHintBanco();  // estado inicial (re-render por error)
+  }
 
   // TMT 2026-05-15: al elegir un cliente del datalist, el value queda
   // como "CODE — NOMBRE". Al blur/submit, extraemos sólo el código

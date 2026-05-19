@@ -1371,6 +1371,26 @@ def crear(
     if (stat or "").upper() == "V":
         raise ValueError("stat='V' (banco Internacional) está deprecado. Usar 'B' al depositar.")
 
+    # TMT 2026-05-19 v8 — códigos de banco "virtuales" (>=90) del legacy dBase.
+    # Pedido literal dueña: "Asegurate que en cobranza funcionen las logicas
+    # de seleccionar opciones de banco >90 ejemplo anticipos, efectivo etc".
+    # Mapeo (confirmado por screenshot del dropdown):
+    #   90 DEP. PICH   → cobro directo en Pichincha (sin papel) → stat='B'
+    #   91 DEP. INTER  → cobro directo en Internacional        → stat='B'
+    #   95 CANCELA ANTIC → marca contable; queda en cartera para que la
+    #                       dueña lo aplique manualmente.
+    #   97 ANTICIPO   → el view fuerza es_anticipo=True; queda en Z y
+    #                    genera espejo negativo.
+    #   98 UKN        → legacy unknown, sin side-effect.
+    #   99 EFECTIVO   → cobro en efectivo: stat='B' + entrada en caja
+    #                    (manejado abajo, post-INSERT, dentro de la tx).
+    # Sin esto el cheque "virtual" quedaba en stat='Z' (cartera) y no
+    # contaba en comisiones ni en el flujo real. BED (HECTOR BEDON) es el
+    # caso testigo: $341k de débito, 0 cobrado en sistema porque "paga
+    # mucho en efectivo" y entraba como banco=99 sin side-effect.
+    if no_banco in (90, 91, 99) and (stat or "").upper() == "Z":
+        stat = "B"
+
     importe_principal = float(importe or 0)
 
     # TMT 2026-05-15: caller puede pasar `conn` para compartir transacción
@@ -1439,6 +1459,51 @@ def crear(
                           "es_anticipo": bool(es_anticipo)},
                 batch_id=batch_id,
             )
+
+        # TMT 2026-05-19 v8 — banco=99 EFECTIVO: insert en scintela.caja
+        # (tipo='E') para que la plata entre realmente al saldo de caja.
+        # Saldo running: pasamos NULL, el trigger
+        # `trg_caja_set_saldo` (mig 0022) lo computa BEFORE INSERT.
+        # NO usamos caja.queries.crear() acá para evitar la cascada de
+        # side-effects basados en concepto_parser (riesgo de match falso).
+        if no_banco == 99 and row.get("id_cheque") and importe_principal > 0:
+            concepto_caja = f"99 {codigo_cli.upper().strip()} ch {(no_cheque or '').strip()}"[:80]
+            caja_row = db.execute_returning(
+                """
+                INSERT INTO scintela.caja
+                    (fecha, tipo, importe, concepto, saldo, clave,
+                     id_cheque, usuario_crea)
+                VALUES (%s, 'E', %s, %s, NULL, %s, %s, %s)
+                RETURNING id_caja
+                """,
+                (
+                    fecha, importe_principal, concepto_caja,
+                    (clave or None) and clave[:3],
+                    row["id_cheque"], usuario,
+                ),
+                conn=conn,
+            ) or {}
+            # mov_doble linkea cheque ↔ caja para que el reverso del
+            # cheque pueda compensar la entrada de caja en automático.
+            if caja_row.get("id_caja"):
+                _md.registrar(
+                    conn=conn,
+                    tipo="cheque_efectivo_to_caja",
+                    origen_table="cheque",
+                    origen_id=row["id_cheque"],
+                    destino_table="caja",
+                    destino_id=caja_row["id_caja"],
+                    importe=importe_principal,
+                    fecha=fecha,
+                    concepto=(f"Cobro efectivo ch{(no_cheque or '').strip()} "
+                              f"de {codigo_cli.upper().strip()} → caja")[:200],
+                    usuario=usuario,
+                    metadata={"codigo_cli": codigo_cli.upper().strip(),
+                              "no_banco": 99,
+                              "id_cheque": row["id_cheque"],
+                              "id_caja": caja_row["id_caja"]},
+                    batch_id=batch_id,
+                )
 
         # Espejo de anticipo (importe negativo) — sólo si flag activo y >0
         if es_anticipo and importe_principal > 0:

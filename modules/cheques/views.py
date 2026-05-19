@@ -126,6 +126,13 @@ def nuevo():
     banco_texto = (request.form.get("banco_texto") or "").strip()[:30] or None
     prov = (request.form.get("prov") or "").strip()[:5] or None
     es_anticipo = bool(request.form.get("es_anticipo"))
+    # TMT 2026-05-19 v8 — banco=97 (ANTICIPO) implica es_anticipo=True
+    # aunque la dueña no tilde el checkbox. Pedido literal: "Asegurate
+    # que en cobranza funcionen las logicas de seleccionar opciones de
+    # banco >90 ejemplo anticipos, efectivo etc". Sin esto, elegir 97
+    # quedaba como cheque normal y no generaba el espejo negativo.
+    if no_banco == 97 and not es_anticipo:
+        es_anticipo = True
 
     if fecha is None:
         errores.append("Fecha inválida.")
