@@ -469,3 +469,100 @@ def clasificar(id_caja: int):
         flash_exc('No pude clasificar el egreso', e)
         return redirect(url_for('caja.lista'))
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# Wizard de reclasificación masiva — TMT 2026-05-19 v5 (pedido dueña).
+# Lista todos los xgast sin num agrupados por concepto único. La dueña
+# elige V para cada concepto (1 click) y se aplica masivamente a todos
+# los xgast con ese concepto. Reemplaza ampliación hardcoded de keywords.
+# ─────────────────────────────────────────────────────────────────────────
+
+@gastos_bp.route("/informes/gastos/reclasificar", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("gastos.crear")
+def reclasificar():
+    """Wizard que muestra conceptos sin num y permite asignar V masivamente.
+
+    TMT 2026-05-19 v6 re-audit hardening:
+    - El batch corre en una SOLA tx (atómico): si una fila falla, rollback total.
+    - num inválido server-side → flash warn explícito (antes silent skip).
+    - Conteo de inputs inválidos para reportar al usuario.
+    """
+    if request.method == "POST":
+        usuario = (g.user or {}).get("username", "web")
+
+        # Pre-validar TODOS los pares ANTES de tocar DB.
+        # TMT 2026-05-19 v6 — concepto[] y num[] paralelos por índice
+        # (antes era num_<concepto> que rompía con &/=).
+        conceptos = request.form.getlist("concepto[]")
+        nums_raw = request.form.getlist("num[]")
+        pares: list[tuple[str, int]] = []
+        invalidos = 0
+        for concepto, v in zip(conceptos, nums_raw, strict=False):
+            v_str = (v or "").strip()
+            concepto_clean = (concepto or "").strip()
+            if not v_str:
+                # "— Saltar —" → ignorar.
+                continue
+            if not concepto_clean:
+                invalidos += 1
+                continue
+            try:
+                num = int(v_str)
+            except (TypeError, ValueError):
+                invalidos += 1
+                continue
+            if num < 1 or num > 9:
+                invalidos += 1
+                continue
+            pares.append((concepto_clean, num))
+
+        if invalidos:
+            flash(
+                f"{invalidos} selección(es) tenía(n) un valor de V fuera de 1..9 "
+                "y fueron ignoradas. Si pasó por DevTools, no juegues con eso.",
+                "warn",
+            )
+
+        # Aplicar en una sola transacción atómica. Si una fila falla,
+        # rollback total y la dueña ve el error sin estado intermedio.
+        aplicados = 0
+        filas_afectadas_total = 0
+        importe_total = 0.0
+        try:
+            with db.tx() as conn:
+                for concepto, num in pares:
+                    r = queries.reclasificar_concepto_bulk(
+                        concepto=concepto, num=num, usuario=usuario,
+                        conn=conn,
+                    )
+                    if r["filas_afectadas"] > 0:
+                        aplicados += 1
+                        filas_afectadas_total += r["filas_afectadas"]
+                        importe_total += r["importe_total"]
+        except Exception as e:
+            flash_exc("Reclasificación falló — rollback completo aplicado", e)
+            return redirect(url_for("gastos.reclasificar"))
+
+        if aplicados:
+            flash(
+                f"Reclasificación OK: {aplicados} conceptos · "
+                f"{filas_afectadas_total} filas · $ {importe_total:,.2f}.",
+                "ok",
+            )
+        else:
+            flash("Ningún concepto fue reclasificado (revisá las selecciones).",
+                  "warn")
+        return redirect(url_for("gastos.reclasificar"))
+
+    # GET: mostrar la tabla.
+    resumen = queries.xgast_sin_num_resumen()
+    # TMT 2026-05-19 v6 — limite + n_total para warn si truncamos.
+    LIMITE_VISIBLE = 500
+    filas = queries.xgast_sin_num_por_concepto(limite=LIMITE_VISIBLE)
+    return render_template(
+        "gastos/reclasificar.html",
+        resumen=resumen,
+        filas=filas,
+        limite_visible=LIMITE_VISIBLE,
+    )

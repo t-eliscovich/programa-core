@@ -758,7 +758,12 @@ function buildChart(q) {
   });
 }
 /* ============================================================ *
- *   Gastos forzados — sidebar + localStorage + chart integration
+ *   Gastos forzados — localStorage + chart integration
+ *   TMT 2026-05-19 v6 audit — optimistic locking por item.
+ *   Cada item lleva `version` que incrementa con cada edit.
+ *   Al guardar, comparamos `version` del DOM vs lo que está en
+ *   localStorage AHORA. Si difiere → reload + warn (otra tab editó).
+ *   También sync cross-tab via `window.addEventListener('storage')`.
  * ============================================================ */
 const GF_STORAGE_KEY = 'flujo_gastos_forzados_v1';
 
@@ -767,7 +772,9 @@ function gfLoad() {
     const raw = localStorage.getItem(GF_STORAGE_KEY);
     if (!raw) return [];
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    // Backfill: items legacy sin version → version = 1.
+    return arr.map(it => ({ version: 1, ...it }));
   } catch (e) {
     console.warn('[gf] No pude leer localStorage:', e);
     return [];
@@ -779,6 +786,32 @@ function gfSave(items) {
   } catch (e) {
     console.warn('[gf] No pude guardar en localStorage:', e);
   }
+}
+
+/* gfUpdateItemOptimistic — update con check de versión:
+ * - lee localStorage AHORA (no la copia que tenía el DOM)
+ * - busca el item por id
+ * - si la versión actual != expectedVersion → CONFLICT
+ *   (otra tab/edición ganó). Devuelve {ok:false, current}.
+ * - si match → aplica `updater(item)` que devuelve el nuevo item,
+ *   incrementa version, guarda. Devuelve {ok:true, updated}.
+ */
+function gfUpdateItemOptimistic(id, expectedVersion, updater) {
+  const cur = gfLoad();
+  const idx = cur.findIndex(x => x.id === id);
+  if (idx === -1) {
+    return { ok: false, reason: 'not_found', current: null };
+  }
+  const item = cur[idx];
+  const actualVersion = Number(item.version || 1);
+  if (Number(expectedVersion || 1) !== actualVersion) {
+    return { ok: false, reason: 'version_conflict', current: item };
+  }
+  const next = updater(item);
+  next.version = actualVersion + 1;
+  cur[idx] = next;
+  gfSave(cur);
+  return { ok: true, updated: next };
 }
 
 function gfRender() {
@@ -798,16 +831,19 @@ function gfRender() {
       const row = document.createElement('div');
       row.className = 'gf-row';
 
-      // TMT 2026-05-19 v2 — inputs inline editables en lugar de prompts.
-      // El cambio se guarda al blur de cada input (o al apretar Enter).
-      // La dueña pidió "editables en fecha y cantidad" — esto lo hace
-      // directo en la fila.
+      // TMT 2026-05-19 v6 audit — capturamos `it.version` al renderizar
+      // y se pasa al saver. Si entre el render y el change otra tab
+      // editó este item, expectedVersion no matchea → conflict warn.
+      const itemVersion = Number(it.version || 1);
+
       const fechaInput = document.createElement('input');
       fechaInput.type = 'date';
       fechaInput.value = it.fecha;
       fechaInput.className = 'gf-edit-fecha';
+      fechaInput.dataset.version = itemVersion;
       fechaInput.title = 'Fecha — editar y se guarda';
-      fechaInput.addEventListener('change', () => _gfSaveCampo(it.id, 'fecha', fechaInput.value));
+      fechaInput.addEventListener('change', () =>
+        _gfSaveCampo(it.id, 'fecha', fechaInput.value, itemVersion));
 
       const importeInput = document.createElement('input');
       importeInput.type = 'number';
@@ -815,8 +851,10 @@ function gfRender() {
       importeInput.min = '0';
       importeInput.value = it.importe;
       importeInput.className = 'gf-edit-importe';
+      importeInput.dataset.version = itemVersion;
       importeInput.title = 'Importe — editar y se guarda';
-      importeInput.addEventListener('change', () => _gfSaveCampo(it.id, 'importe', importeInput.value));
+      importeInput.addEventListener('change', () =>
+        _gfSaveCampo(it.id, 'importe', importeInput.value, itemVersion));
 
       const conceptoInput = document.createElement('input');
       conceptoInput.type = 'text';
@@ -824,8 +862,10 @@ function gfRender() {
       conceptoInput.value = it.concepto || '';
       conceptoInput.placeholder = '(sin concepto)';
       conceptoInput.className = 'gf-edit-concepto';
+      conceptoInput.dataset.version = itemVersion;
       conceptoInput.title = 'Concepto — editar y se guarda';
-      conceptoInput.addEventListener('change', () => _gfSaveCampo(it.id, 'concepto', conceptoInput.value));
+      conceptoInput.addEventListener('change', () =>
+        _gfSaveCampo(it.id, 'concepto', conceptoInput.value, itemVersion));
 
       row.appendChild(fechaInput);
       row.appendChild(importeInput);
@@ -851,9 +891,10 @@ function gfRender() {
   total.textContent = '$ ' + fmt(sum);
 }
 
-function _gfSaveCampo(id, campo, valor) {
+function _gfSaveCampo(id, campo, valor, expectedVersion) {
   // Helper: actualiza un campo de un gasto forzado y refresca el chart.
-  // Valida según campo (importe > 0, fecha en formato YYYY-MM-DD).
+  // TMT 2026-05-19 v6 audit — optimistic locking via expectedVersion.
+  // Si otra tab editó el mismo item, detectamos el conflict y reloads.
   let parsed = valor;
   if (campo === 'importe') {
     const n = parseFloat(valor);
@@ -872,13 +913,34 @@ function _gfSaveCampo(id, campo, valor) {
   } else if (campo === 'concepto') {
     parsed = (valor || '').trim();
   }
-  const cur = gfLoad().map(x => x.id === id ? { ...x, [campo]: parsed } : x);
-  gfSave(cur);
+
+  const result = gfUpdateItemOptimistic(id, expectedVersion, (item) => ({
+    ...item, [campo]: parsed,
+  }));
+
+  if (!result.ok) {
+    if (result.reason === 'version_conflict') {
+      alert(
+        'Este gasto forzado fue modificado en otra ventana del navegador. ' +
+        'Releyendo la lista actualizada — tu cambio se descartó.'
+      );
+    } else if (result.reason === 'not_found') {
+      alert('Este gasto fue eliminado en otra ventana.');
+    }
+    gfRender();
+    gfRebuildChart();
+    return;
+  }
+
   gfRebuildChart();
-  // Recalcular total sin re-renderizar la fila completa (mantiene focus).
+  // Recalcular total leyendo desde localStorage (no de un cache stale).
+  const cur = gfLoad();
   const sum = cur.reduce((acc, it) => acc + Number(it.importe || 0), 0);
   const total = document.getElementById('gf-total');
   if (total) total.textContent = '$ ' + fmt(sum);
+  // Re-render para refrescar la versión visible en data-version del input.
+  // Sin esto, la próxima edición usa la version vieja y dispara conflict.
+  gfRender();
 }
 
 function gfApplyToData(rows) {
@@ -928,9 +990,10 @@ document.getElementById('gf-form').addEventListener('submit', (ev) => {
   const concepto = (document.getElementById('gf-concepto').value || '').trim();
   if (!fecha || !importe || importe <= 0) return;
   const items = gfLoad();
+  // TMT 2026-05-19 v6 audit — version=1 al crear, se incrementa con cada edit.
   items.push({
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-    fecha, importe, concepto,
+    fecha, importe, concepto, version: 1,
   });
   gfSave(items);
   document.getElementById('gf-importe').value = '';
@@ -941,6 +1004,17 @@ document.getElementById('gf-form').addEventListener('submit', (ev) => {
 
 // Render inicial del sidebar (antes del primer buildChart)
 gfRender();
+
+/* TMT 2026-05-19 v6 audit — sync cross-tab: si otra ventana del navegador
+ * modifica `flujo_gastos_forzados_v1` en localStorage, este listener
+ * detecta el `storage` event y re-renderiza el panel + chart para que
+ * todas las tabs queden coherentes sin reload manual. */
+window.addEventListener('storage', (e) => {
+  if (e.key === GF_STORAGE_KEY) {
+    gfRender();
+    gfRebuildChart();
+  }
+});
 
 try {
   buildChart(1);

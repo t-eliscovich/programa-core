@@ -197,6 +197,9 @@ def emitir_cheque(
     es_postdatado: bool = False,         # tipo='proveedor' o 'gasto': dejarlo en posdat futuro
     fechad=None,                         # fecha de cobro si postdatado
     usuario: str = "web",
+    xgast_num: int | None = None,        # TMT 2026-05-19 v4 audit: categoría V1..V9
+                                          # cuando tipo='gasto'. Sin esto el xgast quedaba
+                                          # con num=NULL → invisible en /informes/gastos.
 ) -> dict:
     """Emite un cheque propio en el banco `no_banco`.
 
@@ -301,15 +304,35 @@ def emitir_cheque(
             extras["id_caja"] = id_caja
 
         elif tipo == "gasto":
-            # Crear el gasto YA PAGADO (saldo=0) o pendiente si postdatado
+            # Crear el gasto YA PAGADO (saldo=0) o pendiente si postdatado.
+            # TMT 2026-05-19 v4 audit — incluir `num` para que aparezca en
+            # /informes/gastos V1..V9. Antes el num quedaba NULL → fila
+            # invisible en el matriz (bug clase $220K).
             saldo_xgast = importe_f if es_postdatado else 0.0
             stat_xgast = "P" if es_postdatado else "C"  # P=pendiente, C=cancelado
+            num_xgast = None
+            if xgast_num is not None:
+                try:
+                    n = int(xgast_num)
+                    if 1 <= n <= 9:
+                        num_xgast = n
+                except (TypeError, ValueError):
+                    num_xgast = None
+            # Fallback: si no vino xgast_num explícito, intentar inferir
+            # del concepto vía el matcher de gastos. Si tampoco matchea,
+            # queda NULL (legacy — visible solo en /gastos).
+            if num_xgast is None and concepto:
+                try:
+                    from modules.gastos.queries import sugerir_categoria as _sug
+                    num_xgast = _sug(concepto)
+                except Exception:
+                    num_xgast = None
             cur.execute(
                 """
                 INSERT INTO scintela.xgast
                     (fecha, doc, prov, concepto, importe, saldo, stat,
-                     fechad, clave, usuario_crea)
-                VALUES (%s, 'CH', %s, %s, %s, %s, %s, %s, %s, %s)
+                     fechad, clave, usuario_crea, num)
+                VALUES (%s, 'CH', %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id_xgast
                 """,
                 (
@@ -320,6 +343,7 @@ def emitir_cheque(
                     fechad if es_postdatado else fecha,
                     (beneficiario or "")[:3] if beneficiario else None,
                     usuario[:50],
+                    num_xgast,
                 ),
             )
             gx = cur.fetchone()
@@ -327,8 +351,10 @@ def emitir_cheque(
             side_effect = (
                 f"Gasto #{id_xgast} registrado"
                 + (" (pendiente — posdatado)" if es_postdatado else " (pagado)")
+                + (f" V{num_xgast}" if num_xgast else " (sin categoría — clasificar después en /gastos)")
             )
             extras["id_xgast"] = id_xgast
+            extras["num_xgast"] = num_xgast
 
         elif tipo == "anticipo_usd":
             # TMT 2026-05-17: paridad dBase BANCOS.PRG > CHEQUERA con concepto

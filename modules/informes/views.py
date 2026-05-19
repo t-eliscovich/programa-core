@@ -776,6 +776,16 @@ def gastos():
     suma_v_total = sum(col_v.values())
     suma_amort_total = sum(col_amort.values())
     suma_grand = sum(col_total.values())
+    # TMT 2026-05-19 v5 — pedido dueña: banner "Sin clasificar" con link
+    # al wizard. xgast.num NULL → no aparece en V1..V9 → invisible al ojo.
+    # Mostrar al pie cuánta plata hay en ese limbo.
+    sin_num_resumen = {"n": 0, "total": 0.0, "n_conceptos_unicos": 0}
+    try:
+        from modules.gastos import queries as _gq
+        sin_num_resumen = _gq.xgast_sin_num_resumen()
+    except Exception:
+        pass
+
     return render_template(
         "informes/gastos.html",
         filas=filas, total=total, error=error,
@@ -783,6 +793,7 @@ def gastos():
         fil_total=fil_total,
         suma_v_total=suma_v_total, suma_amort_total=suma_amort_total,
         suma_grand=suma_grand,
+        sin_num_resumen=sin_num_resumen,
     )
 
 

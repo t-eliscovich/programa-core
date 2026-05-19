@@ -276,6 +276,70 @@
                  class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
                  oninput="this.value=this.value.toUpperCase()">
         </div>
+
+        {# TMT 2026-05-19 v4 audit — chips V1..V9 para clasificar el gasto.
+           Sin esto el xgast quedaba con num=NULL → invisible en
+           /informes/gastos (bug clase $220K). Mismo patrón que /caja/nuevo. #}
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            Categoría del gasto <span class="text-slate-400">(elegí una)</span>
+          </label>
+          <input type="hidden" name="xgast_num" id="xgast-num-cheque" value="">
+          {# TMT 2026-05-19 v5 — pedido dueña: chip V2/V5/V8 (servicios)
+             dejan el concepto vacío. El xgast.num del chip es la verdad,
+             concepto es texto libre. #}
+          <div class="flex flex-wrap gap-1.5">
+            {% set vchips = [
+              (1, 'V1', 'Sueldos tejeduría',   'KKSU '),
+              (2, 'V2', 'Servicios tejeduría', ''),
+              (3, 'V3', 'Otros tejeduría',     'KK '),
+              (4, 'V4', 'Sueldos tintorería',  'CCSU '),
+              (5, 'V5', 'Servicios tintorería',''),
+              (6, 'V6', 'Otros tintorería',    'CC '),
+              (7, 'V7', 'Sueldos admin',       'SU '),
+              (8, 'V8', 'Servicios admin',     ''),
+              (9, 'V9', 'Otros admin',         ''),
+            ] %}
+            {% for num, code, label, tmpl in vchips %}
+              <button type="button"
+                      data-vnum="{{ num }}"
+                      data-tmpl="{{ tmpl }}"
+                      class="vchip-cheque text-xs px-2.5 py-1 rounded-full border border-slate-300 bg-white hover:bg-sky-50 hover:border-sky-400 text-slate-700"
+                      title="Categoría {{ code }} — {{ label }}">
+                <span class="font-mono text-slate-500">{{ code }}</span>
+                <span class="ml-1">{{ label }}</span>
+              </button>
+            {% endfor %}
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1.5">
+            Si no elegís categoría, el gasto queda sin clasificar
+            (no aparece en V1..V9 de /informes/gastos hasta clasificarlo
+            manualmente desde /gastos).
+          </p>
+        </div>
+        <script>
+          (function() {
+            // Wire-up chips V1..V9 — pre-llena concepto con template + setea
+            // hidden xgast_num. Mismo patrón que /caja/nuevo.
+            const inp = document.querySelector('input[name="concepto"]');
+            const hidden = document.getElementById('xgast-num-cheque');
+            document.querySelectorAll('.vchip-cheque').forEach(btn => {
+              btn.addEventListener('click', () => {
+                const num = btn.dataset.vnum;
+                const tmpl = btn.dataset.tmpl || '';
+                hidden.value = num;
+                document.querySelectorAll('.vchip-cheque').forEach(b => {
+                  b.classList.remove('bg-sky-100', 'border-sky-400');
+                });
+                btn.classList.add('bg-sky-100', 'border-sky-400');
+                if (inp && !(inp.value || '').trim() && tmpl) {
+                  inp.value = tmpl;
+                }
+                if (inp) inp.focus();
+              });
+            });
+          })();
+        </script>
       </div>
 
       {# Datalist compartida — usada por los dos inputs name="beneficiario". #}

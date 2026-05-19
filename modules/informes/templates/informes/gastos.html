@@ -130,6 +130,34 @@
     </div>
   {% endif %}
 
+  {# TMT 2026-05-19 v6 — banner "Sin clasificar" con permiso check.
+     Si el usuario NO puede crear gastos, mostrar el banner informativo
+     pero SIN link al wizard (evitar 403). #}
+  {% if sin_num_resumen and sin_num_resumen.n %}
+    <div class="mb-5 px-4 py-3 rounded-lg border border-amber-400 bg-amber-50 flex items-center justify-between">
+      <div>
+        <strong class="text-amber-800">
+          $ {{ sin_num_resumen.total | num_es(0) }}
+        </strong>
+        <span class="text-amber-700 text-sm ml-1">
+          en {{ sin_num_resumen.n }} gasto{{ '' if sin_num_resumen.n == 1 else 's' }} sin clasificar
+          ({{ sin_num_resumen.n_conceptos_unicos }} concepto{{ '' if sin_num_resumen.n_conceptos_unicos == 1 else 's' }} único{{ '' if sin_num_resumen.n_conceptos_unicos == 1 else 's' }})
+          — no aparecen en V1..V9.
+        </span>
+      </div>
+      {% if tiene_permiso('gastos.crear') %}
+        <a href="{{ url_for('gastos.reclasificar') }}"
+           class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium shrink-0">
+          Reclasificar →
+        </a>
+      {% else %}
+        <span class="text-xs text-amber-700 italic">
+          (sólo usuarios con permiso de crear gastos pueden reclasificar)
+        </span>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {# TMT 2026-05-19 — 3 tarjetas resumen TEJEDURÍA/TINTORERÍA/ADMINISTRACIÓN
      removidas (pedido dueña item 17): mostraban la misma info que la fila
      "Total con amort." de la matriz unos renglones más abajo. Viola Regla 3

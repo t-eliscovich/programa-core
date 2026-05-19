@@ -4136,6 +4136,260 @@ def snapshot_historia_existe(anio: int, mes: int) -> bool:
     return bool(row)
 
 
+def balance_components_as_of(as_of) -> dict:
+    """Balance "as of" una fecha pasada — TMT 2026-05-19 v6 audit (pedido dueña).
+
+    Devuelve los componentes principales del balance calculados como si
+    estuviéramos en `as_of` (típicamente el último día de un mes pasado).
+    Reemplaza la práctica anterior de usar `informe_balance()` LIVE para
+    backfill de snapshots, que daba siempre el saldo de HOY.
+
+    Granularidad limitada:
+    - Saldos running (caja, banco): última fila con `fecha <= as_of`.
+    - Cheques en cartera (totc): stat ∈ {Z,1,2,3,P,D} con fecha_recibido
+      <= as_of y NO depositados antes de as_of (fechaing IS NULL OR > as_of).
+    - Facturas vivas (totf): fecha <= as_of, saldo > 0, stat ∈ {Z,A,'',null}.
+      APROXIMACIÓN: usa el saldo actual de la factura (no recalcula abonos
+      post-as_of). Para snapshots de meses recientes funciona OK; para
+      meses muy antiguos puede tener drift si hubieron abonos posteriores.
+    - Posdat (totp): WHERE fecha <= as_of AND banc=0 (deuda viva en ese momento).
+    - Stock vsto/vqx/etc: último snapshot historia con fecha <= as_of.
+    - Activos: snapshot del último cierre <= as_of.
+    - Flujos del mes (kcom, ucom, kvent, etc.): WHERE
+      DATE_TRUNC('month', fecha) = DATE_TRUNC('month', as_of).
+    - PATANT, USRET, USUTI: del snapshot anterior al as_of.
+
+    Returns dict con todos los campos necesarios para `scintela.historia`.
+    """
+    from datetime import date as _date
+    if not as_of:
+        as_of = _date.today()
+
+    # --- Saldos running ---
+    salcaj_row = db.fetch_one(
+        """
+        SELECT COALESCE(saldo, 0) AS saldo
+          FROM scintela.caja
+         WHERE fecha <= %s
+         ORDER BY fecha DESC, id_caja DESC
+         LIMIT 1
+        """,
+        (as_of,),
+    ) or {}
+    salcaj = float(salcaj_row.get("saldo") or 0)
+
+    salbanc_rows = db.fetch_all(
+        """
+        SELECT DISTINCT ON (no_banco)
+               no_banco, COALESCE(saldo, 0) AS saldo
+          FROM scintela.transacciones_bancarias
+         WHERE fecha <= %s
+         ORDER BY no_banco, fecha DESC, id_transaccion DESC
+        """,
+        (as_of,),
+    ) or []
+    salbanc = sum(float(r.get("saldo") or 0) for r in salbanc_rows)
+
+    # --- Cheques en cartera (no depositados, no anulados) ---
+    totc_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS total
+          FROM scintela.cheque
+         WHERE stat IN ('Z','1','2','3','P','D')
+           AND COALESCE(fecha_recibido, fecha) <= %s
+           AND (fechaing IS NULL OR fechaing > %s)
+        """,
+        (as_of, as_of),
+    ) or {}
+    totc = float(totc_row.get("total") or 0)
+
+    # --- Facturas vivas as_of ---
+    # Aproximación: factura.saldo actual (no rewind de abonos post-as_of).
+    totf_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(saldo), 0) AS total
+          FROM scintela.factura
+         WHERE fecha <= %s
+           AND COALESCE(saldo, 0) > 0
+           AND (stat IS NULL OR stat IN ('Z','A','',' '))
+        """,
+        (as_of,),
+    ) or {}
+    totf = float(totf_row.get("total") or 0)
+
+    # --- Posdat deuda viva as_of ---
+    totp_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS total
+          FROM scintela.posdat
+         WHERE COALESCE(banc, 0) = 0
+           AND COALESCE(importe, 0) > 0
+           AND fecha <= %s
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+        """,
+        (as_of,),
+    ) or {}
+    totp = float(totp_row.get("total") or 0)
+
+    # --- Stock / activos del último snapshot histórico <= as_of ---
+    hist_prev = db.fetch_one(
+        """
+        SELECT fecha, stock, ustock, uqui, maquinaria, realty, anticipos,
+               patrimonio, usret, usuti
+          FROM scintela.historia
+         WHERE fecha <= %s
+         ORDER BY fecha DESC
+         LIMIT 1
+        """,
+        (as_of,),
+    ) or {}
+    vsto    = float(hist_prev.get("ustock") or 0)
+    vqx     = float(hist_prev.get("uqui") or 0)
+    umaq    = float(hist_prev.get("maquinaria") or 0)
+    uact    = float(hist_prev.get("realty") or 0)
+    antic   = float(hist_prev.get("anticipos") or 0)
+    patant  = float(hist_prev.get("patrimonio") or 0)
+
+    # --- Flujos del mes (mes que contiene as_of) ---
+    kcom_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(kg), 0) AS kg,
+               COALESCE(SUM(importe), 0) AS importe
+          FROM scintela.compra
+         WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
+           AND fecha <= %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """,
+        (as_of, as_of),
+    ) or {}
+    kcom = float(kcom_row.get("kg") or 0)
+    ucom = float(kcom_row.get("importe") or 0)
+
+    vent_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(kg), 0) AS kg,
+               COALESCE(SUM(importe), 0) AS importe
+          FROM scintela.factura
+         WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
+           AND fecha <= %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """,
+        (as_of, as_of),
+    ) or {}
+    kvent = float(vent_row.get("kg") or 0)
+    uvent = float(vent_row.get("importe") or 0)
+
+    gasto_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS importe
+          FROM scintela.xgast
+         WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
+           AND fecha <= %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """,
+        (as_of, as_of),
+    ) or {}
+    gasto = float(gasto_row.get("importe") or 0)
+
+    # USRET (retiros del mes) — aproximación: el snapshot del mes los
+    # recalcula al cierre. USUTI sale de utilidad calculada abajo.
+    usret = 0.0
+
+    # Computar cartera (totc + totf), subt, totl, patr, retiro
+    cart = totc + totf
+    subt = salbanc + salcaj + cart
+    totl = subt + vsto + vqx + umaq + uact + antic
+    patr = totl - totp
+    utilidad = patr - patant
+
+    return {
+        # Saldos
+        "salcaj":  salcaj,
+        "salbanc": salbanc,
+        "banco":   salbanc,
+        "totc":    totc,
+        "totf":    totf,
+        "cart":    cart,
+        # Pasivos
+        "totp":    totp,
+        "deuda":   totp,
+        # Activos fijos / stock
+        "vsto":    vsto,
+        "stock":   float(hist_prev.get("stock") or 0),
+        "ustock":  vsto,
+        "uqui":    vqx,
+        "vqx":     vqx,
+        "umaq":    umaq,
+        "maquinaria": umaq,
+        "uact":    uact,
+        "realty":  uact,
+        "antic":   antic,
+        "anticipos": antic,
+        # Patrimonio + utilidad
+        "subt":    subt,
+        "totl":    totl,
+        "patr":    patr,
+        "patrimonio": patr,
+        "patant":  patant,
+        "utilidad": utilidad,
+        "usuti":   utilidad,  # snapshot guarda usuti = utilidad del período
+        "usret":   usret,
+        "retiro":  usret,
+        # Flujos del mes
+        "kcom":    kcom,
+        "ucom":    ucom,
+        "kvent":   kvent,
+        "uvent":   uvent,
+        "ktej":    0.0,  # Aproximación — kg de tejido del mes requiere
+        "ktin":    0.0,  # join con tinto/compras tipo K. Omitido por scope.
+        "utej":    0.0,
+        "utin":    0.0,
+        "costo":   ucom,  # Default conservador.
+        "gasto":   gasto,
+        "gstotal": gasto,
+        "dolar":   0.0,
+        # Meta
+        "as_of":   as_of,
+    }
+
+
+def informe_balance_as_of(as_of=None) -> dict:
+    """Wrapper que devuelve un dict similar a informe_balance() pero
+    calculado as_of. Default as_of=hoy = comportamiento clásico.
+
+    Implementado parcialmente: cubre los componentes necesarios para
+    `crear_snapshot_historia`. Para uso UI completo, seguir usando
+    `informe_balance()`.
+    """
+    from datetime import date as _date
+    if as_of is None or as_of == _date.today():
+        # As_of = hoy → comportamiento clásico, llama al balance live.
+        return informe_balance()
+    components = balance_components_as_of(as_of)
+    return {
+        "fecha": as_of,
+        "kg": {
+            "kcom":  components["kcom"],
+            "ucom":  components["ucom"],
+            "ktej":  components["ktej"],
+            "ktin":  components["ktin"],
+            "kvent": components["kvent"],
+            "uvent": components["uvent"],
+            "utej":  components["utej"],
+            "utin":  components["utin"],
+            "stock_kg": components["stock"],
+            "costo_mes": components["costo"],
+        },
+        "diagnostico": {
+            "componentes": components,
+        },
+        "stock_subpanels": {
+            "total_us": components["vsto"],
+        },
+        "error": None,
+    }
+
+
 def crear_snapshot_historia(anio: int, mes: int,
                             usuario: str = "auto") -> dict:
     """Crea un snapshot mensual en scintela.historia para (anio, mes).
@@ -4168,8 +4422,14 @@ def crear_snapshot_historia(anio: int, mes: int,
             "razon": f"Ya existe snapshot para {periodo_clave}.",
         }
 
-    # Calcular el balance LIVE — usamos sus componentes para llenar historia.
-    bal = informe_balance()
+    # TMT 2026-05-19 v6 audit — calculamos el balance "as_of último día del mes"
+    # para que los snapshots de backfill queden con la foto correcta. Antes
+    # esto usaba `informe_balance()` LIVE → backfills con saldo de hoy.
+    import calendar
+    last_day = calendar.monthrange(anio, mes)[1]
+    fecha_snap = _date(anio, mes, last_day)
+
+    bal = informe_balance_as_of(fecha_snap)
     if not bal or bal.get("error"):
         return {
             "aplicado": False, "anio": anio, "mes": mes,
@@ -4180,11 +4440,6 @@ def crear_snapshot_historia(anio: int, mes: int,
     d = bal["diagnostico"]["componentes"] if bal.get("diagnostico") else {}
     kg = bal.get("kg", {})
     stock_sub = bal.get("stock_subpanels", {})
-
-    # fecha del snapshot: último día del mes
-    import calendar
-    last_day = calendar.monthrange(anio, mes)[1]
-    fecha_snap = _date(anio, mes, last_day)
 
     with db.tx() as conn:
         db.execute(

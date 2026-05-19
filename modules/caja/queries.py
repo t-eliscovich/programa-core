@@ -94,6 +94,7 @@ def crear(
     clave: str | None = None,
     id_cheque: int | None = None,
     usuario: str = "web",
+    xgast_num: int | None = None,
 ) -> dict:
     """Registrar un movimiento en caja.
 
@@ -244,11 +245,31 @@ def crear(
                               "tiene_side_effect": bool(side_effect_result)},
                 )
 
+        # 4) TMT 2026-05-19 v4 audit — clasificación atómica como gasto
+        # V1..V9 si se pidió. DENTRO de la misma tx: si la clasif falla,
+        # rollback total (caja + side_effect + xgast). Antes esto se hacía
+        # en una tx separada en views.py y dejaba caja huérfana on failure.
+        clasif_result = None
+        if (xgast_num and tipo == "S" and row.get("id_caja")
+                and 1 <= int(xgast_num) <= 9):
+            # Defensa: la lógica del helper rechaza la clasif si la caja
+            # ya tiene un side-effect bancario activo (sería doble conta-
+            # bilización). Lo dejamos burbujear para que la tx haga rollback.
+            from modules.gastos import queries as _gq
+            clasif_result = _gq._clasificar_caja_dentro_tx(
+                conn=conn,
+                id_caja=int(row["id_caja"]),
+                num=int(xgast_num),
+                usuario=usuario,
+                atomico_caja_xgast=True,
+            )
+
     return {
         "id_caja": row.get("id_caja"),
         "saldo_nuevo": saldo_nuevo,
         "side_effect": side_effect_result,
         "id_mov_doble": id_mov_doble,
+        "clasif_gasto": clasif_result,
     }
 
 

@@ -66,6 +66,20 @@ CATEGORIAS_V19 = (
 # arriba en la lista. Conservador a propósito: si no estás seguro, el
 # form lo pregunta.
 KEYWORDS_TO_CATEGORIA: tuple[tuple[str, int], ...] = (
+    # TMT 2026-05-19 v5 — pedido dueña: NO enumerar servicios.
+    # El matcher es solo FALLBACK para gastos sin num explícito.
+    # El chip V1..V9 (xgast.num) es la VERDAD canónica — si la dueña
+    # carga vía chip, este matcher no se invoca. Para los gastos sin num
+    # (legacy o cargados sin chip), la dueña reclasifica desde
+    # /informes/gastos/reclasificar.
+    #
+    # Reglas LC2 mínimas para los casos en que el matcher SÍ se invoque:
+    # ── KKSU/CCSU → sueldos por rubro (V1 tej / V4 tin) ──
+    ("KKSU", 1), ("CCSU", 4),
+    # ── SU solo → V7 sueldos admin ──
+    ("SU ADM", 7), ("SU CAJA", 7), ("SUCAJA", 7),
+    ("SU ", 7),
+
     # ── V1 personal tejeduría ──────────────────────────────────────────
     ("SUELDO TEJ", 1), ("SUELDOS TEJ", 1), ("PERSONAL TEJ", 1),
     # ── V2 gas/comb tejeduría ──────────────────────────────────────────
@@ -98,23 +112,13 @@ KEYWORDS_TO_CATEGORIA: tuple[tuple[str, int], ...] = (
     # ── Sueldos genérico (default V7 si no hay TEJ/TIN/ADM explícito) ──
     ("SUELDO", 7), ("SUELDOS", 7), ("PERSONAL", 7),
 
-    # ── Prefijos cortos legacy (revisado con dueña 2026-05-15) ──────────
-    # "SU ADM" / "SU CAJA" / "KK SU CAJA" → personal admin = V7
-    ("SU ADM", 7), ("SU CAJA", 7), ("SUCAJA", 7),
-    # "KKSU NOMBRE" / "CCSU NOMBRE" → adelanto sueldo a empleado (V7).
-    # Va ANTES de "KK " y "CC " para que matchee primero.
-    ("KKSU ", 7), ("CCSU ", 7),
-    # "SS ..." → IESS o insumos varios. Si vino sin INSUMO/IESS literal,
-    # lo tratamos como gastos generales (V9). Va antes que SS de IESS.
+    # "SS ..." → V9 (gastos generales — no IESS literal, ese ya matcheó).
     ("SS ", 9),
-    # GASOLINA / GASO ... → combustible tin (V5). Cubrimos las abreviaturas
-    # típicas que usa la dueña.
+    # GASOLINA / GASO ... → combustible tin (V5).
     ("GASOLIN", 5), ("GASO ", 5), ("NAFTA", 5),
     # "CC ..." (CC = PROV.FABRICA, vende insumos para tintura/máquinas) → V6
     ("CC ", 6),
-    # "GS ..." / "GAS ..." → gastos varios de planta. Por default los
-    # consideramos GASTOS GENERALES ADMIN (V9); si fuera tintorería/tej
-    # específico, otros keywords más arriba ganan.
+    # "GS ..." / "GAS ..." → gastos varios de planta. Por default V9.
     ("GS ", 9), ("GAS ", 9),
     # "KK ..." → kilometraje/transporte (V3 varios tejeduría histórico).
     ("KK ", 3),
@@ -143,26 +147,58 @@ def clasificar_desde_caja(
     num: int,
     usuario: str = "web",
 ) -> dict:
-    """Asigna categoría V1-V9 a un egreso de caja creando fila xgast +
-    mov_doble. NO toca la fila de caja (ya existe y representa el flujo
-    real de plata); sólo agrega la traza contable de "esta plata es un
-    gasto de categoría N".
+    """Wrapper público: abre su propia tx y llama al helper.
 
-    Validaciones:
-      - id_caja debe existir y ser tipo='S' (egreso).
-      - num ∈ {1..9}.
-      - No debe haber ya un mov_doble que linkee esta caja a un xgast
-        (idempotencia: si ya está clasificado, devolver el existente).
+    Caso de uso: la dueña carga una caja S genérica, después la clasifica
+    desde /gastos/clasificar/<id_caja>. Ese flow tiene 2 commits separados
+    (caja primero, xgast después) — es OK porque la caja era válida por sí
+    sola.
 
-    Devuelve `{id_xgast, id_mov_doble, num, ya_existia: bool}`.
+    Para creación ATÓMICA (caja + xgast en una sola tx, ej. cuando viene
+    de /caja/nuevo con xgast_num), usar `_clasificar_caja_dentro_tx(conn, ...)`.
+    TMT 2026-05-19 v4 audit.
+    """
+    if num not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
+        raise ValueError(f"Categoría inválida: {num}. Debe ser 1..9.")
+    with db.tx() as conn:
+        return _clasificar_caja_dentro_tx(
+            conn=conn, id_caja=id_caja, num=num, usuario=usuario,
+        )
+
+
+def _clasificar_caja_dentro_tx(
+    *,
+    conn,
+    id_caja: int,
+    num: int,
+    usuario: str = "web",
+    atomico_caja_xgast: bool = False,
+) -> dict:
+    """Helper que hace toda la lógica de clasificación DENTRO de una tx
+    existente. El caller es responsable de abrir/cerrar la tx.
+
+    Si el caller es `clasificar_desde_caja` (post-hoc), la caja ya existe
+    y fue commiteada. Si el caller es `caja.crear` con xgast_num, la caja
+    está en la misma tx y se commitea junto con el xgast.
+
+    `atomico_caja_xgast=True` marca el mov_doble con flag para que el
+    reverso (gastos.desclasificar) ADEMÁS reverse la caja S. Default
+    False = comportamiento legacy (solo deshace xgast, caja queda viva).
     """
     if num not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
         raise ValueError(f"Categoría inválida: {num}. Debe ser 1..9.")
 
+    # OJO: estos SELECTs usan db.fetch_one sin pasar conn — son lecturas
+    # autocommit pero las filas ya están "visibles" dentro de la tx porque
+    # fueron escritas con conn ANTES de este punto (REPEATABLE READ defecto
+    # de Postgres ve su propia tx). Si llamamos desde caja.crear y la caja
+    # se acaba de insertar con `conn`, los SELECTs sin conn fallan a verla.
+    # Por eso pasamos conn explícito acá.
     caja = db.fetch_one(
         "SELECT id_caja, fecha, tipo, importe, concepto, clave "
         "FROM scintela.caja WHERE id_caja = %s",
         (id_caja,),
+        conn=conn,
     )
     if not caja:
         raise ValueError(f"Caja id={id_caja} no existe.")
@@ -172,8 +208,8 @@ def clasificar_desde_caja(
             "Sólo egresos pueden clasificarse como gasto."
         )
 
-    # Idempotencia: si ya existe un mov_doble que linkea esta caja con un
-    # xgast, devolver el existente sin crear duplicado.
+    # Idempotencia: si ya existe un mov_doble activo caja→xgast, devolver
+    # el existente sin crear duplicado.
     existente = db.fetch_one(
         """
         SELECT id_mov_doble, destino_id
@@ -184,6 +220,7 @@ def clasificar_desde_caja(
          LIMIT 1
         """,
         (id_caja,),
+        conn=conn,
     )
     if existente:
         return {
@@ -192,6 +229,31 @@ def clasificar_desde_caja(
             "num": num,
             "ya_existia": True,
         }
+
+    # Defensa: si la caja YA tiene un mov_doble activo a banco/retiro/dolares
+    # (= transferencia, retiro, anticipo USD) — NO es un gasto. Refuse para
+    # evitar doble contabilización. TMT 2026-05-19 v4 audit.
+    side_effect_existente = db.fetch_one(
+        """
+        SELECT id_mov_doble, destino_table
+          FROM scintela.mov_doble
+         WHERE origen_table='caja' AND origen_id = %s
+           AND destino_table IN ('transacciones_bancarias','retiros','dolares')
+           AND estado='activo'
+         LIMIT 1
+        """,
+        (id_caja,),
+        conn=conn,
+    )
+    if side_effect_existente:
+        raise ValueError(
+            f"Caja id={id_caja} ya tiene un movimiento vinculado a "
+            f"{side_effect_existente['destino_table']!r} (transferencia/"
+            "retiro/anticipo). No se puede clasificar como gasto — sería "
+            "doble contabilización. Si era un gasto y no una transferencia, "
+            "anulá la caja primero y volvé a cargar con concepto sin "
+            "prefijo PICH/INTER/RR/IN."
+        )
 
     fecha = caja["fecha"]
     importe = float(caja["importe"] or 0)
@@ -211,67 +273,68 @@ def clasificar_desde_caja(
          ORDER BY id_mov_doble DESC LIMIT 1
         """,
         (id_caja,),
+        conn=conn,
     )
 
-    with db.tx() as conn:
-        if md_caja_compra and md_caja_compra.get("destino_id"):
-            id_compra_falsa = int(md_caja_compra["destino_id"])
-            db.execute(
-                "UPDATE scintela.compra "
-                "   SET stat = 'X', "
-                "       observacion = COALESCE(observacion, '') || %s, "
-                "       usuario_modifica = %s, "
-                "       fecha_modifica = CURRENT_TIMESTAMP "
-                " WHERE id_compra = %s",
-                (
-                    f" [reclasif como gasto V{num} desde caja #{id_caja}]",
-                    usuario, id_compra_falsa,
-                ),
-                conn=conn,
-            )
-            db.execute(
-                "UPDATE scintela.mov_doble "
-                "   SET estado = 'reversado' "
-                " WHERE id_mov_doble = %s",
-                (md_caja_compra["id_mov_doble"],),
-                conn=conn,
-            )
-            compra_anulada = id_compra_falsa
-
-        row = db.execute_returning(
-            """
-            INSERT INTO scintela.xgast
-                (fecha, doc, prov, concepto, num, fechad, importe, saldo,
-                 stat, clave, usuario_crea)
-            VALUES (%s, 'OTR', NULL, %s, %s, %s, %s, 0, 'A',
-                    %s, %s)
-            RETURNING id_xgast
-            """,
+    if md_caja_compra and md_caja_compra.get("destino_id"):
+        id_compra_falsa = int(md_caja_compra["destino_id"])
+        db.execute(
+            "UPDATE scintela.compra "
+            "   SET stat = 'X', "
+            "       observacion = COALESCE(observacion, '') || %s, "
+            "       usuario_modifica = %s, "
+            "       fecha_modifica = CURRENT_TIMESTAMP "
+            " WHERE id_compra = %s",
             (
-                fecha, concepto[:100], num, fecha, importe,
-                (clave or None) and clave[:3].upper(),
-                usuario,
+                f" [reclasif como gasto V{num} desde caja #{id_caja}]",
+                usuario, id_compra_falsa,
             ),
             conn=conn,
-        ) or {}
-        id_xgast = int(row["id_xgast"])
-
-        import mov_doble as _md
-        id_md = _md.registrar(
-            conn=conn,
-            tipo="caja_s_to_xgast",
-            origen_table="caja",
-            origen_id=id_caja,
-            destino_table="xgast",
-            destino_id=id_xgast,
-            importe=importe,
-            fecha=fecha,
-            concepto=(f"Clasificar caja #{id_caja} como gasto V{num}: "
-                      f"{concepto}")[:200],
-            usuario=usuario,
-            metadata={"num_categoria": num,
-                      "concepto_original": concepto},
         )
+        db.execute(
+            "UPDATE scintela.mov_doble "
+            "   SET estado = 'reversado' "
+            " WHERE id_mov_doble = %s",
+            (md_caja_compra["id_mov_doble"],),
+            conn=conn,
+        )
+        compra_anulada = id_compra_falsa
+
+    row = db.execute_returning(
+        """
+        INSERT INTO scintela.xgast
+            (fecha, doc, prov, concepto, num, fechad, importe, saldo,
+             stat, clave, usuario_crea)
+        VALUES (%s, 'OTR', NULL, %s, %s, %s, %s, 0, 'A',
+                %s, %s)
+        RETURNING id_xgast
+        """,
+        (
+            fecha, concepto[:100], num, fecha, importe,
+            (clave or None) and clave[:3].upper(),
+            usuario,
+        ),
+        conn=conn,
+    ) or {}
+    id_xgast = int(row["id_xgast"])
+
+    import mov_doble as _md
+    id_md = _md.registrar(
+        conn=conn,
+        tipo="caja_s_to_xgast",
+        origen_table="caja",
+        origen_id=id_caja,
+        destino_table="xgast",
+        destino_id=id_xgast,
+        importe=importe,
+        fecha=fecha,
+        concepto=(f"Clasificar caja #{id_caja} como gasto V{num}: "
+                  f"{concepto}")[:200],
+        usuario=usuario,
+        metadata={"num_categoria": num,
+                  "concepto_original": concepto,
+                  "atomico_caja_xgast": atomico_caja_xgast},
+    )
 
     return {
         "id_xgast": id_xgast,
@@ -872,7 +935,7 @@ def desclasificar(
 
     md_orig = db.fetch_one(
         """
-        SELECT id_mov_doble, origen_id, importe
+        SELECT id_mov_doble, origen_id, importe, metadata
           FROM scintela.mov_doble
          WHERE destino_table = 'xgast'
            AND destino_id    = %s
@@ -888,6 +951,18 @@ def desclasificar(
             f"Gasto id={id_xgast} no es una clasificación de caja. "
             f"Para anular este gasto usá /gastos/{id_xgast}/anular."
         )
+
+    # TMT 2026-05-19 v4 audit — leer flag atomico del metadata.
+    # Si el flow vino de caja+chip (atomico), después de marcar el xgast
+    # también revertimos la caja S para que ambos vuelvan al baseline.
+    md_meta = md_orig.get("metadata") or {}
+    if isinstance(md_meta, str):
+        import json as _json
+        try:
+            md_meta = _json.loads(md_meta)
+        except Exception:
+            md_meta = {}
+    es_atomico = bool(md_meta.get("atomico_caja_xgast"))
 
     import mov_doble as _md
     obs_marca = (f"[DESCLASIFICADO {motivo}]" if motivo
@@ -935,10 +1010,181 @@ def desclasificar(
             id_original=int(md_orig["id_mov_doble"]),
         )
 
+    # TMT 2026-05-19 v4 audit — si la clasif vino del flow atómico caja+chip,
+    # también reversar la caja S para que ambos vuelvan al baseline. Caja
+    # reversar tiene su propia tx (no podemos meterla en la nuestra sin
+    # refactor invasivo); si falla, queda como warn (el xgast ya quedó
+    # desclasificado correctamente).
+    caja_reversada = None
+    caja_warn = None
+    if es_atomico:
+        try:
+            import modules.caja.queries as _cq
+            caja_reversada = _cq.reversar(
+                id_caja_origen,
+                motivo=f"reverso flow atómico chip V{g_row.get('num')}: {motivo}"[:80],
+                usuario=usuario,
+            )
+        except Exception as _e:
+            caja_warn = (
+                f"xgast #{id_xgast} desclasificado OK, pero NO pude "
+                f"reversar la caja #{id_caja_origen} ({_e}). "
+                "Reversala manualmente desde /caja."
+            )
+
     return {
         "id_xgast":      id_xgast,
         "id_caja":       id_caja_origen,
         "stat_previo":   (g_row.get("stat") or "").upper(),
         "stat_nuevo":    "Y",
         "num_v_previo":  g_row.get("num"),
+        "es_atomico":    es_atomico,
+        "caja_reversada": caja_reversada,
+        "caja_warn":     caja_warn,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Reclasificación masiva — TMT 2026-05-19 v5 (pedido dueña).
+# El matcher por keywords solo es FALLBACK. Para xgast sin num,
+# la dueña reclasifica manualmente desde la UI agrupada por concepto único.
+# ─────────────────────────────────────────────────────────────────────────
+
+def xgast_sin_num_resumen() -> dict:
+    """Total de xgast con num NULL o num=0 — los "sin clasificar".
+
+    Devuelve {n, total, n_conceptos_unicos}.
+    Excluye anulados (stat='Y') por convención.
+    """
+    row = db.fetch_one(
+        """
+        SELECT COUNT(*)                          AS n,
+               COALESCE(SUM(importe), 0)         AS total,
+               COUNT(DISTINCT COALESCE(concepto, '')) AS n_conceptos_unicos
+          FROM scintela.xgast
+         WHERE (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
+           AND COALESCE(stat, '') <> 'Y'
+        """
+    ) or {}
+    return {
+        "n": int(row.get("n") or 0),
+        "total": float(row.get("total") or 0),
+        "n_conceptos_unicos": int(row.get("n_conceptos_unicos") or 0),
+    }
+
+
+def xgast_sin_num_por_concepto(limite: int = 200) -> list[dict]:
+    """Lista de conceptos únicos sin clasificar, agrupados.
+
+    Para el wizard /informes/gastos/reclasificar — la dueña ve "luz mayo"
+    una vez y asigna V8, en lugar de tener que clasificar 12 filas
+    individuales.
+
+    Devuelve filas con: concepto, n, total, primer_id, ultimo_id, primera_fecha,
+    ultima_fecha.
+    """
+    return db.fetch_all(
+        """
+        SELECT COALESCE(NULLIF(TRIM(concepto), ''), '(sin concepto)') AS concepto,
+               COUNT(*)                          AS n,
+               COALESCE(SUM(importe), 0)         AS total,
+               MIN(id_xgast)                     AS primer_id,
+               MAX(id_xgast)                     AS ultimo_id,
+               MIN(fecha)                        AS primera_fecha,
+               MAX(fecha)                        AS ultima_fecha
+          FROM scintela.xgast
+         WHERE (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
+           AND COALESCE(stat, '') <> 'Y'
+         GROUP BY COALESCE(NULLIF(TRIM(concepto), ''), '(sin concepto)')
+         ORDER BY SUM(importe) DESC, COUNT(*) DESC
+         LIMIT %s
+        """,
+        (limite,),
+    ) or []
+
+
+def reclasificar_concepto_bulk(
+    *,
+    concepto: str,
+    num: int,
+    usuario: str = "web",
+    conn=None,
+) -> dict:
+    """Asigna `num` (V1..V9) a TODOS los xgast con ese concepto exacto
+    que NO tienen num asignado todavía.
+
+    Idempotente: si una fila ya tiene num (que no sea NULL/0), no se toca.
+    Si la fila ya tenía una marca [RECLASIF V<n>] previa (caso re-reclasificar),
+    la marca vieja se REEMPLAZA — no se acumula.
+
+    TMT 2026-05-19 v6 re-audit: acepta `conn` opcional para que el caller
+    pueda envolver múltiples llamadas en UNA sola tx (atómico). Si no se
+    pasa, abre su propia tx.
+
+    Devuelve {filas_afectadas, importe_total, num}.
+
+    NO crea mov_doble por fila — es un "backfill admin", no operación
+    contable individual. Auditoría: xgast.usuario_modifica + fecha_modifica
+    + sufijo "[RECLASIF V<num> usr=X]" en concepto (regex-replace anterior).
+    """
+    if num not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
+        raise ValueError(f"Categoría inválida: {num}. Debe ser 1..9.")
+    concepto = (concepto or "").strip()
+    if not concepto:
+        raise ValueError("Concepto requerido.")
+
+    def _do(conn_inner):
+        pre = db.fetch_one(
+            """
+            SELECT COUNT(*)                  AS n,
+                   COALESCE(SUM(importe), 0) AS total
+              FROM scintela.xgast
+             WHERE TRIM(COALESCE(concepto, '')) = %s
+               AND (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
+               AND COALESCE(stat, '') <> 'Y'
+            """,
+            (concepto,),
+            conn=conn_inner,
+        ) or {}
+        n_pre = int(pre.get("n") or 0)
+        total_pre = float(pre.get("total") or 0)
+
+        if n_pre == 0:
+            return {"filas_afectadas": 0, "importe_total": 0.0, "num": num}
+
+        marca = f" [RECLASIF V{num} usr={usuario}]"
+        # `REGEXP_REPLACE` quita cualquier marca [RECLASIF V<digit> usr=...]
+        # previa antes de appendar la nueva. Si nunca se reclasificó, el
+        # regex no hace nada y la concat es como antes.
+        db.execute(
+            """
+            UPDATE scintela.xgast
+               SET num = %s,
+                   concepto = LEFT(
+                       REGEXP_REPLACE(
+                           COALESCE(concepto, ''),
+                           ' \\[RECLASIF V[1-9] usr=[^\\]]*\\]',
+                           '',
+                           'g'
+                       ) || %s,
+                       100
+                   ),
+                   usuario_modifica = %s,
+                   fecha_modifica = CURRENT_TIMESTAMP
+             WHERE TRIM(COALESCE(concepto, '')) = %s
+               AND (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
+               AND COALESCE(stat, '') <> 'Y'
+            """,
+            (num, marca, usuario, concepto),
+            conn=conn_inner,
+        )
+        return {
+            "filas_afectadas": n_pre,
+            "importe_total": total_pre,
+            "num": num,
+        }
+
+    if conn is not None:
+        return _do(conn)
+    with db.tx() as new_conn:
+        return _do(new_conn)

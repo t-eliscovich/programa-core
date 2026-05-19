@@ -159,12 +159,20 @@ def editar(
 # pero no se generan nuevas.
 TRANSICIONES_VALIDAS = {
     "Z": {"B", "C", "9", "X", "P", "D", "I"},
-    "P": {"B", "C", "X", "I"},
-    "D": {"B", "C", "X", "I"},
+    # TMT 2026-05-19 v4 audit — agregadas D/P como salida desde
+    # rebotados (1/2) y desde D/P entre sí. El UI dropdown
+    # (TRANSICIONES_LEGALES) ya las ofrecía pero el backend rechazaba.
+    # Casos operativos:
+    #   1 → D: el cheque rebotó y pasamos a Daniela a cobrar.
+    #   1 → P: el cheque rebotó y postergamos a otra fecha.
+    #   D → P: Daniela trajo el cheque, queremos posdatarlo.
+    #   P → D: el postergado lo manda a Daniela.
+    "P": {"B", "C", "X", "I", "D"},
+    "D": {"B", "C", "X", "I", "P"},
     "B": {"9", "X"},
     "I": {"9", "X"},
-    "1": {"9", "X"},
-    "2": {"9", "X"},
+    "1": {"9", "X", "P", "D"},
+    "2": {"9", "X", "P", "D"},
     "A": {"9", "X"},
 }
 

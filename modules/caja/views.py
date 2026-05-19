@@ -89,6 +89,18 @@ def nuevo():
     tipo = (request.form.get("tipo") or "").strip().upper()
     importe = parse_monto(request.form.get("importe"))
     concepto = (request.form.get("concepto") or "").strip()
+    # TMT 2026-05-19 v3 — pedido dueña: el form de salida muestra 9 chips
+    # V1..V9 que pre-cargan concepto + setean `xgast_num`. Si viene, después
+    # de crear la caja S clasificamos automáticamente como xgast con ese num.
+    xgast_num_raw = (request.form.get("xgast_num") or "").strip()
+    xgast_num: int | None = None
+    if xgast_num_raw:
+        try:
+            v = int(xgast_num_raw)
+            if 1 <= v <= 9:
+                xgast_num = v
+        except (TypeError, ValueError):
+            xgast_num = None
 
     if fecha is None:
         errores.append("Fecha inválida.")
@@ -98,12 +110,16 @@ def nuevo():
         errores.append("Importe debe ser mayor que cero.")
     if not concepto:
         errores.append("Concepto requerido.")
+    # xgast_num sólo tiene sentido en salidas (tipo S).
+    if xgast_num and tipo != "S":
+        xgast_num = None
 
     form.update({
         "fecha": request.form.get("fecha"),
         "tipo": tipo,
         "importe": request.form.get("importe"),
         "concepto": concepto,
+        "xgast_num": xgast_num,
         "saldo_actual": queries.saldo_actual(),
     })
 
@@ -114,11 +130,18 @@ def nuevo():
     try:
         usuario = (g.user or {}).get("username", "web")
         clave = (g.user or {}).get("clave") or usuario[:3].upper()
+        # TMT 2026-05-19 v4 audit: pasamos xgast_num a crear(), que lo
+        # clasifica DENTRO de la misma tx. Si falla, rollback total
+        # (no quedan cajas huérfanas).
         r = queries.crear(
             fecha=fecha, tipo=tipo, importe=importe,
             concepto=concepto, clave=clave, usuario=usuario,
+            xgast_num=xgast_num,
         )
-        flash(f"Movimiento de caja registrado (id {r.get('id_caja')}).", "ok")
+        msg = f"Movimiento de caja registrado (id {r.get('id_caja')})."
+        if r.get("clasif_gasto"):
+            msg += f" Clasificado como gasto V{xgast_num} (atómico)."
+        flash(msg, "ok")
         return redirect(url_for("caja.lista"))
     except ValueError as e:
         errores.append(str(e))

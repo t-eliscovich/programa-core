@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Reclasificar gastos sin categoría{% endblock %}
+{% block breadcrumb %}
+Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Gastos</a> /
+<strong>Reclasificar</strong>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full">
+  <header class="page-header">
+    <h1 class="page-title">Reclasificar gastos sin categoría</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Conceptos únicos de xgast con <code>num IS NULL</code>. Elegí V para
+      cada uno y guardá — se aplica masivamente a todas las filas con ese
+      concepto. Lo que no tildes queda pendiente.
+    </p>
+  </header>
+
+  <div class="grid grid-cols-3 gap-3 mb-5">
+    <div class="rounded-lg border border-slate-300 px-4 py-3 bg-amber-50">
+      <div class="text-xs uppercase tracking-wider text-amber-700">Filas sin clasificar</div>
+      <div class="text-2xl font-bold tabular-nums mt-1">{{ resumen.n }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-300 px-4 py-3 bg-amber-50">
+      <div class="text-xs uppercase tracking-wider text-amber-700">Total $ sin clasificar</div>
+      <div class="text-2xl font-bold tabular-nums mt-1">$ {{ resumen.total | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-300 px-4 py-3 bg-slate-50">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Conceptos únicos</div>
+      <div class="text-2xl font-bold tabular-nums mt-1">{{ resumen.n_conceptos_unicos }}</div>
+      {# TMT 2026-05-19 v6 — warn si hay más conceptos que el límite visible. #}
+      {% if resumen.n_conceptos_unicos > (limite_visible or 500) %}
+        <div class="text-[11px] text-rose-700 mt-1">
+          ⚠ Mostrando los {{ limite_visible }} con mayor monto.
+          {{ resumen.n_conceptos_unicos - (limite_visible or 500) }} no visibles —
+          reclasificá los visibles primero, recargá y van apareciendo.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if filas %}
+  <form method="post" action="{{ url_for('gastos.reclasificar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="bg-white border border-slate-300 rounded overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
+          <tr>
+            <th class="px-3 py-2 text-left">Concepto</th>
+            <th class="px-3 py-2 text-right">Filas</th>
+            <th class="px-3 py-2 text-right">Total $</th>
+            <th class="px-3 py-2 text-left">Período</th>
+            <th class="px-3 py-2 text-left">Asignar V</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr class="border-t border-slate-200 hover:bg-slate-50">
+            <td class="px-3 py-2 font-medium">{{ f.concepto }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ f.n }}</td>
+            <td class="px-3 py-2 text-right tabular-nums font-medium">{{ f.total | num_es(2) }}</td>
+            <td class="px-3 py-2 text-xs text-slate-500">
+              {{ f.primera_fecha | fecha_es if f.primera_fecha else '—' }}
+              {% if f.primera_fecha != f.ultima_fecha %}
+                → {{ f.ultima_fecha | fecha_es }}
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">
+              {# TMT 2026-05-19 v6 — pares concepto/num por índice, no por
+                 concepto en el nombre (concepto puede tener &/= y rompe form). #}
+              <input type="hidden" name="concepto[]" value="{{ f.concepto }}">
+              <select name="num[]"
+                      class="rounded border border-slate-400 px-2 py-1 text-sm bg-white">
+                <option value="">— Saltar —</option>
+                <option value="1">V1 · Sueldos tejeduría</option>
+                <option value="2">V2 · Servicios tejeduría</option>
+                <option value="3">V3 · Otros tejeduría</option>
+                <option value="4">V4 · Sueldos tintorería</option>
+                <option value="5">V5 · Servicios tintorería</option>
+                <option value="6">V6 · Otros tintorería</option>
+                <option value="7">V7 · Sueldos admin</option>
+                <option value="8">V8 · Servicios admin</option>
+                <option value="9">V9 · Otros admin</option>
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 flex items-center justify-between">
+      <a href="{{ url_for('informes.gastos') }}"
+         class="text-sm text-slate-500 hover:underline">← Volver a Gastos</a>
+      <button type="submit"
+              class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium">
+        Aplicar reclasificación a los conceptos elegidos
+      </button>
+    </div>
+  </form>
+  {% else %}
+    <div class="bg-emerald-50 border border-emerald-300 rounded p-5 text-center">
+      <p class="text-emerald-800 font-medium">No hay gastos sin clasificar.</p>
+      <a href="{{ url_for('informes.gastos') }}"
+         class="text-sm text-emerald-700 underline mt-2 inline-block">
+        ← Volver a Gastos
+      </a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

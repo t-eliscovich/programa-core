@@ -309,6 +309,18 @@ def emitir_cheque():
         de_socio = (request.form.get("de_socio") or "").strip().upper()
         es_postdatado = bool(request.form.get("es_postdatado"))
         fechad = parse_date(request.form.get("fechad"))
+        # TMT 2026-05-19 v4 audit — xgast_num para clasificar V1..V9 cuando
+        # tipo='gasto'. Sin esto el xgast quedaba con num=NULL → invisible
+        # en /informes/gastos.
+        xgast_num_raw = (request.form.get("xgast_num") or "").strip()
+        xgast_num_val: int | None = None
+        if xgast_num_raw:
+            try:
+                v = int(xgast_num_raw)
+                if 1 <= v <= 9:
+                    xgast_num_val = v
+            except (TypeError, ValueError):
+                xgast_num_val = None
 
         try:
             usuario = (g.user or {}).get("username", "web")
@@ -318,6 +330,7 @@ def emitir_cheque():
                 id_posdat=id_posdat, de_socio=de_socio,
                 es_postdatado=es_postdatado, fechad=fechad,
                 usuario=usuario,
+                xgast_num=xgast_num_val,
             )
             flash(
                 f"Cheque emitido OK desde {r['banco_nombre']} por $ {r['importe']:.2f}. "

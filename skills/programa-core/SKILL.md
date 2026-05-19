@@ -1186,6 +1186,108 @@ Si `kind=POST`, el template renderiza un mini-form en la opción. Si `kind=WIZAR
 
 **Resolver banco por NOMBRE (no por no_banco hardcoded):** el view usa `'PICHINC' in nombre.upper()` y `'INTER' in nombre.upper()`. Esto sobrevive a migraciones de DB donde Pichincha pasó de `no_banco=1` a `no_banco=10`. Cualquier referencia hardcoded a `no_banco=1` es bug (revisar `cheques.boleta_deposito` que ya tuvo este problema).
 
+### Servicios NO se infieren por keyword — el chip V2/V5/V8 es la verdad
+
+**Decisión decisiva 2026-05-19 v5 (revertir intento de v4 de ampliar matcher).**
+
+El universo de "servicios" es abierto (EEQ, CNEL, EMAAP, AGUA, GAS, CNT, INTERNET, FIBRA, CLARO, MOVISTAR, TUENTI, TELEFONO, CABLE, DIRECTV, ALARMA, MONITOREO, …) y cualquier intento de enumerarlos en `KEYWORDS_TO_CATEGORIA` se queda corto. La dueña carga proveedores que nunca van a estar en la lista.
+
+**Estrategia correcta:**
+
+1. **xgast.num del chip V1..V9 es la VERDAD canónica.** Cuando la dueña clickea un chip y carga el gasto, el `num` queda fijo. El matcher de `sugerir_categoria`/`_grupo_concepto` NO se mete con esa fila — el num explícito gana siempre.
+
+2. **Templates de chips V2/V5/V8 = vacío.** Antes pre-cargaban `KK EEQ`/`CC EEQ`/`GAS ADM`. La dueña dijo "concepto libre" — escribe "agua", "luz mayo", "internet claro", "EMAAP", "CNT", lo que sea. Los demás chips (V1/V3/V4/V6/V7) sí mantienen template LC2 nemónico (KKSU, KK, CCSU, CC, SU).
+
+3. **Matcher = solo fallback.** Para gastos cargados sin chip (legacy o entrada manual), `KEYWORDS_TO_CATEGORIA` queda mínimo: solo `KKSU→V1`, `CCSU→V4`, `SU→V7` + reglas dBase clásicas que ya existían. NO se enumeran servicios. Si un xgast queda con num=NULL, aparece como "Sin clasificar" — la dueña lo arregla desde el wizard.
+
+4. **Wizard `/informes/gastos/reclasificar`** — pantalla nueva (`gastos.reclasificar` route + template). Lista todos los xgast sin num agrupados por concepto único, con dropdown V1..V9 por concepto. Submit asigna num masivamente a todas las filas con ese concepto. Idempotente (solo afecta filas con num NULL/0). Agrega marca `[RECLASIF V<n> usr=X]` al concepto.
+
+5. **Banner en `/informes/gastos`** — fila amber al pie con `"$ X en N gastos sin clasificar (M conceptos únicos) — no aparecen en V1..V9"` + botón "Reclasificar →". Para que la dueña vea cuánto está fuera del balance categórico y le sea fácil arreglarlo.
+
+6. **Script `scripts/sugerir_reclasificacion.py`** — CLI con dry-run por default. Lista top N conceptos sin num, o aplica un mapping JSON `{concepto: V}`. Idempotente. Útil para backfill batched.
+
+**Helpers nuevos en `gastos.queries`:**
+- `xgast_sin_num_resumen()` → `{n, total, n_conceptos_unicos}` para el banner.
+- `xgast_sin_num_por_concepto(limite=200)` → lista para el wizard.
+- `reclasificar_concepto_bulk(concepto, num, usuario)` → UPDATE masivo idempotente.
+
+### Audit 2026-05-19 v4 — bugs encontrados y fixed
+
+5 bugs detectados durante el audit extenso de gastos + cheques pedido por Tamara:
+
+**BUG #1 (CRÍTICO) — Atomicidad rota caja+xgast.** `caja.views.nuevo` con `xgast_num` commiteaba la caja primero, después llamaba `clasificar_desde_caja()` en otra tx. Si la 2da fallaba, quedaba caja huérfana → saldo caja descendido + sin gasto registrado.
+
+Fix: refactor `gastos.queries.clasificar_desde_caja` → helper `_clasificar_caja_dentro_tx(conn, ...)`. `caja.queries.crear` ahora acepta `xgast_num` y llama al helper DENTRO de su propia tx. Si clasif falla, rollback total. La función pública `clasificar_desde_caja` (post-hoc, después de caja existente) sigue funcionando como wrapper.
+
+**BUG #2 — Doble contabilización si concepto tiene side-effect prefix + chip V.** Si la dueña tipea "PICH 0123" (transferencia banco) y CLICKEA un chip V, antes se contabilizaba como transferencia Y como gasto.
+
+Fix: en `_clasificar_caja_dentro_tx`, verificar si la caja ya tiene mov_doble activo a `transacciones_bancarias`/`retiros`/`dolares`. Si sí, raise error explicando que no se puede clasificar como gasto (sería doble).
+
+**BUG #3 — Templates V1..V9 inconsistentes con matcher `sugerir_categoria`.** Matrix antes del fix: 5/9 chips matcheaban su V. Divergentes: V1 (`KKSU` → V7), V2 (`KK EEQ` → V5), V4 (`CCSU` → V7), V8 (`GAS` → V9), V7 (`SU` → None).
+
+Fix: reorganizado `KEYWORDS_TO_CATEGORIA` con reglas LC2 explícitas ANTES de las genéricas (KKSU/CCSU/KK+servicios/CC+servicios/SU/GAS ADM). Cambiado template V8 a `GAS ADM ` (en vez de `GAS `). Matrix post-fix: **9/9 chips matchean** + 18/18 conceptos extendidos OK.
+
+Aunque en el flow chip el `xgast_num` se guarda explícito (y por eso el balance siempre cierra), la coherencia template↔matcher era importante para edición manual sin chip y para que el concepto guardado en xgast sea autoreferenciado.
+
+**BUG #4 (CRÍTICO — clase $220K invisible) — Cheques tipo=gasto creaban xgast con num=NULL.** `bancos.queries.emitir_cheque(tipo='gasto')` insertaba xgast SIN num. `gastos_xgast_v1_a_v9_mes()` agrupa por num y solo retorna v1..v9, ignorando v0/NULL. Resultado: todos los gastos pagados con cheque eran invisibles en `/informes/gastos`.
+
+Fix: 
+- `emitir_cheque` acepta `xgast_num`. Si viene, lo usa. Si no, intenta inferir vía `sugerir_categoria(concepto)`.
+- INSERT INTO xgast ahora incluye `num`.
+- Template `bancos/emitir_cheque.html` agrega chips V1..V9 dentro del bloque `campos-gasto` (visible solo cuando tipo=gasto). Mismo patrón que /caja/nuevo.
+
+**BUG #5 — Desalineación TRANSICIONES_VALIDAS (backend) vs TRANSICIONES_LEGALES (UI dropdown).** El nuevo dropdown de edit estado en `/cheques` ofrecía transiciones que el backend rechazaba:
+- 1 → P (postergar rebotado): UI sí, backend rechazaba (VALIDAS["1"]={"9","X"})
+- 1 → D (Daniela cobra rebotado): rechazado
+- 2 → P, 2 → D: rechazado
+- D → P (Daniela posterga): rechazado
+- P → D: rechazado
+
+Fix: ampliada `TRANSICIONES_VALIDAS`:
+```python
+"P": {"B","C","X","I","D"},        # + D
+"D": {"B","C","X","I","P"},        # + P
+"1": {"9","X","P","D"},            # + P, D
+"2": {"9","X","P","D"},            # + P, D
+```
+
+Casos operativos cubiertos:
+- 1→D: cheque rebotó, va a Daniela a cobrar
+- 1→P: cheque rebotó, lo postergamos
+- D→P: Daniela trae el cheque para posdatar
+- P→D: el postergado pasa a Daniela
+
+**Reverso atómico caja+xgast** — además de los 5 bugs, agregada lógica de reverso completo: cuando el mov_doble `caja_s_to_xgast` tiene metadata `atomico_caja_xgast=True` (= vino del flow chip atómico), al desclasificar también se reversa la caja S vía `caja.reversar()`. Si la 2da operación falla, queda como warn (el xgast ya está desclasificado correctamente).
+
+### Caja salida — clasificación V1..V9 inline (2026-05-19 v3)
+
+Pedido dueña: el form de `/caja/nuevo` mostraba un dropdown con conceptos históricos (GAS TAXI BLANCA, CH.LES, etc) que ella encontraba ruidoso. Lo reemplazamos por chips V1..V9 que clasifican el gasto en el momento del alta.
+
+**UI:**
+- Atajo "Caja chica / día inhábil" (INHB) **removido** (la dueña no lo usa).
+- Datalist de conceptos históricos **removida** (ya no hay autocomplete de strings sueltos).
+- Chips top-12 de conceptos históricos **removidos**.
+- **9 chips V1..V9** debajo del input concepto, visibles SOLO cuando `tipo=S`:
+  - V1 Sueldos tejeduría · V2 Servicios tejeduría · V3 Otros tejeduría
+  - V4 Sueldos tintorería · V5 Servicios tintorería · V6 Otros tintorería
+  - V7 Sueldos admin · V8 Servicios admin · V9 Otros admin
+- Click en un chip:
+  - Setea hidden `xgast_num` con el num (1-9).
+  - Pre-carga el concepto con un template LC2 (`KKSU `, `CC EEQ `, `SU `, `GAS `, etc) si el campo está vacío.
+  - Highlight visual de la categoría elegida.
+  - Hay un botón "limpiar" para sacar la clasificación.
+- Cuando el tipo cambia a `E` el wrap se oculta y `xgast_num` se limpia.
+
+**Backend (`caja.views.nuevo` POST):** después de crear la caja S, si vino `xgast_num` (1-9), llama a `gastos.queries.clasificar_desde_caja(id_caja, num, usuario)` que crea el `xgast` + el `mov_doble` tipo `caja_s_to_xgast` linkeando ambas filas. Mismo dispatcher de reverso que ya existía.
+
+**Flow correcto end-to-end:**
+1. Dueña carga `tipo=S, importe=120, concepto="EEQ MAYO"`, click chip V5.
+2. Submit → crea `caja id=N` (egreso real) + llama `clasificar_desde_caja(N, 5)` → crea `xgast num=5` + mov_doble. Atómico.
+3. En `/informes/gastos` la fila aparece bajo V5 (Tintorería · Servicios).
+4. Reverso desde `/historial`: desclasifica el xgast (lo anula) y deja la caja S libre para re-clasificar.
+
+**Por qué chips en vez de campo "num" dropdown:** la dueña pensaba en términos de "es sueldo tej", "es agua de tintorería" — no en V5. El chip dice ambas cosas (V1 + label). Y los templates LC2 prellenados (`KKSU `, `CC EEQ`) le dan un mnemonic al concepto que ella ya conocía del dBase. La clasificación queda explícita (no auto-inferred del concepto) — pedido suyo.
+
 ### Flujo de caja — limpieza y gastos forzados full-width (2026-05-19 v3)
 
 `/informes/flujo`:

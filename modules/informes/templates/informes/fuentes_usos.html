@@ -22,6 +22,10 @@
       <p>{{ data.error }}</p>
       {# TMT 2026-05-18 — botones para crear el snapshot faltante.
          Si la dueña aprieta "Snapshot mes anterior", se crea automáticamente. #}
+      {# TMT 2026-05-19 v6 audit — el warn antiguo ya no aplica:
+         crear_snapshot_historia ahora usa informe_balance_as_of(last_day_mes),
+         así que los snapshots se calculan correctamente con la foto del
+         mes correspondiente. #}
       <form method="post" action="{{ url_for('informes.snapshot_backfill') }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="meses" value="3">
