@@ -977,3 +977,58 @@ Bug del header "4 partidas" vs 8 filas visibles arreglado. `resumen()` ahora ace
 ### Cómo aplicar Regla 3 retroactivamente
 
 Cada vez que la dueña "no entiende" un cuadrito o cuenta, primero preguntarse: **¿está duplicando info que ya aparece en otra parte?** En 5 de los 19 items la respuesta fue sí (cuadritos GTEJ/GTIN/GGF, panel Detalle bancos, fila explicación de utilidad, conteo de Depositados, columna Plazo). Cuando es duplicación → eliminar sin reemplazo. Cuando es nuevo concepto → reemplazar por algo que SÍ entienda (Cuadro MOVIMIENTOS MES estilo dBase).
+
+## Pedido de la dueña 2026-05-19 — Batch 2 follow-up
+
+### Corrección crítica: C = Tintorería (NO Consumibles)
+
+`labels.py`:`TIPO_COMPRA_TINTORERIA = "C"` con label **"Tintorería"**. En el batch original interpreté mal su comentario "C no es otros" y lo cambié a "Consumibles" — la dueña corrigió: **C significa Tintorería**, refleja el LC2 `CC` del dBase. El alias `TIPO_COMPRA_OTROS` apunta al mismo char "C" por compat.
+
+Tipos canónicos (después de la corrección):
+
+| Char | LC2 | Label                 | Notas |
+|---|---|---|---|
+| H | HH | Hilado                | Materia prima — NO entra al matriz de gastos. |
+| K | KK | Tejido                | Producción si kg>0, sino servicio de tejeduría. |
+| Q | QQ | Químicos              | Colorantes + auxiliares. |
+| C | CC | **Tintorería**        | Servicio de tintura. Corrección crítica 2026-05-19. |
+| T | —  | Tintura (legacy)      | Duplicado de C — no usar al alta. |
+| A | AA | Anticipo              | A proveedor, luego se "convierte". |
+| **I** | **IN** | **Anticipo máquinas** | **Nuevo 2026-05-19** — variante de A para maquinaria. |
+| S | —  | Servicios             | Luz, agua, contadora, mantenimiento. |
+
+En la UI del selector (`/compras/nueva`), las opciones muestran el **LC2 (2 chars)** porque es el vocabulario que usa la dueña. Internamente la DB sigue guardando el char único. Mapping en `labels.TIPOS_COMPRA_LC2` + helper `lc2_para_tipo(codigo)`.
+
+### Auto-clasificación de compras en /gastos (LC2 → V1..V9)
+
+`modules/informes/queries.py`:`TIPOS_COMPRA_A_NUM_GASTO` mapea cada tipo de compra al num de gasto (V1..V9):
+
+```python
+TIPOS_COMPRA_A_NUM_GASTO = {
+    "K": 3,   # Tejeduría · Otros
+    "C": 6,   # Tintorería · Otros (Tintura/servicio)
+    "Q": 6,   # Tintorería · Otros (químicos)
+    "T": 6,
+    "S": 9,   # Admin · Otros
+}
+# H, A, I → no entran (MP / anticipos).
+```
+
+`gastos_xgast_v1_a_v9_mes()` ahora hace UNION xgast + compras (mes en curso) y suma cada compra al `num` de su tipo. Excluye `stat IN ('X','Y')` y excluye producción (`tipo='K' AND kg>0` — eso es VK/IPROVK, no gasto operativo).
+
+`gastos_detalle_categoria(num)` también incluye las compras del num correspondiente, agrupadas en un bucket separado `"Compras (tipo X)"`. El template `informes/gastos_detalle.html` muestra un badge violeta `compra` para distinguir filas que vienen de `scintela.compra` vs `scintela.xgast`.
+
+**Por qué este diseño** (vs duplicar compras en xgast al alta):
+- No duplica data → reverso de compra automáticamente saca del balance gastos.
+- No requiere migration ni backfill.
+- Si en el futuro queremos refinar el mapping (ej. compra con concepto "SU" → V1 personal en vez de V3 otros), basta cambiar la función de mapping.
+
+**Lo que NO está clasificado:** compras con tipo `H` (hilado), `A` (anticipo), `I` (anticipo máquinas) — son materia prima / activos diferidos, no gastos operativos. Si la dueña los quiere ver en el matriz, ampliar `TIPOS_COMPRA_A_NUM_GASTO`.
+
+### Bordes globales más oscuros
+
+`templates/base.html` tiene override CSS de `border-slate-200/100/300` a slate-400/300/500 (solo light mode). Si la dueña pide bordes más oscuros aún o cambios visuales en otro lugar, ahí está el botón central. NO refactorear template por template.
+
+### Pantalla Stock fuera del sidebar
+
+`templates/base.html` quitado `nav_link('stock.lista', 'Stock', ...)`. El route sigue vivo (no se borró el módulo) pero ya no se navega ahí — la dueña ve el stock en Resultados.

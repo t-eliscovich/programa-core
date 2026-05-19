@@ -53,7 +53,8 @@ Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Ga
     <div>
       <h1 class="text-2xl font-semibold">{{ data.label if data else 'Detalle gastos' }}</h1>
       <p class="text-sm text-slate-500 mt-1">
-        Mes en curso — drill-down de XGAST agrupado por concepto.
+        Mes en curso — drill-down agrupado por concepto.
+        Incluye xgast + compras del mes con tipo mapeado a este rubro (badge <em>compra</em>).
         ·
         <a href="{{ url_for('informes.gastos') }}" class="underline hover:text-blue-600">Volver a Gastos</a>
       </p>
@@ -91,7 +92,15 @@ Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Ga
         <tr class="fila">
           <td>{{ f.fecha | fecha_es if f.fecha else '' }}</td>
           <td class="font-mono text-xs">{{ f.doc }}</td>
-          <td class="font-mono text-xs">{{ f.prov }}</td>
+          <td class="font-mono text-xs">
+            {{ f.prov }}
+            {# TMT 2026-05-19 — badge "compra" para distinguir filas que
+               vienen de scintela.compra (vía mapping de tipo) vs xgast. #}
+            {% if f.fuente == 'compra' %}
+              <span class="ml-1 px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-sans"
+                    title="Compra tipo {{ f.tipo }} — mapeada a este rubro automáticamente">compra</span>
+            {% endif %}
+          </td>
           <td>{{ f.concepto | cleanstr }}</td>
           <td class="num">{{ f.importe | num_es(2) }}</td>
         </tr>

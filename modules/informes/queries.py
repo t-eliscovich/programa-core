@@ -1151,6 +1151,30 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     """
     filas = db.fetch_all(sql, (n,)) or []
 
+    # TMT 2026-05-19 — incluir compras cuyo tipo mapea a este num (LC2).
+    # Mismo filtro que gastos_xgast_v1_a_v9_mes: excluye anuladas + excluye
+    # producción (K con kg>0). Las compras se agrupan aparte ("Compras —
+    # tipo X") para que la dueña distinga fuente de origen.
+    tipos_para_num = [t for t, v in TIPOS_COMPRA_A_NUM_GASTO.items() if v == n]
+    filas_compras: list[dict] = []
+    if tipos_para_num:
+        where_fecha_c = (
+            "AND fecha >= date_trunc('month', CURRENT_DATE) "
+            "AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
+            if mes_actual else ""
+        )
+        sql_c = f"""
+            SELECT id_compra, fecha, comprobante AS doc, codigo_prov AS prov,
+                   concepto, importe, stat, tipo
+              FROM scintela.compra
+             WHERE UPPER(COALESCE(tipo, '')) = ANY(%s)
+               AND COALESCE(stat, '') NOT IN ('X', 'Y')
+               AND NOT (UPPER(COALESCE(tipo, '')) = 'K' AND COALESCE(kg, 0) > 0)
+               {where_fecha_c}
+             ORDER BY fecha ASC, id_compra ASC
+        """
+        filas_compras = db.fetch_all(sql_c, (tipos_para_num,)) or []
+
     # Agrupar por concepto via _grupo_concepto.
     buckets: dict[str, dict] = {}
     total = 0.0
@@ -1168,6 +1192,29 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
             "concepto": r.get("concepto") or "",
             "importe":  importe,
             "stat":     r.get("stat") or "",
+            "fuente":   "xgast",
+        })
+        buckets[grupo]["subtotal"] += importe
+
+    # Bucket separado para compras (mejor UX que mezclarlas con conceptos
+    # de xgast — tienen distinta estructura, distinto reverso).
+    for r in filas_compras:
+        tipo_c = (r.get("tipo") or "").upper().strip()
+        grupo = f"Compras (tipo {tipo_c})"
+        importe = float(r.get("importe") or 0)
+        total += importe
+        if grupo not in buckets:
+            buckets[grupo] = {"grupo": grupo, "filas": [], "subtotal": 0.0}
+        buckets[grupo]["filas"].append({
+            "id_compra": r.get("id_compra"),
+            "fecha":     r.get("fecha"),
+            "doc":       r.get("doc") or "",
+            "prov":      r.get("prov") or "",
+            "concepto":  r.get("concepto") or "",
+            "importe":   importe,
+            "stat":      r.get("stat") or "",
+            "fuente":    "compra",
+            "tipo":      tipo_c,
         })
         buckets[grupo]["subtotal"] += importe
 
@@ -1183,17 +1230,49 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     }
 
 
+# Mapping compra.tipo → xgast.num (rubro/sub-categoría) — TMT 2026-05-19.
+# Pedido Tamara: que las compras caigan automáticamente en su gasto rubro.
+# Replica el LC2 del dBase (que mapeaba CONCEPTO[0:2] a tipo → V1..V9).
+# Como ya tenemos el campo `tipo` explícito en scintela.compra, no hace falta
+# parsear concepto.
+#
+# Convención: cada tipo cae en su rubro · "Otros" (la sub-cat genérica del
+# rubro). En el futuro podemos refinar mirando el concepto para distinguir
+# personal/servicios/otros dentro del rubro.
+#
+#   K (Tejido)      → V3  (Tejeduría · Otros)
+#   C (Tintorería)  → V6  (Tintorería · Otros)
+#   Q (Químicos)    → V6  (Tintorería · Otros — colorantes/auxiliares)
+#   T (Tintura legacy) → V6
+#   H (Hilado)      → NO entra al matriz: es materia prima, no gasto.
+#   A, I            → NO entran: anticipos.
+#   S (Servicios)   → V9 (Admin · Otros) — luz/contadora/mantenimiento.
+TIPOS_COMPRA_A_NUM_GASTO: dict[str, int] = {
+    "K": 3,
+    "C": 6,
+    "Q": 6,
+    "T": 6,
+    "S": 9,
+}
+
+
 def gastos_xgast_v1_a_v9_mes() -> dict:
-    """V1..V9 del PRG: SUM(importe) FROM xgast WHERE num=N AND mes en curso.
+    """V1..V9 del PRG: SUM(importe) FROM xgast + compras (por tipo) WHERE mes en curso.
 
     Los rótulos PRG:
       V1 = sueldos tejeduría        V4 = sueldos tintorería       V7 = sueldos admin
       V2 = gas/comb tejeduría       V5 = gas/comb tintorería      V8 = gas/comb admin
       V3 = gs.varios tejeduría      V6 = gs.varios tintorería     V9 = gs.varios admin
 
+    TMT 2026-05-19 — incluye compras del mes mapeadas por tipo (ver
+    `TIPOS_COMPRA_A_NUM_GASTO`). Antes solo leía xgast — pedido Tamara para
+    que los servicios de tintorería/tejeduría aparezcan automáticamente sin
+    duplicar carga en xgast. Excluye anuladas (stat 'X','Y') y excluye tipos
+    que no son gastos (H, A, I).
+
     Devuelve {v1..v9, gtej_sin_dtj, gtin_sin_dcc, gs_sin_deprcar}.
     """
-    rows = db.fetch_all(
+    rows_xgast = db.fetch_all(
         """
         SELECT COALESCE(num, 0) AS num,
                COALESCE(SUM(importe), 0) AS total
@@ -1203,7 +1282,31 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         GROUP BY 1
         """
     ) or []
-    v = {int(r.get("num") or 0): float(r.get("total") or 0) for r in rows}
+    v = {int(r.get("num") or 0): float(r.get("total") or 0) for r in rows_xgast}
+
+    # Sumar compras por tipo (mapeado a V1..V9). Excluye anuladas y excluye
+    # producción (tipo='K' con kg>0) — esa es un costo de producción, no un
+    # gasto operativo (vive en VK/IPROVK).
+    rows_compras = db.fetch_all(
+        """
+        SELECT UPPER(COALESCE(tipo, '')) AS tipo,
+               COALESCE(SUM(importe), 0) AS total
+        FROM scintela.compra
+        WHERE fecha >= date_trunc('month', CURRENT_DATE)
+          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+          AND COALESCE(stat, '') NOT IN ('X', 'Y')
+          AND UPPER(COALESCE(tipo, '')) IN ('K','C','Q','T','S')
+          AND NOT (UPPER(COALESCE(tipo, '')) = 'K' AND COALESCE(kg, 0) > 0)
+        GROUP BY 1
+        """
+    ) or []
+    for r in rows_compras:
+        tipo = (r.get("tipo") or "").upper().strip()
+        num = TIPOS_COMPRA_A_NUM_GASTO.get(tipo)
+        if num is None:
+            continue
+        v[num] = v.get(num, 0.0) + float(r.get("total") or 0)
+
     return {
         "v1": v.get(1, 0.0), "v2": v.get(2, 0.0), "v3": v.get(3, 0.0),
         "v4": v.get(4, 0.0), "v5": v.get(5, 0.0), "v6": v.get(6, 0.0),

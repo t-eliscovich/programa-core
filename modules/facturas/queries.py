@@ -465,10 +465,11 @@ def buscar(
     hasta: str | None = None,
     solo_abiertas: bool = False,
     limite: int = 500,
-    vista: str = "todas",
+    vista: str = "cartera",
     cliente: str = "",
     monto_min: float | None = None,
     monto_max: float | None = None,
+    estado: str = "",
 ) -> list[dict]:
     """Filtros:
         q             — busqueda libre (numero, numf_completo, nombre)
@@ -478,15 +479,21 @@ def buscar(
         monto_max     — filtra importe <= monto_max
         desde/hasta   — fecha (YYYY-MM-DD)
         solo_abiertas — saldo > 0 (deprecado a favor de `vista=cartera`)
-        vista (2026-04-29):
-            'cartera'    → stat IN (Z, A) AND saldo > 0  (cartera viva)
+        vista (TMT 2026-05-19 — pedido dueña):
+            'cartera'    → stat IN (Z, A) AND saldo > 0  (cartera viva — DEFAULT)
+            'estado'     → todas (antes 'todas'); filtrable con `estado`.
             'canceladas' → stat = T  (cobradas total)
             'eliminadas' → stat IN (X, Y)  (eliminadas — Y es legacy)
-            'todas'      → todas
+        estado (TMT 2026-05-19, sólo aplica con vista='estado'):
+            'Z' | 'A' | 'T' | 'X' | 'Y' o '' (vacío = todos).
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
-    vista = (vista or "todas").lower().strip()
+    vista = (vista or "cartera").lower().strip()
+    # Back-compat — la vista antes se llamaba 'todas'.
+    if vista == "todas":
+        vista = "estado"
+    estado = (estado or "").upper().strip()
     cliente = (cliente or "").strip().upper()
     # Detector de "código de cliente exacto": 3 caracteres alfanuméricos.
     # Tanto en el campo `q` legacy como en el campo `cliente` nuevo:
@@ -533,12 +540,20 @@ def buscar(
           AND (%(hasta)s::date IS NULL OR f.fecha <= %(hasta)s::date)
           AND (NOT %(solo_abiertas)s OR COALESCE(f.saldo, 0) > 0)
           AND (
-                %(vista)s = 'todas'
+                %(vista)s = 'estado'
              OR (%(vista)s = 'cartera'
                  AND COALESCE(f.saldo, 0) > 0
                  AND (f.stat IS NULL OR f.stat IN ('Z','A','',' ')))
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat IN ('X','Y'))
+          )
+          -- TMT 2026-05-19: filtro de estado dentro de la vista 'estado'.
+          -- Si está vacío, no filtra; si tiene valor, matchea stat (trata
+          -- NULL/empty como 'Z' para que el filtro 'Z' atrape las legacy).
+          AND (
+                %(estado)s = ''
+             OR (%(estado)s = 'Z' AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
+             OR (%(estado)s <> 'Z' AND f.stat = %(estado)s)
           )
         ORDER BY f.fecha ASC, f.numf ASC
         LIMIT %(limite)s
@@ -552,6 +567,7 @@ def buscar(
             "desde": desde or None, "hasta": hasta or None,
             "solo_abiertas": solo_abiertas,
             "vista": vista,
+            "estado": estado,
             "limite": limite,
         },
     ) or []
@@ -587,9 +603,13 @@ def conteos_por_vista() -> dict:
         """
     ) or []
     out = {r["bucket"]: dict(r) for r in rows}
-    out["todas"] = {
+    # TMT 2026-05-19 — 'estado' es el bucket que abarca todo (= antes 'todas').
+    # Mantengo 'todas' como alias por back-compat con cualquier caller externo.
+    total_row = {
         "n": sum(r["n"] for r in rows),
         "total_saldo": sum(float(r["total_saldo"] or 0) for r in rows),
         "total_importe": sum(float(r["total_importe"] or 0) for r in rows),
     }
+    out["estado"] = total_row
+    out["todas"] = total_row
     return out

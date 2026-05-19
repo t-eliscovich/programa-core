@@ -392,12 +392,25 @@ def lista():
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
     solo_abiertas = request.args.get("abiertas") == "1"
-    # Vista canónica (2026-04-29): cartera (Z+A vivas) / canceladas (T) /
-    # eliminadas (X, Y legacy) / todas. Default = todas (la dueña pidió
-    # ver el universo completo primero y filtrar después, 29/abr/2026).
-    vista = (request.args.get("vista") or "todas").lower()
-    if vista not in ("cartera", "canceladas", "eliminadas", "todas"):
+    # Vista canónica:
+    #  - cartera (Z+A vivas)
+    #  - estado (= antes "todas"; muestra todo el universo, filtrable por ?estado=)
+    #  - canceladas (T)
+    #  - eliminadas (X, Y legacy)
+    # TMT 2026-05-19 (pedido dueña): default ahora es 'cartera' (no 'todas').
+    # 'todas' renombrado a 'estado' con un filtro dropdown adentro.
+    vista = (request.args.get("vista") or "cartera").lower()
+    # Back-compat: si todavía llega ?vista=todas, lo mapeamos a 'estado'.
+    if vista == "todas":
+        vista = "estado"
+    if vista not in ("cartera", "estado", "canceladas", "eliminadas"):
         vista = "cartera"
+    # Filtro de estado (solo aplica en vista='estado'). Acepta los stats
+    # canónicos: Z (cartera), A (parcial), T (cancelada), X/Y (eliminada),
+    # o vacío = todos.
+    estado_filtro = (request.args.get("estado") or "").upper().strip()
+    if estado_filtro not in ("", "Z", "A", "T", "X", "Y"):
+        estado_filtro = ""
     # Por default mostrar TODAS las facturas (sin tope de 500).
     # Si en el futuro la base crece a > 100k filas y se vuelve lento,
     # se puede pasar `?limite=500` para acotar. Pedido TMT 2026-05-14.
@@ -410,6 +423,7 @@ def lista():
             q, desde, hasta, solo_abiertas,
             vista=vista, limite=limite,
             cliente=cliente, monto_min=monto_min, monto_max=monto_max,
+            estado=estado_filtro,
         )
         conteos = queries.conteos_por_vista()
         error = None
@@ -441,6 +455,7 @@ def lista():
         cliente=cliente, monto_min=monto_min, monto_max=monto_max,
         solo_abiertas=solo_abiertas,
         vista=vista, conteos=conteos,
+        estado=estado_filtro,
         total_importe=total_importe, total_saldo=total_saldo,
         error=error,
     )
