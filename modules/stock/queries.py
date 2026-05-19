@@ -101,17 +101,30 @@ def _facturas_kg_ytd(ano: int) -> float:
 def _tinto_kg_ytd(ano: int) -> float:
     """TMT 2026-05-18 — kg que entraron a TERMINADO via tintura del año.
 
-    El flujo es: tejido (K) → tintura → terminado. Cada operación de
-    tintura suma kg al stock de terminado y los resta del stock de tejido.
+    Flujo: tejido (K) → tintura → terminado.
 
-    En scintela.tinto, cada fila es una orden de tintura. El total de kg
-    es la suma de las columnas de tipos (toper+jersey+pique+messi+james+
-    franela+otros+etc.) — pero ya tienen las columnas `kg` y `kgn` (kg
-    netos) consolidadas. Usamos `kg` (bruto).
+    Fallback en cascada por columnas (la data legacy tiene `kg` poblado
+    inconsistentemente; algunos registros sólo tienen las columnas
+    individuales por tipo de tela):
+      1) kg                         (consolidado bruto, si lo cargaron)
+      2) kgn                        (consolidado neto)
+      3) toper+jersey+pique+messi+james+franela+j3+jlyc+flyc+falso+otros+kiana
+                                    (suma de columnas individuales)
+
+    Sin filtro de stat (la data legacy rara vez lo setea en tinto).
     """
     row = db.fetch_one(
         """
-        SELECT COALESCE(SUM(COALESCE(kg, 0)), 0) AS kg
+        SELECT COALESCE(SUM(
+            GREATEST(
+                COALESCE(kg, 0),
+                COALESCE(kgn, 0),
+                COALESCE(toper, 0) + COALESCE(jersey, 0) + COALESCE(pique, 0)
+              + COALESCE(messi, 0) + COALESCE(james, 0) + COALESCE(franela, 0)
+              + COALESCE(j3, 0)    + COALESCE(jlyc, 0)  + COALESCE(flyc, 0)
+              + COALESCE(falso, 0) + COALESCE(otros, 0) + COALESCE(kiana, 0)
+            )
+        ), 0) AS kg
           FROM scintela.tinto
          WHERE EXTRACT(YEAR FROM fecha) = %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
