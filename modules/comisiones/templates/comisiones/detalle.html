@@ -49,36 +49,48 @@
   <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">Cheques cobrados del mes</h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto mb-6">
     <table class="w-full text-sm">
+      {# TMT 2026-05-19 v8 — incluye cheques (CHE) y cobros no-cheque
+         (EFE/transferencia). Campos vienen como `fecha`, `doc`, `origen`,
+         `id_origen` (no `fechad`, `no_cheque`, `id_cheque`). #}
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3 text-left">F. depósito</th>
+          <th class="px-4 py-3 text-left">Fecha</th>
+          <th class="px-4 py-3 text-left">Tipo</th>
           <th class="px-4 py-3 text-left">Cliente</th>
-          <th class="px-4 py-3 text-left">N°</th>
+          <th class="px-4 py-3 text-left">N°/Doc</th>
           <th class="px-4 py-3 text-left">Banco</th>
           <th class="px-4 py-3 text-right">Importe</th>
         </tr>
       </thead>
       <tbody>
         {% for c in cobranzas %}
+        {% set _es_cheque = (c.origen or '') == 'CHE' %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2" style="white-space:nowrap;">{{ c.fechad | fecha_es }}</td>
+          <td class="px-4 py-2" style="white-space:nowrap;">{{ c.fecha | fecha_es }}</td>
+          <td class="px-4 py-2 text-xs">
+            {% if _es_cheque %}
+              <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 font-mono">CHE</span>
+            {% else %}
+              <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 font-mono">{{ c.origen or 'EFE' }}</span>
+            {% endif %}
+          </td>
           <td class="px-4 py-2">
             <span class="font-mono text-xs text-slate-500">{{ c.codigo_cli }}</span>
             <span class="ml-1">{{ c.cliente }}</span>
           </td>
-          <td class="px-4 py-2 font-mono text-xs">{{ c.no_cheque or '#' ~ c.id_cheque }}</td>
+          <td class="px-4 py-2 font-mono text-xs">{{ c.doc or ('#' ~ c.id_origen) }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ c.banco or '' }}</td>
           <td class="px-4 py-2 text-right tabular-nums">{{ c.importe | num_es(2) }}</td>
         </tr>
         {% else %}
-        {{ empty_row(5, 'Sin cobranzas en este mes.',
-                     sugerencia='Cheques acreditados (stat B/A) cuya fecha de depósito caiga en el mes.') }}
+        {{ empty_row(6, 'Sin cobranzas en este mes.',
+                     sugerencia='Cheques acreditados (stat B/A) o cobros no-cheque (efectivo/transferencia) con fecha del mes.') }}
         {% endfor %}
       </tbody>
       {% if cobranzas %}
       <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
         <tr>
-          <td class="px-4 py-3 text-base font-bold" colspan="4">Total cobrado</td>
+          <td class="px-4 py-3 text-base font-bold" colspan="5">Total cobrado</td>
           <td class="px-4 py-3 text-right tabular-nums text-lg font-bold">{{ total_cobr | num_es(2) }}</td>
         </tr>
       </tfoot>
