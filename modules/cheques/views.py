@@ -736,18 +736,55 @@ def postergar(id_cheque: int):
     GET: muestra form con la fechad actual y un input para la nueva fecha.
     POST: aplica el cambio y redirige al detalle.
     """
-    ch = queries.por_id(id_cheque)
+    # TMT 2026-05-19 v8 — wrap en try/except defensivo para evitar 502
+    # cuando algo inesperado revienta el worker. Cualquier excepción no
+    # atrapada antes (queries.por_id, parse_date, period guard) cae acá
+    # con flash + redirect en lugar de matar el process.
+    import logging
+    log = logging.getLogger("cheques.postergar")
+
+    try:
+        next_url = (request.form.get("next") or "").strip()
+    except Exception:
+        next_url = ""
+    es_next_local = (
+        next_url.startswith("/")
+        and not next_url.startswith("//")
+        and "://" not in next_url
+    )
+
+    def _fallback_redirect():
+        if es_next_local:
+            return redirect(next_url)
+        return redirect(url_for("cheques.lista"))
+
+    try:
+        ch = queries.por_id(id_cheque)
+    except Exception as e:
+        log.exception("por_id falló para cheque %s", id_cheque)
+        flash_exc("No pude cargar el cheque", e)
+        return _fallback_redirect()
+
     if not ch:
-        abort(404)
+        flash(f"Cheque {id_cheque} no existe.", "warn")
+        return _fallback_redirect()
 
     errores: list[str] = []
     form: dict = {}
 
     if request.method == "GET":
-        return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form)
+        try:
+            return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form)
+        except Exception as e:
+            log.exception("render postergar.html GET falló")
+            flash_exc("No pude mostrar el form", e)
+            return _fallback_redirect()
 
-    nueva_fechad = parse_date(request.form.get("nueva_fechad"))
-    motivo = (request.form.get("motivo") or "").strip()  # opcional. TMT 2026-05-13.
+    try:
+        nueva_fechad = parse_date(request.form.get("nueva_fechad"))
+    except Exception:
+        nueva_fechad = None
+    motivo = (request.form.get("motivo") or "").strip()
 
     if nueva_fechad is None:
         errores.append("Nueva fecha de depósito inválida.")
@@ -758,20 +795,20 @@ def postergar(id_cheque: int):
     })
 
     if errores:
-        return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form), 400
-
-    # TMT 2026-05-19 v8 — dueña: si vengo del popover inline de /cheques,
-    # quedarme en /cheques (preservando filtros). El form inline manda
-    # `next` = full_path de la lista; redirigimos ahí si está y es local.
-    next_url = (request.form.get("next") or "").strip()
-    es_next_local = (
-        next_url.startswith("/")
-        and not next_url.startswith("//")
-        and "://" not in next_url
-    )
+        # Inline (popover): no tirar wizard, flash + back al listado.
+        if es_next_local:
+            for err in errores:
+                flash(err, "warn")
+            return redirect(next_url)
+        try:
+            return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form), 400
+        except Exception as e:
+            log.exception("render postergar.html POST/errores falló")
+            flash_exc("No pude mostrar el form", e)
+            return _fallback_redirect()
 
     try:
-        usuario = (g.user or {}).get("username", "web")
+        usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
         queries.postergar(
             id_cheque=id_cheque,
             nueva_fechad=nueva_fechad,
@@ -782,17 +819,26 @@ def postergar(id_cheque: int):
             f"Cheque postergado al {nueva_fechad.strftime('%d/%m/%Y')}.",
             "ok",
         )
-        if es_next_local:
-            return redirect(next_url)
-        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
     except ValueError as e:
-        errores.append(str(e))
-        return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form), 400
-    except Exception as e:
-        flash_exc("No pude postergar el cheque", e)
         if es_next_local:
+            flash(str(e), "warn")
             return redirect(next_url)
-        return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
+        errores.append(str(e))
+        try:
+            return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form), 400
+        except Exception as e2:
+            log.exception("render postergar.html POST/ValueError falló")
+            flash_exc("No pude mostrar el form", e2)
+            return _fallback_redirect()
+    except Exception as e:
+        log.exception("queries.postergar falló para cheque %s", id_cheque)
+        flash_exc("No pude postergar el cheque", e)
+        return _fallback_redirect()
+
+    # Éxito → redirect.
+    if es_next_local:
+        return redirect(next_url)
+    return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
 @cheques_bp.route("/cheques/<int:id_cheque>/desaplicar/<int:id_factura>", methods=["GET"])
