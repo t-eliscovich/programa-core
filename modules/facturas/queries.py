@@ -470,6 +470,7 @@ def buscar(
     monto_min: float | None = None,
     monto_max: float | None = None,
     estado: str = "",
+    estados: list[str] | None = None,
 ) -> list[dict]:
     """Filtros:
         q             — busqueda libre (numero, numf_completo, nombre)
@@ -486,6 +487,10 @@ def buscar(
             'eliminadas' → stat IN (X, Y)  (eliminadas — Y es legacy)
         estado (TMT 2026-05-19, sólo aplica con vista='estado'):
             'Z' | 'A' | 'T' | 'X' | 'Y' o '' (vacío = todos).
+        estados (TMT 2026-05-19 v8, sólo aplica con vista='estado'):
+            lista de stats — permite filtrar por VARIOS estados a la vez,
+            ej. ['Z','A','T']. Lista vacía o None = todos. Si `estados` se
+            pasa, tiene precedencia sobre `estado` (scalar legacy).
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -494,6 +499,23 @@ def buscar(
     if vista == "todas":
         vista = "estado"
     estado = (estado or "").upper().strip()
+    # TMT 2026-05-19 v8 — multi-estado. Filtrar/normalizar.
+    estados_validos = ("Z", "A", "T", "X", "Y")
+    estados_lista = [
+        s.upper().strip() for s in (estados or [])
+        if s and s.upper().strip() in estados_validos
+    ]
+    # De-dup conservando orden.
+    seen: set[str] = set()
+    estados_lista = [s for s in estados_lista if not (s in seen or seen.add(s))]
+    # Si vino solo `estado` scalar (legacy), promovemos a lista.
+    if not estados_lista and estado in estados_validos:
+        estados_lista = [estado]
+    # Para el SQL: si está vacía → no filtra; si tiene Z, incluye también
+    # los NULL/empty/' ' (legacy = Z implícito).
+    estado_incluye_z = "Z" in estados_lista
+    # Lista de stats explícitos (sin la Z especial).
+    estados_para_in = [s for s in estados_lista if s != "Z"] or [""]
     cliente = (cliente or "").strip().upper()
     # Detector de "código de cliente exacto": 3 caracteres alfanuméricos.
     # Tanto en el campo `q` legacy como en el campo `cliente` nuevo:
@@ -553,13 +575,15 @@ def buscar(
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat IN ('X','Y'))
           )
-          -- TMT 2026-05-19: filtro de estado dentro de la vista 'estado'.
-          -- Si está vacío, no filtra; si tiene valor, matchea stat (trata
-          -- NULL/empty como 'Z' para que el filtro 'Z' atrape las legacy).
+          -- TMT 2026-05-19 v8 — filtro multi-estado (lista de stats).
+          -- Si la lista está vacía → no filtra (lo marcamos con flag
+          -- `estados_vacia`). Si tiene Z, ese matchea NULL/empty/' ' también
+          -- (legacy = Z implícito).
           AND (
-                %(estado)s = ''
-             OR (%(estado)s = 'Z' AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
-             OR (%(estado)s <> 'Z' AND f.stat = %(estado)s)
+                %(estados_vacia)s
+             OR (%(estado_incluye_z)s
+                 AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
+             OR f.stat = ANY(%(estados_para_in)s::text[])
           )
         ORDER BY f.fecha ASC, f.numf ASC
         LIMIT %(limite)s
@@ -574,6 +598,9 @@ def buscar(
             "solo_abiertas": solo_abiertas,
             "vista": vista,
             "estado": estado,
+            "estados_vacia": not estados_lista,
+            "estado_incluye_z": estado_incluye_z,
+            "estados_para_in": estados_para_in,
             "limite": limite,
         },
     ) or []

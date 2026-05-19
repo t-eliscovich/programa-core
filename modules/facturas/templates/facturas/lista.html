@@ -132,21 +132,37 @@
              class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm uppercase">
     </div>
 
-    {# TMT 2026-05-19 — filtro de Estado, sólo visible en la tab "Estado".
-       En la tab Cartera no aplica (cartera ya filtra Z+A vivas).
-       Va DESPUÉS del cliente (pedido dueña). #}
+    {# TMT 2026-05-19 v8 — filtro de Estado multi-checkbox (pedido dueña:
+       "permitir filtrar por varios estados a la vez"). Sólo visible en
+       la tab "Estado". Ninguno tildado = todos. #}
     {% if vista == 'estado' %}
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Estado</label>
-      <select name="estado"
-              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
-        <option value="" {% if not estado %}selected{% endif %}>Todos</option>
-        <option value="Z" {% if estado == 'Z' %}selected{% endif %}>Z · Cartera viva</option>
-        <option value="A" {% if estado == 'A' %}selected{% endif %}>A · Abonada parcial</option>
-        <option value="T" {% if estado == 'T' %}selected{% endif %}>T · Cancelada</option>
-        <option value="X" {% if estado == 'X' %}selected{% endif %}>X · Eliminada</option>
-        <option value="Y" {% if estado == 'Y' %}selected{% endif %}>Y · Anulada (legacy)</option>
-      </select>
+      <label class="block text-xs text-slate-500 mb-1">Estado <span class="text-slate-400 normal-case font-normal">(ninguno = todos)</span></label>
+      <div class="flex flex-wrap gap-2 items-center pt-1">
+        {% set _estado_opts = [
+          ('Z', 'Cartera'),
+          ('A', 'Abonada parcial'),
+          ('T', 'Cancelada'),
+          ('X', 'Eliminada'),
+          ('Y', 'Anulada (legacy)'),
+        ] %}
+        {% set _estados_sel = estados or ([estado] if estado else []) %}
+        {% for code, label in _estado_opts %}
+          <label class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-sm cursor-pointer
+                        {% if code in _estados_sel %}
+                          border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-900/30 dark:text-sky-200
+                        {% else %}
+                          border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800
+                        {% endif %}"
+                 title="{{ label }}">
+            <input type="checkbox" name="estado" value="{{ code }}"
+                   {% if code in _estados_sel %}checked{% endif %}
+                   class="rounded border-slate-400">
+            <span class="font-mono font-semibold">{{ code }}</span>
+            <span class="text-xs text-slate-500">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
     </div>
     {% endif %}
     {# Grupo 2: Monto USD (desde — hasta) #}

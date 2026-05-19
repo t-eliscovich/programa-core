@@ -406,11 +406,22 @@ def lista():
     if vista not in ("cartera", "estado", "canceladas", "eliminadas"):
         vista = "cartera"
     # Filtro de estado (solo aplica en vista='estado'). Acepta los stats
-    # canónicos: Z (cartera), A (parcial), T (cancelada), X/Y (eliminada),
-    # o vacío = todos.
-    estado_filtro = (request.args.get("estado") or "").upper().strip()
-    if estado_filtro not in ("", "Z", "A", "T", "X", "Y"):
-        estado_filtro = ""
+    # canónicos: Z (cartera), A (parcial), T (cancelada), X/Y (eliminada).
+    # TMT 2026-05-19 v8 — pedido dueña: permitir filtrar por VARIOS estados
+    # a la vez. ?estado=Z&estado=A → checkboxes. Lista vacía = todos.
+    # Back-compat: `?estado=Z` solo (legacy) sigue funcionando porque
+    # getlist captura el valor único como lista de 1.
+    estados_raw = request.args.getlist("estado")
+    estados_filtro = [
+        s.upper().strip() for s in estados_raw
+        if s and s.upper().strip() in ("Z", "A", "T", "X", "Y")
+    ]
+    # De-dup preservando orden — útil si el form reenvía duplicados.
+    seen: set[str] = set()
+    estados_filtro = [s for s in estados_filtro if not (s in seen or seen.add(s))]
+    # Compat con el flag scalar viejo (templates / código externo que
+    # consume `estado`).
+    estado_filtro = estados_filtro[0] if len(estados_filtro) == 1 else ""
     # Por default mostrar TODAS las facturas (sin tope de 500).
     # Si en el futuro la base crece a > 100k filas y se vuelve lento,
     # se puede pasar `?limite=500` para acotar. Pedido TMT 2026-05-14.
@@ -424,6 +435,7 @@ def lista():
             vista=vista, limite=limite,
             cliente=cliente, monto_min=monto_min, monto_max=monto_max,
             estado=estado_filtro,
+            estados=estados_filtro,
         )
         conteos = queries.conteos_por_vista()
         error = None
@@ -456,6 +468,7 @@ def lista():
         solo_abiertas=solo_abiertas,
         vista=vista, conteos=conteos,
         estado=estado_filtro,
+        estados=estados_filtro,
         total_importe=total_importe, total_saldo=total_saldo,
         error=error,
     )
