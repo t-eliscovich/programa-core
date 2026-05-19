@@ -272,40 +272,59 @@
     display: grid; grid-template-columns: 150px 150px 1fr 100px; gap: 8px; margin-bottom: 16px;
   }
 
-  /* TMT 2026-05-19 v8 — pedido dueña: "achicalo para que entre todo en
-     una pantalla". Overrides compactos sin tocar el resto. */
-  .flujo-wrap .chart-wrap { height: 320px; }
-  .flujo-wrap .panel { padding: 12px; border-radius: 8px; }
+  /* TMT 2026-05-19 v8 — overrides compactos para que el chart entre en
+     una pantalla. Chart más chico, KPIs compactos. */
+  .flujo-wrap .chart-wrap { height: 280px; }
+  .flujo-wrap .panel { padding: 10px 12px; border-radius: 8px; }
   .flujo-wrap .panel h2 { font-size: 14px; margin-bottom: 6px; }
-  .flujo-wrap .panel .caption { font-size: 11px; margin-bottom: 8px; }
-  .flujo-wrap .kpis { gap: 8px; margin-bottom: 8px; }
-  .flujo-wrap .kpi { padding: 6px 10px; }
+  .flujo-wrap .panel .caption { font-size: 11px; margin-bottom: 6px; }
+  .flujo-wrap .kpis { gap: 6px; margin-bottom: 6px; }
+  .flujo-wrap .kpi { padding: 5px 9px; }
   .flujo-wrap .kpi .label { font-size: 10px; }
-  .flujo-wrap .kpi .value { font-size: 17px; }
+  .flujo-wrap .kpi .value { font-size: 16px; }
   .flujo-wrap .kpi .unit { font-size: 11px; }
-  .flujo-wrap .zoom { margin: 4px 0 8px; }
+  .flujo-wrap .zoom { margin: 3px 0 6px; }
+
+  /* TMT 2026-05-19 v8 (revisión 2) — pedido dueña: "el ingreso deberia
+     ser chico y estar debajo de una gran tabla". Panel gastos forzados:
+     header compacto, tabla GRANDE arriba, form de alta CHIQUITO abajo. */
   .flujo-wrap .gf-panel { padding: 10px 14px; }
-  .flujo-wrap .gf-panel h3 { font-size: 13px; }
-  .flujo-wrap .gf-panel .gf-sub { font-size: 10px; margin: 0 0 6px; }
-  .flujo-wrap .gf-panel .gf-form-inline { margin-bottom: 8px; }
-  .flujo-wrap .gf-panel .gf-form-inline input,
-  .flujo-wrap .gf-panel .gf-form-inline button { padding: 5px 8px; font-size: 12px; }
-  .flujo-wrap .gf-panel .gf-list { max-height: 160px; gap: 4px; }
-  .flujo-wrap .gf-panel .gf-row { padding: 2px 4px; gap: 6px; }
-  .flujo-wrap .gf-panel .gf-row input { padding: 2px 6px; font-size: 11px; }
-  .flujo-wrap .gf-panel .gf-empty { padding: 12px 0; font-size: 11px; }
-  .flujo-wrap .gf-panel .gf-total { margin-top: 6px; padding-top: 6px; font-size: 12px; }
-  .flujo-wrap .gf-panel .gf-total strong { font-size: 13px; }
-  .flujo-wrap .below-chart { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
-  @media (max-width: 1100px) { .flujo-wrap .below-chart { grid-template-columns: 1fr; } }
-  /* gf-full pierde el grid (los 2 paneles ya forman grid arriba). */
-  .flujo-wrap .below-chart .gf-panel.gf-full { margin-bottom: 0; }
-  .flujo-wrap .below-chart .gf-panel.gf-full .gf-form-inline {
-    grid-template-columns: 1fr 1fr 1.5fr auto;
+  .flujo-wrap .gf-panel.gf-full .gf-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 6px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--grid);
   }
-  /* La tabla de posdat scroll: max-height más chico. */
-  .flujo-wrap .below-chart table thead th { padding: 4px 8px !important; font-size: 9px !important; }
-  .flujo-wrap .below-chart table tbody td { padding: 2px 8px !important; font-size: 11px !important; }
+  .flujo-wrap .gf-panel.gf-full .gf-head h3 { margin: 0; font-size: 14px; }
+  .flujo-wrap .gf-panel.gf-full .gf-head .gf-sub {
+    font-size: 12px; color: var(--muted); margin: 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .flujo-wrap .gf-panel.gf-full .gf-head .gf-sub strong {
+    color: var(--bad); font-size: 16px;
+    font-variant-numeric: tabular-nums; margin-left: auto;
+  }
+  /* Lista GRANDE (~340px, scroll si hace falta). */
+  .flujo-wrap .gf-panel .gf-list {
+    max-height: 340px; min-height: 100px;
+    overflow-y: auto; gap: 4px;
+    border: 1px solid var(--grid); border-radius: 6px;
+    padding: 6px; background: var(--panel-hi);
+  }
+  .flujo-wrap .gf-panel .gf-row { padding: 4px 6px; gap: 8px; }
+  .flujo-wrap .gf-panel .gf-row input { padding: 3px 6px; font-size: 12px; }
+  .flujo-wrap .gf-panel .gf-empty { padding: 30px 0; font-size: 12px; }
+
+  /* Form de alta CHICO debajo de la tabla. */
+  .flujo-wrap .gf-panel.gf-full .gf-form-inline {
+    grid-template-columns: 140px 130px 1fr 90px;
+    margin-top: 8px; margin-bottom: 0;
+    padding: 6px; background: var(--panel-hi);
+    border: 1px solid var(--grid); border-radius: 6px;
+  }
+  .flujo-wrap .gf-panel.gf-full .gf-form-inline input,
+  .flujo-wrap .gf-panel.gf-full .gf-form-inline button {
+    padding: 5px 8px; font-size: 12px;
+  }
 </style>
 {% endblock %}
 
@@ -411,84 +430,29 @@
            Los colores del chart hablan por sí mismos. #}
       </section>
 
-      {# TMT 2026-05-19 v8 — Pedido dueña: los "gastos forzados" que ella ve
-         en el TINT.BAT son los POSDAT abiertos (banc=0) con fecha futura.
-         Cuando el panel de localStorage estaba en cero, parecía que no había
-         data. Ahora mostramos la tabla REAL desde scintela.posdat acá abajo
-         del chart, exactamente como TINT.BAT (FECHA / GASTOS / PR / CONCEPTO).
-         El panel manual de abajo queda como "Adicionales" para casos extra
-         que la dueña quiera proyectar sin crear posdat formal. #}
-      <div class="below-chart">
-        {% if egresos_lista %}
-        <section class="panel gf-panel gf-full" style="margin-bottom: 14px;">
-          <div class="gf-head">
-            <h3>Gastos forzados <span style="color:rgb(100 116 139);font-weight:400">(posdat abiertos)</span></h3>
-            <span class="gf-sub">
-              Estos egresos YA están afectando el flujo del chart. Fuente: scintela.posdat.
-              Para editarlos: <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
-            </span>
-          </div>
-          {% set _total_egr = 0 %}
-          {% for e in egresos_lista %}{% set _total_egr = _total_egr + e.importe %}{% endfor %}
-          <div style="max-height: 200px; overflow-y: auto; border: 1px solid rgb(226 232 240); border-radius: 6px; background: white;">
-            <table style="width:100%; font-size:12px; border-collapse:collapse; font-feature-settings:'tnum' 1;">
-              <thead style="position:sticky;top:0;background:rgb(248 250 252);z-index:1;">
-                <tr>
-                  <th style="text-align:left;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">Fecha</th>
-                  <th style="text-align:right;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">Gastos</th>
-                  <th style="text-align:left;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">PR</th>
-                  <th style="text-align:left;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">Concepto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for e in egresos_lista %}
-                <tr style="border-bottom:1px dotted rgb(226 232 240);
-                           {% if e.vencido %}background:rgb(254 226 226);{% endif %}">
-                  <td style="padding:4px 10px;font-family:ui-monospace,monospace;">
-                    {{ e.fecha_efectiva[:10] if e.fecha_efectiva else '—' }}
-                    {% if e.vencido %}<span style="color:rgb(220 38 38);font-size:10px;font-style:italic">vencido</span>{% endif %}
-                  </td>
-                  <td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">{{ e.importe | num_es(0) }}</td>
-                  <td style="padding:4px 10px;font-family:ui-monospace,monospace;color:rgb(15 23 42);">{{ e.prov or '—' }}</td>
-                  <td style="padding:4px 10px;color:rgb(30 41 59);">{{ e.concepto or '—' }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-              <tfoot style="background:rgb(241 245 249);border-top:2px solid rgb(15 23 42);">
-                <tr>
-                  <td style="padding:8px 10px;font-weight:700;">TOTAL ({{ egresos_lista | length }} líneas)</td>
-                  <td style="padding:8px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:700;">{{ _total_egr | num_es(0) }}</td>
-                  <td colspan="2"></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </section>
-        {% endif %}
-
-        {# Panel ADICIONAL — gastos forzados manuales que NO son posdat (ej.
-           "pago gerencia futuro"). Se persisten en scintela.gasto_forzado. #}
-        <section class="panel gf-panel gf-full">
-          <div class="gf-head">
-            <h3>Gastos forzados <span style="color:rgb(100 116 139);font-weight:400">(adicionales)</span></h3>
-            <span class="gf-sub">
-              Egresos extra que NO están en posdat — proyección manual. Se
-              guardan en la base y los ves desde cualquier máquina.
-            </span>
-          </div>
-          <form id="gf-form" class="gf-form-inline" onsubmit="return false">
-            <input type="date" id="gf-fecha" required title="Fecha">
-            <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
-            <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia)">
-            <button type="submit" id="gf-add">+ Agregar</button>
-          </form>
-          <div id="gf-list" class="gf-list"></div>
-          <div class="gf-total">
-            <span>Total adicionales</span>
+      {# TMT 2026-05-19 v8 — Pedido dueña: "esta mal como dividis la pantalla.
+         el ingreso deberia ser chico y estar debajo de una gran tabla.
+         tambien trae cosas de posdat. no esta bien".
+         Layout corregido: una SOLA gran tabla de gastos forzados arriba
+         (scintela.gasto_forzado, persistente DB), form de alta compacto
+         abajo de la tabla. El panel de posdat ya NO se muestra acá —
+         posdat vive en /posdat. #}
+      <section class="panel gf-panel gf-full">
+        <div class="gf-head">
+          <h3>Gastos forzados</h3>
+          <span class="gf-sub">
+            Egresos futuros agendados para proyectar el flujo. Persistentes en la base.
             <strong id="gf-total">$ 0</strong>
-          </div>
-        </section>
-      </div>
+          </span>
+        </div>
+        <div id="gf-list" class="gf-list"></div>
+        <form id="gf-form" class="gf-form-inline" onsubmit="return false">
+          <input type="date" id="gf-fecha" required title="Fecha">
+          <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
+          <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia)">
+          <button type="submit" id="gf-add">+ Agregar</button>
+        </form>
+      </section>
     {% endif %}
   </div>
 </div>
