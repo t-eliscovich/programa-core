@@ -60,7 +60,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
               JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
              WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
                AND EXTRACT(MONTH FROM f.fecha) = %(mm)s
-               AND (f.stat IS NULL OR f.stat NOT IN ('X', 'Y'))
+               AND (f.stat IS NULL OR f.stat <> 'X')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
         )
@@ -159,7 +159,7 @@ def ventas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
           JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
          WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
            AND EXTRACT(MONTH FROM f.fecha) = %(mm)s
-           AND (f.stat IS NULL OR f.stat NOT IN ('X', 'Y'))
+           AND (f.stat IS NULL OR f.stat <> 'X')
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
          ORDER BY f.fecha, f.id_factura
         """,

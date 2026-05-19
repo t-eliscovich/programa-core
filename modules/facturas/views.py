@@ -396,7 +396,7 @@ def lista():
     #  - cartera (Z+A vivas)
     #  - estado (= antes "todas"; muestra todo el universo, filtrable por ?estado=)
     #  - canceladas (T)
-    #  - eliminadas (X, Y legacy)
+    #  - eliminadas (X)  -- 'Y' borrado 2026-05-19, nunca existió en la base.
     # TMT 2026-05-19 (pedido dueña): default ahora es 'cartera' (no 'todas').
     # 'todas' renombrado a 'estado' con un filtro dropdown adentro.
     vista = (request.args.get("vista") or "cartera").lower()
@@ -406,15 +406,13 @@ def lista():
     if vista not in ("cartera", "estado", "canceladas", "eliminadas"):
         vista = "cartera"
     # Filtro de estado (solo aplica en vista='estado'). Acepta los stats
-    # canónicos: Z (cartera), A (parcial), T (cancelada), X/Y (eliminada).
-    # TMT 2026-05-19 v8 — pedido dueña: permitir filtrar por VARIOS estados
-    # a la vez. ?estado=Z&estado=A → checkboxes. Lista vacía = todos.
-    # Back-compat: `?estado=Z` solo (legacy) sigue funcionando porque
-    # getlist captura el valor único como lista de 1.
+    # canónicos: Z (cartera), A (parcial), T (cancelada), X (eliminada).
+    # TMT 2026-05-19 v8 — multi-checkbox. Stat 'Y' fue retirado (la dueña:
+    # "factura Y no existe").
     estados_raw = request.args.getlist("estado")
     estados_filtro = [
         s.upper().strip() for s in estados_raw
-        if s and s.upper().strip() in ("Z", "A", "T", "X", "Y")
+        if s and s.upper().strip() in ("Z", "A", "T", "X")
     ]
     # De-dup preservando orden — útil si el form reenvía duplicados.
     seen: set[str] = set()

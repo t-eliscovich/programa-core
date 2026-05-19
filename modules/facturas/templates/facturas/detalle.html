@@ -25,8 +25,6 @@
           · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Cancelada total</span>
         {% elif fact.stat == 'X' %}
           · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Eliminada por error</span>
-        {% elif fact.stat == 'Y' %}
-          · <span class="ml-1 px-2 py-0.5 rounded text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">Anulada</span>
         {% elif fact.stat %}
           · <span class="font-mono">{{ fact.stat }}</span>
         {% endif %}
@@ -39,7 +37,7 @@
         ← Volver a Facturas
       </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-      {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat not in ('X', 'Y') %}
+      {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat != 'X' %}
         <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"
               onsubmit="return confirm('Generar XML SRI para la factura {{ fact.numf_completo or fact.numf }}? Se creará un comprobante electrónico en estado borrador (aún sin firmar ni enviar al SRI).');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -48,13 +46,13 @@
           </button>
         </form>
       {% endif %}
-      {% if tiene_permiso('facturas.editar') and fact.stat and fact.stat not in ('X', 'Y') %}
+      {% if tiene_permiso('facturas.editar') and fact.stat and fact.stat != 'X' %}
         <a href="{{ url_for('facturas.editar', id_factura=fact.id_factura) }}"
            class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30">
           Editar...
         </a>
       {% endif %}
-      {% if tiene_permiso('facturas.anular') and fact.stat and fact.stat not in ('X', 'Y') %}
+      {% if tiene_permiso('facturas.anular') and fact.stat and fact.stat != 'X' %}
         <a href="{{ url_for('facturas.confirmar_anulacion', id_factura=fact.id_factura) }}"
            class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
           Eliminar...

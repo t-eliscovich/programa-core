@@ -292,7 +292,7 @@ def cuenta_corriente(codigo_cli: str) -> dict:
         SELECT f.fecha,
                CASE
                  WHEN COALESCE(f.importe, 0) < 0 THEN 'DEV'
-                 WHEN f.stat = 'Y' THEN 'ANUL'
+                 WHEN f.stat = 'X' THEN 'ANUL'
                  ELSE 'FAC'
                END                                       AS tipo,
                COALESCE(f.numf_completo, f.numf::text)   AS doc,

@@ -707,7 +707,7 @@ def ventas_mes_corriente_resultado() -> dict:
         FROM scintela.factura
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
-          AND (stat IS NULL OR stat NOT IN ('X','Y'))
+          AND (stat IS NULL OR stat <> 'X')
         """
     ) or {}
     hoy = date.today()
@@ -1933,11 +1933,11 @@ def conciliacion_balance() -> list[dict]:
     ) or {}
     f_eliminadas = db.fetch_one(
         """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
-           FROM scintela.factura WHERE stat IN ('X','Y')"""
+           FROM scintela.factura WHERE stat = 'X'"""
     ) or {}
     f_total_emit = db.fetch_one(
         """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
-           FROM scintela.factura WHERE stat NOT IN ('X','Y') OR stat IS NULL"""
+           FROM scintela.factura WHERE stat <> 'X' OR stat IS NULL"""
     ) or {}
     saldo_cartera = float(f_cartera.get("saldo") or 0)
     match_f, diff_f = _diff(totf_val, saldo_cartera)
@@ -3388,7 +3388,7 @@ def kg_facturas_pc_no_sincronizadas() -> float:
         SELECT COALESCE(SUM(kg), 0) AS total
         FROM scintela.factura
         WHERE COALESCE(usuario_crea, '') <> 'dbf-import'
-          AND (stat IS NULL OR stat NOT IN ('X', 'Y'))
+          AND (stat IS NULL OR stat <> 'X')
         """
     )
     return float((row or {}).get("total") or 0)
@@ -4485,7 +4485,7 @@ def balance_components_as_of(as_of) -> dict:
           FROM scintela.factura
          WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
            AND fecha <= %s
-           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(stat, '') <> 'X'
         """,
         (as_of, as_of),
     ) or {}
@@ -5073,3 +5073,71 @@ def gastos_forzados_importar_bulk(
         gasto_forzado_crear(fecha, importe, concepto, usuario)
         insertados += 1
     return {"insertados": insertados, "saltados": saltados}
+
+
+# ---------------------------------------------------------------------------
+# VENTAS DEL MES por cliente — ranking estilo dBase TINT.BAT.
+# Pedido dueña 2026-05-19 v8: al clickear "Ventas" del balance quiere ver
+# la grilla "VENTAS DEL MES" con CLI / KG / MONTO / % ordenado por monto
+# descendente, idéntica a la pantalla del dBase legacy.
+# ---------------------------------------------------------------------------
+
+def ventas_clientes_del_mes(anio: int | None = None,
+                            mes: int | None = None) -> dict:
+    """Ranking de clientes por ventas del mes (kg + monto + % del total).
+
+    Mes por defecto = mes en curso (live, sin esperar snapshot). Excluye
+    facturas anuladas (stat='X'). Devuelve:
+        {
+          "anio": int, "mes": int,
+          "filas": [
+            {"orden": 1, "codigo_cli": "EEU", "kg": int, "monto": float, "pct": int},
+            ...
+          ],
+          "total_kg": int, "total_monto": float, "n_clientes": int,
+        }
+    """
+    from datetime import date as _date
+    hoy = _date.today()
+    yy = int(anio) if anio else hoy.year
+    mm = int(mes) if mes else hoy.month
+
+    rows = db.fetch_all(
+        """
+        SELECT
+            UPPER(TRIM(COALESCE(f.codigo_cli, '???'))) AS codigo_cli,
+            COALESCE(SUM(f.kg), 0)::int                AS kg,
+            COALESCE(SUM(f.importe), 0)::numeric       AS monto
+          FROM scintela.factura f
+         WHERE EXTRACT(YEAR  FROM f.fecha) = %s
+           AND EXTRACT(MONTH FROM f.fecha) = %s
+           AND COALESCE(f.stat, '') <> 'X'
+         GROUP BY 1
+         HAVING COALESCE(SUM(f.importe), 0) <> 0 OR COALESCE(SUM(f.kg), 0) <> 0
+         ORDER BY SUM(f.importe) DESC NULLS LAST
+        """,
+        (yy, mm),
+    ) or []
+
+    total_kg = sum(int(r["kg"] or 0) for r in rows)
+    total_monto = sum(float(r["monto"] or 0) for r in rows)
+
+    filas = []
+    for i, r in enumerate(rows, start=1):
+        monto = float(r["monto"] or 0)
+        pct = round((monto / total_monto * 100), 0) if total_monto else 0
+        filas.append({
+            "orden": i,
+            "codigo_cli": r["codigo_cli"],
+            "kg": int(r["kg"] or 0),
+            "monto": monto,
+            "pct": int(pct),
+        })
+
+    return {
+        "anio": yy, "mes": mm,
+        "filas": filas,
+        "total_kg": total_kg,
+        "total_monto": total_monto,
+        "n_clientes": len(filas),
+    }

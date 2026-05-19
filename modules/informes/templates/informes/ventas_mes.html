@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Ventas del mes {{ '%02d/%d' % (mes, anio) }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <strong>Ventas del mes</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* TMT 2026-05-19 v8 — replica visual del screen TINT.BAT dBase.
+     Ranking por cliente del mes en 3 columnas. */
+  .vm-grid {
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .vm-grid table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .vm-grid thead th {
+    color: rgb(220 38 38);
+    font-weight: 700;
+    text-transform: uppercase;
+    text-align: right;
+    padding: 4px 8px;
+    border-bottom: 1px solid rgb(148 163 184);
+  }
+  .vm-grid thead th.cli  { text-align: left; }
+  .vm-grid thead th.ord  { text-align: right; width: 28px; }
+  .vm-grid tbody td      { padding: 2px 8px; border-bottom: 1px dotted rgb(226 232 240); }
+  .vm-grid tbody td.ord  { color: rgb(100 116 139); text-align: right; }
+  .vm-grid tbody td.cli  { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  .vm-grid tbody td.num  { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .vm-grid tfoot td      { padding: 6px 8px; border-top: 2px solid rgb(15 23 42); font-weight: 700; }
+  .vm-grid tfoot td.num  { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full">
+  <div class="flex items-center justify-between mb-4 no-print flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold">Ventas del mes</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Ranking por cliente · {{ '%02d/%d' % (mes, anio) }} ·
+        ordenado por monto descendente.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      {# Selector año / mes — viaja a la misma vista #}
+      <form method="get" class="flex items-end gap-2">
+        <label class="flex flex-col text-xs text-slate-500">
+          Año
+          <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
+                 class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
+        </label>
+        <label class="flex flex-col text-xs text-slate-500">
+          Mes
+          <select name="mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white w-20">
+            {% for m in range(1, 13) %}
+              <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ '%02d' % m }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
+      </form>
+      <a href="{{ url_for('informes.ventas_listado_mensual') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        Multi-mes
+      </a>
+      <a href="{{ url_for('informes.balance') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        ← Resultados
+      </a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        Imprimir
+      </button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if data and data.filas %}
+  {# 3 columnas de N filas cada una — replica el layout TINT.BAT.
+     Repartimos las filas con round-up para que la 1ra columna tenga
+     siempre las más grandes (orden ASC sigue por monto DESC). #}
+  {% set total = data.filas | length %}
+  {% set per_col = ((total + 2) // 3) %}
+  {% set col1 = data.filas[0:per_col] %}
+  {% set col2 = data.filas[per_col:per_col*2] %}
+  {% set col3 = data.filas[per_col*2:] %}
+
+  <div class="vm-grid bg-white border border-slate-300 rounded p-3">
+    <div class="text-sm font-bold uppercase tracking-wider text-red-700 mb-2 pl-2">Ventas del mes</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6">
+      {% for col in [col1, col2, col3] %}
+        <table>
+          <thead>
+            <tr>
+              <th class="ord"></th>
+              <th class="cli">CLI</th>
+              <th>KG.</th>
+              <th>MONTO</th>
+              <th>%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in col %}
+              <tr>
+                <td class="ord">{{ f.orden }}</td>
+                <td class="cli">{{ f.codigo_cli }}</td>
+                <td class="num">{{ f.kg | num_es(0) }}</td>
+                <td class="num">{{ f.monto | num_es(0) }}</td>
+                <td class="num">{{ f.pct }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endfor %}
+    </div>
+
+    <div class="mt-4 pt-3 border-t-2 border-slate-900 grid grid-cols-3 gap-x-6 text-sm">
+      <div>
+        <div class="text-xs uppercase text-slate-500">Clientes</div>
+        <div class="font-mono font-bold text-lg">{{ data.n_clientes }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase text-slate-500">Total kg</div>
+        <div class="font-mono font-bold text-lg">{{ data.total_kg | num_es(0) }}</div>
+      </div>
+      <div>
+        <div class="text-xs uppercase text-slate-500">Total monto US$</div>
+        <div class="font-mono font-bold text-lg">$ {{ data.total_monto | num_es(0) }}</div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-white border border-slate-300 rounded p-8 text-center text-slate-500">
+    Sin facturas en {{ '%02d/%d' % (mes, anio) }} (excluyendo anuladas).
+  </div>
+  {% endif %}
+
+  <p class="mt-3 text-xs text-slate-500">
+    Fuente: scintela.factura del mes seleccionado, excluyendo stat='X' (eliminadas).
+    Equivalente a la pantalla VENTAS DEL MES del dBase legacy (TINT.BAT).
+  </p>
+</div>
+{% endblock %}

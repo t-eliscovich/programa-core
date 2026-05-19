@@ -335,7 +335,7 @@ def diag_stock():
                SUM(COALESCE(kg, 0))::int AS kg
           FROM scintela.factura
          WHERE EXTRACT(YEAR FROM fecha) = %s
-           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(stat, '') <> 'X'
          GROUP BY 1 ORDER BY 1
     """, (y,))
 
@@ -769,6 +769,37 @@ def ventas_multianual():
 @requiere_login
 @requiere_permiso("informes.ver")
 def ventas():
+    # TMT 2026-05-19 v8 — dueña: al clickear "Ventas" del balance quiere ver
+    # la pantalla TINT.BAT del dBase (ranking clientes del mes). Por default
+    # ahora redirigimos al ranking del mes; el listado multi-mes vive en
+    # ventas_multianual (link sigue disponible desde ahí).
+    from datetime import date as _date
+    hoy = _date.today()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+    except (TypeError, ValueError):
+        anio = hoy.year
+    try:
+        mes = int(request.args.get("mes") or hoy.month)
+    except (TypeError, ValueError):
+        mes = hoy.month
+    mes = max(1, min(mes, 12))
+    data, error = _safe(
+        lambda: queries.ventas_clientes_del_mes(anio=anio, mes=mes), {},
+    )
+    return render_template(
+        "informes/ventas_mes.html",
+        data=data, anio=anio, mes=mes, error=error,
+    )
+
+
+@informes_bp.route("/ventas/listado-mensual")
+@requiere_login
+@requiere_permiso("informes.ver")
+def ventas_listado_mensual():
+    """Listado de ventas agregadas por mes (últimos N meses). Vivía en
+    /informes/ventas; el URL canónico ahora muestra el ranking de clientes
+    del mes (pantalla TINT.BAT). Esta vista queda como sub-ruta."""
     meses = request.args.get("meses", default=12, type=int)
     filas, error = _safe(lambda: queries.ventas_mensuales(meses), [])
     if request.args.get("export") == "csv":

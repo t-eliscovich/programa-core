@@ -9,19 +9,23 @@ Vocabulario canónico de stats (2026-04-29 — ver docs/SKILL_ADDENDUM_BATCH_18.
 
 Cartera de facturas = Z + A (las que tienen saldo vivo).
 
-DEPRECADO: 'Y' (anulada) — se renombra a 'X'. Las filas históricas con 'Y'
-se respetan, pero todo escritura nueva usa 'X'. Las queries que filtran
-'no anuladas' incluyen ambos códigos (NOT IN ('X', 'Y')).
+TMT 2026-05-19 v8 — La stat 'Y' fue retirada del universo de facturas
+(la dueña confirmó: "factura Y no existe, borremoslo de todos lados").
+Anulada = 'X'. Si por algún motivo aparece una fila legacy con stat='Y',
+queda fuera de cualquier vista (cartera, canceladas, eliminadas, estado).
 """
 from datetime import date, timedelta
 
 import db
 from periodo_guard import asegurar_fecha_abierta
 
-# Stats que cuentan como "vivos" (cartera viva). Excluye T (cancelada) y X/Y (anuladas).
+# Stats que cuentan como "vivos" (cartera viva). Excluye T (cancelada) y X (anulada).
 STATS_VIVOS = ("Z", "A")
 # Stats que cuentan como "anulado / eliminado" — para excluir en cartera.
-STATS_ANULADAS = ("X", "Y")  # Y es legacy, se respeta; X es el código nuevo.
+# TMT 2026-05-19 v8 — dueña: "factura Y no existe, borremoslo de todos lados".
+# Antes había STATS_ANULADAS = ("X","Y") como compat legacy, pero Y nunca
+# se usó en la base operativa. Se elimina del universo conocido.
+STATS_ANULADAS = ("X",)
 
 
 def _stat_desde_saldo(importe: float, abono: float) -> str:
@@ -355,8 +359,7 @@ def anular(id_factura: int, *, motivo: str, usuario: str = "web") -> int:
 
     Reglas:
         - Debe existir.
-        - Stat actual NO puede ser 'X' (ya eliminada) ni 'Y' (legacy
-          anulada — se respeta como ya-anulada).
+        - Stat actual NO puede ser 'X' (ya eliminada).
         - No puede tener aplicaciones de cheques vigentes (chequesxfact).
         - No puede tener retenciones emitidas (retencion).
         - Conserva el histórico — sólo cambia stat a 'X' y deja motivo en
@@ -484,9 +487,9 @@ def buscar(
             'cartera'    → stat IN (Z, A) AND saldo > 0  (cartera viva — DEFAULT)
             'estado'     → todas (antes 'todas'); filtrable con `estado`.
             'canceladas' → stat = T  (cobradas total)
-            'eliminadas' → stat IN (X, Y)  (eliminadas — Y es legacy)
+            'eliminadas' → stat = X  (eliminadas — Y removido 2026-05-19, no existe)
         estado (TMT 2026-05-19, sólo aplica con vista='estado'):
-            'Z' | 'A' | 'T' | 'X' | 'Y' o '' (vacío = todos).
+            'Z' | 'A' | 'T' | 'X' o '' (vacío = todos). 'Y' retirado.
         estados (TMT 2026-05-19 v8, sólo aplica con vista='estado'):
             lista de stats — permite filtrar por VARIOS estados a la vez,
             ej. ['Z','A','T']. Lista vacía o None = todos. Si `estados` se
@@ -500,7 +503,8 @@ def buscar(
         vista = "estado"
     estado = (estado or "").upper().strip()
     # TMT 2026-05-19 v8 — multi-estado. Filtrar/normalizar.
-    estados_validos = ("Z", "A", "T", "X", "Y")
+    # TMT 2026-05-19 v8 — 'Y' retirado del universo de stats.
+    estados_validos = ("Z", "A", "T", "X")
     estados_lista = [
         s.upper().strip() for s in (estados or [])
         if s and s.upper().strip() in estados_validos
@@ -573,7 +577,7 @@ def buscar(
                  AND COALESCE(f.saldo, 0) <> 0
                  AND (f.stat IS NULL OR f.stat IN ('Z','A','',' ')))
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
-             OR (%(vista)s = 'eliminadas' AND f.stat IN ('X','Y'))
+             OR (%(vista)s = 'eliminadas' AND f.stat = 'X')
           )
           -- TMT 2026-05-19 v8 — filtro multi-estado (lista de stats).
           -- Si la lista está vacía → no filtra (lo marcamos con flag
@@ -628,7 +632,7 @@ def conteos_por_vista() -> dict:
             WHEN COALESCE(saldo, 0) <> 0
                  AND (stat IS NULL OR stat IN ('Z','A','',' '))    THEN 'cartera'
             WHEN stat = 'T'                                         THEN 'canceladas'
-            WHEN stat IN ('X','Y')                                  THEN 'eliminadas'
+            WHEN stat = 'X'                                         THEN 'eliminadas'
             ELSE 'otras'
           END                                AS bucket,
           COUNT(*)                           AS n,

@@ -144,7 +144,6 @@
           ('A', 'Abonada parcial'),
           ('T', 'Cancelada'),
           ('X', 'Eliminada'),
-          ('Y', 'Anulada (legacy)'),
         ] %}
         {% set _estados_sel = estados or ([estado] if estado else []) %}
         {% for code, label in _estado_opts %}
