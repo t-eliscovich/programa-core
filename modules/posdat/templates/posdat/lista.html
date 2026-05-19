@@ -46,11 +46,14 @@
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-3">{{ error }}</div>
   {% endif %}
 
+  {# TMT 2026-05-19 v7 — pedido dueña: "filtro de proveedor antes que
+     concepto" (orden de relevancia: filtra primero por quién, después por
+     qué). #}
   <form method="get" class="flex flex-wrap gap-2 mb-3 items-end">
-    <input type="text" name="q" value="{{ q }}" placeholder="Buscar concepto/proveedor"
-           class="border rounded px-2 py-1 text-sm">
     <input type="text" name="prov" value="{{ prov or '' }}" placeholder="Proveedor"
            class="border rounded px-2 py-1 text-sm uppercase" size="6">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar concepto"
+           class="border rounded px-2 py-1 text-sm">
     <label class="text-xs text-slate-600">Desde
       <input type="date" name="desde" value="{{ desde or '' }}" class="border rounded px-2 py-1 text-sm">
     </label>
@@ -67,71 +70,73 @@
        class="text-sm text-slate-500 hover:underline ml-auto">CSV</a>
   </form>
 
+  {# TMT 2026-05-19 v7 — pedido dueña: "achicar las columnas asi veo todo".
+     px-3 py-2 → px-2 py-1, font-size más chico, sin truncar contenido. #}
   <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
-    <table class="min-w-full text-sm">
-      <thead class="bg-slate-50 border-b text-left text-xs uppercase tracking-wider text-slate-500">
+    <table class="min-w-full text-xs">
+      <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-3 py-2">N°</th>
-          <th class="px-3 py-2">Fecha</th>
-          <th class="px-3 py-2">Venc.</th>
-          <th class="px-3 py-2">Prov</th>
-          <th class="px-3 py-2">Proveedor</th>
-          <th class="px-3 py-2">Concepto</th>
-          <th class="px-3 py-2 text-right">Importe</th>
-          <th class="px-3 py-2 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
-          <th class="px-3 py-2">Banco</th>
-          <th class="px-3 py-2"></th>
+          <th class="px-2 py-1">N°</th>
+          <th class="px-2 py-1">Fecha</th>
+          <th class="px-2 py-1">Venc.</th>
+          <th class="px-2 py-1">Prov</th>
+          <th class="px-2 py-1">Proveedor</th>
+          <th class="px-2 py-1">Concepto</th>
+          <th class="px-2 py-1 text-right">Importe</th>
+          <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
+          <th class="px-2 py-1">Banco</th>
+          <th class="px-2 py-1"></th>
         </tr>
       </thead>
       <tbody class="divide-y">
         {% for f in filas %}
         {% set es_ajuste = (f.importe or 0) <= 0 %}
         <tr class="hover:bg-slate-50 {% if es_ajuste %}bg-violet-50/40{% endif %}">
-          <td class="px-3 py-2 font-mono text-xs">
+          <td class="px-2 py-1 font-mono">
             {% if f.num and f.num != 0 %}{{ f.num }}
             {% else %}<span class="text-slate-400">#{{ f.id_posdat }}</span>{% endif %}
           </td>
-          <td class="px-3 py-2">{{ f.fecha | fecha_es }}</td>
-          <td class="px-3 py-2">{{ f.fechad | fecha_es }}</td>
-          <td class="px-3 py-2 font-mono text-xs">{{ f.prov }}</td>
-          <td class="px-3 py-2">{{ f.proveedor }}</td>
-          <td class="px-3 py-2">
+          <td class="px-2 py-1 whitespace-nowrap">{{ f.fecha | fecha_es }}</td>
+          <td class="px-2 py-1 whitespace-nowrap">{{ f.fechad | fecha_es }}</td>
+          <td class="px-2 py-1 font-mono">{{ f.prov }}</td>
+          <td class="px-2 py-1">{{ f.proveedor }}</td>
+          <td class="px-2 py-1">
             {{ f.concepto }}
             {% if es_ajuste %}
-              <span class="ml-1 inline-block px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-medium"
+              <span class="ml-1 inline-block px-1 py-0 rounded bg-violet-100 text-violet-700 text-[9px] font-medium"
                     title="Importe ≤ 0 — anticipo o ajuste contable (reduce el pasivo)">
-                ajuste/anticipo
+                ajuste
               </span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">{{ f.importe | num_es }}</td>
-          <td class="px-3 py-2 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
-          <td class="px-3 py-2 font-mono text-xs">
+          <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">{{ f.importe | num_es }}</td>
+          <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
+          <td class="px-2 py-1 font-mono">
             {% if f.banc == 9 %}
-              <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">pagada</span>
+              <span class="inline-block px-1 py-0 rounded bg-slate-100 text-slate-600 text-[10px]">pagada</span>
             {% elif f.banc == 0 %}
-              <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">abierta</span>
+              <span class="inline-block px-1 py-0 rounded bg-amber-100 text-amber-700 text-[10px]">abierta</span>
             {% else %}
-              <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{{ f.banc }}</span>
+              <span class="inline-block px-1 py-0 rounded bg-emerald-100 text-emerald-700 text-[10px]">{{ f.banc }}</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-right whitespace-nowrap">
+          <td class="px-2 py-1 text-right whitespace-nowrap">
             {% if tiene_permiso('posdat.editar') %}
               <a href="{{ url_for('posdat.editar', id_posdat=f.id_posdat) }}"
-                 class="text-sky-600 hover:underline text-xs">Editar</a>
+                 class="text-sky-600 hover:underline">Editar</a>
               {% if f.banc != 9 %}
                 {# TMT 2026-05-14, #4: el botón "Pagar" antes llamaba a
                    posdat.marcar_pagada que sólo seteaba banc=9 sin
                    movimiento bancario ni mov_doble. Ahora redirige al
                    wizard /bancos/emitir-cheque que hace todo atómico. #}
                 <a href="{{ url_for('bancos.emitir_cheque', id_posdat=f.id_posdat, prov=f.prov or '') }}"
-                   class="text-emerald-600 hover:underline text-xs ml-2"
+                   class="text-emerald-600 hover:underline ml-2"
                    title="Emite el cheque + cierra la posdat atómicamente">Pagar</a>
               {% else %}
                 <form method="post" action="{{ url_for('posdat.reabrir', id_posdat=f.id_posdat) }}"
                       style="display:inline" onsubmit="return confirm('¿Reabrir este pasivo?');">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="text-amber-600 hover:underline text-xs ml-2">Reabrir</button>
+                  <button type="submit" class="text-amber-600 hover:underline ml-2">Reabrir</button>
                 </form>
               {% endif %}
             {% endif %}

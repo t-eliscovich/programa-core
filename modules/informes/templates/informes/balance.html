@@ -115,10 +115,25 @@
         {% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}
       </p>
     </div>
-    <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
-      Imprimir
-    </button>
+    <div class="flex items-center gap-2">
+      {# TMT 2026-05-19 v6 — Features A+B: tabs/links a drill-downs nuevos. #}
+      <a href="{{ url_for('informes.balance_compras') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Compras del mes
+      </a>
+      {# TMT 2026-05-19 v7 — dueña: "no encontre el tab para ir a resultados
+         meses anteriores". Label más explícito + estilo prominente
+         (border-sky-500). Antes decía "Histórico 12m" y no se entendía. #}
+      <a href="{{ url_for('informes.historico_12m') }}"
+         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
+         title="Ver resultados de meses anteriores (matriz comparativa)">
+        ← Meses anteriores
+      </a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+        Imprimir
+      </button>
+    </div>
   </div>
 
   {% if error %}
@@ -320,12 +335,12 @@
             <td class="num-cell">{{ (b.totl - b.uret) | num_es(0) }}</td>
           </tr>
 
-          <tr>
-            <th class="seccion-header" colspan="2" style="text-align:left">PASIVO</th>
-          </tr>
-          <tr class="fila-dato">
+          {# TMT 2026-05-19 v7 — dueña: "Pasivos hay dos rows, con una nos
+             alcanza". Saco el header "PASIVO" (era una sección con una sola
+             fila) y dejo "Pasivos" como única línea con estilo fuerte. #}
+          <tr class="fila-total">
             <td class="label-cell"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
-            <td class="num-cell">{{ b.totp | num_es(0) }}</td>
+            <td class="num-cell neg">{{ b.totp | num_es(0) }}</td>
           </tr>
 
           {# ─── PATRIMONIO NETO — la fila más importante. Bigger + bold. ─── #}
@@ -345,6 +360,13 @@
           <tr class="fila-aux">
             <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos del mes</a></td>
             <td class="num-cell">{{ b.uret | num_es(0) }}</td>
+          </tr>
+          {# TMT 2026-05-19 v7 — pedido dueña: agregar "dividendos del año"
+             debajo de "dividendos del mes". Suma scintela.retiros del año
+             en curso. #}
+          <tr class="fila-aux">
+            <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos del año</a></td>
+            <td class="num-cell">{{ b.uret_anio | num_es(0) }}</td>
           </tr>
         </tbody>
       </table>

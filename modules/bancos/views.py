@@ -69,9 +69,17 @@ def lista():
         banco_actual = (filas[0] if filas else filas_all[0])
 
     # Lista de otros bancos para el selector "Cambiar banco" (excluye el actual).
+    # TMT 2026-05-19 v7 — dueña: "solo podemos cambiar al internacional".
+    # Sólo bancos operativos (PICHINC / INTER). El resto (legacy /
+    # cerrados / históricos) ya no se ofrece como switch.
+    def _es_operativo(b):
+        n = (b.get("nombre") or "").upper()
+        return "PICHINC" in n or "INTER" in n
+
     otros_bancos = [
         b for b in filas_all
-        if not banco_actual or int(b["no_banco"]) != int(banco_actual["no_banco"])
+        if _es_operativo(b)
+        and (not banco_actual or int(b["no_banco"]) != int(banco_actual["no_banco"]))
     ]
 
     return render_template(
@@ -405,7 +413,35 @@ def emitir_cheque():
     # TMT 2026-05-19 v2 — banco pre-seleccionado vía ?no_banco= cuando se
     # entra desde la action bar de /bancos. La dueña trabaja siempre desde
     # Pichincha por defecto, esto evita el "elegir banco" extra.
+    # TMT 2026-05-19 v7 — si no viene ?no_banco=, default = Pichincha.
+    # Pedido literal dueña: "siempre en default deja banco pichincha cuando
+    # estemos completando algo que haya que elegir cheque (emitir/pagar)".
     no_banco_inicial = parse_int(request.args.get("no_banco"))
+    if not no_banco_inicial:
+        for b in bancos or []:
+            if "PICHINC" in (b.get("nombre") or "").upper():
+                no_banco_inicial = int(b["no_banco"])
+                break
+
+    # TMT 2026-05-19 v7 — pedido dueña: "cuando aprieto en una fila pagar,
+    # tiene que venir todo pre cargado. (...) numero de cheque agarrar el
+    # que viene despues del ultimo que tenemos cargado". Calculamos
+    # MAX(numreferencia)+1 del banco pre-seleccionado.
+    no_cheque_sugerido = None
+    if no_banco_inicial:
+        with contextlib.suppress(Exception):
+            row = _db.fetch_one(
+                """
+                SELECT MAX(numreferencia)::int AS ultimo
+                  FROM scintela.transaccion
+                 WHERE no_banco = %s
+                   AND documento = 'CH'
+                   AND numreferencia IS NOT NULL
+                """,
+                (int(no_banco_inicial),),
+            )
+            if row and row.get("ultimo"):
+                no_cheque_sugerido = int(row["ultimo"]) + 1
 
     return render_template(
         "bancos/emitir_cheque.html",
@@ -414,6 +450,7 @@ def emitir_cheque():
         prov_filter=prov_filter,
         tipo_inicial=tipo_inicial,
         no_banco_inicial=no_banco_inicial,
+        no_cheque_sugerido=no_cheque_sugerido,
         hoy=date.today().isoformat(),
         conceptos=conceptos,
         proveedores=proveedores,
@@ -754,7 +791,13 @@ def nuevo_movimiento():
 
     # TMT 2026-05-19 v2 — banco pre-seleccionado vía ?no_banco= (default
     # Pichincha cuando se entra desde /bancos).
+    # TMT 2026-05-19 v7 — si no viene ?no_banco=, default = Pichincha.
     no_banco_inicial = parse_int(request.args.get("no_banco"))
+    if not no_banco_inicial:
+        for b in bancos or []:
+            if "PICHINC" in (b.get("nombre") or "").upper():
+                no_banco_inicial = int(b["no_banco"])
+                break
 
     return render_template(
         "bancos/nuevo_movimiento.html",

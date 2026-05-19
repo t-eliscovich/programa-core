@@ -1143,10 +1143,15 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         "AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
         if mes_actual else ""
     )
+    # TMT 2026-05-19 v6 re-audit — agregado filtro stat='Y' (anuladas).
+    # Antes el drill-down mostraba gastos anulados sumados al subtotal,
+    # discrepando con `gastos_xgast_v1_a_v9_mes` que sí los excluye.
     sql = f"""
         SELECT id_xgast, fecha, doc, prov, concepto, importe, stat, fechad, saldo
         FROM scintela.xgast
-        WHERE num = %s {where_fecha}
+        WHERE num = %s
+          AND COALESCE(stat, '') <> 'Y'
+          {where_fecha}
         ORDER BY fecha ASC, id_xgast ASC
     """
     filas = db.fetch_all(sql, (n,)) or []
@@ -2296,6 +2301,10 @@ def informe_balance() -> dict:
     activos = activos_totales()
     _antic = anticipos()
     _uret = uret_mes_corriente()
+    # TMT 2026-05-19 v7 — dueña pidió "dividendos del año" debajo de
+    # "dividendos del mes". retiros_total_anual() suma scintela.retiros
+    # del año en curso.
+    _uret_anio = retiros_total_anual()
     hist = historia_ultimo_mes() or {}
     inic = iniciales_mes_actual() or {}
     venta_anual = venta_anual_kg_y_us()
@@ -2947,7 +2956,8 @@ def informe_balance() -> dict:
         "pos1": posdats["pos1"], "pos2": posdats["pos2"],
         "salcaj": _salcaj,
         "umaq": activos["umaq"], "uact": activos["uact"],
-        "antic": _antic, "uret": _uret, "totp": posdats["totp"],
+        "antic": _antic, "uret": _uret, "uret_anio": _uret_anio,
+        "totp": posdats["totp"],
         "vsto": vsto, "vqx": vqx,
         "cart": cart, "subt": subt, "totl": totl,
         "patr": patr, "patant": patant, "utilidad": utilidad,
@@ -4136,6 +4146,209 @@ def snapshot_historia_existe(anio: int, mes: int) -> bool:
     return bool(row)
 
 
+def compras_del_periodo(
+    *,
+    anio: int | None = None,
+    mes: int | None = None,
+    prov: str | None = None,
+    num_v: int | None = None,
+) -> dict:
+    """Compras del mes/período + filtros. Tab Compras del /informes/balance.
+
+    Devuelve {anio, mes, filas, total_importe, total_kg, n_filas, prov_options}.
+    `prov` es código exacto del proveedor; `num_v` filtra por V calculado
+    en la cascada `_SQL_COMPRA_NUM_CASE`.
+
+    Excluye anuladas (stat IN X,Y). Excluye producción (K con kg>0) sólo
+    a efectos del cuadre con la línea "Compras" del balance — la tabla
+    sigue mostrando todas (con badge cuando es producción).
+    """
+    from datetime import date as _date
+    if anio is None or mes is None:
+        hoy = _date.today()
+        anio = anio or hoy.year
+        mes = mes or hoy.month
+    prov_norm = (prov or "").strip().upper() or None
+
+    where_v = ""
+    params: list = [anio, mes]
+    if prov_norm:
+        where_v += " AND UPPER(COALESCE(c.codigo_prov,'')) = %s"
+        params.append(prov_norm)
+    if num_v and 1 <= int(num_v) <= 9:
+        # Reuse del SQL CASE.
+        where_v += f" AND ({_SQL_COMPRA_NUM_CASE}) = %s"
+        params.append(int(num_v))
+
+    filas = db.fetch_all(
+        f"""
+        SELECT c.id_compra, c.fecha, c.codigo_prov, c.tipo,
+               c.kg, c.importe, c.concepto, c.comprobante, c.stat,
+               COALESCE(p.nombre, '') AS proveedor,
+               ({_SQL_COMPRA_NUM_CASE}) AS num_v
+          FROM scintela.compra c
+          LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
+         WHERE EXTRACT(YEAR FROM c.fecha) = %s
+           AND EXTRACT(MONTH FROM c.fecha) = %s
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           {where_v}
+         ORDER BY c.fecha ASC, c.id_compra ASC
+        """,
+        tuple(params),
+    ) or []
+
+    total_importe = sum(float(r.get("importe") or 0) for r in filas)
+    total_kg = sum(float(r.get("kg") or 0) for r in filas)
+
+    # Proveedores únicos para el dropdown filter.
+    prov_options = db.fetch_all(
+        """
+        SELECT DISTINCT c.codigo_prov,
+               COALESCE(p.nombre, '') AS nombre
+          FROM scintela.compra c
+          LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
+         WHERE EXTRACT(YEAR FROM c.fecha) = %s
+           AND EXTRACT(MONTH FROM c.fecha) = %s
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND c.codigo_prov IS NOT NULL
+         ORDER BY 1
+        """,
+        (anio, mes),
+    ) or []
+
+    return {
+        "anio": int(anio),
+        "mes": int(mes),
+        "filas": filas,
+        "total_importe": total_importe,
+        "total_kg": total_kg,
+        "n_filas": len(filas),
+        "prov_options": prov_options,
+        "prov_actual": prov_norm,
+        "num_v_actual": int(num_v) if num_v else None,
+    }
+
+
+def historico_12m_matriz(meses_atras: int = 12) -> dict:
+    """Matriz comparativa de los últimos N meses de scintela.historia.
+
+    Pedido dueña 2026-05-19 — Feature B. Lee snapshots ya creados.
+    Devuelve {meses: [...], lineas: [{label, valores[mes_index], total,
+    promedio, delta_pct[mes_index]}]}.
+
+    Las filas (líneas de balance) son las que tiene scintela.historia:
+        Banco, Cartera (totc+totf), Deuda (totp), Stock (ustock+uqui),
+        Anticipos, Maquinaria, Realty, Patrimonio, Ventas (uvent),
+        Compras (ucom), Gasto (xgast), Retiro (usret), Utilidad (usuti).
+    """
+    from datetime import date as _date
+    n = max(1, min(int(meses_atras or 12), 24))
+    hoy = _date.today()
+
+    # Lista de meses (anio, mes) de los últimos N, ordenados ascendente.
+    meses: list[tuple[int, int]] = []
+    a, m = hoy.year, hoy.month
+    for _ in range(n):
+        meses.append((a, m))
+        m -= 1
+        if m < 1:
+            m = 12
+            a -= 1
+    meses.reverse()
+
+    # Cargar snapshots existentes — uno por (año, mes) si existe.
+    snapshots: dict[tuple[int, int], dict] = {}
+    for (a_, m_) in meses:
+        row = db.fetch_one(
+            """
+            SELECT fecha, banco, cart, deuda, ustock, uqui, anticipos,
+                   maquinaria, realty, patrimonio, uvent, ucom, gasto,
+                   usret, usuti, kvent, kcom
+              FROM scintela.historia
+             WHERE EXTRACT(YEAR FROM fecha) = %s
+               AND EXTRACT(MONTH FROM fecha) = %s
+             ORDER BY fecha DESC
+             LIMIT 1
+            """,
+            (a_, m_),
+        )
+        if row:
+            snapshots[(a_, m_)] = row
+
+    # Líneas del matriz: (label, key_en_historia, formato)
+    lineas_def = [
+        ("Ventas $",          "uvent",      "money"),
+        ("Compras $",         "ucom",       "money"),
+        ("Margen bruto",      "_margen",    "money"),  # uvent - ucom
+        ("Gastos $",          "gasto",      "money"),
+        ("Utilidad",          "usuti",      "money"),
+        ("Retiros",           "usret",      "money"),
+        ("Patrimonio",        "patrimonio", "money"),
+        ("Banco",             "banco",      "money"),
+        ("Cartera",           "cart",       "money"),
+        ("Deuda (posdat)",    "deuda",      "money"),
+        ("Stock MP+PT",       "ustock",     "money"),
+        ("Stock químicos",    "uqui",       "money"),
+        ("Anticipos",         "anticipos",  "money"),
+        ("Maquinaria",        "maquinaria", "money"),
+        ("Realty",            "realty",     "money"),
+        ("Ventas (kg)",       "kvent",      "kg"),
+        ("Compras (kg)",      "kcom",       "kg"),
+    ]
+
+    lineas_out = []
+    for label, key, fmt in lineas_def:
+        valores = []
+        for (a_, m_) in meses:
+            snap = snapshots.get((a_, m_))
+            if not snap:
+                valores.append(None)
+                continue
+            if key == "_margen":
+                v = float(snap.get("uvent") or 0) - float(snap.get("ucom") or 0)
+            else:
+                v = float(snap.get(key) or 0)
+            valores.append(v)
+        # Total acumulado / promedio sobre los meses con dato.
+        validos = [v for v in valores if v is not None]
+        total = sum(validos) if validos else 0.0
+        promedio = (total / len(validos)) if validos else 0.0
+        # Δ% vs mes anterior, celda a celda.
+        delta_pct = []
+        for i, v in enumerate(valores):
+            if v is None or i == 0:
+                delta_pct.append(None)
+                continue
+            prev = valores[i - 1]
+            if prev is None or abs(prev) < 0.005:
+                delta_pct.append(None)
+                continue
+            delta_pct.append((v - prev) / abs(prev) * 100.0)
+        lineas_out.append({
+            "label": label,
+            "key": key,
+            "fmt": fmt,
+            "valores": valores,
+            "total": total,
+            "promedio": promedio,
+            "delta_pct": delta_pct,
+        })
+
+    # Conteo de meses sin snapshot (para placeholder + botón backfill).
+    sin_snap = [
+        f"{m_:02d}/{a_}" for (a_, m_) in meses
+        if (a_, m_) not in snapshots
+    ]
+
+    return {
+        "meses": meses,
+        "lineas": lineas_out,
+        "snapshots_existentes": len(snapshots),
+        "meses_total": n,
+        "meses_sin_snap": sin_snap,
+    }
+
+
 def balance_components_as_of(as_of) -> dict:
     """Balance "as of" una fecha pasada — TMT 2026-05-19 v6 audit (pedido dueña).
 
@@ -4660,10 +4873,14 @@ def fuentes_y_usos(
     # significa que acumulamos líquido — va como USO ("aumento de líquido").
     # Si usos > fuentes, agotamos líquido — va como FUENTE.
     delta_global = total_fuentes - total_usos
+    # TMT 2026-05-19 — dueña: "disminución está todo repetido, que sea más
+    # lindo". Renombramos la balancing line a "Ajuste — variación de caja
+    # y bancos" para que NO se confunda con un movimiento real y la línea
+    # se distinga visualmente en el template (italic + gris).
     if delta_global > 0.5:
-        usos.append(("Aumento de líquido (caja + bancos)", delta_global))
+        usos.append(("— Ajuste: variación de caja y bancos", delta_global))
     elif delta_global < -0.5:
-        fuentes.append(("Disminución de líquido (caja + bancos)", abs(delta_global)))
+        fuentes.append(("— Ajuste: variación de caja y bancos", abs(delta_global)))
 
     total_fuentes = sum(m for _, m in fuentes)
     total_usos    = sum(m for _, m in usos)

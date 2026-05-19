@@ -63,6 +63,69 @@ def balance():
     )
 
 
+# Feature A — tab Compras en /informes/balance (TMT 2026-05-19 v6).
+@informes_bp.route("/balance/compras")
+@requiere_login
+@requiere_permiso("informes.ver")
+def balance_compras():
+    """Drill-down de compras del período. Reuse de /informes/balance."""
+    from datetime import date as _date
+    hoy = _date.today()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+    except (TypeError, ValueError):
+        anio = hoy.year
+    try:
+        mes = int(request.args.get("mes") or hoy.month)
+    except (TypeError, ValueError):
+        mes = hoy.month
+    mes = max(1, min(mes, 12))
+    prov = (request.args.get("prov") or "").strip().upper() or None
+    try:
+        num_v = int(request.args.get("v") or 0) or None
+    except (TypeError, ValueError):
+        num_v = None
+    try:
+        data = queries.compras_del_periodo(
+            anio=anio, mes=mes, prov=prov, num_v=num_v,
+        )
+        error = None
+    except Exception as e:  # noqa: BLE001
+        data, error = {"filas": [], "total_importe": 0, "total_kg": 0,
+                       "n_filas": 0, "prov_options": [],
+                       "anio": anio, "mes": mes,
+                       "prov_actual": prov, "num_v_actual": num_v}, str(e)
+    return render_template(
+        "informes/balance_compras.html",
+        data=data, anio=anio, mes=mes,
+        prov=prov, num_v=num_v, error=error,
+    )
+
+
+# Feature B — matriz 12m (TMT 2026-05-19 v6).
+@informes_bp.route("/informes/historico-12m")
+@requiere_login
+@requiere_permiso("informes.ver")
+def historico_12m():
+    """Matriz comparativa últimos N meses (default 12)."""
+    try:
+        n = int(request.args.get("n") or 12)
+    except (TypeError, ValueError):
+        n = 12
+    n = max(1, min(n, 24))
+    try:
+        data = queries.historico_12m_matriz(meses_atras=n)
+        error = None
+    except Exception as e:  # noqa: BLE001
+        data, error = {"meses": [], "lineas": [],
+                       "snapshots_existentes": 0, "meses_total": n,
+                       "meses_sin_snap": []}, str(e)
+    return render_template(
+        "informes/historico_12m.html",
+        data=data, n=n, error=error,
+    )
+
+
 @informes_bp.route("/balance/utilidad-debug")
 @requiere_login
 @requiere_permiso("informes.ver")
@@ -334,6 +397,7 @@ def snapshot_backfill():
         n = int(request.form.get("meses") or 3)
     except (TypeError, ValueError):
         n = 3
+    # TMT 2026-05-19 v6 — Feature B permite hasta 12 meses (antes 12 cap).
     n = max(1, min(n, 12))
     hoy = _date.today()
     aplicados, saltados = [], []

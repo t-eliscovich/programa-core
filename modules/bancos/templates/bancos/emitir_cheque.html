@@ -130,8 +130,15 @@
                  class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
         </div>
         <div>
-          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">N° de cheque</label>
+          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+            N° de cheque
+            {% if no_cheque_sugerido %}<span class="ml-1 normal-case text-slate-400 tracking-normal">— sugerencia: siguiente al último cargado</span>{% endif %}
+          </label>
+          {# TMT 2026-05-19 v7 — pre-llena con MAX(numreferencia)+1 del banco
+             pre-seleccionado. Pedido dueña pagar posdat: "que venga todo
+             pre cargado". #}
           <input type="text" name="no_cheque" placeholder="ej. 1234"
+                 value="{{ no_cheque_sugerido or '' }}"
                  class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
         </div>
         <div>
@@ -144,8 +151,11 @@
             Concepto
             <span class="ml-1 normal-case text-slate-400 tracking-normal">— autocomplete de los más usados</span>
           </label>
+          {# TMT 2026-05-19 v7 — pre-cargado con el concepto de la posdat
+             cuando viene desde "Pagar". #}
           <input type="text" name="concepto" placeholder="Tipeá para autocomplete (PR ACR fact 12, RR TMT, ALQUILER, GS SRI IVA…)"
                  list="conceptos-emitir-list" autocomplete="off" id="emit-concepto-input"
+                 value="{% if posdat_target %}{{ posdat_target.concepto or '' }}{% endif %}"
                  class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900" maxlength="50">
           <div id="emit-tipo-preview" class="mt-1 text-xs text-slate-500 hidden">
             🤖 Detecté:
@@ -188,57 +198,62 @@
        campos; el header agregaba ruido sin explicar nada. #}
     <div class="border-t border-slate-200 pt-5">
       <div id="campos-proveedor" class="campos-tipo hidden space-y-3">
-        <div class="flex items-center gap-2">
-          <input type="text" id="filtro-prov" placeholder="Filtrar por código de proveedor"
-                 class="px-3 py-1.5 text-sm rounded border border-slate-300 w-64 uppercase"
-                 oninput="this.value=this.value.toUpperCase()">
-        </div>
-        <div class="bg-slate-50 border border-slate-200 rounded max-h-64 overflow-y-auto">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-100 text-xs text-slate-500 uppercase tracking-wide sticky top-0">
-              <tr>
-                <th class="px-2 py-1 w-8"></th>
-                <th class="px-2 py-1 text-left">Proveedor</th>
-                <th class="px-2 py-1 text-left">Vence</th>
-                <th class="px-2 py-1 text-right">Importe</th>
-                <th class="px-2 py-1 text-left">Concepto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for p in posdats %}
-                {# TMT 2026-05-19 — item 19: pre-seleccionar la posdat target
-                   cuando se llega desde el botón Pagar. #}
-                <tr class="border-t border-slate-100 hover:bg-slate-50 fila-posdat
-                           {% if posdat_target and p.id_posdat == posdat_target.id_posdat %}bg-emerald-50{% endif %}"
-                    data-prov="{{ p.prov }}">
-                  <td class="px-2 py-1">
-                    <input type="radio" name="id_posdat" value="{{ p.id_posdat }}" class="rounded"
-                           {% if posdat_target and p.id_posdat == posdat_target.id_posdat %}checked{% endif %}>
-                  </td>
-                  <td class="px-2 py-1">
-                    <span class="font-mono text-xs text-slate-500">{{ p.prov }}</span>
-                    <span class="ml-1">{{ p.proveedor or '' }}</span>
-                  </td>
-                  <td class="px-2 py-1 text-xs">{{ p.fechad | fecha_es if p.fechad else '' }}</td>
-                  <td class="px-2 py-1 text-right tabular-nums font-medium">{{ p.importe | num_es }}</td>
-                  <td class="px-2 py-1 text-xs text-slate-500">{{ p.concepto or '' }}</td>
+        {# TMT 2026-05-19 v7 — Pedido dueña: "esta repetido 3 veces el provedor.
+           una sola". Cuando llegamos con posdat_target (botón Pagar), TODO
+           lo del proveedor ya está en el banner verde arriba. Acá sólo
+           pasamos los IDs en hidden y NO repetimos la tabla ni el input. #}
+        {% if posdat_target %}
+          <input type="hidden" name="id_posdat" value="{{ posdat_target.id_posdat }}">
+          <input type="hidden" name="beneficiario" value="{{ posdat_target.prov or '' }}">
+        {% else %}
+          <div class="flex items-center gap-2">
+            <input type="text" id="filtro-prov" placeholder="Filtrar por código de proveedor"
+                   class="px-3 py-1.5 text-sm rounded border border-slate-300 w-64 uppercase"
+                   oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div class="bg-slate-50 border border-slate-200 rounded max-h-64 overflow-y-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-100 text-xs text-slate-500 uppercase tracking-wide sticky top-0">
+                <tr>
+                  <th class="px-2 py-1 w-8"></th>
+                  <th class="px-2 py-1 text-left">Proveedor</th>
+                  <th class="px-2 py-1 text-left">Vence</th>
+                  <th class="px-2 py-1 text-right">Importe</th>
+                  <th class="px-2 py-1 text-left">Concepto</th>
                 </tr>
-              {% else %}
-                <tr><td colspan="5" class="px-2 py-4 text-center text-slate-500 text-xs">
-                  No hay posdats abiertas. Si el cheque es para un proveedor sin posdat previa,
-                  podés dejar esto en blanco — sólo se registrará el movimiento bancario.
-                </td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        <div>
-          <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Código de proveedor (si NO hay posdat)</label>
-          <input type="text" name="beneficiario" placeholder="ACR" maxlength="5"
-                 list="proveedores-list" autocomplete="off"
-                 class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
-                 oninput="this.value=this.value.toUpperCase()">
-        </div>
+              </thead>
+              <tbody>
+                {% for p in posdats %}
+                  <tr class="border-t border-slate-100 hover:bg-slate-50 fila-posdat"
+                      data-prov="{{ p.prov }}">
+                    <td class="px-2 py-1">
+                      <input type="radio" name="id_posdat" value="{{ p.id_posdat }}" class="rounded">
+                    </td>
+                    <td class="px-2 py-1">
+                      <span class="font-mono text-xs text-slate-500">{{ p.prov }}</span>
+                      <span class="ml-1">{{ p.proveedor or '' }}</span>
+                    </td>
+                    <td class="px-2 py-1 text-xs">{{ p.fechad | fecha_es if p.fechad else '' }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums font-medium">{{ p.importe | num_es }}</td>
+                    <td class="px-2 py-1 text-xs text-slate-500">{{ p.concepto or '' }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="5" class="px-2 py-4 text-center text-slate-500 text-xs">
+                    No hay posdats abiertas. Si el cheque es para un proveedor sin posdat previa,
+                    podés dejar esto en blanco — sólo se registrará el movimiento bancario.
+                  </td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Código de proveedor (si NO hay posdat)</label>
+            <input type="text" name="beneficiario" placeholder="ACR" maxlength="5"
+                   list="proveedores-list" autocomplete="off"
+                   class="w-32 px-3 py-2 text-sm rounded border border-slate-300 uppercase"
+                   oninput="this.value=this.value.toUpperCase()">
+          </div>
+        {% endif %}
       </div>
 
       <div id="campos-retiro" class="campos-tipo hidden space-y-3">

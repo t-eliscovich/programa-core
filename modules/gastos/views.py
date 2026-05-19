@@ -408,7 +408,9 @@ def desclasificar(id_xgast: int):
 
 @gastos_bp.route('/gastos/clasificar/<int:id_caja>', methods=['GET', 'POST'])
 @requiere_login
-@requiere_permiso('gastos.crear')
+@requiere_permiso('gastos.editar')  # TMT 2026-05-19 v6 re-audit:
+# antes era 'gastos.crear', pero clasificar modifica una caja S existente
+# (no es alta). Alineamos permiso con la semántica de edición.
 def clasificar(id_caja: int):
     caja = db.fetch_one(
         'SELECT id_caja, fecha, tipo, importe, concepto, clave '

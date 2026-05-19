@@ -541,8 +541,14 @@ def buscar(
           AND (NOT %(solo_abiertas)s OR COALESCE(f.saldo, 0) > 0)
           AND (
                 %(vista)s = 'estado'
+             -- TMT 2026-05-19 v7 — dueña: el total en /resultados (b.totf)
+             -- no coincidía con el de /facturas vista=cartera. Bug:
+             -- informes.totf() NO filtra por signo (incluye sobrepagos
+             -- saldo<0 que netean cartera, fórmula dBase legacy). Acá
+             -- teníamos saldo > 0 que excluía las 664 facturas negativas
+             -- (~$-293k). Cambio: saldo <> 0 para que ambos números cuadren.
              OR (%(vista)s = 'cartera'
-                 AND COALESCE(f.saldo, 0) > 0
+                 AND COALESCE(f.saldo, 0) <> 0
                  AND (f.stat IS NULL OR f.stat IN ('Z','A','',' ')))
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat IN ('X','Y'))
@@ -588,8 +594,11 @@ def conteos_por_vista() -> dict:
     rows = db.fetch_all(
         """
         SELECT
+          -- TMT 2026-05-19 v7 — alineado con buscar() y informes.totf():
+          -- "cartera" = stat ∈ (Z,A,blank) AND saldo <> 0 (incluye saldos
+          -- negativos por sobrepago — netean cartera).
           CASE
-            WHEN COALESCE(saldo, 0) > 0
+            WHEN COALESCE(saldo, 0) <> 0
                  AND (stat IS NULL OR stat IN ('Z','A','',' '))    THEN 'cartera'
             WHEN stat = 'T'                                         THEN 'canceladas'
             WHEN stat IN ('X','Y')                                  THEN 'eliminadas'

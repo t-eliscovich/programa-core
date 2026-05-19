@@ -82,32 +82,9 @@
   </form>
 
   {% if data.fuentes or data.usos %}
-  {# Resumen top — 3 cards consistentes con comisiones/lista #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-    <div class="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Total fuentes</div>
-      <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums mt-1">$ {{ data.total_fuentes | num_es(0) }}</div>
-    </div>
-    <div class="rounded-lg border-2 border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20 px-5 py-3">
-      <div class="text-xs uppercase tracking-wider text-rose-700 dark:text-rose-300 font-semibold">Total usos</div>
-      <div class="text-2xl font-bold text-rose-900 dark:text-rose-100 tabular-nums mt-1">$ {{ data.total_usos | num_es(0) }}</div>
-    </div>
-    {# TMT 2026-05-19 — item 14: con la balancing line los totales son
-       idénticos por construcción, así que `delta_liquido` ya no aporta.
-       Mostramos en su lugar la variación de líquido del período (Δ banco). #}
-    <div class="rounded-lg border-2 {% if data.delta_banco >= 0 %}border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/20{% else %}border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20{% endif %} px-5 py-3">
-      <div class="text-xs uppercase tracking-wider {% if data.delta_banco >= 0 %}text-sky-700 dark:text-sky-300{% else %}text-amber-700 dark:text-amber-300{% endif %} font-semibold">
-        Δ líquido del período
-      </div>
-      <div class="text-2xl font-bold tabular-nums mt-1 {% if data.delta_banco >= 0 %}text-sky-900 dark:text-sky-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
-        $ {{ data.delta_banco | num_es(0) }}
-      </div>
-      <div class="text-xs text-slate-500 mt-1">
-        Total fuentes = Total usos por construcción.
-      </div>
-    </div>
-  </div>
-
+  {# TMT 2026-05-19 — dueña pidió "borrar recuadros de arriba, evitar
+     repeticiones". Los totales viven en el tfoot de cada tabla; no hace
+     falta repetirlos arriba. #}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     {# FUENTES #}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
@@ -117,9 +94,10 @@
       <table class="w-full text-sm">
         <tbody>
           {% for label, monto in data.fuentes %}
-          <tr class="border-t border-slate-100 dark:border-slate-800">
+          {% set es_ajuste = label.startswith('— Ajuste') %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if es_ajuste %}italic text-slate-500 dark:text-slate-400{% endif %}">
             <td class="px-4 py-2">{{ label }}</td>
-            <td class="px-4 py-2 text-right tabular-nums text-emerald-700 dark:text-emerald-400">{{ monto | num_es(0) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums {% if es_ajuste %}text-slate-500{% else %}text-emerald-700 dark:text-emerald-400{% endif %}">{{ monto | num_es(0) }}</td>
           </tr>
           {% else %}
           <tr><td colspan="2" class="px-4 py-6 text-center text-slate-400">Sin fuentes en el período.</td></tr>
@@ -144,9 +122,10 @@
       <table class="w-full text-sm">
         <tbody>
           {% for label, monto in data.usos %}
-          <tr class="border-t border-slate-100 dark:border-slate-800">
+          {% set es_ajuste = label.startswith('— Ajuste') %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if es_ajuste %}italic text-slate-500 dark:text-slate-400{% endif %}">
             <td class="px-4 py-2">{{ label }}</td>
-            <td class="px-4 py-2 text-right tabular-nums text-rose-700 dark:text-rose-400">{{ monto | num_es(0) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums {% if es_ajuste %}text-slate-500{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ monto | num_es(0) }}</td>
           </tr>
           {% else %}
           <tr><td colspan="2" class="px-4 py-6 text-center text-slate-400">Sin usos en el período.</td></tr>

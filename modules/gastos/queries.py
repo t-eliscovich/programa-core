@@ -223,11 +223,14 @@ def _clasificar_caja_dentro_tx(
         conn=conn,
     )
     if existente:
+        # TMT 2026-05-19 v6 re-audit: incluir `compra_anulada=None` para
+        # mantener shape consistente con la rama de inserción nueva.
         return {
             "id_xgast": int(existente["destino_id"]),
             "id_mov_doble": int(existente["id_mov_doble"]),
             "num": num,
             "ya_existia": True,
+            "compra_anulada": None,
         }
 
     # Defensa: si la caja YA tiene un mov_doble activo a banco/retiro/dolares
