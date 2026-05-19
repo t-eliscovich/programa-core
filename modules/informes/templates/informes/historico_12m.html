@@ -1,15 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Histórico TINT.BAT{% endblock %}
 {% block breadcrumb %}
-Informes / <strong>Histórico</strong>
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <strong>Histórico 12m</strong>
 {% endblock %}
 
 {# ------------------------------------------------------------------
-   Helpers de formato (Jinja macros) — rinden el valor de cada celda
-   según el `fmt` que viene de la query (kg / ratio / pct / miles).
+   TMT 2026-05-19 v8 — rediseño completo para consistencia con el
+   resto del programa. Pedido literal dueña: "esta muy bien!! pero
+   re disenalo para que quede consistente con el resto del programa.
+   los datos estan ok".
+
+   Cambios principales (vs el look DOS-dark anterior):
+   * Panel blanco con border slate-200 (estándar)
+   * Tipografía: title text-2xl, subtitle text-sm slate-500
+   * Tabla con thead bg-slate-50, body bordes slate-100 hover slate-50
+   * Números: font-mono + tabular-nums + text-right
+   * Acentos de color SUTILES sobre blanco: amber-700, red-700,
+     sky-700, slate-900 (en vez de cian, amarillo, rojo y azul brillantes
+     sobre fondo negro)
+   * Tabs/botones idénticos a los de provisiones/flujo_grafico
+   * Delta% en chiquito verde/rojo abajo del número (mantenido)
    ------------------------------------------------------------------ #}
+
 {% macro fmt_val(v, fmt) %}
-  {% if v is none %}<span class="miss">—</span>{% else %}
+  {% if v is none %}<span class="text-slate-300">—</span>{% else %}
     {%- if fmt == 'ratio' -%}{{ v | num_es(2) }}
     {%- elif fmt == 'pct' -%}{{ v | num_es(1) }}
     {%- elif fmt == 'kg' -%}{{ v | num_es(0) }}
@@ -21,156 +36,54 @@ Informes / <strong>Histórico</strong>
 
 {% block head_extra %}
 <style>
-  /* =====================================================================
-     TINT.BAT — look DOS-like: fondo oscuro, monoespaciada, labels cian,
-     números blancos, filas amarillas/rojas/azules para destacar totales.
-     TMT 2026-05-19 v7 (pedido dueña — reemplaza matriz claro).
-     ===================================================================== */
-  .tint-shell {
-    background: #000814;
-    color: #d6e1ec;
-    font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
-    border-radius: 8px;
-    padding: 18px 22px 20px;
-    box-shadow: inset 0 0 0 1px rgba(120, 160, 220, 0.15);
+  /* Acentos de fila — colores sutiles sobre blanco (vs cian/amarillo
+     sobre negro del DOS). El nombre `row-color` lo sigue eligiendo el
+     backend (queries.py historico_12m_lineas); acá traducimos. */
+  .h12-tbl { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .h12-tbl td.label  { color: rgb(15 23 42); font-weight: 500; }
+  .h12-tbl td.num    { font-family: ui-monospace, Menlo, Consolas, monospace; text-align: right; }
+  .h12-tbl tr.row-yellow td.label,
+  .h12-tbl tr.row-yellow td.num   { color: rgb(180 83 9); font-weight: 600; }   /* amber-700 */
+  .h12-tbl tr.row-red    td.label,
+  .h12-tbl tr.row-red    td.num   { color: rgb(185 28 28); font-weight: 600; }  /* red-700 */
+  .h12-tbl tr.row-blue   td.label,
+  .h12-tbl tr.row-blue   td.num   { color: rgb(3 105 161); font-weight: 600; }  /* sky-700 */
+  .h12-tbl tr.row-white  td.num   { color: rgb(15 23 42); font-weight: 700; }   /* slate-900 */
+  .h12-tbl tr.sep td  { border-top: 2px solid rgb(203 213 225); padding-top: 8px; }
+  .h12-tbl tr.gap td  { padding: 6px 0 0; border: none; }
+  .h12-tbl .delta {
+    display: block; font-size: 10px; line-height: 1.1;
+    font-weight: 500; color: rgb(148 163 184); margin-top: 1px;
   }
-  .tint-bar {
-    background: #b9c3ce;
-    color: #14202b;
-    font-weight: 700;
-    padding: 3px 10px;
-    font-size: 12px;
-    letter-spacing: 0.05em;
-    border-radius: 4px 4px 0 0;
-    display: inline-block;
+  .h12-tbl .delta.up   { color: rgb(22 163 74); }   /* green-600 */
+  .h12-tbl .delta.down { color: rgb(220 38 38); }   /* red-600 */
+  .h12-tbl thead th {
+    background: rgb(248 250 252);
+    color: rgb(100 116 139);
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; padding: 8px 10px;
+    border-bottom: 1px solid rgb(203 213 225);
+    text-align: right; white-space: nowrap;
   }
-  .tint-tbl {
-    width: 100%;
-    border-collapse: collapse;
-    font-feature-settings: "tnum" 1;
-    font-variant-numeric: tabular-nums;
-    font-size: 14px;
-    line-height: 1.45;
+  .h12-tbl thead th.first { text-align: left; }
+  .h12-tbl thead th .yr {
+    display: block; font-size: 9px; color: rgb(148 163 184);
+    font-weight: 500; margin-top: 1px;
   }
-  .tint-tbl th, .tint-tbl td {
-    padding: 2px 12px;
-    white-space: nowrap;
+  .h12-tbl tbody td { padding: 4px 10px; white-space: nowrap; }
+  .h12-tbl tbody tr:hover td { background: rgb(248 250 252); }
+  /* Mes vs mes — columna delta con su propio look. */
+  .h12-tbl td.delta-cell  { color: rgb(15 23 42); text-align: right;
+                             font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .h12-tbl td.delta-cell .delta-pct {
+    display: block; font-size: 10px; color: rgb(100 116 139); font-weight: 500;
   }
-  .tint-tbl th {
-    text-align: right;
-    font-weight: 700;
-    color: #6df0ff;          /* cian fuerte para los encabezados de mes */
-    font-size: 14px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(120, 160, 220, 0.18);
-  }
-  .tint-tbl th.first { text-align: left; color: #6df0ff; }
-  .tint-tbl th .yr {
-    display: block;
-    font-size: 10px;
-    color: #9eb6cc;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-  }
-  .tint-tbl td.label {
-    color: #6df0ff;          /* labels en cian (como el screenshot) */
-    text-align: left;
-  }
-  .tint-tbl td.num { text-align: right; }
-  .tint-tbl tr.row-yellow td.num,
-  .tint-tbl tr.row-yellow td.label { color: #ffd34d; }
-  .tint-tbl tr.row-red td.num,
-  .tint-tbl tr.row-red td.label { color: #ff6b6b; }
-  .tint-tbl tr.row-blue td.num,
-  .tint-tbl tr.row-blue td.label { color: #5bb3ff; }
-  .tint-tbl tr.row-white td.num { color: #ffffff; }
-  .tint-tbl .miss { color: #5a6975; font-style: italic; }
-  .tint-tbl tr.sep td {
-    border-top: 1px solid rgba(120, 160, 220, 0.25);
-    padding-top: 10px;
-  }
-  .tint-tbl tr.gap td { padding: 8px 0 0; }
-  /* Δ% en chiquito debajo del número — verde/rojo sutil. */
-  .tint-tbl .delta {
-    display: block;
-    font-size: 10px;
-    line-height: 1.1;
-    font-weight: 400;
-    color: #6e7c8a;
-  }
-  .tint-tbl .delta.up   { color: #4ade80; }
-  .tint-tbl .delta.down { color: #f87171; }
-  /* Toolbar superior (modo + paginación). */
-  .tint-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 14px;
-    flex-wrap: wrap;
-  }
-  .tint-tab {
-    display: inline-block;
-    padding: 7px 14px;
-    border-radius: 6px;
-    border: 1px solid #475569;
-    font-size: 13px;
-    font-weight: 600;
-    color: #1a3a5c;
-    background: #fff;
-    text-decoration: none;
-    line-height: 1;
-  }
-  .tint-tab:hover { background: #f1f5f9; }
-  .tint-tab.active {
-    background: #1a3a5c; color: #fff; border-color: #1a3a5c;
-  }
-  .tint-nav-btn {
-    display: inline-flex; align-items: center;
-    height: 32px; padding: 0 12px;
-    border-radius: 6px;
-    border: 1px solid #cbd5e1;
-    background: #fff; color: #1a3a5c;
-    font-size: 13px; font-weight: 600;
-    text-decoration: none;
-  }
-  .tint-nav-btn:hover:not(.disabled) { background: #f1f5f9; }
-  .tint-nav-btn.disabled {
-    color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed;
-  }
-  .tint-window-info {
-    color: #475569; font-size: 13px; padding: 0 6px;
-  }
-  /* Form mes vs mes. */
-  .mom-form {
-    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
-    margin-bottom: 14px; padding: 14px 16px; background: #f8fafc;
-    border: 1px solid #e2e8f0; border-radius: 8px;
-  }
-  .mom-form label { font-size: 12px; color: #475569; font-weight: 600; }
-  .mom-form select, .mom-form input[type=number] {
-    height: 36px; padding: 0 8px;
-    border: 1px solid #cbd5e1; border-radius: 6px;
-    font-size: 14px; font-family: inherit;
-    background: #fff;
-  }
-  .mom-form button {
-    height: 36px; padding: 0 16px;
-    background: #1a3a5c; color: #fff; border: none; border-radius: 6px;
-    font-size: 13px; font-weight: 700; cursor: pointer;
-  }
-  /* En mes-vs-mes el delta abs se muestra con la misma paleta cian/blanco. */
-  .tint-tbl td.delta-cell { color: #6df0ff; text-align: right; font-size: 12px; }
-  .tint-tbl td.delta-cell .delta-pct {
-    display: block; font-size: 10px; color: #9eb6cc;
-  }
+  .h12-tbl td.delta-cell.up   { color: rgb(22 163 74); }
+  .h12-tbl td.delta-cell.down { color: rgb(220 38 38); }
+
   @media print {
-    .tint-toolbar, .mom-form, nav, .breadcrumb { display: none !important; }
-    .tint-shell { background: #fff; color: #000; box-shadow: none; }
-    .tint-tbl td.label, .tint-tbl th, .tint-tbl th.first { color: #000; }
-    .tint-tbl tr.row-yellow td.num, .tint-tbl tr.row-yellow td.label,
-    .tint-tbl tr.row-red td.num, .tint-tbl tr.row-red td.label,
-    .tint-tbl tr.row-blue td.num, .tint-tbl tr.row-blue td.label,
-    .tint-tbl tr.row-white td.num { color: #000; }
+    .no-print { display: none !important; }
+    .h12-tbl tbody tr:hover td { background: transparent; }
   }
 </style>
 {% endblock %}
@@ -178,27 +91,30 @@ Informes / <strong>Histórico</strong>
 {% block content %}
 {% set MES_ABRV = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
 <div class="page-shell page-shell--full">
-  <div class="flex items-center justify-between mb-3">
+
+  {# ─── Header estándar (mismo patrón que provisiones/balance) ──────── #}
+  <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
       <h1 class="text-2xl font-semibold">Histórico — TINT.BAT</h1>
       <p class="text-sm text-slate-500 mt-1">
         {% if modo == 'mom' %}
           Comparación mes vs mes — elegí dos meses para ver la diferencia.
         {% else %}
-          Últimos {{ n }} meses (paginable). Snapshots de scintela.historia.
+          Últimos {{ n }} meses (paginable). Snapshots de <code class="text-xs">scintela.historia</code>.
         {% endif %}
       </p>
     </div>
-    <div class="flex gap-2">
+    <div class="no-print flex items-center gap-2">
       <a href="{{ url_for('informes.balance_compras') }}"
-         class="text-sm px-3 py-2 rounded border border-slate-300 hover:bg-slate-100">
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
         Compras del mes →
       </a>
       <a href="{{ url_for('informes.balance') }}"
-         class="text-sm px-3 py-2 rounded border border-slate-300 hover:bg-slate-100">
-        ← Balance
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        ← Resultados
       </a>
-      <button onclick="window.print()" class="text-sm px-3 py-2 rounded border border-slate-300 hover:bg-slate-100">
+      <button onclick="window.print()"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
         Imprimir
       </button>
     </div>
@@ -210,117 +126,148 @@ Informes / <strong>Histórico</strong>
     </div>
   {% endif %}
 
-  {# ===== Toolbar: tabs + paginación (matriz) o selectores (mom) ===== #}
-  <div class="tint-toolbar">
+  {# ─── Toolbar: tabs estándar + paginación o selectores ────────────── #}
+  <div class="no-print flex items-center gap-2 mb-4 flex-wrap">
     <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n) }}"
-       class="tint-tab {% if modo != 'mom' %}active{% endif %}">Matriz</a>
+       class="text-sm px-3 py-1.5 rounded border
+              {% if modo != 'mom' %}bg-slate-900 text-white border-slate-900
+              {% else %}border-slate-300 hover:bg-slate-100 text-slate-700{% endif %}">
+      Matriz
+    </a>
     <a href="{{ url_for('informes.historico_12m', modo='mom') }}"
-       class="tint-tab {% if modo == 'mom' %}active{% endif %}">Mes vs mes</a>
+       class="text-sm px-3 py-1.5 rounded border
+              {% if modo == 'mom' %}bg-slate-900 text-white border-slate-900
+              {% else %}border-slate-300 hover:bg-slate-100 text-slate-700{% endif %}">
+      Mes vs mes
+    </a>
 
     {% if modo != 'mom' %}
-      <span style="flex:1"></span>
-      {# Paginación: ◀ anteriores / siguientes ▶ #}
+      <div class="flex-1"></div>
       {% set prev_off = data.nav.prev_offset if data.get('nav') else none %}
       {% set next_off = data.nav.next_offset if data.get('nav') else none %}
       {% if prev_off is not none %}
-        <a class="tint-nav-btn"
-           href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=prev_off) }}">◀ Anteriores</a>
+        <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=prev_off) }}"
+           class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+          ← Anteriores
+        </a>
       {% else %}
-        <span class="tint-nav-btn disabled">◀ Anteriores</span>
+        <span class="text-sm px-3 py-1.5 rounded border border-slate-200 text-slate-300 cursor-not-allowed">
+          ← Anteriores
+        </span>
       {% endif %}
-      <span class="tint-window-info">
-        {% if data.meses and data.meses|length > 0 %}
+      {% if data.meses and data.meses|length > 0 %}
+        <span class="text-xs text-slate-500 px-2">
           {{ MES_ABRV[data.meses[0][1]-1] }} {{ data.meses[0][0] }} —
           {{ MES_ABRV[data.meses[-1][1]-1] }} {{ data.meses[-1][0] }}
-        {% endif %}
-      </span>
-      {% if next_off is not none %}
-        <a class="tint-nav-btn"
-           href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=next_off) }}">Siguientes ▶</a>
-      {% else %}
-        <span class="tint-nav-btn disabled">Siguientes ▶</span>
+        </span>
       {% endif %}
-      <form method="get" style="display:inline-flex; gap:6px; align-items:center; margin-left:8px;">
+      {% if next_off is not none %}
+        <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=next_off) }}"
+           class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+          Siguientes →
+        </a>
+      {% else %}
+        <span class="text-sm px-3 py-1.5 rounded border border-slate-200 text-slate-300 cursor-not-allowed">
+          Siguientes →
+        </span>
+      {% endif %}
+      <form method="get" class="flex items-center gap-2 ml-2">
         <input type="hidden" name="modo" value="matriz">
         <input type="hidden" name="offset" value="{{ offset }}">
-        <label style="font-size:12px; color:#475569;">N meses
-          <input type="number" name="n" value="{{ n }}" min="1" max="24"
-                 style="width:60px; height:30px; padding:0 6px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; font-size:13px;">
-        </label>
-        <button class="tint-nav-btn" style="background:#1a3a5c;color:#fff;border-color:#1a3a5c;">Ver</button>
+        <label class="text-xs text-slate-500">N meses</label>
+        <input type="number" name="n" value="{{ n }}" min="1" max="24"
+               class="w-16 rounded border border-slate-300 bg-white px-2 py-1 text-sm tabular-nums">
+        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
       </form>
     {% endif %}
   </div>
 
-  {# ===== Form mes-vs-mes ===== #}
+  {# ─── Form mes vs mes — al estilo "buscador" de provisiones ───────── #}
   {% if modo == 'mom' %}
-    <form method="get" class="mom-form">
+    <form method="get"
+          class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
       <input type="hidden" name="modo" value="mom">
       <div>
-        <label>Mes A (referencia)</label>
-        <div style="display:flex; gap:6px; margin-top:4px;">
-          <select name="a_a">
+        <label class="block text-xs text-slate-500 mb-1">Mes A (referencia)</label>
+        <div class="flex gap-2">
+          <select name="a_a" class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
             {% for (a_, m_) in meses_disponibles %}
               <option value="{{ a_ }}" {% if a_ == mom.par_a[0] %}selected{% endif %}>{{ a_ }}</option>
             {% endfor %}
           </select>
-          <select name="m_a">
+          <select name="m_a" class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
             {% for i in range(1, 13) %}
               <option value="{{ i }}" {% if i == mom.par_a[1] %}selected{% endif %}>{{ MES_ABRV[i-1] }}</option>
             {% endfor %}
           </select>
         </div>
       </div>
-      <div style="font-size:24px; color:#475569; padding-bottom:4px;">→</div>
+      <div class="text-xl text-slate-400 pb-1">→</div>
       <div>
-        <label>Mes B (actual)</label>
-        <div style="display:flex; gap:6px; margin-top:4px;">
-          <select name="a_b">
+        <label class="block text-xs text-slate-500 mb-1">Mes B (actual)</label>
+        <div class="flex gap-2">
+          <select name="a_b" class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
             {% for (a_, m_) in meses_disponibles %}
               <option value="{{ a_ }}" {% if a_ == mom.par_b[0] %}selected{% endif %}>{{ a_ }}</option>
             {% endfor %}
           </select>
-          <select name="m_b">
+          <select name="m_b" class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
             {% for i in range(1, 13) %}
               <option value="{{ i }}" {% if i == mom.par_b[1] %}selected{% endif %}>{{ MES_ABRV[i-1] }}</option>
             {% endfor %}
           </select>
         </div>
       </div>
-      <button type="submit">Comparar</button>
+      <button type="submit" class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">
+        Comparar
+      </button>
     </form>
   {% endif %}
 
-  {# ===== Banner snapshots faltantes ===== #}
+  {# ─── Banner snapshots faltantes (con estilo "warn" estándar) ─────── #}
   {% set sin_snap = (data.meses_sin_snap if modo != 'mom' else mom.meses_sin_snap) or [] %}
   {% if sin_snap %}
-    <div class="mb-3 px-4 py-2 rounded border border-amber-400 bg-amber-50 flex items-center justify-between">
+    <div class="mb-4 px-4 py-3 rounded border border-amber-300 bg-amber-50 flex items-center justify-between gap-4 flex-wrap">
       <div class="text-sm text-amber-800">
         <strong>{{ sin_snap | length }}</strong> mes(es) sin snapshot:
-        {{ sin_snap | join(', ') }}.
+        <span class="font-mono text-xs">{{ sin_snap | join(', ') }}</span>.
       </div>
       {% if modo != 'mom' %}
-      <form method="post" action="{{ url_for('informes.snapshot_backfill') }}" class="inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="meses" value="{{ n }}">
-        <button class="text-xs px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium">
-          Backfillear {{ n }} meses
-        </button>
-      </form>
+        <form method="post" action="{{ url_for('informes.snapshot_backfill') }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="meses" value="{{ n }}">
+          <button class="text-xs px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium">
+            Backfillear {{ n }} meses
+          </button>
+        </form>
       {% endif %}
     </div>
   {% endif %}
 
-  {# ============================================================
-     RENDER MATRIZ — modo principal
-     ============================================================ #}
-  {% if modo != 'mom' %}
-    <span class="tint-bar">TINT.BAT</span>
-    <div class="tint-shell">
-      <table class="tint-tbl">
+  {# ===== Card principal ─ panel blanco con la tabla adentro ========== #}
+  <div class="bg-white border border-slate-200 rounded overflow-x-auto">
+    {# Header del card — etiqueta arriba a la izquierda como en el resto. #}
+    <div class="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+        TINT.BAT {% if modo == 'mom' %}· Mes vs Mes{% endif %}
+      </div>
+      <div class="text-xs text-slate-400">
+        {% if modo == 'mom' %}
+          {{ MES_ABRV[mom.par_a[1]-1] }} {{ mom.par_a[0] }} → {{ MES_ABRV[mom.par_b[1]-1] }} {{ mom.par_b[0] }}
+        {% else %}
+          {{ data.meses|length }} meses · paginable
+        {% endif %}
+      </div>
+    </div>
+
+    {# ============================================================
+       RENDER MATRIZ
+       ============================================================ #}
+    {% if modo != 'mom' %}
+      <table class="w-full text-sm h12-tbl">
         <thead>
           <tr>
-            <th class="first">FECHA</th>
+            <th class="first">Indicador</th>
             {% for (a_, m_) in data.meses %}
               <th>
                 {{ MES_ABRV[m_-1] }}
@@ -332,7 +279,7 @@ Informes / <strong>Histórico</strong>
         <tbody>
           {# OPERATIVO #}
           {% for linea in data.lineas if linea.section == 'operativo' %}
-            <tr class="row-{{ linea.color }}">
+            <tr class="row-{{ linea.color }} border-t border-slate-100">
               <td class="label">{{ linea.label }}</td>
               {% for v in linea.valores %}
                 <td class="num">
@@ -350,7 +297,7 @@ Informes / <strong>Histórico</strong>
           <tr class="gap"><td colspan="{{ data.meses|length + 1 }}"></td></tr>
           {# BALANCE #}
           {% for linea in data.lineas if linea.section == 'balance' %}
-            <tr class="row-{{ linea.color }}{% if loop.first %} sep{% endif %}">
+            <tr class="row-{{ linea.color }}{% if loop.first %} sep{% else %} border-t border-slate-100{% endif %}">
               <td class="label">{{ linea.label }}</td>
               {% for v in linea.valores %}
                 <td class="num">
@@ -361,34 +308,35 @@ Informes / <strong>Histórico</strong>
           {% endfor %}
         </tbody>
       </table>
-    </div>
-    <p class="mt-3 text-xs text-slate-500">
-      Valores en MILES de U$ excepto operativo (kg y U$/kg) y MARGEN % (porcentaje).
-      Δ% verde/rojo bajo el número en sección operativa. Imprimí con el botón
-      <em>Imprimir</em> (queda en blanco para guardar en PDF).
-    </p>
-  {% else %}
-  {# ============================================================
-     RENDER MES VS MES
-     ============================================================ #}
-    <span class="tint-bar">TINT.BAT · MES vs MES</span>
-    <div class="tint-shell">
-      <table class="tint-tbl">
+    {% else %}
+    {# ============================================================
+       RENDER MES VS MES
+       ============================================================ #}
+      <table class="w-full text-sm h12-tbl">
         <thead>
           <tr>
-            <th class="first">FECHA</th>
-            <th>{{ MES_ABRV[mom.par_a[1]-1] }} <span class="yr">{{ mom.par_a[0] }}</span></th>
-            <th>{{ MES_ABRV[mom.par_b[1]-1] }} <span class="yr">{{ mom.par_b[0] }}</span></th>
-            <th>Δ <span class="yr">B − A</span></th>
+            <th class="first">Indicador</th>
+            <th>
+              {{ MES_ABRV[mom.par_a[1]-1] }}
+              <span class="yr">{{ mom.par_a[0] }}</span>
+            </th>
+            <th>
+              {{ MES_ABRV[mom.par_b[1]-1] }}
+              <span class="yr">{{ mom.par_b[0] }}</span>
+            </th>
+            <th>
+              Δ
+              <span class="yr">B − A</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {% for linea in mom.lineas if linea.section == 'operativo' %}
-            <tr class="row-{{ linea.color }}">
+            <tr class="row-{{ linea.color }} border-t border-slate-100">
               <td class="label">{{ linea.label }}</td>
               <td class="num">{{ fmt_val(linea.v_a, linea.fmt) }}</td>
               <td class="num">{{ fmt_val(linea.v_b, linea.fmt) }}</td>
-              <td class="delta-cell">
+              <td class="delta-cell{% if linea.delta_pct is not none and linea.delta_pct > 0 %} up{% elif linea.delta_pct is not none and linea.delta_pct < 0 %} down{% endif %}">
                 {{ fmt_val(linea.delta_abs, linea.fmt) }}
                 {% if linea.delta_pct is not none %}
                   <span class="delta-pct">
@@ -400,11 +348,11 @@ Informes / <strong>Histórico</strong>
           {% endfor %}
           <tr class="gap"><td colspan="4"></td></tr>
           {% for linea in mom.lineas if linea.section == 'balance' %}
-            <tr class="row-{{ linea.color }}{% if loop.first %} sep{% endif %}">
+            <tr class="row-{{ linea.color }}{% if loop.first %} sep{% else %} border-t border-slate-100{% endif %}">
               <td class="label">{{ linea.label }}</td>
               <td class="num">{{ fmt_val(linea.v_a, linea.fmt) }}</td>
               <td class="num">{{ fmt_val(linea.v_b, linea.fmt) }}</td>
-              <td class="delta-cell">
+              <td class="delta-cell{% if linea.delta_pct is not none and linea.delta_pct > 0 %} up{% elif linea.delta_pct is not none and linea.delta_pct < 0 %} down{% endif %}">
                 {{ fmt_val(linea.delta_abs, linea.fmt) }}
                 {% if linea.delta_pct is not none %}
                   <span class="delta-pct">
@@ -416,10 +364,18 @@ Informes / <strong>Histórico</strong>
           {% endfor %}
         </tbody>
       </table>
-    </div>
-    <p class="mt-3 text-xs text-slate-500">
-      Δ = mes B − mes A (absoluto en miles U$ / kg / %). Δ% relativo abajo.
-    </p>
-  {% endif %}
+    {% endif %}
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    {% if modo == 'mom' %}
+      Δ = mes B − mes A (absoluto). El % de abajo es la variación relativa.
+      Verde = subió respecto del mes A, rojo = bajó.
+    {% else %}
+      Valores en <strong>miles de U$</strong> excepto operativo (kg y U$/kg) y MARGEN %.
+      Δ% verde/rojo abajo del número en la sección operativa.
+    {% endif %}
+    Imprimí con el botón <em>Imprimir</em> (queda en blanco para guardar en PDF).
+  </p>
 </div>
 {% endblock %}
