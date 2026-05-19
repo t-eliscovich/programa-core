@@ -271,6 +271,41 @@
   .flujo-wrap .gf-panel.gf-full .gf-form-inline {
     display: grid; grid-template-columns: 150px 150px 1fr 100px; gap: 8px; margin-bottom: 16px;
   }
+
+  /* TMT 2026-05-19 v8 — pedido dueña: "achicalo para que entre todo en
+     una pantalla". Overrides compactos sin tocar el resto. */
+  .flujo-wrap .chart-wrap { height: 320px; }
+  .flujo-wrap .panel { padding: 12px; border-radius: 8px; }
+  .flujo-wrap .panel h2 { font-size: 14px; margin-bottom: 6px; }
+  .flujo-wrap .panel .caption { font-size: 11px; margin-bottom: 8px; }
+  .flujo-wrap .kpis { gap: 8px; margin-bottom: 8px; }
+  .flujo-wrap .kpi { padding: 6px 10px; }
+  .flujo-wrap .kpi .label { font-size: 10px; }
+  .flujo-wrap .kpi .value { font-size: 17px; }
+  .flujo-wrap .kpi .unit { font-size: 11px; }
+  .flujo-wrap .zoom { margin: 4px 0 8px; }
+  .flujo-wrap .gf-panel { padding: 10px 14px; }
+  .flujo-wrap .gf-panel h3 { font-size: 13px; }
+  .flujo-wrap .gf-panel .gf-sub { font-size: 10px; margin: 0 0 6px; }
+  .flujo-wrap .gf-panel .gf-form-inline { margin-bottom: 8px; }
+  .flujo-wrap .gf-panel .gf-form-inline input,
+  .flujo-wrap .gf-panel .gf-form-inline button { padding: 5px 8px; font-size: 12px; }
+  .flujo-wrap .gf-panel .gf-list { max-height: 160px; gap: 4px; }
+  .flujo-wrap .gf-panel .gf-row { padding: 2px 4px; gap: 6px; }
+  .flujo-wrap .gf-panel .gf-row input { padding: 2px 6px; font-size: 11px; }
+  .flujo-wrap .gf-panel .gf-empty { padding: 12px 0; font-size: 11px; }
+  .flujo-wrap .gf-panel .gf-total { margin-top: 6px; padding-top: 6px; font-size: 12px; }
+  .flujo-wrap .gf-panel .gf-total strong { font-size: 13px; }
+  .flujo-wrap .below-chart { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+  @media (max-width: 1100px) { .flujo-wrap .below-chart { grid-template-columns: 1fr; } }
+  /* gf-full pierde el grid (los 2 paneles ya forman grid arriba). */
+  .flujo-wrap .below-chart .gf-panel.gf-full { margin-bottom: 0; }
+  .flujo-wrap .below-chart .gf-panel.gf-full .gf-form-inline {
+    grid-template-columns: 1fr 1fr 1.5fr auto;
+  }
+  /* La tabla de posdat scroll: max-height más chico. */
+  .flujo-wrap .below-chart table thead th { padding: 4px 8px !important; font-size: 9px !important; }
+  .flujo-wrap .below-chart table tbody td { padding: 2px 8px !important; font-size: 11px !important; }
 </style>
 {% endblock %}
 
@@ -395,7 +430,7 @@
           </div>
           {% set _total_egr = 0 %}
           {% for e in egresos_lista %}{% set _total_egr = _total_egr + e.importe %}{% endfor %}
-          <div style="max-height: 380px; overflow-y: auto; border: 1px solid rgb(226 232 240); border-radius: 6px; background: white;">
+          <div style="max-height: 200px; overflow-y: auto; border: 1px solid rgb(226 232 240); border-radius: 6px; background: white;">
             <table style="width:100%; font-size:12px; border-collapse:collapse; font-feature-settings:'tnum' 1;">
               <thead style="position:sticky;top:0;background:rgb(248 250 252);z-index:1;">
                 <tr>
