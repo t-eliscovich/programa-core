@@ -30,6 +30,74 @@ def _bancos() -> list[dict]:
         return []
 
 
+def _handle_cobro_efectivo():
+    """Subhandler para POST /cheques/nuevo con tipo_cobro=efectivo.
+
+    TMT 2026-05-19 v8 — pedido dueña: "CUANDO COBRAMOS EN EFECTIVO TIENE
+    QUE INGRESAR POR COBRANZA" (= /cheques/nuevo del sidebar, no
+    /caja/nuevo). Llama queries.crear_cobro_efectivo que registra
+    atómicamente: caja (E) + abono a factura(s) + scintela.cobro
+    (para sumar en comisiones).
+    """
+    codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()
+    if " " in codigo_cli or "—" in codigo_cli:
+        codigo_cli = codigo_cli.split()[0].strip()[:5]
+    fecha = parse_date(request.form.get("fecha_recibido")) or date.today()
+    destino = (request.form.get("destino_eft") or "99").strip()
+    if destino not in ("99", "90", "91"):
+        destino = "99"
+    concepto_libre = (request.form.get("concepto_libre") or "").strip()[:60]
+    # aplicaciones — del select de facturas pendientes (multi).
+    # Llegan como aplicar[<id_factura>] = monto.
+    aplicaciones = []
+    importe_total = 0.0
+    for key in request.form:
+        if key.startswith("aplicar[") and key.endswith("]"):
+            try:
+                id_fact = int(key[len("aplicar["):-1])
+            except ValueError:
+                continue
+            monto = parse_monto(request.form.get(key))
+            if monto is None or monto <= 0:
+                continue
+            aplicaciones.append({"id_factura": id_fact, "monto": monto})
+            importe_total += monto
+
+    if not codigo_cli:
+        flash("Código de cliente requerido.", "error")
+        return redirect(url_for("cheques.nuevo"))
+    if not aplicaciones:
+        flash("Tenés que aplicar el cobro al menos a una factura "
+              "(ingresá un monto > 0 en la columna 'Aplicar' de las "
+              "facturas pendientes).", "error")
+        return redirect(url_for("cheques.nuevo"))
+
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.crear_cobro_efectivo(
+            codigo_cli=codigo_cli, fecha=fecha,
+            importe_total=importe_total, destino=destino,
+            aplicaciones=aplicaciones, concepto_libre=concepto_libre,
+            usuario=usuario,
+        )
+        n_cancel = len(r.get("codigos_cancelados") or [])
+        flash(
+            f"Cobro {r['destino']} registrado: $ {r['importe']:.2f} "
+            f"a {r['n_facturas']} factura(s)"
+            + (f" ({n_cancel} canceladas)" if n_cancel else "")
+            + ".",
+            "ok",
+        )
+        return redirect(url_for("informes.estado_cuenta",
+                                codigo_cli=codigo_cli))
+    except ValueError as e:
+        flash(str(e), "warn")
+        return redirect(url_for("cheques.nuevo"))
+    except Exception as e:
+        flash_exc("No pude registrar el cobro", e)
+        return redirect(url_for("cheques.nuevo"))
+
+
 @cheques_bp.route("/cheques/nuevo", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("cheques.crear")
@@ -70,6 +138,13 @@ def nuevo():
             )
         return render_template("cheques/nuevo.html", form=form, errores=errores,
                                bancos=_bancos(), clientes_datalist=clientes_datalist)
+
+    # TMT 2026-05-19 v8 — pedido dueña: cobro en efectivo entra por
+    # /cheques/nuevo (= "Cobranza" del sidebar), NO por /caja/nuevo.
+    # Bifurca temprano: si tipo_cobro=efectivo, delega.
+    tipo_cobro = (request.form.get("tipo_cobro") or "cheque").strip().lower()
+    if tipo_cobro in ("efectivo", "eft"):
+        return _handle_cobro_efectivo()
 
     # TMT 2026-05-15: simplificado — una sola fecha de cabecera. La
     # "fecha de emisión" del cheque NO interesa a la dueña; usamos
