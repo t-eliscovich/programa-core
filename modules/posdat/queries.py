@@ -103,6 +103,7 @@ def editar(
     fechad: date | None = None,
     importe=None,
     concepto: str | None = None,
+    prov: str | None = None,       # TMT 2026-05-19 v8 — editable para banc=9
     compr: str | None = None,      # backward-compat: ignorado
     no_comp: str | None = None,    # idem
     tipo: str | None = None,       # idem
@@ -165,6 +166,12 @@ def editar(
     if importe is not None:
         campos.append("importe = %s")
         params.append(importe_nuevo)
+    # TMT 2026-05-19 v8 — `prov` editable. Antes estaba bloqueado por
+    # regla legacy (no cambiar matching con proveedor), pero la dueña
+    # pide editar todos los campos. Solo aplica si viene; vacío → NULL.
+    if prov is not None:
+        campos.append("prov = %s")
+        params.append((prov or "").strip().upper()[:5] or None)
     if not campos:
         return 0
     campos.append("usuario_modifica = %s")

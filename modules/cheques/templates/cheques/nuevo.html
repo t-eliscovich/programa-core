@@ -21,88 +21,11 @@
   <form method="post" id="cheque-form" class="page-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    {# TMT 2026-05-19 v8 — pedido dueña: "CUANDO COBRAMOS EN EFECTIVO TIENE
-       QUE INGRESAR POR COBRANZA". Toggle al inicio bifurca cheque vs
-       efectivo/EFT. Cuando es efectivo: oculta bloque de cheques + muestra
-       selector de destino (Caja=99, Pichincha=90, Internacional=91). #}
-    <div class="flex items-center gap-3 mb-3 pb-3 border-b border-slate-200">
-      <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Tipo de cobro</span>
-      <label class="cursor-pointer">
-        <input type="radio" name="tipo_cobro" value="cheque" checked
-               class="peer sr-only" onchange="toggleTipoCobro(this.value)">
-        <span class="px-3 py-1.5 rounded border border-slate-300 peer-checked:border-sky-600 peer-checked:bg-sky-50 peer-checked:text-sky-700 text-sm font-medium hover:bg-slate-50 inline-block">
-          🏦 Cheque
-        </span>
-      </label>
-      <label class="cursor-pointer">
-        <input type="radio" name="tipo_cobro" value="efectivo"
-               class="peer sr-only" onchange="toggleTipoCobro(this.value)">
-        <span class="px-3 py-1.5 rounded border border-slate-300 peer-checked:border-emerald-600 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 text-sm font-medium hover:bg-slate-50 inline-block">
-          💵 Efectivo / EFT
-        </span>
-      </label>
-      <span class="text-xs text-slate-500 ml-2" id="tipo-cobro-hint">
-        Cheque de cliente — flujo clásico.
-      </span>
-    </div>
-
-    {# Bloque visible cuando tipo_cobro=efectivo. Cliente, fecha y la
-       grilla de facturas pendientes siguen abajo (mismos campos). #}
-    <div id="bloque-efectivo" class="hidden mb-4 p-4 border-2 border-emerald-300 rounded bg-emerald-50/40">
-      <h2 class="text-sm font-bold uppercase tracking-wider text-emerald-700 mb-3">
-        💵 Cobro en efectivo / EFT
-      </h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-        <label class="flex flex-col">
-          <span class="text-xs text-slate-600">Destino <span class="text-red-500">*</span></span>
-          <select name="destino_eft" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white">
-            <option value="99" selected>💵 Efectivo → Caja (99)</option>
-            <option value="90">🏛 EFT → Pichincha (90)</option>
-            <option value="91">🏛 EFT → Internacional (91)</option>
-          </select>
-        </label>
-        <label class="flex flex-col">
-          <span class="text-xs text-slate-600">Concepto (opcional)</span>
-          <input type="text" name="concepto_libre" maxlength="60"
-                 placeholder="Ej: pago factura 1234"
-                 class="border rounded px-2 py-1 mt-0.5 text-sm">
-        </label>
-      </div>
-      <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-2">
-        Aplicá montos en la columna <strong>"Aplicar"</strong> de las facturas
-        pendientes del cliente. La suma se cobra y cancela esas facturas
-        automáticamente. Suma a comisiones del vendedor.
-      </p>
-    </div>
-
-    <script>
-    function toggleTipoCobro(val) {
-      const blockEfe = document.getElementById('bloque-efectivo');
-      const hint = document.getElementById('tipo-cobro-hint');
-      const chequesMulti = document.getElementById('cheques-multi');
-      const aplicarFactBox = document.getElementById('aplicar-factura-box');
-      if (val === 'efectivo') {
-        blockEfe.classList.remove('hidden');
-        if (chequesMulti) chequesMulti.style.display = 'none';
-        if (hint) hint.textContent = 'Pago directo a Caja (99) o EFT a banco (90/91). Cancela facturas.';
-        // Quitar required de los inputs de cheque para no bloquear submit.
-        document.querySelectorAll('#cheques-multi input[required]').forEach(i => {
-          i.dataset.wasRequired = '1';
-          i.removeAttribute('required');
-        });
-        // El bloque de aplicar a facturas SÍ se muestra (es donde la
-        // dueña carga los montos por factura).
-        if (aplicarFactBox) aplicarFactBox.style.display = '';
-      } else {
-        blockEfe.classList.add('hidden');
-        if (chequesMulti) chequesMulti.style.display = '';
-        if (hint) hint.textContent = 'Cheque de cliente — flujo clásico.';
-        document.querySelectorAll('#cheques-multi input[data-was-required="1"]').forEach(i => {
-          i.setAttribute('required', '');
-        });
-      }
-    }
-    </script>
+    {# TMT 2026-05-19 v8 — la dueña aclaró: "YA ESTABA AHI EL COBRO DE
+       EFECTIVO, NO HACIA FALTA PANTALLA EXTRA". El cobro en efectivo se
+       carga eligiendo BANCO=99·EFECTIVO en el select de banco emisor.
+       Códigos especiales del legacy: 90/91=depósitos, 95=cancela
+       anticipo, 97=anticipo, 98=UKN, 99=efectivo. Sin toggle extra. #}
 
     {# Layout 2 columnas: form a la izquierda, anticipo al costado.
        Pensado para no tener que scrollear en la pantalla típica. #}
