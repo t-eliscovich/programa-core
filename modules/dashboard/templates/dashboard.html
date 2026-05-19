@@ -127,7 +127,7 @@
      directos a las acciones más comunes. La privacidad importa:
      alguien que mira de costado ve nombres de pantalla, no plata.
      ========================================================= #}
-  {% if rol == 'Dueño' %}
+  {% if rol in ('Accionista', 'Dueño') %}{# TMT 2026-05-19 v8 rename #}
 
     {# ---- Empezar a trabajar — acciones de carga rápida ---- #}
     <div class="mb-6">
@@ -502,9 +502,9 @@
   {# =========================================================
      Otros roles no listados — placeholder
      ========================================================= #}
-  {% if rol not in ('Dueño', 'Gerente', 'Contabilidad', 'Ventas',
+  {% if rol not in ('Accionista', 'Dueño', 'Gerente', 'Contabilidad', 'Ventas',
                     'Cobranzas', 'Compras', 'Bodega', 'QC', 'Lectura',
-                    'Administrador') %}
+                    'Administrador') %}{# TMT 2026-05-19 v8 rename #}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
       <p class="text-slate-600 dark:text-slate-400">
         Bienvenido, <strong>{{ g.user.username }}</strong>. Tu rol es <strong>{{ rol }}</strong>.
@@ -523,7 +523,7 @@
    Si Chart.js no descarga (offline / firewall / CDN caído), el canvas
    queda en blanco con un mensaje en el alt-text.
    ========================================================================= #}
-{% if rol == 'Dueño' and vista == 'completa' and (
+{% if rol in ('Accionista', 'Dueño') and vista == 'completa' and ({# TMT 2026-05-19 v8 rename #}
         (evolucion_cartera and evolucion_cartera|length > 1)
         or flujo_30d) %}
 <script>

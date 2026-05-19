@@ -6,7 +6,9 @@ permission should add it here first.
 
 Shape: list of (nombre_rol, [permiso, ...]).
 
-`"*"` means wildcard (all permissions). Only Dueño gets that.
+`"*"` means wildcard (all permissions). Only Accionista (antes "Dueño",
+renombrado por pedido de la dueña 2026-05-19 v8 — el rol legal es
+accionista de la empresa) gets that.
 
 Design notes:
     - Contabilidad puede CREAR y ANULAR pero NO editar: una vez emitido un
@@ -52,7 +54,7 @@ día.
 """
 
 ROLES: list[tuple[str, list[str]]] = [
-    ("Dueño", [
+    ("Accionista", [
         "*",  # acceso total
     ]),
     ("Administrador", [

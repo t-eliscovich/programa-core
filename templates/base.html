@@ -257,6 +257,7 @@
     aside#sidebar[data-collapsed="1"] #nav-search,
     aside#sidebar[data-collapsed="1"] .sidebar-footer,
     aside#sidebar[data-collapsed="1"] .sidebar-brand-sub,
+    aside#sidebar[data-collapsed="1"] .sidebar-brand-full,
     aside#sidebar[data-collapsed="1"] #nav-list a > span,
     aside#sidebar[data-collapsed="1"] #nav-list summary > * {
       display: none !important;
@@ -264,6 +265,11 @@
     aside#sidebar[data-collapsed="1"] .sidebar-brand-text {
       font-size: 1rem;
       text-align: center;
+    }
+    /* TMT 2026-05-19 v8 — brand swap: full logo PNG en modo expandido,
+       monograma "i" cursiva en modo colapsado. */
+    aside#sidebar[data-collapsed="1"] .sidebar-brand-initial {
+      display: flex !important;
     }
     aside#sidebar[data-collapsed="1"] #nav-list a,
     aside#sidebar[data-collapsed="1"] #nav-list summary {
@@ -481,12 +487,24 @@
 <div class="flex min-h-screen">
   <aside id="sidebar" class="no-print shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden">
     <div class="px-4 py-3.5 flex items-center justify-between gap-2">
-      {# TMT 2026-05-17 — brand más grande pedido por la dueña. #}
-      <div class="min-w-0 flex items-center gap-2">
-        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center text-base font-bold shrink-0">I</div>
-        <div class="min-w-0">
-          <div class="font-semibold tracking-tight sidebar-brand-text leading-none">intela</div>
-          <div class="text-xs text-slate-500 dark:text-slate-400 sidebar-brand-sub mt-1">Programa Core</div>
+      {# TMT 2026-05-19 v8 — brand = logo oficial. Pedido literal dueña:
+         "o pongamos el logo tambien!". El logo ya tiene "intela" en cursivo
+         rojo + "INDUSTRIA TEXTIL LATINOAMERICANA C. LTDA." abajo, así que
+         el subtítulo "Programa Core" se mueve a un text discreto debajo.
+         En modo colapsado, mostramos solo la "i" del logo (initial). #}
+      <div class="min-w-0 flex items-center gap-2 w-full">
+        {# Versión colapsada: bloque chico estilizado con "i" cursiva roja
+           (paridad con el logo, sin necesidad de cargar la imagen recortada). #}
+        <div class="sidebar-brand-initial hidden w-9 h-9 rounded-lg bg-white border border-slate-200 items-center justify-center shrink-0">
+          <span class="text-2xl italic font-bold text-red-600 leading-none">i</span>
+        </div>
+        {# Versión expandida: logo PNG completo. #}
+        <div class="sidebar-brand-full min-w-0 flex-1">
+          <img src="{{ url_for('static', filename='intela-logo.png') }}"
+               alt="intela — Industria Textil Latinoamericana C. Ltda."
+               class="sidebar-brand-img block max-w-full h-auto"
+               style="max-height: 2.5rem; width: 100%; object-fit: contain;">
+          <div class="text-[10px] text-slate-400 dark:text-slate-500 sidebar-brand-sub mt-1 tracking-wide uppercase">Programa Core</div>
         </div>
       </div>
       <button id="sidebar-toggle" type="button" aria-label="Colapsar sidebar"

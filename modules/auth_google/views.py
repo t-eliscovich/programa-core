@@ -178,11 +178,11 @@ def callback():
     try:
         id_usuario = _upsert_owner(email=email, display_name=name)
     except _DuenoRoleMissing:
-        _log.error("Rol 'Dueño' no existe en seguridad.rol — la DB no está seedeada.")
+        _log.error("Rol 'Accionista' (ni el legacy 'Dueño') existe en seguridad.rol — la DB no está seedeada.")
         return (
             "<html><body style='font-family:sans-serif;padding:40px'>"
             "<h2>Error de configuración</h2>"
-            "<p>El rol <code>Dueño</code> no existe en la tabla <code>seguridad.rol</code>. "
+            "<p>El rol <code>Accionista</code> no existe en la tabla <code>seguridad.rol</code>. "
             "Corré las migraciones / seeds antes de ingresar.</p>"
             "</body></html>",
             500,
@@ -215,9 +215,16 @@ def _upsert_owner(*, email: str, display_name: str) -> int:
     Si el rol Dueño no existe en seguridad.rol, levanta _DuenoRoleMissing
     para que el caller devuelva un 500 con mensaje claro.
     """
+    # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
+    # Buscamos primero el nombre nuevo y caemos a "dueño" (legacy) si la
+    # migración 0035 todavía no se corrió.
     role = db.fetch_one(
-        "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'dueño'"
+        "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'accionista'"
     )
+    if not role:
+        role = db.fetch_one(
+            "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'dueño'"
+        )
     if not role:
         # Tolerancia a sin-tilde por si el seed lo guarda como "Dueno".
         role = db.fetch_one(

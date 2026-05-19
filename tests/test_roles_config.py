@@ -9,14 +9,15 @@ from config.roles import ROLES
 def test_roles_are_non_empty_and_unique():
     nombres = [r[0] for r in ROLES]
     assert len(nombres) == len(set(nombres)), "nombres de rol duplicados"
-    assert "Dueño" in nombres
+    # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
+    assert "Accionista" in nombres
 
 
-def test_only_dueno_has_wildcard():
+def test_only_accionista_has_wildcard():
     for nombre, permisos in ROLES:
         has_wild = "*" in permisos
-        if nombre == "Dueño":
-            assert has_wild, "Dueño debe tener '*'"
+        if nombre == "Accionista":
+            assert has_wild, "Accionista debe tener '*'"
         else:
             assert not has_wild, f"El rol {nombre!r} no debe tener '*'"
 

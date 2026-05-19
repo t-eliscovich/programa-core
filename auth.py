@@ -53,6 +53,10 @@ auth_bp = Blueprint("auth", __name__, template_folder="modules/auth/templates")
 # Si aparece un rol nuevo sin entrada, cae al default (4h) — seguro por
 # omisión.
 SESSION_TIMEOUT_BY_ROLE: dict[str, timedelta] = {
+    # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
+    # Dejamos los dos para compatibilidad transitoria mientras se corre la
+    # migración 0035; cualquiera de los dos resuelve al mismo timeout.
+    "Accionista":    timedelta(hours=8),
     "Dueño":         timedelta(hours=8),
     "Administrador": timedelta(hours=8),
     "Gerente":       timedelta(hours=8),

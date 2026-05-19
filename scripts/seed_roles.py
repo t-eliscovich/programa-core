@@ -120,7 +120,12 @@ def crear_primer_dueno():
                 break
             print("  No coinciden o vacía, probá de nuevo.")
 
-    rol = db.fetch_one("SELECT id_rol FROM seguridad.rol WHERE nombre_rol = 'Dueño'")
+    # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista". Fallback al
+    # nombre viejo si la migración 0035 no se corrió todavía.
+    rol = (
+        db.fetch_one("SELECT id_rol FROM seguridad.rol WHERE nombre_rol = 'Accionista'")
+        or db.fetch_one("SELECT id_rol FROM seguridad.rol WHERE nombre_rol = 'Dueño'")
+    )
     hashed = bcrypt.hashpw(pw1.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db.execute(
         """
@@ -129,7 +134,7 @@ def crear_primer_dueno():
         """,
         (username, hashed, rol["id_rol"]),
     )
-    print(f"  ✓ Usuario {username!r} creado con rol Dueño.")
+    print(f"  ✓ Usuario {username!r} creado con rol Accionista.")
 
 
 def main():

@@ -161,7 +161,9 @@ def create_app() -> Flask:
     # IP allowlist por rol — DEBE ir DESPUÉS de load_logged_in_user porque
     # mira g.user.nombre_rol. Default-allow: sin env var ROLE_IP_ALLOWLIST_X,
     # el rol X pasa igual que siempre. Configurar con
-    # ROLE_IP_ALLOWLIST_DUENO=190.152.1.0/24 etc.
+    # ROLE_IP_ALLOWLIST_ACCIONISTA=190.152.1.0/24 etc. (TMT 2026-05-19 v8 —
+    # "Dueño" renombrado a "Accionista"; si tenías ROLE_IP_ALLOWLIST_DUENO
+    # exportada, renombrala a ROLE_IP_ALLOWLIST_ACCIONISTA o queda inactiva).
     from ip_allowlist import enforce_allowlist
     app.before_request(enforce_allowlist)
 

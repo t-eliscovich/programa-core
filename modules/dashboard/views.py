@@ -161,7 +161,7 @@ def _vista_preferida(rol: str) -> str:
       2) `session["dashboard_vista"]` (lo elegido la última vez).
       3) default "simple" para el Dueño (el pedido operativo: 4 números gigantes).
     """
-    if rol != "Dueño":
+    if rol not in ("Accionista", "Dueño"):  # TMT 2026-05-19 v8 rename Dueño→Accionista
         return "completa"
     q = (request.args.get("vista") or "").strip().lower()
     if q in _VISTAS_DUENO:
@@ -201,7 +201,7 @@ def tablero():
     EMPTY_WEEK = {"facturas": EMPTY, "cheques": EMPTY, "rebotes": EMPTY}
 
     try:
-        if rol == "Dueño":
+        if rol in ("Accionista", "Dueño"):  # TMT 2026-05-19 v8 rename Dueño→Accionista
             # Tablero del Dueño (2026-04-29 batch 21): minimalista. Card
             # grande arriba con el PATRIMONIO NETO como número estrella +
             # link a /informes/balance para el desglose completo. Abajo,
