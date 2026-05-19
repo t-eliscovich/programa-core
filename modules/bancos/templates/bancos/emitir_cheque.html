@@ -105,12 +105,14 @@
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
             Banco origen <span class="text-red-500">*</span>
           </label>
+          {# TMT 2026-05-19 v2 — pre-seleccionar banco vía ?no_banco=. #}
           <select name="no_banco" required
                   class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
             <option value="">— Elegí —</option>
             {% for b in bancos %}
-              <option value="{{ b.no_banco }}">
-                {{ b.no_banco }} — {{ b.nombre or '(sin nombre)' }}
+              <option value="{{ b.no_banco }}"
+                      {% if no_banco_inicial and b.no_banco|int == no_banco_inicial|int %}selected{% endif %}>
+                {{ b.nombre or ('Banco ' ~ b.no_banco) }}
                 {% if b.saldo_stored %} · saldo $ {{ b.saldo_stored | num_es }}{% endif %}
               </option>
             {% endfor %}

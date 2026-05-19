@@ -17,54 +17,67 @@
   {% endfor %}
   {% set total_bancos = ns.total_bancos %}
 
-  {# TMT 2026-05-19 — sin label descriptivo (regla feedback_ui_labels). #}
+  {# TMT 2026-05-19 v2 (pedido dueña): hub centrado en el banco actual.
+     Por default Pichincha. Botón "Cambiar banco" al costado para elegir
+     Internacional u otro. Los 4 botones de acción (Emitir cheque, Depositar,
+     NC, ND) reciben `no_banco={{ banco_actual.no_banco }}` pre-seleccionado. #}
+  {% if banco_actual %}
   <div class="flex items-start justify-between gap-6 mb-4 flex-wrap">
-    {{ page_hero(
-        'Bancos',
-        kpi_valor='$ ' ~ (total_bancos | num_es(0)),
-        kpi_extra='· ' ~ (bancos_con_saldo | length | string)
-    ) }}
+    <div>
+      <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Banco actual</div>
+      <h1 class="text-2xl font-semibold tracking-tight">
+        {{ banco_actual.nombre or ('Banco ' ~ banco_actual.no_banco) }}
+      </h1>
+      <div class="text-3xl font-bold tabular-nums mt-1">
+        $ {{ banco_actual.saldo_stored | float | num_es(0) }}
+      </div>
+    </div>
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if mostrar_todos %}
-        <a href="{{ url_for('bancos.lista') }}"
-           class="text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-          Ocultar saldos 0
-        </a>
-      {% else %}
-        <a href="{{ url_for('bancos.lista', todos=1) }}"
-           class="text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-          Ver todos
-        </a>
-      {% endif %}
+      {# "Cambiar banco" — details/summary nativo, dropdown con los otros bancos #}
+      <details class="relative">
+        <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+          Cambiar banco
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="absolute right-0 mt-1 z-20 min-w-[240px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
+          {% for b in otros_bancos %}
+            <a href="{{ url_for('bancos.lista', banco=b.no_banco) }}"
+               class="flex items-center justify-between px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <span>{{ b.nombre or ('Banco ' ~ b.no_banco) }}</span>
+              <span class="text-xs text-slate-500 tabular-nums">$ {{ b.saldo_stored | float | num_es(0) }}</span>
+            </a>
+          {% else %}
+            <div class="px-4 py-2 text-slate-400 text-xs">No hay otros bancos cargados.</div>
+          {% endfor %}
+        </div>
+      </details>
+      <a href="{{ url_for('bancos.movimientos', no_banco=banco_actual.no_banco) }}"
+         class="text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Ver movimientos
+      </a>
     </div>
   </div>
 
-  {# TMT 2026-05-19 (pedido dueña): action bar con 4 movimientos posibles
-     dentro de Bancos. Las 4 acciones canónicas del dBase:
-       - CH (Emitir cheque) — chequera propia
-       - DE (Depositar)     — depósito directo al banco
-       - NC (Nota crédito)  — entrada (banco nos da plata)
-       - ND (Nota débito)   — egreso (banco nos quita plata)
-     "Depositar cheques en cartera" vive en /cheques/depositar-lote
-     (no confundir con DE simple). #}
+  {# Action bar — 4 movimientos canónicos del banco actual + transferir.
+     Cada botón pre-selecciona el no_banco del banco activo. #}
   {% if tiene_permiso('bancos.conciliar') %}
   <div class="no-print mb-6 flex flex-wrap gap-2">
-    <a href="{{ url_for('bancos.emitir_cheque') }}"
+    <a href="{{ url_for('bancos.emitir_cheque', no_banco=banco_actual.no_banco) }}"
        class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 5h16v14H4z"/><path d="M4 10h16"/></svg>
       Emitir cheque
     </a>
-    <a href="{{ url_for('bancos.nuevo_movimiento', doc='DE') }}"
+    <a href="{{ url_for('bancos.nuevo_movimiento', doc='DE', no_banco=banco_actual.no_banco) }}"
        class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-medium shadow-sm">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5"/><path d="m6 13 6 6 6-6"/></svg>
       Depositar
     </a>
-    <a href="{{ url_for('bancos.nuevo_movimiento', doc='NC') }}"
+    <a href="{{ url_for('bancos.nuevo_movimiento', doc='NC', no_banco=banco_actual.no_banco) }}"
        class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-emerald-400 text-emerald-700 hover:bg-emerald-50 font-medium">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
       Nota de crédito
     </a>
-    <a href="{{ url_for('bancos.nuevo_movimiento', doc='ND') }}"
+    <a href="{{ url_for('bancos.nuevo_movimiento', doc='ND', no_banco=banco_actual.no_banco) }}"
        class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-rose-400 text-rose-700 hover:bg-rose-50 font-medium">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
       Nota de débito
@@ -76,6 +89,23 @@
     </a>
   </div>
   {% endif %}
+  {% endif %}{# fin banco_actual #}
+
+  {# Resumen de todos los bancos abajo — para auditoría #}
+  <div class="flex items-center justify-between mt-4 mb-2 flex-wrap">
+    <div class="text-xs uppercase tracking-wider text-slate-500">
+      Resumen · ${{ total_bancos | num_es(0) }} en {{ bancos_con_saldo | length }} cuenta{{ 's' if bancos_con_saldo|length != 1 else '' }}
+    </div>
+    <div class="no-print">
+      {% if mostrar_todos %}
+        <a href="{{ url_for('bancos.lista', banco=(banco_actual.no_banco if banco_actual else None)) }}"
+           class="text-xs text-slate-500 hover:underline">Ocultar saldos 0</a>
+      {% else %}
+        <a href="{{ url_for('bancos.lista', banco=(banco_actual.no_banco if banco_actual else None), todos=1) }}"
+           class="text-xs text-slate-500 hover:underline">Ver todos</a>
+      {% endif %}
+    </div>
+  </div>
 
   {% if error %}
     <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
@@ -83,11 +113,12 @@
     </div>
   {% endif %}
 
+  {# TMT 2026-05-19 v2 — sacada columna "N°" (pedido dueña: el número de
+     banco no importa). Queda Banco + Saldo + acción. #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm sortable">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-5 py-3 text-left font-medium" data-sort-type="number">N°</th>
           <th class="px-5 py-3 text-left font-medium">Banco</th>
           <th class="px-5 py-3 text-right font-medium" data-sort-type="number">Saldo</th>
           <th class="px-5 py-3" data-no-sort></th>
@@ -95,23 +126,29 @@
       </thead>
       <tbody>
         {% for b in filas %}
-        {# Drift visual REMOVIDO TMT 2026-05-13: el cálculo `stored − (opening
-           + Σ E − Σ S)` daba falsos positivos cuando el opening histórico
-           era grande (ej. Pichincha post-restauración). El audit
-           `auditar_logicas.py` ya detecta drifts reales sin confundir al
-           usuario en la lista diaria. #}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-5 py-2 font-mono text-slate-500">{{ b.no_banco }}</td>
-          <td class="px-5 py-2">{{ b.nombre or ('Banco ' ~ b.no_banco) }}</td>
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40
+                   {% if banco_actual and b.no_banco|int == banco_actual.no_banco|int %}bg-sky-50/40 dark:bg-sky-900/10{% endif %}">
+          <td class="px-5 py-2">
+            {{ b.nombre or ('Banco ' ~ b.no_banco) }}
+            {% if banco_actual and b.no_banco|int == banco_actual.no_banco|int %}
+              <span class="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Actual</span>
+            {% endif %}
+          </td>
           <td class="px-5 py-2 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100">
             $ {{ b.saldo_stored | float | num_es(2) }}
           </td>
           <td class="px-5 py-2 text-right">
-            <a href="{{ url_for('bancos.movimientos', no_banco=b.no_banco) }}" class="text-sm text-blue-600 hover:underline">Movimientos →</a>
+            {% if not banco_actual or b.no_banco|int != banco_actual.no_banco|int %}
+              <a href="{{ url_for('bancos.lista', banco=b.no_banco) }}"
+                 class="text-sm text-blue-600 hover:underline">Usar este →</a>
+            {% else %}
+              <a href="{{ url_for('bancos.movimientos', no_banco=b.no_banco) }}"
+                 class="text-sm text-slate-500 hover:underline">Movimientos →</a>
+            {% endif %}
           </td>
         </tr>
         {% else %}
-        {{ empty_row(4, 'Sin bancos cargados.') }}
+        {{ empty_row(3, 'Sin bancos cargados.') }}
         {% endfor %}
       </tbody>
     </table>

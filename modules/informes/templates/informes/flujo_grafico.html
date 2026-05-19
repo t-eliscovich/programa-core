@@ -123,11 +123,10 @@
     padding: 48px 20px; text-align: center; color: var(--muted); font-size: 14px;
   }
 
-  /* Grid de paneles debajo del chart: egresos (2/3) + gastos forzados (1/3). */
-  .flujo-wrap .below-chart {
-    display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-top: 18px;
-  }
-  @media (max-width: 1100px) { .flujo-wrap .below-chart { grid-template-columns: 1fr; } }
+  /* TMT 2026-05-19 v2 — single column (sólo gastos forzados ahora, el
+     panel de "Editar deudas" se removió). Full width para que las filas
+     editables tengan espacio cómodo. */
+  .flujo-wrap .below-chart { margin-top: 18px; }
 
   /* Lista de egresos automáticos (posdat) — diseño limpio en grid multicolumna. */
   .flujo-wrap .egresos-panel { padding: 0; display: flex; flex-direction: column; }
@@ -228,26 +227,50 @@
     padding: 8px 12px; border-radius: 6px; font-weight: 600; font-size: 12px;
     cursor: pointer;
   }
-  .flujo-wrap .gf-panel .gf-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+  .flujo-wrap .gf-panel .gf-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+
+  /* TMT 2026-05-19 v2 — gf-row con inputs editables inline (fecha, importe,
+     concepto). Cambio se guarda al `change` (blur) de cada input. */
   .flujo-wrap .gf-panel .gf-row {
     background: var(--panel-hi); border: 1px solid var(--grid); border-radius: 6px;
-    padding: 7px 10px; font-size: 12px; display: grid;
-    grid-template-columns: 1fr auto; gap: 4px 8px;
+    padding: 6px 8px; font-size: 12px;
+    display: grid;
+    grid-template-columns: 130px 130px 1fr 28px;
+    gap: 8px; align-items: center;
   }
-  .flujo-wrap .gf-panel .gf-row .gf-fecha { color: var(--muted); font-size: 10px; }
-  .flujo-wrap .gf-panel .gf-row .gf-monto { color: var(--bad); text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .flujo-wrap .gf-panel .gf-row .gf-concepto { grid-column: 1; color: var(--text); font-size: 12px; word-break: break-word; }
+  .flujo-wrap .gf-panel .gf-row input {
+    background: transparent; border: 1px solid transparent; color: var(--text);
+    padding: 4px 6px; border-radius: 4px; font-size: 12px; font-family: inherit;
+    width: 100%;
+  }
+  .flujo-wrap .gf-panel .gf-row input:hover,
+  .flujo-wrap .gf-panel .gf-row input:focus {
+    border-color: var(--grid); background: var(--panel); outline: none;
+  }
+  .flujo-wrap .gf-panel .gf-row .gf-edit-importe {
+    color: var(--bad); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums;
+  }
   .flujo-wrap .gf-panel .gf-row .gf-del {
-    grid-column: 2; background: transparent; color: var(--muted); border: none;
-    cursor: pointer; font-size: 14px; padding: 0; align-self: start;
+    background: transparent; color: var(--muted); border: none;
+    cursor: pointer; font-size: 16px; padding: 0; align-self: center;
   }
   .flujo-wrap .gf-panel .gf-row .gf-del:hover { color: var(--bad); }
-  .flujo-wrap .gf-panel .gf-empty { font-size: 11px; color: var(--muted); font-style: italic; text-align: center; padding: 16px 0; }
+  .flujo-wrap .gf-panel .gf-empty { font-size: 12px; color: var(--muted); font-style: italic; text-align: center; padding: 24px 0; }
   .flujo-wrap .gf-panel .gf-total {
     margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grid);
-    font-size: 12px; display: flex; justify-content: space-between; color: var(--muted);
+    font-size: 13px; display: flex; justify-content: space-between; color: var(--muted);
   }
-  .flujo-wrap .gf-panel .gf-total strong { color: var(--bad); font-variant-numeric: tabular-nums; }
+  .flujo-wrap .gf-panel .gf-total strong { color: var(--bad); font-variant-numeric: tabular-nums; font-size: 14px; }
+
+  /* TMT 2026-05-19 v2 — gf-panel full-width (sin el panel hermano de
+     deudas/posdat que sacamos). Header con label + sub en una sola fila. */
+  .flujo-wrap .gf-panel.gf-full .gf-head {
+    display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px;
+  }
+  .flujo-wrap .gf-panel.gf-full .gf-head h3 { margin: 0; }
+  .flujo-wrap .gf-panel.gf-full .gf-form-inline {
+    display: grid; grid-template-columns: 150px 150px 1fr 100px; gap: 8px; margin-bottom: 16px;
+  }
 </style>
 {% endblock %}
 
@@ -349,38 +372,23 @@
           <canvas id="chart"></canvas>
         </div>
 
-        <div class="legend">
-          <span class="s-pos">saldo a favor</span>
-          <span class="s-neg">saldo en rojo</span>
-          <span class="s-min">mínimo del horizonte</span>
-          <span class="s-egr">egreso ese día (tamaño = magnitud)</span>
-        </div>
+        {# TMT 2026-05-19 v2 — leyenda HTML removida (pedido dueña).
+           Los colores del chart hablan por sí mismos. #}
       </section>
 
-      {# TMT 2026-05-18 — Pedido dueña: el editor de "Egresos del flujo" debe
-         incluir SOLO los gastos forzados (manuales), no la larga lista de
-         posdat. El acceso a editar deudas vive en el botón abajo. #}
+      {# TMT 2026-05-19 v2 — Pedido dueña: el cuadro debajo del chart muestra
+         SOLO gastos forzados editables. Sacado el panel "Editar deudas
+         (posdat banc 0/9)" — vive en /posdat ahora. La dueña quería ver
+         sus gastos forzados acá, no la lista de posdat. #}
       <div class="below-chart">
-        {% if tiene_permiso('posdat.editar') or tiene_permiso('posdat.crear') or tiene_permiso('posdat.anular') %}
-        <section class="panel egresos-panel" style="display:flex;align-items:center;justify-content:center;padding:24px">
-          <button type="button" id="btn-editar-deudas"
-                  class="text-sm px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium"
-                  onclick="abrirModalDeudas()">
-            Editar deudas (posdat banc 0/9)
-          </button>
-          <span style="margin-left:12px;font-size:12px;color:var(--muted)">
-            {{ egresos_lista|length if egresos_lista else 0 }} obligaciones registradas — modal con buscador
-          </span>
-        </section>
-        {% endif %}
-
-        {# Gastos forzados manual — en localStorage. Compacto. #}
-        <section class="panel gf-panel">
-          <h3>Gastos forzados</h3>
-          <p class="gf-sub">
-            Egresos extra que querés ver en la proyección, sin cargar en posdat.
-            Quedan en este navegador.
-          </p>
+        <section class="panel gf-panel gf-full">
+          <div class="gf-head">
+            <h3>Gastos forzados</h3>
+            <span class="gf-sub">
+              Egresos extra para la proyección — fecha + importe editables.
+              Quedan en este navegador.
+            </span>
+          </div>
           <form id="gf-form" class="gf-form-inline" onsubmit="return false">
             <input type="date" id="gf-fecha" required title="Fecha">
             <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
@@ -782,47 +790,46 @@ function gfRender() {
   if (items.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'gf-empty';
-    empty.textContent = 'Sin gastos forzados todavía.';
+    empty.textContent = 'Sin gastos forzados todavía. Agregá uno arriba.';
     list.appendChild(empty);
   } else {
     items.sort((a, b) => a.fecha.localeCompare(b.fecha));
     items.forEach(it => {
       const row = document.createElement('div');
       row.className = 'gf-row';
-      const fechaTxt = (() => {
-        const d = _parseISO(it.fecha);
-        return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' });
-      })();
-      row.innerHTML = (
-        '<span class="gf-fecha">' + fechaTxt + '</span>'
-        + '<span class="gf-monto">$ ' + fmt(it.importe) + '</span>'
-        + '<span class="gf-concepto">' + (it.concepto || '(sin concepto)').replace(/[<>&]/g, '') + '</span>'
-      );
-      // TMT 2026-05-18 — botón editar (la dueña pidió poder editar, no sólo agregar/eliminar)
-      const ed = document.createElement('button');
-      ed.className = 'gf-del';
-      ed.type = 'button';
-      ed.textContent = '✎';
-      ed.title = 'Editar';
-      ed.style.marginRight = '4px';
-      ed.addEventListener('click', () => {
-        const nuevoImp = prompt('Importe USD para "' + (it.concepto || '(sin concepto)') + '":', it.importe);
-        if (nuevoImp === null) return;
-        const n = parseFloat(nuevoImp);
-        if (!isFinite(n) || n <= 0) { alert('Importe inválido.'); return; }
-        const nuevoCpt = prompt('Concepto:', it.concepto || '');
-        if (nuevoCpt === null) return;
-        const nuevaFecha = prompt('Fecha (YYYY-MM-DD):', it.fecha);
-        if (nuevaFecha === null) return;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(nuevaFecha)) { alert('Fecha inválida.'); return; }
-        const cur = gfLoad().map(x => x.id === it.id
-          ? { ...x, importe: n, concepto: (nuevoCpt || '').trim(), fecha: nuevaFecha }
-          : x);
-        gfSave(cur);
-        gfRender();
-        gfRebuildChart();
-      });
-      row.appendChild(ed);
+
+      // TMT 2026-05-19 v2 — inputs inline editables en lugar de prompts.
+      // El cambio se guarda al blur de cada input (o al apretar Enter).
+      // La dueña pidió "editables en fecha y cantidad" — esto lo hace
+      // directo en la fila.
+      const fechaInput = document.createElement('input');
+      fechaInput.type = 'date';
+      fechaInput.value = it.fecha;
+      fechaInput.className = 'gf-edit-fecha';
+      fechaInput.title = 'Fecha — editar y se guarda';
+      fechaInput.addEventListener('change', () => _gfSaveCampo(it.id, 'fecha', fechaInput.value));
+
+      const importeInput = document.createElement('input');
+      importeInput.type = 'number';
+      importeInput.step = '0.01';
+      importeInput.min = '0';
+      importeInput.value = it.importe;
+      importeInput.className = 'gf-edit-importe';
+      importeInput.title = 'Importe — editar y se guarda';
+      importeInput.addEventListener('change', () => _gfSaveCampo(it.id, 'importe', importeInput.value));
+
+      const conceptoInput = document.createElement('input');
+      conceptoInput.type = 'text';
+      conceptoInput.maxLength = 60;
+      conceptoInput.value = it.concepto || '';
+      conceptoInput.placeholder = '(sin concepto)';
+      conceptoInput.className = 'gf-edit-concepto';
+      conceptoInput.title = 'Concepto — editar y se guarda';
+      conceptoInput.addEventListener('change', () => _gfSaveCampo(it.id, 'concepto', conceptoInput.value));
+
+      row.appendChild(fechaInput);
+      row.appendChild(importeInput);
+      row.appendChild(conceptoInput);
 
       const del = document.createElement('button');
       del.className = 'gf-del';
@@ -842,6 +849,36 @@ function gfRender() {
   }
   const sum = items.reduce((acc, it) => acc + Number(it.importe || 0), 0);
   total.textContent = '$ ' + fmt(sum);
+}
+
+function _gfSaveCampo(id, campo, valor) {
+  // Helper: actualiza un campo de un gasto forzado y refresca el chart.
+  // Valida según campo (importe > 0, fecha en formato YYYY-MM-DD).
+  let parsed = valor;
+  if (campo === 'importe') {
+    const n = parseFloat(valor);
+    if (!isFinite(n) || n <= 0) {
+      alert('Importe inválido.');
+      gfRender();
+      return;
+    }
+    parsed = n;
+  } else if (campo === 'fecha') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+      alert('Fecha inválida.');
+      gfRender();
+      return;
+    }
+  } else if (campo === 'concepto') {
+    parsed = (valor || '').trim();
+  }
+  const cur = gfLoad().map(x => x.id === id ? { ...x, [campo]: parsed } : x);
+  gfSave(cur);
+  gfRebuildChart();
+  // Recalcular total sin re-renderizar la fila completa (mantiene focus).
+  const sum = cur.reduce((acc, it) => acc + Number(it.importe || 0), 0);
+  const total = document.getElementById('gf-total');
+  if (total) total.textContent = '$ ' + fmt(sum);
 }
 
 function gfApplyToData(rows) {

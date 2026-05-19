@@ -1169,3 +1169,29 @@ Si `kind=POST`, el template renderiza un mini-form en la opción. Si `kind=WIZAR
 `depositar_lote` es el único wizard sin `id_cheque` en el path (es global — la dueña elige cheques adentro). El template lo trata especial.
 
 **Por qué dropdown nativo y no Alpine/JS:** `<details>` es accesible (teclado funciona), no requiere bundler, y degrada gracioso. La dueña pidió "comodo" — un click revela las opciones, otro click ejecuta.
+
+### Bancos — vista centrada en el banco actual (2026-05-19 v3)
+
+`/bancos` ahora es un hub centrado en UN solo banco a la vez (default = Pichincha). La dueña trabaja casi siempre desde ahí; tener que elegir banco en cada acción era fricción.
+
+**URL: `/bancos?banco=<no_banco>`** o `?banco=PICHINCHA`/`?banco=INTERNACIONAL` (resuelto por nombre — el `no_banco` varía por instalación). Sin param, default = Pichincha por match `'PICHINC' in nombre`.
+
+**Layout:**
+- **Hero**: nombre del banco actual + saldo grande prominente.
+- **Botón "Cambiar banco"** (`<details>`) con dropdown listando los otros bancos (con saldos). Click switchea `?banco=<no_banco>`.
+- **Action bar**: 5 botones cuya URL incluye `?no_banco={banco_actual.no_banco}` — el form destino pre-selecciona el banco automáticamente.
+- **Tabla resumen abajo**: todos los bancos, con badge "Actual" en el activo. Cada otro tiene "Usar este →" que cambia el banco activo. La columna N° se removió (la dueña dijo "el número de banco no importa").
+
+**Templates: `bancos/emitir_cheque.html` y `bancos/nuevo_movimiento.html`** aceptan `?no_banco=N` y lo pre-seleccionan en el `<select name="no_banco">`. Si no viene el param, sigue funcionando como antes (dueña elige a mano).
+
+**Resolver banco por NOMBRE (no por no_banco hardcoded):** el view usa `'PICHINC' in nombre.upper()` y `'INTER' in nombre.upper()`. Esto sobrevive a migraciones de DB donde Pichincha pasó de `no_banco=1` a `no_banco=10`. Cualquier referencia hardcoded a `no_banco=1` es bug (revisar `cheques.boleta_deposito` que ya tuvo este problema).
+
+### Flujo de caja — limpieza y gastos forzados full-width (2026-05-19 v3)
+
+`/informes/flujo`:
+
+- **Leyenda HTML removida** (`.legend` div con cuadrados de color). El chart de Chart.js ya tenía la leyenda nativa desactivada (`legend.display=false`); la HTML duplicaba info que los colores del chart ya comunican.
+- **Panel "Editar deudas (posdat banc 0/9)" eliminado** del area debajo del chart. Si la dueña quiere editar deudas viva en /posdat. El modal subyacente (`#modal-deudas`) sigue en el DOM por si en el futuro lo accedemos desde otro botón, pero ningún elemento lo abre.
+- **Gastos forzados ahora ocupan full-width** debajo del chart (antes era columna lateral 1/3).
+- **Edit inline directo**: cada fila tiene 3 inputs editables (fecha, importe, concepto). El cambio se guarda al `change` event de cada input — sin `prompt()` triple. Helper `_gfSaveCampo(id, campo, valor)` valida y persiste en localStorage. Mucho mejor UX que el prompt-spam anterior.
+- Storage: sigue siendo `localStorage` con key `flujo_gastos_forzados_v1` (sin migración).

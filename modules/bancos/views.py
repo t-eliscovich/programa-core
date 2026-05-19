@@ -17,14 +17,22 @@ bancos_bp = Blueprint("bancos", __name__, template_folder="templates")
 @requiere_login
 @requiere_permiso("bancos.ver")
 def lista():
-    # Por defecto escondemos los bancos con saldo 0 (la mayoría son cuentas
-    # cerradas o históricas que ensucian la vista). ?todos=1 los muestra.
+    """Vista hub de Bancos — TMT 2026-05-19 v2 (pedido dueña).
+
+    Default: muestra Pichincha con su saldo y los 4 botones de acción
+    (Emitir cheque, Depositar, NC, ND) pre-llenados con `?no_banco=`.
+    Botón "Cambiar banco" permite cambiar a Internacional u otro.
+    El "banco actual" se elige con ?banco=<no_banco> o `?banco=PICHINCHA`/
+    `?banco=INTERNACIONAL` (resuelto por NOMBRE — el no_banco hardcoded
+    no nos sirve porque varía por instalación).
+    """
     mostrar_todos = request.args.get("todos") == "1"
     try:
         filas_all = queries.lista_bancos()
         error = None
     except Exception as e:
         filas_all, error = [], str(e)
+
     if mostrar_todos:
         filas = filas_all
     else:
@@ -34,11 +42,45 @@ def lista():
             or round(float(b["saldo_derivado"] or 0), 2) != 0.0
         ]
     ocultos = len(filas_all) - len(filas)
+
+    # --- Resolver el banco "actual" del hub ----------------------------
+    # Prioridad: ?banco=<no_banco_int o nombre> → fallback PICHINCHA.
+    banco_param = (request.args.get("banco") or "").strip().upper()
+
+    def _busca_por_nombre(needle):
+        for b in filas_all:
+            if needle in (b.get("nombre") or "").upper():
+                return b
+        return None
+
+    banco_actual = None
+    if banco_param.isdigit():
+        no = int(banco_param)
+        banco_actual = next((b for b in filas_all if int(b["no_banco"]) == no), None)
+    elif banco_param in ("INTERNACIONAL", "INTER", "INTERNAC"):
+        banco_actual = _busca_por_nombre("INTER")
+    elif banco_param == "PICHINCHA" or banco_param == "PICH":
+        banco_actual = _busca_por_nombre("PICHINC")
+    if banco_actual is None:
+        # Default: Pichincha por nombre.
+        banco_actual = _busca_por_nombre("PICHINC")
+    if banco_actual is None and filas_all:
+        # Fallback: primer banco con saldo > 0, o el primero.
+        banco_actual = (filas[0] if filas else filas_all[0])
+
+    # Lista de otros bancos para el selector "Cambiar banco" (excluye el actual).
+    otros_bancos = [
+        b for b in filas_all
+        if not banco_actual or int(b["no_banco"]) != int(banco_actual["no_banco"])
+    ]
+
     return render_template(
         "bancos/lista.html",
         filas=filas, error=error,
         mostrar_todos=mostrar_todos,
         ocultos=ocultos,
+        banco_actual=banco_actual,
+        otros_bancos=otros_bancos,
     )
 
 
@@ -347,12 +389,18 @@ def emitir_cheque():
         except (ValueError, TypeError):
             posdat_target = None
 
+    # TMT 2026-05-19 v2 — banco pre-seleccionado vía ?no_banco= cuando se
+    # entra desde la action bar de /bancos. La dueña trabaja siempre desde
+    # Pichincha por defecto, esto evita el "elegir banco" extra.
+    no_banco_inicial = parse_int(request.args.get("no_banco"))
+
     return render_template(
         "bancos/emitir_cheque.html",
         bancos=bancos,
         posdats=posdats,
         prov_filter=prov_filter,
         tipo_inicial=tipo_inicial,
+        no_banco_inicial=no_banco_inicial,
         hoy=date.today().isoformat(),
         conceptos=conceptos,
         proveedores=proveedores,
@@ -691,10 +739,15 @@ def nuevo_movimiento():
     with _ctx.suppress(Exception):
         proveedores = queries.proveedores_activos(limite=500)
 
+    # TMT 2026-05-19 v2 — banco pre-seleccionado vía ?no_banco= (default
+    # Pichincha cuando se entra desde /bancos).
+    no_banco_inicial = parse_int(request.args.get("no_banco"))
+
     return render_template(
         "bancos/nuevo_movimiento.html",
         doc=doc, label=label, ayuda=ayuda,
         bancos=bancos,
+        no_banco_inicial=no_banco_inicial,
         proveedores=proveedores,
         hoy=date.today().isoformat(),
     )
