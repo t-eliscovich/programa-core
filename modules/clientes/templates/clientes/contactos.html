@@ -113,7 +113,13 @@
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ c.vend or '' }}</td>
+          <td class="px-3 py-2 text-xs" style="white-space: nowrap;">
+            {% if (c.vend or '')|upper|trim in ('PPR','EDG','SEP','JQU','FL1','RMY') %}
+              <span class="font-mono text-slate-600">{{ c.vend }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
           <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ c.provincia or '' }}</td>
           <td class="px-3 py-2 text-center">
             {% if c.stop == 'S' %}
