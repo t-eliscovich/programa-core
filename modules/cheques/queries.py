@@ -1184,6 +1184,13 @@ STATS = {
     "endosados":    ("E",),                       # endosados a proveedor (TMT 2026-05-12)
     "eliminados":   ("X",),                       # reversados / anulados
     "internacional": ("V",),                      # legacy banco Inter — no usar
+    # TMT 2026-05-19 — items 11 nuevos filtros agregados (pedido dueña):
+    # CARTERA = todo lo que tengo en mi poder esperando cobro.
+    # CARTERA TOTAL = CARTERA + depositados pendientes (B no clearados).
+    # OJO: 'cartera' (solo Z) se preserva como antes para no romper URLs
+    # ni callers externos (depositar_lote, balance, /historial).
+    "cartera_agg":   ("Z", "P", "1", "2", "3", "D"),       # en mi poder
+    "cartera_total": ("Z", "P", "1", "2", "3", "D", "B"),  # en mi poder + depositados pendientes
 }
 
 # Subconjunto de stats que se consideran "vivos" para cartera/cobranza:

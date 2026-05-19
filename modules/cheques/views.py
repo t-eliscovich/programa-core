@@ -1729,6 +1729,32 @@ def lista():
                 conteos_por_bucket["devueltos_en_gestion"] = dict(row_eg)
         except Exception:
             pass
+        # TMT 2026-05-19 — buckets agregados nuevos (pedido dueña item 11):
+        #   CARTERA (en mi poder) = Z + P + 1/2/3 + D
+        #   CARTERA TOTAL = CARTERA + B (depositados pendientes)
+        # Cada uno como su propia query para que sume bien sin doble-conteo
+        # de stats que aparecen en varios buckets clásicos.
+        try:
+            row_agg = db.fetch_one(
+                """
+                SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
+                  FROM scintela.cheque
+                 WHERE stat IN ('Z', 'P', '1', '2', '3', 'D')
+                """
+            )
+            if row_agg:
+                conteos_por_bucket["cartera_agg"] = dict(row_agg)
+            row_tot = db.fetch_one(
+                """
+                SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
+                  FROM scintela.cheque
+                 WHERE stat IN ('Z', 'P', '1', '2', '3', 'D', 'B')
+                """
+            )
+            if row_tot:
+                conteos_por_bucket["cartera_total"] = dict(row_tot)
+        except Exception:
+            pass
     except Exception:
         conteos_por_bucket = {}
 

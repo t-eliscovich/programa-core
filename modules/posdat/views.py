@@ -313,9 +313,14 @@ def lista():
             prov=prov, q=q, solo_abiertas=solo_abiertas,
             desde=desde, hasta=hasta,
         )
-        # TMT 2026-05-18 — si hay filtro de proveedor, el KPI del hero
-        # refleja el total filtrado (la dueña quería verlo así).
-        resumen = queries.resumen(prov=prov)
+        # TMT 2026-05-19 — item 18: el resumen recibe los MISMOS filtros que
+        # buscar() para que "X partidas" del hero coincida con las filas
+        # visibles. Antes ignoraba q/desde/hasta/solo_abiertas y daba
+        # contadores incongruentes.
+        resumen = queries.resumen(
+            prov=prov, q=q, solo_abiertas=solo_abiertas,
+            desde=desde, hasta=hasta,
+        )
         error = None
     except Exception as e:
         filas, resumen, error = [], {}, str(e)

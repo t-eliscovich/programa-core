@@ -312,6 +312,41 @@ def emitir_cheque():
                             "anticipo_usd", "otro"):
         tipo_inicial = ""
 
+    # TMT 2026-05-19 — item 19 (pedido dueña): si vienen con ?id_posdat=N
+    # desde el botón "Pagar" de /posdat, levantamos esa posdat y la pasamos
+    # al template para mostrar un banner de contexto + pre-seleccionar la
+    # fila + pre-llenar importe/concepto. Antes el wizard llegaba "vacío"
+    # y la dueña tenía que recordar todos los datos.
+    import db as _db
+    posdat_target = None
+    id_posdat_param = (request.args.get("id_posdat") or "").strip()
+    if id_posdat_param:
+        try:
+            posdat_target = _db.fetch_one(
+                """
+                SELECT pd.id_posdat, pd.num, pd.prov, pd.fechad,
+                       pd.importe, pd.concepto, pd.banc,
+                       COALESCE(p.nombre, '') AS proveedor_nombre
+                  FROM scintela.posdat pd
+                  LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
+                 WHERE pd.id_posdat = %s
+                   AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                """,
+                (int(id_posdat_param),),
+            )
+            if posdat_target:
+                # Default tipo = "proveedor" cuando viene desde el botón Pagar.
+                if not tipo_inicial:
+                    tipo_inicial = "proveedor"
+                # Si tenemos prov, filtramos las posdats al mismo proveedor
+                # para que la lista no abrume.
+                if posdat_target.get("prov") and not prov_filter:
+                    prov_filter = (posdat_target["prov"] or "").strip().upper() or None
+                    with contextlib.suppress(Exception):
+                        posdats = queries.posdat_abiertas_de(prov_filter)
+        except (ValueError, TypeError):
+            posdat_target = None
+
     return render_template(
         "bancos/emitir_cheque.html",
         bancos=bancos,
@@ -321,6 +356,7 @@ def emitir_cheque():
         hoy=date.today().isoformat(),
         conceptos=conceptos,
         proveedores=proveedores,
+        posdat_target=posdat_target,
     )
 
 

@@ -387,6 +387,119 @@ def uret_mes_corriente() -> float:
     return float(row["total"] or 0) if row else 0.0
 
 
+def _try_movimientos_mes() -> dict | None:
+    """Wrapper safe — si la query falla, devuelve None para que la
+    pantalla de balance no rompa por esto. Logueamos en stderr."""
+    try:
+        return movimientos_mes_dbase()
+    except Exception as e:
+        import logging
+        logging.exception("movimientos_mes_dbase falló: %s", e)
+        return None
+
+
+def movimientos_mes_dbase() -> dict:
+    """Datos para el cuadro MOVIMIENTOS MES estilo dBase (pedido dueña 2026-05-19, item 15b).
+
+    Replica INFORMES.PRG líneas 1003-1090. Devuelve:
+
+    - `header`: las 4 categorías top (HILADO / TEJIDO / TERMINADO / COLORANTES),
+      cada una con stock_inic, ingresos, egresos, stock_act expresados en
+      kg, $/kg y $.
+    - `compras_hilado`: filas por PROV de tipo='H' del mes en curso, con
+      total al final.
+    - `produc_tejido`: filas por PROV de tipo='K' (con kg > 0) del mes en
+      curso, con total al final.
+
+    No incluye todavía TINTORERIA bajos/fuertes ni CS.COLORANTES/CS.PRODUCCION
+    — pendientes hasta tener data confiable de tintorería separada por color.
+    """
+    hist = historia_mas_reciente() or {}
+    # 4 columnas top — usa los kg/$ del último snapshot (idem block kg
+    # original). $/kg derivado.
+    def _safe_div(a, b):
+        try:
+            return float(a) / float(b) if b else 0.0
+        except (TypeError, ZeroDivisionError):
+            return 0.0
+
+    hi0 = float(hist.get("stock_hilado") or hist.get("stock") or 0)
+    tj0 = float(hist.get("stock_tejido") or 0)
+    pf0 = float(hist.get("stock_terminado") or 0)
+    vq0 = float(hist.get("uqui") or 0)
+
+    kcom = float(hist.get("kcom") or 0)
+    ucom = float(hist.get("ucom") or 0)
+    ktej = float(hist.get("ktej") or 0)
+    ktin = float(hist.get("ktin") or 0)
+    kvent = float(hist.get("kvent") or 0)
+    utej = float(hist.get("utej") or 0)
+    utin = float(hist.get("utin") or 0)
+
+    header = {
+        "hilado":     {"stock_inic_kg": hi0, "ingresos_kg": kcom,  "egresos_kg": ktej,  "stock_act_kg": max(hi0 + kcom - ktej, 0),
+                       "ingresos_ukg":  _safe_div(ucom, kcom), "ingresos_us":  ucom},
+        "tejido":     {"stock_inic_kg": tj0, "ingresos_kg": ktej,  "egresos_kg": ktin,  "stock_act_kg": max(tj0 + ktej - ktin, 0),
+                       "ingresos_us": utej},
+        "terminado":  {"stock_inic_kg": pf0, "ingresos_kg": ktin,  "egresos_kg": kvent, "stock_act_kg": max(pf0 + ktin - kvent, 0),
+                       "ingresos_us": utin},
+        "colorantes": {"stock_inic_us": vq0, "stock_act_us": vq0},
+    }
+
+    # Breakdown por proveedor del mes en curso.
+    compras_hilado = db.fetch_all(
+        """
+        SELECT prov                   AS prov,
+               COALESCE(SUM(kg), 0)       AS kg,
+               COALESCE(SUM(importe), 0)  AS importe
+          FROM scintela.compra
+         WHERE UPPER(COALESCE(tipo, '')) = 'H'
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND DATE_TRUNC('month', fecha) = DATE_TRUNC('month', CURRENT_DATE)
+           AND COALESCE(prov, '') <> ''
+           AND UPPER(COALESCE(prov, '')) <> 'XX'
+         GROUP BY prov
+         ORDER BY SUM(importe) DESC
+         LIMIT 20
+        """
+    ) or []
+    for r in compras_hilado:
+        r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
+
+    produc_tejido = db.fetch_all(
+        """
+        SELECT prov                   AS prov,
+               COALESCE(SUM(kg), 0)       AS kg,
+               COALESCE(SUM(importe), 0)  AS importe
+          FROM scintela.compra
+         WHERE UPPER(COALESCE(tipo, '')) = 'K'
+           AND COALESCE(kg, 0) > 0
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND DATE_TRUNC('month', fecha) = DATE_TRUNC('month', CURRENT_DATE)
+           AND COALESCE(prov, '') <> ''
+         GROUP BY prov
+         ORDER BY SUM(importe) DESC
+         LIMIT 20
+        """
+    ) or []
+    for r in produc_tejido:
+        r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
+
+    return {
+        "header": header,
+        "compras_hilado": [dict(r) for r in compras_hilado],
+        "compras_hilado_total": {
+            "kg": sum(float(r.get("kg") or 0) for r in compras_hilado),
+            "importe": sum(float(r.get("importe") or 0) for r in compras_hilado),
+        },
+        "produc_tejido": [dict(r) for r in produc_tejido],
+        "produc_tejido_total": {
+            "kg": sum(float(r.get("kg") or 0) for r in produc_tejido),
+            "importe": sum(float(r.get("importe") or 0) for r in produc_tejido),
+        },
+    }
+
+
 def historia_ultimo_snapshot() -> dict | None:
     """Última fila de scintela.historia (LATEST sin filtro de fecha).
 
@@ -2673,6 +2786,9 @@ def informe_balance() -> dict:
         "diagnostico": diagnostico,
         "resultados": resultados,
         "conciliacion": conciliacion_balance(),
+        # TMT 2026-05-19 — item 15b: cuadro MOVIMIENTOS MES estilo dBase.
+        # Fallback a None si la query rompe (no debe tirar la página).
+        "movimientos_mes": _try_movimientos_mes(),
     }
 
     # ---- Math check de invariantes — TODAS las sumas deben cuadrar.
@@ -3979,25 +4095,47 @@ def crear_snapshot_historia(anio: int, mes: int,
     }
 
 
-def fuentes_y_usos(anio: int, mes: int) -> dict:
-    """Cuadro de Fuentes y Usos del mes elegido vs mes anterior.
+def fuentes_y_usos(
+    *,
+    desde_anio: int | None = None,
+    desde_mes: int | None = None,
+    hasta_anio: int | None = None,
+    hasta_mes: int | None = None,
+    # Back-compat: si se llaman con (anio, mes) viejos, se interpreta como
+    # ventana de 1 mes (anio,mes vs mes anterior). TMT 2026-05-19.
+    anio: int | None = None,
+    mes: int | None = None,
+) -> dict:
+    """Cuadro de Fuentes y Usos en un rango DESDE-HASTA mensual.
+
+    Replica INFORMES.PRG::PROCEDURE FUENTES L1654-1727. Pedido dueña
+    2026-05-19 item 14: seleccionar DESDE-HASTA + 2 columnas con totales
+    iguales (cierra con balancing line "Aumento/Disminución de líquido").
 
     Devuelve:
         {
+          "anio_ini": int, "mes_ini": int,
           "anio": int, "mes": int,
-          "h_ini": <historia mes anterior>,
-          "h_fin": <historia mes elegido>,
+          "h_ini": <historia mes inicial>,
+          "h_fin": <historia mes final>,
           "fuentes": [(label, monto), ...],
           "usos":    [(label, monto), ...],
           "total_fuentes": float,
-          "total_usos":    float,
-          "delta_liquido": float,  # total_fuentes - total_usos
+          "total_usos":    float,         # IGUAL a total_fuentes por construcción
+          "delta_liquido": float,         # Δ banco real (info)
           "delta_banco":   float,
           "error": str | None,
         }
     """
-    yy, mm = int(anio), int(mes)
-    yy_ant, mm_ant = _mes_anterior(yy, mm)
+    # Back-compat: si llaman con (anio, mes), interpretar como ventana 1 mes.
+    if hasta_anio is None and hasta_mes is None and anio is not None and mes is not None:
+        hasta_anio, hasta_mes = int(anio), int(mes)
+        desde_anio_, desde_mes_ = _mes_anterior(hasta_anio, hasta_mes)
+        desde_anio = desde_anio_ if desde_anio is None else desde_anio
+        desde_mes = desde_mes_ if desde_mes is None else desde_mes
+
+    yy, mm = int(hasta_anio), int(hasta_mes)
+    yy_ant, mm_ant = int(desde_anio), int(desde_mes)
 
     h_fin = _historia_en_mes(yy, mm)
     h_ini = _historia_en_mes(yy_ant, mm_ant)
@@ -4082,6 +4220,19 @@ def fuentes_y_usos(anio: int, mes: int) -> dict:
     total_fuentes = sum(m for _, m in fuentes)
     total_usos    = sum(m for _, m in usos)
 
+    # TMT 2026-05-19 item 14: balancing line para que los totales sean
+    # IDÉNTICOS por construcción (identidad contable). Si fuentes > usos,
+    # significa que acumulamos líquido — va como USO ("aumento de líquido").
+    # Si usos > fuentes, agotamos líquido — va como FUENTE.
+    delta_global = total_fuentes - total_usos
+    if delta_global > 0.5:
+        usos.append(("Aumento de líquido (caja + bancos)", delta_global))
+    elif delta_global < -0.5:
+        fuentes.append(("Disminución de líquido (caja + bancos)", abs(delta_global)))
+
+    total_fuentes = sum(m for _, m in fuentes)
+    total_usos    = sum(m for _, m in usos)
+
     return {
         "anio": yy, "mes": mm,
         "anio_ini": yy_ant, "mes_ini": mm_ant,
@@ -4089,6 +4240,7 @@ def fuentes_y_usos(anio: int, mes: int) -> dict:
         "fuentes": fuentes, "usos": usos,
         "total_fuentes": total_fuentes,
         "total_usos":    total_usos,
+        # `delta_liquido` queda en 0 (o casi) por el balancing.
         "delta_liquido": total_fuentes - total_usos,
         "delta_banco":   delta["banco"],
         "error":         None,

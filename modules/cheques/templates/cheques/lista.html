@@ -12,24 +12,37 @@
      agrupadas por importancia (primarias destacadas + dropdown "Más" para
      las menos usadas). TMT 2026-05-13 — antes había 8 botones de igual
      peso visual + total flotando arriba en la misma línea, ilegible. #}
-  {# TMT 2026-05-18 — header con page_hero, consistente con facturas/lista,
-     compras/lista y posdat/lista. El KPI muestra la cartera. #}
-  {% set c_cartera     = conteos.get('cartera', {}) %}
-  {% set c_dev_gest    = conteos.get('devueltos_en_gestion', {}) %}
-  {% set c_postergados = conteos.get('postergados', {}) %}
-  {% set c_daniela     = conteos.get('daniela', {}) %}
-  {% set c_depositados = conteos.get('depositados', {}) %}
-  {% set totc = (c_cartera.get('total', 0) | float)
-              + (c_dev_gest.get('total', 0) | float)
-              + (c_postergados.get('total', 0) | float)
-              + (c_daniela.get('total', 0) | float) %}
-  {% set _n_cartera = (c_cartera.get('n', 0) or 0) + (c_dev_gest.get('n', 0) or 0)
-                    + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) %}
+  {# TMT 2026-05-19 — KPI hero reactivo al filtro (pedido dueña item 12).
+     Cuando hay filtro activo (estado != 'todos', cliente, monto, fechas),
+     el hero muestra el total del subset filtrado, no la cartera global.
+     `total` y `n_total` ya vienen calculados desde el view (queries.total_buscar).
+     Para estado='todos' sin filtros, conservamos el comportamiento clásico
+     (mostrar cartera = Z+P+1/2/3+D) que es lo que la dueña espera por default. #}
+  {% set _filtro_activo = (estado and estado != 'todos')
+                          or cliente or q or desde or hasta
+                          or (monto_min is not none) or (monto_max is not none) %}
+  {% if _filtro_activo %}
+    {% set _hero_total = total | float %}
+    {% set _hero_n = n_total | int %}
+    {% set _hero_label = 'cheques (filtrado)' %}
+  {% else %}
+    {% set c_cartera     = conteos.get('cartera', {}) %}
+    {% set c_dev_gest    = conteos.get('devueltos_en_gestion', {}) %}
+    {% set c_postergados = conteos.get('postergados', {}) %}
+    {% set c_daniela     = conteos.get('daniela', {}) %}
+    {% set _hero_total = (c_cartera.get('total', 0) | float)
+                      + (c_dev_gest.get('total', 0) | float)
+                      + (c_postergados.get('total', 0) | float)
+                      + (c_daniela.get('total', 0) | float) %}
+    {% set _hero_n = (c_cartera.get('n', 0) or 0) + (c_dev_gest.get('n', 0) or 0)
+                   + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) %}
+    {% set _hero_label = 'cheques en cartera' %}
+  {% endif %}
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
     {{ page_hero(
         'Cheques',
-        kpi_valor='$ ' ~ (totc | num_es(0)),
-        kpi_extra='· ' ~ (_n_cartera | string) ~ ' cheques en cartera'
+        kpi_valor='$ ' ~ (_hero_total | num_es(0)),
+        kpi_extra='· ' ~ (_hero_n | string) ~ ' ' ~ _hero_label
     ) }}
 
     {# Acciones — sólo 2 primarias destacadas + dropdown "Más" con el resto. #}
@@ -105,14 +118,20 @@
   {# Pestañas por estado (2026-04-29) — vocabulario canónico.
      "Todos" primero por pedido de la dueña (29/abr): ver el universo completo
      y después filtrar a un bucket específico. #}
+  {# TMT 2026-05-19 — items 11 (pedido dueña):
+     - "En cartera" → "En cartera Z" (sigue siendo solo stat=Z, label más explícito).
+     - "CARTERA" nuevo = Z+P+1/2/3+D (todo lo que tengo en mi poder).
+     - "CARTERA TOTAL" nuevo = CARTERA + B (depositados pendientes). #}
   {% set tabs = [
-    ('todos',       'Todos',       None),
-    ('cartera',     'En cartera',  'Z'),
-    ('depositados', 'Depositados', 'B'),
-    ('devueltos',   'Devueltos',   '1'),
-    ('daniela',     'Daniela',     'D'),
-    ('postergados', 'Postergados', 'P'),
-    ('eliminados',  'Eliminados',  'X'),
+    ('todos',         'Todos',         None),
+    ('cartera',       'En cartera Z',  'Z'),
+    ('cartera_agg',   'CARTERA',       None),
+    ('cartera_total', 'CARTERA TOTAL', None),
+    ('depositados',   'Depositados',   'B'),
+    ('devueltos',     'Devueltos',     '1'),
+    ('daniela',       'Daniela',       'D'),
+    ('postergados',   'Postergados',   'P'),
+    ('eliminados',    'Eliminados',    'X'),
   ] %}
   <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     {% for key, label, _ in tabs %}

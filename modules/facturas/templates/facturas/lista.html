@@ -18,11 +18,28 @@
   {% set _extra_fac = (filas | length | string) ~ ' de ' ~ (n_total | string) ~ ' visibles' %}
   {% if (filas | length) < n_total %}{% set _extra_fac = _extra_fac ~ ' · acotá filtros' %}{% endif %}
 
+  {# TMT 2026-05-19 — KPI hero reactivo al filtro (pedido dueña item 12).
+     Si hay filtro activo (cliente, q, fechas, montos, vista != 'todas'),
+     mostramos el saldo del subset filtrado en vez del total de cartera.
+     `total_saldo` ya viene calculado sobre las filas filtradas. #}
+  {% set _filtro_fac_activo = cliente or q or desde or hasta
+                              or (monto_min is not none) or (monto_max is not none)
+                              or (vista and vista not in ('todas', 'cartera')) %}
+  {% if _filtro_fac_activo %}
+    {% set _hero_fac_total = total_saldo | float %}
+    {% set _hero_fac_n = filas | length %}
+    {% set _hero_fac_label = 'facturas (filtrado)' %}
+  {% else %}
+    {% set _hero_fac_total = tot_cartera_saldo %}
+    {% set _hero_fac_n = c_cartera.get('n', 0) %}
+    {% set _hero_fac_label = 'facturas vivas' %}
+  {% endif %}
+
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
     {{ page_hero(
         'Facturas',
-        kpi_valor='$ ' ~ (tot_cartera_saldo | num_es(0)),
-        kpi_extra='· ' ~ (c_cartera.get('n', 0) | string) ~ ' facturas vivas'
+        kpi_valor='$ ' ~ (_hero_fac_total | num_es(0)),
+        kpi_extra='· ' ~ (_hero_fac_n | string) ~ ' ' ~ _hero_fac_label
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
       {% if tiene_permiso('facturas.crear') %}

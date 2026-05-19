@@ -32,26 +32,46 @@
     </div>
   {% endif %}
 
-  {# Selector mes/año — patrón canónico #}
-  <form method="get" class="flex items-end gap-3 mb-4">
-    <label class="flex flex-col">
-      <span class="text-xs text-slate-600">Año</span>
-      <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
-             class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
-    </label>
-    <label class="flex flex-col">
-      <span class="text-xs text-slate-600">Mes</span>
-      <select name="mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
-        {% set meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'] %}
-        {% for m in range(1, 13) %}
-          <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ m }} — {{ meses[m-1] }}</option>
-        {% endfor %}
-      </select>
-    </label>
+  {# TMT 2026-05-19 — item 14: selector DESDE-HASTA explícito (antes era
+     un solo mes que se comparaba contra el anterior). #}
+  {% set meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'] %}
+  <form method="get" class="flex items-end flex-wrap gap-3 mb-4">
+    <div class="flex items-end gap-2">
+      <span class="text-xs text-slate-500 self-end pb-1.5 mr-1">DESDE</span>
+      <label class="flex flex-col">
+        <span class="text-xs text-slate-600">Mes</span>
+        <select name="desde_mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
+          {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if desde_mes == m %}selected{% endif %}>{{ m }} — {{ meses[m-1] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="flex flex-col">
+        <span class="text-xs text-slate-600">Año</span>
+        <input type="number" name="desde_anio" value="{{ desde_anio }}" min="2000" max="2099"
+               class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
+      </label>
+    </div>
+    <div class="flex items-end gap-2">
+      <span class="text-xs text-slate-500 self-end pb-1.5 mr-1">HASTA</span>
+      <label class="flex flex-col">
+        <span class="text-xs text-slate-600">Mes</span>
+        <select name="hasta_mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900 w-32">
+          {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if hasta_mes == m %}selected{% endif %}>{{ m }} — {{ meses[m-1] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="flex flex-col">
+        <span class="text-xs text-slate-600">Año</span>
+        <input type="number" name="hasta_anio" value="{{ hasta_anio }}" min="2000" max="2099"
+               class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
+      </label>
+    </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Ver</button>
     {% if data.mes_ini is defined %}
       <span class="text-xs text-slate-500 self-center ml-2">
-        Compara cierre <strong>{{ '%02d/%d' % (data.mes_ini, data.anio_ini) }}</strong> →
+        cierre <strong>{{ '%02d/%d' % (data.mes_ini, data.anio_ini) }}</strong> →
         <strong>{{ '%02d/%d' % (data.mes, data.anio) }}</strong>
       </span>
     {% endif %}
@@ -68,15 +88,18 @@
       <div class="text-xs uppercase tracking-wider text-rose-700 dark:text-rose-300 font-semibold">Total usos</div>
       <div class="text-2xl font-bold text-rose-900 dark:text-rose-100 tabular-nums mt-1">$ {{ data.total_usos | num_es(0) }}</div>
     </div>
-    <div class="rounded-lg border-2 {% if data.delta_liquido >= 0 %}border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/20{% else %}border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20{% endif %} px-5 py-3">
-      <div class="text-xs uppercase tracking-wider {% if data.delta_liquido >= 0 %}text-sky-700 dark:text-sky-300{% else %}text-amber-700 dark:text-amber-300{% endif %} font-semibold">
-        Variación de líquido (fuentes − usos)
+    {# TMT 2026-05-19 — item 14: con la balancing line los totales son
+       idénticos por construcción, así que `delta_liquido` ya no aporta.
+       Mostramos en su lugar la variación de líquido del período (Δ banco). #}
+    <div class="rounded-lg border-2 {% if data.delta_banco >= 0 %}border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/20{% else %}border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20{% endif %} px-5 py-3">
+      <div class="text-xs uppercase tracking-wider {% if data.delta_banco >= 0 %}text-sky-700 dark:text-sky-300{% else %}text-amber-700 dark:text-amber-300{% endif %} font-semibold">
+        Δ líquido del período
       </div>
-      <div class="text-2xl font-bold tabular-nums mt-1 {% if data.delta_liquido >= 0 %}text-sky-900 dark:text-sky-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
-        $ {{ data.delta_liquido | num_es(0) }}
+      <div class="text-2xl font-bold tabular-nums mt-1 {% if data.delta_banco >= 0 %}text-sky-900 dark:text-sky-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
+        $ {{ data.delta_banco | num_es(0) }}
       </div>
-      <div class="text-xs {% if data.delta_liquido >= 0 %}text-sky-700/80{% else %}text-amber-700/80{% endif %} mt-1">
-        Δ banco real: $ {{ data.delta_banco | num_es(0) }}
+      <div class="text-xs text-slate-500 mt-1">
+        Total fuentes = Total usos por construcción.
       </div>
     </div>
   </div>

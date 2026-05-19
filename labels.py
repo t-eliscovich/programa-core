@@ -61,34 +61,64 @@ def label_cuenta_pago(key: str) -> str:
 # Código de 1 letra en scintela.compra.tipo. Mantener en sincronía con
 # modules/compras/queries.py:TIPOS_VALIDOS.
 
-TIPO_COMPRA_HILADO    = "H"
-TIPO_COMPRA_TEJIDO    = "K"
-TIPO_COMPRA_TINTURA   = "T"
-TIPO_COMPRA_QUIMICOS  = "Q"
-TIPO_COMPRA_OTROS     = "C"
-TIPO_COMPRA_ANTICIPO  = "A"
-TIPO_COMPRA_SERVICIOS = "S"
+TIPO_COMPRA_HILADO     = "H"
+TIPO_COMPRA_TEJIDO     = "K"
+TIPO_COMPRA_TINTURA    = "T"   # legacy duplicado con C — no usar al alta
+TIPO_COMPRA_QUIMICOS   = "Q"
+# TMT 2026-05-19 (Tamara corrigió): C no es "Otros" ni "Consumibles" —
+# C = TINTORERÍA. Era una mala interpretación mía previa. Refleja el LC2
+# del dBase: concepto que arranca con "CC" → tipo C → tintorería.
+TIPO_COMPRA_TINTORERIA = "C"
+TIPO_COMPRA_ANTICIPO   = "A"
+# TMT 2026-05-19 (Tamara): IN = anticipo para máquinas. Igual que A pero
+# específico para compras de maquinaria/repuestos pagadas adelantadas.
+TIPO_COMPRA_ANT_MAQ    = "I"
+TIPO_COMPRA_SERVICIOS  = "S"
+
+# Alias retro-compat — algunos call-sites todavía usan TIPO_COMPRA_OTROS.
+TIPO_COMPRA_OTROS = TIPO_COMPRA_TINTORERIA
 
 TIPOS_COMPRA_LABEL = {
-    TIPO_COMPRA_HILADO:    "Hilado",        # NO "Hilados"
-    TIPO_COMPRA_TEJIDO:    "Tejido",        # K en legacy
-    TIPO_COMPRA_TINTURA:   "Tintura",
-    TIPO_COMPRA_QUIMICOS:  "Químicos",      # NO "Productos químicos"
-    TIPO_COMPRA_OTROS:     "Otros",         # NO "Cosas de fábrica" en UI
-    TIPO_COMPRA_ANTICIPO:  "Anticipo",
-    TIPO_COMPRA_SERVICIOS: "Servicios",
+    TIPO_COMPRA_HILADO:     "Hilado",        # NO "Hilados"
+    TIPO_COMPRA_TEJIDO:     "Tejido",        # K en legacy
+    TIPO_COMPRA_TINTURA:    "Tintura",
+    TIPO_COMPRA_QUIMICOS:   "Químicos",      # NO "Productos químicos"
+    TIPO_COMPRA_TINTORERIA: "Tintorería",    # C — pedido dueña 2026-05-19
+    TIPO_COMPRA_ANTICIPO:   "Anticipo",
+    TIPO_COMPRA_ANT_MAQ:    "Anticipo máquinas",
+    TIPO_COMPRA_SERVICIOS:  "Servicios",
 }
 
 # Etiqueta larga (para tooltips o pantallas detalladas).
 TIPOS_COMPRA_DESCRIPCION = {
-    TIPO_COMPRA_HILADO:    "Hilado — kg de hilado",
-    TIPO_COMPRA_TEJIDO:    "Tejido — servicio de tejeduría o producción propia",
-    TIPO_COMPRA_TINTURA:   "Tintura — servicio de tintorería",
-    TIPO_COMPRA_QUIMICOS:  "Químicos — colorantes y auxiliares",
-    TIPO_COMPRA_OTROS:     "Otros — repuestos, aceite, consumibles de fábrica",
-    TIPO_COMPRA_ANTICIPO:  "Anticipo — pago a proveedor sin factura todavía",
-    TIPO_COMPRA_SERVICIOS: "Servicios — luz, agua, contadora, mantenimiento",
+    TIPO_COMPRA_HILADO:     "Hilado — kg de hilado (LC2: HH)",
+    TIPO_COMPRA_TEJIDO:     "Tejido — servicio de tejeduría o producción propia (LC2: KK)",
+    TIPO_COMPRA_TINTURA:    "Tintura — servicio de tintorería (legacy, usar C)",
+    TIPO_COMPRA_QUIMICOS:   "Químicos — colorantes y auxiliares (LC2: QQ)",
+    TIPO_COMPRA_TINTORERIA: "Tintorería — servicio de tintorería + insumos (LC2: CC)",
+    TIPO_COMPRA_ANTICIPO:   "Anticipo — pago a proveedor sin factura todavía (LC2: AA)",
+    TIPO_COMPRA_ANT_MAQ:    "Anticipo máquinas — adelanto para compra de maquinaria (LC2: IN)",
+    TIPO_COMPRA_SERVICIOS:  "Servicios — luz, agua, contadora, mantenimiento",
 }
+
+# Mapping LC2 (left-concepto-2) ↔ tipo. Replica lo que dBase hacía para
+# auto-categorizar compras según los primeros 2 chars del concepto.
+# Hoy preferimos usar el TIPO explícito; este mapping queda como referencia
+# y para la posible auto-clasificación de gastos. TMT 2026-05-19.
+TIPOS_COMPRA_LC2 = {
+    "HH": TIPO_COMPRA_HILADO,
+    "KK": TIPO_COMPRA_TEJIDO,
+    "CC": TIPO_COMPRA_TINTORERIA,
+    "QQ": TIPO_COMPRA_QUIMICOS,
+    "AA": TIPO_COMPRA_ANTICIPO,
+    "IN": TIPO_COMPRA_ANT_MAQ,
+}
+
+
+def lc2_para_tipo(codigo: str) -> str:
+    """Devuelve el LC2 (2 chars) de un tipo de 1 char. 'C' → 'CC', etc."""
+    inv = {v: k for k, v in TIPOS_COMPRA_LC2.items()}
+    return inv.get((codigo or "").upper().strip(), (codigo or ""))
 
 
 def label_tipo_compra(codigo: str) -> str:

@@ -361,36 +361,55 @@ def snapshot_backfill():
 @requiere_login
 @requiere_permiso("informes.ver")
 def fuentes_y_usos():
-    """Cuadro de Fuentes y Usos del mes elegido vs mes anterior.
+    """Cuadro de Fuentes y Usos en un rango DESDE-HASTA (mensual).
 
-    Pedido dueña 2026-05-18 (docx "Para Claude"): existe en su PRG viejo
-    y le sirve para presentar a banco/socios.
+    Pedido dueña 2026-05-19 (docx "Para Claude 2", item 14): seleccionar
+    DESDE-HASTA y mostrar 2 columnas con totales iguales (réplica de
+    INFORMES.PRG::PROCEDURE FUENTES L1654-1727). Granularidad: mensual,
+    porque la data viene de scintela.historia (un snapshot por mes).
     """
     from datetime import date
     hoy = date.today()
-    try:
-        anio = int(request.args.get("anio") or hoy.year)
-    except (TypeError, ValueError):
-        anio = hoy.year
-    try:
-        mes = int(request.args.get("mes") or hoy.month)
-    except (TypeError, ValueError):
-        mes = hoy.month
-    mes = max(1, min(mes, 12))
+
+    def _p(k, default):
+        try:
+            return int(request.args.get(k) or default)
+        except (TypeError, ValueError):
+            return default
+
+    # Default: ventana de 1 mes terminando en mes actual (compatible con
+    # comportamiento anterior cuando solo había un picker).
+    hasta_anio = _p("hasta_anio", _p("anio", hoy.year))
+    hasta_mes  = _p("hasta_mes",  _p("mes",  hoy.month))
+    desde_anio = _p("desde_anio", hasta_anio if hasta_mes > 1 else hasta_anio - 1)
+    desde_mes  = _p("desde_mes",  hasta_mes - 1 if hasta_mes > 1 else 12)
+    hasta_mes  = max(1, min(hasta_mes, 12))
+    desde_mes  = max(1, min(desde_mes, 12))
 
     try:
-        data = queries.fuentes_y_usos(anio=anio, mes=mes)
+        data = queries.fuentes_y_usos(
+            desde_anio=desde_anio, desde_mes=desde_mes,
+            hasta_anio=hasta_anio, hasta_mes=hasta_mes,
+        )
     except Exception as e:
         data = {
-            "anio": anio, "mes": mes,
+            "anio_ini": desde_anio, "mes_ini": desde_mes,
+            "anio": hasta_anio, "mes": hasta_mes,
             "fuentes": [], "usos": [],
             "total_fuentes": 0, "total_usos": 0,
             "delta_liquido": 0, "delta_banco": 0,
             "h_ini": {}, "h_fin": {},
             "error": str(e),
         }
-    return render_template("informes/fuentes_usos.html",
-                           data=data, anio=anio, mes=mes)
+    return render_template(
+        "informes/fuentes_usos.html",
+        data=data,
+        # Para back-compat con el template (siguen existiendo `anio`/`mes`
+        # como los del HASTA, además de los explícitos `desde_*`/`hasta_*`).
+        anio=hasta_anio, mes=hasta_mes,
+        desde_anio=desde_anio, desde_mes=desde_mes,
+        hasta_anio=hasta_anio, hasta_mes=hasta_mes,
+    )
 
 
 @informes_bp.route("/flujo")

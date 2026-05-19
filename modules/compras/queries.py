@@ -5,17 +5,24 @@ scintela.posdat (coincide con INFORMES.PRG: 'TOTP = SUM posdat WHERE banc <> 9')
 Este módulo muestra el histórico de compras; para deudas vivas, ir a /proveedores
 o al informe de deudas.
 
-Vocabulario canónico de tipos (2026-04-29 — ver docs/SKILL_ADDENDUM_BATCH_18.md):
+Vocabulario canónico de tipos (TMT 2026-05-19 — corregido por Tamara):
 
-    K  = tejeduría — sin kg = compra de servicio; con kg = PRODUCCIÓN
-    H  = hilado (kg de hilado)
-    Q  = químicos
-    C  = cosas de fábrica (aceite, repuestos, consumibles)
-    A  = anticipo (a proveedor sin factura todavía; luego se "convierte")
+    K (KK) = tejeduría — sin kg = compra de servicio; con kg = PRODUCCIÓN
+    H (HH) = hilado (kg de hilado)
+    Q (QQ) = químicos (colorantes + auxiliares)
+    C (CC) = tintorería (servicio de tintura + insumos) — NO es "Otros".
+              Era mi mala interpretación previa; la dueña lo corrigió.
+    A (AA) = anticipo (a proveedor sin factura todavía; luego se "convierte")
+    I (IN) = anticipo para máquinas (variante de A para maquinaria)
+
+LC2 (left-concepto-2): los códigos de 2 letras (KK, CC, etc.) son el mapeo
+LC2 del dBase. Internamente el schema usa el char único (K, C, ...). El
+mapping LC2 ↔ tipo vive en `labels.TIPOS_COMPRA_LC2`. El selector en
+/compras/nueva muestra los LC2 al usuario pero submite el char único.
 
 La discriminación compras vs producción es:
     PRODUCCIÓN  ⟺ tipo = 'K' AND kg > 0
-    COMPRAS     ⟺ todo lo demás (H, Q, C, K-sin-kg, A)
+    COMPRAS     ⟺ todo lo demás (H, Q, C, K-sin-kg, A, I)
 """
 from datetime import date, timedelta
 
@@ -23,7 +30,9 @@ import db
 from periodo_guard import asegurar_fecha_abierta
 
 # Set de tipos válidos para validación al alta. Cualquier otro valor → ValueError.
-TIPOS_VALIDOS = ("K", "H", "Q", "C", "A")
+# TMT 2026-05-19 — agregado 'I' (IN = Anticipo máquinas, pedido Tamara).
+# Importante: C ahora significa TINTORERÍA (no "Consumibles"/"Otros").
+TIPOS_VALIDOS = ("K", "H", "Q", "C", "A", "I")
 
 # Etiquetas legibles para la UI — fuente única en labels.py para mantener
 # consistencia con todo el resto del programa (TMT 2026-05-12).

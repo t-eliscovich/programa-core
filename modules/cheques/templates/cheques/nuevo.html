@@ -466,10 +466,41 @@
       });
     });
 
-    // TMT 2026-05-19 — wire-up del botón MAX removido (item 6). Si la dueña
-    // necesita "aplicar el resto a esta factura", tildea el checkbox de la
-    // fila (que aplica el saldo entero) y edita manualmente si quiere
-    // partir. El control queda 100% explícito.
+    // ── Botón "MAX": aplica todo lo que queda del cheque a esta factura,
+    // hasta su saldo. TMT 2026-05-16.
+    //   monto_aplicar = min(saldo_factura, total_cheques - sum_aplicaciones_OTRAS)
+    // Si saldo > disponible → consume el disponible entero (cheque corto).
+    // Si disponible > saldo → consume el saldo entero (queda restante para otra).
+    tbody.querySelectorAll('button.aplic-total').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = btn.dataset.id;
+        const inp = tbody.querySelector(`input.aplic-input[data-id="${id}"]`);
+        if (!inp) return;
+        const saldo = parseFloat(inp.dataset.saldo || 0);
+        const totalCheques = sumaImporteCheques();
+        let aplicadoOtros = 0;
+        tbody.querySelectorAll('input.aplic-input').forEach(o => {
+          if (o.dataset.id !== id) aplicadoOtros += parseMonto(o.value) || 0;
+        });
+        const disponible = totalCheques - aplicadoOtros;
+        let toApply;
+        if (saldo > 0) {
+          toApply = Math.max(0, Math.min(saldo, disponible));
+        } else {
+          toApply = saldo;
+        }
+        inp.value = toApply.toFixed(2);
+        inp.dataset.userEdited = '1';
+        inp.dataset.appliedTotal = '1';
+        const tUsed = document.getElementById('aplic-t-used');
+        if (tUsed) tUsed.value = '1';
+        const chk = tbody.querySelector(`input.aplic-cancel[data-id="${id}"]`);
+        if (chk) chk.checked = Math.abs(toApply - saldo) < 0.01 && Math.abs(saldo) > 0.005;
+        recalcAcum();
+        updateSummary();
+      });
+    });
 
     recalcAcum();
     updateSummary();

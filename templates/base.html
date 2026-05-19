@@ -41,6 +41,20 @@
 
     .text-mono { font-variant-numeric: tabular-nums; }
 
+    /* TMT 2026-05-19 — bordes más oscuros para mejor legibilidad (pedido
+       Tamara: su papá no veía los recuadros). Override global de las clases
+       de borde claro de Tailwind. En dark mode no tocamos nada. */
+    :root:not(.dark) .border-slate-200,
+    :root:not(.dark) .border-slate-200\/70 {
+      border-color: rgb(148 163 184) !important;  /* slate-400 — antes 226 232 240 (slate-200) */
+    }
+    :root:not(.dark) .border-slate-100 {
+      border-color: rgb(203 213 225) !important;  /* slate-300 — antes 241 245 249 (slate-100) */
+    }
+    :root:not(.dark) .border-slate-300 {
+      border-color: rgb(100 116 139) !important;  /* slate-500 — para inputs/selects */
+    }
+
     /* ---- Print stylesheet ---- */
     @media print {
       /* Hide chrome (sidebar, topbar, breadcrumbs, action buttons). */
@@ -583,7 +597,10 @@
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.deudas', 'Deudas con proveedores', 'trend-down') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('stock.lista', 'Stock', 'piggy') }}{% endif %}
+        {# TMT 2026-05-19 — pantalla "Stock" removida del sidebar (pedido
+           Tamara): la info ya está en Resultados (sección STOCK del balance).
+           El route stock.lista sigue existiendo pero ya no se navega desde
+           el sidebar; se puede sacar entero en una segunda pasada. #}
         {# TMT 2026-05-17: aclarado — para CREAR anticipos USD se usa el
            item "Pagar Anticipo USD" en Bancos y caja. Acá es sólo VER. #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('dolares.lista', 'Ver anticipos USD', 'cash') }}{% endif %}

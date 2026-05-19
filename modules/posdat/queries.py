@@ -378,24 +378,47 @@ def buscar(
     return rows
 
 
-def resumen(prov: str | None = None) -> dict:
-    """Total de deuda abierta (banc<>9) y número de partidas.
+def resumen(
+    prov: str | None = None,
+    *,
+    q: str = "",
+    solo_abiertas: bool = True,
+    desde: str | None = None,
+    hasta: str | None = None,
+) -> dict:
+    """Total de deuda abierta y número de partidas.
+
+    TMT 2026-05-19 — item 18 (pedido dueña): el resumen ahora matchea
+    exactamente lo que devuelve `buscar()`, así "X partidas" coincide con
+    las filas visibles en el listado. Antes filtraba `importe > 0` y
+    excluía las filas negativas (ajustes/anticipos a favor), dando
+    contadores tipo "4 partidas" cuando se veían 8 filas en pantalla.
 
     Excluye anuladas (soft-delete) — migración 0027.
-
-    TMT 2026-05-18: si pasa `prov`, filtra por proveedor — para que el
-    KPI hero refleje el total del filtro activo en /posdat?prov=XX.
     """
+    q_s = (q or "").strip()
+    like = f"%{q_s}%" if q_s else None
     row = db.fetch_one(
         """
-        SELECT COALESCE(SUM(importe), 0) AS total_abierto,
-               COUNT(*)                  AS partidas_abiertas
-        FROM scintela.posdat
-        WHERE COALESCE(banc, 0) <> 9
-          AND COALESCE(importe, 0) > 0
-          AND (anulada IS NOT TRUE OR anulada IS NULL)
-          AND (%(prov)s IS NULL OR UPPER(prov) = UPPER(%(prov)s))
+        SELECT COALESCE(SUM(pd.importe), 0) AS total_abierto,
+               COUNT(*)                     AS partidas_abiertas
+          FROM scintela.posdat pd
+          LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
+         WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
+           AND (%(q)s IS NULL
+                OR UPPER(COALESCE(pd.concepto,'')) LIKE UPPER(%(like)s)
+                OR UPPER(COALESCE(p.nombre,''))    LIKE UPPER(%(like)s)
+                OR UPPER(COALESCE(pd.prov,''))     LIKE UPPER(%(like)s))
+           AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
+           AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
+           AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
+           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         """,
-        {"prov": prov or None},
+        {
+            "prov": prov or None,
+            "q": q_s or None, "like": like,
+            "solo_abiertas": solo_abiertas,
+            "desde": desde or None, "hasta": hasta or None,
+        },
     )
     return row or {"total_abierto": 0, "partidas_abiertas": 0}

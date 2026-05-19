@@ -46,13 +46,18 @@
 
       <label class="flex flex-col">
         <span class="text-xs text-slate-600">Tipo <span class="text-red-500">*</span></span>
+        {# TMT 2026-05-19 (Tamara): mostrar el código LC2 (2 letras) en la
+           etiqueta para que coincida con el vocabulario que usa la dueña
+           ("KK", "CC", "HH"…). El value sigue siendo el char único de la
+           DB para no romper el schema. Agregado I (IN) = Anticipo máquinas
+           y corregido C = Tintorería. #}
         <select name="tipo" required
                 class="border rounded px-2 py-1 mt-0.5 text-sm bg-white dark:bg-slate-900">
           <option value="">— elegir —</option>
-          {% for k in ['K', 'H', 'Q', 'C', 'A'] %}
+          {% for k in ['K', 'H', 'Q', 'C', 'A', 'I'] %}
             <option value="{{ k }}" {% if form.tipo and form.tipo|upper == k %}selected{% endif %}
                     title="{{ L.TIPOS_COMPRA_DESCRIPCION.get(k, '') }}">
-              {{ k }} — {{ L.label_tipo_compra(k) }}
+              {{ L.lc2_para_tipo(k) }} — {{ L.label_tipo_compra(k) }}
             </option>
           {% endfor %}
         </select>

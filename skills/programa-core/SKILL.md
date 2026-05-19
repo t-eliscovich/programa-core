@@ -896,3 +896,84 @@ ngrok tcp 5432
 Ngrok devuelve un host:port tipo `0.tcp.ngrok.io:NNNNN` — usar ESE en el `.env` (o `DB_HOST` / `DB_PORT` env vars) para que `db.py` apunte ahí. **No usar cloudflared** — la dueña ya tiene ngrok configurado y es lo que usa habitualmente.
 
 Igual que cualquier tunnel ad-hoc, fine para corridas cortas (migrate, status, diagnóstico). Para reads/writes sostenidos, ir por la app en EC2.
+
+## Pedido de la dueña 2026-05-19 — UX cleanup batch 2
+
+Segunda pasada de UI a pedido directo de Tamara (docx "Para Claude 2", 19 items). Patrones que NO se pueden perder:
+
+### Cobranza — `cheques/nuevo.html` (items 1-7)
+
+- Cliente input con `onfocus="this.select()"` + `onclick="this.select()"` — para que al re-focusear, el texto quede seleccionado y la primera tecla lo reemplace. Sin esto la dueña tenía que borrar el cliente actual para reabrir el datalist.
+- Facturas se cargan al `input` event del cliente (debounced 300ms), no solo al `blur`. Antes facturas aparecían recién al tabbear a N° cheque porque el `blur` del cliente se disparaba ahí.
+- Orden de campos: `Importe → N° cheque → A depositar` (la dueña piensa "cuánto cobro" antes que "qué número de cheque es").
+- Columna "Acum. saldo" en el listado de facturas a aplicar — running total de saldos para ver de un vistazo si X facturas suman lo que cobra.
+- **NO** auto-distribuir FIFO. Solo pre-asignar cuando hay match EXACTO entre importe y saldo de UNA factura. La dueña decide explícitamente dónde aplica.
+- **Botón MAX se conserva** (memoria `feedback_cobranza_max.md`). En el intento inicial lo removí — la dueña corrigió que sí lo usa. Si no se entiende la etiqueta, mejorarla; no eliminar.
+- Bloque "Más datos (banco texto libre, endosado a proveedor)" eliminado del form: era redundante con el select de banco emisor y el campo banco_texto no se usaba.
+
+### Nueva compra — `labels.py` (item 8)
+
+`TIPO_COMPRA_OTROS = "C"` ahora se muestra como **"Consumibles"** (no "Otros"). Descripción larga: "Consumibles — repuestos, aceite, otros suministros de fábrica". Mantener este label — la dueña explícitamente dijo "C no es otros". Si surgen más feedback sobre los tipos H/K/T/Q/C, revisar acá primero.
+
+### Bancos detalle — `bancos/movimientos.html` (item 9)
+
+Columnas removidas del listado: `Prov/Ref`, `Usuario`, `Stat`. Eran ruido de auditoría. Si en el futuro se necesitan, mover a un toggle/hover, no de default.
+
+### Emitir cheque — `bancos/emitir_cheque.html` (items 10 + 19)
+
+- Removido header "3. Detalles del destino" — los campos por tipo ya están etiquetados.
+- **Wizard de pago desde posdat:** si llega `?id_posdat=N` la view fetchea esa posdat, pasa `posdat_target` al template, y:
+  - Muestra un banner emerald arriba con `#N · prov · concepto · $importe` y link "← Volver a posdat".
+  - Default `tipo=proveedor`.
+  - Pre-filtra `prov` y pre-selecciona el radio button de esa posdat (`bg-emerald-50`).
+  - Pre-llena el campo `Importe` con el importe de la posdat.
+  - La dueña aún puede editar todo si quiere pagar parcial.
+
+### Cheques lista — `cheques/lista.html` + `queries.py` + `views.py` (items 11-13)
+
+- Conteo "725" en tab "Depositados" ocultado — dato irrelevante para el día a día.
+- Columna "Plazo" removida del listado — no aporta acá.
+- Renombrado tab `cartera` (solo Z) → **"En cartera Z"** (el bucket interno `cartera` sigue siendo `("Z",)` por compat con balance/historial).
+- Agregados 2 buckets/filtros nuevos:
+  - `cartera_agg` = `("Z","P","1","2","3","D")` → tab **"CARTERA"** (todo lo en mi poder).
+  - `cartera_total` = `("Z","P","1","2","3","D","B")` → tab **"CARTERA TOTAL"** (cartera + depositados pendientes).
+  - Los conteos viven en `cheques/views.py` con 2 sub-queries explícitas (no derivados de SUM de buckets para evitar doble-conteo).
+- **KPI hero reactivo a filtros**: si el filtro está activo (estado != `todos`, cliente, monto, q, fechas), el hero muestra `total` / `n_total` del subset filtrado. Label cambia a "cheques (filtrado)". Sin filtro: comportamiento clásico (Z+P+1/2/3+D).
+
+### Facturas lista — `facturas/lista.html` (item 12)
+
+KPI hero reactivo análogo a cheques: si hay filtro (cliente, q, fechas, montos, vista≠todas), muestra `total_saldo` del subset filtrado + label "facturas (filtrado)". Sin filtro: `tot_cartera_saldo` + "facturas vivas".
+
+### Resultados / Balance — `informes/balance.html` (items 15a, 15b, 16)
+
+Limpieza grande:
+- Removido bloque "Kilos y movimientos — último cierre".
+- Removidos `<details>` "Conciliación — totales del balance vs módulos" y "Diagnóstico — qué suma a qué" — la data sigue en `b.conciliacion` y `b.diagnostico` por si queremos exponerla en una vista dedicada (`/informes/utilidad_debug` o similar).
+- Removida fila "Plazo cartera (días)" del panel RESULTADOS.
+- Removidos bloques aux: "Utilidad = PATR − PATANT" (explicación), "Provisión pendiente del mes", "Utilidad Proyectada". `Utilidad Actual` arriba ya es suficiente.
+- Removido panel completo "Detalle bancos" (vivía bajo el Balance) — el dato consolidado ya está en la fila ACTIVO → Bancos.
+
+**Cuadro nuevo MOVIMIENTOS MES (replica INFORMES.PRG L1003-1090):** función nueva `queries.movimientos_mes_dbase()`, expuesta como `b.movimientos_mes` (envuelto en `_try_movimientos_mes()` para fail-safe). Sub-componentes:
+- 4 columnas top (HILADO / TEJIDO CRUDO / TERMINADO / COLORANTES) con STOCK INIC / INGRESOS / EGRESOS / STOCK ACT (kg, $/kg, $).
+- Sub-tabla **COMPRAS HILADO** con breakdown por PROV (tipo='H' del mes) + total.
+- Sub-tabla **PRODUC. TEJIDO** con breakdown por PROV (tipo='K' kg>0 del mes) + total.
+- **Pendiente** (TODO): TINTORERIA bajos/fuertes, CS.COLORANTES, CS.PRODUCCION, PROV.EXT — requieren separar tintura por color. Comentado en el template.
+
+### Gastos — `informes/gastos.html` (item 17)
+
+- 3 tarjetas resumen TEJEDURÍA/TINTORERÍA/ADMINISTRACIÓN removidas — duplicaban la fila "Total con amort." de la matriz 3×3 que está justo debajo (viola Regla 3).
+- Bloque "Movimientos bancarios del mes" removido — el detalle por banco vive en /bancos, no acá.
+
+### Posdat — `posdat/queries.py` + `views.py` (item 18)
+
+Bug del header "4 partidas" vs 8 filas visibles arreglado. `resumen()` ahora acepta los mismos filtros que `buscar()` (`q`, `solo_abiertas`, `desde`, `hasta`) y NO filtra por `importe > 0`. Resultado: el contador del hero matchea las filas del listado. La vista `posdat.lista` pasa todos los filtros a `resumen()`.
+
+### Fuentes y Usos — `informes/views.py` + `queries.py` + `fuentes_usos.html` (item 14)
+
+- Selector cambió de un solo "mes/año" a **DESDE-HASTA** (dos pares mes/año). Granularidad mensual porque la data viene de `scintela.historia`. Back-compat: si vienen los viejos `?anio=&mes=`, se interpreta como ventana de 1 mes (mes elegido vs anterior).
+- **Balancing line** "Aumento/Disminución de líquido (caja + bancos)" — agregada antes de los totales. Resultado: `total_fuentes == total_usos` por construcción (identidad contable). Si el delta global es +, va como USE ("aumento de líquido"); si es −, va como FUENTE ("disminución de líquido"). Replica `INFORMES.PRG::PROCEDURE FUENTES` L1654-1727.
+- KPI "Variación de líquido" reemplazado por "Δ líquido del período" (= `delta_banco` real), porque con la balancing line `delta_liquido` ahora es ~0 por construcción.
+
+### Cómo aplicar Regla 3 retroactivamente
+
+Cada vez que la dueña "no entiende" un cuadrito o cuenta, primero preguntarse: **¿está duplicando info que ya aparece en otra parte?** En 5 de los 19 items la respuesta fue sí (cuadritos GTEJ/GTIN/GGF, panel Detalle bancos, fila explicación de utilidad, conteo de Depositados, columna Plazo). Cuando es duplicación → eliminar sin reemplazo. Cuando es nuevo concepto → reemplazar por algo que SÍ entienda (Cuadro MOVIMIENTOS MES estilo dBase).
