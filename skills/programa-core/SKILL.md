@@ -607,16 +607,39 @@ quedaba sólo en la Mac. La diagnosis se hizo con
 `Get-ChildItem C:\programa-core\migrations\` desde SSM — sin 0032 en
 la lista.
 
-**Fix:** cambiar el exclude a `--exclude='./*.sql'` para que sólo aplique
-a `.sql` en el ROOT del repo (los dumps grandes viven ahí), no a
-subdirectorios como `migrations/`.
+**Fix correcto:** excluir el dump por **nombre exacto** (`--exclude='./intela12042026.sql'`),
+NO con globs tipo `./*.sql`. GNU tar no anchor los globs automáticamente
+— `./*.sql` matchea archivos en subdirs también (probado: `tar --exclude='./*.sql'`
+sigue excluyendo `./migrations/0032.sql`). El primer intento de fix fue
+con `--exclude='./*.sql'` y siguió igual de roto.
 
 **Regla:** cuando agregás un workflow de deploy con exclusiones por glob,
-**siempre verificá qué archivos quedan afuera del tarball**. Lo más
-sencillo es `tar -tzf /tmp/deploy.tar.gz | grep migrations` antes de
-considerarlo done.
+**siempre verificá qué archivos quedan afuera del tarball**:
+```bash
+# Local antes de pushear:
+tar --exclude=... -czf /tmp/deploy.tar.gz .
+tar -tzf /tmp/deploy.tar.gz | grep migrations
+tar -tzf /tmp/deploy.tar.gz | grep -c "\.sql$"
+```
+Si las migrations no están listadas → la exclusión está mal.
 
-### Error 3 — Migración que crea tablas SIN garantizar el owner correcto
+### Error 3 — `migrate.py` con chars Unicode `→` rompe en Windows cp1252
+
+**Lo que pasó:** después de fixear el deploy (errores 1 y 2), la 0032
+finalmente llegó a EC2. `migrate.py` empezó a aplicarla pero crasheó con
+`UnicodeEncodeError: 'charmap' codec can't encode character '→'`.
+La consola de Windows usa `cp1252` por default y no encodea el `→` que
+había en el print de progreso del runner.
+
+**Fix:** ASCII en todos los prints de migrate.py (`→` → `->`, `⚠` → `[!]`,
+etc.). Workaround temporal mientras se deploya: setear
+`$env:PYTHONIOENCODING="utf-8"` antes de invocar Python en SSM.
+
+**Regla:** scripts que corren en Windows EC2 → solo ASCII en stdout, o
+forzar `PYTHONIOENCODING=utf-8`. Los emojis y flechas Unicode son
+trampa silenciosa.
+
+### Error 4 — Migración que crea tablas SIN garantizar el owner correcto
 
 **Lo que pasó:** la 0032 inicialmente hacía `CREATE TABLE scintela.vendedor`
 sin un `ALTER ... OWNER TO`. Si el runner corre con un user (postgres) pero

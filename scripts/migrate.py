@@ -279,7 +279,8 @@ def _apply_one(version: str, name: str, path: Path, *, dry: bool) -> None:
     kind = path.suffix.lstrip(".")
     no_tx = kind == "sql" and _has_no_tx_marker(path)
     tag = f"{kind}, no-tx" if no_tx else kind
-    print(f"  → [{version}] {name}  ({tag})", end="", flush=True)
+    # TMT 2026-05-18 — usar ASCII: Windows cp1252 no encodea '→'.
+    print(f"  -> [{version}] {name}  ({tag})", end="", flush=True)
     if dry:
         print("  (dry-run, no ejecuto)")
         return
@@ -376,7 +377,7 @@ def cmd_status() -> int:
     all_versions = {v for v, _, _ in all_mig}
     orphans = set(applied) - all_versions
     if orphans:
-        print("\n⚠  Versions aplicadas sin archivo en migrations/:")
+        print("\n[!] Versions aplicadas sin archivo en migrations/:")
         for v in sorted(orphans):
             print(f"    {v}  {applied[v]['nombre']}")
     return 0

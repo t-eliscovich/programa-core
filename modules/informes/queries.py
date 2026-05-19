@@ -3825,6 +3825,160 @@ def _mes_anterior(yy: int, mm: int) -> tuple[int, int]:
     return yy, mm - 1
 
 
+def snapshot_historia_existe(anio: int, mes: int) -> bool:
+    """¿Hay ya un registro en scintela.historia para ese año/mes?"""
+    row = db.fetch_one(
+        """
+        SELECT 1 AS x
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         LIMIT 1
+        """,
+        (int(anio), int(mes)),
+    )
+    return bool(row)
+
+
+def crear_snapshot_historia(anio: int, mes: int,
+                            usuario: str = "auto") -> dict:
+    """Crea un snapshot mensual en scintela.historia para (anio, mes).
+
+    TMT 2026-05-18 — Pedido dueña: necesitamos snapshots automáticos del
+    cierre mensual para que `/informes/fuentes-y-usos` tenga data.
+
+    Idempotente vía 2 capas:
+      1. `sistema_meta` con clave `historia_snapshot_ult_periodo` —
+         marker del último mes snapshoteado.
+      2. Existencia previa: si ya hay fila para (anio, mes), no inserta.
+
+    Toma los componentes calculados por `informe_balance()` y los mapea
+    a las columnas de `scintela.historia`. El balance se calcula contra
+    los datos LIVE de hoy — para tomar snapshot del mes pasado conviene
+    correrlo el día 1-2 del mes siguiente.
+
+    Devuelve `{aplicado: bool, anio, mes, id_historia: int|None, razon: str}`.
+    """
+    from datetime import date as _date
+
+    anio = int(anio)
+    mes = int(mes)
+    periodo_clave = f"{anio:04d}-{mes:02d}"
+
+    if snapshot_historia_existe(anio, mes):
+        return {
+            "aplicado": False, "anio": anio, "mes": mes,
+            "id_historia": None,
+            "razon": f"Ya existe snapshot para {periodo_clave}.",
+        }
+
+    # Calcular el balance LIVE — usamos sus componentes para llenar historia.
+    bal = informe_balance()
+    if not bal or bal.get("error"):
+        return {
+            "aplicado": False, "anio": anio, "mes": mes,
+            "id_historia": None,
+            "razon": f"Balance falló: {bal.get('error') if bal else 'sin data'}",
+        }
+
+    d = bal["diagnostico"]["componentes"] if bal.get("diagnostico") else {}
+    kg = bal.get("kg", {})
+    stock_sub = bal.get("stock_subpanels", {})
+
+    # fecha del snapshot: último día del mes
+    import calendar
+    last_day = calendar.monthrange(anio, mes)[1]
+    fecha_snap = _date(anio, mes, last_day)
+
+    with db.tx() as conn:
+        db.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('snapshot_historia'))",
+            conn=conn,
+        )
+        # Re-check después del lock
+        if snapshot_historia_existe(anio, mes):
+            return {"aplicado": False, "anio": anio, "mes": mes,
+                    "id_historia": None,
+                    "razon": "race ganada por otra request"}
+
+        res = db.execute_returning(
+            """
+            INSERT INTO scintela.historia
+                (fecha, stock, kcom, ktej, ktin, ustock, uqui, kvent,
+                 uvent, costo, ucom, utej, utin, gasto, gstotal,
+                 banco, cart, deuda, retiro, patrimonio, anticipos,
+                 dolar, maquinaria, realty, usret, usuti,
+                 fecha_crea, usuario_crea)
+            VALUES (%(fecha)s,
+                    %(stock)s, %(kcom)s, %(ktej)s, %(ktin)s, %(ustock)s,
+                    %(uqui)s, %(kvent)s, %(uvent)s, %(costo)s, %(ucom)s,
+                    %(utej)s, %(utin)s, %(gasto)s, %(gstotal)s,
+                    %(banco)s, %(cart)s, %(deuda)s, %(retiro)s,
+                    %(patrimonio)s, %(anticipos)s, %(dolar)s,
+                    %(maquinaria)s, %(realty)s, %(usret)s, %(usuti)s,
+                    CURRENT_TIMESTAMP, %(usuario)s)
+            RETURNING id_historia
+            """,
+            {
+                "fecha":      fecha_snap,
+                # Stock KG y US$
+                "stock":      float(kg.get("stock_kg") or kg.get("stock_kg_live") or 0),
+                "ustock":     float(stock_sub.get("total_us") or 0),
+                "uqui":       float(d.get("vqx") or 0),
+                # Flujos del mes (KG)
+                "kcom":       float(kg.get("kcom") or 0),
+                "ktej":       float(kg.get("ktej") or 0),
+                "ktin":       float(kg.get("ktin") or 0),
+                "kvent":      float(kg.get("kvent") or 0),
+                # Flujos del mes (US$)
+                "ucom":       float(kg.get("ucom") or 0),
+                "utej":       float(kg.get("utej") or 0),
+                "utin":       float(kg.get("utin") or 0),
+                "uvent":      float(kg.get("uvent") or 0),
+                "costo":      float(kg.get("costo_mes") or 0),
+                # Resultados del mes
+                "gasto":      float(d.get("gastos_mes") or 0),
+                "gstotal":    float(d.get("gastos_total") or 0),
+                # Balance components
+                "banco":      float(d.get("salbanc") or 0),
+                "cart":       float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
+                "deuda":      float(d.get("totp") or 0),
+                "retiro":     float(d.get("uret") or 0),
+                "patrimonio": float(d.get("patr") or 0),
+                "anticipos":  float(d.get("antic") or 0),
+                "dolar":      0.0,    # no usado en PC
+                "maquinaria": float(d.get("umaq") or 0),
+                "realty":     float(d.get("uact") or 0),
+                "usret":      float(d.get("uret") or 0),
+                "usuti":      float(d.get("utilidad") or 0),
+                "usuario":    usuario[:50],
+            },
+            conn=conn,
+        )
+
+        # Avanzar marker en sistema_meta (best-effort)
+        try:
+            db.execute(
+                """
+                INSERT INTO scintela.sistema_meta (clave, valor)
+                VALUES ('historia_snapshot_ult_periodo', %s)
+                ON CONFLICT (clave) DO UPDATE
+                  SET valor = EXCLUDED.valor,
+                      actualizado = CURRENT_TIMESTAMP
+                """,
+                (periodo_clave,),
+                conn=conn,
+            )
+        except Exception:
+            pass
+
+    return {
+        "aplicado": True, "anio": anio, "mes": mes,
+        "id_historia": (res or {}).get("id_historia"),
+        "razon": f"Snapshot creado para {periodo_clave}.",
+    }
+
+
 def fuentes_y_usos(anio: int, mes: int) -> dict:
     """Cuadro de Fuentes y Usos del mes elegido vs mes anterior.
 

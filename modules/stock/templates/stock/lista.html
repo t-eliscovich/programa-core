@@ -88,11 +88,13 @@
 
   {# TMT 2026-05-18: pedido de la dueña — eliminar info redundante de abajo
      (tabla "Compras últimos 3 meses" + nota técnica). #}
-  {% if f.kg == 0 %}
+  {# TMT 2026-05-18 — warning corregido: la fórmula ahora suma kg tinturados
+     (scintela.tinto) como inflow a terminado. Si todavía da 0, es opening
+     del año mal cargado en scintela.iniciales del mes 1. #}
+  {% if f.kg == 0 and (h.kg > 0 or k.kg > 0) %}
   <div class="px-4 py-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-    <strong>⚠ Terminado en 0:</strong> esto pasa cuando las facturas YTD exceden
-    (opening terminado + compras tipo T). El opening del año debería incluir
-    tejido producido — revisar <code>scintela.iniciales</code> del mes 1.
+    <strong>⚠ Terminado en 0:</strong> chequeá <code>scintela.iniciales</code> del mes 1 del año actual —
+    el opening de terminado puede estar mal cargado.
   </div>
   {% endif %}
 </div>

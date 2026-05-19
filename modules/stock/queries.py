@@ -98,6 +98,29 @@ def _facturas_kg_ytd(ano: int) -> float:
     return float(row["kg"] or 0) if row else 0.0
 
 
+def _tinto_kg_ytd(ano: int) -> float:
+    """TMT 2026-05-18 — kg que entraron a TERMINADO via tintura del año.
+
+    El flujo es: tejido (K) → tintura → terminado. Cada operación de
+    tintura suma kg al stock de terminado y los resta del stock de tejido.
+
+    En scintela.tinto, cada fila es una orden de tintura. El total de kg
+    es la suma de las columnas de tipos (toper+jersey+pique+messi+james+
+    franela+otros+etc.) — pero ya tienen las columnas `kg` y `kgn` (kg
+    netos) consolidadas. Usamos `kg` (bruto).
+    """
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(COALESCE(kg, 0)), 0) AS kg
+          FROM scintela.tinto
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """,
+        (ano,),
+    )
+    return float(row["kg"] or 0) if row else 0.0
+
+
 def resumen_stock() -> dict:
     """Devuelve el dict canónico de stock para la página /stock.
 
@@ -116,13 +139,22 @@ def resumen_stock() -> dict:
     opening = _opening_inicial(ano)
     comp = _compras_ytd_por_tipo(ano)
     fact_kg = _facturas_kg_ytd(ano)
+    # TMT 2026-05-18 — flujo de tejido → terminado via tintura intra-año.
+    # Antes la fórmula era: terminado = opening_terminado + compras_T − facturas.
+    # Eso daba 0 cuando facturas YTD > opening + compras_T (siempre, porque
+    # el terminado se PRODUCE internamente, no se compra). Fix: sumar
+    # kg tinturados del año (scintela.tinto.kg) — esa es la producción
+    # que entra a terminado.
+    tinto_kg = _tinto_kg_ytd(ano)
 
     # KG live = opening + compras YTD del tipo. Para terminado restamos
     # las facturas vendidas (el dBase legacy hacía lo mismo en el screen
     # MAT.PR del INFORMES.PRG).
     h_kg = opening["hilado"]   + comp.get("H", {}).get("kg", 0.0)
-    k_kg = opening["tejido"]   + comp.get("K", {}).get("kg", 0.0)
-    t_kg = opening["terminado"] + comp.get("T", {}).get("kg", 0.0) - fact_kg
+    # Tejido: opening + compras K - tinturado (sale a terminado)
+    k_kg = opening["tejido"]   + comp.get("K", {}).get("kg", 0.0) - tinto_kg
+    # Terminado: opening + compras T (raras, externas) + tinturado − facturas
+    t_kg = opening["terminado"] + comp.get("T", {}).get("kg", 0.0) + tinto_kg - fact_kg
 
     # U$/kg ponderado = importe YTD / kg YTD por tipo. Si kg=0, 0.0.
     def _ukg(tipo):

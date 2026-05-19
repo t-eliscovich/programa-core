@@ -4,12 +4,32 @@
 
 {% block content %}
 <div class="page-shell page-shell--xl">
-  <header class="page-header">
+  <header class="page-header flex items-start justify-between">
     <h1 class="page-title">Cuadro de Fuentes y Usos</h1>
+    <form method="post" action="{{ url_for('informes.snapshot_mes') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="anio" value="{{ anio }}">
+      <input type="hidden" name="mes" value="{{ mes }}">
+      <button class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+              title="Crea el snapshot de cierre mensual en scintela.historia para el mes elegido. Idempotente.">
+        📸 Snapshot del mes seleccionado
+      </button>
+    </form>
   </header>
 
   {% if data.error %}
-    <div class="page-error"><p>{{ data.error }}</p></div>
+    <div class="page-error">
+      <p>{{ data.error }}</p>
+      {# TMT 2026-05-18 — botones para crear el snapshot faltante.
+         Si la dueña aprieta "Snapshot mes anterior", se crea automáticamente. #}
+      <form method="post" action="{{ url_for('informes.snapshot_backfill') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="meses" value="3">
+        <button class="mt-2 text-sm px-3 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">
+          Crear snapshots de los últimos 3 meses
+        </button>
+      </form>
+    </div>
   {% endif %}
 
   {# Selector mes/año — patrón canónico #}

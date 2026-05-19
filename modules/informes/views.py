@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
+from error_messages import flash_exc
 from exports import csv_response
 
 from . import queries
@@ -220,6 +221,70 @@ def deudas():
         )
     total = sum(float(r["saldo_total"] or 0) for r in filas)
     return render_template("informes/deudas.html", filas=filas, total=total, error=error)
+
+
+@informes_bp.route("/snapshot-mes", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def snapshot_mes():
+    """Cierra snapshot mensual en scintela.historia para el mes indicado.
+
+    POST con form (anio, mes). Idempotente.
+    """
+    from datetime import date as _date
+    try:
+        anio = int(request.form.get("anio") or _date.today().year)
+        mes  = int(request.form.get("mes")  or _date.today().month)
+    except (TypeError, ValueError):
+        flash("Parámetros inválidos.", "error")
+        return redirect(url_for("informes.fuentes_y_usos"))
+    mes = max(1, min(mes, 12))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.crear_snapshot_historia(anio, mes, usuario=usuario)
+        if r.get("aplicado"):
+            flash(f"Snapshot {mes:02d}/{anio} creado.", "ok")
+        else:
+            flash(r.get("razon", "Nada que hacer."), "info")
+    except Exception as e:
+        flash_exc("Snapshot falló", e)
+    return redirect(url_for("informes.fuentes_y_usos", anio=anio, mes=mes))
+
+
+@informes_bp.route("/snapshot-backfill", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def snapshot_backfill():
+    """Backfill: crea snapshots para los últimos N meses (default 3).
+
+    POST con form (meses=N). Idempotente.
+    """
+    from datetime import date as _date
+    try:
+        n = int(request.form.get("meses") or 3)
+    except (TypeError, ValueError):
+        n = 3
+    n = max(1, min(n, 12))
+    hoy = _date.today()
+    aplicados, saltados = [], []
+    usuario = (g.user or {}).get("username", "web")
+    for i in range(1, n + 1):
+        # Mes pasado i: retrocedemos i meses desde el primero del mes actual
+        m = hoy.month - i
+        a = hoy.year
+        while m < 1:
+            m += 12
+            a -= 1
+        try:
+            r = queries.crear_snapshot_historia(a, m, usuario=usuario)
+            (aplicados if r.get("aplicado") else saltados).append(f"{m:02d}/{a}")
+        except Exception as e:
+            saltados.append(f"{m:02d}/{a} (error: {e})")
+    if aplicados:
+        flash(f"Backfilled: {', '.join(aplicados)}.", "ok")
+    if saltados:
+        flash(f"Salteados (ya existían o error): {', '.join(saltados)}.", "info")
+    return redirect(url_for("informes.fuentes_y_usos"))
 
 
 @informes_bp.route("/fuentes-y-usos")

@@ -188,25 +188,40 @@ def cobros_totales(dias: int = 7) -> dict:
 def cobros_matriz_3_semanas(fecha_hasta: date | None = None) -> list[dict]:
     """Matriz de cobros últimas 3 semanas — replica MENU.PRG:1493-1522 (EFECT).
 
-    El procedure legacy:
-        F1 = DATE() - 14, retrocedido hasta lunes
+    TMT 2026-05-18 — REWRITE para fidelidad 1:1 con el PRG legacy.
+
+    Procedure EFECT (MENU.PRG L1493-1522), lógica exacta:
+
+        F1 = DATE() - 14         (luego rolled-back a lunes via DOW > 2)
         F2 = F1 + 7
         F3 = F1 + 14
-        Suma cheques cobrados (fechad-fechaing < 3) en cada semana.
-        Promedio diario: I1/5, I2/5, I3/DIAS_habiles_corridos.
 
-    Acá:
-      - Definimos "cobros" como aplicaciones cheque→factura
-        (`scintela.chequesxfact`, importe > 0) + entradas DE/AC en
-        `transacciones_bancarias` del día. dBase agrupa CHEQUES + XCHEQUES
-        (cheques propios + foráneos depositados con clearing rápido), que
-        en PG son ambos casos las mismas tablas.
-      - Devolvemos siempre 3 semanas (semana actual + 2 anteriores),
-        partidas por día lun-sáb (domingo no se trabaja).
-      - Cada semana lleva `total_semana` y `prom_dia_habil`.
+        USE CHEQUES INDE CF
+        SET FILT TO FECHAD - FECHING < 3
+        SUM IMPORTE TO I1 FOR FECHAD>=F1 AND FECHAD<F2
+        SUM IMPORTE TO I2 FOR FECHAD>=F2 AND FECHAD<F3
+        SUM IMPORTE TO I3 FOR FECHAD>=F3
 
-    Devuelve lista de 3 dicts: [{semana, lunes, ..., sabado, total_semana,
-                                  prom_dia_habil}].
+        USE F:\\STAND\\XCHEQUES        (cheques de la empresa / extra)
+        SET FILT TO FECHAD - FECHING < 3
+        (mismas sumas, → II1, II2, II3)
+
+        I1 = I1 + II1, etc.
+        DIAS = IIF(DOW(hoy)>1 AND DOW(hoy)<6, DOW(hoy)-1, 5)
+        PROM = I1/5, I2/5, I3/DIAS
+
+    En Programa Core:
+      - `scintela.cheque`  ≈ CHEQUES (cheques recibidos de clientes)
+      - `scintela.cheque.fechad`        ≈ FECHAD legacy
+      - `scintela.cheque.fecha_recibido` ≈ FECHING legacy
+      - El filtro `FECHAD - FECHING < 3` selecciona cheques que se
+        depositan dentro de los 2 días de haberlos recibido
+        — i.e., cobros casi al contado (no posdatados a largo plazo).
+      - XCHEQUES legacy no existe como tabla separada en PC; los
+        movimientos bancarios directos (depósitos cash, transferencias)
+        viven en `transacciones_bancarias` con documento DE/AC.
+        Los incluimos sin filtro de delay porque ya son cobros
+        efectivamente acreditados.
     """
     hasta = fecha_hasta or date.today()
 
@@ -224,19 +239,28 @@ def cobros_matriz_3_semanas(fecha_hasta: date | None = None) -> list[dict]:
     desde = semana_lunes[0]
     hasta_q = lunes_actual + timedelta(days=6)  # domingo de la semana actual
 
-    # Subquery A: aplicaciones de cheques a facturas (cobros vivos).
-    # Subquery B: entradas bancarias (depósito DE / acreditación AC).
     rows = db.fetch_all(
         """
         WITH cobros AS (
-            SELECT cxf.fechaing AS fecha, COALESCE(cxf.importe, 0) AS importe
-              FROM scintela.chequesxfact cxf
-             WHERE cxf.fechaing BETWEEN %(desde)s AND %(hasta)s
-               AND COALESCE(cxf.importe, 0) > 0
+            -- (1) Cheques cobrados al contado / casi al contado.
+            -- PRG: SET FILT TO FECHAD - FECHING < 3
+            -- + stat in (B,A,1,2,3): el cheque fue al banco (cobrado o intentado).
+            SELECT ch.fechad AS fecha,
+                   COALESCE(ch.importe, 0) AS importe
+              FROM scintela.cheque ch
+             WHERE ch.fechad BETWEEN %(desde)s AND %(hasta)s
+               AND ch.fecha_recibido IS NOT NULL
+               AND (ch.fechad - ch.fecha_recibido) < 3
+               AND COALESCE(ch.stat, '') IN ('B', 'A', '1', '2', '3')
 
             UNION ALL
 
-            SELECT t.fecha AS fecha, ABS(COALESCE(t.importe, 0)) AS importe
+            -- (2) Equivalente PC de XCHEQUES legacy: entradas bancarias
+            -- directas (depósito cash DE, acreditación AC) — cobros que
+            -- no pasan por cheque cliente. Estos ya son efectivos por
+            -- definición (entrada al banco confirmada).
+            SELECT t.fecha AS fecha,
+                   ABS(COALESCE(t.importe, 0)) AS importe
               FROM scintela.transacciones_bancarias t
              WHERE t.fecha BETWEEN %(desde)s AND %(hasta)s
                AND COALESCE(t.documento, '') IN ('DE', 'AC')
