@@ -461,9 +461,12 @@ def movimientos_mes_dbase(anio: int | None = None,
     }
 
     # Breakdown por proveedor del mes seleccionado.
+    # TMT 2026-05-19 v8 — fix prod: scintela.compra usa `codigo_prov`,
+    # no `prov` (que es el nombre en posdat / cheque). Antes esto rompía
+    # con `column "prov" does not exist` y tiraba la página entera.
     compras_hilado = db.fetch_all(
         """
-        SELECT prov                   AS prov,
+        SELECT codigo_prov                AS prov,
                COALESCE(SUM(kg), 0)       AS kg,
                COALESCE(SUM(importe), 0)  AS importe
           FROM scintela.compra
@@ -471,9 +474,9 @@ def movimientos_mes_dbase(anio: int | None = None,
            AND COALESCE(stat, '') <> 'Y'
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
-           AND COALESCE(prov, '') <> ''
-           AND UPPER(COALESCE(prov, '')) <> 'XX'
-         GROUP BY prov
+           AND COALESCE(codigo_prov, '') <> ''
+           AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
+         GROUP BY codigo_prov
          ORDER BY SUM(importe) DESC
          LIMIT 20
         """,
@@ -484,7 +487,7 @@ def movimientos_mes_dbase(anio: int | None = None,
 
     produc_tejido = db.fetch_all(
         """
-        SELECT prov                   AS prov,
+        SELECT codigo_prov                AS prov,
                COALESCE(SUM(kg), 0)       AS kg,
                COALESCE(SUM(importe), 0)  AS importe
           FROM scintela.compra
@@ -493,8 +496,8 @@ def movimientos_mes_dbase(anio: int | None = None,
            AND COALESCE(stat, '') <> 'Y'
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
-           AND COALESCE(prov, '') <> ''
-         GROUP BY prov
+           AND COALESCE(codigo_prov, '') <> ''
+         GROUP BY codigo_prov
          ORDER BY SUM(importe) DESC
          LIMIT 20
         """,
