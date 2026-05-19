@@ -145,11 +145,10 @@
     </div>
 
     {# --- Step 3: campos específicos por tipo (mostrados con JS) ------- #}
+    {# TMT 2026-05-19 — header "3. Detalles del destino" removido (pedido
+       dueña item 10). Cada bloque interno ya está etiquetado por sus
+       campos; el header agregaba ruido sin explicar nada. #}
     <div class="border-t border-slate-200 pt-5">
-      <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-2">
-        3. Detalles del destino
-      </h2>
-
       <div id="campos-proveedor" class="campos-tipo hidden space-y-3">
         <div class="flex items-center gap-2">
           <input type="text" id="filtro-prov" placeholder="Filtrar por código de proveedor"

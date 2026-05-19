@@ -178,13 +178,9 @@
             <td class="num-cell">{{ r.ventas.proy_us | num_es(0) }}</td>
             <td></td>
           </tr>
-          <tr class="fila-aux">
-            <td class="label-cell"><a href="{{ url_for('cartera.aging') }}" class="hover:text-blue-600 hover:underline">Plazo cartera (días)</a></td>
-            <td></td>
-            <td></td>
-            <td class="num-cell" style="font-weight:600">{{ r.cartera_dias | num_es(0) }}</td>
-            <td></td>
-          </tr>
+          {# TMT 2026-05-19 — fila "Plazo cartera (días)" removida (pedido
+             dueña item 16: cuadritos auxiliares irrelevantes en Resultados).
+             El dato vive en /cartera con su análisis de aging completo. #}
 
           {# ─── COSTOS — section divider que ocupa toda la fila ─── #}
           <tr>

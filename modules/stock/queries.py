@@ -313,11 +313,25 @@ def resumen_stock() -> dict:
         except Exception:
             us_quim = 0.0
 
+    # TMT 2026-05-18 — Kg de químicos derivado: el sistema legacy guarda
+    # químicos sólo en US$ (vq), pero podemos derivar kg si tenemos la
+    # tarifa uq de iniciales. Sino, sumamos kg de compras tipo Q del año.
+    q_ukg = float(tarifas.get("uq") or 0)
+    q_kg = 0.0
+    if q_ukg > 0 and us_quim > 0:
+        q_kg = us_quim / q_ukg
+    else:
+        # Fallback: kg de compras Q YTD si están cargadas
+        comp_ytd = _compras_ytd_por_tipo(ano)
+        q_kg = comp_ytd.get("Q", {}).get("kg", 0.0)
+        if q_kg > 0 and us_quim > 0:
+            q_ukg = us_quim / q_kg
+
     stock = {
         "hilado":    {"kg": max(0.0, h_kg), "ukg": h_ukg, "us": max(0.0, h_kg) * h_ukg},
         "tejido":    {"kg": max(0.0, k_kg), "ukg": k_ukg, "us": max(0.0, k_kg) * k_ukg},
         "terminado": {"kg": max(0.0, t_kg), "ukg": t_ukg, "us": max(0.0, t_kg) * t_ukg},
-        "quimicos":  {"kg": 0.0, "ukg": 0.0, "us": us_quim},
+        "quimicos":  {"kg": max(0.0, q_kg), "ukg": q_ukg, "us": us_quim},
     }
     total_kg = stock["hilado"]["kg"] + stock["tejido"]["kg"] + stock["terminado"]["kg"]
     total_us = stock["hilado"]["us"] + stock["tejido"]["us"] + stock["terminado"]["us"]

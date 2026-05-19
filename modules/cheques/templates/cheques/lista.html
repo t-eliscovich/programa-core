@@ -121,9 +121,10 @@
          class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
                 {% if estado == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
         {{ label }}
-        {% if key != 'todos' and c %}
-          {# TMT 2026-05-18 — solo el conteo, sin el $ chiquito (la dueña lo
-             encuentra ruidoso y el total real ya está en la card grande). #}
+        {# TMT 2026-05-19 — pedido dueña item 13: no mostrar conteo en
+           "Depositados" (dato irrelevante para el día a día). El resto
+           de tabs siguen mostrando el conteo. #}
+        {% if key != 'todos' and key != 'depositados' and c %}
           <span class="ml-1 text-xs text-slate-400">{{ c.n or 0 }}</span>
         {% endif %}
       </a>
@@ -190,7 +191,8 @@
           <th class="px-3 py-3 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. depósito (orig.)</th>
           <th class="px-3 py-3 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
           <th class="px-3 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
-          <th class="px-3 py-3 text-right font-medium" title="Días entre la carga y el depósito real (o el planificado si todavía no se depositó)" data-sort-type="number">Plazo</th>
+          {# TMT 2026-05-19 — columna "Plazo" removida (pedido dueña item 13).
+             Si se necesita en el futuro vive en una vista de aging/cartera. #}
           <th class="px-3 py-3 text-left font-medium">Banco</th>
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
           <th class="px-3 py-3 text-right font-medium acum-col" title="Total $ corrido por F. depósito (ascendente)" data-no-sort>Acum.</th>
@@ -253,13 +255,7 @@
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-right text-mono text-xs text-slate-600">
-            {% set fecha_dep_efectiva = fechaing_real if fechaing_real else c.fechad %}
-            {% if fecha_cargado and fecha_dep_efectiva %}
-              {% set plazo_dias = (fecha_dep_efectiva - fecha_cargado).days %}
-              {{ plazo_dias }} d
-            {% else %}—{% endif %}
-          </td>
+          {# TMT 2026-05-19 — celda "Plazo" removida (pedido dueña item 13). #}
           {# TMT 2026-05-18 — Cliente movido a col 2 (arriba) #}
           <td class="px-3 py-2 text-slate-500">{{ c.banco or '' }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ c.importe | money_es }}</td>

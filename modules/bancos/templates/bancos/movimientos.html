@@ -54,9 +54,6 @@
           <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">F. dep.</th>
           <th class="px-3 py-3 text-right font-medium">Importe</th>
           <th class="px-3 py-3 text-right font-medium">Saldo</th>
-          <th class="px-3 py-3 text-left font-medium">Prov/Ref</th>
-          <th class="px-3 py-3 text-left font-medium">Usuario</th>
-          <th class="px-3 py-3 text-left font-medium">Stat</th>
           <th class="px-3 py-3 text-left font-medium no-print"></th>
         </tr>
       </thead>
@@ -99,14 +96,6 @@
             {% if es_egreso %}-{% endif %}{{ imp_abs | money_es }}
           </td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ m.saldo | money_es if m.saldo is not none else '' }}</td>
-          <td class="px-3 py-2 text-xs text-slate-500">
-            {% if m.prov %}<span class="font-mono">{{ m.prov }}</span>{% endif %}
-            {% if m.numreferencia %}<span class="ml-1">{{ m.numreferencia }}</span>{% endif %}
-          </td>
-          <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">
-            {{ m.mov_usuario or m.usuario_crea or '' }}
-          </td>
-          <td class="px-3 py-2"><span class="font-mono text-xs text-slate-500">{{ m.stat or '' }}</span></td>
           <td class="px-3 py-2 no-print text-right">
             {% if doc == 'CH' and tiene_permiso('bancos.conciliar') %}
               <a href="{{ url_for('bancos.reversar_cheque_emitido', id_transaccion=m.id_transaccion) }}"
@@ -118,7 +107,7 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(10, 'Sin movimientos en el rango seleccionado.') }}
+        {{ empty_row(7, 'Sin movimientos en el rango seleccionado.') }}
         {% endfor %}
       </tbody>
     </table>
