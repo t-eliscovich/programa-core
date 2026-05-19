@@ -70,11 +70,16 @@ def lista():
 
     # Lista de otros bancos para el selector "Cambiar banco" (excluye el actual).
     # TMT 2026-05-19 v7 — dueña: "solo podemos cambiar al internacional".
-    # Sólo bancos operativos (PICHINC / INTER). El resto (legacy /
-    # cerrados / históricos) ya no se ofrece como switch.
+    # TMT 2026-05-19 v8 — dueña: "BORRAR DEP INTER DE BANCOS". El nombre
+    # "INTER" matcheaba tanto INTERNACI (operativo) como DEP. INTER.
+    # (banco depósito-en-tránsito, no operativo). Cambio a "INTERNAC" para
+    # excluir el de DEP.
     def _es_operativo(b):
-        n = (b.get("nombre") or "").upper()
-        return "PICHINC" in n or "INTER" in n
+        n = (b.get("nombre") or "").upper().strip()
+        # Excluir explícitamente cualquier "DEP. ..." (depósitos en tránsito).
+        if n.startswith("DEP"):
+            return False
+        return "PICHINC" in n or "INTERNAC" in n
 
     otros_bancos = [
         b for b in filas_all
