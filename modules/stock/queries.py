@@ -24,6 +24,52 @@ from datetime import date, timedelta
 import db
 
 
+def _tarifas_mes_actual(ano: int, mes: int) -> dict:
+    """TMT 2026-05-18 — Tarifas U$/kg canónicas del mes (legacy um/uk/uf/uq).
+
+    scintela.iniciales tiene 4 columnas históricas con el precio U$/kg de
+    cada etapa (provenientes de INFORMES.PRG line 337 del legacy):
+      - um = U$/kg hilado (materia prima)
+      - uk = U$/kg tejido
+      - uf = U$/kg final (terminado / PT)
+      - uq = U$/kg químicos (rara vez >0; químicos suelen ser valor neto)
+    Estas tarifas reflejan el costo ponderado al momento del cierre del mes
+    anterior (vía rollforward de cerrar_mes_auto), que es lo correcto para
+    valuar el stock actual.
+
+    Fallback: si la fila de iniciales del mes no tiene tarifas válidas,
+    usar la más reciente que las tenga.
+    """
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(um, 0)::float AS um,
+               COALESCE(uk, 0)::float AS uk,
+               COALESCE(uf, 0)::float AS uf,
+               COALESCE(uq, 0)::float AS uq
+          FROM scintela.iniciales
+         WHERE yy = %s AND mesnum = %s
+         LIMIT 1
+        """,
+        (ano, mes),
+    )
+    if row and (row["um"] or row["uk"] or row["uf"]):
+        return dict(row)
+    # Fallback: tarifas más recientes (alguna fila con datos).
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(um, 0)::float AS um,
+               COALESCE(uk, 0)::float AS uk,
+               COALESCE(uf, 0)::float AS uf,
+               COALESCE(uq, 0)::float AS uq
+          FROM scintela.iniciales
+         WHERE COALESCE(um, 0) > 0 OR COALESCE(uk, 0) > 0 OR COALESCE(uf, 0) > 0
+         ORDER BY yy DESC, mesnum DESC
+         LIMIT 1
+        """
+    )
+    return dict(row) if row else {"um": 0.0, "uk": 0.0, "uf": 0.0, "uq": 0.0}
+
+
 def _opening_mes_actual(ano: int, mes: int) -> dict:
     """TMT 2026-05-18 — Opening del MES EN CURSO (no del año).
 
@@ -218,7 +264,7 @@ def resumen_stock() -> dict:
     # incorporado el rollforward de meses anteriores via cerrar_mes_auto.
     opening = _opening_mes_actual(ano, mes)
     comp_mes = _compras_mes_actual_por_tipo(ano, mes)
-    comp_ytd = _compras_ytd_por_tipo(ano)  # para U$/kg ponderado anual
+    tarifas = _tarifas_mes_actual(ano, mes)
     fact_kg = _facturas_kg_mes_actual(ano, mes)
     tinto_kg = _tinto_kg_mes_actual(ano, mes)
 
@@ -229,25 +275,43 @@ def resumen_stock() -> dict:
     # Terminado: opening + compras T externas + tinturado − facturas
     t_kg = opening["terminado"] + comp_mes.get("T", {}).get("kg", 0.0) + tinto_kg - fact_kg
 
-    # U$/kg ponderado = importe YTD / kg YTD por tipo. Si kg=0, 0.0.
-    def _ukg(tipo):
-        c = comp_ytd.get(tipo, {})
-        kg = c.get("kg", 0.0)
-        if kg > 0:
-            return c.get("importe", 0.0) / kg
-        return 0.0
+    # TMT 2026-05-18 v3 — Tarifas U$/kg canónicas de scintela.iniciales
+    # (legacy um/uk/uf/uq). Antes usábamos weighted avg de compras YTD por
+    # tipo, lo que daba: (a) Tejido 0.51 U$/kg porque compras K incluyen
+    # producción (mucho kg, poco $); (b) Terminado 0 U$/kg porque no hay
+    # compras T (no se compra terminado externamente, se produce).
+    # Estas tarifas vienen del cierre anterior y reflejan el costo ponderado
+    # correcto para valuar el stock actual.
+    h_ukg = tarifas["um"]
+    k_ukg = tarifas["uk"]
+    t_ukg = tarifas["uf"]
+    # Fallback defensivo: si la tarifa de terminado está en 0 pero hay
+    # tarifa de tejido, usar la del tejido (el terminado nunca debería
+    # valer menos que la materia prima de la que sale).
+    if t_ukg <= 0 and k_ukg > 0:
+        t_ukg = k_ukg
 
-    h_ukg = _ukg("H")
-    k_ukg = _ukg("K")
-    t_ukg = _ukg("T")
-
-    # Químicos — escalar US$ del último snapshot (no hay kg trackeados).
-    try:
-        from modules.informes import queries as inf
-        hist_live = inf.historia_ultimo_snapshot() or {}
-        us_quim = float(hist_live.get("uqui") or 0)
-    except Exception:
-        us_quim = 0.0
+    # Químicos: valuación US$ del cierre del mes anterior (= scintela.iniciales.vq).
+    # Si vq está en 0, fallback al último snapshot de scintela.historia.uqui.
+    us_quim = 0.0
+    row_vq = db.fetch_one(
+        """
+        SELECT COALESCE(vq, 0)::float AS vq
+          FROM scintela.iniciales
+         WHERE yy = %s AND mesnum = %s
+         LIMIT 1
+        """,
+        (ano, mes),
+    )
+    if row_vq and row_vq["vq"]:
+        us_quim = float(row_vq["vq"])
+    else:
+        try:
+            from modules.informes import queries as inf
+            hist_live = inf.historia_ultimo_snapshot() or {}
+            us_quim = float(hist_live.get("uqui") or 0)
+        except Exception:
+            us_quim = 0.0
 
     stock = {
         "hilado":    {"kg": max(0.0, h_kg), "ukg": h_ukg, "us": max(0.0, h_kg) * h_ukg},
@@ -263,7 +327,7 @@ def resumen_stock() -> dict:
         "ukg": (total_us / total_kg) if total_kg > 0 else 0.0,
     }
     stock["total_con_quimicos"] = total_us + us_quim
-    stock["snapshot_fecha"] = f"opening {ano}-01 + compras/facturas YTD"
+    stock["snapshot_fecha"] = f"opening {ano}-{mes:02d} + flujo intra-mes"
     return stock
 
 
