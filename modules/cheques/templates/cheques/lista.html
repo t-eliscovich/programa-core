@@ -72,7 +72,7 @@
           {% if tiene_permiso('bancos.conciliar') %}
             <a href="{{ url_for('bancos.emitir_cheque') }}"
                class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-              <div class="font-medium">Emitir cheque propio</div>
+              <div class="font-medium">Emitir cheque</div>
               <div class="text-xs text-slate-500">Chequera para proveedor / retiro / gasto</div>
             </a>
             <a href="{{ url_for('conciliacion.index') }}"

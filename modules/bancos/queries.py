@@ -473,6 +473,227 @@ def proveedores_activos(limite: int = 500) -> list[dict]:
     ) or []
 
 
+def crear_movimiento_simple(
+    *,
+    no_banco: int,
+    documento: str,
+    importe: float,
+    fecha,
+    concepto: str = "",
+    prov: str | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Crea un movimiento bancario "simple" (DE / NC / ND).
+
+    Pedido Tamara 2026-05-19: la pantalla de Bancos ahora tiene 4 acciones
+    (Emitir cheque + Depositar + NC + ND). Las 3 últimas usan este helper.
+
+    Argumentos:
+        documento: 'DE' (depósito), 'NC' (nota de crédito), 'ND' (nota de débito).
+        importe:   positivo siempre — el signo lo aplica bank_helpers.
+        prov:      opcional, código de proveedor relacionado (informativo).
+
+    Signos (`bank_helpers.signo_documento`):
+        DE → +1 (suma al saldo)
+        NC → +1 (suma al saldo)
+        ND → −1 (resta del saldo)
+
+    Atómico: insert + mov_doble en la misma tx. Devuelve dict con
+    `id_transaccion`, `saldo_nuevo`, `id_mov_doble`.
+    """
+    import bank_helpers
+    import mov_doble as _md
+
+    documento = (documento or "").upper().strip()
+    if documento not in ("DE", "NC", "ND"):
+        raise ValueError(
+            f"documento debe ser DE, NC o ND (recibido: {documento!r})"
+        )
+    if not no_banco:
+        raise ValueError("no_banco requerido")
+    importe_f = abs(float(importe or 0))
+    if importe_f <= 0:
+        raise ValueError("Importe debe ser > 0.")
+    if not fecha:
+        raise ValueError("fecha requerida")
+    asegurar_fecha_abierta(fecha)
+
+    # Tipo de mov_doble: 1 a 1 con documento para que el dispatcher de
+    # /historial sepa cómo reversarlo. Convención:
+    #   DE → "deposito"
+    #   NC → "nota_credito"
+    #   ND → "nota_debito"
+    tipo_md = {
+        "DE": "deposito",
+        "NC": "nota_credito",
+        "ND": "nota_debito",
+    }[documento]
+
+    concepto_clean = (concepto or "").strip()[:50]
+
+    with db.tx() as conn:
+        mov = bank_helpers.insert_movimiento_bancario(
+            conn,
+            no_banco=no_banco,
+            no_cta=None,
+            fecha=fecha,
+            documento=documento,
+            importe=importe_f,
+            concepto=concepto_clean,
+            prov=(prov or None),
+            usuario=usuario,
+        )
+        # Auto-link: origen=destino = la fila bancaria misma (no hay
+        # contraparte tipo factura/posdat). Esto permite reversarlo
+        # individualmente desde /historial usando id_mov_doble.
+        id_md = _md.registrar(
+            conn=conn,
+            tipo=tipo_md,
+            origen_table="transacciones_bancarias",
+            origen_id=mov.get("id_transaccion"),
+            destino_table="transacciones_bancarias",
+            destino_id=mov.get("id_transaccion"),
+            importe=importe_f,
+            fecha=fecha,
+            concepto=f"{documento} {concepto_clean}".strip()[:200],
+            usuario=usuario,
+            metadata={
+                "no_banco": no_banco,
+                "documento": documento,
+                "prov": prov or "",
+            },
+        )
+
+    return {
+        "id_transaccion": mov.get("id_transaccion"),
+        "saldo_nuevo":    mov.get("saldo_nuevo"),
+        "id_mov_doble":   id_md,
+        "documento":      documento,
+        "importe":        importe_f,
+        "no_banco":       no_banco,
+    }
+
+
+def reversar_movimiento_simple(
+    *,
+    id_mov_doble: int,
+    motivo: str = "",
+    usuario: str = "web",
+) -> dict:
+    """Reversa un movimiento simple (deposito/nota_credito/nota_debito).
+
+    Lee el mov_doble original, mira su documento y compensa con el
+    documento de signo opuesto:
+      DE(+1) → reversado con CH(-1)
+      NC(+1) → reversado con CH(-1)
+      ND(-1) → reversado con NC(+1)
+
+    Marca el mov_doble original como `estado='reversado'` + `id_reverso`.
+    Atómico.
+    """
+    import bank_helpers
+    import mov_doble as _md
+
+    if not id_mov_doble:
+        raise ValueError("id_mov_doble requerido.")
+
+    md_orig = db.fetch_one(
+        """
+        SELECT id_mov_doble, tipo, origen_id, destino_id, importe,
+               fecha, concepto, metadata, estado
+          FROM scintela.mov_doble
+         WHERE id_mov_doble = %s
+        """,
+        (id_mov_doble,),
+    )
+    if not md_orig:
+        raise ValueError(f"mov_doble #{id_mov_doble} no existe.")
+    if md_orig.get("estado") != "activo":
+        raise ValueError(
+            f"mov_doble #{id_mov_doble} no está activo "
+            f"(estado={md_orig.get('estado')!r})."
+        )
+    tipo_orig = (md_orig.get("tipo") or "").strip()
+    if tipo_orig not in ("deposito", "nota_credito", "nota_debito"):
+        raise ValueError(
+            f"mov_doble #{id_mov_doble} no es un movimiento simple "
+            f"(tipo={tipo_orig!r})."
+        )
+
+    # Leer el documento original desde la transacción bancaria linkeada.
+    tx_orig = db.fetch_one(
+        """
+        SELECT id_transaccion, no_banco, documento, importe AS importe_orig, fecha
+          FROM scintela.transacciones_bancarias
+         WHERE id_transaccion = %s
+        """,
+        (md_orig.get("origen_id"),),
+    )
+    if not tx_orig:
+        raise ValueError(
+            f"Transacción origen #{md_orig.get('origen_id')} no existe."
+        )
+
+    doc_orig = (tx_orig.get("documento") or "").upper().strip()
+    # Documento de reverso (signo opuesto).
+    doc_reverso = {"DE": "CH", "NC": "CH", "ND": "NC"}.get(doc_orig)
+    if not doc_reverso:
+        raise ValueError(
+            f"No sé cómo reversar documento {doc_orig!r} (esperaba DE/NC/ND)."
+        )
+
+    importe_f = abs(float(md_orig.get("importe") or 0))
+    fecha_rev = _date.today()
+    asegurar_fecha_abierta(fecha_rev)
+
+    motivo_clean = (motivo or "").strip()
+    concepto_rev = (
+        f"REVERSO {tipo_orig} #{id_mov_doble}"
+        + (f" — {motivo_clean}" if motivo_clean else "")
+    )[:50]
+
+    with db.tx() as conn:
+        mov_rev = bank_helpers.insert_movimiento_bancario(
+            conn,
+            no_banco=int(tx_orig["no_banco"]),
+            no_cta=None,
+            fecha=fecha_rev,
+            documento=doc_reverso,
+            importe=importe_f,
+            concepto=concepto_rev,
+            usuario=usuario,
+        )
+
+        # mov_doble del reverso, linkeado al original via id_original.
+        id_md_rev = _md.registrar(
+            conn=conn,
+            tipo=f"reverso_{tipo_orig}",
+            origen_table="transacciones_bancarias",
+            origen_id=mov_rev.get("id_transaccion"),
+            destino_table="transacciones_bancarias",
+            destino_id=mov_rev.get("id_transaccion"),
+            importe=importe_f,
+            fecha=fecha_rev,
+            concepto=concepto_rev,
+            usuario=usuario,
+            metadata={
+                "motivo": motivo_clean,
+                "doc_orig": doc_orig,
+                "doc_reverso": doc_reverso,
+                "no_banco": int(tx_orig["no_banco"]),
+            },
+            id_original=id_mov_doble,
+        )
+
+    return {
+        "id_transaccion_reverso": mov_rev.get("id_transaccion"),
+        "saldo_nuevo":            mov_rev.get("saldo_nuevo"),
+        "id_mov_doble_reverso":   id_md_rev,
+        "doc_orig":               doc_orig,
+        "doc_reverso":            doc_reverso,
+    }
+
+
 def transferir_entre_bancos(
     *,
     no_banco_origen: int,

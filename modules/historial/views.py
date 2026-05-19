@@ -420,6 +420,18 @@ _REVERSO_DISPATCH = {
     # más usaba diariamente y antes no se podía deshacer.
     "caja_s_to_xgast":            ("gastos.confirmar_desclasificar",
                                    lambda r: {"id_xgast": r["destino_id"]}),
+    # TMT 2026-05-19 — movimientos bancarios simples (DE / NC / ND) creados
+    # desde la action bar de /bancos. Cada uno compensa con doc de signo
+    # opuesto vía bancos.reversar_movimiento_simple:
+    #   deposito (DE)     → CH
+    #   nota_credito (NC) → CH
+    #   nota_debito (ND)  → NC
+    "deposito":      ("bancos.confirmar_reverso_movimiento_simple",
+                      lambda r: {"id_mov_doble": r["id_mov_doble"]}),
+    "nota_credito":  ("bancos.confirmar_reverso_movimiento_simple",
+                      lambda r: {"id_mov_doble": r["id_mov_doble"]}),
+    "nota_debito":   ("bancos.confirmar_reverso_movimiento_simple",
+                      lambda r: {"id_mov_doble": r["id_mov_doble"]}),
 }
 
 # Tipos que NO se reversan desde acá — el dispatcher muestra un toast

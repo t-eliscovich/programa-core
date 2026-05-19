@@ -17,11 +17,12 @@
   {% endfor %}
   {% set total_bancos = ns.total_bancos %}
 
-  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+  {# TMT 2026-05-19 — sin label descriptivo (regla feedback_ui_labels). #}
+  <div class="flex items-start justify-between gap-6 mb-4 flex-wrap">
     {{ page_hero(
         'Bancos',
         kpi_valor='$ ' ~ (total_bancos | num_es(0)),
-        kpi_extra='· ' ~ (bancos_con_saldo | length | string) ~ ' cuentas con saldo'
+        kpi_extra='· ' ~ (bancos_con_saldo | length | string)
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
       {% if mostrar_todos %}
@@ -37,6 +38,44 @@
       {% endif %}
     </div>
   </div>
+
+  {# TMT 2026-05-19 (pedido dueña): action bar con 4 movimientos posibles
+     dentro de Bancos. Las 4 acciones canónicas del dBase:
+       - CH (Emitir cheque) — chequera propia
+       - DE (Depositar)     — depósito directo al banco
+       - NC (Nota crédito)  — entrada (banco nos da plata)
+       - ND (Nota débito)   — egreso (banco nos quita plata)
+     "Depositar cheques en cartera" vive en /cheques/depositar-lote
+     (no confundir con DE simple). #}
+  {% if tiene_permiso('bancos.conciliar') %}
+  <div class="no-print mb-6 flex flex-wrap gap-2">
+    <a href="{{ url_for('bancos.emitir_cheque') }}"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 5h16v14H4z"/><path d="M4 10h16"/></svg>
+      Emitir cheque
+    </a>
+    <a href="{{ url_for('bancos.nuevo_movimiento', doc='DE') }}"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-medium shadow-sm">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5"/><path d="m6 13 6 6 6-6"/></svg>
+      Depositar
+    </a>
+    <a href="{{ url_for('bancos.nuevo_movimiento', doc='NC') }}"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-emerald-400 text-emerald-700 hover:bg-emerald-50 font-medium">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      Nota de crédito
+    </a>
+    <a href="{{ url_for('bancos.nuevo_movimiento', doc='ND') }}"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-rose-400 text-rose-700 hover:bg-rose-50 font-medium">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+      Nota de débito
+    </a>
+    <a href="{{ url_for('bancos.transferir') }}"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 7h13"/><path d="m12 3 4 4-4 4"/><path d="M21 17H8"/><path d="m12 21-4-4 4-4"/></svg>
+      Transferir entre bancos
+    </a>
+  </div>
+  {% endif %}
 
   {% if error %}
     <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">

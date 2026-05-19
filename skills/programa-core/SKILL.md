@@ -721,7 +721,7 @@ texto que vea Tamara.
 
 ### Regla 2 — No scrollear para ingresar datos
 Las pantallas de alta (Nueva compra, Nueva factura, Cobranza, Nuevo
-gasto, Aporte, Retiro, Emitir cheque propio, Nuevo posdat, etc.) deben
+gasto, Aporte, Retiro, Emitir cheque, Nuevo posdat, etc.) deben
 caber **enteras en un viewport de laptop** (~720px de alto útiles
 después del header + sidebar + breadcrumb). Si no entran:
 - Sacar campos opcionales a un `<details>` colapsado abajo.
@@ -1091,3 +1091,38 @@ Si la dueña pide totales más limpios (en vez de N filas chicas de transporte),
 ### Pantalla Stock fuera del sidebar
 
 `templates/base.html` quitado `nav_link('stock.lista', 'Stock', ...)`. El route sigue vivo (no se borró el módulo) pero ya no se navega ahí — la dueña ve el stock en Resultados.
+
+### Bancos — action bar con 4 movimientos (2026-05-19)
+
+Réplica de cómo funciona el dBase: la pantalla `/bancos` es el hub de todo lo que se hace con bancos. Sidebar limpio (sacado el link top-level "Emitir cheque").
+
+Action bar visible al entrar a `/bancos` con 5 botones (los 4 pedidos + transferir):
+
+| Botón | Endpoint | Documento | Signo |
+|---|---|---|---|
+| **Emitir cheque** | `bancos.emitir_cheque` (existente, wizard largo) | CH | − |
+| **Depositar** | `bancos.nuevo_movimiento?doc=DE` (nuevo, form simple) | DE | + |
+| **Nota de crédito** | `bancos.nuevo_movimiento?doc=NC` (nuevo) | NC | + |
+| **Nota de débito** | `bancos.nuevo_movimiento?doc=ND` (nuevo) | ND | − |
+| Transferir entre bancos | `bancos.transferir` (existente) | CH+TR | atómico |
+
+**No confundir "Depositar" (DE) con "Depositar lote" de /cheques.**
+- `bancos.nuevo_movimiento?doc=DE` = depósito directo, sólo importe + concepto. Para transferencias recibidas, depósitos en efectivo, ingresos sueltos. NO toca tabla `cheque`.
+- `cheques.depositar_lote` = wizard que toma cheques `stat='Z'` en cartera y los manda al banco (lote, cambia stat a B, genera 1 DE por cheque).
+
+**Implementación nueva:**
+
+- `queries.crear_movimiento_simple(no_banco, documento, importe, fecha, concepto, prov, usuario)`:
+  - Valida doc ∈ {DE, NC, ND}.
+  - Llama `bank_helpers.insert_movimiento_bancario(documento=doc, ...)` — signos los aplica el helper.
+  - Registra `mov_doble` tipo `deposito` / `nota_credito` / `nota_debito` con `origen_table=destino_table=transacciones_bancarias` y `origen_id=destino_id=id_transaccion`. Self-link porque no hay contraparte (no es factura/posdat).
+  - Atómico en `db.tx()`.
+- `queries.reversar_movimiento_simple(id_mov_doble, motivo, usuario)`:
+  - Lee el mov_doble + la tx original.
+  - Inserta documento opuesto: `DE→CH`, `NC→CH`, `ND→NC` (igual que `bancos.reversar_cheque_emitido`).
+  - Registra mov_doble del reverso con `id_original=id_mov_doble` (marca el original como reversado).
+- Views nuevas: `bancos.nuevo_movimiento` (GET/POST, query param `?doc=`) + `bancos.confirmar_reverso_movimiento_simple` (GET muestra wizard, POST ejecuta).
+- Template nuevo: `bancos/nuevo_movimiento.html` (form simple — banco, importe, fecha, concepto, opcional proveedor para NC/ND).
+- Dispatcher `historial.views._REVERSO_DISPATCH` actualizado con los 3 tipos nuevos → todos van a `bancos.confirmar_reverso_movimiento_simple`.
+
+**Regla de UX para futuras pantallas:** todo lo que sea movimiento bancario (DE/NC/ND/CH/TR) se inicia desde `/bancos`. Sidebar tiene un único link "Bancos" — las acciones específicas viven adentro. Lo mismo aplica a otras pantallas hub (Cheques, Compras, Facturas). Si alguien pide "agregar X al sidebar" preguntar si en realidad no tendría que vivir como acción dentro de una pantalla hub.

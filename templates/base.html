@@ -570,7 +570,8 @@
       <details class="sidebar-section" data-key="bancos">
         <summary>Bancos y caja</summary>
         {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
-        {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('bancos.emitir_cheque', 'Emitir cheque propio', 'check') }}{% endif %}
+        {# TMT 2026-05-19 — "Emitir cheque" sacado del sidebar (pedido dueña).
+           Ahora vive dentro de /bancos junto con Depositar, NC y ND. #}
         {# 2026-05-17 (v2): el item "Pagar Anticipo USD" se removió del menú.
            El flujo vive como sub-opción adentro del form de "Emitir cheque
            propio" (se selecciona el tipo "Anticipo USD" ahí). Mantener un

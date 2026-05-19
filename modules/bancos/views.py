@@ -624,3 +624,160 @@ def recompute_saldos():
     except Exception as e:
         flash_exc("No pude recalcular saldos bancarios", e)
     return redirect(url_for("bancos.lista"))
+
+
+# ---------------------------------------------------------------------------
+# Nuevo movimiento simple (DE / NC / ND) — TMT 2026-05-19 (pedido dueña).
+# Una vista genérica con un parámetro `doc` que decide el tipo. Reutiliza
+# el mismo template.
+# ---------------------------------------------------------------------------
+_LABELS_DOC = {
+    "DE": ("Depósito",      "Suma al saldo del banco"),
+    "NC": ("Nota de crédito","Suma al saldo (devolución, intereses, reverso de cargo)"),
+    "ND": ("Nota de débito", "Resta del saldo (cargo del banco, comisión, ISI)"),
+}
+
+
+@bancos_bp.route("/bancos/nuevo-movimiento", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def nuevo_movimiento():
+    """Form genérico para crear DE / NC / ND.
+
+    El tipo de documento llega vía `?doc=DE|NC|ND` (GET) o el campo hidden
+    `documento` (POST). Comparte template `bancos/nuevo_movimiento.html`.
+    """
+    doc = (request.args.get("doc") or request.form.get("documento") or "").upper().strip()
+    if doc not in _LABELS_DOC:
+        flash("Documento inválido (debe ser DE, NC o ND).", "warn")
+        return redirect(url_for("bancos.lista"))
+    label, ayuda = _LABELS_DOC[doc]
+
+    try:
+        bancos = queries.lista_bancos()
+    except Exception as e:
+        bancos, _err = [], str(e)
+        flash_exc("No pude listar bancos", e)
+
+    if request.method == "POST":
+        no_banco = parse_int(request.form.get("no_banco"))
+        importe = parse_monto(request.form.get("importe"))
+        fecha = parse_date(request.form.get("fecha")) or date.today()
+        concepto = (request.form.get("concepto") or "").strip()
+        prov = (request.form.get("beneficiario") or "").strip().upper() or None
+        usuario = (g.user or {}).get("username", "web")
+        try:
+            r = queries.crear_movimiento_simple(
+                no_banco=no_banco, documento=doc,
+                importe=importe, fecha=fecha,
+                concepto=concepto, prov=prov,
+                usuario=usuario,
+            )
+            flash(
+                f"{label} registrada por $ {r['importe']:.2f}. "
+                f"Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
+                "ok",
+            )
+            return redirect(url_for("bancos.movimientos",
+                                    no_banco=r["no_banco"]))
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc(f"No pude registrar la {label.lower()}", e)
+
+    # GET o POST con error
+    import contextlib as _ctx
+    proveedores = []
+    with _ctx.suppress(Exception):
+        proveedores = queries.proveedores_activos(limite=500)
+
+    return render_template(
+        "bancos/nuevo_movimiento.html",
+        doc=doc, label=label, ayuda=ayuda,
+        bancos=bancos,
+        proveedores=proveedores,
+        hoy=date.today().isoformat(),
+    )
+
+
+@bancos_bp.route("/bancos/mov-simple/<int:id_mov_doble>/reversar",
+                 methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def confirmar_reverso_movimiento_simple(id_mov_doble: int):
+    """Wizard de reverso para DE / NC / ND creados vía /bancos/nuevo-movimiento.
+
+    GET: muestra detalles + input de motivo.
+    POST: ejecuta queries.reversar_movimiento_simple (atómico).
+    """
+    import db as _db
+    md = _db.fetch_one(
+        """
+        SELECT id_mov_doble, tipo, origen_id, importe, fecha, concepto, estado
+          FROM scintela.mov_doble
+         WHERE id_mov_doble = %s
+        """,
+        (id_mov_doble,),
+    )
+    if not md:
+        flash(f"mov_doble #{id_mov_doble} no existe.", "warn")
+        return redirect(url_for("historial.lista"))
+    if (md.get("estado") or "") != "activo":
+        flash(f"Este mov_doble ya está {md.get('estado')}.", "warn")
+        return redirect(url_for("historial.lista"))
+
+    # Info del movimiento original para mostrar.
+    tx = _db.fetch_one(
+        """
+        SELECT t.id_transaccion, t.no_banco, t.documento, t.importe, t.fecha,
+               t.saldo, COALESCE(b.nombre, '') AS banco_nombre
+          FROM scintela.transacciones_bancarias t
+          LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco
+         WHERE t.id_transaccion = %s
+        """,
+        (md.get("origen_id"),),
+    )
+
+    if request.method == "POST":
+        motivo = (request.form.get("motivo") or "").strip()
+        usuario = (g.user or {}).get("username", "web")
+        try:
+            r = queries.reversar_movimiento_simple(
+                id_mov_doble=id_mov_doble,
+                motivo=motivo,
+                usuario=usuario,
+            )
+            flash(
+                f"Reverso OK: {r['doc_orig']} compensado con {r['doc_reverso']}. "
+                f"Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
+                "ok",
+            )
+            return redirect(url_for("historial.lista"))
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude reversar el movimiento", e)
+
+    # Render wizard de confirmación.
+    tipo_legible = (md.get("tipo") or "").replace("_", " ")
+    return render_template(
+        "_confirmar_accion.html",
+        titulo=f"Reversar {tipo_legible}",
+        mensaje=(
+            "Esta acción compensa el movimiento original con un documento de "
+            "signo opuesto (DE/NC → CH; ND → NC). El saldo del banco queda como "
+            "estaba antes del alta."
+        ),
+        detalle_registro={
+            "Tipo":     tipo_legible,
+            "Banco":    tx.get("banco_nombre", "") if tx else "",
+            "Importe":  f"$ {md.get('importe', 0):.2f}",
+            "Concepto": md.get("concepto") or "(sin concepto)",
+            "Fecha":    md.get("fecha"),
+        },
+        accion_url=url_for("bancos.confirmar_reverso_movimiento_simple",
+                          id_mov_doble=id_mov_doble),
+        volver_url=url_for("historial.lista"),
+        motivo_obligatorio=True,
+        confirm_label="Reversar",
+    )
