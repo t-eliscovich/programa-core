@@ -452,11 +452,15 @@
         {# Tabla GRANDE — sólo posdat.banc=9 (gastos forzados) + manuales legacy. #}
         {% set _total_pd = 0 %}
         {% for e in _gf_filas %}{% set _total_pd = _total_pd + e.importe %}{% endfor %}
+        {# TMT 2026-05-19 v8 — dueña: "borra columna forzado y dejame editar
+           fechas y montos. elimina vencido y saca el color rojo".
+           Tabla con date/number inputs inline (onchange → POST
+           /posdat/_api/<id>/editar). Sin chip "FORZADO". Sin background
+           rojo ni label "vencido". #}
         <div style="max-height: 360px; overflow-y: auto; border: 1px solid var(--grid); border-radius: 6px; background: var(--panel-hi);">
           <table style="width:100%; font-size:12px; border-collapse:collapse; font-feature-settings:'tnum' 1;">
             <thead style="position:sticky;top:0;background:var(--panel-hi);z-index:1;">
               <tr>
-                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Origen</th>
                 <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Fecha</th>
                 <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">PR</th>
                 <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Concepto</th>
@@ -465,20 +469,28 @@
             </thead>
             <tbody id="gf-tabla-body">
               {% for e in _gf_filas %}
-              <tr style="border-bottom:1px dotted var(--grid);{% if e.vencido %}background:rgba(248,113,113,0.10);{% endif %}">
-                <td style="padding:4px 10px;font-size:10px;">
-                  <span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-family:ui-monospace,monospace;">FORZADO</span>
-                </td>
-                <td style="padding:4px 10px;font-family:ui-monospace,monospace;">
-                  {{ e.fecha_efectiva[:10] if e.fecha_efectiva else '—' }}
-                  {% if e.vencido %}<span style="color:rgb(220 38 38);font-size:10px;">vencido</span>{% endif %}
+              <tr data-id-posdat="{{ e.id_posdat }}"
+                  data-concepto="{{ e.concepto or '' }}"
+                  style="border-bottom:1px dotted var(--grid);">
+                <td style="padding:4px 10px;">
+                  <input type="date"
+                         value="{{ e.fechad or e.fecha_efectiva[:10] if e.fecha_efectiva else '' }}"
+                         class="gf-edit-fechad"
+                         data-orig="{{ e.fechad or '' }}"
+                         style="font-family:ui-monospace,monospace;font-size:11px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:130px;">
                 </td>
                 <td style="padding:4px 10px;font-family:ui-monospace,monospace;color:var(--text);">{{ e.prov or '—' }}</td>
                 <td style="padding:4px 10px;color:var(--text);">{{ e.concepto or '—' }}</td>
-                <td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">{{ e.importe | num_es(0) }}</td>
+                <td style="padding:4px 10px;text-align:right;">
+                  <input type="number" step="0.01" min="0.01"
+                         value="{{ '%.2f' % (e.importe or 0) }}"
+                         class="gf-edit-importe"
+                         data-orig="{{ '%.2f' % (e.importe or 0) }}"
+                         style="font-family:ui-monospace,monospace;font-weight:600;font-size:11px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;text-align:right;width:110px;">
+                </td>
               </tr>
               {% else %}
-              <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">
+              <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">
                 Sin gastos forzados todavía. Cargá uno desde /posdat con banc=9, o usá el form de abajo.
               </td></tr>
               {% endfor %}
@@ -486,6 +498,86 @@
             </tbody>
           </table>
         </div>
+
+        {# CSS inline para los inputs editables: borde sutil al hover/focus. #}
+        <style>
+          .gf-edit-fechad:hover, .gf-edit-importe:hover {
+            border-color: var(--grid) !important;
+            background: white !important;
+          }
+          .gf-edit-fechad:focus, .gf-edit-importe:focus {
+            border-color: rgb(14 165 233) !important;
+            background: white !important;
+            outline: none;
+          }
+          .gf-edit-saved { background: rgba(34,197,94,0.15) !important; }
+          .gf-edit-error { background: rgba(248,113,113,0.20) !important; }
+        </style>
+
+        {# JS: enviar updates al endpoint /posdat/_api/<id>/editar onchange. #}
+        <script>
+          (function() {
+            function postUpdate(id_posdat, payload, inputEl) {
+              fetch('/posdat/_api/' + id_posdat + '/editar', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content
+                                  || (document.querySelector('input[name="csrf_token"]') || {}).value || ''
+                },
+                body: JSON.stringify(payload),
+              }).then(r => r.json()).then(j => {
+                if (j && j.ok) {
+                  inputEl.classList.remove('gf-edit-error');
+                  inputEl.classList.add('gf-edit-saved');
+                  inputEl.dataset.orig = inputEl.value;
+                  setTimeout(() => inputEl.classList.remove('gf-edit-saved'), 1200);
+                } else {
+                  inputEl.classList.add('gf-edit-error');
+                  alert('No se pudo guardar: ' + (j.error || 'error'));
+                  // revertir al valor original
+                  inputEl.value = inputEl.dataset.orig;
+                }
+              }).catch(e => {
+                inputEl.classList.add('gf-edit-error');
+                alert('Error de red: ' + e.message);
+                inputEl.value = inputEl.dataset.orig;
+              });
+            }
+            document.querySelectorAll('#gf-tabla-body tr[data-id-posdat]').forEach(tr => {
+              const idPd = tr.dataset.idPosdat;
+              const concepto = tr.dataset.concepto || '';
+              const fechaInput = tr.querySelector('.gf-edit-fechad');
+              const impInput = tr.querySelector('.gf-edit-importe');
+              if (fechaInput) fechaInput.addEventListener('change', () => {
+                if (!fechaInput.value) {
+                  alert('Fecha requerida.');
+                  fechaInput.value = fechaInput.dataset.orig;
+                  return;
+                }
+                postUpdate(idPd, {
+                  fechad: fechaInput.value,
+                  importe: parseFloat(impInput.value),
+                  concepto: concepto,
+                }, fechaInput);
+              });
+              if (impInput) impInput.addEventListener('change', () => {
+                const n = parseFloat(impInput.value);
+                if (!isFinite(n) || n <= 0) {
+                  alert('Importe inválido.');
+                  impInput.value = impInput.dataset.orig;
+                  return;
+                }
+                postUpdate(idPd, {
+                  fechad: fechaInput.value,
+                  importe: n,
+                  concepto: concepto,
+                }, impInput);
+              });
+            });
+          })();
+        </script>
 
         {# Form ALTA — agrega a scintela.gasto_forzado. #}
         <form id="gf-form" class="gf-form-inline" onsubmit="return false">
@@ -807,20 +899,12 @@ function buildChart(q) {
           titleFont: { weight: '600', size: 12 },
           bodyFont: { size: 12 },
           callbacks: {
-            title: ctx => {
-              const row = rows[ctx[0].dataIndex];
-              return row.fecha.toLocaleDateString('es-EC', { weekday: 'short', day: '2-digit', month: 'long' });
-            },
+            // TMT 2026-05-19 v8 — dueña: "solo mostra el saldo, (ni fecha,
+            // ni cheques ni nada)". Tooltip simplificado.
+            title: () => '',
             label: ctx => {
               const row = rows[ctx.dataIndex];
-              const lines = [
-                `Saldo: $ ${fmt(row.saldo)}`,
-              ];
-              if (row.cheques)  lines.push(`  + Cheques: $ ${fmt(row.cheques)}`);
-              if (row.gastos)   lines.push(`  − Egresos: $ ${fmt(Math.abs(row.gastos))}`);
-              if (row.facturas) lines.push(`  + Facturas: $ ${fmt(row.facturas)}`);
-              if (row === minRow) lines.unshift('⚠ Mínimo del horizonte');
-              return lines;
+              return `Saldo: $ ${fmt(row.saldo)}`;
             },
           },
         },

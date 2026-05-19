@@ -568,6 +568,7 @@ def flujo_grafico():
     )
     egresos_lista = [
         {
+            "id_posdat": int(r["id_posdat"]) if r.get("id_posdat") else None,
             "fecha_efectiva": r["fecha_efectiva"].isoformat()
                 if hasattr(r["fecha_efectiva"], "isoformat") else r["fecha_efectiva"],
             "fechad": r["fechad"].isoformat()

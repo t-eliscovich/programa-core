@@ -48,21 +48,35 @@ PROVISIONES_MES_USD = 80000.0
 
 
 def provision_pendiente_mes(hoy: date | None = None) -> float:
-    """Provisión que falta amortizar este mes — INFORMES.PRG línea 420.
+    """Provisión que FALTA amortizar este mes — modelo CUOTA MENSUAL.
 
-    Fórmula PRG: ``PROVI = PROVISIONES * (1 - DAY(DD)/30)``.
+    TMT 2026-05-19 v8 — dueña: "CAMBIAR el concepto de provisiones,
+    pasar de diario a cuota mensual, y el calculo es: valor inicial a
+    principios de mes, mas x/30 por la cuota mensual (x es la fecha
+    actual) pero si x=31 o x=28 en febrero, a fin de mes ajustar a
+    valor inicial+cuota mensual".
 
-    Devuelve un número >= 0. El día 1 del mes vale casi $80k, el día 30
-    vale 0. Para meses de 31 días, el día 31 también queda en 0 (clamp).
+    Fórmula:
+        provisionado_acumulado = cuota_mensual × proporcion
+        provision_pendiente    = cuota_mensual − provisionado_acumulado
 
-    Se descuenta de UT.PROY (utilidad proyectada) para reflejar que esos
-    $80k de provisiones todavía no están reservados en el cierre.
+    Donde:
+        proporcion = X/30 si X < último_dia_del_mes
+                   = 1    si X = último_dia (clamp a 100%)
+
+    Esto cubre meses cortos (febrero 28/29) y largos (31). El día 1 vale
+    casi $80k, último día del mes vale 0.
     """
+    import calendar as _cal
     h = hoy or date.today()
-    dia = h.day
-    if dia >= 30:
-        return 0.0
-    return PROVISIONES_MES_USD * (1.0 - dia / 30.0)
+    X = h.day
+    ultimo_dia = _cal.monthrange(h.year, h.month)[1]
+    if ultimo_dia <= X:
+        proporcion = 1.0
+    else:
+        proporcion = min(X / 30.0, 1.0)
+    provisionado = PROVISIONES_MES_USD * proporcion
+    return max(PROVISIONES_MES_USD - provisionado, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -3753,6 +3767,7 @@ def posdat_egresos_proximos(dias_adelante: int = 365) -> list[dict]:
     return db.fetch_all(
         f"""
         SELECT
+          id_posdat,
           CASE WHEN fechad < CURRENT_DATE THEN CURRENT_DATE ELSE fechad END
             AS fecha_efectiva,
           fechad,

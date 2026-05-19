@@ -354,11 +354,27 @@
              fechad_original guarda la 1ra. #}
           {% set fechad_original = c.fechad_original or c.fechad %}
           <td class="px-3 py-2" style="white-space: nowrap;">{{ fechad_original | fecha_es if fechad_original else '—' }}</td>
-          <td class="px-3 py-2" style="white-space: nowrap;">
-            {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
-              <span class="text-amber-700 dark:text-amber-400 font-medium" title="Última fecha postergada (postergación del {{ c.fecha_postergacion | fecha_es if c.fecha_postergacion else '?' }})">
-                {{ c.fechad | fecha_es }}
-              </span>
+          {# TMT 2026-05-19 v8 — dueña: "inline edit a la fecha postergado".
+             Si el cheque está en stat que permite postergar (Z, P, 1, 2, D),
+             la columna Postergada es un date input editable. Onchange →
+             POST cheques.postergar con nueva_fechad. Si no, muestra "—". #}
+          <td class="px-3 py-2" data-stop="1" style="white-space: nowrap;">
+            {% set _stat_post = (c.stat or '').upper() %}
+            {% if _stat_post in ('Z', 'P', '1', '2', 'D') %}
+              {% set _fechad_iso = (c.fechad or c.fecha).strftime('%Y-%m-%d') if (c.fechad or c.fecha) else '' %}
+              <form method="post" action="{{ url_for('cheques.postergar', id_cheque=c.id_cheque) }}"
+                    class="inline gf-post-form" style="margin:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="date" name="nueva_fechad" value="{{ _fechad_iso }}"
+                       onchange="this.form.submit()"
+                       class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
+                       style="width: 130px;"
+                       title="Editar para postergar fecha">
+              </form>
+              {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
+                <span class="text-[10px] text-amber-600 ml-0.5" title="Postergado el {{ c.fecha_postergacion | fecha_es if c.fecha_postergacion else '?' }}">⚠</span>
+              {% endif %}
             {% else %}
               <span class="text-slate-300">—</span>
             {% endif %}
@@ -375,79 +391,51 @@
           <td class="px-3 py-2 text-slate-500">{{ c.banco or '' }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ c.importe | money_es }}</td>
           {# TMT 2026-05-19 — celda Acum. removida (pedido dueña). #}
-          {# TMT 2026-05-19 — columna "Estado": raw letter (B/V/1/etc) +
-             dropdown inline con transiciones legales según stat actual.
-             Reemplaza el pill colorido que la dueña encontraba excesivo.
-             Usa <details> nativo (sin JS) — click expande/colapsa el menu. #}
+          {# TMT 2026-05-19 v8 — pedido dueña: "hace en cheques un dropdown
+             para el cambio de estado. no otro cuadro y un inline edit a la
+             fecha postergado".
+             Reemplazado el popover por <select> NATIVO. Onchange:
+               - POST  → submit form a cheques.transicionar.
+               - WIZARD → navigate al wizard.
+               - POSTERGAR → ya se edita inline en la columna Postergada
+                            (de arriba), no hace falta acá.
+             El form de postergar se elimina del dropdown porque ya está
+             editable inline. #}
           <td class="px-3 py-2 text-center" data-stop="1">
             {% set s = c.stat or '' %}
             {% set transs = transiciones_legales.get(s, []) if transiciones_legales else [] %}
+            {# Filtramos POSTERGAR — ya se edita inline en columna Postergada. #}
+            {% set transs = transs | rejectattr('kind', 'equalto', 'POSTERGAR') | list %}
             {% if transs %}
-            {# TMT 2026-05-19 v8 — popover nativo en lugar de <details>. La
-               dueña: "Cambiar estado no se entiende la UI, tiene que tener
-               un fondo que tape el resto". Estilos en head_extra (.pop-estado). #}
-            {% set pop_id = 'pop-estado-' ~ c.id_cheque %}
-            <button type="button" popovertarget="{{ pop_id }}" class="pop-trigger" title="Cambiar estado">
-              {{ s or '—' }}
-              <svg class="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div id="{{ pop_id }}" popover="auto" class="pop-estado">
-              <div class="pop-head">
-                <h3>Cambiar estado del cheque</h3>
-                <div class="pop-sub">
-                  N° {{ c.no_cheque or '—' }} · {{ c.cliente or c.codigo_cli or '' }}
-                  · Estado actual <strong class="font-mono">{{ s or '—' }}</strong>
-                </div>
-              </div>
-              <div class="pop-body">
+            <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=c.id_cheque) }}"
+                  class="inline ch-trans-form" style="margin:0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="stat_destino"
+                      onchange="(function(sel){
+                        const v = sel.value;
+                        if (!v) return;
+                        if (v.startsWith('WIZARD:')) {
+                          window.location.href = v.slice(7);
+                          return;
+                        }
+                        sel.form.submit();
+                      })(this)"
+                      class="font-mono text-sm border border-slate-300 rounded px-1 py-0.5 bg-white hover:bg-slate-50 cursor-pointer"
+                      title="Cambiar estado del cheque">
+                <option value="" selected>{{ s or '—' }}</option>
                 {% for t in transs %}
-                  {% if t.kind == 'POSTERGAR' %}
-                    {# TMT 2026-05-19 v8 — pedido dueña: postergar inline,
-                       sin salir de la pantalla, y volver a /cheques con
-                       los filtros vigentes (no al detalle del cheque).
-                       `next` con full_path nos trae acá mismo. #}
-                    {% set _fechad_actual = (c.fechad or c.fecha).strftime('%Y-%m-%d') if (c.fechad or c.fecha) else '' %}
-                    <form method="post" action="{{ url_for('cheques.postergar', id_cheque=c.id_cheque) }}"
-                          class="pop-opt pop-postergar" style="margin:0; flex-wrap: wrap;">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="next" value="{{ request.full_path }}">
-                      <span class="stat-dest">{{ t.stat_destino }}</span>
-                      <span class="grow">{{ t.label }}</span>
-                      <input type="date" name="nueva_fechad" required
-                             value="{{ _fechad_actual }}"
-                             class="pop-date">
-                      <button type="submit" class="pop-go">Guardar</button>
-                    </form>
-                  {% elif t.kind == 'WIZARD' %}
+                  {% if t.kind == 'WIZARD' %}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
-                      <a href="{{ url_for('cheques.depositar_lote') }}" class="pop-opt">
-                        <span class="stat-dest">{{ t.stat_destino }}</span>
-                        <span>{{ t.label }}</span>
-                      </a>
+                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}">→ {{ t.stat_destino }} · {{ t.label }}</option>
                     {% else %}
-                      <a href="{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}" class="pop-opt">
-                        <span class="stat-dest">{{ t.stat_destino }}</span>
-                        <span>{{ t.label }}</span>
-                      </a>
+                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}">→ {{ t.stat_destino }} · {{ t.label }}</option>
                     {% endif %}
                   {% else %}
-                    <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=c.id_cheque) }}" class="block" style="margin:0">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="stat_destino" value="{{ t.stat_destino }}">
-                      <button type="submit" class="pop-opt">
-                        <span class="stat-dest">{{ t.stat_destino }}</span>
-                        <span>{{ t.label }}</span>
-                      </button>
-                    </form>
+                    <option value="{{ t.stat_destino }}">→ {{ t.stat_destino }} · {{ t.label }}</option>
                   {% endif %}
                 {% endfor %}
-              </div>
-              <div class="pop-foot">
-                <button type="button" popovertarget="{{ pop_id }}" popovertargetaction="hide">
-                  Cancelar
-                </button>
-              </div>
-            </div>
+              </select>
+            </form>
             {% else %}
               {# Estado terminal — sin transiciones. Mostrar solo la letra. #}
               <span class="font-mono text-sm text-slate-500">{{ s or '—' }}</span>
