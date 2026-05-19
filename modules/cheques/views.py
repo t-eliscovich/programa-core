@@ -1639,10 +1639,11 @@ def depositar_lote():
 @requiere_permiso("cheques.ver")
 def lista():
     q = request.args.get("q", "").strip()
-    # TMT 2026-05-19 v2 — default vuelve a 'cartera' (= solo Z). Antes
-    # era 'todos' pero el tab "Todos" se eliminó (Cartera total cubre el
-    # 99% del caso de uso y "cartera" es lo primero que querés ver).
-    estado = request.args.get("estado", "cartera")
+    # TMT 2026-05-19 v8 (pedido dueña): default = 'cartera_total' para que
+    # el hero/listado matchee con b.totc de /informes/balance. Antes era
+    # 'cartera' (solo Z) y el número del hero no coincidía con Resultados.
+    # Fórmula canónica TOTC (PRG L24): stat ∈ Z+1+2+3+P+D.
+    estado = request.args.get("estado", "cartera_total")
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     cliente = request.args.get("cliente", "").strip()

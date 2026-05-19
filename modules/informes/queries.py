@@ -4897,3 +4897,179 @@ def fuentes_y_usos(
         "delta_banco":   delta["banco"],
         "error":         None,
     }
+
+
+# ---------------------------------------------------------------------------
+# GASTOS FORZADOS — flujo de fondos. Persistencia DB (migración 0033).
+# Antes vivían en localStorage del navegador (cliente-side), pero la dueña
+# reportó que al abrir en otro navegador/máquina aparecían vacíos. Pedido
+# 2026-05-19 v8: "asegurate de encontrarlos y mostrarmelos".
+# ---------------------------------------------------------------------------
+
+def gastos_forzados_listar() -> list[dict]:
+    """Lista todos los gastos forzados ordenados por fecha ASC."""
+    rows = db.fetch_all(
+        """
+        SELECT id_gasto_forzado, fecha, importe, concepto, version,
+               creado_por, creado_en, actualizado_en, actualizado_por
+          FROM scintela.gasto_forzado
+         ORDER BY fecha ASC, id_gasto_forzado ASC
+        """
+    ) or []
+    out = []
+    for r in rows:
+        out.append({
+            "id": int(r["id_gasto_forzado"]),
+            "fecha": r["fecha"].isoformat() if r["fecha"] else None,
+            "importe": float(r["importe"] or 0),
+            "concepto": r["concepto"] or "",
+            "version": int(r["version"] or 1),
+        })
+    return out
+
+
+def gasto_forzado_crear(
+    fecha,
+    importe: float,
+    concepto: str = "",
+    usuario: str = "web",
+) -> dict:
+    """Crea un nuevo gasto forzado. Devuelve el item con id y version=1."""
+    row = db.fetch_one(
+        """
+        INSERT INTO scintela.gasto_forzado
+            (fecha, importe, concepto, version, creado_por,
+             actualizado_en, actualizado_por)
+        VALUES (%s, %s, %s, 1, %s, CURRENT_TIMESTAMP, %s)
+        RETURNING id_gasto_forzado, fecha, importe, concepto, version
+        """,
+        (fecha, importe, concepto or None, usuario, usuario),
+    )
+    if not row:
+        raise RuntimeError("INSERT gasto_forzado no devolvió fila")
+    return {
+        "id": int(row["id_gasto_forzado"]),
+        "fecha": row["fecha"].isoformat() if row["fecha"] else None,
+        "importe": float(row["importe"] or 0),
+        "concepto": row["concepto"] or "",
+        "version": int(row["version"] or 1),
+    }
+
+
+def gasto_forzado_actualizar(
+    id_gasto_forzado: int,
+    expected_version: int,
+    fecha=None,
+    importe: float | None = None,
+    concepto: str | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Update con optimistic lock — rechaza si la versión actual no coincide.
+
+    Devuelve `{ok: bool, current?: dict, updated?: dict, reason?: str}`.
+    """
+    # Cargar el item actual
+    actual = db.fetch_one(
+        """
+        SELECT id_gasto_forzado, fecha, importe, concepto, version
+          FROM scintela.gasto_forzado
+         WHERE id_gasto_forzado = %s
+        """,
+        (id_gasto_forzado,),
+    )
+    if not actual:
+        return {"ok": False, "reason": "not_found"}
+    actual_v = int(actual["version"] or 1)
+    if actual_v != int(expected_version):
+        return {
+            "ok": False, "reason": "version_conflict",
+            "current": {
+                "id": int(actual["id_gasto_forzado"]),
+                "fecha": actual["fecha"].isoformat() if actual["fecha"] else None,
+                "importe": float(actual["importe"] or 0),
+                "concepto": actual["concepto"] or "",
+                "version": actual_v,
+            },
+        }
+    # Update parcial — coalesce a los valores actuales si vienen en None
+    nueva_fecha = fecha if fecha is not None else actual["fecha"]
+    nuevo_importe = importe if importe is not None else float(actual["importe"] or 0)
+    nuevo_concepto = concepto if concepto is not None else (actual["concepto"] or "")
+    row = db.fetch_one(
+        """
+        UPDATE scintela.gasto_forzado
+           SET fecha           = %s,
+               importe         = %s,
+               concepto        = %s,
+               version         = version + 1,
+               actualizado_en  = CURRENT_TIMESTAMP,
+               actualizado_por = %s
+         WHERE id_gasto_forzado = %s
+           AND version = %s
+        RETURNING id_gasto_forzado, fecha, importe, concepto, version
+        """,
+        (nueva_fecha, nuevo_importe, nuevo_concepto or None,
+         usuario, id_gasto_forzado, expected_version),
+    )
+    if not row:
+        # Race: otra tx ganó entre nuestro SELECT y nuestro UPDATE
+        return {"ok": False, "reason": "version_conflict_race"}
+    return {
+        "ok": True,
+        "updated": {
+            "id": int(row["id_gasto_forzado"]),
+            "fecha": row["fecha"].isoformat() if row["fecha"] else None,
+            "importe": float(row["importe"] or 0),
+            "concepto": row["concepto"] or "",
+            "version": int(row["version"] or 1),
+        },
+    }
+
+
+def gasto_forzado_eliminar(id_gasto_forzado: int) -> bool:
+    """Borra un gasto forzado. Devuelve True si se borró."""
+    row = db.fetch_one(
+        """
+        DELETE FROM scintela.gasto_forzado
+         WHERE id_gasto_forzado = %s
+        RETURNING id_gasto_forzado
+        """,
+        (id_gasto_forzado,),
+    )
+    return bool(row)
+
+
+def gastos_forzados_importar_bulk(
+    items: list[dict], usuario: str = "web"
+) -> dict:
+    """Carga masiva desde localStorage del navegador (one-time migration).
+
+    Acepta lista de items con shape {fecha, importe, concepto}. Saltea
+    items que ya existen con misma fecha+importe+concepto (idempotente).
+    """
+    insertados = 0
+    saltados = 0
+    for it in items or []:
+        fecha = it.get("fecha")
+        importe = float(it.get("importe") or 0)
+        concepto = (it.get("concepto") or "").strip()
+        if not fecha or importe <= 0:
+            saltados += 1
+            continue
+        # Dedup: ya existe igual?
+        existe = db.fetch_one(
+            """
+            SELECT 1 FROM scintela.gasto_forzado
+             WHERE fecha = %s::date
+               AND ROUND(importe::numeric, 2) = ROUND(%s::numeric, 2)
+               AND COALESCE(concepto, '') = %s
+             LIMIT 1
+            """,
+            (fecha, importe, concepto),
+        )
+        if existe:
+            saltados += 1
+            continue
+        gasto_forzado_crear(fecha, importe, concepto, usuario)
+        insertados += 1
+    return {"insertados": insertados, "saltados": saltados}

@@ -4,7 +4,7 @@ import io
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
@@ -1042,3 +1042,134 @@ def estado_cuenta(codigo_cli):
     except Exception:
         pass
     return render_template("informes/estado_cuenta.html", data=data, error=error)
+
+
+# ---------------------------------------------------------------------------
+# Gastos forzados — endpoints JSON. Migración localStorage → DB.
+# Pedido dueña 2026-05-19 v8: cargás en Chrome, abrís en Safari, no
+# aparecía nada. Ahora la fuente de verdad es scintela.gasto_forzado.
+# El JS del flujo_grafico.html llama a estos endpoints (en lugar de
+# tocar localStorage) — ver bloque `gfLoad/gfSave` del template.
+# ---------------------------------------------------------------------------
+
+def _parse_fecha_iso(s: str):
+    """YYYY-MM-DD → date, o None si no parsea."""
+    if not s:
+        return None
+    try:
+        return datetime.strptime(str(s).strip(), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_importe_payload(raw) -> float | None:
+    """Acepta float/int/str con '.' o ','. Devuelve None si no parsea."""
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+@informes_bp.route("/informes/flujo/gastos-forzados", methods=["GET"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def gastos_forzados_listar():
+    try:
+        items = queries.gastos_forzados_listar()
+        return jsonify({"ok": True, "items": items})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@informes_bp.route("/informes/flujo/gastos-forzados", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.editar")
+def gastos_forzados_crear():
+    payload = request.get_json(silent=True) or {}
+    fecha = _parse_fecha_iso(payload.get("fecha"))
+    importe = _parse_importe_payload(payload.get("importe"))
+    concepto = (payload.get("concepto") or "").strip()[:80]
+    if not fecha or importe is None or importe <= 0:
+        return jsonify({
+            "ok": False,
+            "error": "Datos inválidos: fecha (YYYY-MM-DD) y importe > 0 requeridos.",
+        }), 400
+    usuario = (g.user or {}).get("username", "web")
+    try:
+        item = queries.gasto_forzado_crear(
+            fecha=fecha, importe=importe, concepto=concepto, usuario=usuario,
+        )
+        return jsonify({"ok": True, "item": item}), 201
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@informes_bp.route(
+    "/informes/flujo/gastos-forzados/<int:id_gasto>", methods=["PUT", "PATCH"],
+)
+@requiere_login
+@requiere_permiso("informes.editar")
+def gastos_forzados_actualizar(id_gasto: int):
+    payload = request.get_json(silent=True) or {}
+    expected = payload.get("expected_version")
+    if expected is None:
+        return jsonify({"ok": False, "error": "expected_version requerido"}), 400
+    try:
+        expected_v = int(expected)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "expected_version inválido"}), 400
+    fecha = _parse_fecha_iso(payload.get("fecha")) if "fecha" in payload else None
+    importe = _parse_importe_payload(payload.get("importe")) if "importe" in payload else None
+    concepto = (payload.get("concepto") or "").strip()[:80] if "concepto" in payload else None
+    usuario = (g.user or {}).get("username", "web")
+    try:
+        r = queries.gasto_forzado_actualizar(
+            id_gasto_forzado=id_gasto,
+            expected_version=expected_v,
+            fecha=fecha, importe=importe, concepto=concepto,
+            usuario=usuario,
+        )
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+    if not r.get("ok"):
+        status = 409 if r.get("reason", "").startswith("version_conflict") else 404
+        return jsonify(r), status
+    return jsonify(r)
+
+
+@informes_bp.route(
+    "/informes/flujo/gastos-forzados/<int:id_gasto>", methods=["DELETE"],
+)
+@requiere_login
+@requiere_permiso("informes.editar")
+def gastos_forzados_eliminar(id_gasto: int):
+    try:
+        ok = queries.gasto_forzado_eliminar(id_gasto)
+        if not ok:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+        return jsonify({"ok": True})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@informes_bp.route(
+    "/informes/flujo/gastos-forzados/importar", methods=["POST"],
+)
+@requiere_login
+@requiere_permiso("informes.editar")
+def gastos_forzados_importar():
+    """One-time migration: el cliente envía el contenido de localStorage
+    `flujo_gastos_forzados_v1` y los inserta en DB (dedup por
+    fecha+importe+concepto)."""
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("items") or []
+    if not isinstance(items, list):
+        return jsonify({"ok": False, "error": "items debe ser lista"}), 400
+    usuario = (g.user or {}).get("username", "web")
+    try:
+        r = queries.gastos_forzados_importar_bulk(items, usuario=usuario)
+        return jsonify({"ok": True, **r})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500

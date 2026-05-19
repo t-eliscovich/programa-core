@@ -758,60 +758,114 @@ function buildChart(q) {
   });
 }
 /* ============================================================ *
- *   Gastos forzados — localStorage + chart integration
- *   TMT 2026-05-19 v6 audit — optimistic locking por item.
- *   Cada item lleva `version` que incrementa con cada edit.
- *   Al guardar, comparamos `version` del DOM vs lo que está en
- *   localStorage AHORA. Si difiere → reload + warn (otra tab editó).
- *   También sync cross-tab via `window.addEventListener('storage')`.
+ *   Gastos forzados — persistencia en DB (migración 0033).
+ *   TMT 2026-05-19 v8 — antes vivían en localStorage del navegador,
+ *   pero al abrir en otra máquina/navegador no aparecían (pedido
+ *   dueña: "asegurate de encontrarlos y mostrarmelos"). Ahora la
+ *   fuente de verdad es scintela.gasto_forzado vía endpoints JSON
+ *   en informes.views (REST con optimistic locking por `version`).
+ *
+ *   Backwards-compat: si el browser todavía tiene data en localStorage
+ *   `flujo_gastos_forzados_v1` (cargada antes de la migración), un
+ *   banner ofrece migrarla a DB vía /flujo/gastos-forzados/importar.
  * ============================================================ */
 const GF_STORAGE_KEY = 'flujo_gastos_forzados_v1';
+const GF_API_BASE = "{{ url_for('informes.gastos_forzados_listar') }}";
 
-function gfLoad() {
+// Cache module-level. gfLoad() lo devuelve sync para no romper los
+// call-sites existentes (gfRender, gfApplyToData, etc). Se refresca
+// después de cada operación de red.
+let GF_CACHE = [];
+
+function gfLoad() { return GF_CACHE.slice(); }
+
+async function gfFetchAll() {
   try {
-    const raw = localStorage.getItem(GF_STORAGE_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    // Backfill: items legacy sin version → version = 1.
-    return arr.map(it => ({ version: 1, ...it }));
+    const r = await fetch(GF_API_BASE, { credentials: 'same-origin' });
+    if (!r.ok) {
+      console.warn('[gf] GET falló:', r.status);
+      return [];
+    }
+    const j = await r.json();
+    GF_CACHE = (j && j.ok && Array.isArray(j.items)) ? j.items : [];
+    return GF_CACHE;
   } catch (e) {
-    console.warn('[gf] No pude leer localStorage:', e);
+    console.warn('[gf] GET excepción:', e);
     return [];
   }
 }
-function gfSave(items) {
-  try {
-    localStorage.setItem(GF_STORAGE_KEY, JSON.stringify(items));
-  } catch (e) {
-    console.warn('[gf] No pude guardar en localStorage:', e);
-  }
+
+function _csrfToken() {
+  // El layout base inyecta el token en <meta name="csrf-token">. Fallback
+  // a buscarlo en un input hidden por si la plantilla no lo expone.
+  const m = document.querySelector('meta[name="csrf-token"]');
+  if (m && m.content) return m.content;
+  const inp = document.querySelector('input[name="csrf_token"]');
+  return inp ? inp.value : '';
 }
 
-/* gfUpdateItemOptimistic — update con check de versión:
- * - lee localStorage AHORA (no la copia que tenía el DOM)
- * - busca el item por id
- * - si la versión actual != expectedVersion → CONFLICT
- *   (otra tab/edición ganó). Devuelve {ok:false, current}.
- * - si match → aplica `updater(item)` que devuelve el nuevo item,
- *   incrementa version, guarda. Devuelve {ok:true, updated}.
+async function gfApiCreate({ fecha, importe, concepto }) {
+  const r = await fetch(GF_API_BASE, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _csrfToken() },
+    body: JSON.stringify({ fecha, importe, concepto }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j.item;
+}
+
+async function gfApiUpdate(id, expectedVersion, patch) {
+  const r = await fetch(GF_API_BASE + '/' + encodeURIComponent(id), {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _csrfToken() },
+    body: JSON.stringify({ expected_version: expectedVersion, ...patch }),
+  });
+  const j = await r.json().catch(() => ({}));
+  return { status: r.status, body: j };
+}
+
+async function gfApiDelete(id) {
+  const r = await fetch(GF_API_BASE + '/' + encodeURIComponent(id), {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: { 'X-CSRFToken': _csrfToken() },
+  });
+  return r.ok;
+}
+
+/* gfUpdateItemOptimistic — wrapper async sobre el endpoint PUT.
+ * Mantiene la signature del legacy localStorage para no romper
+ * call-sites. Resuelve a {ok, updated, reason, current}.
  */
-function gfUpdateItemOptimistic(id, expectedVersion, updater) {
-  const cur = gfLoad();
-  const idx = cur.findIndex(x => x.id === id);
-  if (idx === -1) {
-    return { ok: false, reason: 'not_found', current: null };
+async function gfUpdateItemOptimistic(id, expectedVersion, updater) {
+  // Construir el patch desde el updater (el legacy `updater(item)`
+  // devolvía el item entero — extraemos los campos editables).
+  const before = (GF_CACHE.find(x => x.id === id)) || {};
+  const after = updater({ ...before });
+  const patch = {};
+  for (const k of ['fecha', 'importe', 'concepto']) {
+    if (after[k] !== before[k]) patch[k] = after[k];
   }
-  const item = cur[idx];
-  const actualVersion = Number(item.version || 1);
-  if (Number(expectedVersion || 1) !== actualVersion) {
-    return { ok: false, reason: 'version_conflict', current: item };
+  const { status, body } = await gfApiUpdate(id, expectedVersion, patch);
+  if (status === 409) {
+    return {
+      ok: false,
+      reason: body.reason === 'version_conflict_race'
+        ? 'version_conflict' : (body.reason || 'version_conflict'),
+      current: body.current || null,
+    };
   }
-  const next = updater(item);
-  next.version = actualVersion + 1;
-  cur[idx] = next;
-  gfSave(cur);
-  return { ok: true, updated: next };
+  if (status === 404) return { ok: false, reason: 'not_found', current: null };
+  if (!body || !body.ok) {
+    return { ok: false, reason: body.reason || 'error', current: null };
+  }
+  // Refrescar cache con el item actualizado
+  const idx = GF_CACHE.findIndex(x => x.id === id);
+  if (idx !== -1) GF_CACHE[idx] = body.updated;
+  return { ok: true, updated: body.updated };
 }
 
 function gfRender() {
@@ -876,10 +930,13 @@ function gfRender() {
       del.type = 'button';
       del.textContent = '×';
       del.title = 'Eliminar';
-      del.addEventListener('click', () => {
+      del.addEventListener('click', async () => {
         if (!confirm('¿Eliminar "' + (it.concepto || '(sin concepto)') + '"?')) return;
-        const cur = gfLoad().filter(x => x.id !== it.id);
-        gfSave(cur);
+        const ok = await gfApiDelete(it.id);
+        if (!ok) {
+          alert('No se pudo eliminar (verificá tus permisos o si ya fue borrado).');
+        }
+        await gfFetchAll();
         gfRender();
         gfRebuildChart();
       });
@@ -891,10 +948,10 @@ function gfRender() {
   total.textContent = '$ ' + fmt(sum);
 }
 
-function _gfSaveCampo(id, campo, valor, expectedVersion) {
+async function _gfSaveCampo(id, campo, valor, expectedVersion) {
   // Helper: actualiza un campo de un gasto forzado y refresca el chart.
-  // TMT 2026-05-19 v6 audit — optimistic locking via expectedVersion.
-  // Si otra tab editó el mismo item, detectamos el conflict y reloads.
+  // TMT 2026-05-19 v8 — ahora vía endpoint REST. Optimistic locking
+  // por `version` lo enforcea el backend.
   let parsed = valor;
   if (campo === 'importe') {
     const n = parseFloat(valor);
@@ -914,18 +971,22 @@ function _gfSaveCampo(id, campo, valor, expectedVersion) {
     parsed = (valor || '').trim();
   }
 
-  const result = gfUpdateItemOptimistic(id, expectedVersion, (item) => ({
+  const result = await gfUpdateItemOptimistic(id, expectedVersion, (item) => ({
     ...item, [campo]: parsed,
   }));
 
   if (!result.ok) {
     if (result.reason === 'version_conflict') {
       alert(
-        'Este gasto forzado fue modificado en otra ventana del navegador. ' +
+        'Este gasto forzado fue modificado en otra ventana o computadora. ' +
         'Releyendo la lista actualizada — tu cambio se descartó.'
       );
+      await gfFetchAll();
     } else if (result.reason === 'not_found') {
       alert('Este gasto fue eliminado en otra ventana.');
+      await gfFetchAll();
+    } else {
+      alert('No se pudo guardar: ' + (result.reason || 'error'));
     }
     gfRender();
     gfRebuildChart();
@@ -933,13 +994,12 @@ function _gfSaveCampo(id, campo, valor, expectedVersion) {
   }
 
   gfRebuildChart();
-  // Recalcular total leyendo desde localStorage (no de un cache stale).
+  // Total leyendo del cache (ya refrescado por gfUpdateItemOptimistic).
   const cur = gfLoad();
   const sum = cur.reduce((acc, it) => acc + Number(it.importe || 0), 0);
   const total = document.getElementById('gf-total');
   if (total) total.textContent = '$ ' + fmt(sum);
   // Re-render para refrescar la versión visible en data-version del input.
-  // Sin esto, la próxima edición usa la version vieja y dispara conflict.
   gfRender();
 }
 
@@ -983,38 +1043,78 @@ function gfRebuildChart() {
   try { buildChart(q); } catch (e) { console.error('[gf] rebuildChart falló:', e); }
 }
 
-document.getElementById('gf-form').addEventListener('submit', (ev) => {
+document.getElementById('gf-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const fecha = document.getElementById('gf-fecha').value;
   const importe = parseFloat(document.getElementById('gf-importe').value);
   const concepto = (document.getElementById('gf-concepto').value || '').trim();
   if (!fecha || !importe || importe <= 0) return;
-  const items = gfLoad();
-  // TMT 2026-05-19 v6 audit — version=1 al crear, se incrementa con cada edit.
-  items.push({
-    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-    fecha, importe, concepto, version: 1,
-  });
-  gfSave(items);
+  try {
+    await gfApiCreate({ fecha, importe, concepto });
+  } catch (e) {
+    alert('No se pudo agregar el gasto forzado: ' + e.message);
+    return;
+  }
+  await gfFetchAll();
   document.getElementById('gf-importe').value = '';
   document.getElementById('gf-concepto').value = '';
   gfRender();
   gfRebuildChart();
 });
 
-// Render inicial del sidebar (antes del primer buildChart)
-gfRender();
+/* TMT 2026-05-19 v8 — migración one-time desde localStorage. Si el
+ * navegador tiene gastos forzados guardados antes de esta release, ofrecer
+ * importarlos a DB. Después de importar exitosamente, los borra del
+ * localStorage para evitar duplicados en futuras visitas. */
+async function gfOfrecerImportarLocalStorage() {
+  let raw;
+  try { raw = localStorage.getItem(GF_STORAGE_KEY); }
+  catch (e) { return; }
+  if (!raw) return;
+  let legacyItems;
+  try { legacyItems = JSON.parse(raw); }
+  catch (e) { return; }
+  if (!Array.isArray(legacyItems) || legacyItems.length === 0) return;
 
-/* TMT 2026-05-19 v6 audit — sync cross-tab: si otra ventana del navegador
- * modifica `flujo_gastos_forzados_v1` en localStorage, este listener
- * detecta el `storage` event y re-renderiza el panel + chart para que
- * todas las tabs queden coherentes sin reload manual. */
-window.addEventListener('storage', (e) => {
-  if (e.key === GF_STORAGE_KEY) {
-    gfRender();
-    gfRebuildChart();
-  }
-});
+  const host = document.querySelector('.gf-wrap') || document.body;
+  const banner = document.createElement('div');
+  banner.className = 'gf-import-banner';
+  banner.style.cssText = 'margin:10px 0;padding:10px 14px;border:1px solid #f59e0b;background:#fef3c7;border-radius:6px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
+  banner.innerHTML =
+    '<span><strong>' + legacyItems.length + ' gasto(s) forzado(s)</strong> guardado(s) en este navegador antes de la migración. ' +
+    '¿Importarlos a la base para que se vean desde cualquier máquina?</span>' +
+    '<button type="button" class="gf-import-go" style="padding:4px 10px;border-radius:4px;background:#0369a1;color:white;border:none;cursor:pointer;">Importar</button>' +
+    '<button type="button" class="gf-import-skip" style="padding:4px 10px;border-radius:4px;background:white;border:1px solid #94a3b8;cursor:pointer;">Ignorar</button>';
+  host.insertBefore(banner, host.firstChild);
+
+  banner.querySelector('.gf-import-skip').addEventListener('click', () => banner.remove());
+  banner.querySelector('.gf-import-go').addEventListener('click', async () => {
+    try {
+      const r = await fetch("{{ url_for('informes.gastos_forzados_importar') }}", {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _csrfToken() },
+        body: JSON.stringify({ items: legacyItems }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      try { localStorage.removeItem(GF_STORAGE_KEY); } catch (e) { /* noop */ }
+      banner.innerHTML = '<span><strong>OK.</strong> ' + j.insertados + ' importado(s), ' + j.saltados + ' saltado(s) (ya existían).</span>';
+      await gfFetchAll();
+      gfRender();
+      gfRebuildChart();
+      setTimeout(() => banner.remove(), 4000);
+    } catch (e) {
+      alert('No se pudo importar: ' + e.message);
+    }
+  });
+}
+
+/* Carga inicial: fetch desde DB → render → buildChart. */
+(async () => {
+  await gfFetchAll();
+  gfRender();
+  await gfOfrecerImportarLocalStorage();
+})();
 
 try {
   buildChart(1);
