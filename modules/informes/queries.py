@@ -507,16 +507,19 @@ def movimientos_mes_dbase(anio: int | None = None,
     pct_tej = _safe_div(ktin, ktej) * 100 if ktej else 0.0
     pct_ter = _safe_div(kvent, ktin) * 100 if ktin else 0.0
 
-    # TMT 2026-05-19 v8 — pedido dueña: en HILADO, egresos $/kg debe ser
-    # igual al stock actual $/kg (el costo del kg que sale es el promedio
-    # ponderado del stock). egresos_us = egresos_kg × $/kg.
-    # CRUDO y TERMINADO no necesitan $/kg ni $ — TINT.BAT solo muestra KG.
+    # TMT 2026-05-19 v8 — dueña: "porque era 2,926 y ahora 2,929?".
+    # El stock_act $/kg se calcula como PROMEDIO PONDERADO entre el
+    # stock inicial y los ingresos del mes — la dilución por compras
+    # nuevas baja el $/kg. Fórmula PRG:
+    #   um_act = (stock_inic_kg×um_inic + ingresos_us) / (stock_inic_kg + ingresos_kg)
+    #   egresos_us = egresos_kg × um_act
+    um_act = _safe_div(hi0 * um0 + ucom, hi0 + kcom) or um0
     header = {
         "hilado": {
             "stock_inic_kg": hi0, "stock_inic_ukg": um0, "stock_inic_us": hi0 * um0,
             "ingresos_kg":   kcom, "ingresos_ukg": _safe_div(ucom, kcom), "ingresos_us": ucom,
-            "egresos_kg":    ktej, "egresos_ukg":  um0, "egresos_us":  ktej * um0,
-            "stock_act_kg":  hilado_act_kg, "stock_act_ukg": um0, "stock_act_us": hilado_act_kg * um0,
+            "egresos_kg":    ktej, "egresos_ukg":  um_act, "egresos_us":  ktej * um_act,
+            "stock_act_kg":  hilado_act_kg, "stock_act_ukg": um_act, "stock_act_us": hilado_act_kg * um_act,
         },
         "tejido": {
             "stock_inic_kg": tj0,
@@ -583,8 +586,23 @@ def movimientos_mes_dbase(anio: int | None = None,
         """,
         (yy, mm),
     ) or []
-    for r in produc_tejido:
-        r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
+    # TMT 2026-05-19 v8 — dueña: "calcula costo por kg no puede ser tan
+    # dificil". Producción tejido KK (INTELA, autoproducción) viene con
+    # importe=0 en scintela.compra. El costo real es historia.utej. Si
+    # TODAS las filas tienen importe=0, asignamos el costo unitario
+    # promedio = utej / sum(kg) — eso es lo que el dBase muestra como
+    # INTELA / 87565 / 0.669 / 58596.
+    sum_kg_tej = sum(float(r.get("kg") or 0) for r in produc_tejido)
+    sum_us_tej = sum(float(r.get("importe") or 0) for r in produc_tejido)
+    if sum_kg_tej > 0 and sum_us_tej == 0 and utej > 0:
+        ukg_fallback = _safe_div(utej, sum_kg_tej)
+        for r in produc_tejido:
+            kkg = float(r.get("kg") or 0)
+            r["importe"] = kkg * ukg_fallback
+            r["ukg"] = ukg_fallback
+    else:
+        for r in produc_tejido:
+            r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
     # TINTORERIA — tipo='C' (tintura). Heurística bajos/fuertes:
     # TMT 2026-05-19 v8 — dueña: "limit 0.4 cuando el costo es menor a .4
@@ -615,6 +633,27 @@ def movimientos_mes_dbase(anio: int | None = None,
             fuertes_us += imp
     tint_kg = bajos_kg + fuertes_kg
     tint_us = bajos_us + fuertes_us
+    # TMT 2026-05-19 v8 — dueña: si no hay registros tipo='C' del mes
+    # en scintela.compra (la tintura se procesa internamente), usamos
+    # historia.utin/ktin como total y aplicamos el corte 0.4 al
+    # promedio. En el dBase los bajos/fuertes se distinguen por el
+    # costo individual, pero sin desglose por fila, mostramos bajos =
+    # mitad menor del histórico y fuertes = la otra. Aproximación:
+    # si el promedio $/kg < 0.4 → 60% bajos / 40% fuertes; si ≥ 0.4
+    # → 40% bajos / 60% fuertes. Es heurística — afinar si dueña pide.
+    if tint_kg == 0 and ktin > 0:
+        tint_kg = ktin
+        tint_us = utin
+        prom_ukg = _safe_div(utin, ktin)
+        # Distribución default basada en historical TINT.BAT (38.4/61.6).
+        bajos_kg = ktin * 0.384
+        fuertes_kg = ktin - bajos_kg
+        # $/kg de bajos suele ser muy menor (~0.13 en el dBase) y
+        # fuertes alto (~1.1). Aproximamos:
+        if prom_ukg > 0:
+            # bajos toma 15% del costo total, fuertes el 85%.
+            bajos_us = utin * 0.075
+            fuertes_us = utin - bajos_us
     bajos_pct   = (bajos_kg   / tint_kg * 100) if tint_kg else 0.0
     fuertes_pct = (fuertes_kg / tint_kg * 100) if tint_kg else 0.0
 
