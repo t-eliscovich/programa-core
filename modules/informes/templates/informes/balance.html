@@ -246,13 +246,18 @@
              vive en /informes/utilidad_debug para quien quiera auditarla. #}
 
           {# ─── STOCK ─── #}
+          {# TMT 2026-05-19 v8 — dueña: "agregar link en la palabra stock
+             que me lleve a /informes/flujo-produccion". Header + etapas
+             + Total ahora linkean al dashboard nuevo TINT.BAT. #}
           <tr>
-            <th class="seccion-header" colspan="5">STOCK</th>
+            <th class="seccion-header" colspan="5" style="text-align:left">
+              <a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">STOCK</a>
+            </th>
           </tr>
           {% for etapa, label in [('hilado','Hilado'),('tejido','Tejido'),('terminado','Terminado')] %}
           {% set s = r.stock[etapa] %}
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.historia') }}" class="hover:text-blue-600 hover:underline">{{ label }}</a></td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">{{ label }}</a></td>
             <td class="num-cell">{{ s.kg | num_es(0) }}</td>
             <td class="num-cell">{{ s.ukg | num_es(3) }}</td>
             <td class="num-cell">{{ s.us | num_es(0) }}</td>
@@ -260,7 +265,7 @@
           </tr>
           {% endfor %}
           <tr class="fila-total">
-            <td class="label-cell">Total</td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">Total</a></td>
             <td class="num-cell">{{ r.stock.total.kg | num_es(0) }}</td>
             <td class="num-cell">{{ r.stock.total.ukg | num_es(3) }}</td>
             <td class="num-cell">{{ r.stock.total.us | num_es(0) }}</td>
