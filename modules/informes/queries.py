@@ -450,14 +450,55 @@ def movimientos_mes_dbase(anio: int | None = None,
     utej = float(hist.get("utej") or 0)
     utin = float(hist.get("utin") or 0)
 
+    # TMT 2026-05-19 v8 — pedido dueña: completar $/kg y $ del stock inic
+    # y stock act. Reusamos las tarifas heurísticas del informe_balance:
+    #   UM (hilado): ucom/kcom del mes o ustock/stock del cierre.
+    #   UK (tejido) = UM + 0.5 ; UF (terminado) = UM + 2.2.
+    # Para el mes en curso, llamamos informe_balance() si está disponible;
+    # si no, calculamos un fallback razonable desde el snapshot histórico.
+    um0 = _safe_div(ucom, kcom)
+    if um0 == 0:
+        # Cierre con compras 0 → derivar del stock $ / kg total.
+        um0 = _safe_div(float(hist.get("ustock") or 0), float(hist.get("stock") or 0))
+    uk0 = um0 + 0.5 if um0 else 0.0
+    uf0 = um0 + 2.2 if um0 else 0.0
+
+    hilado_act_kg = max(hi0 + kcom - ktej, 0)
+    tejido_act_kg = max(tj0 + ktej - ktin, 0)
+    termin_act_kg = max(pf0 + ktin - kvent, 0)
+    color_act_us  = vq0  # sin movimientos automáticos por etapa
+
+    # % de eficiencia (egreso / ingreso del mes). En el dBase se mostraba
+    # como "0.50%" en tejido crudo y "3.76%" en terminado — proxy de
+    # merma o productividad.
+    pct_tej = _safe_div(ktin, ktej) * 100 if ktej else 0.0
+    pct_ter = _safe_div(kvent, ktin) * 100 if ktin else 0.0
+
     header = {
-        "hilado":     {"stock_inic_kg": hi0, "ingresos_kg": kcom,  "egresos_kg": ktej,  "stock_act_kg": max(hi0 + kcom - ktej, 0),
-                       "ingresos_ukg":  _safe_div(ucom, kcom), "ingresos_us":  ucom},
-        "tejido":     {"stock_inic_kg": tj0, "ingresos_kg": ktej,  "egresos_kg": ktin,  "stock_act_kg": max(tj0 + ktej - ktin, 0),
-                       "ingresos_us": utej},
-        "terminado":  {"stock_inic_kg": pf0, "ingresos_kg": ktin,  "egresos_kg": kvent, "stock_act_kg": max(pf0 + ktin - kvent, 0),
-                       "ingresos_us": utin},
-        "colorantes": {"stock_inic_us": vq0, "stock_act_us": vq0},
+        "hilado": {
+            "stock_inic_kg": hi0, "stock_inic_ukg": um0, "stock_inic_us": hi0 * um0,
+            "ingresos_kg":   kcom, "ingresos_ukg": _safe_div(ucom, kcom), "ingresos_us": ucom,
+            "egresos_kg":    ktej,
+            "stock_act_kg":  hilado_act_kg, "stock_act_ukg": um0, "stock_act_us": hilado_act_kg * um0,
+        },
+        "tejido": {
+            "stock_inic_kg": tj0, "stock_inic_us": tj0 * uk0,
+            "ingresos_kg":   ktej, "ingresos_pct": pct_tej, "ingresos_us": utej,
+            "egresos_kg":    ktin,
+            "stock_act_kg":  tejido_act_kg, "stock_act_us": tejido_act_kg * uk0,
+        },
+        "terminado": {
+            "stock_inic_kg": pf0, "stock_inic_us": pf0 * uf0,
+            "ingresos_kg":   ktin, "ingresos_pct": pct_ter, "ingresos_us": utin,
+            "egresos_kg":    kvent,
+            "stock_act_kg":  termin_act_kg, "stock_act_us": termin_act_kg * uf0,
+        },
+        "colorantes": {
+            "stock_inic_us": vq0,
+            "ingresos_us":   0.0,  # se setea abajo con compras Q del mes
+            "egresos_us":    0.0,
+            "stock_act_us":  color_act_us,
+        },
     }
 
     # Breakdown por proveedor del mes seleccionado.
@@ -506,26 +547,38 @@ def movimientos_mes_dbase(anio: int | None = None,
     for r in produc_tejido:
         r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
-    # TINTORERIA — tipo='C' (tintura). Para distinguir bajos/fuertes en
-    # dBase: el legacy usa lc2 (2 primeras letras del concepto) — CC para
-    # tintura, donde bajos eran procesos con poco colorante y fuertes con
-    # mucho. En base nueva sin ese campo separado, dejamos el bloque
-    # plano (totales) y marcamos bajos/fuertes como N/D — la dueña dice
-    # cómo distinguirlos y refinamos.
-    tint_total = db.fetch_one(
+    # TINTORERIA — tipo='C' (tintura). Heurística bajos/fuertes:
+    # el dBase distinguía bajos (poco colorante) vs fuertes (mucho).
+    # Sin flag dedicado, proxy: importe < 0.5 USD/kg → BAJOS, >= → FUERTES.
+    # Aproximación pragmática; afinar con la dueña si difiere mucho del PRG.
+    tint_rows = db.fetch_all(
         """
-        SELECT COALESCE(SUM(kg), 0) AS kg,
-               COALESCE(SUM(importe), 0) AS importe
+        SELECT COALESCE(kg, 0)::numeric      AS kg,
+               COALESCE(importe, 0)::numeric AS importe
           FROM scintela.compra
          WHERE UPPER(COALESCE(tipo, '')) = 'C'
            AND COALESCE(stat, '') <> 'Y'
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
+           AND COALESCE(kg, 0) > 0
         """,
         (yy, mm),
-    ) or {}
-    tint_kg = float(tint_total.get("kg") or 0)
-    tint_us = float(tint_total.get("importe") or 0)
+    ) or []
+    bajos_kg = bajos_us = 0.0
+    fuertes_kg = fuertes_us = 0.0
+    for r in tint_rows:
+        kkg = float(r["kg"])
+        imp = float(r["importe"])
+        if _safe_div(imp, kkg) < 0.5:
+            bajos_kg += kkg
+            bajos_us += imp
+        else:
+            fuertes_kg += kkg
+            fuertes_us += imp
+    tint_kg = bajos_kg + fuertes_kg
+    tint_us = bajos_us + fuertes_us
+    bajos_pct   = (bajos_kg   / tint_kg * 100) if tint_kg else 0.0
+    fuertes_pct = (fuertes_kg / tint_kg * 100) if tint_kg else 0.0
 
     # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
     # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
@@ -543,6 +596,8 @@ def movimientos_mes_dbase(anio: int | None = None,
     ) or {}
     cs_col_us = float(quimicos_mes.get("importe") or 0)
     cs_col_ukg = _safe_div(cs_col_us, ktin)
+    # Aplicar al header de colorantes el ingreso $ del mes.
+    header["colorantes"]["ingresos_us"] = cs_col_us
 
     # CS.PRODUCCION — costo total de producción (mat. prima + tejido + tin
     # + col) / kg producidos en el mes. Usa hist live.
@@ -564,12 +619,12 @@ def movimientos_mes_dbase(anio: int | None = None,
             "importe": sum(float(r.get("importe") or 0) for r in produc_tejido),
         },
         "tintoreria": {
-            # Mientras no haya bajos/fuertes distinguibles, mostramos un total
-            # único; el template ya tiene placeholders para bajos/fuertes.
-            "total": {"kg": tint_kg, "us": tint_us,
-                      "ukg": _safe_div(tint_us, tint_kg)},
-            "bajos":   None,   # N/D — requiere flag en scintela.compra
-            "fuertes": None,
+            "total":   {"kg": tint_kg, "us": tint_us,
+                        "ukg": _safe_div(tint_us, tint_kg), "pct": 100.0 if tint_kg else 0.0},
+            "bajos":   {"kg": bajos_kg, "us": bajos_us,
+                        "ukg": _safe_div(bajos_us, bajos_kg), "pct": bajos_pct},
+            "fuertes": {"kg": fuertes_kg, "us": fuertes_us,
+                        "ukg": _safe_div(fuertes_us, fuertes_kg), "pct": fuertes_pct},
         },
         "cs": {
             "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": 0.0},
@@ -1728,10 +1783,19 @@ def costo_promedio_mp_ponderado(
 
 
 def ventas_anio_en_curso() -> float:
-    """Suma de importes facturados en el año calendario en curso (live,
-    desde scintela.factura). TMT 2026-05-19 v8 — dueña: agregar "Ventas
-    del año" en el panel derecho del balance, reemplazando "Patrimonio
-    último cierre".
+    """Facturado BRUTO del año calendario en curso desde scintela.factura.
+
+    TMT 2026-05-19 v8 — dueña reportó valor incorrecto (debería ser ~10M).
+    Causa: la fórmula anterior incluía importes NEGATIVOS (notas de crédito
+    / devoluciones) que netean la cifra. Para "ventas del año" gerencial
+    queremos el FACTURADO BRUTO POSITIVO (lo que el cliente debía pagar),
+    no el neto post-devoluciones.
+
+    Reglas:
+      - Año calendario en curso (Enero a Diciembre del año actual).
+      - Excluye stat='X' (facturas eliminadas por error).
+      - Solo importes positivos (>0) — las devoluciones con importe<0 no
+        restan al facturado bruto.
     """
     row = db.fetch_one(
         """
@@ -1739,6 +1803,7 @@ def ventas_anio_en_curso() -> float:
           FROM scintela.factura
          WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
            AND COALESCE(stat, '') <> 'X'
+           AND COALESCE(importe, 0) > 0
         """
     )
     return float((row or {}).get("total") or 0)
