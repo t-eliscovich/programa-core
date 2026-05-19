@@ -130,33 +130,10 @@
     </div>
   {% endif %}
 
-  {# ─── 3 tarjetas resumen — totales por rubro (PRG: GTEJ / GTIN / GGF) ─── #}
-  <div class="gastos-cards mb-6">
-    <div class="card tej">
-      <div class="label">Tejeduría — GTEJ</div>
-      <div class="value">$ {{ col_total.tej | num_es(0) }}</div>
-      <div class="breakdown">
-        V1+V2+V3: $ {{ col_v.tej | num_es(0) }}
-        · Amort. máquinas (DTJ): $ {{ col_amort.tej | num_es(0) }}
-      </div>
-    </div>
-    <div class="card tin">
-      <div class="label">Tintorería — GTIN</div>
-      <div class="value">$ {{ col_total.tin | num_es(0) }}</div>
-      <div class="breakdown">
-        V4+V5+V6: $ {{ col_v.tin | num_es(0) }}
-        · Amort. máquinas (DCC): $ {{ col_amort.tin | num_es(0) }}
-      </div>
-    </div>
-    <div class="card adm">
-      <div class="label">Administración — GGF</div>
-      <div class="value">$ {{ col_total.adm | num_es(0) }}</div>
-      <div class="breakdown">
-        V7+V8+V9: $ {{ col_v.adm | num_es(0) }}
-        · Amort. otros (DEPRCAR): $ {{ col_amort.adm | num_es(0) }}
-      </div>
-    </div>
-  </div>
+  {# TMT 2026-05-19 — 3 tarjetas resumen TEJEDURÍA/TINTORERÍA/ADMINISTRACIÓN
+     removidas (pedido dueña item 17): mostraban la misma info que la fila
+     "Total con amort." de la matriz unos renglones más abajo. Viola Regla 3
+     (cero redundancia). #}
 
   {# ─── Matriz 3×3 — el grid mismo ─── #}
   <div class="gastos-matriz mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
@@ -236,45 +213,9 @@
     </div>
   </div>
 
-  {# ─── Detalle: lista plana de movimientos bancarios del mes ─── #}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-3">
-    Movimientos bancarios del mes
-  </h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-4 py-3 text-left font-medium">Fecha</th>
-          <th class="px-4 py-3 text-left font-medium">Doc</th>
-          <th class="px-4 py-3 text-left font-medium">Banco</th>
-          <th class="px-4 py-3 text-left font-medium">Proveedor</th>
-          <th class="px-4 py-3 text-left font-medium">Concepto</th>
-          <th class="px-4 py-3 text-right font-medium">Importe</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2" style="white-space: nowrap;">{{ r.fecha | fecha_es }}</td>
-          <td class="px-4 py-2 font-mono text-xs">{{ r.documento }}</td>
-          <td class="px-4 py-2 text-slate-500">{{ r.banco or '' }}</td>
-          <td class="px-4 py-2">{{ r.proveedor }}</td>
-          <td class="px-4 py-2">{{ r.concepto | cleanstr }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ r.importe | money_es }}</td>
-        </tr>
-        {% else %}
-        {{ empty_row(6, 'Sin movimientos bancarios este mes.', 'Los gastos pueden estar registrados como xgast aunque no haya movimiento bancario aún.') }}
-        {% endfor %}
-      </tbody>
-      {% if filas %}
-      <tfoot class="bg-slate-50 dark:bg-slate-800/50 font-semibold">
-        <tr>
-          <td class="px-4 py-3" colspan="5">Total bancos</td>
-          <td class="px-4 py-3 text-right text-mono">{{ total | money_es }}</td>
-        </tr>
-      </tfoot>
-      {% endif %}
-    </table>
-  </div>
+  {# TMT 2026-05-19 — bloque "Movimientos bancarios del mes" removido
+     (pedido dueña item 17): el detalle por banco vive en /bancos. En
+     /gastos no aporta — la matriz de arriba ya muestra los gastos
+     consolidados por rubro × tipo. #}
 </div>
 {% endblock %}

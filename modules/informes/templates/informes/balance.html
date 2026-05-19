@@ -223,33 +223,11 @@
             <td class="num-cell {{ 'pos' if ut_pos else 'neg' }}">{{ r.utilidad.us | num_es(0) }}</td>
             <td></td>
           </tr>
-          {# Cálculo expuesto: PATR (basado en historia.ustock) − PATANT.
-             No se usa el VSTO con override (= kg×rate) para esto, porque
-             la re-valuación de stock entre cierres NO es ganancia. #}
-          <tr class="fila-aux">
-            <td class="label-cell" colspan="5" style="font-size:11px;color:rgb(100 116 139)">
-              Utilidad = PATR ({{ b.patr_para_utilidad | num_es(0) }})
-              − PATANT ({{ b.patant | num_es(0) }})
-              = {{ r.utilidad.us | num_es(0) }}.
-              PATR usa <code style="font-family:ui-monospace,monospace;font-size:10px">historia.ustock</code> (= valor stock al cierre anterior),
-              no el stock con tarifas iniciales del display.
-            </td>
-          </tr>
-          {# Provisión pendiente del mes — PRG INFORMES.PRG línea 420.
-             PROVI = 80.000 * (1 - DAY(hoy)/30). El día 1 vale ~$77k, el día
-             15 vale $40k, el día 30 vale 0. Se RESTA de UT.PROY para reflejar
-             provisiones que todavía no se reservaron en el cierre. #}
-          <tr class="fila-aux" title="Provisión que falta amortizar este mes — PRG L420: PROVISIONES × (1 − día_del_mes/30). Hoy el sistema descuenta este monto de la Utilidad Proyectada porque todavía no quedó reservado en el cierre.">
-            <td class="label-cell">Provisión pendiente del mes</td>
-            <td></td><td></td>
-            <td class="num-cell">−</td>
-            <td class="num-cell">{{ r.utilidad.provision_pendiente | num_es(0) }}</td>
-          </tr>
-          <tr class="fila-aux">
-            <td class="label-cell">Utilidad Proyectada</td>
-            <td></td><td></td><td class="num-cell">−</td>
-            <td class="num-cell">{{ r.utilidad.proy_us | num_es(0) }}</td>
-          </tr>
+          {# TMT 2026-05-19 — bloques "Utilidad = PATR − PATANT" (explicación),
+             "Provisión pendiente del mes" y "Utilidad Proyectada" removidos
+             (pedido dueña item 16: cuadritos auxiliares irrelevantes).
+             La fila "Utilidad Actual" arriba ya tiene el dato. La explicación
+             vive en /informes/utilidad_debug para quien quiera auditarla. #}
 
           {# ─── STOCK ─── #}
           <tr>
@@ -372,120 +350,25 @@
       </table>
     </div>
 
-    {# -------- D E T A L L E   B A N C O S
-       Solo bancos con saldo > 0. Una columna saldo, sin per-bank posdat
-       (era frágil al hardcode no_banco=1/2). Los posfechados van como
-       una fila separada al final. TOTAL cuadra con BANCOS arriba. #}
-    {% set bancos_visibles = b.bancos_todos | selectattr('saldo') | list %}
-    {% if bancos_visibles %}
-    <div class="mt-2 border-t-2 border-emerald-600 dark:border-emerald-500 font-mono text-sm">
-      <div class="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
-        <span>Detalle bancos</span>
-        <span class="text-xs font-normal text-slate-500 font-sans">cada banco + posfechados pendientes = TOTAL</span>
-      </div>
-      <table class="w-full">
-        <tbody>
-          {% for bco in bancos_visibles %}
-          <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30">
-            <td class="px-4 py-1.5">
-              <a href="{{ url_for('bancos.movimientos', no_banco=bco.no_banco) }}" class="hover:text-blue-600 hover:underline">
-                {{ bco.nombre or ('Banco ' ~ bco.no_banco) }}
-              </a>
-              {% if bco.n_transacciones %}
-                <span class="text-[10px] text-slate-400 font-sans">· {{ bco.n_transacciones }} mov.</span>
-              {% endif %}
-              {# TMT 2026-05-14 (audit #45): si el running saldo está roto y
-                 caímos a SUM signed/raw, mostrar warning visible. La dueña
-                 puede correr POST /bancos/recompute-saldos para rebuilder. #}
-              {% if bco.usa_fallback %}
-                <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-sans bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                      title="El running saldo (stored) está NULL o cero. Se mostró el SUM '{{ bco.saldo_origen }}' como fallback. Considera recalcular saldos.">
-                  ⚠ fallback ({{ bco.saldo_origen }})
-                </span>
-              {% endif %}
-            </td>
-            <td class="px-4 py-1.5 text-right">{{ bco.saldo | money_es }}</td>
-          </tr>
-          {% endfor %}
-          {% set t_saldo = bancos_visibles | sum(attribute='saldo') %}
-          {% if (b.pos1 + b.pos2) %}
-          <tr class="border-b border-slate-100 dark:border-slate-800 text-slate-500">
-            <td class="px-4 py-1.5 italic">+ Posfechados pendientes (POS1+POS2)</td>
-            <td class="px-4 py-1.5 text-right">+ {{ (b.pos1 + b.pos2) | money_es }}</td>
-          </tr>
-          {% endif %}
-          {# El rojo previo se prestaba a confusión (parecía alarma). Cambiado
-             a slate/destacado — TMT 2026-05-12. #}
-          <tr class="border-t-2 border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800/60">
-            <td class="px-4 py-2 font-bold text-slate-900 dark:text-slate-100">TOTAL BANCOS</td>
-            <td class="px-4 py-2 text-right font-bold text-slate-900 dark:text-slate-100">{{ b.salbanc | num_es(0) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
+    {# TMT 2026-05-19 — bloque "Detalle bancos" removido (pedido dueña
+       item 16). El detalle por banco vive en /bancos; acá en el balance
+       el dato consolidado ya aparece en la fila ACTIVO → Bancos. #}
 
     </div>{# fin wrapper col derecha #}
 
   </div>{# fin grid 2 cols #}
   </div>{# fin marco #}
 
-  {# -------- K I L O S   Y   M O V I M I E N T O S   (último cierre) -------- #}
-  {% if b.kg %}
-  <div class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-    <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
-      <span>Kilos y movimientos — último cierre</span>
-      {% if b.snapshot_historia_fecha %}
-        <span class="text-xs font-normal text-slate-500">{{ b.snapshot_historia_fecha | fecha_es }}</span>
-      {% endif %}
-    </div>
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-0">
-      <div class="px-5 py-3 border-r border-b md:border-b-0 border-slate-100 dark:border-slate-800">
-        <div class="text-xs uppercase tracking-wide text-slate-500">Stock</div>
-        <div class="text-base mt-1 tabular-nums">{{ b.kg.stock_kg | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
-        {# Live: snapshot + compras - ventas desde el cierre. Sólo mostramos
-           si hay diferencia visible y ya pasaron al menos 2 días del snapshot
-           (si no, no vale la pena distraer al ojo). #}
-        {% if b.kg.stock_kg_dias and b.kg.stock_kg_dias >= 2
-              and (b.kg.stock_kg_diff | abs) >= 1 %}
-          <div class="text-xs text-slate-500 mt-1" title="Aproximado al día de hoy: último cierre + compras - ventas desde el cierre">
-            hoy:
-            <span class="text-mono text-slate-700 dark:text-slate-200">{{ b.kg.stock_kg_live | num_es(0) }}</span>
-            <span class="{{ 'text-emerald-600' if b.kg.stock_kg_diff >= 0 else 'text-rose-600' }}">
-              ({{ '+' if b.kg.stock_kg_diff >= 0 else '' }}{{ b.kg.stock_kg_diff | num_es(0) }})
-            </span>
-          </div>
-        {% endif %}
-      </div>
-      <div class="px-5 py-3 border-r border-b md:border-b-0 border-slate-100 dark:border-slate-800">
-        <div class="text-xs uppercase tracking-wide text-slate-500">Compras</div>
-        <div class="text-base mt-1 tabular-nums">{{ b.kg.kcom | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
-        <div class="text-xs text-slate-400 mt-0.5">${{ b.kg.costo_kg | num_es(2) }}/kg</div>
-      </div>
-      <div class="px-5 py-3 border-r border-b md:border-b-0 border-slate-100 dark:border-slate-800">
-        <div class="text-xs uppercase tracking-wide text-slate-500">Tejido</div>
-        <div class="text-base mt-1 tabular-nums">{{ b.kg.ktej | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
-        <div class="text-xs text-slate-400 mt-0.5">${{ b.kg.utej | num_es(0) }}</div>
-      </div>
-      <div class="px-5 py-3 border-r border-slate-100 dark:border-slate-800">
-        <div class="text-xs uppercase tracking-wide text-slate-500">Tintura</div>
-        <div class="text-base mt-1 tabular-nums">{{ b.kg.ktin | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
-        <div class="text-xs text-slate-400 mt-0.5">${{ b.kg.utin | num_es(0) }}</div>
-      </div>
-      <div class="px-5 py-3">
-        <div class="text-xs uppercase tracking-wide text-slate-500">Ventas</div>
-        <div class="text-base mt-1 tabular-nums">{{ b.kg.kvent | num_es(0) }}<span class="text-xs text-slate-400 ml-1">kg</span></div>
-        <div class="text-xs text-slate-500 mt-0.5">${{ b.kg.precio_vta | num_es(2) }}/kg · ${{ b.kg.uvent | num_es(0) }}</div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
+  {# TMT 2026-05-19 — bloque "Kilos y movimientos — último cierre" removido
+     (pedido dueña item 15a). El cuadro nuevo MOVIMIENTOS MES estilo dBase
+     (item 15b) lo reemplaza con la granularidad que ella usa de verdad. #}
 
-  {# -------- C O N C I L I A C I Ó N   con   los   M Ó D U L O S --------
-     Cada concepto del balance al lado del total que sale del módulo
-     correspondiente (cheques, facturas, posdat, caja, bancos, etc.).
-     Indica ✓ cuando coinciden o ✗ con la diff cuando no. Permite al
-     gerente auditar de dónde viene cada cifra. #}
+  {# TMT 2026-05-19 — bloques "Conciliación" y "Diagnóstico" removidos
+     (pedido dueña item 15a). Eran <details> de auditoría que la dueña
+     no usaba — vivirán en /informes/utilidad_debug u otra vista
+     dedicada si la necesitamos. Sigue available el dato vía API
+     (b.conciliacion / b.diagnostico) si lo queremos exponer aparte. #}
+  {% if false %}
   {% if b.conciliacion %}
   <details class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <summary class="cursor-pointer px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 font-semibold flex items-center justify-between">
@@ -729,6 +612,7 @@
     </div>
   </details>
   {% endif %}
+  {% endif %}{# fin guard {% if false %} — TMT 2026-05-19 #}
 
   {% endif %}
 </div>

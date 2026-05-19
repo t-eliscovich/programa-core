@@ -126,22 +126,10 @@
           </select>
         </label>
 
-        {# Resto de campos secundarios (texto libre + endoso) plegados. #}
-        <details class="col-span-2 md:col-span-3 -mt-1">
-          <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-700 select-none">
-            ▸ Más datos (banco texto libre, endosado a proveedor)
-          </summary>
-          <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="flex flex-col">
-              <span class="text-xs text-slate-600">Banco (texto libre)</span>
-              <input type="text" name="banco_texto" value="{{ form.banco_texto or '' }}"
-                     class="border rounded px-2 py-1 mt-0.5 text-sm" maxlength="30">
-            </label>
-            {# TMT 2026-05-18 — campo "Endosado a proveedor" removido al
-               alta. El endoso es una operación posterior (cheques.endosar);
-               no tiene sentido cargar aquí. #}
-          </div>
-        </details>
+        {# TMT 2026-05-19 — bloque "Más datos" removido (pedido dueña item 7).
+           El campo banco_texto era redundante con el select de banco emisor
+           de arriba. Si en el futuro hace falta, vive en la pantalla de
+           detalle del cheque. #}
       </div>
 
       {# ─── Columna derecha: toggle "Es anticipo" (warning al costado) ─── #}

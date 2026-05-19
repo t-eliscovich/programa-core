@@ -34,15 +34,19 @@
     </tbody>
   </table>
 
-  <h2 class="text-base font-semibold mt-4 mb-2">scintela.iniciales {{ anio }}</h2>
+  <h2 class="text-base font-semibold mt-4 mb-2">scintela.iniciales {{ anio }} (stock kg + tarifas U$/kg + valor químicos)</h2>
   <table class="w-full text-sm bg-white border rounded mb-6">
     <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
       <tr>
         <th class="px-3 py-2 text-left">Mes</th>
-        <th class="px-3 py-2 text-right">Hilado</th>
-        <th class="px-3 py-2 text-right">Tejido</th>
-        <th class="px-3 py-2 text-right">Terminado</th>
-        <th class="px-3 py-2 text-right">VQ</th>
+        <th class="px-3 py-2 text-right">Hilado kg</th>
+        <th class="px-3 py-2 text-right">Tejido kg</th>
+        <th class="px-3 py-2 text-right">Terminado kg</th>
+        <th class="px-3 py-2 text-right">VQ (US$)</th>
+        <th class="px-3 py-2 text-right text-sky-700">UM</th>
+        <th class="px-3 py-2 text-right text-sky-700">UK</th>
+        <th class="px-3 py-2 text-right text-sky-700">UF</th>
+        <th class="px-3 py-2 text-right text-sky-700">UQ</th>
       </tr>
     </thead>
     <tbody>
@@ -53,9 +57,13 @@
         <td class="px-3 py-1 text-right tabular-nums">{{ r.tejido }}</td>
         <td class="px-3 py-1 text-right tabular-nums {% if (r.terminado or 0) == 0 %}bg-amber-50 font-bold text-amber-800{% endif %}">{{ r.terminado }}</td>
         <td class="px-3 py-1 text-right tabular-nums">{{ r.vq }}</td>
+        <td class="px-3 py-1 text-right tabular-nums text-sky-700">{{ r.um or 0 }}</td>
+        <td class="px-3 py-1 text-right tabular-nums text-sky-700">{{ r.uk or 0 }}</td>
+        <td class="px-3 py-1 text-right tabular-nums text-sky-700">{{ r.uf or 0 }}</td>
+        <td class="px-3 py-1 text-right tabular-nums text-sky-700 {% if (r.uq or 0) == 0 %}bg-amber-50 font-bold text-amber-800{% endif %}">{{ r.uq or 0 }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="px-3 py-4 text-center text-slate-500">VACÍA</td></tr>
+      <tr><td colspan="9" class="px-3 py-4 text-center text-slate-500">VACÍA</td></tr>
       {% endfor %}
     </tbody>
   </table>

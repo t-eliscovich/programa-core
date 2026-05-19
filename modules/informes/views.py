@@ -259,7 +259,8 @@ def diag_stock():
     """, (y,))
 
     iniciales = _safe_q("""
-        SELECT yy, mesnum, hilado, tejido, terminado, vq
+        SELECT yy, mesnum, hilado, tejido, terminado, vq,
+               um, uk, uf, uq
           FROM scintela.iniciales
          WHERE yy = %s
          ORDER BY mesnum
