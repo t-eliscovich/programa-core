@@ -403,12 +403,14 @@
                 {% for t in transs %}
                   {% if t.kind == 'POSTERGAR' %}
                     {# TMT 2026-05-19 v8 — pedido dueña: postergar inline,
-                       sin salir de la pantalla. Form con date input + submit
-                       directo a /cheques/<id>/postergar. #}
+                       sin salir de la pantalla, y volver a /cheques con
+                       los filtros vigentes (no al detalle del cheque).
+                       `next` con full_path nos trae acá mismo. #}
                     {% set _fechad_actual = (c.fechad or c.fecha).strftime('%Y-%m-%d') if (c.fechad or c.fecha) else '' %}
                     <form method="post" action="{{ url_for('cheques.postergar', id_cheque=c.id_cheque) }}"
                           class="pop-opt pop-postergar" style="margin:0; flex-wrap: wrap;">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="next" value="{{ request.full_path }}">
                       <span class="stat-dest">{{ t.stat_destino }}</span>
                       <span class="grow">{{ t.label }}</span>
                       <input type="date" name="nueva_fechad" required

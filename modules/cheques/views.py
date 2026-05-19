@@ -760,6 +760,16 @@ def postergar(id_cheque: int):
     if errores:
         return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form), 400
 
+    # TMT 2026-05-19 v8 — dueña: si vengo del popover inline de /cheques,
+    # quedarme en /cheques (preservando filtros). El form inline manda
+    # `next` = full_path de la lista; redirigimos ahí si está y es local.
+    next_url = (request.form.get("next") or "").strip()
+    es_next_local = (
+        next_url.startswith("/")
+        and not next_url.startswith("//")
+        and "://" not in next_url
+    )
+
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.postergar(
@@ -772,12 +782,16 @@ def postergar(id_cheque: int):
             f"Cheque postergado al {nueva_fechad.strftime('%d/%m/%Y')}.",
             "ok",
         )
+        if es_next_local:
+            return redirect(next_url)
         return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
     except ValueError as e:
         errores.append(str(e))
         return render_template("cheques/postergar.html", ch=ch, errores=errores, form=form), 400
     except Exception as e:
         flash_exc("No pude postergar el cheque", e)
+        if es_next_local:
+            return redirect(next_url)
         return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 

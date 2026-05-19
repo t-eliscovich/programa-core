@@ -422,7 +422,13 @@ def movimientos_mes_dbase(anio: int | None = None,
     hoy = _date.today()
     yy = int(anio) if anio else hoy.year
     mm = int(mes) if mes else hoy.month
-    hist = historia_mas_reciente() or {}
+    # TMT 2026-05-19 v8 — defensivo: si historia falla por cualquier
+    # razón (sin snapshot, tabla vacía, error de conexión), seguimos con
+    # `{}` para que el template no rompa. Cada acceso usa `or 0`.
+    try:
+        hist = historia_mas_reciente() or {}
+    except Exception:
+        hist = {}
     # 4 columnas top — usa los kg/$ del último snapshot (idem block kg
     # original). $/kg derivado.
     def _safe_div(a, b):
