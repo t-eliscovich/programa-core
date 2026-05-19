@@ -1219,40 +1219,39 @@ STATS_VIVOS = ("Z", "B", "1", "2", "3", "D", "P", "A")
 # proveedor endoso, motivo de rebote) → kind=WIZARD. Si es un cambio de
 # stat seco → kind=POST.
 TRANSICIONES_LEGALES: dict[str, list[dict]] = {
-    # Z = en cartera, recién cargado. Tiene todas las opciones operativas.
+    # TMT 2026-05-19 v8 — pedido dueña:
+    #   1. Postergar fecha: kind='POSTERGAR' para que el template muestre
+    #      un date input inline en el popover en vez de redirigir al wizard.
+    #   2. "Endosar a proveedor": removido del dropdown (no se usa más).
+    #
+    # Z = en cartera, recién cargado.
     "Z": [
         {"stat_destino": "B", "label": "Depositar (al banco)",
          "kind": "WIZARD", "endpoint": "cheques.depositar_lote"},
         {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
         {"stat_destino": "D", "label": "Pasar a Daniela",
          "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "E", "label": "Endosar a proveedor",
-         "kind": "WIZARD", "endpoint": "cheques.endosar"},
         {"stat_destino": "X", "label": "Anular (error carga)",
          "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
     ],
     # B = depositado en banco. Sólo se puede marcar rebote.
-    # NO se puede pasar a postergado/Daniela/cartera — ya salió del cliente.
     "B": [
         {"stat_destino": "9", "label": "Marcar como rebotado",
          "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
     ],
     "A": [
-        # Legacy acreditado — comportamiento idéntico a B.
         {"stat_destino": "9", "label": "Marcar como rebotado",
          "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
     ],
     "V": [
-        # Legacy Internacional — idem B.
         {"stat_destino": "9", "label": "Marcar como rebotado",
          "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
     ],
-    # 1 / 2 = rebote en gestión. Volver a cartera (Z), postergar, Daniela,
-    # o marcar 2do rebote (terminal 3).
+    # 1 / 2 = rebote en gestión.
     "1": [
         {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
         {"stat_destino": "D", "label": "Pasar a Daniela",
          "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "X", "label": "Anular (incobrable)",
@@ -1260,27 +1259,23 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     ],
     "2": [
         {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
         {"stat_destino": "D", "label": "Pasar a Daniela",
          "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "X", "label": "Anular (incobrable)",
          "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
     ],
-    # D = Daniela. Puede volver a cartera, postergar o endosar.
+    # D = Daniela.
     "D": [
         {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "WIZARD", "endpoint": "cheques.postergar"},
-        {"stat_destino": "E", "label": "Endosar a proveedor",
-         "kind": "WIZARD", "endpoint": "cheques.endosar"},
+         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
     ],
-    # P = postergado. Volver a cartera (Z), Daniela, endosar, o re-postergar.
+    # P = postergado. Volver a cartera (Z), Daniela, o re-postergar.
     "P": [
         {"stat_destino": "D", "label": "Pasar a Daniela",
          "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "E", "label": "Endosar a proveedor",
-         "kind": "WIZARD", "endpoint": "cheques.endosar"},
         {"stat_destino": "P", "label": "Re-postergar (nueva fecha)",
-         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
     ],
     # Estados terminales — sin transiciones disponibles.
     "3": [],   # 2do rebote terminal
@@ -2671,8 +2666,9 @@ def total_buscar(
         FROM scintela.cheque c
         WHERE (
                 %(q)s IS NULL
-             OR UPPER(c.no_cheque) LIKE UPPER(%(like)s)
-             OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
+             OR UPPER(COALESCE(c.no_cheque, '')) LIKE UPPER(%(like)s)
+             OR c.id_cheque::text LIKE %(like)s
+             OR UPPER(COALESCE(c.codigo_cli, '')) LIKE UPPER(%(like)s)
              OR EXISTS (
                   SELECT 1 FROM scintela.cliente cli
                    WHERE cli.codigo_cli = c.codigo_cli
@@ -2781,7 +2777,8 @@ def buscar(
         FROM scintela.cheque c
         WHERE (
                 %(q)s IS NULL
-             OR UPPER(c.no_cheque) LIKE UPPER(%(like)s)
+             OR UPPER(COALESCE(c.no_cheque, '')) LIKE UPPER(%(like)s)
+             OR c.id_cheque::text LIKE %(like)s
              OR EXISTS (
                   SELECT 1 FROM scintela.cliente cli
                    WHERE cli.codigo_cli = c.codigo_cli

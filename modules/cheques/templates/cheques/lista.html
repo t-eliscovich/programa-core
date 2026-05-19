@@ -79,6 +79,24 @@
     cursor: pointer;
   }
   .pop-trigger:hover { background: rgb(248 250 252); border-color: rgb(148 163 184); }
+  /* Form de postergar inline dentro del popover (TMT 2026-05-19 v8). */
+  .pop-estado .pop-postergar {
+    background: rgb(254 252 232); /* amarillo claro, llama la atención */
+    align-items: center;
+  }
+  .pop-estado .pop-postergar:hover { background: rgb(254 249 195); }
+  .pop-estado .pop-postergar .grow { flex: 1; }
+  .pop-estado .pop-date {
+    border: 1px solid rgb(203 213 225); border-radius: 6px;
+    padding: 4px 8px; font-size: 12px; font-family: ui-monospace, Menlo, monospace;
+    background: white;
+  }
+  .pop-estado .pop-go {
+    padding: 5px 10px; border-radius: 6px;
+    background: rgb(13 148 136); color: white; border: 0;
+    font-size: 12px; cursor: pointer; font-weight: 600;
+  }
+  .pop-estado .pop-go:hover { background: rgb(15 118 110); }
 </style>
 {% endblock %}
 
@@ -323,9 +341,13 @@
             {% endif %}
           </td>
           <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+            {# TMT 2026-05-19 v8 — dueña: sacar el "#" del fallback. Antes
+               cuando no había no_cheque se mostraba "#{id_cheque}", la
+               dueña lo ve como ruido visual. Ahora muestra solo el número
+               (sin prefijo) o "—" si no hay nada. #}
             {% set no_ch = c.no_cheque %}
             {% if no_ch in (None, '', 'None', 'NONE', 'none') %}{% set no_ch = None %}{% endif %}
-            {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">#{{ c.id_cheque }}</span>{% endif %}
+            {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">{{ c.id_cheque }}</span>{% endif %}
           </td>
           {# TMT 2026-05-17: fechad_original NULL = no fue postergado → la
              fechad actual ES la original. NOT NULL = fue postergado y
@@ -379,7 +401,22 @@
               </div>
               <div class="pop-body">
                 {% for t in transs %}
-                  {% if t.kind == 'WIZARD' %}
+                  {% if t.kind == 'POSTERGAR' %}
+                    {# TMT 2026-05-19 v8 — pedido dueña: postergar inline,
+                       sin salir de la pantalla. Form con date input + submit
+                       directo a /cheques/<id>/postergar. #}
+                    {% set _fechad_actual = (c.fechad or c.fecha).strftime('%Y-%m-%d') if (c.fechad or c.fecha) else '' %}
+                    <form method="post" action="{{ url_for('cheques.postergar', id_cheque=c.id_cheque) }}"
+                          class="pop-opt pop-postergar" style="margin:0; flex-wrap: wrap;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <span class="stat-dest">{{ t.stat_destino }}</span>
+                      <span class="grow">{{ t.label }}</span>
+                      <input type="date" name="nueva_fechad" required
+                             value="{{ _fechad_actual }}"
+                             class="pop-date">
+                      <button type="submit" class="pop-go">Guardar</button>
+                    </form>
+                  {% elif t.kind == 'WIZARD' %}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
                       <a href="{{ url_for('cheques.depositar_lote') }}" class="pop-opt">
                         <span class="stat-dest">{{ t.stat_destino }}</span>
