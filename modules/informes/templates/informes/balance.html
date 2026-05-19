@@ -156,11 +156,12 @@
        Misma estructura de header rosa (dBase aesthetic). #}
     {% if b.resultados %}
     {% set r = b.resultados %}
+    {# TMT 2026-05-19 v8 — dueña: borrar los links de COL.QUI. y GS.PROC.
+       Esos rubros no tienen drill-down útil (los colorantes/proceso no
+       están en /informes/gastos como propios). Quedan como texto plano. #}
     {% set _costo_links = {
       'MAT.PR.':  url_for('compras.lista', vista='compras'),
       'TEJIDO':   url_for('compras.lista', vista='produccion'),
-      'COL.QUI.': url_for('informes.gastos'),
-      'GS.PROC.': url_for('informes.gastos'),
       'GASTOS':   url_for('informes.gastos'),
     } %}
     <div class="border-r border-slate-200 dark:border-slate-800">
