@@ -999,31 +999,90 @@ Tipos canónicos (después de la corrección):
 
 En la UI del selector (`/compras/nueva`), las opciones muestran el **LC2 (2 chars)** porque es el vocabulario que usa la dueña. Internamente la DB sigue guardando el char único. Mapping en `labels.TIPOS_COMPRA_LC2` + helper `lc2_para_tipo(codigo)`.
 
-### Auto-clasificación de compras en /gastos (LC2 → V1..V9)
+### Auto-clasificación de compras en /gastos (cascada dBase completa)
 
-`modules/informes/queries.py`:`TIPOS_COMPRA_A_NUM_GASTO` mapea cada tipo de compra al num de gasto (V1..V9):
+**v1 (2026-05-19 mañana, parcial):** dict simple `TIPOS_COMPRA_A_NUM_GASTO` que sólo miraba tipo. Insuficiente — faltaban SU/EEQ/AGUA/CCSU/GAS/etc.
 
-```python
-TIPOS_COMPRA_A_NUM_GASTO = {
-    "K": 3,   # Tejeduría · Otros
-    "C": 6,   # Tintorería · Otros (Tintura/servicio)
-    "Q": 6,   # Tintorería · Otros (químicos)
-    "T": 6,
-    "S": 9,   # Admin · Otros
-}
-# H, A, I → no entran (MP / anticipos).
+**v2 (2026-05-19 tarde, definitivo):** cascada SQL `_SQL_COMPRA_NUM_CASE` que replica `INFORMES.PRG` L160-169 mirando tipo + concepto + codigo_prov. Primer match gana, igual que en dBase.
+
+Reglas (orden importa — primer match):
+
+**Set de keywords de SERVICIOS** (repetible — los mismos en los 3 rubros, pedido Tamara 2026-05-19):
+
+```
+servicios = CMB OR EEQ OR AGUA OR EMAAP OR (concepto LIKE 'GAS%')
 ```
 
-`gastos_xgast_v1_a_v9_mes()` ahora hace UNION xgast + compras (mes en curso) y suma cada compra al `num` de su tipo. Excluye `stat IN ('X','Y')` y excluye producción (`tipo='K' AND kg>0` — eso es VK/IPROVK, no gasto operativo).
+El rubro lo decide el `tipo`; la palabra clave decide la sub-categoría:
 
-`gastos_detalle_categoria(num)` también incluye las compras del num correspondiente, agrupadas en un bucket separado `"Compras (tipo X)"`. El template `informes/gastos_detalle.html` muestra un badge violeta `compra` para distinguir filas que vienen de `scintela.compra` vs `scintela.xgast`.
+| Regla | Condición | → num | Rubro · Sub-cat |
+|---|---|---|---|
+| 1 | `tipo='K'` AND concepto contiene `SU` | 1 | Tej · Sueldos |
+| 2 | `tipo='K'` AND **servicios** | 2 | Tej · Servicios |
+| 3 | `tipo='K'` resto | 3 | Tej · Otros |
+| 4 | `tipo IN (C,Q,T)` AND (`CCSU` OR LC2=`SU`) | 4 | Tin · Sueldos |
+| 5 | `tipo IN (C,Q,T)` AND **servicios** | 5 | Tin · Servicios |
+| 6 | `tipo IN (C,Q,T)` resto | 6 | Tin · Otros |
+| 7 | `tipo='S'` AND (`SU` OR LC2=`SU`) | 7 | Adm · Sueldos |
+| 8 | `tipo='S'` AND **servicios** | 8 | Adm · Servicios |
+| 9 | `tipo='S'` resto | 9 | Adm · Otros |
+| — | `tipo IN (H, A, I)` | NULL | excluido (MP / anticipos) |
+| — | `tipo='K' AND kg>0` | NULL | excluido (producción — vive en VK/IPROVK) |
 
-**Por qué este diseño** (vs duplicar compras en xgast al alta):
-- No duplica data → reverso de compra automáticamente saca del balance gastos.
-- No requiere migration ni backfill.
-- Si en el futuro queremos refinar el mapping (ej. compra con concepto "SU" → V1 personal en vez de V3 otros), basta cambiar la función de mapping.
+**Divergencia consciente vs dBase:** el dBase original tenía la regla V5 (servicios → Tintorería) catch-all sin chequear tipo. Eso forzaba que AGUA/EEQ en una compra admin terminara en Tin · Servicios. La dueña pidió que sean simétricos por rubro (V2/V5/V8 todos aceptan los mismos keywords). Implementación local: `_SERVICIOS_KEYWORDS_SQL` constante reutilizada en las 3 reglas.
 
-**Lo que NO está clasificado:** compras con tipo `H` (hilado), `A` (anticipo), `I` (anticipo máquinas) — son materia prima / activos diferidos, no gastos operativos. Si la dueña los quiere ver en el matriz, ampliar `TIPOS_COMPRA_A_NUM_GASTO`.
+**Implementación:**
+- `_SQL_COMPRA_NUM_CASE` constante con el CASE SQL. Usado dentro del SELECT en `gastos_xgast_v1_a_v9_mes()` y `gastos_detalle_categoria(n)`.
+- `COMPRA_A_GASTO_REGLAS`: lista de tuplas `(slug, num, label)` para referencia/UI.
+- `TIPOS_COMPRA_A_NUM_GASTO`: dict simple legacy, queda para callers externos pero NO usar para clasificar.
+
+**LC2 que aparecen en dBase** (referencia):
+
+| LC2 | Significado | Va a V según rubro |
+|---|---|---|
+| `KK` | Tejeduría | V1/V2/V3 |
+| `CC` | Tintorería | V4/V5/V6 |
+| `SU` | Sueldos | V1, V4 o V7 según contexto |
+| `HH` | Hilado | (excluido — MP) |
+| `QQ` | Químicos | V6 |
+| `AA`, `IN` | Anticipos | (excluidos) |
+| `GA` (LEFT 3 = `GAS`) | Gasolina | V8 |
+
+**Palabras clave que disparan sub-cat:**
+
+| Palabra | Sub-cat | Va a V |
+|---|---|---|
+| `SU` en concepto o LC2 | Sueldos | V1/V4/V7 según rubro |
+| `EEQ` | Luz (Emp. Eléctrica Quito) | V2/V5/V8 |
+| `EMAAP` | Agua potable | V5 |
+| `AGUA` | Agua | V5 |
+| `CMB` | Combustible | V5 |
+| `GAS` al inicio | Gasolina | V8 |
+| `CCSU` | Sueldos tintorería | V4 |
+
+**Fórmulas finales** (idem `INFORMES.PRG` L211-217):
+
+```
+GTEJ = V1+V2+V3 + DTJ        (gastos Tejeduría + amort máq tej)
+GTIN = V4+V5+V6 + DCC        (gastos Tintorería + amort máq tin)
+GGF  = V7+V8+V9 + DEPRCAR    (gastos Admin + amort otros)
+GSU  = V1+V4+V7              (Personal total)
+GEN  = V2+V5+V8              (Servicios total)
+GGT  = V3+V6+V9              (Otros total)
+TTT  = GTEJ+GTIN+GGF
+```
+
+**Por qué cascada SQL y no Python:** la query corre una vez y devuelve los totales sumados. Si lo hacíamos en Python, traíamos N filas de compras al runtime y clasificábamos una por una — más lento y memory-intensive. El CASE vive cerca de la data.
+
+**Reglas de consolidación dBase no implementadas todavía** (`INFORMES.PRG` L172-200):
+- NUM=8 + concepto contiene `TRANS` o importe ≤ $10 → consolidar como "TRANSP.VS."
+- NUM=9 + `AJU`/`VUELT`/`GS.VS` o importe ≤ $5 → "AJUSTES Y GS.VS."
+- NUM=8 + concepto `GASOLINA` → "GASOLINA"
+- NUM=6 + importe ≤ $15 → "GS.FAB.VS."
+
+Si la dueña pide totales más limpios (en vez de N filas chicas de transporte), implementar estas consolidaciones en `gastos_detalle_categoria()` post-fetch.
+
+**Lo que NO está clasificado:** compras con tipo `H` (hilado), `A` (anticipo), `I` (anticipo máquinas) — son materia prima / activos diferidos, no gastos operativos.
 
 ### Bordes globales más oscuros
 

@@ -1151,29 +1151,30 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     """
     filas = db.fetch_all(sql, (n,)) or []
 
-    # TMT 2026-05-19 — incluir compras cuyo tipo mapea a este num (LC2).
-    # Mismo filtro que gastos_xgast_v1_a_v9_mes: excluye anuladas + excluye
-    # producción (K con kg>0). Las compras se agrupan aparte ("Compras —
-    # tipo X") para que la dueña distinga fuente de origen.
-    tipos_para_num = [t for t, v in TIPOS_COMPRA_A_NUM_GASTO.items() if v == n]
-    filas_compras: list[dict] = []
-    if tipos_para_num:
-        where_fecha_c = (
-            "AND fecha >= date_trunc('month', CURRENT_DATE) "
-            "AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
-            if mes_actual else ""
-        )
-        sql_c = f"""
-            SELECT id_compra, fecha, comprobante AS doc, codigo_prov AS prov,
-                   concepto, importe, stat, tipo
-              FROM scintela.compra
-             WHERE UPPER(COALESCE(tipo, '')) = ANY(%s)
-               AND COALESCE(stat, '') NOT IN ('X', 'Y')
-               AND NOT (UPPER(COALESCE(tipo, '')) = 'K' AND COALESCE(kg, 0) > 0)
+    # TMT 2026-05-19 v2 — incluir compras cuyo (tipo, concepto, prov) mapea
+    # a este num según la cascada del dBase (`_SQL_COMPRA_NUM_CASE`). Antes
+    # filtraba sólo por tipo; ahora respeta SU/EEQ/AGUA/etc.
+    where_fecha_c = (
+        "AND c.fecha >= date_trunc('month', CURRENT_DATE) "
+        "AND c.fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
+        if mes_actual else ""
+    )
+    # El CASE va en el SELECT y filtramos por el resultado en un wrapper
+    # outer (Postgres no permite filtrar por columna calculada en el mismo
+    # WHERE sin LATERAL/subquery).
+    sql_c = f"""
+        SELECT * FROM (
+            SELECT c.id_compra, c.fecha, c.comprobante AS doc, c.codigo_prov AS prov,
+                   c.concepto, c.importe, c.stat, c.tipo,
+                   ({_SQL_COMPRA_NUM_CASE}) AS num_calc
+              FROM scintela.compra c
+             WHERE COALESCE(c.stat, '') NOT IN ('X', 'Y')
                {where_fecha_c}
-             ORDER BY fecha ASC, id_compra ASC
-        """
-        filas_compras = db.fetch_all(sql_c, (tipos_para_num,)) or []
+        ) sub
+         WHERE num_calc = %s
+         ORDER BY fecha ASC, id_compra ASC
+    """
+    filas_compras = db.fetch_all(sql_c, (n,)) or []
 
     # Agrupar por concepto via _grupo_concepto.
     buckets: dict[str, dict] = {}
@@ -1230,25 +1231,105 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     }
 
 
-# Mapping compra.tipo → xgast.num (rubro/sub-categoría) — TMT 2026-05-19.
-# Pedido Tamara: que las compras caigan automáticamente en su gasto rubro.
-# Replica el LC2 del dBase (que mapeaba CONCEPTO[0:2] a tipo → V1..V9).
-# Como ya tenemos el campo `tipo` explícito en scintela.compra, no hace falta
-# parsear concepto.
+# Mapping compra → xgast.num (V1..V9) — TMT 2026-05-19 v2.
+# Replica la cascada de INFORMES.PRG L160-169 (líneas &RNW 1..9). Combina
+# el `tipo` de compra (que determina el rubro) con patrones de concepto y
+# codigo_prov (que determinan la sub-cat dentro del rubro).
 #
-# Convención: cada tipo cae en su rubro · "Otros" (la sub-cat genérica del
-# rubro). En el futuro podemos refinar mirando el concepto para distinguir
-# personal/servicios/otros dentro del rubro.
+# Reglas (primer match gana, igual que en dBase):
+#   1. tipo K + concepto contiene 'SU'              → V1 (Tej · Sueldos)
+#   2. tipo K + concepto contiene 'EEQ'             → V2 (Tej · Servicios)
+#   3. tipo K + resto                                → V3 (Tej · Otros)
+#   4. tipo C/Q/T + ('CCSU' OR SU al inicio)        → V4 (Tin · Sueldos)
+#   5. tipo C/Q/T + concepto contiene CMB/EEQ/AGUA/EMAAP → V5 (Tin · Servicios)
+#   6. tipo C/Q/T + resto                            → V6 (Tin · Otros)
+#   7. tipo S + (concepto SU OR LC2=SU)             → V7 (Adm · Sueldos)
+#   8. tipo S + concepto arranca con GAS            → V8 (Adm · Servicios)
+#   9. tipo S + resto                                → V9 (Adm · Otros)
+#   excluidos:
+#     tipo H (Hilado)   — materia prima, no gasto.
+#     tipo A/I (Anticipos) — activo diferido, no gasto.
+#     tipo K con kg>0  — producción, ya entra en VK/IPROVK.
 #
-#   K (Tejido)      → V3  (Tejeduría · Otros)
-#   C (Tintorería)  → V6  (Tintorería · Otros)
-#   Q (Químicos)    → V6  (Tintorería · Otros — colorantes/auxiliares)
-#   T (Tintura legacy) → V6
-#   H (Hilado)      → NO entra al matriz: es materia prima, no gasto.
-#   A, I            → NO entran: anticipos.
-#   S (Servicios)   → V9 (Admin · Otros) — luz/contadora/mantenimiento.
+# SQL CASE equivalente vive en `_SQL_COMPRA_NUM_CASE` más abajo.
+COMPRA_A_GASTO_REGLAS: list[tuple[str, int, str]] = [
+    ("K_SU",     1, "Tej · Sueldos"),
+    ("K_EEQ",    2, "Tej · Servicios"),
+    ("K_OTROS",  3, "Tej · Otros"),
+    ("C_SU",     4, "Tin · Sueldos"),
+    ("C_SERV",   5, "Tin · Servicios"),
+    ("C_OTROS",  6, "Tin · Otros"),
+    ("S_SU",     7, "Adm · Sueldos"),
+    ("S_GAS",    8, "Adm · Servicios"),
+    ("S_OTROS",  9, "Adm · Otros"),
+]
+
+# Keywords de "servicios" — los mismos en los 3 rubros (Tej/Tin/Adm).
+# Pedido Tamara 2026-05-19 v3: los servicios son "repetibles" — agua,
+# emaap, luz, combustible, gasolina pueden aparecer en cualquier rubro;
+# el tipo de compra decide el rubro (V2/V5/V8), pero la palabra clave es
+# la misma. Antes V2 sólo aceptaba EEQ y V8 sólo GAS — desproporcionado.
+#
+# Mantenido el LIKE 'GAS%%' (prefix) además del contains para que matchee
+# "GASOLINA", "GASTOS DE TRANSPORTE", etc. exactamente como hace dBase
+# con LEFT(CONCEPTO,3)='GAS'. CMB/EEQ/AGUA/EMAAP van con contains.
+_SERVICIOS_KEYWORDS_SQL = """
+   (UPPER(COALESCE(c.concepto, '')) LIKE '%%CMB%%'
+    OR UPPER(COALESCE(c.concepto, '')) LIKE '%%EEQ%%'
+    OR UPPER(COALESCE(c.concepto, '')) LIKE '%%AGUA%%'
+    OR UPPER(COALESCE(c.concepto, '')) LIKE '%%EMAAP%%'
+    OR UPPER(COALESCE(c.concepto, '')) LIKE 'GAS%%')
+""".strip()
+
+
+# SQL CASE para mapear (tipo, concepto, codigo_prov) → num V1..V9.
+# Devuelve NULL para compras que no entran al matriz (H, A, I, K-producción).
+# Cascada — primer match gana, igual que las &RNW del PRG.
+_SQL_COMPRA_NUM_CASE = f"""
+CASE
+    -- Excluir materia prima y anticipos
+    WHEN UPPER(COALESCE(c.tipo, '')) IN ('H', 'A', 'I') THEN NULL
+    -- Excluir producción (tipo K + kg>0 cuenta en VK/IPROVK, no gasto)
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'K' AND COALESCE(c.kg, 0) > 0 THEN NULL
+
+    -- V1: Tejeduría · Sueldos
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'K'
+         AND UPPER(COALESCE(c.concepto, '')) LIKE '%%SU%%' THEN 1
+    -- V2: Tejeduría · Servicios (full set repetible: CMB/EEQ/AGUA/EMAAP/GAS)
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'K'
+         AND {_SERVICIOS_KEYWORDS_SQL} THEN 2
+    -- V3: Tejeduría · Otros (catch-all K-sin-kg)
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'K' THEN 3
+
+    -- V4: Tintorería · Sueldos (CCSU explícito o concepto arranca con SU)
+    WHEN UPPER(COALESCE(c.tipo, '')) IN ('C', 'Q', 'T')
+         AND (UPPER(COALESCE(c.concepto, '')) LIKE '%%CCSU%%'
+              OR UPPER(LEFT(COALESCE(c.concepto, ''), 2)) = 'SU') THEN 4
+    -- V5: Tintorería · Servicios (mismo set que V2/V8)
+    WHEN UPPER(COALESCE(c.tipo, '')) IN ('C', 'Q', 'T')
+         AND {_SERVICIOS_KEYWORDS_SQL} THEN 5
+    -- V6: Tintorería · Otros (catch-all C/Q/T)
+    WHEN UPPER(COALESCE(c.tipo, '')) IN ('C', 'Q', 'T') THEN 6
+
+    -- V7: Administración · Sueldos
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'S'
+         AND (UPPER(COALESCE(c.concepto, '')) LIKE '%%SU%%'
+              OR UPPER(LEFT(COALESCE(c.concepto, ''), 2)) = 'SU') THEN 7
+    -- V8: Administración · Servicios (mismo set que V2/V5)
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'S'
+         AND {_SERVICIOS_KEYWORDS_SQL} THEN 8
+    -- V9: Administración · Otros (catch-all S y default)
+    WHEN UPPER(COALESCE(c.tipo, '')) = 'S' THEN 9
+
+    ELSE NULL
+END
+""".strip()
+
+
+# Mapping legacy simple — preservado para callers externos que importen
+# este símbolo. NO usar para clasificar (usar _SQL_COMPRA_NUM_CASE).
 TIPOS_COMPRA_A_NUM_GASTO: dict[str, int] = {
-    "K": 3,
+    "K": 3,   # tipo K default → V3 (refinado por concepto en SQL CASE)
     "C": 6,
     "Q": 6,
     "T": 6,
@@ -1284,28 +1365,24 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
     ) or []
     v = {int(r.get("num") or 0): float(r.get("total") or 0) for r in rows_xgast}
 
-    # Sumar compras por tipo (mapeado a V1..V9). Excluye anuladas y excluye
-    # producción (tipo='K' con kg>0) — esa es un costo de producción, no un
-    # gasto operativo (vive en VK/IPROVK).
-    rows_compras = db.fetch_all(
-        """
-        SELECT UPPER(COALESCE(tipo, '')) AS tipo,
-               COALESCE(SUM(importe), 0) AS total
-        FROM scintela.compra
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
-          AND COALESCE(stat, '') NOT IN ('X', 'Y')
-          AND UPPER(COALESCE(tipo, '')) IN ('K','C','Q','T','S')
-          AND NOT (UPPER(COALESCE(tipo, '')) = 'K' AND COALESCE(kg, 0) > 0)
-        GROUP BY 1
-        """
-    ) or []
+    # Sumar compras del mes mapeadas por la cascada dBase (tipo + concepto
+    # + codigo_prov). Excluye anuladas, materia prima (H), anticipos (A/I)
+    # y producción (K con kg>0). Mapping completo en `_SQL_COMPRA_NUM_CASE`.
+    sql_compras = f"""
+        SELECT ({_SQL_COMPRA_NUM_CASE}) AS num,
+               COALESCE(SUM(c.importe), 0) AS total
+          FROM scintela.compra c
+         WHERE c.fecha >= date_trunc('month', CURRENT_DATE)
+           AND c.fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+         GROUP BY 1
+    """
+    rows_compras = db.fetch_all(sql_compras) or []
     for r in rows_compras:
-        tipo = (r.get("tipo") or "").upper().strip()
-        num = TIPOS_COMPRA_A_NUM_GASTO.get(tipo)
-        if num is None:
+        num = r.get("num")
+        if not num:
             continue
-        v[num] = v.get(num, 0.0) + float(r.get("total") or 0)
+        v[int(num)] = v.get(int(num), 0.0) + float(r.get("total") or 0)
 
     return {
         "v1": v.get(1, 0.0), "v2": v.get(2, 0.0), "v3": v.get(3, 0.0),
