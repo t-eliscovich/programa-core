@@ -1184,13 +1184,11 @@ STATS = {
     "endosados":    ("E",),                       # endosados a proveedor (TMT 2026-05-12)
     "eliminados":   ("X",),                       # reversados / anulados
     "internacional": ("V",),                      # legacy banco Inter — no usar
-    # TMT 2026-05-19 — items 11 nuevos filtros agregados (pedido dueña):
-    # CARTERA = todo lo que tengo en mi poder esperando cobro.
-    # CARTERA TOTAL = CARTERA + depositados pendientes (B no clearados).
-    # OJO: 'cartera' (solo Z) se preserva como antes para no romper URLs
-    # ni callers externos (depositar_lote, balance, /historial).
-    "cartera_agg":   ("Z", "P", "1", "2", "3", "D"),       # en mi poder
-    "cartera_total": ("Z", "P", "1", "2", "3", "D", "B"),  # en mi poder + depositados pendientes
+    # TMT 2026-05-19 v2 (pedido dueña): "Cartera total" = suma de los 4
+    # buckets visibles en pantalla — Cartera Z + Postergados + Daniela
+    # + Devueltos. NO incluye Depositados (B/A) — esos ya están "en el
+    # banco" desde la perspectiva operativa.
+    "cartera_total": ("Z", "P", "1", "2", "3", "D"),
 }
 
 # Subconjunto de stats que se consideran "vivos" para cartera/cobranza:
@@ -1198,6 +1196,97 @@ STATS = {
 # compatibilidad — facturas viejas referencian estos cheques). 'E' (endosado)
 # NO está vivo — ya salió de nuestra cartera.
 STATS_VIVOS = ("Z", "B", "1", "2", "3", "D", "P", "A")
+
+
+# Transiciones legales por stat actual — TMT 2026-05-19, pedido Tamara.
+# Cada entrada es un dict con:
+#   stat_destino: char del stat al que va
+#   label:        texto user-facing para el dropdown
+#   kind:         "POST" (form submit a cheques.transicionar) o
+#                 "WIZARD" (link GET al wizard correspondiente)
+#   endpoint:     nombre de view Flask (solo si kind=WIZARD)
+#   motivo:       True si el endpoint requiere motivo (POST con confirm)
+#
+# La regla canónica: si la transición requiere data extra (fecha nueva,
+# proveedor endoso, motivo de rebote) → kind=WIZARD. Si es un cambio de
+# stat seco → kind=POST.
+TRANSICIONES_LEGALES: dict[str, list[dict]] = {
+    # Z = en cartera, recién cargado. Tiene todas las opciones operativas.
+    "Z": [
+        {"stat_destino": "B", "label": "Depositar (al banco)",
+         "kind": "WIZARD", "endpoint": "cheques.depositar_lote"},
+        {"stat_destino": "P", "label": "Postergar fecha",
+         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+        {"stat_destino": "D", "label": "Pasar a Daniela",
+         "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "E", "label": "Endosar a proveedor",
+         "kind": "WIZARD", "endpoint": "cheques.endosar"},
+        {"stat_destino": "X", "label": "Anular (error carga)",
+         "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
+    ],
+    # B = depositado en banco. Sólo se puede marcar rebote.
+    # NO se puede pasar a postergado/Daniela/cartera — ya salió del cliente.
+    "B": [
+        {"stat_destino": "9", "label": "Marcar como rebotado",
+         "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
+    ],
+    "A": [
+        # Legacy acreditado — comportamiento idéntico a B.
+        {"stat_destino": "9", "label": "Marcar como rebotado",
+         "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
+    ],
+    "V": [
+        # Legacy Internacional — idem B.
+        {"stat_destino": "9", "label": "Marcar como rebotado",
+         "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
+    ],
+    # 1 / 2 = rebote en gestión. Volver a cartera (Z), postergar, Daniela,
+    # o marcar 2do rebote (terminal 3).
+    "1": [
+        {"stat_destino": "P", "label": "Postergar fecha",
+         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+        {"stat_destino": "D", "label": "Pasar a Daniela",
+         "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "X", "label": "Anular (incobrable)",
+         "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
+    ],
+    "2": [
+        {"stat_destino": "P", "label": "Postergar fecha",
+         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+        {"stat_destino": "D", "label": "Pasar a Daniela",
+         "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "X", "label": "Anular (incobrable)",
+         "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
+    ],
+    # D = Daniela. Puede volver a cartera, postergar o endosar.
+    "D": [
+        {"stat_destino": "P", "label": "Postergar fecha",
+         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+        {"stat_destino": "E", "label": "Endosar a proveedor",
+         "kind": "WIZARD", "endpoint": "cheques.endosar"},
+    ],
+    # P = postergado. Volver a cartera (Z), Daniela, endosar, o re-postergar.
+    "P": [
+        {"stat_destino": "D", "label": "Pasar a Daniela",
+         "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "E", "label": "Endosar a proveedor",
+         "kind": "WIZARD", "endpoint": "cheques.endosar"},
+        {"stat_destino": "P", "label": "Re-postergar (nueva fecha)",
+         "kind": "WIZARD", "endpoint": "cheques.postergar"},
+    ],
+    # Estados terminales — sin transiciones disponibles.
+    "3": [],   # 2do rebote terminal
+    "R": [],   # rebote terminal legacy
+    "E": [],   # endosado — vive en /historial para reverso
+    "X": [],   # eliminado/anulado
+    "T": [],   # cobrado total
+}
+
+
+def transiciones_para(stat: str) -> list[dict]:
+    """Devuelve la lista de transiciones legales desde un stat actual."""
+    s = (stat or "").upper().strip()
+    return TRANSICIONES_LEGALES.get(s, [])
 
 # Stats que pueden iniciar un depósito a banco. Z (cartera) es el flujo
 # típico. P (postdatado/postergado) también es válido cuando llega la fecha

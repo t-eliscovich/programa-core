@@ -1639,9 +1639,10 @@ def depositar_lote():
 @requiere_permiso("cheques.ver")
 def lista():
     q = request.args.get("q", "").strip()
-    # Default 'todos' (29/abr/2026): la dueña pidió ver el universo completo
-    # primero y filtrar después. Antes el default era 'cartera'.
-    estado = request.args.get("estado", "todos")
+    # TMT 2026-05-19 v2 — default vuelve a 'cartera' (= solo Z). Antes
+    # era 'todos' pero el tab "Todos" se eliminó (Cartera total cubre el
+    # 99% del caso de uso y "cartera" es lo primero que querés ver).
+    estado = request.args.get("estado", "cartera")
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     cliente = request.args.get("cliente", "").strip()
@@ -1729,26 +1730,15 @@ def lista():
                 conteos_por_bucket["devueltos_en_gestion"] = dict(row_eg)
         except Exception:
             pass
-        # TMT 2026-05-19 — buckets agregados nuevos (pedido dueña item 11):
-        #   CARTERA (en mi poder) = Z + P + 1/2/3 + D
-        #   CARTERA TOTAL = CARTERA + B (depositados pendientes)
-        # Cada uno como su propia query para que sume bien sin doble-conteo
-        # de stats que aparecen en varios buckets clásicos.
+        # TMT 2026-05-19 v2 — Cartera total = Z + P + 1/2/3 + D (los 4
+        # buckets visibles arriba). Sin B (depositados ya están en el
+        # banco). Pedido Tamara — antes incluía B, fue revertido.
         try:
-            row_agg = db.fetch_one(
-                """
-                SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
-                  FROM scintela.cheque
-                 WHERE stat IN ('Z', 'P', '1', '2', '3', 'D')
-                """
-            )
-            if row_agg:
-                conteos_por_bucket["cartera_agg"] = dict(row_agg)
             row_tot = db.fetch_one(
                 """
                 SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
                   FROM scintela.cheque
-                 WHERE stat IN ('Z', 'P', '1', '2', '3', 'D', 'B')
+                 WHERE stat IN ('Z', 'P', '1', '2', '3', 'D')
                 """
             )
             if row_tot:
@@ -1774,6 +1764,9 @@ def lista():
         cliente=cliente, monto_min=monto_min, monto_max=monto_max,
         total=total, n_total=n_total, error=error,
         conteos=conteos_por_bucket,
+        # TMT 2026-05-19 — pasamos el mapping de transiciones para que el
+        # template arme el dropdown de "Editar estado" por fila.
+        transiciones_legales=queries.TRANSICIONES_LEGALES,
     )
 
 

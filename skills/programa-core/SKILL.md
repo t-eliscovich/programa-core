@@ -1126,3 +1126,46 @@ Action bar visible al entrar a `/bancos` con 5 botones (los 4 pedidos + transfer
 - Dispatcher `historial.views._REVERSO_DISPATCH` actualizado con los 3 tipos nuevos → todos van a `bancos.confirmar_reverso_movimiento_simple`.
 
 **Regla de UX para futuras pantallas:** todo lo que sea movimiento bancario (DE/NC/ND/CH/TR) se inicia desde `/bancos`. Sidebar tiene un único link "Bancos" — las acciones específicas viven adentro. Lo mismo aplica a otras pantallas hub (Cheques, Compras, Facturas). Si alguien pide "agregar X al sidebar" preguntar si en realidad no tendría que vivir como acción dentro de una pantalla hub.
+
+### Cheques — tabs reordenados + edit estado inline (2026-05-19 v2)
+
+Pedido dueña post-walkthrough. La pantalla `/cheques` ahora tiene este orden de tabs (sin "Todos", sin "CARTERA" suelto):
+
+```
+Cartera Z · Postergados · Daniela · Devueltos · Cartera total · Depositados · Eliminados
+```
+
+- **Cartera Z** = `STATS["cartera"]` = `("Z",)` — solo cheques recién cargados sin movimiento.
+- **Cartera total** = `STATS["cartera_total"]` = `("Z","P","1","2","3","D")` — la suma de los 4 buckets visibles arriba (en mi poder). SIN B (depositados). Antes incluía B; la dueña lo corrigió.
+- `cartera_agg` legacy removida — `cartera_total` ahora es lo que era `cartera_agg`.
+- Default `estado=` ahora es `cartera` (volvió al pre-2026-04-29; antes era `todos` que no existe más).
+
+**Columnas removidas en `/cheques/lista.html`:**
+- Nombre del cliente — solo código de cliente (mismo patrón que `/facturas`).
+- `Acum.` (saldo acumulado).
+- El pill colorido de estado ("En cartera"/"Depositado"/etc).
+
+**Columna Estado reemplazada por:** raw letter (`Z`/`B`/`1`/`P`/etc) en font-mono dentro de un `<details>` clickeable. Click expande un dropdown con las **transiciones legales** del estado actual. No requiere JS — usa `<details>`/`<summary>` nativo.
+
+**Mapping de transiciones legales** (en `modules/cheques/queries.py:TRANSICIONES_LEGALES`):
+
+| Stat actual | Transiciones permitidas |
+|---|---|
+| **Z** (cartera) | Depositar→B (wizard), Postergar→P (wizard), Daniela→D (POST), Endosar→E (wizard), Anular→X (wizard) |
+| **B**, **A**, **V** (depositado) | Marcar rebote→9 (wizard `confirmar_reverso` con motivo obligatorio). NO puede pasar a Z/P/D — ya salió del cliente. |
+| **1**, **2** (rebote en gestión) | Postergar→P, Daniela→D, Anular incobrable→X |
+| **D** (Daniela) | Postergar→P, Endosar→E |
+| **P** (postergado) | Daniela→D, Endosar→E, Re-postergar→P |
+| **3**, **R**, **E**, **X**, **T** | (terminal — sin transiciones; en el template aparece la letra sola sin dropdown) |
+
+**Implementación:** cada entrada del dict tiene:
+- `stat_destino`: char destino.
+- `label`: texto user-facing en el dropdown.
+- `kind`: `"POST"` (form submit a `cheques.transicionar` con `stat_destino`) o `"WIZARD"` (link GET a wizard dedicado).
+- `endpoint`: nombre Flask del wizard cuando `kind=WIZARD`.
+
+Si `kind=POST`, el template renderiza un mini-form en la opción. Si `kind=WIZARD`, renderiza un `<a>`. El POST llama a `cheques.transicionar` que ya existe y maneja side-effects.
+
+`depositar_lote` es el único wizard sin `id_cheque` en el path (es global — la dueña elige cheques adentro). El template lo trata especial.
+
+**Por qué dropdown nativo y no Alpine/JS:** `<details>` es accesible (teclado funciona), no requiere bundler, y degrada gracioso. La dueña pidió "comodo" — un click revela las opciones, otro click ejecuta.
