@@ -4630,7 +4630,9 @@ def _valor_para_linea(key: str, snap: dict | None) -> float | None:
         return None
     if key.startswith("_"):
         uvent = float(snap.get("uvent") or 0)
-        ucom = float(snap.get("ucom") or 0)
+        # ucom no se usa en esta función (vino de un refactor que terminó
+        # leyendo usuti directo). Lo dejo derivable abajo si hace falta:
+        # ucom = float(snap.get("ucom") or 0).
         usuti = float(snap.get("usuti") or 0)
         kvent = float(snap.get("kvent") or 0)
         if key == "_precio":   # U$/kg vendido
