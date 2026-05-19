@@ -1649,6 +1649,23 @@ def costo_promedio_mp_ponderado(
     }
 
 
+def ventas_anio_en_curso() -> float:
+    """Suma de importes facturados en el año calendario en curso (live,
+    desde scintela.factura). TMT 2026-05-19 v8 — dueña: agregar "Ventas
+    del año" en el panel derecho del balance, reemplazando "Patrimonio
+    último cierre".
+    """
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS total
+          FROM scintela.factura
+         WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+           AND COALESCE(stat, '') <> 'X'
+        """
+    )
+    return float((row or {}).get("total") or 0)
+
+
 def venta_anual_kg_y_us() -> dict:
     """Ventas acumuladas últimos 12 meses (para CART/VENTANUAL*360 = días cobranza).
 
@@ -2305,6 +2322,9 @@ def informe_balance() -> dict:
     # "dividendos del mes". retiros_total_anual() suma scintela.retiros
     # del año en curso.
     _uret_anio = retiros_total_anual()
+    # TMT 2026-05-19 v8 — pedido dueña: agregar "Ventas del año" en el
+    # panel derecho (reemplaza "Patrimonio último cierre").
+    _ventas_anio = ventas_anio_en_curso()
     hist = historia_ultimo_mes() or {}
     inic = iniciales_mes_actual() or {}
     venta_anual = venta_anual_kg_y_us()
@@ -2957,6 +2977,7 @@ def informe_balance() -> dict:
         "salcaj": _salcaj,
         "umaq": activos["umaq"], "uact": activos["uact"],
         "antic": _antic, "uret": _uret, "uret_anio": _uret_anio,
+        "ventas_anio": _ventas_anio,
         "totp": posdats["totp"],
         "vsto": vsto, "vqx": vqx,
         "cart": cart, "subt": subt, "totl": totl,
@@ -5125,13 +5146,14 @@ def ventas_clientes_del_mes(anio: int | None = None,
     filas = []
     for i, r in enumerate(rows, start=1):
         monto = float(r["monto"] or 0)
-        pct = round((monto / total_monto * 100), 0) if total_monto else 0
+        # TMT 2026-05-19 v8 — dueña: agregar un decimal al %.
+        pct = round((monto / total_monto * 100), 1) if total_monto else 0.0
         filas.append({
             "orden": i,
             "codigo_cli": r["codigo_cli"],
             "kg": int(r["kg"] or 0),
             "monto": monto,
-            "pct": int(pct),
+            "pct": pct,
         })
 
     return {

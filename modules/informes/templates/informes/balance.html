@@ -348,14 +348,12 @@
             <td class="label-cell">Patrimonio neto</td>
             <td class="num-cell pos">{{ (b.patr - b.uret) | num_es(0) }}</td>
           </tr>
+          {# TMT 2026-05-19 v8 — dueña: borrar "Patrimonio último cierre" y
+             reemplazar por "Ventas del año". PATANT sigue calculándose
+             internamente para la utilidad, simplemente no se muestra. #}
           <tr class="fila-aux">
-            <td class="label-cell" title="PATANT — historia.patrimonio del último cierre real. Es la base contra la que se compara el patrimonio actual para calcular UTILIDAD.">
-              Patrimonio neto último cierre
-              {% if b.snapshot_historia_fecha %}
-                <span class="text-[10px] text-slate-400">({{ b.snapshot_historia_fecha | fecha_es }})</span>
-              {% endif %}
-            </td>
-            <td class="num-cell">{{ b.patant | num_es(0) }}</td>
+            <td class="label-cell"><a href="{{ url_for('informes.ventas') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
+            <td class="num-cell">{{ b.ventas_anio | num_es(0) }}</td>
           </tr>
           <tr class="fila-aux">
             <td class="label-cell"><a href="{{ url_for('informes.retiros') }}" class="hover:text-blue-600 hover:underline">Dividendos del mes</a></td>

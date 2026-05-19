@@ -793,26 +793,10 @@ def ventas():
     )
 
 
-@informes_bp.route("/ventas/listado-mensual")
-@requiere_login
-@requiere_permiso("informes.ver")
-def ventas_listado_mensual():
-    """Listado de ventas agregadas por mes (últimos N meses). Vivía en
-    /informes/ventas; el URL canónico ahora muestra el ranking de clientes
-    del mes (pantalla TINT.BAT). Esta vista queda como sub-ruta."""
-    meses = request.args.get("meses", default=12, type=int)
-    filas, error = _safe(lambda: queries.ventas_mensuales(meses), [])
-    if request.args.get("export") == "csv":
-        return csv_response(
-            filas,
-            columnas=[
-                ("mes", "Mes"), ("n_facturas", "# facturas"),
-                ("kg_total", "Kg"), ("importe_total", "Importe"),
-                ("abonado_total", "Abonado"),
-            ],
-            filename=f"ventas_{meses}m.csv",
-        )
-    return render_template("informes/ventas.html", filas=filas, meses=meses, error=error)
+# TMT 2026-05-19 v8 — pantalla multi-mes eliminada (pedido dueña).
+# La query `ventas_mensuales` y el template `informes/ventas.html`
+# quedan en el repo por si se necesitan más adelante, pero ya no hay
+# ruta que los exponga.
 
 
 @informes_bp.route("/gastos")

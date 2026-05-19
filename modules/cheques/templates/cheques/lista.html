@@ -3,6 +3,85 @@
 {% block title %}Cheques{% endblock %}
 {% block breadcrumb %}<strong>Cheques</strong>{% endblock %}
 
+{% block head_extra %}
+<style>
+  /* TMT 2026-05-19 v8 — popover nativo para "Cambiar estado".
+     Antes era un <details> inline que se cortaba con el overflow:auto
+     del wrapper de la tabla. El popover nativo se renderiza en top-layer
+     (escapa de cualquier ancestro), tiene backdrop semi-transparente y
+     queda centrado en pantalla — UX de modal limpia. */
+  .pop-estado {
+    border: 1px solid rgb(203 213 225);
+    background: white;
+    color: rgb(15 23 42);
+    padding: 0;
+    border-radius: 10px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+    width: min(360px, 90vw);
+    margin: auto;
+    inset: 0;
+  }
+  .pop-estado::backdrop {
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+  }
+  .pop-estado .pop-head {
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .pop-estado .pop-head h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: rgb(15 23 42);
+  }
+  .pop-estado .pop-head .pop-sub {
+    font-size: 12px;
+    color: rgb(100 116 139);
+    margin-top: 2px;
+  }
+  .pop-estado .pop-body { padding: 6px 0; }
+  .pop-estado .pop-opt {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    text-align: left;
+    padding: 10px 18px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-size: 14px;
+    color: rgb(30 41 59);
+  }
+  .pop-estado .pop-opt:hover { background: rgb(241 245 249); }
+  .pop-estado .pop-opt .stat-dest {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 6px;
+    background: rgb(241 245 249); color: rgb(15 23 42);
+    font-family: ui-monospace, Menlo, monospace; font-weight: 700;
+  }
+  .pop-estado .pop-foot {
+    border-top: 1px solid rgb(226 232 240);
+    padding: 8px 12px; text-align: right;
+  }
+  .pop-estado .pop-foot button {
+    font-size: 13px; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid rgb(203 213 225); background: white;
+    cursor: pointer;
+  }
+  .pop-estado .pop-foot button:hover { background: rgb(248 250 252); }
+  /* Trigger button — chip rectangular con stat */
+  .pop-trigger {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 6px;
+    border: 1px solid rgb(203 213 225);
+    background: white;
+    font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+    cursor: pointer;
+  }
+  .pop-trigger:hover { background: rgb(248 250 252); border-color: rgb(148 163 184); }
+</style>
+{% endblock %}
+
 {% block content %}
 {% set n_visibles = filas | length %}
 {% set n = n_total or n_visibles %}
@@ -282,43 +361,54 @@
             {% set s = c.stat or '' %}
             {% set transs = transiciones_legales.get(s, []) if transiciones_legales else [] %}
             {% if transs %}
-            <details class="inline-block relative">
-              <summary class="list-none cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-mono text-sm">
-                {{ s or '—' }}
-                <svg class="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
-              </summary>
-              <div class="absolute right-0 mt-1 z-30 min-w-[200px] bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md shadow-lg overflow-hidden text-sm text-left">
-                <div class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-                  Cambiar estado
+            {# TMT 2026-05-19 v8 — popover nativo en lugar de <details>. La
+               dueña: "Cambiar estado no se entiende la UI, tiene que tener
+               un fondo que tape el resto". Estilos en head_extra (.pop-estado). #}
+            {% set pop_id = 'pop-estado-' ~ c.id_cheque %}
+            <button type="button" popovertarget="{{ pop_id }}" class="pop-trigger" title="Cambiar estado">
+              {{ s or '—' }}
+              <svg class="w-3 h-3 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="{{ pop_id }}" popover="auto" class="pop-estado">
+              <div class="pop-head">
+                <h3>Cambiar estado del cheque</h3>
+                <div class="pop-sub">
+                  N° {{ c.no_cheque or '—' }} · {{ c.cliente or c.codigo_cli or '' }}
+                  · Estado actual <strong class="font-mono">{{ s or '—' }}</strong>
                 </div>
+              </div>
+              <div class="pop-body">
                 {% for t in transs %}
                   {% if t.kind == 'WIZARD' %}
-                    {# Wizards reciben id_cheque por path; depositar_lote no. #}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
-                      <a href="{{ url_for('cheques.depositar_lote') }}"
-                         class="block px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">
-                        → {{ t.stat_destino }} · {{ t.label }}
+                      <a href="{{ url_for('cheques.depositar_lote') }}" class="pop-opt">
+                        <span class="stat-dest">{{ t.stat_destino }}</span>
+                        <span>{{ t.label }}</span>
                       </a>
                     {% else %}
-                      <a href="{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}"
-                         class="block px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">
-                        → {{ t.stat_destino }} · {{ t.label }}
+                      <a href="{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}" class="pop-opt">
+                        <span class="stat-dest">{{ t.stat_destino }}</span>
+                        <span>{{ t.label }}</span>
                       </a>
                     {% endif %}
                   {% else %}
-                    {# kind=POST → form a cheques.transicionar #}
-                    <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=c.id_cheque) }}" class="block">
+                    <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=c.id_cheque) }}" class="block" style="margin:0">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="stat_destino" value="{{ t.stat_destino }}">
-                      <button type="submit"
-                              class="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">
-                        → {{ t.stat_destino }} · {{ t.label }}
+                      <button type="submit" class="pop-opt">
+                        <span class="stat-dest">{{ t.stat_destino }}</span>
+                        <span>{{ t.label }}</span>
                       </button>
                     </form>
                   {% endif %}
                 {% endfor %}
               </div>
-            </details>
+              <div class="pop-foot">
+                <button type="button" popovertarget="{{ pop_id }}" popovertargetaction="hide">
+                  Cancelar
+                </button>
+              </div>
+            </div>
             {% else %}
               {# Estado terminal — sin transiciones. Mostrar solo la letra. #}
               <span class="font-mono text-sm text-slate-500">{{ s or '—' }}</span>

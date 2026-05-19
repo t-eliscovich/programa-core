@@ -2658,16 +2658,27 @@ def total_buscar(
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     stats = STATS.get(estado)
+    # TMT 2026-05-19 v8 — bug detectado por dueña: hero cheques 1.851.871
+    # vs balance 1.840.030 (diferencia ~$11.841 / 8 cheques). Root cause:
+    # esta query usaba `LEFT JOIN scintela.cliente` y si un codigo_cli
+    # tiene fanout > 1 fila en cliente, cada cheque se contaba múltiples
+    # veces (el SUM y el COUNT inflaban). Solución: cliente entra vía
+    # EXISTS subquery — el cheque queda en 1 fila siempre.
     row = db.fetch_one(
         """
         SELECT COUNT(*)                AS n,
                COALESCE(SUM(c.importe), 0) AS total
         FROM scintela.cheque c
-        LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
-        WHERE (%(q)s IS NULL
-               OR UPPER(c.no_cheque) LIKE UPPER(%(like)s)
-               OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
-               OR UPPER(cli.nombre) LIKE UPPER(%(like)s))
+        WHERE (
+                %(q)s IS NULL
+             OR UPPER(c.no_cheque) LIKE UPPER(%(like)s)
+             OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
+             OR EXISTS (
+                  SELECT 1 FROM scintela.cliente cli
+                   WHERE cli.codigo_cli = c.codigo_cli
+                     AND UPPER(cli.nombre) LIKE UPPER(%(like)s)
+                )
+          )
           -- Filtro por fecha de depósito (fechad) — es lo que importa
           -- operacionalmente: "qué cheques voy a depositar este día".
           -- TMT 2026-05-12: antes filtraba por c.fecha y los postdatados
@@ -2734,6 +2745,11 @@ def buscar(
         "daniela":     "COALESCE(c.fechaing, c.fechad, c.fecha)",
     }
     fecha_col = fecha_col_por_estado.get(estado, "COALESCE(c.fechad, c.fecha)")
+    # TMT 2026-05-19 v8 — refactor: cliente/banco/proveedor se traen vía
+    # subqueries escalares (LIMIT 1) en lugar de LEFT JOIN, para que el
+    # COUNT del listado coincida con totc() del balance. Antes, si cualquier
+    # codigo_cli tenía fanout > 1 en scintela.cliente, los cheques se
+    # duplicaban (1.851.871 mostrado vs 1.840.030 real, diff 8 cheques).
     sql_buscar_cheques = """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
                c.fecha_recibido, c.fecha_crea,
@@ -2741,22 +2757,42 @@ def buscar(
                -- NOT NULL = la primera postergación snapshoteó la fechad
                -- previa acá. fecha_postergacion = cuándo se postergó (última).
                c.fechad_original, c.fecha_postergacion,
-               c.codigo_cli, COALESCE(cli.nombre, '') AS cliente,
+               c.codigo_cli,
+               COALESCE(
+                 (SELECT cli.nombre FROM scintela.cliente cli
+                   WHERE cli.codigo_cli = c.codigo_cli LIMIT 1),
+                 ''
+               ) AS cliente,
                c.importe, c.stat,
                c.no_banco, c.banco AS banco_nombre,
-               COALESCE(bco.nombre, c.banco) AS banco,
+               COALESCE(
+                 (SELECT bco.nombre FROM scintela.banco bco
+                   WHERE bco.no_banco = c.no_banco LIMIT 1),
+                 c.banco
+               ) AS banco,
                -- Para cheques endosados: a qué proveedor se le pasó.
                -- c.prov guarda el codigo_prov del destino. TMT 2026-05-13.
                c.prov AS endoso_prov,
-               COALESCE(prv.nombre, '') AS endoso_proveedor
+               COALESCE(
+                 (SELECT prv.nombre FROM scintela.proveedor prv
+                   WHERE prv.codigo_prov = c.prov LIMIT 1),
+                 ''
+               ) AS endoso_proveedor
         FROM scintela.cheque c
-        LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
-        LEFT JOIN scintela.banco   bco ON bco.no_banco   = c.no_banco
-        LEFT JOIN scintela.proveedor prv ON prv.codigo_prov = c.prov
-        WHERE (%(q)s IS NULL
-               OR UPPER(c.no_cheque) LIKE UPPER(%(like)s)
-               OR UPPER(cli.nombre) LIKE UPPER(%(like)s)
-               OR UPPER(prv.nombre) LIKE UPPER(%(like)s))
+        WHERE (
+                %(q)s IS NULL
+             OR UPPER(c.no_cheque) LIKE UPPER(%(like)s)
+             OR EXISTS (
+                  SELECT 1 FROM scintela.cliente cli
+                   WHERE cli.codigo_cli = c.codigo_cli
+                     AND UPPER(cli.nombre) LIKE UPPER(%(like)s)
+                )
+             OR EXISTS (
+                  SELECT 1 FROM scintela.proveedor prv
+                   WHERE prv.codigo_prov = c.prov
+                     AND UPPER(prv.nombre) LIKE UPPER(%(like)s)
+                )
+          )
           -- Filtro explícito por cliente (3 chars = exacto, otro = fuzzy).
           AND (
                 %(cliente)s IS NULL

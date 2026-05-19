@@ -61,10 +61,8 @@
         </label>
         <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
       </form>
-      <a href="{{ url_for('informes.ventas_listado_mensual') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
-        Multi-mes
-      </a>
+      {# TMT 2026-05-19 v8 — dueña: sacar pantalla multi-mes (el botón
+         "Multi-mes" se quitó; el listado N-mensual ya no se ofrece). #}
       <a href="{{ url_for('informes.balance') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
         ← Resultados
@@ -112,7 +110,7 @@
                 <td class="cli">{{ f.codigo_cli }}</td>
                 <td class="num">{{ f.kg | num_es(0) }}</td>
                 <td class="num">{{ f.monto | num_es(0) }}</td>
-                <td class="num">{{ f.pct }}</td>
+                <td class="num">{{ '%.1f' % f.pct }}</td>
               </tr>
             {% endfor %}
           </tbody>
