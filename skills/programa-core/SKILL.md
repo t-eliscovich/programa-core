@@ -639,7 +639,48 @@ etc.). Workaround temporal mientras se deploya: setear
 forzar `PYTHONIOENCODING=utf-8`. Los emojis y flechas Unicode son
 trampa silenciosa.
 
-### Error 4 — Migración que crea tablas SIN garantizar el owner correcto
+### Error 4 — Inline Python en SSM rompe por quoting + import path
+
+**Lo que pasó:** intenté correr scripts de diagnóstico en EC2 inline con
+`commands='["...python -c \"...\\\"sql\\\"...\""]'`. PowerShell se atragantó
+con paréntesis literales del SQL (`::int`, `COALESCE(...)`). Después el
+fix de usar archivo intermedio funcionó pero el script no encontraba
+`db.py` porque `C:\tmp\` no está en PYTHONPATH.
+
+**Patrón canónico para diagnóstico SSM con base64** (ya documentado en
+intela-aws-deploy skill, repito acá porque es muy común):
+
+```bash
+PY=$(cat <<'PYEOF'
+import sys, os
+sys.path.insert(0, r'C:\programa-core')
+os.chdir(r'C:\programa-core')
+from dotenv import load_dotenv
+load_dotenv()                # OBLIGATORIO: SSM no inherita las env vars
+                             # del web server; sin esto db.py rompe con
+                             # KeyError: 'DB_HOST'.
+import db
+# ... tu lógica
+PYEOF
+)
+B64=$(printf '%s' "$PY" | base64 | tr -d '\n')
+CMD="cd C:\\programa-core; \$env:PYTHONIOENCODING='utf-8'; [System.IO.File]::WriteAllBytes('C:\\tmp\\diag.py', [Convert]::FromBase64String('$B64')); & 'C:\\Python312\\python.exe' 'C:\\tmp\\diag.py'; Remove-Item 'C:\\tmp\\diag.py'"
+ID=$(aws ssm send-command --region us-east-2 \
+  --instance-ids i-0fcca4d7029f08489 \
+  --document-name AWS-RunPowerShellScript \
+  --parameters "commands=[\"$CMD\"]" \
+  --query 'Command.CommandId' --output text)
+sleep 12
+aws ssm get-command-invocation --region us-east-2 \
+  --instance-id i-0fcca4d7029f08489 --command-id "$ID" \
+  --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}' --output json
+```
+
+**Regla:** **NUNCA** uses `python -c "..."` inline para queries SQL con
+paréntesis. **SIEMPRE** base64 → archivo → ejecutar. Y siempre incluir
+`sys.path.insert(0, r'C:\programa-core')` al inicio del script.
+
+### Error 5 — Migración que crea tablas SIN garantizar el owner correcto
 
 **Lo que pasó:** la 0032 inicialmente hacía `CREATE TABLE scintela.vendedor`
 sin un `ALTER ... OWNER TO`. Si el runner corre con un user (postgres) pero

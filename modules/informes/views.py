@@ -223,6 +223,74 @@ def deudas():
     return render_template("informes/deudas.html", filas=filas, total=total, error=error)
 
 
+@informes_bp.route("/_diag/stock")
+@requiere_login
+@requiere_permiso("informes.ver")
+def diag_stock():
+    """TMT 2026-05-18 — diagnóstico del flujo de stock terminado.
+
+    Muestra las queries crudas que alimentan /stock para entender por qué
+    Terminado=0. Pensado para que la dueña abra la URL una vez y mande
+    screenshot — más eficiente que pelear con SSM PowerShell quoting.
+    """
+    import db
+    from datetime import date as _date
+    y = _date.today().year
+
+    def _safe_q(sql, params=()):
+        try:
+            return db.fetch_all(sql, params) or []
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    tinto = _safe_q("""
+        SELECT EXTRACT(MONTH FROM fecha)::int AS mes,
+               COUNT(*) AS n,
+               SUM(COALESCE(kg, 0))::int AS kg_col,
+               SUM(COALESCE(kgn, 0))::int AS kgn_col,
+               SUM(COALESCE(toper,0)+COALESCE(jersey,0)+COALESCE(pique,0)
+                 + COALESCE(messi,0)+COALESCE(james,0)+COALESCE(franela,0)
+                 + COALESCE(otros,0)+COALESCE(j3,0)+COALESCE(jlyc,0)
+                 + COALESCE(flyc,0)+COALESCE(falso,0)+COALESCE(kiana,0))::int AS suma_indiv
+          FROM scintela.tinto
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+         GROUP BY 1 ORDER BY 1
+    """, (y,))
+
+    iniciales = _safe_q("""
+        SELECT yy, mesnum, hilado, tejido, terminado, vq
+          FROM scintela.iniciales
+         WHERE yy = %s
+         ORDER BY mesnum
+    """, (y,))
+
+    facturas_mes = _safe_q("""
+        SELECT EXTRACT(MONTH FROM fecha)::int AS mes,
+               COUNT(*) AS n,
+               SUM(COALESCE(kg, 0))::int AS kg
+          FROM scintela.factura
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+         GROUP BY 1 ORDER BY 1
+    """, (y,))
+
+    compras_tipo = _safe_q("""
+        SELECT UPPER(TRIM(COALESCE(tipo, ''))) AS tipo,
+               COUNT(*) AS n,
+               SUM(COALESCE(kg, 0))::int AS kg,
+               SUM(COALESCE(importe, 0))::int AS importe
+          FROM scintela.compra
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND COALESCE(stat, '') != 'Y'
+         GROUP BY 1 ORDER BY 1
+    """, (y,))
+
+    return render_template("informes/diag_stock.html",
+                           anio=y,
+                           tinto=tinto, iniciales=iniciales,
+                           facturas_mes=facturas_mes, compras_tipo=compras_tipo)
+
+
 @informes_bp.route("/snapshot-mes", methods=["POST"])
 @requiere_login
 @requiere_permiso("informes.ver")

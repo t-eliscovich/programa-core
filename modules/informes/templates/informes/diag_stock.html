@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Diag stock {{ anio }}{% endblock %}
+{% block breadcrumb %}<strong>Diag stock {{ anio }}</strong>{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--xl">
+  <header class="page-header">
+    <h1 class="page-title">Diagnóstico stock — {{ anio }}</h1>
+  </header>
+
+  <h2 class="text-base font-semibold mt-4 mb-2">scintela.tinto por mes</h2>
+  <table class="w-full text-sm bg-white border rounded mb-6">
+    <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+      <tr>
+        <th class="px-3 py-2 text-left">Mes</th>
+        <th class="px-3 py-2 text-right">N filas</th>
+        <th class="px-3 py-2 text-right">kg col</th>
+        <th class="px-3 py-2 text-right">kgn col</th>
+        <th class="px-3 py-2 text-right">Suma cols indiv</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in tinto %}
+      <tr class="border-t">
+        <td class="px-3 py-1">{{ r.mes if r.mes is defined else '—' }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.n if r.n is defined else '?' }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.kg_col if r.kg_col is defined else '?' }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.kgn_col if r.kgn_col is defined else '?' }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.suma_indiv if r.suma_indiv is defined else '?' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-3 py-4 text-center text-slate-500">VACÍA — no hay filas de scintela.tinto en {{ anio }}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 class="text-base font-semibold mt-4 mb-2">scintela.iniciales {{ anio }}</h2>
+  <table class="w-full text-sm bg-white border rounded mb-6">
+    <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+      <tr>
+        <th class="px-3 py-2 text-left">Mes</th>
+        <th class="px-3 py-2 text-right">Hilado</th>
+        <th class="px-3 py-2 text-right">Tejido</th>
+        <th class="px-3 py-2 text-right">Terminado</th>
+        <th class="px-3 py-2 text-right">VQ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in iniciales %}
+      <tr class="border-t">
+        <td class="px-3 py-1">{{ r.mesnum }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.hilado }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.tejido }}</td>
+        <td class="px-3 py-1 text-right tabular-nums {% if (r.terminado or 0) == 0 %}bg-amber-50 font-bold text-amber-800{% endif %}">{{ r.terminado }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.vq }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-3 py-4 text-center text-slate-500">VACÍA</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 class="text-base font-semibold mt-4 mb-2">facturas kg por mes {{ anio }}</h2>
+  <table class="w-full text-sm bg-white border rounded mb-6">
+    <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+      <tr><th class="px-3 py-2 text-left">Mes</th><th class="px-3 py-2 text-right">N</th><th class="px-3 py-2 text-right">Kg</th></tr>
+    </thead>
+    <tbody>
+      {% set ns_f = namespace(total=0) %}
+      {% for r in facturas_mes %}
+      <tr class="border-t">
+        <td class="px-3 py-1">{{ r.mes }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.n }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.kg }}</td>
+      </tr>
+      {% set ns_f.total = ns_f.total + (r.kg or 0) %}
+      {% endfor %}
+      <tr class="border-t-2 font-bold bg-slate-50">
+        <td class="px-3 py-2" colspan="2">Total YTD</td>
+        <td class="px-3 py-2 text-right tabular-nums">{{ ns_f.total }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="text-base font-semibold mt-4 mb-2">compras YTD por tipo {{ anio }}</h2>
+  <table class="w-full text-sm bg-white border rounded mb-6">
+    <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+      <tr><th class="px-3 py-2 text-left">Tipo</th><th class="px-3 py-2 text-right">N</th><th class="px-3 py-2 text-right">Kg</th><th class="px-3 py-2 text-right">Importe US$</th></tr>
+    </thead>
+    <tbody>
+      {% for r in compras_tipo %}
+      <tr class="border-t">
+        <td class="px-3 py-1 font-mono">{{ r.tipo or '(vacío)' }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.n }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.kg }}</td>
+        <td class="px-3 py-1 text-right tabular-nums">{{ r.importe }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="text-xs text-slate-500 mt-6">
+    Esta es página de diagnóstico interno. Si Tamara la ve, mandar screenshot — explica
+    por qué <code>/stock</code> da Terminado=0.
+  </p>
+</div>
+{% endblock %}
