@@ -398,22 +398,30 @@ def _try_movimientos_mes() -> dict | None:
         return None
 
 
-def movimientos_mes_dbase() -> dict:
-    """Datos para el cuadro MOVIMIENTOS MES estilo dBase (pedido dueña 2026-05-19, item 15b).
+def movimientos_mes_dbase(anio: int | None = None,
+                          mes: int | None = None) -> dict:
+    """Datos para el cuadro MOVIMIENTOS MES estilo dBase.
 
     Replica INFORMES.PRG líneas 1003-1090. Devuelve:
 
     - `header`: las 4 categorías top (HILADO / TEJIDO / TERMINADO / COLORANTES),
       cada una con stock_inic, ingresos, egresos, stock_act expresados en
       kg, $/kg y $.
-    - `compras_hilado`: filas por PROV de tipo='H' del mes en curso, con
+    - `compras_hilado`: filas por PROV de tipo='H' del mes seleccionado, con
       total al final.
-    - `produc_tejido`: filas por PROV de tipo='K' (con kg > 0) del mes en
-      curso, con total al final.
+    - `produc_tejido`: filas por PROV de tipo='K' (con kg > 0) del mes
+      seleccionado, con total al final.
+    - `tintoreria`: { bajos, fuertes, totales } — del mes seleccionado.
+    - `cs`: { colorantes, produccion } — costos unitarios resumen.
 
-    No incluye todavía TINTORERIA bajos/fuertes ni CS.COLORANTES/CS.PRODUCCION
-    — pendientes hasta tener data confiable de tintorería separada por color.
+    TMT 2026-05-19 v8 — extendido para usar año/mes parametrizables (pantalla
+    /informes/flujo-produccion). Default = mes en curso. TINTORERIA y CS
+    se calculan acá; queda como N/D si los datos no están.
     """
+    from datetime import date as _date
+    hoy = _date.today()
+    yy = int(anio) if anio else hoy.year
+    mm = int(mes) if mes else hoy.month
     hist = historia_mas_reciente() or {}
     # 4 columnas top — usa los kg/$ del último snapshot (idem block kg
     # original). $/kg derivado.
@@ -446,7 +454,7 @@ def movimientos_mes_dbase() -> dict:
         "colorantes": {"stock_inic_us": vq0, "stock_act_us": vq0},
     }
 
-    # Breakdown por proveedor del mes en curso.
+    # Breakdown por proveedor del mes seleccionado.
     compras_hilado = db.fetch_all(
         """
         SELECT prov                   AS prov,
@@ -454,14 +462,16 @@ def movimientos_mes_dbase() -> dict:
                COALESCE(SUM(importe), 0)  AS importe
           FROM scintela.compra
          WHERE UPPER(COALESCE(tipo, '')) = 'H'
-           AND COALESCE(stat, '') NOT IN ('X', 'Y')
-           AND DATE_TRUNC('month', fecha) = DATE_TRUNC('month', CURRENT_DATE)
+           AND COALESCE(stat, '') <> 'Y'
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(prov, '') <> ''
            AND UPPER(COALESCE(prov, '')) <> 'XX'
          GROUP BY prov
          ORDER BY SUM(importe) DESC
          LIMIT 20
-        """
+        """,
+        (yy, mm),
     ) or []
     for r in compras_hilado:
         r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
@@ -474,18 +484,65 @@ def movimientos_mes_dbase() -> dict:
           FROM scintela.compra
          WHERE UPPER(COALESCE(tipo, '')) = 'K'
            AND COALESCE(kg, 0) > 0
-           AND COALESCE(stat, '') NOT IN ('X', 'Y')
-           AND DATE_TRUNC('month', fecha) = DATE_TRUNC('month', CURRENT_DATE)
+           AND COALESCE(stat, '') <> 'Y'
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(prov, '') <> ''
          GROUP BY prov
          ORDER BY SUM(importe) DESC
          LIMIT 20
-        """
+        """,
+        (yy, mm),
     ) or []
     for r in produc_tejido:
         r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
+    # TINTORERIA — tipo='C' (tintura). Para distinguir bajos/fuertes en
+    # dBase: el legacy usa lc2 (2 primeras letras del concepto) — CC para
+    # tintura, donde bajos eran procesos con poco colorante y fuertes con
+    # mucho. En base nueva sin ese campo separado, dejamos el bloque
+    # plano (totales) y marcamos bajos/fuertes como N/D — la dueña dice
+    # cómo distinguirlos y refinamos.
+    tint_total = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(kg), 0) AS kg,
+               COALESCE(SUM(importe), 0) AS importe
+          FROM scintela.compra
+         WHERE UPPER(COALESCE(tipo, '')) = 'C'
+           AND COALESCE(stat, '') <> 'Y'
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+        """,
+        (yy, mm),
+    ) or {}
+    tint_kg = float(tint_total.get("kg") or 0)
+    tint_us = float(tint_total.get("importe") or 0)
+
+    # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
+    # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
+    # kg tinturados del mes (ktin de historia).
+    quimicos_mes = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS importe
+          FROM scintela.compra
+         WHERE UPPER(COALESCE(tipo, '')) = 'Q'
+           AND COALESCE(stat, '') <> 'Y'
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+        """,
+        (yy, mm),
+    ) or {}
+    cs_col_us = float(quimicos_mes.get("importe") or 0)
+    cs_col_ukg = _safe_div(cs_col_us, ktin)
+
+    # CS.PRODUCCION — costo total de producción (mat. prima + tejido + tin
+    # + col) / kg producidos en el mes. Usa hist live.
+    cs_prod_us = ucom + utej + utin + cs_col_us
+    cs_prod_kg = ktin or ktej or kvent  # mejor proxy disponible
+    cs_prod_ukg = _safe_div(cs_prod_us, cs_prod_kg)
+
     return {
+        "anio": yy, "mes": mm,
         "header": header,
         "compras_hilado": [dict(r) for r in compras_hilado],
         "compras_hilado_total": {
@@ -496,6 +553,18 @@ def movimientos_mes_dbase() -> dict:
         "produc_tejido_total": {
             "kg": sum(float(r.get("kg") or 0) for r in produc_tejido),
             "importe": sum(float(r.get("importe") or 0) for r in produc_tejido),
+        },
+        "tintoreria": {
+            # Mientras no haya bajos/fuertes distinguibles, mostramos un total
+            # único; el template ya tiene placeholders para bajos/fuertes.
+            "total": {"kg": tint_kg, "us": tint_us,
+                      "ukg": _safe_div(tint_us, tint_kg)},
+            "bajos":   None,   # N/D — requiere flag en scintela.compra
+            "fuertes": None,
+        },
+        "cs": {
+            "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": 0.0},
+            "produccion": {"kg": cs_prod_kg, "ukg": cs_prod_ukg, "us": cs_prod_us, "ant": 0.0},
         },
     }
 

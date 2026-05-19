@@ -315,12 +315,17 @@
             <td class="label-cell"><a href="{{ url_for('dolares.lista') }}" class="hover:text-blue-600 hover:underline">Anticipos</a></td>
             <td class="num-cell">{{ b.antic | num_es(0) }}</td>
           </tr>
+          {# TMT 2026-05-19 v8 — pedido dueña: linkear "Stock" al dashboard
+             nuevo de Flujo de producción (replica TINT.BAT). El destino
+             antes era /informes/historia (sólo tabla de cierres); ahora
+             muestra el flujo completo del mes con movimientos, compras
+             por proveedor, producción, tintorería y costos unitarios. #}
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.historia') }}" class="hover:text-blue-600 hover:underline">Stock MP+Prod.</a></td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">Stock MP+Prod.</a></td>
             <td class="num-cell">{{ b.vsto | num_es(0) }}</td>
           </tr>
           <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.historia') }}" class="hover:text-blue-600 hover:underline">Stock Quí.</a></td>
+            <td class="label-cell"><a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">Stock Quí.</a></td>
             <td class="num-cell">{{ b.vqx | num_es(0) }}</td>
           </tr>
           <tr class="fila-dato">

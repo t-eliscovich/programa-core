@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}Flujo producción {{ '%02d/%d' % (mes, anio) }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <strong>Flujo producción</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* TMT 2026-05-19 v8 — replica visual de TINT.BAT (dBase).
+     Bloques compactos, headers en rojo, números tabulares. */
+  .fp { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .fp table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .fp .blk { background: white; border: 1px solid rgb(203 213 225);
+             border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+  .fp .blk-title { color: rgb(220 38 38); font-weight: 700;
+                   font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+                   margin-bottom: 6px; }
+  .fp th { color: rgb(220 38 38); font-weight: 700; text-transform: uppercase;
+           text-align: right; padding: 4px 8px; font-size: 11px;
+           border-bottom: 1px solid rgb(148 163 184); }
+  .fp th.lbl { text-align: left; }
+  .fp td { padding: 3px 8px; }
+  .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
+  .fp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .fp tr.total td { border-top: 1px solid rgb(148 163 184); font-weight: 700;
+                    color: rgb(30 64 175); padding-top: 6px; }
+  .fp .pct { color: rgb(100 116 139); font-size: 10px; font-family: ui-monospace, Menlo, monospace; }
+  .fp .nd  { color: rgb(148 163 184); font-style: italic; }
+  /* CS rows abajo en azul, replica el dBase. */
+  .fp .blk-cs { color: rgb(30 64 175); }
+  .fp .blk-cs th, .fp .blk-cs td.lbl { color: rgb(30 64 175); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full fp">
+  <div class="flex items-center justify-between mb-4 no-print flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold">Flujo de producción · Costos unitarios</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Mes {{ '%02d/%d' % (mes, anio) }} · réplica de la pantalla TINT.BAT del dBase.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <form method="get" class="flex items-end gap-2">
+        <label class="flex flex-col text-xs text-slate-500">
+          Año
+          <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
+                 class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-24">
+        </label>
+        <label class="flex flex-col text-xs text-slate-500">
+          Mes
+          <select name="mes" class="border rounded px-2 py-1 mt-0.5 text-sm bg-white w-20">
+            {% for m in range(1, 13) %}
+              <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ '%02d' % m }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
+      </form>
+      <a href="{{ url_for('informes.balance') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        ← Resultados
+      </a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        Imprimir
+      </button>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if data %}
+    {% set h = data.header or {} %}
+    {% set hl = h.get('hilado', {}) %}
+    {% set tj = h.get('tejido', {}) %}
+    {% set te = h.get('terminado', {}) %}
+    {% set co = h.get('colorantes', {}) %}
+
+    {# ─── MOVIMIENTOS MES — 4 columnas ──────────────────── #}
+    <div class="blk">
+      <div class="blk-title">Movimientos del mes</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="lbl"></th>
+            <th>HILADO · KG</th>
+            <th>HILADO · $/KG</th>
+            <th>HILADO · $</th>
+            <th>TEJIDO CRUDO · KG</th>
+            <th>TERMINADO · KG</th>
+            <th>COLORANTES · $</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="lbl">Stock inic.</td>
+            <td class="num">{{ hl.get('stock_inic_kg') | num_es(0) if hl.get('stock_inic_kg') else '—' }}</td>
+            <td class="num nd">—</td>
+            <td class="num nd">—</td>
+            <td class="num">{{ tj.get('stock_inic_kg') | num_es(0) if tj.get('stock_inic_kg') else '—' }}</td>
+            <td class="num">{{ te.get('stock_inic_kg') | num_es(0) if te.get('stock_inic_kg') else '—' }}</td>
+            <td class="num">{{ co.get('stock_inic_us') | num_es(0) if co.get('stock_inic_us') else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Ingresos</td>
+            <td class="num">{{ hl.get('ingresos_kg') | num_es(0) if hl.get('ingresos_kg') else '—' }}</td>
+            <td class="num">{{ '%.3f' % (hl.get('ingresos_ukg') or 0) if hl.get('ingresos_ukg') else '—' }}</td>
+            <td class="num">{{ hl.get('ingresos_us') | num_es(0) if hl.get('ingresos_us') else '—' }}</td>
+            <td class="num">{{ tj.get('ingresos_kg') | num_es(0) if tj.get('ingresos_kg') else '—' }}</td>
+            <td class="num">{{ te.get('ingresos_kg') | num_es(0) if te.get('ingresos_kg') else '—' }}</td>
+            <td class="num">{{ tj.get('ingresos_us') | num_es(0) if tj.get('ingresos_us') else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Egresos</td>
+            <td class="num">{{ hl.get('egresos_kg') | num_es(0) if hl.get('egresos_kg') else '—' }}</td>
+            <td class="num nd">—</td>
+            <td class="num nd">—</td>
+            <td class="num">{{ tj.get('egresos_kg') | num_es(0) if tj.get('egresos_kg') else '—' }}</td>
+            <td class="num">{{ te.get('egresos_kg') | num_es(0) if te.get('egresos_kg') else '—' }}</td>
+            <td class="num nd">—</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">Stock act.</td>
+            <td class="num">{{ hl.get('stock_act_kg') | num_es(0) if hl.get('stock_act_kg') else '—' }}</td>
+            <td class="num nd">—</td>
+            <td class="num nd">—</td>
+            <td class="num">{{ tj.get('stock_act_kg') | num_es(0) if tj.get('stock_act_kg') else '—' }}</td>
+            <td class="num">{{ te.get('stock_act_kg') | num_es(0) if te.get('stock_act_kg') else '—' }}</td>
+            <td class="num">{{ co.get('stock_act_us') | num_es(0) if co.get('stock_act_us') else '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ─── 2 columnas: COMPRAS HILADO | PRODUC. TEJIDO ──────────── #}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="blk">
+        <div class="blk-title">Compras hilado</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="lbl">Prov</th>
+              <th>Kg</th>
+              <th>$/Kg</th>
+              <th>$</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in data.compras_hilado %}
+              <tr>
+                <td class="lbl">{{ r.prov }}</td>
+                <td class="num">{{ r.kg | num_es(0) }}</td>
+                <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
+                <td class="num">{{ r.importe | num_es(0) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="nd" style="text-align:center;padding:10px">Sin compras de hilado en este mes.</td></tr>
+            {% endfor %}
+            {% if data.compras_hilado %}
+              {% set tot = data.compras_hilado_total %}
+              <tr class="total">
+                <td class="lbl">TOTAL</td>
+                <td class="num">{{ tot.kg | num_es(0) }}</td>
+                <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
+                <td class="num">{{ tot.importe | num_es(0) }}</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="blk">
+        <div class="blk-title">Producción tejido</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="lbl">Prov</th>
+              <th>Kg</th>
+              <th>$/Kg</th>
+              <th>$</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in data.produc_tejido %}
+              <tr>
+                <td class="lbl">{{ r.prov }}</td>
+                <td class="num">{{ r.kg | num_es(0) }}</td>
+                <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
+                <td class="num">{{ r.importe | num_es(0) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="nd" style="text-align:center;padding:10px">Sin producción tejida en este mes.</td></tr>
+            {% endfor %}
+            {% if data.produc_tejido %}
+              {% set tot = data.produc_tejido_total %}
+              <tr class="total">
+                <td class="lbl">TOTAL</td>
+                <td class="num">{{ tot.kg | num_es(0) }}</td>
+                <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
+                <td class="num">{{ tot.importe | num_es(0) }}</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ─── TINTORERIA % ────────────────────────────────────────── #}
+    {% set tint = data.tintoreria or {} %}
+    <div class="blk">
+      <div class="blk-title">Tintorería</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="lbl"></th>
+            <th>%</th>
+            <th>Kg</th>
+            <th>$/Kg</th>
+            <th>Ant.</th>
+            <th>$</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="lbl">Bajos</td>
+            <td colspan="5" class="nd" style="text-align:center">
+              N/D — requiere distinguir bajos/fuertes en scintela.compra (lc2 o flag dedicado).
+            </td>
+          </tr>
+          <tr>
+            <td class="lbl">Fuertes</td>
+            <td colspan="5" class="nd" style="text-align:center">
+              N/D — idem.
+            </td>
+          </tr>
+          {% if tint.total and tint.total.kg %}
+            <tr class="total">
+              <td class="lbl">Total tintorería</td>
+              <td class="num">100,0</td>
+              <td class="num">{{ tint.total.kg | num_es(0) }}</td>
+              <td class="num">{{ '%.3f' % (tint.total.ukg or 0) }}</td>
+              <td class="num nd">—</td>
+              <td class="num">{{ tint.total.us | num_es(0) }}</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ─── COSTOS UNITARIOS ────────────────────────────────────── #}
+    {% set cs = data.cs or {} %}
+    <div class="blk blk-cs">
+      <div class="blk-title" style="color:rgb(30 64 175)">Costos unitarios</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="lbl"></th>
+            <th>Kg</th>
+            <th>$/Kg</th>
+            <th>Ant.</th>
+            <th>$</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set csc = cs.get('colorantes', {}) %}
+          {% set csp = cs.get('produccion', {}) %}
+          <tr>
+            <td class="lbl">CS · Colorantes</td>
+            <td class="num">{{ csc.kg | num_es(0) if csc.kg else '—' }}</td>
+            <td class="num">{{ '%.3f' % (csc.ukg or 0) if csc.ukg else '—' }}</td>
+            <td class="num">{{ '%.3f' % (csc.ant or 0) if csc.ant else '—' }}</td>
+            <td class="num">{{ csc.us | num_es(0) if csc.us else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">CS · Producción</td>
+            <td class="num">{{ csp.kg | num_es(0) if csp.kg else '—' }}</td>
+            <td class="num">{{ '%.3f' % (csp.ukg or 0) if csp.ukg else '—' }}</td>
+            <td class="num">{{ '%.3f' % (csp.ant or 0) if csp.ant else '—' }}</td>
+            <td class="num">{{ csp.us | num_es(0) if csp.us else '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="mt-3 text-xs text-slate-500">
+      Fuentes:
+      <strong>Movimientos del mes</strong> = scintela.historia (stocks) + scintela.compra del mes (ingresos);
+      <strong>Compras hilado</strong> = compra.tipo='H' del mes;
+      <strong>Producción tejido</strong> = compra.tipo='K' del mes;
+      <strong>Tintorería</strong> = compra.tipo='C' del mes (bajos/fuertes pendiente de distinguir);
+      <strong>CS</strong> = costo unitario derivado.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

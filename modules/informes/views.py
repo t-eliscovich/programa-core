@@ -799,6 +799,36 @@ def ventas():
 # ruta que los exponga.
 
 
+@informes_bp.route("/flujo-produccion")
+@requiere_login
+@requiere_permiso("informes.ver")
+def flujo_produccion():
+    """Pantalla TINT.BAT replica — flujo de producción + costos unitarios.
+
+    TMT 2026-05-19 v8 — pedido dueña: linkeable desde "Stock" de
+    /informes/balance, muestra MOVIMIENTOS MES (hilado/crudo/term/col),
+    COMPRAS HILADO, PRODUC.TEJIDO, TINTORERIA y CS.COLORANTES/PRODUCCION.
+    """
+    from datetime import date as _date
+    hoy = _date.today()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+    except (TypeError, ValueError):
+        anio = hoy.year
+    try:
+        mes = int(request.args.get("mes") or hoy.month)
+    except (TypeError, ValueError):
+        mes = hoy.month
+    mes = max(1, min(mes, 12))
+    data, error = _safe(
+        lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes), {},
+    )
+    return render_template(
+        "informes/flujo_produccion.html",
+        data=data, anio=anio, mes=mes, error=error,
+    )
+
+
 @informes_bp.route("/gastos")
 @requiere_login
 @requiere_permiso("informes.ver")
