@@ -4584,35 +4584,78 @@ def compras_del_periodo(
     }
 
 
-def historico_12m_matriz(meses_atras: int = 12) -> dict:
-    """Matriz comparativa de los últimos N meses de scintela.historia.
+# ---------------------------------------------------------------------------
+# Histórico TINT.BAT — TMT 2026-05-19 v7 (rediseño DOS-like)
+# ---------------------------------------------------------------------------
+# Líneas del informe — agrupadas en secciones (OPERATIVO / BALANCE) y con
+# rows derivadas (precio U$/kg, utilid, MARGEN %, TOTAL ACTIVO) para imitar
+# el viejo informe TINT.BAT del dBase.
+#
+# Cada fila lleva:
+#   label    nombre visible (UPPER) idéntico al screenshot
+#   key      campo crudo en scintela.historia o sentinel _derivado
+#   fmt      "kg" | "ratio" | "pct" | "miles" — pista de formato al template
+#   color    "cyan" | "white" | "yellow" | "red" | "blue" — paleta DOS
+#   section  "operativo" | "balance"
+_HIST_LINEAS: list[tuple[str, str, str, str, str]] = [
+    # OPERATIVO — top section (per kg / ratios)
+    ("VENTAS  kg.",     "kvent",      "kg",    "white",  "operativo"),
+    ("precio  U$/kg",   "_precio",    "ratio", "white",  "operativo"),
+    ("utilid",          "_utilid",    "ratio", "white",  "operativo"),
+    ("MARGEN  %",       "_margen_p",  "pct",   "white",  "operativo"),
+    # BALANCE — bottom section (miles de U$)
+    ("BANCO       U$",  "banco",      "miles", "white",  "balance"),
+    ("CARTERA",         "cart",       "miles", "white",  "balance"),
+    ("ANTICIPOS",       "anticipos",  "miles", "white",  "balance"),
+    ("STOCK MP+PROD",   "ustock",     "miles", "white",  "balance"),
+    ("STOCK QUIM.",     "uqui",       "miles", "white",  "balance"),
+    ("MAQUINARIA",      "maquinaria", "miles", "white",  "balance"),
+    ("TERR.Y EDIF.",    "realty",     "miles", "white",  "balance"),
+    ("TOTAL ACTIVO",    "_activo",    "miles", "yellow", "balance"),
+    ("PASIVOS",         "deuda",      "miles", "white",  "balance"),
+    ("PATRIM.NET",      "patrimonio", "miles", "yellow", "balance"),
+    ("VENTAS",          "uvent",      "miles", "white",  "balance"),
+    ("UTILIDADES",      "usuti",      "miles", "red",    "balance"),
+    ("RR",              "usret",      "miles", "blue",   "balance"),
+]
 
-    Pedido dueña 2026-05-19 — Feature B. Lee snapshots ya creados.
-    Devuelve {meses: [...], lineas: [{label, valores[mes_index], total,
-    promedio, delta_pct[mes_index]}]}.
 
-    Las filas (líneas de balance) son las que tiene scintela.historia:
-        Banco, Cartera (totc+totf), Deuda (totp), Stock (ustock+uqui),
-        Anticipos, Maquinaria, Realty, Patrimonio, Ventas (uvent),
-        Compras (ucom), Gasto (xgast), Retiro (usret), Utilidad (usuti).
+def _valor_para_linea(key: str, snap: dict | None) -> float | None:
+    """Computa el valor de una fila a partir del snapshot scintela.historia.
+
+    Devuelve None cuando no hay snapshot o cuando el ratio se indetermina
+    (división por cero).
     """
-    from datetime import date as _date
-    n = max(1, min(int(meses_atras or 12), 24))
-    hoy = _date.today()
+    if snap is None:
+        return None
+    if key.startswith("_"):
+        uvent = float(snap.get("uvent") or 0)
+        ucom = float(snap.get("ucom") or 0)
+        usuti = float(snap.get("usuti") or 0)
+        kvent = float(snap.get("kvent") or 0)
+        if key == "_precio":   # U$/kg vendido
+            return (uvent / kvent) if kvent else None
+        if key == "_utilid":   # utilidad U$/kg
+            return (usuti / kvent) if kvent else None
+        if key == "_margen_p":  # utilidad / ventas %  (matchea TINT.BAT)
+            return (usuti / uvent * 100.0) if uvent else None
+        if key == "_activo":   # suma de activos
+            return (
+                float(snap.get("banco") or 0)
+                + float(snap.get("cart") or 0)
+                + float(snap.get("anticipos") or 0)
+                + float(snap.get("ustock") or 0)
+                + float(snap.get("uqui") or 0)
+                + float(snap.get("maquinaria") or 0)
+                + float(snap.get("realty") or 0)
+            )
+        return None
+    return float(snap.get(key) or 0)
 
-    # Lista de meses (anio, mes) de los últimos N, ordenados ascendente.
-    meses: list[tuple[int, int]] = []
-    a, m = hoy.year, hoy.month
-    for _ in range(n):
-        meses.append((a, m))
-        m -= 1
-        if m < 1:
-            m = 12
-            a -= 1
-    meses.reverse()
 
-    # Cargar snapshots existentes — uno por (año, mes) si existe.
-    snapshots: dict[tuple[int, int], dict] = {}
+def _cargar_snapshots(meses: list[tuple[int, int]]) -> dict[tuple[int, int], dict]:
+    """Lee scintela.historia y devuelve {(a,m): row} para los meses dados."""
+    out: dict[tuple[int, int], dict] = {}
     for (a_, m_) in meses:
         row = db.fetch_one(
             """
@@ -4628,47 +4671,70 @@ def historico_12m_matriz(meses_atras: int = 12) -> dict:
             (a_, m_),
         )
         if row:
-            snapshots[(a_, m_)] = row
+            out[(a_, m_)] = row
+    return out
 
-    # Líneas del matriz: (label, key_en_historia, formato)
-    lineas_def = [
-        ("Ventas $",          "uvent",      "money"),
-        ("Compras $",         "ucom",       "money"),
-        ("Margen bruto",      "_margen",    "money"),  # uvent - ucom
-        ("Gastos $",          "gasto",      "money"),
-        ("Utilidad",          "usuti",      "money"),
-        ("Retiros",           "usret",      "money"),
-        ("Patrimonio",        "patrimonio", "money"),
-        ("Banco",             "banco",      "money"),
-        ("Cartera",           "cart",       "money"),
-        ("Deuda (posdat)",    "deuda",      "money"),
-        ("Stock MP+PT",       "ustock",     "money"),
-        ("Stock químicos",    "uqui",       "money"),
-        ("Anticipos",         "anticipos",  "money"),
-        ("Maquinaria",        "maquinaria", "money"),
-        ("Realty",            "realty",     "money"),
-        ("Ventas (kg)",       "kvent",      "kg"),
-        ("Compras (kg)",      "kcom",       "kg"),
-    ]
+
+def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
+    """Matriz histórica estilo TINT.BAT — TMT 2026-05-19 v7.
+
+    Pedido dueña 2026-05-19 — Feature B. Lee snapshots de scintela.historia
+    y arma una matriz horizontal con filas operativas (per kg / ratios) y
+    filas de balance (en miles de U$).
+
+    Parámetros:
+      meses_atras  cantidad de columnas a mostrar (default 5, máx 24).
+      offset_meses cuántos meses correr la ventana HACIA EL PASADO. 0 = el
+                   mes actual es la última columna; 5 = la última columna
+                   es el mes que cae 5 meses antes (paginar hacia atrás).
+
+    Devuelve:
+      {
+        meses:        [(anio, mes), ...] ASC — las N columnas mostradas
+        lineas:       [{label, key, fmt, color, section, valores, total,
+                        promedio, delta_pct}, ...]
+        meses_total:  N (eco)
+        offset_meses: eco
+        snapshots_existentes: cuántos meses de los N tienen snapshot
+        meses_sin_snap: ['MM/AAAA', ...]
+        meses_disponibles: rango [(min_anio, min_mes), (max_anio, max_mes)]
+                           de los snapshots existentes en BD — para acotar
+                           la navegación.
+        nav: {prev_offset: int|None, next_offset: int|None}
+      }
+    """
+    from datetime import date as _date
+    n = max(1, min(int(meses_atras or 5), 24))
+    off = max(0, int(offset_meses or 0))
+    hoy = _date.today()
+
+    # La última columna del matriz cae en (hoy - off) meses.
+    a, m = hoy.year, hoy.month
+    for _ in range(off):
+        m -= 1
+        if m < 1:
+            m = 12
+            a -= 1
+
+    # Lista de meses (anio, mes) de los N anteriores a esa columna, ASC.
+    meses: list[tuple[int, int]] = []
+    ca, cm = a, m
+    for _ in range(n):
+        meses.append((ca, cm))
+        cm -= 1
+        if cm < 1:
+            cm = 12
+            ca -= 1
+    meses.reverse()
+
+    snapshots = _cargar_snapshots(meses)
 
     lineas_out = []
-    for label, key, fmt in lineas_def:
-        valores = []
-        for (a_, m_) in meses:
-            snap = snapshots.get((a_, m_))
-            if not snap:
-                valores.append(None)
-                continue
-            if key == "_margen":
-                v = float(snap.get("uvent") or 0) - float(snap.get("ucom") or 0)
-            else:
-                v = float(snap.get(key) or 0)
-            valores.append(v)
-        # Total acumulado / promedio sobre los meses con dato.
+    for label, key, fmt, color, section in _HIST_LINEAS:
+        valores = [_valor_para_linea(key, snapshots.get(k)) for k in meses]
         validos = [v for v in valores if v is not None]
         total = sum(validos) if validos else 0.0
         promedio = (total / len(validos)) if validos else 0.0
-        # Δ% vs mes anterior, celda a celda.
         delta_pct = []
         for i, v in enumerate(valores):
             if v is None or i == 0:
@@ -4680,28 +4746,120 @@ def historico_12m_matriz(meses_atras: int = 12) -> dict:
                 continue
             delta_pct.append((v - prev) / abs(prev) * 100.0)
         lineas_out.append({
-            "label": label,
-            "key": key,
-            "fmt": fmt,
-            "valores": valores,
-            "total": total,
-            "promedio": promedio,
+            "label":     label,
+            "key":       key,
+            "fmt":       fmt,
+            "color":     color,
+            "section":   section,
+            "valores":   valores,
+            "total":     total,
+            "promedio":  promedio,
             "delta_pct": delta_pct,
         })
 
-    # Conteo de meses sin snapshot (para placeholder + botón backfill).
     sin_snap = [
         f"{m_:02d}/{a_}" for (a_, m_) in meses
         if (a_, m_) not in snapshots
     ]
 
+    # Rango global de snapshots en BD (para construir navegación segura).
+    rango = db.fetch_one(
+        """
+        SELECT MIN(fecha) AS min_f, MAX(fecha) AS max_f
+          FROM scintela.historia
+        """
+    ) or {}
+    rng_min = rango.get("min_f")
+    rng_max = rango.get("max_f")
+
+    # Navegación: prev = mostrar N meses anteriores; next = N meses adelante.
+    # prev_offset solo si hay snapshots aún más atrás que la primera columna.
+    prev_offset: int | None = None
+    next_offset: int | None = None
+    if meses:
+        first_a, first_m = meses[0]
+        if rng_min and (rng_min.year < first_a
+                        or (rng_min.year == first_a and rng_min.month < first_m)):
+            prev_offset = off + n
+        if off > 0:
+            next_offset = max(0, off - n)
+
     return {
-        "meses": meses,
-        "lineas": lineas_out,
+        "meses":                meses,
+        "lineas":               lineas_out,
+        "meses_total":          n,
+        "offset_meses":         off,
         "snapshots_existentes": len(snapshots),
-        "meses_total": n,
+        "meses_sin_snap":       sin_snap,
+        "rng_min":              rng_min,
+        "rng_max":              rng_max,
+        "nav":                  {"prev_offset": prev_offset, "next_offset": next_offset},
+    }
+
+
+def historico_mom(anio_a: int, mes_a: int, anio_b: int, mes_b: int) -> dict:
+    """Comparación mes-vs-mes para el informe histórico TINT.BAT.
+
+    Toma dos pares (año, mes) y devuelve la misma estructura de filas que
+    `historico_12m_matriz` pero con SOLO dos columnas — mes A y mes B —
+    y un delta absoluto + delta % por fila.
+
+    Convención de orden: mes A es el "viejo" (referencia), mes B es el
+    "nuevo" (actual). El delta es B − A.
+    """
+    par_a = (int(anio_a), int(mes_a))
+    par_b = (int(anio_b), int(mes_b))
+    snaps = _cargar_snapshots([par_a, par_b])
+
+    lineas_out = []
+    for label, key, fmt, color, section in _HIST_LINEAS:
+        v_a = _valor_para_linea(key, snaps.get(par_a))
+        v_b = _valor_para_linea(key, snaps.get(par_b))
+        if v_a is None or v_b is None:
+            delta_abs = None
+            delta_pct = None
+        else:
+            delta_abs = v_b - v_a
+            delta_pct = ((v_b - v_a) / abs(v_a) * 100.0) if abs(v_a) > 0.005 else None
+        lineas_out.append({
+            "label":     label,
+            "key":       key,
+            "fmt":       fmt,
+            "color":     color,
+            "section":   section,
+            "v_a":       v_a,
+            "v_b":       v_b,
+            "delta_abs": delta_abs,
+            "delta_pct": delta_pct,
+        })
+
+    sin_snap = [
+        f"{p[1]:02d}/{p[0]}" for p in (par_a, par_b) if p not in snaps
+    ]
+
+    return {
+        "par_a":          par_a,
+        "par_b":          par_b,
+        "lineas":         lineas_out,
         "meses_sin_snap": sin_snap,
     }
+
+
+def historico_meses_disponibles() -> list[tuple[int, int]]:
+    """Lista distinct (año, mes) de scintela.historia, descendente.
+
+    Se usa para poblar los dropdowns del modo "mes vs mes".
+    """
+    rows = db.fetch_all(
+        """
+        SELECT DISTINCT
+               EXTRACT(YEAR FROM fecha)::int  AS anio,
+               EXTRACT(MONTH FROM fecha)::int AS mes
+          FROM scintela.historia
+         ORDER BY anio DESC, mes DESC
+        """
+    ) or []
+    return [(int(r["anio"]), int(r["mes"])) for r in rows]
 
 
 def balance_components_as_of(as_of) -> dict:

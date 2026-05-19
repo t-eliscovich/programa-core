@@ -102,27 +102,77 @@ def balance_compras():
     )
 
 
-# Feature B — matriz 12m (TMT 2026-05-19 v6).
+# Feature B — matriz histórica TINT.BAT (TMT 2026-05-19 v7).
 @informes_bp.route("/informes/historico-12m")
 @requiere_login
 @requiere_permiso("informes.ver")
 def historico_12m():
-    """Matriz comparativa últimos N meses (default 12)."""
+    """Matriz histórica estilo TINT.BAT, paginable + comparación mes vs mes.
+
+    Query params:
+      modo    "matriz" (default) o "mom" (mes vs mes).
+      n       cantidad de columnas en modo matriz (default 5, max 24).
+      offset  meses a correr hacia atrás la ventana (default 0).
+      a_a / m_a    año/mes del primer mes en modo "mom" (referencia).
+      a_b / m_b    año/mes del segundo mes en modo "mom" (actual).
+    """
+    modo = (request.args.get("modo") or "matriz").strip().lower()
+    if modo not in ("matriz", "mom"):
+        modo = "matriz"
     try:
-        n = int(request.args.get("n") or 12)
+        n = int(request.args.get("n") or 5)
     except (TypeError, ValueError):
-        n = 12
+        n = 5
     n = max(1, min(n, 24))
     try:
-        data = queries.historico_12m_matriz(meses_atras=n)
-        error = None
-    except Exception as e:  # noqa: BLE001
-        data, error = {"meses": [], "lineas": [],
-                       "snapshots_existentes": 0, "meses_total": n,
-                       "meses_sin_snap": []}, str(e)
+        offset = int(request.args.get("offset") or 0)
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
+
+    error = None
+    data: dict = {}
+    mom: dict = {}
+    meses_disponibles: list[tuple[int, int]] = []
+
+    if modo == "mom":
+        # Defaults: comparar mes actual (b) vs mes anterior (a).
+        from datetime import date as _date
+        hoy = _date.today()
+        def _parse_par(prefix: str, default_anio: int, default_mes: int):
+            try:
+                a_ = int(request.args.get(f"a_{prefix}") or default_anio)
+                m_ = int(request.args.get(f"m_{prefix}") or default_mes)
+            except (TypeError, ValueError):
+                return default_anio, default_mes
+            return a_, max(1, min(12, m_))
+        mes_actual_a, mes_actual_m = hoy.year, hoy.month
+        prev_a, prev_m = mes_actual_a, mes_actual_m - 1
+        if prev_m < 1:
+            prev_m = 12
+            prev_a -= 1
+        a_a, m_a = _parse_par("a", prev_a, prev_m)
+        a_b, m_b = _parse_par("b", mes_actual_a, mes_actual_m)
+        try:
+            mom = queries.historico_mom(a_a, m_a, a_b, m_b)
+            meses_disponibles = queries.historico_meses_disponibles()
+        except Exception as e:  # noqa: BLE001
+            mom = {"par_a": (a_a, m_a), "par_b": (a_b, m_b),
+                   "lineas": [], "meses_sin_snap": []}
+            error = str(e)
+    else:
+        try:
+            data = queries.historico_12m_matriz(meses_atras=n, offset_meses=offset)
+        except Exception as e:  # noqa: BLE001
+            data = {"meses": [], "lineas": [],
+                    "snapshots_existentes": 0, "meses_total": n,
+                    "offset_meses": offset, "meses_sin_snap": [],
+                    "nav": {"prev_offset": None, "next_offset": None}}
+            error = str(e)
     return render_template(
         "informes/historico_12m.html",
-        data=data, n=n, error=error,
+        data=data, mom=mom, modo=modo, n=n, offset=offset,
+        meses_disponibles=meses_disponibles, error=error,
     )
 
 

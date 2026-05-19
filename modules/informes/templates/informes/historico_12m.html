@@ -1,32 +1,192 @@
 {% extends "base.html" %}
-{% block title %}Histórico {{ n }} meses{% endblock %}
+{% block title %}Histórico TINT.BAT{% endblock %}
 {% block breadcrumb %}
-Informes / <strong>Histórico {{ n }} meses</strong>
+Informes / <strong>Histórico</strong>
 {% endblock %}
+
+{# ------------------------------------------------------------------
+   Helpers de formato (Jinja macros) — rinden el valor de cada celda
+   según el `fmt` que viene de la query (kg / ratio / pct / miles).
+   ------------------------------------------------------------------ #}
+{% macro fmt_val(v, fmt) %}
+  {% if v is none %}<span class="miss">—</span>{% else %}
+    {%- if fmt == 'ratio' -%}{{ v | num_es(2) }}
+    {%- elif fmt == 'pct' -%}{{ v | num_es(1) }}
+    {%- elif fmt == 'kg' -%}{{ v | num_es(0) }}
+    {%- elif fmt == 'miles' -%}{{ (v / 1000.0) | num_es(1) }}
+    {%- else -%}{{ v | num_es(0) }}
+    {%- endif -%}
+  {% endif %}
+{% endmacro %}
 
 {% block head_extra %}
 <style>
-  /* Matriz horizontal — celda compacta con tabular-nums */
-  .h12-tbl { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
-  .h12-tbl th, .h12-tbl td { padding: 6px 10px; font-size: 12px; }
-  .h12-tbl thead th { background: rgb(248 250 252); border-bottom: 1px solid rgb(148 163 184); }
-  .h12-tbl .num { text-align: right; }
-  .h12-tbl tr.linea:hover { background: rgb(248 250 252); }
-  .h12-tbl .delta-pos { color: rgb(22 163 74); font-size: 10px; }
-  .h12-tbl .delta-neg { color: rgb(220 38 38); font-size: 10px; }
-  .h12-tbl .miss { color: rgb(148 163 184); font-style: italic; }
-  .h12-tbl .total-col { background: rgb(241 245 249); font-weight: 600; }
+  /* =====================================================================
+     TINT.BAT — look DOS-like: fondo oscuro, monoespaciada, labels cian,
+     números blancos, filas amarillas/rojas/azules para destacar totales.
+     TMT 2026-05-19 v7 (pedido dueña — reemplaza matriz claro).
+     ===================================================================== */
+  .tint-shell {
+    background: #000814;
+    color: #d6e1ec;
+    font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+    border-radius: 8px;
+    padding: 18px 22px 20px;
+    box-shadow: inset 0 0 0 1px rgba(120, 160, 220, 0.15);
+  }
+  .tint-bar {
+    background: #b9c3ce;
+    color: #14202b;
+    font-weight: 700;
+    padding: 3px 10px;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    border-radius: 4px 4px 0 0;
+    display: inline-block;
+  }
+  .tint-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .tint-tbl th, .tint-tbl td {
+    padding: 2px 12px;
+    white-space: nowrap;
+  }
+  .tint-tbl th {
+    text-align: right;
+    font-weight: 700;
+    color: #6df0ff;          /* cian fuerte para los encabezados de mes */
+    font-size: 14px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(120, 160, 220, 0.18);
+  }
+  .tint-tbl th.first { text-align: left; color: #6df0ff; }
+  .tint-tbl th .yr {
+    display: block;
+    font-size: 10px;
+    color: #9eb6cc;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .tint-tbl td.label {
+    color: #6df0ff;          /* labels en cian (como el screenshot) */
+    text-align: left;
+  }
+  .tint-tbl td.num { text-align: right; }
+  .tint-tbl tr.row-yellow td.num,
+  .tint-tbl tr.row-yellow td.label { color: #ffd34d; }
+  .tint-tbl tr.row-red td.num,
+  .tint-tbl tr.row-red td.label { color: #ff6b6b; }
+  .tint-tbl tr.row-blue td.num,
+  .tint-tbl tr.row-blue td.label { color: #5bb3ff; }
+  .tint-tbl tr.row-white td.num { color: #ffffff; }
+  .tint-tbl .miss { color: #5a6975; font-style: italic; }
+  .tint-tbl tr.sep td {
+    border-top: 1px solid rgba(120, 160, 220, 0.25);
+    padding-top: 10px;
+  }
+  .tint-tbl tr.gap td { padding: 8px 0 0; }
+  /* Δ% en chiquito debajo del número — verde/rojo sutil. */
+  .tint-tbl .delta {
+    display: block;
+    font-size: 10px;
+    line-height: 1.1;
+    font-weight: 400;
+    color: #6e7c8a;
+  }
+  .tint-tbl .delta.up   { color: #4ade80; }
+  .tint-tbl .delta.down { color: #f87171; }
+  /* Toolbar superior (modo + paginación). */
+  .tint-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .tint-tab {
+    display: inline-block;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a3a5c;
+    background: #fff;
+    text-decoration: none;
+    line-height: 1;
+  }
+  .tint-tab:hover { background: #f1f5f9; }
+  .tint-tab.active {
+    background: #1a3a5c; color: #fff; border-color: #1a3a5c;
+  }
+  .tint-nav-btn {
+    display: inline-flex; align-items: center;
+    height: 32px; padding: 0 12px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    background: #fff; color: #1a3a5c;
+    font-size: 13px; font-weight: 600;
+    text-decoration: none;
+  }
+  .tint-nav-btn:hover:not(.disabled) { background: #f1f5f9; }
+  .tint-nav-btn.disabled {
+    color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed;
+  }
+  .tint-window-info {
+    color: #475569; font-size: 13px; padding: 0 6px;
+  }
+  /* Form mes vs mes. */
+  .mom-form {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
+    margin-bottom: 14px; padding: 14px 16px; background: #f8fafc;
+    border: 1px solid #e2e8f0; border-radius: 8px;
+  }
+  .mom-form label { font-size: 12px; color: #475569; font-weight: 600; }
+  .mom-form select, .mom-form input[type=number] {
+    height: 36px; padding: 0 8px;
+    border: 1px solid #cbd5e1; border-radius: 6px;
+    font-size: 14px; font-family: inherit;
+    background: #fff;
+  }
+  .mom-form button {
+    height: 36px; padding: 0 16px;
+    background: #1a3a5c; color: #fff; border: none; border-radius: 6px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  /* En mes-vs-mes el delta abs se muestra con la misma paleta cian/blanco. */
+  .tint-tbl td.delta-cell { color: #6df0ff; text-align: right; font-size: 12px; }
+  .tint-tbl td.delta-cell .delta-pct {
+    display: block; font-size: 10px; color: #9eb6cc;
+  }
+  @media print {
+    .tint-toolbar, .mom-form, nav, .breadcrumb { display: none !important; }
+    .tint-shell { background: #fff; color: #000; box-shadow: none; }
+    .tint-tbl td.label, .tint-tbl th, .tint-tbl th.first { color: #000; }
+    .tint-tbl tr.row-yellow td.num, .tint-tbl tr.row-yellow td.label,
+    .tint-tbl tr.row-red td.num, .tint-tbl tr.row-red td.label,
+    .tint-tbl tr.row-blue td.num, .tint-tbl tr.row-blue td.label,
+    .tint-tbl tr.row-white td.num { color: #000; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
+{% set MES_ABRV = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
 <div class="page-shell page-shell--full">
-  <div class="flex items-center justify-between mb-5">
+  <div class="flex items-center justify-between mb-3">
     <div>
-      <h1 class="text-2xl font-semibold">Histórico — últimos {{ n }} meses</h1>
+      <h1 class="text-2xl font-semibold">Histórico — TINT.BAT</h1>
       <p class="text-sm text-slate-500 mt-1">
-        Matriz comparativa de scintela.historia. Snapshots fieles al mes
-        correspondiente (vía informe_balance_as_of).
+        {% if modo == 'mom' %}
+          Comparación mes vs mes — elegí dos meses para ver la diferencia.
+        {% else %}
+          Últimos {{ n }} meses (paginable). Snapshots de scintela.historia.
+        {% endif %}
       </p>
     </div>
     <div class="flex gap-2">
@@ -50,24 +210,96 @@ Informes / <strong>Histórico {{ n }} meses</strong>
     </div>
   {% endif %}
 
-  {# Selector N #}
-  <form method="get" class="flex items-end gap-3 mb-4">
-    <label class="flex flex-col">
-      <span class="text-xs text-slate-600">Meses atrás</span>
-      <input type="number" name="n" value="{{ n }}" min="1" max="24"
-             class="border rounded px-2 py-1 mt-0.5 font-mono text-sm w-20">
-    </label>
-    <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
-  </form>
+  {# ===== Toolbar: tabs + paginación (matriz) o selectores (mom) ===== #}
+  <div class="tint-toolbar">
+    <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n) }}"
+       class="tint-tab {% if modo != 'mom' %}active{% endif %}">Matriz</a>
+    <a href="{{ url_for('informes.historico_12m', modo='mom') }}"
+       class="tint-tab {% if modo == 'mom' %}active{% endif %}">Mes vs mes</a>
 
-  {# Banner snapshots faltantes #}
-  {% if data.meses_sin_snap %}
-    <div class="mb-4 px-4 py-3 rounded border border-amber-400 bg-amber-50 flex items-center justify-between">
-      <div class="text-sm text-amber-800">
-        <strong>{{ data.meses_sin_snap | length }}</strong> mes(es) sin snapshot:
-        {{ data.meses_sin_snap | join(', ') }}.
-        Las celdas vacías quedan como "—".
+    {% if modo != 'mom' %}
+      <span style="flex:1"></span>
+      {# Paginación: ◀ anteriores / siguientes ▶ #}
+      {% set prev_off = data.nav.prev_offset if data.get('nav') else none %}
+      {% set next_off = data.nav.next_offset if data.get('nav') else none %}
+      {% if prev_off is not none %}
+        <a class="tint-nav-btn"
+           href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=prev_off) }}">◀ Anteriores</a>
+      {% else %}
+        <span class="tint-nav-btn disabled">◀ Anteriores</span>
+      {% endif %}
+      <span class="tint-window-info">
+        {% if data.meses and data.meses|length > 0 %}
+          {{ MES_ABRV[data.meses[0][1]-1] }} {{ data.meses[0][0] }} —
+          {{ MES_ABRV[data.meses[-1][1]-1] }} {{ data.meses[-1][0] }}
+        {% endif %}
+      </span>
+      {% if next_off is not none %}
+        <a class="tint-nav-btn"
+           href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=next_off) }}">Siguientes ▶</a>
+      {% else %}
+        <span class="tint-nav-btn disabled">Siguientes ▶</span>
+      {% endif %}
+      <form method="get" style="display:inline-flex; gap:6px; align-items:center; margin-left:8px;">
+        <input type="hidden" name="modo" value="matriz">
+        <input type="hidden" name="offset" value="{{ offset }}">
+        <label style="font-size:12px; color:#475569;">N meses
+          <input type="number" name="n" value="{{ n }}" min="1" max="24"
+                 style="width:60px; height:30px; padding:0 6px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; font-size:13px;">
+        </label>
+        <button class="tint-nav-btn" style="background:#1a3a5c;color:#fff;border-color:#1a3a5c;">Ver</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {# ===== Form mes-vs-mes ===== #}
+  {% if modo == 'mom' %}
+    <form method="get" class="mom-form">
+      <input type="hidden" name="modo" value="mom">
+      <div>
+        <label>Mes A (referencia)</label>
+        <div style="display:flex; gap:6px; margin-top:4px;">
+          <select name="a_a">
+            {% for (a_, m_) in meses_disponibles %}
+              <option value="{{ a_ }}" {% if a_ == mom.par_a[0] %}selected{% endif %}>{{ a_ }}</option>
+            {% endfor %}
+          </select>
+          <select name="m_a">
+            {% for i in range(1, 13) %}
+              <option value="{{ i }}" {% if i == mom.par_a[1] %}selected{% endif %}>{{ MES_ABRV[i-1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
+      <div style="font-size:24px; color:#475569; padding-bottom:4px;">→</div>
+      <div>
+        <label>Mes B (actual)</label>
+        <div style="display:flex; gap:6px; margin-top:4px;">
+          <select name="a_b">
+            {% for (a_, m_) in meses_disponibles %}
+              <option value="{{ a_ }}" {% if a_ == mom.par_b[0] %}selected{% endif %}>{{ a_ }}</option>
+            {% endfor %}
+          </select>
+          <select name="m_b">
+            {% for i in range(1, 13) %}
+              <option value="{{ i }}" {% if i == mom.par_b[1] %}selected{% endif %}>{{ MES_ABRV[i-1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit">Comparar</button>
+    </form>
+  {% endif %}
+
+  {# ===== Banner snapshots faltantes ===== #}
+  {% set sin_snap = (data.meses_sin_snap if modo != 'mom' else mom.meses_sin_snap) or [] %}
+  {% if sin_snap %}
+    <div class="mb-3 px-4 py-2 rounded border border-amber-400 bg-amber-50 flex items-center justify-between">
+      <div class="text-sm text-amber-800">
+        <strong>{{ sin_snap | length }}</strong> mes(es) sin snapshot:
+        {{ sin_snap | join(', ') }}.
+      </div>
+      {% if modo != 'mom' %}
       <form method="post" action="{{ url_for('informes.snapshot_backfill') }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="meses" value="{{ n }}">
@@ -75,57 +307,119 @@ Informes / <strong>Histórico {{ n }} meses</strong>
           Backfillear {{ n }} meses
         </button>
       </form>
+      {% endif %}
     </div>
   {% endif %}
 
-  {# Matriz: filas = líneas, columnas = meses ASC + total + promedio #}
-  <div class="h12-tbl bg-white border border-slate-300 rounded overflow-x-auto">
-    <table class="w-full">
-      <thead>
-        <tr>
-          <th class="text-left">Línea</th>
-          {% for (a, m) in data.meses %}
-            <th class="text-right">{{ '%02d/%d' % (m, a) }}</th>
+  {# ============================================================
+     RENDER MATRIZ — modo principal
+     ============================================================ #}
+  {% if modo != 'mom' %}
+    <span class="tint-bar">TINT.BAT</span>
+    <div class="tint-shell">
+      <table class="tint-tbl">
+        <thead>
+          <tr>
+            <th class="first">FECHA</th>
+            {% for (a_, m_) in data.meses %}
+              <th>
+                {{ MES_ABRV[m_-1] }}
+                <span class="yr">{{ a_ }}</span>
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {# OPERATIVO #}
+          {% for linea in data.lineas if linea.section == 'operativo' %}
+            <tr class="row-{{ linea.color }}">
+              <td class="label">{{ linea.label }}</td>
+              {% for v in linea.valores %}
+                <td class="num">
+                  {{ fmt_val(v, linea.fmt) }}
+                  {% set d = linea.delta_pct[loop.index0] %}
+                  {% if d is not none and (d | abs) >= 0.05 %}
+                    <span class="delta {% if d >= 0 %}up{% else %}down{% endif %}">
+                      {{ '+' if d >= 0 else '' }}{{ '%.1f' % d }}%
+                    </span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
           {% endfor %}
-          <th class="text-right total-col">Total</th>
-          <th class="text-right total-col">Promedio</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for linea in data.lineas %}
-        <tr class="linea">
-          <td class="font-medium">{{ linea.label }}</td>
-          {% for v in linea.valores %}
-            <td class="num">
-              {% if v is none %}
-                <span class="miss">—</span>
-              {% else %}
-                {% if linea.fmt == 'kg' %}
-                  {{ v | num_es(0) }}
-                {% else %}
-                  {{ v | num_es(0) }}
-                {% endif %}
-                {% set d = linea.delta_pct[loop.index0] %}
-                {% if d is not none %}
-                  <div class="{% if d >= 0 %}delta-pos{% else %}delta-neg{% endif %}">
-                    {{ '+' if d >= 0 else '' }}{{ '%.1f' % d }}%
-                  </div>
-                {% endif %}
-              {% endif %}
-            </td>
+          <tr class="gap"><td colspan="{{ data.meses|length + 1 }}"></td></tr>
+          {# BALANCE #}
+          {% for linea in data.lineas if linea.section == 'balance' %}
+            <tr class="row-{{ linea.color }}{% if loop.first %} sep{% endif %}">
+              <td class="label">{{ linea.label }}</td>
+              {% for v in linea.valores %}
+                <td class="num">
+                  {{ fmt_val(v, linea.fmt) }}
+                </td>
+              {% endfor %}
+            </tr>
           {% endfor %}
-          <td class="num total-col">{{ linea.total | num_es(0) }}</td>
-          <td class="num total-col">{{ linea.promedio | num_es(0) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <p class="mt-3 text-xs text-slate-500">
-    Cada celda = valor del snapshot del mes (scintela.historia). Δ% vs mes anterior abajo.
-    Promedio = suma sobre meses con dato disponible / cantidad de meses con dato.
-    Si querés exportar, usar el botón Imprimir (PDF nativo del navegador).
-  </p>
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-3 text-xs text-slate-500">
+      Valores en MILES de U$ excepto operativo (kg y U$/kg) y MARGEN % (porcentaje).
+      Δ% verde/rojo bajo el número en sección operativa. Imprimí con el botón
+      <em>Imprimir</em> (queda en blanco para guardar en PDF).
+    </p>
+  {% else %}
+  {# ============================================================
+     RENDER MES VS MES
+     ============================================================ #}
+    <span class="tint-bar">TINT.BAT · MES vs MES</span>
+    <div class="tint-shell">
+      <table class="tint-tbl">
+        <thead>
+          <tr>
+            <th class="first">FECHA</th>
+            <th>{{ MES_ABRV[mom.par_a[1]-1] }} <span class="yr">{{ mom.par_a[0] }}</span></th>
+            <th>{{ MES_ABRV[mom.par_b[1]-1] }} <span class="yr">{{ mom.par_b[0] }}</span></th>
+            <th>Δ <span class="yr">B − A</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linea in mom.lineas if linea.section == 'operativo' %}
+            <tr class="row-{{ linea.color }}">
+              <td class="label">{{ linea.label }}</td>
+              <td class="num">{{ fmt_val(linea.v_a, linea.fmt) }}</td>
+              <td class="num">{{ fmt_val(linea.v_b, linea.fmt) }}</td>
+              <td class="delta-cell">
+                {{ fmt_val(linea.delta_abs, linea.fmt) }}
+                {% if linea.delta_pct is not none %}
+                  <span class="delta-pct">
+                    {{ '+' if linea.delta_pct >= 0 else '' }}{{ '%.1f' % linea.delta_pct }}%
+                  </span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          <tr class="gap"><td colspan="4"></td></tr>
+          {% for linea in mom.lineas if linea.section == 'balance' %}
+            <tr class="row-{{ linea.color }}{% if loop.first %} sep{% endif %}">
+              <td class="label">{{ linea.label }}</td>
+              <td class="num">{{ fmt_val(linea.v_a, linea.fmt) }}</td>
+              <td class="num">{{ fmt_val(linea.v_b, linea.fmt) }}</td>
+              <td class="delta-cell">
+                {{ fmt_val(linea.delta_abs, linea.fmt) }}
+                {% if linea.delta_pct is not none %}
+                  <span class="delta-pct">
+                    {{ '+' if linea.delta_pct >= 0 else '' }}{{ '%.1f' % linea.delta_pct }}%
+                  </span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-3 text-xs text-slate-500">
+      Δ = mes B − mes A (absoluto en miles U$ / kg / %). Δ% relativo abajo.
+    </p>
+  {% endif %}
 </div>
 {% endblock %}
