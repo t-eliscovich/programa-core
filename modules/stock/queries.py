@@ -24,24 +24,38 @@ from datetime import date, timedelta
 import db
 
 
-def _opening_inicial(ano: int) -> dict:
-    """Opening del año desde iniciales (mes 1, año actual o el más reciente)."""
+def _opening_mes_actual(ano: int, mes: int) -> dict:
+    """TMT 2026-05-18 — Opening del MES EN CURSO (no del año).
+
+    scintela.iniciales tiene una fila por mes con el rollforward del
+    cierre anterior. Para stock LIVE al día de hoy, partimos del opening
+    del mes actual (= cierre del mes anterior) y agregamos delta del mes.
+
+    Antes usábamos iniciales[mes=1] + delta YTD. Problema: scintela.tinto
+    sólo tiene data del mes actual cargada (los meses históricos están
+    vacíos en esa tabla — el tracking de tintura se hace fuera). Así que
+    el delta YTD daba: opening_enero + compras_T_YTD + tinto_solo_mes_actual
+    − facturas_YTD → terminado siempre negativo → clipped a 0.
+
+    Con opening del mes actual + delta intra-mes, las queries son consistentes
+    (todas miran al MISMO período corto).
+    """
     row = db.fetch_one(
         """
         SELECT COALESCE(hilado, 0)    AS hilado,
                COALESCE(tejido, 0)    AS tejido,
                COALESCE(terminado, 0) AS terminado
           FROM scintela.iniciales
-         WHERE yy = %s AND mesnum = 1
+         WHERE yy = %s AND mesnum = %s
          LIMIT 1
         """,
-        (ano,),
+        (ano, mes),
     )
     if row and (row["hilado"] or row["tejido"] or row["terminado"]):
         return {"hilado": float(row["hilado"]),
                 "tejido": float(row["tejido"]),
                 "terminado": float(row["terminado"])}
-    # Fallback: cualquier fila de iniciales con datos (la más reciente).
+    # Fallback: iniciales más reciente con data.
     row = db.fetch_one(
         """
         SELECT COALESCE(hilado, 0)    AS hilado,
@@ -62,11 +76,31 @@ def _opening_inicial(ano: int) -> dict:
     return {"hilado": 0.0, "tejido": 0.0, "terminado": 0.0}
 
 
-def _compras_ytd_por_tipo(ano: int) -> dict:
-    """SUM(kg) + SUM(importe) de compras del año por tipo (H/K/T/Q).
+def _compras_mes_actual_por_tipo(ano: int, mes: int) -> dict:
+    """SUM(kg) + SUM(importe) de compras del MES en curso por tipo (H/K/T/Q).
 
-    Excluye anuladas (stat='Y'). Devuelve dict {tipo: {"kg": x, "importe": y}}.
+    Filtrado al mes actual para mantener consistencia con _opening_mes_actual.
     """
+    rows = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(COALESCE(tipo, ''))) AS tipo,
+               SUM(COALESCE(kg, 0))            AS kg,
+               SUM(COALESCE(importe, 0))       AS importe
+          FROM scintela.compra
+         WHERE COALESCE(stat, '') != 'Y'
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         GROUP BY 1
+        """,
+        (ano, mes),
+    ) or []
+    return {r["tipo"]: {"kg": float(r["kg"] or 0),
+                       "importe": float(r["importe"] or 0)}
+            for r in rows}
+
+
+def _compras_ytd_por_tipo(ano: int) -> dict:
+    """SUM(kg)+SUM(importe) YTD por tipo — para U$/kg ponderado del año."""
     rows = db.fetch_all(
         """
         SELECT UPPER(TRIM(COALESCE(tipo, ''))) AS tipo,
@@ -84,16 +118,41 @@ def _compras_ytd_por_tipo(ano: int) -> dict:
             for r in rows}
 
 
-def _facturas_kg_ytd(ano: int) -> float:
-    """SUM(kg) facturados del año (kg que salieron del stock terminado)."""
+def _facturas_kg_mes_actual(ano: int, mes: int) -> float:
+    """SUM(kg) facturados del MES (kg que salieron del stock terminado)."""
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(COALESCE(kg, 0)), 0) AS kg
           FROM scintela.factura
          WHERE COALESCE(stat, '') NOT IN ('X', 'Y')
-           AND EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
         """,
-        (ano,),
+        (ano, mes),
+    )
+    return float(row["kg"] or 0) if row else 0.0
+
+
+def _tinto_kg_mes_actual(ano: int, mes: int) -> float:
+    """kg tinturados (entran a terminado, salen de tejido) del MES."""
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(
+            GREATEST(
+                COALESCE(kg, 0),
+                COALESCE(kgn, 0),
+                COALESCE(toper, 0) + COALESCE(jersey, 0) + COALESCE(pique, 0)
+              + COALESCE(messi, 0) + COALESCE(james, 0) + COALESCE(franela, 0)
+              + COALESCE(j3, 0)    + COALESCE(jlyc, 0)  + COALESCE(flyc, 0)
+              + COALESCE(falso, 0) + COALESCE(otros, 0) + COALESCE(kiana, 0)
+            )
+        ), 0) AS kg
+          FROM scintela.tinto
+         WHERE EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+        """,
+        (ano, mes),
     )
     return float(row["kg"] or 0) if row else 0.0
 
@@ -148,30 +207,31 @@ def resumen_stock() -> dict:
           "snapshot_fecha": "YYYY-MM" o None,
         }
     """
-    ano = date.today().year
-    opening = _opening_inicial(ano)
-    comp = _compras_ytd_por_tipo(ano)
-    fact_kg = _facturas_kg_ytd(ano)
-    # TMT 2026-05-18 — flujo de tejido → terminado via tintura intra-año.
-    # Antes la fórmula era: terminado = opening_terminado + compras_T − facturas.
-    # Eso daba 0 cuando facturas YTD > opening + compras_T (siempre, porque
-    # el terminado se PRODUCE internamente, no se compra). Fix: sumar
-    # kg tinturados del año (scintela.tinto.kg) — esa es la producción
-    # que entra a terminado.
-    tinto_kg = _tinto_kg_ytd(ano)
+    hoy = date.today()
+    ano, mes = hoy.year, hoy.month
 
-    # KG live = opening + compras YTD del tipo. Para terminado restamos
-    # las facturas vendidas (el dBase legacy hacía lo mismo en el screen
-    # MAT.PR del INFORMES.PRG).
-    h_kg = opening["hilado"]   + comp.get("H", {}).get("kg", 0.0)
-    # Tejido: opening + compras K - tinturado (sale a terminado)
-    k_kg = opening["tejido"]   + comp.get("K", {}).get("kg", 0.0) - tinto_kg
-    # Terminado: opening + compras T (raras, externas) + tinturado − facturas
-    t_kg = opening["terminado"] + comp.get("T", {}).get("kg", 0.0) + tinto_kg - fact_kg
+    # TMT 2026-05-18 v2 — Opening del MES en curso + delta INTRA-MES.
+    # Antes usábamos opening de enero + delta YTD. Problema: scintela.tinto
+    # sólo tiene data del mes actual cargada (los meses históricos están
+    # vacíos — el tracking de tintura se hace fuera). Entonces el delta YTD
+    # daba terminado negativo → clipped a 0. El opening del mes ya tiene
+    # incorporado el rollforward de meses anteriores via cerrar_mes_auto.
+    opening = _opening_mes_actual(ano, mes)
+    comp_mes = _compras_mes_actual_por_tipo(ano, mes)
+    comp_ytd = _compras_ytd_por_tipo(ano)  # para U$/kg ponderado anual
+    fact_kg = _facturas_kg_mes_actual(ano, mes)
+    tinto_kg = _tinto_kg_mes_actual(ano, mes)
+
+    # Flujo intra-mes:
+    h_kg = opening["hilado"]    + comp_mes.get("H", {}).get("kg", 0.0)
+    # Tejido: opening + compras K - tinturado (sale a tintura)
+    k_kg = opening["tejido"]    + comp_mes.get("K", {}).get("kg", 0.0) - tinto_kg
+    # Terminado: opening + compras T externas + tinturado − facturas
+    t_kg = opening["terminado"] + comp_mes.get("T", {}).get("kg", 0.0) + tinto_kg - fact_kg
 
     # U$/kg ponderado = importe YTD / kg YTD por tipo. Si kg=0, 0.0.
     def _ukg(tipo):
-        c = comp.get(tipo, {})
+        c = comp_ytd.get(tipo, {})
         kg = c.get("kg", 0.0)
         if kg > 0:
             return c.get("importe", 0.0) / kg
