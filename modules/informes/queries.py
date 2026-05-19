@@ -437,10 +437,15 @@ def movimientos_mes_dbase(anio: int | None = None,
         except (TypeError, ZeroDivisionError):
             return 0.0
 
-    # TMT 2026-05-19 v8 — refactor: scintela.historia NO tiene desglose
-    # stock_hilado/tejido/terminado — sólo `stock` (total). El desglose
-    # vive en scintela.iniciales (mensual). Usamos iniciales para el
-    # mes seleccionado como STOCK INICIAL, y para tarifas (um/uk/uf/uq).
+    # TMT 2026-05-19 v8 — Stock inicial = FINAL del mes ANTERIOR (pedido
+    # dueña). scintela.iniciales del mes pedido es la proyección/opening
+    # del mes en curso, pero la dueña quiere el cierre del mes anterior.
+    # Calculamos el mes anterior (1→12 del año previo).
+    mm_ant = mm - 1
+    yy_ant = yy
+    if mm_ant < 1:
+        mm_ant = 12
+        yy_ant = yy - 1
     try:
         inic = db.fetch_one(
             """
@@ -450,12 +455,12 @@ def movimientos_mes_dbase(anio: int | None = None,
              ORDER BY id_iniciales DESC
              LIMIT 1
             """,
-            (mm, yy),
+            (mm_ant, yy_ant),
         ) or {}
     except Exception:
         inic = {}
 
-    # Fallback: si no hay iniciales del mes pedido, agarrar la más reciente.
+    # Fallback: si no hay iniciales del mes anterior, agarrar la más reciente.
     if not inic or not (float(inic.get("hilado") or 0)):
         try:
             inic = db.fetch_one(
@@ -488,13 +493,13 @@ def movimientos_mes_dbase(anio: int | None = None,
     um0 = float(inic.get("um") or 0) or _safe_div(ucom, kcom)
     if um0 == 0:
         um0 = _safe_div(float(hist.get("ustock") or 0), float(hist.get("stock") or 0))
-    uk0 = float(inic.get("uk") or 0) or (um0 + 0.5 if um0 else 0.0)
-    uf0 = float(inic.get("uf") or 0) or (um0 + 2.2 if um0 else 0.0)
+    # TMT 2026-05-19 v8 — uk0/uf0 (tarifas tejido/terminado) ya no se
+    # usan acá: el template TINT.BAT sólo muestra KG para CRUDO y TERM.
+    # Si en el futuro se agregan columnas $ a esas etapas, recalcular.
 
     hilado_act_kg = max(hi0 + kcom - ktej, 0)
     tejido_act_kg = max(tj0 + ktej - ktin, 0)
     termin_act_kg = max(pf0 + ktin - kvent, 0)
-    color_act_us  = vq0  # sin movimientos automáticos por etapa
 
     # % de eficiencia (egreso / ingreso del mes). En el dBase se mostraba
     # como "0.50%" en tejido crudo y "3.76%" en terminado — proxy de
@@ -502,30 +507,36 @@ def movimientos_mes_dbase(anio: int | None = None,
     pct_tej = _safe_div(ktin, ktej) * 100 if ktej else 0.0
     pct_ter = _safe_div(kvent, ktin) * 100 if ktin else 0.0
 
+    # TMT 2026-05-19 v8 — pedido dueña: en HILADO, egresos $/kg debe ser
+    # igual al stock actual $/kg (el costo del kg que sale es el promedio
+    # ponderado del stock). egresos_us = egresos_kg × $/kg.
+    # CRUDO y TERMINADO no necesitan $/kg ni $ — TINT.BAT solo muestra KG.
     header = {
         "hilado": {
             "stock_inic_kg": hi0, "stock_inic_ukg": um0, "stock_inic_us": hi0 * um0,
             "ingresos_kg":   kcom, "ingresos_ukg": _safe_div(ucom, kcom), "ingresos_us": ucom,
-            "egresos_kg":    ktej,
+            "egresos_kg":    ktej, "egresos_ukg":  um0, "egresos_us":  ktej * um0,
             "stock_act_kg":  hilado_act_kg, "stock_act_ukg": um0, "stock_act_us": hilado_act_kg * um0,
         },
         "tejido": {
-            "stock_inic_kg": tj0, "stock_inic_us": tj0 * uk0,
-            "ingresos_kg":   ktej, "ingresos_pct": pct_tej, "ingresos_us": utej,
+            "stock_inic_kg": tj0,
+            "ingresos_kg":   ktej, "ingresos_pct": pct_tej,
             "egresos_kg":    ktin,
-            "stock_act_kg":  tejido_act_kg, "stock_act_us": tejido_act_kg * uk0,
+            "stock_act_kg":  tejido_act_kg,
         },
         "terminado": {
-            "stock_inic_kg": pf0, "stock_inic_us": pf0 * uf0,
-            "ingresos_kg":   ktin, "ingresos_pct": pct_ter, "ingresos_us": utin,
+            "stock_inic_kg": pf0,
+            "ingresos_kg":   ktin, "ingresos_pct": pct_ter,
             "egresos_kg":    kvent,
-            "stock_act_kg":  termin_act_kg, "stock_act_us": termin_act_kg * uf0,
+            "stock_act_kg":  termin_act_kg,
         },
         "colorantes": {
             "stock_inic_us": vq0,
             "ingresos_us":   0.0,  # se setea abajo con compras Q del mes
+            # Egresos $ derivado del balance contable: inic + ingresos - act.
+            # Se completa después de calcular ingresos.
             "egresos_us":    0.0,
-            "stock_act_us":  color_act_us,
+            "stock_act_us":  vq0,  # default; se recalcula post-ingresos.
         },
     }
 
@@ -576,9 +587,8 @@ def movimientos_mes_dbase(anio: int | None = None,
         r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
     # TINTORERIA — tipo='C' (tintura). Heurística bajos/fuertes:
-    # el dBase distinguía bajos (poco colorante) vs fuertes (mucho).
-    # Sin flag dedicado, proxy: importe < 0.5 USD/kg → BAJOS, >= → FUERTES.
-    # Aproximación pragmática; afinar con la dueña si difiere mucho del PRG.
+    # TMT 2026-05-19 v8 — dueña: "limit 0.4 cuando el costo es menor a .4
+    # es bajo, arriba es fuerte". Criterio $/kg = 0.4 USD.
     tint_rows = db.fetch_all(
         """
         SELECT COALESCE(kg, 0)::numeric      AS kg,
@@ -597,7 +607,7 @@ def movimientos_mes_dbase(anio: int | None = None,
     for r in tint_rows:
         kkg = float(r["kg"])
         imp = float(r["importe"])
-        if _safe_div(imp, kkg) < 0.5:
+        if _safe_div(imp, kkg) < 0.4:
             bajos_kg += kkg
             bajos_us += imp
         else:
@@ -626,12 +636,76 @@ def movimientos_mes_dbase(anio: int | None = None,
     cs_col_ukg = _safe_div(cs_col_us, ktin)
     # Aplicar al header de colorantes el ingreso $ del mes.
     header["colorantes"]["ingresos_us"] = cs_col_us
+    # TMT 2026-05-19 v8 — egresos $ de colorantes derivado por balance:
+    # inic + ingresos - act = consumo. Necesitamos stock act final, que
+    # viene del último snapshot live (uqui de historia_ultimo_snapshot).
+    # Si no tenemos snapshot fresh, usamos vq0 = stock_act = stock_inic
+    # (consumo = ingresos del mes).
+    try:
+        hist_live = historia_ultimo_snapshot() or {}
+        stock_act_col = float(hist_live.get("uqui") or vq0)
+    except Exception:
+        stock_act_col = vq0
+    header["colorantes"]["stock_act_us"] = stock_act_col
+    header["colorantes"]["egresos_us"] = max(
+        float(header["colorantes"]["stock_inic_us"])
+        + float(header["colorantes"]["ingresos_us"])
+        - float(header["colorantes"]["stock_act_us"]),
+        0.0,
+    )
 
     # CS.PRODUCCION — costo total de producción (mat. prima + tejido + tin
     # + col) / kg producidos en el mes. Usa hist live.
     cs_prod_us = ucom + utej + utin + cs_col_us
     cs_prod_kg = ktin or ktej or kvent  # mejor proxy disponible
     cs_prod_ukg = _safe_div(cs_prod_us, cs_prod_kg)
+
+    # TMT 2026-05-19 v8 — CS Anterior (columna ANT.) = CS unitario del
+    # mes pasado, de scintela.historia. Pedido dueña: comparar
+    # mes-a-mes el costo unitario.
+    cs_col_ukg_ant = 0.0
+    cs_prod_ukg_ant = 0.0
+    try:
+        hist_ant = db.fetch_one(
+            """
+            SELECT ucom, utej, utin, ktin, ktej, kvent
+              FROM scintela.historia
+             WHERE EXTRACT(YEAR FROM fecha)  = %s
+               AND EXTRACT(MONTH FROM fecha) = %s
+             ORDER BY fecha DESC LIMIT 1
+            """,
+            (yy_ant, mm_ant),
+        ) or {}
+        if hist_ant:
+            ucom_ant = float(hist_ant.get("ucom") or 0)
+            utej_ant = float(hist_ant.get("utej") or 0)
+            utin_ant = float(hist_ant.get("utin") or 0)
+            ktin_ant = float(hist_ant.get("ktin") or 0)
+            ktej_ant = float(hist_ant.get("ktej") or 0)
+            kvent_ant = float(hist_ant.get("kvent") or 0)
+            # CS.colorantes anterior: hay que calcular quimicos del mes
+            # anterior también — query separada.
+            try:
+                q_ant = db.fetch_one(
+                    """
+                    SELECT COALESCE(SUM(importe), 0) AS importe
+                      FROM scintela.compra
+                     WHERE UPPER(COALESCE(tipo, '')) = 'Q'
+                       AND COALESCE(stat, '') <> 'Y'
+                       AND EXTRACT(YEAR FROM fecha)  = %s
+                       AND EXTRACT(MONTH FROM fecha) = %s
+                    """,
+                    (yy_ant, mm_ant),
+                ) or {}
+                cs_col_us_ant = float(q_ant.get("importe") or 0)
+            except Exception:
+                cs_col_us_ant = 0.0
+            cs_col_ukg_ant = _safe_div(cs_col_us_ant, ktin_ant)
+            cs_prod_us_ant = ucom_ant + utej_ant + utin_ant + cs_col_us_ant
+            cs_prod_kg_ant = ktin_ant or ktej_ant or kvent_ant
+            cs_prod_ukg_ant = _safe_div(cs_prod_us_ant, cs_prod_kg_ant)
+    except Exception:
+        pass
 
     return {
         "anio": yy, "mes": mm,
@@ -655,8 +729,8 @@ def movimientos_mes_dbase(anio: int | None = None,
                         "ukg": _safe_div(fuertes_us, fuertes_kg), "pct": fuertes_pct},
         },
         "cs": {
-            "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": 0.0},
-            "produccion": {"kg": cs_prod_kg, "ukg": cs_prod_ukg, "us": cs_prod_us, "ant": 0.0},
+            "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": cs_col_ukg_ant},
+            "produccion": {"kg": cs_prod_kg, "ukg": cs_prod_ukg, "us": cs_prod_us, "ant": cs_prod_ukg_ant},
         },
     }
 
