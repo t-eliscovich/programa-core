@@ -233,8 +233,9 @@ def diag_stock():
     Terminado=0. Pensado para que la dueña abra la URL una vez y mande
     screenshot — más eficiente que pelear con SSM PowerShell quoting.
     """
-    import db
     from datetime import date as _date
+
+    import db
     y = _date.today().year
 
     def _safe_q(sql, params=()):
