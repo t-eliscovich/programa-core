@@ -523,7 +523,8 @@
    Si Chart.js no descarga (offline / firewall / CDN caído), el canvas
    queda en blanco con un mensaje en el alt-text.
    ========================================================================= #}
-{% if rol in ('Accionista', 'Dueño') and vista == 'completa' and ({# TMT 2026-05-19 v8 rename #}
+{# TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista", aceptamos ambos. #}
+{% if rol in ('Accionista', 'Dueño') and vista == 'completa' and (
         (evolucion_cartera and evolucion_cartera|length > 1)
         or flujo_30d) %}
 <script>
