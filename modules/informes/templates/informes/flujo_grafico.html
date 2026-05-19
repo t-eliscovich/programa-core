@@ -376,17 +376,69 @@
            Los colores del chart hablan por sí mismos. #}
       </section>
 
-      {# TMT 2026-05-19 v2 — Pedido dueña: el cuadro debajo del chart muestra
-         SOLO gastos forzados editables. Sacado el panel "Editar deudas
-         (posdat banc 0/9)" — vive en /posdat ahora. La dueña quería ver
-         sus gastos forzados acá, no la lista de posdat. #}
+      {# TMT 2026-05-19 v8 — Pedido dueña: los "gastos forzados" que ella ve
+         en el TINT.BAT son los POSDAT abiertos (banc=0) con fecha futura.
+         Cuando el panel de localStorage estaba en cero, parecía que no había
+         data. Ahora mostramos la tabla REAL desde scintela.posdat acá abajo
+         del chart, exactamente como TINT.BAT (FECHA / GASTOS / PR / CONCEPTO).
+         El panel manual de abajo queda como "Adicionales" para casos extra
+         que la dueña quiera proyectar sin crear posdat formal. #}
       <div class="below-chart">
+        {% if egresos_lista %}
+        <section class="panel gf-panel gf-full" style="margin-bottom: 14px;">
+          <div class="gf-head">
+            <h3>Gastos forzados <span style="color:rgb(100 116 139);font-weight:400">(posdat abiertos)</span></h3>
+            <span class="gf-sub">
+              Estos egresos YA están afectando el flujo del chart. Fuente: scintela.posdat.
+              Para editarlos: <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
+            </span>
+          </div>
+          {% set _total_egr = 0 %}
+          {% for e in egresos_lista %}{% set _total_egr = _total_egr + e.importe %}{% endfor %}
+          <div style="max-height: 380px; overflow-y: auto; border: 1px solid rgb(226 232 240); border-radius: 6px; background: white;">
+            <table style="width:100%; font-size:12px; border-collapse:collapse; font-feature-settings:'tnum' 1;">
+              <thead style="position:sticky;top:0;background:rgb(248 250 252);z-index:1;">
+                <tr>
+                  <th style="text-align:left;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">Fecha</th>
+                  <th style="text-align:right;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">Gastos</th>
+                  <th style="text-align:left;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">PR</th>
+                  <th style="text-align:left;padding:6px 10px;color:rgb(220 38 38);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgb(148 163 184);">Concepto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for e in egresos_lista %}
+                <tr style="border-bottom:1px dotted rgb(226 232 240);
+                           {% if e.vencido %}background:rgb(254 226 226);{% endif %}">
+                  <td style="padding:4px 10px;font-family:ui-monospace,monospace;">
+                    {{ e.fecha_efectiva[:10] if e.fecha_efectiva else '—' }}
+                    {% if e.vencido %}<span style="color:rgb(220 38 38);font-size:10px;font-style:italic">vencido</span>{% endif %}
+                  </td>
+                  <td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">{{ e.importe | num_es(0) }}</td>
+                  <td style="padding:4px 10px;font-family:ui-monospace,monospace;color:rgb(15 23 42);">{{ e.prov or '—' }}</td>
+                  <td style="padding:4px 10px;color:rgb(30 41 59);">{{ e.concepto or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot style="background:rgb(241 245 249);border-top:2px solid rgb(15 23 42);">
+                <tr>
+                  <td style="padding:8px 10px;font-weight:700;">TOTAL ({{ egresos_lista | length }} líneas)</td>
+                  <td style="padding:8px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:700;">{{ _total_egr | num_es(0) }}</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+        {% endif %}
+
+        {# Panel ADICIONAL — gastos forzados manuales que NO son posdat (ej.
+           "pago gerencia futuro"). Se persisten en scintela.gasto_forzado. #}
         <section class="panel gf-panel gf-full">
           <div class="gf-head">
-            <h3>Gastos forzados</h3>
+            <h3>Gastos forzados <span style="color:rgb(100 116 139);font-weight:400">(adicionales)</span></h3>
             <span class="gf-sub">
-              Egresos extra para la proyección — fecha + importe editables.
-              Quedan en este navegador.
+              Egresos extra que NO están en posdat — proyección manual. Se
+              guardan en la base y los ves desde cualquier máquina.
             </span>
           </div>
           <form id="gf-form" class="gf-form-inline" onsubmit="return false">
@@ -397,7 +449,7 @@
           </form>
           <div id="gf-list" class="gf-list"></div>
           <div class="gf-total">
-            <span>Total forzados</span>
+            <span>Total adicionales</span>
             <strong id="gf-total">$ 0</strong>
           </div>
         </section>
