@@ -704,6 +704,7 @@ def movimientos_mes_dbase(anio: int | None = None,
     # mes-a-mes el costo unitario.
     cs_col_ukg_ant = 0.0
     cs_prod_ukg_ant = 0.0
+    tint_ukg_ant = 0.0  # promedio $/kg tintura del mes anterior
     try:
         hist_ant = db.fetch_one(
             """
@@ -722,6 +723,9 @@ def movimientos_mes_dbase(anio: int | None = None,
             ktin_ant = float(hist_ant.get("ktin") or 0)
             ktej_ant = float(hist_ant.get("ktej") or 0)
             kvent_ant = float(hist_ant.get("kvent") or 0)
+            # TMT 2026-05-19 v8 — dueña: "te falta el ANT". Tintorería
+            # ANT = costo unitario promedio del mes anterior (utin / ktin).
+            tint_ukg_ant = _safe_div(utin_ant, ktin_ant)
             # CS.colorantes anterior: hay que calcular quimicos del mes
             # anterior también — query separada.
             try:
@@ -761,11 +765,17 @@ def movimientos_mes_dbase(anio: int | None = None,
         },
         "tintoreria": {
             "total":   {"kg": tint_kg, "us": tint_us,
-                        "ukg": _safe_div(tint_us, tint_kg), "pct": 100.0 if tint_kg else 0.0},
+                        "ukg": _safe_div(tint_us, tint_kg),
+                        "pct": 100.0 if tint_kg else 0.0,
+                        "ant": tint_ukg_ant},
             "bajos":   {"kg": bajos_kg, "us": bajos_us,
-                        "ukg": _safe_div(bajos_us, bajos_kg), "pct": bajos_pct},
+                        "ukg": _safe_div(bajos_us, bajos_kg),
+                        "pct": bajos_pct,
+                        "ant": tint_ukg_ant},
             "fuertes": {"kg": fuertes_kg, "us": fuertes_us,
-                        "ukg": _safe_div(fuertes_us, fuertes_kg), "pct": fuertes_pct},
+                        "ukg": _safe_div(fuertes_us, fuertes_kg),
+                        "pct": fuertes_pct,
+                        "ant": tint_ukg_ant},
         },
         "cs": {
             "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": cs_col_ukg_ant},

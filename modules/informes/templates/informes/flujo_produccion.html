@@ -225,7 +225,7 @@
               <td class="num">{{ '%.1f' % (bj.pct or 0) }}</td>
               <td class="num">{{ bj.kg | num_es(0) if bj.kg else '—' }}</td>
               <td class="num">{{ '%.3f' % (bj.ukg or 0) if bj.ukg else '—' }}</td>
-              <td class="num nd">—</td>
+              <td class="num">{{ '%.3f' % (bj.ant or 0) if bj.ant else '—' }}</td>
               <td class="num">{{ bj.us | num_es(0) if bj.us else '—' }}</td>
             </tr>
             <tr>
@@ -233,7 +233,7 @@
               <td class="num">{{ '%.1f' % (ft.pct or 0) }}</td>
               <td class="num">{{ ft.kg | num_es(0) if ft.kg else '—' }}</td>
               <td class="num">{{ '%.3f' % (ft.ukg or 0) if ft.ukg else '—' }}</td>
-              <td class="num nd">—</td>
+              <td class="num">{{ '%.3f' % (ft.ant or 0) if ft.ant else '—' }}</td>
               <td class="num">{{ ft.us | num_es(0) if ft.us else '—' }}</td>
             </tr>
             {% if tt.kg %}
@@ -242,7 +242,7 @@
                 <td class="num">100.0</td>
                 <td class="num">{{ tt.kg | num_es(0) }}</td>
                 <td class="num">{{ '%.3f' % (tt.ukg or 0) }}</td>
-                <td class="num nd">—</td>
+                <td class="num">{{ '%.3f' % (tt.ant or 0) if tt.ant else '—' }}</td>
                 <td class="num">{{ tt.us | num_es(0) }}</td>
               </tr>
             {% endif %}
