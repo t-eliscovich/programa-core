@@ -112,12 +112,14 @@
           <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">{{ f.importe | num_es }}</td>
           <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
           <td class="px-2 py-1 font-mono">
+            {# TMT 2026-05-19 v8 — dueña: "los que tienen un numero 9
+               son los forzados" (gastos forzados, no pagadas). #}
             {% if f.banc == 9 %}
-              <span class="inline-block px-1 py-0 rounded bg-slate-100 text-slate-600 text-[10px]">pagada</span>
+              <span class="inline-block px-1 py-0 rounded bg-amber-100 text-amber-800 text-[10px]" title="Gasto forzado — proyección interna, no es deuda a proveedor">forzado</span>
             {% elif f.banc == 0 %}
-              <span class="inline-block px-1 py-0 rounded bg-amber-100 text-amber-700 text-[10px]">abierta</span>
+              <span class="inline-block px-1 py-0 rounded bg-sky-100 text-sky-700 text-[10px]" title="Deuda abierta a proveedor">abierta</span>
             {% else %}
-              <span class="inline-block px-1 py-0 rounded bg-emerald-100 text-emerald-700 text-[10px]">{{ f.banc }}</span>
+              <span class="inline-block px-1 py-0 rounded bg-emerald-100 text-emerald-700 text-[10px]" title="Pagada con banco {{ f.banc }}">pag · {{ f.banc }}</span>
             {% endif %}
           </td>
           <td class="px-2 py-1 text-right whitespace-nowrap">

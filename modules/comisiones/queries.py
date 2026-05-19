@@ -104,6 +104,10 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
           LEFT JOIN clientes_por_vend cv ON cv.codigo = v.codigo
           LEFT JOIN cobranzas_total    co ON co.codigo = v.codigo
           LEFT JOIN ventas_mes         ve ON ve.codigo = v.codigo
+         -- TMT 2026-05-19 v8 — dueña: "Sigo viendo muchos vendedores, no
+         -- solo 6". scintela.vendedor tiene códigos legacy del backfill de
+         -- cliente.vend. Filtramos a los 6 oficiales y listo.
+         WHERE v.codigo IN ('PPR','EDG','SEP','JQU','FL1','RMY')
          ORDER BY comision_mes DESC, cobranzas_mes DESC, v.codigo
         """,
         {"yy": yy, "mm": mm},

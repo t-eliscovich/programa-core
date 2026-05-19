@@ -430,29 +430,132 @@
            Los colores del chart hablan por sí mismos. #}
       </section>
 
-      {# TMT 2026-05-19 v8 — Pedido dueña: "esta mal como dividis la pantalla.
-         el ingreso deberia ser chico y estar debajo de una gran tabla.
-         tambien trae cosas de posdat. no esta bien".
-         Layout corregido: una SOLA gran tabla de gastos forzados arriba
-         (scintela.gasto_forzado, persistente DB), form de alta compacto
-         abajo de la tabla. El panel de posdat ya NO se muestra acá —
-         posdat vive en /posdat. #}
+      {# TMT 2026-05-19 v8 (revisión 4) — dueña confirmó: "en posdat hay
+         un campo BANC LOS que tienen un numero 9 son los forzados".
+         Filtramos egresos_lista a banc=9. Los banc=0 son posdat reales
+         (deudas a proveedor) y viven en /posdat. #}
+      {% set _gf_filas = [] %}
+      {% for e in egresos_lista if e.banc == 9 %}
+        {% set _ = _gf_filas.append(e) %}
+      {% endfor %}
       <section class="panel gf-panel gf-full">
         <div class="gf-head">
           <h3>Gastos forzados</h3>
           <span class="gf-sub">
-            Egresos futuros agendados para proyectar el flujo. Persistentes en la base.
+            Pasivos con <code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=9</code>
+            — proyecciones internas (no son deudas a proveedor). Editables desde
+            <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
             <strong id="gf-total">$ 0</strong>
           </span>
         </div>
-        <div id="gf-list" class="gf-list"></div>
+
+        {# Tabla GRANDE — sólo posdat.banc=9 (gastos forzados) + manuales legacy. #}
+        {% set _total_pd = 0 %}
+        {% for e in _gf_filas %}{% set _total_pd = _total_pd + e.importe %}{% endfor %}
+        <div style="max-height: 360px; overflow-y: auto; border: 1px solid var(--grid); border-radius: 6px; background: var(--panel-hi);">
+          <table style="width:100%; font-size:12px; border-collapse:collapse; font-feature-settings:'tnum' 1;">
+            <thead style="position:sticky;top:0;background:var(--panel-hi);z-index:1;">
+              <tr>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Origen</th>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Fecha</th>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">PR</th>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Concepto</th>
+                <th style="text-align:right;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Importe USD</th>
+              </tr>
+            </thead>
+            <tbody id="gf-tabla-body">
+              {% for e in _gf_filas %}
+              <tr style="border-bottom:1px dotted var(--grid);{% if e.vencido %}background:rgba(248,113,113,0.10);{% endif %}">
+                <td style="padding:4px 10px;font-size:10px;">
+                  <span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-family:ui-monospace,monospace;">FORZADO</span>
+                </td>
+                <td style="padding:4px 10px;font-family:ui-monospace,monospace;">
+                  {{ e.fecha_efectiva[:10] if e.fecha_efectiva else '—' }}
+                  {% if e.vencido %}<span style="color:rgb(220 38 38);font-size:10px;">vencido</span>{% endif %}
+                </td>
+                <td style="padding:4px 10px;font-family:ui-monospace,monospace;color:var(--text);">{{ e.prov or '—' }}</td>
+                <td style="padding:4px 10px;color:var(--text);">{{ e.concepto or '—' }}</td>
+                <td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">{{ e.importe | num_es(0) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">
+                Sin gastos forzados todavía. Cargá uno desde /posdat con banc=9, o usá el form de abajo.
+              </td></tr>
+              {% endfor %}
+              {# Filas MANUAL (scintela.gasto_forzado) las inyecta el JS más abajo. #}
+            </tbody>
+          </table>
+        </div>
+
+        {# Form ALTA — agrega a scintela.gasto_forzado. #}
         <form id="gf-form" class="gf-form-inline" onsubmit="return false">
           <input type="date" id="gf-fecha" required title="Fecha">
           <input type="number" id="gf-importe" step="0.01" min="0" placeholder="Importe USD" required>
-          <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia)">
+          <input type="text" id="gf-concepto" maxlength="60" placeholder="Concepto (ej: pago gerencia, alquiler)">
           <button type="submit" id="gf-add">+ Agregar</button>
         </form>
+
+        {# Lista oculta — el JS legacy `gfRender` la sigue usando internamente
+           para tracking + chart, pero acá no la mostramos: las filas se
+           inyectan en el `tbody#gf-tabla-body` arriba para que se mezclen
+           con los posdat en la misma tabla. #}
+        <div id="gf-list" style="display:none"></div>
       </section>
+
+      {# Inyectar filas manuales en la misma tabla. #}
+      <script>
+        (function() {
+          const POSDAT_TOTAL = {{ _total_pd | tojson }};
+
+          function fmtMoney(n) {
+            return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(n || 0);
+          }
+          function fmtFecha(iso) {
+            if (!iso) return '—';
+            const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!m) return iso;
+            return m[3] + '/' + m[2] + '/' + m[1];
+          }
+
+          // Espera a que gfFetchAll exista (definido más abajo) y se hidrate.
+          const _origRender = window.gfRender;
+          window.gfRender = function() {
+            if (typeof _origRender === 'function') {
+              try { _origRender(); } catch (e) { console.warn(e); }
+            }
+            // Borrar filas previas MANUAL y reinyectar.
+            const tbody = document.getElementById('gf-tabla-body');
+            if (!tbody) return;
+            tbody.querySelectorAll('tr[data-gf-id]').forEach(tr => tr.remove());
+            const items = (typeof gfLoad === 'function') ? gfLoad() : [];
+            let manualTotal = 0;
+            items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+            items.forEach(it => {
+              manualTotal += Number(it.importe || 0);
+              const tr = document.createElement('tr');
+              tr.setAttribute('data-gf-id', it.id);
+              tr.style.borderBottom = '1px dotted var(--grid)';
+              tr.style.background = 'rgba(254,249,195,0.30)';
+              tr.innerHTML =
+                '<td style="padding:4px 10px;font-size:10px;">'
+                  + '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-family:ui-monospace,monospace;">MANUAL</span>'
+                + '</td>'
+                + '<td style="padding:4px 10px;font-family:ui-monospace,monospace;">' + fmtFecha(it.fecha) + '</td>'
+                + '<td style="padding:4px 10px;color:var(--muted);">—</td>'
+                + '<td style="padding:4px 10px;color:var(--text);">' + (it.concepto || '—') + '</td>'
+                + '<td style="padding:4px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;">' + fmtMoney(it.importe) + '</td>';
+              tbody.appendChild(tr);
+            });
+            // Update total general (posdat + manual).
+            const totalEl = document.getElementById('gf-total');
+            if (totalEl) totalEl.textContent = '$ ' + fmtMoney(POSDAT_TOTAL + manualTotal);
+          };
+          // Trigger inicial cuando termine la carga de gastos forzados.
+          document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(window.gfRender, 200);
+          });
+        })();
+      </script>
     {% endif %}
   </div>
 </div>

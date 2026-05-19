@@ -437,10 +437,43 @@ def movimientos_mes_dbase(anio: int | None = None,
         except (TypeError, ZeroDivisionError):
             return 0.0
 
-    hi0 = float(hist.get("stock_hilado") or hist.get("stock") or 0)
-    tj0 = float(hist.get("stock_tejido") or 0)
-    pf0 = float(hist.get("stock_terminado") or 0)
-    vq0 = float(hist.get("uqui") or 0)
+    # TMT 2026-05-19 v8 — refactor: scintela.historia NO tiene desglose
+    # stock_hilado/tejido/terminado — sólo `stock` (total). El desglose
+    # vive en scintela.iniciales (mensual). Usamos iniciales para el
+    # mes seleccionado como STOCK INICIAL, y para tarifas (um/uk/uf/uq).
+    try:
+        inic = db.fetch_one(
+            """
+            SELECT hilado, tejido, terminado, vq, um, uk, uf, uq
+              FROM scintela.iniciales
+             WHERE mesnum = %s AND yy = %s
+             ORDER BY id_iniciales DESC
+             LIMIT 1
+            """,
+            (mm, yy),
+        ) or {}
+    except Exception:
+        inic = {}
+
+    # Fallback: si no hay iniciales del mes pedido, agarrar la más reciente.
+    if not inic or not (float(inic.get("hilado") or 0)):
+        try:
+            inic = db.fetch_one(
+                """
+                SELECT hilado, tejido, terminado, vq, um, uk, uf, uq
+                  FROM scintela.iniciales
+                 WHERE COALESCE(hilado, 0) > 0
+                 ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
+                 LIMIT 1
+                """,
+            ) or {}
+        except Exception:
+            inic = inic or {}
+
+    hi0 = float(inic.get("hilado") or hist.get("stock_hilado") or hist.get("stock") or 0)
+    tj0 = float(inic.get("tejido") or hist.get("stock_tejido") or 0)
+    pf0 = float(inic.get("terminado") or hist.get("stock_terminado") or 0)
+    vq0 = float(inic.get("vq") or hist.get("uqui") or 0)
 
     kcom = float(hist.get("kcom") or 0)
     ucom = float(hist.get("ucom") or 0)
@@ -450,18 +483,13 @@ def movimientos_mes_dbase(anio: int | None = None,
     utej = float(hist.get("utej") or 0)
     utin = float(hist.get("utin") or 0)
 
-    # TMT 2026-05-19 v8 — pedido dueña: completar $/kg y $ del stock inic
-    # y stock act. Reusamos las tarifas heurísticas del informe_balance:
-    #   UM (hilado): ucom/kcom del mes o ustock/stock del cierre.
-    #   UK (tejido) = UM + 0.5 ; UF (terminado) = UM + 2.2.
-    # Para el mes en curso, llamamos informe_balance() si está disponible;
-    # si no, calculamos un fallback razonable desde el snapshot histórico.
-    um0 = _safe_div(ucom, kcom)
+    # Tarifas: primero de iniciales (objetivo / opening balance), después
+    # heurística PRG (UM = ucom/kcom; UK = UM+0.5; UF = UM+2.2).
+    um0 = float(inic.get("um") or 0) or _safe_div(ucom, kcom)
     if um0 == 0:
-        # Cierre con compras 0 → derivar del stock $ / kg total.
         um0 = _safe_div(float(hist.get("ustock") or 0), float(hist.get("stock") or 0))
-    uk0 = um0 + 0.5 if um0 else 0.0
-    uf0 = um0 + 2.2 if um0 else 0.0
+    uk0 = float(inic.get("uk") or 0) or (um0 + 0.5 if um0 else 0.0)
+    uf0 = float(inic.get("uf") or 0) or (um0 + 2.2 if um0 else 0.0)
 
     hilado_act_kg = max(hi0 + kcom - ktej, 0)
     tejido_act_kg = max(tj0 + ktej - ktin, 0)
@@ -1783,30 +1811,55 @@ def costo_promedio_mp_ponderado(
 
 
 def ventas_anio_en_curso() -> float:
-    """Facturado BRUTO del año calendario en curso desde scintela.factura.
+    """Ventas del año calendario en curso: SUM(historia.uvent) de meses
+    cerrados + facturado live del mes en curso.
 
-    TMT 2026-05-19 v8 — dueña reportó valor incorrecto (debería ser ~10M).
-    Causa: la fórmula anterior incluía importes NEGATIVOS (notas de crédito
-    / devoluciones) que netean la cifra. Para "ventas del año" gerencial
-    queremos el FACTURADO BRUTO POSITIVO (lo que el cliente debía pagar),
-    no el neto post-devoluciones.
+    TMT 2026-05-19 v8 (revisión 2) — dueña: "ventas del año sale de
+    historia, deberiamos sumar los usd de cada mes". scintela.historia
+    tiene una fila por mes cerrado con uvent definitivo. Sumamos los
+    meses cerrados del año, y para el mes en curso (que todavía no tiene
+    snapshot) usamos el facturado live de scintela.factura.
 
-    Reglas:
-      - Año calendario en curso (Enero a Diciembre del año actual).
-      - Excluye stat='X' (facturas eliminadas por error).
-      - Solo importes positivos (>0) — las devoluciones con importe<0 no
-        restan al facturado bruto.
+    Si historia falla, fallback a la suma live de factura (solo positivos).
     """
-    row = db.fetch_one(
-        """
-        SELECT COALESCE(SUM(importe), 0) AS total
-          FROM scintela.factura
-         WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
-           AND COALESCE(stat, '') <> 'X'
-           AND COALESCE(importe, 0) > 0
-        """
-    )
-    return float((row or {}).get("total") or 0)
+    from datetime import date as _date
+    hoy = _date.today()
+    yy = hoy.year
+    mm = hoy.month
+
+    try:
+        # Meses cerrados del año actual desde historia (uvent definitivo).
+        row_hist = db.fetch_one(
+            """
+            SELECT COALESCE(SUM(uvent), 0) AS total
+              FROM scintela.historia
+             WHERE EXTRACT(YEAR FROM fecha)  = %s
+               AND EXTRACT(MONTH FROM fecha) < %s
+            """,
+            (yy, mm),
+        ) or {}
+        uvent_cerrados = float(row_hist.get("total") or 0)
+    except Exception:
+        uvent_cerrados = 0.0
+
+    try:
+        # Mes en curso: live desde scintela.factura (sólo positivos).
+        row_live = db.fetch_one(
+            """
+            SELECT COALESCE(SUM(importe), 0) AS total
+              FROM scintela.factura
+             WHERE EXTRACT(YEAR FROM fecha)  = %s
+               AND EXTRACT(MONTH FROM fecha) = %s
+               AND COALESCE(stat, '') <> 'X'
+               AND COALESCE(importe, 0) > 0
+            """,
+            (yy, mm),
+        ) or {}
+        uvent_mes = float(row_live.get("total") or 0)
+    except Exception:
+        uvent_mes = 0.0
+
+    return uvent_cerrados + uvent_mes
 
 
 def venta_anual_kg_y_us() -> dict:
