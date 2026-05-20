@@ -170,8 +170,22 @@
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fecha | fecha_es }}</td>
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fechad | fecha_es }}</td>
           <td class="px-2 py-1 font-mono">{{ f.prov }}</td>
-          <td class="px-2 py-1">
-            {{ f.concepto }}
+          <td class="px-2 py-1" data-stop="1">
+            {# TMT 2026-05-20 — concepto editable inline. Postea a
+               /posdat/_api/<id>/editar con {concepto}. Cuando es vacío,
+               muestra placeholder en gris (ayuda a encontrar rows con
+               concepto corrupto/nulo). Render defensivo: None → ''. #}
+            {% set _conc = f.concepto if f.concepto and f.concepto != 'None' else '' %}
+            {% if tiene_permiso('posdat.editar') %}
+              <input type="text" maxlength="100"
+                     class="posdat-concepto-edit w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-xs"
+                     value="{{ _conc }}"
+                     data-orig="{{ _conc }}"
+                     placeholder="(sin concepto — completar)"
+                     title="Concepto editable">
+            {% else %}
+              {{ _conc }}
+            {% endif %}
             {% if es_ajuste %}
               <span class="ml-1 inline-block px-1 py-0 rounded bg-violet-100 text-violet-700 text-[9px] font-medium"
                     title="Importe ≤ 0 — anticipo o ajuste contable (reduce el pasivo)">
@@ -250,51 +264,74 @@
     .posdat-importe-error { background: rgba(248,113,113,0.20) !important; }
   </style>
 
-  {# TMT 2026-05-20 — inline edit del IMPORTE (total). Postea a
-     /posdat/_api/<id>/editar con sólo {importe}. La API conserva el
-     concepto original cuando el caller no lo manda. #}
+  {# TMT 2026-05-20 — inline edit del IMPORTE (total) y CONCEPTO.
+     Postean a /posdat/_api/<id>/editar. La API conserva los campos
+     que el caller no manda. #}
   {% if tiene_permiso('posdat.editar') %}
   <script>
     (function() {
       const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
                 || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+
+      function postEditar(idPosdat, payload, inp, savedClass, errorClass) {
+        fetch('/posdat/_api/' + idPosdat + '/editar', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify(payload),
+        }).then(r => r.json()).then(j => {
+          if (j && j.ok) {
+            inp.classList.remove(errorClass);
+            inp.classList.add(savedClass);
+            inp.dataset.orig = inp.value;
+            setTimeout(() => inp.classList.remove(savedClass), 1200);
+            if (typeof window.posdatRecalcKPIs === 'function') window.posdatRecalcKPIs();
+          } else {
+            inp.classList.add(errorClass);
+            alert('No se pudo guardar: ' + ((j && j.error) || 'error'));
+            inp.value = inp.dataset.orig;
+          }
+        }).catch(e => {
+          inp.classList.add(errorClass);
+          alert('Error de red: ' + e.message);
+          inp.value = inp.dataset.orig;
+        });
+      }
+
       document.querySelectorAll('#posdat-tabla tbody tr[data-id-posdat]').forEach(tr => {
         const idPosdat = tr.dataset.idPosdat;
-        const inp = tr.querySelector('.posdat-importe-edit');
-        if (!inp) return;
-        inp.addEventListener('change', () => {
-          const n = parseFloat(inp.value);
-          if (!isFinite(n) || n <= 0) {
-            alert('Importe inválido (debe ser > 0).');
-            inp.value = inp.dataset.orig;
-            return;
-          }
-          fetch('/posdat/_api/' + idPosdat + '/editar', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-            body: JSON.stringify({ importe: n }),
-          }).then(r => r.json()).then(j => {
-            if (j && j.ok) {
-              inp.classList.remove('posdat-importe-error');
-              inp.classList.add('posdat-importe-saved');
-              inp.dataset.orig = inp.value;
-              setTimeout(() => inp.classList.remove('posdat-importe-saved'), 1200);
-              // TMT 2026-05-20 v3 — refrescar KPIs en vivo (si estamos
-              // en la tab YY). La función vive en window porque este
-              // IIFE no la conoce localmente.
-              if (typeof window.posdatRecalcKPIs === 'function') window.posdatRecalcKPIs();
-            } else {
-              inp.classList.add('posdat-importe-error');
-              alert('No se pudo guardar: ' + (j.error || 'error'));
-              inp.value = inp.dataset.orig;
+        // Editor de IMPORTE
+        const inpImp = tr.querySelector('.posdat-importe-edit');
+        if (inpImp) {
+          inpImp.addEventListener('change', () => {
+            const n = parseFloat(inpImp.value);
+            if (!isFinite(n) || n <= 0) {
+              alert('Importe inválido (debe ser > 0).');
+              inpImp.value = inpImp.dataset.orig;
+              return;
             }
-          }).catch(e => {
-            inp.classList.add('posdat-importe-error');
-            alert('Error de red: ' + e.message);
-            inp.value = inp.dataset.orig;
+            postEditar(idPosdat, { importe: n }, inpImp,
+                       'posdat-importe-saved', 'posdat-importe-error');
           });
-        });
+        }
+        // TMT 2026-05-20 — Editor de CONCEPTO inline. Postea
+        // {concepto: "..."} a /posdat/_api/<id>/editar. La API ya
+        // acepta concepto vacío como error (lo necesitamos para casos
+        // legítimos), así que validamos del lado cliente y dejamos al
+        // backend rechazar string vacío.
+        const inpCon = tr.querySelector('.posdat-concepto-edit');
+        if (inpCon) {
+          inpCon.addEventListener('change', () => {
+            const v = (inpCon.value || '').trim();
+            if (!v) {
+              alert('Concepto vacío. Para borrarlo hay que ir al editor completo.');
+              inpCon.value = inpCon.dataset.orig;
+              return;
+            }
+            postEditar(idPosdat, { concepto: v }, inpCon,
+                       'posdat-importe-saved', 'posdat-importe-error');
+          });
+        }
       });
     })();
   </script>
