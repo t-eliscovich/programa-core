@@ -427,41 +427,45 @@ def check_totales():
         facturas_live = float((fact_live or {}).get("t") or 0)
 
         # ─── Construir los checks ────────────────────────────────────
+        # TMT 2026-05-20 — labels SIEMPRE referencian "Resultados → X" para
+        # que la dueña sepa exactamente qué número del balance estamos
+        # comparando (pedido: "la comparacion tenia que ser con resultados").
         checks = [
             _diff_check(
-                "Cartera bruta (cheques + facturas)",
-                "/cartera total",                       cartera_total,
-                "Resultados (TOTC + TOTF)",             totc + totf,
+                "Cheques (cartera) — Resultados vs /cartera",
+                "Resultados → Cheques",                 totc,
+                "/cartera → Cheques en cartera",        cartera_cheques,
             ),
             _diff_check(
-                "Cheques en cartera",
-                "/cartera.cheques_en_cartera",          cartera_cheques,
-                "informes.totc()",                      totc,
+                "Facturas — Resultados vs /cartera",
+                "Resultados → Facturas",                totf,
+                "/cartera → Saldo facturas",            cartera_facturas,
             ),
             _diff_check(
-                "Facturas (TOTF)",
-                "/cartera.saldo_facturas",              cartera_facturas,
-                "informes.totf()",                      totf,
+                "Subtotal Cartera — Resultados vs /cartera",
+                "Resultados → ↳ Subtotal Cartera",      totc + totf,
+                "/cartera → KPI hero (total)",          cartera_total,
             ),
             _diff_check(
-                "TOTC sanity (cheques Z+1+2+3+P+D)",
-                "informes.totc()",                      totc,
-                "live SUM cheque.importe",              cheques_live,
+                "Pasivos — Resultados vs /deudas",
+                "Resultados → Pasivos",                 totp,
+                "/deudas → Total deudas",               deudas_total,
             ),
             _diff_check(
-                "TOTF sanity (facturas Z/A)",
-                "informes.totf()",                      totf,
-                "live SUM factura.saldo",               facturas_live,
+                "Posdatas — Resultados vs /posdat",
+                "Resultados → ↳ Posdatas (total)",      totp,
+                "/posdat → tab Posdatados + tab YY",    posdat_total_no_yy + posdat_total_yy,
+            ),
+            # Sanity adicionales — chequea queries internas vs live SQL.
+            _diff_check(
+                "Sanity TOTC: queries vs live SQL",
+                "Resultados → Cheques (totc())",        totc,
+                "SELECT SUM live (Z+1+2+3+P+D)",        cheques_live,
             ),
             _diff_check(
-                "Pasivos = Deudas",
-                "Resultados.TOTP",                      totp,
-                "/deudas total",                        deudas_total,
-            ),
-            _diff_check(
-                "Deudas vs /posdat (Posdatados)",
-                "/deudas total",                        deudas_total,
-                "/posdat tab=Posdatados (sin YY)",      posdat_total_no_yy + posdat_total_yy,
+                "Sanity TOTF: queries vs live SQL",
+                "Resultados → Facturas (totf())",       totf,
+                "SELECT SUM live (Z+A)",                facturas_live,
             ),
         ]
     except Exception as e:  # noqa: BLE001
