@@ -194,6 +194,104 @@ def api_editar_tipo(id_activos: int):
         return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
+@activos_bp.route("/activos/activar-maquinaria", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("activos.crear")
+def activar_maquinaria():
+    """Wizard de activación de maquinaria.
+
+    TMT 2026-05-20 — pedido dueña. Inputs: proveedor + anticipos vivos a
+    consumir + valor total + vida útil + deuda + nº cuotas + meses entre +
+    fecha primera cuota. Side effects atómicos: consume anticipos +
+    INSERT activo + N posdats + mov_doble (ver activos.queries.activar_maquinaria).
+    """
+    from datetime import timedelta
+
+    import db as _db
+
+    if request.method == "POST":
+        codigo_prov = (request.form.get("codigo_prov") or "").strip().upper()
+        ids_raw     = request.form.getlist("id_dolares")
+        try:
+            ids = [int(x) for x in ids_raw if x and str(x).strip()]
+        except ValueError:
+            flash("IDs de anticipos inválidos.", "warn")
+            return redirect(url_for("activos.activar_maquinaria",
+                                    prov=codigo_prov))
+        concepto         = (request.form.get("concepto") or "").strip()
+        tipo             = (request.form.get("tipo") or "").strip().upper()
+        valor_total      = parse_monto(request.form.get("valor_total")) or 0
+        vida_util_meses  = parse_int(request.form.get("vida_util_meses")) or 60
+        n_cuotas         = parse_int(request.form.get("n_cuotas")) or 0
+        meses_entre      = parse_int(request.form.get("meses_entre_cuotas")) or 0
+        fecha_primera    = parse_date(request.form.get("fecha_primera_cuota"))
+        try:
+            r = queries.activar_maquinaria(
+                codigo_prov=codigo_prov,
+                ids_anticipos=ids,
+                concepto=concepto,
+                tipo=tipo,
+                valor_total=valor_total,
+                vida_util_meses=vida_util_meses,
+                n_cuotas=n_cuotas,
+                meses_entre_cuotas=meses_entre,
+                fecha_primera_cuota=fecha_primera,
+                usuario=(g.user or {}).get("username", "web"),
+            )
+            cuotas_msg = (f" + {r['n_cuotas']} posdat(s) cuota mensual "
+                          f"${r['cuota_mensual']:.2f}") if r["deuda_total"] > 0 else ""
+            flash(
+                f"Máquina activada: {concepto} (id {r['id_activos']}) · "
+                f"valor ${r['valor_total']:.2f} · "
+                f"{r['n_anticipos_consumidos']} anticipo(s) consumido(s)"
+                f"{cuotas_msg}.",
+                "ok",
+            )
+            return redirect(url_for("activos.lista"))
+        except ValueError as e:
+            flash(str(e), "warn")
+            return redirect(url_for("activos.activar_maquinaria",
+                                    prov=codigo_prov))
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude activar la máquina", e)
+            return redirect(url_for("activos.activar_maquinaria",
+                                    prov=codigo_prov))
+
+    # GET — lista proveedores con anticipos vivos + anticipos del prov elegido
+    prov_sel = (request.args.get("prov") or "").strip().upper() or None
+    # Defensivo si el módulo dolares falla por alguna razón.
+    grupos = []
+    anticipos = []
+    nombres: dict[str, str] = {}
+    try:
+        from modules.dolares import queries as _doq
+        grupos = _doq.anticipos_pendientes_por_proveedor() or []
+        if prov_sel:
+            anticipos = _doq.anticipos_pendientes_de_proveedor(prov_sel) or []
+        # Mapeo de nombres por código.
+        rows = _db.fetch_all(
+            "SELECT codigo_prov, COALESCE(nombre,'') AS nombre "
+            "FROM scintela.proveedor"
+        ) or []
+        nombres = {r["codigo_prov"]: r["nombre"] for r in rows}
+        for g_row in grupos:
+            g_row["nombre"] = nombres.get(g_row["codigo_prov"]) or ""
+    except Exception as e:  # noqa: BLE001
+        flash(f"No pude cargar anticipos: {e}", "warn")
+
+    primera_cuota_default = (date.today() + timedelta(days=90)).isoformat()
+    return render_template(
+        "activos/activar_maquinaria.html",
+        grupos=grupos,
+        prov_sel=prov_sel,
+        anticipos=anticipos,
+        nombres=nombres,
+        hoy=date.today().isoformat(),
+        primera_cuota_default=primera_cuota_default,
+        tipos_canonicos=queries.TIPOS_CANONICOS,
+    )
+
+
 @activos_bp.route("/activos/_api/reordenar", methods=["POST"])
 @requiere_login
 @requiere_permiso("activos.crear")  # mismo permiso que crear, agrupado

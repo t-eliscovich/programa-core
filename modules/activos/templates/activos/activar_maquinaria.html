@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row %}
+
+{% block title %}Activar Maquinaria{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('activos.lista') }}" class="hover:underline text-slate-500">Activos</a> /
+  <strong>Activar Maquinaria</strong>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--xl">
+  <header class="page-header">
+    <h1 class="page-title">Activar Maquinaria</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Convierte anticipos USD de un proveedor en un activo fijo + la deuda
+      residual (si la hay) se carga como N cuotas en posdat. Todo atómico.
+    </p>
+  </header>
+
+  {# ─── Paso 1: elegir proveedor ─────────────────────────────────── #}
+  {% if not prov_sel %}
+    <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+      <h2 class="text-lg font-medium mb-3">Elegí proveedor con anticipos vivos</h2>
+      {% if grupos %}
+        <ul class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {% for g_row in grupos %}
+            <li>
+              <a href="{{ url_for('activos.activar_maquinaria', prov=g_row.codigo_prov) }}"
+                 class="flex items-center justify-between px-3 py-2 rounded border border-slate-200 hover:border-sky-400 hover:bg-sky-50">
+                <div>
+                  <div class="font-mono font-medium">{{ g_row.codigo_prov }}</div>
+                  <div class="text-xs text-slate-500">{{ g_row.nombre or '(sin nombre)' }}</div>
+                </div>
+                <div class="text-right">
+                  <div class="font-mono text-sm">$ {{ g_row.total_usd | num_es }}</div>
+                  <div class="text-xs text-slate-500">{{ g_row.n_anticipos }} anticipo(s)</div>
+                </div>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-sm text-slate-500">No hay proveedores con anticipos vivos.</p>
+      {% endif %}
+    </div>
+  {% else %}
+    {# ─── Paso 2: form completo de activación ─────────────────────── #}
+    <form method="POST" id="activar-form" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="codigo_prov" value="{{ prov_sel }}">
+
+      <div class="bg-sky-50 border border-sky-200 rounded p-3 text-sm">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            Proveedor: <span class="font-mono font-medium">{{ prov_sel }}</span>
+            {% if nombres.get(prov_sel) %}
+              <span class="text-slate-600">— {{ nombres.get(prov_sel) }}</span>
+            {% endif %}
+          </div>
+          <a href="{{ url_for('activos.activar_maquinaria') }}"
+             class="text-xs text-sky-700 hover:underline">← Cambiar proveedor</a>
+        </div>
+      </div>
+
+      {# ── 2a. Lista de anticipos vivos del proveedor ─────────────── #}
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+        <div class="px-3 py-2 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <strong class="text-sm">Anticipos vivos · seleccioná los que se aplican</strong>
+          <span class="text-xs text-slate-600">
+            Seleccionado: <strong id="suma-anticipos" class="font-mono">$ 0,00</strong>
+          </span>
+        </div>
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 text-[10px] uppercase text-slate-500">
+            <tr>
+              <th class="px-2 py-1 w-8 text-center">
+                <input type="checkbox" id="toggle-all" title="Seleccionar todos">
+              </th>
+              <th class="px-2 py-1 text-left">Fecha</th>
+              <th class="px-2 py-1 text-left">Concepto</th>
+              <th class="px-2 py-1 text-right">Importe USD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in anticipos %}
+              <tr class="border-t border-slate-100">
+                <td class="px-2 py-1 text-center">
+                  <input type="checkbox" name="id_dolares" value="{{ a.id_dolares }}"
+                         class="anticipo-chk"
+                         data-importe="{{ a.importe or 0 }}">
+                </td>
+                <td class="px-2 py-1">{{ a.fecha | fecha_es if a.fecha else '' }}</td>
+                <td class="px-2 py-1">{{ a.concepto or '' }}</td>
+                <td class="px-2 py-1 text-right font-mono tabular-nums">{{ a.importe | num_es if a.importe else '' }}</td>
+              </tr>
+            {% else %}
+              {{ empty_row(4, 'Sin anticipos vivos para este proveedor.') }}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {# ── 2b. Datos del activo ───────────────────────────────────── #}
+      <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+        <h3 class="text-sm font-medium text-slate-700 mb-3">Datos de la máquina</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label class="flex flex-col md:col-span-2">
+            <span class="text-xs text-slate-600">Concepto / nombre <span class="text-red-500">*</span></span>
+            <input type="text" name="concepto" maxlength="100" required
+                   placeholder="ej: Telar Sulzer #3"
+                   class="border rounded px-2 py-1 mt-0.5 text-sm">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-slate-600">Tipo <span class="text-red-500">*</span></span>
+            <select name="tipo" required class="border rounded px-2 py-1 mt-0.5 text-sm">
+              {% for code, lbl in tipos_canonicos %}
+                <option value="{{ code }}" {% if code == 'M' %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-slate-600">Valor total USD <span class="text-red-500">*</span></span>
+            <input type="number" step="0.01" min="0.01" name="valor_total" id="valor-total" required
+                   placeholder="0.00"
+                   class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-slate-600">Vida útil (meses) <span class="text-red-500">*</span></span>
+            <input type="number" min="1" step="1" name="vida_util_meses" value="60" required
+                   class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm">
+          </label>
+          <div class="flex flex-col justify-end">
+            <span class="text-[10px] text-slate-500">Cuota mensual depreciación (auto):</span>
+            <span id="cuota-depr" class="font-mono text-sm text-emerald-700">—</span>
+          </div>
+        </div>
+      </div>
+
+      {# ── 2c. Deuda residual + cuotas ────────────────────────────── #}
+      <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 shadow-sm">
+        <h3 class="text-sm font-medium text-amber-900 mb-3">Deuda residual + cuotas</h3>
+        <div class="text-sm mb-3 grid grid-cols-3 gap-3">
+          <div class="bg-white border border-amber-200 rounded px-3 py-2">
+            <div class="text-[10px] uppercase text-slate-500">Valor máquina</div>
+            <div id="resumen-valor" class="font-mono text-base">$ 0,00</div>
+          </div>
+          <div class="bg-white border border-amber-200 rounded px-3 py-2">
+            <div class="text-[10px] uppercase text-slate-500">− Anticipos</div>
+            <div id="resumen-anticipos" class="font-mono text-base">$ 0,00</div>
+          </div>
+          <div class="bg-white border border-amber-300 rounded px-3 py-2">
+            <div class="text-[10px] uppercase text-amber-700">= Deuda residual</div>
+            <div id="resumen-deuda" class="font-mono text-base font-semibold text-amber-900">$ 0,00</div>
+          </div>
+        </div>
+        <div id="deuda-warning" class="hidden mb-3 px-3 py-2 rounded bg-red-100 text-red-800 text-xs">
+          ⚠ Los anticipos superan el valor total. Reducí anticipos o aumentá el valor.
+        </div>
+        <div id="cuotas-block" class="grid grid-cols-1 md:grid-cols-3 gap-3 hidden">
+          <label class="flex flex-col">
+            <span class="text-xs text-amber-900">N° de cuotas <span class="text-red-500">*</span></span>
+            <input type="number" min="1" step="1" name="n_cuotas" value="1"
+                   class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-amber-900">Meses entre cuotas <span class="text-red-500">*</span></span>
+            <input type="number" min="1" step="1" name="meses_entre_cuotas" value="3"
+                   class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-amber-900">A partir de <span class="text-red-500">*</span></span>
+            <input type="date" name="fecha_primera_cuota"
+                   value="{{ primera_cuota_default }}"
+                   class="border rounded px-2 py-1 mt-0.5 text-sm">
+          </label>
+        </div>
+        <div id="cuotas-vacio" class="hidden mt-2 text-xs text-emerald-700">
+          ✓ Sin deuda — no se generarán posdats.
+        </div>
+      </div>
+
+      {# ── 2d. Confirmación ─────────────────────────────────────── #}
+      <div class="flex items-center justify-between pt-2 border-t">
+        <a href="{{ url_for('activos.lista') }}" class="text-sm text-slate-500 hover:text-slate-700">
+          Cancelar
+        </a>
+        <button type="submit" id="btn-submit"
+                class="px-4 py-2 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-700 shadow-sm">
+          Activar máquina
+        </button>
+      </div>
+    </form>
+
+    <script>
+      (function() {
+        const valorEl    = document.getElementById('valor-total');
+        const vidaEl     = document.querySelector('input[name="vida_util_meses"]');
+        const cuotaDepEl = document.getElementById('cuota-depr');
+        const sumaEl     = document.getElementById('suma-anticipos');
+        const resValor   = document.getElementById('resumen-valor');
+        const resAnt     = document.getElementById('resumen-anticipos');
+        const resDeu     = document.getElementById('resumen-deuda');
+        const warnEl     = document.getElementById('deuda-warning');
+        const cuotasBlk  = document.getElementById('cuotas-block');
+        const cuotasVac  = document.getElementById('cuotas-vacio');
+        const btnSubmit  = document.getElementById('btn-submit');
+        const toggleAll  = document.getElementById('toggle-all');
+
+        const fmt2 = n => (n || 0).toLocaleString('es-EC', {
+          minimumFractionDigits: 2, maximumFractionDigits: 2,
+        });
+
+        function sumaAnticipos() {
+          let s = 0;
+          document.querySelectorAll('.anticipo-chk:checked').forEach(cb => {
+            s += parseFloat(cb.dataset.importe) || 0;
+          });
+          return s;
+        }
+
+        function recalcular() {
+          const valor = parseFloat(valorEl.value) || 0;
+          const vida  = parseInt(vidaEl.value, 10) || 0;
+          const sumaA = sumaAnticipos();
+          const deuda = Math.round((valor - sumaA) * 100) / 100;
+
+          sumaEl.textContent  = '$ ' + fmt2(sumaA);
+          resValor.textContent = '$ ' + fmt2(valor);
+          resAnt.textContent   = '$ ' + fmt2(sumaA);
+          resDeu.textContent   = '$ ' + fmt2(deuda);
+
+          if (vida > 0 && valor > 0) {
+            cuotaDepEl.textContent = '$ ' + fmt2(valor / vida) + ' / mes';
+          } else {
+            cuotaDepEl.textContent = '—';
+          }
+
+          // Estados de validación
+          const anticiposExceden = deuda < -0.005;
+          warnEl.classList.toggle('hidden', !anticiposExceden);
+          btnSubmit.disabled = anticiposExceden || valor <= 0;
+          btnSubmit.classList.toggle('opacity-50', btnSubmit.disabled);
+          btnSubmit.classList.toggle('cursor-not-allowed', btnSubmit.disabled);
+
+          // Mostrar bloque de cuotas si deuda > 0; mensaje "sin deuda" si = 0.
+          if (deuda > 0.005) {
+            cuotasBlk.classList.remove('hidden');
+            cuotasVac.classList.add('hidden');
+            // Si n_cuotas vacío, default 1.
+            const nCuoEl = document.querySelector('input[name="n_cuotas"]');
+            if (nCuoEl && !nCuoEl.value) nCuoEl.value = '1';
+          } else {
+            cuotasBlk.classList.add('hidden');
+            cuotasVac.classList.toggle('hidden', anticiposExceden);
+          }
+        }
+
+        // Toggle all anticipos
+        if (toggleAll) {
+          toggleAll.addEventListener('change', () => {
+            document.querySelectorAll('.anticipo-chk').forEach(cb => {
+              cb.checked = toggleAll.checked;
+            });
+            recalcular();
+          });
+        }
+        document.querySelectorAll('.anticipo-chk').forEach(cb => {
+          cb.addEventListener('change', recalcular);
+        });
+        if (valorEl) valorEl.addEventListener('input', recalcular);
+        if (vidaEl)  vidaEl.addEventListener('input', recalcular);
+
+        // Estado inicial.
+        recalcular();
+      })();
+    </script>
+  {% endif %}
+</div>
+{% endblock %}

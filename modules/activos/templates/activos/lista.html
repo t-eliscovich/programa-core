@@ -52,6 +52,13 @@
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
         Nuevo activo
       </a>
+      {# TMT 2026-05-20 — wizard nuevo de activación de maquinaria. #}
+      <a href="{{ url_for('activos.activar_maquinaria') }}"
+         class="inline-flex items-center gap-1.5 rounded-md bg-sky-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-sky-700 shadow-sm"
+         title="Convertir anticipos en activo + posdats de la deuda residual">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3h18v18H3z M9 9h6v6H9z"/></svg>
+        Activar máquina
+      </a>
     {% endif %}
     <a href="{{ url_for('activos.lista', q=q, tipo=tipo, solo_activos=('1' if solo_activos else None), export='csv') }}"
        class="inline-flex items-center rounded-md bg-white border border-slate-300 text-slate-700 px-3 py-1.5 text-sm hover:bg-slate-50">

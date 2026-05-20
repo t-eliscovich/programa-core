@@ -1614,3 +1614,44 @@ Son transiciones POST simples — sin side-effects automáticos (no stop al clie
 ### YY KPIs corregidos: Importe + Cuota mensual (no diaria) (2026-05-20 patch)
 
 Iteración 2 de los KPIs de la tab YY. La dueña pidió: "los kpi totales era de las columans que ya teniamos". Implementación inicial mostraba "Total diario = mensual/30" (derivado). Cambio: ahora los KPIs son `SUM(importe)` y `SUM(cuota_mensual)` — los totales de las columnas VISIBLES en la tabla. Más intuitivo (suma de lo que ves, no derivado).
+
+### Activación de Maquinaria (2026-05-20)
+
+Pedido dueña — wizard nuevo en `/activos/activar-maquinaria` que reemplaza el workflow legacy dBase BANCOS.PRG. Convierte anticipos USD + deuda residual en un activo + N posdats.
+
+**Use case canónico:** compré una máquina al proveedor MY por $110. Di anticipo $30 + flete/seguros $10 (total $40 en scintela.dolares con `cta='MY'`, `st=''`). Llega la máquina → vida útil 5 años → deuda residual $70 en 4 cuotas trimestrales.
+
+**Inputs del form:**
+- Proveedor (se selecciona desde lista de los que tienen anticipos vivos).
+- Checkboxes sobre anticipos vivos → suma en vivo.
+- Concepto / nombre de la máquina (ej: "Telar Sulzer #3").
+- Tipo (T/I/M/K/C — código canónico).
+- Valor total USD de la máquina.
+- Vida útil meses (default 60).
+- **Deuda residual: NO se ingresa, se calcula como residual** = `valor_total − SUM(anticipos)` (pedido literal: "introducimos total de la deuda en activos y la deuda sea residual").
+- Si deuda > 0 → n_cuotas + meses_entre_cuotas + fecha_primera_cuota.
+
+**Validación estricta en backend (`activos.queries.activar_maquinaria`)**:
+- valor_total > 0, vida_util > 0.
+- Anticipos todos del MISMO proveedor + todos vivos (`st = ''`).
+- `SUM(anticipos) <= valor_total` (si superan, error "no se pueden activar con cambio").
+- Deuda calculada server-side (no se confía en el cliente).
+- Si deuda > 0: n_cuotas >= 1, meses_entre >= 1, fecha_primera_cuota requerida.
+
+**Side effects atómicos (UNA transacción):**
+1. `UPDATE scintela.dolares SET st='M'` (consumido por Maquinaria — distinto de 'B'=BAP/compra, para auditar el origen).
+2. `INSERT scintela.activos` con `inicial=valor_total`, `cuota=valor/vida_util`, `id_proveedor`, `fecha=today`.
+3. `INSERT scintela.posdat × N` (una por cuota). `fechad = fecha_primera_cuota + i × meses_entre`. Importe distribuido: base = `round(deuda/N, 2)`, la última absorbe el resto del round (la suma exacta = deuda).
+4. `mov_doble registrar(tipo='activacion_maquinaria', batch_id=UUID)` con metadata completa: ids_anticipos, ids_posdat, valor, deuda, etc. → reverso atómico desde /historial (TBD).
+
+**Tests** (`tests/test_activos_activar_maquinaria.py`): 11 tests con mock pattern (sin DB), cubren las 9 invariantes + happy path con/sin deuda + distribución de cuotas con redondeo. 11/11 verde.
+
+### Activación de Hilado — ya existía
+
+El flujo de hilado ya estaba implementado como `dolares.convertir_a_compra` (BAP — Boleta de Aplicación de Pagos, replica BANCOS.PRG:733-819). Vive en `/dolares/convertir-lote`:
+- Lista anticipos vivos del proveedor.
+- Pedís kg + tipo_compra (H/K/Q/C).
+- Marca anticipos `st='B'` + crea compra con `comprobante='BAP<seq>'`, `importe = SUM`, `kg`, `cuenta_pagada='A'`.
+- mov_doble `bap_anticipo_a_compra`.
+
+No requiere cambios — la dueña ya lo usa.

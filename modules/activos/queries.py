@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+from periodo_guard import asegurar_fecha_abierta
 
 # Mapeo canónico de tipo → orden + label.
 # TMT 2026-05-20 — pedido dueña: códigos de una letra T/I/M/K/C y orden
@@ -448,6 +449,264 @@ def reordenar(ids_en_orden: list[int], *, usuario: str = "web") -> int:
                 (idx, id_activo),
             )
     return len(ids_clean)
+
+
+def _sumar_meses(d: date, n: int) -> date:
+    """Suma N meses a una fecha. Si el día destino no existe en el mes
+    (ej: 31 de febrero), cae al último día del mes."""
+    from calendar import monthrange
+    total_m = d.month - 1 + n
+    y = d.year + total_m // 12
+    m = total_m % 12 + 1
+    last = monthrange(y, m)[1]
+    return date(y, m, min(d.day, last))
+
+
+def activar_maquinaria(
+    *,
+    codigo_prov: str,
+    ids_anticipos: list[int],
+    concepto: str,
+    tipo: str,
+    valor_total: float,
+    vida_util_meses: int,
+    n_cuotas: int,
+    meses_entre_cuotas: int,
+    fecha_primera_cuota: date | None,
+    usuario: str = "web",
+) -> dict:
+    """Activa una máquina recién llegada en una sola transacción atómica.
+
+    Pedido dueña 2026-05-20: el flujo de "activación de maquinaria" es:
+      1. Marcar los anticipos USD seleccionados como consumidos (`st='M'`).
+      2. Insertar el activo (scintela.activos) con valor=valor_total y
+         cuota mensual = valor_total / vida_util_meses.
+      3. Insertar N posdats (una por cuota) escalonadas cada
+         `meses_entre_cuotas`, sumando la **deuda residual**.
+      4. Registrar mov_doble linkeado para audit + reverso futuro.
+
+    **La deuda es residual** (no se ingresa): `deuda = valor_total - SUM(anticipos)`.
+    El form muestra el cálculo en vivo; este queries lo recomputa
+    server-side para no confiar en lo que mande el cliente.
+
+    Validaciones:
+      - Anticipos todos del MISMO proveedor + todos vivos.
+      - `valor_total >= SUM(anticipos)` (si no, error: "los anticipos
+        superan el valor — no se pueden activar máquinas con cambio").
+      - Si la deuda > 0: requiere `n_cuotas >= 1` y `fecha_primera_cuota`.
+      - Si la deuda == 0: no se crean posdats.
+
+    Devuelve `{id_activos, ids_posdat: [...], n_anticipos_consumidos,
+              valor_total, deuda_total, n_cuotas}`.
+    """
+    import db as _db
+
+    # ── 0. Sanitizar y validar inputs básicos ───────────────────────────
+    codigo_prov = (codigo_prov or "").strip().upper()
+    if not codigo_prov:
+        raise ValueError("Proveedor requerido.")
+    concepto = (concepto or "").strip()
+    if not concepto:
+        raise ValueError("Concepto / nombre de la máquina requerido.")
+    tipo = (tipo or "").strip().upper()[:3]
+    if not tipo:
+        raise ValueError("Tipo requerido (T/I/M/K/C).")
+    valor_total = float(valor_total or 0)
+    vida_util_meses = int(vida_util_meses or 0)
+    n_cuotas = int(n_cuotas or 0)
+    meses_entre_cuotas = int(meses_entre_cuotas or 0)
+    if valor_total <= 0:
+        raise ValueError("Valor total de la máquina debe ser > 0.")
+    if vida_util_meses <= 0:
+        raise ValueError("Vida útil debe ser > 0 meses.")
+
+    ids_unique = sorted({int(i) for i in ids_anticipos if i})
+    hoy = date.today()
+    asegurar_fecha_abierta(hoy)
+
+    with _db.tx() as conn:
+        # ── 1. Validar proveedor ────────────────────────────────────────
+        prov_row = _db.fetch_one(
+            "SELECT id_proveedor, codigo_prov, COALESCE(nombre,'') AS nombre "
+            "FROM scintela.proveedor WHERE codigo_prov = %s",
+            (codigo_prov,), conn=conn,
+        )
+        if not prov_row:
+            raise ValueError(f"Proveedor {codigo_prov!r} no existe.")
+        id_proveedor = int(prov_row["id_proveedor"])
+
+        # ── 2. Validar anticipos: mismo prov + todos vivos + suma ─────
+        suma_anticipos = 0.0
+        if ids_unique:
+            placeholder = ",".join(["%s"] * len(ids_unique))
+            rows = _db.fetch_all(
+                f"""
+                SELECT id_dolares, cta, importe, st
+                  FROM scintela.dolares
+                 WHERE id_dolares IN ({placeholder})
+                 ORDER BY id_dolares
+                 FOR UPDATE
+                """,
+                tuple(ids_unique), conn=conn,
+            ) or []
+            if len(rows) != len(ids_unique):
+                faltan = set(ids_unique) - {int(r["id_dolares"]) for r in rows}
+                raise ValueError(f"No encontré anticipos: {sorted(faltan)}.")
+            for r in rows:
+                cta_r = (r.get("cta") or "").strip().upper()
+                if cta_r != codigo_prov:
+                    raise ValueError(
+                        f"Anticipo #{r['id_dolares']} es del proveedor "
+                        f"{cta_r!r}, no {codigo_prov!r}."
+                    )
+                if (r.get("st") or "").strip():
+                    raise ValueError(
+                        f"Anticipo #{r['id_dolares']} ya está consumido "
+                        f"(st='{r.get('st')}')."
+                    )
+                suma_anticipos += float(r.get("importe") or 0)
+
+        # ── 3. Deuda residual: valor - anticipos. NO viene del cliente. ──
+        deuda_total = round(valor_total - suma_anticipos, 2)
+        if deuda_total < -0.005:
+            raise ValueError(
+                f"Los anticipos ({suma_anticipos:.2f}) superan el valor "
+                f"total ({valor_total:.2f}). No se puede activar una "
+                f"máquina con cambio a favor del proveedor."
+            )
+        # Snap a cero por si la diferencia es < 0.5 cent (rounding).
+        if abs(deuda_total) < 0.005:
+            deuda_total = 0.0
+
+        # Si hay deuda, validar parámetros de las cuotas.
+        if deuda_total > 0:
+            if n_cuotas < 1:
+                raise ValueError("Hay deuda residual — n° de cuotas debe ser >= 1.")
+            if meses_entre_cuotas < 1:
+                raise ValueError("Meses entre cuotas debe ser >= 1.")
+            if not fecha_primera_cuota:
+                raise ValueError("Fecha de primera cuota requerida.")
+
+        # ── 4. Marcar anticipos como consumidos (st='M') ───────────────
+        if ids_unique:
+            _db.execute(
+                f"""
+                UPDATE scintela.dolares
+                   SET st = 'M',
+                       usuario_modifica = %s,
+                       fecha_modifica = CURRENT_TIMESTAMP
+                 WHERE id_dolares IN ({",".join(["%s"] * len(ids_unique))})
+                """,
+                (usuario[:50], *ids_unique),
+                conn=conn,
+            )
+
+        # ── 5. INSERT activo ────────────────────────────────────────────
+        cuota_mensual = round(valor_total / vida_util_meses, 2)
+        activo_row = _db.execute_returning(
+            """
+            INSERT INTO scintela.activos
+                (fecha, concepto, tipo, inicial, amortizac, amortimes,
+                 valor, cuota, vida_util, id_proveedor, usuario_crea)
+            VALUES (%s, %s, %s, %s, 0, 0, %s, %s, %s, %s, %s)
+            RETURNING id_activos
+            """,
+            (
+                hoy, concepto[:100], tipo, valor_total,
+                valor_total, cuota_mensual, vida_util_meses,
+                id_proveedor, usuario[:50],
+            ),
+            conn=conn,
+        ) or {}
+        id_activos = int(activo_row.get("id_activos") or 0)
+
+        # ── 6. INSERT N posdats (uno por cuota) ─────────────────────────
+        ids_posdat: list[int] = []
+        if deuda_total > 0 and n_cuotas > 0:
+            # Importe por cuota: distribuir exacto. La última absorbe
+            # el resto del round.
+            base = round(deuda_total / n_cuotas, 2)
+            ajuste_ultima = round(deuda_total - base * n_cuotas, 2)
+            # Próximo num correlativo para posdat.
+            row_n = _db.fetch_one(
+                "SELECT COALESCE(MAX(num), 0) + 1 AS sig FROM scintela.posdat",
+                conn=conn,
+            )
+            num_base = int(row_n["sig"]) if row_n else 1
+            for i in range(n_cuotas):
+                num_i = num_base + i
+                fechad_i = _sumar_meses(fecha_primera_cuota, i * meses_entre_cuotas)
+                imp_i = base + (ajuste_ultima if i == n_cuotas - 1 else 0)
+                concepto_i = (
+                    f"Cuota {i + 1}/{n_cuotas} maq {concepto}"
+                )[:100]
+                pr = _db.execute_returning(
+                    """
+                    INSERT INTO scintela.posdat
+                        (num, fecha, fechad, prov, importe, banc, concepto,
+                         usuario_crea)
+                    VALUES (%s, %s, %s, %s, %s, 0, %s, %s)
+                    RETURNING id_posdat
+                    """,
+                    (num_i, hoy, fechad_i, codigo_prov, imp_i,
+                     concepto_i, usuario[:50]),
+                    conn=conn,
+                ) or {}
+                if pr.get("id_posdat"):
+                    ids_posdat.append(int(pr["id_posdat"]))
+
+        # ── 7. mov_doble del evento atómico ─────────────────────────────
+        try:
+            import uuid as _uuid
+
+            import mov_doble as _md
+            batch_id = str(_uuid.uuid4())
+            # Una fila resumen del evento (audit completo).
+            _md.registrar(
+                conn=conn,
+                tipo="activacion_maquinaria",
+                origen_table="activos",
+                origen_id=id_activos,
+                destino_table="activos",
+                destino_id=id_activos,
+                importe=valor_total,
+                fecha=hoy,
+                concepto=(
+                    f"Activación máquina {concepto} · proveedor {codigo_prov} · "
+                    f"valor ${valor_total:.2f} · anticipos ${suma_anticipos:.2f} · "
+                    f"deuda ${deuda_total:.2f} en {n_cuotas} cuotas"
+                )[:200],
+                usuario=usuario,
+                batch_id=batch_id,
+                metadata={
+                    "codigo_prov":      codigo_prov,
+                    "id_activos":       id_activos,
+                    "valor_total":      valor_total,
+                    "anticipos":        suma_anticipos,
+                    "deuda_total":      deuda_total,
+                    "n_cuotas":         n_cuotas,
+                    "meses_entre":      meses_entre_cuotas,
+                    "ids_anticipos":    ids_unique,
+                    "ids_posdat":       ids_posdat,
+                    "vida_util_meses":  vida_util_meses,
+                    "cuota_mensual":    cuota_mensual,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            # mov_doble es para audit/reverso — si falla NO abortamos
+            # la transacción (la activación ya quedó). Pero burbujamos
+            # por si es un error inesperado.
+            raise
+
+    return {
+        "id_activos":             id_activos,
+        "ids_posdat":             ids_posdat,
+        "n_anticipos_consumidos": len(ids_unique),
+        "valor_total":            valor_total,
+        "deuda_total":            deuda_total,
+        "n_cuotas":               n_cuotas,
+        "cuota_mensual":          cuota_mensual,
+    }
 
 
 def correr_amortizacion(usuario: str = "web") -> dict:
