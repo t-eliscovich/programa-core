@@ -1699,6 +1699,11 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
 
     Devuelve {v1..v9, gtej_sin_dtj, gtin_sin_dcc, gs_sin_deprcar}.
     """
+    # TMT 2026-05-20 PASADA 6 Federico #10 — defensive: excluir anulados
+    # (stat 'X') del rollup. Antes la query no filtraba, lo que podía
+    # mostrar xgast anulados (legacy). Federico reportó que un $500 no
+    # aparecía en V9 — verificar si el xgast no quedó stat='X' por algún
+    # reverse no sincronizado.
     rows_xgast = db.fetch_all(
         """
         SELECT COALESCE(num, 0) AS num,
@@ -1706,6 +1711,7 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         FROM scintela.xgast
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+          AND COALESCE(stat, '') NOT IN ('X', 'Y')
         GROUP BY 1
         """
     ) or []

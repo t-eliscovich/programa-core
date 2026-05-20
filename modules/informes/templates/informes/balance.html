@@ -55,6 +55,15 @@
   .informe-balance td.num-cell {
     text-align: right; padding: 8px 12px;
   }
+  /* TMT 2026-05-20 PASADA 6 Federico #2 — sumandos (cheques+facturas,
+     maquinaria+terrenos) corren una "columna" a la izquierda para que
+     visualmente NO se mezclen con la columna del subtotal. */
+  .informe-balance td.num-cell--sumando {
+    padding-right: 36px;
+    font-size: 12px;
+    color: rgb(148 163 184);
+  }
+  .dark .informe-balance td.num-cell--sumando { color: rgb(100 116 139); }
   .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
   /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
@@ -269,10 +278,8 @@
           </tr>
         </tbody>
       </table>
-      <p class="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100 dark:border-slate-800 font-sans">
-        Utilidad = (PATR − PATANT) + dividendos del mes (delta patrimonio +
-        retiros). Proyección: <code class="font-mono">scintela.iniciales</code>.
-      </p>
+      {# TMT 2026-05-20 PASADA 6 Federico #3 — leyenda "Utilidad = (PATR-PATANT)+dividendos…"
+         eliminada. La fórmula sigue calculándose intacta, solo se quitó el texto. #}
     </div>
     {% endif %}
 
@@ -302,11 +309,11 @@
           </tr>
           <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('cheques.lista') }}" class="hover:text-blue-600 hover:underline">Cheques</a></td>
-            <td class="num-cell">{{ b.totc | num_es(0) }}</td>
+            <td class="num-cell num-cell--sumando">{{ b.totc | num_es(0) }}</td>
           </tr>
           <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('facturas.lista') }}" class="hover:text-blue-600 hover:underline">Facturas</a></td>
-            <td class="num-cell">{{ b.totf | num_es(0) }}</td>
+            <td class="num-cell num-cell--sumando">{{ b.totf | num_es(0) }}</td>
           </tr>
           {# TMT 2026-05-20 — Subtotal Cartera (= cheques + facturas) con
              link a /cartera. Pedido dueña: "Sumar cheques mas facturas y
@@ -339,11 +346,11 @@
           </tr>
           <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">Maq/Equip.</a></td>
-            <td class="num-cell">{{ b.umaq | num_es(0) }}</td>
+            <td class="num-cell num-cell--sumando">{{ b.umaq | num_es(0) }}</td>
           </tr>
           <tr class="fila-dato">
             <td class="label-cell"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">Terr/Edif/Ins.</a></td>
-            <td class="num-cell">{{ b.uact | num_es(0) }}</td>
+            <td class="num-cell num-cell--sumando">{{ b.uact | num_es(0) }}</td>
           </tr>
           {# TMT 2026-05-20 — Subtotal Terreno + Maquinaria (pedido dueña:
              "Tambien un subtotal Terreno+Maquinaria para ver en Activos"). #}

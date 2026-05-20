@@ -19,7 +19,7 @@ TMT 2026-05-13.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import db
 
@@ -354,8 +354,17 @@ def compras_mes_por_tipo(meses_atras: int = 3) -> list[dict]:
     Sirve para que la dueña vea el "qué entró últimamente" de un vistazo,
     como contexto del stock actual.
     """
-    desde = (date.today().replace(day=1) - timedelta(days=meses_atras * 31))
-    desde = desde.replace(day=1)
+    # TMT 2026-05-20 PASADA 3 — month math fix.
+    # Antes: `today.replace(day=1) - timedelta(days=meses*31)` salta más
+    # días de los que debería cuando hay meses cortos (ej. dic-feb).
+    # Ahora retrocedemos mes a mes para landing exacto en el día 1.
+    _hoy = date.today().replace(day=1)
+    _yr, _mo = _hoy.year, _hoy.month
+    _mo -= meses_atras
+    while _mo <= 0:
+        _mo += 12
+        _yr -= 1
+    desde = date(_yr, _mo, 1)
     return db.fetch_all(
         """
         SELECT COALESCE(NULLIF(TRIM(UPPER(c.tipo)), ''), '?') AS tipo,

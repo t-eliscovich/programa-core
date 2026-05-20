@@ -80,9 +80,6 @@ def crear(
     """
     asegurar_fecha_abierta(fecha)
 
-    if numf is None:
-        numf = proximo_numf()
-
     # Vencimiento por defecto = fecha + pago_del_cliente días (si hay)
     if vencimiento is None:
         row = db.fetch_one(
@@ -98,6 +95,19 @@ def crear(
         vencimiento = fecha + timedelta(days=dias)
 
     with db.tx() as conn:
+        # TMT 2026-05-20 PASADA 3 — race-condition fix.
+        # Antes: numf = MAX(numf)+1 fuera de tx. Dos requests concurrentes
+        # podían asignar el mismo numf. Con advisory lock por la tabla
+        # entera (clave 4242 = "factura.numf"), solo una transacción a la
+        # vez recalcula el siguiente. El lock se libera al COMMIT/ROLLBACK.
+        if numf is None:
+            with conn.cursor() as _cur:
+                _cur.execute("SELECT pg_advisory_xact_lock(4242)")
+                _cur.execute(
+                    "SELECT COALESCE(MAX(numf), 0) + 1 FROM scintela.factura"
+                )
+                numf = int(_cur.fetchone()[0])
+
         row = db.execute_returning(
             """
             INSERT INTO scintela.factura

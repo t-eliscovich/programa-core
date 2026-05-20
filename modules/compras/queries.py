@@ -859,6 +859,74 @@ def convertir_anticipo(
     }
 
 
+def total_buscar(
+    q: str = "",
+    desde: str | None = None,
+    hasta: str | None = None,
+    incluir_anuladas: bool = False,
+    vista: str = "todas",
+    kg_filter: str | None = None,
+) -> dict:
+    """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
+
+    TMT 2026-05-20 PASADA 6 Federico #15 — antes el total se calculaba
+    sumando `filas` que ya venían limitadas a 500. Cuando había >500
+    compras en el filtro, el total no se movía con cambios del filtro.
+    Ahora va una query separada sin LIMIT.
+    """
+    q = (q or "").strip()
+    like = f"%{q}%" if q else None
+    row = db.fetch_one(
+        """
+        SELECT COUNT(*)                    AS n,
+               COALESCE(SUM(c.importe), 0) AS total,
+               COALESCE(SUM(c.kg), 0)      AS total_kg
+        FROM scintela.compra c
+        LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
+        WHERE (%(incluir_anuladas)s OR COALESCE(c.stat, '') <> 'Y')
+          AND COALESCE(c.stat, '') <> 'Y'
+          AND (%(q)s IS NULL
+               OR UPPER(c.codigo_prov) LIKE UPPER(%(like)s)
+               OR UPPER(COALESCE(c.comprobante,'')) LIKE UPPER(%(like)s)
+               OR UPPER(COALESCE(c.concepto,'')) LIKE UPPER(%(like)s)
+               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s)
+               OR CAST(c.numero AS TEXT) LIKE %(like)s)
+          AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
+          AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          AND (
+                %(kg_filter)s IS NULL
+             OR (%(kg_filter)s = 'gt0' AND COALESCE(c.kg, 0) > 0.01)
+             OR (%(kg_filter)s = 'eq0' AND COALESCE(c.kg, 0) <= 0.01)
+          )
+          AND (
+                %(vista)s = 'todas'
+             OR (%(vista)s = 'produccion'
+                 AND UPPER(COALESCE(c.tipo, '')) = 'K'
+                 AND COALESCE(c.kg, 0) > 0.01)
+             OR (%(vista)s = 'anticipos'
+                 AND UPPER(COALESCE(c.tipo, '')) = 'A')
+             OR (%(vista)s = 'compras'
+                 AND (UPPER(COALESCE(c.tipo, '')) IN ('H', 'Q', 'C')
+                      OR (UPPER(COALESCE(c.tipo, '')) = 'K'
+                          AND COALESCE(c.kg, 0) <= 0.01)
+                      OR COALESCE(c.tipo, '') = ''))
+          )
+        """,
+        {
+            "q": q or None, "like": like,
+            "desde": desde or None, "hasta": hasta or None,
+            "incluir_anuladas": bool(incluir_anuladas),
+            "vista": (vista or "todas").lower(),
+            "kg_filter": kg_filter,
+        },
+    )
+    return {
+        "n":        int(row["n"] or 0) if row else 0,
+        "total":    float(row["total"] or 0) if row else 0.0,
+        "total_kg": float(row["total_kg"] or 0) if row else 0.0,
+    }
+
+
 def buscar(
     q: str = "",
     desde: str | None = None,

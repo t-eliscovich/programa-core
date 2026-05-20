@@ -249,6 +249,54 @@
 </div>
 {% endmacro %}
 
+{#
+   ─────────────── FILTROS LISTA — Buscar + Fecha + Acciones ───────────────
+   TMT 2026-05-20 PASADA 4 (DRY): consolidación del formulario de filtros
+   que aparece idéntico en 15+ pantallas (caja, bancos, cheques, compras,
+   facturas, gastos, posdat, proformas, retenciones, retiros, dolares,
+   historial, bitacora, capital, anticipos).
+
+   Uso:
+     {{ filtros_fecha(q=q, desde=desde, hasta=hasta,
+                      placeholder='Cliente, factura…',
+                      extras_html=botones_csv_imprimir_etc) }}
+
+   `extras_html` se renderiza con |safe a la derecha del botón "Filtrar".
+   `mes_actual_url` opcional: muestra botón "Mes actual" que setea desde=
+   primer día del mes y hasta=hoy (TMT 2026-05-20 PASADA 6 Federico #6/#16).
+#}
+{% macro filtros_fecha(q='', desde=None, hasta=None, placeholder='Buscar…',
+                       label_q='Buscar', mes_actual_url=None,
+                       extras_html='', method='get', action='') %}
+<form method="{{ method }}" {% if action %}action="{{ action }}"{% endif %}
+      class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  {% if q is not none %}
+  <div>
+    <label class="block text-xs text-slate-500 mb-1">{{ label_q }}</label>
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="{{ placeholder }}"
+           class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+  </div>
+  {% endif %}
+  <div>
+    <label class="block text-xs text-slate-500 mb-1">Desde</label>
+    <input type="date" name="desde" value="{{ desde or '' }}"
+           class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+  </div>
+  <div>
+    <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+    <input type="date" name="hasta" value="{{ hasta or '' }}"
+           class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+  </div>
+  <button type="submit" class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+  {% if mes_actual_url %}
+    <a href="{{ mes_actual_url }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+       title="Setea desde=día 1 del mes actual, hasta=hoy">Mes actual</a>
+  {% endif %}
+  {% if extras_html %}{{ extras_html | safe }}{% endif %}
+</form>
+{% endmacro %}
+
 {# Colored pill for saldo/delta values. Negative = red, positive = emerald, zero = slate. #}
 {% macro saldo_pill(valor, mostrar_cero=True) %}
 {% set v = (valor or 0) | float %}

@@ -139,6 +139,13 @@
       </select>
     </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
+    {# TMT 2026-05-20 PASADA 6 Federico #16 — botón "Mes actual" en compras. #}
+    {% set _hoy = g.now.date() if g.now else None %}
+    {% if _hoy %}
+      <a href="{{ url_for('compras.lista', q=q, desde=_hoy.replace(day=1).isoformat(), hasta=_hoy.isoformat(), kg=kg_filter) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+         title="Setea desde=día 1 del mes actual, hasta=hoy">Mes actual</a>
+    {% endif %}
   </form>
 
   {% if error %}

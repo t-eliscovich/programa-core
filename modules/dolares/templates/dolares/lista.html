@@ -126,13 +126,28 @@
 {% from "_ui.html" import page_hero %}
 {% block content %}
 <div class="max-w-full anticipos-page">
-  {% set _total_vivos = (resumen.total_vivos | float) if (resumen and resumen.get('total_vivos') is not none) else 0 %}
-  {% set _n_vivos = (resumen.n_vivos | int) if (resumen and resumen.get('n_vivos') is not none) else 0 %}
+  {# TMT 2026-05-20 PASADA 6 Federico #7 — hero KPI reactivo al filtro.
+     Antes mostraba siempre el universo (resumen.total_vivos). Si Federico
+     filtra por cuenta, ahora muestra el subtotal de las filas filtradas
+     y agrega un caption "filtrado de TOTAL". #}
+  {% set _filtro_anticipos_activo = (cta or desde or hasta) %}
+  {% set _total_universo = (resumen.total_vivos | float) if (resumen and resumen.get('total_vivos') is not none) else 0 %}
+  {% set _n_universo = (resumen.n_vivos | int) if (resumen and resumen.get('n_vivos') is not none) else 0 %}
+  {% if _filtro_anticipos_activo %}
+    {% set _subtotal_filtrado = filas | map(attribute='importe') | map('float') | sum %}
+    {% set _total_vivos = _subtotal_filtrado %}
+    {% set _n_vivos = filas | length %}
+    {% set _hero_extra = '· ' ~ (_n_vivos | string) ~ ' filtrados de ' ~ (_n_universo | string) ~ ' · universo US$ ' ~ (_total_universo | num_es(0)) %}
+  {% else %}
+    {% set _total_vivos = _total_universo %}
+    {% set _n_vivos = _n_universo %}
+    {% set _hero_extra = '· ' ~ (_n_vivos | string) ~ ' anticipos vivos' %}
+  {% endif %}
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
     {{ page_hero(
         'Anticipos USD',
         kpi_valor=('US$ ' ~ (_total_vivos | num_es(0))),
-        kpi_extra='· ' ~ (_n_vivos | string) ~ ' anticipos vivos'
+        kpi_extra=_hero_extra
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
       {# TMT 2026-05-20 — botones explícitos para los 2 workflows que

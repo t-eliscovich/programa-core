@@ -2715,6 +2715,9 @@ def total_buscar(
     estado: str = "todos",
     desde: str | None = None,
     hasta: str | None = None,
+    cliente: str | None = None,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
 ) -> dict:
     """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
 
@@ -2754,6 +2757,12 @@ def total_buscar(
           AND (%(desde)s::date IS NULL OR COALESCE(c.fechad, c.fecha) >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR COALESCE(c.fechad, c.fecha) <= %(hasta)s::date)
           AND (%(stats)s::text[] IS NULL OR c.stat = ANY(%(stats)s::text[]))
+          -- TMT 2026-05-20 PASADA 6 Federico #8 — total_buscar ahora
+          -- recibe cliente/monto_min/monto_max para que el hero KPI
+          -- refleje el subset real cuando se filtra por cliente.
+          AND (%(cliente)s::text IS NULL OR UPPER(COALESCE(c.codigo_cli, '')) = UPPER(%(cliente)s))
+          AND (%(monto_min)s::numeric IS NULL OR COALESCE(c.importe, 0) >= %(monto_min)s)
+          AND (%(monto_max)s::numeric IS NULL OR COALESCE(c.importe, 0) <= %(monto_max)s)
           -- Excluir reversados del total. Pedido TMT 2026-05-14.
           AND COALESCE(c.stat, '') <> 'X'
         """,
@@ -2761,6 +2770,9 @@ def total_buscar(
             "q": q or None, "like": like,
             "desde": desde or None, "hasta": hasta or None,
             "stats": list(stats) if stats else None,
+            "cliente": (cliente or None),
+            "monto_min": monto_min,
+            "monto_max": monto_max,
         },
     )
     return {

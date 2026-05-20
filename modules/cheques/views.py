@@ -1965,7 +1965,14 @@ def lista():
     # del filtro, no hay diferencia. Si están limitadas (truncado), el
     # template muestra "Mostrando X de N · Total $T".
     try:
-        agg = queries.total_buscar(q, estado, desde, hasta)
+        # TMT 2026-05-20 PASADA 6 Federico #8 — pasar cliente/monto al
+        # total_buscar para que el hero KPI refleje el filtro real.
+        agg = queries.total_buscar(
+            q, estado, desde, hasta,
+            cliente=cliente,
+            monto_min=monto_min,
+            monto_max=monto_max,
+        )
         total = agg["total"]
         n_total = agg["n"]
     except Exception:

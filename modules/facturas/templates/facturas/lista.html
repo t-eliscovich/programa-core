@@ -213,10 +213,12 @@
           <th class="px-3 py-3 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
           <th class="px-3 py-3 text-left font-medium">Cliente</th>
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Kg</th>
+          {# TMT 2026-05-20 PASADA 6 (Federico #13): orden correcto =
+             IMPORTE | ABONO | SALDO | ACUM | STAT. #}
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-3 py-3 text-right font-medium acum-col" title="Total facturado corrido por fecha (ascendente)" data-no-sort>Acum.</th>
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Saldo</th>
+          <th class="px-3 py-3 text-right font-medium acum-col" title="Total facturado corrido por fecha (ascendente)" data-no-sort>Acum.</th>
           <th class="px-3 py-3 text-left font-medium">Stat</th>
         </tr>
       </thead>
@@ -234,9 +236,9 @@
           </td>
           <td class="px-3 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-3 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
           <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
         </tr>
         {% else %}

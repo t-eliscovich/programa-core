@@ -415,10 +415,23 @@ def lista():
             filename="compras.csv",
         )
 
-    total_importe = sum(float(r["importe"] or 0) for r in filas
-                        if (r.get("stat") or "").upper() != "Y")
-    total_kg = sum(float(r["kg"] or 0) for r in filas
-                   if (r.get("stat") or "").upper() != "Y")
+    # TMT 2026-05-20 PASADA 6 Federico #15 — total real del filtro sin
+    # LIMIT. Si las filas visibles == universo, no hay diferencia. Si
+    # están truncadas a 500 (limit), el header sigue mostrando el total
+    # real del filtro, no el sumatorio de las 500 visibles.
+    try:
+        agg = queries.total_buscar(
+            q, desde, hasta,
+            incluir_anuladas=incluir_anuladas, vista=vista,
+            kg_filter=kg_filter,
+        )
+        total_importe = agg["total"]
+        total_kg = agg["total_kg"]
+    except Exception:
+        total_importe = sum(float(r["importe"] or 0) for r in filas
+                            if (r.get("stat") or "").upper() != "Y")
+        total_kg = sum(float(r["kg"] or 0) for r in filas
+                       if (r.get("stat") or "").upper() != "Y")
     # Conteos por vista para los tabs — query separado sobre el universo
     # completo (con los filtros de fecha aplicados pero SIN el filtro de
     # vista), porque sino los buckets no-activos siempre dan 0. Cada
