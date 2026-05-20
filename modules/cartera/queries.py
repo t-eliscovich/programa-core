@@ -38,13 +38,16 @@ def aging_buckets() -> list[dict]:
     (saldo_facturas − cheques_en_cartera). Los cheques se asignan a los
     buckets más jóvenes primero.
     """
+    # TMT 2026-05-20 — alineado el filtro de cheques con TOTC del balance
+    # (informes.queries.totc): stat ∈ {Z,1,2,3,P,D}. Antes incluía 'A'
+    # (legacy acreditados) → /cartera daba un total distinto a Resultados.
     rows = db.fetch_all(
         """
         WITH cheques_cli AS (
             SELECT codigo_cli,
                    COALESCE(SUM(importe), 0) AS en_cartera
             FROM scintela.cheque
-            WHERE stat IN ('Z','1','2','3','P','D','A')
+            WHERE stat IN ('Z','1','2','3','P','D')
               AND codigo_cli IS NOT NULL
             GROUP BY codigo_cli
         )
@@ -81,9 +84,11 @@ def aging_buckets() -> list[dict]:
         FROM scintela.factura f
         LEFT JOIN scintela.cliente c     ON c.codigo_cli = f.codigo_cli
         LEFT JOIN cheques_cli cc         ON cc.codigo_cli = f.codigo_cli
-        WHERE COALESCE(f.saldo, 0) > 0
-          AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+        -- TMT 2026-05-20 — sin filtro saldo>0 para incluir sobrepagos
+        -- (paridad con TOTF del balance, que no los excluye).
+        WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         GROUP BY f.codigo_cli, c.nombre, c.stop, c.cupo, c.vend, c.telefono, c.correo
+        HAVING COALESCE(SUM(f.saldo), 0) + COALESCE(MAX(cc.en_cartera), 0) <> 0
         ORDER BY b90_plus DESC, saldo_total DESC
         """
     ) or []
@@ -113,12 +118,14 @@ def aging_totales() -> dict:
     buckets de mora se mantienen sobre factura.saldo solamente — la
     distribución por días es de las facturas, no de los cheques.
     """
+    # TMT 2026-05-20 — mismos filtros que TOTC/TOTF (informes.queries) para
+    # que /cartera total == Resultados.Subtotal Cartera.
     row = db.fetch_one(
         """
         WITH cheques_total AS (
             SELECT COALESCE(SUM(importe), 0) AS en_cartera
               FROM scintela.cheque
-             WHERE stat IN ('Z','1','2','3','P','D','A')
+             WHERE stat IN ('Z','1','2','3','P','D')
                AND codigo_cli IS NOT NULL
         )
         SELECT
@@ -143,8 +150,8 @@ def aging_totales() -> dict:
             COUNT(*)                        AS n_facturas,
             COUNT(DISTINCT f.codigo_cli)    AS n_clientes
         FROM scintela.factura f
-        WHERE COALESCE(f.saldo, 0) > 0
-          AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+        -- TMT 2026-05-20 — sin filtro saldo>0 (paridad TOTF).
+        WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         """
     )
     if not row:
