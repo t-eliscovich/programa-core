@@ -1,10 +1,14 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}{{ 'Nueva' if modo=='crear' else 'Editar' }} provisión{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('provisiones.lista') }}" class="hover:underline">Provisiones</a> / <strong>{{ 'Nueva' if modo=='crear' else 'Editar' }}</strong>{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto py-6 px-4">
-  <h1 class="text-xl font-semibold mb-4">
-    {{ 'Nueva provisión' if modo=='crear' else 'Editar provisión' }}
-  </h1>
+{# TMT 2026-05-20 PASADA 2 cierre — page_hero canónico. #}
+<div class="max-w-2xl">
+  {{ page_hero(
+      'Nueva provisión' if modo == 'crear' else 'Editar provisión',
+      'Cuota mensual recurrente que se autopopula como posdatado YY cada mes.'
+  ) }}
 
   {% if errores %}
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">

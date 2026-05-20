@@ -1,10 +1,14 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}{{ 'Nuevo' if modo=='crear' else 'Editar' }} pasivo{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('posdat.lista') }}" class="hover:underline">Posdatados</a> / <strong>{{ 'Nuevo' if modo=='crear' else ('N°' ~ form.num) }}</strong>{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto py-6 px-4">
-  <h1 class="text-xl font-semibold mb-4">
-    {{ 'Nuevo pasivo (posdat)' if modo=='crear' else 'Editar pasivo N° ' + (form.num|string) }}
-  </h1>
+{# TMT 2026-05-20 PASADA 2 cierre — page_hero canónico. #}
+<div class="max-w-3xl">
+  {{ page_hero(
+      'Nuevo pasivo (posdat)' if modo == 'crear' else 'Editar pasivo N° ' ~ (form.num | string),
+      'Deuda con proveedor: importe + vencimiento + cuota mensual (opcional para YY).'
+  ) }}
 
   {% if errores %}
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">

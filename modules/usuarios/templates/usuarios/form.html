@@ -1,10 +1,14 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}{{ 'Nuevo' if modo=='crear' else 'Editar' }} usuario{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('usuarios.lista') }}" class="hover:underline">Usuarios</a> / <strong>{{ 'Nuevo' if modo=='crear' else form.username }}</strong>{% endblock %}
 {% block content %}
-<div class="max-w-xl mx-auto py-6 px-4">
-  <h1 class="text-xl font-semibold mb-4">
-    {{ 'Nuevo usuario' if modo=='crear' else 'Editar ' + form.username }}
-  </h1>
+{# TMT 2026-05-20 PASADA 2 cierre — page_hero canónico. #}
+<div class="max-w-xl">
+  {{ page_hero(
+      'Nuevo usuario' if modo == 'crear' else 'Editar ' ~ form.username,
+      'Cuenta de acceso. El rol define los permisos disponibles.'
+  ) }}
 
   {% if errores %}
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
