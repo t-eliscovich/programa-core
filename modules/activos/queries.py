@@ -66,6 +66,35 @@ CATEGORIA_LABELS = {
 }
 
 
+# Cache module-level del feature flag "existe scintela.activos.orden_manual"
+# (columna que trae la migración 0037). Sin esta cache haríamos un check
+# information_schema por cada request. La invalidación natural es el
+# restart del worker — si la columna se crea, basta con restart-task.
+_HAS_ORDEN_MANUAL: bool | None = None
+
+
+def _tiene_orden_manual() -> bool:
+    """Detecta si scintela.activos.orden_manual existe — feature flag para
+    la migración 0037. Defensivo: durante el gap entre deploy y migrate,
+    /activos seguía funcionando sin el column."""
+    global _HAS_ORDEN_MANUAL
+    if _HAS_ORDEN_MANUAL is not None:
+        return _HAS_ORDEN_MANUAL
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1 AS x FROM information_schema.columns
+             WHERE table_schema = 'scintela'
+               AND table_name   = 'activos'
+               AND column_name  = 'orden_manual'
+            """
+        )
+        _HAS_ORDEN_MANUAL = row is not None
+    except Exception:  # noqa: BLE001
+        _HAS_ORDEN_MANUAL = False
+    return _HAS_ORDEN_MANUAL
+
+
 def buscar(
     q: str = "",
     tipo: str | None = None,
@@ -86,6 +115,16 @@ def buscar(
     # COEF = min(día_del_mes, 30) / 30  →  proración diaria (MENU.PRG L275).
     # AMORTIMES_calc = COEF × CUOTA  (lo que va corriendo este mes).
     # valor_libros = inicial - amortizac_acum - amortimes_calc.
+    #
+    # TMT 2026-05-20: fragmentos condicionados por la migración 0037.
+    # Si `orden_manual` existe → se incluye en SELECT + ORDER BY. Si no,
+    # se reemplaza por strings vacíos → query funciona como antes.
+    if _tiene_orden_manual():
+        orden_manual_select   = "a.orden_manual,"
+        orden_manual_order_by = "a.orden_manual NULLS LAST,"
+    else:
+        orden_manual_select   = ""
+        orden_manual_order_by = ""
     sql = f"""
         WITH coef AS (
           SELECT LEAST(EXTRACT(DAY FROM CURRENT_DATE)::numeric, 30) / 30.0 AS c
@@ -94,6 +133,7 @@ def buscar(
                a.fecha,
                a.concepto,
                a.tipo,
+               {orden_manual_select}
                a.inicial,
                a.amortizac,
                -- AMORTIMES calculado (no el stored): COEF × cuota
@@ -134,7 +174,13 @@ def buscar(
           AND (%(tipo)s IS NULL OR UPPER(a.tipo) = UPPER(%(tipo)s))
           AND (NOT %(solo_activos)s
                OR (COALESCE(a.inicial, 0) - COALESCE(a.amortizac, 0)) > 0.01)
-        ORDER BY {_CATEGORIA_CASE_SQL} ASC,
+        -- TMT 2026-05-20: si la dueña arrastró el activo a una posición
+        -- específica (orden_manual NOT NULL), gana sobre el orden
+        -- canónico. NULL queda al final con el orden por categoría/fecha
+        -- de siempre. {orden_manual_order_by} se inyecta sólo si la
+        -- columna existe (gap deploy/migrate friendly).
+        ORDER BY {orden_manual_order_by}
+                 {_CATEGORIA_CASE_SQL} ASC,
                  a.fecha DESC NULLS LAST, a.id_activos DESC
         LIMIT %(limite)s
     """
@@ -291,6 +337,54 @@ def crear(
         "vida_util":    vida_util_meses,
         "inicial":      importe_inicial,
     }
+
+
+def reordenar(ids_en_orden: list[int], *, usuario: str = "web") -> int:
+    """Persiste el orden manual de activos.
+
+    TMT 2026-05-20 — pedido dueña: "Dejame drag and drop en activos.
+    porque asi lo ordeno manualmente".
+
+    Recibe la lista de id_activos EN EL ORDEN VISIBLE. A cada uno le
+    asigna `orden_manual = índice + 1` (empieza en 1 para que NULL siga
+    siendo "sin orden"). Todo en una sola transacción.
+
+    Si la columna no existe (migración 0037 sin correr), levanta
+    ValueError — el caller debe haber chequeado `_tiene_orden_manual()`
+    antes de invocar.
+    """
+    if not _tiene_orden_manual():
+        raise ValueError(
+            "scintela.activos.orden_manual no existe — correr la "
+            "migración 0037 antes de usar el drag-and-drop."
+        )
+    if not ids_en_orden:
+        return 0
+    # Sanitizar — sólo ints, dedupe preservando orden.
+    seen: set[int] = set()
+    ids_clean: list[int] = []
+    for raw in ids_en_orden:
+        try:
+            i = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if i in seen:
+            continue
+        seen.add(i)
+        ids_clean.append(i)
+    if not ids_clean:
+        return 0
+    with db.tx() as conn, conn.cursor() as cur:
+        for idx, id_activo in enumerate(ids_clean, start=1):
+            cur.execute(
+                """
+                UPDATE scintela.activos
+                   SET orden_manual = %s
+                 WHERE id_activos = %s
+                """,
+                (idx, id_activo),
+            )
+    return len(ids_clean)
 
 
 def correr_amortizacion(usuario: str = "web") -> dict:

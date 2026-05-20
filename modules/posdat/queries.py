@@ -345,42 +345,13 @@ def buscar(
     # Antes filtraba banc<>9, pero eso incluía banc=10/32 (cheques emitidos
     # modernos PC) — esos NO son deuda abierta, ya fueron pagados desde el
     # banco. La definición correcta es banc=0 (POSDAT_DEUDA_VIVA_WHERE).
-    #
-    # TMT 2026-05-20 — JOIN a scintela.provisiones por concepto (case
-    # insensitive, trim). Trae cuota_mensual e id_provisiones para
-    # editar inline desde /posdat. Pedido dueña: "que las provisiones se
-    # puedan cambiar tanto el importe como la cuota mensual directamente
-    # en posdatados". Match aproximado pero estable: si el concepto del
-    # posdat empieza con el concepto de una provisión, la matchea.
     rows = db.fetch_all(
         """
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave,
-               COALESCE(p.nombre, '') AS proveedor,
-               pr.id_provisiones,
-               pr.importe                          AS cuota_mensual,
-               -- TMT 2026-05-20: cuota diaria = mensual / 30 (idéntico
-               -- al modelo "valor_inicio_mes + (día/30) × cuota mensual"
-               -- documentado en provision_pendiente_mes).
-               ROUND((COALESCE(pr.importe, 0) / 30.0)::numeric, 2)
-                                                   AS cuota_diaria,
-               pr.periodo_aplica  AS provision_periodo
+               COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
-        LEFT JOIN LATERAL (
-            SELECT id_provisiones, importe, periodo_aplica, concepto
-              FROM scintela.provisiones
-             WHERE LENGTH(TRIM(COALESCE(provisiones.concepto, ''))) >= 3
-               AND LENGTH(TRIM(COALESCE(pd.concepto, '')))           >= 3
-               AND (
-                    UPPER(TRIM(COALESCE(pd.concepto,'')))
-                      LIKE UPPER(TRIM(COALESCE(provisiones.concepto,''))) || '%%'
-                 OR UPPER(TRIM(COALESCE(provisiones.concepto,'')))
-                      LIKE UPPER(TRIM(COALESCE(pd.concepto,''))) || '%%'
-               )
-             ORDER BY LENGTH(COALESCE(concepto, '')) DESC
-             LIMIT 1
-        ) pr ON TRUE
         WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
           AND (%(q)s IS NULL
                OR UPPER(COALESCE(pd.concepto,'')) LIKE UPPER(%(like)s)
@@ -402,6 +373,55 @@ def buscar(
             "limite": limite,
         },
     ) or []
+
+    # TMT 2026-05-20 — match a scintela.provisiones HECHO EN PYTHON.
+    # Originalmente lo intenté con LEFT JOIN LATERAL, pero un comportamiento
+    # de psycopg2 con el escape de '%%' rompió en prod (500: error 61ea4d2e).
+    # En Python es más simple + defensivo: cargo todas las provisiones (son
+    # ~10-20 filas) UNA vez por request y matcheo en memoria. Si la tabla no
+    # existe o falla, los posdat siguen funcionando sin cuota_mensual.
+    provisiones_lookup: list[dict] = []
+    try:
+        provisiones_lookup = db.fetch_all(
+            "SELECT id_provisiones, concepto, importe, periodo_aplica "
+            "FROM scintela.provisiones"
+        ) or []
+    except Exception:  # noqa: BLE001
+        provisiones_lookup = []
+
+    # Ordenar por longitud DESC para que el "más específico" gane (igual
+    # que el ORDER BY LENGTH del LATERAL original).
+    provisiones_lookup.sort(
+        key=lambda p: len((p.get("concepto") or "").strip()), reverse=True,
+    )
+
+    def _match_provision(concepto_pd: str) -> dict | None:
+        """Devuelve la provisión que matchea por concepto (starts-with
+        bidireccional, case-insensitive, longitud ≥ 3)."""
+        cn = (concepto_pd or "").strip().upper()
+        if len(cn) < 3:
+            return None
+        for pr in provisiones_lookup:
+            cp = (pr.get("concepto") or "").strip().upper()
+            if len(cp) < 3:
+                continue
+            if cn.startswith(cp) or cp.startswith(cn):
+                return pr
+        return None
+
+    for r in rows:
+        match = _match_provision(r.get("concepto") or "")
+        if match:
+            cm = float(match.get("importe") or 0)
+            r["id_provisiones"]    = match.get("id_provisiones")
+            r["cuota_mensual"]     = cm
+            r["cuota_diaria"]      = round(cm / 30.0, 2)
+            r["provision_periodo"] = match.get("periodo_aplica")
+        else:
+            r["id_provisiones"]    = None
+            r["cuota_mensual"]     = None
+            r["cuota_diaria"]      = None
+            r["provision_periodo"] = None
 
     # Saldo acumulado = deuda corrida hasta la fecha de vencimiento. Útil
     # para planificar flujo: "al 15 de junio ya vencieron $ X de posdatados".

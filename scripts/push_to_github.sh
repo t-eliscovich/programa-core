@@ -42,19 +42,27 @@ echo "→ Cambios pendientes:"
 git status --short
 echo ""
 
-# 4. Confirmar
-read -r -p "¿Continuar con add + commit + push? [s/N] " RESP
-# NOTA TMT 2026-05-20: macOS viene con bash 3.2 (Apple no actualiza
-# por temas de licencia GPL3). `${VAR,,}` (lowercase) es bash 4+. Acá
-# lo hacemos con `tr` para que funcione tanto en mac como en la EC2.
-RESP_LC="$(printf '%s' "$RESP" | tr '[:upper:]' '[:lower:]')"
-case "$RESP_LC" in
-  s|si|y|yes) : ;;  # OK, continuar
-  *)
-    echo "✗ Cancelado por el usuario."
-    exit 1
-    ;;
-esac
+# 4. Confirmación — pasá --no-confirm o NO_CONFIRM=1 para saltarla.
+# TMT 2026-05-20 update: la dueña dijo "siempre y" — default es seguir.
+# Para abortar antes de pushear, hacé Ctrl+C cuando ves el mensaje del
+# commit. Si querés volver al prompt explícito, pasá --confirm o setear
+# CONFIRM=1.
+if [[ "${1:-}" == "--confirm" || "${CONFIRM:-}" == "1" ]]; then
+  read -r -p "¿Continuar con add + commit + push? [s/N] " RESP
+  RESP_LC="$(printf '%s' "$RESP" | tr '[:upper:]' '[:lower:]')"
+  case "$RESP_LC" in
+    s|si|y|yes) : ;;
+    *)
+      echo "✗ Cancelado por el usuario."
+      exit 1
+      ;;
+  esac
+  # Si vino --confirm como primer arg, lo consumimos para que el commit
+  # message use el siguiente (sino "--confirm" se usaría como mensaje).
+  if [[ "${1:-}" == "--confirm" ]]; then
+    shift
+  fi
+fi
 
 # 5. Add todo
 git add -A

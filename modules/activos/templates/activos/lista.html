@@ -115,10 +115,16 @@
   </form>
 
   {# --- Tabla ---------------------------------------------------------- #}
+  {# TMT 2026-05-20 — drag-and-drop activo. La columna "drag handle"
+     aparece sólo con permiso activos.crear (es la misma que regula crear/
+     reordenar). Cada fila es draggable; los headers de categoría NO. #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm" id="activos-tabla">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
+          {% if tiene_permiso('activos.crear') %}
+            <th class="px-2 py-3 no-print" style="width:24px;" title="Arrastrá la fila para reordenar"></th>
+          {% endif %}
           <th class="px-3 py-3 text-left" style="white-space: nowrap;">Fecha</th>
           <th class="px-3 py-3 text-left">Concepto</th>
           <th class="px-3 py-3 text-left" style="white-space: nowrap;">Tipo</th>
@@ -132,20 +138,32 @@
         </tr>
       </thead>
       <tbody>
-        {% set ns = namespace(prev_cat=0) %}
+        {% set ns = namespace(prev_cat=0, any_manual=false) %}
+        {# TMT 2026-05-20 — si HAY filas con orden_manual seteado, no
+           mostramos headers de categoría (porque el orden manual cruza
+           categorías). #}
+        {% for a in filas %}{% if a.orden_manual %}{% set ns.any_manual = true %}{% endif %}{% endfor %}
+        {% set ns.prev_cat = 0 %}
+        {% set _colspan = (11 if tiene_permiso('activos.crear') else 10) %}
         {% for a in filas %}
-        {% if a.categoria_orden and a.categoria_orden != ns.prev_cat %}
+        {% if a.categoria_orden and a.categoria_orden != ns.prev_cat and not ns.any_manual %}
           {# Header de sección por categoría — vocabulario canónico 2026-04-29.
              Terrenos primero, máquinas después, otros al final. #}
           <tr class="bg-slate-100 dark:bg-slate-800/70">
-            <td colspan="10" class="px-3 py-1.5 text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 font-semibold">
+            <td colspan="{{ _colspan }}" class="px-3 py-1.5 text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 font-semibold">
               {{ a.categoria_label or 'Otros' }}
             </td>
           </tr>
           {% set ns.prev_cat = a.categoria_orden %}
         {% endif %}
         {% set agotado = (a.valor_libros or 0) <= 0.01 %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if agotado %}opacity-60{% endif %}">
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 activo-fila {% if agotado %}opacity-60{% endif %}"
+            data-id-activo="{{ a.id_activos }}"
+            {% if tiene_permiso('activos.crear') %}draggable="true"{% endif %}>
+          {% if tiene_permiso('activos.crear') %}
+            <td class="px-2 py-2 no-print text-center text-slate-400 cursor-grab select-none"
+                title="Arrastrá para reordenar">⋮⋮</td>
+          {% endif %}
           <td class="px-3 py-2" style="white-space: nowrap;">{{ a.fecha | fecha_es if a.fecha else '—' }}</td>
           <td class="px-3 py-2">{{ a.concepto or '' }}</td>
           <td class="px-3 py-2 font-mono text-xs">
@@ -174,10 +192,132 @@
           <td class="px-3 py-2 text-right tabular-nums text-xs text-slate-500">{{ a.ult_mes_amortizado or '' }}</td>
         </tr>
         {% else %}
-        {{ empty_row(10, 'Sin activos en el filtro.', 'Probá quitar el filtro o desmarcar "solo activos vivos".') }}
+        {{ empty_row(_colspan, 'Sin activos en el filtro.', 'Probá quitar el filtro o desmarcar "solo activos vivos".') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {# TMT 2026-05-20 — Drag-and-drop con HTML5 nativo (sin libs externas).
+     Cuando la dueña suelta una fila, mandamos POST a /activos/_api/reordenar
+     con los ids en el nuevo orden. La página NO se recarga — el DOM ya
+     refleja la nueva posición y el orden persistido se ve en la próxima
+     carga. Pedido literal: "Dejame drag and drop en activos. porque asi
+     lo ordeno manualmente". #}
+  {% if tiene_permiso('activos.crear') %}
+  <style>
+    .activo-fila.dragging  { opacity: 0.4; }
+    .activo-fila.drop-above { box-shadow: inset 0 2px 0 0 rgb(14 165 233); }
+    .activo-fila.drop-below { box-shadow: inset 0 -2px 0 0 rgb(14 165 233); }
+    #activos-banner {
+      position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+      background: rgb(236 253 245); border: 1px solid rgb(110 231 183);
+      color: rgb(6 95 70); padding: 0.5rem 1rem; border-radius: 8px;
+      box-shadow: 0 6px 12px -3px rgba(0,0,0,0.15);
+      font-size: 0.875rem; z-index: 50;
+    }
+  </style>
+  <div id="activos-banner" class="hidden">Orden guardado ✓</div>
+  <script>
+    (function() {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+      const tbody = document.querySelector('#activos-tabla tbody');
+      const banner = document.getElementById('activos-banner');
+      let dragSrc = null;
+
+      function notif(msg, ok) {
+        if (!banner) return;
+        banner.textContent = msg;
+        banner.style.background = ok ? 'rgb(236 253 245)' : 'rgb(254 226 226)';
+        banner.style.borderColor = ok ? 'rgb(110 231 183)' : 'rgb(248 113 113)';
+        banner.style.color = ok ? 'rgb(6 95 70)' : 'rgb(127 29 29)';
+        banner.classList.remove('hidden');
+        setTimeout(() => banner.classList.add('hidden'), 2000);
+      }
+
+      function todasLasFilas() {
+        // Sólo filas con data-id-activo (no las categoría-header filas).
+        return Array.from(tbody.querySelectorAll('tr.activo-fila[data-id-activo]'));
+      }
+
+      function persistirOrden() {
+        const ids = todasLasFilas().map(tr => parseInt(tr.dataset.idActivo, 10));
+        fetch('/activos/_api/reordenar', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ ids: ids }),
+        }).then(r => r.json()).then(j => {
+          if (j && j.ok) {
+            notif(`Orden guardado · ${j.n_actualizados} activos`, true);
+          } else {
+            notif('No se pudo guardar: ' + ((j && j.error) || 'error'), false);
+          }
+        }).catch(e => {
+          notif('Error de red: ' + e.message, false);
+        });
+      }
+
+      tbody.addEventListener('dragstart', (e) => {
+        const tr = e.target.closest('tr.activo-fila');
+        if (!tr) return;
+        dragSrc = tr;
+        tr.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        // Firefox necesita setData o no dispara drop.
+        try { e.dataTransfer.setData('text/plain', tr.dataset.idActivo || ''); } catch (_) {}
+      });
+
+      tbody.addEventListener('dragend', (e) => {
+        const tr = e.target.closest('tr.activo-fila');
+        if (tr) tr.classList.remove('dragging');
+        // Limpiar markers
+        todasLasFilas().forEach(f => {
+          f.classList.remove('drop-above');
+          f.classList.remove('drop-below');
+        });
+        dragSrc = null;
+      });
+
+      tbody.addEventListener('dragover', (e) => {
+        const tr = e.target.closest('tr.activo-fila');
+        if (!tr || !dragSrc || tr === dragSrc) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        // Indicar visualmente si va arriba o abajo de la fila hover.
+        const rect = tr.getBoundingClientRect();
+        const arriba = (e.clientY - rect.top) < rect.height / 2;
+        // Limpiar markers previos
+        todasLasFilas().forEach(f => {
+          f.classList.remove('drop-above');
+          f.classList.remove('drop-below');
+        });
+        tr.classList.add(arriba ? 'drop-above' : 'drop-below');
+      });
+
+      tbody.addEventListener('drop', (e) => {
+        const tr = e.target.closest('tr.activo-fila');
+        if (!tr || !dragSrc || tr === dragSrc) return;
+        e.preventDefault();
+        const rect = tr.getBoundingClientRect();
+        const arriba = (e.clientY - rect.top) < rect.height / 2;
+        // Mover el nodo arrastrado.
+        if (arriba) {
+          tr.parentNode.insertBefore(dragSrc, tr);
+        } else {
+          tr.parentNode.insertBefore(dragSrc, tr.nextSibling);
+        }
+        // Limpiar markers
+        todasLasFilas().forEach(f => {
+          f.classList.remove('drop-above');
+          f.classList.remove('drop-below');
+        });
+        // Persistir.
+        persistirOrden();
+      });
+    })();
+  </script>
+  {% endif %}
 
 {% endblock %}

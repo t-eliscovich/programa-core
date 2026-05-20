@@ -1406,3 +1406,49 @@ Pedido dueña literal: "Necesitamos agilizar el proceso de los depósitos. Si es
 ### Bash 3.2 compat en push_to_github.sh (2026-05-20)
 
 macOS viene con bash 3.2 (Apple no actualiza por GPL3). `${VAR,,}` (lowercase expansion) es bash 4+, falla con "bad substitution". Se reemplazó por `printf '%s' "$RESP" | tr '[:upper:]' '[:lower:]'` que es portable. Recordatorio para futuros scripts: en mac NO usar `${VAR,,}`, `${VAR^^}`, `${VAR:N:M}` con offsets negativos. Sí podés usar arrays asociativos en scripts internos siempre que TODOS los users tengan bash 4+ (la EC2 tiene Windows, no aplica). Para .sh que toca corren tanto en mac como en EC2 (vía git bash) → POSIX-friendly.
+
+### Fix urgente /posdat 500 (2026-05-20)
+
+Error ID `61ea4d2e` en prod. El `LEFT JOIN LATERAL` que agregué al SELECT de `posdat.queries.buscar()` fallaba en RDS (la combinación de `%%` escape en psycopg2 + LATERAL + ORDER BY dentro del subselect rompió de un modo que localmente no se replicó).
+
+**Fix:** sacar el JOIN, hacer el match a `scintela.provisiones` en Python:
+
+```python
+provisiones_lookup = db.fetch_all("SELECT id_provisiones, concepto, importe, periodo_aplica FROM scintela.provisiones")
+# Ordenar por longitud DESC para que el más específico gane
+provisiones_lookup.sort(key=lambda p: len(p.get("concepto") or ""), reverse=True)
+
+for r in rows:
+    match = _match_provision(r.get("concepto") or "")
+    r["cuota_mensual"] = float(match["importe"]) if match else None
+    r["cuota_diaria"]  = round(r["cuota_mensual"] / 30.0, 2) if match else None
+    r["id_provisiones"] = match.get("id_provisiones") if match else None
+```
+
+El lookup es <20 filas, una query extra por request. Trade-off: mucho más simple, más defensivo (try/except en el fetch_all envuelve la tabla missing), y los tests son triviales (matcheo de strings en Python). El LATERAL JOIN dejaba demasiada magia oculta en SQL que no se replicaba bien entre entornos.
+
+**Regla aprendida:** psycopg2 + LATERAL JOIN + `%%` escape literals → frágil. Si el match es chiquito (<100 filas), preferir join en Python.
+
+### Drag-and-drop reorden manual en /activos (2026-05-20)
+
+Pedido dueña: "Dejame drag and drop en activos. porque asi lo ordeno manualmente".
+
+**Migración 0037**: agrega `orden_manual INTEGER` a `scintela.activos` + index `idx_activos_orden_manual`. Idempotente (DO block + IF NOT EXISTS).
+
+**`activos.queries.buscar`**: ORDER BY ahora arranca con `a.orden_manual NULLS LAST,` antes del orden canónico (categoría → fecha DESC). Filas con `orden_manual` NULL caen al final con el orden de siempre.
+
+**Feature flag `_tiene_orden_manual()`**: cache module-level (chequea `information_schema.columns` una vez por worker). Durante el gap deploy→migrate, la query se construye sin las referencias a `orden_manual` y todo sigue funcionando. Restart-task reseta la cache.
+
+**Endpoint `POST /activos/_api/reordenar`** (`activos.api_reordenar`): JSON `{ids: [int]}` con los IDs en el NUEVO orden visible. El handler hace UPDATE de `orden_manual = índice + 1` para cada uno, todo en una sola tx. Permission gate: `activos.crear` (mismo rol que ya puede editar activos).
+
+**Frontend (HTML5 nativo, sin libs externas)**:
+- Cada fila draggable tiene `draggable="true"` + handle `⋮⋮` en una columna nueva.
+- `dragstart` marca la fila origen con `.dragging` (opacity 0.4).
+- `dragover` calcula si el cursor está arriba/abajo del centro de la fila target → muestra una línea sky-500 en el borde top o bottom (`.drop-above` / `.drop-below`).
+- `drop` reordena el DOM con `insertBefore` y POSTea `persistirOrden()` con la lista de IDs.
+- Banner verde "Orden guardado ✓" arriba del centro durante 2s.
+- **Headers de categoría se ocultan** cuando hay AL MENOS UNA fila con `orden_manual` seteado (porque el orden manual cruza categorías y los headers quedarían mal). En "modo canónico" (todo NULL) siguen apareciendo igual que siempre.
+
+**Por qué HTML5 nativo y no Sortable.js**: el caso es chico (<200 filas), no hay sub-listas, no hay groups, no hay nested. Native DnD pesa 0KB extra. Si en el futuro se vuelve complejo (grupos, multi-select, mobile-touch), Sortable.js está al alcance de un CDN.
+
+**Caveat mobile**: HTML5 DnD nativo no anda en mobile táctil. Si la dueña reordena desde tablet/celular, vamos a tener que agregar Sortable.js (que sí cubre touch). Por ahora, este caso es desktop-only.

@@ -6,7 +6,16 @@ se autocalcula como inicial/vida_util si la dueña no la especifica.
 """
 from datetime import date
 
-from flask import Blueprint, flash, g, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    flash,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
@@ -138,6 +147,34 @@ def nuevo():
         proveedores=proveedores,
         hoy=date.today().isoformat(),
     )
+
+
+@activos_bp.route("/activos/_api/reordenar", methods=["POST"])
+@requiere_login
+@requiere_permiso("activos.crear")  # mismo permiso que crear, agrupado
+def api_reordenar():
+    """Persiste el nuevo orden manual desde el drag-and-drop.
+
+    TMT 2026-05-20 — JSON `{ids: [int]}`. La UI manda los ids EN EL
+    NUEVO ORDEN VISIBLE; el endpoint le asigna orden_manual = 1..N.
+    """
+    data = request.get_json(silent=True) or request.form
+    ids_raw = data.get("ids") or []
+    if isinstance(ids_raw, str):
+        ids_raw = [x for x in ids_raw.split(",") if x.strip()]
+    try:
+        ids = [int(x) for x in ids_raw]
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "IDs inválidos."}), 400
+    try:
+        n = queries.reordenar(
+            ids, usuario=(g.user or {}).get("username", "web"),
+        )
+        return jsonify({"ok": True, "n_actualizados": n})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude guardar el orden: {e}"}), 500
 
 
 @activos_bp.route("/activos/amortizar", methods=["POST"])

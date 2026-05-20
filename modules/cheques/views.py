@@ -1617,9 +1617,10 @@ def api_depositar_lote():
     `saldo_antes`, `saldo_despues`. La UI muestra una notificación con
     el delta del saldo para que la dueña vea que efectivamente subió.
     """
-    import bank_helpers
     import contextlib
     from datetime import datetime as _dt
+
+    import bank_helpers
 
     data = request.get_json(silent=True) or request.form
     ids_raw = data.get("ids") or data.get("id_cheque") or []
