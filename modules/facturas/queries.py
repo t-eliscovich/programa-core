@@ -477,7 +477,13 @@ def buscar(
     desde: str | None = None,
     hasta: str | None = None,
     solo_abiertas: bool = False,
-    limite: int = 500,
+    limite: int = 10000,  # TMT 2026-05-20 v3 — antes 500 truncaba a las
+                          # 500 más antiguas y el running ACUM final no
+                          # coincidía con el total del header (que cuenta
+                          # las 4500+ del bucket entero). Pedido dueña:
+                          # 'facturas, acum total, no es igual al total'.
+                          # 10k cubre con margen — si las facturas crecen
+                          # mucho más, paginamos.
     vista: str = "cartera",
     cliente: str = "",
     monto_min: float | None = None,
