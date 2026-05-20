@@ -393,34 +393,38 @@
        item 16). El detalle por banco vive en /bancos; acá en el balance
        el dato consolidado ya aparece en la fila ACTIVO → Bancos. #}
 
-    </div>{# fin wrapper col derecha #}
-
-  </div>{# fin grid 2 cols #}
-
-  {# TMT 2026-05-20 — Movimientos del año en panel SEPARADO debajo de la
-     tabla principal (pedido dueña: "movimientos del año sacalo de la
-     tabla y lo ponemos debajo de la tabla"). #}
-  <div class="mt-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 max-w-md">
-    <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-3">
-      Movimientos del año
-    </div>
-    <table class="w-full text-sm">
-      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+    {# TMT 2026-05-20 v3 — Movimientos del año dentro de la col derecha
+       (pedido dueña: "la pantalla de resultados no esta tan linda, falta
+       ubicar los recuadros parejos. un lado temina antes que el otro").
+       Antes estaba debajo del grid en el lado izquierdo, dejaba un
+       hueco grande a la derecha. Ahora cuelga al pie de la col 2
+       y los dos paneles terminan en líneas cercanas. #}
+    <table class="balance-table mt-2">
+      <thead>
         <tr>
-          <td class="py-1.5"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
-          <td class="py-1.5 text-right font-mono tabular-nums">{{ b.ventas_anio | num_es(0) }}</td>
+          <th class="seccion-header" style="text-align:left">MOVIMIENTOS DEL AÑO</th>
+          <th class="col-header" style="text-align:right">U$</th>
         </tr>
-        <tr>
-          <td class="py-1.5"><a href="{{ url_for('informes.retiros', tab='mes') }}" class="hover:text-blue-600 hover:underline">Dividendos del mes</a></td>
-          <td class="py-1.5 text-right font-mono tabular-nums">{{ b.uret | num_es(0) }}</td>
+      </thead>
+      <tbody>
+        <tr class="fila-dato">
+          <td class="label-cell"><a href="{{ url_for('informes.ventas_anio') }}" class="hover:text-blue-600 hover:underline">Ventas del año</a></td>
+          <td class="num-cell">{{ b.ventas_anio | num_es(0) }}</td>
         </tr>
-        <tr>
-          <td class="py-1.5"><a href="{{ url_for('informes.retiros', tab='anio') }}" class="hover:text-blue-600 hover:underline">Dividendos del año</a></td>
-          <td class="py-1.5 text-right font-mono tabular-nums">{{ b.uret_anio | num_es(0) }}</td>
+        <tr class="fila-dato">
+          <td class="label-cell"><a href="{{ url_for('informes.retiros', tab='mes') }}" class="hover:text-blue-600 hover:underline">Dividendos del mes</a></td>
+          <td class="num-cell">{{ b.uret | num_es(0) }}</td>
+        </tr>
+        <tr class="fila-dato">
+          <td class="label-cell"><a href="{{ url_for('informes.retiros', tab='anio') }}" class="hover:text-blue-600 hover:underline">Dividendos del año</a></td>
+          <td class="num-cell">{{ b.uret_anio | num_es(0) }}</td>
         </tr>
       </tbody>
     </table>
-  </div>
+
+    </div>{# fin wrapper col derecha #}
+
+  </div>{# fin grid 2 cols #}
 
   </div>{# fin marco #}
 
