@@ -10,12 +10,12 @@
       <h1 class="text-2xl font-semibold">Deudas</h1>
       <p class="text-sm text-slate-500 mt-1">Saldos por pagar a proveedores</p>
     </div>
-    {# TMT 2026-05-20 — KPI total arriba (pedido dueña: "falta el total
-       arriba"). Tile estilo similar al de /posdat. #}
-    <div class="rounded-lg bg-slate-900 text-white px-5 py-3">
-      <div class="text-[10px] uppercase tracking-wide text-slate-300">Total deudas</div>
-      <div class="text-2xl font-semibold tabular-nums text-right">$ {{ total | num_es(0) }}</div>
-      <div class="text-xs text-slate-300 text-right">{{ filas | length }} proveedores</div>
+    {# TMT 2026-05-20 v2 — KPI consistente con el resto del app
+       (mismo patrón que /posdat?tab=yy y /activos). #}
+    <div class="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
+      <div class="text-xs text-rose-700 uppercase tracking-wide">Total deudas</div>
+      <div class="text-xl font-semibold text-rose-900 text-right tabular-nums">$ {{ total | num_es(0) }}</div>
+      <div class="text-xs text-rose-700 text-right">{{ filas | length }} proveedores</div>
     </div>
     <button onclick="window.print()" class="no-print text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
   </div>
