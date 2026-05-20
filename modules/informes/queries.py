@@ -5765,11 +5765,20 @@ def fuentes_y_usos(
         v = row.get(col)
         return float(v) if v is not None else 0.0
 
+    # TMT 2026-05-20 v3 — corrección crítica replicando PRG L1654-1727:
+    # 1. PRG usa `O=USTOCK` (US$ de stock), NO `stock` (kg). Mi código
+    #    anterior usaba `stock` que es la cantidad en KG — mezclaba
+    #    unidades en un cuadro de fondos.
+    # 2. PRG suma USUTI/USRET sobre los meses del período (recno > recI
+    #    y recno <= recF), NO hace Δ (final - inicial). Para períodos
+    #    de >1 mes esto da distinto.
+
     # Δ por cuenta (fin - ini). Activos: + = uso. Pasivos: + = fuente.
+    # CUIDADO: stock=ustock (PRG L1678 O=USTOCK).
     delta = {
         # Activos
         "cart":       f(h_fin, "cart")       - f(h_ini, "cart"),
-        "stock":      f(h_fin, "stock")      - f(h_ini, "stock"),
+        "ustock":     f(h_fin, "ustock")     - f(h_ini, "ustock"),
         "uqui":       f(h_fin, "uqui")       - f(h_ini, "uqui"),
         "maquinaria": f(h_fin, "maquinaria") - f(h_ini, "maquinaria"),
         "realty":     f(h_fin, "realty")     - f(h_ini, "realty"),
@@ -5778,34 +5787,42 @@ def fuentes_y_usos(
         "deuda":      f(h_fin, "deuda")      - f(h_ini, "deuda"),
         # Cuasi-líquidos (control)
         "banco":      f(h_fin, "banco")      - f(h_ini, "banco"),
-        # Resultados
-        "usuti":      f(h_fin, "usuti")      - f(h_ini, "usuti"),
-        # Retiros (acum del año)
-        "usret":      f(h_fin, "usret")      - f(h_ini, "usret"),
     }
+
+    # PRG L1706-1707: SUM ALL USUTI/USRET sobre meses del período
+    # (recno>recI .AND. recno<=recF). Sumamos los snapshots intermedios
+    # — esto cuenta la utilidad/retiros DEL PERÍODO acumulados.
+    sum_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(usuti), 0) AS uti,
+               COALESCE(SUM(usret), 0) AS ret
+          FROM scintela.historia
+         WHERE fecha > %s AND fecha <= %s
+        """,
+        (h_ini.get("fecha"), h_fin.get("fecha")),
+    ) or {}
+    utilidad_periodo = float(sum_row.get("uti") or 0)
+    retiros_periodo  = float(sum_row.get("ret") or 0)
 
     fuentes: list[tuple[str, float]] = []
     usos:    list[tuple[str, float]] = []
 
-    # Utilidad del período (la del mes) → fuente si positiva, uso si pérdida.
-    utilidad_mes = delta["usuti"]
-    if utilidad_mes >= 0:
-        fuentes.append(("Utilidad del mes", utilidad_mes))
+    # PRG L1708-1709: FUENTES=UTI, USOS=RET. Si UTI<0 (pérdida acum),
+    # va como uso. Si RET>0 (hubo retiros), va como uso. Si RET<0
+    # (reverso raro), va como fuente.
+    if utilidad_periodo >= 0:
+        fuentes.append(("Utilidad del período", utilidad_periodo))
     else:
-        usos.append(("Pérdida del mes", abs(utilidad_mes)))
+        usos.append(("Pérdida del período", abs(utilidad_periodo)))
+    if retiros_periodo > 0:
+        usos.append(("Retiros del período", retiros_periodo))
+    elif retiros_periodo < 0:
+        fuentes.append(("Reverso de retiros", abs(retiros_periodo)))
 
-    # Retiros del mes → uso (USRET es acumulado anual; Δ del mes son los del mes).
-    retiros_mes = delta["usret"]
-    if retiros_mes > 0:
-        usos.append(("Retiros del mes", retiros_mes))
-    elif retiros_mes < 0:
-        # Δ negativo = reversa de retiros (raro) → fuente
-        fuentes.append(("Reverso de retiros", abs(retiros_mes)))
-
-    # Activos: Δ>0 = uso, Δ<0 = fuente.
+    # PRG L1710-1716: para cada activo (BCNOQMR), if Δ>0 → uso, sino fuente.
     activos_labels = {
         "cart":       "Cartera (clientes)",
-        "stock":      "Stock de productos",
+        "ustock":     "Stock de productos",
         "uqui":       "Stock de químicos",
         "maquinaria": "Maquinaria",
         "realty":     "Terrenos y edificios",
