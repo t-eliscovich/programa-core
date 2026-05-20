@@ -312,6 +312,14 @@
             <td class="label-cell"><a href="{{ url_for('facturas.lista') }}" class="hover:text-blue-600 hover:underline">Facturas</a></td>
             <td class="num-cell">{{ b.totf | num_es(0) }}</td>
           </tr>
+          {# TMT 2026-05-20 — Subtotal Cartera (= cheques + facturas) con
+             link a /cartera. Pedido dueña: "Sumar cheques mas facturas y
+             crear subtotal cartera: esto tiene un link que lleva a
+             cartera". #}
+          <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
+            <td class="label-cell pl-6 text-slate-500"><a href="{{ url_for('cartera.aging') }}" class="hover:text-blue-600 hover:underline">↳ Subtotal Cartera</a></td>
+            <td class="num-cell text-slate-600">{{ (b.totc + b.totf) | num_es(0) }}</td>
+          </tr>
           <tr class="fila-total">
             <td class="label-cell">Subtotal</td>
             <td class="num-cell">{{ b.subt | num_es(0) }}</td>
@@ -341,17 +349,28 @@
             <td class="label-cell"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">Terr/Edif/Ins.</a></td>
             <td class="num-cell">{{ b.uact | num_es(0) }}</td>
           </tr>
+          {# TMT 2026-05-20 — Subtotal Terreno + Maquinaria (pedido dueña:
+             "Tambien un subtotal Terreno+Maquinaria para ver en Activos"). #}
+          <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
+            <td class="label-cell pl-6 text-slate-500"><a href="{{ url_for('activos.lista') }}" class="hover:text-blue-600 hover:underline">↳ Subtotal Terreno + Maquinaria</a></td>
+            <td class="num-cell text-slate-600">{{ (b.umaq + b.uact) | num_es(0) }}</td>
+          </tr>
           <tr class="fila-total">
             <td class="label-cell">Total activo</td>
             <td class="num-cell">{{ (b.totl - b.uret) | num_es(0) }}</td>
           </tr>
 
-          {# TMT 2026-05-19 v7 — dueña: "Pasivos hay dos rows, con una nos
-             alcanza". Saco el header "PASIVO" (era una sección con una sola
-             fila) y dejo "Pasivos" como única línea con estilo fuerte. #}
+          {# TMT 2026-05-20 — pedido dueña:
+             - Link de Pasivos → /deudas (no /posdat, que era confuso).
+             - Agregar fila auxiliar Posdatas con el mismo total, debería
+               coincidir con Deudas (ambas leen banc=0 + importe>0). #}
           <tr class="fila-total">
-            <td class="label-cell"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
+            <td class="label-cell"><a href="{{ url_for('informes.deudas') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
             <td class="num-cell neg">{{ b.totp | num_es(0) }}</td>
+          </tr>
+          <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
+            <td class="label-cell pl-6 text-slate-500"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">↳ Posdatas (total)</a></td>
+            <td class="num-cell text-slate-600">{{ b.totp | num_es(0) }}</td>
           </tr>
 
           {# ─── PATRIMONIO NETO — la fila más importante. Bigger + bold. ─── #}

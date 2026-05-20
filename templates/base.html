@@ -636,13 +636,10 @@
         <summary>Informes</summary>
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.balance', 'Resultados', 'report') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}{% endif %}
-        {% if tiene_permiso('cartera.ver') or tiene_permiso('informes.ver') %}{{ nav_link('cartera.aging', 'Cartera', 'money') }}{% endif %}
-        {% if tiene_permiso('gastos.ver') %}{{ nav_link('informes.gastos', 'Gastos', 'box') }}{% endif %}
+        {# TMT 2026-05-20 — Cartera / Gastos / Activos salen del sidebar
+           (pedido dueña). Mantienen el link desde /informes/balance. #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.deudas', 'Deudas con proveedores', 'trend-down') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}{% endif %}
-        {# TMT 2026-05-20 — Activos / Amortizaciones se mudó de Datos base
-           a Informes (pedido dueña: "activos ponelo en informes"). #}
-        {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos / Amortizaciones', 'target') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('dolares.lista', 'Ver anticipos USD', 'cash') }}{% endif %}
         {% if tiene_permiso('capital.ver') %}{{ nav_link('capital.lista', 'Movimientos de capital', 'chart-pie') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('historial.lista', 'Historial movimientos', 'history') }}{% endif %}

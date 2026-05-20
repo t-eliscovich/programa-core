@@ -3460,6 +3460,10 @@ def deudas_por_proveedor() -> list[dict]:
     agrupar el informe /deudas por categoría (Mat.Prima H+Q, Maquinaria U,
     Bancos B, Otros Y/null).
     """
+    # TMT 2026-05-20 — removido el filtro `importe > 0` para que el total
+    # de Deudas COINCIDA con TOTP del balance (pedido dueña: "Pasivos no
+    # es igual a deudas. Deberia ser igual"). Antes los anticipos /
+    # ajustes (importe ≤ 0) se excluían acá pero NO de TOTP → discrepancia.
     return db.fetch_all(
         f"""
         SELECT COALESCE(p.codigo_prov, pd.prov)   AS codigo_prov,
@@ -3472,9 +3476,9 @@ def deudas_por_proveedor() -> list[dict]:
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
         WHERE {posdat_deuda_viva_where('pd')}
-          AND COALESCE(pd.importe, 0) > 0
           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         GROUP BY p.codigo_prov, pd.prov, p.nombre, p.tipo
+        HAVING ABS(COALESCE(SUM(pd.importe), 0)) > 0.005
         ORDER BY saldo_total DESC
         """
     )

@@ -43,14 +43,19 @@ def aging():
     if codigos_sel:
         filas = [f for f in filas if (f.get("codigo_cli") or "").upper() in codigos_sel]
         # Recalcular totales sobre la selección — suma en Python, está filtrada.
+        # TMT 2026-05-20 — incluir cheques_en_cartera + saldo_facturas
+        # (faltaban — tfoot mostraba "—" cuando había filtro). Pedido
+        # dueña: "cartera faltarían totales bien sumados".
         totales = {
-            "b0_30":      sum(float(f.get("b0_30")   or 0) for f in filas),
-            "b31_60":     sum(float(f.get("b31_60")  or 0) for f in filas),
-            "b61_90":     sum(float(f.get("b61_90")  or 0) for f in filas),
-            "b90_plus":   sum(float(f.get("b90_plus") or 0) for f in filas),
-            "total":      sum(float(f.get("saldo_total") or 0) for f in filas),
-            "n_facturas": sum(int(f.get("n_facturas") or 0) for f in filas),
-            "n_clientes": len(filas),
+            "b0_30":              sum(float(f.get("b0_30")              or 0) for f in filas),
+            "b31_60":             sum(float(f.get("b31_60")             or 0) for f in filas),
+            "b61_90":             sum(float(f.get("b61_90")             or 0) for f in filas),
+            "b90_plus":           sum(float(f.get("b90_plus")           or 0) for f in filas),
+            "total":              sum(float(f.get("saldo_total")        or 0) for f in filas),
+            "saldo_facturas":     sum(float(f.get("saldo_facturas")     or 0) for f in filas),
+            "cheques_en_cartera": sum(float(f.get("cheques_en_cartera") or 0) for f in filas),
+            "n_facturas":         sum(int(f.get("n_facturas")           or 0) for f in filas),
+            "n_clientes":         len(filas),
         }
 
     if request.args.get("export") == "csv":

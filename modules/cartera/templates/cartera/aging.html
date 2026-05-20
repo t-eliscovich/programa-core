@@ -187,9 +187,11 @@
             Total
             <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} clientes)</span>
           </td>
-          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold">{{ totales.cheques_en_cartera | num_es(0) if totales.cheques_en_cartera else '—' }}</td>
-          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold">{{ totales.saldo_facturas | num_es(0) if totales.saldo_facturas else '—' }}</td>
-          <td class="px-3 py-3 text-right tabular-nums text-lg font-bold text-slate-900 dark:text-slate-100">{{ totales.total | num_es(0) }}</td>
+          {# TMT 2026-05-20 — siempre mostrar números (antes ponía '—'
+             cuando 0 o None, lo que daba apariencia de bug). #}
+          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold">{{ (totales.cheques_en_cartera or 0) | num_es(0) }}</td>
+          <td class="px-3 py-3 text-right tabular-nums text-base font-semibold">{{ (totales.saldo_facturas or 0) | num_es(0) }}</td>
+          <td class="px-3 py-3 text-right tabular-nums text-lg font-bold text-slate-900 dark:text-slate-100">{{ (totales.total or 0) | num_es(0) }}</td>
           <td class="px-3 py-3 text-right tabular-nums text-base font-semibold text-slate-500">100%</td>
         </tr>
       </tfoot>
