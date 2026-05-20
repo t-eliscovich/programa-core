@@ -351,6 +351,130 @@ def cartera():
     return render_template("informes/cartera.html", filas=filas, total=total, error=error)
 
 
+@informes_bp.route("/check-totales")
+@requiere_login
+@requiere_permiso("informes.ver")
+def check_totales():
+    """Diagnóstico de consistencia entre pantallas.
+
+    TMT 2026-05-20 — pedido dueña: "necesito hacer un check de los totales,
+    no me gusta llegar a una pantalla y ver otra cosa". Compara cada
+    total cruzado entre vistas y marca diffs con badge rojo.
+
+    Cruces verificados:
+      A. Cartera bruta:    /cartera.total  vs  Resultados (TOTC + TOTF)
+      B. Pasivos:          /deudas.total   vs  Resultados.TOTP
+      C. Posdat (deuda):   /posdat default vs  /deudas.total
+      D. TOTC (sin 'A'):   informes.totc() vs  cheques live Z+1+2+3+P+D
+      E. TOTF:             informes.totf() vs  facturas Z+A live
+    """
+    import db as _db
+
+    error = None
+    checks: list[dict] = []
+
+    def _diff_check(label: str, a_label: str, a_val: float,
+                    b_label: str, b_val: float, ok_tol: float = 0.5) -> dict:
+        a_f = float(a_val or 0)
+        b_f = float(b_val or 0)
+        diff = a_f - b_f
+        ok = abs(diff) <= ok_tol
+        return {
+            "label":    label,
+            "a_label":  a_label, "a_val": a_f,
+            "b_label":  b_label, "b_val": b_f,
+            "diff":     diff,
+            "ok":       ok,
+        }
+
+    try:
+        # ─── Building blocks (queries canónicas) ─────────────────────
+        totc = queries.totc()
+        totf = queries.totf()
+        totp = queries.posdat_totales()["totp"]
+
+        # /cartera total (bruto)
+        from modules.cartera import queries as _cq
+        cartera_tot = _cq.aging_totales()
+        cartera_total = float(cartera_tot.get("total") or 0)
+        cartera_facturas = float(cartera_tot.get("saldo_facturas") or 0)
+        cartera_cheques  = float(cartera_tot.get("cheques_en_cartera") or 0)
+
+        # /deudas total
+        deudas_filas = queries.deudas_por_proveedor()
+        deudas_total = sum(float(r.get("saldo_total") or 0) for r in deudas_filas)
+
+        # /posdat default (= banc=0 + no anulada)
+        from modules.posdat import queries as _pq
+        posdat_resumen = _pq.resumen(solo_abiertas=True, tab="posdatados")
+        posdat_resumen_yy = _pq.resumen(solo_abiertas=True, tab="yy")
+        posdat_total_no_yy = float(posdat_resumen.get("total_abierto") or 0)
+        posdat_total_yy    = float(posdat_resumen_yy.get("total_abierto") or 0)
+
+        # Cheques live (mismo filtro que totc — sanity).
+        chq_live = _db.fetch_one(
+            "SELECT COALESCE(SUM(importe), 0) AS t "
+            "FROM scintela.cheque "
+            "WHERE stat IN ('Z','1','2','3','P','D')"
+        )
+        cheques_live = float((chq_live or {}).get("t") or 0)
+
+        fact_live = _db.fetch_one(
+            "SELECT COALESCE(SUM(saldo), 0) AS t "
+            "FROM scintela.factura "
+            "WHERE stat IS NULL OR stat IN ('Z','A','',' ')"
+        )
+        facturas_live = float((fact_live or {}).get("t") or 0)
+
+        # ─── Construir los checks ────────────────────────────────────
+        checks = [
+            _diff_check(
+                "Cartera bruta (cheques + facturas)",
+                "/cartera total",                       cartera_total,
+                "Resultados (TOTC + TOTF)",             totc + totf,
+            ),
+            _diff_check(
+                "Cheques en cartera",
+                "/cartera.cheques_en_cartera",          cartera_cheques,
+                "informes.totc()",                      totc,
+            ),
+            _diff_check(
+                "Facturas (TOTF)",
+                "/cartera.saldo_facturas",              cartera_facturas,
+                "informes.totf()",                      totf,
+            ),
+            _diff_check(
+                "TOTC sanity (cheques Z+1+2+3+P+D)",
+                "informes.totc()",                      totc,
+                "live SUM cheque.importe",              cheques_live,
+            ),
+            _diff_check(
+                "TOTF sanity (facturas Z/A)",
+                "informes.totf()",                      totf,
+                "live SUM factura.saldo",               facturas_live,
+            ),
+            _diff_check(
+                "Pasivos = Deudas",
+                "Resultados.TOTP",                      totp,
+                "/deudas total",                        deudas_total,
+            ),
+            _diff_check(
+                "Deudas vs /posdat (Posdatados)",
+                "/deudas total",                        deudas_total,
+                "/posdat tab=Posdatados (sin YY)",      posdat_total_no_yy + posdat_total_yy,
+            ),
+        ]
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+        import traceback
+        traceback.print_exc()
+
+    return render_template(
+        "informes/check_totales.html",
+        checks=checks, error=error,
+    )
+
+
 @informes_bp.route("/deudas")
 @requiere_login
 @requiere_permiso("informes.ver")

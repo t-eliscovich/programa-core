@@ -635,6 +635,7 @@
       <details class="sidebar-section" data-key="informes">
         <summary>Informes</summary>
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.balance', 'Resultados', 'report') }}{% endif %}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.check_totales', 'Check totales', 'check') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}{% endif %}
         {# TMT 2026-05-20 — Cartera / Gastos / Activos salen del sidebar
            (pedido dueña). Mantienen el link desde /informes/balance. #}

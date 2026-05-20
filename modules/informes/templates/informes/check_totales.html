@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Check totales{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Informes</a> / <strong>Check de totales</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold">Check de totales</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Cruza los totales clave entre pantallas para detectar inconsistencias.
+      Si una línea aparece en <span class="text-rose-700 font-medium">rojo</span>, hay un
+      número que no coincide entre dos vistas — clickeá los enlaces de cada
+      lado para ver de dónde viene.
+    </p>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# Resumen — cuántos OK vs cuántos fallaron #}
+  {% set _n_ok = checks | selectattr('ok') | list | length %}
+  {% set _n_fail = (checks | length) - _n_ok %}
+  <div class="mb-4 grid grid-cols-3 gap-3">
+    <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wide text-emerald-700">Checks OK</div>
+      <div class="text-2xl font-semibold text-emerald-900 tabular-nums">{{ _n_ok }}</div>
+    </div>
+    <div class="rounded-lg {% if _n_fail %}bg-rose-50 border border-rose-300{% else %}bg-slate-50 border border-slate-200{% endif %} px-4 py-3">
+      <div class="text-xs uppercase tracking-wide {% if _n_fail %}text-rose-700{% else %}text-slate-500{% endif %}">Discrepancias</div>
+      <div class="text-2xl font-semibold tabular-nums {% if _n_fail %}text-rose-900{% else %}text-slate-700{% endif %}">{{ _n_fail }}</div>
+    </div>
+    <div class="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Total checks</div>
+      <div class="text-2xl font-semibold tabular-nums text-slate-700">{{ checks | length }}</div>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium" style="width:40px;">Estado</th>
+          <th class="px-3 py-2 text-left font-medium">Cruce</th>
+          <th class="px-3 py-2 text-right font-medium">A</th>
+          <th class="px-3 py-2 text-right font-medium">B</th>
+          <th class="px-3 py-2 text-right font-medium">A − B</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in checks %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if not c.ok %}bg-rose-50/40 dark:bg-rose-900/10{% endif %}">
+          <td class="px-3 py-2 text-center">
+            {% if c.ok %}
+              <span class="text-emerald-600 text-lg" title="Coincide">✓</span>
+            {% else %}
+              <span class="text-rose-600 text-lg" title="Discrepancia">✗</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            <div class="font-medium {% if not c.ok %}text-rose-900{% endif %}">{{ c.label }}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">
+              <span class="font-mono">A: {{ c.a_label }}</span> vs
+              <span class="font-mono">B: {{ c.b_label }}</span>
+            </div>
+          </td>
+          <td class="px-3 py-2 text-right font-mono tabular-nums">{{ '%.2f' | format(c.a_val) }}</td>
+          <td class="px-3 py-2 text-right font-mono tabular-nums">{{ '%.2f' | format(c.b_val) }}</td>
+          <td class="px-3 py-2 text-right font-mono tabular-nums {% if not c.ok %}text-rose-700 font-semibold{% else %}text-slate-400{% endif %}">
+            {{ '%+.2f' | format(c.diff) }}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-3 py-6 text-center text-slate-500">No hay checks definidos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    Tolerancia por check: $ 0,50 (para absorber rounding de centavos).
+    Si una diff es mayor, indica un problema real de coherencia entre
+    queries — generalmente filtros distintos (saldo&gt;0, stat='A', etc).
+  </p>
+
+  <div class="mt-4 flex gap-2 no-print">
+    <a href="{{ url_for('informes.balance') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">
+      Ir a Resultados
+    </a>
+    <a href="{{ url_for('cartera.aging') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">
+      Ir a Cartera
+    </a>
+    <a href="{{ url_for('informes.deudas') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">
+      Ir a Deudas
+    </a>
+    <a href="{{ url_for('posdat.lista') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">
+      Ir a Posdat
+    </a>
+  </div>
+</div>
+{% endblock %}
