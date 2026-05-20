@@ -105,13 +105,12 @@
     <label class="text-xs text-slate-600">Hasta
       <input type="date" name="hasta" value="{{ hasta or '' }}" class="border rounded px-2 py-1 text-sm">
     </label>
-    <label class="text-xs text-slate-600 flex items-center gap-1">
-      <input type="hidden" name="abiertas" value="0">
-      <input type="checkbox" name="abiertas" value="1" {% if solo_abiertas %}checked{% endif %}>
-      Sólo abiertas
-    </label>
+    {# TMT 2026-05-20 — checkbox "Sólo abiertas" eliminado (pedido
+       dueña: "sacar filtro solo abiertas no se que es"). El default
+       en views.py ahora es False = todas. Si alguien necesita el
+       filtro legacy, puede pasar ?abiertas=1 a mano. #}
     <button type="submit" class="bg-slate-700 text-white px-3 py-1 rounded text-sm">Buscar</button>
-    <a href="{{ url_for('posdat.lista', q=q, prov=prov, desde=desde, hasta=hasta, abiertas='1' if solo_abiertas else '0', export='csv') }}"
+    <a href="{{ url_for('posdat.lista', q=q, prov=prov, desde=desde, hasta=hasta, export='csv') }}"
        class="text-sm text-slate-500 hover:underline ml-auto">CSV</a>
   </form>
 

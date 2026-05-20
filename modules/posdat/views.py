@@ -304,7 +304,11 @@ def anular(id_posdat: int):
 def lista():
     q = request.args.get("q", "").strip()
     prov = (request.args.get("prov") or "").strip().upper() or None
-    solo_abiertas = request.args.get("abiertas") != "0"
+    # TMT 2026-05-20 — default cambiado a False (= todas). La dueña
+    # reportó: "si no pongo nada en los filtros y pongo buscar me va
+    # de 2 millones a 7 millones". El checkbox "Sólo abiertas" se
+    # eliminó de la UI; queda como query-param opcional para CSV/legacy.
+    solo_abiertas = request.args.get("abiertas") == "1"
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     # TMT 2026-05-20 — tab='posdatados' (default) excluye prov='YY';

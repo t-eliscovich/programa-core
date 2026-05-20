@@ -48,7 +48,9 @@
           <th class="px-3 py-2 text-right font-medium">Plazo</th>
           <th class="px-3 py-2 text-right font-medium">Ret. base</th>
           <th class="px-3 py-2 text-right font-medium">Ret. IVA</th>
-          <th class="px-3 py-2 text-right font-medium">Deuda</th>
+          {# TMT 2026-05-20 — columna Deuda eliminada (pedido dueña:
+             "la deuda de los provedores no debe estar en datos base").
+             Se ve en /posdat. #}
         </tr>
       </thead>
       <tbody>
@@ -81,10 +83,9 @@
           <td class="px-3 py-2 text-right text-mono">{{ p.plazo or '' }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ p.retbase or '' }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
-          <td class="px-3 py-2 text-right text-mono {% if p.saldo_total and p.saldo_total > 0 %}font-semibold{% endif %}">{{ p.saldo_total | money_es }}</td>
         </tr>
         {% else %}
-        {{ empty_row(10, 'Sin proveedores.') }}
+        {{ empty_row(9, 'Sin proveedores.') }}
         {% endfor %}
       </tbody>
     </table>

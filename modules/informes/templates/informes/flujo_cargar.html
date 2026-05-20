@@ -1,17 +1,15 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Flujo — cargar datos{% endblock %}
 {% block breadcrumb %}Informes / <a href="{{ url_for('informes.flujo_grafico') }}">Flujo</a> / <strong>Cargar</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 cierre. #}
 <div class="max-w-5xl">
-  <div class="mb-6">
-    <h1 class="text-2xl font-semibold">Cargar datos de flujo</h1>
-    <p class="text-sm text-slate-500 mt-1">
-      Poblá la tabla <code>scintela.flujo</code> día por día o subí un CSV.
-      Si la fecha ya existe, los valores cargados la actualizan; el resto
-      queda como está.
-    </p>
-  </div>
+  {{ page_hero(
+      'Cargar datos de flujo',
+      descripcion_safe='Poblá la tabla <code>scintela.flujo</code> día por día o subí un CSV. Si la fecha ya existe, los valores cargados la actualizan; el resto queda como está.'
+  ) }}
 
   {% if errores %}
     <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">

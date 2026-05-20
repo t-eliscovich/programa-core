@@ -1,12 +1,12 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Diag stock {{ anio }}{% endblock %}
 {% block breadcrumb %}<strong>Diag stock {{ anio }}</strong>{% endblock %}
 
 {% block content %}
-<div class="page-shell page-shell--xl">
-  <header class="page-header">
-    <h1 class="page-title">Diagnóstico stock — {{ anio }}</h1>
-  </header>
+{# TMT 2026-05-20 PASADA 2 cierre. #}
+<div class="max-w-7xl">
+  {{ page_hero('Diagnóstico stock — ' ~ anio, 'Tabla cruzada de scintela.tinto vs scintela.historia para detectar discrepancias.') }}
 
   <h2 class="text-base font-semibold mt-4 mb-2">scintela.tinto por mes</h2>
   <table class="w-full text-sm bg-white border rounded mb-6">
