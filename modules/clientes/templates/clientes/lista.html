@@ -90,22 +90,25 @@
           <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
           {% if tiene_permiso('clientes.editar') %}
           <td class="px-1 py-2 no-print text-center">
-            {# TMT 2026-05-20 — botón eliminar con confirm() pedido dueña.
-               Usamos tojson para que el nombre con apóstrofes (Joaquín
-               D'Angelo, etc.) no rompa el HTML. #}
-            {% set _msg = '¿Eliminar cliente ' ~ c.codigo_cli ~ ' — ' ~ (c.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene facturas o cheques vinculados, será bloqueado.' %}
-            <form method="post" action="{{ url_for('clientes.eliminar', codigo_cli=c.codigo_cli) }}"
-                  class="inline"
-                  onsubmit="return confirm({{ _msg | tojson }});">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit"
-                      class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
-                      title="Eliminar cliente (pregunta antes)">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                </svg>
-              </button>
-            </form>
+            {# TMT 2026-05-20 v3 — botón eliminar con confirm().
+               Defensivo: solo renderizamos si c.codigo_cli tiene valor.
+               Sin esto, url_for() genera '/clientes//eliminar' que da 404.
+               Usamos tojson para escape correcto del nombre. #}
+            {% if c.codigo_cli %}
+              {% set _msg = '¿Eliminar cliente ' ~ c.codigo_cli ~ ' — ' ~ (c.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene facturas o cheques vinculados, será bloqueado.' %}
+              <form method="post" action="{{ url_for('clientes.eliminar', codigo_cli=c.codigo_cli) }}"
+                    class="inline"
+                    onsubmit="return confirm({{ _msg | tojson }});">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                        title="Eliminar cliente (pregunta antes)">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                  </svg>
+                </button>
+              </form>
+            {% endif %}
           </td>
           {% endif %}
         </tr>

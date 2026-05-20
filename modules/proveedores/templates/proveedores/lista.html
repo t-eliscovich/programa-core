@@ -88,21 +88,24 @@
           <td class="px-3 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
           {% if tiene_permiso('proveedores.editar') %}
           <td class="px-1 py-2 no-print text-center">
-            {# TMT 2026-05-20 — botón eliminar con confirm() pedido dueña.
-               Usamos tojson para escapar el nombre correctamente. #}
-            {% set _msg = '¿Eliminar proveedor ' ~ p.codigo_prov ~ ' — ' ~ (p.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene compras o posdatados vinculados, será bloqueado.' %}
-            <form method="post" action="{{ url_for('proveedores.eliminar', codigo_prov=p.codigo_prov) }}"
-                  class="inline"
-                  onsubmit="return confirm({{ _msg | tojson }});">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit"
-                      class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
-                      title="Eliminar proveedor (pregunta antes)">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                </svg>
-              </button>
-            </form>
+            {# TMT 2026-05-20 v3 — botón eliminar con confirm().
+               Defensivo: solo renderizamos si p.codigo_prov tiene valor.
+               Sin esto, url_for() genera '/proveedores//eliminar' → 404. #}
+            {% if p.codigo_prov %}
+              {% set _msg = '¿Eliminar proveedor ' ~ p.codigo_prov ~ ' — ' ~ (p.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene compras o posdatados vinculados, será bloqueado.' %}
+              <form method="post" action="{{ url_for('proveedores.eliminar', codigo_prov=p.codigo_prov) }}"
+                    class="inline"
+                    onsubmit="return confirm({{ _msg | tojson }});">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                        title="Eliminar proveedor (pregunta antes)">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                  </svg>
+                </button>
+              </form>
+            {% endif %}
           </td>
           {% endif %}
         </tr>

@@ -868,7 +868,26 @@ def historia_mas_reciente() -> dict | None:
 
     Bug TMT 2026-05-11: STOCK mostraba Hilado=2,950 en vez de 2,926
     porque hist.ustock (April $) se dividía por kg de iniciales (May).
+
+    TMT 2026-05-20 v3 — defensivo: filtra snapshots auto-creados
+    incompletos (= los que escribimos sin computar ktej/ktin/utej/utin).
+    Si el snapshot no tiene esos campos, /flujo-produccion mostraba 0
+    en TINTORERIA y KK $/kg. Ahora exigimos ktej > 0 para considerar
+    el snapshot "completo". Si todos están vacíos, devuelve el más
+    reciente igual (fallback gracioso, mejor algo que nada).
     """
+    row = db.fetch_one(
+        """
+        SELECT *
+        FROM scintela.historia
+        WHERE COALESCE(ktej, 0) > 0
+        ORDER BY fecha DESC
+        LIMIT 1
+        """
+    )
+    if row:
+        return row
+    # Fallback: si NINGÚN snapshot tiene ktej, devolver el más reciente.
     return db.fetch_one(
         """
         SELECT *

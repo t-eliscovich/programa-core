@@ -155,12 +155,11 @@
           {% if _show_acum %}
             <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
           {% endif %}
-          {# TMT 2026-05-20 — columnas Banco / Editar / Pagar removidas
-             por pedido dueña. Las acciones siguen accesibles desde el
-             detalle del posdat (click en la fila).
-             TMT 2026-05-20 v5 — en tab YY agregamos columna "Eliminar"
-             (botón 🗑 con confirm) para edición tipo spreadsheet. #}
-          {% if tab == 'yy' and tiene_permiso('posdat.anular') %}
+          {# TMT 2026-05-20 v6 — columna eliminar también en Posdatados
+             (pedido dueña: "EN posdatados no. podes poner que me deje
+             agregar y editar inline?"). Edit inline ya funciona via
+             /posdat/_api/<id>/editar; agregamos delete + add line. #}
+          {% if tiene_permiso('posdat.anular') %}
             <th class="px-1 py-1 no-print" style="width:36px;"></th>
           {% endif %}
         </tr>
@@ -245,15 +244,16 @@
           {% if _show_acum %}
           <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
           {% endif %}
-          {# TMT 2026-05-20 v5 — botón eliminar en tab YY. #}
-          {% if tab == 'yy' and tiene_permiso('posdat.anular') %}
+          {# TMT 2026-05-20 v6 — botón eliminar en TODAS las tabs. #}
+          {% if tiene_permiso('posdat.anular') %}
           <td class="px-1 py-1 no-print text-center">
-            {% set _msg = '¿Eliminar línea YY ' ~ (f.concepto or 'sin concepto') ~ ' (importe ' ~ (f.importe | num_es) ~ ')?' %}
+            {% set _msg = '¿Eliminar línea ' ~ (f.prov or 'sin proveedor') ~ ' — ' ~ (f.concepto or 'sin concepto') ~ ' (importe ' ~ (f.importe | num_es) ~ ')?' %}
             <button type="button"
-                    class="posdat-yy-del text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                    class="posdat-row-del text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
                     data-id-posdat="{{ f.id_posdat }}"
+                    data-prov="{{ f.prov or '' }}"
                     data-msg="{{ _msg }}"
-                    title="Eliminar línea YY">
+                    title="Eliminar línea">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
               </svg>
@@ -263,26 +263,37 @@
         </tr>
         {% else %}
           {# colspan = Fecha/Venc/Prov/Concepto/Importe (5) + columnas
-             condicionales (mensual/diaria/acum) + delete YY.
+             condicionales (mensual/diaria/acum) + delete.
              N° eliminada TMT 2026-05-20 v4. #}
-          {% set _colspan_empty = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if (tab == 'yy' and tiene_permiso('posdat.anular')) else 0) %}
+          {% set _colspan_empty = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
           {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
-      {# TMT 2026-05-20 v5 — fila de "+ Nueva línea" al pie del YY tab.
-         Permite crear una row YY vacía rápido. Pedido dueña: "dentro
-         de YY voy a poner otros tipos. que no me bloquee". #}
-      {% if tab == 'yy' and tiene_permiso('posdat.crear') %}
+      {# TMT 2026-05-20 v6 — "+ Nueva línea" al pie de AMBAS tabs.
+         En YY: crea row vacía (prov='YY', importe=0, concepto=''),
+         editás inline.
+         En Posdatados: pide proveedor con prompt() (no podemos crear
+         sin proveedor real porque la FK lo exige). #}
+      {% if tiene_permiso('posdat.crear') %}
       <tfoot class="no-print bg-slate-50 dark:bg-slate-800/40 border-t-2 border-slate-200 dark:border-slate-700">
         <tr>
           {% set _colspan_add = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
           <td colspan="{{ _colspan_add }}" class="px-3 py-2 text-left">
-            <button type="button" id="yy-add-line"
-                    class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-              Nueva línea YY
-            </button>
-            <span class="ml-3 text-xs text-slate-500">Crea una fila YY vacía. Editás concepto / importe / venc. en la grilla.</span>
+            {% if tab == 'yy' %}
+              <button type="button" id="yy-add-line"
+                      class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                Nueva línea YY
+              </button>
+              <span class="ml-3 text-xs text-slate-500">Crea una fila YY vacía. Editás concepto / importe / venc. en la grilla.</span>
+            {% else %}
+              <button type="button" id="posdat-add-line"
+                      class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                Nueva línea
+              </button>
+              <span class="ml-3 text-xs text-slate-500">Te pide código de proveedor y crea una fila. Después editás importe / concepto inline.</span>
+            {% endif %}
           </td>
         </tr>
       </tfoot>
@@ -500,26 +511,36 @@
   </script>
   {% endif %}
 
-  {# TMT 2026-05-20 v5 — JS para CRUD YY: eliminar líneas + agregar.
-     Pedido dueña: "Podemos hacer que en YY se pueda editar inline?
-     tengo que poder eliminar y abajo un + para otra linea. dentro
-     de YY voy a poner otros tipos. que no me bloquee." #}
-  {% if tab == 'yy' %}
+  {# TMT 2026-05-20 v6 — JS CRUD para AMBAS tabs (YY y Posdatados):
+     eliminar líneas + agregar. Pedido dueña: "EN posdatados no.
+     podes poner que me deje agregar y editar inline?" #}
   <script>
     (function() {
       const csrf = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
-      // Botón "🗑 Eliminar" por fila YY.
-      document.querySelectorAll('.posdat-yy-del').forEach(btn => {
+      // Botón "🗑 Eliminar" por fila (ambas tabs). Para posdatados
+      // normales el motivo se solicita (>=10 chars). Para YY el
+      // backend acepta motivo vacío.
+      document.querySelectorAll('.posdat-row-del').forEach(btn => {
         btn.addEventListener('click', () => {
           const id = btn.dataset.idPosdat;
+          const prov = (btn.dataset.prov || '').toUpperCase();
           const msg = btn.dataset.msg || '¿Eliminar línea?';
           if (!confirm(msg)) return;
+          let motivo = '';
+          if (prov !== 'YY') {
+            motivo = prompt('Motivo (mínimo 10 caracteres):', '');
+            if (motivo === null) return;  // cancel
+            if (motivo.trim().length < 10) {
+              alert('Motivo obligatorio para eliminar posdat normal (mínimo 10 caracteres).');
+              return;
+            }
+          }
           fetch('/posdat/_api/' + id + '/anular', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-            body: JSON.stringify({motivo: ''}),  // YY no exige motivo
+            body: JSON.stringify({motivo: motivo}),
           }).then(r => r.json()).then(j => {
             if (j && j.ok) {
               btn.closest('tr')?.remove();
@@ -530,40 +551,61 @@
         });
       });
 
-      // Botón "+ Nueva línea YY" — crea una fila vacía y recarga.
-      const btnAdd = document.getElementById('yy-add-line');
-      if (btnAdd) {
-        btnAdd.addEventListener('click', () => {
-          btnAdd.disabled = true;
-          btnAdd.textContent = '⏳ Creando…';
-          const hoy = new Date().toISOString().slice(0, 10);
+      const hoy = new Date().toISOString().slice(0, 10);
+
+      // Botón "+ Nueva línea YY" — crea row vacía con prov='YY'.
+      const btnYY = document.getElementById('yy-add-line');
+      if (btnYY) {
+        btnYY.addEventListener('click', () => {
+          btnYY.disabled = true; btnYY.textContent = '⏳ Creando…';
           fetch('/posdat/_api/nuevo', {
-            method: 'POST',
-            credentials: 'same-origin',
+            method: 'POST', credentials: 'same-origin',
             headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-            body: JSON.stringify({
-              fecha: hoy,
-              fechad: hoy,
-              prov: 'YY',
-              importe: 0,
-              concepto: '',
-            }),
+            body: JSON.stringify({fecha: hoy, fechad: hoy, prov: 'YY', importe: 0, concepto: ''}),
           }).then(r => r.json()).then(j => {
-            if (j && j.ok) {
-              window.location.reload();
-            } else {
+            if (j && j.ok) { window.location.reload(); }
+            else {
               alert('No se pudo crear: ' + ((j && j.error) || 'error'));
-              btnAdd.disabled = false;
-              btnAdd.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> Nueva línea YY';
+              btnYY.disabled = false;
+              btnYY.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> Nueva línea YY';
             }
-          }).catch(e => {
-            alert('Error de red: ' + e.message);
-            btnAdd.disabled = false;
-          });
+          }).catch(e => { alert('Error de red: ' + e.message); btnYY.disabled = false; });
+        });
+      }
+
+      // Botón "+ Nueva línea" (Posdatados main tab) — pide código de
+      // proveedor, importe y concepto. La FK lo exige; si el code
+      // no existe, el endpoint devuelve error y el caller lo muestra.
+      const btnPosdat = document.getElementById('posdat-add-line');
+      if (btnPosdat) {
+        btnPosdat.addEventListener('click', () => {
+          const prov = prompt('Código de proveedor (ej. AC, PICH, etc.):', '');
+          if (prov === null) return;
+          const provClean = prov.trim().toUpperCase();
+          if (!provClean) { alert('Código de proveedor requerido.'); return; }
+          if (provClean === 'YY') { alert('Para YY usá la otra tab.'); return; }
+          const concepto = prompt('Concepto:', '');
+          if (concepto === null) return;
+          const importeStr = prompt('Importe:', '0');
+          if (importeStr === null) return;
+          const importe = parseFloat(importeStr.replace(',', '.')) || 0;
+          if (importe <= 0) { alert('Importe debe ser > 0.'); return; }
+          btnPosdat.disabled = true; btnPosdat.textContent = '⏳ Creando…';
+          fetch('/posdat/_api/nuevo', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({fecha: hoy, fechad: hoy, prov: provClean, importe: importe, concepto: concepto.trim() || provClean}),
+          }).then(r => r.json()).then(j => {
+            if (j && j.ok) { window.location.reload(); }
+            else {
+              alert('No se pudo crear: ' + ((j && j.error) || 'error'));
+              btnPosdat.disabled = false;
+              btnPosdat.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> Nueva línea';
+            }
+          }).catch(e => { alert('Error de red: ' + e.message); btnPosdat.disabled = false; });
         });
       }
     })();
   </script>
-  {% endif %}
 </div>
 {% endblock %}

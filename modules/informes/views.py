@@ -160,13 +160,16 @@ def historico_12m():
             error = str(e)
     else:
         # Auto-tomar snapshot del mes actual (con throttle de 1h).
-        # Pedido dueña: "cuando entro se agrega una nueva columna con el
-        # mes actual sin borrar el ultimo mes actual".
-        try:
-            usuario = (g.user or {}).get("username", "web")
-            snap_info = queries.tomar_snapshot_mes_actual(usuario=usuario)
-        except Exception as e:  # noqa: BLE001
-            snap_info = {"accion": "error", "error": str(e)}
+        # TMT 2026-05-20 v3 — snapshot automático DESACTIVADO al entrar.
+        # Pedido dueña original era "cuando entro se agrega una nueva
+        # columna con el mes actual sin borrar el ultimo mes actual" pero
+        # el snapshot auto sobreescribía los campos ktej/ktin/utej/utin
+        # (que calcular_kpis NO computa) con 0 — rompía la TINTORERIA y
+        # KK $/kg en /flujo-produccion. Ahora el snapshot se crea SOLO
+        # con click explícito al botón "↻ Snapshot ahora" del template.
+        # La pantalla sigue mostrando el último snapshot existente.
+        snap_info = {"accion": "manual",
+                     "motivo": "snapshot auto deshabilitado — usá '↻ Snapshot ahora'"}
         try:
             data = queries.historico_5m_con_actual(max_actual=3)
         except Exception as e:  # noqa: BLE001
