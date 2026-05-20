@@ -1,14 +1,18 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Usuarios{% endblock %}
+{% block breadcrumb %}<strong>Usuarios</strong>{% endblock %}
 {% block content %}
-<div class="max-w-5xl mx-auto py-6 px-4">
-  <div class="flex items-center justify-between mb-4">
-    <h1 class="text-xl font-semibold">Usuarios</h1>
-    <a href="{{ url_for('usuarios.nuevo') }}"
-       class="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded text-sm">
-      + Nuevo usuario
-    </a>
+{# TMT 2026-05-20 PASADA 2 cierre — page_hero canónico. #}
+<div class="max-w-5xl">
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Usuarios', 'Cuentas con acceso al sistema. Asigná rol y permisos al crear.') }}
+    <div class="no-print">
+      <a href="{{ url_for('usuarios.nuevo') }}"
+         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white shadow-sm">
+        + Nuevo usuario
+      </a>
+    </div>
   </div>
 
   <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">

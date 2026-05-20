@@ -1,24 +1,13 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Provisiones{% endblock %}
 {% block breadcrumb %}<strong>Provisiones</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 cierre — page_hero con descripcion_safe. #}
 <div class="max-w-5xl">
-  <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
-    <div>
-      <h1 class="text-2xl font-semibold">Provisiones</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        Cuota mensual de gastos recurrentes (alquileres, servicios, sueldos provisionados, etc.).
-        <br>
-        <span class="text-xs">
-          Valor del mes actual = valor_inicio_mes + (día/30) × cuota mensual.
-          A fin de mes ajusta a valor_inicio + cuota.
-          Editá el valor real del posdat en
-          <a href="{{ url_for('posdat.lista') }}" class="text-sky-700 hover:underline">Posdatados</a>.
-        </span>
-      </p>
-    </div>
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Provisiones', descripcion_safe='Cuota mensual de gastos recurrentes (alquileres, servicios, sueldos provisionados, etc.).<br><span class="text-xs">Valor del mes actual = valor_inicio_mes + (día/30) × cuota mensual. A fin de mes ajusta a valor_inicio + cuota. Editá el valor real del posdat en <a href="' ~ url_for('posdat.lista') ~ '" class="text-sky-700 hover:underline">Posdatados</a>.</span>') }}
     <div class="no-print flex items-center gap-2">
       <a href="{{ url_for('provisiones.lista', q=q, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
