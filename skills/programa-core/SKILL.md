@@ -1380,3 +1380,29 @@ Pedido dueña: "dejame ingresar le total en posdatados". El importe (total) era 
 `scripts/push_to_github.sh` — pedido dueña "madame script para subir a github". Defensivo: aborta si no estás en main, muestra el diff y pide confirmación, hace `git pull --rebase` antes del push para no romper si alguien pusheó antes. Imprime recordatorio post-push de correr las migraciones a mano (no se corren solas con git pull).
 
 Uso: `./scripts/push_to_github.sh "mensaje opcional"`.
+
+### Depósito inline de cheques desde /cheques (2026-05-20)
+
+Pedido dueña literal: "Necesitamos agilizar el proceso de los depósitos. Si estoy parado en cheques de clientes. Tener un filtro que dia hoy. Después poder seleccionar, y una vez que pongo depositar lote, se depositan los seleccionados en la pantalla principal. No hace falta una segunda pantalla. (...) Cuando el cheque se deposita, tengo que ver que el saldo subió en el banco".
+
+**Flujo nuevo (sin segunda pantalla):**
+1. En `/cheques`, click el chip "Hoy" → setea `desde=hasta=today` y submitea el form (JS local, no requiere endpoint).
+2. Aparecen checkboxes a la izquierda de cada fila — sólo en cheques con stat Z (cartera) o P (postergado). El resto NO muestra checkbox (no se puede depositar algo ya depositado / anulado).
+3. Al tildar al menos uno, aparece una **barra flotante verde** abajo del centro con: count, total, date picker (default hoy), botón "Depositar lote en Pichincha".
+4. Click "Depositar" → confirm si son >1, POST a `/cheques/_api/depositar-lote`.
+5. Banner verde arriba del centro: "✓ N cheques depositados en Pichincha · Saldo $X → $Y (+$Z)" + link a la boleta.
+6. Auto-reload en 2.5s para refrescar conteos por tab.
+
+**Endpoint nuevo: `POST /cheques/_api/depositar-lote`** (views.api_depositar_lote).
+- Acepta JSON `{ids: [int], no_banco?: int, fecha?: 'YYYY-MM-DD'}`. Sin no_banco, fallback a Pichincha por nombre (mismo que el wizard clásico).
+- Reusa `queries.depositar_lote()` — toda la lógica transaccional (UPDATE cheque + INSERT transacciones_bancarias + chequextransaccion + mov_doble) está intacta.
+- Lee `bank_helpers.saldo_actual(no_banco)` ANTES y DESPUÉS del depósito, devuelve ambos para que la UI muestre el delta.
+- Devuelve también `boleta_url` por si la dueña quiere imprimirla.
+
+**Por qué el filtro "Hoy" es client-side:** no requiere endpoint nuevo — el form de filtros ya postea `desde`/`hasta`. Sólo seteamos los inputs y submitt. Más barato que un endpoint dedicado.
+
+**Coexistencia con el wizard viejo:** la pantalla `/cheques/depositar-lote` sigue funcionando (no se eliminó). Quien prefiera el flujo clásico (lo abre desde el botón verde "Depositar lote" del header) sigue teniéndolo. La barra flotante es el camino feliz para 1-N cheques rápidos.
+
+### Bash 3.2 compat en push_to_github.sh (2026-05-20)
+
+macOS viene con bash 3.2 (Apple no actualiza por GPL3). `${VAR,,}` (lowercase expansion) es bash 4+, falla con "bad substitution". Se reemplazó por `printf '%s' "$RESP" | tr '[:upper:]' '[:lower:]'` que es portable. Recordatorio para futuros scripts: en mac NO usar `${VAR,,}`, `${VAR^^}`, `${VAR:N:M}` con offsets negativos. Sí podés usar arrays asociativos en scripts internos siempre que TODOS los users tengan bash 4+ (la EC2 tiene Windows, no aplica). Para .sh que toca corren tanto en mac como en EC2 (vía git bash) → POSIX-friendly.

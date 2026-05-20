@@ -278,6 +278,16 @@
       <input type="date" name="hasta" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
+    {# TMT 2026-05-20 — atajo "Hoy" (pedido dueña: agilizar depósitos).
+       Setea desde=hasta=hoy y submitea. Visualmente queda como un chip
+       chico al lado del rango. #}
+    <div class="self-end">
+      <button type="button" id="filtro-hoy-btn"
+              class="text-xs px-3 py-1.5 rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium"
+              title="Filtrar cheques cuya fecha a depositar es hoy">
+        Hoy
+      </button>
+    </div>
     {# Búsqueda libre — N° cheque o nombre cliente/prov endoso #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
@@ -302,6 +312,15 @@
              - Acum. removida.
              - Columna "Stat" ahora muestra raw letter (B/V/1/2/…) + dropdown
                inline con las transiciones legales del estado actual. #}
+          {# TMT 2026-05-20 — columna checkbox para depósito inline (pedido
+             dueña: agilizar depósitos sin segunda pantalla). Sólo visible
+             si la usuaria tiene permiso cheques.aplicar. #}
+          {% if tiene_permiso('cheques.aplicar') %}
+            <th class="px-2 py-3 text-center font-medium no-print" data-no-sort style="width:32px;">
+              <input type="checkbox" id="cheque-toggle-all"
+                     title="Seleccionar todos los depositables visibles">
+            </th>
+          {% endif %}
           <th class="px-3 py-3 text-left font-medium" title="Día en que cargué el cheque en el sistema" data-sort-type="date">Cargado</th>
           <th class="px-3 py-3 text-left font-medium">Cliente</th>
           <th class="px-3 py-3 text-left font-medium">N°</th>
@@ -319,12 +338,28 @@
         {# Fila clickeable entera → /cheques/<id>. Los <a> internos siguen
            funcionando porque les ponemos data-stop=1 + JS abajo. TMT 2026-05-13. #}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
-            data-href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}">
+            data-href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
+            data-id-cheque="{{ c.id_cheque }}"
+            data-importe="{{ c.importe or 0 }}">
           {# TMT 2026-05-18 — fecha en col 1, cliente en col 2 #}
           {% set fecha_cargado = c.fecha_recibido or (c.fecha_crea.date() if c.fecha_crea and c.fecha_crea.__class__.__name__ == 'datetime' else c.fecha_crea) or c.fecha %}
           {% set stat_u = (c.stat or '').upper() %}
           {% set ya_depositado = stat_u in ('B','A','1','2','3','R') %}
           {% set fechaing_real = c.fechaing if ya_depositado else None %}
+          {# TMT 2026-05-20 — checkbox: sólo habilitado para cheques en
+             estados depositables (Z cartera, P postdatado/postergado).
+             Para el resto, queda vacío (sin checkbox) — no se puede
+             depositar algo ya depositado o anulado. #}
+          {% if tiene_permiso('cheques.aplicar') %}
+            <td class="px-2 py-2 text-center no-print" data-stop="1">
+              {% if stat_u in ('Z', 'P') %}
+                <input type="checkbox" class="cheque-pick" value="{{ c.id_cheque }}"
+                       data-importe="{{ c.importe or 0 }}"
+                       data-no="{{ c.no_cheque or '' }}"
+                       data-cli="{{ c.codigo_cli or '' }}">
+              {% endif %}
+            </td>
+          {% endif %}
           <td class="px-3 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
           <td class="px-3 py-2">
             {# TMT 2026-05-19 — solo código (pedido dueña, sin nombre). #}
@@ -457,11 +492,47 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(10, 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
+        {# TMT 2026-05-20 — colspan +1 cuando hay permiso de aplicar (col checkbox extra). #}
+        {{ empty_row((11 if tiene_permiso('cheques.aplicar') else 10), 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {# ─── TMT 2026-05-20 — Barra flotante "Depositar selección" + banner de
+       confirmación. Pedido dueña: "Necesitamos agilizar el proceso de los
+       depósitos. Si estoy parado en cheques de clientes. Tener un filtro
+       que dia hoy. Después poder seleccionar, y una vez que pongo
+       depositar lote, se depositan los seleccionados en la pantalla
+       principal. No hace falta una segunda pantalla". Y: "Cuando el
+       cheque se deposita, tengo que ver que el saldo subió en el banco". #}
+  {% if tiene_permiso('cheques.aplicar') %}
+    <div id="dep-bar"
+         class="no-print fixed bottom-4 left-1/2 -translate-x-1/2 z-30 hidden
+                flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg
+                bg-emerald-600 text-white">
+      <span class="text-sm">
+        <strong id="dep-count">0</strong> cheques seleccionados ·
+        Total <strong id="dep-total">$ 0</strong>
+      </span>
+      <input type="date" id="dep-fecha" value="{{ hoy_iso or '' }}"
+             class="text-xs text-slate-900 rounded px-2 py-1 border-0"
+             title="Fecha de depósito">
+      <button type="button" id="dep-btn"
+              class="text-sm px-3 py-1.5 rounded bg-white text-emerald-700 hover:bg-emerald-50 font-medium">
+        Depositar lote en Pichincha
+      </button>
+      <button type="button" id="dep-cancel"
+              class="text-xs text-emerald-100 hover:text-white">
+        ✕
+      </button>
+    </div>
+    <div id="dep-banner"
+         class="no-print fixed top-4 left-1/2 -translate-x-1/2 z-40 hidden
+                max-w-2xl px-4 py-3 rounded-lg shadow-lg text-sm
+                bg-emerald-50 border border-emerald-300 text-emerald-900">
+    </div>
+  {% endif %}
 
   {# Filas clickeables: navegar a la URL en data-href cuando se hace click,
      respetando los <a data-stop="1"> internos. TMT 2026-05-13.
@@ -494,5 +565,167 @@
       });
     })();
   </script>
+
+  {# TMT 2026-05-20 — Filtro "Hoy" + depósito inline. Pedido dueña:
+     "Tener un filtro que dia hoy. Después poder seleccionar, y una vez
+     que pongo depositar lote, se depositan los seleccionados en la
+     pantalla principal. No hace falta una segunda pantalla".
+
+     Cuando se completa el depósito, mostramos un banner verde con el
+     delta de saldo del banco — pedido literal: "Cuando el cheque se
+     deposita, tengo que ver que el saldo subió en el banco". #}
+  {% if tiene_permiso('cheques.aplicar') %}
+  <script>
+    (function() {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+
+      // ── 1. Filtro "Hoy" — setea desde=hasta=today y submitea ──────
+      const btnHoy = document.getElementById('filtro-hoy-btn');
+      if (btnHoy) {
+        btnHoy.addEventListener('click', () => {
+          const form = btnHoy.closest('form');
+          if (!form) return;
+          const hoy = new Date().toISOString().slice(0, 10);
+          const desde = form.querySelector('input[name="desde"]');
+          const hasta = form.querySelector('input[name="hasta"]');
+          if (desde) desde.value = hoy;
+          if (hasta) hasta.value = hoy;
+          form.submit();
+        });
+      }
+
+      // ── 2. Checkboxes + barra flotante de depósito ────────────────
+      const bar       = document.getElementById('dep-bar');
+      const cntEl     = document.getElementById('dep-count');
+      const totEl     = document.getElementById('dep-total');
+      const btnDep    = document.getElementById('dep-btn');
+      const btnCancel = document.getElementById('dep-cancel');
+      const fechaEl   = document.getElementById('dep-fecha');
+      const banner    = document.getElementById('dep-banner');
+      const toggleAll = document.getElementById('cheque-toggle-all');
+
+      // Default fecha=hoy si el server no la pasó.
+      if (fechaEl && !fechaEl.value) {
+        fechaEl.value = new Date().toISOString().slice(0, 10);
+      }
+
+      const fmt = n => Number(n || 0).toLocaleString('es-EC', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      });
+
+      function getSeleccionados() {
+        return Array.from(document.querySelectorAll('.cheque-pick:checked'));
+      }
+
+      function actualizarBarra() {
+        const sel = getSeleccionados();
+        if (sel.length === 0) {
+          if (bar) bar.classList.add('hidden');
+          if (toggleAll) toggleAll.checked = false;
+          return;
+        }
+        const total = sel.reduce(
+          (acc, cb) => acc + (parseFloat(cb.dataset.importe) || 0), 0);
+        if (cntEl) cntEl.textContent = sel.length;
+        if (totEl) totEl.textContent = '$ ' + fmt(total);
+        if (bar) bar.classList.remove('hidden');
+      }
+
+      // Wire-up de cada checkbox.
+      document.querySelectorAll('.cheque-pick').forEach(cb => {
+        cb.addEventListener('change', actualizarBarra);
+      });
+
+      // "Toggle all" — sólo afecta los visibles depositables.
+      if (toggleAll) {
+        toggleAll.addEventListener('change', () => {
+          const on = toggleAll.checked;
+          document.querySelectorAll('.cheque-pick').forEach(cb => {
+            cb.checked = on;
+          });
+          actualizarBarra();
+        });
+      }
+
+      // Cancelar — desmarca todos.
+      if (btnCancel) {
+        btnCancel.addEventListener('click', () => {
+          document.querySelectorAll('.cheque-pick').forEach(cb => cb.checked = false);
+          actualizarBarra();
+        });
+      }
+
+      // ── 3. POST al endpoint AJAX ──────────────────────────────────
+      if (btnDep) {
+        btnDep.addEventListener('click', () => {
+          const sel = getSeleccionados();
+          if (sel.length === 0) {
+            alert('Seleccioná al menos un cheque para depositar.');
+            return;
+          }
+          const ids = sel.map(cb => parseInt(cb.value, 10));
+          const total = sel.reduce(
+            (acc, cb) => acc + (parseFloat(cb.dataset.importe) || 0), 0);
+          const fecha = fechaEl ? fechaEl.value : '';
+
+          // Confirmación rápida — la dueña va a ver el banco subir,
+          // pero igual queremos un "estás seguro?" para 10+ cheques.
+          if (sel.length > 1) {
+            const msg = `Depositar ${sel.length} cheques por $ ${fmt(total)} `
+                      + `en Pichincha el ${fecha || 'hoy'}?`;
+            if (!confirm(msg)) return;
+          }
+
+          btnDep.disabled = true;
+          btnDep.textContent = 'Depositando…';
+
+          fetch('/cheques/_api/depositar-lote', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrf,
+            },
+            body: JSON.stringify({
+              ids: ids,
+              fecha: fecha || null,
+            }),
+          }).then(r => r.json()).then(j => {
+            btnDep.disabled = false;
+            btnDep.textContent = 'Depositar lote en Pichincha';
+            if (!j || !j.ok) {
+              alert('No se pudo depositar: ' + ((j && j.error) || 'error'));
+              return;
+            }
+            // ── 4. Banner con delta de saldo ────────────────────────
+            const sa = j.saldo_antes;
+            const sd = j.saldo_despues;
+            const deltaTxt = (sa !== null && sd !== null)
+              ? `Saldo ${j.banco_nombre}: $ ${fmt(sa)} → <strong>$ ${fmt(sd)}</strong> (+$ ${fmt(j.total)})`
+              : `Total depositado: $ ${fmt(j.total)}`;
+            if (banner) {
+              banner.innerHTML =
+                `<div class="font-medium mb-0.5">✓ ${j.n_depositados} cheque(s) depositado(s) en ${j.banco_nombre}</div>` +
+                `<div class="text-xs">${deltaTxt} · `
+                + `<a href="${j.boleta_url}" class="underline" target="_blank">Boleta imprimible →</a></div>`;
+              banner.classList.remove('hidden');
+            }
+            // Esconder la barra y recargar la lista en 2.5s para que la
+            // dueña alcance a leer el saldo. La recarga refresca conteos
+            // por estado (Cartera, Depositados) y saca los depositados
+            // del listado.
+            if (bar) bar.classList.add('hidden');
+            setTimeout(() => window.location.reload(), 2500);
+          }).catch(e => {
+            btnDep.disabled = false;
+            btnDep.textContent = 'Depositar lote en Pichincha';
+            alert('Error de red: ' + e.message);
+          });
+        });
+      }
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}

@@ -6,6 +6,7 @@ from flask import (
     abort,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -1594,6 +1595,114 @@ def anular_error_carga(id_cheque: int):
     return render_template("cheques/anular_error_carga.html", ch=ch)
 
 
+@cheques_bp.route("/cheques/_api/depositar-lote", methods=["POST"])
+@requiere_login
+@requiere_permiso("cheques.aplicar")
+def api_depositar_lote():
+    """Depósito inline de N cheques desde la pantalla /cheques.
+
+    Pedido dueña 2026-05-20: "Necesitamos agilizar el proceso de los
+    depósitos. Si estoy parado en cheques de clientes. Tener un filtro
+    que dia hoy. Después poder seleccionar, y una vez que pongo
+    depositar lote, se depositan los seleccionados en la pantalla
+    principal. No hace falta una segunda pantalla. (...) Cuando el
+    cheque se deposita, tengo que ver que el saldo subió en el banco".
+
+    Acepta JSON `{ids: [int], no_banco?: int, fecha?: 'YYYY-MM-DD'}`. Si
+    no_banco no viene, default a Pichincha (mismo fallback que el
+    wizard clásico). Reusa `queries.depositar_lote` para no duplicar la
+    lógica transaccional.
+
+    Devuelve JSON con `n_depositados`, `total`, `banco_nombre`,
+    `saldo_antes`, `saldo_despues`. La UI muestra una notificación con
+    el delta del saldo para que la dueña vea que efectivamente subió.
+    """
+    import bank_helpers
+    import contextlib
+    from datetime import datetime as _dt
+
+    data = request.get_json(silent=True) or request.form
+    ids_raw = data.get("ids") or data.get("id_cheque") or []
+    if isinstance(ids_raw, str):
+        # Form submit envía CSV "1,2,3" — soportamos ambos.
+        ids_raw = [x for x in ids_raw.split(",") if x.strip()]
+    try:
+        ids = [int(x) for x in ids_raw]
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "IDs de cheques inválidos."}), 400
+    if not ids:
+        return jsonify({"ok": False, "error": "Seleccioná al menos un cheque."}), 400
+
+    # Fallback de banco — replica el match por nombre del wizard.
+    no_banco = data.get("no_banco")
+    try:
+        no_banco = int(no_banco) if no_banco not in (None, "") else None
+    except (TypeError, ValueError):
+        no_banco = None
+    if not no_banco:
+        all_bancos = []
+        with contextlib.suppress(Exception):
+            all_bancos = db.fetch_all(
+                "SELECT no_banco, COALESCE(nombre,'') AS nombre "
+                "FROM scintela.banco ORDER BY no_banco"
+            ) or []
+        pichincha = [b for b in all_bancos
+                     if "PICHINC" in (b.get("nombre") or "").upper()]
+        if pichincha:
+            no_banco = int(pichincha[0]["no_banco"])
+    if not no_banco:
+        return jsonify({
+            "ok": False,
+            "error": "Banco destino requerido (no encontré Pichincha por default).",
+        }), 400
+
+    fecha_raw = (data.get("fecha") or "").strip()
+    try:
+        fecha_dep = _dt.strptime(fecha_raw, "%Y-%m-%d").date() if fecha_raw else None
+    except ValueError:
+        return jsonify({"ok": False, "error": f"Fecha inválida: {fecha_raw!r}."}), 400
+
+    # Saldo ANTES (para mostrar el delta).
+    try:
+        saldo_antes = bank_helpers.saldo_actual(no_banco=no_banco)
+    except Exception:  # noqa: BLE001
+        saldo_antes = None
+
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.depositar_lote(
+            ids_cheques=ids, no_banco=no_banco,
+            fecha_deposito=fecha_dep, usuario=usuario,
+        )
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude depositar: {e}"}), 500
+
+    # Saldo DESPUÉS — leído después del commit de queries.depositar_lote.
+    try:
+        saldo_despues = bank_helpers.saldo_actual(no_banco=no_banco)
+    except Exception:  # noqa: BLE001
+        saldo_despues = None
+
+    return jsonify({
+        "ok": True,
+        "n_depositados":  r["n_depositados"],
+        "total":          r["total"],
+        "no_banco":       r["no_banco"],
+        "banco_nombre":   r["banco_nombre"],
+        "fecha_deposito": r["fecha_deposito"].isoformat(),
+        "saldo_antes":    saldo_antes,
+        "saldo_despues":  saldo_despues,
+        # URL de la boleta imprimible — el JS puede ofrecerla como link.
+        "boleta_url": url_for(
+            "cheques.boleta_deposito",
+            fecha=r["fecha_deposito"].isoformat(),
+            no_banco=r["no_banco"],
+        ),
+    })
+
+
 @cheques_bp.route("/cheques/depositar-lote", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("cheques.aplicar")
@@ -1870,6 +1979,9 @@ def lista():
         # TMT 2026-05-19 — pasamos el mapping de transiciones para que el
         # template arme el dropdown de "Editar estado" por fila.
         transiciones_legales=queries.TRANSICIONES_LEGALES,
+        # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
+        # flotante "Depositar lote" (depósito inline sin segunda pantalla).
+        hoy_iso=date.today().isoformat(),
     )
 
 
