@@ -62,8 +62,21 @@ def lista():
             filename="activos.csv",
         )
 
-    # TMT 2026-05-20 v3 — subtotales removidos por pedido dueña ("borrar
-    # subtotales"). El cálculo del dict ya no es necesario.
+    # TMT 2026-05-20 v4 — subtotales por subcategoría re-agregados
+    # (pedido dueña: "ahora si agreguemos subtotales"). Iteración:
+    # v2 los puso, v3 los sacó, v4 vuelven con las rows más compactas.
+    subtotales: dict[int, dict] = {}
+    for f in filas:
+        cat = int(f.get("categoria_orden") or 99)
+        s = subtotales.setdefault(cat, {
+            "n": 0, "inicial": 0.0, "amortizac": 0.0,
+            "valor_libros": 0.0, "amortimes": 0.0,
+        })
+        s["n"]            += 1
+        s["inicial"]      += float(f.get("inicial")      or 0)
+        s["amortizac"]    += float(f.get("amortizac")    or 0)
+        s["valor_libros"] += float(f.get("valor_libros") or 0)
+        s["amortimes"]    += float(f.get("amortimes")    or 0)
 
     return render_template(
         "activos/lista.html",
@@ -72,6 +85,7 @@ def lista():
         error=error,
         # Códigos canónicos para el dropdown de tipo inline.
         tipos_canonicos=queries.TIPOS_CANONICOS,
+        subtotales=subtotales,
     )
 
 

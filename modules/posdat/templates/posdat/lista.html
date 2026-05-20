@@ -151,8 +151,9 @@
           {% if _show_acum %}
             <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
           {% endif %}
-          <th class="px-2 py-1">Banco</th>
-          <th class="px-2 py-1"></th>
+          {# TMT 2026-05-20 — columnas Banco / Editar / Pagar removidas
+             por pedido dueña. Las acciones siguen accesibles desde el
+             detalle del posdat (click en la fila). #}
         </tr>
       </thead>
       <tbody class="divide-y">
@@ -225,43 +226,12 @@
           {% if _show_acum %}
           <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
           {% endif %}
-          <td class="px-2 py-1 font-mono">
-            {# TMT 2026-05-19 v8 — dueña: "los que tienen un numero 9
-               son los forzados" (gastos forzados, no pagadas). #}
-            {% if f.banc == 9 %}
-              <span class="inline-block px-1 py-0 rounded bg-amber-100 text-amber-800 text-[10px]" title="Gasto forzado — proyección interna, no es deuda a proveedor">forzado</span>
-            {% elif f.banc == 0 %}
-              <span class="inline-block px-1 py-0 rounded bg-sky-100 text-sky-700 text-[10px]" title="Deuda abierta a proveedor">abierta</span>
-            {% else %}
-              <span class="inline-block px-1 py-0 rounded bg-emerald-100 text-emerald-700 text-[10px]" title="Pagada con banco {{ f.banc }}">pag · {{ f.banc }}</span>
-            {% endif %}
-          </td>
-          <td class="px-2 py-1 text-right whitespace-nowrap">
-            {% if tiene_permiso('posdat.editar') %}
-              <a href="{{ url_for('posdat.editar', id_posdat=f.id_posdat) }}"
-                 class="text-sky-600 hover:underline">Editar</a>
-              {% if f.banc != 9 %}
-                {# TMT 2026-05-14, #4: el botón "Pagar" antes llamaba a
-                   posdat.marcar_pagada que sólo seteaba banc=9 sin
-                   movimiento bancario ni mov_doble. Ahora redirige al
-                   wizard /bancos/emitir-cheque que hace todo atómico. #}
-                <a href="{{ url_for('bancos.emitir_cheque', id_posdat=f.id_posdat, prov=f.prov or '') }}"
-                   class="text-emerald-600 hover:underline ml-2"
-                   title="Emite el cheque + cierra la posdat atómicamente">Pagar</a>
-              {% else %}
-                <form method="post" action="{{ url_for('posdat.reabrir', id_posdat=f.id_posdat) }}"
-                      style="display:inline" onsubmit="return confirm('¿Reabrir este pasivo?');">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="text-amber-600 hover:underline ml-2">Reabrir</button>
-                </form>
-              {% endif %}
-            {% endif %}
-          </td>
         </tr>
         {% else %}
           {# colspan = N°/Fecha/Venc/Prov/Concepto/Importe + columnas
-             condicionales (mensual/diaria/acum) + Banco + acciones. #}
-          {% set _colspan_empty = 8 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) %}
+             condicionales (mensual/diaria/acum). Banco + acciones
+             removidas (TMT 2026-05-20). #}
+          {% set _colspan_empty = 6 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) %}
           {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
