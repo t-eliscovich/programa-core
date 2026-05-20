@@ -647,7 +647,7 @@
         <summary>Datos base</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
-        {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Amortizaciones (activos)', 'target') }}{% endif %}
+        {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos / Amortizaciones', 'target') }}{% endif %}
         {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La
            cuota mensual se edita inline desde /posdat (columna nueva
            "Cuota mensual"). La pantalla /provisiones sigue accesible por
