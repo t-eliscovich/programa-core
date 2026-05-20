@@ -84,20 +84,34 @@
        class="text-sm text-slate-500 hover:text-slate-700 ml-2">limpiar</a>
   </form>
 
-  {# Tabla #}
-  <div class="bg-white border border-slate-200 rounded overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+  {# Tabla — TMT 2026-05-20 v2: layout fixed para que entre sin scroll.
+     Pedido dueña: "QUIERO VER TODA LA TABLA NO SOLO UNA PARTE.
+     SIN SCROLLEAR". Anchos definidos en %; columnas de texto largo
+     (Concepto, Origen, Destino) usan truncate con tooltip. #}
+  <div class="bg-white border border-slate-200 rounded">
+    <table class="w-full text-xs table-fixed">
+      <colgroup>
+        <col style="width: 7%">   <!-- Fecha -->
+        <col style="width: 14%">  <!-- Tipo -->
+        <col style="width: 10%">  <!-- Origen -->
+        <col style="width: 10%">  <!-- Destino -->
+        <col style="width: 9%">   <!-- Importe -->
+        <col>                     <!-- Concepto: el resto -->
+        <col style="width: 7%">   <!-- Estado -->
+        <col style="width: 8%">   <!-- Usuario -->
+        <col style="width: 7%">   <!-- Acciones -->
+      </colgroup>
+      <thead class="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-3 py-2 text-left font-medium">Fecha</th>
-          <th class="px-3 py-2 text-left font-medium">Tipo</th>
-          <th class="px-3 py-2 text-left font-medium">Origen</th>
-          <th class="px-3 py-2 text-left font-medium">Destino</th>
-          <th class="px-3 py-2 text-right font-medium">Importe</th>
-          <th class="px-3 py-2 text-left font-medium">Concepto</th>
-          <th class="px-3 py-2 text-left font-medium">Estado</th>
-          <th class="px-3 py-2 text-left font-medium">Usuario</th>
-          <th class="px-3 py-2 text-right font-medium no-print">Acciones</th>
+          <th class="px-2 py-2 text-left font-medium">Fecha</th>
+          <th class="px-2 py-2 text-left font-medium">Tipo</th>
+          <th class="px-2 py-2 text-left font-medium">Origen</th>
+          <th class="px-2 py-2 text-left font-medium">Destino</th>
+          <th class="px-2 py-2 text-right font-medium">Importe</th>
+          <th class="px-2 py-2 text-left font-medium">Concepto</th>
+          <th class="px-2 py-2 text-left font-medium">Estado</th>
+          <th class="px-2 py-2 text-left font-medium">Usuario</th>
+          <th class="px-2 py-2 text-right font-medium no-print">Acciones</th>
         </tr>
       </thead>
       {# TMT 2026-05-16: la tabla usa MÚLTIPLES <tbody>, uno por item.
@@ -174,30 +188,30 @@
                          {% if r.estado == 'reverso' %}italic opacity-70{% endif %}
                          {% if r.row_url %}cursor-pointer{% endif %}"
                   {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
-                <td class="px-3 py-2 whitespace-nowrap pl-8">
+                <td class="px-2 py-1.5 whitespace-nowrap pl-4">
                   <div class="text-xs text-violet-700">↳</div>
                   <div class="text-[10px] text-slate-400">#{{ r.id_mov_doble }}</div>
                 </td>
-                <td class="px-3 py-2">
-                  <div class="font-medium">{{ r.label }}</div>
-                  </td>
-                <td class="px-3 py-2 text-xs">
+                <td class="px-2 py-1.5 truncate" title="{{ r.label }}">
+                  <div class="font-medium truncate">{{ r.label }}</div>
+                </td>
+                <td class="px-2 py-1.5 text-xs truncate">
                   {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
                   {% else %}{{ r.origen_label }}{% endif %}
                 </td>
-                <td class="px-3 py-2 text-xs">
+                <td class="px-2 py-1.5 text-xs truncate">
                   {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                   {% else %}{{ r.destino_label }}{% endif %}
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums font-mono">
+                <td class="px-2 py-1.5 text-right tabular-nums font-mono whitespace-nowrap">
                   {{ r.importe | money_es }}
                 </td>
-                <td class="px-3 py-2 text-xs text-slate-600 max-w-md truncate" title="{{ r.concepto or '' }}">
+                <td class="px-2 py-1.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
                   {{ r.concepto or '' }}
                 </td>
-                <td class="px-3 py-2">{{ render_estado(r) }}</td>
-                <td class="px-3 py-2 text-xs text-slate-500">{{ r.usuario or '' }}</td>
-                <td class="px-3 py-2 text-right no-print">
+                <td class="px-2 py-1.5">{{ render_estado(r) }}</td>
+                <td class="px-2 py-1.5 text-xs text-slate-500 truncate">{{ r.usuario or '' }}</td>
+                <td class="px-2 py-1.5 text-right no-print">
                   <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
                 </td>
               </tr>
@@ -212,30 +226,30 @@
                        {% if r.estado == 'reverso' %}bg-slate-50/60 italic{% endif %}
                        {% if r.row_url %}cursor-pointer{% endif %}"
                 {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
-              <td class="px-3 py-2 whitespace-nowrap">
+              <td class="px-2 py-1.5 whitespace-nowrap">
                 {{ r.fecha_operacion | fecha_es }}
                 <div class="text-[10px] text-slate-400">#{{ r.id_mov_doble }}</div>
               </td>
-              <td class="px-3 py-2">
-                <div class="font-medium">{{ r.label }}</div>
+              <td class="px-2 py-1.5 truncate" title="{{ r.label }}">
+                <div class="font-medium truncate">{{ r.label }}</div>
               </td>
-              <td class="px-3 py-2 text-xs">
+              <td class="px-2 py-1.5 text-xs truncate">
                 {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
                 {% else %}{{ r.origen_label }}{% endif %}
               </td>
-              <td class="px-3 py-2 text-xs">
+              <td class="px-2 py-1.5 text-xs truncate">
                 {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                 {% else %}{{ r.destino_label }}{% endif %}
               </td>
-              <td class="px-3 py-2 text-right tabular-nums font-mono">
+              <td class="px-2 py-1.5 text-right tabular-nums font-mono whitespace-nowrap">
                 {{ r.importe | money_es }}
               </td>
-              <td class="px-3 py-2 text-xs text-slate-600 max-w-md truncate" title="{{ r.concepto or '' }}">
+              <td class="px-2 py-1.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
                 {{ r.concepto or '' }}
               </td>
               <td class="px-3 py-2">{{ render_estado(r) }}</td>
-              <td class="px-3 py-2 text-xs text-slate-500">{{ r.usuario or '' }}</td>
-              <td class="px-3 py-2 text-right no-print">
+              <td class="px-2 py-1.5 text-xs text-slate-500 truncate">{{ r.usuario or '' }}</td>
+              <td class="px-2 py-1.5 text-right no-print">
                 {% if r.estado == 'activo' %}
                   <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
                      class="text-xs text-rose-600 hover:text-rose-800 hover:underline"

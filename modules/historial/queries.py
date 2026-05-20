@@ -233,6 +233,25 @@ def listar(
                 OR UPPER(COALESCE(u.concepto, '')) LIKE UPPER(%(qlike)s)
                 OR UPPER(u.tipo) LIKE UPPER(%(qlike)s)
                 OR UPPER(COALESCE(u.usuario, '')) LIKE UPPER(%(qlike)s))
+           -- TMT 2026-05-20 v3 — dedup pedido dueña: cuando una caja S
+           -- se clasifica como gasto V1..V9, se generan 2 mov_doble:
+           --   (a) caja_s_simple   (caja → caja self-ref)
+           --   (b) caja_s_to_xgast (caja → xgast con la categoría)
+           -- En el historial queremos UNA sola fila (la de to_xgast,
+           -- que es la informativa). Ocultamos las caja_s_simple
+           -- cuando existe OTRO mov_doble con el mismo id_caja como
+           -- origen y tipo distinto.
+           AND NOT (
+                u.tipo IN ('caja_s_simple', 'caja_e_simple', 'caja_cb_simple')
+                AND u.origen_table = 'caja'
+                AND EXISTS (
+                    SELECT 1 FROM scintela.mov_doble m2
+                     WHERE m2.origen_table = 'caja'
+                       AND m2.origen_id    = u.origen_id
+                       AND m2.tipo        <> u.tipo
+                       AND m2.estado       = u.estado
+                )
+           )
          ORDER BY u.fecha_operacion DESC, u.id_mov_doble DESC
          LIMIT %(limite)s
         """,
