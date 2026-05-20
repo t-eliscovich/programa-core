@@ -135,6 +135,25 @@
         kpi_extra='· ' ~ (_n_vivos | string) ~ ' anticipos vivos'
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
+      {# TMT 2026-05-20 — botones explícitos para los 2 workflows que
+         consumen anticipos (pedido dueña: "Hilado no veo el convertir
+         lote"). Ambos visibles desde acá. #}
+      {% if tiene_permiso('compras.crear') %}
+        <a href="{{ url_for('dolares.convertir_lote') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+           title="Convertir anticipos a compra (BAP) — caso típico: hilado que llegó">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          Convertir a compra (hilado)
+        </a>
+      {% endif %}
+      {% if tiene_permiso('activos.crear') %}
+        <a href="{{ url_for('activos.activar_maquinaria') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 shadow-sm"
+           title="Convertir anticipos en activo fijo + posdats — caso típico: máquina que llegó">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z M9 9h6v6H9z"/></svg>
+          Activar máquina
+        </a>
+      {% endif %}
       <details class="relative">
         <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
           Más

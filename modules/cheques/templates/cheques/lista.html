@@ -303,34 +303,29 @@
     </div>
   {% endif %}
 
+  {# TMT 2026-05-20 — tabla compactada (pedido dueña: "que entre en una
+     pantalla"). text-xs + py-1 + headers en text-[10px]. Mismo patrón
+     que /activos. Columna Estado angosta (~50px). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm sortable">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+    <table class="w-full text-xs sortable">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          {# TMT 2026-05-19 v2 (pedido dueña):
-             - Cliente: solo código (sin nombre).
-             - Acum. removida.
-             - Columna "Stat" ahora muestra raw letter (B/V/1/2/…) + dropdown
-               inline con las transiciones legales del estado actual. #}
-          {# TMT 2026-05-20 — columna checkbox para depósito inline (pedido
-             dueña: agilizar depósitos sin segunda pantalla). Sólo visible
-             si la usuaria tiene permiso cheques.aplicar. #}
           {% if tiene_permiso('cheques.aplicar') %}
-            <th class="px-2 py-3 text-center font-medium no-print" data-no-sort style="width:32px;">
+            <th class="px-1 py-1 text-center font-medium no-print" data-no-sort style="width:24px;">
               <input type="checkbox" id="cheque-toggle-all"
                      title="Seleccionar todos los depositables visibles">
             </th>
           {% endif %}
-          <th class="px-3 py-3 text-left font-medium" title="Día en que cargué el cheque en el sistema" data-sort-type="date">Cargado</th>
-          <th class="px-3 py-3 text-left font-medium">Cliente</th>
-          <th class="px-3 py-3 text-left font-medium">N°</th>
-          <th class="px-3 py-3 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. depósito (orig.)</th>
-          <th class="px-3 py-3 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
-          <th class="px-3 py-3 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
-          <th class="px-3 py-3 text-left font-medium">Banco</th>
-          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-3 py-3 text-center font-medium" data-no-sort>Estado</th>
-          <th class="px-3 py-3 text-right font-medium no-print" data-no-sort>Acciones</th>
+          <th class="px-2 py-1 text-left font-medium" title="Día en que cargué el cheque" data-sort-type="date">Cargado</th>
+          <th class="px-2 py-1 text-left font-medium">Cliente</th>
+          <th class="px-2 py-1 text-left font-medium">N°</th>
+          <th class="px-2 py-1 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. dep.</th>
+          <th class="px-2 py-1 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
+          <th class="px-2 py-1 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
+          <th class="px-2 py-1 text-left font-medium">Banco</th>
+          <th class="px-2 py-1 text-right font-medium" data-sort-type="number">Importe</th>
+          <th class="px-1 py-1 text-center font-medium" data-no-sort style="width:50px;">Estado</th>
+          <th class="px-2 py-1 text-right font-medium no-print" data-no-sort>Acc.</th>
         </tr>
       </thead>
       <tbody>
@@ -445,6 +440,10 @@
             <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=c.id_cheque) }}"
                   class="inline ch-trans-form" style="margin:0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {# TMT 2026-05-20 — dropdown compacto: solo letras en las
+                 options (no labels largos). Ancho ~36px en vez de ~140px.
+                 El title del select muestra el label completo del stat
+                 actual en hover por si la dueña necesita confirmar. #}
               <select name="stat_destino"
                       onchange="(function(sel){
                         const v = sel.value;
@@ -455,18 +454,18 @@
                         }
                         sel.form.submit();
                       })(this)"
-                      class="font-mono text-sm border border-slate-300 rounded px-1 py-0.5 bg-white hover:bg-slate-50 cursor-pointer"
-                      title="Cambiar estado del cheque">
+                      class="font-mono text-xs border border-slate-300 rounded px-0.5 py-0 bg-white hover:bg-slate-50 cursor-pointer w-10"
+                      title="Cambiar estado">
                 <option value="" selected>{{ s or '—' }}</option>
                 {% for t in transs %}
                   {% if t.kind == 'WIZARD' %}
                     {% if t.endpoint == 'cheques.depositar_lote' %}
-                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}">→ {{ t.stat_destino }} · {{ t.label }}</option>
+                      <option value="WIZARD:{{ url_for('cheques.depositar_lote') }}" title="{{ t.label }}">→{{ t.stat_destino }}</option>
                     {% else %}
-                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}">→ {{ t.stat_destino }} · {{ t.label }}</option>
+                      <option value="WIZARD:{{ url_for(t.endpoint, id_cheque=c.id_cheque) }}" title="{{ t.label }}">→{{ t.stat_destino }}</option>
                     {% endif %}
                   {% else %}
-                    <option value="{{ t.stat_destino }}">→ {{ t.stat_destino }} · {{ t.label }}</option>
+                    <option value="{{ t.stat_destino }}" title="{{ t.label }}">→{{ t.stat_destino }}</option>
                   {% endif %}
                 {% endfor %}
               </select>

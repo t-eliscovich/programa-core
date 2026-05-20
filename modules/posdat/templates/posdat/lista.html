@@ -350,32 +350,11 @@
       const DIAS_MES = 30;
       const fmt2 = n => (isFinite(n) ? Number(n).toFixed(2) : '');
 
-      // TMT 2026-05-20 — al editar la cuota mensual, recalculamos el
-      // importe prorrateado al día de hoy:
-      //   importe = cuota_mensual * día_hoy / días_del_mes_actual
-      // Pedido dueña: "cuando yo modifico la cuota mensual, ejemplo 30
-      // me ponga importe 1 o 0,x si es 31 dias el mes". Día 1 de un mes
-      // de 30 días → importe = 1 exacto. Día 1 de un mes de 31 días →
-      // importe ≈ 0.97. Así el saldo running queda sincronizado con la
-      // nueva cuota desde el inicio del mes, sin esperar al proximo
-      // tick de provisiones_diarias.
-      function calcularImporteHoy(cuotaMensual) {
-        const now = new Date();
-        const diaHoy = now.getDate();
-        const diasMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        return cuotaMensual * diaHoy / diasMes;
-      }
-
-      function actualizarImporteEnUI(tr, nuevoImporte) {
-        // El campo `importe` puede estar como <input> editable o como
-        // texto plano según permisos. Cubrimos ambos.
-        const inp = tr.querySelector('.posdat-importe-edit');
-        if (inp) {
-          inp.value = nuevoImporte.toFixed(2);
-          inp.dataset.orig = inp.value;
-        }
-        recalcularKPIs();
-      }
+      // TMT 2026-05-20 v4 — REMOVED cross-recalc importe ↔ cuota mensual.
+      // Pedido dueña: "no hagamos calculos cuando edito los field importe
+      // y cuota mensual". Cada campo se edita y guarda INDEPENDIENTE.
+      // El cron diario `correr_provisiones_diarias` sigue actualizando
+      // el importe con la cuota nueva en el próximo tick.
 
       // TMT 2026-05-20 v3 — recálculo en vivo de los KPIs de la tab YY.
       // Pedido dueña: "tambien se tiene que recalcular si yo cambio algo
@@ -403,9 +382,8 @@
       const recalcularKPIs = window.posdatRecalcKPIs;
 
       function persistirMensual(idProv, mensual, focused, otro) {
-        // Determinar la fila del posdat para actualizar también su importe.
-        const tr = focused.closest('tr[data-id-posdat]');
-        const idPosdat = tr ? tr.dataset.idPosdat : null;
+        // TMT 2026-05-20 v4 — sólo guarda la cuota mensual. NO recalcula
+        // ni actualiza el importe del posdat (pedido dueña).
         fetch('/provisiones/_api/' + idProv + '/quick-edit', {
           method: 'POST',
           credentials: 'same-origin',
@@ -418,26 +396,8 @@
             focused.dataset.orig = focused.value;
             if (otro) otro.dataset.orig = otro.value;
             setTimeout(() => focused.classList.remove('posdat-cuota-saved'), 1200);
-
-            // ── Step 2: recalcular y persistir el importe del posdat
-            if (idPosdat && tr) {
-              const nuevoImporte = calcularImporteHoy(mensual);
-              if (nuevoImporte > 0) {
-                fetch('/posdat/_api/' + idPosdat + '/editar', {
-                  method: 'POST',
-                  credentials: 'same-origin',
-                  headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-                  body: JSON.stringify({ importe: nuevoImporte }),
-                }).then(r => r.json()).then(j2 => {
-                  if (j2 && j2.ok) {
-                    actualizarImporteEnUI(tr, nuevoImporte);
-                  }
-                  // Si el sync de importe falla NO marcamos error — la
-                  // cuota mensual ya se guardó; el siguiente tick del
-                  // script provisiones_diarias_run va a corregirlo.
-                }).catch(() => {});
-              }
-            }
+            // Refrescar KPI del header (sum cuota_mensual cambia).
+            if (typeof window.posdatRecalcKPIs === 'function') window.posdatRecalcKPIs();
           } else {
             focused.classList.add('posdat-cuota-error');
             alert('No se pudo guardar: ' + (j.error || 'error'));

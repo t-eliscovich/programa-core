@@ -620,6 +620,9 @@
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Historial de Compras', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados a proveedores', 'receipt') }}{% endif %}
+        {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
+           (pedido dueña: "no debe estar colgada de informes"). #}
+        {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="bancos">
@@ -637,7 +640,9 @@
         {% if tiene_permiso('gastos.ver') %}{{ nav_link('informes.gastos', 'Gastos', 'box') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.deudas', 'Deudas con proveedores', 'trend-down') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}{% endif %}
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
+        {# TMT 2026-05-20 — Activos / Amortizaciones se mudó de Datos base
+           a Informes (pedido dueña: "activos ponelo en informes"). #}
+        {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos / Amortizaciones', 'target') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('dolares.lista', 'Ver anticipos USD', 'cash') }}{% endif %}
         {% if tiene_permiso('capital.ver') %}{{ nav_link('capital.lista', 'Movimientos de capital', 'chart-pie') }}{% endif %}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('historial.lista', 'Historial movimientos', 'history') }}{% endif %}
@@ -647,7 +652,6 @@
         <summary>Datos base</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
-        {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Activos / Amortizaciones', 'target') }}{% endif %}
         {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La
            cuota mensual se edita inline desde /posdat (columna nueva
            "Cuota mensual"). La pantalla /provisiones sigue accesible por
