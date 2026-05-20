@@ -261,9 +261,16 @@
             {% endfor %}
           </tr>
           {# Fila de acciones SOLO sobre las columnas del mes actual. #}
-          {% set tiene_actual = false %}
-          {% for c in data.columnas if c.es_mes_actual %}{% set tiene_actual = true %}{% endfor %}
-          {% if tiene_actual %}
+          {# TMT 2026-05-20 — fix Jinja2 scope: `{% set tiene_actual %}`
+             dentro del for NO propaga al if exterior (bug clásico de
+             Jinja). Usamos namespace para que escape el for. Esto es
+             lo que ocultaba los botones Validar/Borrar de las columnas
+             duplicadas de mayo (Federico #4). #}
+          {% set ns = namespace(tiene=false) %}
+          {% for c in data.columnas if c.es_mes_actual %}
+            {% set ns.tiene = true %}
+          {% endfor %}
+          {% if ns.tiene %}
           <tr class="no-print">
             <th class="first text-[10px] uppercase text-slate-400">Acciones</th>
             {% for c in data.columnas %}
