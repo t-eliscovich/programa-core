@@ -514,11 +514,18 @@ def api_anular(id_posdat: int):
         return jsonify({"ok": False, "error": "Posdat no encontrado."}), 404
     data = request.get_json(silent=True) or request.form
     motivo = (data.get("motivo") or "").strip()
-    if len(motivo) < 10:
+    # TMT 2026-05-20 v3 — para YY (cuotas mensuales) no exigimos motivo
+    # largo: la dueña edita la grilla y elimina/agrega líneas como un
+    # spreadsheet ("que no me bloquee"). Para posdat normales sigue
+    # vigente el mínimo de 10 chars (audit de proveedores reales).
+    es_yy = (pd.get("prov") or "").upper() == "YY"
+    if not es_yy and len(motivo) < 10:
         return jsonify({
             "ok": False,
             "error": "Motivo obligatorio (mínimo 10 caracteres).",
         }), 400
+    if es_yy and not motivo:
+        motivo = "Eliminado desde lista YY"
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.anular(id_posdat, motivo=motivo, usuario=usuario)
@@ -565,9 +572,14 @@ def api_nuevo():
     concepto = (data.get("concepto") or "").strip()
     if not prov:
         return jsonify({"ok": False, "error": "Proveedor requerido."}), 400
-    if importe is None or importe <= 0:
+    # TMT 2026-05-20 v3 — YY (cuotas mensuales) puede crearse con
+    # importe=0 y concepto vacío; la dueña los completa después inline.
+    es_yy = prov == "YY"
+    if importe is None:
+        importe = 0.0 if es_yy else None
+    if not es_yy and (importe is None or importe <= 0):
         return jsonify({"ok": False, "error": "Importe debe ser > 0."}), 400
-    if not concepto:
+    if not concepto and not es_yy:
         return jsonify({"ok": False, "error": "Concepto requerido."}), 400
     try:
         usuario = (g.user or {}).get("username", "web")

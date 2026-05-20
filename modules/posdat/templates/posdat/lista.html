@@ -40,13 +40,22 @@
     </div>
   </div>
 
-  {# ── 3 KPIs siempre visibles: Posdatados / YY / Total ───────────────── #}
+  {# ── 3 KPIs siempre visibles: Total primero, después Posdatados y YY ──
+     TMT 2026-05-20 v4 — pedido dueña: "Posdatados el KPI del total
+     primero y luego los otros dos. ningun bloque negro!! horrible."
+     Todos los 3 KPIs con el mismo estilo blanco/borde; el del Total
+     se distingue solo por el label y el tamaño del valor. #}
   {% set _pos_total = (conteos_tab.get('posdatados', {}).get('total_abierto', 0) or 0) %}
   {% set _pos_n     = (conteos_tab.get('posdatados', {}).get('partidas_abiertas', 0) or 0) %}
   {% set _yy_total  = (conteos_tab.get('yy', {}).get('total_abierto', 0) or 0) %}
   {% set _yy_n      = (conteos_tab.get('yy', {}).get('partidas_abiertas', 0) or 0) %}
   {% set _combinado = _pos_total + _yy_total %}
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Total = Posdatados + YY</div>
+      <div class="mt-2 text-2xl font-semibold text-mono">{{ _combinado | money_es }}</div>
+      <div class="mt-1 text-xs text-slate-500">{{ _pos_n + _yy_n }} partidas totales</div>
+    </div>
     <div class="bg-white dark:bg-slate-900 border-2 {{ 'border-sky-300 dark:border-sky-700' if tab == 'posdatados' else 'border-slate-200 dark:border-slate-800' }} rounded p-5">
       <div class="text-xs uppercase tracking-wider text-slate-500">Posdatados</div>
       <div class="mt-2 text-2xl font-semibold text-mono">{{ _pos_total | money_es }}</div>
@@ -56,11 +65,6 @@
       <div class="text-xs uppercase tracking-wider text-slate-500">YY (cuotas mensuales)</div>
       <div class="mt-2 text-2xl font-semibold text-mono">{{ _yy_total | money_es }}</div>
       <div class="mt-1 text-xs text-slate-500">{{ _yy_n }} provisione{{ '' if _yy_n == 1 else 's' }}</div>
-    </div>
-    <div class="bg-slate-900 dark:bg-slate-100 border-2 border-slate-900 dark:border-slate-100 text-white dark:text-slate-900 rounded p-5">
-      <div class="text-xs uppercase tracking-wider opacity-70">Total = Posdatados + YY</div>
-      <div class="mt-2 text-2xl font-semibold text-mono">{{ _combinado | money_es }}</div>
-      <div class="mt-1 text-xs opacity-70">{{ _pos_n + _yy_n }} partidas totales</div>
     </div>
   </div>
 
@@ -153,7 +157,12 @@
           {% endif %}
           {# TMT 2026-05-20 — columnas Banco / Editar / Pagar removidas
              por pedido dueña. Las acciones siguen accesibles desde el
-             detalle del posdat (click en la fila). #}
+             detalle del posdat (click en la fila).
+             TMT 2026-05-20 v5 — en tab YY agregamos columna "Eliminar"
+             (botón 🗑 con confirm) para edición tipo spreadsheet. #}
+          {% if tab == 'yy' and tiene_permiso('posdat.anular') %}
+            <th class="px-1 py-1 no-print" style="width:36px;"></th>
+          {% endif %}
         </tr>
       </thead>
       <tbody class="divide-y">
@@ -236,15 +245,48 @@
           {% if _show_acum %}
           <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
           {% endif %}
+          {# TMT 2026-05-20 v5 — botón eliminar en tab YY. #}
+          {% if tab == 'yy' and tiene_permiso('posdat.anular') %}
+          <td class="px-1 py-1 no-print text-center">
+            {% set _msg = '¿Eliminar línea YY ' ~ (f.concepto or 'sin concepto') ~ ' (importe ' ~ (f.importe | num_es) ~ ')?' %}
+            <button type="button"
+                    class="posdat-yy-del text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                    data-id-posdat="{{ f.id_posdat }}"
+                    data-msg="{{ _msg }}"
+                    title="Eliminar línea YY">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+              </svg>
+            </button>
+          </td>
+          {% endif %}
         </tr>
         {% else %}
           {# colspan = Fecha/Venc/Prov/Concepto/Importe (5) + columnas
-             condicionales (mensual/diaria/acum). N° eliminada
-             TMT 2026-05-20 v4. #}
-          {% set _colspan_empty = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) %}
+             condicionales (mensual/diaria/acum) + delete YY.
+             N° eliminada TMT 2026-05-20 v4. #}
+          {% set _colspan_empty = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if (tab == 'yy' and tiene_permiso('posdat.anular')) else 0) %}
           {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
+      {# TMT 2026-05-20 v5 — fila de "+ Nueva línea" al pie del YY tab.
+         Permite crear una row YY vacía rápido. Pedido dueña: "dentro
+         de YY voy a poner otros tipos. que no me bloquee". #}
+      {% if tab == 'yy' and tiene_permiso('posdat.crear') %}
+      <tfoot class="no-print bg-slate-50 dark:bg-slate-800/40 border-t-2 border-slate-200 dark:border-slate-700">
+        <tr>
+          {% set _colspan_add = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) + (1 if tiene_permiso('posdat.anular') else 0) %}
+          <td colspan="{{ _colspan_add }}" class="px-3 py-2 text-left">
+            <button type="button" id="yy-add-line"
+                    class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              Nueva línea YY
+            </button>
+            <span class="ml-3 text-xs text-slate-500">Crea una fila YY vacía. Editás concepto / importe / venc. en la grilla.</span>
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 
@@ -454,6 +496,72 @@
           persistirMensual(idProv, mensual, diariInp, mensInp);
         });
       });
+    })();
+  </script>
+  {% endif %}
+
+  {# TMT 2026-05-20 v5 — JS para CRUD YY: eliminar líneas + agregar.
+     Pedido dueña: "Podemos hacer que en YY se pueda editar inline?
+     tengo que poder eliminar y abajo un + para otra linea. dentro
+     de YY voy a poner otros tipos. que no me bloquee." #}
+  {% if tab == 'yy' %}
+  <script>
+    (function() {
+      const csrf = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+
+      // Botón "🗑 Eliminar" por fila YY.
+      document.querySelectorAll('.posdat-yy-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.idPosdat;
+          const msg = btn.dataset.msg || '¿Eliminar línea?';
+          if (!confirm(msg)) return;
+          fetch('/posdat/_api/' + id + '/anular', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({motivo: ''}),  // YY no exige motivo
+          }).then(r => r.json()).then(j => {
+            if (j && j.ok) {
+              btn.closest('tr')?.remove();
+            } else {
+              alert('No se pudo eliminar: ' + ((j && j.error) || 'error'));
+            }
+          }).catch(e => alert('Error de red: ' + e.message));
+        });
+      });
+
+      // Botón "+ Nueva línea YY" — crea una fila vacía y recarga.
+      const btnAdd = document.getElementById('yy-add-line');
+      if (btnAdd) {
+        btnAdd.addEventListener('click', () => {
+          btnAdd.disabled = true;
+          btnAdd.textContent = '⏳ Creando…';
+          const hoy = new Date().toISOString().slice(0, 10);
+          fetch('/posdat/_api/nuevo', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+            body: JSON.stringify({
+              fecha: hoy,
+              fechad: hoy,
+              prov: 'YY',
+              importe: 0,
+              concepto: '',
+            }),
+          }).then(r => r.json()).then(j => {
+            if (j && j.ok) {
+              window.location.reload();
+            } else {
+              alert('No se pudo crear: ' + ((j && j.error) || 'error'));
+              btnAdd.disabled = false;
+              btnAdd.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> Nueva línea YY';
+            }
+          }).catch(e => {
+            alert('Error de red: ' + e.message);
+            btnAdd.disabled = false;
+          });
+        });
+      }
     })();
   </script>
   {% endif %}

@@ -58,11 +58,17 @@ def crear(
     prov = (prov or "").upper().strip()
     if not prov:
         raise ValueError("Proveedor requerido.")
-    if importe is None or float(importe) <= 0:
+    # TMT 2026-05-20 v3 — relajar validaciones para tab YY (pedido dueña:
+    # "que no me bloquee"). YY es un "proveedor virtual" para
+    # provisiones / cuotas mensuales; los importes pueden ser 0 al
+    # inicio y la dueña los completa inline. No requiere FK a
+    # scintela.proveedor ni concepto obligatorio.
+    es_yy = prov == "YY"
+    if importe is None or (float(importe) <= 0 and not es_yy):
         raise ValueError("Importe debe ser mayor que cero.")
-    if not concepto:
+    if not concepto and not es_yy:
         raise ValueError("Concepto requerido.")
-    if not db.fetch_one(
+    if not es_yy and not db.fetch_one(
         "SELECT 1 AS x FROM scintela.proveedor WHERE codigo_prov = %s", (prov,)
     ):
         raise ValueError(f"Proveedor {prov!r} no existe.")

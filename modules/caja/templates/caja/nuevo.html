@@ -116,36 +116,67 @@
 
       <div id="gasto-chips-wrap" class="md:col-span-2 -mt-2"
            style="display:none">
-        <div class="text-xs text-slate-500 mb-1.5">Clasificar como gasto (opcional, sólo para salidas):</div>
-        <div class="flex flex-wrap gap-1.5">
-          {# TMT 2026-05-19 v5 — pedido dueña: chip V2/V5/V8 (servicios)
-             dejan el concepto VACÍO. La dueña escribe libremente "agua",
-             "luz mayo", "internet claro", "EMAAP", "CNT", lo que sea —
-             el matcher NO trata de adivinar el V. El xgast.num del chip
-             es la verdad. Templates LC2 solo se mantienen para los V
-             donde tienen sentido nemónico (V1/V3/V4/V6/V7). #}
-          {% set vchips = [
-            (1, 'V1', 'Sueldos tejeduría',   'KKSU '),
-            (2, 'V2', 'Servicios tejeduría', ''),
-            (3, 'V3', 'Otros tejeduría',     'KK '),
-            (4, 'V4', 'Sueldos tintorería',  'CCSU '),
-            (5, 'V5', 'Servicios tintorería',''),
-            (6, 'V6', 'Otros tintorería',    'CC '),
-            (7, 'V7', 'Sueldos admin',       'SU '),
-            (8, 'V8', 'Servicios admin',     ''),
-            (9, 'V9', 'Otros admin',         ''),
-          ] %}
-          {% for num, code, label, tmpl in vchips %}
-            <button type="button"
-                    data-vnum="{{ num }}"
-                    data-tmpl="{{ tmpl }}"
-                    class="vchip text-xs px-2.5 py-1 rounded-full border border-slate-300 bg-white hover:bg-sky-50 hover:border-sky-400 text-slate-700"
-                    title="Categoría {{ code }} — {{ label }}">
-              <span class="font-mono text-slate-500">{{ code }}</span>
-              <span class="ml-1">{{ label }}</span>
-            </button>
+        <div class="text-xs text-slate-500 mb-2">Clasificar como gasto (opcional, sólo para salidas):</div>
+        {# TMT 2026-05-20 v2 — pedido dueña: "en salida de caja,
+           ordenar de v1 a v9 con unos botones mas lindos y mismo
+           como ponemos en gastos, la matriz 1,4,7 y abajo 2,5,8 etc".
+           Matriz 3×3 por rubro (filas) × área (columnas):
+             |          | Tejeduría | Tintorería | Admin |
+             | Sueldos  |    V1     |    V4      |  V7   |
+             | Servicios|    V2     |    V5      |  V8   |
+             | Otros    |    V3     |    V6      |  V9   |
+           Botones más grandes con código + descripción, sticky para
+           que se note cuál está activo. Templates LC2 solo donde
+           tienen sentido (V1/V3/V4/V6/V7). #}
+        {% set _vmap = {
+          1: ('V1', 'Sueldos',   'KKSU '),
+          2: ('V2', 'Servicios', ''),
+          3: ('V3', 'Otros',     'KK '),
+          4: ('V4', 'Sueldos',   'CCSU '),
+          5: ('V5', 'Servicios', ''),
+          6: ('V6', 'Otros',     'CC '),
+          7: ('V7', 'Sueldos',   'SU '),
+          8: ('V8', 'Servicios', ''),
+          9: ('V9', 'Otros',     ''),
+        } %}
+        <div class="vchip-grid grid grid-cols-3 gap-2 max-w-2xl">
+          {# Headers de columnas. #}
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold text-center pb-1 border-b border-slate-200">Tejeduría</div>
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold text-center pb-1 border-b border-slate-200">Tintorería</div>
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold text-center pb-1 border-b border-slate-200">Administración</div>
+          {# Fila 1: Sueldos — V1 / V4 / V7. #}
+          {# Fila 2: Servicios — V2 / V5 / V8. #}
+          {# Fila 3: Otros — V3 / V6 / V9. #}
+          {% set _area_nombre = {1: 'Tejeduría', 4: 'Tintorería', 7: 'Administración',
+                                 2: 'Tejeduría', 5: 'Tintorería', 8: 'Administración',
+                                 3: 'Tejeduría', 6: 'Tintorería', 9: 'Administración'} %}
+          {% for trio in [(1, 4, 7), (2, 5, 8), (3, 6, 9)] %}
+            {% for num in trio %}
+              {% set code = _vmap[num][0] %}
+              {% set label = _vmap[num][1] %}
+              {% set tmpl = _vmap[num][2] %}
+              <button type="button"
+                      data-vnum="{{ num }}"
+                      data-tmpl="{{ tmpl }}"
+                      class="vchip flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg border-2 border-slate-200 bg-white hover:border-sky-400 hover:bg-sky-50 transition text-slate-700"
+                      title="Categoría {{ code }} — {{ label }} {{ _area_nombre[num] }}">
+                <span class="font-mono font-semibold text-sky-700 text-base">{{ code }}</span>
+                <span class="text-xs">{{ label }}</span>
+              </button>
+            {% endfor %}
           {% endfor %}
         </div>
+        <style>
+          .vchip.vchip--active {
+            border-color: rgb(2 132 199) !important;
+            background: rgb(224 242 254) !important;
+            color: rgb(7 89 133) !important;
+          }
+          .dark .vchip.vchip--active {
+            background: rgb(12 74 110) !important;
+            color: rgb(186 230 253) !important;
+          }
+        </style>
         <div id="vchip-selected" class="hidden mt-2 text-xs text-emerald-700">
           ✓ Clasificado como <strong id="vchip-selected-text"></strong>.
           Al guardar se agrega como xgast.
@@ -207,7 +238,7 @@
               hiddenNum.value = '';
               selectedRow.classList.add('hidden');
               document.querySelectorAll('.vchip.bg-sky-100').forEach(b => {
-                b.classList.remove('bg-sky-100', 'border-sky-400');
+                b.classList.remove('bg-sky-100', 'border-sky-400', 'vchip--active');
               });
             }
           }
@@ -221,9 +252,9 @@
               hiddenNum.value = num;
               // Resaltar visualmente la categoría elegida.
               document.querySelectorAll('.vchip').forEach(b => {
-                b.classList.remove('bg-sky-100', 'border-sky-400');
+                b.classList.remove('bg-sky-100', 'border-sky-400', 'vchip--active');
               });
-              btn.classList.add('bg-sky-100', 'border-sky-400');
+              btn.classList.add('vchip--active');
               // Pre-cargar concepto template si está vacío. Si la dueña ya
               // escribió algo, no machacarlo.
               if (!(inp.value || '').trim() && tmpl) {
@@ -241,7 +272,7 @@
             hiddenNum.value = '';
             selectedRow.classList.add('hidden');
             document.querySelectorAll('.vchip').forEach(b => {
-              b.classList.remove('bg-sky-100', 'border-sky-400');
+              b.classList.remove('bg-sky-100', 'border-sky-400', 'vchip--active');
             });
           });
 
