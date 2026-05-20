@@ -1452,3 +1452,34 @@ Pedido dueña: "Dejame drag and drop en activos. porque asi lo ordeno manualment
 **Por qué HTML5 nativo y no Sortable.js**: el caso es chico (<200 filas), no hay sub-listas, no hay groups, no hay nested. Native DnD pesa 0KB extra. Si en el futuro se vuelve complejo (grupos, multi-select, mobile-touch), Sortable.js está al alcance de un CDN.
 
 **Caveat mobile**: HTML5 DnD nativo no anda en mobile táctil. Si la dueña reordena desde tablet/celular, vamos a tener que agregar Sortable.js (que sí cubre touch). Por ahora, este caso es desktop-only.
+
+### Edit tipo inline + nuevo sort por T/I/M/K/C en /activos (2026-05-20)
+
+Pedido dueña: códigos canónicos de 1 letra y orden fijo:
+
+| Código | Categoría | Orden |
+|---|---|---|
+| T | Terrenos | 1 |
+| I | Edificios | 2 |
+| M | Maquinaria Tintorería | 3 |
+| K | Maquinaria Tejeduría | 4 |
+| C | Camiones | 5 |
+| (otros) | Otros | 99 |
+
+**`_CATEGORIA_CASE_SQL`** reemplazada para reconocer:
+- Códigos nuevos T/I/M/K/C (preferidos).
+- Códigos legacy TER/EDF/HIL/TEJ/TIN/QUI/ACA/VEH (compat, fallback).
+- Patrones regex sobre `concepto` para casos sin tipo (matcheo defensivo).
+
+**`CATEGORIA_LABELS`** actualizado a las 5 etiquetas nuevas + "Otros" (99).
+
+**`TIPOS_CANONICOS`** — constante nueva con `[(code, label), ...]` para el dropdown del template. Sólo expone los 5 canónicos; los legacy aparecen sólo si el row ya los tiene cargados (como opción "(legacy)" al inicio del select).
+
+**Inline edit:**
+- Cada celda Tipo es un `<select>`. Onchange → POST `/activos/_api/<id>/editar-tipo` con `{tipo}`.
+- Backend `queries.editar_tipo()` hace UPDATE + recomputa el bucket de categoría (devuelve `categoria_orden` y `categoria_label` para que el front pueda repintar).
+- Después del save: banner "Tipo actualizado a X · Categoría Y. Recargá para ver el nuevo orden." + auto-reload en 1.5s (el reorden por categoría sólo se ve al recargar; no merece la pena hacer DOM-juggling en cliente).
+
+**Subtotales por subcategoría** (pedido extra): el view agrega filas footer al cierre de cada bucket con `n, inicial, amortizac, valor_libros, amortimes`. El template usa un `{% macro subtotal_row(cat) %}` que se invoca antes del header de la categoría siguiente + después del loop para cerrar la última. **NO** se muestran cuando hay drag-and-drop activo (`ns.any_manual`) porque el orden manual cruza categorías.
+
+**Coexistencia con orden_manual (drag-drop):** el ORDER BY arranca con `orden_manual NULLS LAST,` antes de `categoria_orden`. Filas arrastradas explícitamente ganan; el resto sigue el orden por categoría nuevo. Si la dueña usa drag-drop, los headers + subtotales de categoría se ocultan automáticamente (no tendría sentido).

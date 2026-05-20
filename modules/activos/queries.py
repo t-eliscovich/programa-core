@@ -31,39 +31,62 @@ from datetime import date
 import db
 
 # Mapeo canónico de tipo → orden + label.
-# El orden se calcula con CASE en SQL para que el ordenamiento sea estable
-# y consistente entre vistas. Los códigos de tipo son los que aparecen en
-# el dump histórico — la búsqueda es case-insensitive.
+# TMT 2026-05-20 — pedido dueña: códigos de una letra T/I/M/K/C y orden
+# fijo:
+#   T = Terrenos             (1)
+#   I = Edificios            (2)
+#   M = Maquinaria Tintorería (3)
+#   K = Maquinaria Tejeduría  (4)
+#   C = Camiones             (5)
+#
+# Los códigos legacy (TER/EDF/HIL/TEJ/TIN/MAQ/VEH) siguen funcionando como
+# fallback — la dueña los va a ir migrando con el inline-edit. Cualquier
+# tipo no reconocido cae en 99 = "Otros".
 _CATEGORIA_CASE_SQL = """
     CASE
-      -- Inmuebles: terreno, edificio, instalaciones.
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('TER','EDF','INS','TERRENO','PRED','PROP','TERRENOS','EDIFICIO','INSTALACIONES')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(TERRENO|PREDIO|LOTE|PROPIEDAD|FINCA|EDIFICIO|INSTALAC|BODEGA)'
+      -- 1. Terrenos
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('T','TER','PROP','TERRENO','TERRENOS','PRED','LOTE')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(TERRENO|PREDIO|LOTE|FINCA|PROPIEDAD)'
         THEN 1
-      -- Producción: incluye secciones específicas (HIL/TEJ/TIN/QUI/ACA) +
-      -- maquinaria genérica + herramientas. TMT 2026-05-17.
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('MAQ','HER','EQO','HIL','TEJ','TIN','QUI','ACA','MAQUINARIA','MAQUINA','MAQUINAS','HERRAMIENTAS','EQUIPOS','HILADO','TEJEDURIA','TINTURA','QUIMICOS','ACABADO')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(MAQUINA|TELAR|TINTE|RAMA|TERMOFI|HERRAMIENT|HILADO|TEJED|TINTUR|QUIMIC|ACABAD)'
+      -- 2. Edificios (e instalaciones de inmueble: bodegas, etc.)
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('I','EDF','INS','EDIFICIO','EDIFICIOS','INSTALACIONES')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(EDIFICIO|INSTALAC|BODEGA)'
         THEN 2
-      -- Vehículos.
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('VEH','CAR','VEHICULO','AUTO','CAMION','CAMIONETA','VEHICULOS')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(VEHICULO|CAMION|AUTO|CAMIONETA|MOTO)'
+      -- 3. Maquinaria Tintorería: tinte, química, acabado.
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('M','TIN','QUI','ACA','TINTURA','TINTORERIA','QUIMICOS','ACABADO')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(TINTUR|TINTORERIA|QUIMIC|ACABAD|RAMA|TERMOFI)'
         THEN 3
-      -- Oficina: cómputo, muebles, software.
-      WHEN UPPER(COALESCE(a.tipo, '')) IN ('OFI','MUE','SFW','OFICINA','COMP','COMPUTO','MUEBLES','SOFTWARE')
-        OR UPPER(COALESCE(a.concepto, '')) ~ '(COMPUTAD|IMPRESORA|MUEBLE|OFICINA|SOFTWARE|INTANGIB)'
+      -- 4. Maquinaria Tejeduría: hilado, tejido, telares.
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('K','HIL','TEJ','HILADO','TEJEDURIA')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(HILADO|TEJED|TELAR|URDIDORA)'
         THEN 4
-      ELSE 5
+      -- 5. Camiones (vehículos motorizados).
+      WHEN UPPER(COALESCE(a.tipo, '')) IN ('C','VEH','CAR','CAMION','CAMIONES','VEHICULO','VEHICULOS','AUTO','CAMIONETA')
+        OR UPPER(COALESCE(a.concepto, '')) ~ '(CAMION|VEHICULO|AUTO|CAMIONETA|MOTO)'
+        THEN 5
+      ELSE 99
     END
 """
 
+# Etiqueta legible para cada bucket (TMT 2026-05-20).
 CATEGORIA_LABELS = {
-    1: "Terrenos y propiedades",
-    2: "Maquinaria",
-    3: "Vehículos",
-    4: "Equipo de oficina",
-    5: "Otros",
+    1: "Terrenos",
+    2: "Edificios",
+    3: "Maquinaria Tintorería",
+    4: "Maquinaria Tejeduría",
+    5: "Camiones",
+    99: "Otros",
 }
+
+# Códigos canónicos para el dropdown de inline-edit (sin Otros — la dueña
+# elige uno de los 5).
+TIPOS_CANONICOS = [
+    ("T", "T · Terrenos"),
+    ("I", "I · Edificios"),
+    ("M", "M · Maquinaria Tintorería"),
+    ("K", "K · Maquinaria Tejeduría"),
+    ("C", "C · Camiones"),
+]
 
 
 # Cache module-level del feature flag "existe scintela.activos.orden_manual"
@@ -336,6 +359,44 @@ def crear(
         "cuota":        cuota_f,
         "vida_util":    vida_util_meses,
         "inicial":      importe_inicial,
+    }
+
+
+def editar_tipo(id_activo: int, tipo_nuevo: str, *, usuario: str = "web") -> dict:
+    """Cambia el `tipo` de un activo. TMT 2026-05-20.
+
+    Acepta los 5 códigos canónicos (T/I/M/K/C) — cualquier otro string
+    no vacío también pasa (compat con legacy "TER", "MAQ", etc.), pero
+    el inline-edit del template sólo ofrece los 5 nuevos.
+
+    Devuelve `{id_activos, tipo, categoria_orden, categoria_label}` para
+    que el front-end actualice la fila sin recargar.
+    """
+    tipo_nuevo = (tipo_nuevo or "").strip().upper()[:3]
+    if not tipo_nuevo:
+        raise ValueError("Tipo requerido.")
+
+    n = db.execute(
+        "UPDATE scintela.activos SET tipo = %s WHERE id_activos = %s",
+        (tipo_nuevo, id_activo),
+    )
+    if not n:
+        raise ValueError(f"Activo id={id_activo} no existe.")
+
+    # Releer la fila para devolver el bucket de categoría actualizado.
+    sql = f"""
+        SELECT id_activos, tipo, concepto,
+               {_CATEGORIA_CASE_SQL} AS categoria_orden
+          FROM scintela.activos a
+         WHERE id_activos = %s
+    """
+    row = db.fetch_one(sql, (id_activo,)) or {}
+    cat = int(row.get("categoria_orden") or 99)
+    return {
+        "id_activos":       int(row.get("id_activos") or id_activo),
+        "tipo":             row.get("tipo") or tipo_nuevo,
+        "categoria_orden":  cat,
+        "categoria_label":  CATEGORIA_LABELS.get(cat, "Otros"),
     }
 
 
