@@ -361,10 +361,11 @@
             notif('No se pudo cambiar el tipo: ' + ((j && j.error) || 'error'), false);
             return;
           }
-          notif(`Tipo actualizado a ${j.tipo} (${j.categoria_label}). Recargá para ver el nuevo orden.`, true);
-          // Auto-reload en 1.5s — la dueña ve el feedback breve y la
-          // página se acomoda con el nuevo subtotal/orden.
-          setTimeout(() => window.location.reload(), 1500);
+          notif(`Tipo → ${j.tipo} · ${j.categoria_label}`, true);
+          // TMT 2026-05-20 v2: reload casi instantáneo (600ms) — pedido
+          // dueña "en activos que se organicen tambien si edito el tipo".
+          // El delay corto deja ver el banner y a la vez es rápido.
+          setTimeout(() => window.location.reload(), 600);
         }).catch(err => {
           sel.disabled = false;
           notif('Error de red: ' + err.message, false);

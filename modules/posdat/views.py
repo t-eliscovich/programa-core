@@ -307,11 +307,16 @@ def lista():
     solo_abiertas = request.args.get("abiertas") != "0"
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
+    # TMT 2026-05-20 — tab='posdatados' (default) excluye prov='YY';
+    # tab='yy' solo trae los gastos forzados / provisiones.
+    tab = (request.args.get("tab") or "posdatados").strip().lower()
+    if tab not in ("posdatados", "yy"):
+        tab = "posdatados"
 
     try:
         filas = queries.buscar(
             prov=prov, q=q, solo_abiertas=solo_abiertas,
-            desde=desde, hasta=hasta,
+            desde=desde, hasta=hasta, tab=tab,
         )
         # TMT 2026-05-19 — item 18: el resumen recibe los MISMOS filtros que
         # buscar() para que "X partidas" del hero coincida con las filas
@@ -319,11 +324,26 @@ def lista():
         # contadores incongruentes.
         resumen = queries.resumen(
             prov=prov, q=q, solo_abiertas=solo_abiertas,
-            desde=desde, hasta=hasta,
+            desde=desde, hasta=hasta, tab=tab,
         )
+        # TMT 2026-05-20 — conteos por tab para los badges del switcher.
+        # Defensivo: si falla, dejamos 0 y la UI sigue.
+        try:
+            conteos_tab = {
+                "posdatados": queries.resumen(
+                    prov=prov, q=q, solo_abiertas=solo_abiertas,
+                    desde=desde, hasta=hasta, tab="posdatados",
+                ),
+                "yy": queries.resumen(
+                    prov=prov, q=q, solo_abiertas=solo_abiertas,
+                    desde=desde, hasta=hasta, tab="yy",
+                ),
+            }
+        except Exception:  # noqa: BLE001
+            conteos_tab = {"posdatados": {}, "yy": {}}
         error = None
     except Exception as e:
-        filas, resumen, error = [], {}, str(e)
+        filas, resumen, conteos_tab, error = [], {}, {"posdatados": {}, "yy": {}}, str(e)
 
     if request.args.get("export") == "csv":
         # TMT 2026-05-20 — sale "proveedor" (nombre) del CSV, igual que
@@ -352,6 +372,8 @@ def lista():
         filas=filas, resumen=resumen,
         q=q, prov=prov, desde=desde, hasta=hasta,
         solo_abiertas=solo_abiertas, error=error,
+        # TMT 2026-05-20 — tab + conteos para el switcher de tabs.
+        tab=tab, conteos_tab=conteos_tab,
     )
 
 

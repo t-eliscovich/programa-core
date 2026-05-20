@@ -1483,3 +1483,31 @@ Pedido dueña: códigos canónicos de 1 letra y orden fijo:
 **Subtotales por subcategoría** (pedido extra): el view agrega filas footer al cierre de cada bucket con `n, inicial, amortizac, valor_libros, amortimes`. El template usa un `{% macro subtotal_row(cat) %}` que se invoca antes del header de la categoría siguiente + después del loop para cerrar la última. **NO** se muestran cuando hay drag-and-drop activo (`ns.any_manual`) porque el orden manual cruza categorías.
 
 **Coexistencia con orden_manual (drag-drop):** el ORDER BY arranca con `orden_manual NULLS LAST,` antes de `categoria_orden`. Filas arrastradas explícitamente ganan; el resto sigue el orden por categoría nuevo. Si la dueña usa drag-drop, los headers + subtotales de categoría se ocultan automáticamente (no tendría sentido).
+
+### /posdat split en 2 tabs: Posdatados / YY (2026-05-20)
+
+Pedido dueña: "Posdatados. vamos a hacer dos tabs. primera tab posdatados como esta y borrar columnas cuota mensual y diaria. sin nigun YY. segunda tab YY. borrar cuota diaria y acum (mantener resto de las columnas)".
+
+**Modelo:**
+- Tab `posdatados` (default): excluye `prov='YY'` (deudas reales a proveedor). NO muestra cuota mensual ni cuota diaria. SÍ muestra deuda acumulada.
+- Tab `yy`: solo `prov='YY'` (gastos forzados / provisiones). SÍ muestra cuota mensual. NO muestra cuota diaria ni deuda acumulada.
+
+`prov='YY'` es el marcador legacy dBase para "gasto forzado" (los que `correr_provisiones_diarias` mete con concepto patterns hardcodeados como SUELDOS, ALQUILER, AB*, etc.). Convención del MENU.PRG original — no es un proveedor real.
+
+**Backend:**
+- `posdat.queries.buscar(tab='posdatados'|'yy')` agrega un AND switch: `(tab='yy' AND prov='YY') OR (tab='posdatados' AND prov<>'YY')`. Default 'posdatados' (compat con callers viejos).
+- `posdat.queries.resumen(tab=...)` mismo split — para que el badge de cada tab muestre el N correcto.
+- `posdat.views.lista` lee `request.args.tab`, valida en `('posdatados', 'yy')`, pasa al template + computa `conteos_tab` para los dos buckets así el switcher muestra ambos badges al toque.
+
+**Template:**
+- Switcher de tabs en estilo borderline igual al de /cheques (border-b-2 sky-600 para el activo, badges con conteo).
+- Flags `_show_mensual`, `_show_diaria`, `_show_acum` en la cabecera; cada `<th>` y `<td>` envueltos en `{% if _show_X %}`.
+  - tab=posdatados: mensual=false, diaria=false, acum=true.
+  - tab=yy:         mensual=true,  diaria=false, acum=false.
+- `_colspan_empty` se recomputa dinámicamente para el empty_row.
+
+**Por qué eliminar cuota diaria de las dos tabs**: la dueña ya tiene la lectura mensual en YY; la diaria era redundante y "ensuciaba" la vista. Si más adelante la quiere de vuelta, basta con flippear `_show_diaria=true` en el tab que corresponda.
+
+### Reorden auto al editar tipo en /activos (2026-05-20 patch)
+
+El delay de reload pasó de **1500ms → 600ms** después de editar tipo. La dueña pidió "que se organicen también si edito el tipo" → reload casi instantáneo. 600ms es suficiente para que se vea el banner "Tipo → X · Categoría Y" y a la vez se sienta rápido.

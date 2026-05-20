@@ -46,6 +46,27 @@
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-3">{{ error }}</div>
   {% endif %}
 
+  {# TMT 2026-05-20 — Switcher de tabs.
+     - Posdatados (default): excluye prov='YY' (deudas a proveedor reales).
+       Sin columnas Cuota mensual ni Cuota diaria.
+     - YY: solo prov='YY' (gastos forzados / provisiones). Con Cuota
+       mensual; sin Cuota diaria ni Deuda acumulada. #}
+  {% set _tab_args = {'q': q, 'prov': prov, 'desde': desde, 'hasta': hasta,
+                      'abiertas': '1' if solo_abiertas else '0'} %}
+  <div class="no-print flex items-end gap-1 mb-3 border-b border-slate-200">
+    {% for key, label in [('posdatados', 'Posdatados'), ('yy', 'YY')] %}
+      {% set c = conteos_tab.get(key, {}) %}
+      <a href="{{ url_for('posdat.lista', tab=key, **_tab_args) }}"
+         class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
+                {% if tab == key %}border-sky-600 text-sky-700 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+        {{ label }}
+        {% if c.partidas_abiertas %}
+          <span class="ml-1 text-xs text-slate-400">{{ c.partidas_abiertas }}</span>
+        {% endif %}
+      </a>
+    {% endfor %}
+  </div>
+
   {# TMT 2026-05-19 v7 — pedido dueña: "filtro de proveedor antes que
      concepto" (orden de relevancia: filtra primero por quién, después por
      qué). #}
@@ -81,6 +102,14 @@
        el posdat matchea contra una provisión por concepto. #}
   <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
     <table class="min-w-full text-xs" id="posdat-tabla">
+      {# TMT 2026-05-20 — visibilidad de columnas por tab:
+         - tab='posdatados' (default): SIN Cuota mensual, SIN Cuota diaria.
+         - tab='yy': CON Cuota mensual, SIN Cuota diaria, SIN Deuda acum.
+         El switcher se hace con flags. _colspan_empty cuenta cuántas
+         columnas hay para el empty_row. #}
+      {% set _show_mensual = (tab == 'yy') %}
+      {% set _show_diaria  = false %}
+      {% set _show_acum    = (tab != 'yy') %}
       <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-2 py-1">N°</th>
@@ -89,9 +118,15 @@
           <th class="px-2 py-1">Prov</th>
           <th class="px-2 py-1">Concepto</th>
           <th class="px-2 py-1 text-right" title="Importe acumulado del día — fracción de la cuota mensual cuando es provisión">Importe</th>
-          <th class="px-2 py-1 text-right" title="Cuota mensual de la provisión origen — editable inline (cambia la diaria)">Cuota mensual</th>
-          <th class="px-2 py-1 text-right" title="Cuota diaria = mensual ÷ 30. Editable (recalcula la mensual)">Cuota diaria</th>
-          <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
+          {% if _show_mensual %}
+            <th class="px-2 py-1 text-right" title="Cuota mensual de la provisión origen — editable inline">Cuota mensual</th>
+          {% endif %}
+          {% if _show_diaria %}
+            <th class="px-2 py-1 text-right" title="Cuota diaria = mensual ÷ 30. Editable (recalcula la mensual)">Cuota diaria</th>
+          {% endif %}
+          {% if _show_acum %}
+            <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
+          {% endif %}
           <th class="px-2 py-1">Banco</th>
           <th class="px-2 py-1"></th>
         </tr>
@@ -133,24 +168,23 @@
               {{ f.importe | num_es }}
             {% endif %}
           </td>
+          {% if _show_mensual %}
           <td class="px-2 py-1 text-right font-mono tabular-nums">
             {% if f.id_provisiones and tiene_permiso('provisiones.editar') %}
               <input type="number" step="0.01" min="0"
                      class="posdat-cuota-edit posdat-cuota-mensual w-28 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
                      value="{{ f.cuota_mensual }}"
                      data-orig="{{ f.cuota_mensual }}"
-                     title="Cuota mensual de la provisión — al guardar recalcula la diaria">
+                     title="Cuota mensual de la provisión — editable inline">
             {% elif f.id_provisiones %}
               <span class="text-slate-600">{{ f.cuota_mensual | num_es }}</span>
             {% else %}
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
+          {% endif %}
+          {% if _show_diaria %}
           <td class="px-2 py-1 text-right font-mono tabular-nums">
-            {# TMT 2026-05-20 — Cuota diaria = mensual ÷ 30. Editable.
-               Si el usuario la cambia, recalcula la mensual (diaria × 30)
-               y persiste vía /provisiones/_api/<id>/quick-edit. Sin
-               provisión linkeada, queda vacía. #}
             {% if f.id_provisiones and tiene_permiso('provisiones.editar') %}
               <input type="number" step="0.01" min="0"
                      class="posdat-cuota-edit posdat-cuota-diaria w-24 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
@@ -163,7 +197,10 @@
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
+          {% endif %}
+          {% if _show_acum %}
           <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
+          {% endif %}
           <td class="px-2 py-1 font-mono">
             {# TMT 2026-05-19 v8 — dueña: "los que tienen un numero 9
                son los forzados" (gastos forzados, no pagadas). #}
@@ -198,7 +235,10 @@
           </td>
         </tr>
         {% else %}
-          {{ empty_row(11, 'Sin pasivos con los filtros actuales.') }}
+          {# colspan = N°/Fecha/Venc/Prov/Concepto/Importe + columnas
+             condicionales (mensual/diaria/acum) + Banco + acciones. #}
+          {% set _colspan_empty = 8 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) %}
+          {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
     </table>

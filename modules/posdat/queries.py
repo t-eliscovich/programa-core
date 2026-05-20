@@ -338,6 +338,7 @@ def buscar(
     desde: str | None = None,
     hasta: str | None = None,
     limite: int = 500,
+    tab: str = "posdatados",
 ) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -345,6 +346,11 @@ def buscar(
     # Antes filtraba banc<>9, pero eso incluía banc=10/32 (cheques emitidos
     # modernos PC) — esos NO son deuda abierta, ya fueron pagados desde el
     # banco. La definición correcta es banc=0 (POSDAT_DEUDA_VIVA_WHERE).
+    #
+    # TMT 2026-05-20 — split en dos tabs (pedido dueña):
+    #   tab='posdatados' → excluye prov='YY' (deudas a proveedor reales).
+    #   tab='yy'         → solo prov='YY' (gastos forzados / provisiones).
+    tab_norm = (tab or "posdatados").strip().lower()
     rows = db.fetch_all(
         """
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
@@ -360,6 +366,11 @@ def buscar(
           AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
           AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
+          -- TMT 2026-05-20: filtro de tab (YY vs resto).
+          AND (
+                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) = 'YY')
+             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) <> 'YY')
+          )
           -- Filtro de soft-delete (migración 0027): siempre excluye anuladas.
           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         ORDER BY pd.fechad, pd.id_posdat
@@ -371,6 +382,7 @@ def buscar(
             "solo_abiertas": solo_abiertas,
             "desde": desde or None, "hasta": hasta or None,
             "limite": limite,
+            "tab": tab_norm,
         },
     ) or []
 
@@ -441,6 +453,7 @@ def resumen(
     solo_abiertas: bool = True,
     desde: str | None = None,
     hasta: str | None = None,
+    tab: str = "posdatados",
 ) -> dict:
     """Total de deuda abierta y número de partidas.
 
@@ -454,6 +467,7 @@ def resumen(
     """
     q_s = (q or "").strip()
     like = f"%{q_s}%" if q_s else None
+    tab_norm = (tab or "posdatados").strip().lower()
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(pd.importe), 0) AS total_abierto,
@@ -468,6 +482,10 @@ def resumen(
            AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
            AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
            AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
+           AND (
+                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) = 'YY')
+             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) <> 'YY')
+           )
            AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         """,
         {
@@ -475,6 +493,7 @@ def resumen(
             "q": q_s or None, "like": like,
             "solo_abiertas": solo_abiertas,
             "desde": desde or None, "hasta": hasta or None,
+            "tab": tab_norm,
         },
     )
     return row or {"total_abierto": 0, "partidas_abiertas": 0}
