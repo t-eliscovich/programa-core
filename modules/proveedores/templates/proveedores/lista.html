@@ -34,40 +34,104 @@
   {% endif %}
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm" id="proveedores-tabla">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3 text-left font-medium">Código</th>
-          <th class="px-4 py-3 text-left font-medium">Nombre</th>
-          <th class="px-4 py-3 text-left font-medium">RUC</th>
-          <th class="px-4 py-3 text-left font-medium">Tel</th>
-          <th class="px-4 py-3 text-left font-medium">Representante</th>
-          <th class="px-4 py-3 text-right font-medium">Plazo</th>
-          <th class="px-4 py-3 text-right font-medium">Ret. base</th>
-          <th class="px-4 py-3 text-right font-medium">Ret. IVA</th>
-          <th class="px-4 py-3 text-right font-medium">Deuda</th>
+          <th class="px-3 py-2 text-left font-medium">Código</th>
+          <th class="px-3 py-2 text-left font-medium">Nombre</th>
+          {# TMT 2026-05-20 — columna Tipo (U=máquina, H=hilado, Q=químicos, Y=otro).
+             Editable inline para que la dueña pueda categorizar los
+             proveedores. Filtra los wizards de Activar Maquinaria (U) y
+             Convertir hilado (H). #}
+          <th class="px-1 py-2 text-center font-medium" style="width:48px;" title="U=Máquina · H=Hilado · Q=Químicos · Y=Otro">Tipo</th>
+          <th class="px-3 py-2 text-left font-medium">RUC</th>
+          <th class="px-3 py-2 text-left font-medium">Tel</th>
+          <th class="px-3 py-2 text-left font-medium">Representante</th>
+          <th class="px-3 py-2 text-right font-medium">Plazo</th>
+          <th class="px-3 py-2 text-right font-medium">Ret. base</th>
+          <th class="px-3 py-2 text-right font-medium">Ret. IVA</th>
+          <th class="px-3 py-2 text-right font-medium">Deuda</th>
         </tr>
       </thead>
       <tbody>
         {% for p in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if p.activo and p.activo != 'S' %}opacity-50{% endif %}">
-          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ p.codigo_prov }}</td>
-          <td class="px-4 py-2">{{ p.nombre }}</td>
-          <td class="px-4 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ p.ruc }}</td>
-          <td class="px-4 py-2 text-xs text-slate-500">{{ p.telefono }}</td>
-          <td class="px-4 py-2 text-xs">{{ p.representante }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ p.plazo or '' }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ p.retbase or '' }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
-          <td class="px-4 py-2 text-right text-mono {% if p.saldo_total and p.saldo_total > 0 %}font-semibold{% endif %}">{{ p.saldo_total | money_es }}</td>
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if p.activo and p.activo != 'S' %}opacity-50{% endif %}"
+            data-id-proveedor="{{ p.id_proveedor }}">
+          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">{{ p.codigo_prov }}</td>
+          <td class="px-3 py-2">{{ p.nombre }}</td>
+          <td class="px-1 py-2 text-center font-mono" data-stop="1">
+            {% if tiene_permiso('proveedores.editar') %}
+              <select class="prov-tipo-edit bg-slate-100 dark:bg-slate-800 border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-0.5 py-0 text-[11px] font-medium uppercase w-12"
+                      title="Tipo: U=Máquina · H=Hilado · Q=Químicos · Y=Otro">
+                <option value="">—</option>
+                {% set _t = (p.tipo or '').upper() %}
+                {% for code, lbl in [('U','U · Máquina'),('H','H · Hilado'),('Q','Q · Químicos'),('Y','Y · Otro')] %}
+                  <option value="{{ code }}" {% if code == _t %}selected{% endif %}>{{ code }}</option>
+                {% endfor %}
+                {# Si el tipo actual no está en los canónicos, lo mostramos como legacy. #}
+                {% if _t and _t not in ['U','H','Q','Y'] %}
+                  <option value="{{ _t }}" selected>{{ _t }}</option>
+                {% endif %}
+              </select>
+            {% else %}
+              <span class="text-[10px] text-slate-600">{{ p.tipo or '' }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ p.ruc }}</td>
+          <td class="px-3 py-2 text-xs text-slate-500">{{ p.telefono }}</td>
+          <td class="px-3 py-2 text-xs">{{ p.representante }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ p.plazo or '' }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ p.retbase or '' }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
+          <td class="px-3 py-2 text-right text-mono {% if p.saldo_total and p.saldo_total > 0 %}font-semibold{% endif %}">{{ p.saldo_total | money_es }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin proveedores.') }}
+        {{ empty_row(10, 'Sin proveedores.') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
 
   <p class="mt-3 text-xs text-slate-400 no-print">Mostrando {{ filas | length }} proveedores.</p>
+
+  {# TMT 2026-05-20 — JS inline edit del tipo (postea a /proveedores/_api/<id>/tipo). #}
+  {% if tiene_permiso('proveedores.editar') %}
+  <style>
+    .prov-tipo-saved { background: rgba(34,197,94,0.18) !important; }
+    .prov-tipo-error { background: rgba(248,113,113,0.20) !important; }
+  </style>
+  <script>
+    (function() {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+      document.querySelectorAll('#proveedores-tabla tbody tr[data-id-proveedor]').forEach(tr => {
+        const idProv = tr.dataset.idProveedor;
+        const sel = tr.querySelector('.prov-tipo-edit');
+        if (!sel) return;
+        sel.addEventListener('change', () => {
+          const nuevo = sel.value;
+          fetch('/proveedores/_api/' + idProv + '/tipo', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ tipo: nuevo }),
+          }).then(r => r.json()).then(j => {
+            if (j && j.ok) {
+              sel.classList.remove('prov-tipo-error');
+              sel.classList.add('prov-tipo-saved');
+              setTimeout(() => sel.classList.remove('prov-tipo-saved'), 1200);
+            } else {
+              sel.classList.add('prov-tipo-error');
+              alert('No se pudo guardar: ' + ((j && j.error) || 'error'));
+            }
+          }).catch(e => {
+            sel.classList.add('prov-tipo-error');
+            alert('Error de red: ' + e.message);
+          });
+        });
+      });
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}

@@ -265,7 +265,9 @@ def activar_maquinaria():
     nombres: dict[str, str] = {}
     try:
         from modules.dolares import queries as _doq
-        grupos = _doq.anticipos_pendientes_por_proveedor() or []
+        # TMT 2026-05-20 — pedido dueña: "si cargo maquinaria solo me
+        # debería aparecer los U". Filtramos proveedores tipo='U'.
+        grupos = _doq.anticipos_pendientes_por_proveedor(tipos_filter=["U"]) or []
         if prov_sel:
             anticipos = _doq.anticipos_pendientes_de_proveedor(prov_sel) or []
         # Mapeo de nombres por código.

@@ -4,6 +4,7 @@ from flask import (
     abort,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -211,6 +212,39 @@ def toggle_activo(codigo_prov: str):
     except Exception as e:
         flash_exc("No pude cambiar estado", e)
     return redirect(url_for("proveedores.lista"))
+
+
+@proveedores_bp.route("/proveedores/_api/<int:id_proveedor>/tipo", methods=["POST"])
+@requiere_login
+@requiere_permiso("proveedores.editar")
+def api_editar_tipo(id_proveedor: int):
+    """Inline edit del campo `tipo` desde /proveedores.
+
+    TMT 2026-05-20 — pedido dueña: el tipo del proveedor define qué
+    workflow puede consumirlo (U=máquinas, H=hilado, Q=químicos, Y=otro).
+    Acepta JSON `{tipo: 'U'|'H'|'Q'|'Y'|''}`. Vacío = limpiar.
+    """
+    import db as _db
+    data = request.get_json(silent=True) or request.form
+    tipo_nuevo = (data.get("tipo") or "").strip().upper()[:1]
+    # Empty string lo dejamos pasar para "limpiar tipo".
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        n = _db.execute(
+            """
+            UPDATE scintela.proveedor
+               SET tipo = NULLIF(%s, ''),
+                   usuario_modifica = %s,
+                   fecha_modifica = CURRENT_TIMESTAMP
+             WHERE id_proveedor = %s
+            """,
+            (tipo_nuevo, usuario[:50], id_proveedor),
+        )
+        if not n:
+            return jsonify({"ok": False, "error": "Proveedor no existe."}), 404
+        return jsonify({"ok": True, "tipo": tipo_nuevo or None})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
 @proveedores_bp.route("/proveedores")

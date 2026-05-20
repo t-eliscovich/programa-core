@@ -146,29 +146,48 @@ def resumen() -> dict:
 #   - `convertir_a_compra()` ejecuta la conversión atómica.
 # ──────────────────────────────────────────────────────────────────────────
 
-def anticipos_pendientes_por_proveedor() -> list[dict]:
+def anticipos_pendientes_por_proveedor(
+    tipos_filter: list[str] | None = None,
+) -> list[dict]:
     """Agrupa anticipos vivos (`st` vacío) por codigo_prov.
 
     Replica el filtro `&SF CTA=PRO .AND. ST=' '` de BANCOS.PRG:759 y la
     sumatoria `&SAI BB` para mostrar el total por proveedor.
 
+    TMT 2026-05-20 — `tipos_filter` opcional: lista de letras de
+    `scintela.proveedor.tipo` para filtrar (ej: `['U']` para maquinaria,
+    `['H']` para hilado). Sin filtro: devuelve todos los que tengan
+    anticipos vivos. Si un cta no existe en scintela.proveedor (raro),
+    cae afuera si hay filtro.
+
     Devuelve lista [{codigo_prov, total_usd, n_anticipos, ult_fecha,
-                      primer_fecha}] ordenada por total_usd DESC.
+                      primer_fecha, nombre, tipo}] ordenada por total_usd DESC.
     """
+    tipos_norm = None
+    if tipos_filter:
+        tipos_norm = [t.strip().upper()[:1] for t in tipos_filter if t and t.strip()]
+        tipos_norm = [t for t in tipos_norm if t]
     return db.fetch_all(
         """
-        SELECT UPPER(TRIM(cta)) AS codigo_prov,
-               COALESCE(SUM(importe), 0)  AS total_usd,
-               COUNT(*)                   AS n_anticipos,
-               MAX(fecha)                 AS ult_fecha,
-               MIN(fecha)                 AS primer_fecha
-          FROM scintela.dolares
-         WHERE (st IS NULL OR st IN ('', ' '))
-           AND cta IS NOT NULL AND TRIM(cta) <> ''
-         GROUP BY UPPER(TRIM(cta))
+        SELECT UPPER(TRIM(d.cta))       AS codigo_prov,
+               COALESCE(SUM(d.importe), 0)  AS total_usd,
+               COUNT(*)                     AS n_anticipos,
+               MAX(d.fecha)                 AS ult_fecha,
+               MIN(d.fecha)                 AS primer_fecha,
+               MAX(COALESCE(p.nombre, ''))  AS nombre,
+               MAX(COALESCE(p.tipo, ''))    AS tipo
+          FROM scintela.dolares d
+          LEFT JOIN scintela.proveedor p
+                 ON UPPER(TRIM(p.codigo_prov)) = UPPER(TRIM(d.cta))
+         WHERE (d.st IS NULL OR d.st IN ('', ' '))
+           AND d.cta IS NOT NULL AND TRIM(d.cta) <> ''
+           AND (%(tipos_norm)s::text[] IS NULL
+                OR UPPER(COALESCE(p.tipo, '')) = ANY(%(tipos_norm)s::text[]))
+         GROUP BY UPPER(TRIM(d.cta))
          HAVING COUNT(*) > 0
          ORDER BY total_usd DESC, codigo_prov ASC
-        """
+        """,
+        {"tipos_norm": tipos_norm},
     ) or []
 
 

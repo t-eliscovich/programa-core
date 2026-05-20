@@ -155,7 +155,12 @@ def convertir_lote():
 
     # GET
     prov_sel = (request.args.get("prov") or "").strip().upper() or None
-    grupos, _ = _safe(queries.anticipos_pendientes_por_proveedor, [])
+    # TMT 2026-05-20 — pedido dueña: "Lo mismo para hilo (H)". Filtramos
+    # proveedores tipo='H' en el wizard de convertir-lote.
+    grupos, _ = _safe(
+        lambda: queries.anticipos_pendientes_por_proveedor(tipos_filter=["H"]),
+        [],
+    )
 
     # Enriquecer con nombre del proveedor (no es N+1 grande — pocos proveedores).
     nombres: dict[str, str] = {}
