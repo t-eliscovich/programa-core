@@ -62,32 +62,16 @@ def lista():
             filename="activos.csv",
         )
 
-    # TMT 2026-05-20 — subtotales por subcategoría (pedido dueña: "los
-    # totales deberían ir en cada subcategoria"). Agrupamos en Python para
-    # evitar una segunda query con GROUP BY. Suma: inicial, amortizac,
-    # valor_libros, amortimes (cuota mensual prorrateada).
-    subtotales: dict[int, dict] = {}
-    for f in filas:
-        cat = int(f.get("categoria_orden") or 99)
-        s = subtotales.setdefault(cat, {
-            "n": 0, "inicial": 0.0, "amortizac": 0.0,
-            "valor_libros": 0.0, "amortimes": 0.0,
-        })
-        s["n"]            += 1
-        s["inicial"]      += float(f.get("inicial")      or 0)
-        s["amortizac"]    += float(f.get("amortizac")    or 0)
-        s["valor_libros"] += float(f.get("valor_libros") or 0)
-        s["amortimes"]    += float(f.get("amortimes")    or 0)
+    # TMT 2026-05-20 v3 — subtotales removidos por pedido dueña ("borrar
+    # subtotales"). El cálculo del dict ya no es necesario.
 
     return render_template(
         "activos/lista.html",
         filas=filas, q=q, tipo=tipo, solo_activos=solo_activos,
         resumen=resumen, tipos=tipos,
         error=error,
-        # TMT 2026-05-20 — pasamos los códigos canónicos y los subtotales
-        # para el dropdown de tipo y las filas de footer por categoría.
+        # Códigos canónicos para el dropdown de tipo inline.
         tipos_canonicos=queries.TIPOS_CANONICOS,
-        subtotales=subtotales,
     )
 
 

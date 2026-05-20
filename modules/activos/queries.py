@@ -139,12 +139,13 @@ def buscar(
     # AMORTIMES_calc = COEF × CUOTA  (lo que va corriendo este mes).
     # valor_libros = inicial - amortizac_acum - amortimes_calc.
     #
-    # TMT 2026-05-20: fragmentos condicionados por la migración 0037.
-    # Si `orden_manual` existe → se incluye en SELECT + ORDER BY. Si no,
-    # se reemplaza por strings vacíos → query funciona como antes.
+    # TMT 2026-05-20 v3: la dueña pidió sort puro por categoría → fecha.
+    # `orden_manual` (de la migración 0037) ya no entra en el ORDER BY
+    # para evitar que los headers de categoría se dupliquen. La columna
+    # se mantiene en SELECT por si en el futuro reactivamos el drag-drop.
     if _tiene_orden_manual():
         orden_manual_select   = "a.orden_manual,"
-        orden_manual_order_by = "a.orden_manual NULLS LAST,"
+        orden_manual_order_by = ""  # ya no se usa en ORDER BY
     else:
         orden_manual_select   = ""
         orden_manual_order_by = ""
@@ -197,13 +198,14 @@ def buscar(
           AND (%(tipo)s IS NULL OR UPPER(a.tipo) = UPPER(%(tipo)s))
           AND (NOT %(solo_activos)s
                OR (COALESCE(a.inicial, 0) - COALESCE(a.amortizac, 0)) > 0.01)
-        -- TMT 2026-05-20: si la dueña arrastró el activo a una posición
-        -- específica (orden_manual NOT NULL), gana sobre el orden
-        -- canónico. NULL queda al final con el orden por categoría/fecha
-        -- de siempre. {orden_manual_order_by} se inyecta sólo si la
-        -- columna existe (gap deploy/migrate friendly).
-        ORDER BY {orden_manual_order_by}
-                 {_CATEGORIA_CASE_SQL} ASC,
+        -- TMT 2026-05-20 v3: pedido dueña "Ordenar por tipo luego por
+        -- fecha. Solo una vez cada sub categoria". Sort estricto =
+        -- categoría → fecha DESC. orden_manual queda como secundario
+        -- DENTRO de cada categoría (ya no rompe el group-by-categoría —
+        -- antes los rows arrastrados saltaban entre categorías y los
+        -- headers se duplicaban).
+        ORDER BY {_CATEGORIA_CASE_SQL} ASC,
+                 {orden_manual_order_by}
                  a.fecha DESC NULLS LAST, a.id_activos DESC
         LIMIT %(limite)s
     """

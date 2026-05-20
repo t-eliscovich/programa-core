@@ -139,39 +139,13 @@
       </thead>
       <tbody>
         {% set ns = namespace(prev_cat=0) %}
-        {# TMT 2026-05-20 v3 — SIEMPRE mostrar headers + subtotales por
-           categoría, incluso si hay rows con `orden_manual` seteado.
-           Pedido dueña: "faltan las sub categorías en activos". El
-           drag-drop ahora coexiste con los headers — si hay orden manual
-           cruzado, los headers van a aparecer en el orden en que
-           aparece cada categoría por primera vez. #}
+        {# TMT 2026-05-20 v3 — SOLO un header por categoría, sin
+           subtotales. Pedido dueña: "Solo una vez cada sub categoria.
+           borrar subtotales. Ordenar por tipo luego por fecha". #}
         {% set _colspan = (11 if tiene_permiso('activos.crear') else 10) %}
-
-        {# Macro para imprimir el footer (subtotal) de una categoría que
-           recién terminó. TMT 2026-05-20. #}
-        {% macro subtotal_row(cat_orden) %}
-          {% set s = subtotales.get(cat_orden) %}
-          {% if s %}
-          <tr class="bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-700 font-semibold text-xs">
-            {% if tiene_permiso('activos.crear') %}<td class="no-print"></td>{% endif %}
-            <td colspan="3" class="px-3 py-2 text-right text-slate-600 dark:text-slate-300">
-              Subtotal · {{ s.n }} activo{{ '' if s.n == 1 else 's' }}
-            </td>
-            <td class="px-3 py-2 text-right tabular-nums text-slate-700">{{ s.inicial | num_es }}</td>
-            <td class="px-3 py-2 text-right tabular-nums text-amber-700">{{ s.amortizac | num_es }}</td>
-            <td class="px-3 py-2 text-right tabular-nums text-sky-700">{{ s.valor_libros | num_es }}</td>
-            <td></td>
-            <td class="px-3 py-2 text-right tabular-nums text-emerald-700">{{ s.amortimes | num_es }}</td>
-            <td></td><td></td>
-          </tr>
-          {% endif %}
-        {% endmacro %}
 
         {% for a in filas %}
         {% if a.categoria_orden and a.categoria_orden != ns.prev_cat %}
-          {# Cerrar la categoría anterior con su subtotal antes de empezar
-             la nueva. TMT 2026-05-20. #}
-          {% if ns.prev_cat %}{{ subtotal_row(ns.prev_cat) }}{% endif %}
           {# Header de sección por categoría — vocabulario canónico 2026-05-20.
              Orden nuevo: T Terrenos / I Edificios / M Tintorería / K Tejeduría / C Camiones / 99 Otros. #}
           <tr class="bg-slate-100 dark:bg-slate-800/70">
@@ -181,8 +155,10 @@
           </tr>
           {% set ns.prev_cat = a.categoria_orden %}
         {% endif %}
-        {% set agotado = (a.valor_libros or 0) <= 0.01 %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 activo-fila {% if agotado %}opacity-60{% endif %}"
+        {# TMT 2026-05-20 v3 — pedido dueña: "no importa que ya haya
+           100%". Removido el opacity-60 + line-through; los activos
+           totalmente amortizados se ven igual que los demás. #}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 activo-fila"
             data-id-activo="{{ a.id_activos }}"
             {% if tiene_permiso('activos.crear') %}draggable="true"{% endif %}>
           {% if tiene_permiso('activos.crear') %}
@@ -214,7 +190,7 @@
           </td>
           <td class="px-3 py-2 text-right tabular-nums">{{ a.inicial | num_es if a.inicial else '' }}</td>
           <td class="px-3 py-2 text-right tabular-nums text-amber-700">{{ a.amortizac | num_es if a.amortizac else '' }}</td>
-          <td class="px-3 py-2 text-right tabular-nums font-medium {% if agotado %}text-slate-400 line-through{% else %}text-sky-700{% endif %}">
+          <td class="px-3 py-2 text-right tabular-nums font-medium text-sky-700">
             {{ a.valor_libros | num_es }}
           </td>
           <td class="px-3 py-2 text-right tabular-nums text-xs">
@@ -235,8 +211,6 @@
         {% else %}
         {{ empty_row(_colspan, 'Sin activos en el filtro.', 'Probá quitar el filtro o desmarcar "solo activos vivos".') }}
         {% endfor %}
-        {# Subtotal de la ÚLTIMA categoría (el loop no lo cierra solo). #}
-        {% if ns.prev_cat %}{{ subtotal_row(ns.prev_cat) }}{% endif %}
       </tbody>
     </table>
   </div>
