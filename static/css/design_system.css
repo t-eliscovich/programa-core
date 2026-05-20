@@ -118,6 +118,31 @@
   --color-text-muted:   var(--dark-text-muted);
 }
 
+/* ─── TABLAS SIN SCROLL HORIZONTAL ─────────────────────────────────── */
+/* TMT 2026-05-20 — pedido dueña: "Que ninguna pantalla se scrollee
+   para los costados". Los wrappers de tabla pasaron de
+   `overflow-x-auto` a `overflow-hidden`. Este CSS hace que las
+   tablas internas se ajusten al viewport. Cells de texto largo
+   wrappean (no se cortan); cells con `whitespace-nowrap` (códigos,
+   fechas, importes) se truncan con `…` si exceden el wrapper. */
+.rounded.overflow-hidden > table {
+  width: 100%;
+  table-layout: auto;
+}
+.rounded.overflow-hidden > table th,
+.rounded.overflow-hidden > table td {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+/* Cells con `whitespace-nowrap` se truncan con `…` para no desbordar
+   el wrapper. El usuario ve el contenido completo en el title tooltip. */
+.rounded.overflow-hidden > table th[style*="white-space: nowrap"],
+.rounded.overflow-hidden > table td[style*="white-space: nowrap"] {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ─── UTILIDADES (para casos sin Tailwind) ─────────────────────────── */
 
 /* Cards canónicas — usar SOLO si no podés usar las clases Tailwind */

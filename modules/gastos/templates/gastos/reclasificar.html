@@ -42,7 +42,7 @@ Informes / <a href="{{ url_for('informes.gastos') }}" class="hover:underline">Ga
   {% if filas %}
   <form method="post" action="{{ url_for('gastos.reclasificar') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="bg-white border border-slate-300 rounded overflow-x-auto">
+    <div class="bg-white border border-slate-300 rounded overflow-hidden">
       <table class="w-full text-sm">
         <thead class="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
           <tr>

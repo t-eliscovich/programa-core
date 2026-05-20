@@ -203,43 +203,51 @@
     </div>
   {% endif %}
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-sm sortable">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  {# TMT 2026-05-20 v2 — table-fixed para que entre sin scroll horizontal.
+     Pedido dueña: "Que ninguna pantalla se scrollee para los costados". #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <table class="w-full text-xs sortable table-fixed">
+      <colgroup>
+        <col style="width: 9%">    <!-- N° -->
+        <col style="width: 9%">    <!-- Fecha -->
+        <col>                       <!-- Cliente: resto -->
+        <col style="width: 9%">    <!-- Kg -->
+        <col style="width: 11%">   <!-- Importe -->
+        <col style="width: 11%">   <!-- Abonado -->
+        <col style="width: 11%">   <!-- Saldo -->
+        <col style="width: 13%">   <!-- Acum -->
+        <col style="width: 6%">    <!-- Stat -->
+      </colgroup>
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          {# TMT 2026-05-19 — sacadas columnas "Vence" y "Nombre" (pedido
-             dueña: nadie ve vencimiento + alcanza con código de cliente). #}
-          <th class="px-3 py-3 text-left font-medium">N°</th>
-          <th class="px-3 py-3 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
-          <th class="px-3 py-3 text-left font-medium">Cliente</th>
-          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Kg</th>
-          {# TMT 2026-05-20 PASADA 6 (Federico #13): orden correcto =
-             IMPORTE | ABONO | SALDO | ACUM | STAT. #}
-          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Abonado</th>
-          <th class="px-3 py-3 text-right font-medium" data-sort-type="number">Saldo</th>
-          <th class="px-3 py-3 text-right font-medium acum-col" title="Total facturado corrido por fecha (ascendente)" data-no-sort>Acum.</th>
-          <th class="px-3 py-3 text-left font-medium">Stat</th>
+          <th class="px-2 py-2 text-left font-medium">N°</th>
+          <th class="px-2 py-2 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
+          <th class="px-2 py-2 text-left font-medium">Cliente</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Kg</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
+          <th class="px-2 py-2 text-right font-medium acum-col" title="Total facturado corrido" data-no-sort>Acum.</th>
+          <th class="px-2 py-2 text-left font-medium">Stat</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
+          <td class="px-2 py-1.5 font-mono truncate" style="white-space: nowrap;">
             <a href="{{ url_for('facturas.detalle', id_factura=f.id_factura) }}" class="hover:text-blue-600">{% if f.numf_completo %}{{ f.numf_completo }}{% elif f.numf and f.numf != 0 %}{{ f.numf }}{% else %}<span class="text-slate-400">#{{ f.id_factura }}</span>{% endif %}</a>
           </td>
-          <td class="px-3 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
-          <td class="px-3 py-2">
-            {# TMT 2026-05-19 — solo código, sin nombre (pedido dueña). #}
+          <td class="px-2 py-1.5" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+          <td class="px-2 py-1.5 truncate" title="{{ f.codigo_cli }}">
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}"
-               class="font-mono text-xs hover:text-blue-600">{{ f.codigo_cli }}</a>
+               class="font-mono hover:text-blue-600">{{ f.codigo_cli }}</a>
           </td>
-          <td class="px-3 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
-          <td class="px-3 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
-          <td class="px-3 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
-          <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
+          <td class="px-2 py-1.5 text-right text-mono">{{ f.kg | kg_es }}</td>
+          <td class="px-2 py-1.5 text-right text-mono">{{ f.importe | money_es }}</td>
+          <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
+          <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
+          <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
+          <td class="px-2 py-1.5 font-mono text-slate-500">{{ f.stat }}</td>
         </tr>
         {% else %}
         {{ empty_row(9, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
