@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, saldo_pill, stat_chip, page_hero, kpi_card %}
+{% from "_ui.html" import empty_row, saldo_pill, stat_chip, page_hero, kpi_card, volver_a_resultados %}
 
 {% block title %}Cartera — aging{% endblock %}
 {% block breadcrumb %}<strong>Cartera</strong>{% endblock %}
@@ -14,6 +14,7 @@
                   ~ ((totales.n_facturas or 0) | string) ~ ' facturas vivas'
     ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
+      {{ volver_a_resultados() }}
       {% if tiene_permiso('stop_cliente.editar') %}
         <form method="post" action="{{ url_for('cartera.stop_automatico') }}"
               class="inline-flex items-center gap-2">

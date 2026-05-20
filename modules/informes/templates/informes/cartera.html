@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, saldo_pill, page_hero %}
+{% from "_ui.html" import empty_row, saldo_pill, page_hero, volver_a_resultados %}
 {% block title %}Cartera — resumen{% endblock %}
-{% block breadcrumb %}Informes / <strong>Cartera — resumen</strong>{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Cartera — resumen</strong>{% endblock %}
 
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
@@ -9,6 +9,7 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Cartera — resumen', descripcion='Saldos por cobrar a clientes (vista compacta)') }}
     <div class="no-print flex items-center gap-2">
+      {{ volver_a_resultados() }}
       <a href="{{ url_for('cartera.aging') }}"
          class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90 inline-flex items-center gap-1.5">
         Ver con buckets de mora

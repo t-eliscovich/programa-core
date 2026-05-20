@@ -298,6 +298,26 @@
 {% endmacro %}
 
 {# Colored pill for saldo/delta values. Negative = red, positive = emerald, zero = slate. #}
+{#
+   ─────────────── BOTÓN VOLVER A RESULTADOS ─────────────────────────────
+   TMT 2026-05-20 — pedido dueña: "En dividendos tener boton para volver
+   a resultados. esto me gusta. si podes mostramelo en mas lugares".
+
+   Uso (al lado del page_hero, en el .no-print de acciones):
+       {{ volver_a_resultados() }}
+
+   Si la pantalla es drilldown de un módulo distinto al balance, pasale
+   un href custom:
+       {{ volver_a_resultados(href=url_for('mi.indice'), texto='← Volver al índice') }}
+#}
+{% macro volver_a_resultados(href=None, texto='← Resultados', title='Volver al Informe de Resultados') %}
+{% set _h = href or url_for('informes.balance') %}
+<a href="{{ _h }}"
+   class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+   title="{{ title }}">{{ texto }}</a>
+{% endmacro %}
+
+
 {% macro saldo_pill(valor, mostrar_cero=True) %}
 {% set v = (valor or 0) | float %}
 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-mono

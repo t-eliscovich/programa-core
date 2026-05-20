@@ -47,7 +47,9 @@
           <th class="px-4 py-3 text-left font-medium">Vend</th>
           <th class="px-4 py-3 text-left font-medium">Estado</th>
           <th class="px-4 py-3 text-right font-medium" data-sort-type="number">Cupo</th>
-          <th class="px-4 py-3 text-right font-medium" data-sort-type="number">Saldo</th>
+          {# TMT 2026-05-20 — columna 'Saldo' eliminada (pedido dueña:
+             "en base de datos clientes, no mostrar deuda"). La info
+             de saldo por cliente se ve en /informes/estado-cuenta. #}
         </tr>
       </thead>
       <tbody>
@@ -83,10 +85,9 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono {% if c.saldo_total and c.saldo_total > 0 %}font-semibold{% endif %}">{{ c.saldo_total | money_es }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin clientes.') }}
+        {{ empty_row(8, 'Sin clientes.') }}
         {% endfor %}
       </tbody>
     </table>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_hero %}
+{% from "_ui.html" import empty_row, page_hero, volver_a_resultados %}
 {% block title %}Ventas {{ anio }}{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Ventas {{ anio }}</strong>{% endblock %}
 
@@ -11,6 +11,7 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Ventas del año ' ~ anio, 'Mes a mes desde enero · facturación con kg, precio promedio U$/kg, importe y acumulado.') }}
     <div class="no-print flex items-center gap-2">
+      {{ volver_a_resultados() }}
       <a href="{{ url_for('informes.ventas_anio', export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
       <button onclick="window.print()"

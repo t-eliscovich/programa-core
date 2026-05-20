@@ -1,10 +1,14 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_header %}
+{% from "_ui.html" import empty_row, page_header, volver_a_resultados %}
 
 {% block title %}Activos fijos{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Activos fijos</strong>{% endblock %}
 
 {% block content %}
-  {{ page_header("Activos fijos", "Bienes amortizables — máquinas, vehículos, edificios, etc.") }}
+  <div class="flex items-start justify-between gap-4 mb-4 flex-wrap">
+    {{ page_header("Activos fijos", "Bienes amortizables — máquinas, vehículos, edificios, etc.") }}
+    <div class="no-print">{{ volver_a_resultados() }}</div>
+  </div>
 
   {% if error %}
     <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">

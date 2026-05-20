@@ -12,48 +12,22 @@
 {% block content %}
 <div class="max-w-full">
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
-    {# TMT 2026-05-20 — Hero adaptado por tab:
-       - tab='posdatados': hero estándar con total abierto.
-       - tab='yy': hero custom con 2 KPIs (mensual + diario), pedido dueña. #}
-    {% if tab == 'yy' %}
-      <div>
-        <h1 class="text-2xl font-semibold mb-2">Posdatados YY <span class="text-sm font-normal text-slate-500">· cuotas mensuales</span></h1>
-        <div class="grid grid-cols-2 gap-3 max-w-md">
-          <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
-            <div class="text-xs text-sky-700 uppercase tracking-wide">Total importe</div>
-            {# TMT 2026-05-20 v3 — IDs en los KPI para recálculo en vivo al
-               editar inline. Pedido dueña: "se tiene que recalcular si yo
-               cambio algo en los editables". #}
-            <div id="yy-total-importe" class="text-xl font-semibold text-sky-900 text-right tabular-nums">$ {{ total_importe | num_es(0) }}</div>
-            <div class="text-xs text-sky-700 text-right">acumulado al día de hoy</div>
-          </div>
-          <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
-            <div class="text-xs text-emerald-700 uppercase tracking-wide">Total cuota mensual</div>
-            <div id="yy-total-cuota-mensual" class="text-xl font-semibold text-emerald-900 text-right tabular-nums">$ {{ total_cuota_mensual | num_es(0) }}</div>
-            <div class="text-xs text-emerald-700 text-right">{{ resumen.partidas_abiertas or 0 }} provisiones</div>
-          </div>
-        </div>
-      </div>
-    {% else %}
-      {% set _v = '$ ' ~ ((resumen.total_abierto or 0) | num_es(0)) %}
-      {% set _e = '· ' ~ (resumen.partidas_abiertas | string) ~ ' partidas abiertas' %}
-      {% if prov %}
-        {# Hero muestra el total del proveedor filtrado #}
-        {% set _v = '$ ' ~ ((resumen.total_abierto or 0) | num_es(0)) %}
-        {% set _e = '· proveedor ' ~ prov ~ ' · ' ~ (resumen.partidas_abiertas | string) ~ ' partidas' %}
-      {% endif %}
-      {{ page_hero(
-          'Posdatados',
-          kpi_valor=_v,
-          kpi_extra=_e
-      ) }}
-    {% endif %}
+    {# TMT 2026-05-20 v3 — Hero unificado: 3 KPIs visibles en AMBAS
+       tabs (pedido dueña: "necesito que en ambas tabs arriba diga
+       el KPI total posdatados + YY = x. en el de posdatados tmbn
+       el kpi de posdatados. en el de yy el total de yy tmbn"). #}
+    {{ page_hero('Posdatados', 'Pasivos con proveedores. Posdatados = deuda con proveedores · YY = cuotas mensuales (provisiones).') }}
     <div class="no-print flex items-center gap-2 shrink-0">
+      <a href="{{ url_for('informes.balance') }}"
+         class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+         title="Volver al Resultados">
+        ← Resultados
+      </a>
       {% if prov or q or desde or hasta %}
-        <a href="{{ url_for('posdat.lista') }}"
+        <a href="{{ url_for('posdat.lista', tab=tab) }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
            title="Volver al listado completo, sin filtros">
-          ← Volver a todos
+          ← Sin filtros
         </a>
       {% endif %}
       {% if tiene_permiso('posdat.crear') %}
@@ -63,6 +37,30 @@
           Nuevo pasivo
         </a>
       {% endif %}
+    </div>
+  </div>
+
+  {# ── 3 KPIs siempre visibles: Posdatados / YY / Total ───────────────── #}
+  {% set _pos_total = (conteos_tab.get('posdatados', {}).get('total_abierto', 0) or 0) %}
+  {% set _pos_n     = (conteos_tab.get('posdatados', {}).get('partidas_abiertas', 0) or 0) %}
+  {% set _yy_total  = (conteos_tab.get('yy', {}).get('total_abierto', 0) or 0) %}
+  {% set _yy_n      = (conteos_tab.get('yy', {}).get('partidas_abiertas', 0) or 0) %}
+  {% set _combinado = _pos_total + _yy_total %}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white dark:bg-slate-900 border-2 {{ 'border-sky-300 dark:border-sky-700' if tab == 'posdatados' else 'border-slate-200 dark:border-slate-800' }} rounded p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-500">Posdatados</div>
+      <div class="mt-2 text-2xl font-semibold text-mono">{{ _pos_total | money_es }}</div>
+      <div class="mt-1 text-xs text-slate-500">{{ _pos_n }} partida{{ '' if _pos_n == 1 else 's' }} a proveedores</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-2 {{ 'border-sky-300 dark:border-sky-700' if tab == 'yy' else 'border-slate-200 dark:border-slate-800' }} rounded p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-500">YY (cuotas mensuales)</div>
+      <div class="mt-2 text-2xl font-semibold text-mono">{{ _yy_total | money_es }}</div>
+      <div class="mt-1 text-xs text-slate-500">{{ _yy_n }} provisione{{ '' if _yy_n == 1 else 's' }}</div>
+    </div>
+    <div class="bg-slate-900 dark:bg-slate-100 border-2 border-slate-900 dark:border-slate-100 text-white dark:text-slate-900 rounded p-5">
+      <div class="text-xs uppercase tracking-wider opacity-70">Total = Posdatados + YY</div>
+      <div class="mt-2 text-2xl font-semibold text-mono">{{ _combinado | money_es }}</div>
+      <div class="mt-1 text-xs opacity-70">{{ _pos_n + _yy_n }} partidas totales</div>
     </div>
   </div>
 
