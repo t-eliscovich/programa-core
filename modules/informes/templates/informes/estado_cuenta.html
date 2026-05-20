@@ -31,11 +31,26 @@
      Antes decía "Nos debe", cambiado a "Saldo cliente" para tono profesional. #}
   {% set t = data.totales %}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-    <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if t.saldo_vivo > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
+    {# TMT 2026-05-20 PASADA 6 Federico #14 — drift entre header
+       SALDO CLIENTE y último ACUM de la tabla.
+       Root cause: `saldo_vivo` solo suma facturas Z/A con saldo>0.
+       El ACUM acumula TODOS los saldos (incluye sobrepagos negativos
+       y facturas T canceladas con saldo residual). Para que el
+       cliente vea una sola fuente de verdad, mostramos el NETO
+       (saldo total, mismo que último ACUM) como número grande y
+       agregamos un detalle pequeño con el desglose. #}
+    {% set _saldo_neto = t.saldo %}
+    {% set _sobrepagos = (t.saldo_vivo or 0) - _saldo_neto %}
+    <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if _saldo_neto > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
       <div class="text-xs uppercase tracking-wider text-slate-500">Saldo cliente</div>
-      <div class="mt-1 text-3xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo_vivo > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
-        {{ t.saldo_vivo | money_es }}
+      <div class="mt-1 text-3xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if _saldo_neto > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
+        {{ _saldo_neto | money_es }}
       </div>
+      {% if _sobrepagos > 0.005 %}
+        <div class="mt-1 text-xs text-slate-500">
+          Facturas vivas {{ t.saldo_vivo | money_es }} − sobrepagos {{ _sobrepagos | money_es }}
+        </div>
+      {% endif %}
       {% if t.saldo_vencido > 0 %}
         <div class="mt-1 text-xs text-red-600 dark:text-red-400">
           {{ t.saldo_vencido | money_es }} vencido ({{ t.n_vencidas }} factura{{ '' if t.n_vencidas == 1 else 's' }})
