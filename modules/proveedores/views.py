@@ -11,6 +11,7 @@ from flask import (
     url_for,
 )
 
+import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
@@ -194,22 +195,26 @@ def editar(codigo_prov: str):
         )
 
 
-@proveedores_bp.route("/proveedores/<codigo_prov>/eliminar", methods=["POST"])
+@proveedores_bp.route("/proveedores/<int:id_proveedor>/eliminar", methods=["POST"])
 @requiere_login
 @requiere_permiso("proveedores.editar")
-def eliminar(codigo_prov: str):
-    """Borra un proveedor con confirmación.
+def eliminar(id_proveedor: int):
+    """Borra un proveedor con confirmación por PK.
 
-    TMT 2026-05-20 — pedido dueña: "que exista boton de eliminar y que
-    pregunte antes de eliminar". Confirmación via JS confirm() en el
-    template (no doble-paso server-side). Bloquea si hay FKs activas.
+    TMT 2026-05-20 v2 — pedido dueña: rows legacy sin codigo_prov
+    también deben ser eliminables. Usamos id_proveedor (PK) para
+    que NUNCA falle por URL malformada.
     """
-    prov = queries.por_codigo(codigo_prov)
-    if not prov:
+    fila = db.fetch_one(
+        "SELECT codigo_prov, nombre FROM scintela.proveedor WHERE id_proveedor = %s",
+        (int(id_proveedor),),
+    ) or {}
+    if not fila:
         abort(404)
+    label = (fila.get("codigo_prov") or "(sin código)") + " — " + (fila.get("nombre") or "(sin nombre)")
     try:
-        queries.eliminar(codigo_prov)
-        flash(f"Proveedor {codigo_prov} — {prov['nombre']} eliminado.", "ok")
+        queries.eliminar_por_id(int(id_proveedor))
+        flash(f"Proveedor {label} eliminado.", "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:

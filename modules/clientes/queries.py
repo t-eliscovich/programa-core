@@ -206,36 +206,57 @@ def set_activo(codigo_cli: str, activo: bool, usuario: str = "web") -> int:
     )
 
 
-def eliminar(codigo_cli: str) -> int:
-    """Borra un cliente. Rechaza si tiene FKs activas (facturas, cheques).
+def eliminar_por_id(id_cliente: int) -> int:
+    """Borra un cliente por PK (id_cliente). Rechaza si tiene FKs.
 
-    TMT 2026-05-20 — pedido dueña: "Clientes idem" (botón eliminar
-    con confirmación, como proveedores). Bloquea si hay registros
-    vinculados; el caller maneja el ValueError.
+    TMT 2026-05-20 v2 — pedido dueña: "TAMBIEN LAS PRIMERAS ROWS
+    DEBERIAN SER ELIMINABLES". Algunos clientes legacy tienen
+    codigo_cli='' o NULL — la URL /clientes/<codigo>/eliminar
+    fallaba con 404. Usamos id_cliente (PK) que SIEMPRE existe.
     """
-    codigo = codigo_cli.upper().strip()
-    n_fact = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.factura WHERE codigo_cli = %s",
-        (codigo,),
+    fila = db.fetch_one(
+        "SELECT codigo_cli FROM scintela.cliente WHERE id_cliente = %s",
+        (int(id_cliente),),
     ) or {}
-    if int(n_fact.get("n") or 0) > 0:
-        raise ValueError(
-            f"No se puede eliminar: el cliente {codigo} tiene "
-            f"{n_fact['n']} facturas registradas."
-        )
-    n_che = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.cheque WHERE codigo_cli = %s",
-        (codigo,),
-    ) or {}
-    if int(n_che.get("n") or 0) > 0:
-        raise ValueError(
-            f"No se puede eliminar: el cliente {codigo} tiene "
-            f"{n_che['n']} cheques registrados."
-        )
+    codigo = (fila.get("codigo_cli") or "").strip()
+    # Si tiene código, chequeamos FKs por código. Si NO tiene código,
+    # asumimos que no puede tener facturas/cheques vinculados (no podrían
+    # haberse cargado sin código del cliente).
+    if codigo:
+        n_fact = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.factura WHERE UPPER(codigo_cli) = %s",
+            (codigo.upper(),),
+        ) or {}
+        if int(n_fact.get("n") or 0) > 0:
+            raise ValueError(
+                f"No se puede eliminar: el cliente {codigo} tiene "
+                f"{n_fact['n']} facturas registradas."
+            )
+        n_che = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.cheque WHERE UPPER(codigo_cli) = %s",
+            (codigo.upper(),),
+        ) or {}
+        if int(n_che.get("n") or 0) > 0:
+            raise ValueError(
+                f"No se puede eliminar: el cliente {codigo} tiene "
+                f"{n_che['n']} cheques registrados."
+            )
     return db.execute(
-        "DELETE FROM scintela.cliente WHERE codigo_cli = %s",
-        (codigo,),
+        "DELETE FROM scintela.cliente WHERE id_cliente = %s",
+        (int(id_cliente),),
     )
+
+
+# Alias legacy: si algo llama eliminar(codigo) sigue funcionando.
+def eliminar(codigo_cli: str) -> int:
+    """Wrapper legacy — convierte código a id_cliente y llama eliminar_por_id."""
+    fila = db.fetch_one(
+        "SELECT id_cliente FROM scintela.cliente WHERE codigo_cli = %s",
+        (codigo_cli.upper().strip(),),
+    ) or {}
+    if not fila:
+        raise ValueError(f"Cliente {codigo_cli!r} no encontrado.")
+    return eliminar_por_id(int(fila["id_cliente"]))
 
 
 def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False) -> list[dict]:
@@ -251,7 +272,7 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False) -> l
     like = f"%{q}%" if q else None
     return db.fetch_all(
         """
-        SELECT c.codigo_cli, c.nombre, c.telefono, c.ruc, c.stop, c.cupo,
+        SELECT c.id_cliente, c.codigo_cli, c.nombre, c.telefono, c.ruc, c.stop, c.cupo,
                c.pago, c.vend, c.fecha_cupo,
                COALESCE(c.activo, TRUE) AS activo,
                COALESCE(s.saldo_total, 0) AS saldo_total,

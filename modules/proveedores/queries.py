@@ -125,37 +125,51 @@ def set_activo(codigo_prov: str, activo: bool, usuario: str = "web") -> int:
     )
 
 
-def eliminar(codigo_prov: str) -> int:
-    """Borra un proveedor. Rechaza si tiene FKs activas (compras, posdat).
+def eliminar_por_id(id_proveedor: int) -> int:
+    """Borra un proveedor por PK. Rechaza si tiene FKs activas.
 
-    TMT 2026-05-20 — pedido dueña: "que exista boton de eliminar y que
-    pregunte antes de eliminar". Si hay registros vinculados, devuelve
-    0 y el caller debe mostrar el error.
+    TMT 2026-05-20 v2 — pedido dueña: rows legacy sin codigo_prov
+    también deben ser eliminables. Usamos id_proveedor (PK).
     """
-    codigo = codigo_prov.upper().strip()
-    # Chequear FKs antes de borrar — evitamos un IntegrityError críptico.
-    n_compras = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.compra WHERE codigo_prov = %s",
-        (codigo,),
+    fila = db.fetch_one(
+        "SELECT codigo_prov FROM scintela.proveedor WHERE id_proveedor = %s",
+        (int(id_proveedor),),
     ) or {}
-    if int(n_compras.get("n") or 0) > 0:
-        raise ValueError(
-            f"No se puede eliminar: el proveedor {codigo} tiene "
-            f"{n_compras['n']} compras registradas."
-        )
-    n_posdat = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.posdat WHERE prov = %s",
-        (codigo,),
-    ) or {}
-    if int(n_posdat.get("n") or 0) > 0:
-        raise ValueError(
-            f"No se puede eliminar: el proveedor {codigo} tiene "
-            f"{n_posdat['n']} posdatados registrados."
-        )
+    codigo = (fila.get("codigo_prov") or "").strip()
+    if codigo:
+        n_compras = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.compra WHERE UPPER(codigo_prov) = %s",
+            (codigo.upper(),),
+        ) or {}
+        if int(n_compras.get("n") or 0) > 0:
+            raise ValueError(
+                f"No se puede eliminar: el proveedor {codigo} tiene "
+                f"{n_compras['n']} compras registradas."
+            )
+        n_posdat = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.posdat WHERE UPPER(prov) = %s",
+            (codigo.upper(),),
+        ) or {}
+        if int(n_posdat.get("n") or 0) > 0:
+            raise ValueError(
+                f"No se puede eliminar: el proveedor {codigo} tiene "
+                f"{n_posdat['n']} posdatados registrados."
+            )
     return db.execute(
-        "DELETE FROM scintela.proveedor WHERE codigo_prov = %s",
-        (codigo,),
+        "DELETE FROM scintela.proveedor WHERE id_proveedor = %s",
+        (int(id_proveedor),),
     )
+
+
+# Alias legacy
+def eliminar(codigo_prov: str) -> int:
+    fila = db.fetch_one(
+        "SELECT id_proveedor FROM scintela.proveedor WHERE codigo_prov = %s",
+        (codigo_prov.upper().strip(),),
+    ) or {}
+    if not fila:
+        raise ValueError(f"Proveedor {codigo_prov!r} no encontrado.")
+    return eliminar_por_id(int(fila["id_proveedor"]))
 
 
 def buscar(q: str = "", limite: int = 300) -> list[dict]:

@@ -10,6 +10,7 @@ from flask import (
     url_for,
 )
 
+import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
@@ -196,21 +197,26 @@ def toggle_stop(codigo_cli: str):
     return redirect(url_for("clientes.lista"))
 
 
-@clientes_bp.route("/clientes/<codigo_cli>/eliminar", methods=["POST"])
+@clientes_bp.route("/clientes/<int:id_cliente>/eliminar", methods=["POST"])
 @requiere_login
 @requiere_permiso("clientes.editar")
-def eliminar(codigo_cli: str):
-    """Borra un cliente con confirmación.
+def eliminar(id_cliente: int):
+    """Borra un cliente con confirmación, por PK.
 
-    TMT 2026-05-20 — pedido dueña: "Clientes idem" (botón eliminar
-    con confirm). Bloquea si tiene facturas/cheques.
+    TMT 2026-05-20 v2 — pedido dueña: rows legacy sin codigo_cli
+    también deben ser eliminables. Usamos id_cliente (PK) en lugar
+    de codigo_cli para que NUNCA falle por URL malformada.
     """
-    cli = queries.por_codigo(codigo_cli)
-    if not cli:
+    fila = db.fetch_one(
+        "SELECT codigo_cli, nombre FROM scintela.cliente WHERE id_cliente = %s",
+        (int(id_cliente),),
+    ) or {}
+    if not fila:
         abort(404)
+    label = (fila.get("codigo_cli") or "(sin código)") + " — " + (fila.get("nombre") or "(sin nombre)")
     try:
-        queries.eliminar(codigo_cli)
-        flash(f"Cliente {codigo_cli} — {cli['nombre']} eliminado.", "ok")
+        queries.eliminar_por_id(int(id_cliente))
+        flash(f"Cliente {label} eliminado.", "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:

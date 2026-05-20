@@ -86,27 +86,25 @@
           <td class="px-3 py-2 text-right text-mono">{{ p.plazo or '' }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ p.retbase or '' }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ p.retiva or '' }}</td>
-          {% if tiene_permiso('proveedores.editar') %}
+          {% if tiene_permiso('proveedores.editar') and p.id_proveedor %}
           <td class="px-1 py-2 no-print text-center">
-            {# TMT 2026-05-20 v3 — botón eliminar con confirm().
-               Defensivo: solo renderizamos si p.codigo_prov tiene valor.
-               Sin esto, url_for() genera '/proveedores//eliminar' → 404. #}
-            {% if p.codigo_prov %}
-              {% set _msg = '¿Eliminar proveedor ' ~ p.codigo_prov ~ ' — ' ~ (p.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene compras o posdatados vinculados, será bloqueado.' %}
-              <form method="post" action="{{ url_for('proveedores.eliminar', codigo_prov=p.codigo_prov) }}"
-                    class="inline"
-                    onsubmit="return confirm({{ _msg | tojson }});">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit"
-                        class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
-                        title="Eliminar proveedor (pregunta antes)">
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                  </svg>
-                </button>
-              </form>
-            {% endif %}
+            {# TMT 2026-05-20 v4 — eliminar por id_proveedor (PK). #}
+            <form method="post"
+                  action="{{ url_for('proveedores.eliminar', id_proveedor=p.id_proveedor) }}"
+                  class="inline prov-del-form"
+                  data-label="{{ p.codigo_prov or '(sin código)' }} — {{ p.nombre or '(sin nombre)' }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                      title="Eliminar proveedor (pregunta antes)">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                </svg>
+              </button>
+            </form>
           </td>
+          {% elif tiene_permiso('proveedores.editar') %}
+          <td class="px-1 py-2 no-print text-center"></td>
           {% endif %}
         </tr>
         {% else %}
@@ -152,6 +150,30 @@
             sel.classList.add('prov-tipo-error');
             alert('Error de red: ' + e.message);
           });
+        });
+      });
+    })();
+  </script>
+  {% endif %}
+
+  {# TMT 2026-05-20 v4 — confirm() via event listener (más robusto que
+     onsubmit inline; el inline no siempre dispara). Pedido dueña:
+     "ANTES DE ELIMINAR CLIENTE O PROVEDOR NO PREGUNTA NADA!!". #}
+  {% if tiene_permiso('proveedores.editar') %}
+  <script>
+    (function() {
+      document.querySelectorAll('.prov-del-form').forEach(form => {
+        form.addEventListener('submit', (ev) => {
+          const label = form.dataset.label || 'este proveedor';
+          const ok = confirm(
+            '¿Eliminar proveedor ' + label + '?\n\n' +
+            'Esta acción NO se puede deshacer.\n' +
+            'Si tiene compras o posdatados vinculados, será bloqueado.'
+          );
+          if (!ok) {
+            ev.preventDefault();
+            return false;
+          }
         });
       });
     })();

@@ -88,28 +88,29 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
-          {% if tiene_permiso('clientes.editar') %}
+          {% if tiene_permiso('clientes.editar') and c.id_cliente %}
           <td class="px-1 py-2 no-print text-center">
-            {# TMT 2026-05-20 v3 — botón eliminar con confirm().
-               Defensivo: solo renderizamos si c.codigo_cli tiene valor.
-               Sin esto, url_for() genera '/clientes//eliminar' que da 404.
-               Usamos tojson para escape correcto del nombre. #}
-            {% if c.codigo_cli %}
-              {% set _msg = '¿Eliminar cliente ' ~ c.codigo_cli ~ ' — ' ~ (c.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene facturas o cheques vinculados, será bloqueado.' %}
-              <form method="post" action="{{ url_for('clientes.eliminar', codigo_cli=c.codigo_cli) }}"
-                    class="inline"
-                    onsubmit="return confirm({{ _msg | tojson }});">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit"
-                        class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
-                        title="Eliminar cliente (pregunta antes)">
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                  </svg>
-                </button>
-              </form>
-            {% endif %}
+            {# TMT 2026-05-20 v4 — eliminar por id_cliente (PK).
+               Antes usaba codigo_cli y fallaba con 404 cuando el código
+               estaba vacío (clientes legacy). Ahora cualquier row con
+               PK es eliminable. El confirm() está en JS event listener
+               (no onsubmit inline) para que SIEMPRE pregunte. #}
+            <form method="post"
+                  action="{{ url_for('clientes.eliminar', id_cliente=c.id_cliente) }}"
+                  class="inline cli-del-form"
+                  data-label="{{ c.codigo_cli or '(sin código)' }} — {{ c.nombre or '(sin nombre)' }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                      title="Eliminar cliente (pregunta antes)">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                </svg>
+              </button>
+            </form>
           </td>
+          {% elif tiene_permiso('clientes.editar') %}
+          <td class="px-1 py-2 no-print text-center"></td>
           {% endif %}
         </tr>
         {% else %}
@@ -120,5 +121,30 @@
   </div>
 
   <p class="mt-3 text-xs text-slate-400 no-print">Mostrando {{ filas | length }} clientes.</p>
+
+  {# TMT 2026-05-20 v4 — confirm() via event listener (no inline onsubmit).
+     Más robusto: el onsubmit inline a veces se ignora si el browser hace
+     caching agresivo o si el nombre tiene caracteres que rompen el escape.
+     Acá interceptamos el submit programáticamente. #}
+  {% if tiene_permiso('clientes.editar') %}
+  <script>
+    (function() {
+      document.querySelectorAll('.cli-del-form').forEach(form => {
+        form.addEventListener('submit', (ev) => {
+          const label = form.dataset.label || 'este cliente';
+          const ok = confirm(
+            '¿Eliminar cliente ' + label + '?\n\n' +
+            'Esta acción NO se puede deshacer.\n' +
+            'Si tiene facturas o cheques vinculados, será bloqueado.'
+          );
+          if (!ok) {
+            ev.preventDefault();
+            return false;
+          }
+        });
+      });
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}
