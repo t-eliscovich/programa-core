@@ -21,12 +21,15 @@
         <div class="grid grid-cols-2 gap-3 max-w-md">
           <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
             <div class="text-xs text-sky-700 uppercase tracking-wide">Total importe</div>
-            <div class="text-xl font-semibold text-sky-900 text-right tabular-nums">$ {{ total_importe | num_es(0) }}</div>
+            {# TMT 2026-05-20 v3 — IDs en los KPI para recálculo en vivo al
+               editar inline. Pedido dueña: "se tiene que recalcular si yo
+               cambio algo en los editables". #}
+            <div id="yy-total-importe" class="text-xl font-semibold text-sky-900 text-right tabular-nums">$ {{ total_importe | num_es(0) }}</div>
             <div class="text-xs text-sky-700 text-right">acumulado al día de hoy</div>
           </div>
           <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
             <div class="text-xs text-emerald-700 uppercase tracking-wide">Total cuota mensual</div>
-            <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">$ {{ total_cuota_mensual | num_es(0) }}</div>
+            <div id="yy-total-cuota-mensual" class="text-xl font-semibold text-emerald-900 text-right tabular-nums">$ {{ total_cuota_mensual | num_es(0) }}</div>
             <div class="text-xs text-emerald-700 text-right">{{ resumen.partidas_abiertas or 0 }} provisiones</div>
           </div>
         </div>
@@ -307,6 +310,10 @@
               inp.classList.add('posdat-importe-saved');
               inp.dataset.orig = inp.value;
               setTimeout(() => inp.classList.remove('posdat-importe-saved'), 1200);
+              // TMT 2026-05-20 v3 — refrescar KPIs en vivo (si estamos
+              // en la tab YY). La función vive en window porque este
+              // IIFE no la conoce localmente.
+              if (typeof window.posdatRecalcKPIs === 'function') window.posdatRecalcKPIs();
             } else {
               inp.classList.add('posdat-importe-error');
               alert('No se pudo guardar: ' + (j.error || 'error'));
@@ -360,7 +367,33 @@
           inp.value = nuevoImporte.toFixed(2);
           inp.dataset.orig = inp.value;
         }
+        recalcularKPIs();
       }
+
+      // TMT 2026-05-20 v3 — recálculo en vivo de los KPIs de la tab YY.
+      // Pedido dueña: "tambien se tiene que recalcular si yo cambio algo
+      // en los editables". Suma todos los inputs visibles + actualiza
+      // los <div> de Total Importe y Total Cuota Mensual. Está colgado
+      // a `window` porque hay 2 IIFEs separados (importe + cuota) que
+      // necesitan llamarlo.
+      window.posdatRecalcKPIs = function() {
+        const elImp = document.getElementById('yy-total-importe');
+        const elCuo = document.getElementById('yy-total-cuota-mensual');
+        if (!elImp && !elCuo) return;  // no estamos en la tab YY
+        let totImp = 0, totCuo = 0;
+        document.querySelectorAll('#posdat-tabla tbody tr[data-id-posdat]')
+          .forEach(tr => {
+            const imp = tr.querySelector('.posdat-importe-edit');
+            if (imp) totImp += parseFloat(imp.value) || 0;
+            const cuo = tr.querySelector('.posdat-cuota-mensual');
+            if (cuo) totCuo += parseFloat(cuo.value) || 0;
+          });
+        const fmt0 = n => Math.round(n).toLocaleString('es-EC');
+        if (elImp) elImp.textContent = '$ ' + fmt0(totImp);
+        if (elCuo) elCuo.textContent = '$ ' + fmt0(totCuo);
+      };
+      // Alias local (compat con el resto del IIFE).
+      const recalcularKPIs = window.posdatRecalcKPIs;
 
       function persistirMensual(idProv, mensual, focused, otro) {
         // Determinar la fila del posdat para actualizar también su importe.
