@@ -90,10 +90,13 @@
           <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
           {% if tiene_permiso('clientes.editar') %}
           <td class="px-1 py-2 no-print text-center">
-            {# TMT 2026-05-20 — botón eliminar con confirm() pedido dueña. #}
+            {# TMT 2026-05-20 — botón eliminar con confirm() pedido dueña.
+               Usamos tojson para que el nombre con apóstrofes (Joaquín
+               D'Angelo, etc.) no rompa el HTML. #}
+            {% set _msg = '¿Eliminar cliente ' ~ c.codigo_cli ~ ' — ' ~ (c.nombre or '') ~ '? Esta acción NO se puede deshacer. Si tiene facturas o cheques vinculados, será bloqueado.' %}
             <form method="post" action="{{ url_for('clientes.eliminar', codigo_cli=c.codigo_cli) }}"
                   class="inline"
-                  onsubmit="return confirm('¿Eliminar cliente {{ c.codigo_cli }} — {{ c.nombre | replace(\"'\", \"\\\\'\") }}? Esta acción NO se puede deshacer. Si tiene facturas o cheques vinculados, será bloqueado.');">
+                  onsubmit="return confirm({{ _msg | tojson }});">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit"
                       class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
