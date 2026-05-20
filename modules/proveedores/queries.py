@@ -172,7 +172,25 @@ def eliminar(codigo_prov: str) -> int:
     return eliminar_por_id(int(fila["id_proveedor"]))
 
 
-def buscar(q: str = "", limite: int = 300) -> list[dict]:
+def contar(q: str = "") -> int:
+    """COUNT(*) total para paginación."""
+    q = (q or "").strip()
+    like = f"%{q}%" if q else None
+    row = db.fetch_one(
+        """
+        SELECT COUNT(*) AS n
+          FROM scintela.proveedor p
+         WHERE %(q)s IS NULL
+            OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
+            OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
+            OR p.ruc LIKE %(like)s
+        """,
+        {"q": q or None, "like": like},
+    ) or {}
+    return int(row.get("n") or 0)
+
+
+def buscar(q: str = "", limite: int = 300, offset: int = 0) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     return db.fetch_all(
@@ -197,7 +215,8 @@ def buscar(q: str = "", limite: int = 300) -> list[dict]:
         -- then nombre". Antes ordenaba por saldo DESC (= mostraba la
         -- columna Deuda que ya se eliminó del listado).
         ORDER BY COALESCE(p.tipo, '') ASC, p.nombre ASC
-        LIMIT %(limite)s
+        LIMIT %(limite)s OFFSET %(offset)s
         """,
-        {"q": q or None, "like": like, "limite": limite},
+        {"q": q or None, "like": like, "limite": limite,
+         "offset": int(offset or 0)},
     )

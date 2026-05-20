@@ -114,7 +114,31 @@
     </table>
   </div>
 
-  <p class="mt-3 text-xs text-slate-400 no-print">Mostrando {{ filas | length }} proveedores.</p>
+  {# TMT 2026-05-20 v2 — paginación 200 por página. #}
+  <div class="mt-3 flex items-center justify-between no-print">
+    <p class="text-xs text-slate-400">
+      Mostrando <strong>{{ ((pag - 1) * por_pag) + 1 }}-{{ ((pag - 1) * por_pag) + (filas | length) }}</strong>
+      de <strong>{{ total | num_es(0) }}</strong> proveedores
+      {% if q %}<span class="ml-1">(filtro: <code>{{ q }}</code>)</span>{% endif %}
+    </p>
+    {% if total_pag > 1 %}
+    <nav class="flex items-center gap-2 text-sm">
+      {% if pag > 1 %}
+        <a href="{{ url_for('proveedores.lista', q=q, pag=pag-1) }}"
+           class="px-3 py-1 rounded border border-slate-300 hover:bg-slate-100">‹ Anterior</a>
+      {% else %}
+        <span class="px-3 py-1 rounded border border-slate-200 text-slate-300">‹ Anterior</span>
+      {% endif %}
+      <span class="text-xs text-slate-500">Página <strong>{{ pag }}</strong> de <strong>{{ total_pag }}</strong></span>
+      {% if pag < total_pag %}
+        <a href="{{ url_for('proveedores.lista', q=q, pag=pag+1) }}"
+           class="px-3 py-1 rounded border border-slate-300 hover:bg-slate-100">Siguiente ›</a>
+      {% else %}
+        <span class="px-3 py-1 rounded border border-slate-200 text-slate-300">Siguiente ›</span>
+      {% endif %}
+    </nav>
+    {% endif %}
+  </div>
 
   {# TMT 2026-05-20 — JS inline edit del tipo (postea a /proveedores/_api/<id>/tipo). #}
   {% if tiene_permiso('proveedores.editar') %}

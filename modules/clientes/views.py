@@ -290,15 +290,31 @@ def contactos():
 def lista():
     q = request.args.get("q", "").strip()
     incluir_inactivos = request.args.get("inactivos") == "1"
+    # TMT 2026-05-20 v2 — paginación pedido dueña.
     try:
-        filas = queries.buscar(q, incluir_inactivos=incluir_inactivos)
+        pag = max(1, int(request.args.get("pag") or 1))
+    except (TypeError, ValueError):
+        pag = 1
+    POR_PAG = 200
+    offset = (pag - 1) * POR_PAG
+    try:
+        filas = queries.buscar(q, incluir_inactivos=incluir_inactivos,
+                               limite=POR_PAG, offset=offset)
+        total = queries.contar(q, incluir_inactivos=incluir_inactivos)
         error = None
     except Exception as e:
-        filas, error = [], str(e)
+        filas, total, error = [], 0, str(e)
+    total_pag = max(1, (total + POR_PAG - 1) // POR_PAG)
 
     if request.args.get("export") == "csv":
+        # CSV trae todo, sin paginación.
+        try:
+            todos = queries.buscar(q, incluir_inactivos=incluir_inactivos,
+                                   limite=100000, offset=0)
+        except Exception:
+            todos = filas
         return csv_response(
-            filas,
+            todos,
             columnas=[
                 ("codigo_cli", "Código"),
                 ("nombre", "Cliente"),
@@ -318,6 +334,7 @@ def lista():
         "clientes/lista.html",
         filas=filas, q=q, error=error,
         incluir_inactivos=incluir_inactivos,
+        pag=pag, total_pag=total_pag, total=total, por_pag=POR_PAG,
     )
 
 

@@ -259,8 +259,12 @@ def eliminar(codigo_cli: str) -> int:
     return eliminar_por_id(int(fila["id_cliente"]))
 
 
-def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False) -> list[dict]:
+def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
+           offset: int = 0) -> list[dict]:
     """Lista paginada con búsqueda por código/nombre/RUC.
+
+    TMT 2026-05-20 v2 — agregado `offset` para paginación (pedido dueña:
+    "mostrando 200 clientes, dejame ir a una proxima pantalla").
 
     Por default filtra clientes con `activo=False` (legacy DIFUNTOS).
     Pasar `incluir_inactivos=True` para verlos.
@@ -296,13 +300,34 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False) -> l
         -- por codigo". Antes ordenaba por saldo DESC (= columna que
         -- ya se eliminó del listado).
         ORDER BY c.codigo_cli ASC
-        LIMIT %(limite)s
+        LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
             "q": q or None, "like": like, "limite": limite,
             "incluir_inactivos": bool(incluir_inactivos),
+            "offset": int(offset or 0),
         },
     )
+
+
+def contar(q: str = "", incluir_inactivos: bool = False) -> int:
+    """COUNT(*) total para paginación (sin LIMIT)."""
+    q = (q or "").strip()
+    like = f"%{q}%" if q else None
+    row = db.fetch_one(
+        """
+        SELECT COUNT(*) AS n
+          FROM scintela.cliente c
+         WHERE (%(incluir_inactivos)s OR COALESCE(c.activo, TRUE) = TRUE)
+           AND (%(q)s IS NULL
+                OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
+                OR UPPER(c.nombre)     LIKE UPPER(%(like)s)
+                OR c.ruc LIKE %(like)s)
+        """,
+        {"q": q or None, "like": like,
+         "incluir_inactivos": bool(incluir_inactivos)},
+    ) or {}
+    return int(row.get("n") or 0)
 
 
 def cuenta_corriente(codigo_cli: str) -> dict:

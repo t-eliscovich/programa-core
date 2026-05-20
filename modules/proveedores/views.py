@@ -280,15 +280,28 @@ def api_editar_tipo(id_proveedor: int):
 @requiere_permiso("proveedores.ver")
 def lista():
     q = request.args.get("q", "").strip()
+    # TMT 2026-05-20 v2 — paginación pedido dueña.
     try:
-        filas = queries.buscar(q)
+        pag = max(1, int(request.args.get("pag") or 1))
+    except (TypeError, ValueError):
+        pag = 1
+    POR_PAG = 200
+    offset = (pag - 1) * POR_PAG
+    try:
+        filas = queries.buscar(q, limite=POR_PAG, offset=offset)
+        total = queries.contar(q)
         error = None
     except Exception as e:
-        filas, error = [], str(e)
+        filas, total, error = [], 0, str(e)
+    total_pag = max(1, (total + POR_PAG - 1) // POR_PAG)
 
     if request.args.get("export") == "csv":
+        try:
+            todos = queries.buscar(q, limite=100000, offset=0)
+        except Exception:
+            todos = filas
         return csv_response(
-            filas,
+            todos,
             columnas=[
                 ("codigo_prov", "Código"),
                 ("nombre", "Proveedor"),
@@ -303,4 +316,8 @@ def lista():
             filename="proveedores.csv",
         )
 
-    return render_template("proveedores/lista.html", filas=filas, q=q, error=error)
+    return render_template(
+        "proveedores/lista.html",
+        filas=filas, q=q, error=error,
+        pag=pag, total_pag=total_pag, total=total, por_pag=POR_PAG,
+    )
