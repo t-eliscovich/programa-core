@@ -654,9 +654,53 @@ def movimientos(no_banco):
             ],
             filename=f"banco_{no_banco}_movimientos.csv",
         )
+
+    # TMT 2026-05-20 — Agrupar depósitos en lotes. Pedido dueña: "un dia
+    # deposito 25 cheques, como mi ultimo movimiento. En el banco yo
+    # quiero ver un renglon que diga 1000 USD depositados, 25 cheques. y
+    # luego si abro un + (...) vea el detalle, cheque x por x monto etc.".
+    #
+    # Las filas vienen ORDER BY fecha DESC, id_transaccion DESC.
+    # Agrupamos DE consecutivos de la MISMA fecha en un "lote". Si el
+    # grupo tiene 2+, lo presentamos como 1 fila resumen + N filas
+    # detalle ocultas; si tiene 1, va como movimiento normal.
+    items: list[dict] = []
+    i = 0
+    while i < len(filas):
+        f = filas[i]
+        doc = (f.get("documento") or "").strip().upper()
+        if doc == "DE":
+            j = i
+            grupo = []
+            while (j < len(filas)
+                   and (filas[j].get("documento") or "").strip().upper() == "DE"
+                   and filas[j].get("fecha") == f.get("fecha")):
+                grupo.append(filas[j])
+                j += 1
+            if len(grupo) >= 2:
+                total_lote = sum(float(g.get("importe") or 0) for g in grupo)
+                # El saldo del lote es el del PRIMER row (más nuevo en el
+                # orden DESC) — refleja el saldo después de TODO el lote.
+                saldo_lote = grupo[0].get("saldo")
+                items.append({
+                    "_kind":         "lote",
+                    "fecha":         f.get("fecha"),
+                    "n_cheques":     len(grupo),
+                    "importe_total": total_lote,
+                    "saldo":         saldo_lote,
+                    "lote_key":      f"lote-{grupo[0].get('id_transaccion')}",
+                    "children":      grupo,
+                })
+                i = j
+                continue
+        # Default: fila individual
+        items.append({"_kind": "row", **f})
+        i += 1
+
     return render_template(
         "bancos/movimientos.html",
-        banco=banco, filas=filas, desde=desde, hasta=hasta, error=error,
+        banco=banco, filas=filas, items=items,
+        desde=desde, hasta=hasta, error=error,
     )
 
 

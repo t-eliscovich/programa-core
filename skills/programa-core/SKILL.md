@@ -1511,3 +1511,30 @@ Pedido dueña: "Posdatados. vamos a hacer dos tabs. primera tab posdatados como 
 ### Reorden auto al editar tipo en /activos (2026-05-20 patch)
 
 El delay de reload pasó de **1500ms → 600ms** después de editar tipo. La dueña pidió "que se organicen también si edito el tipo" → reload casi instantáneo. 600ms es suficiente para que se vea el banner "Tipo → X · Categoría Y" y a la vez se sienta rápido.
+
+### Lotes de depósito agrupados en /bancos/<no_banco>/movimientos (2026-05-20)
+
+Pedido dueña: "Cuando deposito cheques en el banco. un dia deposito 25 cheques, como mi ultimo movimiento. En el banco yo quiero ver un renglon que diga 1000 USD depositados, 25 cheques. y luego si abro un + o hint vea el detalle, cheque x por x monto etc.".
+
+**Modelo:** los movimientos vienen de `transacciones_bancarias` con `documento='DE'` (depósito). Cuando `queries.depositar_lote()` deposita N cheques, genera N filas DE consecutivas del mismo `no_banco + fecha`. La vista los agrupa en Python (sin migración nueva).
+
+**Algoritmo** (`bancos.views.movimientos`):
+- Itera `filas` (ya viene ORDER BY fecha DESC, id_transaccion DESC).
+- Cuando encuentra una DE, mira hacia adelante mientras siga siendo DE en la misma fecha.
+- Si el "grupo" tiene 2+ filas → crea un item `{_kind: 'lote', n_cheques, importe_total, saldo, lote_key, children: [...]}`.
+- Si tiene 1, lo deja como item `{_kind: 'row', ...row...}`.
+- Manda al template `items` (la lista agrupada).
+
+**El saldo del lote** es el saldo de la fila MÁS RECIENTE del grupo (primera en el orden DESC) → refleja el saldo running DESPUÉS de aplicar todo el lote, no en el medio.
+
+**Template:**
+- Fila summary en verde clara: `[DE×25] [25 cheques depositados] [+$X] [+ ver detalle]`. Clickeable (el row entero) y el botón también.
+- Filas detail (`.lote-child`) en `hidden` por default, una por cheque, con sangría visual (↳ + padding-left) y tipografía más chica.
+- Click en summary OR en el botón `+ ver detalle` → toggle `.hidden` en las children + cambio del label `+ ver detalle` ↔ `− ocultar`.
+- `aria-expanded` en el botón para accesibilidad.
+
+**Por qué agrupar en Python, no en SQL:** el GROUP BY en SQL pierde la granularidad de cada cheque, y para reconstruir el detalle hay que hacer 2 queries (lote + children). En Python con la lista ya ordenada, el agrupamiento es un pase O(n) sin perder data.
+
+**Por qué no agregar `lote_id`/`batch_id` a `transacciones_bancarias`:** el match por (fecha + no_banco + documento='DE') es **suficientemente bueno** y no requiere migración. Si en el futuro hace falta distinguir 2 lotes en el mismo día al mismo banco (caso raro), se agrega columna y se llena desde `queries.depositar_lote` con un UUID — el algoritmo del view ya estaría listo para usarlo (sólo cambia el criterio de agrupamiento).
+
+**Heads-up de UX:** si la usuaria deposita 2 cheques sueltos en momentos distintos del mismo día, también se agrupan. Aceptable: la dueña los ve igual sumados, abre el detalle y los ve uno por uno.
