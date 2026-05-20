@@ -98,6 +98,15 @@ def nuevo():
     if not fechads_raw:
         v = request.form.get("fechad")
         fechads_raw = [v] if v else []
+    # TMT 2026-05-20 — Estado por cheque desde el dropdown nuevo (Z, P, D,
+    # B, X, 1, 2). Si no viene, default Z (cartera) — el comportamiento
+    # legacy. Cuando stat=P, la fechad es obligatoria; para el resto, la
+    # fechad se colapsa a la fecha de recibido (queries.crear lo hace
+    # con `fechad or fecha`).
+    stats_raw = request.form.getlist("stat[]")
+    if not stats_raw:
+        v = request.form.get("stat")
+        stats_raw = [v] if v else []
     # Limpiar y alinear las listas — cada cheque puede tener su propia
     # fecha de depósito.
     cheques_in: list[dict] = []
@@ -105,14 +114,23 @@ def nuevo():
         n_clean = (n or "").strip()
         i_clean = importes_raw[i] if i < len(importes_raw) else None
         fd_clean = fechads_raw[i] if i < len(fechads_raw) else None
+        st_clean = (stats_raw[i] if i < len(stats_raw) else "") or "Z"
+        st_clean = st_clean.strip().upper()[:1] or "Z"
         if not n_clean and not (i_clean and str(i_clean).strip()):
             continue  # bloque totalmente vacío → skip
-        # fechad por defecto = fecha_recibido si no se completó.
+        # fechad por defecto: si el cheque NO es postdatado, colapsa a la
+        # fecha de recibido. Si es postdatado (stat='P') y vino vacía, es
+        # un error que se valida abajo.
         fd_parsed = parse_date(fd_clean) if fd_clean else None
+        if st_clean == "P":
+            cheque_fechad = fd_parsed  # puede ser None → error abajo
+        else:
+            cheque_fechad = fd_parsed or fecha
         cheques_in.append({
             "no_cheque": n_clean,
             "importe": parse_monto(i_clean),
-            "fechad": fd_parsed or fecha,
+            "fechad": cheque_fechad,
+            "stat": st_clean,
             "raw_importe": i_clean,
         })
     # `fechad` general (compat con resto del view + restore-on-error).
@@ -188,6 +206,14 @@ def nuevo():
             imp = ch.get("importe")
             if imp is None or imp <= 0:
                 errores.append(f"Importe{(' (' + etq + ')') if etq else ''} mayor que cero requerido.")
+            # TMT 2026-05-20 — si stat='P' (postdatado) la fecha de
+            # depósito es obligatoria. Pedido literal dueña: "agregar P
+            # en el dropdown y pedir fecha".
+            if (ch.get("stat") or "Z") == "P" and ch.get("fechad") is None:
+                errores.append(
+                    f"Fecha de depósito requerida{(' (' + etq + ')') if etq else ''} "
+                    "cuando el estado es P (postdatado)."
+                )
         # No permitir números duplicados dentro del mismo guardado.
         nos = [c["no_cheque"].upper() for c in cheques_in if c.get("no_cheque")]
         if len(nos) != len(set(nos)):
@@ -375,6 +401,9 @@ def nuevo():
                     no_cheque=ch_in["no_cheque"],
                     importe=ch_in["importe"], no_banco=no_banco,
                     banco_texto=banco_texto, prov=prov,
+                    # TMT 2026-05-20 — stat seleccionado en el dropdown
+                    # (Z/P/D/B/X/1/2). queries.crear lo respeta si !=Z.
+                    stat=ch_in.get("stat") or "Z",
                     clave=clave, es_anticipo=es_anticipo, usuario=usuario,
                     batch_id=batch_id,
                     conn=conn,

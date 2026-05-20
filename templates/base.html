@@ -603,8 +603,9 @@
 
       {# TMT 2026-05-19 v8 — pedido dueña: 5 grupos canónicos en este
          orden — INGRESOS / MODIFICAR / BANCOS / INFORMES / DATOS BASE.
-         "Datos base" incluye Provisiones y Amortizaciones (antes
-         vivían en sección aparte). #}
+         "Datos base" incluye Amortizaciones. (Provisiones salió del
+         menú el 2026-05-20: la cuota mensual se edita inline en
+         /posdat — columna "Cuota mensual"). #}
 
       <details class="sidebar-section" data-key="ingreso" open>
         <summary>Ingresos</summary>
@@ -647,7 +648,10 @@
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
         {% if tiene_permiso('activos.ver') %}{{ nav_link('activos.lista', 'Amortizaciones (activos)', 'target') }}{% endif %}
-        {% if tiene_permiso('provisiones.ver') %}{{ nav_link('provisiones.lista', 'Provisiones', 'piggy') }}{% endif %}
+        {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La
+           cuota mensual se edita inline desde /posdat (columna nueva
+           "Cuota mensual"). La pantalla /provisiones sigue accesible por
+           URL para audit/legacy, pero ya no es un destino visible. #}
       </details>
 
       {# TMT 2026-05-17: Recientes ahora es una sección colapsable más

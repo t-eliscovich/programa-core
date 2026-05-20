@@ -326,6 +326,10 @@ def lista():
         filas, resumen, error = [], {}, str(e)
 
     if request.args.get("export") == "csv":
+        # TMT 2026-05-20 — sale "proveedor" (nombre) del CSV, igual que
+        # de la UI. Entra "cuota_mensual" (cuando el posdat matchea
+        # contra una provisión). Mantiene paridad con las columnas
+        # visibles en /posdat.
         return csv_response(
             filas,
             columnas=[
@@ -333,9 +337,10 @@ def lista():
                 ("fecha", "Fecha"),
                 ("fechad", "Venc."),
                 ("prov", "Prov"),
-                ("proveedor", "Nombre"),
                 ("concepto", "Concepto"),
                 ("importe", "Importe"),
+                ("cuota_mensual", "Cuota mensual"),
+                ("cuota_diaria", "Cuota diaria"),
                 ("banc", "Banco"),
                 ("clave", "Clave"),
             ],
@@ -412,23 +417,36 @@ def api_lista_flujo():
 @requiere_login
 @requiere_permiso("posdat.editar")
 def api_editar(id_posdat: int):
-    """Edita importe/fechad/concepto desde el modal de flujo. JSON in/out."""
+    """Edita importe/fechad/concepto desde el modal de flujo o desde el
+    inline-edit de la lista de posdat. JSON in/out.
+
+    TMT 2026-05-20 — acepta updates parciales: si el caller manda sólo
+    `importe`, no se exige `concepto` (se conserva el de la fila). Si el
+    caller manda concepto explícito, sigue valiendo la validación
+    original. Pedido dueña: "dejame ingresar le total en posdatados".
+    """
     pd = queries.por_id(id_posdat)
     if not pd:
         return jsonify({"ok": False, "error": "Posdat no encontrado."}), 404
     data = request.get_json(silent=True) or request.form
     fechad = parse_date(data.get("fechad"))
     importe = parse_monto(data.get("importe"))
-    concepto = (data.get("concepto") or "").strip()
+    # `concepto` sólo se considera "intencional" si la key vino en el
+    # payload — un null/empty explícito sigue siendo error.
+    concepto_provided = "concepto" in (data.keys() if hasattr(data, "keys") else {})
+    concepto_raw = data.get("concepto") if concepto_provided else None
+    concepto = (concepto_raw or "").strip() if concepto_provided else None
+
     if importe is not None and importe <= 0:
         return jsonify({"ok": False, "error": "Importe debe ser > 0."}), 400
-    if not concepto:
-        return jsonify({"ok": False, "error": "Concepto requerido."}), 400
+    if concepto_provided and not concepto:
+        return jsonify({"ok": False, "error": "Concepto vacío."}), 400
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.editar(
             id_posdat,
-            fechad=fechad, importe=importe, concepto=concepto,
+            fechad=fechad, importe=importe,
+            concepto=concepto if concepto_provided else None,
             usuario=usuario,
         )
         actualizado = queries.por_id(id_posdat)

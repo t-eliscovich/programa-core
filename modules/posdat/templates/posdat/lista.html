@@ -71,18 +71,26 @@
   </form>
 
   {# TMT 2026-05-19 v7 — pedido dueña: "achicar las columnas asi veo todo".
-     px-3 py-2 → px-2 py-1, font-size más chico, sin truncar contenido. #}
+     px-3 py-2 → px-2 py-1, font-size más chico, sin truncar contenido.
+     TMT 2026-05-20 — dueña: "borrar columna proveedor (nombre), agregar
+     columna cuota mensual que sea editable. deberia ir cambiando el
+     importe depende el dia que estamos, fracción de la cuota mensual".
+     - Sale columna "Proveedor" (nombre largo); queda "Prov" (código corto).
+     - Entra columna "Cuota mensual" inline-editable que postea al
+       endpoint /provisiones/_api/<id>/quick-edit. Sólo aparece cuando
+       el posdat matchea contra una provisión por concepto. #}
   <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
-    <table class="min-w-full text-xs">
+    <table class="min-w-full text-xs" id="posdat-tabla">
       <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-2 py-1">N°</th>
           <th class="px-2 py-1">Fecha</th>
           <th class="px-2 py-1">Venc.</th>
           <th class="px-2 py-1">Prov</th>
-          <th class="px-2 py-1">Proveedor</th>
           <th class="px-2 py-1">Concepto</th>
-          <th class="px-2 py-1 text-right">Importe</th>
+          <th class="px-2 py-1 text-right" title="Importe acumulado del día — fracción de la cuota mensual cuando es provisión">Importe</th>
+          <th class="px-2 py-1 text-right" title="Cuota mensual de la provisión origen — editable inline (cambia la diaria)">Cuota mensual</th>
+          <th class="px-2 py-1 text-right" title="Cuota diaria = mensual ÷ 30. Editable (recalcula la mensual)">Cuota diaria</th>
           <th class="px-2 py-1 text-right" title="Deuda corrida hasta la fecha de vencimiento">Deuda acum.</th>
           <th class="px-2 py-1">Banco</th>
           <th class="px-2 py-1"></th>
@@ -91,7 +99,10 @@
       <tbody class="divide-y">
         {% for f in filas %}
         {% set es_ajuste = (f.importe or 0) <= 0 %}
-        <tr class="hover:bg-slate-50 {% if es_ajuste %}bg-violet-50/40{% endif %}">
+        <tr class="hover:bg-slate-50 {% if es_ajuste %}bg-violet-50/40{% endif %}"
+            data-id-posdat="{{ f.id_posdat }}"
+            data-concepto="{{ f.concepto or '' }}"
+            {% if f.id_provisiones %}data-id-prov="{{ f.id_provisiones }}"{% endif %}>
           <td class="px-2 py-1 font-mono">
             {% if f.num and f.num != 0 %}{{ f.num }}
             {% else %}<span class="text-slate-400">#{{ f.id_posdat }}</span>{% endif %}
@@ -99,7 +110,6 @@
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fecha | fecha_es }}</td>
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fechad | fecha_es }}</td>
           <td class="px-2 py-1 font-mono">{{ f.prov }}</td>
-          <td class="px-2 py-1">{{ f.proveedor }}</td>
           <td class="px-2 py-1">
             {{ f.concepto }}
             {% if es_ajuste %}
@@ -109,7 +119,50 @@
               </span>
             {% endif %}
           </td>
-          <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">{{ f.importe | num_es }}</td>
+          <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">
+            {# TMT 2026-05-20 — Importe (total) editable inline. La dueña
+               quiere poder ingresar el total directo sin abrir el form
+               de editar. Postea a /posdat/_api/<id>/editar. #}
+            {% if tiene_permiso('posdat.editar') %}
+              <input type="number" step="0.01"
+                     class="posdat-importe-edit w-32 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums {% if es_ajuste %}text-violet-700{% endif %}"
+                     value="{{ f.importe }}"
+                     data-orig="{{ f.importe }}"
+                     title="Total del posdat — editable directo en la lista">
+            {% else %}
+              {{ f.importe | num_es }}
+            {% endif %}
+          </td>
+          <td class="px-2 py-1 text-right font-mono tabular-nums">
+            {% if f.id_provisiones and tiene_permiso('provisiones.editar') %}
+              <input type="number" step="0.01" min="0"
+                     class="posdat-cuota-edit posdat-cuota-mensual w-28 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
+                     value="{{ f.cuota_mensual }}"
+                     data-orig="{{ f.cuota_mensual }}"
+                     title="Cuota mensual de la provisión — al guardar recalcula la diaria">
+            {% elif f.id_provisiones %}
+              <span class="text-slate-600">{{ f.cuota_mensual | num_es }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
+          <td class="px-2 py-1 text-right font-mono tabular-nums">
+            {# TMT 2026-05-20 — Cuota diaria = mensual ÷ 30. Editable.
+               Si el usuario la cambia, recalcula la mensual (diaria × 30)
+               y persiste vía /provisiones/_api/<id>/quick-edit. Sin
+               provisión linkeada, queda vacía. #}
+            {% if f.id_provisiones and tiene_permiso('provisiones.editar') %}
+              <input type="number" step="0.01" min="0"
+                     class="posdat-cuota-edit posdat-cuota-diaria w-24 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
+                     value="{{ '%.2f' | format((f.cuota_mensual or 0) / 30.0) }}"
+                     data-orig="{{ '%.2f' | format((f.cuota_mensual or 0) / 30.0) }}"
+                     title="Diaria = mensual ÷ 30. Cambiarla actualiza la mensual.">
+            {% elif f.id_provisiones %}
+              <span class="text-slate-600">{{ ((f.cuota_mensual or 0) / 30.0) | num_es(2) }}</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
           <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{{ f.saldo_acumulado | num_es }}</td>
           <td class="px-2 py-1 font-mono">
             {# TMT 2026-05-19 v8 — dueña: "los que tienen un numero 9
@@ -145,10 +198,158 @@
           </td>
         </tr>
         {% else %}
-          {{ empty_row(9, 'Sin pasivos con los filtros actuales.') }}
+          {{ empty_row(11, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {# TMT 2026-05-20 — JS: inline edit de cuota mensual.
+     Postea a /provisiones/_api/<id>/quick-edit (mismo endpoint que usa
+     la pantalla /provisiones original). Como esa endpoint actualiza
+     `provisiones.importe`, el cambio se ve reflejado en TODOS los
+     posdat que matchean esa provisión cuando se recargue la lista. #}
+  <style>
+    .posdat-cuota-saved   { background: rgba(34,197,94,0.18) !important; }
+    .posdat-cuota-error   { background: rgba(248,113,113,0.20) !important; }
+    .posdat-importe-saved { background: rgba(34,197,94,0.18) !important; }
+    .posdat-importe-error { background: rgba(248,113,113,0.20) !important; }
+  </style>
+
+  {# TMT 2026-05-20 — inline edit del IMPORTE (total). Postea a
+     /posdat/_api/<id>/editar con sólo {importe}. La API conserva el
+     concepto original cuando el caller no lo manda. #}
+  {% if tiene_permiso('posdat.editar') %}
+  <script>
+    (function() {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+      document.querySelectorAll('#posdat-tabla tbody tr[data-id-posdat]').forEach(tr => {
+        const idPosdat = tr.dataset.idPosdat;
+        const inp = tr.querySelector('.posdat-importe-edit');
+        if (!inp) return;
+        inp.addEventListener('change', () => {
+          const n = parseFloat(inp.value);
+          if (!isFinite(n) || n <= 0) {
+            alert('Importe inválido (debe ser > 0).');
+            inp.value = inp.dataset.orig;
+            return;
+          }
+          fetch('/posdat/_api/' + idPosdat + '/editar', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ importe: n }),
+          }).then(r => r.json()).then(j => {
+            if (j && j.ok) {
+              inp.classList.remove('posdat-importe-error');
+              inp.classList.add('posdat-importe-saved');
+              inp.dataset.orig = inp.value;
+              setTimeout(() => inp.classList.remove('posdat-importe-saved'), 1200);
+            } else {
+              inp.classList.add('posdat-importe-error');
+              alert('No se pudo guardar: ' + (j.error || 'error'));
+              inp.value = inp.dataset.orig;
+            }
+          }).catch(e => {
+            inp.classList.add('posdat-importe-error');
+            alert('Error de red: ' + e.message);
+            inp.value = inp.dataset.orig;
+          });
+        });
+      });
+    })();
+  </script>
+  {% endif %}
+
+  {% if tiene_permiso('provisiones.editar') %}
+  <script>
+    (function() {
+      // TMT 2026-05-20 — edit bidireccional de cuota mensual ↔ diaria.
+      // - Cambiás la mensual → diaria se recalcula (mensual / 30).
+      // - Cambiás la diaria  → mensual se recalcula (diaria × 30).
+      // Sólo persistimos la MENSUAL en el backend (es el campo
+      // `provisiones.importe`). La diaria es derivada.
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+      const DIAS_MES = 30;
+      const fmt2 = n => (isFinite(n) ? Number(n).toFixed(2) : '');
+
+      function persistirMensual(idProv, mensual, focused, otro) {
+        fetch('/provisiones/_api/' + idProv + '/quick-edit', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ importe: mensual }),
+        }).then(r => r.json()).then(j => {
+          if (j && j.ok) {
+            focused.classList.remove('posdat-cuota-error');
+            focused.classList.add('posdat-cuota-saved');
+            focused.dataset.orig = focused.value;
+            if (otro) otro.dataset.orig = otro.value;
+            setTimeout(() => focused.classList.remove('posdat-cuota-saved'), 1200);
+          } else {
+            focused.classList.add('posdat-cuota-error');
+            alert('No se pudo guardar: ' + (j.error || 'error'));
+            focused.value = focused.dataset.orig;
+            if (otro) otro.value = otro.dataset.orig;
+          }
+        }).catch(e => {
+          focused.classList.add('posdat-cuota-error');
+          alert('Error de red: ' + e.message);
+          focused.value = focused.dataset.orig;
+          if (otro) otro.value = otro.dataset.orig;
+        });
+      }
+
+      document.querySelectorAll('#posdat-tabla tbody tr[data-id-prov]').forEach(tr => {
+        const idProv  = tr.dataset.idProv;
+        const mensInp = tr.querySelector('.posdat-cuota-mensual');
+        const diariInp = tr.querySelector('.posdat-cuota-diaria');
+
+        // Live sync (sin POST): mientras la dueña escribe en una, la otra
+        // se va actualizando en pantalla. Sólo al `change` (blur/Enter)
+        // disparamos el POST de la mensual al backend.
+        if (mensInp && diariInp) {
+          mensInp.addEventListener('input', () => {
+            const n = parseFloat(mensInp.value);
+            diariInp.value = isFinite(n) ? fmt2(n / DIAS_MES) : '';
+          });
+          diariInp.addEventListener('input', () => {
+            const n = parseFloat(diariInp.value);
+            mensInp.value = isFinite(n) ? fmt2(n * DIAS_MES) : '';
+          });
+        }
+
+        if (mensInp) mensInp.addEventListener('change', () => {
+          const n = parseFloat(mensInp.value);
+          if (!isFinite(n) || n < 0) {
+            alert('Cuota mensual inválida.');
+            mensInp.value = mensInp.dataset.orig;
+            if (diariInp) diariInp.value = diariInp.dataset.orig;
+            return;
+          }
+          // Sincronizar diaria visualmente antes de guardar (por si vino
+          // de un input sin trigger de 'input').
+          if (diariInp) diariInp.value = fmt2(n / DIAS_MES);
+          persistirMensual(idProv, n, mensInp, diariInp);
+        });
+
+        if (diariInp) diariInp.addEventListener('change', () => {
+          const n = parseFloat(diariInp.value);
+          if (!isFinite(n) || n < 0) {
+            alert('Cuota diaria inválida.');
+            diariInp.value = diariInp.dataset.orig;
+            if (mensInp) mensInp.value = mensInp.dataset.orig;
+            return;
+          }
+          const mensual = n * DIAS_MES;
+          if (mensInp) mensInp.value = fmt2(mensual);
+          persistirMensual(idProv, mensual, diariInp, mensInp);
+        });
+      });
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}

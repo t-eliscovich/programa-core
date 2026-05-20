@@ -964,8 +964,13 @@ function buildChart(q) {
           callbacks: {
             // TMT 2026-05-19 v8 — dueña: "solo mostra el saldo, (ni fecha,
             // ni cheques ni nada)". Tooltip simplificado.
+            // TMT 2026-05-20 — el callback `label` se llama UNA vez por
+            // dataset, así que con 2 datasets (saldo + egresos dots) el
+            // tooltip mostraba "Saldo: $X" duplicado. Devolvemos null para
+            // el dataset de egresos así sale una sola línea.
             title: () => '',
             label: ctx => {
+              if (ctx.datasetIndex !== 0) return null;
               const row = rows[ctx.dataIndex];
               return `Saldo: $ ${fmt(row.saldo)}`;
             },

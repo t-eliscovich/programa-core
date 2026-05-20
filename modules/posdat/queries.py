@@ -345,13 +345,42 @@ def buscar(
     # Antes filtraba banc<>9, pero eso incluía banc=10/32 (cheques emitidos
     # modernos PC) — esos NO son deuda abierta, ya fueron pagados desde el
     # banco. La definición correcta es banc=0 (POSDAT_DEUDA_VIVA_WHERE).
+    #
+    # TMT 2026-05-20 — JOIN a scintela.provisiones por concepto (case
+    # insensitive, trim). Trae cuota_mensual e id_provisiones para
+    # editar inline desde /posdat. Pedido dueña: "que las provisiones se
+    # puedan cambiar tanto el importe como la cuota mensual directamente
+    # en posdatados". Match aproximado pero estable: si el concepto del
+    # posdat empieza con el concepto de una provisión, la matchea.
     rows = db.fetch_all(
         """
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave,
-               COALESCE(p.nombre, '') AS proveedor
+               COALESCE(p.nombre, '') AS proveedor,
+               pr.id_provisiones,
+               pr.importe                          AS cuota_mensual,
+               -- TMT 2026-05-20: cuota diaria = mensual / 30 (idéntico
+               -- al modelo "valor_inicio_mes + (día/30) × cuota mensual"
+               -- documentado en provision_pendiente_mes).
+               ROUND((COALESCE(pr.importe, 0) / 30.0)::numeric, 2)
+                                                   AS cuota_diaria,
+               pr.periodo_aplica  AS provision_periodo
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
+        LEFT JOIN LATERAL (
+            SELECT id_provisiones, importe, periodo_aplica, concepto
+              FROM scintela.provisiones
+             WHERE LENGTH(TRIM(COALESCE(provisiones.concepto, ''))) >= 3
+               AND LENGTH(TRIM(COALESCE(pd.concepto, '')))           >= 3
+               AND (
+                    UPPER(TRIM(COALESCE(pd.concepto,'')))
+                      LIKE UPPER(TRIM(COALESCE(provisiones.concepto,''))) || '%%'
+                 OR UPPER(TRIM(COALESCE(provisiones.concepto,'')))
+                      LIKE UPPER(TRIM(COALESCE(pd.concepto,''))) || '%%'
+               )
+             ORDER BY LENGTH(COALESCE(concepto, '')) DESC
+             LIMIT 1
+        ) pr ON TRUE
         WHERE (%(prov)s IS NULL OR UPPER(pd.prov) = UPPER(%(prov)s))
           AND (%(q)s IS NULL
                OR UPPER(COALESCE(pd.concepto,'')) LIKE UPPER(%(like)s)

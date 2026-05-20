@@ -92,8 +92,12 @@
                  cuando hay más de un bloque. Vacío en el primero. #}
               <div class="bloque-header hidden mb-1 text-[10px] text-slate-500 flex items-center justify-between"></div>
               {# TMT 2026-05-19 — orden Importe → N° cheque → A depositar
-                 (pedido dueña item 3: ver importe primero). #}
-              <div class="grid grid-cols-3 gap-2 items-end">
+                 (pedido dueña item 3: ver importe primero).
+                 TMT 2026-05-20 — agregado dropdown "Estado" con
+                 Z/P/D/B/X/1/2. La fecha "A depositar" sólo se habilita
+                 cuando estado=P (postdatado). En los otros estados la
+                 fecha queda lockeada a la fecha de recibido. #}
+              <div class="grid grid-cols-4 gap-2 items-end">
                 <label class="flex flex-col">
                   <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
                   <input type="text" name="importe[]" value="{{ form.importe or '' }}"
@@ -106,9 +110,24 @@
                          class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
                 </label>
                 <label class="flex flex-col">
-                  <span class="text-xs text-slate-600">A depositar</span>
+                  <span class="text-xs text-slate-600">Estado</span>
+                  <select name="stat[]" class="border rounded px-2 py-1 mt-0.5 text-sm cheque-stat">
+                    <option value="Z" {% if not form.stat or form.stat == 'Z' %}selected{% endif %}>Z · En cartera</option>
+                    <option value="P" {% if form.stat == 'P' %}selected{% endif %}>P · Postdatado</option>
+                    <option value="D" {% if form.stat == 'D' %}selected{% endif %}>D · Daniela</option>
+                    <option value="B" {% if form.stat == 'B' %}selected{% endif %}>B · Depositado</option>
+                    <option value="X" {% if form.stat == 'X' %}selected{% endif %}>X · Anulado</option>
+                    <option value="1" {% if form.stat == '1' %}selected{% endif %}>1 · Devuelto</option>
+                    <option value="2" {% if form.stat == '2' %}selected{% endif %}>2 · Devuelto (2°)</option>
+                  </select>
+                </label>
+                <label class="flex flex-col cheque-fechad-wrap">
+                  <span class="text-xs text-slate-600">A depositar
+                    <span class="cheque-fechad-req text-red-500 hidden">*</span>
+                  </span>
                   <input type="date" name="fechad[]" value="{{ form.fechad_iso or form.fechad or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad">
+                         class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad disabled:bg-slate-100 disabled:text-slate-400"
+                         disabled>
                 </label>
               </div>
             </div>
@@ -838,6 +857,8 @@
       if (numInp) numInp.focus();
       actualizarVisibilidad();
       actualizarMultiHint();
+      // TMT 2026-05-20 — re-aplicar el toggle de fechad al bloque nuevo.
+      aplicarToggleFechad(nuevo);
     });
   }
 
@@ -848,6 +869,51 @@
       updateSummary();
     }
   });
+
+  // TMT 2026-05-20 — Estado del cheque toggle: la fecha "A depositar"
+  // sólo se habilita cuando estado=P (postdatado). Para el resto, queda
+  // disabled y vuelve al valor de fecha_recibido (today si está vacío).
+  // Pedido literal dueña: "solo dejar cambiar fecha posdatado cuando
+  // selecciono opcion P del dropdown".
+  function aplicarToggleFechad(bloque) {
+    const statSel  = bloque.querySelector('.cheque-stat');
+    const fechad   = bloque.querySelector('.cheque-fechad');
+    const reqMark  = bloque.querySelector('.cheque-fechad-req');
+    if (!statSel || !fechad) return;
+    const esPostdatado = (statSel.value || '').toUpperCase() === 'P';
+    if (esPostdatado) {
+      fechad.disabled = false;
+      fechad.required = true;
+      if (reqMark) reqMark.classList.remove('hidden');
+      // Si no tenía valor, sugerimos hoy + 1 mes como punto de partida.
+      if (!fechad.value) {
+        const d = new Date();
+        d.setMonth(d.getMonth() + 1);
+        fechad.value = d.toISOString().slice(0, 10);
+      }
+    } else {
+      fechad.disabled = true;
+      fechad.required = false;
+      if (reqMark) reqMark.classList.add('hidden');
+      // No-postdatado: la fechad colapsa a la fecha de recibido. Se la
+      // dejamos vacía → el backend la setea = fecha en queries.crear().
+      fechad.value = '';
+    }
+  }
+  chequesList.addEventListener('change', (e) => {
+    if (e.target.classList.contains('cheque-stat')) {
+      const bloque = e.target.closest('.cheque-bloque');
+      if (bloque) aplicarToggleFechad(bloque);
+    }
+  });
+  // Aplicar el estado inicial en todos los bloques (incl. el clonado por
+  // el botón + Otro cheque). Se llama también desde renumerarBloques()
+  // si se quisiera, pero el clone copia el value del select original
+  // así que basta con un sweep cuando se agrega un bloque.
+  function sweepTodosLosBloques() {
+    chequesList.querySelectorAll('.cheque-bloque').forEach(aplicarToggleFechad);
+  }
+  sweepTodosLosBloques();
 
   // Eventos
   codigoInput.addEventListener('change', cargarFacturas);
