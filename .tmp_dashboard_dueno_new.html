@@ -1,0 +1,88 @@
+  {# =========================================================
+     DUEÑO — Tablero MUY simple (2026-04-29 batch 21)
+     Pedido de la dueña: el balance "horrible" del Tablero se va.
+     El layout que le gusta (a/p/pn tipo dBase) ya está en
+     /informes/balance — ahí lo dejamos intacto. El Tablero queda
+     reducido a:
+       1. CTA grande a "Informe de Resultados" arriba
+       2. 3 chips abajo con lo que toca esta semana
+     Nada de KPIs duplicadas, ni chart de evolución, ni rankings.
+     ========================================================= #}
+  {% if rol == 'Dueño' %}
+
+    {# CTA grande hacia /informes/balance — la pantalla que le gusta. #}
+    <a href="{{ url_for('informes.balance') }}"
+       class="block group mb-8 bg-gradient-to-br from-slate-900 to-slate-800 dark:from-slate-950 dark:to-slate-900 text-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">
+            Informe de Resultados
+          </div>
+          <h2 class="text-2xl md:text-3xl font-semibold mt-1">
+            Activos · Pasivos · Patrimonio neto
+          </h2>
+          <p class="text-sm text-slate-400 mt-2 max-w-xl">
+            Bancos, cajas, cartera, stock, maquinaria, deudas y patrimonio.
+            Con desglose por banco y kilos del último cierre.
+          </p>
+        </div>
+        <div class="hidden md:flex w-14 h-14 rounded-full bg-white/10 group-hover:bg-white/20 items-center justify-center transition-colors shrink-0">
+          <svg class="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    {# -------- Esta semana — chips chicas con lo que hay que hacer -------- #}
+    <h2 class="text-sm uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-3">
+      Esta semana
+    </h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {# Cobranza #}
+      <a href="{{ url_for('cartera.aging') }}"
+         class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 flex items-center gap-3 hover:border-emerald-400 dark:hover:border-emerald-700 transition-colors">
+        <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3z"/><path d="m7 12 3 3 7-7"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs text-slate-500">A cobrar (hoy + 7d)</div>
+          <div class="text-lg font-semibold tabular-nums">
+            $ {{ (cobranza_semana.total if cobranza_semana else 0) | num_es }}
+          </div>
+          <div class="text-xs text-slate-400">{{ cobranza_semana.n if cobranza_semana else 0 }} facturas</div>
+        </div>
+      </a>
+      {# Pagos #}
+      <a href="{{ url_for('posdat.lista') }}"
+         class="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 flex items-center gap-3 hover:border-amber-400 dark:hover:border-amber-700 transition-colors">
+        <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9 6 9-6v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 7l9 6 9-6"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs text-slate-500">A pagar (hoy + 7d)</div>
+          <div class="text-lg font-semibold tabular-nums">
+            $ {{ (compras_pagar.total if compras_pagar else 0) | num_es }}
+          </div>
+          <div class="text-xs text-slate-400">{{ compras_pagar.n if compras_pagar else 0 }} posdatadas</div>
+        </div>
+      </a>
+      {# Cheques rebotados #}
+      {% set rebotes_n = resumen_semana.rebotes.n if resumen_semana else 0 %}
+      {% set rebotes_total = resumen_semana.rebotes.total if resumen_semana else 0 %}
+      <a href="{{ url_for('cheques.lista', estado='devueltos') }}"
+         class="block bg-white dark:bg-slate-900 border {% if rebotes_n > 0 %}border-red-300 dark:border-red-800{% else %}border-slate-200 dark:border-slate-800{% endif %} rounded-lg p-4 flex items-center gap-3 hover:border-red-500 dark:hover:border-red-700 transition-colors">
+        <div class="w-10 h-10 rounded-full {% if rebotes_n > 0 %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300{% else %}bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500{% endif %} flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs text-slate-500">Cheques rebotados (7d)</div>
+          <div class="text-lg font-semibold tabular-nums {% if rebotes_n > 0 %}text-red-700 dark:text-red-300{% endif %}">
+            {% if rebotes_n > 0 %}$ {{ rebotes_total | num_es }}{% else %}—{% endif %}
+          </div>
+          <div class="text-xs text-slate-400">{{ rebotes_n }} cheques</div>
+        </div>
+      </a>
+    </div>
+
+  {% endif %}

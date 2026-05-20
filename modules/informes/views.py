@@ -396,7 +396,12 @@ def check_totales():
         # /cartera total (bruto)
         from modules.cartera import queries as _cq
         cartera_tot = _cq.aging_totales()
-        cartera_facturas = float(cartera_tot.get("saldo_facturas") or 0)
+        # TMT 2026-05-20 v4 Federico — usar el saldo NETO (incluye sobrepagos)
+        # para que el check matchee TOTF de Resultados. /cartera muestra
+        # saldo_facturas (positivos) pero el check compara contra TOTF que
+        # netea los sobrepagos. Sin esto, hay drift = SUM(saldo<0 stat=Z|A).
+        cartera_facturas = float(cartera_tot.get("saldo_facturas_net") or 0)
+        cartera_sobrepagos = float(cartera_tot.get("sobrepagos") or 0)
         cartera_cheques  = float(cartera_tot.get("cheques_en_cartera") or 0)
 
         # /deudas total
@@ -441,9 +446,9 @@ def check_totales():
                 "/cartera → Cheques en cartera",        cartera_cheques,
             ),
             _diff_check(
-                "Facturas vivas — Resultados vs /cartera",
-                "Resultados → Facturas",                totf,
-                "/cartera → Saldo facturas",            cartera_facturas,
+                "Facturas vivas — Resultados vs /cartera (netas)",
+                "Resultados → Facturas",                                  totf,
+                f"/cartera → Saldo facturas + sobrepagos ({cartera_sobrepagos:,.2f})",  cartera_facturas,
             ),
             _diff_check(
                 "Pasivos — Resultados vs /deudas",

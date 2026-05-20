@@ -138,6 +138,15 @@ def aging_totales() -> dict:
               FROM scintela.cheque
              WHERE stat IN ('Z','1','2','3','P','D')
                AND codigo_cli IS NOT NULL
+        ),
+        -- TMT 2026-05-20 v4 — sobrepagos sumados aparte para que
+        -- /informes/check-totales pueda reconciliar contra TOTF
+        -- (Resultados los netea). Mismo filtro de stat pero saldo<0.
+        sobrepagos AS (
+            SELECT COALESCE(SUM(saldo), 0) AS total
+              FROM scintela.factura
+             WHERE COALESCE(saldo, 0) < 0
+               AND (stat IS NULL OR stat IN ('Z','A','',' '))
         )
         SELECT
             COALESCE(SUM(CASE
@@ -154,6 +163,7 @@ def aging_totales() -> dict:
                 THEN f.saldo ELSE 0 END), 0) AS b90_plus,
             COALESCE(SUM(f.saldo), 0) AS saldo_facturas,
             (SELECT en_cartera FROM cheques_total) AS cheques_en_cartera,
+            (SELECT total FROM sobrepagos)         AS sobrepagos,
             -- TMT 2026-05-20 v3: total NETO = facturas − cheques. Revert
             -- del bruto. /cartera mide "cuánto me deben". Resultados.
             -- Subtotal Cartera mide "activos comerciales" (= bruto) — son
@@ -193,13 +203,20 @@ def aging_totales() -> dict:
         if pendiente <= 0:
             break
 
+    sobrepagos = float(row.get("sobrepagos") or 0)
+    saldo_facturas_pos = float(row.get("saldo_facturas") or 0)
     return {
         "b0_30":              buckets["b0_30"],
         "b31_60":             buckets["b31_60"],
         "b61_90":             buckets["b61_90"],
         "b90_plus":           buckets["b90_plus"],
         "total":              float(row["total"] or 0),
-        "saldo_facturas":     float(row.get("saldo_facturas") or 0),
+        "saldo_facturas":     saldo_facturas_pos,
+        # TMT 2026-05-20 v4 — saldo neto (incluyendo sobrepagos<0) para
+        # /informes/check-totales. saldo_facturas == TOTF salvo por los
+        # sobrepagos que /cartera excluye del aging.
+        "sobrepagos":         sobrepagos,
+        "saldo_facturas_net": saldo_facturas_pos + sobrepagos,
         "cheques_en_cartera": float(row.get("cheques_en_cartera") or 0),
         "n_facturas":         int(row["n_facturas"] or 0),
         "n_clientes":         int(row["n_clientes"] or 0),

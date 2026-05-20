@@ -89,8 +89,31 @@ def stub(monkeypatch):
     monkeypatch.setattr(db, "execute", s.execute)
     monkeypatch.setattr(db, "execute_returning", s.execute_returning)
     monkeypatch.setattr(db, "tx", s.tx)
+    # TMT 2026-05-20 — patchear `asegurar_fecha_abierta` en el módulo
+    # global Y en las referencias locales de los modules que hicieron
+    # `from periodo_guard import asegurar_fecha_abierta`. Sin esto los
+    # tests pasan localmente (cuando cheques.queries se importa por 1ra
+    # vez dentro del test) pero fallan en CI (cheques.queries ya estaba
+    # importado por otro test previo y tiene la ref original).
     import periodo_guard
-    monkeypatch.setattr(periodo_guard, "asegurar_fecha_abierta", lambda *a, **kw: None)
+    _noop = lambda *a, **kw: None  # noqa: E731
+    monkeypatch.setattr(periodo_guard, "asegurar_fecha_abierta", _noop)
+    for mod_path in (
+        "modules.cheques.queries",
+        "modules.facturas.queries",
+        "modules.compras.queries",
+        "modules.posdat.queries",
+        "modules.bancos.queries",
+        "modules.caja.queries",
+        "modules.capital.queries",
+        "modules.dolares.queries",
+        "modules.gastos.queries",
+        "modules.activos.queries",
+    ):
+        if mod_path in sys.modules:
+            m = sys.modules[mod_path]
+            if hasattr(m, "asegurar_fecha_abierta"):
+                monkeypatch.setattr(m, "asegurar_fecha_abierta", _noop)
     return s
 
 

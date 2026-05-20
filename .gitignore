@@ -30,3 +30,6 @@ secrets/
 *.key
 *_credentials.json
 *_token.txt
+# Auto-push para Claude (scripts/claude_push.py)
+.gh_pat
+.claude_push.json

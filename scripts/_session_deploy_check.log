@@ -1,0 +1,115 @@
+=== 2026-04-17 14:52:25 — deploy check & apply ===
+
+--- python version ---
+Python 3.14.3
+PY=.venv/bin/python
+
+--- postgres reachable? ---
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 346, in load_dotenv
+    dotenv_path = find_dotenv()
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 305, in find_dotenv
+    assert frame.f_back is not None
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+--- roles/usuarios ANTES ---
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 346, in load_dotenv
+    dotenv_path = find_dotenv()
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 305, in find_dotenv
+    assert frame.f_back is not None
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+--- marcar 0001-0005 como aplicadas (backfill puro del tracker) ---
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 346, in load_dotenv
+    dotenv_path = find_dotenv()
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 305, in find_dotenv
+    assert frame.f_back is not None
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+--- migrate.py --status (después del backfill) ---
+V      estado      nombre                                    aplicada_en
+--------------------------------------------------------------------------------
+0001   PENDIENTE   0001_seguridad_fks                      
+0002   PENDIENTE   0002_indexes                            
+0003   PENDIENTE   0003_seed_roles                         
+0004   PENDIENTE   0004_bitacora                           
+0005   PENDIENTE   0005_periodos                           
+0006   PENDIENTE   0006_bitacora_request_id                
+0007   PENDIENTE   0007_ejecuciones_tareas                 
+
+--- migrate.py APPLY (debería correr sólo 0006 + 0007) ---
+Aplicando 7 migración(es):
+  → [0001] 0001_seguridad_fks  (sql)  OK (114 ms)
+  → [0002] 0002_indexes  (sql)  OK (311 ms)
+  → [0003] 0003_seed_roles  (py)  OK (20 ms)
+  → [0004] 0004_bitacora  (sql)  OK (7 ms)
+  → [0005] 0005_periodos  (sql)  OK (5 ms)
+  → [0006] 0006_bitacora_request_id  (sql)  OK (0 ms)
+  → [0007] 0007_ejecuciones_tareas  (sql)  OK (1 ms)
+
+Listo.
+
+--- migrate.py --status (después del apply) ---
+V      estado      nombre                                    aplicada_en
+--------------------------------------------------------------------------------
+0001   aplicada    0001_seguridad_fks                        2026-04-17 14:52:25.453851  (114 ms)
+0002   aplicada    0002_indexes                              2026-04-17 14:52:25.585469  (311 ms)
+0003   aplicada    0003_seed_roles                           2026-04-17 14:52:25.904751  (20 ms)
+0004   aplicada    0004_bitacora                             2026-04-17 14:52:25.920009  (7 ms)
+0005   aplicada    0005_periodos                             2026-04-17 14:52:25.927856  (5 ms)
+0006   aplicada    0006_bitacora_request_id                  2026-04-17 14:52:25.933405  (0 ms)
+0007   aplicada    0007_ejecuciones_tareas                   2026-04-17 14:52:25.934334  (1 ms)
+
+--- roles/usuarios DESPUÉS ---
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 346, in load_dotenv
+    dotenv_path = find_dotenv()
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/.venv/lib/python3.14/site-packages/dotenv/main.py", line 305, in find_dotenv
+    assert frame.f_back is not None
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+--- procesa_provisiones_mensual.py (dry manual) ---
+2026-04-17 14:52:26,121  INFO   procesa_provisiones_mensual: periodo=2026-04  fecha=2026-04-17  host=Tamaras-MacBook-Air.local  force=False
+2026-04-17 14:52:26,138  INFO   procesa_provisiones_mensual: ejecutando procesa_provisiones para periodo 2026-04
+2026-04-17 14:52:26,138  ERROR  procesa_provisiones_mensual: falló procesa_provisiones
+Traceback (most recent call last):
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/scripts/procesa_provisiones_mensual.py", line 212, in correr
+    _ejecutar_tarea(tarea, sql_call, fecha)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/scripts/procesa_provisiones_mensual.py", line 166, in _ejecutar_tarea
+    tx.exec(sql_call, params)
+    ^^^^^^^
+AttributeError: 'psycopg2.extensions.connection' object has no attribute 'exec'
+2026-04-17 14:52:26,141  INFO   procesa_provisiones_mensual: ejecutando actualizar_amortizacion para periodo 2026-04
+2026-04-17 14:52:26,141  ERROR  procesa_provisiones_mensual: falló actualizar_amortizacion
+Traceback (most recent call last):
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/scripts/procesa_provisiones_mensual.py", line 212, in correr
+    _ejecutar_tarea(tarea, sql_call, fecha)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tamaraeliscovich/Documents/Claude/Projects/Programa Core/scripts/procesa_provisiones_mensual.py", line 166, in _ejecutar_tarea
+    tx.exec(sql_call, params)
+    ^^^^^^^
+AttributeError: 'psycopg2.extensions.connection' object has no attribute 'exec'
+
+  periodo: 2026-04
+  fecha:   2026-04-17
+  host:    Tamaras-MacBook-Air.local
+  force:   False
+
+  [ER]  procesa_provisiones: AttributeError: 'psycopg2.extensions.connection' object has no attribute 'exec'
+  [ER]  actualizar_amortizacion: AttributeError: 'psycopg2.extensions.connection' object has no attribute 'exec'
+
+  exit 1
+[exit code: 1]
+
+--- FIN ===
