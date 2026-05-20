@@ -20,14 +20,14 @@
         <h1 class="text-2xl font-semibold mb-2">Posdatados YY <span class="text-sm font-normal text-slate-500">· cuotas mensuales</span></h1>
         <div class="grid grid-cols-2 gap-3 max-w-md">
           <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
-            <div class="text-xs text-sky-700 uppercase tracking-wide">Total mensual</div>
-            <div class="text-xl font-semibold text-sky-900 text-right tabular-nums">$ {{ total_cuota_mensual | num_es(0) }}</div>
-            <div class="text-xs text-sky-700 text-right">{{ resumen.partidas_abiertas or 0 }} provisiones</div>
+            <div class="text-xs text-sky-700 uppercase tracking-wide">Total importe</div>
+            <div class="text-xl font-semibold text-sky-900 text-right tabular-nums">$ {{ total_importe | num_es(0) }}</div>
+            <div class="text-xs text-sky-700 text-right">acumulado al día de hoy</div>
           </div>
           <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
-            <div class="text-xs text-emerald-700 uppercase tracking-wide">Total diario</div>
-            <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">$ {{ total_cuota_diaria | num_es(2) }}</div>
-            <div class="text-xs text-emerald-700 text-right">≈ mensual ÷ 30</div>
+            <div class="text-xs text-emerald-700 uppercase tracking-wide">Total cuota mensual</div>
+            <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">$ {{ total_cuota_mensual | num_es(0) }}</div>
+            <div class="text-xs text-emerald-700 text-right">{{ resumen.partidas_abiertas or 0 }} provisiones</div>
           </div>
         </div>
       </div>

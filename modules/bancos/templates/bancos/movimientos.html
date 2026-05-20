@@ -13,7 +13,21 @@
       </h1>
       <p class="text-sm text-slate-500 mt-1">Movimientos del banco (transacciones_bancarias)</p>
     </div>
-    <button onclick="window.print()" class="no-print text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    <div class="no-print flex items-center gap-2">
+      {# TMT 2026-05-20 — botón Excel (pedido dueña). Reusa los mismos
+         filtros (desde/hasta) que el listado. #}
+      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco, desde=desde, hasta=hasta, export='xlsx') }}"
+         class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5"
+         title="Descargar Excel con los movimientos del período">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Excel
+      </a>
+      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco, desde=desde, hasta=hasta, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        CSV
+      </a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
   </div>
 
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">

@@ -140,22 +140,29 @@ def editar(
     campos = []
     params: list = []
 
-    # Mergear extras al concepto si vinieron
+    # Mergear extras al concepto si vinieron (sólo tipo/compr/no_comp del
+    # caller, NO la marca de auditoría del importe — esa quedó como una
+    # mala idea: ensuciaba el concepto y, peor, cuando el caller no
+    # mandaba concepto, terminaba REEMPLAZANDO el concepto original con
+    # SÓLO la marca [ED imp_prev:X nuevo:Y]. TMT 2026-05-20: el audit del
+    # importe ya queda registrado en mov_doble (tipo='posdat_edit_importe')
+    # y en /historial — no hace falta también desfigurar el concept.
     extras_parts = [
         f"[{tipo}]" if tipo else None,
         compr or None,
         no_comp or None,
     ]
-    # Si cambia el importe, agregamos marca de auditoría al concepto
-    # (visible en lista/csv) — sin desplazar la lógica del mov_doble.
-    if importe_cambio:
-        extras_parts.append(
-            f"[ED imp_prev:{importe_prev:.2f} nuevo:{importe_nuevo:.2f}]"
-        )
     extras = " ".join(x for x in extras_parts if x)
 
+    # Regla: SOLO actualizamos `concepto` si el caller mandó algo explícito
+    # (concepto explícito o algún campo extra como tipo/compr/no_comp).
+    # Si concepto is None Y no hay extras, dejamos la columna intacta —
+    # ANTES la combinación de "importe cambia + concepto None" wipeaba
+    # el concept con el marker de audit. Bug visto en row #151
+    # (concepto quedó como "[ED imp_prev:5000 nuevo:9500]").
     if concepto is not None or extras:
-        concepto_full = ((concepto or "") + (" " + extras if extras else "")).strip()
+        concepto_base = concepto if concepto is not None else (actual.get("concepto") or "")
+        concepto_full = (concepto_base + (" " + extras if extras else "")).strip()
         if concepto_full:
             campos.append("concepto = %s")
             params.append(concepto_full[:100])

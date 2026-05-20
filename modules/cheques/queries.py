@@ -1225,12 +1225,19 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     #   2. "Endosar a proveedor": removido del dropdown (no se usa más).
     #
     # Z = en cartera, recién cargado.
+    # TMT 2026-05-20 — pedido dueña: agregar 1 y 2 al dropdown de
+    # transiciones ("no veo 1 y 2 en el dropdown"). Permiten marcar el
+    # cheque como devuelto directo sin pasar por deposito + reverso.
     "Z": [
         {"stat_destino": "B", "label": "Depositar (al banco)",
          "kind": "WIZARD", "endpoint": "cheques.depositar_lote"},
         {"stat_destino": "P", "label": "Postergar fecha",
          "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
         {"stat_destino": "D", "label": "Pasar a Daniela",
+         "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "1", "label": "Devuelto",
+         "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "2", "label": "Devuelto (2°)",
          "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "X", "label": "Anular (error carga)",
          "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},

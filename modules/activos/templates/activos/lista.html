@@ -138,12 +138,13 @@
         </tr>
       </thead>
       <tbody>
-        {% set ns = namespace(prev_cat=0, any_manual=false) %}
-        {# TMT 2026-05-20 — si HAY filas con orden_manual seteado, no
-           mostramos headers de categoría (porque el orden manual cruza
-           categorías). #}
-        {% for a in filas %}{% if a.orden_manual %}{% set ns.any_manual = true %}{% endif %}{% endfor %}
-        {% set ns.prev_cat = 0 %}
+        {% set ns = namespace(prev_cat=0) %}
+        {# TMT 2026-05-20 v3 — SIEMPRE mostrar headers + subtotales por
+           categoría, incluso si hay rows con `orden_manual` seteado.
+           Pedido dueña: "faltan las sub categorías en activos". El
+           drag-drop ahora coexiste con los headers — si hay orden manual
+           cruzado, los headers van a aparecer en el orden en que
+           aparece cada categoría por primera vez. #}
         {% set _colspan = (11 if tiene_permiso('activos.crear') else 10) %}
 
         {# Macro para imprimir el footer (subtotal) de una categoría que
@@ -167,7 +168,7 @@
         {% endmacro %}
 
         {% for a in filas %}
-        {% if a.categoria_orden and a.categoria_orden != ns.prev_cat and not ns.any_manual %}
+        {% if a.categoria_orden and a.categoria_orden != ns.prev_cat %}
           {# Cerrar la categoría anterior con su subtotal antes de empezar
              la nueva. TMT 2026-05-20. #}
           {% if ns.prev_cat %}{{ subtotal_row(ns.prev_cat) }}{% endif %}
@@ -235,7 +236,7 @@
         {{ empty_row(_colspan, 'Sin activos en el filtro.', 'Probá quitar el filtro o desmarcar "solo activos vivos".') }}
         {% endfor %}
         {# Subtotal de la ÚLTIMA categoría (el loop no lo cierra solo). #}
-        {% if not ns.any_manual and ns.prev_cat %}{{ subtotal_row(ns.prev_cat) }}{% endif %}
+        {% if ns.prev_cat %}{{ subtotal_row(ns.prev_cat) }}{% endif %}
       </tbody>
     </table>
   </div>

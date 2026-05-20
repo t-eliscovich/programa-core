@@ -655,6 +655,101 @@ def movimientos(no_banco):
             filename=f"banco_{no_banco}_movimientos.csv",
         )
 
+    # TMT 2026-05-20 — Excel export de movimientos. Pedido dueña: "del
+    # banco dejame descargar un excel". Mismo patrón que comisiones —
+    # openpyxl con bold + número format. Una sola hoja con todos los
+    # movimientos del rango filtrado + total al final.
+    if request.args.get("export") == "xlsx" and filas:
+        import io
+
+        from flask import Response
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+        except ImportError:
+            flash("openpyxl no instalado en el server.", "error")
+            return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Movimientos"
+        bold = Font(bold=True)
+        hdr_fill = PatternFill("solid", fgColor="E2E8F0")
+        # Cabecera del banco arriba.
+        ws["A1"] = f"Movimientos · {banco.get('nombre') or ('Banco ' + str(no_banco))}"
+        ws["A1"].font = Font(bold=True, size=14)
+        if desde or hasta:
+            ws["A2"] = (
+                f"Período: {desde or 'inicio'} → {hasta or 'hoy'}"
+            )
+        ws["A3"] = f"Generado: {date.today().isoformat()}"
+
+        # Headers de la tabla en la fila 5.
+        headers = ["Fecha", "Doc", "Concepto", "F. depósito",
+                   "Importe", "Saldo", "Estado"]
+        for i, h in enumerate(headers, 1):
+            c = ws.cell(row=5, column=i, value=h)
+            c.font = bold
+            c.fill = hdr_fill
+            c.alignment = Alignment(horizontal="left")
+
+        # Filas — orden ORIGINAL (DESC) tal como las ve en pantalla.
+        row_idx = 6
+        for m in filas:
+            doc = (m.get("documento") or "").strip()
+            es_egreso = doc in ("CH", "ND", "DB")
+            imp_raw = m.get("importe") or 0
+            imp_abs = imp_raw if imp_raw is None or imp_raw >= 0 else -imp_raw
+            imp_excel = float(imp_abs) * (-1 if es_egreso else 1)
+            estado = m.get("mov_estado") or ""
+            ws.cell(row=row_idx, column=1, value=m.get("fecha"))
+            ws.cell(row=row_idx, column=2, value=doc)
+            ws.cell(row=row_idx, column=3, value=m.get("concepto") or "")
+            ws.cell(row=row_idx, column=4, value=m.get("fechad"))
+            c_imp = ws.cell(row=row_idx, column=5, value=imp_excel)
+            c_imp.number_format = '#,##0.00'
+            c_sal = ws.cell(
+                row=row_idx, column=6,
+                value=(float(m.get("saldo")) if m.get("saldo") is not None else None),
+            )
+            c_sal.number_format = '#,##0.00'
+            ws.cell(row=row_idx, column=7, value=estado)
+            row_idx += 1
+
+        # Total firmado al final (saldo neto del período visible).
+        total_row = row_idx + 1
+        c = ws.cell(row=total_row, column=1, value="TOTAL")
+        c.font = bold
+        c.fill = hdr_fill
+        total_imp = 0.0
+        for m in filas:
+            doc = (m.get("documento") or "").strip()
+            es_egreso = doc in ("CH", "ND", "DB")
+            imp_raw = m.get("importe") or 0
+            imp_abs = imp_raw if imp_raw is None or imp_raw >= 0 else -imp_raw
+            total_imp += float(imp_abs) * (-1 if es_egreso else 1)
+        t = ws.cell(row=total_row, column=5, value=total_imp)
+        t.font = bold
+        t.number_format = '#,##0.00'
+        t.fill = hdr_fill
+
+        # Anchos de columnas.
+        for col, w in [("A", 12), ("B", 8), ("C", 50),
+                       ("D", 12), ("E", 16), ("F", 16), ("G", 14)]:
+            ws.column_dimensions[col].width = w
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        filename = (
+            f"banco_{no_banco}_{desde or 'inicio'}_{hasta or 'hoy'}.xlsx"
+        )
+        return Response(
+            buf.getvalue(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     # TMT 2026-05-20 — Agrupar depósitos en lotes. Pedido dueña: "un dia
     # deposito 25 cheques, como mi ultimo movimiento. En el banco yo
     # quiero ver un renglon que diga 1000 USD depositados, 25 cheques. y

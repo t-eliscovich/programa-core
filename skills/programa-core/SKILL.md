@@ -1567,3 +1567,50 @@ Pedido dueña: "en el titulo dos totales, mensual y diario. Que cuando yo modifi
 | $30 | 31 | 1 | $0.97 |
 | $30 | 28 | 15 | $16.07 |
 | $300 | 31 | 20 | $193.55 |
+
+### Excel export de /bancos/<no_banco>/movimientos (2026-05-20)
+
+Pedido dueña: "del banco dejame descargar un excel". Botón verde "Excel" arriba al lado de CSV/Imprimir.
+
+`views.movimientos` ahora atiende `?export=xlsx`. Usa openpyxl (mismo patrón que `comisiones`). Una sola hoja "Movimientos" con:
+- A1: título "Movimientos · <banco>".
+- A2-A3: período + fecha de generación.
+- Row 5: headers (Fecha, Doc, Concepto, F. depósito, Importe, Saldo, Estado) en bold + fill gris.
+- Rows 6+: una por movimiento, importe SIGNED (negativo para CH/ND/DB, positivo para DE/AC/NC). Excel summa correcto.
+- Row final: TOTAL del período, también signed.
+
+`openpyxl>=3.1` agregado a `requirements.txt` (ya lo usaba comisiones pero no estaba pin-eado).
+
+### Activos: subcategorías SIEMPRE visibles (2026-05-20 patch)
+
+Pedido dueña: "faltan las sub categorías en activos". Antes ocultaba los headers cuando había rows con `orden_manual` (drag-drop activo) — porque "el orden manual cruza categorías y los headers quedarían mal". La dueña quiere VER los headers y subtotales **siempre**.
+
+Cambio: removido el flag `ns.any_manual`. Los headers + subtotales aparecen siempre que `categoria_orden` cambia. Si la dueña drag-droppea rows entre categorías, los headers pueden aparecer en orden inesperado, pero ella prefiere eso a no verlos.
+
+### Bug fix posdat.editar — wipe del concepto al cambiar solo importe (2026-05-20)
+
+Síntoma: row #151 quedó con concepto `[ED imp_prev:5000.00 nuevo:9500.00]`. El concept original ("SUELDOS" o lo que fuera) se perdió.
+
+Causa: `posdat.queries.editar()` agregaba un marker de audit `[ED imp_prev:X nuevo:Y]` al concepto cuando el importe cambiaba. Si el caller no mandaba concepto explícito, la línea `(concepto or "") + " " + extras` resultaba en SOLO el marker → REEMPLAZABA el concepto original.
+
+Fix:
+- Removido el marker `[ED imp_prev:X nuevo:Y]` del concepto. El audit del importe ya queda en `mov_doble` (`tipo='posdat_edit_importe'`) y en /historial — no hace falta también desfigurar el concepto.
+- Cuando caller no manda concepto y no hay `tipo/compr/no_comp` extra, NO se actualiza la columna concepto. Antes la actualizaba con el marker.
+
+Row #151 hay que arreglarlo a mano (editar concepto + restaurar el valor original). Las próximas ediciones de importe no van a corromper el concepto.
+
+### Cheques transitions: 1 y 2 visibles desde Z (2026-05-20)
+
+Pedido dueña: "en cheques no pusiste todas las acciones, dropdown P/D/B/X/1/2. no veo 1 y 2 en el dropdown".
+
+`TRANSICIONES_LEGALES["Z"]` ahora incluye:
+- "1" → Devuelto (kind POST)
+- "2" → Devuelto (2°) (kind POST)
+
+Antes 1/2 sólo eran accesibles desde B (vía wizard de reverso). Ahora la dueña puede marcar un cheque Z como devuelto directo (caso típico: bulk load de data histórica, o cheque que rebotó pero no pasó por depósito).
+
+Son transiciones POST simples — sin side-effects automáticos (no stop al cliente, no posdat). Si en el futuro hace falta agregar side-effects, va al wizard `confirmar_reverso` o nuevo wrapper.
+
+### YY KPIs corregidos: Importe + Cuota mensual (no diaria) (2026-05-20 patch)
+
+Iteración 2 de los KPIs de la tab YY. La dueña pidió: "los kpi totales era de las columans que ya teniamos". Implementación inicial mostraba "Total diario = mensual/30" (derivado). Cambio: ahora los KPIs son `SUM(importe)` y `SUM(cuota_mensual)` — los totales de las columnas VISIBLES en la tabla. Más intuitivo (suma de lo que ves, no derivado).
