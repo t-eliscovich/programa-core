@@ -4134,6 +4134,51 @@ def retiros_recientes(dias: int = 180) -> list[dict]:
     )
 
 
+def retiros_del_mes_actual() -> list[dict]:
+    """Retiros del mes corriente — para la tab 'Dividendos del mes'.
+
+    TMT 2026-05-20 — pedido dueña: unificar /informes/retiros con tabs
+    mes/año. Replaces el filtro 'últimos N días' que era poco intuitivo.
+    """
+    return db.fetch_all(
+        """
+        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
+               b.nombre AS banco
+        FROM scintela.retiros r
+        LEFT JOIN scintela.banco b ON b.no_banco = r.nb
+        WHERE EXTRACT(YEAR FROM r.fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
+          AND EXTRACT(MONTH FROM r.fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
+        ORDER BY r.fecha DESC, r.id_retiro DESC
+        """
+    )
+
+
+def retiros_del_anio_actual() -> list[dict]:
+    """Retiros del año corriente — para la tab 'Dividendos del año'."""
+    return db.fetch_all(
+        """
+        SELECT r.id_retiro, r.fecha, r.nb, r.ret, r.de, r.concepto,
+               b.nombre AS banco
+        FROM scintela.retiros r
+        LEFT JOIN scintela.banco b ON b.no_banco = r.nb
+        WHERE EXTRACT(YEAR FROM r.fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+        ORDER BY r.fecha DESC, r.id_retiro DESC
+        """
+    )
+
+
+def retiros_total_mes_actual() -> float:
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(ret), 0) AS total
+        FROM scintela.retiros
+        WHERE EXTRACT(YEAR FROM fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
+          AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
+        """
+    )
+    return float(row["total"] or 0) if row else 0.0
+
+
 def retiros_total_anual() -> float:
     row = db.fetch_one(
         """

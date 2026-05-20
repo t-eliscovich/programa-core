@@ -1204,23 +1204,49 @@ def gastos_detalle(num):
 @requiere_login
 @requiere_permiso("informes.ver")
 def retiros():
-    dias = request.args.get("dias", default=180, type=int)
-    filas, error = _safe(lambda: queries.retiros_recientes(dias), [])
+    """Dividendos — 2 tabs (mes/año) con KPIs combinados arriba.
+
+    TMT 2026-05-20 v2 — pedido dueña: unificar pantallas de retiros.
+    Reemplaza la antigua /capital + /retiros con un solo destino. Cada
+    tab muestra los retiros del periodo, pero los KPIs (mes + año)
+    aparecen siempre en ambas.
+    """
+    tab = (request.args.get("tab") or "mes").strip().lower()
+    if tab not in ("mes", "anio"):
+        tab = "mes"
+
+    if tab == "anio":
+        filas, error = _safe(queries.retiros_del_anio_actual, [])
+    else:
+        filas, error = _safe(queries.retiros_del_mes_actual, [])
+
     if request.args.get("export") == "csv":
         return csv_response(
             filas,
             columnas=[
-                ("fecha", "Fecha"), ("banco", "Banco"),
-                ("de", "De"), ("concepto", "Concepto"),
-                ("ret", "Monto"),
+                ("fecha", "Fecha"),
+                ("concepto", "Concepto"),
+                ("ret", "Importe"),
             ],
-            filename=f"retiros_{dias}d.csv",
+            filename=f"dividendos_{tab}.csv",
         )
-    total = sum(float(r["ret"] or 0) for r in filas)
+
+    # KPIs — siempre mes + año (visibles en ambas tabs).
+    total_mes,   _ = _safe(queries.retiros_total_mes_actual, 0.0)
     total_anual, _ = _safe(queries.retiros_total_anual, 0.0)
+
+    # Conteos para los badges del switcher de tabs (best-effort).
+    try:
+        n_mes  = len(queries.retiros_del_mes_actual())
+        n_anio = len(queries.retiros_del_anio_actual())
+    except Exception:  # noqa: BLE001
+        n_mes, n_anio = 0, 0
+
     return render_template(
         "informes/retiros.html",
-        filas=filas, dias=dias, total=total, total_anual=total_anual,
+        filas=filas, tab=tab,
+        total_mes=total_mes, total_anual=total_anual,
+        n_mes=n_mes, n_anio=n_anio,
         error=error,
     )
 

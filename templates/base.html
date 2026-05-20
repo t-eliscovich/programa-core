@@ -644,7 +644,11 @@
            PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
            menú — su contenido se mergea con /posdat (decisión Tamara). #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}{% endif %}
-        {% if tiene_permiso('capital.ver') %}{{ nav_link('capital.lista', 'Movimientos de capital', 'chart-pie') }}{% endif %}
+        {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
+           (pedido dueña: "para retiros tenemos demasiadas pantallas.
+           Este borralo: /capital"). Los dividendos se ven desde
+           /informes/balance → click 'Dividendos del mes'/'Dividendos
+           del año' que llevan a /informes/retiros con tabs. #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('historial.lista', 'Historial movimientos', 'history') }}{% endif %}
       </details>
 
