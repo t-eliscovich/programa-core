@@ -1,15 +1,13 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Activos fijos{% endblock %}
 {% block breadcrumb %}Informes / <strong>Activos fijos</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 <div class="max-w-6xl">
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-semibold">Activos fijos</h1>
-      <p class="text-sm text-slate-500 mt-1">Terrenos, edificios, maquinaria — con amortización</p>
-    </div>
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Activos fijos', descripcion='Terrenos, edificios, maquinaria — con amortización') }}
     <button onclick="window.print()" class="no-print text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
   </div>
 

@@ -21,10 +21,15 @@
          significado obvio en el contexto.
 #}
 
-{% macro page_hero(titulo, descripcion='', kpi_label='', kpi_valor='', kpi_extra='') %}
+{% macro page_hero(titulo, descripcion='', kpi_label='', kpi_valor='', kpi_extra='', descripcion_safe='') %}
+{# TMT 2026-05-20 PASADA 2 — agregado `descripcion_safe`: render HTML
+   sin escape para casos con <a>, <strong>, <br>, etc. (proformas,
+   retenciones, provisiones). Si pasas BOTH, descripcion_safe gana. #}
 <div class="flex-1 min-w-0">
   <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{{ titulo }}</h1>
-  {% if descripcion %}
+  {% if descripcion_safe %}
+    <div class="text-sm text-slate-500 mt-1">{{ descripcion_safe | safe }}</div>
+  {% elif descripcion %}
     <p class="text-sm text-slate-500 mt-1">{{ descripcion }}</p>
   {% endif %}
   {% if kpi_valor %}

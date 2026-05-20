@@ -1,15 +1,12 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Clientes{% endblock %}
 {% block breadcrumb %}<strong>Clientes</strong>{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl">
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-semibold">Clientes</h1>
-      <p class="text-sm text-slate-500 mt-1">Listado con saldo pendiente</p>
-    </div>
+  <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
+    {{ page_hero('Clientes', 'Listado con saldo pendiente') }}
     <div class="no-print flex items-center gap-2">
       <form class="flex items-center gap-2">
         <input type="text" name="q" value="{{ q }}" placeholder="Código, nombre o RUC…" autofocus

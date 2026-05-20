@@ -61,12 +61,14 @@ def aging_buckets() -> list[dict]:
                COUNT(*)                            AS n_facturas,
                COALESCE(SUM(f.saldo), 0)           AS saldo_facturas,
                COALESCE(MAX(cc.en_cartera), 0)     AS cheques_en_cartera,
-               -- TMT 2026-05-20: saldo_total = facturas + cheques (BRUTO).
-               -- Antes era facturas − cheques (neto). La dueña pidió que
-               -- /cartera total matchee con Resultados.Subtotal Cartera
-               -- (= TOTC + TOTF). Ahora son el mismo número.
+               -- TMT 2026-05-20 v3: saldo_total NETO = facturas − cheques.
+               -- (Lo que el cliente realmente me debe después de aplicar
+               -- los cheques recibidos.) Antes lo hice bruto para matchear
+               -- con Resultados.Subtotal Cartera, pero la dueña aclaró
+               -- que son conceptos distintos: Resultados ve activos
+               -- comerciales (bruto), /cartera ve cuánto me deben (neto).
                COALESCE(SUM(f.saldo), 0)
-                  + COALESCE(MAX(cc.en_cartera), 0) AS saldo_total,
+                  - COALESCE(MAX(cc.en_cartera), 0) AS saldo_total,
                COALESCE(SUM(CASE
                    WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) <= 30
                    THEN f.saldo ELSE 0 END), 0)    AS b0_30,
@@ -84,21 +86,30 @@ def aging_buckets() -> list[dict]:
         FROM scintela.factura f
         LEFT JOIN scintela.cliente c     ON c.codigo_cli = f.codigo_cli
         LEFT JOIN cheques_cli cc         ON cc.codigo_cli = f.codigo_cli
-        -- TMT 2026-05-20 — sin filtro saldo>0 para incluir sobrepagos
-        -- (paridad con TOTF del balance, que no los excluye).
-        WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+        -- TMT 2026-05-20 v3 — vuelve el filtro saldo>0 para excluir
+        -- sobrepagos individuales que ensucian el aging por cliente.
+        -- TOTF del balance los suma global; acá no los necesitamos
+        -- como filas separadas (el cliente con sobrepago puede aparecer
+        -- igual via cheques_en_cartera del LEFT JOIN).
+        WHERE COALESCE(f.saldo, 0) > 0
+          AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         GROUP BY f.codigo_cli, c.nombre, c.stop, c.cupo, c.vend, c.telefono, c.correo
-        HAVING COALESCE(SUM(f.saldo), 0) + COALESCE(MAX(cc.en_cartera), 0) <> 0
         ORDER BY b90_plus DESC, saldo_total DESC
         """
     ) or []
 
-    # TMT 2026-05-20 — antes asignábamos cheques contra buckets (jóvenes
-    # primero) para que sum(buckets) == saldo_total neto. Ahora total es
-    # BRUTO (facturas + cheques), así que los buckets se quedan en sus
-    # face values (= saldo_facturas distribuido por mora) y los cheques
-    # entran separados. Visualmente: sum(buckets) = saldo_facturas, y
-    # saldo_total = saldo_facturas + cheques_en_cartera.
+    # TMT 2026-05-20 v3 — buckets vuelven a netearse contra los cheques
+    # en cartera (jóvenes primero), igual que la versión original. Así
+    # sum(buckets) == saldo_total neto y la aging vuelve a tener sentido.
+    for r in rows:
+        pendiente = float(r.get("cheques_en_cartera") or 0)
+        for k in ("b0_30", "b31_60", "b61_90", "b90_plus"):
+            actual = float(r.get(k) or 0)
+            toma = min(actual, pendiente)
+            r[k] = actual - toma
+            pendiente -= toma
+            if pendiente <= 0:
+                break
 
     # TMT 2026-05-18 — Pedido dueña (docx "Para Claude"): la pantalla
     # principal /cartera/aging usa una tabla de 5 columnas (CLIENTE,
@@ -143,15 +154,19 @@ def aging_totales() -> dict:
                 THEN f.saldo ELSE 0 END), 0) AS b90_plus,
             COALESCE(SUM(f.saldo), 0) AS saldo_facturas,
             (SELECT en_cartera FROM cheques_total) AS cheques_en_cartera,
-            -- TMT 2026-05-20: total BRUTO (= facturas + cheques) para
-            -- matchear con Resultados.Subtotal Cartera. Antes restaba.
+            -- TMT 2026-05-20 v3: total NETO = facturas − cheques. Revert
+            -- del bruto. /cartera mide "cuánto me deben". Resultados.
+            -- Subtotal Cartera mide "activos comerciales" (= bruto) — son
+            -- conceptos distintos, no tienen que coincidir.
             COALESCE(SUM(f.saldo), 0)
-                + (SELECT en_cartera FROM cheques_total)  AS total,
+                - (SELECT en_cartera FROM cheques_total)  AS total,
             COUNT(*)                        AS n_facturas,
             COUNT(DISTINCT f.codigo_cli)    AS n_clientes
         FROM scintela.factura f
-        -- TMT 2026-05-20 — sin filtro saldo>0 (paridad TOTF).
-        WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+        -- TMT 2026-05-20 v3 — vuelve el filtro saldo>0. /cartera es vista
+        -- de "qué facturas vivas hay" — sobrepagos no entran al aging.
+        WHERE COALESCE(f.saldo, 0) > 0
+          AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         """
     )
     if not row:
@@ -161,18 +176,22 @@ def aging_totales() -> dict:
             "n_facturas": 0, "n_clientes": 0,
         }
 
-    # TMT 2026-05-20 — buckets en BRUTO (= face value de facturas por
-    # mora). Antes restábamos los cheques en cartera para que matche
-    # con total neto, pero ahora el total es bruto (= facturas + cheques),
-    # así que los buckets quedan tal cual y los cheques entran en el
-    # número de arriba ("cheques en cartera"). sum(buckets) =
-    # saldo_facturas. saldo_facturas + cheques_en_cartera = total.
+    # TMT 2026-05-20 v3 — buckets netos (= face value − cheques jóvenes
+    # primero). Igual que la versión original, asegura que sum(buckets)
+    # == saldo_total neto.
     buckets = {
         "b0_30":    float(row["b0_30"] or 0),
         "b31_60":   float(row["b31_60"] or 0),
         "b61_90":   float(row["b61_90"] or 0),
         "b90_plus": float(row["b90_plus"] or 0),
     }
+    pendiente = float(row.get("cheques_en_cartera") or 0)
+    for label in ("b0_30", "b31_60", "b61_90", "b90_plus"):
+        toma = min(buckets[label], pendiente)
+        buckets[label] -= toma
+        pendiente -= toma
+        if pendiente <= 0:
+            break
 
     return {
         "b0_30":              buckets["b0_30"],

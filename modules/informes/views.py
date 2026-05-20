@@ -396,7 +396,6 @@ def check_totales():
         # /cartera total (bruto)
         from modules.cartera import queries as _cq
         cartera_tot = _cq.aging_totales()
-        cartera_total = float(cartera_tot.get("total") or 0)
         cartera_facturas = float(cartera_tot.get("saldo_facturas") or 0)
         cartera_cheques  = float(cartera_tot.get("cheques_en_cartera") or 0)
 
@@ -427,24 +426,24 @@ def check_totales():
         facturas_live = float((fact_live or {}).get("t") or 0)
 
         # ─── Construir los checks ────────────────────────────────────
-        # TMT 2026-05-20 — labels SIEMPRE referencian "Resultados → X" para
-        # que la dueña sepa exactamente qué número del balance estamos
-        # comparando (pedido: "la comparacion tenia que ser con resultados").
+        # TMT 2026-05-20 v3 — labels SIEMPRE referencian "Resultados → X".
+        # IMPORTANTE: NO comparamos "Subtotal Cartera" vs "/cartera total"
+        # porque son números semánticamente DISTINTOS:
+        #   - Resultados.Subtotal Cartera = cheques + facturas (BRUTO,
+        #     activos comerciales).
+        #   - /cartera total = facturas − cheques (NETO, lo que me deben).
+        # En cambio, comparamos los SUMANDOS individuales (cheques y
+        # facturas separados) que SÍ deben coincidir entre las 2 vistas.
         checks = [
             _diff_check(
-                "Cheques (cartera) — Resultados vs /cartera",
+                "Cheques en cartera — Resultados vs /cartera",
                 "Resultados → Cheques",                 totc,
                 "/cartera → Cheques en cartera",        cartera_cheques,
             ),
             _diff_check(
-                "Facturas — Resultados vs /cartera",
+                "Facturas vivas — Resultados vs /cartera",
                 "Resultados → Facturas",                totf,
                 "/cartera → Saldo facturas",            cartera_facturas,
-            ),
-            _diff_check(
-                "Subtotal Cartera — Resultados vs /cartera",
-                "Resultados → ↳ Subtotal Cartera",      totc + totf,
-                "/cartera → KPI hero (total)",          cartera_total,
             ),
             _diff_check(
                 "Pasivos — Resultados vs /deudas",

@@ -1,0 +1,213 @@
+/*
+ * design_system.css — Programa Core
+ *
+ * Tokens canónicos del sistema de diseño. La app usa Tailwind como
+ * principal vehiculo (classes utilitarias), pero estos tokens definen
+ * los valores canónicos a los que las clases TW deben mapearse, y
+ * sirven como referencia documental para:
+ *   - decisiones de tipografía (tamaños, pesos, line-height)
+ *   - paleta semántica (slate/sky/emerald/amber/rose)
+ *   - spacing (4px grid)
+ *   - elevación (shadow-sm/md/lg)
+ *   - radios (4/6/8px)
+ *
+ * También expone variables CSS para componentes legacy que no usan
+ * Tailwind (algunos charts, banners de error 500, etc.).
+ *
+ * TMT 2026-05-20 PASADA 2: creado como parte de la estandarización UI.
+ * Los macros canónicos viven en templates/_ui.html — este CSS es
+ * referencia + utilidades para edge cases.
+ */
+
+:root {
+  /* ─── TIPOGRAFÍA ─────────────────────────────────────────────────── */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "Menlo", "Cascadia Code", "Source Code Pro",
+               monospace;
+
+  /* Tamaños (escala tipográfica Tailwind alineada) */
+  --text-xs:   12px;   /* labels, badges */
+  --text-sm:   14px;   /* body default */
+  --text-base: 16px;
+  --text-lg:   18px;   /* h3 */
+  --text-xl:   20px;   /* h2 */
+  --text-2xl:  24px;   /* h1 (page title) */
+  --text-3xl:  30px;   /* hero KPI */
+  --text-4xl:  36px;
+
+  /* Pesos */
+  --font-regular: 400;
+  --font-medium:  500;
+  --font-semibold: 600;
+  --font-bold:    700;
+
+  /* ─── SPACING (4px grid) ─────────────────────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;    /* sm */
+  --space-3: 12px;
+  --space-4: 16px;   /* md */
+  --space-5: 20px;
+  --space-6: 24px;   /* lg */
+  --space-8: 32px;   /* xl */
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ─── RADIOS ─────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 6px;   /* default buttons, inputs */
+  --radius-lg: 8px;   /* cards */
+  --radius-xl: 12px;  /* hero cards */
+  --radius-full: 9999px;  /* badges, pills */
+
+  /* ─── ELEVACIÓN ──────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1),
+               0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1),
+               0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* ─── PALETA SEMÁNTICA (tonos light) ─────────────────────────────── */
+  /* slate — neutral (texto, fondos, bordes) */
+  --color-bg:           rgb(248 250 252); /* slate-50 */
+  --color-surface:      rgb(255 255 255); /* white */
+  --color-surface-alt:  rgb(241 245 249); /* slate-100 */
+  --color-border:       rgb(226 232 240); /* slate-200 */
+  --color-border-hover: rgb(203 213 225); /* slate-300 */
+  --color-text:         rgb(15 23 42);    /* slate-900 */
+  --color-text-muted:   rgb(100 116 139); /* slate-500 */
+  --color-text-faint:   rgb(148 163 184); /* slate-400 */
+
+  /* sky — info / primario */
+  --color-primary:        rgb(2 132 199);  /* sky-600 */
+  --color-primary-hover:  rgb(3 105 161);  /* sky-700 */
+  --color-primary-soft:   rgb(240 249 255); /* sky-50 */
+  --color-primary-border: rgb(186 230 253); /* sky-200 */
+
+  /* emerald — success / positivo */
+  --color-success:        rgb(5 150 105);  /* emerald-600 */
+  --color-success-hover:  rgb(4 120 87);   /* emerald-700 */
+  --color-success-soft:   rgb(236 253 245); /* emerald-50 */
+  --color-success-border: rgb(167 243 208); /* emerald-200 */
+
+  /* amber — warning */
+  --color-warning:        rgb(217 119 6);  /* amber-600 */
+  --color-warning-soft:   rgb(255 251 235); /* amber-50 */
+  --color-warning-border: rgb(253 230 138); /* amber-200 */
+
+  /* rose — danger / negativo (deudas, errores) */
+  --color-danger:        rgb(225 29 72);  /* rose-600 */
+  --color-danger-hover:  rgb(190 18 60);  /* rose-700 */
+  --color-danger-soft:   rgb(255 241 242); /* rose-50 */
+  --color-danger-border: rgb(254 205 211); /* rose-200 */
+
+  /* ─── PALETA SEMÁNTICA (tonos dark, prefijo dark- en JSX/HTML) ──── */
+  --dark-bg:           rgb(2 6 23);      /* slate-950 */
+  --dark-surface:      rgb(15 23 42);    /* slate-900 */
+  --dark-border:       rgb(51 65 85);    /* slate-700 */
+  --dark-text:         rgb(241 245 249); /* slate-100 */
+  --dark-text-muted:   rgb(148 163 184); /* slate-400 */
+}
+
+/* Modo oscuro */
+.dark {
+  --color-bg:           var(--dark-bg);
+  --color-surface:      var(--dark-surface);
+  --color-border:       var(--dark-border);
+  --color-text:         var(--dark-text);
+  --color-text-muted:   var(--dark-text-muted);
+}
+
+/* ─── UTILIDADES (para casos sin Tailwind) ─────────────────────────── */
+
+/* Cards canónicas — usar SOLO si no podés usar las clases Tailwind */
+.ds-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+/* Botón primario canónico */
+.ds-btn-primary {
+  background: var(--color-primary);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ds-btn-primary:hover { background: var(--color-primary-hover); }
+.ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Botón secundario */
+.ds-btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.ds-btn-secondary:hover { background: var(--color-surface-alt); }
+
+/* Banners de estado */
+.ds-banner-success {
+  background: var(--color-success-soft);
+  border: 1px solid var(--color-success-border);
+  color: var(--color-success-hover);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+.ds-banner-warning {
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-warning);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+.ds-banner-danger {
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger-hover);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+/*
+ * Convenciones para nuevos templates:
+ *
+ *  - Headers de página: usar el macro `page_hero(titulo, descripcion='')`
+ *    o `page_header(titulo, subtitulo=None)` de templates/_ui.html.
+ *    NO escribas <h1 class="text-2xl"> inline.
+ *
+ *  - KPI tiles: usar `kpi_card(label, valor, extra='', tono='slate')`.
+ *    Tonos disponibles: slate (neutro), sky (info), emerald (positivo),
+ *    amber (warning), rose (danger/deudas).
+ *    NO inventes colores nuevos sueltos (bg-purple-50, bg-teal-100, etc.).
+ *
+ *  - Acciones (botones de header): clases TW estándar
+ *    Primario:   `bg-sky-600 text-white hover:bg-sky-700 px-4 py-2 rounded shadow-sm`
+ *    Success:    `bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded shadow-sm`
+ *    Secundario: `border border-slate-300 hover:bg-slate-100 px-3 py-1.5 rounded`
+ *    Peligro:    `bg-rose-600 text-white hover:bg-rose-700 px-3 py-1.5 rounded`
+ *
+ *  - Tablas: padding canónico `px-3 py-2` (rows finos) o `px-4 py-2`
+ *    (rows estándar). Header `text-[10px] uppercase tracking-wider
+ *    text-slate-500 font-semibold`.
+ *
+ *  - Empty state: `empty_row(colspan, mensaje, sugerencia='')` dentro
+ *    del `{% else %}` del `{% for %}` del tbody.
+ *
+ *  - Confirmar accion destructiva: extender `_confirmar_accion.html`
+ *    (no inventes tu propio modal).
+ *
+ *  - Forms: usar `_inputs.html` para campos comunes con label + error.
+ */

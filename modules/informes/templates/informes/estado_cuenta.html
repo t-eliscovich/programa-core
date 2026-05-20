@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, saldo_pill %}
+{% from "_ui.html" import empty_row, saldo_pill, page_hero %}
 {% block title %}Estado de cuenta — {{ data.cliente.codigo_cli }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
@@ -7,16 +7,11 @@
 {% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
+{% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% if data.cliente.ruc %} · RUC: {{ data.cliente.ruc }}{% endif %}{% if data.cliente.telefono %} · Tel: {{ data.cliente.telefono }}{% endif %}{% endset %}
 <div class="max-w-6xl">
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-semibold">{{ data.cliente.nombre }}</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        <span class="font-mono">{{ data.cliente.codigo_cli }}</span>
-        {% if data.cliente.ruc %} · RUC: {{ data.cliente.ruc }}{% endif %}
-        {% if data.cliente.telefono %} · Tel: {{ data.cliente.telefono }}{% endif %}
-      </p>
-    </div>
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
     <div class="no-print flex items-center gap-2">
       {# TMT 2026-05-18 — volver a la cartera total (pedido de la dueña) #}
       <a href="{{ url_for('cartera.aging') }}"

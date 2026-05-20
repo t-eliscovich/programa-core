@@ -1,15 +1,13 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Deudas{% endblock %}
 {% block breadcrumb %}Informes / <strong>Deudas</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 <div class="max-w-5xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    <div>
-      <h1 class="text-2xl font-semibold">Deudas</h1>
-      <p class="text-sm text-slate-500 mt-1">Saldos por pagar a proveedores</p>
-    </div>
+    {{ page_hero('Deudas', descripcion='Saldos por pagar a proveedores') }}
     {# TMT 2026-05-20 v2 — KPI consistente con el resto del app
        (mismo patrón que /posdat?tab=yy y /activos). #}
     <div class="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">

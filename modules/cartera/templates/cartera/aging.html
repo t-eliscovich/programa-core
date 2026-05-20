@@ -84,12 +84,12 @@
       Cómo se calcula el total ({{ totales.total | num_es(0) }})
     </summary>
     <div class="mt-2 px-3 py-2 rounded text-xs bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
-      Cartera (total bruto) = facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(2) }}</span>
-      + cheques en cartera <span class="font-mono">{{ totales.cheques_en_cartera | num_es(2) }}</span>
+      Cartera viva (neto) = facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(2) }}</span>
+      − cheques ya recibidos <span class="font-mono">{{ totales.cheques_en_cartera | num_es(2) }}</span>
       = <strong class="font-mono text-slate-700 dark:text-slate-200">{{ totales.total | num_es(2) }}</strong>.
-      Coincide con "Subtotal Cartera" del informe de Resultados.
-      Los buckets de mora (0-30/31-60/61-90/90+) se calculan sobre las
-      facturas; los cheques en cartera son una entrada separada.
+      Este es "lo que el cliente todavía me debe" — distinto de
+      "Subtotal Cartera" del informe Resultados que es el BRUTO
+      (cheques + facturas como activos comerciales).
     </div>
   </details>
   {% endif %}

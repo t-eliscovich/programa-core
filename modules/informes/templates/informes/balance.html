@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Informe Resultados{% endblock %}
 {% block breadcrumb %}Informes / <strong>Informe Resultados — Balance</strong>{% endblock %}
 
@@ -105,16 +106,11 @@
 {% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
+{% set _desc %}Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>{% if b and b.snapshot_historia_fecha %} · Último cierre <span class="text-slate-700 dark:text-slate-300">{{ b.snapshot_historia_fecha | fecha_es }}</span>{% endif %}{% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}{% endset %}
 <div class="max-w-full informe-balance">
-  <div class="flex items-center justify-between mb-5 no-print">
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">Informe de Resultados</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>
-        {% if b and b.snapshot_historia_fecha %} · Último cierre <span class="text-slate-700 dark:text-slate-300">{{ b.snapshot_historia_fecha | fecha_es }}</span>{% endif %}
-        {% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}
-      </p>
-    </div>
+  <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
+    {{ page_hero('Informe de Resultados', descripcion_safe=_desc) }}
     <div class="flex items-center gap-2">
       {# TMT 2026-05-19 v6 — Features A+B: tabs/links a drill-downs nuevos. #}
       <a href="{{ url_for('informes.balance_compras') }}"

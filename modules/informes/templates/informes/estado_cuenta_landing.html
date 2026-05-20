@@ -1,14 +1,13 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Estado de cuenta{% endblock %}
 {% block breadcrumb %}Informes / <strong>Estado de cuenta</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 <div class="max-w-5xl">
-  <div class="mb-6">
-    <h1 class="text-2xl font-semibold">Estado de cuenta de cliente</h1>
-    <p class="text-sm text-slate-500 mt-1">
-      Buscá por código o nombre, o elegí entre los mayores deudores.
-    </p>
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Estado de cuenta de cliente', descripcion='Buscá por código o nombre, o elegí entre los mayores deudores.') }}
   </div>
 
   {% if error %}

@@ -1,37 +1,56 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row %}
+{% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Bitácora{% endblock %}
+{% block breadcrumb %}<strong>Bitácora</strong>{% endblock %}
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 <div class="max-w-7xl">
-  <h1 class="text-xl font-semibold mb-4">Bitácora de acciones</h1>
+  {{ page_hero('Bitácora de acciones', descripcion_safe='Mostrando ' ~ (filas | length) ~ ' eventos') }}
 
   {% if error %}
-    <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-3">{{ error }}</div>
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
   {% endif %}
 
-  <form method="get" class="flex flex-wrap gap-2 mb-3 items-end">
-    <input type="text" name="q" value="{{ q }}" placeholder="Buscar ruta/resumen/id"
-           class="border rounded px-2 py-1 text-sm" size="24">
-    <input type="text" name="usuario" value="{{ usuario or '' }}" placeholder="Usuario"
-           class="border rounded px-2 py-1 text-sm" size="10">
-    <select name="modulo" class="border rounded px-2 py-1 text-sm">
-      <option value="">— módulo —</option>
-      {% for m in modulos %}
-        <option value="{{ m }}" {% if modulo==m %}selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-    <input type="text" name="request_id" value="{{ request_id or '' }}"
-           placeholder="Request-Id (o prefijo)"
-           class="border rounded px-2 py-1 text-sm font-mono" size="16">
-    <label class="text-xs text-slate-600">Desde
-      <input type="date" name="desde" value="{{ desde or '' }}" class="border rounded px-2 py-1 text-sm">
-    </label>
-    <label class="text-xs text-slate-600">Hasta
-      <input type="date" name="hasta" value="{{ hasta or '' }}" class="border rounded px-2 py-1 text-sm">
-    </label>
-    <button type="submit" class="bg-slate-700 text-white px-3 py-1 rounded text-sm">Filtrar</button>
+  <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Ruta / resumen / id…"
+             class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Usuario</label>
+      <input type="text" name="usuario" value="{{ usuario or '' }}"
+             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Módulo</label>
+      <select name="modulo" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <option value="">— todos —</option>
+        {% for m in modulos %}
+          <option value="{{ m }}" {% if modulo==m %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Request-Id</label>
+      <input type="text" name="request_id" value="{{ request_id or '' }}"
+             class="w-40 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-mono">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
     <a href="{{ url_for('bitacora.lista', q=q, usuario=usuario, modulo=modulo, request_id=request_id, desde=desde, hasta=hasta, export='csv') }}"
-       class="text-sm text-slate-500 hover:underline ml-auto">CSV</a>
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
   </form>
 
   <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
