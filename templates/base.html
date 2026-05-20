@@ -648,8 +648,10 @@
            (pedido dueña: "para retiros tenemos demasiadas pantallas.
            Este borralo: /capital"). Los dividendos se ven desde
            /informes/balance → click 'Dividendos del mes'/'Dividendos
-           del año' que llevan a /informes/retiros con tabs. #}
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('historial.lista', 'Historial movimientos', 'history') }}{% endif %}
+           del año' que llevan a /informes/retiros con tabs.
+           TMT 2026-05-20 v2 — "Historial movimientos" se movió debajo
+           de Recientes (pedido dueña: "La tab historial de moviemientos
+           podemos ponerlo debajo de recientes?"). #}
       </details>
 
       <details class="sidebar-section" data-key="datos">
@@ -697,6 +699,15 @@
           {% endif %}
         {% endfor %}
       </details>
+      {% endif %}
+
+      {# TMT 2026-05-20 v2 — Historial movimientos al pie del sidebar
+         (pedido dueña: "La tab historial de moviemientos podemos ponerlo
+         debajo de recientes?"). #}
+      {% if tiene_permiso('informes.ver') %}
+      <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+        {{ nav_link('historial.lista', 'Historial movimientos', 'history') }}
+      </div>
       {% endif %}
     </nav>
 

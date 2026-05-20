@@ -196,6 +196,28 @@ def toggle_stop(codigo_cli: str):
     return redirect(url_for("clientes.lista"))
 
 
+@clientes_bp.route("/clientes/<codigo_cli>/eliminar", methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.editar")
+def eliminar(codigo_cli: str):
+    """Borra un cliente con confirmación.
+
+    TMT 2026-05-20 — pedido dueña: "Clientes idem" (botón eliminar
+    con confirm). Bloquea si tiene facturas/cheques.
+    """
+    cli = queries.por_codigo(codigo_cli)
+    if not cli:
+        abort(404)
+    try:
+        queries.eliminar(codigo_cli)
+        flash(f"Cliente {codigo_cli} — {cli['nombre']} eliminado.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude eliminar", e)
+    return redirect(url_for("clientes.lista"))
+
+
 @clientes_bp.route("/clientes/<codigo_cli>/activar", methods=["POST"])
 @requiere_login
 @requiere_permiso("clientes.editar")

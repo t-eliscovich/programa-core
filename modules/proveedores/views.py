@@ -194,6 +194,29 @@ def editar(codigo_prov: str):
         )
 
 
+@proveedores_bp.route("/proveedores/<codigo_prov>/eliminar", methods=["POST"])
+@requiere_login
+@requiere_permiso("proveedores.editar")
+def eliminar(codigo_prov: str):
+    """Borra un proveedor con confirmación.
+
+    TMT 2026-05-20 — pedido dueña: "que exista boton de eliminar y que
+    pregunte antes de eliminar". Confirmación via JS confirm() en el
+    template (no doble-paso server-side). Bloquea si hay FKs activas.
+    """
+    prov = queries.por_codigo(codigo_prov)
+    if not prov:
+        abort(404)
+    try:
+        queries.eliminar(codigo_prov)
+        flash(f"Proveedor {codigo_prov} — {prov['nombre']} eliminado.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude eliminar", e)
+    return redirect(url_for("proveedores.lista"))
+
+
 @proveedores_bp.route("/proveedores/<codigo_prov>/activo", methods=["POST"])
 @requiere_login
 @requiere_permiso("proveedores.editar")

@@ -206,6 +206,38 @@ def set_activo(codigo_cli: str, activo: bool, usuario: str = "web") -> int:
     )
 
 
+def eliminar(codigo_cli: str) -> int:
+    """Borra un cliente. Rechaza si tiene FKs activas (facturas, cheques).
+
+    TMT 2026-05-20 — pedido dueña: "Clientes idem" (botón eliminar
+    con confirmación, como proveedores). Bloquea si hay registros
+    vinculados; el caller maneja el ValueError.
+    """
+    codigo = codigo_cli.upper().strip()
+    n_fact = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.factura WHERE codigo_cli = %s",
+        (codigo,),
+    ) or {}
+    if int(n_fact.get("n") or 0) > 0:
+        raise ValueError(
+            f"No se puede eliminar: el cliente {codigo} tiene "
+            f"{n_fact['n']} facturas registradas."
+        )
+    n_che = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.cheque WHERE codigo_cli = %s",
+        (codigo,),
+    ) or {}
+    if int(n_che.get("n") or 0) > 0:
+        raise ValueError(
+            f"No se puede eliminar: el cliente {codigo} tiene "
+            f"{n_che['n']} cheques registrados."
+        )
+    return db.execute(
+        "DELETE FROM scintela.cliente WHERE codigo_cli = %s",
+        (codigo,),
+    )
+
+
 def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False) -> list[dict]:
     """Lista paginada con búsqueda por código/nombre/RUC.
 
@@ -239,7 +271,10 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False) -> l
                OR UPPER(c.codigo_cli) LIKE UPPER(%(like)s)
                OR UPPER(c.nombre)     LIKE UPPER(%(like)s)
                OR c.ruc LIKE %(like)s)
-        ORDER BY COALESCE(s.saldo_total, 0) DESC, c.nombre
+        -- TMT 2026-05-20 v2 — pedido dueña: "Clientes idem, sortear
+        -- por codigo". Antes ordenaba por saldo DESC (= columna que
+        -- ya se eliminó del listado).
+        ORDER BY c.codigo_cli ASC
         LIMIT %(limite)s
         """,
         {

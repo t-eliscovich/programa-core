@@ -125,6 +125,39 @@ def set_activo(codigo_prov: str, activo: bool, usuario: str = "web") -> int:
     )
 
 
+def eliminar(codigo_prov: str) -> int:
+    """Borra un proveedor. Rechaza si tiene FKs activas (compras, posdat).
+
+    TMT 2026-05-20 — pedido dueña: "que exista boton de eliminar y que
+    pregunte antes de eliminar". Si hay registros vinculados, devuelve
+    0 y el caller debe mostrar el error.
+    """
+    codigo = codigo_prov.upper().strip()
+    # Chequear FKs antes de borrar — evitamos un IntegrityError críptico.
+    n_compras = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.compra WHERE codigo_prov = %s",
+        (codigo,),
+    ) or {}
+    if int(n_compras.get("n") or 0) > 0:
+        raise ValueError(
+            f"No se puede eliminar: el proveedor {codigo} tiene "
+            f"{n_compras['n']} compras registradas."
+        )
+    n_posdat = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.posdat WHERE prov = %s",
+        (codigo,),
+    ) or {}
+    if int(n_posdat.get("n") or 0) > 0:
+        raise ValueError(
+            f"No se puede eliminar: el proveedor {codigo} tiene "
+            f"{n_posdat['n']} posdatados registrados."
+        )
+    return db.execute(
+        "DELETE FROM scintela.proveedor WHERE codigo_prov = %s",
+        (codigo,),
+    )
+
+
 def buscar(q: str = "", limite: int = 300) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -146,7 +179,10 @@ def buscar(q: str = "", limite: int = 300) -> list[dict]:
            OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
            OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
            OR p.ruc LIKE %(like)s
-        ORDER BY COALESCE(d.saldo_total, 0) DESC, p.nombre
+        -- TMT 2026-05-20 v2 — pedido dueña: "provedores sort by tipo,
+        -- then nombre". Antes ordenaba por saldo DESC (= mostraba la
+        -- columna Deuda que ya se eliminó del listado).
+        ORDER BY COALESCE(p.tipo, '') ASC, p.nombre ASC
         LIMIT %(limite)s
         """,
         {"q": q or None, "like": like, "limite": limite},

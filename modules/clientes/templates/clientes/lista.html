@@ -50,6 +50,9 @@
           {# TMT 2026-05-20 — columna 'Saldo' eliminada (pedido dueña:
              "en base de datos clientes, no mostrar deuda"). La info
              de saldo por cliente se ve en /informes/estado-cuenta. #}
+          {% if tiene_permiso('clientes.editar') %}
+          <th class="px-1 py-3 no-print" style="width:40px;" data-no-sort></th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
@@ -85,9 +88,26 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-right text-mono">{{ c.cupo | money_es }}</td>
+          {% if tiene_permiso('clientes.editar') %}
+          <td class="px-1 py-2 no-print text-center">
+            {# TMT 2026-05-20 — botón eliminar con confirm() pedido dueña. #}
+            <form method="post" action="{{ url_for('clientes.eliminar', codigo_cli=c.codigo_cli) }}"
+                  class="inline"
+                  onsubmit="return confirm('¿Eliminar cliente {{ c.codigo_cli }} — {{ c.nombre | replace(\"'\", \"\\\\'\") }}? Esta acción NO se puede deshacer. Si tiene facturas o cheques vinculados, será bloqueado.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit"
+                      class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
+                      title="Eliminar cliente (pregunta antes)">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                </svg>
+              </button>
+            </form>
+          </td>
+          {% endif %}
         </tr>
         {% else %}
-        {{ empty_row(8, 'Sin clientes.') }}
+        {{ empty_row(9, 'Sin clientes.') }}
         {% endfor %}
       </tbody>
     </table>

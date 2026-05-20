@@ -618,14 +618,19 @@ def buscar(
             "limite": limite,
         },
     ) or []
-    # Running total cronológico (ascendente) de la columna `importe`.
-    # Listado en orden ASC (más vieja arriba) — pedido TMT 2026-05-14.
+    # Running total cronológico (ascendente).
+    # TMT 2026-05-20 v2 — el ACUM ahora acumula SALDO (no importe), para
+    # que el último valor coincida con el header (que muestra SUM(saldo)
+    # del bucket cartera). Pedido dueña: "el total de arriba no coincide
+    # con el acumulado. es porque no tenes en cuenta las negativas".
+    # Devoluciones y sobrepagos (saldo negativo) restan del corrido, lo
+    # mismo que hacen en el header — total visible = último ACUM.
     from datetime import date as _date
     rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
                                            r.get("numf") or 0))
     acum = 0.0
     for r in rows_asc:
-        acum += float(r.get("importe") or 0)
+        acum += float(r.get("saldo") or 0)
         r["saldo_acumulado"] = acum
     return rows_asc
 

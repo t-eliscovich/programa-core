@@ -3957,45 +3957,83 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
 
     TMT 2026-05-20 — pedido dueña: pantalla simple desde
     /informes/balance al click 'Ventas del año'. Columnas:
-    mes, kg, precio (U$/kg), importe, acum (running sum del importe
-    en orden cronológico ascendente).
+    mes, kg, precio (U$/kg), importe, acum.
 
-    Filtra facturas vivas o canceladas (Z, A, T, P, blank) — excluye
-    anuladas (X, Y). Devuelve filas ordenadas de enero a hoy.
+    TMT 2026-05-20 v2 — fix: ahora usa MISMA FUENTE que el balance
+    para que el TOTAL coincida con 'Ventas del año' (Resultados).
+    Antes solo leía scintela.factura → daba ~5.5M cuando balance
+    decía 10M (la diferencia es que historia.uvent ya incluye
+    devoluciones/ajustes contabilizados en el closing mensual).
+    Pedido dueña: "Ventas del año esta mal, el total es 10 millones,
+    lo tenes en resultados". Fórmula nueva:
+       - meses cerrados → historia.uvent / historia.kvent
+       - mes en curso   → live de scintela.factura (mismo filtro
+                          que ventas_anio_en_curso: stat<>'X', any sign)
     """
-    rows = db.fetch_all(
+    from datetime import date as _date
+    hoy = _date.today()
+    yy, mm = hoy.year, hoy.month
+
+    # Meses cerrados del año (historia.uvent ya tiene el cierre definitivo).
+    rows_hist = db.fetch_all(
         """
         SELECT EXTRACT(MONTH FROM fecha)::int AS mes_num,
-               COUNT(*)                        AS n_facturas,
-               COALESCE(SUM(kg), 0)            AS kg,
-               COALESCE(SUM(importe), 0)       AS importe
-        FROM scintela.factura
-        WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
-          AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
-        GROUP BY EXTRACT(MONTH FROM fecha)
-        ORDER BY mes_num ASC
-        """
+               COALESCE(SUM(uvent), 0) AS importe,
+               COALESCE(SUM(kvent), 0) AS kg
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) < %s
+         GROUP BY EXTRACT(MONTH FROM fecha)
+        """,
+        (yy, mm),
     ) or []
-    # Calcular precio promedio y acumulado en Python.
+
+    # Mes en curso → live de scintela.factura (mismo filtro que
+    # ventas_anio_en_curso: stat <> 'X', importe > 0 — sin sumar
+    # devoluciones/sobrepagos que distorsionarían el live).
+    row_live = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS importe,
+               COALESCE(SUM(kg), 0)      AS kg
+          FROM scintela.factura
+         WHERE EXTRACT(YEAR FROM fecha)  = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+           AND COALESCE(stat, '') <> 'X'
+           AND COALESCE(importe, 0) > 0
+        """,
+        (yy, mm),
+    ) or {}
+
+    # Armar mapa mes → datos.
+    por_mes: dict[int, dict] = {}
+    for r in rows_hist:
+        m = int(r.get("mes_num") or 0)
+        por_mes[m] = {
+            "kg":      float(r.get("kg") or 0),
+            "importe": float(r.get("importe") or 0),
+        }
+    por_mes[mm] = {
+        "kg":      float(row_live.get("kg") or 0),
+        "importe": float(row_live.get("importe") or 0),
+    }
+
     _MES_NOMBRES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
                     "Julio", "Agosto", "Septiembre", "Octubre",
                     "Noviembre", "Diciembre"]
     acum = 0.0
     out: list[dict] = []
-    for r in rows:
-        mes_num  = int(r.get("mes_num") or 0)
-        kg       = float(r.get("kg") or 0)
-        importe  = float(r.get("importe") or 0)
-        acum    += importe
-        precio   = (importe / kg) if kg > 0 else 0.0
+    for m in sorted(por_mes.keys()):
+        d = por_mes[m]
+        kg, importe = d["kg"], d["importe"]
+        acum += importe
+        precio = (importe / kg) if kg > 0 else 0.0
         out.append({
-            "mes_num":     mes_num,
-            "mes_nombre":  _MES_NOMBRES[mes_num - 1] if 1 <= mes_num <= 12 else "?",
-            "n_facturas":  int(r.get("n_facturas") or 0),
-            "kg":          kg,
-            "precio":      precio,
-            "importe":     importe,
-            "acum":        acum,
+            "mes_num":    m,
+            "mes_nombre": _MES_NOMBRES[m - 1] if 1 <= m <= 12 else "?",
+            "kg":         kg,
+            "precio":     precio,
+            "importe":    importe,
+            "acum":       acum,
         })
     return out
 
