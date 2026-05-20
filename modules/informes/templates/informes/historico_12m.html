@@ -145,15 +145,24 @@
     </a>
     {% if modo != 'mom' and snap_info %}
       <div class="flex-1"></div>
-      <span class="text-xs text-slate-500">
+      <span class="text-xs text-slate-500 mr-3">
         {% if snap_info.accion == 'inserted' %}
           ✓ Snapshot del mes actual tomado (id {{ snap_info.id_historia }})
         {% elif snap_info.accion == 'throttled' %}
-          ⏱ Snapshot reciente (< 1h) — no se tomó nuevo
+          ⏱ Snapshot reciente (< 24h) — no se tomó nuevo
         {% elif snap_info.accion == 'error' %}
           ⚠ No se pudo tomar snapshot: {{ snap_info.error }}
         {% endif %}
       </span>
+      {# TMT 2026-05-20 v4 — botón para forzar snapshot ignorando throttle.
+         Pedido dueña: "Historico resultados sigue en 0. no puede tener 0".
+         Útil cuando la lógica de calcular_kpis cambió y queremos rehacer
+         el snapshot del mes con la versión nueva sin esperar 24h. #}
+      <button id="forzar-snapshot" type="button"
+              class="no-print text-xs px-3 py-1 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium"
+              title="Crea un snapshot nuevo del mes actual con los KPIs actuales (ignora el throttle).">
+        ↻ Snapshot ahora
+      </button>
     {% endif %}
   </div>
 
@@ -364,6 +373,30 @@
               }).catch(e => alert('Error de red: ' + e.message));
             });
           });
+
+          // TMT 2026-05-20 v4 — botón "↻ Snapshot ahora" — fuerza un
+          // snapshot nuevo ignorando throttle.
+          const btnForzar = document.getElementById('forzar-snapshot');
+          if (btnForzar) {
+            btnForzar.addEventListener('click', () => {
+              if (!confirm('¿Crear un snapshot nuevo del mes actual con los KPIs de hoy?')) return;
+              btnForzar.disabled = true;
+              btnForzar.textContent = '⏳ Procesando…';
+              postAction('/informes/historico-12m/_api/snapshot-ahora').then(j => {
+                if (j && j.ok) {
+                  window.location.reload();
+                } else {
+                  alert('No se pudo crear: ' + ((j && j.error) || 'error'));
+                  btnForzar.disabled = false;
+                  btnForzar.textContent = '↻ Snapshot ahora';
+                }
+              }).catch(e => {
+                alert('Error de red: ' + e.message);
+                btnForzar.disabled = false;
+                btnForzar.textContent = '↻ Snapshot ahora';
+              });
+            });
+          }
         })();
       </script>
     {% else %}

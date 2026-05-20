@@ -131,9 +131,12 @@
       {% set _show_mensual = (tab == 'yy') %}
       {% set _show_diaria  = false %}
       {% set _show_acum    = (tab != 'yy') %}
+      {# TMT 2026-05-20 v4 — columna N° eliminada (pedido dueña:
+         "Posdatados borrar N de posdatados y YY"). El id_posdat sigue
+         disponible como tooltip / breadcrumb pero no se renderiza
+         como columna. #}
       <thead class="bg-slate-50 border-b text-left text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-2 py-1">N°</th>
           <th class="px-2 py-1">Fecha</th>
           <th class="px-2 py-1">Venc.</th>
           <th class="px-2 py-1">Prov</th>
@@ -160,10 +163,6 @@
             data-id-posdat="{{ f.id_posdat }}"
             data-concepto="{{ f.concepto or '' }}"
             {% if f.id_provisiones %}data-id-prov="{{ f.id_provisiones }}"{% endif %}>
-          <td class="px-2 py-1 font-mono">
-            {% if f.num and f.num != 0 %}{{ f.num }}
-            {% else %}<span class="text-slate-400">#{{ f.id_posdat }}</span>{% endif %}
-          </td>
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fecha | fecha_es }}</td>
           <td class="px-2 py-1 whitespace-nowrap">{{ f.fechad | fecha_es }}</td>
           <td class="px-2 py-1 font-mono">{{ f.prov }}</td>
@@ -239,10 +238,10 @@
           {% endif %}
         </tr>
         {% else %}
-          {# colspan = N°/Fecha/Venc/Prov/Concepto/Importe + columnas
-             condicionales (mensual/diaria/acum). Banco + acciones
-             removidas (TMT 2026-05-20). #}
-          {% set _colspan_empty = 6 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) %}
+          {# colspan = Fecha/Venc/Prov/Concepto/Importe (5) + columnas
+             condicionales (mensual/diaria/acum). N° eliminada
+             TMT 2026-05-20 v4. #}
+          {% set _colspan_empty = 5 + (1 if _show_mensual else 0) + (1 if _show_diaria else 0) + (1 if _show_acum else 0) %}
           {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>

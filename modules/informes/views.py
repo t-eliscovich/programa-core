@@ -211,6 +211,25 @@ def historico_borrar(id_historia: int):
         return jsonify({"ok": False, "error": f"No pude borrar: {e}"}), 500
 
 
+@informes_bp.route("/informes/historico-12m/_api/snapshot-ahora", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def historico_snapshot_ahora():
+    """Fuerza un snapshot del mes actual ignorando el throttle de 24h.
+
+    TMT 2026-05-20 — pedido dueña: cuando los KPIs muestran 0 porque
+    el snapshot viejo se tomó con la lógica vieja, queremos un botón
+    que rehace el snapshot con la lógica nueva sin esperar 24h.
+    """
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        # Pasamos throttle_segundos=0 para que se inserte sí o sí.
+        r = queries.tomar_snapshot_mes_actual(usuario=usuario, throttle_segundos=0)
+        return jsonify({"ok": True, **r})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude crear snapshot: {e}"}), 500
+
+
 @informes_bp.route("/balance/utilidad-debug")
 @requiere_login
 @requiere_permiso("informes.ver")
