@@ -3952,6 +3952,54 @@ def upsert_flujo_rows(rows: list[dict], usuario: str) -> dict:
 # VENTAS mensuales — agregadas desde factura
 # ---------------------------------------------------------------------------
 
+def ventas_mes_a_mes_anio_actual() -> list[dict]:
+    """Ventas mes a mes del año en curso con acumulado.
+
+    TMT 2026-05-20 — pedido dueña: pantalla simple desde
+    /informes/balance al click 'Ventas del año'. Columnas:
+    mes, kg, precio (U$/kg), importe, acum (running sum del importe
+    en orden cronológico ascendente).
+
+    Filtra facturas vivas o canceladas (Z, A, T, P, blank) — excluye
+    anuladas (X, Y). Devuelve filas ordenadas de enero a hoy.
+    """
+    rows = db.fetch_all(
+        """
+        SELECT EXTRACT(MONTH FROM fecha)::int AS mes_num,
+               COUNT(*)                        AS n_facturas,
+               COALESCE(SUM(kg), 0)            AS kg,
+               COALESCE(SUM(importe), 0)       AS importe
+        FROM scintela.factura
+        WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+          AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
+        GROUP BY EXTRACT(MONTH FROM fecha)
+        ORDER BY mes_num ASC
+        """
+    ) or []
+    # Calcular precio promedio y acumulado en Python.
+    _MES_NOMBRES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                    "Julio", "Agosto", "Septiembre", "Octubre",
+                    "Noviembre", "Diciembre"]
+    acum = 0.0
+    out: list[dict] = []
+    for r in rows:
+        mes_num  = int(r.get("mes_num") or 0)
+        kg       = float(r.get("kg") or 0)
+        importe  = float(r.get("importe") or 0)
+        acum    += importe
+        precio   = (importe / kg) if kg > 0 else 0.0
+        out.append({
+            "mes_num":     mes_num,
+            "mes_nombre":  _MES_NOMBRES[mes_num - 1] if 1 <= mes_num <= 12 else "?",
+            "n_facturas":  int(r.get("n_facturas") or 0),
+            "kg":          kg,
+            "precio":      precio,
+            "importe":     importe,
+            "acum":        acum,
+        })
+    return out
+
+
 def ventas_mensuales(meses: int = 12) -> list[dict]:
     """Ventas e importes por mes de los últimos N meses."""
     return db.fetch_all(

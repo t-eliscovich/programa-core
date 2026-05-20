@@ -1072,6 +1072,44 @@ def ventas():
 # ruta que los exponga.
 
 
+@informes_bp.route("/ventas-anio")
+@requiere_login
+@requiere_permiso("informes.ver")
+def ventas_anio():
+    """Ventas del año en curso — mes a mes con acumulado.
+
+    TMT 2026-05-20 — pedido dueña: pantalla simple desde
+    /informes/balance al click 'Ventas del año'. Columnas:
+    mes · kg · precio (U$/kg) · importe · acum.
+    """
+    filas, error = _safe(queries.ventas_mes_a_mes_anio_actual, [])
+    total_kg = sum(float(r.get("kg") or 0) for r in filas)
+    total_importe = sum(float(r.get("importe") or 0) for r in filas)
+    precio_prom = (total_importe / total_kg) if total_kg > 0 else 0.0
+    if request.args.get("export") == "csv":
+        return csv_response(
+            filas,
+            columnas=[
+                ("mes_nombre", "Mes"),
+                ("kg",         "Kg"),
+                ("precio",     "Precio U$/kg"),
+                ("importe",    "Importe"),
+                ("acum",       "Acumulado"),
+            ],
+            filename="ventas_anio.csv",
+        )
+    from datetime import date as _date
+    return render_template(
+        "informes/ventas_anio.html",
+        filas=filas,
+        total_kg=total_kg,
+        total_importe=total_importe,
+        precio_prom=precio_prom,
+        anio=_date.today().year,
+        error=error,
+    )
+
+
 @informes_bp.route("/flujo-produccion")
 @requiere_login
 @requiere_permiso("informes.ver")
