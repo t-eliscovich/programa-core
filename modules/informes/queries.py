@@ -4725,6 +4725,27 @@ def _cargar_snapshots(meses: list[tuple[int, int]]) -> dict[tuple[int, int], dic
     return out
 
 
+def _cargar_snapshots_mes(anio: int, mes: int, limite: int = 3) -> list[dict]:
+    """Devuelve TODOS los snapshots de un mes (max `limite`), ordenados de
+    más viejo a más nuevo. TMT 2026-05-20 — pedido dueña: el mes actual
+    puede tener 2+ snapshots para comparar el nuevo contra el anterior.
+    """
+    return db.fetch_all(
+        """
+        SELECT id_historia, fecha, fecha_crea, usuario_crea,
+               banco, cart, deuda, ustock, uqui, anticipos,
+               maquinaria, realty, patrimonio, uvent, ucom, gasto,
+               usret, usuti, kvent, kcom
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         ORDER BY fecha_crea DESC
+         LIMIT %s
+        """,
+        (anio, mes, int(limite)),
+    ) or []
+
+
 def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
     """Matriz histórica estilo TINT.BAT — TMT 2026-05-19 v7.
 
@@ -4845,6 +4866,215 @@ def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
         "rng_max":              rng_max,
         "nav":                  {"prev_offset": prev_offset, "next_offset": next_offset},
     }
+
+
+def historico_5m_con_actual(max_actual: int = 3) -> dict:
+    """Matriz histórica fija: últimos 5 meses + mes actual.
+
+    Pedido dueña 2026-05-20:
+      - 5 meses fijos a la izquierda (1 snapshot c/u, el más reciente del mes).
+      - Mes actual a la derecha (puede tener 2+ snapshots para comparar).
+      - Cada columna tiene id_historia para que el frontend pueda
+        validar/borrar la columna correcta.
+
+    `max_actual` = cuántos snapshots del mes actual mostrar (default 3,
+    los más nuevos).
+
+    Devuelve:
+      {
+        columnas: [{key: (a,m) o (a,m,id), label_corto, label_largo,
+                    id_historia: int|None, es_mes_actual: bool,
+                    es_canonico_default: bool}],
+        lineas:   [{label, key, fmt, color, section, valores}],
+        meses_sin_snap: ['MM/AAAA', ...],
+      }
+    """
+    from datetime import date as _date
+    hoy = _date.today()
+
+    # Últimos 5 meses CERRADOS (excluyendo el actual).
+    meses_pasados: list[tuple[int, int]] = []
+    ca, cm = hoy.year, hoy.month - 1
+    if cm < 1:
+        cm = 12
+        ca -= 1
+    for _ in range(5):
+        meses_pasados.append((ca, cm))
+        cm -= 1
+        if cm < 1:
+            cm = 12
+            ca -= 1
+    meses_pasados.reverse()  # ASC: el más viejo a la izquierda.
+
+    # Snapshots del mes actual (varios para comparar).
+    snaps_actual = _cargar_snapshots_mes(hoy.year, hoy.month, limite=max_actual)
+    # Quedan ordenados más nuevo primero — invertimos para que la más
+    # nueva quede a la derecha (siguiendo el orden cronológico visual).
+    snaps_actual_asc = list(reversed(snaps_actual))
+
+    # Snapshots de meses pasados (1 c/u, el más reciente).
+    snaps_pasados = _cargar_snapshots(meses_pasados)
+
+    # Armar lista de columnas para el template.
+    columnas: list[dict] = []
+    for (a_, m_) in meses_pasados:
+        snap = snaps_pasados.get((a_, m_))
+        columnas.append({
+            "key":            f"{a_:04d}-{m_:02d}",
+            "anio":           a_,
+            "mes":            m_,
+            "label_corto":    f"{m_:02d}/{a_ % 100:02d}",
+            "label_largo":    f"{m_:02d}/{a_}",
+            "id_historia":    int(snap["id_historia"]) if snap and snap.get("id_historia") else None,
+            "fecha_crea":     snap.get("fecha_crea") if snap else None,
+            "es_mes_actual":  False,
+            "es_canonico_default": False,
+            "snap":           snap,
+        })
+    # Mes actual — N columnas (la última = más reciente = "candidata default").
+    n_actual = len(snaps_actual_asc)
+    for i, snap in enumerate(snaps_actual_asc):
+        es_ultima = (i == n_actual - 1)
+        sufijo = ""
+        if n_actual > 1:
+            # Mostrar fecha_crea como sufijo si hay >1 snapshot del mes.
+            fc = snap.get("fecha_crea")
+            sufijo = f" #{i + 1}" + (f" ({fc.strftime('%d/%m')})" if fc else "")
+        columnas.append({
+            "key":            f"{hoy.year:04d}-{hoy.month:02d}-{snap['id_historia']}",
+            "anio":           hoy.year,
+            "mes":            hoy.month,
+            "label_corto":    f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
+            "label_largo":    f"{hoy.month:02d}/{hoy.year}{sufijo}",
+            "id_historia":    int(snap["id_historia"]),
+            "fecha_crea":     snap.get("fecha_crea"),
+            "es_mes_actual":  True,
+            "es_canonico_default": es_ultima,
+            "snap":           snap,
+        })
+
+    # Armar líneas (igual que historico_12m_matriz).
+    lineas_out = []
+    for label, key, fmt, color, section in _HIST_LINEAS:
+        valores = [_valor_para_linea(key, c.get("snap")) for c in columnas]
+        lineas_out.append({
+            "label":     label,
+            "key":       key,
+            "fmt":       fmt,
+            "color":     color,
+            "section":   section,
+            "valores":   valores,
+        })
+
+    sin_snap = [
+        f"{m_:02d}/{a_}" for (a_, m_) in meses_pasados
+        if (a_, m_) not in snaps_pasados
+    ]
+    if not snaps_actual_asc:
+        sin_snap.append(f"{hoy.month:02d}/{hoy.year} (actual — pulsá '↻ Snapshot ahora')")
+
+    return {
+        "columnas":       columnas,
+        "lineas":         lineas_out,
+        "meses_sin_snap": sin_snap,
+        "n_actual":       n_actual,
+        "hoy":            hoy,
+    }
+
+
+def tomar_snapshot_mes_actual(
+    usuario: str = "web",
+    throttle_segundos: int = 3600,
+) -> dict:
+    """Inserta un snapshot del mes actual en scintela.historia.
+
+    TMT 2026-05-20 — pedido dueña: al entrar a /historico-12m se toma
+    un snapshot nuevo del mes en curso, sin pisar el anterior, para
+    poder comparar.
+
+    `throttle_segundos` evita re-snapshot por refresh accidental: si
+    el último snapshot del mes actual es de hace menos que ese tiempo,
+    no inserta nada y devuelve `accion='throttled'`.
+
+    Devuelve `{accion: 'inserted'|'throttled', id_historia, kpis}`.
+    """
+    from datetime import date as _date
+    from datetime import datetime as _dt
+    hoy = _date.today()
+
+    # Chequear throttle.
+    ult = db.fetch_one(
+        """
+        SELECT id_historia, fecha_crea
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         ORDER BY fecha_crea DESC
+         LIMIT 1
+        """,
+        (hoy.year, hoy.month),
+    )
+    if ult and ult.get("fecha_crea"):
+        edad = (_dt.now() - ult["fecha_crea"]).total_seconds()
+        if edad < throttle_segundos:
+            return {
+                "accion":      "throttled",
+                "id_historia": int(ult["id_historia"]),
+                "motivo":      f"último snapshot hace {int(edad)}s (< {throttle_segundos}s)",
+            }
+
+    # Importar el script de snapshot dinamicamente (vive en scripts/).
+    import os
+    import sys
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    scripts_dir = os.path.join(repo_root, "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import snapshot_historia_mensual as _snap
+    r = _snap.ejecutar(hoy, force=False, usuario=usuario)
+    # Si ya existía (skipped), forzamos insert nuevo manual — queremos
+    # MÚLTIPLES snapshots del mismo mes para comparar.
+    if r.get("accion") == "skipped":
+        kpis = _snap.calcular_kpis(hoy)
+        new_id = _snap.insertar_snapshot(kpis, usuario=usuario)
+        return {"accion": "inserted", "id_historia": new_id, "kpis": kpis}
+    return {"accion": r.get("accion"), "id_historia": r.get("id_historia"),
+            "kpis": r.get("kpis", {})}
+
+
+def validar_snapshot(id_historia: int, *, usuario: str = "web") -> dict:
+    """Marca un snapshot como "el bueno" y borra los OTROS del mismo mes.
+
+    TMT 2026-05-20 — pedido dueña: cuando hay 2 columnas del mes actual,
+    elige una y los demás se borran.
+    """
+    row = db.fetch_one(
+        "SELECT id_historia, fecha FROM scintela.historia WHERE id_historia = %s",
+        (id_historia,),
+    )
+    if not row:
+        raise ValueError(f"Snapshot id={id_historia} no existe.")
+    fecha = row["fecha"]
+    n = db.execute(
+        """
+        DELETE FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM %s::date)
+           AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM %s::date)
+           AND id_historia <> %s
+        """,
+        (fecha, fecha, id_historia),
+    )
+    return {"id_historia": id_historia, "n_borrados": int(n or 0)}
+
+
+def borrar_snapshot(id_historia: int) -> int:
+    """Borra un snapshot específico de scintela.historia."""
+    return db.execute(
+        "DELETE FROM scintela.historia WHERE id_historia = %s",
+        (id_historia,),
+    )
 
 
 def historico_mom(anio_a: int, mes_a: int, anio_b: int, mes_b: int) -> dict:

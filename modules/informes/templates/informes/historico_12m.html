@@ -126,13 +126,16 @@
     </div>
   {% endif %}
 
-  {# ─── Toolbar: tabs estándar + paginación o selectores ────────────── #}
+  {# ─── Toolbar: tabs Matriz / Mes vs mes ───────────────────────────── #}
+  {# TMT 2026-05-20 — paginación + selector N removidos por pedido dueña:
+     la matriz queda FIJA en 5 meses pasados + mes actual. La navegación
+     vieja queda accesible solo en el modo "mom" (mes vs mes). #}
   <div class="no-print flex items-center gap-2 mb-4 flex-wrap">
-    <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n) }}"
+    <a href="{{ url_for('informes.historico_12m', modo='matriz') }}"
        class="text-sm px-3 py-1.5 rounded border
               {% if modo != 'mom' %}bg-slate-900 text-white border-slate-900
               {% else %}border-slate-300 hover:bg-slate-100 text-slate-700{% endif %}">
-      Matriz
+      Últimos 5 meses + actual
     </a>
     <a href="{{ url_for('informes.historico_12m', modo='mom') }}"
        class="text-sm px-3 py-1.5 rounded border
@@ -140,45 +143,17 @@
               {% else %}border-slate-300 hover:bg-slate-100 text-slate-700{% endif %}">
       Mes vs mes
     </a>
-
-    {% if modo != 'mom' %}
+    {% if modo != 'mom' and snap_info %}
       <div class="flex-1"></div>
-      {% set prev_off = data.nav.prev_offset if data.get('nav') else none %}
-      {% set next_off = data.nav.next_offset if data.get('nav') else none %}
-      {% if prev_off is not none %}
-        <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=prev_off) }}"
-           class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
-          ← Anteriores
-        </a>
-      {% else %}
-        <span class="text-sm px-3 py-1.5 rounded border border-slate-200 text-slate-300 cursor-not-allowed">
-          ← Anteriores
-        </span>
-      {% endif %}
-      {% if data.meses and data.meses|length > 0 %}
-        <span class="text-xs text-slate-500 px-2">
-          {{ MES_ABRV[data.meses[0][1]-1] }} {{ data.meses[0][0] }} —
-          {{ MES_ABRV[data.meses[-1][1]-1] }} {{ data.meses[-1][0] }}
-        </span>
-      {% endif %}
-      {% if next_off is not none %}
-        <a href="{{ url_for('informes.historico_12m', modo='matriz', n=n, offset=next_off) }}"
-           class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
-          Siguientes →
-        </a>
-      {% else %}
-        <span class="text-sm px-3 py-1.5 rounded border border-slate-200 text-slate-300 cursor-not-allowed">
-          Siguientes →
-        </span>
-      {% endif %}
-      <form method="get" class="flex items-center gap-2 ml-2">
-        <input type="hidden" name="modo" value="matriz">
-        <input type="hidden" name="offset" value="{{ offset }}">
-        <label class="text-xs text-slate-500">N meses</label>
-        <input type="number" name="n" value="{{ n }}" min="1" max="24"
-               class="w-16 rounded border border-slate-300 bg-white px-2 py-1 text-sm tabular-nums">
-        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
-      </form>
+      <span class="text-xs text-slate-500">
+        {% if snap_info.accion == 'inserted' %}
+          ✓ Snapshot del mes actual tomado (id {{ snap_info.id_historia }})
+        {% elif snap_info.accion == 'throttled' %}
+          ⏱ Snapshot reciente (< 1h) — no se tomó nuevo
+        {% elif snap_info.accion == 'error' %}
+          ⚠ No se pudo tomar snapshot: {{ snap_info.error }}
+        {% endif %}
+      </span>
     {% endif %}
   </div>
 
@@ -261,20 +236,58 @@
     </div>
 
     {# ============================================================
-       RENDER MATRIZ
+       RENDER MATRIZ (TMT 2026-05-20 — nueva estructura `columnas`)
+       Cada columna del mes actual trae botones validar / borrar.
        ============================================================ #}
     {% if modo != 'mom' %}
-      <table class="w-full text-sm h12-tbl">
+      {% set _ncols = data.columnas | length %}
+      <table class="w-full text-sm h12-tbl" id="hist-tabla">
         <thead>
           <tr>
             <th class="first">Indicador</th>
-            {% for (a_, m_) in data.meses %}
-              <th>
-                {{ MES_ABRV[m_-1] }}
-                <span class="yr">{{ a_ }}</span>
+            {% for c in data.columnas %}
+              <th class="{% if c.es_mes_actual %}bg-sky-50{% endif %}">
+                {{ MES_ABRV[c.mes-1] }}
+                <span class="yr">{{ c.anio }}</span>
+                {% if c.es_mes_actual %}
+                  <div class="text-[9px] text-sky-600 mt-0.5">
+                    {% if c.fecha_crea %}{{ c.fecha_crea.strftime('%d/%m %H:%M') }}{% endif %}
+                    {% if c.es_canonico_default %}
+                      <span class="ml-1 px-1 rounded bg-sky-200 text-sky-900 font-semibold">DEFAULT</span>
+                    {% endif %}
+                  </div>
+                {% endif %}
               </th>
             {% endfor %}
           </tr>
+          {# Fila de acciones SOLO sobre las columnas del mes actual. #}
+          {% set tiene_actual = false %}
+          {% for c in data.columnas if c.es_mes_actual %}{% set tiene_actual = true %}{% endfor %}
+          {% if tiene_actual %}
+          <tr class="no-print">
+            <th class="first text-[10px] uppercase text-slate-400">Acciones</th>
+            {% for c in data.columnas %}
+              <th class="text-center">
+                {% if c.es_mes_actual and c.id_historia %}
+                  <div class="flex flex-col items-center gap-0.5">
+                    <button type="button"
+                            class="hist-validar text-[10px] px-1.5 py-0 rounded bg-emerald-100 text-emerald-800 hover:bg-emerald-200 font-medium"
+                            data-id="{{ c.id_historia }}"
+                            title="Validar este snapshot (borra los otros del mes actual)">
+                      ✓ Validar
+                    </button>
+                    <button type="button"
+                            class="hist-borrar text-[10px] px-1.5 py-0 rounded bg-rose-100 text-rose-800 hover:bg-rose-200"
+                            data-id="{{ c.id_historia }}"
+                            title="Borrar este snapshot (mantiene los demás)">
+                      🗑 Borrar
+                    </button>
+                  </div>
+                {% endif %}
+              </th>
+            {% endfor %}
+          </tr>
+          {% endif %}
         </thead>
         <tbody>
           {# OPERATIVO #}
@@ -282,25 +295,21 @@
             <tr class="row-{{ linea.color }} border-t border-slate-100">
               <td class="label">{{ linea.label }}</td>
               {% for v in linea.valores %}
-                <td class="num">
+                {% set c = data.columnas[loop.index0] %}
+                <td class="num {% if c.es_mes_actual %}bg-sky-50/40{% endif %}">
                   {{ fmt_val(v, linea.fmt) }}
-                  {% set d = linea.delta_pct[loop.index0] %}
-                  {% if d is not none and (d | abs) >= 0.05 %}
-                    <span class="delta {% if d >= 0 %}up{% else %}down{% endif %}">
-                      {{ '+' if d >= 0 else '' }}{{ '%.1f' % d }}%
-                    </span>
-                  {% endif %}
                 </td>
               {% endfor %}
             </tr>
           {% endfor %}
-          <tr class="gap"><td colspan="{{ data.meses|length + 1 }}"></td></tr>
+          <tr class="gap"><td colspan="{{ _ncols + 1 }}"></td></tr>
           {# BALANCE #}
           {% for linea in data.lineas if linea.section == 'balance' %}
             <tr class="row-{{ linea.color }}{% if loop.first %} sep{% else %} border-t border-slate-100{% endif %}">
               <td class="label">{{ linea.label }}</td>
               {% for v in linea.valores %}
-                <td class="num">
+                {% set c = data.columnas[loop.index0] %}
+                <td class="num {% if c.es_mes_actual %}bg-sky-50/40{% endif %}">
                   {{ fmt_val(v, linea.fmt) }}
                 </td>
               {% endfor %}
@@ -308,6 +317,48 @@
           {% endfor %}
         </tbody>
       </table>
+
+      {# JS para los botones Validar / Borrar del mes actual. #}
+      <script>
+        (function() {
+          const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
+                    || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+          function postAction(url, payload) {
+            return fetch(url, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+              body: JSON.stringify(payload || {}),
+            }).then(r => r.json());
+          }
+          document.querySelectorAll('.hist-validar').forEach(btn => {
+            btn.addEventListener('click', () => {
+              if (!confirm('¿Validar esta columna como buena? Se borrarán los otros snapshots del mes actual.')) return;
+              const id = btn.dataset.id;
+              postAction('/informes/historico-12m/_api/' + id + '/validar').then(j => {
+                if (j && j.ok) {
+                  window.location.reload();
+                } else {
+                  alert('No se pudo validar: ' + ((j && j.error) || 'error'));
+                }
+              }).catch(e => alert('Error de red: ' + e.message));
+            });
+          });
+          document.querySelectorAll('.hist-borrar').forEach(btn => {
+            btn.addEventListener('click', () => {
+              if (!confirm('¿Borrar este snapshot? La otra columna del mes actual queda como única.')) return;
+              const id = btn.dataset.id;
+              postAction('/informes/historico-12m/_api/' + id + '/borrar').then(j => {
+                if (j && j.ok) {
+                  window.location.reload();
+                } else {
+                  alert('No se pudo borrar: ' + ((j && j.error) || 'error'));
+                }
+              }).catch(e => alert('Error de red: ' + e.message));
+            });
+          });
+        })();
+      </script>
     {% else %}
     {# ============================================================
        RENDER MES VS MES

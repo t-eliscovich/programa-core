@@ -103,36 +103,34 @@ def balance_compras():
 
 
 # Feature B — matriz histórica TINT.BAT (TMT 2026-05-19 v7).
+# TMT 2026-05-20 — refactor: ahora la vista DEFAULT es la matriz fija 5+1
+# (5 meses pasados + mes actual con múltiples snapshots para comparar).
+# Toma snapshot del mes actual al entrar (throttle 1h) y permite validar
+# o borrar cada snapshot del mes actual.
 @informes_bp.route("/informes/historico-12m")
 @requiere_login
 @requiere_permiso("informes.ver")
 def historico_12m():
-    """Matriz histórica estilo TINT.BAT, paginable + comparación mes vs mes.
+    """Matriz fija 5 meses pasados + mes actual (con N snapshots).
 
-    Query params:
-      modo    "matriz" (default) o "mom" (mes vs mes).
-      n       cantidad de columnas en modo matriz (default 5, max 24).
-      offset  meses a correr hacia atrás la ventana (default 0).
-      a_a / m_a    año/mes del primer mes en modo "mom" (referencia).
-      a_b / m_b    año/mes del segundo mes en modo "mom" (actual).
+    Pedido dueña 2026-05-20: la pantalla siempre muestra los últimos 5
+    meses cerrados + el mes actual. Al entrar, toma un snapshot nuevo
+    del mes actual (sin pisar el anterior, throttle 1h) para que la
+    dueña pueda comparar. Cada snapshot del mes actual puede ser
+    "validado" (deja éste, borra el resto) o "borrado" (solo éste).
+
+    Query params (todos opcionales):
+      modo    "matriz" (default), "mom" (mes vs mes — modo viejo).
+      a_a/m_a/a_b/m_b: para modo "mom".
     """
     modo = (request.args.get("modo") or "matriz").strip().lower()
     if modo not in ("matriz", "mom"):
         modo = "matriz"
-    try:
-        n = int(request.args.get("n") or 5)
-    except (TypeError, ValueError):
-        n = 5
-    n = max(1, min(n, 24))
-    try:
-        offset = int(request.args.get("offset") or 0)
-    except (TypeError, ValueError):
-        offset = 0
-    offset = max(0, offset)
 
     error = None
     data: dict = {}
     mom: dict = {}
+    snap_info: dict = {}
     meses_disponibles: list[tuple[int, int]] = []
 
     if modo == "mom":
@@ -161,19 +159,56 @@ def historico_12m():
                    "lineas": [], "meses_sin_snap": []}
             error = str(e)
     else:
+        # Auto-tomar snapshot del mes actual (con throttle de 1h).
+        # Pedido dueña: "cuando entro se agrega una nueva columna con el
+        # mes actual sin borrar el ultimo mes actual".
         try:
-            data = queries.historico_12m_matriz(meses_atras=n, offset_meses=offset)
+            usuario = (g.user or {}).get("username", "web")
+            snap_info = queries.tomar_snapshot_mes_actual(usuario=usuario)
         except Exception as e:  # noqa: BLE001
-            data = {"meses": [], "lineas": [],
-                    "snapshots_existentes": 0, "meses_total": n,
-                    "offset_meses": offset, "meses_sin_snap": [],
-                    "nav": {"prev_offset": None, "next_offset": None}}
+            snap_info = {"accion": "error", "error": str(e)}
+        try:
+            data = queries.historico_5m_con_actual(max_actual=3)
+        except Exception as e:  # noqa: BLE001
+            data = {"columnas": [], "lineas": [], "meses_sin_snap": [],
+                    "n_actual": 0, "hoy": None}
             error = str(e)
+
     return render_template(
         "informes/historico_12m.html",
-        data=data, mom=mom, modo=modo, n=n, offset=offset,
+        data=data, mom=mom, modo=modo,
         meses_disponibles=meses_disponibles, error=error,
+        snap_info=snap_info,
     )
+
+
+@informes_bp.route("/informes/historico-12m/_api/<int:id_historia>/validar", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def historico_validar(id_historia: int):
+    """Marca un snapshot como canónico — borra los OTROS del mismo mes."""
+    try:
+        r = queries.validar_snapshot(
+            id_historia,
+            usuario=(g.user or {}).get("username", "web"),
+        )
+        return jsonify({"ok": True, **r})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude validar: {e}"}), 500
+
+
+@informes_bp.route("/informes/historico-12m/_api/<int:id_historia>/borrar", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def historico_borrar(id_historia: int):
+    """Borra UN snapshot específico de scintela.historia."""
+    try:
+        n = queries.borrar_snapshot(id_historia)
+        return jsonify({"ok": True, "n_borrados": int(n or 0)})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude borrar: {e}"}), 500
 
 
 @informes_bp.route("/balance/utilidad-debug")
