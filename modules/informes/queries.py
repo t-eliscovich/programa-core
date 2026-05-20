@@ -1260,33 +1260,76 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
                 "motivo": "ya al día (sin días hábiles pendientes)",
             }
 
-        # Aplicar UNA vez por cada día hábil pendiente.
+        # TMT 2026-05-20 — pedido dueña: el cron diario ahora se DRIVEA
+        # de la tabla `scintela.provisiones` (no de la lista hardcoded
+        # PROVISIONES_DIARIAS). Para cada provisión:
+        #   1. Buscar la posdat YY que matchea por concepto (starts-with
+        #      bidireccional case-insensitive, longitud ≥ 3).
+        #   2. Si existe → importe += cuota_mensual / 30.
+        #   3. Si no existe → se saltea (no toca ese día — la dueña puede
+        #      crear el posdat YY manualmente o dejar la provisión sola).
+        #
+        # La lista hardcoded queda como FALLBACK SOLO para provisiones
+        # legacy que todavía no están en `scintela.provisiones`. Una vez
+        # que la dueña migre todo, podés borrar el fallback.
+        provisiones_rows = db.fetch_all(
+            "SELECT id_provisiones, concepto, importe "
+            "FROM scintela.provisiones "
+            "WHERE COALESCE(importe, 0) > 0",
+            conn=conn,
+        ) or []
         for _dia in dias_a_aplicar:
             cats_dia = 0
-            for prov_filter, matcher_kind, pattern, monto in PROVISIONES_DIARIAS:
-                where_extra, params = _condicion_provision(prov_filter, matcher_kind, pattern)
-                sql = f"""
+            # 1. Driver nuevo: cada provisión aplica su cuota/30.
+            for pr in provisiones_rows:
+                concepto = (pr.get("concepto") or "").strip()
+                if len(concepto) < 3:
+                    continue
+                diario = float(pr.get("importe") or 0) / 30.0
+                if diario <= 0:
+                    continue
+                # Match aproximado contra el concepto del posdat YY.
+                # Mismo criterio que el LATERAL JOIN viejo: starts-with
+                # bidireccional, case-insensitive.
+                ret = db.fetch_one(
+                    """
                     WITH first_match AS (
                         SELECT id_posdat
                           FROM scintela.posdat
                          WHERE COALESCE(banc, 0) <> 9
                            AND (anulada IS NOT TRUE OR anulada IS NULL)
-                           AND {where_extra}
+                           AND UPPER(COALESCE(prov, '')) = 'YY'
+                           AND LENGTH(TRIM(COALESCE(concepto, ''))) >= 3
+                           AND (
+                                UPPER(TRIM(COALESCE(concepto, '')))
+                                  LIKE UPPER(%(c)s) || '%%'
+                             OR UPPER(%(c)s)
+                                  LIKE UPPER(TRIM(COALESCE(concepto, ''))) || '%%'
+                           )
                          ORDER BY id_posdat
                          LIMIT 1
                     )
                     UPDATE scintela.posdat p
-                       SET importe = COALESCE(p.importe, 0) + %s,
+                       SET importe = COALESCE(p.importe, 0) + %(diario)s,
                            fecha_modifica = CURRENT_TIMESTAMP,
                            usuario_modifica = 'provisiones_diarias'
                       FROM first_match fm
                      WHERE p.id_posdat = fm.id_posdat
                     RETURNING p.id_posdat
-                """
-                ret = db.fetch_one(sql, tuple(params + [monto]), conn=conn)
+                    """,
+                    {"c": concepto, "diario": diario},
+                    conn=conn,
+                )
                 if ret:
                     cats_dia += 1
-                    total += monto
+                    total += diario
+            # 2. Fallback legacy: la lista hardcoded PROVISIONES_DIARIAS.
+            # Sólo aplica a posdats que NO matchearon con la tabla nueva
+            # (chequeamos por id_posdat distinto). Útil mientras la dueña
+            # migra todas las categorías. TMT 2026-05-20: dejar comentado
+            # si después de un mes no se ve usado.
+            # for prov_filter, matcher_kind, pattern, monto in PROVISIONES_DIARIAS:
+            #     ... (código viejo)
             cats_ultima = cats_dia
 
         # Actualizar marker — siempre avanzar a hoy

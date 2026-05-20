@@ -62,14 +62,14 @@
           <td class="px-1 py-2 text-center font-mono" data-stop="1">
             {% if tiene_permiso('proveedores.editar') %}
               <select class="prov-tipo-edit bg-slate-100 dark:bg-slate-800 border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-0.5 py-0 text-[11px] font-medium uppercase w-12"
-                      title="Tipo: U=Máquina · H=Hilado · Q=Químicos · Y=Otro">
+                      title="Tipo: U=Máquina · H=Hilado · Q=Químicos · B=Bancos · Y=Otro">
                 <option value="">—</option>
                 {% set _t = (p.tipo or '').upper() %}
-                {% for code, lbl in [('U','U · Máquina'),('H','H · Hilado'),('Q','Q · Químicos'),('Y','Y · Otro')] %}
+                {% for code, lbl in [('U','U · Máquina'),('H','H · Hilado'),('Q','Q · Químicos'),('B','B · Bancos'),('Y','Y · Otro')] %}
                   <option value="{{ code }}" {% if code == _t %}selected{% endif %}>{{ code }}</option>
                 {% endfor %}
                 {# Si el tipo actual no está en los canónicos, lo mostramos como legacy. #}
-                {% if _t and _t not in ['U','H','Q','Y'] %}
+                {% if _t and _t not in ['U','H','Q','B','Y'] %}
                   <option value="{{ _t }}" selected>{{ _t }}</option>
                 {% endif %}
               </select>
