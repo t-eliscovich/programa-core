@@ -217,10 +217,15 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         "uvent":     float(ventas.get("uvent") or 0),
         "kcom":      float(compras.get("kcom") or 0),
         "ucom":      float(compras.get("ucom") or 0),
-        # TMT 2026-05-20 v2 — campos que ANTES quedaban en 0 (Federico #4).
-        "anticipos": float(bal.get("antic", 0) or 0),
-        "stock":     float(bal.get("vsto", 0) or 0),
-        "uqui":      float(bal.get("vqx", 0) or 0),
+        # TMT 2026-05-20 v3 — campos que ANTES quedaban en 0 (Federico #4).
+        # CUIDADO con stock vs ustock: en scintela.historia,
+        #   stock  = KG de MP+Producto Terminado
+        #   ustock = US$ del stock (lo que el template muestra como
+        #            'STOCK MP+PROD' en miles de dólares).
+        # bal.vsto es US$, así que lo mapeamos a ustock (no a stock).
+        "anticipos":  float(bal.get("antic", 0) or 0),
+        "ustock":     float(bal.get("vsto", 0) or 0),
+        "uqui":       float(bal.get("vqx", 0) or 0),
         "maquinaria": float(bal.get("umaq", 0) or 0),
         "realty":     float(bal.get("uact", 0) or 0),
         "patrimonio": float(bal.get("patr", 0) or 0),
@@ -247,9 +252,13 @@ def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
     maquinaria, realty, patrimonio, usret, usuti. Sin estas el
     histórico mostraba 0,0 en mes corriente (Federico #4).
     """
-    # Defaults para campos opcionales (compatibilidad con calls viejas).
+    # TMT 2026-05-20 v3 — defaults + nombres de columnas correctos.
+    # OJO: scintela.historia tiene 'stock' (kg) y 'ustock' (US$). El
+    # template del histórico lee 'ustock'. calcular_kpis() popula
+    # 'ustock' (no 'stock'). 'stock' se deja en NULL — el campo de kg
+    # no se snapshota desde el balance.
     kpis_full = {
-        "anticipos": 0, "stock": 0, "uqui": 0,
+        "anticipos": 0, "ustock": 0, "uqui": 0,
         "maquinaria": 0, "realty": 0, "patrimonio": 0,
         "usret": 0, "usuti": 0,
         **kpis,
@@ -259,12 +268,12 @@ def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
         INSERT INTO scintela.historia
             (fecha, cart, deuda, banco, gasto, retiro,
              kvent, uvent, kcom, ucom,
-             anticipos, stock, uqui, maquinaria, realty,
+             anticipos, ustock, uqui, maquinaria, realty,
              patrimonio, usret, usuti,
              usuario_crea)
         VALUES (%(fecha)s, %(cart)s, %(deuda)s, %(banco)s, %(gasto)s, %(retiro)s,
                 %(kvent)s, %(uvent)s, %(kcom)s, %(ucom)s,
-                %(anticipos)s, %(stock)s, %(uqui)s, %(maquinaria)s, %(realty)s,
+                %(anticipos)s, %(ustock)s, %(uqui)s, %(maquinaria)s, %(realty)s,
                 %(patrimonio)s, %(usret)s, %(usuti)s,
                 %(usuario)s)
         RETURNING id_historia
@@ -277,7 +286,7 @@ def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
 def actualizar_snapshot(id_historia: int, kpis: dict, usuario: str = "snapshot_auto") -> int:
     """Sobreescribe un snapshot existente — sólo si el caller pasó --force."""
     kpis_full = {
-        "anticipos": 0, "stock": 0, "uqui": 0,
+        "anticipos": 0, "ustock": 0, "uqui": 0,
         "maquinaria": 0, "realty": 0, "patrimonio": 0,
         "usret": 0, "usuti": 0,
         **kpis,
@@ -295,7 +304,7 @@ def actualizar_snapshot(id_historia: int, kpis: dict, usuario: str = "snapshot_a
                kcom = %(kcom)s,
                ucom = %(ucom)s,
                anticipos = %(anticipos)s,
-               stock = %(stock)s,
+               ustock = %(ustock)s,
                uqui = %(uqui)s,
                maquinaria = %(maquinaria)s,
                realty = %(realty)s,
