@@ -87,8 +87,18 @@ def _host() -> str:
 def calcular_kpis(fecha_cierre: date) -> dict:
     """Calcula los KPIs del mes que termina en `fecha_cierre`.
 
-    Todas las queries son defensivas (COALESCE). Si una tabla no existe
-    o está vacía, el campo queda en 0.
+    TMT 2026-05-20 v2 — antes solo calculaba 9 campos (cart, deuda,
+    banco, gasto, retiro, kvent, uvent, kcom, ucom). El snapshot
+    insertaba ESOS 9 y los otros 16 columnas de scintela.historia
+    quedaban en NULL/0, lo que daba snapshots "mayo 2026" con
+    ANTICIPOS=0, STOCK=0, MAQUINARIA=0 etc. (Federico #4).
+
+    Ahora también calcula: anticipos, stock (vsto=MP+PROD), uqui
+    (stock químicos), maquinaria, realty (terrenos+edificios),
+    patrimonio, utilidad, retiros acumulados.
+
+    Si `informe_balance()` falla, fallback a los queries simples
+    originales (defensivo).
     """
     primer_dia = fecha_cierre.replace(day=1)
 
@@ -98,6 +108,17 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         except Exception as e:
             log.warning("Query falló (campo queda en 0): %s — %s", sql.split()[1] if sql else "?", e)
             return {}
+
+    # Fuente única: informe_balance() ya calcula TODOS los KPIs que el
+    # balance muestra en pantalla. Lo usamos en lugar de duplicar la
+    # lógica acá. Si falla por cualquier motivo, los campos avanzados
+    # quedan en 0 (fallback al comportamiento legacy).
+    try:
+        from modules.informes import queries as _iq
+        bal = _iq.informe_balance() or {}
+    except Exception as e:  # noqa: BLE001
+        log.warning("informe_balance falló — campos avanzados en 0: %s", e)
+        bal = {}
 
     # Cartera viva al cierre — saldos > 0 con stat válido
     cart = safe_one(
@@ -178,17 +199,33 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         (primer_dia, fecha_cierre),
     )
 
+    # Si bal está completo, sobrescribimos los KPIs ya conocidos para
+    # mantener UNA sola fuente de verdad (lo que /informes/balance
+    # muestra ES lo que se snapshotea).
+    cart_bal   = bal.get("totc", 0) + bal.get("totf", 0)
+    deuda_bal  = bal.get("totp", 0)
+    banco_bal  = bal.get("salbanc", banco)
+
     return {
-        "fecha":  fecha_cierre,
-        "cart":   float(cart),
-        "deuda":  float(deuda),
-        "banco":  float(banco),
-        "gasto":  float(gasto),
-        "retiro": float(retiro),
-        "kvent":  float(ventas.get("kvent") or 0),
-        "uvent":  float(ventas.get("uvent") or 0),
-        "kcom":   float(compras.get("kcom") or 0),
-        "ucom":   float(compras.get("ucom") or 0),
+        "fecha":     fecha_cierre,
+        "cart":      float(cart_bal or cart),
+        "deuda":     float(deuda_bal or deuda),
+        "banco":     float(banco_bal or banco),
+        "gasto":     float(gasto),
+        "retiro":    float(retiro),
+        "kvent":     float(ventas.get("kvent") or 0),
+        "uvent":     float(ventas.get("uvent") or 0),
+        "kcom":      float(compras.get("kcom") or 0),
+        "ucom":      float(compras.get("ucom") or 0),
+        # TMT 2026-05-20 v2 — campos que ANTES quedaban en 0 (Federico #4).
+        "anticipos": float(bal.get("antic", 0) or 0),
+        "stock":     float(bal.get("vsto", 0) or 0),
+        "uqui":      float(bal.get("vqx", 0) or 0),
+        "maquinaria": float(bal.get("umaq", 0) or 0),
+        "realty":     float(bal.get("uact", 0) or 0),
+        "patrimonio": float(bal.get("patr", 0) or 0),
+        "usuti":      float(bal.get("utilidad", 0) or 0),
+        "usret":      float(bal.get("uret", 0) or retiro),
     }
 
 
@@ -204,23 +241,47 @@ def existe_snapshot(fecha: date) -> dict | None:
 
 
 def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
-    """Inserta un nuevo snapshot. Devuelve el id_historia generado."""
+    """Inserta un nuevo snapshot. Devuelve el id_historia generado.
+
+    TMT 2026-05-20 v2 — agregadas columnas anticipos, stock, uqui,
+    maquinaria, realty, patrimonio, usret, usuti. Sin estas el
+    histórico mostraba 0,0 en mes corriente (Federico #4).
+    """
+    # Defaults para campos opcionales (compatibilidad con calls viejas).
+    kpis_full = {
+        "anticipos": 0, "stock": 0, "uqui": 0,
+        "maquinaria": 0, "realty": 0, "patrimonio": 0,
+        "usret": 0, "usuti": 0,
+        **kpis,
+    }
     row = db.execute_returning(
         """
         INSERT INTO scintela.historia
             (fecha, cart, deuda, banco, gasto, retiro,
-             kvent, uvent, kcom, ucom, usuario_crea)
+             kvent, uvent, kcom, ucom,
+             anticipos, stock, uqui, maquinaria, realty,
+             patrimonio, usret, usuti,
+             usuario_crea)
         VALUES (%(fecha)s, %(cart)s, %(deuda)s, %(banco)s, %(gasto)s, %(retiro)s,
-                %(kvent)s, %(uvent)s, %(kcom)s, %(ucom)s, %(usuario)s)
+                %(kvent)s, %(uvent)s, %(kcom)s, %(ucom)s,
+                %(anticipos)s, %(stock)s, %(uqui)s, %(maquinaria)s, %(realty)s,
+                %(patrimonio)s, %(usret)s, %(usuti)s,
+                %(usuario)s)
         RETURNING id_historia
         """,
-        {**kpis, "usuario": usuario[:50]},
+        {**kpis_full, "usuario": usuario[:50]},
     )
     return int(row["id_historia"]) if row else 0
 
 
 def actualizar_snapshot(id_historia: int, kpis: dict, usuario: str = "snapshot_auto") -> int:
     """Sobreescribe un snapshot existente — sólo si el caller pasó --force."""
+    kpis_full = {
+        "anticipos": 0, "stock": 0, "uqui": 0,
+        "maquinaria": 0, "realty": 0, "patrimonio": 0,
+        "usret": 0, "usuti": 0,
+        **kpis,
+    }
     return db.execute(
         """
         UPDATE scintela.historia
@@ -233,11 +294,19 @@ def actualizar_snapshot(id_historia: int, kpis: dict, usuario: str = "snapshot_a
                uvent = %(uvent)s,
                kcom = %(kcom)s,
                ucom = %(ucom)s,
+               anticipos = %(anticipos)s,
+               stock = %(stock)s,
+               uqui = %(uqui)s,
+               maquinaria = %(maquinaria)s,
+               realty = %(realty)s,
+               patrimonio = %(patrimonio)s,
+               usret = %(usret)s,
+               usuti = %(usuti)s,
                fecha_modifica = CURRENT_TIMESTAMP,
                usuario_modifica = %(usuario)s
          WHERE id_historia = %(id_historia)s
         """,
-        {**kpis, "id_historia": id_historia, "usuario": usuario[:50]},
+        {**kpis_full, "id_historia": id_historia, "usuario": usuario[:50]},
     )
 
 

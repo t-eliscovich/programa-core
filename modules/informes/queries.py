@@ -4994,13 +4994,19 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
 
 def tomar_snapshot_mes_actual(
     usuario: str = "web",
-    throttle_segundos: int = 3600,
+    throttle_segundos: int = 86400,  # TMT 2026-05-20 v2: 1h → 24h
 ) -> dict:
     """Inserta un snapshot del mes actual en scintela.historia.
 
     TMT 2026-05-20 — pedido dueña: al entrar a /historico-12m se toma
     un snapshot nuevo del mes en curso, sin pisar el anterior, para
     poder comparar.
+
+    TMT 2026-05-20 v2 — throttle subido de 1h a 24h. Antes cada hora
+    se creaba una columna nueva del mes actual; después de 3 horas
+    aparecían 3 columnas duplicadas en /historico-12m. Ahora máximo
+    1 snapshot por día (la dueña valida/borra desde la UI si quiere
+    comparar varios).
 
     `throttle_segundos` evita re-snapshot por refresh accidental: si
     el último snapshot del mes actual es de hace menos que ese tiempo,

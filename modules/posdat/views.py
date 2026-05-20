@@ -304,11 +304,12 @@ def anular(id_posdat: int):
 def lista():
     q = request.args.get("q", "").strip()
     prov = (request.args.get("prov") or "").strip().upper() or None
-    # TMT 2026-05-20 — default cambiado a False (= todas). La dueña
-    # reportó: "si no pongo nada en los filtros y pongo buscar me va
-    # de 2 millones a 7 millones". El checkbox "Sólo abiertas" se
-    # eliminó de la UI; queda como query-param opcional para CSV/legacy.
-    solo_abiertas = request.args.get("abiertas") == "1"
+    # TMT 2026-05-20 v2 — vuelve default solo_abiertas=True (pedido
+    # dueña: "aca solo hay que tomar banc=0"). Sin checkbox visible:
+    # la app SIEMPRE filtra banc=0 desde la UI. El total del hero y
+    # las filas son consistentes (= deuda viva, no pagada todavía).
+    # ?abiertas=0 en URL sigue funcionando para ver TODAS legacy.
+    solo_abiertas = request.args.get("abiertas") != "0"
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     # TMT 2026-05-20 — tab='posdatados' (default) excluye prov='YY';

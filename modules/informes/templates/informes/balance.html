@@ -55,11 +55,12 @@
   .informe-balance td.num-cell {
     text-align: right; padding: 8px 12px;
   }
-  /* TMT 2026-05-20 PASADA 6 Federico #2 — sumandos (cheques+facturas,
-     maquinaria+terrenos) corren una "columna" a la izquierda para que
-     visualmente NO se mezclen con la columna del subtotal. */
+  /* TMT 2026-05-20 v2 — sumandos (cheques+facturas, maquinaria+terrenos)
+     corren MÁS a la izquierda (pedido dueña: "necesitamos correrlo más
+     a la izquierda"). Antes era padding-right: 36px; ahora 80px y
+     letter-spacing distinto para separar visualmente. */
   .informe-balance td.num-cell--sumando {
-    padding-right: 36px;
+    padding-right: 80px;
     font-size: 12px;
     color: rgb(148 163 184);
   }
@@ -363,17 +364,14 @@
             <td class="num-cell">{{ (b.totl - b.uret) | num_es(0) }}</td>
           </tr>
 
-          {# TMT 2026-05-20 — pedido dueña:
-             - Link de Pasivos → /deudas (no /posdat, que era confuso).
-             - Agregar fila auxiliar Posdatas con el mismo total, debería
-               coincidir con Deudas (ambas leen banc=0 + importe>0). #}
+          {# TMT 2026-05-20 v2 — pedido dueña: "en pasivos, deja
+             pasivos. no hace falta el postadata. borrar." La fila
+             aux '↳ Posdatas (total)' era el mismo número 2 veces
+             seguidas — ruido. Link de Pasivos sigue yendo a /posdat
+             para drill-down. #}
           <tr class="fila-total">
-            <td class="label-cell"><a href="{{ url_for('informes.deudas') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
+            <td class="label-cell"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">Pasivos</a></td>
             <td class="num-cell neg">{{ b.totp | num_es(0) }}</td>
-          </tr>
-          <tr class="fila-aux border-t border-slate-100 dark:border-slate-800">
-            <td class="label-cell pl-6 text-slate-500"><a href="{{ url_for('posdat.lista') }}" class="hover:text-blue-600 hover:underline">↳ Posdatas (total)</a></td>
-            <td class="num-cell text-slate-600">{{ b.totp | num_es(0) }}</td>
           </tr>
 
           {# ─── PATRIMONIO NETO — la fila más importante. Bigger + bold. ─── #}
