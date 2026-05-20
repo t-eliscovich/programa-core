@@ -326,6 +326,7 @@ def deudas():
             filas,
             columnas=[
                 ("codigo_prov", "Código"), ("nombre", "Proveedor"),
+                ("tipo", "Tipo"),
                 ("n_posdats", "# posdatados"), ("saldo_total", "Saldo"),
                 ("posdat_mas_vieja", "Posdat más vieja"),
                 ("vence_mas_viejo", "Vence más vieja"),
@@ -333,7 +334,61 @@ def deudas():
             filename="deudas_proveedores.csv",
         )
     total = sum(float(r["saldo_total"] or 0) for r in filas)
-    return render_template("informes/deudas.html", filas=filas, total=total, error=error)
+
+    # TMT 2026-05-20 — Agrupar por categoría según proveedor.tipo (pedido
+    # dueña: "subtotales de mat.prima, maquinaria, bancos, etc. con %").
+    # Mapeo de tipos a categorías canónicas:
+    #   H, Q  → Mat. Prima
+    #   U     → Maquinaria
+    #   B     → Bancos
+    #   Y, '' → Otros / Servicios
+    cats_orden = [
+        (1, "Mat. Prima",  {"H", "Q"}),
+        (2, "Maquinaria",  {"U"}),
+        (3, "Bancos",      {"B"}),
+        (4, "Otros",       {"Y", ""}),
+    ]
+
+    def _categoria_de(tipo: str) -> tuple[int, str]:
+        t = (tipo or "").strip().upper()
+        for orden, label, codes in cats_orden:
+            if t in codes:
+                return (orden, label)
+        return (4, "Otros")
+
+    # Anotar cada fila con categoria + categoria_orden + pct.
+    filas_anotadas: list[dict] = []
+    for r in filas:
+        cat_orden, cat_label = _categoria_de(r.get("tipo") or "")
+        saldo = float(r.get("saldo_total") or 0)
+        filas_anotadas.append({
+            **dict(r),
+            "categoria":       cat_label,
+            "categoria_orden": cat_orden,
+            "pct":             round(100.0 * saldo / total, 1) if total > 0 else 0.0,
+        })
+    # Sort por categoría ASC + dentro por saldo DESC.
+    filas_anotadas.sort(
+        key=lambda r: (r["categoria_orden"], -float(r.get("saldo_total") or 0)),
+    )
+
+    # Subtotales por categoría (con %).
+    subtotales: dict[int, dict] = {}
+    for r in filas_anotadas:
+        cat = r["categoria_orden"]
+        s = subtotales.setdefault(cat, {
+            "orden": cat, "label": r["categoria"], "n": 0, "total": 0.0,
+        })
+        s["n"]     += 1
+        s["total"] += float(r.get("saldo_total") or 0)
+    for s in subtotales.values():
+        s["pct"] = round(100.0 * s["total"] / total, 1) if total > 0 else 0.0
+
+    return render_template(
+        "informes/deudas.html",
+        filas=filas_anotadas, total=total, error=error,
+        subtotales=subtotales,
+    )
 
 
 @informes_bp.route("/_diag/stock")

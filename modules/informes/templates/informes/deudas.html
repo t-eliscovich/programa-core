@@ -23,37 +23,82 @@
      - Columnas "Compras" y "Más vieja" removidas (inútiles).
      - Cada proveedor es un link a /posdat?prov=XX (que tiene su botón
        "← Volver a todos" para regresar a la lista de deudas). #}
+  {# TMT 2026-05-20 — agrupado por categoría (Mat.Prima / Maquinaria /
+     Bancos / Otros) con subtotales + % por categoría y por proveedor.
+     Pedido dueña: "Copiar del dbase" — DEUD con SUBTOTALES. La categoría
+     se infiere de proveedor.tipo (H/Q → Mat.Prima, U → Maq, B → Bancos). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-5 py-3 text-left font-medium" style="white-space: nowrap;">Código</th>
-          <th class="px-5 py-3 text-left font-medium">Proveedor</th>
-          <th class="px-5 py-3 text-right font-medium">Saldo</th>
+          <th class="px-4 py-2 text-left font-medium" style="white-space: nowrap;">Código</th>
+          <th class="px-4 py-2 text-left font-medium">Proveedor</th>
+          <th class="px-2 py-2 text-center font-medium" style="width:40px;">Tipo</th>
+          <th class="px-4 py-2 text-right font-medium">Saldo</th>
+          <th class="px-4 py-2 text-right font-medium" style="width:60px;">%</th>
         </tr>
       </thead>
       <tbody>
+        {% set ns = namespace(prev_cat=0) %}
         {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
-            onclick="window.location='{{ url_for('posdat.lista', prov=f.codigo_prov) }}'">
-          <td class="px-5 py-2 font-mono text-xs" style="white-space: nowrap;">{{ f.codigo_prov }}</td>
-          <td class="px-5 py-2">
-            <a href="{{ url_for('posdat.lista', prov=f.codigo_prov) }}"
-               class="hover:text-sky-600 hover:underline">{{ f.nombre }}</a>
-          </td>
-          <td class="px-5 py-2 text-right text-mono">{{ f.saldo_total | money_es }}</td>
-        </tr>
+          {% if f.categoria_orden != ns.prev_cat %}
+            {# Cerrar la categoría anterior con su subtotal (excepto el primer header). #}
+            {% if ns.prev_cat %}
+              {% set _s = subtotales.get(ns.prev_cat) %}
+              {% if _s %}
+              <tr class="bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 font-semibold text-xs">
+                <td colspan="3" class="px-4 py-2 text-right text-slate-600 dark:text-slate-300">
+                  Subtotal {{ _s.label }} · {{ _s.n }} proveedor{{ '' if _s.n == 1 else 'es' }}
+                </td>
+                <td class="px-4 py-2 text-right text-mono text-slate-700">{{ _s.total | money_es }}</td>
+                <td class="px-4 py-2 text-right text-mono text-slate-700">{{ _s.pct }}%</td>
+              </tr>
+              {% endif %}
+            {% endif %}
+            {# Header de la nueva categoría. #}
+            <tr class="bg-slate-100 dark:bg-slate-800/70">
+              <td colspan="5" class="px-4 py-1.5 text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 font-semibold">
+                {{ f.categoria }}
+              </td>
+            </tr>
+            {% set ns.prev_cat = f.categoria_orden %}
+          {% endif %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+              onclick="window.location='{{ url_for('posdat.lista', prov=f.codigo_prov) }}'">
+            <td class="px-4 py-1.5 font-mono text-xs" style="white-space: nowrap;">{{ f.codigo_prov }}</td>
+            <td class="px-4 py-1.5">
+              <a href="{{ url_for('posdat.lista', prov=f.codigo_prov) }}"
+                 class="hover:text-sky-600 hover:underline">{{ f.nombre }}</a>
+            </td>
+            <td class="px-2 py-1.5 text-center font-mono text-xs text-slate-500">{{ f.tipo or '' }}</td>
+            <td class="px-4 py-1.5 text-right text-mono">{{ f.saldo_total | money_es }}</td>
+            <td class="px-4 py-1.5 text-right text-mono text-xs text-slate-500">{{ f.pct }}%</td>
+          </tr>
         {% else %}
-        {{ empty_row(3, 'Sin deudas pendientes.', 'No hay posdatados a pagar.') }}
+        {{ empty_row(5, 'Sin deudas pendientes.', 'No hay posdatados a pagar.') }}
         {% endfor %}
+        {# Cerrar la última categoría. #}
+        {% if filas and ns.prev_cat %}
+          {% set _s = subtotales.get(ns.prev_cat) %}
+          {% if _s %}
+          <tr class="bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 font-semibold text-xs">
+            <td colspan="3" class="px-4 py-2 text-right text-slate-600 dark:text-slate-300">
+              Subtotal {{ _s.label }} · {{ _s.n }} proveedor{{ '' if _s.n == 1 else 'es' }}
+            </td>
+            <td class="px-4 py-2 text-right text-mono text-slate-700">{{ _s.total | money_es }}</td>
+            <td class="px-4 py-2 text-right text-mono text-slate-700">{{ _s.pct }}%</td>
+          </tr>
+          {% endif %}
+        {% endif %}
       </tbody>
       {% if filas %}
       <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
         <tr>
-          <td class="px-5 py-3 text-base font-bold text-slate-900 dark:text-slate-100" colspan="2">
+          <td class="px-4 py-3 text-base font-bold text-slate-900 dark:text-slate-100" colspan="3">
             Total <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} proveedores)</span>
           </td>
-          <td class="px-5 py-3 text-right text-mono text-lg font-bold text-slate-900 dark:text-slate-100">{{ total | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono text-lg font-bold text-slate-900 dark:text-slate-100">{{ total | money_es }}</td>
+          <td class="px-4 py-3 text-right text-mono text-xs font-bold text-slate-500">100%</td>
         </tr>
       </tfoot>
       {% endif %}

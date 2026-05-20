@@ -3412,11 +3412,16 @@ def deudas_por_proveedor() -> list[dict]:
     Sólo banc=0 (no instrumentada). banc=1/2 ya descontaron el saldo
     bancario; banc=9 son cheques posdatados ya emitidos — sumarlos como
     deuda double-counta vs el balance. Mismo criterio que TOTP.
+
+    TMT 2026-05-20 — devuelve también `tipo` (proveedor.tipo) para
+    agrupar el informe /deudas por categoría (Mat.Prima H+Q, Maquinaria U,
+    Bancos B, Otros Y/null).
     """
     return db.fetch_all(
         f"""
         SELECT COALESCE(p.codigo_prov, pd.prov)   AS codigo_prov,
                COALESCE(p.nombre, pd.prov, '—')   AS nombre,
+               UPPER(COALESCE(p.tipo, ''))        AS tipo,
                COUNT(pd.id_posdat)                AS n_posdats,
                COALESCE(SUM(pd.importe), 0)       AS saldo_total,
                MIN(pd.fecha)                      AS posdat_mas_vieja,
@@ -3426,7 +3431,7 @@ def deudas_por_proveedor() -> list[dict]:
         WHERE {posdat_deuda_viva_where('pd')}
           AND COALESCE(pd.importe, 0) > 0
           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
-        GROUP BY p.codigo_prov, pd.prov, p.nombre
+        GROUP BY p.codigo_prov, pd.prov, p.nombre, p.tipo
         ORDER BY saldo_total DESC
         """
     )
