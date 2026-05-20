@@ -12,18 +12,39 @@
 {% block content %}
 <div class="max-w-full">
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
-    {% set _v = '$ ' ~ ((resumen.total_abierto or 0) | num_es(0)) %}
-    {% set _e = '· ' ~ (resumen.partidas_abiertas | string) ~ ' partidas abiertas' %}
-    {% if prov %}
-      {# Hero muestra el total del proveedor filtrado #}
+    {# TMT 2026-05-20 — Hero adaptado por tab:
+       - tab='posdatados': hero estándar con total abierto.
+       - tab='yy': hero custom con 2 KPIs (mensual + diario), pedido dueña. #}
+    {% if tab == 'yy' %}
+      <div>
+        <h1 class="text-2xl font-semibold mb-2">Posdatados YY <span class="text-sm font-normal text-slate-500">· cuotas mensuales</span></h1>
+        <div class="grid grid-cols-2 gap-3 max-w-md">
+          <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
+            <div class="text-xs text-sky-700 uppercase tracking-wide">Total mensual</div>
+            <div class="text-xl font-semibold text-sky-900 text-right tabular-nums">$ {{ total_cuota_mensual | num_es(0) }}</div>
+            <div class="text-xs text-sky-700 text-right">{{ resumen.partidas_abiertas or 0 }} provisiones</div>
+          </div>
+          <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+            <div class="text-xs text-emerald-700 uppercase tracking-wide">Total diario</div>
+            <div class="text-xl font-semibold text-emerald-900 text-right tabular-nums">$ {{ total_cuota_diaria | num_es(2) }}</div>
+            <div class="text-xs text-emerald-700 text-right">≈ mensual ÷ 30</div>
+          </div>
+        </div>
+      </div>
+    {% else %}
       {% set _v = '$ ' ~ ((resumen.total_abierto or 0) | num_es(0)) %}
-      {% set _e = '· proveedor ' ~ prov ~ ' · ' ~ (resumen.partidas_abiertas | string) ~ ' partidas' %}
+      {% set _e = '· ' ~ (resumen.partidas_abiertas | string) ~ ' partidas abiertas' %}
+      {% if prov %}
+        {# Hero muestra el total del proveedor filtrado #}
+        {% set _v = '$ ' ~ ((resumen.total_abierto or 0) | num_es(0)) %}
+        {% set _e = '· proveedor ' ~ prov ~ ' · ' ~ (resumen.partidas_abiertas | string) ~ ' partidas' %}
+      {% endif %}
+      {{ page_hero(
+          'Posdatados',
+          kpi_valor=_v,
+          kpi_extra=_e
+      ) }}
     {% endif %}
-    {{ page_hero(
-        'Posdatados',
-        kpi_valor=_v,
-        kpi_extra=_e
-    ) }}
     <div class="no-print flex items-center gap-2 shrink-0">
       {% if prov or q or desde or hasta %}
         <a href="{{ url_for('posdat.lista') }}"
@@ -315,7 +336,36 @@
       const DIAS_MES = 30;
       const fmt2 = n => (isFinite(n) ? Number(n).toFixed(2) : '');
 
+      // TMT 2026-05-20 — al editar la cuota mensual, recalculamos el
+      // importe prorrateado al día de hoy:
+      //   importe = cuota_mensual * día_hoy / días_del_mes_actual
+      // Pedido dueña: "cuando yo modifico la cuota mensual, ejemplo 30
+      // me ponga importe 1 o 0,x si es 31 dias el mes". Día 1 de un mes
+      // de 30 días → importe = 1 exacto. Día 1 de un mes de 31 días →
+      // importe ≈ 0.97. Así el saldo running queda sincronizado con la
+      // nueva cuota desde el inicio del mes, sin esperar al proximo
+      // tick de provisiones_diarias.
+      function calcularImporteHoy(cuotaMensual) {
+        const now = new Date();
+        const diaHoy = now.getDate();
+        const diasMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        return cuotaMensual * diaHoy / diasMes;
+      }
+
+      function actualizarImporteEnUI(tr, nuevoImporte) {
+        // El campo `importe` puede estar como <input> editable o como
+        // texto plano según permisos. Cubrimos ambos.
+        const inp = tr.querySelector('.posdat-importe-edit');
+        if (inp) {
+          inp.value = nuevoImporte.toFixed(2);
+          inp.dataset.orig = inp.value;
+        }
+      }
+
       function persistirMensual(idProv, mensual, focused, otro) {
+        // Determinar la fila del posdat para actualizar también su importe.
+        const tr = focused.closest('tr[data-id-posdat]');
+        const idPosdat = tr ? tr.dataset.idPosdat : null;
         fetch('/provisiones/_api/' + idProv + '/quick-edit', {
           method: 'POST',
           credentials: 'same-origin',
@@ -328,6 +378,26 @@
             focused.dataset.orig = focused.value;
             if (otro) otro.dataset.orig = otro.value;
             setTimeout(() => focused.classList.remove('posdat-cuota-saved'), 1200);
+
+            // ── Step 2: recalcular y persistir el importe del posdat
+            if (idPosdat && tr) {
+              const nuevoImporte = calcularImporteHoy(mensual);
+              if (nuevoImporte > 0) {
+                fetch('/posdat/_api/' + idPosdat + '/editar', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                  body: JSON.stringify({ importe: nuevoImporte }),
+                }).then(r => r.json()).then(j2 => {
+                  if (j2 && j2.ok) {
+                    actualizarImporteEnUI(tr, nuevoImporte);
+                  }
+                  // Si el sync de importe falla NO marcamos error — la
+                  // cuota mensual ya se guardó; el siguiente tick del
+                  // script provisiones_diarias_run va a corregirlo.
+                }).catch(() => {});
+              }
+            }
           } else {
             focused.classList.add('posdat-cuota-error');
             alert('No se pudo guardar: ' + (j.error || 'error'));

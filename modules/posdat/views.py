@@ -367,6 +367,18 @@ def lista():
             filename="posdat.csv",
         )
 
+    # TMT 2026-05-20 — totales de cuota mensual + diaria para el header
+    # de la tab YY (pedido dueña: "en el titulo dos totales, mensual y
+    # diario"). Sólo tienen sentido en la tab YY (donde matcheamos
+    # contra provisiones); en la tab posdatados quedan en 0.
+    total_cuota_mensual = 0.0
+    total_cuota_diaria  = 0.0
+    if tab == "yy":
+        for f in filas:
+            cm = float(f.get("cuota_mensual") or 0)
+            total_cuota_mensual += cm
+            total_cuota_diaria  += cm / 30.0
+
     return render_template(
         "posdat/lista.html",
         filas=filas, resumen=resumen,
@@ -374,6 +386,8 @@ def lista():
         solo_abiertas=solo_abiertas, error=error,
         # TMT 2026-05-20 — tab + conteos para el switcher de tabs.
         tab=tab, conteos_tab=conteos_tab,
+        total_cuota_mensual=total_cuota_mensual,
+        total_cuota_diaria=total_cuota_diaria,
     )
 
 

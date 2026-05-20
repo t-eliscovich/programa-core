@@ -1538,3 +1538,32 @@ Pedido dueña: "Cuando deposito cheques en el banco. un dia deposito 25 cheques,
 **Por qué no agregar `lote_id`/`batch_id` a `transacciones_bancarias`:** el match por (fecha + no_banco + documento='DE') es **suficientemente bueno** y no requiere migración. Si en el futuro hace falta distinguir 2 lotes en el mismo día al mismo banco (caso raro), se agrega columna y se llena desde `queries.depositar_lote` con un UUID — el algoritmo del view ya estaría listo para usarlo (sólo cambia el criterio de agrupamiento).
 
 **Heads-up de UX:** si la usuaria deposita 2 cheques sueltos en momentos distintos del mismo día, también se agrupan. Aceptable: la dueña los ve igual sumados, abre el detalle y los ve uno por uno.
+
+### YY tab: totales mensual+diario + sync importe al editar cuota (2026-05-20)
+
+Pedido dueña: "en el titulo dos totales, mensual y diario. Que cuando yo modifico la cuota mensual, ejemplo 30 me ponga importe 1 o 0,x si es 31 dias el mes".
+
+**Hero custom para la tab YY:**
+- Cuando `tab='yy'` el template `posdat/lista.html` reemplaza el `page_hero()` estándar por un grid de 2 KPI tiles:
+  - **Total mensual** (sky-50): `SUM(cuota_mensual)` de las filas visibles + count de provisiones.
+  - **Total diario** (emerald-50): `SUM(cuota_mensual / 30)` con la etiqueta "≈ mensual ÷ 30".
+- Ambos totales se calculan en `views.lista` (en Python sobre `filas`) y se pasan al template como `total_cuota_mensual` y `total_cuota_diaria`. La tab `posdatados` no los usa (queda en 0 y muestra el hero estándar).
+
+**Recálculo del importe al editar cuota mensual:**
+- Cuando la dueña cambia la `cuota mensual` inline, el JS hace DOS POSTs en serie:
+  1. `/provisiones/_api/<id_prov>/quick-edit` con `{importe: cuota_nueva}` → persiste la cuota.
+  2. `/posdat/_api/<id_posdat>/editar` con `{importe: cuota_nueva * dia_hoy / dias_del_mes_actual}` → recalcula el importe del posdat correspondiente.
+- Día y días del mes los calcula el cliente: `new Date().getDate()` y `new Date(year, month+1, 0).getDate()` (truco JS para el último día del mes).
+- Si el segundo POST falla NO se marca error en la UI — la cuota mensual ya quedó guardada y el próximo tick de `correr_provisiones_diarias` corregirá el importe.
+
+**Por qué usar días reales del mes (no /30 fijo):**
+- La dueña pidió explícitamente "0,x si es 31 dias el mes". El modelo MENU.PRG legacy y `provision_pendiente_mes()` usan /30 fijo, PERO la idea acá es distinta: estamos seteando el importe ACTUAL del posdat al "valor que tendría según la nueva cuota". Esto es independiente del modelo de prorrateo y matchea la intuición de la dueña.
+- La columna **Cuota diaria** (en la otra tab, no en YY) sigue usando /30 fijo para consistencia con el modelo de queries; sólo el SET-importe-al-editar usa días reales.
+
+**Ejemplos:**
+| Cuota mensual | Mes (días) | Día hoy | Importe nuevo |
+|---|---|---|---|
+| $30 | 30 | 1 | $1.00 |
+| $30 | 31 | 1 | $0.97 |
+| $30 | 28 | 15 | $16.07 |
+| $300 | 31 | 20 | $193.55 |
