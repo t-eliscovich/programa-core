@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Ventas del mes {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
@@ -34,15 +35,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-shell page-shell--full">
-  <div class="flex items-center justify-between mb-4 no-print flex-wrap gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold">Ventas del mes</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        Ranking por cliente · {{ '%02d/%d' % (mes, anio) }} ·
-        ordenado por monto descendente.
-      </p>
-    </div>
+{# TMT 2026-05-20 PASADA 2 cierre. #}
+<div class="max-w-full">
+  <div class="flex items-start justify-between mb-6 no-print flex-wrap gap-4">
+    {{ page_hero(
+        'Ventas del mes',
+        'Ranking por cliente · ' ~ ('%02d/%d' % (mes, anio)) ~ ' · ordenado por monto descendente.'
+    ) }}
     <div class="flex items-center gap-2">
       {# Selector año / mes — viaja a la misma vista #}
       <form method="get" class="flex items-end gap-2">

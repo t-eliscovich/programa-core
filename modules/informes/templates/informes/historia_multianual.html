@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Historia multi-año{% endblock %}
 {% block breadcrumb %}Informes / <strong>Historia multi-año</strong>{% endblock %}
 
@@ -52,16 +53,13 @@
 {% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 cierre. #}
 <div class="max-w-full">
-  <div class="flex items-center justify-between mb-5">
-    <div>
-      <h1 class="text-2xl font-semibold">Historia multi-año</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        Matriz mes × año (corriente + 2 anteriores). Replica INFORMES.PRG modo "1/2/3".
-        ·
-        <a href="{{ url_for('informes.historia') }}" class="underline hover:text-blue-600">Volver a vista cronológica</a>
-      </p>
-    </div>
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero(
+        'Historia multi-año',
+        descripcion_safe='Matriz mes × año (corriente + 2 anteriores). Replica INFORMES.PRG modo "1/2/3". · <a href="' ~ url_for('informes.historia') ~ '" class="underline hover:text-blue-600">Volver a vista cronológica</a>'
+    ) }}
     <div class="no-print flex items-center gap-2">
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
     </div>

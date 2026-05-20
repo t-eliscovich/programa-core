@@ -1,19 +1,13 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 
 {% block title %}Check totales{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Informes</a> / <strong>Check de totales</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-05-20 PASADA 2 cierre — page_hero con descripcion_safe. #}
 <div class="max-w-4xl">
-  <div class="mb-6">
-    <h1 class="text-2xl font-semibold">Check de totales</h1>
-    <p class="text-sm text-slate-500 mt-1">
-      Cruza los totales clave entre pantallas para detectar inconsistencias.
-      Si una línea aparece en <span class="text-rose-700 font-medium">rojo</span>, hay un
-      número que no coincide entre dos vistas — clickeá los enlaces de cada
-      lado para ver de dónde viene.
-    </p>
-  </div>
+  {{ page_hero('Check de totales', descripcion_safe='Cruza los totales clave entre pantallas para detectar inconsistencias. Si una línea aparece en <span class="text-rose-700 font-medium">rojo</span>, hay un número que no coincide entre dos vistas — clickeá los enlaces de cada lado para ver de dónde viene.') }}
 
   {% if error %}
     <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
