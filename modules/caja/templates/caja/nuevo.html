@@ -42,84 +42,21 @@
                placeholder="1.234,56">
       </label>
 
-      {# TMT 2026-05-18 — hint largo arriba removido (Regla 3).
-         Las cards de atajo se autoexplican. #}
-      <div class="md:col-span-2 -mb-2">
-        {# TMT 2026-05-20 v3 — orden pedido dueña: Depósito Pichincha,
-           Depósito Internacional, Pago a proveedor, Activar anticipo
-           USD, Retiro de capital (al final). #}
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="caja-atajos">
-          <button type="button" data-prefix="PICH " data-needs="ref"
-                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
-            <span class="text-lg">🏦</span>
-            <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-sky-700">Depósito a {{ L.BANCO_PICHINCHA }}</div>
-              <div class="text-[10px] text-slate-400">PICH + nº depósito / referencia</div>
-            </span>
-          </button>
-          <button type="button" data-prefix="INTER " data-needs="ref"
-                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
-            <span class="text-lg">🏦</span>
-            <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-sky-700">Depósito a {{ L.BANCO_INTERNACIONAL }}</div>
-              <div class="text-[10px] text-slate-400">INTER + nº depósito / referencia</div>
-            </span>
-          </button>
-          <button type="button" data-prefix="PR " data-needs="prov"
-                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-left text-xs transition">
-            <span class="text-lg">🏭</span>
-            <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-violet-700">Pago a proveedor</div>
-              <div class="text-[10px] text-slate-400">PR + código del proveedor</div>
-            </span>
-          </button>
-          <button type="button" data-prefix="IN." data-needs="cta"
-                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-left text-xs transition">
-            <span class="text-lg">💵</span>
-            <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-emerald-700">Activar anticipo USD</div>
-              <div class="text-[10px] text-slate-400">IN. + código de la cuenta</div>
-            </span>
-          </button>
-          <button type="button" data-prefix="RR " data-needs="socio"
-                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left text-xs transition">
-            <span class="text-lg">👤</span>
-            <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-rose-700">Retiro de capital</div>
-              <div class="text-[10px] text-slate-400">RR + código del accionista</div>
-            </span>
-          </button>
-          {# TMT 2026-05-19 v3 — atajo "Caja chica / día inhábil" removido
-             (pedido dueña). #}
-        </div>
-      </div>
-
-      <label class="flex flex-col md:col-span-2">
-        <span class="text-sm text-slate-600">
-          Concepto <span class="text-red-500">*</span>
-        </span>
-        <input type="text" name="concepto" id="concepto-input" value="{{ form.concepto or '' }}"
-               autocomplete="off"
-               class="border rounded px-2 py-1 mt-1" maxlength="80" required
-               placeholder="Click un atajo o categoría ↑ o tipeá">
-        <div id="side-effect-preview" class="hidden mt-2 px-3 py-2 rounded-md bg-sky-50 border border-sky-200 text-sky-900 text-xs">
-          🔗 <strong>Operación vinculada:</strong>
-          <span id="side-effect-text"></span>
-          <span class="ml-2 text-sky-600">— se registra junto con el de caja, en una sola operación.</span>
-        </div>
-      </label>
-
-      {# TMT 2026-05-19 v3 — pedido dueña: dropdown de gastos = 9 categorías
-         V1..V9 (sueldos/servicios/otros × Tej/Tin/Adm). Click pre-carga
-         concepto + setea hidden xgast_num. Backend auto-clasifica si tipo=S.
-         Reemplaza los chips de conceptos históricos (GAS TAXI, CH.LES, etc)
-         que eran ruido. Visible sólo cuando tipo=S (egreso). #}
+      {# TMT 2026-05-21 (dueña pidió "CHIP PRIMERO + caja más user-friendly"):
+         orden nuevo del form ===
+           1) Categoría V1..V9   ← chip primero (para egresos)
+           2) Atajos contextuales (entrada: PICH/INTER · salida: PR/IN/RR)
+           3) Concepto (input texto, ya pre-cargado por chip o atajo)
+         Antes había muchos botones siempre visibles que confundían. Ahora
+         se muestran solo los atajos relevantes al tipo (E o S). #}
       <input type="hidden" name="xgast_num" id="xgast-num"
              value="{{ form.xgast_num or '' }}">
 
-      <div id="gasto-chips-wrap" class="md:col-span-2 -mt-2"
+      <div id="gasto-chips-wrap" class="md:col-span-2 -mb-1"
            style="display:none">
-        <div class="text-xs text-slate-500 mb-2">Clasificar como gasto (opcional, sólo para salidas):</div>
+        <div class="text-xs text-slate-500 mb-2">
+          <strong>1.</strong> Elegí la categoría del gasto (opcional):
+        </div>
         {# TMT 2026-05-20 v2 — pedido dueña: "en salida de caja,
            ordenar de v1 a v9 con unos botones mas lindos y mismo
            como ponemos en gastos, la matriz 1,4,7 y abajo 2,5,8 etc".
@@ -187,6 +124,75 @@
         </div>
       </div>
 
+      {# TMT 2026-05-21 — Sección 2: atajos contextuales por tipo. Antes los
+         5 atajos (PICH/INTER/PR/IN/RR) se mostraban siempre. Ahora:
+            tipo=E (entrada) → solo PICH + INTER (depósito de plata que ENTRA a caja)
+            tipo=S (salida)  → solo PR + IN + RR (pagos que SALEN de caja)
+         Resultado: 5 botones permanentes → 2-3 visibles según contexto. #}
+      <div class="md:col-span-2 -mb-2">
+        <div class="text-xs text-slate-500 mb-2" id="atajos-titulo">
+          <strong>2.</strong> O elegí un atajo de operación frecuente (opcional):
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="caja-atajos">
+          <button type="button" data-prefix="PICH " data-needs="ref" data-tipo="E"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
+            <span class="text-lg">🏦</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-sky-700">Depósito a {{ L.BANCO_PICHINCHA }}</div>
+              <div class="text-[10px] text-slate-400">PICH + nº depósito / referencia</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="INTER " data-needs="ref" data-tipo="E"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
+            <span class="text-lg">🏦</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-sky-700">Depósito a {{ L.BANCO_INTERNACIONAL }}</div>
+              <div class="text-[10px] text-slate-400">INTER + nº depósito / referencia</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="PR " data-needs="prov" data-tipo="S"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-left text-xs transition">
+            <span class="text-lg">🏭</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-violet-700">Pago a proveedor</div>
+              <div class="text-[10px] text-slate-400">PR + código del proveedor</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="IN." data-needs="cta" data-tipo="S"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-left text-xs transition">
+            <span class="text-lg">💵</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-emerald-700">Activar anticipo USD</div>
+              <div class="text-[10px] text-slate-400">IN. + código de la cuenta</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="RR " data-needs="socio" data-tipo="S"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left text-xs transition">
+            <span class="text-lg">👤</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-rose-700">Retiro de capital</div>
+              <div class="text-[10px] text-slate-400">RR + código del accionista</div>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {# Sección 3 — Concepto (ya pre-cargado si tocaste chip o atajo). #}
+      <label class="flex flex-col md:col-span-2">
+        <span class="text-sm text-slate-600">
+          <strong>3.</strong> Concepto <span class="text-red-500">*</span>
+        </span>
+        <input type="text" name="concepto" id="concepto-input" value="{{ form.concepto or '' }}"
+               autocomplete="off"
+               class="border rounded px-2 py-1 mt-1" maxlength="80" required
+               placeholder="Click un chip o atajo ↑ o tipeá libre">
+        <div id="side-effect-preview" class="hidden mt-2 px-3 py-2 rounded-md bg-sky-50 border border-sky-200 text-sky-900 text-xs">
+          🔗 <strong>Operación vinculada:</strong>
+          <span id="side-effect-text"></span>
+          <span class="ml-2 text-sky-600">— se registra junto con el de caja, en una sola operación.</span>
+        </div>
+      </label>
+
       {# JS de atajos + preview en vivo — fuera del if porque los atajos
          (RR/PICH/etc.) siempre se muestran aunque no haya conceptos históricos. #}
       <script>
@@ -232,8 +238,12 @@
           const selectedRow = document.getElementById('vchip-selected');
           const selectedText = document.getElementById('vchip-selected-text');
 
-          function toggleVchipsByTipo() {
+          // TMT 2026-05-21 — filtrado contextual:
+          //   tipo=E → V-chips OFF, atajos PICH/INTER visibles
+          //   tipo=S → V-chips ON,  atajos PR/IN/RR visibles
+          function toggleByTipo() {
             const t = (tipoSelect.value || '').toUpperCase();
+            // V-chips (sólo en salida)
             if (t === 'S') {
               wrapVchips.style.display = '';
             } else {
@@ -244,9 +254,14 @@
                 b.classList.remove('bg-sky-100', 'border-sky-400', 'vchip--active');
               });
             }
+            // Atajos PICH/INTER (entrada) vs PR/IN/RR (salida)
+            document.querySelectorAll('#caja-atajos button.atajo').forEach(b => {
+              const want = (b.dataset.tipo || '').toUpperCase();
+              b.style.display = (want === t) ? '' : 'none';
+            });
           }
-          tipoSelect.addEventListener('change', toggleVchipsByTipo);
-          toggleVchipsByTipo();
+          tipoSelect.addEventListener('change', toggleByTipo);
+          toggleByTipo();
 
           document.querySelectorAll('.vchip').forEach(btn => {
             btn.addEventListener('click', () => {

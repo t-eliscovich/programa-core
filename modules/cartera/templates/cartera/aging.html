@@ -66,9 +66,26 @@
     </div>
   {% endif %}
 
+  {# TMT 2026-05-21 — pedido dueña: mostrar también el BRUTO (saldo facturas
+     + cheques en cartera) además del NETO. Antes solo se veía el neto en el
+     hero y los 4 buckets, y el bruto vivía escondido en un <details>.
+     Ahora fila de 3 KPIs principales encima de los buckets de mora. #}
+  {% set _bruto = (totales.saldo_facturas or 0) + (totales.cheques_en_cartera or 0) %}
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+    {{ kpi_card('Facturas a cobrar', '$ ' ~ ((totales.saldo_facturas or 0) | num_es(0)),
+                'lo que falta cobrar en facturas',
+                tono='slate') }}
+    {{ kpi_card('Cheques en cartera', '$ ' ~ ((totales.cheques_en_cartera or 0) | num_es(0)),
+                'recibidos, todavía no cobrados',
+                tono='slate') }}
+    {{ kpi_card('Total bruto', '$ ' ~ (_bruto | num_es(0)),
+                'facturas + cheques (activo comercial)',
+                tono='sky') }}
+  </div>
+
   {# KPIs por bucket de mora. Sólo 90+ tiene tono rojo (alerta real); los
      otros 3 en slate uniforme para no parecer semáforo. #}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
     {{ kpi_card('0-30 días',  '$ ' ~ ((totales.b0_30 or 0) | num_es(0)),  '', tono='slate') }}
     {{ kpi_card('31-60 días', '$ ' ~ ((totales.b31_60 or 0) | num_es(0)), '', tono='slate') }}
     {{ kpi_card('61-90 días', '$ ' ~ ((totales.b61_90 or 0) | num_es(0)), '', tono='amber') }}
@@ -77,23 +94,24 @@
                 tono='rose') }}
   </div>
 
-  {# Nota técnica colapsada — paridad con dBase. La info está pero no compite
-     visualmente con los datos importantes. #}
-  {% if totales.cheques_en_cartera and totales.cheques_en_cartera != 0 %}
-  <details class="mb-4">
-    <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-      Cómo se calcula el total ({{ totales.total | num_es(0) }})
-    </summary>
-    <div class="mt-2 px-3 py-2 rounded text-xs bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
-      Cartera viva (neto) = facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(2) }}</span>
-      − cheques ya recibidos <span class="font-mono">{{ totales.cheques_en_cartera | num_es(2) }}</span>
-      = <strong class="font-mono text-slate-700 dark:text-slate-200">{{ totales.total | num_es(2) }}</strong>.
-      Este es "lo que el cliente todavía me debe" — distinto de
-      "Subtotal Cartera" del informe Resultados que es el BRUTO
-      (cheques + facturas como activos comerciales).
-    </div>
-  </details>
-  {% endif %}
+  {# Explicación visible (no colapsada) del por qué el número del hero
+     (Neto) puede no coincidir con Balance/Resultados. Pedido dueña 2026-05-21:
+     "todo consistente". El drift se explica por sobrepagos (facturas con
+     saldo<0) que aging excluye y Balance no. #}
+  <div class="mb-4 px-3 py-2 rounded text-xs bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 text-slate-700 dark:text-slate-300">
+    <strong>Cómo conciliar con Balance:</strong>
+    el <em>Neto</em> del hero (<span class="font-mono">$ {{ totales.total | num_es(0) }}</span>)
+    = facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(0) }}</span>
+    − cheques en cartera <span class="font-mono">{{ totales.cheques_en_cartera | num_es(0) }}</span>
+    (lo que el cliente todavía me debe).
+    El <em>Bruto</em> arriba (<span class="font-mono">$ {{ _bruto | num_es(0) }}</span>)
+    = facturas + cheques (activos comerciales).
+    El <em>Subtotal Cartera</em> de Balance/Resultados es <em>TOTF + TOTC</em> con
+    {% if totales.sobrepagos and totales.sobrepagos < 0 %}los sobrepagos
+       (<span class="font-mono text-rose-700">{{ totales.sobrepagos | num_es(0) }}</span>) ya descontados —
+       por eso suele ser menor que el Bruto de acá.{% else %}sobrepagos
+       neteados — por eso puede diferir del Bruto de acá.{% endif %}
+  </div>
 
   {# TMT 2026-05-18 — Chips "Con email", "Con teléfono", "Sin contacto"
      sacados a pedido de la dueña (no aportan a la tarea de cobranza). #}

@@ -2674,9 +2674,7 @@ def reversar(
         stop_aplicado = False
         es_rebote_real = es_rebote_real and bool(ch["codigo_cli"])
         if es_rebote_real:
-            marca = (
-                f"[REBOTE] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} {date.today().isoformat()}"
-            )
+            marca = f"[REBOTE] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} {date.today().isoformat()}"
             if motivo:
                 marca += f" — {motivo[:80]}"
             # Anotar en observación SIN tocar el flag stop (lo decide la

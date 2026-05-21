@@ -300,6 +300,11 @@
           <th class="px-3 py-3 text-right font-medium">Abono fact.</th>
           <th class="px-3 py-3 text-right font-medium">Saldo fact.</th>
           <th class="px-3 py-3 text-left font-medium">Stat</th>
+          {# TMT 2026-05-21 (H-3): botón Desaplicar inline. Antes había que adivinar
+             la URL /cheques/<id>/desaplicar/<id_factura>. La dueña lo pidió visible. #}
+          {% if tiene_permiso('cheques.aplicar') %}
+          <th class="px-3 py-3 text-right font-medium no-print">Acción</th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
@@ -316,9 +321,23 @@
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.abono_f | money_es }}</td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.saldo_f | money_es }}</td>
           <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ a.stat_f }}</td>
+          {% if tiene_permiso('cheques.aplicar') %}
+          <td class="px-3 py-2 text-right no-print">
+            {% if a.id_fact %}
+            <a href="{{ url_for('cheques.confirmar_desaplicar', id_cheque=ch.id_cheque, id_factura=a.id_fact) }}"
+               class="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
+               title="Deshacer esta aplicación específica (deja el cheque en cartera para re-aplicar a otra factura)">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+              </svg>
+              Desaplicar
+            </a>
+            {% endif %}
+          </td>
+          {% endif %}
         </tr>
         {% else %}
-        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="7">Cheque aún no aplicado a facturas.</td></tr>
+        <tr><td class="px-5 py-6 text-center text-slate-500" colspan="{% if tiene_permiso('cheques.aplicar') %}8{% else %}7{% endif %}">Cheque aún no aplicado a facturas.</td></tr>
         {% endfor %}
       </tbody>
     </table>
