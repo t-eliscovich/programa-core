@@ -1,7 +1,27 @@
 """Consultas de usuarios (seguridad.usuario + seguridad.rol)."""
+
 import bcrypt
 
 import db
+
+# TMT 2026-05-21 dueña: set canónico de claves de operador de movimientos.
+# El form de /usuarios usa un dropdown cerrado a estas 4 opciones.
+# `None` / cadena vacía son válidos (clave opcional).
+CLAVES_CANONICAS = ("FED", "TAM", "ALX", "ADR")
+
+
+def _normalizar_clave(clave: str | None) -> str | None:
+    """Devuelve clave en mayúsculas si está en el set canónico, sino None.
+
+    Acepta '' o None → None (clave opcional). Cualquier valor fuera del
+    set se rechaza retornando None (el caller decide si flashear warning).
+    """
+    if not clave:
+        return None
+    c = clave.strip().upper()
+    if c not in CLAVES_CANONICAS:
+        return None
+    return c
 
 
 def listar() -> list[dict]:
@@ -30,9 +50,7 @@ def por_id(id_usuario: int) -> dict | None:
 
 
 def roles_disponibles() -> list[dict]:
-    return db.fetch_all(
-        "SELECT id_rol, nombre_rol FROM seguridad.rol ORDER BY nombre_rol"
-    )
+    return db.fetch_all("SELECT id_rol, nombre_rol FROM seguridad.rol ORDER BY nombre_rol")
 
 
 def crear(
@@ -49,21 +67,22 @@ def crear(
         raise ValueError("Password debe tener al menos 6 caracteres.")
     if not id_rol:
         raise ValueError("Rol requerido.")
-    if db.fetch_one(
-        "SELECT 1 FROM seguridad.usuario WHERE lower(username) = %s", (username,)
-    ):
+    if db.fetch_one("SELECT 1 FROM seguridad.usuario WHERE lower(username) = %s", (username,)):
         raise ValueError(f"Ya existe un usuario {username!r}.")
 
     ph = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    return db.execute_returning(
-        """
+    return (
+        db.execute_returning(
+            """
         INSERT INTO seguridad.usuario
             (username, password_hash, id_rol, activo, clave)
         VALUES (%s, %s, %s, TRUE, %s)
         RETURNING id_usuario, username
         """,
-        (username[:40], ph, id_rol, (clave or None) and clave[:3].upper()),
-    ) or {}
+            (username[:40], ph, id_rol, _normalizar_clave(clave)),
+        )
+        or {}
+    )
 
 
 def editar(
@@ -80,8 +99,9 @@ def editar(
         campos.append("id_rol = %s")
         params.append(id_rol)
     if clave is not None:
+        # TMT 2026-05-21 dueña: solo aceptamos claves canónicas (FED/TAM/ALX/ADR).
         campos.append("clave = %s")
-        params.append(clave[:3].upper() if clave else None)
+        params.append(_normalizar_clave(clave))
     if activo is not None:
         campos.append("activo = %s")
         params.append(bool(activo))

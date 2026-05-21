@@ -40,10 +40,34 @@
     </label>
 
     <label class="flex flex-col mb-3">
-      <span class="text-sm text-slate-600">Clave corta (3 letras, opcional)</span>
-      <input type="text" name="clave" value="{{ form.clave or '' }}"
-             class="border rounded px-2 py-1 mt-1 uppercase" maxlength="3"
-             oninput="this.value=this.value.toUpperCase()">
+      <span class="text-sm text-slate-600">
+        Clave corta (operador de movimientos)
+      </span>
+      {# TMT 2026-05-21 dueña: set canónico = {FED, TAM, ALX, ADR}.
+         Antes el input era libre y aparecía drift (tel/TEL/TAM, AND vs ADR).
+         Ahora dropdown cerrado — solo permite las 4 oficiales o vacío. #}
+      <select name="clave" class="border rounded px-2 py-1 mt-1">
+        <option value="">— sin clave —</option>
+        {% set _claves_canonicas = [
+          ('FED', 'FED — Federico'),
+          ('TAM', 'TAM — Tamara'),
+          ('ALX', 'ALX — Alex'),
+          ('ADR', 'ADR — Andres'),
+        ] %}
+        {% for code, label in _claves_canonicas %}
+          <option value="{{ code }}"
+                  {% if (form.clave or '')|upper == code %}selected{% endif %}>
+            {{ label }}
+          </option>
+        {% endfor %}
+        {# Mostrar clave actual si NO está en el set canónico (legacy) — la
+           dueña puede verla pero al guardar se reemplazará por la elegida. #}
+        {% if form.clave and (form.clave|upper) not in ['FED','TAM','ALX','ADR'] %}
+          <option value="{{ form.clave|upper }}" selected>
+            {{ form.clave|upper }} — (legacy, cambiar a una canónica)
+          </option>
+        {% endif %}
+      </select>
     </label>
 
     {% if modo=='editar' %}
