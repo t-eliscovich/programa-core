@@ -37,6 +37,7 @@ Notas:
       explicando exactamente qué falta. Esto fuerza a correr las migraciones
       antes que la app pueda servir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -66,10 +67,12 @@ auth_google_bp = Blueprint("auth_google", __name__, url_prefix="/auth/google")
 
 # Fallback hardcodeado: los dos dueños. Si la env var OAUTH_ALLOWLIST se
 # pierde por error de deploy, los dos emails siguen acá.
-_DEFAULT_ALLOWLIST = frozenset({
-    "teliscovich@gmail.com",
-    "feliscovich@gmail.com",
-})
+_DEFAULT_ALLOWLIST = frozenset(
+    {
+        "teliscovich@gmail.com",
+        "feliscovich@gmail.com",
+    }
+)
 
 
 def _allowlist() -> frozenset[str]:
@@ -178,7 +181,9 @@ def callback():
     try:
         id_usuario = _upsert_owner(email=email, display_name=name)
     except _DuenoRoleMissing:
-        _log.error("Rol 'Accionista' (ni el legacy 'Dueño') existe en seguridad.rol — la DB no está seedeada.")
+        _log.error(
+            "Rol 'Accionista' (ni el legacy 'Dueño') existe en seguridad.rol — la DB no está seedeada."
+        )
         return (
             "<html><body style='font-family:sans-serif;padding:40px'>"
             "<h2>Error de configuración</h2>"
@@ -202,33 +207,81 @@ def callback():
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 class _DuenoRoleMissing(Exception):
     """El rol Dueño no existe — la DB no está seedeada."""
 
 
+def _email_to_role_map() -> dict[str, str]:
+    """Mapeo email→nombre_rol leído de env var OAUTH_ROLE_MAP.
+
+    Formato: 'email1=Rol1,email2=Rol2,...' (case-insensitive en email).
+    Ej.: 'alex@gmail.com=Operario,andres@gmail.com=Administrador'.
+
+    Si la env var no está seteada o el email no figura, el caller debe
+    fallback al rol default (Accionista). TMT 2026-05-21.
+    """
+    raw = os.environ.get("OAUTH_ROLE_MAP", "")
+    if not raw:
+        return {}
+    out: dict[str, str] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if "=" not in entry:
+            continue
+        email, rol = entry.split("=", 1)
+        email = email.strip().lower()
+        rol = rol.strip()
+        if email and rol:
+            out[email] = rol
+    return out
+
+
 def _upsert_owner(*, email: str, display_name: str) -> int:
-    """Crea o actualiza el usuario Dueño y devuelve su id_usuario.
+    """Crea o actualiza el usuario y devuelve su id_usuario.
 
-    Idempotente: si el usuario ya existe (por username = email), lo deja
-    como está pero asegura activo=TRUE y id_rol = id del rol Dueño.
+    Si el email está mapeado en OAUTH_ROLE_MAP a un rol específico,
+    usa ese rol. Sino, default a Accionista (compat con flujo viejo
+    de los dueños).
 
-    Si el rol Dueño no existe en seguridad.rol, levanta _DuenoRoleMissing
+    Idempotente: si el usuario ya existe, asegura activo=TRUE y el
+    id_rol correcto.
+
+    Si el rol no existe en seguridad.rol, levanta _DuenoRoleMissing
     para que el caller devuelva un 500 con mensaje claro.
     """
-    # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
-    # Buscamos primero el nombre nuevo y caemos a "dueño" (legacy) si la
-    # migración 0035 todavía no se corrió.
-    role = db.fetch_one(
-        "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'accionista'"
-    )
-    if not role:
+    # TMT 2026-05-21 dueña: rol asignado por email. Alex va a 'Operario'
+    # (ver pantallas operativas pero NO Informes). Andres va a
+    # 'Administrador'. Si no hay mapping, default a Accionista (compat).
+    role_map = _email_to_role_map()
+    nombre_rol_deseado = role_map.get(email.lower())
+
+    role = None
+    if nombre_rol_deseado:
         role = db.fetch_one(
-            "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'dueño'"
+            "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = %s",
+            (nombre_rol_deseado.lower(),),
         )
+        if not role:
+            _log.warning(
+                "OAUTH_ROLE_MAP referencia rol %r que no existe en seguridad.rol — "
+                "cayendo a Accionista para %s",
+                nombre_rol_deseado,
+                email,
+            )
+
+    if not role:
+        # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
+        # Buscamos primero el nombre nuevo y caemos a "dueño" (legacy) si la
+        # migración 0035 todavía no se corrió.
+        role = db.fetch_one("SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'accionista'")
+    if not role:
+        role = db.fetch_one("SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = 'dueño'")
     if not role:
         # Tolerancia a sin-tilde por si el seed lo guarda como "Dueno".
         role = db.fetch_one(
-            "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) IN ('dueno', 'owner', 'admin', 'administrador')"
+            "SELECT id_rol FROM seguridad.rol "
+            "WHERE lower(nombre_rol) IN ('dueno', 'owner', 'admin', 'administrador')"
         )
     if not role:
         raise _DuenoRoleMissing()
