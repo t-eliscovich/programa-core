@@ -1,4 +1,5 @@
 """Comisiones de vendedores — list + inline edit + detalle mensual."""
+
 import io
 from datetime import date
 
@@ -41,7 +42,7 @@ def _yy_mm() -> tuple[int, int]:
 
 @comisiones_bp.route("/comisiones")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("comisiones.ver")
 def lista():
     yy, mm = _yy_mm()
     try:
@@ -51,9 +52,10 @@ def lista():
         filas = []
         msg = str(e)
         # TMT 2026-05-18 — mensaje legible si la migración 0032 no corrió.
-        if 'scintela.vendedor' in msg and 'does not exist' in msg:
-            error = ("La tabla scintela.vendedor todavía no existe. "
-                     "Aplicá la migración: python scripts/migrate.py")
+        if "scintela.vendedor" in msg and "does not exist" in msg:
+            error = (
+                "La tabla scintela.vendedor todavía no existe. Aplicá la migración: python scripts/migrate.py"
+            )
         else:
             error = msg
 
@@ -74,20 +76,23 @@ def lista():
 
     totales = {
         "cobranzas": sum(float(f.get("cobranzas_mes") or 0) for f in filas),
-        "ventas":    sum(float(f.get("ventas_mes") or 0) for f in filas),
-        "comision":  sum(float(f.get("comision_mes") or 0) for f in filas),
+        "ventas": sum(float(f.get("ventas_mes") or 0) for f in filas),
+        "comision": sum(float(f.get("comision_mes") or 0) for f in filas),
     }
 
     return render_template(
         "comisiones/lista.html",
-        filas=filas, totales=totales,
-        anio=yy, mes=mm, error=error,
+        filas=filas,
+        totales=totales,
+        anio=yy,
+        mes=mm,
+        error=error,
     )
 
 
 @comisiones_bp.route("/comisiones/<codigo>")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("comisiones.ver")
 def detalle(codigo: str):
     yy, mm = _yy_mm()
     v = queries.por_codigo(codigo)
@@ -95,7 +100,7 @@ def detalle(codigo: str):
         abort(404)
     try:
         cobranzas = queries.cobranzas_detalle(codigo, anio=yy, mes=mm)
-        ventas    = queries.ventas_detalle(codigo, anio=yy, mes=mm)
+        ventas = queries.ventas_detalle(codigo, anio=yy, mes=mm)
         error = None
     except Exception as e:
         cobranzas, ventas, error = [], [], str(e)
@@ -107,16 +112,22 @@ def detalle(codigo: str):
 
     return render_template(
         "comisiones/detalle.html",
-        vendedor=v, cobranzas=cobranzas, ventas=ventas,
-        total_cobr=total_cobr, total_vent=total_vent,
-        pct=pct, comision=comision,
-        anio=yy, mes=mm, error=error,
+        vendedor=v,
+        cobranzas=cobranzas,
+        ventas=ventas,
+        total_cobr=total_cobr,
+        total_vent=total_vent,
+        pct=pct,
+        comision=comision,
+        anio=yy,
+        mes=mm,
+        error=error,
     )
 
 
 @comisiones_bp.route("/comisiones/<codigo>/pct", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("comisiones.ver")
 def actualizar_pct(codigo: str):
     """Inline edit del % desde la lista."""
     v = queries.por_codigo(codigo)
@@ -125,23 +136,21 @@ def actualizar_pct(codigo: str):
     pct = parse_monto(request.form.get("pct_comision"))
     if pct is None or pct < 0 or pct > 100:
         flash("% inválido (debe ser 0-100).", "error")
-        return redirect(url_for("comisiones.lista",
-                                anio=request.form.get("anio"),
-                                mes=request.form.get("mes")))
+        return redirect(
+            url_for("comisiones.lista", anio=request.form.get("anio"), mes=request.form.get("mes"))
+        )
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.actualizar_pct(codigo, pct, usuario=usuario)
         flash(f"% de {codigo} actualizado a {pct}%.", "ok")
     except Exception as e:
         flash_exc("No pude actualizar", e)
-    return redirect(url_for("comisiones.lista",
-                            anio=request.form.get("anio"),
-                            mes=request.form.get("mes")))
+    return redirect(url_for("comisiones.lista", anio=request.form.get("anio"), mes=request.form.get("mes")))
 
 
 @comisiones_bp.route("/comisiones/<codigo>/excel")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("comisiones.ver")
 def exportar_excel(codigo: str):
     """Descarga XLSX con cobranzas + ventas del vendedor en el mes.
 
@@ -155,11 +164,10 @@ def exportar_excel(codigo: str):
 
     try:
         cobranzas = queries.cobranzas_detalle(codigo, anio=yy, mes=mm)
-        ventas    = queries.ventas_detalle(codigo, anio=yy, mes=mm)
+        ventas = queries.ventas_detalle(codigo, anio=yy, mes=mm)
     except Exception as e:
         flash_exc("No pude armar el Excel", e)
-        return redirect(url_for("comisiones.detalle", codigo=codigo,
-                                anio=yy, mes=mm))
+        return redirect(url_for("comisiones.detalle", codigo=codigo, anio=yy, mes=mm))
 
     total_cobr = sum(float(r.get("importe") or 0) for r in cobranzas)
     total_vent = sum(float(r.get("importe") or 0) for r in ventas)
@@ -171,8 +179,7 @@ def exportar_excel(codigo: str):
         from openpyxl.styles import Alignment, Font, PatternFill
     except ImportError:
         flash("openpyxl no instalado en el server — pedí al admin que lo instale.", "error")
-        return redirect(url_for("comisiones.detalle", codigo=codigo,
-                                anio=yy, mes=mm))
+        return redirect(url_for("comisiones.detalle", codigo=codigo, anio=yy, mes=mm))
 
     wb = Workbook()
 
@@ -197,16 +204,15 @@ def exportar_excel(codigo: str):
     ws_res["B7"] = comision
     ws_res["A7"].font = bold
     ws_res["B7"].font = bold
-    ws_res["B5"].number_format = '#,##0.00'
-    ws_res["B6"].number_format = '#,##0.00'
-    ws_res["B7"].number_format = '#,##0.00'
+    ws_res["B5"].number_format = "#,##0.00"
+    ws_res["B6"].number_format = "#,##0.00"
+    ws_res["B7"].number_format = "#,##0.00"
     ws_res.column_dimensions["A"].width = 25
     ws_res.column_dimensions["B"].width = 18
 
     # Hoja 2 — Cobranzas (separadas por origen)
     ws_cob = wb.create_sheet("Cobranzas")
-    headers_cob = ["Tipo", "Fecha", "Cliente código", "Cliente nombre",
-                   "N°/Doc", "Banco", "Importe USD"]
+    headers_cob = ["Tipo", "Fecha", "Cliente código", "Cliente nombre", "N°/Doc", "Banco", "Importe USD"]
     for i, h in enumerate(headers_cob, 1):
         c = ws_cob.cell(row=1, column=i, value=h)
         c.font = bold
@@ -223,7 +229,7 @@ def exportar_excel(codigo: str):
         ws_cob.cell(row=row_idx, column=5, value=r.get("doc") or "")
         ws_cob.cell(row=row_idx, column=6, value=r.get("banco") or "")
         imp = ws_cob.cell(row=row_idx, column=7, value=float(r.get("importe") or 0))
-        imp.number_format = '#,##0.00'
+        imp.number_format = "#,##0.00"
         row_idx += 1
     # Total
     if cobranzas:
@@ -233,16 +239,14 @@ def exportar_excel(codigo: str):
         c.fill = hdr_fill
         t = ws_cob.cell(row=total_row, column=7, value=total_cobr)
         t.font = bold
-        t.number_format = '#,##0.00'
+        t.number_format = "#,##0.00"
         t.fill = hdr_fill
-    for col, w in [("A", 8), ("B", 12), ("C", 14), ("D", 30),
-                   ("E", 14), ("F", 18), ("G", 16)]:
+    for col, w in [("A", 8), ("B", 12), ("C", 14), ("D", 30), ("E", 14), ("F", 18), ("G", 16)]:
         ws_cob.column_dimensions[col].width = w
 
     # Hoja 3 — Ventas (facturas emitidas)
     ws_vta = wb.create_sheet("Ventas")
-    headers_vta = ["Fecha", "Cliente código", "Cliente nombre",
-                   "N° factura", "Importe USD", "Saldo USD"]
+    headers_vta = ["Fecha", "Cliente código", "Cliente nombre", "N° factura", "Importe USD", "Saldo USD"]
     for i, h in enumerate(headers_vta, 1):
         c = ws_vta.cell(row=1, column=i, value=h)
         c.font = bold
@@ -252,13 +256,13 @@ def exportar_excel(codigo: str):
         ws_vta.cell(row=i, column=1, value=r.get("fecha"))
         ws_vta.cell(row=i, column=2, value=r.get("codigo_cli") or "")
         ws_vta.cell(row=i, column=3, value=r.get("cliente") or "")
-        ws_vta.cell(row=i, column=4, value=r.get("numf_completo")
-                                          or r.get("numf") or "")
+        ws_vta.cell(row=i, column=4, value=r.get("numf_completo") or r.get("numf") or "")
         imp = ws_vta.cell(row=i, column=5, value=float(r.get("importe") or 0))
-        imp.number_format = '#,##0.00'
-        sal = ws_vta.cell(row=i, column=6,
-                          value=float(r.get("saldo") or 0) if r.get("saldo") is not None else None)
-        sal.number_format = '#,##0.00'
+        imp.number_format = "#,##0.00"
+        sal = ws_vta.cell(
+            row=i, column=6, value=float(r.get("saldo") or 0) if r.get("saldo") is not None else None
+        )
+        sal.number_format = "#,##0.00"
     if ventas:
         total_row = len(ventas) + 3
         c = ws_vta.cell(row=total_row, column=1, value="TOTAL")
@@ -266,10 +270,9 @@ def exportar_excel(codigo: str):
         c.fill = hdr_fill
         t = ws_vta.cell(row=total_row, column=5, value=total_vent)
         t.font = bold
-        t.number_format = '#,##0.00'
+        t.number_format = "#,##0.00"
         t.fill = hdr_fill
-    for col, w in [("A", 12), ("B", 14), ("C", 30),
-                   ("D", 16), ("E", 16), ("F", 16)]:
+    for col, w in [("A", 12), ("B", 14), ("C", 30), ("D", 16), ("E", 16), ("F", 16)]:
         ws_vta.column_dimensions[col].width = w
 
     buf = io.BytesIO()
@@ -285,7 +288,7 @@ def exportar_excel(codigo: str):
 
 @comisiones_bp.route("/comisiones/<codigo>/nombre", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("comisiones.ver")
 def actualizar_nombre(codigo: str):
     """Inline edit del nombre desde la lista."""
     v = queries.por_codigo(codigo)
@@ -301,6 +304,4 @@ def actualizar_nombre(codigo: str):
         flash(f"Nombre de {codigo} actualizado.", "ok")
     except Exception as e:
         flash_exc("No pude actualizar", e)
-    return redirect(url_for("comisiones.lista",
-                            anio=request.form.get("anio"),
-                            mes=request.form.get("mes")))
+    return redirect(url_for("comisiones.lista", anio=request.form.get("anio"), mes=request.form.get("mes")))

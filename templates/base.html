@@ -881,6 +881,27 @@
        Factura/Compra/Emitir cheque/Retiro/Caja/Depositar/Transferir/Historial)
        sacada a pedido de la dueña. Todo se accede desde el sidebar. #}
 
+    {# TMT 2026-05-21 dueña: banner persistente cuando estás impersonando a
+       otro usuario (feature "ver como"). Va encima del main para que sea
+       imposible de ignorar. Botón Volver = POST /auth/stop-impersonate. #}
+    {% if g.get('impersonating_from') %}
+    <div class="bg-amber-100 dark:bg-amber-900/40 border-b-2 border-amber-400 dark:border-amber-700 px-6 py-2 flex items-center justify-between gap-4 sticky top-0 z-30">
+      <div class="text-sm text-amber-900 dark:text-amber-100">
+        <span class="font-semibold">⚠ Viendo como otro usuario:</span>
+        estás logueado como <strong class="font-mono">{{ g.user.username }}</strong>
+        ({{ g.user.nombre_rol }}). Tu cuenta real es
+        <strong class="font-mono">{{ g.impersonating_from.username }}</strong>.
+      </div>
+      <form method="post" action="{{ url_for('auth.stop_impersonate') }}" class="shrink-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit"
+                class="text-sm px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-800 text-white font-medium shadow-sm">
+          ← Volver a mi cuenta
+        </button>
+      </form>
+    </div>
+    {% endif %}
+
     <main class="flex-1 p-6 overflow-x-auto">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

@@ -42,6 +42,23 @@
           <td class="px-3 py-2 whitespace-nowrap">
             <a href="{{ url_for('usuarios.editar', id_usuario=u.id_usuario) }}"
                class="text-sky-600 hover:underline text-xs">Editar</a>
+            {# TMT 2026-05-21 dueña: botón "Ver como" — solo Accionista puede
+               impersonar. Si la dueña real (no impersonando) y el usuario está
+               activo y no es ella misma, mostramos el botón. #}
+            {% set _real = g.impersonating_from or g.user %}
+            {% if u.activo
+                  and (_real.nombre_rol or '')|lower == 'accionista'
+                  and u.id_usuario != _real.id_usuario %}
+              <form method="post" action="{{ url_for('auth.impersonate', id_usuario=u.id_usuario) }}"
+                    style="display:inline" class="ml-2"
+                    onsubmit="return confirm('¿Ver el sistema como {{ u.username }}? Vas a navegar con sus permisos hasta que vuelvas con el botón ‘Volver a mi cuenta’.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="text-xs px-1.5 py-0.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50">
+                  👁 Ver como
+                </button>
+              </form>
+            {% endif %}
             <form method="post" action="{{ url_for('usuarios.toggle_activo', id_usuario=u.id_usuario) }}"
                   style="display:inline" onsubmit="return confirm('¿{{ 'Desactivar' if u.activo else 'Activar' }} {{ u.username }}?');">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -1249,7 +1249,7 @@ def ventas():
 
 @informes_bp.route("/ventas-anio")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("ventas.ver")
 def ventas_anio():
     """Ventas del año en curso — mes a mes con acumulado.
 
@@ -1323,7 +1323,7 @@ def flujo_produccion():
 
 @informes_bp.route("/gastos")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("gastos.ver")
 def gastos():
     filas, error = _safe(queries.gastos_mes_corriente, [])
     if request.args.get("export") == "csv":
@@ -1419,7 +1419,7 @@ def gastos():
 
 @informes_bp.route("/gastos/detalle/<int:num>")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("gastos.ver")
 def gastos_detalle(num):
     """Drill-down de una categoría V1..V12 — DETALGAST del PRG.
 

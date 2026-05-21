@@ -11,6 +11,7 @@ Session timeouts (sliding, per rol):
     `SESSION_TIMEOUT_BY_ROLE` más abajo y `_enforce_session_timeout`
     en load_logged_in_user.
 """
+
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -56,17 +57,17 @@ SESSION_TIMEOUT_BY_ROLE: dict[str, timedelta] = {
     # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
     # Dejamos los dos para compatibilidad transitoria mientras se corre la
     # migración 0035; cualquiera de los dos resuelve al mismo timeout.
-    "Accionista":    timedelta(hours=8),
-    "Dueño":         timedelta(hours=8),
+    "Accionista": timedelta(hours=8),
+    "Dueño": timedelta(hours=8),
     "Administrador": timedelta(hours=8),
-    "Gerente":       timedelta(hours=8),
-    "Contabilidad":  timedelta(hours=4),
-    "Compras":       timedelta(hours=4),
-    "Cobranzas":     timedelta(hours=4),
-    "Ventas":        timedelta(hours=4),
-    "Bodega":        timedelta(hours=12),
-    "QC":            timedelta(hours=12),
-    "Lectura":       timedelta(hours=24),
+    "Gerente": timedelta(hours=8),
+    "Contabilidad": timedelta(hours=4),
+    "Compras": timedelta(hours=4),
+    "Cobranzas": timedelta(hours=4),
+    "Ventas": timedelta(hours=4),
+    "Bodega": timedelta(hours=12),
+    "QC": timedelta(hours=12),
+    "Lectura": timedelta(hours=24),
 }
 SESSION_TIMEOUT_DEFAULT = timedelta(hours=4)
 
@@ -99,6 +100,7 @@ def _parse_last_activity(raw: str | None) -> datetime | None:
 # ---------------------------------------------------------------------------
 # Hooks
 # ---------------------------------------------------------------------------
+
 
 def load_logged_in_user() -> None:
     """before_request handler: populate g.user and g.permisos.
@@ -149,21 +151,32 @@ def load_logged_in_user() -> None:
     )
     g.permisos = {p["nombre_opcion"] for p in permisos}
 
+    # TMT 2026-05-21 dueña: feature "ver como otro usuario" (impersonate).
+    # Si la sesión tiene `impersonating_from_id`, significa que el dueño real
+    # se cambió a este usuario temporalmente. Cargamos el username del real
+    # para mostrarlo en el banner "← Volver a tu cuenta".
+    real_id = session.get("impersonating_from_id")
+    g.impersonating_from = None
+    if real_id and real_id != user_id:
+        real = db.fetch_one(
+            "SELECT id_usuario, username FROM seguridad.usuario WHERE id_usuario = %s",
+            (real_id,),
+        )
+        if real:
+            g.impersonating_from = real
+
 
 def _is_keepalive_path(path: str | None) -> bool:
     """Paths que NO cuentan como actividad del usuario (monitoreo, estáticos)."""
     if not path:
         return False
-    return (
-        path.startswith("/static/")
-        or path.startswith("/healthz")
-        or path.startswith("/favicon")
-    )
+    return path.startswith("/static/") or path.startswith("/healthz") or path.startswith("/favicon")
 
 
 # ---------------------------------------------------------------------------
 # Decorators
 # ---------------------------------------------------------------------------
+
 
 def requiere_login(view):
     @wraps(view)
@@ -230,6 +243,7 @@ def registrar_bitacora(
         rol = usuario_row.get("nombre_rol")
         request_id = g.get("request_id")  # puesto en app.before_request
         import json as _json
+
         db.execute(
             """
             INSERT INTO scintela.bitacora_acciones
@@ -241,9 +255,11 @@ def registrar_bitacora(
                     %s)
             """,
             (
-                usuario[:40], rol and rol[:40],
+                usuario[:40],
+                rol and rol[:40],
                 (request.remote_addr or "")[:45],
-                request.method[:8], request.path[:200],
+                request.method[:8],
+                request.path[:200],
                 (modulo or (request.blueprint or ""))[:40],
                 (accion or request.endpoint or "")[:40],
                 entidad and entidad[:40],
@@ -277,11 +293,10 @@ def registrar_bitacora_after_request(response):
             form = request.form
             # Extraer un payload sanitizado (sin csrf_token ni passwords).
             blacklist = {"csrf_token", "password", "password_confirm", "token"}
-            payload = {
-                k: v for k, v in form.items(multi=True) if k not in blacklist
-            } if form else None
+            payload = {k: v for k, v in form.items(multi=True) if k not in blacklist} if form else None
             registrar_bitacora(
-                payload=payload, status_http=response.status_code,
+                payload=payload,
+                status_http=response.status_code,
             )
     except Exception:
         pass
@@ -299,6 +314,7 @@ def login():
     # queda apagado — la única forma de loguearse es por el botón de Google.
     # El template render del GET ya muestra el botón en lugar del form.
     from flask import current_app as _ca
+
     if _ca.config.get("GOOGLE_OAUTH_ENABLED") and request.method == "POST":
         flash("El login con usuario y contraseña está deshabilitado en este servidor.", "error")
         return render_template("login.html"), 410
@@ -329,6 +345,7 @@ def login():
         except Exception as e:
             # psycopg2.errors.UndefinedColumn u otra falla SQL — degradamos.
             import logging
+
             logging.getLogger("programa_core").warning(
                 "login: cols 2FA faltan (migrate.py 0008 pendiente?): %s", e
             )
@@ -386,6 +403,91 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("auth.login"))
+
+
+# ---------------------------------------------------------------------------
+# Impersonate — "ver como otro usuario". Solo para Accionista (la dueña).
+# ---------------------------------------------------------------------------
+# Pedido TMT 2026-05-21: la dueña quiere probar qué ven Alex/Andres/Federico
+# sin tener que loguear con sus cuentas. El flujo:
+#   1) POST /auth/impersonate/<id_usuario> con CSRF → guarda
+#      session["impersonating_from_id"] = mi id real
+#      session["user_id"] = id del usuario impersonado
+#   2) Navegás normalmente como ese usuario.
+#   3) POST /auth/stop-impersonate → restaura tu id real.
+#
+# Seguridad: la única gate es que el id_usuario REAL (`g.user["id_usuario"]`)
+# tenga `nombre_rol == 'Accionista'`. Nadie más puede impersonar — ni un
+# Administrador. Esto evita escalada de privilegios.
+#
+# `g.impersonating_from` (set en load_logged_in_user) sirve para que el
+# template muestre el banner amber con "Volver a [user_real]".
+
+
+def _es_accionista(user_row: dict | None) -> bool:
+    """True si el usuario tiene rol Accionista (único que puede impersonar)."""
+    if not user_row:
+        return False
+    return (user_row.get("nombre_rol") or "").lower() == "accionista"
+
+
+@auth_bp.route("/impersonate/<int:id_usuario>", methods=["POST"])
+def impersonate(id_usuario: int):
+    """Cambia la sesión actual para ver el sistema como otro usuario.
+
+    Solo Accionistas. Si ya estás impersonando, primero te tenés que detener
+    (POST /auth/stop-impersonate) — no permitimos cadenas de impersonate.
+    """
+    if not g.get("user"):
+        return redirect(url_for("auth.login"))
+
+    # El id REAL: si ya estoy impersonando, el real es `impersonating_from_id`.
+    # Si no, soy yo mismo.
+    real_id = session.get("impersonating_from_id") or g.user["id_usuario"]
+    real_user = db.fetch_one(
+        """
+        SELECT u.id_usuario, u.username, r.nombre_rol
+          FROM seguridad.usuario u
+          JOIN seguridad.rol r USING (id_rol)
+         WHERE u.id_usuario = %s
+        """,
+        (real_id,),
+    )
+    if not _es_accionista(real_user):
+        flash("Solo un Accionista puede ver como otro usuario.", "warn")
+        return redirect(url_for("dashboard.index"))
+
+    # Validar que el destino existe y está activo.
+    target = db.fetch_one(
+        "SELECT id_usuario, username, activo FROM seguridad.usuario WHERE id_usuario = %s",
+        (id_usuario,),
+    )
+    if not target or not target.get("activo"):
+        flash("Usuario no encontrado o inactivo.", "warn")
+        return redirect(url_for("dashboard.index"))
+
+    # No impersonarte a vos mismo.
+    if int(id_usuario) == int(real_id):
+        flash("Ya estás logueado como vos mismo.", "info")
+        return redirect(url_for("dashboard.index"))
+
+    # Guardamos el real (si todavía no lo guardamos) y switcheamos.
+    session["impersonating_from_id"] = real_id
+    session["user_id"] = int(id_usuario)
+    session["last_activity"] = datetime.now(UTC).isoformat()
+    flash(f"Ahora estás viendo como {target['username']}.", "ok")
+    return redirect(url_for("dashboard.index"))
+
+
+@auth_bp.route("/stop-impersonate", methods=["POST", "GET"])
+def stop_impersonate():
+    """Vuelve a la cuenta real. Idempotente: si no estoy impersonando, no rompe."""
+    real_id = session.pop("impersonating_from_id", None)
+    if real_id:
+        session["user_id"] = int(real_id)
+        session["last_activity"] = datetime.now(UTC).isoformat()
+        flash("Volviste a tu cuenta.", "ok")
+    return redirect(url_for("dashboard.index"))
 
 
 # ---------------------------------------------------------------------------

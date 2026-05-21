@@ -94,6 +94,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "capital.ver",
             "posdat.ver",
             "sri.ver",
+            "comisiones.ver",
         ],
     ),
     (
@@ -123,6 +124,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "retiros.ver",
             "historia.ver",
             "iniciales.ver",
+            "comisiones.ver",
         ],
     ),
     (
@@ -168,6 +170,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "flujo.ver",
             "sri.ver",
             "sri.emitir",
+            "comisiones.ver",
         ],
     ),
     (
@@ -308,11 +311,17 @@ ROLES: list[tuple[str, list[str]]] = [
             "activos.amortizar",
             # Iniciales editable para que pueda actualizar saldos bancos/caja.
             "iniciales.editar",
-            # NO incluidos a propósito (todo "Informes" y todo lo que solo
-            # se accede desde ahí): informes.ver, flujo.ver, ventas.ver,
-            # gastos.ver, retiros.ver, historia.ver, iniciales.ver,
-            # capital.ver, bitacora.ver, usuarios.admin, periodo.cerrar,
-            # roles.ver, roles.editar.
+            # TMT 2026-05-21 dueña update: comisiones, ventas-año y gastos
+            # clasificados SÍ. Estas 3 vistas viven bajo /informes/* pero ya
+            # tienen permisos granulares — Alex las ve sin tener informes.ver.
+            "comisiones.ver",
+            "ventas.ver",
+            "gastos.ver",
+            # NO incluidos a propósito (todo "Informes" general y todo lo que
+            # solo se accede desde ahí sin permiso granular): informes.ver,
+            # flujo.ver, retiros.ver, historia.ver, iniciales.ver, capital.ver,
+            # bitacora.ver, usuarios.admin, periodo.cerrar, roles.ver,
+            # roles.editar.
         ],
     ),
     (
@@ -337,6 +346,7 @@ ROLES: list[tuple[str, list[str]]] = [
             "capital.ver",
             "posdat.ver",
             "sri.ver",
+            "comisiones.ver",
         ],
     ),
 ]
