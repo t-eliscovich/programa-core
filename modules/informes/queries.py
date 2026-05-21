@@ -5404,6 +5404,16 @@ def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
     }
 
 
+def _hora_quito(dt):
+    """Convierte un datetime UTC (asi lo guarda el server/RDS) a hora
+    de Quito. Ecuador es UTC-5 y NO tiene horario de verano, asi que
+    alcanza con restar 5 horas fijas. Devuelve None si dt es None."""
+    if dt is None:
+        return None
+    from datetime import timedelta as _td
+    return dt - _td(hours=5)
+
+
 def historico_5m_con_actual(max_actual: int = 3) -> dict:
     """Matriz histórica fija: últimos 5 meses + mes actual.
 
@@ -5464,7 +5474,7 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 "label_corto": f"{m_:02d}/{a_ % 100:02d}",
                 "label_largo": f"{m_:02d}/{a_}",
                 "id_historia": int(snap["id_historia"]) if snap and snap.get("id_historia") else None,
-                "fecha_crea": snap.get("fecha_crea") if snap else None,
+                "fecha_crea": _hora_quito(snap.get("fecha_crea")) if snap else None,
                 "es_mes_actual": False,
                 "es_canonico_default": False,
                 "snap": snap,
@@ -5487,7 +5497,7 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
                 "label_largo": f"{hoy.month:02d}/{hoy.year}{sufijo}",
                 "id_historia": int(snap["id_historia"]),
-                "fecha_crea": snap.get("fecha_crea"),
+                "fecha_crea": _hora_quito(snap.get("fecha_crea")),
                 "es_mes_actual": True,
                 "es_canonico_default": es_ultima,
                 "snap": snap,
@@ -5512,6 +5522,26 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
     sin_snap = [f"{m_:02d}/{a_}" for (a_, m_) in meses_pasados if (a_, m_) not in snaps_pasados]
     if not snaps_actual_asc:
         sin_snap.append(f"{hoy.month:02d}/{hoy.year} (actual — pulsá '↻ Snapshot ahora')")
+
+    # Federico 2026-05-21 -- columna fina de DIFERENCIAS entre las 2
+    # columnas mas recientes, SOLO si las 2 ultimas son del mes actual.
+    if len(columnas) >= 2 and columnas[-1].get("es_mes_actual") \
+            and columnas[-2].get("es_mes_actual"):
+        _pos = len(columnas) - 1   # entre la anteultima y la ultima
+        for _ln in lineas_out:
+            _vals = _ln["valores"]
+            _a, _b = _vals[_pos - 1], _vals[_pos]
+            try:
+                _d = (_b - _a) if (_a is not None and _b is not None) else None
+            except Exception:  # noqa: BLE001
+                _d = None
+            _vals.insert(_pos, _d)
+        columnas.insert(_pos, {
+            "key": "delta", "es_delta": True, "es_mes_actual": False,
+            "es_canonico_default": False, "id_historia": None,
+            "fecha_crea": None, "anio": None, "mes": None,
+            "label_corto": "Δ", "label_largo": "Δ", "snap": None,
+        })
 
     return {
         "columnas": columnas,

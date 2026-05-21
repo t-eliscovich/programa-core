@@ -4,13 +4,14 @@
   mes en curso y borra el resto.
 - eliminar_ultima_columna_mes_actual: borra la columna más reciente y
   deja viva la previa (botón "Eliminar última columna").
+- _hora_quito: convierte fecha_crea (UTC) a hora de Quito.
 
 Usan mocks de `db` — no necesitan Postgres.
 """
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,12 +66,10 @@ def test_consolidar_solo_toca_el_mes_actual(monkeypatch):
     queries.consolidar_snapshots_mes_actual(conservar=2)
 
     hoy = date.today()
-    # El DELETE está acotado al AÑO y MES de hoy:
     assert cap["params"]["a"] == hoy.year
     assert cap["params"]["m"] == hoy.month
     assert "EXTRACT(YEAR FROM fecha) = %(a)s" in cap["sql"]
     assert "EXTRACT(MONTH FROM fecha) = %(m)s" in cap["sql"]
-    # Una fila de un mes cerrado nunca puede matchear ese WHERE.
 
 
 def test_eliminar_ultima_borra_la_mas_reciente(monkeypatch):
@@ -100,3 +99,8 @@ def test_eliminar_ultima_sin_columnas_no_rompe(monkeypatch):
     r = queries.eliminar_ultima_columna_mes_actual()
 
     assert r["borrado"] is False
+
+
+def test_hora_quito_resta_5_horas():
+    """fecha_crea viene en UTC (server/RDS); se muestra en hora de Quito
+    (UTC-5, sin horario de verano)."""

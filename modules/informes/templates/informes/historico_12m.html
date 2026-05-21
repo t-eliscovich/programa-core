@@ -80,6 +80,11 @@
   }
   .h12-tbl td.delta-cell.up   { color: rgb(22 163 74); }
   .h12-tbl td.delta-cell.down { color: rgb(220 38 38); }
+  /* Federico 2026-05-21 - columna fina de diferencias (letra chica). */
+  .h12-tbl .h12-delta-col {
+    font-size: 10px; color: rgb(100 116 139);
+    background: rgb(248 250 252); font-style: italic;
+  }
 
   @media print {
     .no-print { display: none !important; }
@@ -261,7 +266,8 @@
           <tr>
             <th class="first">Indicador</th>
             {% for c in data.columnas %}
-              <th class="{% if c.es_mes_actual %}bg-sky-50{% endif %}">
+              <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50{% endif %}">
+                {% if c.es_delta %}Δ{% else %}
                 {{ MES_ABRV[c.mes-1] }}
                 <span class="yr">{{ c.anio }}</span>
                 {% if c.es_mes_actual %}
@@ -271,6 +277,7 @@
                       <span class="ml-1 px-1 rounded bg-sky-200 text-sky-900 font-semibold">DEFAULT</span>
                     {% endif %}
                   </div>
+                {% endif %}
                 {% endif %}
               </th>
             {% endfor %}
@@ -318,7 +325,7 @@
               <td class="label">{{ linea.label }}</td>
               {% for v in linea.valores %}
                 {% set c = data.columnas[loop.index0] %}
-                <td class="num {% if c.es_mes_actual %}bg-sky-50/40{% endif %}">
+                <td class="num {% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50/40{% endif %}">
                   {{ fmt_val(v, linea.fmt) }}
                 </td>
               {% endfor %}
@@ -331,7 +338,7 @@
               <td class="label">{{ linea.label }}</td>
               {% for v in linea.valores %}
                 {% set c = data.columnas[loop.index0] %}
-                <td class="num {% if c.es_mes_actual %}bg-sky-50/40{% endif %}">
+                <td class="num {% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50/40{% endif %}">
                   {{ fmt_val(v, linea.fmt) }}
                 </td>
               {% endfor %}
