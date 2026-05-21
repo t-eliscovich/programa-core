@@ -15,10 +15,16 @@
 <div class="page-shell page-shell--full">
   {# Hero estandarizado — patrón page_hero + acciones primarias + dropdown "Más". #}
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+    {# TMT 2026-05-21 fix L-1 (pedido dueña): el KPI principal mostraba
+       la DEUDA con proveedores (TOTP del balance) y eso confundía con
+       el listado de compras del período. Ahora el KPI muestra el total
+       de compras del filtro activo. La deuda viva sigue siendo
+       accesible vía /posdat. #}
     {{ page_hero(
         'Compras',
-        kpi_valor='$ ' ~ (deuda.total | num_es(0)),
-        kpi_extra='· ' ~ (deuda.n_partidas | string) ~ ' partidas abiertas a proveedores'
+        kpi_valor='$ ' ~ (total_importe | num_es(0)),
+        kpi_extra='· ' ~ (filas | length | string) ~ ' compras en pantalla'
+                   ~ ' · ' ~ (total_kg | num_es(0)) ~ ' kg'
     ) }}
 
     <div class="no-print flex items-center gap-2 shrink-0">
