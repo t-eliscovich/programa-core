@@ -204,19 +204,23 @@
   {% endif %}
 
   {# TMT 2026-05-20 v2 — table-fixed para que entre sin scroll horizontal.
-     Pedido dueña: "Que ninguna pantalla se scrollee para los costados". #}
+     Pedido dueña: "Que ninguna pantalla se scrollee para los costados".
+     TMT 2026-05-21 — +2 columnas Δ (Kg / USD) que comparan PC vs Asinfo.
+     Si coincide → tilde sky. Si difiere → delta numérico en rojo. #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <table class="w-full text-xs sortable table-fixed">
       <colgroup>
-        <col style="width: 9%">    <!-- N° -->
-        <col style="width: 9%">    <!-- Fecha -->
+        <col style="width: 8%">    <!-- N° -->
+        <col style="width: 8%">    <!-- Fecha -->
         <col>                       <!-- Cliente: resto -->
-        <col style="width: 9%">    <!-- Kg -->
-        <col style="width: 11%">   <!-- Importe -->
-        <col style="width: 11%">   <!-- Abonado -->
-        <col style="width: 11%">   <!-- Saldo -->
-        <col style="width: 13%">   <!-- Acum -->
-        <col style="width: 6%">    <!-- Stat -->
+        <col style="width: 8%">    <!-- Kg -->
+        <col style="width: 7%">    <!-- Δ Kg AI -->
+        <col style="width: 10%">   <!-- Importe -->
+        <col style="width: 8%">    <!-- Δ USD AI -->
+        <col style="width: 10%">   <!-- Abonado -->
+        <col style="width: 10%">   <!-- Saldo -->
+        <col style="width: 11%">   <!-- Acum -->
+        <col style="width: 5%">    <!-- Stat -->
       </colgroup>
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
@@ -224,7 +228,9 @@
           <th class="px-2 py-2 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
           <th class="px-2 py-2 text-left font-medium">Cliente</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Kg</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Δ Kg vs Asinfo (PC - Asinfo)">Δ AI</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Δ USD vs Asinfo (PC - Asinfo)">Δ AI</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
           <th class="px-2 py-2 text-right font-medium acum-col" title="Total facturado corrido" data-no-sort>Acum.</th>
@@ -243,17 +249,43 @@
                class="font-mono hover:text-blue-600">{{ f.codigo_cli }}</a>
           </td>
           <td class="px-2 py-1.5 text-right text-mono">{{ f.kg | kg_es }}</td>
+          {# Δ AI Kg = Asinfo - PC. + = Asinfo tiene más kg. None = sin match. 0 = ✓ #}
+          <td class="px-2 py-1.5 text-right text-mono" title="{% if f.asinfo_kg is none %}sin match Asinfo{% else %}Asinfo: {{ f.asinfo_kg | num_es(2) }} kg{% endif %}">
+            {% if f.asinfo_kg is none %}
+              <span class="text-slate-300">—</span>
+            {% elif f.asinfo_diff_kg == 0 %}
+              <span class="text-sky-600 dark:text-sky-400">✓</span>
+            {% else %}
+              <span class="text-rose-600 dark:text-rose-400">{{ '%+.2f' % f.asinfo_diff_kg }}</span>
+            {% endif %}
+          </td>
           <td class="px-2 py-1.5 text-right text-mono">{{ f.importe | money_es }}</td>
+          {# Δ AI USD = Asinfo - PC. + = Asinfo factura más. None = sin match. 0 = ✓ #}
+          <td class="px-2 py-1.5 text-right text-mono" title="{% if f.asinfo_usd is none %}sin match Asinfo{% else %}Asinfo: $ {{ f.asinfo_usd | num_es(2) }}{% endif %}">
+            {% if f.asinfo_usd is none %}
+              <span class="text-slate-300">—</span>
+            {% elif f.asinfo_diff_usd == 0 %}
+              <span class="text-sky-600 dark:text-sky-400">✓</span>
+            {% else %}
+              <span class="text-rose-600 dark:text-rose-400">{{ '%+.2f' % f.asinfo_diff_usd }}</span>
+            {% endif %}
+          </td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
           <td class="px-2 py-1.5 font-mono text-slate-500">{{ f.stat }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
+        {{ empty_row(11, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
         {% endfor %}
       </tbody>
     </table>
+    {% if not asinfo_intentado and filas %}
+      <div class="px-3 py-2 text-[11px] text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800">
+        Columnas <strong>Δ AI</strong> deshabilitadas para esta vista (más de 1000 filas).
+        Acotá con filtros de fecha o cliente para ver el comparativo con Asinfo.
+      </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

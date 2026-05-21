@@ -440,6 +440,43 @@ def lista():
     except Exception as e:
         filas, conteos, error = [], {}, str(e)
 
+    # ===== Enriquecimiento con Asinfo (read-only, fail-soft) =====
+    # Para cada factura de PC, intentamos matchear contra la card 199 de
+    # Asinfo via numf_completo == numero. Agregamos asinfo_kg/asinfo_usd
+    # y los deltas vs PC. Si no hay match → None (la columna queda "—").
+    #
+    # Performance: solo enriquecemos si <= 1000 filas Y hay fechas válidas
+    # en el rango. Para vistas amplias (todas las históricas) saltamos.
+    _asinfo_intentado = False
+    if 0 < len(filas) <= 1000:
+        fechas = [f["fecha"] for f in filas if f.get("fecha")]
+        if fechas:
+            from modules.asinfo import service as asinfo_service
+
+            _asinfo_intentado = True
+            mn, mx = min(fechas), max(fechas)
+            asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
+            # Indexar por numero (sólo tipo FACTURA — las NCs/devoluciones
+            # tienen sus propios números que no matchean con facturas de PC).
+            asinfo_idx: dict[str, dict] = {}
+            for r in asinfo_rows:
+                if r.get("tipo") == "FACTURA" and r.get("numero"):
+                    asinfo_idx[r["numero"]] = r
+            # Mergear
+            for f in filas:
+                numero = (f.get("numf_completo") or "").strip()
+                r_ai = asinfo_idx.get(numero) if numero else None
+                if r_ai is not None:
+                    f["asinfo_kg"] = float(r_ai.get("kg") or 0)
+                    f["asinfo_usd"] = float(r_ai.get("usd") or 0)
+                    f["asinfo_diff_kg"] = round(f["asinfo_kg"] - float(f.get("kg") or 0), 3)
+                    f["asinfo_diff_usd"] = round(f["asinfo_usd"] - float(f.get("importe") or 0), 2)
+                else:
+                    f["asinfo_kg"] = None
+                    f["asinfo_usd"] = None
+                    f["asinfo_diff_kg"] = None
+                    f["asinfo_diff_usd"] = None
+
     if request.args.get("export") == "csv":
         return csv_response(
             filas,
@@ -469,6 +506,7 @@ def lista():
         estados=estados_filtro,
         total_importe=total_importe, total_saldo=total_saldo,
         error=error,
+        asinfo_intentado=_asinfo_intentado,
     )
 
 
