@@ -2077,56 +2077,13 @@ def desaplicar_factura(
             conn=conn,
         )
 
-        # ─── Auto-anular cheque si quedó sin aplicaciones Y fue creado en la
-        # Si después del reverso el cheque queda SIN aplicaciones vivas,
-        # automáticamente lo marcamos stat='X' (Reversado). El cartel
-        # "Reversado" aparece en el listado y el cheque deja de sumar a
-        # los KPIs. La usuaria puede verlo en el tab "Eliminados" o
-        # con ?ver_eliminados=1. Pedido TMT 2026-05-14.
-        #
-        # Antes la regla era "sólo si fue creado hoy" pero confundía a la
-        # usuaria — el cheque #1899 reversado ayer seguía en cartera como
-        # "Postergado". Ahora cualquier cheque que queda sin aplicación
-        # post-reverso se anula.
-        #
-        # Si el cheque está depositado (B) o endosado (E), NO se toca —
-        # esos tienen sus propios flujos de reverso.
-        aplic_restantes = (
-            db.fetch_one(
-                "SELECT COUNT(*) AS n FROM scintela.chequesxfact WHERE id_cheque=%s",
-                (id_cheque,),
-                conn=conn,
-            )
-            or {}
-        )
-        n_aplic_restantes = int(aplic_restantes.get("n") or 0)
-        cheque_aux = (
-            db.fetch_one(
-                "SELECT fecha, fechaing, no_banco, stat FROM scintela.cheque WHERE id_cheque = %s",
-                (id_cheque,),
-                conn=conn,
-            )
-            or {}
-        )
-        # No anular si ya está en estado no-anulable (depositado, endosado, etc).
-        stat_actual = (cheque_aux.get("stat") or "").upper()
-        anulable = stat_actual in ("Z", "P")
-
+        # TMT 2026-05-21 dueña: el cheque después de desaplicar SIGUE
+        # en Z (cartera), disponible para re-aplicar. Antes se marcaba
+        # automáticamente como 'X' (Eliminado) cuando quedaba sin aplicaciones
+        # vivas — esto generaba sorpresa ("¿por qué desapareció el cheque?").
+        # Si la dueña quiere anular el cheque, lo hace manualmente desde la
+        # pantalla del cheque.
         auto_anulado = False
-        if n_aplic_restantes == 0 and anulable:
-            marca = "[X] auto-anulado al reversar aplicación"
-            if motivo:
-                marca += f" — {motivo[:60]}"
-            db.execute(
-                "UPDATE scintela.cheque "
-                "SET stat='X', fechaout=%s, "
-                "    observacion = RIGHT(COALESCE(observacion || ' | ', '') || %s, 200), "
-                "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
-                "WHERE id_cheque=%s",
-                (date.today(), marca, usuario, id_cheque),
-                conn=conn,
-            )
-            auto_anulado = True
 
         # Registrar mov_doble reverso linkeado al original.
         # SKILL.md "Lo que NO hacer": no `try/except: pass` silencioso
@@ -2711,27 +2668,28 @@ def reversar(
             conn=conn,
         )
 
-        # Rebote real (B/1/2/A → 1 o 3) ⇒ cliente a STOP.
-        # Solo si no estaba ya en stop — idempotente.
+        # TMT 2026-05-21 dueña: el STOP es SOLO MANUAL. No marcar
+        # automáticamente al rebotar. La obs sí queda anotada para que
+        # vea quién rebotó y decida si pone STOP manualmente.
         stop_aplicado = False
         es_rebote_real = es_rebote_real and bool(ch["codigo_cli"])
         if es_rebote_real:
             marca = (
-                f"[S] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} REBOTADO {date.today().isoformat()}"
+                f"[REBOTE] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} {date.today().isoformat()}"
             )
             if motivo:
                 marca += f" — {motivo[:80]}"
-            rc = db.execute(
+            # Anotar en observación SIN tocar el flag stop (lo decide la
+            # dueña manualmente desde /clientes/<codigo>/stop).
+            db.execute(
                 "UPDATE scintela.cliente "
-                "SET stop='S', "
-                "    observacion = RIGHT("
+                "SET observacion = RIGHT("
                 "        COALESCE(observacion || ' | ', '') || %s, %s), "
                 "    usuario_modifica = %s "
-                "WHERE codigo_cli = %s AND COALESCE(stop,'N') != 'S'",
+                "WHERE codigo_cli = %s",
                 (marca, _OBS_CAP, usuario, ch["codigo_cli"]),
                 conn=conn,
             )
-            stop_aplicado = bool(rc)
 
         # Si era postdatado, borrar su posdat
         db.execute(

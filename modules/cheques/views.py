@@ -784,7 +784,7 @@ def confirmar_reverso(id_cheque: int):
     }
     mensaje = (
         f"Vas a rebotar el cheque N° {ch.get('no_cheque')} por $ {ch.get('importe') or 0}. "
-        "El cliente pasará automáticamente a STOP."
+        "Se anota un rebote en la observación del cliente — el STOP lo decidís vos manualmente."
         if es_rebote
         else f"Vas a reversar el cheque N° {ch.get('no_cheque')} (anulación sin afectar al cliente)."
     )
@@ -1565,8 +1565,8 @@ def confirmar_rebote(id_cheque: int):
         titulo=f"Marcar como rebotado — cheque {ch.get('no_cheque') or '#' + str(id_cheque)}",
         mensaje=(
             f"Vas a marcar el cheque como rebotado. "
-            f"El cliente {ch.get('codigo_cli') or ''} pasará a STOP automáticamente. "
-            "Indicá motivo (ej. fondos insuficientes, cuenta cerrada)."
+            f"Se anota en la observación del cliente {ch.get('codigo_cli') or ''} — "
+            "el STOP lo decidís manualmente desde la pantalla del cliente."
         ),
         detalle_registro=detalle,
         accion_url=url_for("cheques.transicionar", id_cheque=id_cheque),
