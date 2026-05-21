@@ -494,8 +494,30 @@ def movimientos_mes_dbase(anio: int | None = None,
     pf0 = float(inic.get("terminado") or hist.get("stock_terminado") or 0)
     vq0 = float(inic.get("vq") or hist.get("uqui") or 0)
 
-    kcom = float(hist.get("kcom") or 0)
-    ucom = float(hist.get("ucom") or 0)
+    # TMT 2026-05-21 fix bug $/kg ingresos: el snapshot historia.kcom/ucom
+    # incluye TODAS las compras del mes (H+K+T+Q+C). Pero la columna
+    # "INGRESOS" de la fila HILADO debe contar solo compras tipo='H' —
+    # sino el promedio $/kg sale distinto al "COMPRAS HILADO TOTAL" que
+    # filtra por tipo. Bug reportado por dueña 2026-05-21: vio 2.913 en
+    # Ingresos vs 2.863 en Compras Hilado.
+    try:
+        _h_row = db.fetch_one(
+            """
+            SELECT COALESCE(SUM(kg), 0)      AS kg,
+                   COALESCE(SUM(importe), 0) AS importe
+              FROM scintela.compra
+             WHERE UPPER(COALESCE(tipo, '')) = 'H'
+               AND COALESCE(stat, '') <> 'Y'
+               AND EXTRACT(YEAR FROM fecha)  = %s
+               AND EXTRACT(MONTH FROM fecha) = %s
+            """,
+            (yy, mm),
+        ) or {}
+        kcom = float(_h_row.get("kg") or 0)
+        ucom = float(_h_row.get("importe") or 0)
+    except Exception:
+        kcom = float(hist.get("kcom") or 0)
+        ucom = float(hist.get("ucom") or 0)
     ktej = float(hist.get("ktej") or 0)
     ktin = float(hist.get("ktin") or 0)
     kvent = float(hist.get("kvent") or 0)

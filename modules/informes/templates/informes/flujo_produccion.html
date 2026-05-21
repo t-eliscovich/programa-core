@@ -25,7 +25,10 @@
   .fp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
   .fp tr.total td { border-top: 1px solid rgb(148 163 184); font-weight: 700;
                     color: rgb(30 64 175); padding-top: 4px; }
-  .fp .pct { color: rgb(100 116 139); font-size: 10px; }
+  /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
+     número principal, no al costado, para encolumnar correctamente. */
+  .fp .pct { color: rgb(100 116 139); font-size: 10px; display: block;
+             line-height: 1.1; margin-top: 2px; }
   .fp .nd  { color: rgb(148 163 184); font-style: italic; }
   .fp .blk-cs th, .fp .blk-cs td.lbl { color: rgb(30 64 175); }
   /* Grid 2 columnas compacto para compras-hilado / producción tejido,
