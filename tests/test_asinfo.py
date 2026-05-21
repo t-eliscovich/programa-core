@@ -18,6 +18,14 @@ from modules._lib import metabase_client
 from modules.asinfo import service
 
 
+@pytest.fixture(autouse=True)
+def _reset_facturas_cache():
+    """El cache TTL de facturas_periodo es global. Limpiarlo entre tests."""
+    service.reset_facturas_cache()
+    yield
+    service.reset_facturas_cache()
+
+
 # ---------------------------------------------------------------------------
 # fetch_card_from_env
 # ---------------------------------------------------------------------------

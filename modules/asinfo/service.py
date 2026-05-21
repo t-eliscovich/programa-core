@@ -118,6 +118,20 @@ def ventas_cliente_kg(vendedor: Optional[str] = None) -> list[dict]:
     return fetch_card_from_env("ASINFO_CARD_CLIENTE_KG", params=params)
 
 
+# ---------------------------------------------------------------------------
+# Cache TTL para facturas_periodo
+# ---------------------------------------------------------------------------
+# Una vista de /facturas pide hasta 5 años de facturas a Metabase y eso
+# tarda 10-30s. Cacheamos por rango de fechas durante 5 min — la cartera
+# no cambia segundo a segundo y la diferencia entre "ahora" y "hace 5 min"
+# es irrelevante para conciliación. Reiniciar el proceso lo invalida.
+
+import time as _time
+
+_FACTURAS_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+_FACTURAS_TTL_SECS = 300  # 5 minutos
+
+
 def facturas_periodo(desde, hasta) -> list[dict]:
     """Facturas + NC financieras + Devoluciones + NTEN en el rango [desde, hasta].
 
@@ -131,8 +145,10 @@ def facturas_periodo(desde, hasta) -> list[dict]:
         usd             — DECIMAL. NC_FINANCIERA, DEVOLUCION y NCNT negados.
 
     Lee de la card definida por la env var `ASINFO_CARD_FACTURAS` (ID 199 al 2026-05-21).
-    La card está validada contra el export histórico al 2026-05-20:
-    match exacto en USD, +16 kg (0.14%) en FACTURA por ajustes posteriores al export.
+
+    Performance: cache TTL 5 min por (desde, hasta). La primera carga del día
+    sobre un rango grande puede tardar 10-30s; las siguientes son instantáneas.
+    Para invalidar el cache, llamar `reset_facturas_cache()` o restart del proceso.
 
     Args:
         desde, hasta: `date` o string 'YYYY-MM-DD'. Ambos inclusivos.
@@ -145,19 +161,38 @@ def facturas_periodo(desde, hasta) -> list[dict]:
         desde = desde.isoformat()
     if hasattr(hasta, "isoformat"):
         hasta = hasta.isoformat()
+    desde, hasta = str(desde), str(hasta)
+
+    key = (desde, hasta)
+    now = _time.time()
+    cached = _FACTURAS_CACHE.get(key)
+    if cached and (now - cached[0]) < _FACTURAS_TTL_SECS:
+        return cached[1]
+
     params = [
         {
             "type": "date/single",
             "target": ["variable", ["template-tag", "fecha_inicio"]],
-            "value": str(desde),
+            "value": desde,
         },
         {
             "type": "date/single",
             "target": ["variable", ["template-tag", "fecha_fin"]],
-            "value": str(hasta),
+            "value": hasta,
         },
     ]
-    return fetch_card_from_env("ASINFO_CARD_FACTURAS", params=params)
+    rows = fetch_card_from_env("ASINFO_CARD_FACTURAS", params=params)
+    # Solo cacheamos si trajo algo — si fue [] por error de red, no fijamos
+    # el resultado vacío 5 min (mejor reintentar al próximo request).
+    if rows:
+        _FACTURAS_CACHE[key] = (now, rows)
+    return rows
+
+
+def reset_facturas_cache() -> None:
+    """Vaciar el cache de facturas_periodo. Útil para tests o tras un deploy
+    que invalidó la fuente."""
+    _FACTURAS_CACHE.clear()
 
 
 def facturas_totales_por_tipo(desde, hasta) -> dict:

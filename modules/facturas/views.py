@@ -450,19 +450,34 @@ def lista():
     # comodamente. Para vistas históricas más amplias saltamos — pero igual
     # inicializamos las 4 claves a None para que el template no rompa.
     _asinfo_intentado = False
+    from datetime import date as _date_inic
+    _ASINFO_CUTOFF = _date_inic(2025, 1, 1)
     for f in filas:
         f["asinfo_kg"] = None
         f["asinfo_usd"] = None
         f["asinfo_diff_kg"] = None
         f["asinfo_diff_usd"] = None
+        # True si la factura es de ANTES de cuando arrancó Asinfo "limpio"
+        # → sabemos que no va a tener match, no es un error.
+        f["asinfo_pre_cutoff"] = bool(f.get("fecha") and f["fecha"] < _ASINFO_CUTOFF)
     if 0 < len(filas) <= 6000:
+        from datetime import date as _date
+
+        # Asinfo solo tiene data limpia desde 2025-01-01. Recortamos el rango
+        # mínimo para no pedirle 5 años de facturas históricas que sabemos
+        # que NO van a matchear (cartera legacy 2021-2024). Esto pasa de
+        # ~50k filas a ~5k y la query baja de 20s a 2-3s.
+        ASINFO_DESDE_EFECTIVO = _date(2025, 1, 1)
         fechas = [f["fecha"] for f in filas if f.get("fecha")]
-        if fechas:
+        # Solo pedimos a Asinfo si hay AL MENOS una factura con fecha >= 2025.
+        fechas_2025_plus = [f for f in fechas if f >= ASINFO_DESDE_EFECTIVO]
+        if fechas_2025_plus:
             try:
                 from modules.asinfo import service as asinfo_service
 
                 _asinfo_intentado = True
-                mn, mx = min(fechas), max(fechas)
+                mn = max(min(fechas_2025_plus), ASINFO_DESDE_EFECTIVO)
+                mx = max(fechas_2025_plus)
                 asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
                 # Indexar por numero (sólo tipo FACTURA — las NCs/devoluciones
                 # tienen sus propios números que no matchean con facturas de PC).

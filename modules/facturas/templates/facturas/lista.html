@@ -252,8 +252,11 @@
           {# Kg AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_kg = f.asinfo_kg if f.asinfo_kg is defined else none %}
           {% set _ai_dkg = f.asinfo_diff_kg if f.asinfo_diff_kg is defined else none %}
-          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_kg is none %}sin match Asinfo{% elif _ai_dkg %}Δ={{ '%+.2f' % _ai_dkg }} vs PC{% else %}coincide con PC{% endif %}">
-            {% if _ai_kg is none %}
+          {% set _ai_pre = f.asinfo_pre_cutoff if f.asinfo_pre_cutoff is defined else false %}
+          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_pre %}Asinfo solo tiene data desde 2025-01-01. Facturas anteriores no están allá.{% elif _ai_kg is none %}sin match en Asinfo{% elif _ai_dkg %}Δ={{ '%+.2f' % _ai_dkg }} vs PC{% else %}coincide con PC{% endif %}">
+            {% if _ai_pre %}
+              <span class="text-slate-300 text-[10px]">ant. 25</span>
+            {% elif _ai_kg is none %}
               <span class="text-slate-300">—</span>
             {% elif _ai_dkg == 0 %}
               <span class="text-slate-400">{{ _ai_kg | kg_es }}</span>
@@ -265,8 +268,10 @@
           {# USD AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_usd = f.asinfo_usd if f.asinfo_usd is defined else none %}
           {% set _ai_dusd = f.asinfo_diff_usd if f.asinfo_diff_usd is defined else none %}
-          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_usd is none %}sin match Asinfo{% elif _ai_dusd %}Δ={{ '%+.2f' % _ai_dusd }} vs PC{% else %}coincide con PC{% endif %}">
-            {% if _ai_usd is none %}
+          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_pre %}Asinfo solo tiene data desde 2025-01-01.{% elif _ai_usd is none %}sin match en Asinfo{% elif _ai_dusd %}Δ={{ '%+.2f' % _ai_dusd }} vs PC{% else %}coincide con PC{% endif %}">
+            {% if _ai_pre %}
+              <span class="text-slate-300 text-[10px]">ant. 25</span>
+            {% elif _ai_usd is none %}
               <span class="text-slate-300">—</span>
             {% elif _ai_dusd == 0 %}
               <span class="text-slate-400">{{ _ai_usd | money_es }}</span>
