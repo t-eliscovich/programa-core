@@ -5807,36 +5807,35 @@ def fuentes_y_usos(
             "_origen":    "live",
         }
 
-    h_fin = _historia_en_mes(yy, mm)
-    h_ini = _historia_en_mes(yy_ant, mm_ant)
-
-    # Fallback HASTA: snapshot ausente o vacío
+    # TMT 2026-05-20 v6 — SIEMPRE usar balance_components_as_of() para AMBOS
+    # extremos. Razón: si usás un mix de informe_balance() LIVE + as_of, las
+    # queries internas son distintas (criterios de cart/totf cambian) y
+    # introducen un drift artificial en los Δ que invierte signos (Tamara
+    # vio CARTERA/ANTICIPOS/PASIVOS/RETIROS al revés). Usar la misma
+    # función para ambos garantiza simetría: las imperfecciones del cálculo
+    # se cancelan en la resta.
     hoy = _date.today()
     es_mes_actual = (yy == hoy.year and mm == hoy.month)
-    if _es_snap_vacio(h_fin) or es_mes_actual:
-        try:
-            if es_mes_actual:
-                # Mes actual → balance LIVE de hoy.
-                bal_live = informe_balance()  # type: ignore[name-defined]
-                comp = (bal_live or {}).get("diagnostico", {}).get("componentes", {})
-                h_fin = _row_desde_componentes(comp, hoy)
-            else:
-                last_day = _cal.monthrange(yy, mm)[1]
-                fecha_fin = _date(yy, mm, last_day)
-                comp = balance_components_as_of(fecha_fin)
-                h_fin = _row_desde_componentes(comp, fecha_fin)
-        except Exception:
-            pass
 
-    # Fallback DESDE
-    if _es_snap_vacio(h_ini):
-        try:
-            last_day_i = _cal.monthrange(yy_ant, mm_ant)[1]
-            fecha_ini = _date(yy_ant, mm_ant, last_day_i)
-            comp = balance_components_as_of(fecha_ini)
-            h_ini = _row_desde_componentes(comp, fecha_ini)
-        except Exception:
-            pass
+    last_day_fin = _cal.monthrange(yy, mm)[1]
+    fecha_fin = _date(yy, mm, last_day_fin) if not es_mes_actual else hoy
+
+    last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
+    fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
+
+    comp_fin: dict = {}
+    comp_ini: dict = {}
+    try:
+        comp_fin = balance_components_as_of(fecha_fin) or {}
+        h_fin = _row_desde_componentes(comp_fin, fecha_fin)
+    except Exception:
+        h_fin = _historia_en_mes(yy, mm)
+
+    try:
+        comp_ini = balance_components_as_of(fecha_ini) or {}
+        h_ini = _row_desde_componentes(comp_ini, fecha_ini)
+    except Exception:
+        h_ini = _historia_en_mes(yy_ant, mm_ant)
 
     if not h_fin or not h_ini:
         return {
@@ -5897,35 +5896,29 @@ def fuentes_y_usos(
         if f(h_ini, k) == 0 and f(h_fin, k) > 1.0:
             columnas_ini_vacias.append(k)
 
-    # PRG L1706-1707: SUM ALL USUTI/USRET sobre meses del período
-    # (recno>recI .AND. recno<=recF). Sumamos los snapshots intermedios
-    # — esto cuenta la utilidad/retiros DEL PERÍODO acumulados.
-    sum_row = db.fetch_one(
+    # TMT 2026-05-20 v6 — utilidad y retiros del PERÍODO.
+    #
+    # Retiros del período: SUM directo de scintela.retiros entre las dos
+    # fechas. Es la fuente de verdad (no scintela.historia.usret, que solo
+    # se rellena si el snapshot mensual quedó bien generado).
+    # NOTA: la columna de monto es `ret` (no `importe`). Ver L395 misma tabla.
+    retiros_row = db.fetch_one(
         """
-        SELECT COALESCE(SUM(usuti), 0) AS uti,
-               COALESCE(SUM(usret), 0) AS ret
-          FROM scintela.historia
+        SELECT COALESCE(SUM(ret), 0) AS total
+          FROM scintela.retiros
          WHERE fecha > %s AND fecha <= %s
         """,
-        (h_ini.get("fecha"), h_fin.get("fecha")),
+        (fecha_ini, fecha_fin),
     ) or {}
-    # TMT 2026-05-20 v5b — si los snapshots intermedios tienen
-    # usuti=0/usret=0 (porque nunca se rellenaron bien), Y el período
-    # incluye el mes en curso, fallback a la utilidad/retiros LIVE.
-    uti_db = float(sum_row.get("uti") or 0)
-    ret_db = float(sum_row.get("ret") or 0)
-    if (uti_db == 0 or ret_db == 0) and es_mes_actual:
-        try:
-            bal_live = informe_balance()
-            comp = (bal_live or {}).get("diagnostico", {}).get("componentes", {})
-            if uti_db == 0:
-                sum_row["uti"] = float(comp.get("utilidad") or 0)
-            if ret_db == 0:
-                sum_row["ret"] = float(comp.get("uret") or 0)
-        except Exception:
-            pass
-    utilidad_periodo = float(sum_row.get("uti") or 0)
-    retiros_periodo  = float(sum_row.get("ret") or 0)
+    retiros_periodo = float(retiros_row.get("total") or 0)
+
+    # Utilidad del período = ΔPatrimonio + Retiros − Aportes. Aportes no
+    # se modelan separadamente (los retiros negativos en la tabla actúan
+    # como aportes). Entonces:
+    #   utilidad_periodo = (patr_fin - patr_ini) + retiros_periodo
+    patr_fin = float(comp_fin.get("patr") or h_fin.get("patrimonio") or 0)
+    patr_ini = float(comp_ini.get("patr") or h_ini.get("patrimonio") or 0)
+    utilidad_periodo = (patr_fin - patr_ini) + retiros_periodo
 
     fuentes: list[tuple[str, float]] = []
     usos:    list[tuple[str, float]] = []
