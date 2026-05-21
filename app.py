@@ -320,6 +320,11 @@ def create_app() -> Flask:
 
     app.register_blueprint(healthz_bp)
 
+    # Diagnóstico de bridges externos — admin-only, no escribe nada.
+    from modules.diag.views import bp as diag_bp
+
+    app.register_blueprint(diag_bp)
+
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
     # middleware so we don't steal its elapsed-time header, and AFTER all

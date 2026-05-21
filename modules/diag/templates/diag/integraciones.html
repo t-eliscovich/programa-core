@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, empty_row %}
+{% block title %}Diagnóstico integraciones{% endblock %}
+{% block breadcrumb %}<strong>Diagnóstico integraciones</strong>{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full">
+
+  {{ page_hero(
+      'Diagnóstico — Bridges externos',
+      descripcion='Preview de la data que estamos trayendo desde formulas_app (tintorería) y Asinfo (ERP) vía Metabase. Para validar que llega bien antes de armar UIs encima.'
+  ) }}
+
+  {# ============== Estado de configuración ============== #}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900">
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">formulas_app (Postgres)</div>
+      {% if estado.formulas_db_configured %}
+        <div class="text-sky-600 dark:text-sky-400 font-semibold">● Configurado</div>
+      {% else %}
+        <div class="text-amber-600 dark:text-amber-400 font-semibold">○ No configurado</div>
+        <p class="text-xs text-slate-500 mt-1">Falta seterar <code>FORMULAS_DATABASE_URL</code></p>
+      {% endif %}
+    </div>
+    <div class="rounded-lg border border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900">
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Metabase / Asinfo (HTTP API)</div>
+      {% if estado.metabase_configured %}
+        <div class="text-sky-600 dark:text-sky-400 font-semibold">● Configurado</div>
+      {% else %}
+        <div class="text-amber-600 dark:text-amber-400 font-semibold">○ No configurado</div>
+        <p class="text-xs text-slate-500 mt-1">Falta seterar <code>METABASE_URL</code>/<code>USERNAME</code>/<code>PASSWORD</code></p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="mt-2 text-xs text-slate-500">
+    Para chequeo profundo (toca red): <a class="underline" href="/healthz/integraciones" target="_blank">/healthz/integraciones</a>
+  </div>
+
+  {# ============== SECCIÓN 1: TINTURA (formulas_app) ============== #}
+  <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-10 mb-4">
+    Tintorería — desde <code>formulas_app</code>
+  </h2>
+
+  <h3 class="text-sm uppercase tracking-wide text-slate-500 mb-2">
+    Últimas 25 órdenes (tinturado_resumen)
+  </h3>
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 mb-8">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left" style="white-space:nowrap">N°</th>
+          <th class="px-3 py-2 text-left">Fecha</th>
+          <th class="px-3 py-2 text-left">Terminado</th>
+          <th class="px-3 py-2 text-left">Fórmula</th>
+          <th class="px-3 py-2 text-left">Color</th>
+          <th class="px-3 py-2 text-left">Categoría</th>
+          <th class="px-3 py-2 text-right">Plan kg</th>
+          <th class="px-3 py-2 text-right">Cruda kg</th>
+          <th class="px-3 py-2 text-right">Terminada kg</th>
+          <th class="px-3 py-2 text-right">Desperdicio</th>
+          <th class="px-3 py-2 text-left">Jet</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in tintura_ordenes %}
+          <tr class="border-t border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+            <td class="px-3 py-2 font-mono text-xs" style="white-space:nowrap">{{ o.numero }}</td>
+            <td class="px-3 py-2 text-xs">{{ o.fecha.isoformat() if o.fecha else '—' }}</td>
+            <td class="px-3 py-2 text-xs">
+              {% if o.fecha_terminado %}
+                {{ o.fecha_terminado.isoformat() }}
+              {% else %}
+                <span class="text-slate-400">en curso</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-xs">{{ o.formula_cod or '—' }}</td>
+            <td class="px-3 py-2">{{ o.color or '—' }}</td>
+            <td class="px-3 py-2 text-xs text-slate-500">{{ o.categoria or '—' }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ o.kilos_planeados | num_es(1) }}</td>
+            <td class="px-3 py-2 text-right text-mono">
+              {{ o.tela_cruda_kg | num_es(1) if o.tela_cruda_kg is not none else '—' }}
+            </td>
+            <td class="px-3 py-2 text-right text-mono">
+              {{ o.tela_terminada_kg | num_es(1) if o.tela_terminada_kg is not none else '—' }}
+            </td>
+            <td class="px-3 py-2 text-right text-mono">
+              {% if o.desperdicio_kg is not none %}
+                <span class="{% if o.desperdicio_kg > 0 %}text-amber-600 dark:text-amber-400{% endif %}">
+                  {{ o.desperdicio_kg | num_es(1) }}
+                </span>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-xs">{{ o.jet or '—' }}</td>
+          </tr>
+        {% else %}
+          {{ empty_row(11, 'No hay órdenes de tinturado para mostrar. Verificá /healthz/integraciones.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="text-sm uppercase tracking-wide text-slate-500 mb-2">
+    Stock de químicos — top 80 por familia ({{ tintura_stock_total }} productos en total)
+  </h3>
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 mb-8">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">Familia</th>
+          <th class="px-3 py-2 text-left">N° visible</th>
+          <th class="px-3 py-2 text-left">Nombre</th>
+          <th class="px-3 py-2 text-right">Stock kg</th>
+          <th class="px-3 py-2 text-left">Última lectura</th>
+          <th class="px-3 py-2 text-right">Precio US$/kg</th>
+          <th class="px-3 py-2 text-left">Nota</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in tintura_stock %}
+          <tr class="border-t border-slate-100 dark:border-slate-800/50">
+            <td class="px-3 py-2 text-xs">{{ s.familia }}</td>
+            <td class="px-3 py-2 text-xs">{{ s.num_visible }}</td>
+            <td class="px-3 py-2">{{ s.nombre }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ s.stock_kg | num_es(2) }}</td>
+            <td class="px-3 py-2 text-xs">
+              {{ s.fecha_lectura.isoformat() if s.fecha_lectura else '—' }}
+            </td>
+            <td class="px-3 py-2 text-right text-mono">$ {{ s.precio_us | num_es(4) }}</td>
+            <td class="px-3 py-2 text-xs text-slate-500" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ s.nota }}
+            </td>
+          </tr>
+        {% else %}
+          {{ empty_row(7, 'No hay productos de tintorería para mostrar.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ============== SECCIÓN 2: ASINFO (Metabase) ============== #}
+  <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-10 mb-4">
+    Asinfo — desde Metabase (card 199)
+  </h2>
+
+  <form method="get" class="flex items-end gap-3 mb-4 flex-wrap">
+    <div>
+      <label class="block text-xs uppercase tracking-wide text-slate-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ fecha_desde.isoformat() }}"
+             class="border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-sm bg-white dark:bg-slate-900">
+    </div>
+    <div>
+      <label class="block text-xs uppercase tracking-wide text-slate-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ fecha_hasta.isoformat() }}"
+             class="border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-sm bg-white dark:bg-slate-900">
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
+      Filtrar
+    </button>
+    <div class="flex gap-2 text-xs">
+      <a href="?desde={{ hoy.isoformat() }}&hasta={{ hoy.isoformat() }}" class="text-sky-600 dark:text-sky-400 underline">hoy</a>
+      <a href="?desde={{ ayer.isoformat() }}&hasta={{ ayer.isoformat() }}" class="text-sky-600 dark:text-sky-400 underline">ayer</a>
+      <a href="?desde={{ mes_actual_desde.isoformat() }}&hasta={{ hoy.isoformat() }}" class="text-sky-600 dark:text-sky-400 underline">mes actual</a>
+    </div>
+  </form>
+
+  <h3 class="text-sm uppercase tracking-wide text-slate-500 mb-2">
+    Totales por tipo en el rango {{ fecha_desde.isoformat() }} → {{ fecha_hasta.isoformat() }}
+  </h3>
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 mb-8">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">Tipo de documento</th>
+          <th class="px-3 py-2 text-right">N° docs</th>
+          <th class="px-3 py-2 text-right">Kg</th>
+          <th class="px-3 py-2 text-right">US$</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set _orden = ['FACTURA','DEVOLUCION','NC_FINANCIERA','NTEN','NCNT'] %}
+        {% set _total_kg = namespace(v=0) %}
+        {% set _total_usd = namespace(v=0) %}
+        {% set _total_n = namespace(v=0) %}
+        {% for tipo in _orden %}
+          {% if tipo in asinfo_totales %}
+            {% set t = asinfo_totales[tipo] %}
+            {% set _total_kg.v = _total_kg.v + (t.kg | float) %}
+            {% set _total_usd.v = _total_usd.v + (t.usd | float) %}
+            {% set _total_n.v = _total_n.v + t.docs %}
+            <tr class="border-t border-slate-100 dark:border-slate-800/50">
+              <td class="px-3 py-2 font-medium">{{ tipo }}</td>
+              <td class="px-3 py-2 text-right text-mono">{{ t.docs }}</td>
+              <td class="px-3 py-2 text-right text-mono
+                  {% if t.kg < 0 %}text-rose-600 dark:text-rose-400{% endif %}">
+                {{ t.kg | num_es(2) }}
+              </td>
+              <td class="px-3 py-2 text-right text-mono
+                  {% if t.usd < 0 %}text-rose-600 dark:text-rose-400{% endif %}">
+                $ {{ t.usd | num_es(2) }}
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+        {% if asinfo_totales %}
+          <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-semibold bg-slate-50/50 dark:bg-slate-800/30">
+            <td class="px-3 py-2">TOTAL NETO</td>
+            <td class="px-3 py-2 text-right text-mono">{{ _total_n.v }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ _total_kg.v | num_es(2) }}</td>
+            <td class="px-3 py-2 text-right text-mono">$ {{ _total_usd.v | num_es(2) }}</td>
+          </tr>
+        {% else %}
+          {{ empty_row(4, 'No hay documentos en este rango. Probá otra fecha o verificá /healthz/integraciones.') }}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="text-sm uppercase tracking-wide text-slate-500 mb-2">
+    Primeras 50 filas individuales del rango
+  </h3>
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 mb-8">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">Tipo</th>
+          <th class="px-3 py-2 text-left">Fecha</th>
+          <th class="px-3 py-2 text-left">Número</th>
+          <th class="px-3 py-2 text-left">Cliente</th>
+          <th class="px-3 py-2 text-left">Vendedor</th>
+          <th class="px-3 py-2 text-right">Kg</th>
+          <th class="px-3 py-2 text-right">US$</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in asinfo_filas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800/50">
+            <td class="px-3 py-2 text-xs font-mono
+                {% if r.tipo in ('DEVOLUCION','NC_FINANCIERA','NCNT') %}
+                  text-rose-600 dark:text-rose-400
+                {% endif %}">
+              {{ r.tipo }}
+            </td>
+            <td class="px-3 py-2 text-xs">{{ r.fecha }}</td>
+            <td class="px-3 py-2 text-xs font-mono" style="white-space:nowrap">{{ r.numero }}</td>
+            <td class="px-3 py-2 text-xs">{{ r.cliente_codigo or '—' }}</td>
+            <td class="px-3 py-2 text-xs text-slate-500">{{ r.vendedor or '—' }}</td>
+            <td class="px-3 py-2 text-right text-mono
+                {% if (r.kg | float) < 0 %}text-rose-600 dark:text-rose-400{% endif %}">
+              {{ r.kg | num_es(2) }}
+            </td>
+            <td class="px-3 py-2 text-right text-mono
+                {% if (r.usd | float) < 0 %}text-rose-600 dark:text-rose-400{% endif %}">
+              $ {{ r.usd | num_es(2) }}
+            </td>
+          </tr>
+        {% else %}
+          {{ empty_row(7, 'No hay filas en este rango.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if asinfo_filas and asinfo_filas | length == 50 %}
+      <div class="px-3 py-2 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800">
+        Mostrando 50 primeras filas. Ver totales arriba para el rango completo, o abrir la card en
+        <a class="underline text-sky-600 dark:text-sky-400" href="https://metabase.intela.com.ec/question/199" target="_blank">Metabase</a>.
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
