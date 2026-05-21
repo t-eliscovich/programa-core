@@ -1476,7 +1476,7 @@ def _parse_importe_payload(raw) -> float | None:
         return None
 
 
-@informes_bp.route("/informes/flujo/gastos-forzados", methods=["GET"])
+@informes_bp.route("/flujo/gastos-forzados", methods=["GET"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def gastos_forzados_listar():
@@ -1487,7 +1487,7 @@ def gastos_forzados_listar():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@informes_bp.route("/informes/flujo/gastos-forzados", methods=["POST"])
+@informes_bp.route("/flujo/gastos-forzados", methods=["POST"])
 @requiere_login
 @requiere_permiso("informes.editar")
 def gastos_forzados_crear():
