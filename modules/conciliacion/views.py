@@ -10,6 +10,10 @@ from error_messages import flash_exc
 from modules.conciliacion import queries
 from modules.conciliacion.matcher import matchear
 from modules.conciliacion.parser import parse_csv
+from modules.conciliacion.parser_xlsx import parse_xlsx
+from modules.conciliacion.matcher_depositos import (
+    matchear_depositos, transacciones_en_rango,
+)
 
 conciliacion_bp = Blueprint(
     "conciliacion",
@@ -19,6 +23,7 @@ conciliacion_bp = Blueprint(
 )
 
 _SESSION_KEY = "_conciliacion_sospechosos"
+_SESSION_DEP = "_conciliacion_depositos_resultado"
 
 
 @conciliacion_bp.route("/", methods=["GET", "POST"])
@@ -123,3 +128,118 @@ def bandeja():
     """Muestra la bandeja de sospechosos guardada en session."""
     sospechosos = session.get(_SESSION_KEY, [])
     return render_template("conciliacion/bandeja.html", sospechosos=sospechosos)
+
+
+# ─── Hub: elegir qué tipo de conciliación arrancar ─────────────────────────
+@conciliacion_bp.route("/hub")
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub():
+    """Página principal con las opciones de conciliación.
+
+    TMT 2026-05-20 — la dueña pidió un flow "super friendly". Antes
+    `/conciliacion` arrancaba directo en el upload de cheques rebotados.
+    Ahora arranca en este hub y desde acá se elige.
+    """
+    return render_template("conciliacion/hub.html")
+
+
+# ─── Depósitos pendientes — el flow nuevo (xlsx + match contra banco) ──────
+@conciliacion_bp.route("/depositos", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def depositos():
+    """Upload de Excel con DEPÓSITOS PENDIENTES + match contra el banco.
+
+    GET  → muestra el formulario de upload (paso 1 del wizard).
+    POST → parsea el Excel, matchea contra `scintela.transacciones_bancarias`,
+           guarda el resultado en session, y muestra la pantalla de resultados.
+    """
+    if request.method == "POST":
+        f = request.files.get("archivo")
+        if not f or not f.filename:
+            flash("Subí un Excel (.xlsx) con los depósitos pendientes.", "warn")
+            return redirect(url_for("conciliacion.depositos"))
+        raw = f.read()
+        try:
+            deps = parse_xlsx(raw)
+        except Exception as e:
+            flash_exc("No se pudo leer el Excel", e)
+            return redirect(url_for("conciliacion.depositos"))
+        if not deps:
+            flash("El Excel no contenía depósitos válidos. Revisá que tenga "
+                  "columnas FECHA y VALOR.", "warn")
+            return redirect(url_for("conciliacion.depositos"))
+
+        # Rango de fechas: ± 30 días del rango de los depósitos.
+        fechas = [d.fecha for d in deps if d.fecha]
+        if not fechas:
+            flash("Ningún depósito del Excel tiene fecha válida.", "warn")
+            return redirect(url_for("conciliacion.depositos"))
+        desde = min(fechas) - timedelta(days=30)
+        hasta = max(fechas) + timedelta(days=30)
+        if hasta > date.today():
+            hasta = date.today()
+
+        movs = transacciones_en_rango(desde, hasta)
+        resultado = matchear_depositos(deps, movs, dias_tolerancia=5)
+
+        # Persistir resultado minimal en session para acciones posteriores.
+        session[_SESSION_DEP] = {
+            "filas": [
+                {
+                    "fecha": (f.deposito.fecha.isoformat() if f.deposito.fecha else None),
+                    "concepto": f.deposito.concepto,
+                    "codigo": f.deposito.codigo,
+                    "valor": float(f.deposito.valor),
+                    "detalle": f.deposito.detalle,
+                    "hoja": f.deposito.hoja,
+                    "estado": f.estado,
+                    "razon": f.razon,
+                    "match_id": f.match.id_transaccion if f.match else None,
+                    "match_fecha": (f.match.fecha.isoformat() if (f.match and f.match.fecha) else None),
+                    "match_concepto": f.match.concepto if f.match else "",
+                    "match_documento": f.match.documento if f.match else "",
+                    "match_no_banco": f.match.no_banco if f.match else None,
+                }
+                for f in resultado.filas
+            ],
+            "desde": desde.isoformat(),
+            "hasta": hasta.isoformat(),
+        }
+
+        return render_template(
+            "conciliacion/depositos_resultado.html",
+            resultado=resultado,
+            desde=desde, hasta=hasta,
+            n_filas=len(resultado.filas),
+        )
+
+    return render_template("conciliacion/depositos_upload.html")
+
+
+@conciliacion_bp.route("/depositos/resultado")
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def depositos_resultado():
+    """Re-muestra el último resultado guardado en session (post-redirect)."""
+    data = session.get(_SESSION_DEP)
+    if not data:
+        flash("No hay resultados guardados. Subí un Excel para comenzar.", "warn")
+        return redirect(url_for("conciliacion.depositos"))
+    return render_template(
+        "conciliacion/depositos_resultado.html",
+        resultado_session=data,
+        desde=data.get("desde"),
+        hasta=data.get("hasta"),
+        n_filas=len(data.get("filas") or []),
+    )
+
+
+@conciliacion_bp.route("/depositos/limpiar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def depositos_limpiar():
+    """Borra el resultado guardado en session (botón 'Empezar de nuevo')."""
+    session.pop(_SESSION_DEP, None)
+    return redirect(url_for("conciliacion.depositos"))

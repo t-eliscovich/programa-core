@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Resultado conciliación{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('conciliacion.hub') }}">Conciliación</a> / <a href="{{ url_for('conciliacion.depositos') }}">Depósitos</a> / <strong>Resultado</strong>{% endblock %}
+
+{% block content %}
+{#
+  TMT 2026-05-20 — pantalla de resultados de la conciliación de depósitos.
+  Acepta `resultado` (objeto MatchResult) o `resultado_session` (dict del
+  session). El template normaliza ambos a la misma forma para iterar.
+#}
+{% set _filas = [] %}
+{% if resultado_session %}
+  {# Forma session: dict puro #}
+  {% set _filas = resultado_session.filas %}
+{% elif resultado %}
+  {% set _filas = [] %}
+{% endif %}
+
+<div class="max-w-7xl mx-auto px-4 py-6">
+  <div class="flex items-start justify-between mb-4 gap-3 flex-wrap">
+    {{ page_hero('Resultado de conciliación',
+                 (resultado_session and 'Período ' ~ resultado_session.desde ~ ' → ' ~ resultado_session.hasta) or
+                 ('Período ' ~ (desde|string) ~ ' → ' ~ (hasta|string))) }}
+    <div class="flex items-center gap-2 no-print">
+      <a href="{{ url_for('conciliacion.depositos') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        ← Volver al upload
+      </a>
+      <form method="post" action="{{ url_for('conciliacion.depositos_limpiar') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+          🗑 Empezar de nuevo
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ─── KPI cards: verde / amarillo / rojo ──────────────────────────── #}
+  {% if resultado %}
+    {% set n_v = resultado.n_verde %}
+    {% set n_a = resultado.n_amarillo %}
+    {% set n_r = resultado.n_rojo %}
+    {% set t_v = resultado.total_verde %}
+    {% set t_a = resultado.total_amarillo %}
+    {% set t_r = resultado.total_rojo %}
+  {% else %}
+    {% set n_v = 0 %}{% set n_a = 0 %}{% set n_r = 0 %}
+    {% set t_v = 0 %}{% set t_a = 0 %}{% set t_r = 0 %}
+    {% for f in _filas %}
+      {% if f.estado == 'verde' %}
+        {% set n_v = n_v + 1 %}
+        {% set t_v = t_v + f.valor %}
+      {% elif f.estado == 'amarillo' %}
+        {% set n_a = n_a + 1 %}
+        {% set t_a = t_a + f.valor %}
+      {% else %}
+        {% set n_r = n_r + 1 %}
+        {% set t_r = t_r + f.valor %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+    <div class="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
+      <div class="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 text-sm font-medium">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Conciliados
+      </div>
+      <div class="mt-1 text-3xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">{{ n_v }}</div>
+      <div class="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5 tabular-nums">US$ {{ t_v | num_es(2) }}</div>
+    </div>
+    <div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+      <div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm font-medium">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Por revisar
+      </div>
+      <div class="mt-1 text-3xl font-bold text-amber-700 dark:text-amber-300 tabular-nums">{{ n_a }}</div>
+      <div class="text-xs text-amber-600 dark:text-amber-400 mt-0.5 tabular-nums">US$ {{ t_a | num_es(2) }}</div>
+    </div>
+    <div class="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl p-4">
+      <div class="flex items-center gap-2 text-rose-700 dark:text-rose-300 text-sm font-medium">
+        <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Sin match
+      </div>
+      <div class="mt-1 text-3xl font-bold text-rose-700 dark:text-rose-300 tabular-nums">{{ n_r }}</div>
+      <div class="text-xs text-rose-600 dark:text-rose-400 mt-0.5 tabular-nums">US$ {{ t_r | num_es(2) }}</div>
+    </div>
+  </div>
+
+  {# Filtros visuales (client-side) #}
+  <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+    <span class="text-xs text-slate-500 mr-1">Mostrar:</span>
+    <button data-filter="todos"     class="filtro-btn active text-xs px-3 py-1 rounded-full border border-slate-300 bg-slate-900 text-white">Todos</button>
+    <button data-filter="verde"     class="filtro-btn text-xs px-3 py-1 rounded-full border border-emerald-300 text-emerald-700 hover:bg-emerald-50">✓ Conciliados</button>
+    <button data-filter="amarillo"  class="filtro-btn text-xs px-3 py-1 rounded-full border border-amber-300 text-amber-700 hover:bg-amber-50">⚠ Por revisar</button>
+    <button data-filter="rojo"      class="filtro-btn text-xs px-3 py-1 rounded-full border border-rose-300 text-rose-700 hover:bg-rose-50">✗ Sin match</button>
+    <div class="ml-auto">
+      <input type="search" id="buscar" placeholder="Buscar concepto…"
+             class="text-xs px-3 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 w-56">
+    </div>
+  </div>
+
+  {# Tabla de filas #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50">
+        <tr>
+          <th class="px-3 py-2.5 text-left text-[10px] uppercase tracking-wider text-slate-500 font-semibold w-8"></th>
+          <th class="px-3 py-2.5 text-left text-[10px] uppercase tracking-wider text-slate-500 font-semibold" style="width:11%">Fecha</th>
+          <th class="px-3 py-2.5 text-left text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Concepto</th>
+          <th class="px-3 py-2.5 text-right text-[10px] uppercase tracking-wider text-slate-500 font-semibold" style="width:14%">Valor</th>
+          <th class="px-3 py-2.5 text-left text-[10px] uppercase tracking-wider text-slate-500 font-semibold" style="width:30%">Estado</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-resultado">
+      {% if resultado %}
+        {% for f in resultado.filas %}
+          {% set badge_cls = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' if f.estado == 'verde' else
+                            ('bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' if f.estado == 'amarillo' else
+                             'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300') %}
+          {% set ico = '✓' if f.estado == 'verde' else ('⚠' if f.estado == 'amarillo' else '✗') %}
+          <tr data-estado="{{ f.estado }}" class="fila border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30">
+            <td class="px-3 py-2 text-center">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold {{ badge_cls }}">{{ ico }}</span>
+            </td>
+            <td class="px-3 py-2 tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
+              {{ f.deposito.fecha.strftime('%d/%m/%Y') if f.deposito.fecha else '—' }}
+            </td>
+            <td class="px-3 py-2 text-slate-800 dark:text-slate-200">
+              <span class="dato-concepto">{{ f.deposito.concepto or '—' }}</span>
+              {% if f.deposito.codigo %}
+                <span class="ml-1 text-xs text-slate-400 font-mono">#{{ f.deposito.codigo }}</span>
+              {% endif %}
+              {% if f.deposito.detalle %}
+                <span class="ml-1 text-xs text-slate-500">· {{ f.deposito.detalle }}</span>
+              {% endif %}
+              <div class="text-xs text-slate-400 mt-0.5">({{ f.deposito.hoja }})</div>
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums font-mono text-slate-800 dark:text-slate-200">
+              {{ f.deposito.valor | num_es(2) }}
+            </td>
+            <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+              {{ f.razon }}
+              {% if f.match %}
+                <div class="mt-1 text-[11px] text-slate-500">
+                  Banco #{{ f.match.no_banco }} · {{ f.match.fecha.strftime('%d/%m/%Y') }}
+                  · {{ f.match.documento }} · "{{ f.match.concepto[:40] }}"
+                </div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        {% for f in _filas %}
+          {% set badge_cls = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' if f.estado == 'verde' else
+                            ('bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' if f.estado == 'amarillo' else
+                             'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300') %}
+          {% set ico = '✓' if f.estado == 'verde' else ('⚠' if f.estado == 'amarillo' else '✗') %}
+          <tr data-estado="{{ f.estado }}" class="fila border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30">
+            <td class="px-3 py-2 text-center">
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold {{ badge_cls }}">{{ ico }}</span>
+            </td>
+            <td class="px-3 py-2 tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
+              {{ f.fecha or '—' }}
+            </td>
+            <td class="px-3 py-2 text-slate-800 dark:text-slate-200">
+              <span class="dato-concepto">{{ f.concepto or '—' }}</span>
+              {% if f.codigo %}
+                <span class="ml-1 text-xs text-slate-400 font-mono">#{{ f.codigo }}</span>
+              {% endif %}
+              {% if f.detalle %}
+                <span class="ml-1 text-xs text-slate-500">· {{ f.detalle }}</span>
+              {% endif %}
+              <div class="text-xs text-slate-400 mt-0.5">({{ f.hoja }})</div>
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums font-mono text-slate-800 dark:text-slate-200">
+              {{ f.valor | num_es(2) }}
+            </td>
+            <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+              {{ f.razon }}
+              {% if f.match_id %}
+                <div class="mt-1 text-[11px] text-slate-500">
+                  Banco #{{ f.match_no_banco }} · {{ f.match_fecha }}
+                  · {{ f.match_documento }} · "{{ (f.match_concepto or '')[:40] }}"
+                </div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-4 text-xs text-slate-500">
+    <strong>¿Cómo interpretar?</strong>
+    <span class="ml-1 inline-block w-2 h-2 rounded-full bg-emerald-500 align-middle"></span> <em>Conciliado</em>:
+    el banco registró el depósito con el mismo importe y fecha exacta.
+    <span class="ml-2 inline-block w-2 h-2 rounded-full bg-amber-500 align-middle"></span> <em>Por revisar</em>:
+    importe coincide pero la fecha difiere — probable que aparezca con desfase de días.
+    <span class="ml-2 inline-block w-2 h-2 rounded-full bg-rose-500 align-middle"></span> <em>Sin match</em>:
+    el banco no tiene ningún movimiento con este importe en ±30 días — probable error de carga o no entró.
+  </p>
+</div>
+
+<script>
+(function() {
+  const btns = document.querySelectorAll('.filtro-btn');
+  const filas = document.querySelectorAll('.fila');
+  const buscar = document.getElementById('buscar');
+  let curFiltro = 'todos';
+  let curBuscar = '';
+
+  function aplicar() {
+    filas.forEach(f => {
+      const matchEstado = curFiltro === 'todos' || f.dataset.estado === curFiltro;
+      const txt = (f.querySelector('.dato-concepto') || {}).textContent || '';
+      const matchTxt = !curBuscar || txt.toLowerCase().includes(curBuscar);
+      f.style.display = (matchEstado && matchTxt) ? '' : 'none';
+    });
+  }
+
+  btns.forEach(b => b.addEventListener('click', () => {
+    btns.forEach(x => {
+      x.classList.remove('active','bg-slate-900','text-white');
+      x.classList.add('bg-white');
+    });
+    b.classList.add('active','bg-slate-900','text-white');
+    b.classList.remove('bg-white');
+    curFiltro = b.dataset.filter;
+    aplicar();
+  }));
+  buscar.addEventListener('input', () => {
+    curBuscar = buscar.value.trim().toLowerCase();
+    aplicar();
+  });
+})();
+</script>
+{% endblock %}

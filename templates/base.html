@@ -629,7 +629,7 @@
         <summary>Bancos</summary>
         {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
         {% if tiene_permiso('caja.ver') %}{{ nav_link('caja.lista', 'Caja', 'cash') }}{% endif %}
-        {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.index', 'Conciliar con banco', 'check') }}{% endif %}
+        {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.hub', 'Conciliar con banco', 'check') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="informes">
