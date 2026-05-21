@@ -228,9 +228,9 @@
           <th class="px-2 py-2 text-left font-medium" data-sort-type="date" data-acum-driver>Fecha</th>
           <th class="px-2 py-2 text-left font-medium">Cliente</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Kg</th>
-          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Δ Kg vs Asinfo (PC - Asinfo)">Δ AI</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Kg según Asinfo. Rojo si difiere de PC.">Kg AI</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
-          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Δ USD vs Asinfo (PC - Asinfo)">Δ AI</th>
+          <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Importe USD según Asinfo. Rojo si difiere de PC.">USD AI</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
           <th class="px-2 py-2 text-right font-medium acum-col" title="Total facturado corrido" data-no-sort>Acum.</th>
@@ -249,29 +249,29 @@
                class="font-mono hover:text-blue-600">{{ f.codigo_cli }}</a>
           </td>
           <td class="px-2 py-1.5 text-right text-mono">{{ f.kg | kg_es }}</td>
-          {# Δ AI Kg = Asinfo - PC. + = Asinfo tiene más kg. None = sin match. 0 = ✓ #}
+          {# Kg AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_kg = f.asinfo_kg if f.asinfo_kg is defined else none %}
           {% set _ai_dkg = f.asinfo_diff_kg if f.asinfo_diff_kg is defined else none %}
-          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_kg is none %}sin match Asinfo{% else %}Asinfo: {{ _ai_kg | num_es(2) }} kg{% endif %}">
+          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_kg is none %}sin match Asinfo{% elif _ai_dkg %}Δ={{ '%+.2f' % _ai_dkg }} vs PC{% else %}coincide con PC{% endif %}">
             {% if _ai_kg is none %}
               <span class="text-slate-300">—</span>
             {% elif _ai_dkg == 0 %}
-              <span class="text-sky-600 dark:text-sky-400">✓</span>
+              <span class="text-slate-400">{{ _ai_kg | kg_es }}</span>
             {% else %}
-              <span class="text-rose-600 dark:text-rose-400">{{ '%+.2f' % _ai_dkg }}</span>
+              <span class="text-rose-600 dark:text-rose-400 font-semibold">{{ _ai_kg | kg_es }}</span>
             {% endif %}
           </td>
           <td class="px-2 py-1.5 text-right text-mono">{{ f.importe | money_es }}</td>
-          {# Δ AI USD = Asinfo - PC. + = Asinfo factura más. None = sin match. 0 = ✓ #}
+          {# USD AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_usd = f.asinfo_usd if f.asinfo_usd is defined else none %}
           {% set _ai_dusd = f.asinfo_diff_usd if f.asinfo_diff_usd is defined else none %}
-          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_usd is none %}sin match Asinfo{% else %}Asinfo: $ {{ _ai_usd | num_es(2) }}{% endif %}">
+          <td class="px-2 py-1.5 text-right text-mono" title="{% if _ai_usd is none %}sin match Asinfo{% elif _ai_dusd %}Δ={{ '%+.2f' % _ai_dusd }} vs PC{% else %}coincide con PC{% endif %}">
             {% if _ai_usd is none %}
               <span class="text-slate-300">—</span>
             {% elif _ai_dusd == 0 %}
-              <span class="text-sky-600 dark:text-sky-400">✓</span>
+              <span class="text-slate-400">{{ _ai_usd | money_es }}</span>
             {% else %}
-              <span class="text-rose-600 dark:text-rose-400">{{ '%+.2f' % _ai_dusd }}</span>
+              <span class="text-rose-600 dark:text-rose-400 font-semibold">{{ _ai_usd | money_es }}</span>
             {% endif %}
           </td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
@@ -286,7 +286,7 @@
     </table>
     {% if not asinfo_intentado and filas %}
       <div class="px-3 py-2 text-[11px] text-slate-500 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800">
-        Columnas <strong>Δ AI</strong> deshabilitadas para esta vista (más de 1000 filas).
+        Columnas <strong>Kg AI</strong> / <strong>USD AI</strong> deshabilitadas (más de 6000 filas).
         Acotá con filtros de fecha o cliente para ver el comparativo con Asinfo.
       </div>
     {% endif %}

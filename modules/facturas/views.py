@@ -445,17 +445,17 @@ def lista():
     # Asinfo via numf_completo == numero. Agregamos asinfo_kg/asinfo_usd
     # y los deltas vs PC. Si no hay match → None (la columna queda "—").
     #
-    # Performance: solo enriquecemos si <= 1000 filas Y hay fechas válidas
-    # en el rango. Para vistas amplias (todas las históricas) saltamos —
-    # pero igual inicializamos las 4 claves a None para que el template
-    # no rompa con Undefined.
+    # Performance: solo enriquecemos si <= 6000 filas Y hay fechas válidas
+    # en el rango. La cartera viva ronda las 4500, así que con 6000 cubrimos
+    # comodamente. Para vistas históricas más amplias saltamos — pero igual
+    # inicializamos las 4 claves a None para que el template no rompa.
     _asinfo_intentado = False
     for f in filas:
         f["asinfo_kg"] = None
         f["asinfo_usd"] = None
         f["asinfo_diff_kg"] = None
         f["asinfo_diff_usd"] = None
-    if 0 < len(filas) <= 1000:
+    if 0 < len(filas) <= 6000:
         fechas = [f["fecha"] for f in filas if f.get("fecha")]
         if fechas:
             try:
