@@ -446,36 +446,43 @@ def lista():
     # y los deltas vs PC. Si no hay match → None (la columna queda "—").
     #
     # Performance: solo enriquecemos si <= 1000 filas Y hay fechas válidas
-    # en el rango. Para vistas amplias (todas las históricas) saltamos.
+    # en el rango. Para vistas amplias (todas las históricas) saltamos —
+    # pero igual inicializamos las 4 claves a None para que el template
+    # no rompa con Undefined.
     _asinfo_intentado = False
+    for f in filas:
+        f["asinfo_kg"] = None
+        f["asinfo_usd"] = None
+        f["asinfo_diff_kg"] = None
+        f["asinfo_diff_usd"] = None
     if 0 < len(filas) <= 1000:
         fechas = [f["fecha"] for f in filas if f.get("fecha")]
         if fechas:
-            from modules.asinfo import service as asinfo_service
+            try:
+                from modules.asinfo import service as asinfo_service
 
-            _asinfo_intentado = True
-            mn, mx = min(fechas), max(fechas)
-            asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
-            # Indexar por numero (sólo tipo FACTURA — las NCs/devoluciones
-            # tienen sus propios números que no matchean con facturas de PC).
-            asinfo_idx: dict[str, dict] = {}
-            for r in asinfo_rows:
-                if r.get("tipo") == "FACTURA" and r.get("numero"):
-                    asinfo_idx[r["numero"]] = r
-            # Mergear
-            for f in filas:
-                numero = (f.get("numf_completo") or "").strip()
-                r_ai = asinfo_idx.get(numero) if numero else None
-                if r_ai is not None:
-                    f["asinfo_kg"] = float(r_ai.get("kg") or 0)
-                    f["asinfo_usd"] = float(r_ai.get("usd") or 0)
-                    f["asinfo_diff_kg"] = round(f["asinfo_kg"] - float(f.get("kg") or 0), 3)
-                    f["asinfo_diff_usd"] = round(f["asinfo_usd"] - float(f.get("importe") or 0), 2)
-                else:
-                    f["asinfo_kg"] = None
-                    f["asinfo_usd"] = None
-                    f["asinfo_diff_kg"] = None
-                    f["asinfo_diff_usd"] = None
+                _asinfo_intentado = True
+                mn, mx = min(fechas), max(fechas)
+                asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
+                # Indexar por numero (sólo tipo FACTURA — las NCs/devoluciones
+                # tienen sus propios números que no matchean con facturas de PC).
+                asinfo_idx: dict[str, dict] = {}
+                for r in asinfo_rows:
+                    if r.get("tipo") == "FACTURA" and r.get("numero"):
+                        asinfo_idx[r["numero"]] = r
+                # Mergear
+                for f in filas:
+                    numero = (f.get("numf_completo") or "").strip()
+                    r_ai = asinfo_idx.get(numero) if numero else None
+                    if r_ai is not None:
+                        f["asinfo_kg"] = float(r_ai.get("kg") or 0)
+                        f["asinfo_usd"] = float(r_ai.get("usd") or 0)
+                        f["asinfo_diff_kg"] = round(f["asinfo_kg"] - float(f.get("kg") or 0), 3)
+                        f["asinfo_diff_usd"] = round(f["asinfo_usd"] - float(f.get("importe") or 0), 2)
+            except Exception as _e:
+                # Cualquier falla del bridge no debe romper la lista de facturas.
+                _LOG_ENRICH = __import__("logging").getLogger("programa_core.facturas")
+                _LOG_ENRICH.warning("Enriquecimiento Asinfo falló: %s", _e)
 
     if request.args.get("export") == "csv":
         return csv_response(
