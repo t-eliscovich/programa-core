@@ -9,15 +9,12 @@ cuando solo necesitamos pushear N archivos puntuales.
 from __future__ import annotations
 
 import base64
-import json
-import os
 import sys
 from pathlib import Path
-from urllib import request as urlrequest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from claude_push import _api, _git_sha1, _load_config, _load_pat  # noqa: E402
+from claude_push import _api, _load_config, _load_pat  # noqa: E402
 
 
 def main():

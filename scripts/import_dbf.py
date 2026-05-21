@@ -139,7 +139,7 @@ def _num_robusto(v, default=None):
     = negativo). Para campos numéricos venidos como TEXT del DBF."""
     if v is None or v == "":
         return default
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return float(v)
     s = str(v).strip().replace(" ", "")
     if not s:

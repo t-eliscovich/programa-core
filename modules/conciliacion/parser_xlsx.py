@@ -71,7 +71,7 @@ def _parse_fecha_celda(v) -> date | None:
 def _parse_valor(v) -> Decimal:
     if v is None:
         return Decimal(0)
-    if isinstance(v, (int, float, Decimal)):
+    if isinstance(v, int | float | Decimal):
         try:
             return Decimal(str(v))
         except InvalidOperation:
