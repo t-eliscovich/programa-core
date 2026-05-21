@@ -8,6 +8,7 @@ Cubre:
     - service.costos_por_cliente / fuente / disponible.
     - Panel en detalle factura no rompe si el adapter levanta.
 """
+
 from __future__ import annotations
 
 import os
@@ -28,6 +29,7 @@ from modules.costos_ot.adapters import (
 # ---------------------------------------------------------------------------
 # FakeAdapter
 # ---------------------------------------------------------------------------
+
 
 def test_fake_adapter_cliente_conocido_devuelve_ots():
     a = FakeAdapter()
@@ -69,13 +71,19 @@ def test_fake_adapter_normaliza_codigo_cli_a_mayuscula():
 
 
 def test_fake_adapter_extra_override_permite_inyectar_datos_en_tests():
-    a = FakeAdapter(_extra={"TEST": [{
-        "n_orden": "99999",
-        "fecha_cierre": date(2026, 4, 10),
-        "descripcion": "Test OT",
-        "kg": 100.0,
-        "costo_kg": 2.0,
-    }]})
+    a = FakeAdapter(
+        _extra={
+            "TEST": [
+                {
+                    "n_orden": "99999",
+                    "fecha_cierre": date(2026, 4, 10),
+                    "descripcion": "Test OT",
+                    "kg": 100.0,
+                    "costo_kg": 2.0,
+                }
+            ]
+        }
+    )
     rows = a.costos_por_cliente("TEST")
     assert len(rows) == 1
     assert rows[0].n_orden == "99999"
@@ -84,8 +92,14 @@ def test_fake_adapter_extra_override_permite_inyectar_datos_en_tests():
 
 def test_ot_costo_to_dict_serializa_fecha_iso():
     c = OTCosto(
-        n_orden="1", fecha_cierre=date(2026, 4, 10), cliente_codigo="JTX",
-        descripcion="x", kg=10, costo_total=20, costo_kg=2, fuente="fake",
+        n_orden="1",
+        fecha_cierre=date(2026, 4, 10),
+        cliente_codigo="JTX",
+        descripcion="x",
+        kg=10,
+        costo_total=20,
+        costo_kg=2,
+        fuente="fake",
     )
     d = c.to_dict()
     assert d["fecha_cierre"] == "2026-04-10"
@@ -94,8 +108,14 @@ def test_ot_costo_to_dict_serializa_fecha_iso():
 
 def test_ot_costo_to_dict_fecha_none_no_rompe():
     c = OTCosto(
-        n_orden="1", fecha_cierre=None, cliente_codigo="JTX",
-        descripcion="x", kg=10, costo_total=20, costo_kg=2, fuente="fake",
+        n_orden="1",
+        fecha_cierre=None,
+        cliente_codigo="JTX",
+        descripcion="x",
+        kg=10,
+        costo_total=20,
+        costo_kg=2,
+        fuente="fake",
     )
     d = c.to_dict()
     assert d["fecha_cierre"] is None
@@ -105,11 +125,16 @@ def test_ot_costo_to_dict_fecha_none_no_rompe():
 # MetabaseAdapter
 # ---------------------------------------------------------------------------
 
+
 def test_metabase_adapter_disponible_false_sin_env():
     # aseguramos entorno limpio
     with patch.dict(os.environ, {}, clear=False):
-        for key in ("METABASE_URL", "METABASE_USERNAME", "METABASE_PASSWORD",
-                    "METABASE_QUESTION_ID_COSTOS_OT"):
+        for key in (
+            "METABASE_URL",
+            "METABASE_USERNAME",
+            "METABASE_PASSWORD",
+            "METABASE_QUESTION_ID_COSTOS_OT",
+        ):
             os.environ.pop(key, None)
         a = MetabaseAdapter()
         assert a.disponible() is False
@@ -129,8 +154,12 @@ def test_metabase_adapter_disponible_true_con_env_completo():
 def test_metabase_adapter_sin_config_devuelve_lista_vacia_sin_error():
     # No env vars — no I/O. costos_por_cliente devuelve vacío y no levanta.
     with patch.dict(os.environ, {}, clear=False):
-        for key in ("METABASE_URL", "METABASE_USERNAME", "METABASE_PASSWORD",
-                    "METABASE_QUESTION_ID_COSTOS_OT"):
+        for key in (
+            "METABASE_URL",
+            "METABASE_USERNAME",
+            "METABASE_PASSWORD",
+            "METABASE_QUESTION_ID_COSTOS_OT",
+        ):
             os.environ.pop(key, None)
         assert MetabaseAdapter().costos_por_cliente("JTX") == []
 
@@ -154,8 +183,12 @@ def test_metabase_row_to_costo_normaliza_fecha_iso():
 
 def test_metabase_row_to_costo_fecha_invalida_queda_none():
     row = {
-        "n_orden": "1", "fecha_cierre": "no-es-fecha", "cliente_codigo": "J",
-        "descripcion": "", "kg": 0, "costo_kg": 0,
+        "n_orden": "1",
+        "fecha_cierre": "no-es-fecha",
+        "cliente_codigo": "J",
+        "descripcion": "",
+        "kg": 0,
+        "costo_kg": 0,
     }
     c = MetabaseAdapter._row_to_costo(row)
     assert c.fecha_cierre is None
@@ -164,6 +197,7 @@ def test_metabase_row_to_costo_fecha_invalida_queda_none():
 # ---------------------------------------------------------------------------
 # PostgresAdapter
 # ---------------------------------------------------------------------------
+
 
 def test_postgres_adapter_row_to_costo():
     row = {
@@ -179,15 +213,14 @@ def test_postgres_adapter_row_to_costo():
     assert c.fuente == "postgres"
 
 
-def test_postgres_adapter_fetch_falla_devuelve_vacio(monkeypatch):
-    """Si la vista no existe (migración no-aplicada), no reventar."""
-    import db
-
-    def _raise(*args, **kwargs):
-        raise Exception("relation scintela.vw_costos_ordenes does not exist")
-
-    monkeypatch.setattr(db, "fetch_all", _raise)
-    assert PostgresAdapter().costos_por_cliente("JTX") == []
+def test_postgres_adapter_permanentemente_no_disponible():
+    """formulas_app no tiene mapping orden→cliente, así que el adapter
+    queda deshabilitado por diseño. Ver SKILL programa-core-integraciones."""
+    a = PostgresAdapter()
+    assert a.disponible() is False
+    assert a.costos_por_cliente("JTX") == []
+    assert a.costos_por_cliente("") == []
+    assert a.costos_por_factura(123) == []
 
 
 def test_postgres_adapter_codigo_cli_vacio():
@@ -197,6 +230,7 @@ def test_postgres_adapter_codigo_cli_vacio():
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def test_build_adapter_default_es_fake():
     with patch.dict(os.environ, {}, clear=False):
@@ -226,6 +260,7 @@ def test_build_adapter_lee_env(monkeypatch):
 # service fachada
 # ---------------------------------------------------------------------------
 
+
 def test_service_reset_y_costos_con_fake():
     service.reset_adapter(FakeAdapter())
     try:
@@ -240,10 +275,13 @@ def test_service_reset_y_costos_con_fake():
 def test_service_absorbe_exceptions_del_adapter():
     class BoomAdapter:
         fuente = "boom"
+
         def costos_por_cliente(self, codigo_cli):
             raise RuntimeError("simulated backend failure")
+
         def costos_por_factura(self, id_factura):
             raise RuntimeError("simulated backend failure")
+
         def disponible(self):
             raise RuntimeError("simulated backend failure")
 
@@ -260,6 +298,7 @@ def test_service_absorbe_exceptions_del_adapter():
 # ---------------------------------------------------------------------------
 # Vista HTTP — smoke de las rutas con cliente real
 # ---------------------------------------------------------------------------
+
 
 def _login_cartera(app, fake_db):
     """Crea un usuario Dueño-ish con cartera.ver y devuelve el test client logueado."""

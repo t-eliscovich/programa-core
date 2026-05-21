@@ -12,6 +12,7 @@ app con un adaptador intercambiable:
 El selector se controla con env var COSTOS_OT_ADAPTER (default: fake).
 Ver `modules/costos_ot/adapters.py` para los contratos.
 """
+
 from modules.costos_ot.service import costos_por_cliente, costos_por_factura, disponible
 
 __all__ = ["costos_por_cliente", "costos_por_factura", "disponible"]
