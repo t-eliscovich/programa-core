@@ -263,6 +263,23 @@ def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
         "usret": 0, "usuti": 0,
         **kpis,
     }
+    # Federico 2026-05-21 -- carry-forward de los campos de produccion
+    # que vienen de TINT.BAT (ktej/ktin/utej/utin). calcular_kpis() NO
+    # los computa; sin esto el snapshot nuevo los dejaba en NULL/0 y
+    # rompia la TINTORERIA y el $/kg de /flujo-produccion. Copiamos los
+    # valores del ultimo snapshot que si los tenga.
+    _carry = db.fetch_one(
+        """
+        SELECT ktej, ktin, utej, utin
+          FROM scintela.historia
+         WHERE COALESCE(ktej, 0) <> 0 OR COALESCE(ktin, 0) <> 0
+            OR COALESCE(utej, 0) <> 0 OR COALESCE(utin, 0) <> 0
+         ORDER BY fecha_crea DESC NULLS LAST, id_historia DESC
+         LIMIT 1
+        """
+    ) or {}
+    for _campo in ("ktej", "ktin", "utej", "utin"):
+        kpis_full[_campo] = _carry.get(_campo)
     row = db.execute_returning(
         """
         INSERT INTO scintela.historia
@@ -270,11 +287,13 @@ def insertar_snapshot(kpis: dict, usuario: str = "snapshot_auto") -> int:
              kvent, uvent, kcom, ucom,
              anticipos, ustock, uqui, maquinaria, realty,
              patrimonio, usret, usuti,
+             ktej, ktin, utej, utin,
              usuario_crea)
         VALUES (%(fecha)s, %(cart)s, %(deuda)s, %(banco)s, %(gasto)s, %(retiro)s,
                 %(kvent)s, %(uvent)s, %(kcom)s, %(ucom)s,
                 %(anticipos)s, %(ustock)s, %(uqui)s, %(maquinaria)s, %(realty)s,
                 %(patrimonio)s, %(usret)s, %(usuti)s,
+                %(ktej)s, %(ktin)s, %(utej)s, %(utin)s,
                 %(usuario)s)
         RETURNING id_historia
         """,

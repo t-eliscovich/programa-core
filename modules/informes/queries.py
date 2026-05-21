@@ -5625,6 +5625,65 @@ def borrar_snapshot(id_historia: int) -> int:
     )
 
 
+def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
+    """Borra los snapshots del mes actual salvo los `conservar` mas recientes.
+
+    Federico 2026-05-21 -- la pantalla Historial deja siempre la columna
+    previa + la nueva (conservar=2) para comparar; lo mas viejo se limpia.
+    Devuelve la cantidad de filas borradas.
+    """
+    from datetime import date as _date
+
+    hoy = _date.today()
+    k = max(1, int(conservar))
+    return db.execute(
+        """
+        DELETE FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %(a)s
+           AND EXTRACT(MONTH FROM fecha) = %(m)s
+           AND id_historia NOT IN (
+               SELECT id_historia
+                 FROM scintela.historia
+                WHERE EXTRACT(YEAR FROM fecha) = %(a)s
+                  AND EXTRACT(MONTH FROM fecha) = %(m)s
+                ORDER BY fecha_crea DESC NULLS LAST, id_historia DESC
+                LIMIT %(k)s
+           )
+        """,
+        {"a": hoy.year, "m": hoy.month, "k": k},
+    ) or 0
+
+
+def eliminar_ultima_columna_mes_actual() -> dict:
+    """Borra la columna mas reciente del mes actual.
+
+    Federico 2026-05-21 -- boton 'Eliminar ultima': cuando la columna
+    recien creada tiene errores, se borra y queda viva la previa (el
+    ultimo milestone bueno).
+    """
+    from datetime import date as _date
+
+    hoy = _date.today()
+    ult = db.fetch_one(
+        """
+        SELECT id_historia
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         ORDER BY fecha_crea DESC NULLS LAST, id_historia DESC
+         LIMIT 1
+        """,
+        (hoy.year, hoy.month),
+    )
+    if not ult:
+        return {"borrado": False, "motivo": "no hay columnas del mes actual"}
+    n = db.execute(
+        "DELETE FROM scintela.historia WHERE id_historia = %s",
+        (ult["id_historia"],),
+    )
+    return {"borrado": True, "id_historia": int(ult["id_historia"]), "n": int(n or 0)}
+
+
 def historico_mom(anio_a: int, mes_a: int, anio_b: int, mes_b: int) -> dict:
     """Comparación mes-vs-mes para el informe histórico TINT.BAT.
 

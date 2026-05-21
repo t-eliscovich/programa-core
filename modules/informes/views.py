@@ -183,16 +183,23 @@ def historico_12m():
             mom = {"par_a": (a_a, m_a), "par_b": (a_b, m_b), "lineas": [], "meses_sin_snap": []}
             error = str(e)
     else:
-        # Auto-tomar snapshot del mes actual (con throttle de 1h).
-        # TMT 2026-05-20 v3 — snapshot automático DESACTIVADO al entrar.
-        # Pedido dueña original era "cuando entro se agrega una nueva
-        # columna con el mes actual sin borrar el ultimo mes actual" pero
-        # el snapshot auto sobreescribía los campos ktej/ktin/utej/utin
-        # (que calcular_kpis NO computa) con 0 — rompía la TINTORERIA y
-        # KK $/kg en /flujo-produccion. Ahora el snapshot se crea SOLO
-        # con click explícito al botón "↻ Snapshot ahora" del template.
-        # La pantalla sigue mostrando el último snapshot existente.
-        snap_info = {"accion": "manual", "motivo": "snapshot auto deshabilitado — usá '↻ Snapshot ahora'"}
+        # Federico 2026-05-21 -- foto automatica al entrar (reactivada).
+        # El bug que la habia desactivado (snapshot con ktej/ktin en 0)
+        # quedo resuelto con el carry-forward en insertar_snapshot.
+        # Flujo: (1) crear la columna de esta entrada -- throttle corto
+        # para que un refresh no la duplique; (2) consolidar dejando las
+        # 2 columnas mas recientes del mes (la previa + la nueva).
+        try:
+            snap_info = queries.tomar_snapshot_mes_actual(
+                usuario=(g.user or {}).get("username", "web"),
+                throttle_segundos=180,
+            )
+        except Exception as e:  # noqa: BLE001
+            snap_info = {"accion": "error", "error": str(e)}
+        try:
+            queries.consolidar_snapshots_mes_actual(conservar=2)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             data = queries.historico_5m_con_actual(max_actual=3)
         except Exception as e:  # noqa: BLE001
@@ -256,6 +263,18 @@ def historico_snapshot_ahora():
         return jsonify({"ok": True, **r})
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"No pude crear snapshot: {e}"}), 500
+
+
+@informes_bp.route("/historico-12m/_api/eliminar-ultima", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.ver")
+def historico_eliminar_ultima():
+    """Borra la columna mas reciente del mes actual (boton Eliminar ultima)."""
+    try:
+        r = queries.eliminar_ultima_columna_mes_actual()
+        return jsonify({"ok": True, **r})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude eliminar: {e}"}), 500
 
 
 @informes_bp.route("/balance/utilidad-debug")

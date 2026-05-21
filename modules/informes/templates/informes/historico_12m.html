@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Histórico TINT.BAT{% endblock %}
+{% block title %}Historial{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
-  <strong>Histórico 12m</strong>
+  <strong>Historial</strong>
 {% endblock %}
 
 {# ------------------------------------------------------------------
@@ -95,7 +95,7 @@
   {# ─── Header estándar (mismo patrón que provisiones/balance) ──────── #}
   <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
-      <h1 class="text-2xl font-semibold">Histórico — TINT.BAT</h1>
+      <h1 class="text-2xl font-semibold">Historial</h1>
       <p class="text-sm text-slate-500 mt-1">
         {% if modo == 'mom' %}
           Comparación mes vs mes — elegí dos meses para ver la diferencia.
@@ -149,7 +149,7 @@
         {% if snap_info.accion == 'inserted' %}
           ✓ Snapshot del mes actual tomado (id {{ snap_info.id_historia }})
         {% elif snap_info.accion == 'throttled' %}
-          ⏱ Snapshot reciente (< 24h) — no se tomó nuevo
+          ⏱ Snapshot reciente — no se tomó nuevo
         {% elif snap_info.accion == 'error' %}
           ⚠ No se pudo tomar snapshot: {{ snap_info.error }}
         {% endif %}
@@ -162,6 +162,12 @@
               class="no-print text-xs px-3 py-1 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium"
               title="Crea un snapshot nuevo del mes actual con los KPIs actuales (ignora el throttle).">
         ↻ Snapshot ahora
+      </button>
+      {# Federico 2026-05-21 - boton para borrar la columna mas reciente. #}
+      <button id="eliminar-ultima" type="button"
+              class="no-print text-xs px-3 py-1 rounded bg-rose-600 text-white hover:bg-rose-700 font-medium"
+              title="Borra la columna mas reciente del mes actual y deja viva la previa.">
+        Eliminar última columna
       </button>
     {% endif %}
   </div>
@@ -233,7 +239,7 @@
     {# Header del card — etiqueta arriba a la izquierda como en el resto. #}
     <div class="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
       <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-        TINT.BAT {% if modo == 'mom' %}· Mes vs Mes{% endif %}
+        Historial {% if modo == 'mom' %}· Mes vs Mes{% endif %}
       </div>
       <div class="text-xs text-slate-400">
         {% if modo == 'mom' %}
@@ -394,6 +400,26 @@
                 alert('Error de red: ' + e.message);
                 btnForzar.disabled = false;
                 btnForzar.textContent = '↻ Snapshot ahora';
+              });
+            });
+          }
+
+          // Federico 2026-05-21 - boton "Eliminar última columna".
+          const btnElimUlt = document.getElementById('eliminar-ultima');
+          if (btnElimUlt) {
+            btnElimUlt.addEventListener('click', () => {
+              if (!confirm('¿Eliminar la última columna del mes actual? Queda viva la columna previa.')) return;
+              btnElimUlt.disabled = true;
+              postAction('/informes/historico-12m/_api/eliminar-ultima').then(j => {
+                if (j && j.ok) {
+                  window.location.reload();
+                } else {
+                  alert('No se pudo eliminar: ' + ((j && j.error) || 'error'));
+                  btnElimUlt.disabled = false;
+                }
+              }).catch(e => {
+                alert('Error de red: ' + e.message);
+                btnElimUlt.disabled = false;
               });
             });
           }
