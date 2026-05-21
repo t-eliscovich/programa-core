@@ -1,4 +1,5 @@
 """Informes gerenciales — read-only v1."""
+
 import csv
 import io
 from datetime import date, datetime
@@ -52,6 +53,7 @@ def balance():
     # inicializada todavía. Decorador defensivo.
     try:
         from modules.iniciales.views import auto_cerrar_mes_si_corresponde
+
         auto_cerrar_mes_si_corresponde()
     except Exception as e:  # noqa: BLE001
         {"aplicado": False, "error": str(e)}
@@ -59,7 +61,9 @@ def balance():
     data, error = _safe(queries.informe_balance, {})
     return render_template(
         "informes/balance.html",
-        b=data, error=error, provisiones=prov_result,
+        b=data,
+        error=error,
+        provisiones=prov_result,
     )
 
 
@@ -70,6 +74,7 @@ def balance():
 def balance_compras():
     """Drill-down de compras del período. Reuse de /informes/balance."""
     from datetime import date as _date
+
     hoy = _date.today()
     try:
         anio = int(request.args.get("anio") or hoy.year)
@@ -87,18 +92,35 @@ def balance_compras():
         num_v = None
     try:
         data = queries.compras_del_periodo(
-            anio=anio, mes=mes, prov=prov, num_v=num_v,
+            anio=anio,
+            mes=mes,
+            prov=prov,
+            num_v=num_v,
         )
         error = None
     except Exception as e:  # noqa: BLE001
-        data, error = {"filas": [], "total_importe": 0, "total_kg": 0,
-                       "n_filas": 0, "prov_options": [],
-                       "anio": anio, "mes": mes,
-                       "prov_actual": prov, "num_v_actual": num_v}, str(e)
+        data, error = (
+            {
+                "filas": [],
+                "total_importe": 0,
+                "total_kg": 0,
+                "n_filas": 0,
+                "prov_options": [],
+                "anio": anio,
+                "mes": mes,
+                "prov_actual": prov,
+                "num_v_actual": num_v,
+            },
+            str(e),
+        )
     return render_template(
         "informes/balance_compras.html",
-        data=data, anio=anio, mes=mes,
-        prov=prov, num_v=num_v, error=error,
+        data=data,
+        anio=anio,
+        mes=mes,
+        prov=prov,
+        num_v=num_v,
+        error=error,
     )
 
 
@@ -136,7 +158,9 @@ def historico_12m():
     if modo == "mom":
         # Defaults: comparar mes actual (b) vs mes anterior (a).
         from datetime import date as _date
+
         hoy = _date.today()
+
         def _parse_par(prefix: str, default_anio: int, default_mes: int):
             try:
                 a_ = int(request.args.get(f"a_{prefix}") or default_anio)
@@ -144,6 +168,7 @@ def historico_12m():
             except (TypeError, ValueError):
                 return default_anio, default_mes
             return a_, max(1, min(12, m_))
+
         mes_actual_a, mes_actual_m = hoy.year, hoy.month
         prev_a, prev_m = mes_actual_a, mes_actual_m - 1
         if prev_m < 1:
@@ -155,8 +180,7 @@ def historico_12m():
             mom = queries.historico_mom(a_a, m_a, a_b, m_b)
             meses_disponibles = queries.historico_meses_disponibles()
         except Exception as e:  # noqa: BLE001
-            mom = {"par_a": (a_a, m_a), "par_b": (a_b, m_b),
-                   "lineas": [], "meses_sin_snap": []}
+            mom = {"par_a": (a_a, m_a), "par_b": (a_b, m_b), "lineas": [], "meses_sin_snap": []}
             error = str(e)
     else:
         # Auto-tomar snapshot del mes actual (con throttle de 1h).
@@ -168,19 +192,20 @@ def historico_12m():
         # KK $/kg en /flujo-produccion. Ahora el snapshot se crea SOLO
         # con click explícito al botón "↻ Snapshot ahora" del template.
         # La pantalla sigue mostrando el último snapshot existente.
-        snap_info = {"accion": "manual",
-                     "motivo": "snapshot auto deshabilitado — usá '↻ Snapshot ahora'"}
+        snap_info = {"accion": "manual", "motivo": "snapshot auto deshabilitado — usá '↻ Snapshot ahora'"}
         try:
             data = queries.historico_5m_con_actual(max_actual=3)
         except Exception as e:  # noqa: BLE001
-            data = {"columnas": [], "lineas": [], "meses_sin_snap": [],
-                    "n_actual": 0, "hoy": None}
+            data = {"columnas": [], "lineas": [], "meses_sin_snap": [], "n_actual": 0, "hoy": None}
             error = str(e)
 
     return render_template(
         "informes/historico_12m.html",
-        data=data, mom=mom, modo=modo,
-        meses_disponibles=meses_disponibles, error=error,
+        data=data,
+        mom=mom,
+        modo=modo,
+        meses_disponibles=meses_disponibles,
+        error=error,
         snap_info=snap_info,
     )
 
@@ -245,56 +270,73 @@ def utilidad_debug():
         identifique cuál da el número correcto.
     """
     import db
+
     data, error = _safe(queries.informe_balance, {})
 
     # Levantar la fila de historia que se usa como PATANT
-    hist_row = db.fetch_one(
-        """
+    hist_row = (
+        db.fetch_one(
+            """
         SELECT *
         FROM scintela.historia
         WHERE fecha < date_trunc('month', CURRENT_DATE)::date
         ORDER BY fecha DESC
         LIMIT 1
         """
-    ) or {}
+        )
+        or {}
+    )
 
     # Levantar TODAS las filas de historia (últimas 24) para auditar qué
     # está cargado y comparar con el dBase. Usuario reportó 2026-05-06:
     # April=20,115,887, Marzo=176,556,980 (probable typo, debería ser
     # ~17,655,698 dado que April es 20M).
-    hist_all = db.fetch_all(
-        """
+    hist_all = (
+        db.fetch_all(
+            """
         SELECT fecha, patrimonio, ustock, uqui, usret, usuti, kvent, uvent
         FROM scintela.historia
         ORDER BY fecha DESC
         LIMIT 24
         """
-    ) or []
+        )
+        or []
+    )
 
     # Componentes de PATR
     componentes = {
-        "subt":   float(data.get("subt") or 0),
-        "vsto_display":  float(data.get("vsto") or 0),  # post-override
-        "vqx":    float(data.get("vqx") or 0),
-        "umaq":   float(data.get("umaq") or 0),
-        "uact":   float(data.get("uact") or 0),
-        "uret":   float(data.get("uret") or 0),
-        "antic":  float(data.get("antic") or 0),
-        "totp":   float(data.get("totp") or 0),
+        "subt": float(data.get("subt") or 0),
+        "vsto_display": float(data.get("vsto") or 0),  # post-override
+        "vqx": float(data.get("vqx") or 0),
+        "umaq": float(data.get("umaq") or 0),
+        "uact": float(data.get("uact") or 0),
+        "uret": float(data.get("uret") or 0),
+        "antic": float(data.get("antic") or 0),
+        "totp": float(data.get("totp") or 0),
     }
     vsto_orig = float(hist_row.get("ustock") or 0)
     componentes["vsto_orig"] = vsto_orig
 
     # PATR alternativos
     patr_post = (
-        componentes["subt"] + componentes["vsto_display"]
-        + componentes["vqx"] + componentes["umaq"] + componentes["uact"]
-        + componentes["uret"] + componentes["antic"] - componentes["totp"]
+        componentes["subt"]
+        + componentes["vsto_display"]
+        + componentes["vqx"]
+        + componentes["umaq"]
+        + componentes["uact"]
+        + componentes["uret"]
+        + componentes["antic"]
+        - componentes["totp"]
     )
     patr_pre = (
-        componentes["subt"] + componentes["vsto_orig"]
-        + componentes["vqx"] + componentes["umaq"] + componentes["uact"]
-        + componentes["uret"] + componentes["antic"] - componentes["totp"]
+        componentes["subt"]
+        + componentes["vsto_orig"]
+        + componentes["vqx"]
+        + componentes["umaq"]
+        + componentes["uact"]
+        + componentes["uret"]
+        + componentes["antic"]
+        - componentes["totp"]
     )
 
     patrimonio_hist = float(hist_row.get("patrimonio") or 0)
@@ -305,37 +347,44 @@ def utilidad_debug():
     formulas = [
         {
             "label": "A) patr_pre_override − patrimonio_hist (= lo actual)",
-            "patr": patr_pre, "patant": patrimonio_hist,
+            "patr": patr_pre,
+            "patant": patrimonio_hist,
             "result": patr_pre - patrimonio_hist,
         },
         {
             "label": "B) patr_post_override − patrimonio_hist",
-            "patr": patr_post, "patant": patrimonio_hist,
+            "patr": patr_post,
+            "patant": patrimonio_hist,
             "result": patr_post - patrimonio_hist,
         },
         {
             "label": "C) patr_pre_override − (patrimonio_hist − usret_hist)",
-            "patr": patr_pre, "patant": patrimonio_hist - usret_hist,
+            "patr": patr_pre,
+            "patant": patrimonio_hist - usret_hist,
             "result": patr_pre - (patrimonio_hist - usret_hist),
         },
         {
             "label": "D) patr_post_override − (patrimonio_hist − usret_hist)",
-            "patr": patr_post, "patant": patrimonio_hist - usret_hist,
+            "patr": patr_post,
+            "patant": patrimonio_hist - usret_hist,
             "result": patr_post - (patrimonio_hist - usret_hist),
         },
         {
             "label": "E) usuti_hist (= utilidad guardada en cierre anterior, sin recalcular)",
-            "patr": 0, "patant": 0,
+            "patr": 0,
+            "patant": 0,
             "result": usuti_hist,
         },
         {
             "label": "F) patr_pre_override − patrimonio_hist + usret_hist (= delta + retiros del cierre)",
-            "patr": patr_pre, "patant": patrimonio_hist - usret_hist,
+            "patr": patr_pre,
+            "patant": patrimonio_hist - usret_hist,
             "result": patr_pre - patrimonio_hist + usret_hist,
         },
         {
             "label": "G) patr_post_override − patrimonio_hist + usret_hist",
-            "patr": patr_post, "patant": patrimonio_hist - usret_hist,
+            "patr": patr_post,
+            "patant": patrimonio_hist - usret_hist,
             "result": patr_post - patrimonio_hist + usret_hist,
         },
     ]
@@ -345,9 +394,11 @@ def utilidad_debug():
         hist_row=hist_row,
         hist_all=hist_all,
         componentes=componentes,
-        patr_pre=patr_pre, patr_post=patr_post,
+        patr_pre=patr_pre,
+        patr_post=patr_post,
         patrimonio_hist=patrimonio_hist,
-        usret_hist=usret_hist, usuti_hist=usuti_hist,
+        usret_hist=usret_hist,
+        usuti_hist=usuti_hist,
         formulas=formulas,
         error=error,
     )
@@ -362,8 +413,10 @@ def cartera():
         return csv_response(
             filas,
             columnas=[
-                ("codigo_cli", "Código"), ("nombre", "Cliente"),
-                ("n_facturas", "# facturas"), ("saldo_total", "Saldo"),
+                ("codigo_cli", "Código"),
+                ("nombre", "Cliente"),
+                ("n_facturas", "# facturas"),
+                ("saldo_total", "Saldo"),
                 ("factura_mas_vieja", "Fact. más vieja"),
                 ("vence_mas_viejo", "Vence más vieja"),
             ],
@@ -395,18 +448,21 @@ def check_totales():
     error = None
     checks: list[dict] = []
 
-    def _diff_check(label: str, a_label: str, a_val: float,
-                    b_label: str, b_val: float, ok_tol: float = 0.5) -> dict:
+    def _diff_check(
+        label: str, a_label: str, a_val: float, b_label: str, b_val: float, ok_tol: float = 0.5
+    ) -> dict:
         a_f = float(a_val or 0)
         b_f = float(b_val or 0)
         diff = a_f - b_f
         ok = abs(diff) <= ok_tol
         return {
-            "label":    label,
-            "a_label":  a_label, "a_val": a_f,
-            "b_label":  b_label, "b_val": b_f,
-            "diff":     diff,
-            "ok":       ok,
+            "label": label,
+            "a_label": a_label,
+            "a_val": a_f,
+            "b_label": b_label,
+            "b_val": b_f,
+            "diff": diff,
+            "ok": ok,
         }
 
     try:
@@ -417,6 +473,7 @@ def check_totales():
 
         # /cartera total (bruto)
         from modules.cartera import queries as _cq
+
         cartera_tot = _cq.aging_totales()
         # TMT 2026-05-20 v4 Federico — usar el saldo NETO (incluye sobrepagos)
         # para que el check matchee TOTF de Resultados. /cartera muestra
@@ -424,7 +481,7 @@ def check_totales():
         # netea los sobrepagos. Sin esto, hay drift = SUM(saldo<0 stat=Z|A).
         cartera_facturas = float(cartera_tot.get("saldo_facturas_net") or 0)
         cartera_sobrepagos = float(cartera_tot.get("sobrepagos") or 0)
-        cartera_cheques  = float(cartera_tot.get("cheques_en_cartera") or 0)
+        cartera_cheques = float(cartera_tot.get("cheques_en_cartera") or 0)
 
         # /deudas total
         deudas_filas = queries.deudas_por_proveedor()
@@ -432,10 +489,11 @@ def check_totales():
 
         # /posdat default (= banc=0 + no anulada)
         from modules.posdat import queries as _pq
+
         posdat_resumen = _pq.resumen(solo_abiertas=True, tab="posdatados")
         posdat_resumen_yy = _pq.resumen(solo_abiertas=True, tab="yy")
         posdat_total_no_yy = float(posdat_resumen.get("total_abierto") or 0)
-        posdat_total_yy    = float(posdat_resumen_yy.get("total_abierto") or 0)
+        posdat_total_yy = float(posdat_resumen_yy.get("total_abierto") or 0)
 
         # Cheques live (mismo filtro que totc — sanity).
         chq_live = _db.fetch_one(
@@ -464,44 +522,58 @@ def check_totales():
         checks = [
             _diff_check(
                 "Cheques en cartera — Resultados vs /cartera",
-                "Resultados → Cheques",                 totc,
-                "/cartera → Cheques en cartera",        cartera_cheques,
+                "Resultados → Cheques",
+                totc,
+                "/cartera → Cheques en cartera",
+                cartera_cheques,
             ),
             _diff_check(
                 "Facturas vivas — Resultados vs /cartera (netas)",
-                "Resultados → Facturas",                                  totf,
-                f"/cartera → Saldo facturas + sobrepagos ({cartera_sobrepagos:,.2f})",  cartera_facturas,
+                "Resultados → Facturas",
+                totf,
+                f"/cartera → Saldo facturas + sobrepagos ({cartera_sobrepagos:,.2f})",
+                cartera_facturas,
             ),
             _diff_check(
                 "Pasivos — Resultados vs /deudas",
-                "Resultados → Pasivos",                 totp,
-                "/deudas → Total deudas",               deudas_total,
+                "Resultados → Pasivos",
+                totp,
+                "/deudas → Total deudas",
+                deudas_total,
             ),
             _diff_check(
                 "Posdatas — Resultados vs /posdat",
-                "Resultados → ↳ Posdatas (total)",      totp,
-                "/posdat → tab Posdatados + tab YY",    posdat_total_no_yy + posdat_total_yy,
+                "Resultados → ↳ Posdatas (total)",
+                totp,
+                "/posdat → tab Posdatados + tab YY",
+                posdat_total_no_yy + posdat_total_yy,
             ),
             # Sanity adicionales — chequea queries internas vs live SQL.
             _diff_check(
                 "Sanity TOTC: queries vs live SQL",
-                "Resultados → Cheques (totc())",        totc,
-                "SELECT SUM live (Z+1+2+3+P+D)",        cheques_live,
+                "Resultados → Cheques (totc())",
+                totc,
+                "SELECT SUM live (Z+1+2+3+P+D)",
+                cheques_live,
             ),
             _diff_check(
                 "Sanity TOTF: queries vs live SQL",
-                "Resultados → Facturas (totf())",       totf,
-                "SELECT SUM live (Z+A)",                facturas_live,
+                "Resultados → Facturas (totf())",
+                totf,
+                "SELECT SUM live (Z+A)",
+                facturas_live,
             ),
         ]
     except Exception as e:  # noqa: BLE001
         error = str(e)
         import traceback
+
         traceback.print_exc()
 
     return render_template(
         "informes/check_totales.html",
-        checks=checks, error=error,
+        checks=checks,
+        error=error,
     )
 
 
@@ -514,9 +586,11 @@ def deudas():
         return csv_response(
             filas,
             columnas=[
-                ("codigo_prov", "Código"), ("nombre", "Proveedor"),
+                ("codigo_prov", "Código"),
+                ("nombre", "Proveedor"),
                 ("tipo", "Tipo"),
-                ("n_posdats", "# posdatados"), ("saldo_total", "Saldo"),
+                ("n_posdats", "# posdatados"),
+                ("saldo_total", "Saldo"),
                 ("posdat_mas_vieja", "Posdat más vieja"),
                 ("vence_mas_viejo", "Vence más vieja"),
             ],
@@ -532,10 +606,10 @@ def deudas():
     #   B     → Bancos
     #   Y, '' → Otros / Servicios
     cats_orden = [
-        (1, "Mat. Prima",  {"H", "Q"}),
-        (2, "Maquinaria",  {"U"}),
-        (3, "Bancos",      {"B"}),
-        (4, "Otros",       {"Y", ""}),
+        (1, "Mat. Prima", {"H", "Q"}),
+        (2, "Maquinaria", {"U"}),
+        (3, "Bancos", {"B"}),
+        (4, "Otros", {"Y", ""}),
     ]
 
     def _categoria_de(tipo: str) -> tuple[int, str]:
@@ -550,12 +624,14 @@ def deudas():
     for r in filas:
         cat_orden, cat_label = _categoria_de(r.get("tipo") or "")
         saldo = float(r.get("saldo_total") or 0)
-        filas_anotadas.append({
-            **dict(r),
-            "categoria":       cat_label,
-            "categoria_orden": cat_orden,
-            "pct":             round(100.0 * saldo / total, 1) if total > 0 else 0.0,
-        })
+        filas_anotadas.append(
+            {
+                **dict(r),
+                "categoria": cat_label,
+                "categoria_orden": cat_orden,
+                "pct": round(100.0 * saldo / total, 1) if total > 0 else 0.0,
+            }
+        )
     # Sort por categoría ASC + dentro por saldo DESC.
     filas_anotadas.sort(
         key=lambda r: (r["categoria_orden"], -float(r.get("saldo_total") or 0)),
@@ -565,17 +641,25 @@ def deudas():
     subtotales: dict[int, dict] = {}
     for r in filas_anotadas:
         cat = r["categoria_orden"]
-        s = subtotales.setdefault(cat, {
-            "orden": cat, "label": r["categoria"], "n": 0, "total": 0.0,
-        })
-        s["n"]     += 1
+        s = subtotales.setdefault(
+            cat,
+            {
+                "orden": cat,
+                "label": r["categoria"],
+                "n": 0,
+                "total": 0.0,
+            },
+        )
+        s["n"] += 1
         s["total"] += float(r.get("saldo_total") or 0)
     for s in subtotales.values():
         s["pct"] = round(100.0 * s["total"] / total, 1) if total > 0 else 0.0
 
     return render_template(
         "informes/deudas.html",
-        filas=filas_anotadas, total=total, error=error,
+        filas=filas_anotadas,
+        total=total,
+        error=error,
         subtotales=subtotales,
     )
 
@@ -593,6 +677,7 @@ def diag_stock():
     from datetime import date as _date
 
     import db
+
     y = _date.today().year
 
     def _safe_q(sql, params=()):
@@ -601,7 +686,8 @@ def diag_stock():
         except Exception as e:
             return [{"error": str(e)}]
 
-    tinto = _safe_q("""
+    tinto = _safe_q(
+        """
         SELECT EXTRACT(MONTH FROM fecha)::int AS mes,
                COUNT(*) AS n,
                SUM(COALESCE(kg, 0))::int AS kg_col,
@@ -613,17 +699,23 @@ def diag_stock():
           FROM scintela.tinto
          WHERE EXTRACT(YEAR FROM fecha) = %s
          GROUP BY 1 ORDER BY 1
-    """, (y,))
+    """,
+        (y,),
+    )
 
-    iniciales = _safe_q("""
+    iniciales = _safe_q(
+        """
         SELECT yy, mesnum, hilado, tejido, terminado, vq,
                um, uk, uf, uq
           FROM scintela.iniciales
          WHERE yy = %s
          ORDER BY mesnum
-    """, (y,))
+    """,
+        (y,),
+    )
 
-    facturas_mes = _safe_q("""
+    facturas_mes = _safe_q(
+        """
         SELECT EXTRACT(MONTH FROM fecha)::int AS mes,
                COUNT(*) AS n,
                SUM(COALESCE(kg, 0))::int AS kg
@@ -631,9 +723,12 @@ def diag_stock():
          WHERE EXTRACT(YEAR FROM fecha) = %s
            AND COALESCE(stat, '') <> 'X'
          GROUP BY 1 ORDER BY 1
-    """, (y,))
+    """,
+        (y,),
+    )
 
-    compras_tipo = _safe_q("""
+    compras_tipo = _safe_q(
+        """
         SELECT UPPER(TRIM(COALESCE(tipo, ''))) AS tipo,
                COUNT(*) AS n,
                SUM(COALESCE(kg, 0))::int AS kg,
@@ -642,12 +737,18 @@ def diag_stock():
          WHERE EXTRACT(YEAR FROM fecha) = %s
            AND COALESCE(stat, '') != 'Y'
          GROUP BY 1 ORDER BY 1
-    """, (y,))
+    """,
+        (y,),
+    )
 
-    return render_template("informes/diag_stock.html",
-                           anio=y,
-                           tinto=tinto, iniciales=iniciales,
-                           facturas_mes=facturas_mes, compras_tipo=compras_tipo)
+    return render_template(
+        "informes/diag_stock.html",
+        anio=y,
+        tinto=tinto,
+        iniciales=iniciales,
+        facturas_mes=facturas_mes,
+        compras_tipo=compras_tipo,
+    )
 
 
 @informes_bp.route("/snapshot-mes", methods=["POST"])
@@ -659,9 +760,10 @@ def snapshot_mes():
     POST con form (anio, mes). Idempotente.
     """
     from datetime import date as _date
+
     try:
         anio = int(request.form.get("anio") or _date.today().year)
-        mes  = int(request.form.get("mes")  or _date.today().month)
+        mes = int(request.form.get("mes") or _date.today().month)
     except (TypeError, ValueError):
         flash("Parámetros inválidos.", "error")
         return redirect(url_for("informes.fuentes_y_usos"))
@@ -687,6 +789,7 @@ def snapshot_backfill():
     POST con form (meses=N). Idempotente.
     """
     from datetime import date as _date
+
     try:
         n = int(request.form.get("meses") or 3)
     except (TypeError, ValueError):
@@ -727,6 +830,7 @@ def fuentes_y_usos():
     porque la data viene de scintela.historia (un snapshot por mes).
     """
     from datetime import date
+
     hoy = date.today()
 
     def _p(k, default):
@@ -738,25 +842,33 @@ def fuentes_y_usos():
     # Default: ventana de 1 mes terminando en mes actual (compatible con
     # comportamiento anterior cuando solo había un picker).
     hasta_anio = _p("hasta_anio", _p("anio", hoy.year))
-    hasta_mes  = _p("hasta_mes",  _p("mes",  hoy.month))
+    hasta_mes = _p("hasta_mes", _p("mes", hoy.month))
     desde_anio = _p("desde_anio", hasta_anio if hasta_mes > 1 else hasta_anio - 1)
-    desde_mes  = _p("desde_mes",  hasta_mes - 1 if hasta_mes > 1 else 12)
-    hasta_mes  = max(1, min(hasta_mes, 12))
-    desde_mes  = max(1, min(desde_mes, 12))
+    desde_mes = _p("desde_mes", hasta_mes - 1 if hasta_mes > 1 else 12)
+    hasta_mes = max(1, min(hasta_mes, 12))
+    desde_mes = max(1, min(desde_mes, 12))
 
     try:
         data = queries.fuentes_y_usos(
-            desde_anio=desde_anio, desde_mes=desde_mes,
-            hasta_anio=hasta_anio, hasta_mes=hasta_mes,
+            desde_anio=desde_anio,
+            desde_mes=desde_mes,
+            hasta_anio=hasta_anio,
+            hasta_mes=hasta_mes,
         )
     except Exception as e:
         data = {
-            "anio_ini": desde_anio, "mes_ini": desde_mes,
-            "anio": hasta_anio, "mes": hasta_mes,
-            "fuentes": [], "usos": [],
-            "total_fuentes": 0, "total_usos": 0,
-            "delta_liquido": 0, "delta_banco": 0,
-            "h_ini": {}, "h_fin": {},
+            "anio_ini": desde_anio,
+            "mes_ini": desde_mes,
+            "anio": hasta_anio,
+            "mes": hasta_mes,
+            "fuentes": [],
+            "usos": [],
+            "total_fuentes": 0,
+            "total_usos": 0,
+            "delta_liquido": 0,
+            "delta_banco": 0,
+            "h_ini": {},
+            "h_fin": {},
             "error": str(e),
         }
     return render_template(
@@ -764,9 +876,12 @@ def fuentes_y_usos():
         data=data,
         # Para back-compat con el template (siguen existiendo `anio`/`mes`
         # como los del HASTA, además de los explícitos `desde_*`/`hasta_*`).
-        anio=hasta_anio, mes=hasta_mes,
-        desde_anio=desde_anio, desde_mes=desde_mes,
-        hasta_anio=hasta_anio, hasta_mes=hasta_mes,
+        anio=hasta_anio,
+        mes=hasta_mes,
+        desde_anio=desde_anio,
+        desde_mes=desde_mes,
+        hasta_anio=hasta_anio,
+        hasta_mes=hasta_mes,
     )
 
 
@@ -780,12 +895,19 @@ def flujo():
         return csv_response(
             filas,
             columnas=[
-                ("fecha", "Fecha"), ("cheques", "Cheques"), ("facturas", "Facturas"),
-                ("pichincha", "Pichincha"), ("inter", "Internacional"),
-                ("posdat1", "Pos.dat 1"), ("posdat2", "Pos.dat 2"),
-                ("mprima", "M. prima"), ("gastos", "Gastos"),
-                ("saldo", "Saldo"), ("pagos", "Pagos"),
-                ("dolares", "Dólares"), ("usaldo", "USD saldo"),
+                ("fecha", "Fecha"),
+                ("cheques", "Cheques"),
+                ("facturas", "Facturas"),
+                ("pichincha", "Pichincha"),
+                ("inter", "Internacional"),
+                ("posdat1", "Pos.dat 1"),
+                ("posdat2", "Pos.dat 2"),
+                ("mprima", "M. prima"),
+                ("gastos", "Gastos"),
+                ("saldo", "Saldo"),
+                ("pagos", "Pagos"),
+                ("dolares", "Dólares"),
+                ("usaldo", "USD saldo"),
             ],
             filename=f"flujo_{dias}d.csv",
         )
@@ -829,7 +951,8 @@ def flujo_grafico():
     else:
         filas, error = _safe(
             lambda: queries.flujo_calculado(
-                dias_atras=14, dias_adelante=365,
+                dias_atras=14,
+                dias_adelante=365,
                 ignorar_cheques=ignorar_cheques,
             ),
             [],
@@ -839,18 +962,18 @@ def flujo_grafico():
     # instead of relying on the browser's Date(string) forgiveness.
     datos = [
         {
-            "fecha":     r["fecha"].isoformat() if hasattr(r["fecha"], "isoformat") else r["fecha"],
-            "saldo":     float(r["saldo"] or 0),
-            "cheques":   float(r["cheques"] or 0),
-            "facturas":  float(r["facturas"] or 0),
-            "posdat1":   float(r["posdat1"] or 0),
-            "posdat2":   float(r["posdat2"] or 0),
+            "fecha": r["fecha"].isoformat() if hasattr(r["fecha"], "isoformat") else r["fecha"],
+            "saldo": float(r["saldo"] or 0),
+            "cheques": float(r["cheques"] or 0),
+            "facturas": float(r["facturas"] or 0),
+            "posdat1": float(r["posdat1"] or 0),
+            "posdat2": float(r["posdat2"] or 0),
             "pichincha": float(r["pichincha"] or 0),
-            "inter":     float(r["inter"] or 0),
-            "mprima":    float(r["mprima"] or 0),
-            "gastos":    float(r["gastos"] or 0),
-            "pagos":     float(r["pagos"] or 0),
-            "dolares":   float(r["dolares"] or 0),
+            "inter": float(r["inter"] or 0),
+            "mprima": float(r["mprima"] or 0),
+            "gastos": float(r["gastos"] or 0),
+            "pagos": float(r["pagos"] or 0),
+            "dolares": float(r["dolares"] or 0),
         }
         for r in filas
     ]
@@ -858,20 +981,23 @@ def flujo_grafico():
     # Lista de posdat egresos para mostrar al lado del gráfico — ayuda al
     # gerente a saber QUÉ se está restando, no sólo el total agregado.
     posdat_egresos, _ = _safe(
-        lambda: queries.posdat_egresos_proximos(dias_adelante=365), [],
+        lambda: queries.posdat_egresos_proximos(dias_adelante=365),
+        [],
     )
     egresos_lista = [
         {
             "id_posdat": int(r["id_posdat"]) if r.get("id_posdat") else None,
             "fecha_efectiva": r["fecha_efectiva"].isoformat()
-                if hasattr(r["fecha_efectiva"], "isoformat") else r["fecha_efectiva"],
+            if hasattr(r["fecha_efectiva"], "isoformat")
+            else r["fecha_efectiva"],
             "fechad": r["fechad"].isoformat()
-                if r.get("fechad") and hasattr(r["fechad"], "isoformat") else None,
-            "prov":     r.get("prov") or "",
+            if r.get("fechad") and hasattr(r["fechad"], "isoformat")
+            else None,
+            "prov": r.get("prov") or "",
             "concepto": r.get("concepto") or "",
-            "importe":  float(r.get("importe") or 0),
-            "banc":     int(r.get("banc") or 0),
-            "vencido":  bool(r.get("fechad") and r["fechad"] < date.today()),
+            "importe": float(r.get("importe") or 0),
+            "banc": int(r.get("banc") or 0),
+            "vencido": bool(r.get("fechad") and r["fechad"] < date.today()),
         }
         for r in posdat_egresos
     ]
@@ -901,9 +1027,19 @@ def flujo_grafico():
 # ---------------------------------------------------------------------------
 
 _FLUJO_HEADERS = [
-    "fecha", "saldo", "cheques", "facturas",
-    "posdat1", "posdat2", "pichincha", "inter",
-    "mprima", "gastos", "pagos", "dolares", "usaldo",
+    "fecha",
+    "saldo",
+    "cheques",
+    "facturas",
+    "posdat1",
+    "posdat2",
+    "pichincha",
+    "inter",
+    "mprima",
+    "gastos",
+    "pagos",
+    "dolares",
+    "usaldo",
 ]
 
 
@@ -953,10 +1089,23 @@ def flujo_cargar():
         w = csv.writer(buf, delimiter=";")
         w.writerow(_FLUJO_HEADERS)
         # Una fila de ejemplo para que el usuario vea el formato.
-        w.writerow([
-            date.today().isoformat(), "0", "0", "0",
-            "0", "0", "0", "0", "0", "0", "0", "0", "0",
-        ])
+        w.writerow(
+            [
+                date.today().isoformat(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+            ]
+        )
         return Response(
             buf.getvalue().encode("utf-8"),
             mimetype="text/csv; charset=utf-8",
@@ -997,9 +1146,7 @@ def flujo_cargar():
                         if col in rn and rn[col] not in (None, ""):
                             monto = _parse_monto(rn[col])
                             if monto is None:
-                                errores.append(
-                                    f"Línea {i} col {col}: monto inválido ({rn[col]!r})"
-                                )
+                                errores.append(f"Línea {i} col {col}: monto inválido ({rn[col]!r})")
                             else:
                                 row[col] = monto
                     rows.append(row)
@@ -1026,8 +1173,7 @@ def flujo_cargar():
             try:
                 resultado = queries.upsert_flujo_rows(rows, usuario)
                 flash(
-                    f"Flujo: {resultado['inserted']} insertadas, "
-                    f"{resultado['updated']} actualizadas.",
+                    f"Flujo: {resultado['inserted']} insertadas, {resultado['updated']} actualizadas.",
                     "ok",
                 )
                 return redirect(url_for("informes.flujo_grafico"))
@@ -1056,7 +1202,9 @@ def ventas_multianual():
     data, error = _safe(lambda: queries.ventas_multianual(anios), {})
     return render_template(
         "informes/ventas_multianual.html",
-        data=data, anios=anios, error=error,
+        data=data,
+        anios=anios,
+        error=error,
     )
 
 
@@ -1069,6 +1217,7 @@ def ventas():
     # ahora redirigimos al ranking del mes; el listado multi-mes vive en
     # ventas_multianual (link sigue disponible desde ahí).
     from datetime import date as _date
+
     hoy = _date.today()
     try:
         anio = int(request.args.get("anio") or hoy.year)
@@ -1080,11 +1229,15 @@ def ventas():
         mes = hoy.month
     mes = max(1, min(mes, 12))
     data, error = _safe(
-        lambda: queries.ventas_clientes_del_mes(anio=anio, mes=mes), {},
+        lambda: queries.ventas_clientes_del_mes(anio=anio, mes=mes),
+        {},
     )
     return render_template(
         "informes/ventas_mes.html",
-        data=data, anio=anio, mes=mes, error=error,
+        data=data,
+        anio=anio,
+        mes=mes,
+        error=error,
     )
 
 
@@ -1113,14 +1266,15 @@ def ventas_anio():
             filas,
             columnas=[
                 ("mes_nombre", "Mes"),
-                ("kg",         "Kg"),
-                ("precio",     "Precio U$/kg"),
-                ("importe",    "Importe"),
-                ("acum",       "Acumulado"),
+                ("kg", "Kg"),
+                ("precio", "Precio U$/kg"),
+                ("importe", "Importe"),
+                ("acum", "Acumulado"),
             ],
             filename="ventas_anio.csv",
         )
     from datetime import date as _date
+
     return render_template(
         "informes/ventas_anio.html",
         filas=filas,
@@ -1143,6 +1297,7 @@ def flujo_produccion():
     COMPRAS HILADO, PRODUC.TEJIDO, TINTORERIA y CS.COLORANTES/PRODUCCION.
     """
     from datetime import date as _date
+
     hoy = _date.today()
     try:
         anio = int(request.args.get("anio") or hoy.year)
@@ -1154,11 +1309,15 @@ def flujo_produccion():
         mes = hoy.month
     mes = max(1, min(mes, 12))
     data, error = _safe(
-        lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes), {},
+        lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes),
+        {},
     )
     return render_template(
         "informes/flujo_produccion.html",
-        data=data, anio=anio, mes=mes, error=error,
+        data=data,
+        anio=anio,
+        mes=mes,
+        error=error,
     )
 
 
@@ -1171,9 +1330,12 @@ def gastos():
         return csv_response(
             filas,
             columnas=[
-                ("fecha", "Fecha"), ("documento", "Doc"),
-                ("concepto", "Concepto"), ("proveedor", "Proveedor"),
-                ("banco", "Banco"), ("importe", "Importe"),
+                ("fecha", "Fecha"),
+                ("documento", "Doc"),
+                ("concepto", "Concepto"),
+                ("proveedor", "Proveedor"),
+                ("banco", "Banco"),
+                ("importe", "Importe"),
             ],
             filename="gastos_mes.csv",
         )
@@ -1186,19 +1348,28 @@ def gastos():
     #   GGF  = V7+V8+V9 + DEPRCAR
     v, _e = _safe(queries.gastos_xgast_v1_a_v9_mes, {})
     a, _e = _safe(queries.amortizaciones_mensuales, {})
+
     def gv(k):
         return float((v or {}).get(k) or 0)
+
     def ga(k):
         return float((a or {}).get(k) or 0)
+
     matriz = {
         "personal": {
-            "tej":   gv("v1"), "tin":   gv("v4"), "adm":   gv("v7"),
+            "tej": gv("v1"),
+            "tin": gv("v4"),
+            "adm": gv("v7"),
         },
         "servicios": {
-            "tej":   gv("v2"), "tin":   gv("v5"), "adm":   gv("v8"),
+            "tej": gv("v2"),
+            "tin": gv("v5"),
+            "adm": gv("v8"),
         },
         "otros": {
-            "tej":   gv("v3"), "tin":   gv("v6"), "adm":   gv("v9"),
+            "tej": gv("v3"),
+            "tin": gv("v6"),
+            "adm": gv("v9"),
         },
     }
     # Totales por columna (V1+V2+V3 etc.) y los GTEJ/GTIN/GGF con amort.
@@ -1211,9 +1382,9 @@ def gastos():
     col_total = {k: col_v[k] + col_amort[k] for k in col_v}
     # Totales por fila (personal/servicios/otros — sin amort, son sólo V1-V9).
     fil_total = {
-        "personal":  matriz["personal"]["tej"]  + matriz["personal"]["tin"]  + matriz["personal"]["adm"],
+        "personal": matriz["personal"]["tej"] + matriz["personal"]["tin"] + matriz["personal"]["adm"],
         "servicios": matriz["servicios"]["tej"] + matriz["servicios"]["tin"] + matriz["servicios"]["adm"],
-        "otros":     matriz["otros"]["tej"]     + matriz["otros"]["tin"]     + matriz["otros"]["adm"],
+        "otros": matriz["otros"]["tej"] + matriz["otros"]["tin"] + matriz["otros"]["adm"],
     }
     suma_v_total = sum(col_v.values())
     suma_amort_total = sum(col_amort.values())
@@ -1224,16 +1395,23 @@ def gastos():
     sin_num_resumen = {"n": 0, "total": 0.0, "n_conceptos_unicos": 0}
     try:
         from modules.gastos import queries as _gq
+
         sin_num_resumen = _gq.xgast_sin_num_resumen()
     except Exception:
         pass
 
     return render_template(
         "informes/gastos.html",
-        filas=filas, total=total, error=error,
-        matriz=matriz, col_v=col_v, col_amort=col_amort, col_total=col_total,
+        filas=filas,
+        total=total,
+        error=error,
+        matriz=matriz,
+        col_v=col_v,
+        col_amort=col_amort,
+        col_total=col_total,
         fil_total=fil_total,
-        suma_v_total=suma_v_total, suma_amort_total=suma_amort_total,
+        suma_v_total=suma_v_total,
+        suma_amort_total=suma_amort_total,
         suma_grand=suma_grand,
         sin_num_resumen=sin_num_resumen,
     )
@@ -1256,7 +1434,9 @@ def gastos_detalle(num):
     data, error = _safe(lambda: queries.gastos_detalle_categoria(num), {})
     return render_template(
         "informes/gastos_detalle.html",
-        data=data, num=num, error=error,
+        data=data,
+        num=num,
+        error=error,
     )
 
 
@@ -1292,21 +1472,24 @@ def retiros():
         )
 
     # KPIs — siempre mes + año (visibles en ambas tabs).
-    total_mes,   _ = _safe(queries.retiros_total_mes_actual, 0.0)
+    total_mes, _ = _safe(queries.retiros_total_mes_actual, 0.0)
     total_anual, _ = _safe(queries.retiros_total_anual, 0.0)
 
     # Conteos para los badges del switcher de tabs (best-effort).
     try:
-        n_mes  = len(queries.retiros_del_mes_actual())
+        n_mes = len(queries.retiros_del_mes_actual())
         n_anio = len(queries.retiros_del_anio_actual())
     except Exception:  # noqa: BLE001
         n_mes, n_anio = 0, 0
 
     return render_template(
         "informes/retiros.html",
-        filas=filas, tab=tab,
-        total_mes=total_mes, total_anual=total_anual,
-        n_mes=n_mes, n_anio=n_anio,
+        filas=filas,
+        tab=tab,
+        total_mes=total_mes,
+        total_anual=total_anual,
+        n_mes=n_mes,
+        n_anio=n_anio,
         error=error,
     )
 
@@ -1320,11 +1503,16 @@ def activos():
         return csv_response(
             filas,
             columnas=[
-                ("fecha", "Fecha"), ("concepto", "Concepto"),
-                ("tipo", "Tipo"), ("proveedor", "Proveedor"),
-                ("inicial", "Inicial"), ("amortizac", "Amort. acum."),
-                ("amortimes", "Amort. mes"), ("valor", "Valor neto"),
-                ("cuota", "Cuota"), ("vida_util", "Vida útil"),
+                ("fecha", "Fecha"),
+                ("concepto", "Concepto"),
+                ("tipo", "Tipo"),
+                ("proveedor", "Proveedor"),
+                ("inicial", "Inicial"),
+                ("amortizac", "Amort. acum."),
+                ("amortimes", "Amort. mes"),
+                ("valor", "Valor neto"),
+                ("cuota", "Cuota"),
+                ("vida_util", "Vida útil"),
                 ("ult_mes_amortizado", "Últ. mes amort."),
             ],
             filename="activos_fijos.csv",
@@ -1347,7 +1535,9 @@ def historia_multianual():
     data, error = _safe(lambda: queries.historia_multianual(meses), {})
     return render_template(
         "informes/historia_multianual.html",
-        data=data, meses=meses, error=error,
+        data=data,
+        meses=meses,
+        error=error,
     )
 
 
@@ -1361,16 +1551,31 @@ def historia():
             filas,
             columnas=[
                 ("fecha", "Mes"),
-                ("stock", "Stock"), ("kcom", "Kg compra"), ("ktej", "Kg tejido"),
-                ("ktin", "Kg tinto"), ("ustock", "U stock"), ("uqui", "U químicos"),
-                ("kvent", "Kg venta"), ("uvent", "U venta"), ("costo", "Costo"),
-                ("ucom", "U compra"), ("utej", "U tejido"), ("utin", "U tinto"),
-                ("gasto", "Gasto mes"), ("gstotal", "Gasto total"),
-                ("banco", "Banco"), ("cart", "Cartera"), ("deuda", "Deuda"),
-                ("retiro", "Retiro"), ("patrimonio", "Patrimonio"),
-                ("anticipos", "Anticipos"), ("dolar", "Dólar"),
-                ("maquinaria", "Maquinaria"), ("realty", "Inmueble"),
-                ("usret", "USD retiro"), ("usuti", "USD utilidad"),
+                ("stock", "Stock"),
+                ("kcom", "Kg compra"),
+                ("ktej", "Kg tejido"),
+                ("ktin", "Kg tinto"),
+                ("ustock", "U stock"),
+                ("uqui", "U químicos"),
+                ("kvent", "Kg venta"),
+                ("uvent", "U venta"),
+                ("costo", "Costo"),
+                ("ucom", "U compra"),
+                ("utej", "U tejido"),
+                ("utin", "U tinto"),
+                ("gasto", "Gasto mes"),
+                ("gstotal", "Gasto total"),
+                ("banco", "Banco"),
+                ("cart", "Cartera"),
+                ("deuda", "Deuda"),
+                ("retiro", "Retiro"),
+                ("patrimonio", "Patrimonio"),
+                ("anticipos", "Anticipos"),
+                ("dolar", "Dólar"),
+                ("maquinaria", "Maquinaria"),
+                ("realty", "Inmueble"),
+                ("usret", "USD retiro"),
+                ("usuti", "USD utilidad"),
             ],
             filename="historia_mensual.csv",
         )
@@ -1387,13 +1592,26 @@ def iniciales():
         return csv_response(
             filas,
             columnas=[
-                ("yy", "Año"), ("mesnum", "#"), ("mesnom", "Mes"),
-                ("hilado", "Hilado"), ("tejido", "Tejido"), ("terminado", "Terminado"),
-                ("vq", "VQ"), ("um", "UM"), ("uk", "UK"), ("uf", "UF"), ("uq", "UQ"),
-                ("pre", "Precio"), ("kprog", "Kg prog."), ("gprog", "Gasto prog."),
-                ("numnot", "# notas"), ("dificil", "Dificultad"),
-                ("pretej", "Precio tej."), ("pretin", "Precio tin."),
-                ("preadm", "Precio adm."), ("pretot", "Precio tot."),
+                ("yy", "Año"),
+                ("mesnum", "#"),
+                ("mesnom", "Mes"),
+                ("hilado", "Hilado"),
+                ("tejido", "Tejido"),
+                ("terminado", "Terminado"),
+                ("vq", "VQ"),
+                ("um", "UM"),
+                ("uk", "UK"),
+                ("uf", "UF"),
+                ("uq", "UQ"),
+                ("pre", "Precio"),
+                ("kprog", "Kg prog."),
+                ("gprog", "Gasto prog."),
+                ("numnot", "# notas"),
+                ("dificil", "Dificultad"),
+                ("pretej", "Precio tej."),
+                ("pretin", "Precio tin."),
+                ("preadm", "Precio adm."),
+                ("pretot", "Precio tot."),
             ],
             filename=f"iniciales_{anio or 'todos'}.csv",
         )
@@ -1424,7 +1642,10 @@ def estado_cuenta_landing():
     top = top[:10] if top else []
     return render_template(
         "informes/estado_cuenta_landing.html",
-        top=top, matches=matches, q=busqueda, error=error,
+        top=top,
+        matches=matches,
+        q=busqueda,
+        error=error,
     )
 
 
@@ -1438,9 +1659,11 @@ def estado_cuenta(codigo_cli):
         abort(404)
     try:
         from modules.recientes import queries as rec
+
         cli = data.get("cliente") or {}
         rec.registrar(
-            "cliente", codigo_up,
+            "cliente",
+            codigo_up,
             etiqueta=f"{codigo_up} — {cli.get('nombre') or ''}",
         )
     except Exception:
@@ -1455,6 +1678,7 @@ def estado_cuenta(codigo_cli):
 # El JS del flujo_grafico.html llama a estos endpoints (en lugar de
 # tocar localStorage) — ver bloque `gfLoad/gfSave` del template.
 # ---------------------------------------------------------------------------
+
 
 def _parse_fecha_iso(s: str):
     """YYYY-MM-DD → date, o None si no parsea."""
@@ -1496,14 +1720,19 @@ def gastos_forzados_crear():
     importe = _parse_importe_payload(payload.get("importe"))
     concepto = (payload.get("concepto") or "").strip()[:80]
     if not fecha or importe is None or importe <= 0:
-        return jsonify({
-            "ok": False,
-            "error": "Datos inválidos: fecha (YYYY-MM-DD) y importe > 0 requeridos.",
-        }), 400
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Datos inválidos: fecha (YYYY-MM-DD) y importe > 0 requeridos.",
+            }
+        ), 400
     usuario = (g.user or {}).get("username", "web")
     try:
         item = queries.gasto_forzado_crear(
-            fecha=fecha, importe=importe, concepto=concepto, usuario=usuario,
+            fecha=fecha,
+            importe=importe,
+            concepto=concepto,
+            usuario=usuario,
         )
         return jsonify({"ok": True, "item": item}), 201
     except Exception as e:  # noqa: BLE001
@@ -1511,7 +1740,8 @@ def gastos_forzados_crear():
 
 
 @informes_bp.route(
-    "/informes/flujo/gastos-forzados/<int:id_gasto>", methods=["PUT", "PATCH"],
+    "/informes/flujo/gastos-forzados/<int:id_gasto>",
+    methods=["PUT", "PATCH"],
 )
 @requiere_login
 @requiere_permiso("informes.editar")
@@ -1532,7 +1762,9 @@ def gastos_forzados_actualizar(id_gasto: int):
         r = queries.gasto_forzado_actualizar(
             id_gasto_forzado=id_gasto,
             expected_version=expected_v,
-            fecha=fecha, importe=importe, concepto=concepto,
+            fecha=fecha,
+            importe=importe,
+            concepto=concepto,
             usuario=usuario,
         )
     except Exception as e:  # noqa: BLE001
@@ -1544,7 +1776,8 @@ def gastos_forzados_actualizar(id_gasto: int):
 
 
 @informes_bp.route(
-    "/informes/flujo/gastos-forzados/<int:id_gasto>", methods=["DELETE"],
+    "/informes/flujo/gastos-forzados/<int:id_gasto>",
+    methods=["DELETE"],
 )
 @requiere_login
 @requiere_permiso("informes.editar")
@@ -1559,7 +1792,8 @@ def gastos_forzados_eliminar(id_gasto: int):
 
 
 @informes_bp.route(
-    "/informes/flujo/gastos-forzados/importar", methods=["POST"],
+    "/informes/flujo/gastos-forzados/importar",
+    methods=["POST"],
 )
 @requiere_login
 @requiere_permiso("informes.editar")

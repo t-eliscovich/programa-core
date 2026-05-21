@@ -1,4 +1,5 @@
 """Rutas del módulo conciliación."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -9,11 +10,12 @@ from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from modules.conciliacion import queries
 from modules.conciliacion.matcher import matchear
+from modules.conciliacion.matcher_depositos import (
+    matchear_depositos,
+    transacciones_en_rango,
+)
 from modules.conciliacion.parser import parse_csv
 from modules.conciliacion.parser_xlsx import parse_xlsx
-from modules.conciliacion.matcher_depositos import (
-    matchear_depositos, transacciones_en_rango,
-)
 
 conciliacion_bp = Blueprint(
     "conciliacion",
@@ -59,11 +61,11 @@ def index():
             {
                 "id_cheque": s["id_cheque"],
                 "no_cheque": s["no_cheque"],
-                "importe":   float(s["importe"]),
+                "importe": float(s["importe"]),
                 "codigo_cli": s["codigo_cli"],
-                "fechad":     s["fechad"].isoformat() if s["fechad"] else None,
-                "dias":       s["dias_sin_match"],
-                "razon":      s["razon"],
+                "fechad": s["fechad"].isoformat() if s["fechad"] else None,
+                "dias": s["dias_sin_match"],
+                "razon": s["razon"],
             }
             for s in result.sospechosos
         ]
@@ -167,8 +169,7 @@ def depositos():
             flash_exc("No se pudo leer el Excel", e)
             return redirect(url_for("conciliacion.depositos"))
         if not deps:
-            flash("El Excel no contenía depósitos válidos. Revisá que tenga "
-                  "columnas FECHA y VALOR.", "warn")
+            flash("El Excel no contenía depósitos válidos. Revisá que tenga columnas FECHA y VALOR.", "warn")
             return redirect(url_for("conciliacion.depositos"))
 
         # Rango de fechas: ± 30 días del rango de los depósitos.
@@ -190,25 +191,29 @@ def depositos():
         filas_session = []
         for f in resultado.filas:
             firma = queries.firma_deposito(
-                f.deposito.fecha, f.deposito.valor,
-                f.deposito.codigo, f.deposito.concepto,
+                f.deposito.fecha,
+                f.deposito.valor,
+                f.deposito.codigo,
+                f.deposito.concepto,
             )
-            filas_session.append({
-                "firma_dep": firma,
-                "fecha": (f.deposito.fecha.isoformat() if f.deposito.fecha else None),
-                "concepto": f.deposito.concepto,
-                "codigo": f.deposito.codigo,
-                "valor": float(f.deposito.valor),
-                "detalle": f.deposito.detalle,
-                "hoja": f.deposito.hoja,
-                "estado": f.estado,
-                "razon": f.razon,
-                "match_id": f.match.id_transaccion if f.match else None,
-                "match_fecha": (f.match.fecha.isoformat() if (f.match and f.match.fecha) else None),
-                "match_concepto": f.match.concepto if f.match else "",
-                "match_documento": f.match.documento if f.match else "",
-                "match_no_banco": f.match.no_banco if f.match else None,
-            })
+            filas_session.append(
+                {
+                    "firma_dep": firma,
+                    "fecha": (f.deposito.fecha.isoformat() if f.deposito.fecha else None),
+                    "concepto": f.deposito.concepto,
+                    "codigo": f.deposito.codigo,
+                    "valor": float(f.deposito.valor),
+                    "detalle": f.deposito.detalle,
+                    "hoja": f.deposito.hoja,
+                    "estado": f.estado,
+                    "razon": f.razon,
+                    "match_id": f.match.id_transaccion if f.match else None,
+                    "match_fecha": (f.match.fecha.isoformat() if (f.match and f.match.fecha) else None),
+                    "match_concepto": f.match.concepto if f.match else "",
+                    "match_documento": f.match.documento if f.match else "",
+                    "match_no_banco": f.match.no_banco if f.match else None,
+                }
+            )
         session[_SESSION_DEP] = {
             "filas": filas_session,
             "desde": desde.isoformat(),
@@ -224,7 +229,8 @@ def depositos():
         return render_template(
             "conciliacion/depositos_resultado.html",
             resultado_session=session[_SESSION_DEP],
-            desde=desde, hasta=hasta,
+            desde=desde,
+            hasta=hasta,
             n_filas=len(filas_session),
         )
 
@@ -280,8 +286,7 @@ def depositos_marcar():
         nota      : str (opcional)
     """
     data = session.get(_SESSION_DEP) or {}
-    firmas = {f["firma_dep"]: f for f in (data.get("filas") or [])
-              if f.get("firma_dep")}
+    firmas = {f["firma_dep"]: f for f in (data.get("filas") or []) if f.get("firma_dep")}
 
     firma = (request.form.get("firma_dep") or "").strip()
     accion = (request.form.get("accion") or "").strip()
@@ -295,6 +300,7 @@ def depositos_marcar():
 
     fila = firmas[firma]
     from datetime import date as _date
+
     fdep = None
     if fila.get("fecha"):
         try:
@@ -347,6 +353,7 @@ def depositos_confirmar_verdes():
             saltados += 1
             continue
         from datetime import date as _date
+
         fdep = None
         if fila.get("fecha"):
             try:
@@ -368,6 +375,8 @@ def depositos_confirmar_verdes():
             confirmados += 1
         except Exception:
             pass
-    flash(f"Confirmados {confirmados} matches verdes. "
-          f"({saltados} ya tenían decisión previa, no se tocaron.)", "ok")
+    flash(
+        f"Confirmados {confirmados} matches verdes. ({saltados} ya tenían decisión previa, no se tocaron.)",
+        "ok",
+    )
     return redirect(url_for("conciliacion.depositos_resultado"))

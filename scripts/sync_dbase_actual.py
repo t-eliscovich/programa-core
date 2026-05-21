@@ -53,6 +53,7 @@ Exit codes:
     1  algún error en el import o sanity check no superado
     2  pre-check falló (schema, source dir, etc.)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,6 +73,7 @@ import import_dbf  # noqa: E402
 
 try:
     from dotenv import load_dotenv  # noqa: E402
+
     load_dotenv(ROOT / ".env")
 except ImportError:
     pass
@@ -99,6 +101,7 @@ def _force_utf8_stdout():
 
 # ─── Verificaciones PRE-import ────────────────────────────────────────────
 
+
 def verificar_schema_version(min_version: str) -> tuple[bool, str]:
     """¿La DB tiene aplicadas todas las migraciones hasta `min_version`?
 
@@ -106,16 +109,16 @@ def verificar_schema_version(min_version: str) -> tuple[bool, str]:
     similar. Si no existe, retornamos OK con warning (DB nueva).
     """
     import db as _db
+
     try:
         # Probar dos shapes comunes: scintela.migrations o schema_migrations.
         for schema_table in (
             ("scintela", "migrations"),
-            ("public",   "schema_migrations"),
+            ("public", "schema_migrations"),
         ):
             try:
                 rows = _db.fetch_all(
-                    f"SELECT version FROM {schema_table[0]}.{schema_table[1]} "
-                    "ORDER BY version DESC LIMIT 5"
+                    f"SELECT version FROM {schema_table[0]}.{schema_table[1]} ORDER BY version DESC LIMIT 5"
                 )
                 if rows:
                     last = max(str(r.get("version") or "") for r in rows)
@@ -164,7 +167,10 @@ def hacer_backup(target_dir: Path, tablas: list[str]) -> tuple[bool, str]:
         with open(out_file, "wb") as f:
             res = subprocess.run(
                 [pg_dump, "--data-only", "--no-owner", "--no-privileges"] + t_args + [db_url],
-                stdout=f, stderr=subprocess.PIPE, check=False, timeout=600,
+                stdout=f,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=600,
             )
         if res.returncode != 0:
             return False, f"pg_dump exit {res.returncode}: {res.stderr.decode()[:200]}"
@@ -187,12 +193,14 @@ def _build_dburl_from_env() -> str | None:
 
 # ─── Verificaciones POST-import ───────────────────────────────────────────
 
+
 def contar_huerfanos() -> dict[str, int]:
     """Cuenta filas con FK que apunta a un registro inexistente.
 
     Pre-mortem 2b. Lista cerrada de joins críticos.
     """
     import db as _db
+
     queries = {
         "cheque_sin_cliente": """
             SELECT COUNT(*) AS n
@@ -232,13 +240,13 @@ def contar_huerfanos() -> dict[str, int]:
 def contar_nulls_criticos() -> dict[str, int]:
     """Campos NULL que rompen pantallas si quedan vacíos."""
     import db as _db
+
     out = {}
     checks = [
         ("factura.fecha", "scintela.factura", "fecha IS NULL"),
         ("cheque.importe", "scintela.cheque", "importe IS NULL OR importe = 0"),
         ("xgast.num_sin_clasificar", "scintela.xgast", "num IS NULL"),
-        ("transacciones_bancarias.no_banco", "scintela.transacciones_bancarias",
-         "no_banco IS NULL"),
+        ("transacciones_bancarias.no_banco", "scintela.transacciones_bancarias", "no_banco IS NULL"),
     ]
     for name, table, cond in checks:
         try:
@@ -255,8 +263,7 @@ def crear_snapshots_ultimos_meses(n_meses: int = 12, dry_run: bool = False) -> d
     Usa `informes.queries.crear_snapshot_historia(anio, mes)` que es idempotente.
     """
     if dry_run:
-        return {"creados": 0, "ya_existian": 0, "errores": 0,
-                "msg": "DRY-RUN — no se crearon snapshots"}
+        return {"creados": 0, "ya_existian": 0, "errores": 0, "msg": "DRY-RUN — no se crearon snapshots"}
     creados = 0
     ya_existian = 0
     errores = 0
@@ -264,8 +271,12 @@ def crear_snapshots_ultimos_meses(n_meses: int = 12, dry_run: bool = False) -> d
     try:
         from modules.informes.queries import crear_snapshot_historia
     except Exception as e:
-        return {"creados": 0, "ya_existian": 0, "errores": 1,
-                "msg": f"no se pudo importar crear_snapshot_historia: {e}"}
+        return {
+            "creados": 0,
+            "ya_existian": 0,
+            "errores": 1,
+            "msg": f"no se pudo importar crear_snapshot_historia: {e}",
+        }
 
     hoy = date.today()
     cur = date(hoy.year, hoy.month, 1)
@@ -287,7 +298,9 @@ def crear_snapshots_ultimos_meses(n_meses: int = 12, dry_run: bool = False) -> d
             errores += 1
             detalle.append(f"{cur.year}-{cur.month:02d} ✗ {e}")
     return {
-        "creados": creados, "ya_existian": ya_existian, "errores": errores,
+        "creados": creados,
+        "ya_existian": ya_existian,
+        "errores": errores,
         "msg": f"snapshots: {creados} creados · {ya_existian} ya existían · {errores} errores",
         "detalle": detalle,
     }
@@ -300,6 +313,7 @@ def comparar_drift_balance() -> dict:
     carga del DBF metió data inconsistente con lo que el dBase reportaba.
     """
     import db as _db
+
     try:
         last = _db.fetch_one(
             "SELECT fecha, banco, cart, ustock, deuda, patrimonio "
@@ -308,13 +322,14 @@ def comparar_drift_balance() -> dict:
         if not last:
             return {"ok": True, "msg": "no hay snapshot reciente para comparar"}
         from modules.informes.queries import informe_balance
+
         bal = informe_balance()
         comp = (bal or {}).get("diagnostico", {}).get("componentes", {})
         bal_live = {
-            "banco":      float(comp.get("salbanc_total") or 0),
-            "cart":       float(comp.get("cart") or 0),
-            "ustock":     float(comp.get("vsto") or 0),
-            "deuda":      float(comp.get("totp") or 0),
+            "banco": float(comp.get("salbanc_total") or 0),
+            "cart": float(comp.get("cart") or 0),
+            "ustock": float(comp.get("vsto") or 0),
+            "deuda": float(comp.get("totp") or 0),
             "patrimonio": float(comp.get("patr") or 0),
         }
         drifts = {}
@@ -332,8 +347,8 @@ def comparar_drift_balance() -> dict:
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────
 
-def correr_sync_principal(source: Path, dry_run: bool, only: str,
-                          encoding: str | None) -> int:
+
+def correr_sync_principal(source: Path, dry_run: bool, only: str, encoding: str | None) -> int:
     """Llama a import_dbf.main() reusando su lógica de TRUNCATE+INSERT."""
     argv = ["import_dbf", "--source-dir", str(source)]
     if dry_run:
@@ -357,22 +372,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("--source", default=str(DEFAULT_SOURCE),
-                    help="Carpeta con los .DBF")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Lee los DBFs e informa, no toca DB")
-    ap.add_argument("--only", default="",
-                    help="Solo importar estos DBFs (coma-sep)")
-    ap.add_argument("--encoding", default=None,
-                    help="Forzar encoding (default: auto)")
-    ap.add_argument("--skip-backup", action="store_true",
-                    help="No hace pg_dump pre-import")
-    ap.add_argument("--skip-pre-checks", action="store_true",
-                    help="Omite verificación de schema version")
-    ap.add_argument("--skip-post-checks", action="store_true",
-                    help="Omite sanity check post-import")
-    ap.add_argument("--skip-backfills", action="store_true",
-                    help="Omite backfills encadenados (snapshots, etc.)")
+    ap.add_argument("--source", default=str(DEFAULT_SOURCE), help="Carpeta con los .DBF")
+    ap.add_argument("--dry-run", action="store_true", help="Lee los DBFs e informa, no toca DB")
+    ap.add_argument("--only", default="", help="Solo importar estos DBFs (coma-sep)")
+    ap.add_argument("--encoding", default=None, help="Forzar encoding (default: auto)")
+    ap.add_argument("--skip-backup", action="store_true", help="No hace pg_dump pre-import")
+    ap.add_argument("--skip-pre-checks", action="store_true", help="Omite verificación de schema version")
+    ap.add_argument("--skip-post-checks", action="store_true", help="Omite sanity check post-import")
+    ap.add_argument(
+        "--skip-backfills", action="store_true", help="Omite backfills encadenados (snapshots, etc.)"
+    )
     ap.add_argument("--verbose", "-v", action="store_true")
     args = ap.parse_args()
 
@@ -399,6 +408,7 @@ def main():
 
     if not args.skip_pre_checks and not args.dry_run:
         import db as _db
+
         try:
             _db.init_pool()
             ok, msg = verificar_schema_version(MIN_MIGRATION)
@@ -411,11 +421,20 @@ def main():
     # ─── BACKUP ──────────────────────────────────────────────────────────
     if not args.skip_backup and not args.dry_run:
         tablas_backup = [
-            "scintela.factura", "scintela.cheque", "scintela.posdat",
-            "scintela.caja", "scintela.dolares", "scintela.activos",
-            "scintela.historia", "scintela.iniciales", "scintela.compra",
-            "scintela.flujo", "scintela.transacciones_bancarias",
-            "scintela.xgast", "scintela.retiros", "scintela.tinto",
+            "scintela.factura",
+            "scintela.cheque",
+            "scintela.posdat",
+            "scintela.caja",
+            "scintela.dolares",
+            "scintela.activos",
+            "scintela.historia",
+            "scintela.iniciales",
+            "scintela.compra",
+            "scintela.flujo",
+            "scintela.transacciones_bancarias",
+            "scintela.xgast",
+            "scintela.retiros",
+            "scintela.tinto",
         ]
         print()
         print("─── BACKUP ────────────────────────────────────────────────────")
@@ -471,8 +490,10 @@ def main():
             for k, d in drift.get("drifts", {}).items():
                 pct = d["drift_pct"]
                 badge = "✓" if pct < 0.5 else ("⚠" if pct < 5 else "✗")
-                print(f"  {k:<14} snap={d['snap']:>14,.0f}  live={d['live']:>14,.0f}  "
-                      f"drift={pct:>6.2f}% {badge}")
+                print(
+                    f"  {k:<14} snap={d['snap']:>14,.0f}  live={d['live']:>14,.0f}  "
+                    f"drift={pct:>6.2f}% {badge}"
+                )
         else:
             print(f"  ⚠ {drift.get('msg')}")
 

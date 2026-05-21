@@ -23,6 +23,7 @@ Schema realities (verified against intela12042026.sql):
     - activos.tipo IN ('I','M','C','K')             — I=inmueble, M/C/K=maquinaria
     - historia.stock = VSTO, historia.uqui = VQX, historia.patrimonio = PATANT
 """
+
 from datetime import date
 
 import db
@@ -68,6 +69,7 @@ def provision_pendiente_mes(hoy: date | None = None) -> float:
     casi $80k, último día del mes vale 0.
     """
     import calendar as _cal
+
     h = hoy or date.today()
     X = h.day
     ultimo_dia = _cal.monthrange(h.year, h.month)[1]
@@ -82,6 +84,7 @@ def provision_pendiente_mes(hoy: date | None = None) -> float:
 # ---------------------------------------------------------------------------
 # Building blocks — each is one small, cheap query
 # ---------------------------------------------------------------------------
+
 
 def totf() -> float:
     """Cartera de facturas: saldo neto por cobrar en facturas vivas (Z + A).
@@ -235,12 +238,13 @@ def saldo_bancos() -> list[dict]:
         """
     )
     import logging
+
     _log_saldo = logging.getLogger("programa_core.informes.saldo_bancos")
     out = []
     for r in rows:
         stored = float(r.get("saldo_stored") or 0)
         signed = float(r.get("saldo_signed") or 0)
-        raw    = float(r.get("saldo_raw") or 0)
+        raw = float(r.get("saldo_raw") or 0)
         if abs(stored) > 0.5:
             saldo, origen = stored, "stored"
         elif abs(signed) > 0.5:
@@ -259,20 +263,27 @@ def saldo_bancos() -> list[dict]:
         if origen != "stored":
             _log_saldo.warning(
                 "saldo banco %s (%s) no usa 'stored': origen=%s stored=%.2f signed=%.2f raw=%.2f n_tx=%s",
-                r.get("no_banco"), r.get("nombre"), origen,
-                stored, signed, raw, r.get("n_transacciones"),
+                r.get("no_banco"),
+                r.get("nombre"),
+                origen,
+                stored,
+                signed,
+                raw,
+                r.get("n_transacciones"),
             )
-        out.append({
-            "no_banco":        r.get("no_banco"),
-            "nombre":          r.get("nombre"),
-            "saldo":           saldo,
-            "saldo_origen":    origen,
-            "usa_fallback":    origen not in ("stored", "empty"),
-            "saldo_stored":    stored,
-            "saldo_signed":    signed,
-            "saldo_raw":       raw,
-            "n_transacciones": int(r.get("n_transacciones") or 0),
-        })
+        out.append(
+            {
+                "no_banco": r.get("no_banco"),
+                "nombre": r.get("nombre"),
+                "saldo": saldo,
+                "saldo_origen": origen,
+                "usa_fallback": origen not in ("stored", "empty"),
+                "saldo_stored": stored,
+                "saldo_signed": signed,
+                "saldo_raw": raw,
+                "n_transacciones": int(r.get("n_transacciones") or 0),
+            }
+        )
     return out
 
 
@@ -408,12 +419,12 @@ def _try_movimientos_mes() -> dict | None:
         return movimientos_mes_dbase()
     except Exception as e:
         import logging
+
         logging.exception("movimientos_mes_dbase falló: %s", e)
         return None
 
 
-def movimientos_mes_dbase(anio: int | None = None,
-                          mes: int | None = None) -> dict:
+def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> dict:
     """Datos para el cuadro MOVIMIENTOS MES estilo dBase.
 
     Replica INFORMES.PRG líneas 1003-1090. Devuelve:
@@ -433,6 +444,7 @@ def movimientos_mes_dbase(anio: int | None = None,
     se calculan acá; queda como N/D si los datos no están.
     """
     from datetime import date as _date
+
     hoy = _date.today()
     yy = int(anio) if anio else hoy.year
     mm = int(mes) if mes else hoy.month
@@ -443,6 +455,7 @@ def movimientos_mes_dbase(anio: int | None = None,
         hist = historia_mas_reciente() or {}
     except Exception:
         hist = {}
+
     # 4 columnas top — usa los kg/$ del último snapshot (idem block kg
     # original). $/kg derivado.
     def _safe_div(a, b):
@@ -461,31 +474,37 @@ def movimientos_mes_dbase(anio: int | None = None,
         mm_ant = 12
         yy_ant = yy - 1
     try:
-        inic = db.fetch_one(
-            """
+        inic = (
+            db.fetch_one(
+                """
             SELECT hilado, tejido, terminado, vq, um, uk, uf, uq
               FROM scintela.iniciales
              WHERE mesnum = %s AND yy = %s
              ORDER BY id_iniciales DESC
              LIMIT 1
             """,
-            (mm_ant, yy_ant),
-        ) or {}
+                (mm_ant, yy_ant),
+            )
+            or {}
+        )
     except Exception:
         inic = {}
 
     # Fallback: si no hay iniciales del mes anterior, agarrar la más reciente.
     if not inic or not (float(inic.get("hilado") or 0)):
         try:
-            inic = db.fetch_one(
-                """
+            inic = (
+                db.fetch_one(
+                    """
                 SELECT hilado, tejido, terminado, vq, um, uk, uf, uq
                   FROM scintela.iniciales
                  WHERE COALESCE(hilado, 0) > 0
                  ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
                  LIMIT 1
                 """,
-            ) or {}
+                )
+                or {}
+            )
         except Exception:
             inic = inic or {}
 
@@ -501,8 +520,9 @@ def movimientos_mes_dbase(anio: int | None = None,
     # filtra por tipo. Bug reportado por dueña 2026-05-21: vio 2.913 en
     # Ingresos vs 2.863 en Compras Hilado.
     try:
-        _h_row = db.fetch_one(
-            """
+        _h_row = (
+            db.fetch_one(
+                """
             SELECT COALESCE(SUM(kg), 0)      AS kg,
                    COALESCE(SUM(importe), 0) AS importe
               FROM scintela.compra
@@ -511,8 +531,10 @@ def movimientos_mes_dbase(anio: int | None = None,
                AND EXTRACT(YEAR FROM fecha)  = %s
                AND EXTRACT(MONTH FROM fecha) = %s
             """,
-            (yy, mm),
-        ) or {}
+                (yy, mm),
+            )
+            or {}
+        )
         kcom = float(_h_row.get("kg") or 0)
         ucom = float(_h_row.get("importe") or 0)
     except Exception:
@@ -552,30 +574,40 @@ def movimientos_mes_dbase(anio: int | None = None,
     um_act = _safe_div(hi0 * um0 + ucom, hi0 + kcom) or um0
     header = {
         "hilado": {
-            "stock_inic_kg": hi0, "stock_inic_ukg": um0, "stock_inic_us": hi0 * um0,
-            "ingresos_kg":   kcom, "ingresos_ukg": _safe_div(ucom, kcom), "ingresos_us": ucom,
-            "egresos_kg":    ktej, "egresos_ukg":  um_act, "egresos_us":  ktej * um_act,
-            "stock_act_kg":  hilado_act_kg, "stock_act_ukg": um_act, "stock_act_us": hilado_act_kg * um_act,
+            "stock_inic_kg": hi0,
+            "stock_inic_ukg": um0,
+            "stock_inic_us": hi0 * um0,
+            "ingresos_kg": kcom,
+            "ingresos_ukg": _safe_div(ucom, kcom),
+            "ingresos_us": ucom,
+            "egresos_kg": ktej,
+            "egresos_ukg": um_act,
+            "egresos_us": ktej * um_act,
+            "stock_act_kg": hilado_act_kg,
+            "stock_act_ukg": um_act,
+            "stock_act_us": hilado_act_kg * um_act,
         },
         "tejido": {
             "stock_inic_kg": tj0,
-            "ingresos_kg":   ktej, "ingresos_pct": pct_tej,
-            "egresos_kg":    ktin,
-            "stock_act_kg":  tejido_act_kg,
+            "ingresos_kg": ktej,
+            "ingresos_pct": pct_tej,
+            "egresos_kg": ktin,
+            "stock_act_kg": tejido_act_kg,
         },
         "terminado": {
             "stock_inic_kg": pf0,
-            "ingresos_kg":   ktin, "ingresos_pct": pct_ter,
-            "egresos_kg":    kvent,
-            "stock_act_kg":  termin_act_kg,
+            "ingresos_kg": ktin,
+            "ingresos_pct": pct_ter,
+            "egresos_kg": kvent,
+            "stock_act_kg": termin_act_kg,
         },
         "colorantes": {
             "stock_inic_us": vq0,
-            "ingresos_us":   0.0,  # se setea abajo con compras Q del mes
+            "ingresos_us": 0.0,  # se setea abajo con compras Q del mes
             # Egresos $ derivado del balance contable: inic + ingresos - act.
             # Se completa después de calcular ingresos.
-            "egresos_us":    0.0,
-            "stock_act_us":  vq0,  # default; se recalcula post-ingresos.
+            "egresos_us": 0.0,
+            "stock_act_us": vq0,  # default; se recalcula post-ingresos.
         },
     }
 
@@ -583,8 +615,9 @@ def movimientos_mes_dbase(anio: int | None = None,
     # TMT 2026-05-19 v8 — fix prod: scintela.compra usa `codigo_prov`,
     # no `prov` (que es el nombre en posdat / cheque). Antes esto rompía
     # con `column "prov" does not exist` y tiraba la página entera.
-    compras_hilado = db.fetch_all(
-        """
+    compras_hilado = (
+        db.fetch_all(
+            """
         SELECT codigo_prov                AS prov,
                COALESCE(SUM(kg), 0)       AS kg,
                COALESCE(SUM(importe), 0)  AS importe
@@ -599,13 +632,16 @@ def movimientos_mes_dbase(anio: int | None = None,
          ORDER BY SUM(importe) DESC
          LIMIT 20
         """,
-        (yy, mm),
-    ) or []
+            (yy, mm),
+        )
+        or []
+    )
     for r in compras_hilado:
         r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
-    produc_tejido = db.fetch_all(
-        """
+    produc_tejido = (
+        db.fetch_all(
+            """
         SELECT codigo_prov                AS prov,
                COALESCE(SUM(kg), 0)       AS kg,
                COALESCE(SUM(importe), 0)  AS importe
@@ -620,8 +656,10 @@ def movimientos_mes_dbase(anio: int | None = None,
          ORDER BY SUM(importe) DESC
          LIMIT 20
         """,
-        (yy, mm),
-    ) or []
+            (yy, mm),
+        )
+        or []
+    )
     # TMT 2026-05-19 v8 — dueña: "calcula costo por kg no puede ser tan
     # dificil". Producción tejido KK (INTELA, autoproducción) viene con
     # importe=0 en scintela.compra. El costo real es historia.utej. Si
@@ -643,8 +681,9 @@ def movimientos_mes_dbase(anio: int | None = None,
     # TINTORERIA — tipo='C' (tintura). Heurística bajos/fuertes:
     # TMT 2026-05-19 v8 — dueña: "limit 0.4 cuando el costo es menor a .4
     # es bajo, arriba es fuerte". Criterio $/kg = 0.4 USD.
-    tint_rows = db.fetch_all(
-        """
+    tint_rows = (
+        db.fetch_all(
+            """
         SELECT COALESCE(kg, 0)::numeric      AS kg,
                COALESCE(importe, 0)::numeric AS importe
           FROM scintela.compra
@@ -654,8 +693,10 @@ def movimientos_mes_dbase(anio: int | None = None,
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(kg, 0) > 0
         """,
-        (yy, mm),
-    ) or []
+            (yy, mm),
+        )
+        or []
+    )
     bajos_kg = bajos_us = 0.0
     fuertes_kg = fuertes_us = 0.0
     for r in tint_rows:
@@ -690,14 +731,15 @@ def movimientos_mes_dbase(anio: int | None = None,
             # bajos toma 15% del costo total, fuertes el 85%.
             bajos_us = utin * 0.075
             fuertes_us = utin - bajos_us
-    bajos_pct   = (bajos_kg   / tint_kg * 100) if tint_kg else 0.0
+    bajos_pct = (bajos_kg / tint_kg * 100) if tint_kg else 0.0
     fuertes_pct = (fuertes_kg / tint_kg * 100) if tint_kg else 0.0
 
     # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
     # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
     # kg tinturados del mes (ktin de historia).
-    quimicos_mes = db.fetch_one(
-        """
+    quimicos_mes = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0) AS importe
           FROM scintela.compra
          WHERE UPPER(COALESCE(tipo, '')) = 'Q'
@@ -705,8 +747,10 @@ def movimientos_mes_dbase(anio: int | None = None,
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
         """,
-        (yy, mm),
-    ) or {}
+            (yy, mm),
+        )
+        or {}
+    )
     cs_col_us = float(quimicos_mes.get("importe") or 0)
     cs_col_ukg = _safe_div(cs_col_us, ktin)
     # Aplicar al header de colorantes el ingreso $ del mes.
@@ -742,16 +786,19 @@ def movimientos_mes_dbase(anio: int | None = None,
     cs_prod_ukg_ant = 0.0
     tint_ukg_ant = 0.0  # promedio $/kg tintura del mes anterior
     try:
-        hist_ant = db.fetch_one(
-            """
+        hist_ant = (
+            db.fetch_one(
+                """
             SELECT ucom, utej, utin, ktin, ktej, kvent
               FROM scintela.historia
              WHERE EXTRACT(YEAR FROM fecha)  = %s
                AND EXTRACT(MONTH FROM fecha) = %s
              ORDER BY fecha DESC LIMIT 1
             """,
-            (yy_ant, mm_ant),
-        ) or {}
+                (yy_ant, mm_ant),
+            )
+            or {}
+        )
         if hist_ant:
             ucom_ant = float(hist_ant.get("ucom") or 0)
             utej_ant = float(hist_ant.get("utej") or 0)
@@ -765,8 +812,9 @@ def movimientos_mes_dbase(anio: int | None = None,
             # CS.colorantes anterior: hay que calcular quimicos del mes
             # anterior también — query separada.
             try:
-                q_ant = db.fetch_one(
-                    """
+                q_ant = (
+                    db.fetch_one(
+                        """
                     SELECT COALESCE(SUM(importe), 0) AS importe
                       FROM scintela.compra
                      WHERE UPPER(COALESCE(tipo, '')) = 'Q'
@@ -774,8 +822,10 @@ def movimientos_mes_dbase(anio: int | None = None,
                        AND EXTRACT(YEAR FROM fecha)  = %s
                        AND EXTRACT(MONTH FROM fecha) = %s
                     """,
-                    (yy_ant, mm_ant),
-                ) or {}
+                        (yy_ant, mm_ant),
+                    )
+                    or {}
+                )
                 cs_col_us_ant = float(q_ant.get("importe") or 0)
             except Exception:
                 cs_col_us_ant = 0.0
@@ -787,7 +837,8 @@ def movimientos_mes_dbase(anio: int | None = None,
         pass
 
     return {
-        "anio": yy, "mes": mm,
+        "anio": yy,
+        "mes": mm,
         "header": header,
         "compras_hilado": [dict(r) for r in compras_hilado],
         "compras_hilado_total": {
@@ -800,18 +851,27 @@ def movimientos_mes_dbase(anio: int | None = None,
             "importe": sum(float(r.get("importe") or 0) for r in produc_tejido),
         },
         "tintoreria": {
-            "total":   {"kg": tint_kg, "us": tint_us,
-                        "ukg": _safe_div(tint_us, tint_kg),
-                        "pct": 100.0 if tint_kg else 0.0,
-                        "ant": tint_ukg_ant},
-            "bajos":   {"kg": bajos_kg, "us": bajos_us,
-                        "ukg": _safe_div(bajos_us, bajos_kg),
-                        "pct": bajos_pct,
-                        "ant": tint_ukg_ant},
-            "fuertes": {"kg": fuertes_kg, "us": fuertes_us,
-                        "ukg": _safe_div(fuertes_us, fuertes_kg),
-                        "pct": fuertes_pct,
-                        "ant": tint_ukg_ant},
+            "total": {
+                "kg": tint_kg,
+                "us": tint_us,
+                "ukg": _safe_div(tint_us, tint_kg),
+                "pct": 100.0 if tint_kg else 0.0,
+                "ant": tint_ukg_ant,
+            },
+            "bajos": {
+                "kg": bajos_kg,
+                "us": bajos_us,
+                "ukg": _safe_div(bajos_us, bajos_kg),
+                "pct": bajos_pct,
+                "ant": tint_ukg_ant,
+            },
+            "fuertes": {
+                "kg": fuertes_kg,
+                "us": fuertes_us,
+                "ukg": _safe_div(fuertes_us, fuertes_kg),
+                "pct": fuertes_pct,
+                "ant": tint_ukg_ant,
+            },
         },
         "cs": {
             "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": cs_col_ukg_ant},
@@ -949,10 +1009,7 @@ def iniciales_mes_actual() -> dict | None:
         """,
         (hoy.month, hoy.year),
     )
-    if row and (
-        float(row.get("kprog") or 0) > 0
-        or float(row.get("hilado") or 0) > 0
-    ):
+    if row and (float(row.get("kprog") or 0) > 0 or float(row.get("hilado") or 0) > 0):
         return row
 
     # 2. La más reciente con datos reales (algún campo > 0)
@@ -1038,8 +1095,9 @@ def ventas_mes_corriente_resultado() -> dict:
     las facturas válidas (incluyendo las pagadas/canceladas — todas
     suman a las ventas del mes).
     """
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COUNT(*) AS n,
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
@@ -1048,20 +1106,23 @@ def ventas_mes_corriente_resultado() -> dict:
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
           AND (stat IS NULL OR stat <> 'X')
         """
-    ) or {}
+        )
+        or {}
+    )
     hoy = date.today()
     # primer día del mes siguiente menos un día
     if hoy.month == 12:
         ultimo_dia = date(hoy.year + 1, 1, 1).day
     else:
         from calendar import monthrange
+
         ultimo_dia = monthrange(hoy.year, hoy.month)[1]
     return {
-        "n":              int(row.get("n") or 0),
-        "kg":             float(row.get("kg") or 0),
-        "importe":        float(row.get("importe") or 0),
-        "dias_pasados":   hoy.day,
-        "dias_mes":       ultimo_dia,
+        "n": int(row.get("n") or 0),
+        "kg": float(row.get("kg") or 0),
+        "importe": float(row.get("importe") or 0),
+        "dias_pasados": hoy.day,
+        "dias_mes": ultimo_dia,
     }
 
 
@@ -1077,8 +1138,9 @@ def compras_mes_corriente() -> dict:
     Verificado contra DBF real 30/04/2026: TIPO='H' abril = 199.464 kg /
     $581.021 → cuadra exacto con la pantalla del dBase (foto TMT).
     """
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COUNT(*) AS n,
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
@@ -1091,10 +1153,12 @@ def compras_mes_corriente() -> dict:
           -- TMT 2026-05-13.
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
         """
-    ) or {}
+        )
+        or {}
+    )
     return {
-        "n":      int(row.get("n") or 0),
-        "kg":     float(row.get("kg") or 0),
+        "n": int(row.get("n") or 0),
+        "kg": float(row.get("kg") or 0),
         "importe": float(row.get("importe") or 0),
     }
 
@@ -1131,23 +1195,23 @@ PROVISIONES_DIARIAS = [
     # sueldo 300, AB Andrés Bucheli 1300, IES 2400, AEC 7300, SUELDOS 6000,
     # ALQUILER 700, RT 8400, INCOB 400, JP 200, INTER 300 = $31,600/día.
     # El 2700 era una transcripción vieja del PRG que quedó stale.
-    ("YY", "concepto_starts_with",     "SR",      3300),
-    ("YY", "concepto_starts_with",     "13",      1000),
-    ("YY", "concepto_starts_with",     "14",       300),
-    ("YY", "concepto_starts_with",     "AB",      1300),
-    ("YY", "concepto_starts_with",     "SS",      2400),
+    ("YY", "concepto_starts_with", "SR", 3300),
+    ("YY", "concepto_starts_with", "13", 1000),
+    ("YY", "concepto_starts_with", "14", 300),
+    ("YY", "concepto_starts_with", "AB", 1300),
+    ("YY", "concepto_starts_with", "SS", 2400),
     # TMT 2026-05-15 (re-audit C5): el patrón "A,E,C" ANTES era
     # `concepto LIKE 'A,E,C%'` — nunca matcheaba nada y silenciosamente
     # dropeaba $7,300/día ($160-220k/mes) de provisiones. dBase original
     # usaba `LEFT(concepto,1) $ 'AEC'` (init A, E o C). Lo reemplazamos
     # con el matcher `concepto_starts_with_any` (lista de iniciales).
-    ("YY", "concepto_starts_with_any", "A|E|C",   7300),
-    ("YY", "concepto_starts_with",     "SUELDOS", 6000),
-    ("YY", "concepto_eq",              "ALQUILER", 700),
-    ("",   "prov_eq",                  "RT",      8400),
-    ("",   "concepto_contains",        "INCOB",    400),
-    ("",   "concepto_starts_with",     "JP",       200),
-    ("",   "concepto_contains",        "INTER",    300),
+    ("YY", "concepto_starts_with_any", "A|E|C", 7300),
+    ("YY", "concepto_starts_with", "SUELDOS", 6000),
+    ("YY", "concepto_eq", "ALQUILER", 700),
+    ("", "prov_eq", "RT", 8400),
+    ("", "concepto_contains", "INCOB", 400),
+    ("", "concepto_starts_with", "JP", 200),
+    ("", "concepto_contains", "INTER", 300),
 ]
 
 
@@ -1239,8 +1303,7 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
     with db.tx() as conn:
         # Lock pessimista — bloquea hasta que la tx concurrente commitee.
         lock_row = db.fetch_one(
-            "SELECT valor FROM scintela.sistema_meta "
-            " WHERE clave = %s FOR UPDATE",
+            "SELECT valor FROM scintela.sistema_meta  WHERE clave = %s FOR UPDATE",
             ("provisiones_diarias_ult_fecha",),
             conn=conn,
         )
@@ -1279,8 +1342,10 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
         if forzar and not dias_a_aplicar:
             if ult_fecha >= hoy:
                 return {
-                    "aplicado": False, "dias_aplicados": 0,
-                    "monto_total": 0.0, "categorias_por_dia": 0,
+                    "aplicado": False,
+                    "dias_aplicados": 0,
+                    "monto_total": 0.0,
+                    "categorias_por_dia": 0,
                     "ult_fecha_anterior": ult_fecha_str,
                     "ult_fecha_nueva": ult_fecha_str,
                     "motivo": (
@@ -1294,8 +1359,10 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
             # Lock liberado al salir del with. Sin cambios — devolver sin
             # tocar el marker.
             return {
-                "aplicado": False, "dias_aplicados": 0,
-                "monto_total": 0.0, "categorias_por_dia": 0,
+                "aplicado": False,
+                "dias_aplicados": 0,
+                "monto_total": 0.0,
+                "categorias_por_dia": 0,
                 "ult_fecha_anterior": ult_fecha_str,
                 "ult_fecha_nueva": ult_fecha_str,
                 "motivo": "ya al día (sin días hábiles pendientes)",
@@ -1313,12 +1380,15 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
         # La lista hardcoded queda como FALLBACK SOLO para provisiones
         # legacy que todavía no están en `scintela.provisiones`. Una vez
         # que la dueña migre todo, podés borrar el fallback.
-        provisiones_rows = db.fetch_all(
-            "SELECT id_provisiones, concepto, importe "
-            "FROM scintela.provisiones "
-            "WHERE COALESCE(importe, 0) > 0",
-            conn=conn,
-        ) or []
+        provisiones_rows = (
+            db.fetch_all(
+                "SELECT id_provisiones, concepto, importe "
+                "FROM scintela.provisiones "
+                "WHERE COALESCE(importe, 0) > 0",
+                conn=conn,
+            )
+            or []
+        )
         for _dia in dias_a_aplicar:
             cats_dia = 0
             # 1. Driver nuevo: cada provisión aplica su cuota/30.
@@ -1410,8 +1480,9 @@ def amortizaciones_mensuales() -> dict:
     (VK/KK, GTIN/KR) mostrarían valores más bajos cada día del mes.
     Bug TMT 2026-05-13: TEJIDO 0.602 vs dBase 0.627; GS.PROC 1.846 vs 1.883.
     """
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         WITH coef AS (
           SELECT LEAST(EXTRACT(DAY FROM CURRENT_DATE)::numeric, 30) / 30.0 AS c
         )
@@ -1421,7 +1492,9 @@ def amortizaciones_mensuales() -> dict:
         WHERE COALESCE(cuota, 0) > 0
         GROUP BY 1
         """
-    ) or []
+        )
+        or []
+    )
     by = {r.get("tipo"): float(r.get("total") or 0) for r in rows}
     depract = by.get("I", 0.0)
     deprmaq = by.get("M", 0.0)
@@ -1432,8 +1505,8 @@ def amortizaciones_mensuales() -> dict:
         "deprmaq": deprmaq,
         "deprtej": deprtej,
         "deprcar": deprcar,
-        "dcc":     deprmaq + depract * 0.5,
-        "dtj":     deprtej + depract * 0.5,
+        "dcc": deprmaq + depract * 0.5,
+        "dtj": deprtej + depract * 0.5,
     }
 
 
@@ -1517,13 +1590,13 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     except (TypeError, ValueError):
         return {"num": 0, "label": "", "grupos": [], "total": 0.0, "n_filas": 0}
     if n < 1 or n > 9:
-        return {"num": n, "label": "(categoría inválida)",
-                "grupos": [], "total": 0.0, "n_filas": 0}
+        return {"num": n, "label": "(categoría inválida)", "grupos": [], "total": 0.0, "n_filas": 0}
 
     where_fecha = (
         "AND fecha >= date_trunc('month', CURRENT_DATE) "
         "AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
-        if mes_actual else ""
+        if mes_actual
+        else ""
     )
     # TMT 2026-05-19 v6 re-audit — agregado filtro stat='Y' (anuladas).
     # Antes el drill-down mostraba gastos anulados sumados al subtotal,
@@ -1544,7 +1617,8 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     where_fecha_c = (
         "AND c.fecha >= date_trunc('month', CURRENT_DATE) "
         "AND c.fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
-        if mes_actual else ""
+        if mes_actual
+        else ""
     )
     # El CASE va en el SELECT y filtramos por el resultado en un wrapper
     # outer (Postgres no permite filtrar por columna calculada en el mismo
@@ -1572,16 +1646,18 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         total += importe
         if grupo not in buckets:
             buckets[grupo] = {"grupo": grupo, "filas": [], "subtotal": 0.0}
-        buckets[grupo]["filas"].append({
-            "id_xgast": r.get("id_xgast"),
-            "fecha":    r.get("fecha"),
-            "doc":      r.get("doc") or "",
-            "prov":     r.get("prov") or "",
-            "concepto": r.get("concepto") or "",
-            "importe":  importe,
-            "stat":     r.get("stat") or "",
-            "fuente":   "xgast",
-        })
+        buckets[grupo]["filas"].append(
+            {
+                "id_xgast": r.get("id_xgast"),
+                "fecha": r.get("fecha"),
+                "doc": r.get("doc") or "",
+                "prov": r.get("prov") or "",
+                "concepto": r.get("concepto") or "",
+                "importe": importe,
+                "stat": r.get("stat") or "",
+                "fuente": "xgast",
+            }
+        )
         buckets[grupo]["subtotal"] += importe
 
     # Bucket separado para compras (mejor UX que mezclarlas con conceptos
@@ -1593,27 +1669,29 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         total += importe
         if grupo not in buckets:
             buckets[grupo] = {"grupo": grupo, "filas": [], "subtotal": 0.0}
-        buckets[grupo]["filas"].append({
-            "id_compra": r.get("id_compra"),
-            "fecha":     r.get("fecha"),
-            "doc":       r.get("doc") or "",
-            "prov":      r.get("prov") or "",
-            "concepto":  r.get("concepto") or "",
-            "importe":   importe,
-            "stat":      r.get("stat") or "",
-            "fuente":    "compra",
-            "tipo":      tipo_c,
-        })
+        buckets[grupo]["filas"].append(
+            {
+                "id_compra": r.get("id_compra"),
+                "fecha": r.get("fecha"),
+                "doc": r.get("doc") or "",
+                "prov": r.get("prov") or "",
+                "concepto": r.get("concepto") or "",
+                "importe": importe,
+                "stat": r.get("stat") or "",
+                "fuente": "compra",
+                "tipo": tipo_c,
+            }
+        )
         buckets[grupo]["subtotal"] += importe
 
     # Ordenamos los grupos por subtotal descendente — los gastos más grandes arriba.
     grupos = sorted(buckets.values(), key=lambda g: g["subtotal"], reverse=True)
 
     return {
-        "num":     n,
-        "label":   GASTOS_NUM_LABELS.get(n, f"V{n}"),
-        "grupos":  grupos,
-        "total":   total,
+        "num": n,
+        "label": GASTOS_NUM_LABELS.get(n, f"V{n}"),
+        "grupos": grupos,
+        "total": total,
         "n_filas": len(filas),
     }
 
@@ -1640,15 +1718,15 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
 #
 # SQL CASE equivalente vive en `_SQL_COMPRA_NUM_CASE` más abajo.
 COMPRA_A_GASTO_REGLAS: list[tuple[str, int, str]] = [
-    ("K_SU",     1, "Tej · Sueldos"),
-    ("K_EEQ",    2, "Tej · Servicios"),
-    ("K_OTROS",  3, "Tej · Otros"),
-    ("C_SU",     4, "Tin · Sueldos"),
-    ("C_SERV",   5, "Tin · Servicios"),
-    ("C_OTROS",  6, "Tin · Otros"),
-    ("S_SU",     7, "Adm · Sueldos"),
-    ("S_GAS",    8, "Adm · Servicios"),
-    ("S_OTROS",  9, "Adm · Otros"),
+    ("K_SU", 1, "Tej · Sueldos"),
+    ("K_EEQ", 2, "Tej · Servicios"),
+    ("K_OTROS", 3, "Tej · Otros"),
+    ("C_SU", 4, "Tin · Sueldos"),
+    ("C_SERV", 5, "Tin · Servicios"),
+    ("C_OTROS", 6, "Tin · Otros"),
+    ("S_SU", 7, "Adm · Sueldos"),
+    ("S_GAS", 8, "Adm · Servicios"),
+    ("S_OTROS", 9, "Adm · Otros"),
 ]
 
 # Keywords de "servicios" — los mismos en los 3 rubros (Tej/Tin/Adm).
@@ -1716,7 +1794,7 @@ END
 # Mapping legacy simple — preservado para callers externos que importen
 # este símbolo. NO usar para clasificar (usar _SQL_COMPRA_NUM_CASE).
 TIPOS_COMPRA_A_NUM_GASTO: dict[str, int] = {
-    "K": 3,   # tipo K default → V3 (refinado por concepto en SQL CASE)
+    "K": 3,  # tipo K default → V3 (refinado por concepto en SQL CASE)
     "C": 6,
     "Q": 6,
     "T": 6,
@@ -1745,8 +1823,9 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
     # mostrar xgast anulados (legacy). Federico reportó que un $500 no
     # aparecía en V9 — verificar si el xgast no quedó stat='X' por algún
     # reverse no sincronizado.
-    rows_xgast = db.fetch_all(
-        """
+    rows_xgast = (
+        db.fetch_all(
+            """
         SELECT COALESCE(num, 0) AS num,
                COALESCE(SUM(importe), 0) AS total
         FROM scintela.xgast
@@ -1755,7 +1834,9 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
         GROUP BY 1
         """
-    ) or []
+        )
+        or []
+    )
     v = {int(r.get("num") or 0): float(r.get("total") or 0) for r in rows_xgast}
 
     # Sumar compras del mes mapeadas por la cascada dBase (tipo + concepto
@@ -1778,12 +1859,18 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         v[int(num)] = v.get(int(num), 0.0) + float(r.get("total") or 0)
 
     return {
-        "v1": v.get(1, 0.0), "v2": v.get(2, 0.0), "v3": v.get(3, 0.0),
-        "v4": v.get(4, 0.0), "v5": v.get(5, 0.0), "v6": v.get(6, 0.0),
-        "v7": v.get(7, 0.0), "v8": v.get(8, 0.0), "v9": v.get(9, 0.0),
-        "gtej_sin_dtj":      v.get(1, 0) + v.get(2, 0) + v.get(3, 0),
-        "gtin_sin_dcc":      v.get(4, 0) + v.get(5, 0) + v.get(6, 0),
-        "gs_sin_deprcar":    v.get(7, 0) + v.get(8, 0) + v.get(9, 0),
+        "v1": v.get(1, 0.0),
+        "v2": v.get(2, 0.0),
+        "v3": v.get(3, 0.0),
+        "v4": v.get(4, 0.0),
+        "v5": v.get(5, 0.0),
+        "v6": v.get(6, 0.0),
+        "v7": v.get(7, 0.0),
+        "v8": v.get(8, 0.0),
+        "v9": v.get(9, 0.0),
+        "gtej_sin_dtj": v.get(1, 0) + v.get(2, 0) + v.get(3, 0),
+        "gtin_sin_dcc": v.get(4, 0) + v.get(5, 0) + v.get(6, 0),
+        "gs_sin_deprcar": v.get(7, 0) + v.get(8, 0) + v.get(9, 0),
     }
 
 
@@ -1809,8 +1896,9 @@ def tinto_mes_corriente_resultado() -> dict:
     # psycopg2 los confunde con placeholders cuando params es `()` (default
     # de db.fetch_one) y tira "tuple index out of range". Mismo patrón
     # que `provisiones/queries.py` (ver nota allá).
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0)                                     AS itin,
                COALESCE(SUM(CASE WHEN UPPER(TRIM(color)) NOT LIKE 'LAV%%'
                                  THEN kg  ELSE 0 END), 0)                    AS ktint,
@@ -1821,11 +1909,13 @@ def tinto_mes_corriente_resultado() -> dict:
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
         """
-    ) or {}
+        )
+        or {}
+    )
     return {
-        "itin":  float(row.get("itin") or 0),
+        "itin": float(row.get("itin") or 0),
         "ktint": float(row.get("ktint") or 0),
-        "kr":    float(row.get("kr") or 0),
+        "kr": float(row.get("kr") or 0),
     }
 
 
@@ -1836,8 +1926,9 @@ def compras_iprovk_mes() -> dict:
     Mantenido como compat. Para el panel Resultados v2 usar
     `tejido_mes_componentes()` que descompone interno/externo/gastos-KK.
     """
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(kg),      0) AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.compra
@@ -1848,9 +1939,11 @@ def compras_iprovk_mes() -> dict:
           AND COALESCE(kg, 0) > 0
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
         """
-    ) or {}
+        )
+        or {}
+    )
     return {
-        "kg":      float(row.get("kg") or 0),
+        "kg": float(row.get("kg") or 0),
         "importe": float(row.get("importe") or 0),
     }
 
@@ -1862,8 +1955,9 @@ def compras_tipo_t_externos_mes() -> dict:
     Filtramos `prov<>'KK' AND kg>0` para mantener consistencia con
     `compras_iprovk_mes()` (IPROV/IPROVK pattern).
     """
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(kg),      0) AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.compra
@@ -1874,9 +1968,11 @@ def compras_tipo_t_externos_mes() -> dict:
           AND COALESCE(kg, 0) > 0
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
         """
-    ) or {}
+        )
+        or {}
+    )
     return {
-        "kg":      float(row.get("kg") or 0),
+        "kg": float(row.get("kg") or 0),
         "importe": float(row.get("importe") or 0),
     }
 
@@ -1888,15 +1984,18 @@ def tinto_kg_servicios_mes() -> float:
     nuestros, los tinturamos para otros). Se restan de KT en la fórmula
     de stock: `KT = KT_externos + KTINT - KSTI`.
     """
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(kg), 0) AS kg
         FROM scintela.tinto
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
           AND UPPER(TRIM(stat)) = 'S'
         """
-    ) or {}
+        )
+        or {}
+    )
     return float(row.get("kg") or 0)
 
 
@@ -1930,8 +2029,9 @@ def tejido_mes_componentes() -> dict:
         "us_total":      us_externo + us_kk_gastos
       }
     """
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT
             CASE WHEN COALESCE(UPPER(TRIM(codigo_prov)),'') = 'KK'
                  THEN 'KK' ELSE 'OTRO' END                                    AS quien,
@@ -1945,23 +2045,25 @@ def tejido_mes_componentes() -> dict:
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
         GROUP BY 1
         """
-    ) or []
+        )
+        or []
+    )
     out = {
-        "kg_interno": 0.0, "kg_externo": 0.0,
-        "us_externo": 0.0, "us_kk_gastos": 0.0,
+        "kg_interno": 0.0,
+        "kg_externo": 0.0,
+        "us_externo": 0.0,
+        "us_kk_gastos": 0.0,
     }
     for r in rows:
         if r.get("quien") == "KK":
-            out["kg_interno"]   = float(r.get("kg_con_kg") or 0)
+            out["kg_interno"] = float(r.get("kg_con_kg") or 0)
             out["us_kk_gastos"] = float(r.get("us_sin_kg") or 0)
             # Si una fila KK tuviera kg>0 y importe>0 simultaneamente (raro
             # pero posible), su importe NO se suma como "gasto" — ya está
             # contado como costo de tejido interno por kg. Defensivo: dejarlo.
         else:
             out["kg_externo"] = float(r.get("kg_con_kg") or 0)
-            out["us_externo"] = (
-                float(r.get("us_con_kg") or 0) + float(r.get("us_sin_kg") or 0)
-            )
+            out["us_externo"] = float(r.get("us_con_kg") or 0) + float(r.get("us_sin_kg") or 0)
     out["kg_total"] = out["kg_interno"] + out["kg_externo"]
     out["us_total"] = out["us_externo"] + out["us_kk_gastos"]
     return out
@@ -2027,13 +2129,13 @@ def costo_promedio_mp_ponderado(
         src = "none"
 
     return {
-        "ukg_promedio":      ukg,
-        "kg_disponible":     kg_disp,
-        "us_disponible":     us_disp,
+        "ukg_promedio": ukg,
+        "kg_disponible": kg_disp,
+        "us_disponible": us_disp,
         "stock_anterior_kg": stock_anterior_kg,
         "stock_anterior_us": stock_anterior_us,
-        "tarifa_anterior":   tarifa_anterior,
-        "src":               src,
+        "tarifa_anterior": tarifa_anterior,
+        "src": src,
     }
 
 
@@ -2050,29 +2152,34 @@ def ventas_anio_en_curso() -> float:
     Si historia falla, fallback a la suma live de factura (solo positivos).
     """
     from datetime import date as _date
+
     hoy = _date.today()
     yy = hoy.year
     mm = hoy.month
 
     try:
         # Meses cerrados del año actual desde historia (uvent definitivo).
-        row_hist = db.fetch_one(
-            """
+        row_hist = (
+            db.fetch_one(
+                """
             SELECT COALESCE(SUM(uvent), 0) AS total
               FROM scintela.historia
              WHERE EXTRACT(YEAR FROM fecha)  = %s
                AND EXTRACT(MONTH FROM fecha) < %s
             """,
-            (yy, mm),
-        ) or {}
+                (yy, mm),
+            )
+            or {}
+        )
         uvent_cerrados = float(row_hist.get("total") or 0)
     except Exception:
         uvent_cerrados = 0.0
 
     try:
         # Mes en curso: live desde scintela.factura (sólo positivos).
-        row_live = db.fetch_one(
-            """
+        row_live = (
+            db.fetch_one(
+                """
             SELECT COALESCE(SUM(importe), 0) AS total
               FROM scintela.factura
              WHERE EXTRACT(YEAR FROM fecha)  = %s
@@ -2080,8 +2187,10 @@ def ventas_anio_en_curso() -> float:
                AND COALESCE(stat, '') <> 'X'
                AND COALESCE(importe, 0) > 0
             """,
-            (yy, mm),
-        ) or {}
+                (yy, mm),
+            )
+            or {}
+        )
         uvent_mes = float(row_live.get("total") or 0)
     except Exception:
         uvent_mes = 0.0
@@ -2271,21 +2380,21 @@ def conciliacion_balance() -> list[dict]:
 
     # ----------- CAJA -----------
     salcaj_val = salcaj()
-    caja_count = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.caja WHERE saldo IS NOT NULL"
-    ) or {}
-    out.append({
-        "concepto": "CAJA",
-        "balance": salcaj_val,
-        "modulo":  salcaj_val,
-        "match":   True,
-        "diff":    0.0,
-        "detalle": [
-            ("Último saldo en scintela.caja", salcaj_val),
-            ("Filas de caja con saldo no-null", int(caja_count.get("n") or 0)),
-        ],
-        "nota": "PRG línea 68: SALCAJ = SALDO del último registro de caja.",
-    })
+    caja_count = db.fetch_one("SELECT COUNT(*) AS n FROM scintela.caja WHERE saldo IS NOT NULL") or {}
+    out.append(
+        {
+            "concepto": "CAJA",
+            "balance": salcaj_val,
+            "modulo": salcaj_val,
+            "match": True,
+            "diff": 0.0,
+            "detalle": [
+                ("Último saldo en scintela.caja", salcaj_val),
+                ("Filas de caja con saldo no-null", int(caja_count.get("n") or 0)),
+            ],
+            "nota": "PRG línea 68: SALCAJ = SALDO del último registro de caja.",
+        }
+    )
 
     # ----------- BANCOS -----------
     bancos = saldo_bancos()
@@ -2293,71 +2402,82 @@ def conciliacion_balance() -> list[dict]:
     bancos_total = sum(float(b["saldo"] or 0) for b in bancos)
     salbanc = bancos_total + pos["pos1"] + pos["pos2"]
     bancos_detalle: list[tuple[str, float]] = [
-        (f"{(b['nombre'] or 'Banco ' + str(b['no_banco']))} (origen: {b.get('saldo_origen')})", float(b["saldo"] or 0))
-        for b in bancos if abs(float(b["saldo"] or 0)) > 0.5
+        (
+            f"{(b['nombre'] or 'Banco ' + str(b['no_banco']))} (origen: {b.get('saldo_origen')})",
+            float(b["saldo"] or 0),
+        )
+        for b in bancos
+        if abs(float(b["saldo"] or 0)) > 0.5
     ]
     bancos_detalle.append(("+ Posdat banc=1 (POS1)", pos["pos1"]))
     bancos_detalle.append(("+ Posdat banc=2 (POS2)", pos["pos2"]))
     bancos_detalle.append(("= BANCOS (SALBANC)", salbanc))
-    out.append({
-        "concepto": "BANCOS",
-        "balance": salbanc,
-        "modulo":  salbanc,
-        "match":   True,
-        "diff":    0.0,
-        "detalle": bancos_detalle,
-        "nota": "PRG líneas 78, 99, 370: SALBANC = SALBANC1 + SALBANC2 = (Pichincha + POS1) + (Internacional + POS2).",
-    })
+    out.append(
+        {
+            "concepto": "BANCOS",
+            "balance": salbanc,
+            "modulo": salbanc,
+            "match": True,
+            "diff": 0.0,
+            "detalle": bancos_detalle,
+            "nota": "PRG líneas 78, 99, 370: SALBANC = SALBANC1 + SALBANC2 = (Pichincha + POS1) + (Internacional + POS2).",
+        }
+    )
 
     # ----------- CHEQUES (TOTC) -----------
     totc_val = totc()
     chq = cheques_por_stat()
+
     def _chq(stat: str) -> float:
         return float(chq.get(stat, {}).get("total") or 0)
-    chq_z   = _chq("Z")
-    chq_p   = _chq("P")
-    chq_d   = _chq("D")
-    chq_1   = _chq("1")
-    chq_2   = _chq("2")
-    chq_3   = _chq("3")
-    chq_b   = _chq("B")
-    chq_a   = _chq("A")
-    chq_r   = _chq("R")
+
+    chq_z = _chq("Z")
+    chq_p = _chq("P")
+    chq_d = _chq("D")
+    chq_1 = _chq("1")
+    chq_2 = _chq("2")
+    chq_3 = _chq("3")
+    chq_b = _chq("B")
+    chq_a = _chq("A")
+    chq_r = _chq("R")
     en_totc = chq_z + chq_1 + chq_2 + chq_3 + chq_p + chq_d
     match_c, diff_c = _diff(totc_val, en_totc)
-    cartera_modulo = chq_z   # /cheques?estado=cartera muestra solo Z
-    out.append({
-        "concepto": "CHEQUES (TOTC)",
-        "balance": totc_val,
-        "modulo":  en_totc,
-        "match":   match_c,
-        "diff":    diff_c,
-        "detalle": [
-            ("cartera Z (/cheques?estado=cartera)", chq_z),
-            ("postergados P (/cheques?estado=postergados)", chq_p),
-            ("Daniela D (/cheques?estado=daniela)", chq_d),
-            ("rebote-en-gestión 1ra (/cheques?estado=devueltos)", chq_1),
-            ("rebote-en-gestión 2da", chq_2),
-            ("rebote-en-gestión 3ra", chq_3),
-            ("Σ TOTC = Z+1+2+3+P+D", en_totc),
-            ("(no entra) depositados B (suma a banco)", chq_b),
-            ("(no entra) acreditados A legacy (suma a banco)", chq_a),
-            ("(no entra) rebote terminal R (incobrable)", chq_r),
-        ],
-        "nota": (
-            "PRG línea 24: STAT $ \"Z123PD\". TOTC suma cartera + postergados + Daniela + rebotados-en-gestión. "
-            "La pestaña /cheques?estado=cartera muestra SOLO Z — por eso siempre es ≤ TOTC. "
-            f"Diferencia esperada con la pestaña cartera: ${en_totc - cartera_modulo:,.2f}."
-        ),
-    })
+    cartera_modulo = chq_z  # /cheques?estado=cartera muestra solo Z
+    out.append(
+        {
+            "concepto": "CHEQUES (TOTC)",
+            "balance": totc_val,
+            "modulo": en_totc,
+            "match": match_c,
+            "diff": diff_c,
+            "detalle": [
+                ("cartera Z (/cheques?estado=cartera)", chq_z),
+                ("postergados P (/cheques?estado=postergados)", chq_p),
+                ("Daniela D (/cheques?estado=daniela)", chq_d),
+                ("rebote-en-gestión 1ra (/cheques?estado=devueltos)", chq_1),
+                ("rebote-en-gestión 2da", chq_2),
+                ("rebote-en-gestión 3ra", chq_3),
+                ("Σ TOTC = Z+1+2+3+P+D", en_totc),
+                ("(no entra) depositados B (suma a banco)", chq_b),
+                ("(no entra) acreditados A legacy (suma a banco)", chq_a),
+                ("(no entra) rebote terminal R (incobrable)", chq_r),
+            ],
+            "nota": (
+                'PRG línea 24: STAT $ "Z123PD". TOTC suma cartera + postergados + Daniela + rebotados-en-gestión. '
+                "La pestaña /cheques?estado=cartera muestra SOLO Z — por eso siempre es ≤ TOTC. "
+                f"Diferencia esperada con la pestaña cartera: ${en_totc - cartera_modulo:,.2f}."
+            ),
+        }
+    )
 
     # ----------- FACTURAS (TOTF) -----------
     totf_val = totf()
     # f_cartera reporta el NET (= mismo filtro que totf), para que
     # diagnostico cuadre contra TOTF. Los sobrepagos (saldo<0) ya no se
     # excluyen; el dBase legacy nunca los excluyó.
-    f_cartera = db.fetch_one(
-        """
+    f_cartera = (
+        db.fetch_one(
+            """
         SELECT COUNT(*)                         AS n,
                COALESCE(SUM(saldo),   0)        AS saldo,
                COALESCE(SUM(importe), 0)        AS importe,
@@ -2366,51 +2486,82 @@ def conciliacion_balance() -> list[dict]:
         FROM scintela.factura
         WHERE stat IS NULL OR stat IN ('Z','A','',' ')
         """
-    ) or {}
-    f_canceladas = db.fetch_one(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
+        )
+        or {}
+    )
+    f_canceladas = (
+        db.fetch_one(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
            FROM scintela.factura WHERE stat = 'T'"""
-    ) or {}
-    f_eliminadas = db.fetch_one(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
+        )
+        or {}
+    )
+    f_eliminadas = (
+        db.fetch_one(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
            FROM scintela.factura WHERE stat = 'X'"""
-    ) or {}
-    f_total_emit = db.fetch_one(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
+        )
+        or {}
+    )
+    f_total_emit = (
+        db.fetch_one(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS importe
            FROM scintela.factura WHERE stat <> 'X' OR stat IS NULL"""
-    ) or {}
+        )
+        or {}
+    )
     saldo_cartera = float(f_cartera.get("saldo") or 0)
     match_f, diff_f = _diff(totf_val, saldo_cartera)
-    out.append({
-        "concepto": "FACTURAS (TOTF)",
-        "balance": totf_val,
-        "modulo":  saldo_cartera,
-        "match":   match_f,
-        "diff":    diff_f,
-        "detalle": [
-            (f"Cartera Z/A NETA — {int(f_cartera.get('n') or 0)} facturas (sumando sobrepagos)", saldo_cartera),
-            (f"  ↳ de las cuales {int(f_cartera.get('n_sobrepagos') or 0)} con saldo<0 (sobrepagos)", float(f_cartera.get("saldo_sobrepagos") or 0)),
-            ("  importe total emitido de esas mismas facturas",     float(f_cartera.get("importe") or 0)),
-            (f"Canceladas (stat=T) — {int(f_canceladas.get('n') or 0)} facturas (importe)", float(f_canceladas.get("importe") or 0)),
-            (f"Eliminadas (stat IN X,Y) — {int(f_eliminadas.get('n') or 0)} (importe)",     float(f_eliminadas.get("importe") or 0)),
-            (f"Total facturas emitidas (sin X/Y) — {int(f_total_emit.get('n') or 0)} (importe)", float(f_total_emit.get("importe") or 0)),
-        ],
-        "nota": (
-            "PRG línea 27: TOTF = SUM(saldo) FOR STAT $ \"ZA\" (sin filtro de signo). "
-            "Sobrepagos (saldo<0 = abono > importe) restan de la cartera. "
-            "Verificado: $4.916.202,77 = lo que el dBase live mostraba 2026-05-06."
-        ),
-    })
+    out.append(
+        {
+            "concepto": "FACTURAS (TOTF)",
+            "balance": totf_val,
+            "modulo": saldo_cartera,
+            "match": match_f,
+            "diff": diff_f,
+            "detalle": [
+                (
+                    f"Cartera Z/A NETA — {int(f_cartera.get('n') or 0)} facturas (sumando sobrepagos)",
+                    saldo_cartera,
+                ),
+                (
+                    f"  ↳ de las cuales {int(f_cartera.get('n_sobrepagos') or 0)} con saldo<0 (sobrepagos)",
+                    float(f_cartera.get("saldo_sobrepagos") or 0),
+                ),
+                ("  importe total emitido de esas mismas facturas", float(f_cartera.get("importe") or 0)),
+                (
+                    f"Canceladas (stat=T) — {int(f_canceladas.get('n') or 0)} facturas (importe)",
+                    float(f_canceladas.get("importe") or 0),
+                ),
+                (
+                    f"Eliminadas (stat IN X,Y) — {int(f_eliminadas.get('n') or 0)} (importe)",
+                    float(f_eliminadas.get("importe") or 0),
+                ),
+                (
+                    f"Total facturas emitidas (sin X/Y) — {int(f_total_emit.get('n') or 0)} (importe)",
+                    float(f_total_emit.get("importe") or 0),
+                ),
+            ],
+            "nota": (
+                'PRG línea 27: TOTF = SUM(saldo) FOR STAT $ "ZA" (sin filtro de signo). '
+                "Sobrepagos (saldo<0 = abono > importe) restan de la cartera. "
+                "Verificado: $4.916.202,77 = lo que el dBase live mostraba 2026-05-06."
+            ),
+        }
+    )
 
     # ----------- ANTICIPOS -----------
     antic_val = anticipos()
-    dol_breakdown = db.fetch_all(
-        """SELECT COALESCE(NULLIF(TRIM(st), ''), '(vivo)') AS st,
+    dol_breakdown = (
+        db.fetch_all(
+            """SELECT COALESCE(NULLIF(TRIM(st), ''), '(vivo)') AS st,
                   COUNT(*) AS n,
                   COALESCE(SUM(importe), 0) AS total
            FROM scintela.dolares
            GROUP BY 1 ORDER BY 1"""
-    ) or []
+        )
+        or []
+    )
     detalle_dol = []
     total_dol_all = 0.0
     for r in dol_breakdown:
@@ -2419,63 +2570,73 @@ def conciliacion_balance() -> list[dict]:
         detalle_dol.append((f"st={r['st']} ({int(r['n'])} filas)", t))
     detalle_dol.append(("ANTICIPOS = SUM(st null/vacío)", antic_val))
     detalle_dol.append(("Total dólares (todos los st)", total_dol_all))
-    out.append({
-        "concepto": "ANTICIPOS",
-        "balance": antic_val,
-        "modulo":  antic_val,
-        "match":   True,
-        "diff":    0.0,
-        "detalle": detalle_dol,
-        "nota": "ANTICIPOS = SUM(importe) en scintela.dolares con st NULL o vacío (anticipos vivos del cliente).",
-    })
+    out.append(
+        {
+            "concepto": "ANTICIPOS",
+            "balance": antic_val,
+            "modulo": antic_val,
+            "match": True,
+            "diff": 0.0,
+            "detalle": detalle_dol,
+            "nota": "ANTICIPOS = SUM(importe) en scintela.dolares con st NULL o vacío (anticipos vivos del cliente).",
+        }
+    )
 
     # ----------- ACTIVOS FIJOS (UMAQ + UACT) -----------
     activos = activos_totales()
-    a_breakdown = db.fetch_all(
-        """SELECT COALESCE(NULLIF(TRIM(tipo), ''), '(sin tipo)') AS tipo,
+    a_breakdown = (
+        db.fetch_all(
+            """SELECT COALESCE(NULLIF(TRIM(tipo), ''), '(sin tipo)') AS tipo,
                   COUNT(*) AS n,
                   COALESCE(SUM(valor), 0) AS total
            FROM scintela.activos
            GROUP BY 1 ORDER BY 1"""
-    ) or []
+        )
+        or []
+    )
     detalle_act = []
     for r in a_breakdown:
         detalle_act.append((f"tipo={r['tipo']} ({int(r['n'])} activos)", float(r.get("total") or 0)))
     detalle_act.append(("Σ UMAQ (tipo M/C/K)", activos["umaq"]))
-    detalle_act.append(("Σ UACT (tipo I)",     activos["uact"]))
-    out.append({
-        "concepto": "MAQ/EQUIP. + TERR/EDIF/INS.",
-        "balance": activos["umaq"] + activos["uact"],
-        "modulo":  activos["umaq"] + activos["uact"],
-        "match":   True,
-        "diff":    0.0,
-        "detalle": detalle_act,
-        "nota": "PRG líneas 47-48: UACT FOR TIPO='I' (terrenos/edificios), UMAQ FOR TIPO $ 'MCK' (maquinaria, computación, kilos).",
-    })
+    detalle_act.append(("Σ UACT (tipo I)", activos["uact"]))
+    out.append(
+        {
+            "concepto": "MAQ/EQUIP. + TERR/EDIF/INS.",
+            "balance": activos["umaq"] + activos["uact"],
+            "modulo": activos["umaq"] + activos["uact"],
+            "match": True,
+            "diff": 0.0,
+            "detalle": detalle_act,
+            "nota": "PRG líneas 47-48: UACT FOR TIPO='I' (terrenos/edificios), UMAQ FOR TIPO $ 'MCK' (maquinaria, computación, kilos).",
+        }
+    )
 
     # ----------- STOCK MP+PROD / STOCK QUI / UTILIDAD (historia) -----------
     hist = historia_ultimo_mes() or {}
     snap_fecha = hist.get("fecha")
-    out.append({
-        "concepto": "STOCK MP+PROD. + STOCK QUI. + UTILIDAD",
-        "balance": float(hist.get("ustock") or 0) + float(hist.get("uqui") or 0),
-        "modulo":  float(hist.get("ustock") or 0) + float(hist.get("uqui") or 0),
-        "match":   True,
-        "diff":    0.0,
-        "detalle": [
-            ("VSTO = historia.ustock (último cierre)", float(hist.get("ustock") or 0)),
-            ("VQX = historia.uqui",                    float(hist.get("uqui") or 0)),
-            ("UTILIDAD = historia.usuti",              float(hist.get("usuti") or 0)),
-            ("PATANT = historia.patrimonio",           float(hist.get("patrimonio") or 0)),
-            ("Fecha snapshot histórico", snap_fecha.isoformat() if snap_fecha else "—"),
-        ],
-        "nota": "VSTO/VQX/PATANT/USUTI vienen del último snapshot mensual en scintela.historia. Si la fecha está vieja, todos estos componentes pueden estar desfasados.",
-    })
+    out.append(
+        {
+            "concepto": "STOCK MP+PROD. + STOCK QUI. + UTILIDAD",
+            "balance": float(hist.get("ustock") or 0) + float(hist.get("uqui") or 0),
+            "modulo": float(hist.get("ustock") or 0) + float(hist.get("uqui") or 0),
+            "match": True,
+            "diff": 0.0,
+            "detalle": [
+                ("VSTO = historia.ustock (último cierre)", float(hist.get("ustock") or 0)),
+                ("VQX = historia.uqui", float(hist.get("uqui") or 0)),
+                ("UTILIDAD = historia.usuti", float(hist.get("usuti") or 0)),
+                ("PATANT = historia.patrimonio", float(hist.get("patrimonio") or 0)),
+                ("Fecha snapshot histórico", snap_fecha.isoformat() if snap_fecha else "—"),
+            ],
+            "nota": "VSTO/VQX/PATANT/USUTI vienen del último snapshot mensual en scintela.historia. Si la fecha está vieja, todos estos componentes pueden estar desfasados.",
+        }
+    )
 
     # ----------- PASIVOS (TOTP) -----------
     pd_balance = pos["totp"]
-    pd_modulo = db.fetch_one(
-        f"""
+    pd_modulo = (
+        db.fetch_one(
+            f"""
         SELECT COUNT(*)                         AS n,
                COALESCE(SUM(importe), 0)        AS total
         FROM scintela.posdat
@@ -2483,21 +2644,29 @@ def conciliacion_balance() -> list[dict]:
           AND COALESCE(importe, 0) > 0
           AND (anulada IS NOT TRUE OR anulada IS NULL)
         """
-    ) or {}
+        )
+        or {}
+    )
     pd_total_modulo = float(pd_modulo.get("total") or 0)
-    pd_pagados = db.fetch_one(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS total
+    pd_pagados = (
+        db.fetch_one(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS total
            FROM scintela.posdat
            WHERE COALESCE(banc,0)=9
              AND (anulada IS NOT TRUE OR anulada IS NULL)"""
-    ) or {}
-    pd_neg = db.fetch_one(
-        f"""SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS total
+        )
+        or {}
+    )
+    pd_neg = (
+        db.fetch_one(
+            f"""SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS total
            FROM scintela.posdat
            WHERE {POSDAT_DEUDA_VIVA_WHERE}
              AND COALESCE(importe,0)<=0
              AND (anulada IS NOT TRUE OR anulada IS NULL)"""
-    ) or {}
+        )
+        or {}
+    )
     pd_neg_total = float(pd_neg.get("total") or 0)
     # La diferencia ESPERABLE entre balance y módulo es exactamente la
     # suma de los posdat con importe<=0: balance = módulo + neg. Si esa
@@ -2505,54 +2674,79 @@ def conciliacion_balance() -> list[dict]:
     # idénticos — no es un drift, es que miden cosas levemente distintas.
     diff_p = pd_balance - pd_total_modulo
     match_p = abs(diff_p - pd_neg_total) <= 0.5
-    out.append({
-        "concepto": "PASIVOS (TOTP)",
-        "balance": pd_balance,
-        "modulo":  pd_total_modulo,
-        "match":   match_p,
-        "diff":    diff_p,
-        "detalle": [
-            (f"Posdat abiertas (banc=0, importe>0) — {int(pd_modulo.get('n') or 0)} partidas", pd_total_modulo),
-            (f"Posdat con importe ≤ 0 (no entran al módulo) — {int(pd_neg.get('n') or 0)}", float(pd_neg.get("total") or 0)),
-            (f"Posdat pagadas (banc=9) — {int(pd_pagados.get('n') or 0)}", float(pd_pagados.get("total") or 0)),
-            ("(de las anteriores) POS1 banc=1 (suma a Pichincha)", pos["pos1"]),
-            ("(de las anteriores) POS2 banc=2 (suma a Internacional)", pos["pos2"]),
-        ],
-        "nota": (
-            "PRG línea 55: TOTP = SUM(importe) FOR BANC=0 (deuda viva, "
-            "no instrumentada). banc=1/2 ya descontaron el saldo bancario "
-            "vía bank_helpers, banc=9 son cheques posdatados ya emitidos. "
-            "El balance incluye posdats con importe≤0 (anticipos/ajustes); "
-            "el módulo /posdat los esconde porque no son deuda viva. La "
-            "diferencia entre las dos columnas debe ser exactamente igual "
-            "a la suma de esos posdats negativos — si matchea, ✓ (no es "
-            "drift, son métricas levemente distintas)."
-        ),
-    })
+    out.append(
+        {
+            "concepto": "PASIVOS (TOTP)",
+            "balance": pd_balance,
+            "modulo": pd_total_modulo,
+            "match": match_p,
+            "diff": diff_p,
+            "detalle": [
+                (
+                    f"Posdat abiertas (banc=0, importe>0) — {int(pd_modulo.get('n') or 0)} partidas",
+                    pd_total_modulo,
+                ),
+                (
+                    f"Posdat con importe ≤ 0 (no entran al módulo) — {int(pd_neg.get('n') or 0)}",
+                    float(pd_neg.get("total") or 0),
+                ),
+                (
+                    f"Posdat pagadas (banc=9) — {int(pd_pagados.get('n') or 0)}",
+                    float(pd_pagados.get("total") or 0),
+                ),
+                ("(de las anteriores) POS1 banc=1 (suma a Pichincha)", pos["pos1"]),
+                ("(de las anteriores) POS2 banc=2 (suma a Internacional)", pos["pos2"]),
+            ],
+            "nota": (
+                "PRG línea 55: TOTP = SUM(importe) FOR BANC=0 (deuda viva, "
+                "no instrumentada). banc=1/2 ya descontaron el saldo bancario "
+                "vía bank_helpers, banc=9 son cheques posdatados ya emitidos. "
+                "El balance incluye posdats con importe≤0 (anticipos/ajustes); "
+                "el módulo /posdat los esconde porque no son deuda viva. La "
+                "diferencia entre las dos columnas debe ser exactamente igual "
+                "a la suma de esos posdats negativos — si matchea, ✓ (no es "
+                "drift, son métricas levemente distintas)."
+            ),
+        }
+    )
 
     # ----------- DIVID (URET) -----------
     uret_val = uret_mes_corriente()
-    uret_total = db.fetch_one(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(ret), 0) AS total
+    uret_total = (
+        db.fetch_one(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(ret), 0) AS total
            FROM scintela.retiros"""
-    ) or {}
-    uret_year = db.fetch_one(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(ret), 0) AS total
+        )
+        or {}
+    )
+    uret_year = (
+        db.fetch_one(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(ret), 0) AS total
            FROM scintela.retiros WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)"""
-    ) or {}
-    out.append({
-        "concepto": "DIVID. (URET)",
-        "balance": uret_val,
-        "modulo":  uret_val,
-        "match":   True,
-        "diff":    0.0,
-        "detalle": [
-            ("Retiros del mes en curso (URET)", uret_val),
-            (f"Retiros del año actual — {int(uret_year.get('n') or 0)}", float(uret_year.get("total") or 0)),
-            (f"Retiros TOTALES histórico — {int(uret_total.get('n') or 0)}", float(uret_total.get("total") or 0)),
-        ],
-        "nota": "PRG línea 37: URET = SUM(ret) FOR &MA AND DD-FECHA<63. &MA = mes/año actual. Filtramos retiros del mes en curso.",
-    })
+        )
+        or {}
+    )
+    out.append(
+        {
+            "concepto": "DIVID. (URET)",
+            "balance": uret_val,
+            "modulo": uret_val,
+            "match": True,
+            "diff": 0.0,
+            "detalle": [
+                ("Retiros del mes en curso (URET)", uret_val),
+                (
+                    f"Retiros del año actual — {int(uret_year.get('n') or 0)}",
+                    float(uret_year.get("total") or 0),
+                ),
+                (
+                    f"Retiros TOTALES histórico — {int(uret_total.get('n') or 0)}",
+                    float(uret_total.get("total") or 0),
+                ),
+            ],
+            "nota": "PRG línea 37: URET = SUM(ret) FOR &MA AND DD-FECHA<63. &MA = mes/año actual. Filtramos retiros del mes en curso.",
+        }
+    )
 
     # ---------- SELF-CHECK del contrato ----------
     # Si las filas no son exactamente BALANCE_CONCEPTS en orden, algo se desincronizó.
@@ -2568,6 +2762,7 @@ def conciliacion_balance() -> list[dict]:
         # En dev/test: error duro. En prod: warning para no romper la página.
         import logging
         import os
+
         if os.environ.get("ENV", "development") == "development":
             raise AssertionError(msg)
         logging.getLogger(__name__).error(msg)
@@ -2582,6 +2777,7 @@ def conciliacion_balance() -> list[dict]:
             )
             import logging
             import os
+
             if os.environ.get("ENV", "development") == "development":
                 raise AssertionError(msg)
             logging.getLogger(__name__).error(msg)
@@ -2616,24 +2812,27 @@ def _verificar_balance_math(b: dict) -> list[str]:
                 f"vs calculado {calculado:,.2f} (diff {esperado - calculado:+,.2f})"
             )
 
-    _check("CART = TOTF + TOTC",
-           b.get("cart", 0),
-           float(b.get("totf") or 0) + float(b.get("totc") or 0))
+    _check("CART = TOTF + TOTC", b.get("cart", 0), float(b.get("totf") or 0) + float(b.get("totc") or 0))
 
-    _check("SUBT = SALBANC + SALCAJ + CART",
-           b.get("subt", 0),
-           float(b.get("salbanc") or 0) + float(b.get("salcaj") or 0) + float(b.get("cart") or 0))
+    _check(
+        "SUBT = SALBANC + SALCAJ + CART",
+        b.get("subt", 0),
+        float(b.get("salbanc") or 0) + float(b.get("salcaj") or 0) + float(b.get("cart") or 0),
+    )
 
-    _check("TOTL = SUBT + VSTO + VQX + UMAQ + UACT + URET + ANTIC",
-           b.get("totl", 0),
-           float(b.get("subt") or 0)
-           + float(b.get("vsto") or 0) + float(b.get("vqx") or 0)
-           + float(b.get("umaq") or 0) + float(b.get("uact") or 0)
-           + float(b.get("uret") or 0) + float(b.get("antic") or 0))
+    _check(
+        "TOTL = SUBT + VSTO + VQX + UMAQ + UACT + URET + ANTIC",
+        b.get("totl", 0),
+        float(b.get("subt") or 0)
+        + float(b.get("vsto") or 0)
+        + float(b.get("vqx") or 0)
+        + float(b.get("umaq") or 0)
+        + float(b.get("uact") or 0)
+        + float(b.get("uret") or 0)
+        + float(b.get("antic") or 0),
+    )
 
-    _check("PATR = TOTL - TOTP",
-           b.get("patr", 0),
-           float(b.get("totl") or 0) - float(b.get("totp") or 0))
+    _check("PATR = TOTL - TOTP", b.get("patr", 0), float(b.get("totl") or 0) - float(b.get("totp") or 0))
 
     # BANCOS rule (post-fix 2026-04-30): sum saldo bancos + POS1 + POS2.
     # `bancos_todos` es la lista cruda de saldo_bancos() — cada uno con `saldo`.
@@ -2660,10 +2859,23 @@ def _safe_div(num: float, den: float) -> float:
 
 def _costo_total_con_desperdicio(
     *,
-    cost_mat_ukg, cost_col_ukg, cost_tej_ukg, cost_gsp_ukg, cost_gas_ukg,
-    cost_mat_us,  cost_col_us,  cost_tej_us,  cost_gsp_us,  cost_gas_us,
-    cost_mat_proy, cost_col_proy, cost_tej_proy, cost_gsp_proy, cost_gas_proy,
-    KR, KTINT,
+    cost_mat_ukg,
+    cost_col_ukg,
+    cost_tej_ukg,
+    cost_gsp_ukg,
+    cost_gas_ukg,
+    cost_mat_us,
+    cost_col_us,
+    cost_tej_us,
+    cost_gsp_us,
+    cost_gas_us,
+    cost_mat_proy,
+    cost_col_proy,
+    cost_tej_proy,
+    cost_gsp_proy,
+    cost_gas_proy,
+    KR,
+    KTINT,
 ) -> dict:
     """Fila TOTAL del panel COSTOS — replica PRG INFORMES.PRG líneas 404-413.
 
@@ -2694,14 +2906,11 @@ def _costo_total_con_desperdicio(
     DESK = 0.5
     factor = 1 + (DESP + DESK) / 100
     return {
-        "ukg":     factor * (cost_mat_ukg + cost_col_ukg)
-                   + cost_tej_ukg + cost_gsp_ukg + cost_gas_ukg,
-        "us":      factor * (cost_mat_us + cost_col_us)
-                   + cost_tej_us + cost_gsp_us + cost_gas_us,
-        "proy_us": factor * (cost_mat_proy + cost_col_proy)
-                   + cost_tej_proy + cost_gsp_proy + cost_gas_proy,
+        "ukg": factor * (cost_mat_ukg + cost_col_ukg) + cost_tej_ukg + cost_gsp_ukg + cost_gas_ukg,
+        "us": factor * (cost_mat_us + cost_col_us) + cost_tej_us + cost_gsp_us + cost_gas_us,
+        "proy_us": factor * (cost_mat_proy + cost_col_proy) + cost_tej_proy + cost_gsp_proy + cost_gas_proy,
         "desperdicio_pct": DESP + DESK,
-        "factor":          factor,
+        "factor": factor,
     }
 
 
@@ -2820,27 +3029,27 @@ def informe_balance() -> dict:
     kg = {
         # historia.stock = kg, historia.ustock = US$. Antes leía ustock acá
         # (label decía "kg" pero el valor estaba en US$). Fix 2026-04-30.
-        "stock_kg":   float(hist.get("stock") or 0),   # kg en stock de MP+PT (snapshot)
-        "stock_kg_live":       live["live_kg"],
-        "stock_kg_diff":       live["live_kg"] - float(hist.get("stock") or 0),
+        "stock_kg": float(hist.get("stock") or 0),  # kg en stock de MP+PT (snapshot)
+        "stock_kg_live": live["live_kg"],
+        "stock_kg_diff": live["live_kg"] - float(hist.get("stock") or 0),
         "stock_kg_live_desde": live["snapshot_fecha"],
-        "stock_kg_dias":       live["dias_desde_snapshot"],
-        "kcom":       float(hist.get("kcom")   or 0),   # kg comprados el mes
-        "ktej":       float(hist.get("ktej")   or 0),   # kg tejidos
-        "ktin":       float(hist.get("ktin")   or 0),   # kg tinturados (fuera)
-        "kvent":      float(hist.get("kvent")  or 0),   # kg vendidos
-        "ucom":       float(hist.get("ucom")   or 0),   # U$ compras mes
-        "utej":       float(hist.get("utej")   or 0),   # U$ costo tejido
-        "utin":       float(hist.get("utin")   or 0),   # U$ costo tintura
-        "uvent":      float(hist.get("uvent")  or 0),   # U$ ventas mes
-        "costo_mes":  float(hist.get("costo")  or 0),   # U$ costo total mes
+        "stock_kg_dias": live["dias_desde_snapshot"],
+        "kcom": float(hist.get("kcom") or 0),  # kg comprados el mes
+        "ktej": float(hist.get("ktej") or 0),  # kg tejidos
+        "ktin": float(hist.get("ktin") or 0),  # kg tinturados (fuera)
+        "kvent": float(hist.get("kvent") or 0),  # kg vendidos
+        "ucom": float(hist.get("ucom") or 0),  # U$ compras mes
+        "utej": float(hist.get("utej") or 0),  # U$ costo tejido
+        "utin": float(hist.get("utin") or 0),  # U$ costo tintura
+        "uvent": float(hist.get("uvent") or 0),  # U$ ventas mes
+        "costo_mes": float(hist.get("costo") or 0),  # U$ costo total mes
         # Precios unitarios útiles para el ojo del gerente
-        "precio_vta": (float(hist.get("uvent") or 0) /
-                       float(hist.get("kvent") or 0))
-                      if hist.get("kvent") else 0.0,
-        "costo_kg":   (float(hist.get("ucom") or 0) /
-                       float(hist.get("kcom") or 0))
-                      if hist.get("kcom") else 0.0,
+        "precio_vta": (float(hist.get("uvent") or 0) / float(hist.get("kvent") or 0))
+        if hist.get("kvent")
+        else 0.0,
+        "costo_kg": (float(hist.get("ucom") or 0) / float(hist.get("kcom") or 0))
+        if hist.get("kcom")
+        else 0.0,
     }
 
     # Los bancos con saldo exactamente 0 no aportan a la lectura del balance —
@@ -2853,9 +3062,9 @@ def informe_balance() -> dict:
     chq_breakdown = cheques_por_stat()
     snap_fecha = hist.get("fecha")
     dias_snapshot = (date.today() - snap_fecha).days if snap_fecha else None
-    activos_count_row = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.activos WHERE COALESCE(valor,0) > 0"
-    ) or {}
+    activos_count_row = (
+        db.fetch_one("SELECT COUNT(*) AS n FROM scintela.activos WHERE COALESCE(valor,0) > 0") or {}
+    )
     n_activos = int(activos_count_row.get("n") or 0)
 
     advertencias = []
@@ -2906,10 +3115,7 @@ def informe_balance() -> dict:
         )
     # Diagnóstico: cheques que NO suman a TOTC pero podrían ser importantes
     rebotados_terminales = chq_breakdown.get("R", {}).get("total", 0.0)
-    depositados = (
-        chq_breakdown.get("B", {}).get("total", 0.0)
-        + chq_breakdown.get("A", {}).get("total", 0.0)
-    )
+    depositados = chq_breakdown.get("B", {}).get("total", 0.0) + chq_breakdown.get("A", {}).get("total", 0.0)
 
     diagnostico = {
         "snapshot_dias": dias_snapshot,
@@ -2963,23 +3169,23 @@ def informe_balance() -> dict:
     # en vez de 108k (parcial hasta el cierre).
     h_kvent = vent_mes["kg"]
     h_uvent = vent_mes["importe"]
-    h_kcom  = comp_mes["kg"]
-    h_ucom  = comp_mes["importe"]
+    h_kcom = comp_mes["kg"]
+    h_ucom = comp_mes["importe"]
 
     # ─── Iniciales / proyecciones del mes ───────────────────────────────
     # Estos datos del mes target los necesita el bloque COSTOS (proyección
     # de cada fila + tarifas META para fallback) y el bloque STOCK más
     # abajo. Antes vivían después del bloque COSTOS y eso rompía el orden
     # de definición.
-    kgpro = float(inic.get("kprog") or 0)            # KGPRO — kg meta del mes
+    kgpro = float(inic.get("kprog") or 0)  # KGPRO — kg meta del mes
     pretej = float(inic.get("pretej") or 0)
     pretin = float(inic.get("pretin") or 0)
     preadm = float(inic.get("preadm") or 0)
     pretot = float(inic.get("pretot") or 0)
-    inic_um = float(inic.get("um") or 0)             # tarifa MP objetivo
-    inic_uk = float(inic.get("uk") or 0)             # tarifa tejido objetivo
-    inic_uq = float(inic.get("uq") or 0)             # tarifa col.qui. objetivo
-    inic_pre = float(inic.get("pre") or 0)           # tarifa precio venta
+    inic_um = float(inic.get("um") or 0)  # tarifa MP objetivo
+    inic_uk = float(inic.get("uk") or 0)  # tarifa tejido objetivo
+    inic_uq = float(inic.get("uq") or 0)  # tarifa col.qui. objetivo
+    inic_pre = float(inic.get("pre") or 0)  # tarifa precio venta
 
     # ─── Tarifas del CIERRE ANTERIOR (mes previo) ─────────────────────
     # `um_anterior`: la usa MAT.PR. UMX (panel COSTOS) y el back-derive
@@ -2992,18 +3198,18 @@ def informe_balance() -> dict:
     # Tejido y Terminado del panel STOCK NO leen iniciales.uk/uf — se
     # derivan de h_um con offsets fijos (uk = um+0,5, uf = uk+1,7).
     mesnum_actual = int(inic.get("mesnum") or 0)
-    yy_actual     = int(inic.get("yy") or 0)
-    um_anterior   = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "um")
+    yy_actual = int(inic.get("yy") or 0)
+    um_anterior = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "um")
     tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "uf")
 
     # Tarifas live (ratio de datos del mes; pueden ser 0 si no hay datos).
     precio = _safe_div(h_uvent, h_kvent)
-    umx    = _safe_div(h_ucom,  h_kcom)
-    iqx    = _safe_div(0,       0)                   # se completa con tin abajo
+    umx = _safe_div(h_ucom, h_kcom)
+    iqx = _safe_div(0, 0)  # se completa con tin abajo
     # Tarifas EFFECTIVAS = live si hay, sino meta de iniciales.
     precio_eff, precio_src = _eff_rate(precio, inic_pre)
-    um_eff,     um_src     = _eff_rate(umx,    inic_um)
-    uq_eff,     uq_src     = _eff_rate(iqx,    inic_uq)
+    um_eff, um_src = _eff_rate(umx, inic_um)
+    uq_eff, uq_src = _eff_rate(iqx, inic_uq)
 
     # COSTOS panel — replica EXACTA de INFORMES.PRG líneas 399-403.
     # Variables del legacy:
@@ -3017,10 +3223,10 @@ def informe_balance() -> dict:
     #                                          desde flujo bancario)
     #   UMX         = costo MP ponderado por stock (legacy FIFO formula)
     #   KV          = h_kvent (kg de ventas del mes)
-    amort = amortizaciones_mensuales()           # → dcc, dtj, deprcar
-    gxg   = gastos_xgast_v1_a_v9_mes()           # → V1..V9 sumados por rubro
-    tin   = tinto_mes_corriente_resultado()      # → itin, ktint, kr
-    tej   = tejido_mes_componentes()             # → kg interno/externo + us externo/KK
+    amort = amortizaciones_mensuales()  # → dcc, dtj, deprcar
+    gxg = gastos_xgast_v1_a_v9_mes()  # → V1..V9 sumados por rubro
+    tin = tinto_mes_corriente_resultado()  # → itin, ktint, kr
+    tej = tejido_mes_componentes()  # → kg interno/externo + us externo/KK
 
     # ─── MAT.PR. (PRG línea 399) ──────────────────────────────────────
     # PRG línea 337: UMX = (VM + (HI - KM) * UM0) / HI con HI = HI0+KM-KH
@@ -3076,8 +3282,8 @@ def informe_balance() -> dict:
     # ─── COL.QUI. (PRG línea 401) ─────────────────────────────────────
     # PRG: kg=KTINT, ukg=ITIN/KR (NO ITIN/KTINT — sutil), proy=KGPRO*ITIN/KR
     KTINT = float(tin.get("ktint") or 0)
-    KR    = float(tin.get("kr") or 0)
-    ITIN  = float(tin.get("itin") or 0)
+    KR = float(tin.get("kr") or 0)
+    ITIN = float(tin.get("itin") or 0)
     cost_col_kg = KTINT
     cost_col_us = ITIN
     cost_col_ukg = _safe_div(ITIN, KR) or uq_eff
@@ -3101,18 +3307,18 @@ def informe_balance() -> dict:
     cost_gas_us = GS
     cost_gas_ukg = _safe_div(GS, KV)
     cost_gas_proy = preadm
-    h_ktej  = float(hist.get("ktej")  or 0)
-    h_utej  = float(hist.get("utej")  or 0)
-    h_ktin  = float(hist.get("ktin")  or 0)
-    h_utin  = float(hist.get("utin")  or 0)
+    h_ktej = float(hist.get("ktej") or 0)
+    h_utej = float(hist.get("utej") or 0)
+    h_ktin = float(hist.get("ktin") or 0)
+    h_utin = float(hist.get("utin") or 0)
     # h_gasto/h_costo/h_gstotal del cierre histórico ya no se usan: GASTOS
     # viene live de xgast.V7+V8+V9 + DEPRCAR; costo_total se suma de las
     # filas. Sólo h_usuti se conserva para diagnóstico (referencia histórica).
     h_usuti = float(hist.get("usuti") or 0)
 
     # Tarifas legacy heredadas del último cierre, para diagnóstico.
-    _safe_div(h_utej,  h_ktej)              # U$/kg tejido (histórico)
-    iqx_legacy = _safe_div(h_utin, h_ktin)           # U$/kg gs.proceso (histórico)
+    _safe_div(h_utej, h_ktej)  # U$/kg tejido (histórico)
+    iqx_legacy = _safe_div(h_utin, h_ktin)  # U$/kg gs.proceso (histórico)
 
     # Recomputar iqx con tin.itin/KR ahora que tin está disponible —
     # esto reemplaza el placeholder de iqx=0 puesto antes del bloque COSTOS.
@@ -3121,8 +3327,8 @@ def informe_balance() -> dict:
     uq_eff, uq_src = _eff_rate(iqx, inic_uq)
 
     proy_uvent = kgpro * precio_eff
-    proy_mp    = kgpro * um_eff
-    proy_col   = kgpro * uq_eff
+    proy_mp = kgpro * um_eff
+    proy_col = kgpro * uq_eff
     proy_total = pretot or (proy_mp + pretej + pretin + preadm + proy_col)
 
     # Utilidad: PRG línea 380 → UTILIDAD = PATR - PATANT (live).
@@ -3225,9 +3431,9 @@ def informe_balance() -> dict:
 
     resultados = {
         "ventas": {
-            "kg":      h_kvent,
-            "ukg":     precio,
-            "us":      h_uvent,
+            "kg": h_kvent,
+            "ukg": precio,
+            "us": h_uvent,
             "proy_us": proy_uvent,
             "proy_kg": kgpro,
         },
@@ -3237,14 +3443,13 @@ def informe_balance() -> dict:
             # Cada fila es un dict {label, kg, ukg, us, proy, src, ayuda}.
             # `src`: 'live' = datos del mes; 'meta' = fallback iniciales;
             #        'none' = sin datos ni objetivo.
-
             # MAT.PR. — PRG línea 399: kg=KM, ukg=UMX, us=VM, proy=KGPRO*UMX
             # UMX = (VM + (HI - KM)*UM0) / HI con HI = HI0+KM-KH.
             {
                 "label": "MAT.PR.",
-                "kg":  cost_mat_kg,
+                "kg": cost_mat_kg,
                 "ukg": cost_mat_ukg,
-                "us":  cost_mat_us,
+                "us": cost_mat_us,
                 "proy": cost_mat_proy,
                 "src": "live" if cost_mat_us > 0 or HI > 0 else um_src,
                 "ayuda": (
@@ -3254,22 +3459,26 @@ def informe_balance() -> dict:
                     f"Proyección: KGPRO ({kgpro:,.0f}) × UMX ({UMX:,.3f}) = {cost_mat_proy:,.0f}."
                 ),
                 "detalle": {
-                    "HI0_stock_anterior": HI0, "KM_compras_kg": KM, "VM_compras_us": VM,
-                    "UM0_tarifa_anterior": UM0, "KH_salieron_a_tejido": KH,
-                    "HI_stock_final": HI, "UMX": UMX,
+                    "HI0_stock_anterior": HI0,
+                    "KM_compras_kg": KM,
+                    "VM_compras_us": VM,
+                    "UM0_tarifa_anterior": UM0,
+                    "KH_salieron_a_tejido": KH,
+                    "HI_stock_final": HI,
+                    "UMX": UMX,
                 },
             },
             # TEJIDO — PRG línea 400: kg=KK, ukg=VK/KK, us=VK, proy=XPRETEJ
             # VK = SUM(IMPORTE TIPO='K') + DTJ. NO incluye V1+V2+V3.
             {
                 "label": "TEJIDO",
-                "kg":  cost_tej_kg,
+                "kg": cost_tej_kg,
                 "ukg": cost_tej_ukg,
-                "us":  cost_tej_us,
+                "us": cost_tej_us,
                 "proy": cost_tej_proy,
-                "src": "live" if cost_tej_us > 0 else (
-                    "meta" if (pretej > 0 or cost_tej_kg_src == "meta") else "none"
-                ),
+                "src": "live"
+                if cost_tej_us > 0
+                else ("meta" if (pretej > 0 or cost_tej_kg_src == "meta") else "none"),
                 "ayuda": (
                     "TEJIDO (PRG línea 400). U$/kg = VK/KK. "
                     "VK = SUM(IMPORTE WHERE TIPO='K') + DTJ — "
@@ -3279,21 +3488,22 @@ def informe_balance() -> dict:
                     "KK = SUM(KG WHERE TIPO='K') = interno (PROV='KK') + externo."
                 ),
                 "detalle": {
-                    "VK_us": VK, "KK_kg": KK,
-                    "amort_dtj":     amort["dtj"],
-                    "kg_interno":    tej["kg_interno"],
-                    "kg_externo":    tej["kg_externo"],
-                    "us_externo":    tej["us_externo"],
-                    "us_kk_gastos":  tej["us_kk_gastos"],
+                    "VK_us": VK,
+                    "KK_kg": KK,
+                    "amort_dtj": amort["dtj"],
+                    "kg_interno": tej["kg_interno"],
+                    "kg_externo": tej["kg_externo"],
+                    "us_externo": tej["us_externo"],
+                    "us_kk_gastos": tej["us_kk_gastos"],
                 },
             },
             # COL.QUI. — PRG línea 401: kg=KTINT, ukg=ITIN/KR, us=ITIN, proy=KGPRO*ITIN/KR
             # OJO: ukg divide por KR (kg que llegan a terminado), NO por KTINT.
             {
                 "label": "COL.QUI.",
-                "kg":  cost_col_kg,
+                "kg": cost_col_kg,
                 "ukg": cost_col_ukg,
-                "us":  cost_col_us,
+                "us": cost_col_us,
                 "proy": cost_col_proy,
                 "src": "live" if cost_col_us > 0 else uq_src,
                 "ayuda": (
@@ -3309,9 +3519,9 @@ def informe_balance() -> dict:
             # GTIN = V4+V5+V6 + DCC.
             {
                 "label": "GS.PROC.",
-                "kg":  cost_gsp_kg,
+                "kg": cost_gsp_kg,
                 "ukg": cost_gsp_ukg,
-                "us":  cost_gsp_us,
+                "us": cost_gsp_us,
                 "proy": cost_gsp_proy,
                 "src": "live" if cost_gsp_us > 0 else ("meta" if pretin > 0 else "none"),
                 "ayuda": (
@@ -3320,8 +3530,10 @@ def informe_balance() -> dict:
                     f"KR ({KR:,.0f}) = kg que llegan a terminado este mes."
                 ),
                 "detalle": {
-                    "v4_v5_v6": gxg["gtin_sin_dcc"], "amort_dcc": amort["dcc"],
-                    "GTIN": GTIN, "KR": KR,
+                    "v4_v5_v6": gxg["gtin_sin_dcc"],
+                    "amort_dcc": amort["dcc"],
+                    "GTIN": GTIN,
+                    "KR": KR,
                 },
             },
             # GASTOS — PRG línea 403: ukg=GS/KV, us=GS, proy=XPREADM (sin kg).
@@ -3331,9 +3543,9 @@ def informe_balance() -> dict:
             # bancarios sin categoría que el legacy capturaba via FILTRO.
             {
                 "label": "GASTOS",
-                "kg":  None,
+                "kg": None,
                 "ukg": cost_gas_ukg,
-                "us":  cost_gas_us,
+                "us": cost_gas_us,
                 "proy": cost_gas_proy,
                 "src": "live" if cost_gas_us > 0 else ("meta" if preadm > 0 else "none"),
                 "ayuda": (
@@ -3343,8 +3555,10 @@ def informe_balance() -> dict:
                     "(Diferencia con dBase: el legacy calcula GS = G1+G2+CA+DEPRCAR desde flujo bancario."
                 ),
                 "detalle": {
-                    "v7_v8_v9": gxg["gs_sin_deprcar"], "amort_deprcar": amort["deprcar"],
-                    "GS": GS, "KV": KV,
+                    "v7_v8_v9": gxg["gs_sin_deprcar"],
+                    "amort_deprcar": amort["deprcar"],
+                    "GS": GS,
+                    "KV": KV,
                 },
             },
         ],
@@ -3354,19 +3568,29 @@ def informe_balance() -> dict:
             "uq": uq_src,
         },
         "costo_total": _costo_total_con_desperdicio(
-            cost_mat_ukg=cost_mat_ukg, cost_col_ukg=cost_col_ukg,
-            cost_tej_ukg=cost_tej_ukg, cost_gsp_ukg=cost_gsp_ukg, cost_gas_ukg=cost_gas_ukg,
-            cost_mat_us=cost_mat_us, cost_col_us=cost_col_us,
-            cost_tej_us=cost_tej_us, cost_gsp_us=cost_gsp_us, cost_gas_us=cost_gas_us,
-            cost_mat_proy=cost_mat_proy, cost_col_proy=cost_col_proy,
-            cost_tej_proy=cost_tej_proy, cost_gsp_proy=cost_gsp_proy, cost_gas_proy=cost_gas_proy,
-            KR=KR, KTINT=KTINT,
+            cost_mat_ukg=cost_mat_ukg,
+            cost_col_ukg=cost_col_ukg,
+            cost_tej_ukg=cost_tej_ukg,
+            cost_gsp_ukg=cost_gsp_ukg,
+            cost_gas_ukg=cost_gas_ukg,
+            cost_mat_us=cost_mat_us,
+            cost_col_us=cost_col_us,
+            cost_tej_us=cost_tej_us,
+            cost_gsp_us=cost_gsp_us,
+            cost_gas_us=cost_gas_us,
+            cost_mat_proy=cost_mat_proy,
+            cost_col_proy=cost_col_proy,
+            cost_tej_proy=cost_tej_proy,
+            cost_gsp_proy=cost_gsp_proy,
+            cost_gas_proy=cost_gas_proy,
+            KR=KR,
+            KTINT=KTINT,
         ),
         "utilidad": {
             # UT.ACT del PRG = PATR - PATANT (live). Foto: 592.544.
-            "pct":     utilidad_pct,
-            "ukg":     utilidad_ukg,
-            "us":      utilidad,           # ← live PATR-PATANT, no h_usuti
+            "pct": utilidad_pct,
+            "ukg": utilidad_ukg,
+            "us": utilidad,  # ← live PATR-PATANT, no h_usuti
             "proy_us": proy_utilidad,
             # Provisión que falta amortizar este mes (PRG línea 420).
             # Se restó dentro de `proy_us`; la exponemos también acá para
@@ -3379,32 +3603,41 @@ def informe_balance() -> dict:
             "usuti_historia": h_usuti,
         },
         "stock": {
-            "hilado":    {"kg": h_hilado,        "ukg": h_um, "us": val_hilado},
-            "tejido":    {"kg": h_tejido_kg,     "ukg": h_uk, "us": val_tejido},
-            "terminado": {"kg": h_terminado_kg,  "ukg": h_uf, "us": val_terminado},
-            "total":     {"kg": stock_total_kg,  "ukg": stock_ukg_prom, "us": stock_total_us},
+            "hilado": {"kg": h_hilado, "ukg": h_um, "us": val_hilado},
+            "tejido": {"kg": h_tejido_kg, "ukg": h_uk, "us": val_tejido},
+            "terminado": {"kg": h_terminado_kg, "ukg": h_uf, "us": val_terminado},
+            "total": {"kg": stock_total_kg, "ukg": stock_ukg_prom, "us": stock_total_us},
         },
         "snapshot_fecha": snap_fecha,
-        "iniciales_mes": (
-            f"{inic.get('mesnom') or '?'} {inic.get('yy') or ''}"
-            if inic else None
-        ),
+        "iniciales_mes": (f"{inic.get('mesnom') or '?'} {inic.get('yy') or ''}" if inic else None),
     }
 
     resultado = {
-        "totf": _totf, "totc": _totc,
+        "totf": _totf,
+        "totc": _totc,
         "bancos": bancos_activos,
         "bancos_todos": bancos,
-        "salbanc1": salbanc1, "salbanc2": salbanc2, "salbanc": salbanc,
-        "pos1": posdats["pos1"], "pos2": posdats["pos2"],
+        "salbanc1": salbanc1,
+        "salbanc2": salbanc2,
+        "salbanc": salbanc,
+        "pos1": posdats["pos1"],
+        "pos2": posdats["pos2"],
         "salcaj": _salcaj,
-        "umaq": activos["umaq"], "uact": activos["uact"],
-        "antic": _antic, "uret": _uret, "uret_anio": _uret_anio,
+        "umaq": activos["umaq"],
+        "uact": activos["uact"],
+        "antic": _antic,
+        "uret": _uret,
+        "uret_anio": _uret_anio,
         "ventas_anio": _ventas_anio,
         "totp": posdats["totp"],
-        "vsto": vsto, "vqx": vqx,
-        "cart": cart, "subt": subt, "totl": totl,
-        "patr": patr, "patant": patant, "utilidad": utilidad,
+        "vsto": vsto,
+        "vqx": vqx,
+        "cart": cart,
+        "subt": subt,
+        "totl": totl,
+        "patr": patr,
+        "patant": patant,
+        "utilidad": utilidad,
         # `patr_para_utilidad` = patr ANTES del override de vsto, coherente
         # con PATANT (= historia.patrimonio neto del cierre anterior).
         # Lo expongo para que el panel pueda mostrar el cálculo:
@@ -3432,6 +3665,7 @@ def informe_balance() -> dict:
         # En prod: agregar a advertencias del banner ámbar para que el
         # gerente lo vea, pero no romper la página.
         import os
+
         env = os.environ.get("ENV", "development").lower()
         msg_completo = "Invariantes del balance violadas:\n  - " + "\n  - ".join(errores_math)
         if env == "development":
@@ -3447,6 +3681,7 @@ def informe_balance() -> dict:
 # CARTERA — saldos por cliente
 # ---------------------------------------------------------------------------
 
+
 def cartera_por_cliente() -> list[dict]:
     """Agregado por cliente: cheques + facturas + total + % del total.
 
@@ -3457,8 +3692,9 @@ def cartera_por_cliente() -> list[dict]:
     - FACTURAS = SUM(factura.saldo) viva
     - TOTAL    = FACTURAS − CHEQUES (paridad dBase, lo neto a cobrar)
     """
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         WITH cheques_cli AS (
             SELECT codigo_cli,
                    COALESCE(SUM(importe), 0) AS cheques
@@ -3483,7 +3719,9 @@ def cartera_por_cliente() -> list[dict]:
           AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         GROUP BY f.codigo_cli, c.nombre
         """
-    ) or []
+        )
+        or []
+    )
 
     total = sum(float(r.get("saldo_total") or 0) for r in rows) or 1.0
     for r in rows:
@@ -3495,6 +3733,7 @@ def cartera_por_cliente() -> list[dict]:
 # ---------------------------------------------------------------------------
 # DEUDAS — pasivos por posdat (como lo hace INFORMES.PRG)
 # ---------------------------------------------------------------------------
+
 
 def deudas_por_proveedor() -> list[dict]:
     """Pasivos agrupados por proveedor (deuda viva = banc=0).
@@ -3522,7 +3761,7 @@ def deudas_por_proveedor() -> list[dict]:
                MIN(pd.fechad)                     AS vence_mas_viejo
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
-        WHERE {posdat_deuda_viva_where('pd')}
+        WHERE {posdat_deuda_viva_where("pd")}
           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         GROUP BY p.codigo_prov, pd.prov, p.nombre, p.tipo
         HAVING ABS(COALESCE(SUM(pd.importe), 0)) > 0.005
@@ -3534,6 +3773,7 @@ def deudas_por_proveedor() -> list[dict]:
 # ---------------------------------------------------------------------------
 # FLUJO — últimos N días
 # ---------------------------------------------------------------------------
+
 
 def flujo_ultimos_dias(dias: int = 30) -> list[dict]:
     # Coerce to int defensively; callers may pass strings from query params.
@@ -3590,6 +3830,7 @@ def flujo_calculado(
     Los demás van en 0.
     """
     from datetime import timedelta as _td
+
     try:
         atras = max(0, int(dias_atras))
     except (TypeError, ValueError):
@@ -3656,8 +3897,9 @@ def flujo_calculado(
     if ignorar_cheques:
         cheques_por_dia: dict = {}
     else:
-        cheques_rows = db.fetch_all(
-            """
+        cheques_rows = (
+            db.fetch_all(
+                """
             SELECT fechad AS fecha,
                    COALESCE(SUM(importe), 0) AS total
               FROM scintela.cheque
@@ -3667,8 +3909,10 @@ def flujo_calculado(
                AND fechad <= CURRENT_DATE + make_interval(days => %s)
              GROUP BY fechad
             """,
-            (adelante,),
-        ) or []
+                (adelante,),
+            )
+            or []
+        )
         cheques_por_dia = {r["fecha"]: float(r["total"] or 0) for r in cheques_rows}
 
     # 4) Facturas — el dBase legacy NO las incluye en el gráfico, aunque
@@ -3708,8 +3952,9 @@ def flujo_calculado(
     #   1) Cambié a banc=0 only → flujo optimista, dBase mostraba -$2.3M.
     #   2) Filtre banc=9 vencidos → faltaron $1.3M; gap consistente vs dBase.
     #   3) Definitivo: mirror dBase = banc IN (0, 9), vencidos imputados a hoy.
-    posdat_rows = db.fetch_all(
-        f"""
+    posdat_rows = (
+        db.fetch_all(
+            f"""
         SELECT
           CASE WHEN fechad < CURRENT_DATE THEN CURRENT_DATE ELSE fechad END AS fecha,
           COALESCE(SUM(importe), 0) AS total
@@ -3720,8 +3965,10 @@ def flujo_calculado(
           AND (anulada IS NOT TRUE OR anulada IS NULL)
         GROUP BY 1
         """,
-        (adelante,),
-    ) or []
+            (adelante,),
+        )
+        or []
+    )
     posdat_por_dia = {r["fecha"]: float(r["total"] or 0) for r in posdat_rows}
 
     # 6) Construir la curva día a día.
@@ -3732,15 +3979,22 @@ def flujo_calculado(
     # Días pasados — línea recta del saldo actual (no recalculamos historia).
     for offset in range(-atras, 0):
         fecha = hoy + _td(days=offset)
-        filas.append({
-            "fecha": fecha,
-            "saldo": saldo_hoy,
-            "cheques": 0.0, "facturas": 0.0,
-            "posdat1": 0.0, "posdat2": 0.0,
-            "pichincha": 0.0, "inter": 0.0,
-            "mprima": 0.0, "gastos": 0.0,
-            "pagos": 0.0, "dolares": 0.0,
-        })
+        filas.append(
+            {
+                "fecha": fecha,
+                "saldo": saldo_hoy,
+                "cheques": 0.0,
+                "facturas": 0.0,
+                "posdat1": 0.0,
+                "posdat2": 0.0,
+                "pichincha": 0.0,
+                "inter": 0.0,
+                "mprima": 0.0,
+                "gastos": 0.0,
+                "pagos": 0.0,
+                "dolares": 0.0,
+            }
+        )
 
     # Hoy y adelante — proyección acumulada.
     # Día t: saldo_t = saldo_{t-1} + cheques(t) + facturas(t) - posdat(t)
@@ -3757,18 +4011,22 @@ def flujo_calculado(
         fact_in = facturas_por_dia.get(fecha, 0.0)
         egreso = posdat_por_dia.get(fecha, 0.0)
         saldo_acum = saldo_acum + cheq_in + fact_in - egreso
-        filas.append({
-            "fecha": fecha,
-            "saldo": saldo_acum,
-            "cheques": cheq_in,
-            "facturas": fact_in,
-            "posdat1": 0.0, "posdat2": 0.0,
-            "pichincha": 0.0, "inter": 0.0,
-            "mprima": 0.0,
-            "gastos": -egreso,    # negativo: el chart lo trata como egreso
-            "pagos": 0.0,
-            "dolares": 0.0,
-        })
+        filas.append(
+            {
+                "fecha": fecha,
+                "saldo": saldo_acum,
+                "cheques": cheq_in,
+                "facturas": fact_in,
+                "posdat1": 0.0,
+                "posdat2": 0.0,
+                "pichincha": 0.0,
+                "inter": 0.0,
+                "mprima": 0.0,
+                "gastos": -egreso,  # negativo: el chart lo trata como egreso
+                "pagos": 0.0,
+                "dolares": 0.0,
+            }
+        )
 
     return filas
 
@@ -3793,8 +4051,9 @@ def plazos_dbase() -> dict:
         {"cobro": int, "deuda": int, "n_facturas": int, "n_posdat": int}
         Días redondeados al entero más cercano.
     """
-    row_cobro = db.fetch_one(
-        """
+    row_cobro = (
+        db.fetch_one(
+            """
         SELECT
           ROUND(SUM(saldo * (vencimiento - fecha)) / NULLIF(SUM(saldo), 0))::int AS dias,
           COUNT(*) AS n
@@ -3804,9 +4063,12 @@ def plazos_dbase() -> dict:
           AND vencimiento IS NOT NULL
           AND fecha IS NOT NULL
         """
-    ) or {}
-    row_deuda = db.fetch_one(
-        f"""
+        )
+        or {}
+    )
+    row_deuda = (
+        db.fetch_one(
+            f"""
         SELECT
           ROUND(SUM(importe * (fechad - fecha)) / NULLIF(SUM(importe), 0))::int AS dias,
           COUNT(*) AS n
@@ -3817,7 +4079,9 @@ def plazos_dbase() -> dict:
           AND (fechad - fecha) BETWEEN 0 AND 365
           AND (anulada IS NOT TRUE OR anulada IS NULL)
         """
-    ) or {}
+        )
+        or {}
+    )
     return {
         "cobro": int(row_cobro.get("dias") or 0),
         "deuda": int(row_deuda.get("dias") or 0),
@@ -3869,8 +4133,9 @@ def posdat_egresos_proximos(dias_adelante: int = 365) -> list[dict]:
         importe        : float
         banc           : int   (0 o 9 en los resultados)
     """
-    return db.fetch_all(
-        f"""
+    return (
+        db.fetch_all(
+            f"""
         SELECT
           id_posdat,
           CASE WHEN fechad < CURRENT_DATE THEN CURRENT_DATE ELSE fechad END
@@ -3887,8 +4152,10 @@ def posdat_egresos_proximos(dias_adelante: int = 365) -> list[dict]:
           AND (anulada IS NOT TRUE OR anulada IS NULL)
         ORDER BY fecha_efectiva ASC, importe DESC
         """,
-        (max(30, int(dias_adelante)),),
-    ) or []
+            (max(30, int(dias_adelante)),),
+        )
+        or []
+    )
 
 
 def flujo_proyeccion(dias_atras: int = 14, dias_adelante: int = 365) -> list[dict]:
@@ -3933,9 +4200,18 @@ def flujo_proyeccion(dias_atras: int = 14, dias_adelante: int = 365) -> list[dic
 
 
 FLUJO_COLS = (
-    "cheques", "facturas", "posdat1", "posdat2",
-    "pichincha", "inter", "mprima", "gastos",
-    "saldo", "pagos", "dolares", "usaldo",
+    "cheques",
+    "facturas",
+    "posdat1",
+    "posdat2",
+    "pichincha",
+    "inter",
+    "mprima",
+    "gastos",
+    "saldo",
+    "pagos",
+    "dolares",
+    "usaldo",
 )
 
 
@@ -3971,7 +4247,8 @@ def upsert_flujo_rows(rows: list[dict], usuario: str) -> dict:
                 if supplied:
                     set_sql = ", ".join(f"{c} = %s" for c, _ in supplied)
                     params = tuple(v for _, v in supplied) + (
-                        usuario, existing["id_flujo"],
+                        usuario,
+                        existing["id_flujo"],
                     )
                     db.execute(
                         f"UPDATE scintela.flujo SET {set_sql}, "
@@ -3986,8 +4263,7 @@ def upsert_flujo_rows(rows: list[dict], usuario: str) -> dict:
                 vals = [fecha] + [v for _, v in supplied] + [usuario]
                 placeholders = ", ".join(["%s"] * len(vals))
                 db.execute(
-                    f"INSERT INTO scintela.flujo ({', '.join(cols)}) "
-                    f"VALUES ({placeholders})",
+                    f"INSERT INTO scintela.flujo ({', '.join(cols)}) VALUES ({placeholders})",
                     tuple(vals),
                     conn=conn,
                 )
@@ -3998,6 +4274,7 @@ def upsert_flujo_rows(rows: list[dict], usuario: str) -> dict:
 # ---------------------------------------------------------------------------
 # VENTAS mensuales — agregadas desde factura
 # ---------------------------------------------------------------------------
+
 
 def ventas_mes_a_mes_anio_actual() -> list[dict]:
     """Ventas mes a mes del año en curso con acumulado.
@@ -4018,12 +4295,14 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
                           que ventas_anio_en_curso: stat<>'X', any sign)
     """
     from datetime import date as _date
+
     hoy = _date.today()
     yy, mm = hoy.year, hoy.month
 
     # Meses cerrados del año (historia.uvent ya tiene el cierre definitivo).
-    rows_hist = db.fetch_all(
-        """
+    rows_hist = (
+        db.fetch_all(
+            """
         SELECT EXTRACT(MONTH FROM fecha)::int AS mes_num,
                COALESCE(SUM(uvent), 0) AS importe,
                COALESCE(SUM(kvent), 0) AS kg
@@ -4032,14 +4311,17 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
            AND EXTRACT(MONTH FROM fecha) < %s
          GROUP BY EXTRACT(MONTH FROM fecha)
         """,
-        (yy, mm),
-    ) or []
+            (yy, mm),
+        )
+        or []
+    )
 
     # Mes en curso → live de scintela.factura (mismo filtro que
     # ventas_anio_en_curso: stat <> 'X', importe > 0 — sin sumar
     # devoluciones/sobrepagos que distorsionarían el live).
-    row_live = db.fetch_one(
-        """
+    row_live = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0) AS importe,
                COALESCE(SUM(kg), 0)      AS kg
           FROM scintela.factura
@@ -4048,25 +4330,38 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
            AND COALESCE(stat, '') <> 'X'
            AND COALESCE(importe, 0) > 0
         """,
-        (yy, mm),
-    ) or {}
+            (yy, mm),
+        )
+        or {}
+    )
 
     # Armar mapa mes → datos.
     por_mes: dict[int, dict] = {}
     for r in rows_hist:
         m = int(r.get("mes_num") or 0)
         por_mes[m] = {
-            "kg":      float(r.get("kg") or 0),
+            "kg": float(r.get("kg") or 0),
             "importe": float(r.get("importe") or 0),
         }
     por_mes[mm] = {
-        "kg":      float(row_live.get("kg") or 0),
+        "kg": float(row_live.get("kg") or 0),
         "importe": float(row_live.get("importe") or 0),
     }
 
-    _MES_NOMBRES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                    "Julio", "Agosto", "Septiembre", "Octubre",
-                    "Noviembre", "Diciembre"]
+    _MES_NOMBRES = [
+        "Enero",
+        "Febrero",
+        "Marzo",
+        "Abril",
+        "Mayo",
+        "Junio",
+        "Julio",
+        "Agosto",
+        "Septiembre",
+        "Octubre",
+        "Noviembre",
+        "Diciembre",
+    ]
     acum = 0.0
     out: list[dict] = []
     for m in sorted(por_mes.keys()):
@@ -4074,14 +4369,16 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
         kg, importe = d["kg"], d["importe"]
         acum += importe
         precio = (importe / kg) if kg > 0 else 0.0
-        out.append({
-            "mes_num":    m,
-            "mes_nombre": _MES_NOMBRES[m - 1] if 1 <= m <= 12 else "?",
-            "kg":         kg,
-            "precio":     precio,
-            "importe":    importe,
-            "acum":       acum,
-        })
+        out.append(
+            {
+                "mes_num": m,
+                "mes_nombre": _MES_NOMBRES[m - 1] if 1 <= m <= 12 else "?",
+                "kg": kg,
+                "precio": precio,
+                "importe": importe,
+                "acum": acum,
+            }
+        )
     return out
 
 
@@ -4150,8 +4447,9 @@ def ventas_multianual(anios: int = 4) -> dict:
     # Una query — todas las facturas vivas en el rango de años + agrupado por
     # (year, month). Filtramos stat para excluir anuladas (TMT bug TMT
     # 2026-04-29: filas con stat='Y' inflaban U$/kg). PRG: `STAT $ "ZA"`.
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT EXTRACT(YEAR  FROM fecha)::int AS yy,
                EXTRACT(MONTH FROM fecha)::int AS mm,
                COUNT(*)                       AS n,
@@ -4162,19 +4460,20 @@ def ventas_multianual(anios: int = 4) -> dict:
           AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
         GROUP BY yy, mm
         """,
-        (anios_list[0], anios_list[-1]),
-    ) or []
+            (anios_list[0], anios_list[-1]),
+        )
+        or []
+    )
 
     idx: dict[tuple[int, int], dict] = {}
     for r in rows:
         idx[(int(r["yy"]), int(r["mm"]))] = {
-            "kg":      float(r.get("kg") or 0),
+            "kg": float(r.get("kg") or 0),
             "importe": float(r.get("importe") or 0),
-            "n":       int(r.get("n") or 0),
+            "n": int(r.get("n") or 0),
         }
 
-    mes_labels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
-                  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    mes_labels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
     def _pct_var(act: float, ant: float) -> float | None:
         if not ant:
@@ -4202,31 +4501,32 @@ def ventas_multianual(anios: int = 4) -> dict:
     for a in anios_list:
         tot_kg = 0.0
         tot_us = 0.0
-        tot_n  = 0
+        tot_n = 0
         for m in range(1, 13):
             d = idx.get((a, m), {})
             tot_kg += float(d.get("kg") or 0)
             tot_us += float(d.get("importe") or 0)
-            tot_n  += int(d.get("n") or 0)
+            tot_n += int(d.get("n") or 0)
         precio_prom = (tot_us / tot_kg) if tot_kg else 0.0
         totales_por_anio[a] = {
-            "kg":          tot_kg,
-            "importe":     tot_us,
+            "kg": tot_kg,
+            "importe": tot_us,
             "precio_prom": precio_prom,
-            "n":           tot_n,
+            "n": tot_n,
         }
 
     return {
-        "anios":            anios_list,
-        "meses":            meses_out,
+        "anios": anios_list,
+        "meses": meses_out,
         "totales_por_anio": totales_por_anio,
-        "n_anios":          n,
+        "n_anios": n,
     }
 
 
 # ---------------------------------------------------------------------------
 # GASTOS — mes en curso, agrupados (vía transacciones_bancarias + caja)
 # ---------------------------------------------------------------------------
+
 
 def gastos_mes_corriente() -> list[dict]:
     """
@@ -4252,6 +4552,7 @@ def gastos_mes_corriente() -> list[dict]:
 # ---------------------------------------------------------------------------
 # RETIROS — lista y totales
 # ---------------------------------------------------------------------------
+
 
 def retiros_recientes(dias: int = 180) -> list[dict]:
     return db.fetch_all(
@@ -4327,6 +4628,7 @@ def retiros_total_anual() -> float:
 # ACTIVOS — lista de activos fijos con amortización
 # ---------------------------------------------------------------------------
 
+
 def activos_lista() -> list[dict]:
     return db.fetch_all(
         """
@@ -4344,6 +4646,7 @@ def activos_lista() -> list[dict]:
 # ---------------------------------------------------------------------------
 # HISTORIA — snapshots mensuales
 # ---------------------------------------------------------------------------
+
 
 def historia_lista(limite: int = 24) -> list[dict]:
     """Snapshot mensual completo — 26 columnas de datos como en HISTORIA.DBF."""
@@ -4414,8 +4717,9 @@ def historia_multianual(meses: int = 12) -> dict:
     # Una única query — agarra los últimos 36 meses (3 años × 12) y le
     # damos forma en Python. Cada fila histórica tiene `fecha` (último día
     # del mes legacy o algún día del mes); agrupamos por (year, month).
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT EXTRACT(YEAR  FROM fecha)::int AS yy,
                EXTRACT(MONTH FROM fecha)::int AS mm,
                MAX(fecha)                     AS fecha,
@@ -4433,27 +4737,28 @@ def historia_multianual(meses: int = 12) -> dict:
         WHERE EXTRACT(YEAR FROM fecha) BETWEEN %s AND %s
         GROUP BY yy, mm
         """,
-        (anio_actual - 2, anio_actual),
-    ) or []
+            (anio_actual - 2, anio_actual),
+        )
+        or []
+    )
 
     # Indexar por (yy, mm) → datos.
     idx: dict[tuple[int, int], dict] = {}
     for r in rows:
         idx[(int(r["yy"]), int(r["mm"]))] = {
             "patrimonio": float(r.get("patrimonio") or 0),
-            "uvent":      float(r.get("uvent")      or 0),
-            "usuti":      float(r.get("usuti")      or 0),
-            "kvent":      float(r.get("kvent")      or 0),
-            "ustock":     float(r.get("ustock")     or 0),
-            "uqui":       float(r.get("uqui")       or 0),
-            "cart":       float(r.get("cart")       or 0),
-            "deuda":      float(r.get("deuda")      or 0),
-            "usret":      float(r.get("usret")      or 0),
-            "fecha":      r.get("fecha"),
+            "uvent": float(r.get("uvent") or 0),
+            "usuti": float(r.get("usuti") or 0),
+            "kvent": float(r.get("kvent") or 0),
+            "ustock": float(r.get("ustock") or 0),
+            "uqui": float(r.get("uqui") or 0),
+            "cart": float(r.get("cart") or 0),
+            "deuda": float(r.get("deuda") or 0),
+            "usret": float(r.get("usret") or 0),
+            "fecha": r.get("fecha"),
         }
 
-    mes_labels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
-                  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    mes_labels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
     def _pct_var(act: float, ant: float) -> float | None:
         """Variación % de `act` vs `ant`. None si la base es 0 (evita ZeroDiv)."""
@@ -4465,22 +4770,34 @@ def historia_multianual(meses: int = 12) -> dict:
     for m in range(1, n_meses + 1):
         datos: dict = {}
         for a in anios:
-            datos[a] = idx.get((a, m), {
-                "patrimonio": 0.0, "uvent": 0.0, "usuti": 0.0, "kvent": 0.0,
-                "ustock": 0.0, "uqui": 0.0, "cart": 0.0, "deuda": 0.0,
-                "usret": 0.0, "fecha": None,
-            })
+            datos[a] = idx.get(
+                (a, m),
+                {
+                    "patrimonio": 0.0,
+                    "uvent": 0.0,
+                    "usuti": 0.0,
+                    "kvent": 0.0,
+                    "ustock": 0.0,
+                    "uqui": 0.0,
+                    "cart": 0.0,
+                    "deuda": 0.0,
+                    "usret": 0.0,
+                    "fecha": None,
+                },
+            )
         # Variación % anio_actual vs anio_actual-1 (replica el "DR %" del PRG L1446-1450).
         cur, prev = datos[anio_actual], datos[anio_actual - 1]
-        datos["var_patr_pct"]  = _pct_var(cur["patrimonio"], prev["patrimonio"])
-        datos["var_uvent_pct"] = _pct_var(cur["uvent"],      prev["uvent"])
-        datos["var_kvent_pct"] = _pct_var(cur["kvent"],      prev["kvent"])
-        datos["var_usuti_pct"] = _pct_var(cur["usuti"],      prev["usuti"])
-        meses_out.append({
-            "mes":   m,
-            "label": mes_labels[m - 1],
-            "datos": datos,
-        })
+        datos["var_patr_pct"] = _pct_var(cur["patrimonio"], prev["patrimonio"])
+        datos["var_uvent_pct"] = _pct_var(cur["uvent"], prev["uvent"])
+        datos["var_kvent_pct"] = _pct_var(cur["kvent"], prev["kvent"])
+        datos["var_usuti_pct"] = _pct_var(cur["usuti"], prev["usuti"])
+        meses_out.append(
+            {
+                "mes": m,
+                "label": mes_labels[m - 1],
+                "datos": datos,
+            }
+        )
 
     # Totales acumulados por año (PRG L1383-1389 SUM ALL USUTI/USRET/UVENT).
     totales_por_anio: dict[int, dict] = {}
@@ -4506,6 +4823,7 @@ def historia_multianual(meses: int = 12) -> dict:
 # INICIALES — metas/valores de apertura mensuales (INICIALES.DBF)
 # ---------------------------------------------------------------------------
 
+
 def iniciales_lista(anio: int | None = None, limite: int = 36) -> list[dict]:
     """Metas mensuales (INICIALES.DBF): producción programada, precios, notas."""
     return db.fetch_all(
@@ -4527,6 +4845,7 @@ def iniciales_lista(anio: int | None = None, limite: int = 36) -> list[dict]:
 # ---------------------------------------------------------------------------
 # ESTADO DE CUENTA por cliente
 # ---------------------------------------------------------------------------
+
 
 def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
     """Fuzzy-ish lookup de cliente por codigo_cli o nombre (ilike)."""
@@ -4575,10 +4894,17 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
             "facturas": [],
             "cheques": [],
             "totales": {
-                "kg": 0.0, "importe": 0.0, "abono": 0.0, "saldo": 0.0,
-                "saldo_vivo": 0.0, "n_vencidas": 0, "saldo_vencido": 0.0,
-                "cheques_total": 0.0, "cheques_cartera": 0.0,
-                "cheques_depositados": 0.0, "cheques_acreditados": 0.0,
+                "kg": 0.0,
+                "importe": 0.0,
+                "abono": 0.0,
+                "saldo": 0.0,
+                "saldo_vivo": 0.0,
+                "n_vencidas": 0,
+                "saldo_vencido": 0.0,
+                "cheques_total": 0.0,
+                "cheques_cartera": 0.0,
+                "cheques_depositados": 0.0,
+                "cheques_acreditados": 0.0,
                 "cheques_rebotados": 0.0,
             },
         }
@@ -4616,8 +4942,9 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     )
 
     # Totales — calculados en SQL para precisión numeric, no en Python.
-    tot_fac = db.fetch_one(
-        """
+    tot_fac = (
+        db.fetch_one(
+            """
         SELECT
           COALESCE(SUM(kg), 0)                                        AS kg,
           COALESCE(SUM(importe), 0)                                   AS importe,
@@ -4640,16 +4967,19 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         FROM scintela.factura
         WHERE codigo_cli = %s
         """,
-        (codigo_cli,),
-    ) or {}
+            (codigo_cli,),
+        )
+        or {}
+    )
     # Stats canónicos (2026-04-29 + TMT 2026-05-16):
     #   Z/P = cartera (todavía en mano)
     #   B/A = depositados (B nuevo, A legacy — ambos son "ya en banco")
     #   1/2/3/R = devueltos/rebotados (1/2/3 todavía en gestión, R terminal)
     #   D = "Daniela" (caso especial legacy — no es depositado)
     #   E = endosado, X = eliminado
-    tot_che = db.fetch_one(
-        """
+    tot_che = (
+        db.fetch_one(
+            """
         SELECT
           COALESCE(SUM(importe), 0)                                                       AS total,
           COALESCE(SUM(CASE WHEN stat IN ('Z','P')         THEN importe ELSE 0 END), 0)   AS cartera,
@@ -4661,23 +4991,25 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         WHERE codigo_cli = %s
           AND COALESCE(stat,'') <> 'X'
         """,
-        (codigo_cli,),
-    ) or {}
+            (codigo_cli,),
+        )
+        or {}
+    )
 
     totales = {
-        "kg":              float(tot_fac.get("kg") or 0),
-        "importe":         float(tot_fac.get("importe") or 0),
-        "abono":           float(tot_fac.get("abono") or 0),
-        "saldo":           float(tot_fac.get("saldo") or 0),
-        "saldo_vivo":      float(tot_fac.get("saldo_vivo") or 0),
-        "saldo_vencido":   float(tot_fac.get("saldo_vencido") or 0),
-        "n_vencidas":      int(tot_fac.get("n_vencidas") or 0),
-        "cheques_total":         float(tot_che.get("total") or 0),
-        "cheques_cartera":       float(tot_che.get("cartera") or 0),
-        "cheques_depositados":   float(tot_che.get("depositados") or 0),
-        "cheques_rebotados":     float(tot_che.get("rebotados") or 0),
-        "cheques_endosados":     float(tot_che.get("endosados") or 0),
-        "cheques_daniela":       float(tot_che.get("daniela") or 0),
+        "kg": float(tot_fac.get("kg") or 0),
+        "importe": float(tot_fac.get("importe") or 0),
+        "abono": float(tot_fac.get("abono") or 0),
+        "saldo": float(tot_fac.get("saldo") or 0),
+        "saldo_vivo": float(tot_fac.get("saldo_vivo") or 0),
+        "saldo_vencido": float(tot_fac.get("saldo_vencido") or 0),
+        "n_vencidas": int(tot_fac.get("n_vencidas") or 0),
+        "cheques_total": float(tot_che.get("total") or 0),
+        "cheques_cartera": float(tot_che.get("cartera") or 0),
+        "cheques_depositados": float(tot_che.get("depositados") or 0),
+        "cheques_rebotados": float(tot_che.get("rebotados") or 0),
+        "cheques_endosados": float(tot_che.get("endosados") or 0),
+        "cheques_daniela": float(tot_che.get("daniela") or 0),
     }
     return {"cliente": cliente, "facturas": facturas, "cheques": cheques, "totales": totales}
 
@@ -4695,13 +5027,15 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
 # Total Fuentes − Total Usos ≈ Δ caja + bancos (verificación).
 # ---------------------------------------------------------------------------
 
+
 def _historia_en_mes(yy: int, mm: int) -> dict:
     """Devuelve la última fila de historia DEL mes (o {} si no hay).
 
     Si en el mes hay varios snapshots, toma el de fecha más alta.
     """
-    return db.fetch_one(
-        """
+    return (
+        db.fetch_one(
+            """
         SELECT *
           FROM scintela.historia
          WHERE EXTRACT(YEAR FROM fecha)  = %s
@@ -4709,8 +5043,10 @@ def _historia_en_mes(yy: int, mm: int) -> dict:
          ORDER BY fecha DESC, id_historia DESC
          LIMIT 1
         """,
-        (int(yy), int(mm)),
-    ) or {}
+            (int(yy), int(mm)),
+        )
+        or {}
+    )
 
 
 def _mes_anterior(yy: int, mm: int) -> tuple[int, int]:
@@ -4755,6 +5091,7 @@ def compras_del_periodo(
     sigue mostrando todas (con badge cuando es producción).
     """
     from datetime import date as _date
+
     if anio is None or mes is None:
         hoy = _date.today()
         anio = anio or hoy.year
@@ -4771,8 +5108,9 @@ def compras_del_periodo(
         where_v += f" AND ({_SQL_COMPRA_NUM_CASE}) = %s"
         params.append(int(num_v))
 
-    filas = db.fetch_all(
-        f"""
+    filas = (
+        db.fetch_all(
+            f"""
         SELECT c.id_compra, c.fecha, c.codigo_prov, c.tipo,
                c.kg, c.importe, c.concepto, c.comprobante, c.stat,
                COALESCE(p.nombre, '') AS proveedor,
@@ -4785,15 +5123,18 @@ def compras_del_periodo(
            {where_v}
          ORDER BY c.fecha ASC, c.id_compra ASC
         """,
-        tuple(params),
-    ) or []
+            tuple(params),
+        )
+        or []
+    )
 
     total_importe = sum(float(r.get("importe") or 0) for r in filas)
     total_kg = sum(float(r.get("kg") or 0) for r in filas)
 
     # Proveedores únicos para el dropdown filter.
-    prov_options = db.fetch_all(
-        """
+    prov_options = (
+        db.fetch_all(
+            """
         SELECT DISTINCT c.codigo_prov,
                COALESCE(p.nombre, '') AS nombre
           FROM scintela.compra c
@@ -4804,8 +5145,10 @@ def compras_del_periodo(
            AND c.codigo_prov IS NOT NULL
          ORDER BY 1
         """,
-        (anio, mes),
-    ) or []
+            (anio, mes),
+        )
+        or []
+    )
 
     return {
         "anio": int(anio),
@@ -4835,24 +5178,24 @@ def compras_del_periodo(
 #   section  "operativo" | "balance"
 _HIST_LINEAS: list[tuple[str, str, str, str, str]] = [
     # OPERATIVO — top section (per kg / ratios)
-    ("VENTAS  kg.",     "kvent",      "kg",    "white",  "operativo"),
-    ("precio  U$/kg",   "_precio",    "ratio", "white",  "operativo"),
-    ("utilid",          "_utilid",    "ratio", "white",  "operativo"),
-    ("MARGEN  %",       "_margen_p",  "pct",   "white",  "operativo"),
+    ("VENTAS  kg.", "kvent", "kg", "white", "operativo"),
+    ("precio  U$/kg", "_precio", "ratio", "white", "operativo"),
+    ("utilid", "_utilid", "ratio", "white", "operativo"),
+    ("MARGEN  %", "_margen_p", "pct", "white", "operativo"),
     # BALANCE — bottom section (miles de U$)
-    ("BANCO       U$",  "banco",      "miles", "white",  "balance"),
-    ("CARTERA",         "cart",       "miles", "white",  "balance"),
-    ("ANTICIPOS",       "anticipos",  "miles", "white",  "balance"),
-    ("STOCK MP+PROD",   "ustock",     "miles", "white",  "balance"),
-    ("STOCK QUIM.",     "uqui",       "miles", "white",  "balance"),
-    ("MAQUINARIA",      "maquinaria", "miles", "white",  "balance"),
-    ("TERR.Y EDIF.",    "realty",     "miles", "white",  "balance"),
-    ("TOTAL ACTIVO",    "_activo",    "miles", "yellow", "balance"),
-    ("PASIVOS",         "deuda",      "miles", "white",  "balance"),
-    ("PATRIM.NET",      "patrimonio", "miles", "yellow", "balance"),
-    ("VENTAS",          "uvent",      "miles", "white",  "balance"),
-    ("UTILIDADES",      "usuti",      "miles", "red",    "balance"),
-    ("RR",              "usret",      "miles", "blue",   "balance"),
+    ("BANCO       U$", "banco", "miles", "white", "balance"),
+    ("CARTERA", "cart", "miles", "white", "balance"),
+    ("ANTICIPOS", "anticipos", "miles", "white", "balance"),
+    ("STOCK MP+PROD", "ustock", "miles", "white", "balance"),
+    ("STOCK QUIM.", "uqui", "miles", "white", "balance"),
+    ("MAQUINARIA", "maquinaria", "miles", "white", "balance"),
+    ("TERR.Y EDIF.", "realty", "miles", "white", "balance"),
+    ("TOTAL ACTIVO", "_activo", "miles", "yellow", "balance"),
+    ("PASIVOS", "deuda", "miles", "white", "balance"),
+    ("PATRIM.NET", "patrimonio", "miles", "yellow", "balance"),
+    ("VENTAS", "uvent", "miles", "white", "balance"),
+    ("UTILIDADES", "usuti", "miles", "red", "balance"),
+    ("RR", "usret", "miles", "blue", "balance"),
 ]
 
 
@@ -4871,13 +5214,13 @@ def _valor_para_linea(key: str, snap: dict | None) -> float | None:
         # ucom = float(snap.get("ucom") or 0).
         usuti = float(snap.get("usuti") or 0)
         kvent = float(snap.get("kvent") or 0)
-        if key == "_precio":   # U$/kg vendido
+        if key == "_precio":  # U$/kg vendido
             return (uvent / kvent) if kvent else None
-        if key == "_utilid":   # utilidad U$/kg
+        if key == "_utilid":  # utilidad U$/kg
             return (usuti / kvent) if kvent else None
         if key == "_margen_p":  # utilidad / ventas %  (matchea TINT.BAT)
             return (usuti / uvent * 100.0) if uvent else None
-        if key == "_activo":   # suma de activos
+        if key == "_activo":  # suma de activos
             return (
                 float(snap.get("banco") or 0)
                 + float(snap.get("cart") or 0)
@@ -4894,7 +5237,7 @@ def _valor_para_linea(key: str, snap: dict | None) -> float | None:
 def _cargar_snapshots(meses: list[tuple[int, int]]) -> dict[tuple[int, int], dict]:
     """Lee scintela.historia y devuelve {(a,m): row} para los meses dados."""
     out: dict[tuple[int, int], dict] = {}
-    for (a_, m_) in meses:
+    for a_, m_ in meses:
         row = db.fetch_one(
             """
             SELECT fecha, banco, cart, deuda, ustock, uqui, anticipos,
@@ -4918,8 +5261,9 @@ def _cargar_snapshots_mes(anio: int, mes: int, limite: int = 3) -> list[dict]:
     más viejo a más nuevo. TMT 2026-05-20 — pedido dueña: el mes actual
     puede tener 2+ snapshots para comparar el nuevo contra el anterior.
     """
-    return db.fetch_all(
-        """
+    return (
+        db.fetch_all(
+            """
         SELECT id_historia, fecha, fecha_crea, usuario_crea,
                banco, cart, deuda, ustock, uqui, anticipos,
                maquinaria, realty, patrimonio, uvent, ucom, gasto,
@@ -4930,8 +5274,10 @@ def _cargar_snapshots_mes(anio: int, mes: int, limite: int = 3) -> list[dict]:
          ORDER BY fecha_crea DESC
          LIMIT %s
         """,
-        (anio, mes, int(limite)),
-    ) or []
+            (anio, mes, int(limite)),
+        )
+        or []
+    )
 
 
 def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
@@ -4963,6 +5309,7 @@ def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
       }
     """
     from datetime import date as _date
+
     n = max(1, min(int(meses_atras or 5), 24))
     off = max(0, int(offset_meses or 0))
     hoy = _date.today()
@@ -5004,30 +5351,32 @@ def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
                 delta_pct.append(None)
                 continue
             delta_pct.append((v - prev) / abs(prev) * 100.0)
-        lineas_out.append({
-            "label":     label,
-            "key":       key,
-            "fmt":       fmt,
-            "color":     color,
-            "section":   section,
-            "valores":   valores,
-            "total":     total,
-            "promedio":  promedio,
-            "delta_pct": delta_pct,
-        })
+        lineas_out.append(
+            {
+                "label": label,
+                "key": key,
+                "fmt": fmt,
+                "color": color,
+                "section": section,
+                "valores": valores,
+                "total": total,
+                "promedio": promedio,
+                "delta_pct": delta_pct,
+            }
+        )
 
-    sin_snap = [
-        f"{m_:02d}/{a_}" for (a_, m_) in meses
-        if (a_, m_) not in snapshots
-    ]
+    sin_snap = [f"{m_:02d}/{a_}" for (a_, m_) in meses if (a_, m_) not in snapshots]
 
     # Rango global de snapshots en BD (para construir navegación segura).
-    rango = db.fetch_one(
-        """
+    rango = (
+        db.fetch_one(
+            """
         SELECT MIN(fecha) AS min_f, MAX(fecha) AS max_f
           FROM scintela.historia
         """
-    ) or {}
+        )
+        or {}
+    )
     rng_min = rango.get("min_f")
     rng_max = rango.get("max_f")
 
@@ -5037,22 +5386,21 @@ def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
     next_offset: int | None = None
     if meses:
         first_a, first_m = meses[0]
-        if rng_min and (rng_min.year < first_a
-                        or (rng_min.year == first_a and rng_min.month < first_m)):
+        if rng_min and (rng_min.year < first_a or (rng_min.year == first_a and rng_min.month < first_m)):
             prev_offset = off + n
         if off > 0:
             next_offset = max(0, off - n)
 
     return {
-        "meses":                meses,
-        "lineas":               lineas_out,
-        "meses_total":          n,
-        "offset_meses":         off,
+        "meses": meses,
+        "lineas": lineas_out,
+        "meses_total": n,
+        "offset_meses": off,
         "snapshots_existentes": len(snapshots),
-        "meses_sin_snap":       sin_snap,
-        "rng_min":              rng_min,
-        "rng_max":              rng_max,
-        "nav":                  {"prev_offset": prev_offset, "next_offset": next_offset},
+        "meses_sin_snap": sin_snap,
+        "rng_min": rng_min,
+        "rng_max": rng_max,
+        "nav": {"prev_offset": prev_offset, "next_offset": next_offset},
     }
 
 
@@ -5078,6 +5426,7 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
       }
     """
     from datetime import date as _date
+
     hoy = _date.today()
 
     # Últimos 5 meses CERRADOS (excluyendo el actual).
@@ -5105,68 +5454,71 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
 
     # Armar lista de columnas para el template.
     columnas: list[dict] = []
-    for (a_, m_) in meses_pasados:
+    for a_, m_ in meses_pasados:
         snap = snaps_pasados.get((a_, m_))
-        columnas.append({
-            "key":            f"{a_:04d}-{m_:02d}",
-            "anio":           a_,
-            "mes":            m_,
-            "label_corto":    f"{m_:02d}/{a_ % 100:02d}",
-            "label_largo":    f"{m_:02d}/{a_}",
-            "id_historia":    int(snap["id_historia"]) if snap and snap.get("id_historia") else None,
-            "fecha_crea":     snap.get("fecha_crea") if snap else None,
-            "es_mes_actual":  False,
-            "es_canonico_default": False,
-            "snap":           snap,
-        })
+        columnas.append(
+            {
+                "key": f"{a_:04d}-{m_:02d}",
+                "anio": a_,
+                "mes": m_,
+                "label_corto": f"{m_:02d}/{a_ % 100:02d}",
+                "label_largo": f"{m_:02d}/{a_}",
+                "id_historia": int(snap["id_historia"]) if snap and snap.get("id_historia") else None,
+                "fecha_crea": snap.get("fecha_crea") if snap else None,
+                "es_mes_actual": False,
+                "es_canonico_default": False,
+                "snap": snap,
+            }
+        )
     # Mes actual — N columnas (la última = más reciente = "candidata default").
     n_actual = len(snaps_actual_asc)
     for i, snap in enumerate(snaps_actual_asc):
-        es_ultima = (i == n_actual - 1)
+        es_ultima = i == n_actual - 1
         sufijo = ""
         if n_actual > 1:
             # Mostrar fecha_crea como sufijo si hay >1 snapshot del mes.
             fc = snap.get("fecha_crea")
             sufijo = f" #{i + 1}" + (f" ({fc.strftime('%d/%m')})" if fc else "")
-        columnas.append({
-            "key":            f"{hoy.year:04d}-{hoy.month:02d}-{snap['id_historia']}",
-            "anio":           hoy.year,
-            "mes":            hoy.month,
-            "label_corto":    f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
-            "label_largo":    f"{hoy.month:02d}/{hoy.year}{sufijo}",
-            "id_historia":    int(snap["id_historia"]),
-            "fecha_crea":     snap.get("fecha_crea"),
-            "es_mes_actual":  True,
-            "es_canonico_default": es_ultima,
-            "snap":           snap,
-        })
+        columnas.append(
+            {
+                "key": f"{hoy.year:04d}-{hoy.month:02d}-{snap['id_historia']}",
+                "anio": hoy.year,
+                "mes": hoy.month,
+                "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
+                "label_largo": f"{hoy.month:02d}/{hoy.year}{sufijo}",
+                "id_historia": int(snap["id_historia"]),
+                "fecha_crea": snap.get("fecha_crea"),
+                "es_mes_actual": True,
+                "es_canonico_default": es_ultima,
+                "snap": snap,
+            }
+        )
 
     # Armar líneas (igual que historico_12m_matriz).
     lineas_out = []
     for label, key, fmt, color, section in _HIST_LINEAS:
         valores = [_valor_para_linea(key, c.get("snap")) for c in columnas]
-        lineas_out.append({
-            "label":     label,
-            "key":       key,
-            "fmt":       fmt,
-            "color":     color,
-            "section":   section,
-            "valores":   valores,
-        })
+        lineas_out.append(
+            {
+                "label": label,
+                "key": key,
+                "fmt": fmt,
+                "color": color,
+                "section": section,
+                "valores": valores,
+            }
+        )
 
-    sin_snap = [
-        f"{m_:02d}/{a_}" for (a_, m_) in meses_pasados
-        if (a_, m_) not in snaps_pasados
-    ]
+    sin_snap = [f"{m_:02d}/{a_}" for (a_, m_) in meses_pasados if (a_, m_) not in snaps_pasados]
     if not snaps_actual_asc:
         sin_snap.append(f"{hoy.month:02d}/{hoy.year} (actual — pulsá '↻ Snapshot ahora')")
 
     return {
-        "columnas":       columnas,
-        "lineas":         lineas_out,
+        "columnas": columnas,
+        "lineas": lineas_out,
         "meses_sin_snap": sin_snap,
-        "n_actual":       n_actual,
-        "hoy":            hoy,
+        "n_actual": n_actual,
+        "hoy": hoy,
     }
 
 
@@ -5194,6 +5546,7 @@ def tomar_snapshot_mes_actual(
     """
     from datetime import date as _date
     from datetime import datetime as _dt
+
     hoy = _date.today()
 
     # Chequear throttle.
@@ -5212,14 +5565,15 @@ def tomar_snapshot_mes_actual(
         edad = (_dt.now() - ult["fecha_crea"]).total_seconds()
         if edad < throttle_segundos:
             return {
-                "accion":      "throttled",
+                "accion": "throttled",
                 "id_historia": int(ult["id_historia"]),
-                "motivo":      f"último snapshot hace {int(edad)}s (< {throttle_segundos}s)",
+                "motivo": f"último snapshot hace {int(edad)}s (< {throttle_segundos}s)",
             }
 
     # Importar el script de snapshot dinamicamente (vive en scripts/).
     import os
     import sys
+
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
@@ -5227,6 +5581,7 @@ def tomar_snapshot_mes_actual(
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
     import snapshot_historia_mensual as _snap
+
     r = _snap.ejecutar(hoy, force=False, usuario=usuario)
     # Si ya existía (skipped), forzamos insert nuevo manual — queremos
     # MÚLTIPLES snapshots del mismo mes para comparar.
@@ -5234,8 +5589,7 @@ def tomar_snapshot_mes_actual(
         kpis = _snap.calcular_kpis(hoy)
         new_id = _snap.insertar_snapshot(kpis, usuario=usuario)
         return {"accion": "inserted", "id_historia": new_id, "kpis": kpis}
-    return {"accion": r.get("accion"), "id_historia": r.get("id_historia"),
-            "kpis": r.get("kpis", {})}
+    return {"accion": r.get("accion"), "id_historia": r.get("id_historia"), "kpis": r.get("kpis", {})}
 
 
 def validar_snapshot(id_historia: int, *, usuario: str = "web") -> dict:
@@ -5295,26 +5649,26 @@ def historico_mom(anio_a: int, mes_a: int, anio_b: int, mes_b: int) -> dict:
         else:
             delta_abs = v_b - v_a
             delta_pct = ((v_b - v_a) / abs(v_a) * 100.0) if abs(v_a) > 0.005 else None
-        lineas_out.append({
-            "label":     label,
-            "key":       key,
-            "fmt":       fmt,
-            "color":     color,
-            "section":   section,
-            "v_a":       v_a,
-            "v_b":       v_b,
-            "delta_abs": delta_abs,
-            "delta_pct": delta_pct,
-        })
+        lineas_out.append(
+            {
+                "label": label,
+                "key": key,
+                "fmt": fmt,
+                "color": color,
+                "section": section,
+                "v_a": v_a,
+                "v_b": v_b,
+                "delta_abs": delta_abs,
+                "delta_pct": delta_pct,
+            }
+        )
 
-    sin_snap = [
-        f"{p[1]:02d}/{p[0]}" for p in (par_a, par_b) if p not in snaps
-    ]
+    sin_snap = [f"{p[1]:02d}/{p[0]}" for p in (par_a, par_b) if p not in snaps]
 
     return {
-        "par_a":          par_a,
-        "par_b":          par_b,
-        "lineas":         lineas_out,
+        "par_a": par_a,
+        "par_b": par_b,
+        "lineas": lineas_out,
         "meses_sin_snap": sin_snap,
     }
 
@@ -5324,15 +5678,18 @@ def historico_meses_disponibles() -> list[tuple[int, int]]:
 
     Se usa para poblar los dropdowns del modo "mes vs mes".
     """
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT DISTINCT
                EXTRACT(YEAR FROM fecha)::int  AS anio,
                EXTRACT(MONTH FROM fecha)::int AS mes
           FROM scintela.historia
          ORDER BY anio DESC, mes DESC
         """
-    ) or []
+        )
+        or []
+    )
     return [(int(r["anio"]), int(r["mes"])) for r in rows]
 
 
@@ -5362,32 +5719,39 @@ def balance_components_as_of(as_of) -> dict:
     Returns dict con todos los campos necesarios para `scintela.historia`.
     """
     from datetime import date as _date
+
     if not as_of:
         as_of = _date.today()
 
     # --- Saldos running ---
-    salcaj_row = db.fetch_one(
-        """
+    salcaj_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(saldo, 0) AS saldo
           FROM scintela.caja
          WHERE fecha <= %s
          ORDER BY fecha DESC, id_caja DESC
          LIMIT 1
         """,
-        (as_of,),
-    ) or {}
+            (as_of,),
+        )
+        or {}
+    )
     salcaj = float(salcaj_row.get("saldo") or 0)
 
-    salbanc_rows = db.fetch_all(
-        """
+    salbanc_rows = (
+        db.fetch_all(
+            """
         SELECT DISTINCT ON (no_banco)
                no_banco, COALESCE(saldo, 0) AS saldo
           FROM scintela.transacciones_bancarias
          WHERE fecha <= %s
          ORDER BY no_banco, fecha DESC, id_transaccion DESC
         """,
-        (as_of,),
-    ) or []
+            (as_of,),
+        )
+        or []
+    )
     salbanc_bancos = sum(float(r.get("saldo") or 0) for r in salbanc_rows)
     # TMT 2026-05-20 v7 — FÓRMULA CANÓNICA DE BANCO (SALBANC):
     #
@@ -5402,8 +5766,9 @@ def balance_components_as_of(as_of) -> dict:
     # emitirlos — pero contablemente el dinero sigue siendo nuestro hasta
     # que el beneficiario los cobra. Drift histórico: balance_components_as_of
     # no sumaba pos1/pos2 → BANCO en F&U distinto a /balance.
-    pos_row = db.fetch_one(
-        """
+    pos_row = (
+        db.fetch_one(
+            """
         SELECT
           COALESCE(SUM(CASE WHEN banc=1 THEN importe ELSE 0 END), 0) AS pos1,
           COALESCE(SUM(CASE WHEN banc=2 THEN importe ELSE 0 END), 0) AS pos2
@@ -5411,37 +5776,45 @@ def balance_components_as_of(as_of) -> dict:
          WHERE fecha <= %s
            AND (anulada IS NOT TRUE OR anulada IS NULL)
         """,
-        (as_of,),
-    ) or {}
+            (as_of,),
+        )
+        or {}
+    )
     pos1 = float(pos_row.get("pos1") or 0)
     pos2 = float(pos_row.get("pos2") or 0)
     salbanc = salbanc_bancos + pos1 + pos2
 
     # --- Cheques en cartera (no depositados, no anulados) ---
-    totc_row = db.fetch_one(
-        """
+    totc_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0) AS total
           FROM scintela.cheque
          WHERE stat IN ('Z','1','2','3','P','D')
            AND COALESCE(fecha_recibido, fecha) <= %s
            AND (fechaing IS NULL OR fechaing > %s)
         """,
-        (as_of, as_of),
-    ) or {}
+            (as_of, as_of),
+        )
+        or {}
+    )
     totc = float(totc_row.get("total") or 0)
 
     # --- Facturas vivas as_of ---
     # Aproximación: factura.saldo actual (no rewind de abonos post-as_of).
-    totf_row = db.fetch_one(
-        """
+    totf_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(saldo), 0) AS total
           FROM scintela.factura
          WHERE fecha <= %s
            AND COALESCE(saldo, 0) > 0
            AND (stat IS NULL OR stat IN ('Z','A','',' '))
         """,
-        (as_of,),
-    ) or {}
+            (as_of,),
+        )
+        or {}
+    )
     totf = float(totf_row.get("total") or 0)
 
     # --- Posdat deuda viva as_of ---
@@ -5457,21 +5830,25 @@ def balance_components_as_of(as_of) -> dict:
     # deuda). /balance no aplica ese filtro → drift entre pantallas. La
     # fórmula canónica es la misma de `posdat_totales()` con el agregado
     # del filtro de fecha para snapshots históricos.
-    totp_row = db.fetch_one(
-        """
+    totp_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0) AS total
           FROM scintela.posdat
          WHERE COALESCE(banc, 0) = 0
            AND fecha <= %s
            AND (anulada IS NOT TRUE OR anulada IS NULL)
         """,
-        (as_of,),
-    ) or {}
+            (as_of,),
+        )
+        or {}
+    )
     totp = float(totp_row.get("total") or 0)
 
     # --- Stock / activos del último snapshot histórico <= as_of ---
-    hist_prev = db.fetch_one(
-        """
+    hist_prev = (
+        db.fetch_one(
+            """
         SELECT fecha, stock, ustock, uqui, maquinaria, realty, anticipos,
                patrimonio, usret, usuti
           FROM scintela.historia
@@ -5479,18 +5856,21 @@ def balance_components_as_of(as_of) -> dict:
          ORDER BY fecha DESC
          LIMIT 1
         """,
-        (as_of,),
-    ) or {}
-    vsto    = float(hist_prev.get("ustock") or 0)
-    vqx     = float(hist_prev.get("uqui") or 0)
-    umaq    = float(hist_prev.get("maquinaria") or 0)
-    uact    = float(hist_prev.get("realty") or 0)
-    antic   = float(hist_prev.get("anticipos") or 0)
-    patant  = float(hist_prev.get("patrimonio") or 0)
+            (as_of,),
+        )
+        or {}
+    )
+    vsto = float(hist_prev.get("ustock") or 0)
+    vqx = float(hist_prev.get("uqui") or 0)
+    umaq = float(hist_prev.get("maquinaria") or 0)
+    uact = float(hist_prev.get("realty") or 0)
+    antic = float(hist_prev.get("anticipos") or 0)
+    patant = float(hist_prev.get("patrimonio") or 0)
 
     # --- Flujos del mes (mes que contiene as_of) ---
-    kcom_row = db.fetch_one(
-        """
+    kcom_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(kg), 0) AS kg,
                COALESCE(SUM(importe), 0) AS importe
           FROM scintela.compra
@@ -5498,13 +5878,16 @@ def balance_components_as_of(as_of) -> dict:
            AND fecha <= %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
         """,
-        (as_of, as_of),
-    ) or {}
+            (as_of, as_of),
+        )
+        or {}
+    )
     kcom = float(kcom_row.get("kg") or 0)
     ucom = float(kcom_row.get("importe") or 0)
 
-    vent_row = db.fetch_one(
-        """
+    vent_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(kg), 0) AS kg,
                COALESCE(SUM(importe), 0) AS importe
           FROM scintela.factura
@@ -5512,21 +5895,26 @@ def balance_components_as_of(as_of) -> dict:
            AND fecha <= %s
            AND COALESCE(stat, '') <> 'X'
         """,
-        (as_of, as_of),
-    ) or {}
+            (as_of, as_of),
+        )
+        or {}
+    )
     kvent = float(vent_row.get("kg") or 0)
     uvent = float(vent_row.get("importe") or 0)
 
-    gasto_row = db.fetch_one(
-        """
+    gasto_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0) AS importe
           FROM scintela.xgast
          WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
            AND fecha <= %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
         """,
-        (as_of, as_of),
-    ) or {}
+            (as_of, as_of),
+        )
+        or {}
+    )
     gasto = float(gasto_row.get("importe") or 0)
 
     # USRET (retiros del mes) — aproximación: el snapshot del mes los
@@ -5542,55 +5930,55 @@ def balance_components_as_of(as_of) -> dict:
 
     return {
         # Saldos
-        "salcaj":  salcaj,
+        "salcaj": salcaj,
         "salbanc": salbanc,
         "salbanc_bancos": salbanc_bancos,  # sin pos1+pos2, para debug
-        "pos1":    pos1,
-        "pos2":    pos2,
-        "banco":   salbanc,
-        "totc":    totc,
-        "totf":    totf,
-        "cart":    cart,
+        "pos1": pos1,
+        "pos2": pos2,
+        "banco": salbanc,
+        "totc": totc,
+        "totf": totf,
+        "cart": cart,
         # Pasivos
-        "totp":    totp,
-        "deuda":   totp,
+        "totp": totp,
+        "deuda": totp,
         # Activos fijos / stock
-        "vsto":    vsto,
-        "stock":   float(hist_prev.get("stock") or 0),
-        "ustock":  vsto,
-        "uqui":    vqx,
-        "vqx":     vqx,
-        "umaq":    umaq,
+        "vsto": vsto,
+        "stock": float(hist_prev.get("stock") or 0),
+        "ustock": vsto,
+        "uqui": vqx,
+        "vqx": vqx,
+        "umaq": umaq,
         "maquinaria": umaq,
-        "uact":    uact,
-        "realty":  uact,
-        "antic":   antic,
+        "uact": uact,
+        "realty": uact,
+        "antic": antic,
         "anticipos": antic,
         # Patrimonio + utilidad
-        "subt":    subt,
-        "totl":    totl,
-        "patr":    patr,
+        "subt": subt,
+        "totl": totl,
+        "patr": patr,
         "patrimonio": patr,
-        "patant":  patant,
+        "patant": patant,
         "utilidad": utilidad,
-        "usuti":   utilidad,  # snapshot guarda usuti = utilidad del período
-        "usret":   usret,
-        "retiro":  usret,
+        "usuti": utilidad,  # snapshot guarda usuti = utilidad del período
+        "usret": usret,
+        "retiro": usret,
         # Flujos del mes
-        "kcom":    kcom,
-        "ucom":    ucom,
-        "kvent":   kvent,
-        "uvent":   uvent,
-        "ktej":    0.0,  # Aproximación — kg de tejido del mes requiere
-        "ktin":    0.0,  # join con tinto/compras tipo K. Omitido por scope.
-        "utej":    0.0,
-        "utin":    0.0,
-        "costo":   ucom,  # Default conservador.
-        "gasto":   gasto,
+        "kcom": kcom,
+        "ucom": ucom,
+        "kvent": kvent,
+        "uvent": uvent,
+        "ktej": 0.0,  # Aproximación — kg de tejido del mes requiere
+        "ktin": 0.0,  # join con tinto/compras tipo K. Omitido por scope.
+        "utej": 0.0,
+        "utin": 0.0,
+        "costo": ucom,  # Default conservador.
+        "gasto": gasto,
         "gstotal": gasto,
-        "dolar":   0.0,
+        "dolar": 0.0,
         # Meta
-        "as_of":   as_of,
+        "as_of": as_of,
     }
 
 
@@ -5603,6 +5991,7 @@ def informe_balance_as_of(as_of=None) -> dict:
     `informe_balance()`.
     """
     from datetime import date as _date
+
     if as_of is None or as_of == _date.today():
         # As_of = hoy → comportamiento clásico, llama al balance live.
         return informe_balance()
@@ -5610,14 +5999,14 @@ def informe_balance_as_of(as_of=None) -> dict:
     return {
         "fecha": as_of,
         "kg": {
-            "kcom":  components["kcom"],
-            "ucom":  components["ucom"],
-            "ktej":  components["ktej"],
-            "ktin":  components["ktin"],
+            "kcom": components["kcom"],
+            "ucom": components["ucom"],
+            "ktej": components["ktej"],
+            "ktin": components["ktin"],
             "kvent": components["kvent"],
             "uvent": components["uvent"],
-            "utej":  components["utej"],
-            "utin":  components["utin"],
+            "utej": components["utej"],
+            "utin": components["utin"],
             "stock_kg": components["stock"],
             "costo_mes": components["costo"],
         },
@@ -5631,8 +6020,7 @@ def informe_balance_as_of(as_of=None) -> dict:
     }
 
 
-def crear_snapshot_historia(anio: int, mes: int,
-                            usuario: str = "auto") -> dict:
+def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
     """Crea un snapshot mensual en scintela.historia para (anio, mes).
 
     TMT 2026-05-18 — Pedido dueña: necesitamos snapshots automáticos del
@@ -5658,7 +6046,9 @@ def crear_snapshot_historia(anio: int, mes: int,
 
     if snapshot_historia_existe(anio, mes):
         return {
-            "aplicado": False, "anio": anio, "mes": mes,
+            "aplicado": False,
+            "anio": anio,
+            "mes": mes,
             "id_historia": None,
             "razon": f"Ya existe snapshot para {periodo_clave}.",
         }
@@ -5667,13 +6057,16 @@ def crear_snapshot_historia(anio: int, mes: int,
     # para que los snapshots de backfill queden con la foto correcta. Antes
     # esto usaba `informe_balance()` LIVE → backfills con saldo de hoy.
     import calendar
+
     last_day = calendar.monthrange(anio, mes)[1]
     fecha_snap = _date(anio, mes, last_day)
 
     bal = informe_balance_as_of(fecha_snap)
     if not bal or bal.get("error"):
         return {
-            "aplicado": False, "anio": anio, "mes": mes,
+            "aplicado": False,
+            "anio": anio,
+            "mes": mes,
             "id_historia": None,
             "razon": f"Balance falló: {bal.get('error') if bal else 'sin data'}",
         }
@@ -5689,9 +6082,13 @@ def crear_snapshot_historia(anio: int, mes: int,
         )
         # Re-check después del lock
         if snapshot_historia_existe(anio, mes):
-            return {"aplicado": False, "anio": anio, "mes": mes,
-                    "id_historia": None,
-                    "razon": "race ganada por otra request"}
+            return {
+                "aplicado": False,
+                "anio": anio,
+                "mes": mes,
+                "id_historia": None,
+                "razon": "race ganada por otra request",
+            }
 
         res = db.execute_returning(
             """
@@ -5712,38 +6109,38 @@ def crear_snapshot_historia(anio: int, mes: int,
             RETURNING id_historia
             """,
             {
-                "fecha":      fecha_snap,
+                "fecha": fecha_snap,
                 # Stock KG y US$
-                "stock":      float(kg.get("stock_kg") or kg.get("stock_kg_live") or 0),
-                "ustock":     float(stock_sub.get("total_us") or 0),
-                "uqui":       float(d.get("vqx") or 0),
+                "stock": float(kg.get("stock_kg") or kg.get("stock_kg_live") or 0),
+                "ustock": float(stock_sub.get("total_us") or 0),
+                "uqui": float(d.get("vqx") or 0),
                 # Flujos del mes (KG)
-                "kcom":       float(kg.get("kcom") or 0),
-                "ktej":       float(kg.get("ktej") or 0),
-                "ktin":       float(kg.get("ktin") or 0),
-                "kvent":      float(kg.get("kvent") or 0),
+                "kcom": float(kg.get("kcom") or 0),
+                "ktej": float(kg.get("ktej") or 0),
+                "ktin": float(kg.get("ktin") or 0),
+                "kvent": float(kg.get("kvent") or 0),
                 # Flujos del mes (US$)
-                "ucom":       float(kg.get("ucom") or 0),
-                "utej":       float(kg.get("utej") or 0),
-                "utin":       float(kg.get("utin") or 0),
-                "uvent":      float(kg.get("uvent") or 0),
-                "costo":      float(kg.get("costo_mes") or 0),
+                "ucom": float(kg.get("ucom") or 0),
+                "utej": float(kg.get("utej") or 0),
+                "utin": float(kg.get("utin") or 0),
+                "uvent": float(kg.get("uvent") or 0),
+                "costo": float(kg.get("costo_mes") or 0),
                 # Resultados del mes
-                "gasto":      float(d.get("gastos_mes") or 0),
-                "gstotal":    float(d.get("gastos_total") or 0),
+                "gasto": float(d.get("gastos_mes") or 0),
+                "gstotal": float(d.get("gastos_total") or 0),
                 # Balance components
-                "banco":      float(d.get("salbanc") or 0),
-                "cart":       float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
-                "deuda":      float(d.get("totp") or 0),
-                "retiro":     float(d.get("uret") or 0),
+                "banco": float(d.get("salbanc") or 0),
+                "cart": float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
+                "deuda": float(d.get("totp") or 0),
+                "retiro": float(d.get("uret") or 0),
                 "patrimonio": float(d.get("patr") or 0),
-                "anticipos":  float(d.get("antic") or 0),
-                "dolar":      0.0,    # no usado en PC
+                "anticipos": float(d.get("antic") or 0),
+                "dolar": 0.0,  # no usado en PC
                 "maquinaria": float(d.get("umaq") or 0),
-                "realty":     float(d.get("uact") or 0),
-                "usret":      float(d.get("uret") or 0),
-                "usuti":      float(d.get("utilidad") or 0),
-                "usuario":    usuario[:50],
+                "realty": float(d.get("uact") or 0),
+                "usret": float(d.get("uret") or 0),
+                "usuti": float(d.get("utilidad") or 0),
+                "usuario": usuario[:50],
             },
             conn=conn,
         )
@@ -5765,7 +6162,9 @@ def crear_snapshot_historia(anio: int, mes: int,
             pass
 
     return {
-        "aplicado": True, "anio": anio, "mes": mes,
+        "aplicado": True,
+        "anio": anio,
+        "mes": mes,
         "id_historia": (res or {}).get("id_historia"),
         "razon": f"Snapshot creado para {periodo_clave}.",
     }
@@ -5828,16 +6227,18 @@ def fuentes_y_usos(
     #     equivalente al row de historia.
     #  3. Si el snapshot existe pero `banco`, `cart`, o `ustock` están en
     #     0 → considerar inválido y recalcular as_of.
-    from datetime import date as _date, datetime as _dt
     import calendar as _cal
+    from datetime import date as _date
 
     def _es_snap_vacio(row: dict) -> bool:
         """Snapshot inservible: las cuentas críticas están en 0."""
         if not row:
             return True
-        return (float(row.get("banco") or 0) == 0
-                and float(row.get("cart") or 0) == 0
-                and float(row.get("ustock") or 0) == 0)
+        return (
+            float(row.get("banco") or 0) == 0
+            and float(row.get("cart") or 0) == 0
+            and float(row.get("ustock") or 0) == 0
+        )
 
     def _row_desde_componentes(c: dict, fecha) -> dict:
         """Mapea componentes a las keys de scintela.historia row.
@@ -5853,27 +6254,25 @@ def fuentes_y_usos(
              leía `salbanc` que no existe en el live components → todo 0.
         """
         # banco: live tiene `salbanc_total`, as_of tiene `salbanc`.
-        banco = (c.get("salbanc_total") or c.get("salbanc")
-                 or c.get("banco") or 0)
+        banco = c.get("salbanc_total") or c.get("salbanc") or c.get("banco") or 0
         # cart: ambos tienen `cart` o (totc + totf).
         cart_v = c.get("cart")
         if cart_v is None:
             cart_v = (c.get("totc") or 0) + (c.get("totf") or 0)
         return {
-            "fecha":      fecha,
-            "banco":      float(banco or 0),
-            "cart":       float(cart_v or 0),
-            "ustock":     float(c.get("vsto") or c.get("ustock") or 0),
-            "uqui":       float(c.get("vqx") or c.get("uqui") or 0),
+            "fecha": fecha,
+            "banco": float(banco or 0),
+            "cart": float(cart_v or 0),
+            "ustock": float(c.get("vsto") or c.get("ustock") or 0),
+            "uqui": float(c.get("vqx") or c.get("uqui") or 0),
             "maquinaria": float(c.get("umaq") or c.get("maquinaria") or 0),
-            "realty":     float(c.get("uact") or c.get("realty") or 0),
-            "anticipos":  float(c.get("antic") or c.get("anticipos") or 0),
-            "deuda":      float(c.get("totp") or c.get("deuda") or 0),
-            "usret":      float(c.get("uret") or c.get("usret")
-                                or c.get("retiro") or 0),
-            "usuti":      float(c.get("utilidad") or c.get("usuti") or 0),
+            "realty": float(c.get("uact") or c.get("realty") or 0),
+            "anticipos": float(c.get("antic") or c.get("anticipos") or 0),
+            "deuda": float(c.get("totp") or c.get("deuda") or 0),
+            "usret": float(c.get("uret") or c.get("usret") or c.get("retiro") or 0),
+            "usuti": float(c.get("utilidad") or c.get("usuti") or 0),
             "patrimonio": float(c.get("patr") or c.get("patrimonio") or 0),
-            "_origen":    "live",
+            "_origen": "live",
         }
 
     # TMT 2026-05-20 v6 — SIEMPRE usar balance_components_as_of() para AMBOS
@@ -5884,7 +6283,7 @@ def fuentes_y_usos(
     # función para ambos garantiza simetría: las imperfecciones del cálculo
     # se cancelan en la resta.
     hoy = _date.today()
-    es_mes_actual = (yy == hoy.year and mm == hoy.month)
+    es_mes_actual = yy == hoy.year and mm == hoy.month
 
     last_day_fin = _cal.monthrange(yy, mm)[1]
     fecha_fin = _date(yy, mm, last_day_fin) if not es_mes_actual else hoy
@@ -5908,11 +6307,16 @@ def fuentes_y_usos(
 
     if not h_fin or not h_ini:
         return {
-            "anio": yy, "mes": mm,
-            "h_ini": h_ini, "h_fin": h_fin,
-            "fuentes": [], "usos": [],
-            "total_fuentes": 0.0, "total_usos": 0.0,
-            "delta_liquido": 0.0, "delta_banco": 0.0,
+            "anio": yy,
+            "mes": mm,
+            "h_ini": h_ini,
+            "h_fin": h_fin,
+            "fuentes": [],
+            "usos": [],
+            "total_fuentes": 0.0,
+            "total_usos": 0.0,
+            "delta_liquido": 0.0,
+            "delta_banco": 0.0,
             "error": (
                 "No hay snapshot mensual en scintela.historia para "
                 f"{mm_ant:02d}/{yy_ant} y/o {mm:02d}/{yy}. "
@@ -5946,16 +6350,16 @@ def fuentes_y_usos(
 
     delta = {
         # Activos
-        "cart":       _delta("cart"),
-        "ustock":     _delta("ustock"),
-        "uqui":       _delta("uqui"),
+        "cart": _delta("cart"),
+        "ustock": _delta("ustock"),
+        "uqui": _delta("uqui"),
         "maquinaria": _delta("maquinaria"),
-        "realty":     _delta("realty"),
-        "anticipos":  _delta("anticipos"),
+        "realty": _delta("realty"),
+        "anticipos": _delta("anticipos"),
         # Pasivos
-        "deuda":      _delta("deuda"),
+        "deuda": _delta("deuda"),
         # Cuasi-líquidos (control)
-        "banco":      _delta("banco"),
+        "banco": _delta("banco"),
     }
 
     # Detectar columnas h_ini incompletas — el template las muestra
@@ -5971,14 +6375,17 @@ def fuentes_y_usos(
     # fechas. Es la fuente de verdad (no scintela.historia.usret, que solo
     # se rellena si el snapshot mensual quedó bien generado).
     # NOTA: la columna de monto es `ret` (no `importe`). Ver L395 misma tabla.
-    retiros_row = db.fetch_one(
-        """
+    retiros_row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(ret), 0) AS total
           FROM scintela.retiros
          WHERE fecha > %s AND fecha <= %s
         """,
-        (fecha_ini, fecha_fin),
-    ) or {}
+            (fecha_ini, fecha_fin),
+        )
+        or {}
+    )
     retiros_periodo = float(retiros_row.get("total") or 0)
 
     # Utilidad del período = ΔPatrimonio + Retiros − Aportes. Aportes no
@@ -5990,7 +6397,7 @@ def fuentes_y_usos(
     utilidad_periodo = (patr_fin - patr_ini) + retiros_periodo
 
     fuentes: list[tuple[str, float]] = []
-    usos:    list[tuple[str, float]] = []
+    usos: list[tuple[str, float]] = []
 
     # PRG L1708-1709: FUENTES=UTI, USOS=RET. Si UTI<0 (pérdida acum),
     # va como uso. Si RET>0 (hubo retiros), va como uso. Si RET<0
@@ -6006,12 +6413,12 @@ def fuentes_y_usos(
 
     # PRG L1710-1716: para cada activo (BCNOQMR), if Δ>0 → uso, sino fuente.
     activos_labels = {
-        "cart":       "Cartera (clientes)",
-        "ustock":     "Stock de productos",
-        "uqui":       "Stock de químicos",
+        "cart": "Cartera (clientes)",
+        "ustock": "Stock de productos",
+        "uqui": "Stock de químicos",
         "maquinaria": "Maquinaria",
-        "realty":     "Terrenos y edificios",
-        "anticipos":  "Anticipos USD a proveedores",
+        "realty": "Terrenos y edificios",
+        "anticipos": "Anticipos USD a proveedores",
     }
     for k, label in activos_labels.items():
         d = delta[k]
@@ -6042,13 +6449,13 @@ def fuentes_y_usos(
     # PRG orden exacto: CAJA Y BANCOS, CARTERA, ANTICIPOS,
     # STOCK MP+PROD., STOCK QUIM., MAQUINARIA, TERR.Y EDIF.
     cuentas: list[dict] = [
-        _activo_row("CAJA Y BANCOS",  "banco"),
-        _activo_row("CARTERA",        "cart"),
-        _activo_row("ANTICIPOS",      "anticipos"),
+        _activo_row("CAJA Y BANCOS", "banco"),
+        _activo_row("CARTERA", "cart"),
+        _activo_row("ANTICIPOS", "anticipos"),
         _activo_row("STOCK MP+PROD.", "ustock"),
-        _activo_row("STOCK QUIM.",    "uqui"),
-        _activo_row("MAQUINARIA",     "maquinaria"),
-        _activo_row("TERR.Y EDIF.",   "realty"),
+        _activo_row("STOCK QUIM.", "uqui"),
+        _activo_row("MAQUINARIA", "maquinaria"),
+        _activo_row("TERR.Y EDIF.", "realty"),
     ]
     # Pasivos: PRG L1748 PASIVOS = ABS(DF-PI). Si DF<PI (bajó), es uso.
     # Si DF>PI (subió), es fuente. Mi delta["deuda"]=fin-ini.
@@ -6061,7 +6468,7 @@ def fuentes_y_usos(
     if utilidad_periodo >= 0:
         cuentas.append(_row("UTILIDADES", utilidad_periodo, 0.0))
     else:
-        cuentas.append(_row("PÉRDIDA",    0.0, abs(utilidad_periodo)))
+        cuentas.append(_row("PÉRDIDA", 0.0, abs(utilidad_periodo)))
     # PRG L1769-1774: RET > 0 → "RETIROS" en USOS; RET < 0 → "APORTES"
     # en FUENTES (con ajuste FUENTES=FUENTES-RET, USOS=USOS-RET).
     if retiros_periodo > 0:
@@ -6079,7 +6486,7 @@ def fuentes_y_usos(
     # mismo balance (Activo = Pasivo + PN). Si no cuadra, agregamos
     # una row de Ajuste para que cierre.
     total_fuentes_cuentas = sum(c["fuente"] for c in cuentas)
-    total_usos_cuentas    = sum(c["uso"]    for c in cuentas)
+    total_usos_cuentas = sum(c["uso"] for c in cuentas)
     delta_global = total_fuentes_cuentas - total_usos_cuentas
     if abs(delta_global) > 0.5:
         if delta_global > 0:
@@ -6089,25 +6496,29 @@ def fuentes_y_usos(
             cuentas.append(_row("AJUSTE (variación caja+bancos)", abs(delta_global), 0.0))
 
     total_fuentes = sum(c["fuente"] for c in cuentas)
-    total_usos    = sum(c["uso"]    for c in cuentas)
+    total_usos = sum(c["uso"] for c in cuentas)
 
     return {
-        "anio": yy, "mes": mm,
-        "anio_ini": yy_ant, "mes_ini": mm_ant,
-        "h_ini": h_ini, "h_fin": h_fin,
+        "anio": yy,
+        "mes": mm,
+        "anio_ini": yy_ant,
+        "mes_ini": mm_ant,
+        "h_ini": h_ini,
+        "h_fin": h_fin,
         # TMT 2026-05-20 v4 — `cuentas` es la tabla unificada estilo PRG
         # con 1 row por concepto y columnas (fuente, uso). El template
         # itera esta lista directo. `fuentes`/`usos` quedan para
         # back-compat de calls externos pero ya no se usan en el UI.
         "cuentas": cuentas,
-        "fuentes": fuentes, "usos": usos,
+        "fuentes": fuentes,
+        "usos": usos,
         "total_fuentes": total_fuentes,
-        "total_usos":    total_usos,
-        "delta_banco":   delta["banco"],
+        "total_usos": total_usos,
+        "delta_banco": delta["banco"],
         # v5c: lista de columnas que el snapshot inicial no tiene
         # rellenas — el template muestra un warning.
         "columnas_ini_vacias": columnas_ini_vacias,
-        "error":         None,
+        "error": None,
     }
 
 
@@ -6118,25 +6529,31 @@ def fuentes_y_usos(
 # 2026-05-19 v8: "asegurate de encontrarlos y mostrarmelos".
 # ---------------------------------------------------------------------------
 
+
 def gastos_forzados_listar() -> list[dict]:
     """Lista todos los gastos forzados ordenados por fecha ASC."""
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT id_gasto_forzado, fecha, importe, concepto, version,
                creado_por, creado_en, actualizado_en, actualizado_por
           FROM scintela.gasto_forzado
          ORDER BY fecha ASC, id_gasto_forzado ASC
         """
-    ) or []
+        )
+        or []
+    )
     out = []
     for r in rows:
-        out.append({
-            "id": int(r["id_gasto_forzado"]),
-            "fecha": r["fecha"].isoformat() if r["fecha"] else None,
-            "importe": float(r["importe"] or 0),
-            "concepto": r["concepto"] or "",
-            "version": int(r["version"] or 1),
-        })
+        out.append(
+            {
+                "id": int(r["id_gasto_forzado"]),
+                "fecha": r["fecha"].isoformat() if r["fecha"] else None,
+                "importe": float(r["importe"] or 0),
+                "concepto": r["concepto"] or "",
+                "version": int(r["version"] or 1),
+            }
+        )
     return out
 
 
@@ -6194,7 +6611,8 @@ def gasto_forzado_actualizar(
     actual_v = int(actual["version"] or 1)
     if actual_v != int(expected_version):
         return {
-            "ok": False, "reason": "version_conflict",
+            "ok": False,
+            "reason": "version_conflict",
             "current": {
                 "id": int(actual["id_gasto_forzado"]),
                 "fecha": actual["fecha"].isoformat() if actual["fecha"] else None,
@@ -6220,8 +6638,7 @@ def gasto_forzado_actualizar(
            AND version = %s
         RETURNING id_gasto_forzado, fecha, importe, concepto, version
         """,
-        (nueva_fecha, nuevo_importe, nuevo_concepto or None,
-         usuario, id_gasto_forzado, expected_version),
+        (nueva_fecha, nuevo_importe, nuevo_concepto or None, usuario, id_gasto_forzado, expected_version),
     )
     if not row:
         # Race: otra tx ganó entre nuestro SELECT y nuestro UPDATE
@@ -6251,9 +6668,7 @@ def gasto_forzado_eliminar(id_gasto_forzado: int) -> bool:
     return bool(row)
 
 
-def gastos_forzados_importar_bulk(
-    items: list[dict], usuario: str = "web"
-) -> dict:
+def gastos_forzados_importar_bulk(items: list[dict], usuario: str = "web") -> dict:
     """Carga masiva desde localStorage del navegador (one-time migration).
 
     Acepta lista de items con shape {fecha, importe, concepto}. Saltea
@@ -6294,8 +6709,8 @@ def gastos_forzados_importar_bulk(
 # descendente, idéntica a la pantalla del dBase legacy.
 # ---------------------------------------------------------------------------
 
-def ventas_clientes_del_mes(anio: int | None = None,
-                            mes: int | None = None) -> dict:
+
+def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> dict:
     """Ranking de clientes por ventas del mes (kg + monto + % del total).
 
     Mes por defecto = mes en curso (live, sin esperar snapshot). Excluye
@@ -6310,12 +6725,14 @@ def ventas_clientes_del_mes(anio: int | None = None,
         }
     """
     from datetime import date as _date
+
     hoy = _date.today()
     yy = int(anio) if anio else hoy.year
     mm = int(mes) if mes else hoy.month
 
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT
             UPPER(TRIM(COALESCE(f.codigo_cli, '???'))) AS codigo_cli,
             COALESCE(SUM(f.kg), 0)::int                AS kg,
@@ -6328,8 +6745,10 @@ def ventas_clientes_del_mes(anio: int | None = None,
          HAVING COALESCE(SUM(f.importe), 0) <> 0 OR COALESCE(SUM(f.kg), 0) <> 0
          ORDER BY SUM(f.importe) DESC NULLS LAST
         """,
-        (yy, mm),
-    ) or []
+            (yy, mm),
+        )
+        or []
+    )
 
     total_kg = sum(int(r["kg"] or 0) for r in rows)
     total_monto = sum(float(r["monto"] or 0) for r in rows)
@@ -6339,16 +6758,19 @@ def ventas_clientes_del_mes(anio: int | None = None,
         monto = float(r["monto"] or 0)
         # TMT 2026-05-19 v8 — dueña: agregar un decimal al %.
         pct = round((monto / total_monto * 100), 1) if total_monto else 0.0
-        filas.append({
-            "orden": i,
-            "codigo_cli": r["codigo_cli"],
-            "kg": int(r["kg"] or 0),
-            "monto": monto,
-            "pct": pct,
-        })
+        filas.append(
+            {
+                "orden": i,
+                "codigo_cli": r["codigo_cli"],
+                "kg": int(r["kg"] or 0),
+                "monto": monto,
+                "pct": pct,
+            }
+        )
 
     return {
-        "anio": yy, "mes": mm,
+        "anio": yy,
+        "mes": mm,
         "filas": filas,
         "total_kg": total_kg,
         "total_monto": total_monto,

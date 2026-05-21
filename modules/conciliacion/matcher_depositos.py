@@ -15,21 +15,22 @@ La UI muestra cada categoría en un color y permite acciones de resolución:
     - AMARILLO → confirmar el match manualmente
     - ROJO    → marcar como "no entró" / duplicado / etc.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
-from typing import Iterable
 
 import db
-
 from modules.conciliacion.parser_xlsx import DepositoPendiente
 
 
 @dataclass
 class MovBancario:
     """Una fila de scintela.transacciones_bancarias."""
+
     id_transaccion: int
     fecha: date
     documento: str
@@ -39,7 +40,7 @@ class MovBancario:
     no_banco: int
 
     @classmethod
-    def from_row(cls, row: dict) -> "MovBancario":
+    def from_row(cls, row: dict) -> MovBancario:
         return cls(
             id_transaccion=int(row["id_transaccion"]),
             fecha=row["fecha"],
@@ -54,6 +55,7 @@ class MovBancario:
 @dataclass
 class FilaConciliada:
     """Un depósito del Excel matched (o no) contra el banco."""
+
     deposito: DepositoPendiente
     estado: str  # 'verde' | 'amarillo' | 'rojo'
     match: MovBancario | None = None
@@ -73,8 +75,7 @@ class ConciliacionResultado:
     total_rojo: float = 0.0
 
 
-def transacciones_en_rango(desde: date, hasta: date,
-                           no_banco: int | None = None) -> list[MovBancario]:
+def transacciones_en_rango(desde: date, hasta: date, no_banco: int | None = None) -> list[MovBancario]:
     """Trae todos los DE/TR/AC/NC en el rango de fechas dado.
 
     DE = depósito, TR = transferencia recibida, AC = abono crédito, NC = nota
@@ -113,14 +114,16 @@ def _importe_match(dep_valor: Decimal, mov_importe: float, tol: float = 0.01) ->
     return abs(float(dep_valor) - mov_importe) <= tol
 
 
-def _categoria(dep: DepositoPendiente,
-               matches_perfectos: list[MovBancario],
-               matches_probables: list[MovBancario]) -> FilaConciliada:
+def _categoria(
+    dep: DepositoPendiente, matches_perfectos: list[MovBancario], matches_probables: list[MovBancario]
+) -> FilaConciliada:
     if matches_perfectos:
         # match exacto: 1 sólo o el primero
         m = matches_perfectos[0]
         return FilaConciliada(
-            deposito=dep, estado="verde", match=m,
+            deposito=dep,
+            estado="verde",
+            match=m,
             razon=f"Match exacto en banco #{m.no_banco} ({m.fecha:%d/%m/%Y}, {m.documento})",
             candidatos=matches_perfectos,
         )
@@ -135,11 +138,16 @@ def _categoria(dep: DepositoPendiente,
         else:
             razon = f"{len(matches_probables)} movimientos del banco con el mismo importe."
         return FilaConciliada(
-            deposito=dep, estado="amarillo", match=m, razon=razon,
+            deposito=dep,
+            estado="amarillo",
+            match=m,
+            razon=razon,
             candidatos=matches_probables,
         )
     return FilaConciliada(
-        deposito=dep, estado="rojo", match=None,
+        deposito=dep,
+        estado="rojo",
+        match=None,
         razon="No hay movimiento en el banco con este importe en el rango buscado.",
     )
 
@@ -169,10 +177,13 @@ def matchear_depositos(
     for dep in depositos:
         if dep.fecha is None:
             # Sin fecha → no se puede matchear, va a rojo
-            resultado.filas.append(FilaConciliada(
-                deposito=dep, estado="rojo",
-                razon="Depósito sin fecha en el Excel.",
-            ))
+            resultado.filas.append(
+                FilaConciliada(
+                    deposito=dep,
+                    estado="rojo",
+                    razon="Depósito sin fecha en el Excel.",
+                )
+            )
             continue
 
         # Buscar matches

@@ -29,6 +29,7 @@ Para iterar sin riesgo:
 Esta herramienta es de TRANSICIÓN. Cuando se retire el dBase, archivar
 en scripts/_archive/.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,6 +47,7 @@ if str(ROOT) not in sys.path:
 # Si python-dotenv no está, se asume que las variables ya están exportadas.
 try:
     from dotenv import load_dotenv  # noqa: E402
+
     load_dotenv(ROOT / ".env")
 except ImportError:
     pass
@@ -57,8 +59,7 @@ try:
     import dbfread
 except ImportError:
     print(
-        "ERROR: 'dbfread' no está instalado.\n"
-        "Correr: pip install dbfread",
+        "ERROR: 'dbfread' no está instalado.\nCorrer: pip install dbfread",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -161,7 +162,7 @@ def _num_robusto(v, default=None):
 # Pre-mortem 2a. Mapea valores legacy del dBase a stats que la app entiende.
 # `None` significa "skipear esa fila" (no importar).
 _STAT_LEGACY_MAP_CHEQUE = {
-    "V": "B",   # Cheque depositado en Internacional → "B" (banco moderno)
+    "V": "B",  # Cheque depositado en Internacional → "B" (banco moderno)
     # TMT 2026-05-21 confirmación dueña: 'W' en CHEQUES.DBF eran cheques
     # legacy ya depositados en banco (MODIFICA.PRG L800 los pintaba R/W
     # warning). Tamara confirmó "si ya están en el banco, entonces sí" →
@@ -171,7 +172,7 @@ _STAT_LEGACY_MAP_CHEQUE = {
     "*": None,  # Sentinel reemplazo
 }
 _STAT_LEGACY_MAP_FACTURA = {
-    "V": "A",   # Factura "vencida" legacy → "A" anulada parcial
+    "V": "A",  # Factura "vencida" legacy → "A" anulada parcial
     "Y": None,
     "*": None,
 }
@@ -201,15 +202,29 @@ def _remap_stat(stat: str | None, mapping: dict) -> str | None:
 # quedan con mesnum NULL y rompen las queries que filtran por mesnum.
 _MES_NUM = {
     # Español
-    "ENE": 1, "FEB": 2, "MAR": 3, "ABR": 4, "MAY": 5, "JUN": 6,
-    "JUL": 7, "AGO": 8, "SEP": 9, "SET": 9, "OCT": 10, "NOV": 11, "DIC": 12,
+    "ENE": 1,
+    "FEB": 2,
+    "MAR": 3,
+    "ABR": 4,
+    "MAY": 5,
+    "JUN": 6,
+    "JUL": 7,
+    "AGO": 8,
+    "SEP": 9,
+    "SET": 9,
+    "OCT": 10,
+    "NOV": 11,
+    "DIC": 12,
     # Inglés (los DBFs actuales vienen así)
-    "JAN": 1, "APR": 4, "AUG": 8, "DEC": 12,
+    "JAN": 1,
+    "APR": 4,
+    "AUG": 8,
+    "DEC": 12,
     # (FEB, MAR, MAY, JUN, JUL, SEP, OCT, NOV ya coinciden con el español)
     # Correcciones de typos históricos en INICIALE.DBF:
-    "JÔL": 7,    # 'Jôl' yy=2003 (en CP850), entre Jun y Aug → Jul. Encoding glitch.
-    "JÂL": 7,    # Mismo row leído con CP1252 — por si el encoding cambia.
-    "EDT": 3,    # 'edt' yy=2019, entre Feb y Apr → Mar (typo)
+    "JÔL": 7,  # 'Jôl' yy=2003 (en CP850), entre Jun y Aug → Jul. Encoding glitch.
+    "JÂL": 7,  # Mismo row leído con CP1252 — por si el encoding cambia.
+    "EDT": 3,  # 'edt' yy=2019, entre Feb y Apr → Mar (typo)
 }
 
 
@@ -230,19 +245,19 @@ def _map_factura(r):
     if stat_raw and stat is None and stat_raw.upper() in _STAT_LEGACY_MAP_FACTURA:
         return None
     return {
-        "numf":         _int(r.get("NUMF"), 0) or 0,
-        "fecha":        _date_robusto(r.get("FECHA")) or date.today(),
-        "codigo_cli":   _str(r.get("CLIENTE"), 5) or "",
-        "kg":           _num_robusto(r.get("KG"), 0) or 0,
-        "importe":      _num_robusto(r.get("IMPORTE"), 0) or 0,
-        "abono":        _num_robusto(r.get("ABONO"), 0) or 0,
-        "saldo":        _num_robusto(r.get("SALDO"), 0) or 0,
-        "stat":         stat,
-        "condic":       _str(r.get("CONDIC"), 2),
-        "vencimiento":  _date_robusto(r.get("VENCIM")),
-        "tipo":         _str(r.get("TIPO"), 2),
-        "clave":        _str(r.get("CLAVE"), 2),
-        "pase":         _str(r.get("PASE"), 5),
+        "numf": _int(r.get("NUMF"), 0) or 0,
+        "fecha": _date_robusto(r.get("FECHA")) or date.today(),
+        "codigo_cli": _str(r.get("CLIENTE"), 5) or "",
+        "kg": _num_robusto(r.get("KG"), 0) or 0,
+        "importe": _num_robusto(r.get("IMPORTE"), 0) or 0,
+        "abono": _num_robusto(r.get("ABONO"), 0) or 0,
+        "saldo": _num_robusto(r.get("SALDO"), 0) or 0,
+        "stat": stat,
+        "condic": _str(r.get("CONDIC"), 2),
+        "vencimiento": _date_robusto(r.get("VENCIM")),
+        "tipo": _str(r.get("TIPO"), 2),
+        "clave": _str(r.get("CLAVE"), 2),
+        "pase": _str(r.get("PASE"), 5),
         "usuario_crea": "dbf-import",
     }
 
@@ -254,43 +269,43 @@ def _map_cheque(r):
         # Devuelve None → import_one filtrará esta fila.
         return None
     return {
-        "fecha":        _date_robusto(r.get("FECHA")) or date.today(),
-        "fechad":       _date_robusto(r.get("FECHAD")) or _date_robusto(r.get("FECHA")) or date.today(),
-        "codigo_cli":   _str(r.get("CLIENTE"), 5),
-        "importe":      _num_robusto(r.get("IMPORTE")),
-        "no_banco":     _int(r.get("NB")),
-        "banco":        _str(r.get("BANCO"), 30),
-        "stat":         stat,
-        "fechaing":     _date_robusto(r.get("FECHING")),
-        "fechaout":     _date_robusto(r.get("FECHOUT")),
-        "prov":         _str(r.get("PROV"), 5),
-        "clave":        _str(r.get("CLAVE"), 5),
+        "fecha": _date_robusto(r.get("FECHA")) or date.today(),
+        "fechad": _date_robusto(r.get("FECHAD")) or _date_robusto(r.get("FECHA")) or date.today(),
+        "codigo_cli": _str(r.get("CLIENTE"), 5),
+        "importe": _num_robusto(r.get("IMPORTE")),
+        "no_banco": _int(r.get("NB")),
+        "banco": _str(r.get("BANCO"), 30),
+        "stat": stat,
+        "fechaing": _date_robusto(r.get("FECHING")),
+        "fechaout": _date_robusto(r.get("FECHOUT")),
+        "prov": _str(r.get("PROV"), 5),
+        "clave": _str(r.get("CLAVE"), 5),
         "usuario_crea": "dbf-import",
     }
 
 
 def _map_posdat(r):
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "fechad":       _date(r.get("FECHAD")),
-        "prov":         _str(r.get("PROV"), 3),
-        "num":          _int(r.get("NUM")),
-        "importe":      _num(r.get("IMPORTE")),
-        "concepto":     _str(r.get("CONCEPTO"), 100),
-        "banc":         _int(r.get("BANC")),
-        "clave":        _str(r.get("CLAVE"), 3),
+        "fecha": _date(r.get("FECHA")),
+        "fechad": _date(r.get("FECHAD")),
+        "prov": _str(r.get("PROV"), 3),
+        "num": _int(r.get("NUM")),
+        "importe": _num(r.get("IMPORTE")),
+        "concepto": _str(r.get("CONCEPTO"), 100),
+        "banc": _int(r.get("BANC")),
+        "clave": _str(r.get("CLAVE"), 3),
         "usuario_crea": "dbf-import",
     }
 
 
 def _map_caja(r):
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "tipo":         _str(r.get("TIPO"), 3),
-        "importe":      _num(r.get("IMPORTE")),
-        "concepto":     _str(r.get("CONCEPTO"), 100),
-        "saldo":        _num(r.get("SALDO")),
-        "clave":        _str(r.get("CLAVE"), 3),
+        "fecha": _date(r.get("FECHA")),
+        "tipo": _str(r.get("TIPO"), 3),
+        "importe": _num(r.get("IMPORTE")),
+        "concepto": _str(r.get("CONCEPTO"), 100),
+        "saldo": _num(r.get("SALDO")),
+        "clave": _str(r.get("CLAVE"), 3),
         "usuario_crea": "dbf-import",
     }
 
@@ -300,12 +315,12 @@ def _map_dolares(r):
     # la expone como 'ST_T' o 'ST'. Probamos ambas.
     st = r.get("ST") or r.get("ST_T") or r.get("ST T")
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "cta":          _str(r.get("CTA"), 3),
-        "concepto":     _str(r.get("CONCEPTO"), 100),
-        "importe":      _num(r.get("IMPORTE")),
-        "st":           _str(st, 3),
-        "clave":        _str(r.get("CLAVE"), 3),
+        "fecha": _date(r.get("FECHA")),
+        "cta": _str(r.get("CTA"), 3),
+        "concepto": _str(r.get("CONCEPTO"), 100),
+        "importe": _num(r.get("IMPORTE")),
+        "st": _str(st, 3),
+        "clave": _str(r.get("CLAVE"), 3),
         "usuario_crea": "dbf-import",
     }
 
@@ -318,12 +333,12 @@ def _map_retiros(r):
     `nb` puede ser None, 0, o el no_banco — lo dejamos pasar tal cual.
     """
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "nb":           _int(r.get("NB")),
-        "ret":          _num(r.get("RET")),
-        "de":           _str(r.get("DE"), 5),
-        "concepto":     _str(r.get("CONCEPTO"), 100),
-        "clave":        _str(r.get("CLAVE"), 5),
+        "fecha": _date(r.get("FECHA")),
+        "nb": _int(r.get("NB")),
+        "ret": _num(r.get("RET")),
+        "de": _str(r.get("DE"), 5),
+        "concepto": _str(r.get("CONCEPTO"), 100),
+        "clave": _str(r.get("CLAVE"), 5),
         "usuario_crea": "dbf-import",
     }
 
@@ -345,27 +360,27 @@ def _map_tinto(r):
     inserción cuando el día de mañana metan un valor.
     """
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "cod":          _str(r.get("COD"), 5),
-        "color":        _str(r.get("COLOR"), 30),
-        "franela":      _int(r.get("FRANELA")),
-        "messi":        _int(r.get("MESSI")),
-        "james":        _int(r.get("JAMES")),
-        "jersey":       _int(r.get("JERSEY")),
-        "j3":           _int(r.get("J3")),
-        "toper":        _int(r.get("TOPER")),
-        "jlyc":         _int(r.get("JLYC")),
-        "pique":        _int(r.get("PIQUE")),
-        "flyc":         _int(r.get("FLYC")),
-        "falso":        _int(r.get("FALSO")),
-        "otros":        _int(r.get("OTROS")),
-        "kiana":        _int(r.get("KIANA")),
-        "tipo":         _int(r.get("TIPO")),
-        "kg":           _num(r.get("KG")),
-        "kgn":          _num(r.get("KGN")),
-        "importe":      _num(r.get("IMPORTE")),
-        "stat":         _str(r.get("STAT"), 3),
-        "clave":        _str(r.get("CLAVE"), 3),
+        "fecha": _date(r.get("FECHA")),
+        "cod": _str(r.get("COD"), 5),
+        "color": _str(r.get("COLOR"), 30),
+        "franela": _int(r.get("FRANELA")),
+        "messi": _int(r.get("MESSI")),
+        "james": _int(r.get("JAMES")),
+        "jersey": _int(r.get("JERSEY")),
+        "j3": _int(r.get("J3")),
+        "toper": _int(r.get("TOPER")),
+        "jlyc": _int(r.get("JLYC")),
+        "pique": _int(r.get("PIQUE")),
+        "flyc": _int(r.get("FLYC")),
+        "falso": _int(r.get("FALSO")),
+        "otros": _int(r.get("OTROS")),
+        "kiana": _int(r.get("KIANA")),
+        "tipo": _int(r.get("TIPO")),
+        "kg": _num(r.get("KG")),
+        "kgn": _num(r.get("KGN")),
+        "importe": _num(r.get("IMPORTE")),
+        "stat": _str(r.get("STAT"), 3),
+        "clave": _str(r.get("CLAVE"), 3),
         "usuario_crea": "dbf-import",
     }
 
@@ -373,46 +388,46 @@ def _map_tinto(r):
 def _map_activos(r):
     valor = r.get("VALOR") or r.get("VALOR_R") or r.get("VALOR R")
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "concepto":     _str(r.get("CONCEPTO"), 100),
-        "tipo":         _str(r.get("TIPO"), 3),
-        "inicial":      _num(r.get("INICIAL")),
-        "amortizac":    _num(r.get("AMORTIZAC")),
-        "amortimes":    _num(r.get("AMORTIMES")),
-        "valor":        _num(valor),
-        "cuota":        _num(r.get("CUOTA")),
+        "fecha": _date(r.get("FECHA")),
+        "concepto": _str(r.get("CONCEPTO"), 100),
+        "tipo": _str(r.get("TIPO"), 3),
+        "inicial": _num(r.get("INICIAL")),
+        "amortizac": _num(r.get("AMORTIZAC")),
+        "amortimes": _num(r.get("AMORTIMES")),
+        "valor": _num(valor),
+        "cuota": _num(r.get("CUOTA")),
         "usuario_crea": "dbf-import",
     }
 
 
 def _map_historia(r):
     return {
-        "fecha":      _date(r.get("FECHA")),
-        "stock":      _num(r.get("STOCK")),
-        "kcom":       _num(r.get("KCOM")),
-        "ktej":       _num(r.get("KTEJ")),
-        "ktin":       _num(r.get("KTIN")),
-        "ustock":     _num(r.get("USTOCK")),
-        "uqui":       _num(r.get("UQUI")),
-        "kvent":      _num(r.get("KVENT")),
-        "uvent":      _num(r.get("UVENT")),
-        "costo":      _num(r.get("COSTO")),
-        "ucom":       _num(r.get("UCOM")),
-        "utej":       _num(r.get("UTEJ")),
-        "utin":       _num(r.get("UTIN")),
-        "gasto":      _num(r.get("GASTO")),
-        "gstotal":    _num(r.get("GSTOTAL")),
-        "banco":      _num(r.get("BANCO")),
-        "cart":       _num(r.get("CART")),
-        "deuda":      _num(r.get("DEUDA")),
-        "retiro":     _num(r.get("RETIRO")),
+        "fecha": _date(r.get("FECHA")),
+        "stock": _num(r.get("STOCK")),
+        "kcom": _num(r.get("KCOM")),
+        "ktej": _num(r.get("KTEJ")),
+        "ktin": _num(r.get("KTIN")),
+        "ustock": _num(r.get("USTOCK")),
+        "uqui": _num(r.get("UQUI")),
+        "kvent": _num(r.get("KVENT")),
+        "uvent": _num(r.get("UVENT")),
+        "costo": _num(r.get("COSTO")),
+        "ucom": _num(r.get("UCOM")),
+        "utej": _num(r.get("UTEJ")),
+        "utin": _num(r.get("UTIN")),
+        "gasto": _num(r.get("GASTO")),
+        "gstotal": _num(r.get("GSTOTAL")),
+        "banco": _num(r.get("BANCO")),
+        "cart": _num(r.get("CART")),
+        "deuda": _num(r.get("DEUDA")),
+        "retiro": _num(r.get("RETIRO")),
         "patrimonio": _num(r.get("PATRIMONIO")),
-        "anticipos":  _num(r.get("ANTICIPOS")),
-        "dolar":      _num(r.get("DOLAR")),
+        "anticipos": _num(r.get("ANTICIPOS")),
+        "dolar": _num(r.get("DOLAR")),
         "maquinaria": _num(r.get("MAQUINARIA")),
-        "realty":     _num(r.get("REALTY")),
-        "usret":      _num(r.get("USRET")),
-        "usuti":      _num(r.get("USUTI")),
+        "realty": _num(r.get("REALTY")),
+        "usret": _num(r.get("USRET")),
+        "usuti": _num(r.get("USUTI")),
         "usuario_crea": "dbf-import",
     }
 
@@ -420,64 +435,64 @@ def _map_historia(r):
 def _map_iniciales(r):
     yy = r.get("YY") or r.get("YY_R") or r.get("YY R")
     return {
-        "mesnum":   _mes_a_num(_str(r.get("MES"))),
-        "mesnom":   _str(r.get("MES"), 10),
-        "yy":       _int(yy),
-        "hilado":   _num(r.get("HILADO")),
-        "tejido":   _num(r.get("TEJIDO")),
+        "mesnum": _mes_a_num(_str(r.get("MES"))),
+        "mesnom": _str(r.get("MES"), 10),
+        "yy": _int(yy),
+        "hilado": _num(r.get("HILADO")),
+        "tejido": _num(r.get("TEJIDO")),
         "terminado": _num(r.get("TERMINADO")),
-        "vq":       _num(r.get("VQ")),
-        "um":       _num(r.get("UM")),
-        "uk":       _num(r.get("UK")),
-        "uf":       _num(r.get("UF")),
-        "uq":       _num(r.get("UQ") or r.get("UQ_EB") or r.get("UQ EB")),
-        "pre":      _num(r.get("PRE")),
-        "kprog":    _num(r.get("KPROG")),
-        "gprog":    _num(r.get("GPROG")),
-        "numnot":   _num(r.get("NUMNOT")),
-        "dificil":  _num(r.get("DIFICIL")),
-        "pretej":   _num(r.get("PRETEJ")),
-        "pretin":   _num(r.get("PRETIN")),
-        "preadm":   _num(r.get("PREADM")),
-        "pretot":   _num(r.get("PRETOT")),
+        "vq": _num(r.get("VQ")),
+        "um": _num(r.get("UM")),
+        "uk": _num(r.get("UK")),
+        "uf": _num(r.get("UF")),
+        "uq": _num(r.get("UQ") or r.get("UQ_EB") or r.get("UQ EB")),
+        "pre": _num(r.get("PRE")),
+        "kprog": _num(r.get("KPROG")),
+        "gprog": _num(r.get("GPROG")),
+        "numnot": _num(r.get("NUMNOT")),
+        "dificil": _num(r.get("DIFICIL")),
+        "pretej": _num(r.get("PRETEJ")),
+        "pretin": _num(r.get("PRETIN")),
+        "preadm": _num(r.get("PREADM")),
+        "pretot": _num(r.get("PRETOT")),
         "usuario_crea": "dbf-import",
     }
 
 
 def _map_compra(r):
     return {
-        "fecha":         _date(r.get("FECHA")),
-        "codigo_prov":   _str(r.get("PROV"), 3),
-        "tipo":          _str(r.get("TIPO"), 3),
-        "comprobante":   _str(r.get("COMPROBANT"), 100),
-        "kg":            _num(r.get("KG")),
-        "importe":       _num(r.get("IMPORTE")),
-        "no_banco":      _int(r.get("BANC")),
-        "numero":        _int(r.get("NUM")),
-        "fecha_ing":     _date(r.get("FECHING")),
-        "fechad":        _date(r.get("FECHAD")),
-        "concepto":      _str(r.get("CONCEPTO"), 200),
-        "clave":         _str(r.get("CLAVE"), 3),
-        "usuario_crea":  "dbf-import",
+        "fecha": _date(r.get("FECHA")),
+        "codigo_prov": _str(r.get("PROV"), 3),
+        "tipo": _str(r.get("TIPO"), 3),
+        "comprobante": _str(r.get("COMPROBANT"), 100),
+        "kg": _num(r.get("KG")),
+        "importe": _num(r.get("IMPORTE")),
+        "no_banco": _int(r.get("BANC")),
+        "numero": _int(r.get("NUM")),
+        "fecha_ing": _date(r.get("FECHING")),
+        "fechad": _date(r.get("FECHAD")),
+        "concepto": _str(r.get("CONCEPTO"), 200),
+        "clave": _str(r.get("CLAVE"), 3),
+        "usuario_crea": "dbf-import",
     }
 
 
 def _map_flujo(r):
     inter = r.get("INTER") or r.get("INTER_R") or r.get("INTER R")
     return {
-        "fecha":     _date(r.get("FECHA")),
-        "cheques":   _num(r.get("CHEQUES")),
-        "facturas":  _num(r.get("FACTURAS")),
-        "posdat1":   _num(r.get("POSDAT1")),
-        "posdat2":   _num(r.get("POSDAT2")),
+        "fecha": _date(r.get("FECHA")),
+        "cheques": _num(r.get("CHEQUES")),
+        "facturas": _num(r.get("FACTURAS")),
+        "posdat1": _num(r.get("POSDAT1")),
+        "posdat2": _num(r.get("POSDAT2")),
         "pichincha": _num(r.get("PICHINCHA")),
-        "inter":     _num(inter),
-        "mprima":    _num(r.get("MPRIMA")),
-        "gastos":    _num(r.get("GASTOS")),
-        "saldo":     _num(r.get("SALDO")),
-        "pagos":     _num(r.get("PAGOS")),
-        "dolares":   _num(r.get("DOLARES")),
-        "usaldo":    _num(r.get("USALDO")),
+        "inter": _num(inter),
+        "mprima": _num(r.get("MPRIMA")),
+        "gastos": _num(r.get("GASTOS")),
+        "saldo": _num(r.get("SALDO")),
+        "pagos": _num(r.get("PAGOS")),
+        "dolares": _num(r.get("DOLARES")),
+        "usaldo": _num(r.get("USALDO")),
         "usuario_crea": "dbf-import",
     }
 
@@ -491,16 +506,16 @@ def _map_xgast(r):
         V7+V8+V9 = gastos administración → GS
     """
     return {
-        "fecha":        _date(r.get("FECHA")),
-        "doc":          _str(r.get("DOC"), 5),
-        "prov":         _str(r.get("PROV"), 5),
-        "concepto":     _str(r.get("CONCEPTO"), 100),
-        "num":          _int(r.get("NUM")),
-        "fechad":       _date(r.get("FECHAD")),
-        "importe":      _num(r.get("IMPORTE")),
-        "saldo":        _num(r.get("SALDO")),
-        "stat":         _str(r.get("STAT"), 3),
-        "clave":        _str(r.get("CLAVE"), 3),
+        "fecha": _date(r.get("FECHA")),
+        "doc": _str(r.get("DOC"), 5),
+        "prov": _str(r.get("PROV"), 5),
+        "concepto": _str(r.get("CONCEPTO"), 100),
+        "num": _int(r.get("NUM")),
+        "fechad": _date(r.get("FECHAD")),
+        "importe": _num(r.get("IMPORTE")),
+        "saldo": _num(r.get("SALDO")),
+        "stat": _str(r.get("STAT"), 3),
+        "clave": _str(r.get("CLAVE"), 3),
         "usuario_crea": "dbf-import",
     }
 
@@ -514,18 +529,18 @@ def _map_banco_trans(r):
     en INTELA copy/INTER.DBF).
     """
     return {
-        "fecha":          _date(r.get("FECHA")) or date.today(),
-        "documento":      _str(r.get("DOC"), 5) or "",
-        "concepto":       _str(r.get("CONCEPTO"), 50) or "",
-        "fechad":         _date(r.get("FECHAD")),
-        "importe":        _num(r.get("IMPORTE"), 0) or 0,
-        "saldo":          _num(r.get("SALDO")),
-        "stat":           _str(r.get("STAT"), 2),
-        "no_banco":       None,   # se completa después con lookup en banco
-        "prov":           _str(r.get("PROV"), 5),
-        "numreferencia":  _int(r.get("NUM")),
-        "clave":          _str(r.get("CLAVE"), 3),
-        "usuario_crea":   "dbf-import",
+        "fecha": _date(r.get("FECHA")) or date.today(),
+        "documento": _str(r.get("DOC"), 5) or "",
+        "concepto": _str(r.get("CONCEPTO"), 50) or "",
+        "fechad": _date(r.get("FECHAD")),
+        "importe": _num(r.get("IMPORTE"), 0) or 0,
+        "saldo": _num(r.get("SALDO")),
+        "stat": _str(r.get("STAT"), 2),
+        "no_banco": None,  # se completa después con lookup en banco
+        "prov": _str(r.get("PROV"), 5),
+        "numreferencia": _int(r.get("NUM")),
+        "clave": _str(r.get("CLAVE"), 3),
+        "usuario_crea": "dbf-import",
     }
 
 
@@ -540,67 +555,67 @@ _map_pichincha_trans = _map_banco_trans
 TABLE_MAP: dict[str, dict] = {
     "FACTURAS.DBF": {
         "pg_table": "scintela.factura",
-        "mapper":   _map_factura,
+        "mapper": _map_factura,
         "criticidad": "CRITICO",
         "descripcion": "Facturas — TOTF en balance, cartera, estado de cuenta",
     },
     "CHEQUES.DBF": {
         "pg_table": "scintela.cheque",
-        "mapper":   _map_cheque,
+        "mapper": _map_cheque,
         "criticidad": "CRITICO",
         "descripcion": "Cheques — TOTC en balance",
     },
     "POSDAT.DBF": {
         "pg_table": "scintela.posdat",
-        "mapper":   _map_posdat,
+        "mapper": _map_posdat,
         "criticidad": "SUPER",
         "descripcion": "Posdat — TOTP (PASIVOS) + POS1/POS2 a BANCOS",
     },
     "CAJA.DBF": {
         "pg_table": "scintela.caja",
-        "mapper":   _map_caja,
+        "mapper": _map_caja,
         "criticidad": "CRITICO",
         "descripcion": "Caja — SALCAJ del balance",
     },
     "DOLARES.DBF": {
         "pg_table": "scintela.dolares",
-        "mapper":   _map_dolares,
+        "mapper": _map_dolares,
         "criticidad": "CRITICO",
         "descripcion": "Dólares — ANTICIPOS del balance",
     },
     "ACTIVOS.DBF": {
         "pg_table": "scintela.activos",
-        "mapper":   _map_activos,
+        "mapper": _map_activos,
         "criticidad": "CRITICO",
         "descripcion": "Activos fijos — UMAQ + UACT del balance",
     },
     "HISTORIA.DBF": {
         "pg_table": "scintela.historia",
-        "mapper":   _map_historia,
+        "mapper": _map_historia,
         "criticidad": "SUPER",
         "descripcion": "Snapshots mensuales — VSTO, VQX, PATANT, USUTI",
     },
     "INICIALE.DBF": {
         "pg_table": "scintela.iniciales",
-        "mapper":   _map_iniciales,
+        "mapper": _map_iniciales,
         "criticidad": "CRITICO",
         "descripcion": "Iniciales / proyecciones — KGPRO, PRETEJ, PRETIN, PREADM, PRETOT",
     },
     "COMPRAS.DBF": {
         "pg_table": "scintela.compra",
-        "mapper":   _map_compra,
+        "mapper": _map_compra,
         "criticidad": "utiles",
         "descripcion": "Compras — listado + alimenta posdat",
     },
     "FLUJO.DBF": {
         "pg_table": "scintela.flujo",
-        "mapper":   _map_flujo,
+        "mapper": _map_flujo,
         "criticidad": "utiles",
         "descripcion": "Flujo — panel /informes/flujo/grafico",
     },
     "PICHINCH.DBF": {
         "pg_table": "scintela.transacciones_bancarias",
-        "mapper":   _map_banco_trans,
+        "mapper": _map_banco_trans,
         "criticidad": "SUPER",
         "descripcion": "Banco Pichincha — saldo BANCOS del balance",
         "post_load": "asignar_no_banco_pichincha",
@@ -610,7 +625,7 @@ TABLE_MAP: dict[str, dict] = {
     },
     "INTER.DBF": {
         "pg_table": "scintela.transacciones_bancarias",
-        "mapper":   _map_banco_trans,
+        "mapper": _map_banco_trans,
         "criticidad": "SUPER",
         "descripcion": "Banco Internacional — segundo BANCOS del balance",
         "post_load": "asignar_no_banco_internacional",
@@ -618,19 +633,19 @@ TABLE_MAP: dict[str, dict] = {
     },
     "XGAST.DBF": {
         "pg_table": "scintela.xgast",
-        "mapper":   _map_xgast,
+        "mapper": _map_xgast,
         "criticidad": "CRITICO",
         "descripcion": "Gastos varios V1..V9 — alimentan COSTOS (TEJIDO/GS.PROC/GASTOS) del panel Resultados",
     },
     "RETIROS.DBF": {
         "pg_table": "scintela.retiros",
-        "mapper":   _map_retiros,
+        "mapper": _map_retiros,
         "criticidad": "CRITICO",
         "descripcion": "Retiros del dueño (dividendos / RR) — URET en balance",
     },
     "TINTO.DBF": {
         "pg_table": "scintela.tinto",
-        "mapper":   _map_tinto,
+        "mapper": _map_tinto,
         "criticidad": "CRITICO",
         "descripcion": "Tintura del mes — alimenta COL.QUI. + KR del panel Resultados",
     },
@@ -688,9 +703,7 @@ def _read_dbf(path: Path, encoding: str | None = None) -> list[dict]:
         except Exception:
             continue
         # Cuenta '?' en los primeros 50 rows como heurística
-        sample = "".join(
-            str(v) for r in rows[:50] for v in r.values() if isinstance(v, str)
-        )
+        sample = "".join(str(v) for r in rows[:50] for v in r.values() if isinstance(v, str))
         replacements = sample.count("?")
         if best_replacements is None or replacements < best_replacements:
             best_replacements = replacements
@@ -700,9 +713,12 @@ def _read_dbf(path: Path, encoding: str | None = None) -> list[dict]:
             break
     if best_enc and best_enc != _DEFAULT_ENCODING:
         import logging
+
         logging.getLogger("import_dbf").info(
             "Encoding detectado para %s: %s (replacements=%d)",
-            path.name, best_enc, best_replacements or 0,
+            path.name,
+            best_enc,
+            best_replacements or 0,
         )
     return best_rows or []
 
@@ -716,7 +732,7 @@ def _lookup_no_banco_pichincha() -> int | None:
     )
     if row and row.get("no_banco"):
         return int(row["no_banco"])
-    return 1   # default legacy
+    return 1  # default legacy
 
 
 def _lookup_no_banco_internacional() -> int | None:
@@ -748,13 +764,13 @@ def _post_load_internacional(rows: list[dict]) -> list[dict]:
 
 
 _POST_LOAD_FNS = {
-    "asignar_no_banco_pichincha":     _post_load_pichincha,
+    "asignar_no_banco_pichincha": _post_load_pichincha,
     "asignar_no_banco_internacional": _post_load_internacional,
 }
 
 
 _DELETE_WHERE_FNS = {
-    "_lookup_no_banco_pichincha":     _lookup_no_banco_pichincha,
+    "_lookup_no_banco_pichincha": _lookup_no_banco_pichincha,
     "_lookup_no_banco_internacional": _lookup_no_banco_internacional,
 }
 
@@ -783,13 +799,17 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
     leidas = len(pg_rows)
     if dry_run:
         return {
-            "ok": True, "filas_leidas": leidas, "filas_insertadas": 0,
+            "ok": True,
+            "filas_leidas": leidas,
+            "filas_insertadas": 0,
             "msg": f"DRY-RUN: leí {leidas} filas, no inserté",
         }
 
     if leidas == 0:
         return {
-            "ok": True, "filas_leidas": 0, "filas_insertadas": 0,
+            "ok": True,
+            "filas_leidas": 0,
+            "filas_insertadas": 0,
             "msg": "DBF vacío — saltado, Postgres conserva su data",
         }
 
@@ -840,17 +860,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("--source-dir", default=str(DEFAULT_DBF_DIR),
-                    help=f"Carpeta donde están los .DBF (default: {DEFAULT_DBF_DIR})")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Lee los DBFs e informa, pero no toca Postgres.")
-    ap.add_argument("--only", default="",
-                    help="Coma-separated DBF names (e.g. FACTURAS.DBF,CHEQUES.DBF)")
-    ap.add_argument("--list", action="store_true",
-                    help="Lista las tablas que el script sabe cargar y termina.")
-    ap.add_argument("--encoding", default=None,
-                    help=f"Forzar encoding (default: auto-detect entre {_TRY_ENCODINGS}). "
-                         "Si lo pasás, se usa para todos los DBFs.")
+    ap.add_argument(
+        "--source-dir",
+        default=str(DEFAULT_DBF_DIR),
+        help=f"Carpeta donde están los .DBF (default: {DEFAULT_DBF_DIR})",
+    )
+    ap.add_argument("--dry-run", action="store_true", help="Lee los DBFs e informa, pero no toca Postgres.")
+    ap.add_argument("--only", default="", help="Coma-separated DBF names (e.g. FACTURAS.DBF,CHEQUES.DBF)")
+    ap.add_argument(
+        "--list", action="store_true", help="Lista las tablas que el script sabe cargar y termina."
+    )
+    ap.add_argument(
+        "--encoding",
+        default=None,
+        help=f"Forzar encoding (default: auto-detect entre {_TRY_ENCODINGS}). "
+        "Si lo pasás, se usa para todos los DBFs.",
+    )
     args = ap.parse_args()
 
     if args.list:
@@ -884,10 +909,7 @@ def main():
 
     # En production / RDS, requerir confirmación explícita.
     db_host = os.environ.get("DB_HOST", "localhost")
-    parece_prod = (
-        "rds.amazonaws.com" in db_host
-        or os.environ.get("ENV", "").lower() == "production"
-    )
+    parece_prod = "rds.amazonaws.com" in db_host or os.environ.get("ENV", "").lower() == "production"
     if parece_prod and os.environ.get("I_KNOW_THIS_IS_PROD") != "1":
         print(f"ERROR: DB_HOST={db_host} parece producción.", file=sys.stderr)
         print("Si querés correr en prod, exportá I_KNOW_THIS_IS_PROD=1.", file=sys.stderr)
@@ -926,8 +948,10 @@ def main():
             resumen["fail"] += 1
 
     print()
-    print(f"Resumen: {resumen['ok']} cargadas · {resumen['skip']} saltadas · "
-          f"{resumen['fail']} con error · {resumen['filas']:,} filas totales")
+    print(
+        f"Resumen: {resumen['ok']} cargadas · {resumen['skip']} saltadas · "
+        f"{resumen['fail']} con error · {resumen['filas']:,} filas totales"
+    )
 
     if resumen["fail"]:
         sys.exit(1)

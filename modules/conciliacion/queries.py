@@ -1,6 +1,8 @@
 """Queries para la conciliación bancaria."""
+
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 
 import db
@@ -18,16 +20,19 @@ def cheques_depositados_rango(desde: date, hasta: date) -> list[dict]:
     P (postergados), D (Daniela). Sólo 'B' es el universo de cheques
     depositados a investigar contra el extracto del banco.
     """
-    return db.fetch_all(
-        """
+    return (
+        db.fetch_all(
+            """
         SELECT id_cheque, no_cheque, fecha, fechad, importe, codigo_cli
           FROM scintela.cheque
          WHERE stat = 'B'
            AND fechad BETWEEN %s AND %s
          ORDER BY fechad DESC, id_cheque DESC
         """,
-        (desde, hasta),
-    ) or []
+            (desde, hasta),
+        )
+        or []
+    )
 
 
 def cheque_por_id(id_cheque: int) -> dict | None:
@@ -43,8 +48,6 @@ def cheque_por_id(id_cheque: int) -> dict | None:
 
 # ─── Log manual de conciliación de depósitos ──────────────────────────────
 # Migration 0039_conciliacion_manual_log.sql
-
-import hashlib
 
 
 def firma_deposito(fecha, valor, codigo: str, concepto: str) -> str:
@@ -85,9 +88,17 @@ def marcar_deposito(
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id, creado_en
         """,
-        (firma_dep, fecha_dep, valor_dep, codigo_dep or "",
-         (concepto_dep or "")[:1000], accion, id_transaccion,
-         (nota or "")[:500], usuario[:50]),
+        (
+            firma_dep,
+            fecha_dep,
+            valor_dep,
+            codigo_dep or "",
+            (concepto_dep or "")[:1000],
+            accion,
+            id_transaccion,
+            (nota or "")[:500],
+            usuario[:50],
+        ),
     )
     return {"id": int(row["id"]), "creado_en": row["creado_en"]} if row else {}
 
@@ -102,8 +113,9 @@ def estado_actual_depositos(firmas: list[str]) -> dict[str, dict]:
     if not firmas:
         return {}
     # ORDER BY firma_dep, creado_en DESC + DISTINCT ON → último por firma
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT DISTINCT ON (firma_dep)
                firma_dep, accion, id, creado_en, usuario, nota,
                id_transaccion
@@ -111,16 +123,18 @@ def estado_actual_depositos(firmas: list[str]) -> dict[str, dict]:
          WHERE firma_dep = ANY(%s)
          ORDER BY firma_dep, creado_en DESC, id DESC
         """,
-        (firmas,),
-    ) or []
+            (firmas,),
+        )
+        or []
+    )
     out: dict[str, dict] = {}
     for r in rows:
         out[r["firma_dep"]] = {
-            "accion":         r["accion"],
-            "id":             int(r["id"]),
-            "creado_en":      r["creado_en"],
-            "usuario":        r["usuario"],
-            "nota":           r["nota"] or "",
+            "accion": r["accion"],
+            "id": int(r["id"]),
+            "creado_en": r["creado_en"],
+            "usuario": r["usuario"],
+            "nota": r["nota"] or "",
             "id_transaccion": r["id_transaccion"],
         }
     return out

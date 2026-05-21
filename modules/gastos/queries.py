@@ -18,6 +18,7 @@ Categorías (`doc`) sugeridas — son códigos cortos:
     MAN = mantenimiento / reparaciones
     OTR = otro
 """
+
 from datetime import date, timedelta
 
 import db
@@ -75,51 +76,92 @@ KEYWORDS_TO_CATEGORIA: tuple[tuple[str, int], ...] = (
     #
     # Reglas LC2 mínimas para los casos en que el matcher SÍ se invoque:
     # ── KKSU/CCSU → sueldos por rubro (V1 tej / V4 tin) ──
-    ("KKSU", 1), ("CCSU", 4),
+    ("KKSU", 1),
+    ("CCSU", 4),
     # ── SU solo → V7 sueldos admin ──
-    ("SU ADM", 7), ("SU CAJA", 7), ("SUCAJA", 7),
+    ("SU ADM", 7),
+    ("SU CAJA", 7),
+    ("SUCAJA", 7),
     ("SU ", 7),
-
     # ── V1 personal tejeduría ──────────────────────────────────────────
-    ("SUELDO TEJ", 1), ("SUELDOS TEJ", 1), ("PERSONAL TEJ", 1),
+    ("SUELDO TEJ", 1),
+    ("SUELDOS TEJ", 1),
+    ("PERSONAL TEJ", 1),
     # ── V2 gas/comb tejeduría ──────────────────────────────────────────
-    ("GAS TEJ", 2), ("COMB TEJ", 2), ("COMBUSTIBLE TEJ", 2),
+    ("GAS TEJ", 2),
+    ("COMB TEJ", 2),
+    ("COMBUSTIBLE TEJ", 2),
     # ── V3 gs varios tejeduría ─────────────────────────────────────────
-    ("REPUESTO TEJ", 3), ("MANTEN TEJ", 3), ("MANT TEJ", 3),
-    ("INSUMO TEJ", 3), ("HILADO REPAR", 3),
+    ("REPUESTO TEJ", 3),
+    ("MANTEN TEJ", 3),
+    ("MANT TEJ", 3),
+    ("INSUMO TEJ", 3),
+    ("HILADO REPAR", 3),
     # ── V4 personal tintorería ─────────────────────────────────────────
-    ("SUELDO TIN", 4), ("SUELDOS TIN", 4), ("PERSONAL TIN", 4),
+    ("SUELDO TIN", 4),
+    ("SUELDOS TIN", 4),
+    ("PERSONAL TIN", 4),
     # ── V5 gas/comb/servicios tintorería ───────────────────────────────
-    ("EEQ", 5), ("EMAAP", 5), ("ELECTRIC", 5),
-    ("LUZ", 5), ("AGUA", 5), ("GAS TIN", 5),
-    ("DIESEL", 5), ("COMBUS", 5), ("FUEL", 5),
+    ("EEQ", 5),
+    ("EMAAP", 5),
+    ("ELECTRIC", 5),
+    ("LUZ", 5),
+    ("AGUA", 5),
+    ("GAS TIN", 5),
+    ("DIESEL", 5),
+    ("COMBUS", 5),
+    ("FUEL", 5),
     # ── V6 gs varios tintorería ────────────────────────────────────────
-    ("PINTUR", 6), ("CC PINTUR", 6),  # match temprano
-    ("QUIMIC", 6), ("COLORANTE EXTRA", 6),
-    ("REPUESTO TIN", 6), ("MANTEN TIN", 6), ("MANT TIN", 6),
+    ("PINTUR", 6),
+    ("CC PINTUR", 6),  # match temprano
+    ("QUIMIC", 6),
+    ("COLORANTE EXTRA", 6),
+    ("REPUESTO TIN", 6),
+    ("MANTEN TIN", 6),
+    ("MANT TIN", 6),
     ("INSUMO TIN", 6),
     # ── V7 personal admin ──────────────────────────────────────────────
-    ("SUELDO ADM", 7), ("SUELDOS ADM", 7), ("PERSONAL ADM", 7),
-    ("HONORARIO", 7), ("ABOGADO", 7), ("CONTAD", 7),
+    ("SUELDO ADM", 7),
+    ("SUELDOS ADM", 7),
+    ("PERSONAL ADM", 7),
+    ("HONORARIO", 7),
+    ("ABOGADO", 7),
+    ("CONTAD", 7),
     # ── V8 servicios admin ─────────────────────────────────────────────
-    ("TELEFON", 8), ("CELULAR", 8), ("INTERNET", 8),
-    ("CABLE", 8), ("CHEQUERA", 8), ("BANCAR", 8),
+    ("TELEFON", 8),
+    ("CELULAR", 8),
+    ("INTERNET", 8),
+    ("CABLE", 8),
+    ("CHEQUERA", 8),
+    ("BANCAR", 8),
     # ── V9 gs varios admin / impuestos / etc ───────────────────────────
-    ("SRI", 9), ("IMPUEST", 9), ("MUNICIP", 9), ("IESS", 9),
-    ("JUBILAC", 9), ("INCOBRA", 9), ("INTERES", 9),
-    ("PAPELERI", 9), ("OFICINA", 9), ("ALQUILER", 9),
-    ("ANDRES BUCHELI", 9), ("AB ", 9),
+    ("SRI", 9),
+    ("IMPUEST", 9),
+    ("MUNICIP", 9),
+    ("IESS", 9),
+    ("JUBILAC", 9),
+    ("INCOBRA", 9),
+    ("INTERES", 9),
+    ("PAPELERI", 9),
+    ("OFICINA", 9),
+    ("ALQUILER", 9),
+    ("ANDRES BUCHELI", 9),
+    ("AB ", 9),
     # ── Sueldos genérico (default V7 si no hay TEJ/TIN/ADM explícito) ──
-    ("SUELDO", 7), ("SUELDOS", 7), ("PERSONAL", 7),
-
+    ("SUELDO", 7),
+    ("SUELDOS", 7),
+    ("PERSONAL", 7),
     # "SS ..." → V9 (gastos generales — no IESS literal, ese ya matcheó).
     ("SS ", 9),
     # GASOLINA / GASO ... → combustible tin (V5).
-    ("GASOLIN", 5), ("GASO ", 5), ("NAFTA", 5),
+    ("GASOLIN", 5),
+    ("GASO ", 5),
+    ("NAFTA", 5),
     # "CC ..." (CC = PROV.FABRICA, vende insumos para tintura/máquinas) → V6
     ("CC ", 6),
     # "GS ..." / "GAS ..." → gastos varios de planta. Por default V9.
-    ("GS ", 9), ("GAS ", 9),
+    ("GS ", 9),
+    ("GAS ", 9),
     # "KK ..." → kilometraje/transporte (V3 varios tejeduría histórico).
     ("KK ", 3),
 )
@@ -162,7 +204,10 @@ def clasificar_desde_caja(
         raise ValueError(f"Categoría inválida: {num}. Debe ser 1..9.")
     with db.tx() as conn:
         return _clasificar_caja_dentro_tx(
-            conn=conn, id_caja=id_caja, num=num, usuario=usuario,
+            conn=conn,
+            id_caja=id_caja,
+            num=num,
+            usuario=usuario,
         )
 
 
@@ -195,8 +240,7 @@ def _clasificar_caja_dentro_tx(
     # se acaba de insertar con `conn`, los SELECTs sin conn fallan a verla.
     # Por eso pasamos conn explícito acá.
     caja = db.fetch_one(
-        "SELECT id_caja, fecha, tipo, importe, concepto, clave "
-        "FROM scintela.caja WHERE id_caja = %s",
+        "SELECT id_caja, fecha, tipo, importe, concepto, clave FROM scintela.caja WHERE id_caja = %s",
         (id_caja,),
         conn=conn,
     )
@@ -290,21 +334,21 @@ def _clasificar_caja_dentro_tx(
             " WHERE id_compra = %s",
             (
                 f" [reclasif como gasto V{num} desde caja #{id_caja}]",
-                usuario, id_compra_falsa,
+                usuario,
+                id_compra_falsa,
             ),
             conn=conn,
         )
         db.execute(
-            "UPDATE scintela.mov_doble "
-            "   SET estado = 'reversado' "
-            " WHERE id_mov_doble = %s",
+            "UPDATE scintela.mov_doble    SET estado = 'reversado'  WHERE id_mov_doble = %s",
             (md_caja_compra["id_mov_doble"],),
             conn=conn,
         )
         compra_anulada = id_compra_falsa
 
-    row = db.execute_returning(
-        """
+    row = (
+        db.execute_returning(
+            """
         INSERT INTO scintela.xgast
             (fecha, doc, prov, concepto, num, fechad, importe, saldo,
              stat, clave, usuario_crea)
@@ -312,16 +356,23 @@ def _clasificar_caja_dentro_tx(
                 %s, %s)
         RETURNING id_xgast
         """,
-        (
-            fecha, concepto[:100], num, fecha, importe,
-            (clave or None) and clave[:3].upper(),
-            usuario,
-        ),
-        conn=conn,
-    ) or {}
+            (
+                fecha,
+                concepto[:100],
+                num,
+                fecha,
+                importe,
+                (clave or None) and clave[:3].upper(),
+                usuario,
+            ),
+            conn=conn,
+        )
+        or {}
+    )
     id_xgast = int(row["id_xgast"])
 
     import mov_doble as _md
+
     id_md = _md.registrar(
         conn=conn,
         tipo="caja_s_to_xgast",
@@ -331,12 +382,13 @@ def _clasificar_caja_dentro_tx(
         destino_id=id_xgast,
         importe=importe,
         fecha=fecha,
-        concepto=(f"Clasificar caja #{id_caja} como gasto V{num}: "
-                  f"{concepto}")[:200],
+        concepto=(f"Clasificar caja #{id_caja} como gasto V{num}: {concepto}")[:200],
         usuario=usuario,
-        metadata={"num_categoria": num,
-                  "concepto_original": concepto,
-                  "atomico_caja_xgast": atomico_caja_xgast},
+        metadata={
+            "num_categoria": num,
+            "concepto_original": concepto,
+            "atomico_caja_xgast": atomico_caja_xgast,
+        },
     )
 
     return {
@@ -353,8 +405,9 @@ def caja_egresos_sin_clasificar(limite: int = 200) -> list[dict]:
     fila xgast linkeada vía mov_doble. Usado por el banner en /caja y la
     UI de clasificación.
     """
-    return db.fetch_all(
-        """
+    return (
+        db.fetch_all(
+            """
         SELECT c.id_caja, c.fecha, c.importe, c.concepto, c.clave
           FROM scintela.caja c
          WHERE c.tipo = 'S'
@@ -399,8 +452,10 @@ def caja_egresos_sin_clasificar(limite: int = 200) -> list[dict]:
          ORDER BY c.fecha DESC, c.id_caja DESC
          LIMIT %s
         """,
-        ("PICH%", "INTER%", "RR%", "IN.%", "INHB%", limite),
-    ) or []
+            ("PICH%", "INTER%", "RR%", "IN.%", "INHB%", limite),
+        )
+        or []
+    )
 
 
 def buscar(
@@ -412,8 +467,9 @@ def buscar(
     """Histórico de gastos filtrable por concepto/proveedor/doc + fecha."""
     q = (q or "").strip()
     like = f"%{q}%" if q else None
-    rows = db.fetch_all(
-        """
+    rows = (
+        db.fetch_all(
+            """
         SELECT g.id_xgast, g.fecha, g.fechad, g.doc, g.prov,
                g.concepto, g.num, g.importe, g.saldo, g.stat, g.clave,
                COALESCE(p.nombre, '') AS proveedor
@@ -430,17 +486,21 @@ def buscar(
         ORDER BY g.fecha DESC, g.id_xgast DESC
         LIMIT %(limite)s
         """,
-        {
-            "q": q or None, "like": like,
-            "desde": desde or None, "hasta": hasta or None,
-            "limite": limite,
-        },
-    ) or []
+            {
+                "q": q or None,
+                "like": like,
+                "desde": desde or None,
+                "hasta": hasta or None,
+                "limite": limite,
+            },
+        )
+        or []
+    )
     # Running total cronológico (ascendente) — total gastado corrido.
     # TMT 2026-05-13.
     from datetime import date as _date
-    rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
-                                           r.get("id_xgast") or 0))
+
+    rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min, r.get("id_xgast") or 0))
     acum = 0.0
     for r in rows_asc:
         acum += float(r.get("importe") or 0)
@@ -450,8 +510,9 @@ def buscar(
 
 def totales_por_mes(meses: int = 12) -> list[dict]:
     """Resumen mensual de gastos para un mini-chart o vista de tendencia."""
-    return db.fetch_all(
-        """
+    return (
+        db.fetch_all(
+            """
         SELECT date_trunc('month', fecha)::date AS mes,
                SUM(importe) AS total,
                COUNT(*)     AS n_gastos
@@ -460,15 +521,15 @@ def totales_por_mes(meses: int = 12) -> list[dict]:
         GROUP BY 1
         ORDER BY 1 DESC
         """,
-        (max(1, min(int(meses or 12), 60)),),
-    ) or []
+            (max(1, min(int(meses or 12), 60)),),
+        )
+        or []
+    )
 
 
 def proximo_numero() -> int:
     """Siguiente número de gasto (MAX+1). Fallback a 1."""
-    row = db.fetch_one(
-        "SELECT COALESCE(MAX(num), 0) + 1 AS siguiente FROM scintela.xgast"
-    )
+    row = db.fetch_one("SELECT COALESCE(MAX(num), 0) + 1 AS siguiente FROM scintela.xgast")
     return int(row["siguiente"]) if row else 1
 
 
@@ -538,8 +599,9 @@ def crear(
         fechad_final = fechad
 
     with db.tx() as conn:
-        row = db.execute_returning(
-            """
+        row = (
+            db.execute_returning(
+                """
             INSERT INTO scintela.xgast
                 (fecha, doc, prov, concepto, num, fechad, importe, saldo, stat,
                  clave, usuario_crea)
@@ -547,21 +609,23 @@ def crear(
                     %s, %s)
             RETURNING id_xgast, num
             """,
-            (
-                fecha,
-                doc_final,
-                (prov or None) and prov[:5].upper(),
-                concepto[:100],
-                num,
-                fechad_final,
-                importe_num,
-                saldo,
-                stat,
-                (clave or None) and clave[:3].upper(),
-                usuario,
-            ),
-            conn=conn,
-        ) or {}
+                (
+                    fecha,
+                    doc_final,
+                    (prov or None) and prov[:5].upper(),
+                    concepto[:100],
+                    num,
+                    fechad_final,
+                    importe_num,
+                    saldo,
+                    stat,
+                    (clave or None) and clave[:3].upper(),
+                    usuario,
+                ),
+                conn=conn,
+            )
+            or {}
+        )
         # Historial unificado: todo gasto queda registrado en mov_doble
         # como auto-referencia para que aparezca en /historial. Si falla,
         # rollback total. TMT 2026-05-13.
@@ -576,9 +640,11 @@ def crear(
         # alta + reverso es simétrico.
         if row.get("id_xgast"):
             import mov_doble as _md
+
             if pagado:
                 # 1) caja salida real
                 import caja_helpers as _ch
+
                 caja_row = _ch.insert_movimiento_caja(
                     conn,
                     fecha=fecha,
@@ -601,10 +667,12 @@ def crear(
                     fecha=fecha,
                     concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:200],
                     usuario=usuario,
-                    metadata={"doc": doc_final,
-                              "prov": prov or "",
-                              "pagado": True,
-                              "fechad": fechad_final.isoformat() if fechad_final else None},
+                    metadata={
+                        "doc": doc_final,
+                        "prov": prov or "",
+                        "pagado": True,
+                        "fechad": fechad_final.isoformat() if fechad_final else None,
+                    },
                 )
             else:
                 # Gasto a crédito (no pagado) — sigue creando un xgast→xgast
@@ -620,10 +688,12 @@ def crear(
                     fecha=fecha,
                     concepto=(f"Gasto #{num} {doc_final} — {concepto}")[:200],
                     usuario=usuario,
-                    metadata={"doc": doc_final,
-                              "prov": prov or "",
-                              "pagado": False,
-                              "fechad": fechad_final.isoformat() if fechad_final else None},
+                    metadata={
+                        "doc": doc_final,
+                        "prov": prov or "",
+                        "pagado": False,
+                        "fechad": fechad_final.isoformat() if fechad_final else None,
+                    },
                 )
     return row
 
@@ -632,25 +702,28 @@ def resumen(desde: str | None = None, hasta: str | None = None) -> dict:
     """Total + n + ticket promedio del filtro actual."""
     desde_d = desde or (date.today() - timedelta(days=90)).isoformat()
     hasta_d = hasta or date.today().isoformat()
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COALESCE(SUM(importe), 0) AS total,
                COALESCE(SUM(saldo), 0)   AS saldo_pendiente,
                COUNT(*)                  AS n
         FROM scintela.xgast
         WHERE fecha BETWEEN %s::date AND %s::date
         """,
-        (desde_d, hasta_d),
-    ) or {}
+            (desde_d, hasta_d),
+        )
+        or {}
+    )
     n = int(row.get("n") or 0)
     total = float(row.get("total") or 0)
     return {
-        "n":               n,
-        "total":           total,
+        "n": n,
+        "total": total,
         "saldo_pendiente": float(row.get("saldo_pendiente") or 0),
         "ticket_promedio": (total / n) if n else 0.0,
-        "desde":           desde_d,
-        "hasta":           hasta_d,
+        "desde": desde_d,
+        "hasta": hasta_d,
     }
 
 
@@ -751,7 +824,8 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
                AND estado       = 'activo'
              ORDER BY id_mov_doble DESC LIMIT 1
             """,
-            (id_xgast,), conn=conn,
+            (id_xgast,),
+            conn=conn,
         )
 
         if stat_prev == "A":
@@ -759,12 +833,14 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
             # pago desde concepto_parser (mismo motor que usa caja.crear).
             try:
                 import concepto_parser
+
                 concepto_orig = ""
                 # Re-leer el concepto del xgast (puede tener marca [ANULADO]
                 # ya, pero queremos el original sin marca).
                 cr = db.fetch_one(
                     "SELECT concepto FROM scintela.xgast WHERE id_xgast = %s",
-                    (id_xgast,), conn=conn,
+                    (id_xgast,),
+                    conn=conn,
                 )
                 concepto_orig = (cr or {}).get("concepto") or ""
                 # Sacar la marca [ANULADO...] para parsear el original.
@@ -772,15 +848,12 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
 
                 provs_validos = {
                     (r.get("codigo_prov") or "").strip().upper()
-                    for r in (db.fetch_all(
-                        "SELECT codigo_prov FROM scintela.proveedor"
-                    ) or [])
+                    for r in (db.fetch_all("SELECT codigo_prov FROM scintela.proveedor") or [])
                 }
                 bancos_map: dict = {}
-                for b in db.fetch_all(
-                    "SELECT no_banco, COALESCE(nombre, '') AS nombre "
-                    "FROM scintela.banco"
-                ) or []:
+                for b in (
+                    db.fetch_all("SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco") or []
+                ):
                     n = (b.get("nombre") or "").upper().strip()
                     if "PICHINC" in n:
                         bancos_map.setdefault("PICHINCHA", int(b["no_banco"]))
@@ -797,6 +870,7 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
             if ptipo == "transfer_banco":
                 # Pago vía banco — compensación con NC.
                 import bank_helpers
+
                 no_banco = parsed.get("no_banco")
                 if no_banco:
                     bank_helpers.insert_movimiento_bancario(
@@ -810,27 +884,26 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
                         usuario=usuario,
                         stat="A",
                     )
-                    side_effects_reversados.append(
-                        f"banco{no_banco} +${importe_gasto:.2f}"
-                    )
+                    side_effects_reversados.append(f"banco{no_banco} +${importe_gasto:.2f}")
             elif ptipo == "compra_proveedor" or ptipo == "retiro_socio" or ptipo == "dolares":
                 # Casos raros para gasto — dejamos auditado pero no
                 # auto-compensamos (el usuario tiene que ir al módulo
                 # específico). En la práctica los gastos no van por estas
                 # vías; defensivo.
-                side_effects_reversados.append(
-                    f"(no auto-compensado: tipo={ptipo})"
-                )
+                side_effects_reversados.append(f"(no auto-compensado: tipo={ptipo})")
             else:
                 # Default: pago en caja (gasto típico — luz, agua, etc.).
                 # Compensación = ENTRADA en caja por el mismo importe.
                 import caja_helpers
+
                 caja_helpers.insert_movimiento_caja(
                     conn,
-                    fecha=fecha_rev, tipo="E",
+                    fecha=fecha_rev,
+                    tipo="E",
                     importe=importe_gasto,
                     concepto=(f"REVERSO gasto #{g_row.get('num') or id_xgast}")[:80],
-                    clave="REV", usuario=usuario,
+                    clave="REV",
+                    usuario=usuario,
                 )
                 side_effects_reversados.append(f"caja +${importe_gasto:.2f}")
 
@@ -872,15 +945,16 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
             concepto=(
                 f"ANULACION gasto #{g_row.get('num') or id_xgast}"
                 + (f" — {motivo}" if motivo else "")
-                + (f" [{', '.join(side_effects_reversados)}]"
-                   if side_effects_reversados else "")
+                + (f" [{', '.join(side_effects_reversados)}]" if side_effects_reversados else "")
             )[:200],
             usuario=usuario,
-            metadata={"motivo": motivo or "",
-                      "id_xgast": id_xgast,
-                      "doc": g_row.get("doc"),
-                      "stat_previo": stat_prev,
-                      "side_effects_reversados": side_effects_reversados},
+            metadata={
+                "motivo": motivo or "",
+                "id_xgast": id_xgast,
+                "doc": g_row.get("doc"),
+                "stat_previo": stat_prev,
+                "side_effects_reversados": side_effects_reversados,
+            },
             id_original=(md_orig or {}).get("id_mov_doble"),
         )
     return {
@@ -961,6 +1035,7 @@ def desclasificar(
     md_meta = md_orig.get("metadata") or {}
     if isinstance(md_meta, str):
         import json as _json
+
         try:
             md_meta = _json.loads(md_meta)
         except Exception:
@@ -968,10 +1043,9 @@ def desclasificar(
     es_atomico = bool(md_meta.get("atomico_caja_xgast"))
 
     import mov_doble as _md
-    obs_marca = (f"[DESCLASIFICADO {motivo}]" if motivo
-                 else "[DESCLASIFICADO]")
-    importe_md = float(md_orig.get("importe")
-                       or g_row.get("importe") or 0)
+
+    obs_marca = f"[DESCLASIFICADO {motivo}]" if motivo else "[DESCLASIFICADO]"
+    importe_md = float(md_orig.get("importe") or g_row.get("importe") or 0)
     id_caja_origen = int(md_orig["origen_id"])
 
     with db.tx() as conn:
@@ -1000,14 +1074,13 @@ def desclasificar(
             fecha=date.today(),
             concepto=(
                 f"DESCLASIFICAR xgast #{id_xgast} "
-                f"(V{g_row.get('num') or '?'}) ← caja #{id_caja_origen}"
-                + (f" — {motivo}" if motivo else "")
+                f"(V{g_row.get('num') or '?'}) ← caja #{id_caja_origen}" + (f" — {motivo}" if motivo else "")
             )[:200],
             usuario=usuario,
             metadata={
-                "motivo":   motivo or "",
-                "id_caja":  id_caja_origen,
-                "num_v":    g_row.get("num"),
+                "motivo": motivo or "",
+                "id_caja": id_caja_origen,
+                "num_v": g_row.get("num"),
                 "concepto_original": g_row.get("concepto"),
             },
             id_original=int(md_orig["id_mov_doble"]),
@@ -1023,6 +1096,7 @@ def desclasificar(
     if es_atomico:
         try:
             import modules.caja.queries as _cq
+
             caja_reversada = _cq.reversar(
                 id_caja_origen,
                 motivo=f"reverso flow atómico chip V{g_row.get('num')}: {motivo}"[:80],
@@ -1036,14 +1110,14 @@ def desclasificar(
             )
 
     return {
-        "id_xgast":      id_xgast,
-        "id_caja":       id_caja_origen,
-        "stat_previo":   (g_row.get("stat") or "").upper(),
-        "stat_nuevo":    "Y",
-        "num_v_previo":  g_row.get("num"),
-        "es_atomico":    es_atomico,
+        "id_xgast": id_xgast,
+        "id_caja": id_caja_origen,
+        "stat_previo": (g_row.get("stat") or "").upper(),
+        "stat_nuevo": "Y",
+        "num_v_previo": g_row.get("num"),
+        "es_atomico": es_atomico,
         "caja_reversada": caja_reversada,
-        "caja_warn":     caja_warn,
+        "caja_warn": caja_warn,
     }
 
 
@@ -1053,14 +1127,16 @@ def desclasificar(
 # la dueña reclasifica manualmente desde la UI agrupada por concepto único.
 # ─────────────────────────────────────────────────────────────────────────
 
+
 def xgast_sin_num_resumen() -> dict:
     """Total de xgast con num NULL o num=0 — los "sin clasificar".
 
     Devuelve {n, total, n_conceptos_unicos}.
     Excluye anulados (stat='Y') por convención.
     """
-    row = db.fetch_one(
-        """
+    row = (
+        db.fetch_one(
+            """
         SELECT COUNT(*)                          AS n,
                COALESCE(SUM(importe), 0)         AS total,
                COUNT(DISTINCT COALESCE(concepto, '')) AS n_conceptos_unicos
@@ -1068,7 +1144,9 @@ def xgast_sin_num_resumen() -> dict:
          WHERE (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
            AND COALESCE(stat, '') <> 'Y'
         """
-    ) or {}
+        )
+        or {}
+    )
     return {
         "n": int(row.get("n") or 0),
         "total": float(row.get("total") or 0),
@@ -1086,8 +1164,9 @@ def xgast_sin_num_por_concepto(limite: int = 200) -> list[dict]:
     Devuelve filas con: concepto, n, total, primer_id, ultimo_id, primera_fecha,
     ultima_fecha.
     """
-    return db.fetch_all(
-        """
+    return (
+        db.fetch_all(
+            """
         SELECT COALESCE(NULLIF(TRIM(concepto), ''), '(sin concepto)') AS concepto,
                COUNT(*)                          AS n,
                COALESCE(SUM(importe), 0)         AS total,
@@ -1102,8 +1181,10 @@ def xgast_sin_num_por_concepto(limite: int = 200) -> list[dict]:
          ORDER BY SUM(importe) DESC, COUNT(*) DESC
          LIMIT %s
         """,
-        (limite,),
-    ) or []
+            (limite,),
+        )
+        or []
+    )
 
 
 def reclasificar_concepto_bulk(
@@ -1137,8 +1218,9 @@ def reclasificar_concepto_bulk(
         raise ValueError("Concepto requerido.")
 
     def _do(conn_inner):
-        pre = db.fetch_one(
-            """
+        pre = (
+            db.fetch_one(
+                """
             SELECT COUNT(*)                  AS n,
                    COALESCE(SUM(importe), 0) AS total
               FROM scintela.xgast
@@ -1146,11 +1228,13 @@ def reclasificar_concepto_bulk(
                AND (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
                AND COALESCE(stat, '') <> 'Y'
             """,
-            (concepto,),
-            conn=conn_inner,
-        ) or {}
+                (concepto,),
+                conn=conn_inner,
+            )
+            or {}
+        )
         n_pre = int(pre.get("n") or 0)
-        total_pre = float(pre.get("total") or 0)
+        float(pre.get("total") or 0)
 
         if n_pre == 0:
             return {"filas_afectadas": 0, "importe_total": 0.0, "num": num}
@@ -1165,8 +1249,9 @@ def reclasificar_concepto_bulk(
         # SELECT). Sin esto, si dos usuarios reclasifican el mismo
         # concepto en paralelo, ambos veían "5 reclasificadas" cuando solo
         # el primero efectivamente las tocó. Race-safe.
-        rows = db.fetch_all(
-            """
+        rows = (
+            db.fetch_all(
+                """
             UPDATE scintela.xgast
                SET num = %s,
                    concepto = LEFT(
@@ -1185,9 +1270,11 @@ def reclasificar_concepto_bulk(
                AND COALESCE(stat, '') <> 'Y'
          RETURNING id_xgast, COALESCE(importe, 0) AS imp
             """,
-            (num, marca, usuario, concepto),
-            conn=conn_inner,
-        ) or []
+                (num, marca, usuario, concepto),
+                conn=conn_inner,
+            )
+            or []
+        )
         filas_real = len(rows)
         importe_real = sum(float(r.get("imp") or 0) for r in rows)
         return {

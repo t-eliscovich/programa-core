@@ -16,6 +16,7 @@ Variantes vistas:
 
 Devuelve siempre `list[DepositoPendiente]` con la misma forma.
 """
+
 from __future__ import annotations
 
 import io
@@ -23,7 +24,6 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Iterable
 
 _LOG = logging.getLogger("programa_core.conciliacion.parser_xlsx")
 
@@ -39,6 +39,7 @@ class DepositoPendiente:
     detalle   : nota libre, opcional (puede traer iniciales del cliente)
     hoja      : nombre de la hoja de origen (para trazabilidad)
     """
+
     fecha: date | None
     concepto: str
     codigo: str
@@ -90,15 +91,24 @@ def _parse_valor(v) -> Decimal:
 
 
 def _normalizar(s: str) -> str:
-    return (s or "").strip().lower().replace(" ", "").replace("á", "a") \
-        .replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
+    return (
+        (s or "")
+        .strip()
+        .lower()
+        .replace(" ", "")
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
 
 
-_HEADER_FECHA   = {"fecha", "fech", "fechha"}  # incluye 'FEC HA' normalizado
+_HEADER_FECHA = {"fecha", "fech", "fechha"}  # incluye 'FEC HA' normalizado
 _HEADER_CONCEPTO = {"concepto", "detalle", "descripcion", "observacion"}
-_HEADER_CODIGO  = {"codigo", "ref", "referencia", "numero", "ndocumento"}
-_HEADER_VALOR   = {"valor", "monto", "importe", "credito", "haber"}
-_HEADER_NOTA    = {"detalle2", "nota", "observ", "obs"}  # segundo "DETALLE" si existe
+_HEADER_CODIGO = {"codigo", "ref", "referencia", "numero", "ndocumento"}
+_HEADER_VALOR = {"valor", "monto", "importe", "credito", "haber"}
+_HEADER_NOTA = {"detalle2", "nota", "observ", "obs"}  # segundo "DETALLE" si existe
 
 
 def _detectar_columnas(headers: list[str]) -> dict:
@@ -107,8 +117,7 @@ def _detectar_columnas(headers: list[str]) -> dict:
     Si una hoja tiene dos columnas "DETALLE" (como FEB2023), la primera se trata
     como 'concepto' y la segunda como 'nota'. Manejamos eso al detectar.
     """
-    mapeo = {"fecha": None, "concepto": None, "codigo": None,
-             "valor": None, "nota": None}
+    mapeo = {"fecha": None, "concepto": None, "codigo": None, "valor": None, "nota": None}
     detalles_vistos: list[int] = []
     for i, h in enumerate(headers):
         n = _normalizar(h)
@@ -149,8 +158,7 @@ def _es_fila_decorativa(celdas: list) -> bool:
     textos = [str(c or "").strip().upper() for c in celdas if c]
     if not textos:
         return False
-    return any("PENDIENTE" in t or "DEPOSITO" in t and len(textos) == 1
-               for t in textos)
+    return any("PENDIENTE" in t or "DEPOSITO" in t and len(textos) == 1 for t in textos)
 
 
 def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
@@ -166,9 +174,7 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
     try:
         from openpyxl import load_workbook
     except ImportError as e:
-        raise RuntimeError(
-            "openpyxl no instalado — pip install openpyxl"
-        ) from e
+        raise RuntimeError("openpyxl no instalado — pip install openpyxl") from e
 
     if not raw:
         return []
@@ -197,8 +203,9 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
             continue
 
         # Leer filas siguientes
-        for i, row in enumerate(ws.iter_rows(min_row=header_row_idx + 1, values_only=True),
-                                start=header_row_idx + 1):
+        for _i, row in enumerate(
+            ws.iter_rows(min_row=header_row_idx + 1, values_only=True), start=header_row_idx + 1
+        ):
             row_list = list(row)
             if not any(c is not None and str(c).strip() for c in row_list):
                 continue  # fila totalmente vacía
@@ -233,14 +240,16 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
                 except IndexError:
                     pass
 
-            salida.append(DepositoPendiente(
-                fecha=fecha,
-                concepto=concepto,
-                codigo=codigo,
-                valor=valor,
-                detalle=nota,
-                hoja=nombre_hoja,
-            ))
+            salida.append(
+                DepositoPendiente(
+                    fecha=fecha,
+                    concepto=concepto,
+                    codigo=codigo,
+                    valor=valor,
+                    detalle=nota,
+                    hoja=nombre_hoja,
+                )
+            )
 
     wb.close()
     return salida

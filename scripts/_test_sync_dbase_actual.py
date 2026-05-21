@@ -7,6 +7,7 @@ fechas TEXT, importes con coma, stat legacy remap).
 
 Correr: python scripts/_test_sync_dbase_actual.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -34,18 +35,14 @@ def check(cond, msg):
 
 # ─── Coerciones robustas ──────────────────────────────────────────────────
 
+
 def test_date_robusto():
     print("\n[test] _date_robusto — pre-mortem 2f")
-    check(import_dbf._date_robusto(date(2026, 5, 20)) == date(2026, 5, 20),
-          "datetime.date pass-through")
-    check(import_dbf._date_robusto("20/05/2026") == date(2026, 5, 20),
-          "DD/MM/YYYY string")
-    check(import_dbf._date_robusto("2026-05-20") == date(2026, 5, 20),
-          "YYYY-MM-DD string")
-    check(import_dbf._date_robusto("20-05-2026") == date(2026, 5, 20),
-          "DD-MM-YYYY string")
-    check(import_dbf._date_robusto("20/05/26") == date(2026, 5, 20),
-          "DD/MM/YY string (corto)")
+    check(import_dbf._date_robusto(date(2026, 5, 20)) == date(2026, 5, 20), "datetime.date pass-through")
+    check(import_dbf._date_robusto("20/05/2026") == date(2026, 5, 20), "DD/MM/YYYY string")
+    check(import_dbf._date_robusto("2026-05-20") == date(2026, 5, 20), "YYYY-MM-DD string")
+    check(import_dbf._date_robusto("20-05-2026") == date(2026, 5, 20), "DD-MM-YYYY string")
+    check(import_dbf._date_robusto("20/05/26") == date(2026, 5, 20), "DD/MM/YY string (corto)")
     check(import_dbf._date_robusto("") is None, "string vacío")
     check(import_dbf._date_robusto(None) is None, "None")
     check(import_dbf._date_robusto("#REF!") is None, "Excel ref error")
@@ -68,27 +65,29 @@ def test_num_robusto():
 def test_stat_legacy_remap():
     print("\n[test] _STAT_LEGACY_MAP + _remap_stat — pre-mortem 2a")
     # CHEQUE: V→B, Y→None, *→None
-    check(import_dbf._remap_stat("V", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
-          "cheque stat=V → B")
-    check(import_dbf._remap_stat("W", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
-          "cheque stat=W → B (confirmado dueña 2026-05-21)")
-    check(import_dbf._remap_stat("Y", import_dbf._STAT_LEGACY_MAP_CHEQUE) is None,
-          "cheque stat=Y → None (skip)")
-    check(import_dbf._remap_stat("*", import_dbf._STAT_LEGACY_MAP_CHEQUE) is None,
-          "cheque stat=* → None")
-    check(import_dbf._remap_stat("B", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
-          "cheque stat=B (válido) pass-through")
-    check(import_dbf._remap_stat("Z", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "Z",
-          "cheque stat=Z (cartera moderno) pass-through")
+    check(import_dbf._remap_stat("V", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B", "cheque stat=V → B")
+    check(
+        import_dbf._remap_stat("W", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
+        "cheque stat=W → B (confirmado dueña 2026-05-21)",
+    )
+    check(
+        import_dbf._remap_stat("Y", import_dbf._STAT_LEGACY_MAP_CHEQUE) is None, "cheque stat=Y → None (skip)"
+    )
+    check(import_dbf._remap_stat("*", import_dbf._STAT_LEGACY_MAP_CHEQUE) is None, "cheque stat=* → None")
+    check(
+        import_dbf._remap_stat("B", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
+        "cheque stat=B (válido) pass-through",
+    )
+    check(
+        import_dbf._remap_stat("Z", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "Z",
+        "cheque stat=Z (cartera moderno) pass-through",
+    )
     # FACTURA: V→A
-    check(import_dbf._remap_stat("V", import_dbf._STAT_LEGACY_MAP_FACTURA) == "A",
-          "factura stat=V → A")
+    check(import_dbf._remap_stat("V", import_dbf._STAT_LEGACY_MAP_FACTURA) == "A", "factura stat=V → A")
     # Genérico
-    check(import_dbf._remap_stat("Y", import_dbf._STAT_LEGACY_MAP_GENERIC) is None,
-          "genérico stat=Y → None")
+    check(import_dbf._remap_stat("Y", import_dbf._STAT_LEGACY_MAP_GENERIC) is None, "genérico stat=Y → None")
     # None / "" no rompen
-    check(import_dbf._remap_stat(None, import_dbf._STAT_LEGACY_MAP_CHEQUE) is None,
-          "None stat → None")
+    check(import_dbf._remap_stat(None, import_dbf._STAT_LEGACY_MAP_CHEQUE) is None, "None stat → None")
 
 
 def test_mappers_skip_legacy():
@@ -100,8 +99,7 @@ def test_mappers_skip_legacy():
     # _map_cheque con stat='V' debería devolver dict con stat='B'.
     rec_v = {"STAT": "V", "FECHA": date(2026, 5, 20), "IMPORTE": 100, "CLIENTE": "BED"}
     out = import_dbf._map_cheque(rec_v)
-    check(out is not None and out["stat"] == "B",
-          "_map_cheque con stat=V remapea a B")
+    check(out is not None and out["stat"] == "B", "_map_cheque con stat=V remapea a B")
     # _map_factura con stat='Y'
     rec_y_f = {"STAT": "Y", "FECHA": date(2026, 5, 20), "IMPORTE": 200}
     out = import_dbf._map_factura(rec_y_f)
@@ -124,12 +122,12 @@ def test_mes_a_num():
 
 # ─── sync_dbase_actual helpers ────────────────────────────────────────────
 
+
 def test_source_dir_check():
     print("\n[test] verificar_source_dir")
     with tempfile.TemporaryDirectory() as tmp:
         ok, msg = sync_dbase_actual.verificar_source_dir(Path(tmp))
-        check(not ok and "no contiene" in msg.lower(),
-              "directorio vacío → error")
+        check(not ok and "no contiene" in msg.lower(), "directorio vacío → error")
         # Crear un DBF dummy
         (Path(tmp) / "DUMMY.DBF").write_bytes(b"\x03")
         ok, msg = sync_dbase_actual.verificar_source_dir(Path(tmp))
@@ -152,16 +150,21 @@ def test_argv_parsing():
     ap.add_argument("--skip-pre-checks", action="store_true")
     ap.add_argument("--skip-post-checks", action="store_true")
     ap.add_argument("--skip-backfills", action="store_true")
-    args = ap.parse_args([
-        "--source", "/tmp",
-        "--dry-run",
-        "--only", "FACTURAS.DBF",
-        "--encoding", "cp1252",
-        "--skip-backup",
-        "--skip-pre-checks",
-        "--skip-post-checks",
-        "--skip-backfills",
-    ])
+    args = ap.parse_args(
+        [
+            "--source",
+            "/tmp",
+            "--dry-run",
+            "--only",
+            "FACTURAS.DBF",
+            "--encoding",
+            "cp1252",
+            "--skip-backup",
+            "--skip-pre-checks",
+            "--skip-post-checks",
+            "--skip-backfills",
+        ]
+    )
     check(args.source == "/tmp", "--source")
     check(args.dry_run is True, "--dry-run")
     check(args.only == "FACTURAS.DBF", "--only")
@@ -175,21 +178,33 @@ def test_argv_parsing():
 def test_table_map_completeness():
     print("\n[test] TABLE_MAP cubre las tablas críticas")
     expected = {
-        "FACTURAS.DBF", "CHEQUES.DBF", "POSDAT.DBF", "CAJA.DBF",
-        "DOLARES.DBF", "ACTIVOS.DBF", "HISTORIA.DBF", "INICIALE.DBF",
-        "COMPRAS.DBF", "FLUJO.DBF", "PICHINCH.DBF", "INTER.DBF",
-        "XGAST.DBF", "RETIROS.DBF", "TINTO.DBF",
+        "FACTURAS.DBF",
+        "CHEQUES.DBF",
+        "POSDAT.DBF",
+        "CAJA.DBF",
+        "DOLARES.DBF",
+        "ACTIVOS.DBF",
+        "HISTORIA.DBF",
+        "INICIALE.DBF",
+        "COMPRAS.DBF",
+        "FLUJO.DBF",
+        "PICHINCH.DBF",
+        "INTER.DBF",
+        "XGAST.DBF",
+        "RETIROS.DBF",
+        "TINTO.DBF",
     }
     actual = set(import_dbf.TABLE_MAP.keys())
     missing = expected - actual
-    check(not missing, f"todos los DBFs críticos en TABLE_MAP "
-                       f"(faltarían: {sorted(missing) if missing else 'none'})")
+    check(
+        not missing,
+        f"todos los DBFs críticos en TABLE_MAP (faltarían: {sorted(missing) if missing else 'none'})",
+    )
 
 
 def test_encoding_constants():
     print("\n[test] encoding constants disponibles")
-    check(import_dbf._DEFAULT_ENCODING == "cp850",
-          "default encoding es cp850")
+    check(import_dbf._DEFAULT_ENCODING == "cp850", "default encoding es cp850")
     check("cp1252" in import_dbf._TRY_ENCODINGS, "cp1252 en TRY_ENCODINGS")
     check("latin-1" in import_dbf._TRY_ENCODINGS, "latin-1 en TRY_ENCODINGS")
     check("utf-8" in import_dbf._TRY_ENCODINGS, "utf-8 en TRY_ENCODINGS")
@@ -197,12 +212,14 @@ def test_encoding_constants():
 
 def test_min_migration_pinned():
     print("\n[test] MIN_MIGRATION pinned al último deploy")
-    check(sync_dbase_actual.MIN_MIGRATION >= "0039",
-          f"MIN_MIGRATION={sync_dbase_actual.MIN_MIGRATION} ≥ 0039 "
-          "(incluye conciliacion_manual_log)")
+    check(
+        sync_dbase_actual.MIN_MIGRATION >= "0039",
+        f"MIN_MIGRATION={sync_dbase_actual.MIN_MIGRATION} ≥ 0039 (incluye conciliacion_manual_log)",
+    )
 
 
 # ─── RUN ──────────────────────────────────────────────────────────────────
+
 
 def main():
     print("=" * 60)
