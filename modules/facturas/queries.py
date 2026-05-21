@@ -632,13 +632,17 @@ def buscar(
     # Devoluciones y sobrepagos (saldo negativo) restan del corrido, lo
     # mismo que hacen en el header — total visible = último ACUM.
     from datetime import date as _date
+    # Calculamos el acum en orden ASC cronológico (running total).
     rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
                                            r.get("numf") or 0))
     acum = 0.0
     for r in rows_asc:
         acum += float(r.get("saldo") or 0)
         r["saldo_acumulado"] = acum
-    return rows_asc
+    # Pero la pantalla muestra las facturas en orden DESC (pedido dueña
+    # 2026-05-21: las nuevas arriba). El SQL ya devuelve DESC; lo único
+    # que necesitamos hacer es invertir el resultado del sort ASC.
+    return list(reversed(rows_asc))
 
 
 def conteos_por_vista() -> dict:
