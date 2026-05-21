@@ -80,10 +80,10 @@
   }
   .h12-tbl td.delta-cell.up   { color: rgb(22 163 74); }
   .h12-tbl td.delta-cell.down { color: rgb(220 38 38); }
-  /* Federico 2026-05-21 - columna fina de diferencias (letra chica). */
+  /* Federico 2026-05-21 - columna de diferencias: letra chica, sin negrita. */
   .h12-tbl .h12-delta-col {
-    font-size: 10px; color: rgb(100 116 139);
-    background: rgb(248 250 252); font-style: italic;
+    font-size: 9px !important; font-weight: 400 !important;
+    color: rgb(100 116 139); background: rgb(248 250 252);
   }
 
   @media print {
@@ -110,10 +110,6 @@
       </p>
     </div>
     <div class="no-print flex items-center gap-2">
-      <a href="{{ url_for('informes.balance_compras') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
-        Compras del mes →
-      </a>
       <a href="{{ url_for('informes.balance') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
         ← Resultados
