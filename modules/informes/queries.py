@@ -5744,8 +5744,81 @@ def fuentes_y_usos(
     yy, mm = int(hasta_anio), int(hasta_mes)
     yy_ant, mm_ant = int(desde_anio), int(desde_mes)
 
+    # TMT 2026-05-20 v5 — fallback robusto contra snapshots vacíos.
+    # El bug que se reportó: el snapshot existe pero tiene 0 en las
+    # columnas críticas (banco, cart, ustock, etc.) porque
+    # `balance_components_as_of` los lee del snapshot ANTERIOR. Si nunca
+    # hubo un snapshot "padre" bueno, todos heredan 0 → fuentes-y-usos
+    # muestra fila tras fila en "—".
+    #
+    # Heurística:
+    #  1. Si el mes HASTA es el mes en curso (o un mes sin snapshot),
+    #     calcular h_fin con `informe_balance()` LIVE de HOY → foto real.
+    #  2. Si el mes DESDE no tiene snapshot, calcularlo con
+    #     `balance_components_as_of(last_day(desde))` y armar un dict
+    #     equivalente al row de historia.
+    #  3. Si el snapshot existe pero `banco`, `cart`, o `ustock` están en
+    #     0 → considerar inválido y recalcular as_of.
+    from datetime import date as _date, datetime as _dt
+    import calendar as _cal
+
+    def _es_snap_vacio(row: dict) -> bool:
+        """Snapshot inservible: las cuentas críticas están en 0."""
+        if not row:
+            return True
+        return (float(row.get("banco") or 0) == 0
+                and float(row.get("cart") or 0) == 0
+                and float(row.get("ustock") or 0) == 0)
+
+    def _row_desde_componentes(c: dict, fecha) -> dict:
+        """Mapea `balance_components_as_of` output → mismas keys que
+        scintela.historia row (lo que espera `f(row, col)` abajo)."""
+        return {
+            "fecha":      fecha,
+            "banco":      float(c.get("salbanc") or c.get("banco") or 0),
+            "cart":       float((c.get("totc") or 0)) + float((c.get("totf") or 0)),
+            "ustock":     float(c.get("vsto") or c.get("ustock") or 0),
+            "uqui":       float(c.get("vqx") or c.get("uqui") or 0),
+            "maquinaria": float(c.get("umaq") or c.get("maquinaria") or 0),
+            "realty":     float(c.get("uact") or c.get("realty") or 0),
+            "anticipos":  float(c.get("antic") or c.get("anticipos") or 0),
+            "deuda":      float(c.get("totp") or c.get("deuda") or 0),
+            "usret":      float(c.get("usret") or c.get("retiro") or 0),
+            "usuti":      float(c.get("usuti") or c.get("utilidad") or 0),
+            "patrimonio": float(c.get("patr") or c.get("patrimonio") or 0),
+            "_origen":    "live",
+        }
+
     h_fin = _historia_en_mes(yy, mm)
     h_ini = _historia_en_mes(yy_ant, mm_ant)
+
+    # Fallback HASTA: snapshot ausente o vacío
+    hoy = _date.today()
+    es_mes_actual = (yy == hoy.year and mm == hoy.month)
+    if _es_snap_vacio(h_fin) or es_mes_actual:
+        try:
+            if es_mes_actual:
+                # Mes actual → balance LIVE de hoy.
+                bal_live = informe_balance()  # type: ignore[name-defined]
+                comp = (bal_live or {}).get("diagnostico", {}).get("componentes", {})
+                h_fin = _row_desde_componentes(comp, hoy)
+            else:
+                last_day = _cal.monthrange(yy, mm)[1]
+                fecha_fin = _date(yy, mm, last_day)
+                comp = balance_components_as_of(fecha_fin)
+                h_fin = _row_desde_componentes(comp, fecha_fin)
+        except Exception:
+            pass
+
+    # Fallback DESDE
+    if _es_snap_vacio(h_ini):
+        try:
+            last_day_i = _cal.monthrange(yy_ant, mm_ant)[1]
+            fecha_ini = _date(yy_ant, mm_ant, last_day_i)
+            comp = balance_components_as_of(fecha_ini)
+            h_ini = _row_desde_componentes(comp, fecha_ini)
+        except Exception:
+            pass
 
     if not h_fin or not h_ini:
         return {
