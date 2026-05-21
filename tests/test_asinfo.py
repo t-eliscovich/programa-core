@@ -129,8 +129,93 @@ def test_disponible_true_con_metabase_y_al_menos_una_card(monkeypatch):
         "ASINFO_CARD_VENDEDOR_USD",
         "ASINFO_CARD_VENDEDOR_KG",
         "ASINFO_CARD_CLIENTE_KG",
+        "ASINFO_CARD_FACTURAS",
     ):
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv("ASINFO_CARD_CLIENTE_KG", "164")
     with patch.object(metabase_client, "disponible", return_value=True):
         assert service.disponible() is True
+
+
+# ---------------------------------------------------------------------------
+# facturas_periodo  /  facturas_totales_por_tipo
+# ---------------------------------------------------------------------------
+
+
+def test_facturas_periodo_pasa_rango_como_template_tags(monkeypatch):
+    from datetime import date
+
+    monkeypatch.setenv("ASINFO_CARD_FACTURAS", "199")
+    with patch.object(metabase_client, "fetch_card", return_value=[]) as m:
+        service.facturas_periodo(date(2026, 5, 1), date(2026, 5, 31))
+    args, kwargs = m.call_args
+    assert args[0] == "199"
+    params = kwargs.get("params")
+    assert params is not None
+    assert len(params) == 2
+    # fecha_inicio
+    assert params[0]["target"] == ["variable", ["template-tag", "fecha_inicio"]]
+    assert params[0]["value"] == "2026-05-01"
+    # fecha_fin
+    assert params[1]["target"] == ["variable", ["template-tag", "fecha_fin"]]
+    assert params[1]["value"] == "2026-05-31"
+
+
+def test_facturas_periodo_acepta_strings_iso(monkeypatch):
+    """Si paso strings 'YYYY-MM-DD' en lugar de date, también funciona."""
+    monkeypatch.setenv("ASINFO_CARD_FACTURAS", "199")
+    with patch.object(metabase_client, "fetch_card", return_value=[]) as m:
+        service.facturas_periodo("2026-05-01", "2026-05-31")
+    params = m.call_args.kwargs["params"]
+    assert params[0]["value"] == "2026-05-01"
+    assert params[1]["value"] == "2026-05-31"
+
+
+def test_facturas_periodo_sin_env_devuelve_vacio(monkeypatch):
+    monkeypatch.delenv("ASINFO_CARD_FACTURAS", raising=False)
+    with patch.object(metabase_client, "fetch_card") as m:
+        result = service.facturas_periodo("2026-05-01", "2026-05-31")
+    assert result == []
+    m.assert_not_called()
+
+
+def test_facturas_totales_por_tipo_suma_correctamente(monkeypatch):
+    """Replica el caso del 2026-05-20 — totales por tipo deben sumar bien."""
+    rows = [
+        {"tipo": "FACTURA", "kg": 100, "usd": 1000},
+        {"tipo": "FACTURA", "kg": 200, "usd": 2000},
+        {"tipo": "DEVOLUCION", "kg": -10, "usd": -100},
+        {"tipo": "NC_FINANCIERA", "kg": 0, "usd": -50},
+        {"tipo": "NC_FINANCIERA", "kg": 0, "usd": -30},
+    ]
+    monkeypatch.setenv("ASINFO_CARD_FACTURAS", "199")
+    with patch.object(metabase_client, "fetch_card", return_value=rows):
+        totales = service.facturas_totales_por_tipo("2026-05-01", "2026-05-31")
+    assert totales["FACTURA"]["docs"] == 2
+    assert totales["FACTURA"]["kg"] == 300.0
+    assert totales["FACTURA"]["usd"] == 3000.0
+    assert totales["DEVOLUCION"]["docs"] == 1
+    assert totales["DEVOLUCION"]["kg"] == -10.0
+    assert totales["NC_FINANCIERA"]["docs"] == 2
+    assert totales["NC_FINANCIERA"]["kg"] == 0.0
+    assert totales["NC_FINANCIERA"]["usd"] == -80.0
+
+
+def test_facturas_totales_por_tipo_vacio_si_no_hay_data(monkeypatch):
+    monkeypatch.setenv("ASINFO_CARD_FACTURAS", "199")
+    with patch.object(metabase_client, "fetch_card", return_value=[]):
+        assert service.facturas_totales_por_tipo("2026-05-01", "2026-05-31") == {}
+
+
+def test_facturas_totales_robusto_con_nulls_y_strings(monkeypatch):
+    """Si la card devuelve kg/usd como None o como string, no rompe."""
+    rows = [
+        {"tipo": "FACTURA", "kg": None, "usd": "1500.5"},
+        {"tipo": None, "kg": 50, "usd": 500},  # tipo desconocido cae en '?'
+    ]
+    monkeypatch.setenv("ASINFO_CARD_FACTURAS", "199")
+    with patch.object(metabase_client, "fetch_card", return_value=rows):
+        totales = service.facturas_totales_por_tipo("2026-05-01", "2026-05-31")
+    assert totales["FACTURA"]["kg"] == 0.0
+    assert totales["FACTURA"]["usd"] == 1500.5
+    assert "?" in totales

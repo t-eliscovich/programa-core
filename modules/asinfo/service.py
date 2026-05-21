@@ -118,6 +118,72 @@ def ventas_cliente_kg(vendedor: Optional[str] = None) -> list[dict]:
     return fetch_card_from_env("ASINFO_CARD_CLIENTE_KG", params=params)
 
 
+def facturas_periodo(desde, hasta) -> list[dict]:
+    """Facturas + NC financieras + Devoluciones + NTEN en el rango [desde, hasta].
+
+    Cada fila es un documento individual con:
+        tipo            — 'FACTURA' | 'DEVOLUCION' | 'NC_FINANCIERA' | 'NTEN' | 'NCNT'
+        fecha           — date
+        numero          — TEXT ('001-099-000175661' o 'NTEN-10444')
+        cliente_codigo  — TEXT (código user-facing de empresa)
+        vendedor        — TEXT (nombre del agente comercial)
+        kg              — DECIMAL. NC_FINANCIERA siempre 0. DEVOLUCION/NCNT negados.
+        usd             — DECIMAL. NC_FINANCIERA, DEVOLUCION y NCNT negados.
+
+    Lee de la card definida por la env var `ASINFO_CARD_FACTURAS` (ID 199 al 2026-05-21).
+    La card está validada contra el export histórico al 2026-05-20:
+    match exacto en USD, +16 kg (0.14%) en FACTURA por ajustes posteriores al export.
+
+    Args:
+        desde, hasta: `date` o string 'YYYY-MM-DD'. Ambos inclusivos.
+
+    Returns:
+        Lista de dicts con las columnas arriba. [] si Metabase está caído
+        o si la env var no está seteada (fail-soft).
+    """
+    if hasattr(desde, "isoformat"):
+        desde = desde.isoformat()
+    if hasattr(hasta, "isoformat"):
+        hasta = hasta.isoformat()
+    params = [
+        {
+            "type": "date/single",
+            "target": ["variable", ["template-tag", "fecha_inicio"]],
+            "value": str(desde),
+        },
+        {
+            "type": "date/single",
+            "target": ["variable", ["template-tag", "fecha_fin"]],
+            "value": str(hasta),
+        },
+    ]
+    return fetch_card_from_env("ASINFO_CARD_FACTURAS", params=params)
+
+
+def facturas_totales_por_tipo(desde, hasta) -> dict:
+    """Agregados por tipo de documento en el período [desde, hasta].
+
+    Wrapper sobre facturas_periodo() que suma kg y usd por tipo. Útil para
+    el panel de "ventas del mes" y para conciliar contra Programa Core.
+
+    Returns:
+        dict tipo→{docs, kg, usd}. Vacío si no hay data o si el bridge cae.
+    """
+    rows = facturas_periodo(desde, hasta)
+    out: dict = {}
+    for r in rows:
+        t = r.get("tipo") or "?"
+        slot = out.setdefault(t, {"docs": 0, "kg": 0.0, "usd": 0.0})
+        slot["docs"] += 1
+        slot["kg"] += float(r.get("kg") or 0)
+        slot["usd"] += float(r.get("usd") or 0)
+    # Redondear
+    for slot in out.values():
+        slot["kg"] = round(slot["kg"], 3)
+        slot["usd"] = round(slot["usd"], 2)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Disponibilidad
 # ---------------------------------------------------------------------------
@@ -137,5 +203,6 @@ def disponible() -> bool:
             "ASINFO_CARD_VENDEDOR_USD",
             "ASINFO_CARD_VENDEDOR_KG",
             "ASINFO_CARD_CLIENTE_KG",
+            "ASINFO_CARD_FACTURAS",
         )
     )
