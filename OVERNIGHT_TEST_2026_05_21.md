@@ -23,7 +23,32 @@ _(se llena a medida que comito)_
 
 ## Pantallas testeadas en browser
 
-_(se llena en Fase 2)_
+| Pantalla | Status | Nota |
+|---|---|---|
+| `/` (home) | ✅ | Logo + bienvenida. Sin KPIs (intencional). |
+| `/informes/balance` | ✅ | Resultados + Activo cuadran. Utilidad −941.618 (atención: pérdida acumulada del año) |
+| `/cheques` | ✅ | $1.790.450 · 992 cartera. Tabs Cartera Z/Postergados/Daniela/Devueltos/Cartera total/Depositados/Eliminados |
+| `/facturas` | ✅ | $5.051.001 · 4516 cartera, 4927 total. Sobrepagos en rojo. |
+| `/posdat` | ✅ | $2.138.605 · 155 posdat + 11 YY = 166 partidas. Matchea Pasivos del Balance |
+| `/caja` | ✅ | $25.973 · 523 movs. Hay "REVERSO id 522 — sin motivo" (L-3) |
+| `/bancos` | ✅ | PICHINCHA $2.349.530 + INTERNACI $3.761,19 = $2.353.291. Matchea Balance ✓ |
+| `/activos` | ✅ con drift | Valor libros $4.039.934 — Balance suma solo M/K/I vivos = $2.574.934 (L-4 explicado) |
+| `/clientes` | ✅ | Listado paginable. Pago=C (contado/crédito). |
+| `/compras` | ⚠ | Header dice "$2.138.606 · 166 partidas abiertas a proveedores" pero tabla muestra $2.864.093/395 filas (L-5 confusión KPI) |
+| `/informes/balance/compras` | ✅ | 34 filas mes 05/2026 · $283.178 · 178.982 kg |
+| `/informes/gastos` | ✅ | Matriz V1..V9. Total con amort $559.436. |
+| `/informes/gastos/reclasificar` | ✅ | "No hay gastos sin clasificar" — 0 pendientes |
+| `/informes/retiros` | ✅ | Mes 8 retiros $85.385,89 (matchea F&U) · Año $850.092 |
+| `/informes/fuentes-y-usos` | ✅ post-fix | Total cuadra: 930.910 = 930.910. PASIVOS 23.246 USOS (corregido v7) |
+| `/informes/historico-12m` | ✅ post-fix C-1 | Matriz mensual. Antes daba 404 — ver Fix |
+| `/informes/historia/multianual` | ✅ | 2024/2025/2026 lado a lado, ΔKg + Δ% verde/rojo |
+| `/informes/flujo` | ⚠ C-2 | **Bug crítico**: muestra fechas 2027/2028 con saldos negativos $-3.4M. Confuso |
+| `/informes/retiros` (tab año) | ✅ | 64 retiros año $850.092 |
+| `/capital` | ⚠ | KPI "$23.624 patrimonio al 20/02/2014" confuso. Saldo acum −$25.485.495 (L-2) |
+| `/cobranzas/matriz-3-semanas` | ✅ | $940.755,87 total 3 sem · prom $62.717 |
+| `/historial` | ✅ | 6628 activos · 5 reversos. Batch_id visible |
+| `/conciliacion/hub` | ✅ | Dos cards (Depósitos / Cheques rebotados) |
+| `/conciliacion/depositos` | ✅ | Wizard 3 pasos. Dropzone funcional |
 
 ## Drift dBase ↔ PC
 

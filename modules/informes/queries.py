@@ -3519,12 +3519,18 @@ def flujo_ultimos_dias(dias: int = 30) -> list[dict]:
         dias_int = int(dias)
     except (TypeError, ValueError):
         dias_int = 30
+    # TMT 2026-05-21 [overnight] fix C-2: la query no limitaba el techo de
+    # fecha → si el DBF tiene rows con fecha futura (proyecciones), se
+    # mostraban en /informes/flujo con fechas 2027/2028 + saldos negativos
+    # confusos. Agregar `fecha <= CURRENT_DATE` para que el reporte sea
+    # estrictamente histórico.
     return db.fetch_all(
         """
         SELECT fecha, cheques, facturas, pichincha, inter,
                posdat1, posdat2, mprima, gastos, saldo, pagos, dolares, usaldo
         FROM scintela.flujo
         WHERE fecha >= CURRENT_DATE - make_interval(days => %s)
+          AND fecha <= CURRENT_DATE
         ORDER BY fecha DESC
         """,
         (dias_int,),
