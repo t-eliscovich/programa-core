@@ -805,9 +805,7 @@ def confirmar_reverso(id_cheque: int):
 @requiere_permiso("cheques.anular")
 def reversar(id_cheque: int):
     motivo = (request.form.get("motivo") or "").strip()
-    if not motivo:
-        flash("Motivo requerido para reversar el cheque.", "warn")
-        return redirect(url_for("cheques.confirmar_reverso", id_cheque=id_cheque))
+    # TMT 2026-05-21 dueña: motivo opcional sin requerir.
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.reversar(id_cheque=id_cheque, motivo=motivo, usuario=usuario)
@@ -1596,11 +1594,9 @@ def transicionar(id_cheque: int):
     fecha_str = (request.form.get("fecha") or "").strip()
     fecha = parse_date(fecha_str) if fecha_str else None
 
-    # Rebote requiere motivo — redirigir al wizard si vino vacío.
-    # TMT 2026-05-13.
+    # TMT 2026-05-21 dueña: motivo opcional. Si está vacío, usa default.
     if stat_destino == "9" and not motivo:
-        flash("Motivo requerido para marcar el cheque como rebotado.", "warn")
-        return redirect(url_for("cheques.confirmar_rebote", id_cheque=id_cheque))
+        motivo = "sin motivo"
 
     # Resolver no_banco por NOMBRE cuando el front mandó un placeholder
     # (legacy: B/I tenían 1/2 hardcodeados pero la DB del usuario tiene

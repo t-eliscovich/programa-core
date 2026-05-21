@@ -1,4 +1,5 @@
 """Caja — libro de caja en efectivo."""
+
 from datetime import datetime
 
 from flask import (
@@ -31,19 +32,16 @@ def preview_concepto():
     """
     import concepto_parser
     import db as _db
+
     concepto = (request.args.get("concepto") or "").strip()
     if not concepto:
         return {"descripcion": ""}
     provs_validos = {
         (r.get("codigo_prov") or "").strip().upper()
-        for r in (_db.fetch_all(
-            "SELECT codigo_prov FROM scintela.proveedor"
-        ) or [])
+        for r in (_db.fetch_all("SELECT codigo_prov FROM scintela.proveedor") or [])
     }
     bancos_map: dict = {}
-    for b in _db.fetch_all(
-        "SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco"
-    ) or []:
+    for b in _db.fetch_all("SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco") or []:
         n = (b.get("nombre") or "").upper().strip()
         if "PICHINC" in n:
             bancos_map.setdefault("PICHINCHA", int(b["no_banco"]))
@@ -82,8 +80,7 @@ def nuevo():
             tipo_inicial = "E"
         form["tipo"] = tipo_inicial
         form["saldo_actual"] = queries.saldo_actual()
-        return render_template("caja/nuevo.html", form=form, errores=errores,
-                               conceptos=conceptos)
+        return render_template("caja/nuevo.html", form=form, errores=errores, conceptos=conceptos)
 
     fecha = parse_date(request.form.get("fecha"))
     tipo = (request.form.get("tipo") or "").strip().upper()
@@ -114,18 +111,19 @@ def nuevo():
     if xgast_num and tipo != "S":
         xgast_num = None
 
-    form.update({
-        "fecha": request.form.get("fecha"),
-        "tipo": tipo,
-        "importe": request.form.get("importe"),
-        "concepto": concepto,
-        "xgast_num": xgast_num,
-        "saldo_actual": queries.saldo_actual(),
-    })
+    form.update(
+        {
+            "fecha": request.form.get("fecha"),
+            "tipo": tipo,
+            "importe": request.form.get("importe"),
+            "concepto": concepto,
+            "xgast_num": xgast_num,
+            "saldo_actual": queries.saldo_actual(),
+        }
+    )
 
     if errores:
-        return render_template("caja/nuevo.html", form=form, errores=errores,
-                               conceptos=conceptos), 400
+        return render_template("caja/nuevo.html", form=form, errores=errores, conceptos=conceptos), 400
 
     try:
         usuario = (g.user or {}).get("username", "web")
@@ -134,8 +132,12 @@ def nuevo():
         # clasifica DENTRO de la misma tx. Si falla, rollback total
         # (no quedan cajas huérfanas).
         r = queries.crear(
-            fecha=fecha, tipo=tipo, importe=importe,
-            concepto=concepto, clave=clave, usuario=usuario,
+            fecha=fecha,
+            tipo=tipo,
+            importe=importe,
+            concepto=concepto,
+            clave=clave,
+            usuario=usuario,
             xgast_num=xgast_num,
         )
         msg = f"Movimiento de caja registrado (id {r.get('id_caja')})."
@@ -164,6 +166,7 @@ def confirmar_reverso(id_caja: int):
     TMT 2026-05-13.
     """
     from flask import abort
+
     m = queries.por_id(id_caja)
     if not m:
         abort(404)
@@ -203,9 +206,9 @@ def reversar(id_caja: int):
     con tipo invertido (E↔S), mismo importe, concepto "REVERSO id N — <motivo>".
     """
     motivo = (request.form.get("motivo") or "").strip()
+    # TMT 2026-05-21 dueña: motivo opcional sin requerir.
     if not motivo:
-        flash("Motivo requerido para reversar el movimiento.", "warn")
-        return redirect(url_for("caja.confirmar_reverso", id_caja=id_caja))
+        motivo = "sin motivo"
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.reversar(id_caja, motivo=motivo, usuario=usuario)
@@ -244,6 +247,7 @@ def lista():
         # el SET de ids; el botón "Clasificar" aparece inline en la fila
         # de cada egreso que está en este set (TMT 2026-05-15, opción B).
         from modules.gastos import queries as _gq
+
         try:
             egresos_sin_clasif = _gq.caja_egresos_sin_clasificar(limite=2000)
         except Exception:
@@ -272,8 +276,12 @@ def lista():
 
     return render_template(
         "caja/lista.html",
-        filas=filas, resumen=resumen,
-        q=q, desde=desde, hasta=hasta, error=error,
+        filas=filas,
+        resumen=resumen,
+        q=q,
+        desde=desde,
+        hasta=hasta,
+        error=error,
         ids_sin_clasif=ids_sin_clasif,
         n_sin_clasif=len(ids_sin_clasif),
     )
