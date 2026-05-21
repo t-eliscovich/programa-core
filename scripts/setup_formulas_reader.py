@@ -60,8 +60,6 @@ EXPOSED_TABLES = [
     "inventario",
     "inventario_ajustes",
     "compras",
-    "costos",
-    "proveedores",
 ]
 
 
@@ -130,10 +128,24 @@ def main() -> int:
             cur.execute("GRANT USAGE ON SCHEMA public TO programa_core_reader")
 
             # 4) SELECT explícito en las tablas expuestas.
+            # Tolerante: si una tabla no existe (ej. esquema desactualizado o
+            # tabla todavía no creada), warning y seguir. Mejor que fallar
+            # la corrida entera por una tabla faltante.
+            granted = []
+            missing = []
             for tbl in EXPOSED_TABLES:
+                cur.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = %s",
+                    (tbl,),
+                )
+                if cur.fetchone() is None:
+                    missing.append(tbl)
+                    continue
                 cur.execute(
                     sql.SQL("GRANT SELECT ON public.{} TO programa_core_reader").format(sql.Identifier(tbl))
                 )
+                granted.append(tbl)
 
             # 5) DEFAULT PRIVILEGES — para tablas nuevas creadas por el owner
             # que queramos exponer en el futuro (agregándolas a EXPOSED_TABLES
@@ -156,6 +168,10 @@ def main() -> int:
         print("ROL programa_core_reader (re)creado. Connection string:")
         print()
         print(f"FORMULAS_DATABASE_URL={url_out}")
+        print()
+        print(f"Tablas con GRANT SELECT ({len(granted)}): {', '.join(granted)}")
+        if missing:
+            print(f"Tablas no existentes (skipped): {', '.join(missing)}")
         print()
         print("Pasos siguientes:")
         print("  1) Setear esta var a nivel Machine en el EC2:")
