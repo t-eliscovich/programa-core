@@ -5864,21 +5864,38 @@ def fuentes_y_usos(
     #    y recno <= recF), NO hace Δ (final - inicial). Para períodos
     #    de >1 mes esto da distinto.
 
-    # Δ por cuenta (fin - ini). Activos: + = uso. Pasivos: + = fuente.
-    # CUIDADO: stock=ustock (PRG L1678 O=USTOCK).
+    # TMT 2026-05-20 v5c — Δ con guard contra columnas faltantes en h_ini.
+    # Si h_ini.X = 0 (porque el snapshot del cierre anterior nunca se
+    # rellenó bien para esa columna) pero h_fin.X > 0, calcular Δ =
+    # h_fin - 0 = h_fin entero es ABSURDO (un Δ que dice "este mes
+    # apareció todo el stock"). Mejor reportar Δ=0 y avisar.
+    def _delta(key: str) -> float:
+        a = f(h_ini, key)
+        b = f(h_fin, key)
+        if a == 0 and abs(b) > 1.0:
+            return 0.0  # snapshot ini incompleto — ocultar diferencia
+        return b - a
+
     delta = {
         # Activos
-        "cart":       f(h_fin, "cart")       - f(h_ini, "cart"),
-        "ustock":     f(h_fin, "ustock")     - f(h_ini, "ustock"),
-        "uqui":       f(h_fin, "uqui")       - f(h_ini, "uqui"),
-        "maquinaria": f(h_fin, "maquinaria") - f(h_ini, "maquinaria"),
-        "realty":     f(h_fin, "realty")     - f(h_ini, "realty"),
-        "anticipos":  f(h_fin, "anticipos")  - f(h_ini, "anticipos"),
+        "cart":       _delta("cart"),
+        "ustock":     _delta("ustock"),
+        "uqui":       _delta("uqui"),
+        "maquinaria": _delta("maquinaria"),
+        "realty":     _delta("realty"),
+        "anticipos":  _delta("anticipos"),
         # Pasivos
-        "deuda":      f(h_fin, "deuda")      - f(h_ini, "deuda"),
+        "deuda":      _delta("deuda"),
         # Cuasi-líquidos (control)
-        "banco":      f(h_fin, "banco")      - f(h_ini, "banco"),
+        "banco":      _delta("banco"),
     }
+
+    # Detectar columnas h_ini incompletas — el template las muestra
+    # como warning para que la dueña sepa qué snapshot recargar.
+    columnas_ini_vacias: list[str] = []
+    for k in ("ustock", "uqui", "maquinaria", "realty", "anticipos", "cart", "banco"):
+        if f(h_ini, k) == 0 and f(h_fin, k) > 1.0:
+            columnas_ini_vacias.append(k)
 
     # PRG L1706-1707: SUM ALL USUTI/USRET sobre meses del período
     # (recno>recI .AND. recno<=recF). Sumamos los snapshots intermedios
@@ -6025,6 +6042,9 @@ def fuentes_y_usos(
         "total_fuentes": total_fuentes,
         "total_usos":    total_usos,
         "delta_banco":   delta["banco"],
+        # v5c: lista de columnas que el snapshot inicial no tiene
+        # rellenas — el template muestra un warning.
+        "columnas_ini_vacias": columnas_ini_vacias,
         "error":         None,
     }
 
