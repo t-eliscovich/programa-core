@@ -70,6 +70,8 @@ def test_stat_legacy_remap():
     # CHEQUE: V→B, Y→None, *→None
     check(import_dbf._remap_stat("V", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
           "cheque stat=V → B")
+    check(import_dbf._remap_stat("W", import_dbf._STAT_LEGACY_MAP_CHEQUE) == "B",
+          "cheque stat=W → B (confirmado dueña 2026-05-21)")
     check(import_dbf._remap_stat("Y", import_dbf._STAT_LEGACY_MAP_CHEQUE) is None,
           "cheque stat=Y → None (skip)")
     check(import_dbf._remap_stat("*", import_dbf._STAT_LEGACY_MAP_CHEQUE) is None,

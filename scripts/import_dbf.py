@@ -162,6 +162,11 @@ def _num_robusto(v, default=None):
 # `None` significa "skipear esa fila" (no importar).
 _STAT_LEGACY_MAP_CHEQUE = {
     "V": "B",   # Cheque depositado en Internacional → "B" (banco moderno)
+    # TMT 2026-05-21 confirmación dueña: 'W' en CHEQUES.DBF eran cheques
+    # legacy ya depositados en banco (MODIFICA.PRG L800 los pintaba R/W
+    # warning). Tamara confirmó "si ya están en el banco, entonces sí" →
+    # mismo destino que V: stat='B'.
+    "W": "B",
     "Y": None,  # Físicamente borrado en dBase
     "*": None,  # Sentinel reemplazo
 }
