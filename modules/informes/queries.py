@@ -3586,7 +3586,7 @@ def informe_balance() -> dict:
         v6=gxg["v6"],
         dcc=amort["dcc"],
         itin=float(tin.get("itin") or 0),
-        ktint=float(tin.get("ktint") or 0),
+        ktint=float(tin.get("kr") or 0),
         v7=gxg["v7"],
         v8=gxg["v8"],
         v9=gxg["v9"],
