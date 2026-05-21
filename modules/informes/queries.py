@@ -5771,20 +5771,38 @@ def fuentes_y_usos(
                 and float(row.get("ustock") or 0) == 0)
 
     def _row_desde_componentes(c: dict, fecha) -> dict:
-        """Mapea `balance_components_as_of` output → mismas keys que
-        scintela.historia row (lo que espera `f(row, col)` abajo)."""
+        """Mapea componentes a las keys de scintela.historia row.
+
+        TMT 2026-05-20 v5b — soporta DOS shapes:
+          1. `balance_components_as_of()` devuelve: salbanc, totc, totf,
+             vsto, vqx, umaq, uact, antic, totp, usret, usuti, patr (y
+             algunos aliases ya mapeados).
+          2. `informe_balance()['diagnostico']['componentes']` devuelve:
+             salcaj, salbanc1, salbanc2, **salbanc_total**, totc, totf,
+             cart, vsto, vqx, umaq, uact, antic, totp, uret, utilidad,
+             patr. CLAVES DISTINTAS — bug 2026-05-20: mi versión vieja
+             leía `salbanc` que no existe en el live components → todo 0.
+        """
+        # banco: live tiene `salbanc_total`, as_of tiene `salbanc`.
+        banco = (c.get("salbanc_total") or c.get("salbanc")
+                 or c.get("banco") or 0)
+        # cart: ambos tienen `cart` o (totc + totf).
+        cart_v = c.get("cart")
+        if cart_v is None:
+            cart_v = (c.get("totc") or 0) + (c.get("totf") or 0)
         return {
             "fecha":      fecha,
-            "banco":      float(c.get("salbanc") or c.get("banco") or 0),
-            "cart":       float((c.get("totc") or 0)) + float((c.get("totf") or 0)),
+            "banco":      float(banco or 0),
+            "cart":       float(cart_v or 0),
             "ustock":     float(c.get("vsto") or c.get("ustock") or 0),
             "uqui":       float(c.get("vqx") or c.get("uqui") or 0),
             "maquinaria": float(c.get("umaq") or c.get("maquinaria") or 0),
             "realty":     float(c.get("uact") or c.get("realty") or 0),
             "anticipos":  float(c.get("antic") or c.get("anticipos") or 0),
             "deuda":      float(c.get("totp") or c.get("deuda") or 0),
-            "usret":      float(c.get("usret") or c.get("retiro") or 0),
-            "usuti":      float(c.get("usuti") or c.get("utilidad") or 0),
+            "usret":      float(c.get("uret") or c.get("usret")
+                                or c.get("retiro") or 0),
+            "usuti":      float(c.get("utilidad") or c.get("usuti") or 0),
             "patrimonio": float(c.get("patr") or c.get("patrimonio") or 0),
             "_origen":    "live",
         }
@@ -5874,6 +5892,21 @@ def fuentes_y_usos(
         """,
         (h_ini.get("fecha"), h_fin.get("fecha")),
     ) or {}
+    # TMT 2026-05-20 v5b — si los snapshots intermedios tienen
+    # usuti=0/usret=0 (porque nunca se rellenaron bien), Y el período
+    # incluye el mes en curso, fallback a la utilidad/retiros LIVE.
+    uti_db = float(sum_row.get("uti") or 0)
+    ret_db = float(sum_row.get("ret") or 0)
+    if (uti_db == 0 or ret_db == 0) and es_mes_actual:
+        try:
+            bal_live = informe_balance()
+            comp = (bal_live or {}).get("diagnostico", {}).get("componentes", {})
+            if uti_db == 0:
+                sum_row["uti"] = float(comp.get("utilidad") or 0)
+            if ret_db == 0:
+                sum_row["ret"] = float(comp.get("uret") or 0)
+        except Exception:
+            pass
     utilidad_periodo = float(sum_row.get("uti") or 0)
     retiros_periodo  = float(sum_row.get("ret") or 0)
 
