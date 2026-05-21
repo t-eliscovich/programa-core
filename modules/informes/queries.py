@@ -678,61 +678,52 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         for r in produc_tejido:
             r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
-    # TINTORERIA — tipo='C' (tintura). Heurística bajos/fuertes:
-    # TMT 2026-05-19 v8 — dueña: "limit 0.4 cuando el costo es menor a .4
-    # es bajo, arriba es fuerte". Criterio $/kg = 0.4 USD.
-    tint_rows = (
-        db.fetch_all(
-            """
-        SELECT COALESCE(kg, 0)::numeric      AS kg,
-               COALESCE(importe, 0)::numeric AS importe
-          FROM scintela.compra
-         WHERE UPPER(COALESCE(tipo, '')) = 'C'
-           AND COALESCE(stat, '') <> 'Y'
-           AND EXTRACT(YEAR FROM fecha)  = %s
-           AND EXTRACT(MONTH FROM fecha) = %s
-           AND COALESCE(kg, 0) > 0
+    # TINTORERIA — replica el PROCEDURE COMPRAS del dBase INFORMES.PRG.
+    # Bajos vs Fuertes: corte IMPORTE/KG < 0.4, combinando dos fuentes:
+    # scintela.tinto (tabla del tinturado, solo mes en curso) y
+    # scintela.compra tipo='T' (tintura tercerizada del mes).
+    # Federico 2026-05-21 -- antes usaba compra tipo='C' + una heuristica
+    # fija 38.4/61.6; ahora reproduce la logica real del dBase.
+    _LIM_TINT = 0.4
+    _t = db.fetch_one(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(color, ''))) <> 'LAV'
+                            THEN kgn ELSE 0 END), 0)                  AS ktint,
+          COALESCE(SUM(importe), 0)                                   AS itin,
+          COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
+                            THEN kgn ELSE 0 END), 0)                  AS ktibaj,
+          COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
+                            THEN importe ELSE 0 END), 0)              AS itibaj
+        FROM scintela.tinto
         """,
-            (yy, mm),
-        )
-        or []
-    )
-    bajos_kg = bajos_us = 0.0
-    fuertes_kg = fuertes_us = 0.0
-    for r in tint_rows:
-        kkg = float(r["kg"])
-        imp = float(r["importe"])
-        if _safe_div(imp, kkg) < 0.4:
-            bajos_kg += kkg
-            bajos_us += imp
-        else:
-            fuertes_kg += kkg
-            fuertes_us += imp
-    tint_kg = bajos_kg + fuertes_kg
-    tint_us = bajos_us + fuertes_us
-    # TMT 2026-05-19 v8 — dueña: si no hay registros tipo='C' del mes
-    # en scintela.compra (la tintura se procesa internamente), usamos
-    # historia.utin/ktin como total y aplicamos el corte 0.4 al
-    # promedio. En el dBase los bajos/fuertes se distinguen por el
-    # costo individual, pero sin desglose por fila, mostramos bajos =
-    # mitad menor del histórico y fuertes = la otra. Aproximación:
-    # si el promedio $/kg < 0.4 → 60% bajos / 40% fuertes; si ≥ 0.4
-    # → 40% bajos / 60% fuertes. Es heurística — afinar si dueña pide.
-    if tint_kg == 0 and ktin > 0:
-        tint_kg = ktin
-        tint_us = utin
-        prom_ukg = _safe_div(utin, ktin)
-        # Distribución default basada en historical TINT.BAT (38.4/61.6).
-        bajos_kg = ktin * 0.384
-        fuertes_kg = ktin - bajos_kg
-        # $/kg de bajos suele ser muy menor (~0.13 en el dBase) y
-        # fuertes alto (~1.1). Aproximamos:
-        if prom_ukg > 0:
-            # bajos toma 15% del costo total, fuertes el 85%.
-            bajos_us = utin * 0.075
-            fuertes_us = utin - bajos_us
-    bajos_pct = (bajos_kg / tint_kg * 100) if tint_kg else 0.0
-    fuertes_pct = (fuertes_kg / tint_kg * 100) if tint_kg else 0.0
+        {"lim": _LIM_TINT},
+    ) or {}
+    _ct = db.fetch_one(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
+                            THEN kg ELSE 0 END), 0)                   AS kbaj,
+          COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
+                            THEN importe ELSE 0 END), 0)              AS ibaj
+        FROM scintela.compra
+        WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'T'
+          AND COALESCE(stat, '') NOT IN ('X', 'Y')
+          AND EXTRACT(YEAR FROM fecha)  = %(yy)s
+          AND EXTRACT(MONTH FROM fecha) = %(mm)s
+        """,
+        {"lim": _LIM_TINT, "yy": yy, "mm": mm},
+    ) or {}
+    _ktint = float(_t.get("ktint") or 0)
+    _itin = float(_t.get("itin") or 0)
+    bajos_kg = float(_ct.get("kbaj") or 0) + float(_t.get("ktibaj") or 0)
+    bajos_us = float(_ct.get("ibaj") or 0) + float(_t.get("itibaj") or 0)
+    fuertes_kg = _ktint - bajos_kg
+    fuertes_us = _itin - bajos_us
+    tint_kg = _ktint
+    tint_us = _itin
+    bajos_pct = (bajos_kg / _ktint * 100.0) if _ktint else 0.0
+    fuertes_pct = (100.0 - bajos_pct) if _ktint else 0.0
 
     # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
     # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
