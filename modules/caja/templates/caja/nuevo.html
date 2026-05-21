@@ -45,15 +45,10 @@
       {# TMT 2026-05-18 — hint largo arriba removido (Regla 3).
          Las cards de atajo se autoexplican. #}
       <div class="md:col-span-2 -mb-2">
+        {# TMT 2026-05-20 v3 — orden pedido dueña: Depósito Pichincha,
+           Depósito Internacional, Pago a proveedor, Activar anticipo
+           USD, Retiro de capital (al final). #}
         <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="caja-atajos">
-          <button type="button" data-prefix="RR " data-needs="socio"
-                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left text-xs transition">
-            <span class="text-lg">👤</span>
-            <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-rose-700">Retiro de capital</div>
-              <div class="text-[10px] text-slate-400">RR + código del accionista</div>
-            </span>
-          </button>
           <button type="button" data-prefix="PICH " data-needs="ref"
                   class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
             <span class="text-lg">🏦</span>
@@ -82,8 +77,16 @@
                   class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-left text-xs transition">
             <span class="text-lg">💵</span>
             <span class="flex-1">
-              <div class="font-medium text-slate-700 group-hover:text-emerald-700">Movimiento USD</div>
+              <div class="font-medium text-slate-700 group-hover:text-emerald-700">Activar anticipo USD</div>
               <div class="text-[10px] text-slate-400">IN. + código de la cuenta</div>
+            </span>
+          </button>
+          <button type="button" data-prefix="RR " data-needs="socio"
+                  class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left text-xs transition">
+            <span class="text-lg">👤</span>
+            <span class="flex-1">
+              <div class="font-medium text-slate-700 group-hover:text-rose-700">Retiro de capital</div>
+              <div class="text-[10px] text-slate-400">RR + código del accionista</div>
             </span>
           </button>
           {# TMT 2026-05-19 v3 — atajo "Caja chica / día inhábil" removido
