@@ -185,34 +185,47 @@ def depositos():
         resultado = matchear_depositos(deps, movs, dias_tolerancia=5)
 
         # Persistir resultado minimal en session para acciones posteriores.
+        # Incluye `firma_dep` para que las acciones manuales del usuario
+        # se puedan correlacionar con la fila.
+        filas_session = []
+        for f in resultado.filas:
+            firma = queries.firma_deposito(
+                f.deposito.fecha, f.deposito.valor,
+                f.deposito.codigo, f.deposito.concepto,
+            )
+            filas_session.append({
+                "firma_dep": firma,
+                "fecha": (f.deposito.fecha.isoformat() if f.deposito.fecha else None),
+                "concepto": f.deposito.concepto,
+                "codigo": f.deposito.codigo,
+                "valor": float(f.deposito.valor),
+                "detalle": f.deposito.detalle,
+                "hoja": f.deposito.hoja,
+                "estado": f.estado,
+                "razon": f.razon,
+                "match_id": f.match.id_transaccion if f.match else None,
+                "match_fecha": (f.match.fecha.isoformat() if (f.match and f.match.fecha) else None),
+                "match_concepto": f.match.concepto if f.match else "",
+                "match_documento": f.match.documento if f.match else "",
+                "match_no_banco": f.match.no_banco if f.match else None,
+            })
         session[_SESSION_DEP] = {
-            "filas": [
-                {
-                    "fecha": (f.deposito.fecha.isoformat() if f.deposito.fecha else None),
-                    "concepto": f.deposito.concepto,
-                    "codigo": f.deposito.codigo,
-                    "valor": float(f.deposito.valor),
-                    "detalle": f.deposito.detalle,
-                    "hoja": f.deposito.hoja,
-                    "estado": f.estado,
-                    "razon": f.razon,
-                    "match_id": f.match.id_transaccion if f.match else None,
-                    "match_fecha": (f.match.fecha.isoformat() if (f.match and f.match.fecha) else None),
-                    "match_concepto": f.match.concepto if f.match else "",
-                    "match_documento": f.match.documento if f.match else "",
-                    "match_no_banco": f.match.no_banco if f.match else None,
-                }
-                for f in resultado.filas
-            ],
+            "filas": filas_session,
             "desde": desde.isoformat(),
             "hasta": hasta.isoformat(),
         }
 
+        # Decoramos cada fila con el último estado manual (si lo hay).
+        firmas = [x["firma_dep"] for x in filas_session]
+        estado_manual = queries.estado_actual_depositos(firmas)
+        for fila in filas_session:
+            fila["estado_manual"] = estado_manual.get(fila["firma_dep"], {}).get("accion")
+
         return render_template(
             "conciliacion/depositos_resultado.html",
-            resultado=resultado,
+            resultado_session=session[_SESSION_DEP],
             desde=desde, hasta=hasta,
-            n_filas=len(resultado.filas),
+            n_filas=len(filas_session),
         )
 
     return render_template("conciliacion/depositos_upload.html")
@@ -227,6 +240,15 @@ def depositos_resultado():
     if not data:
         flash("No hay resultados guardados. Subí un Excel para comenzar.", "warn")
         return redirect(url_for("conciliacion.depositos"))
+
+    # Re-fetchear estados manuales en cada vista (puede haber cambiado desde
+    # otra pestaña / otro usuario).
+    firmas = [f["firma_dep"] for f in data.get("filas") or [] if f.get("firma_dep")]
+    estado_manual = queries.estado_actual_depositos(firmas)
+    for fila in data.get("filas") or []:
+        firma = fila.get("firma_dep")
+        fila["estado_manual"] = estado_manual.get(firma, {}).get("accion") if firma else None
+
     return render_template(
         "conciliacion/depositos_resultado.html",
         resultado_session=data,
@@ -243,3 +265,109 @@ def depositos_limpiar():
     """Borra el resultado guardado en session (botón 'Empezar de nuevo')."""
     session.pop(_SESSION_DEP, None)
     return redirect(url_for("conciliacion.depositos"))
+
+
+# ─── Marcar UNA fila: ✅ confirmar o ❌ rechazar ────────────────────────────
+@conciliacion_bp.route("/depositos/marcar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def depositos_marcar():
+    """Marca un depósito como confirmado/rechazado.
+
+    Espera (form-encoded o JSON):
+        firma_dep : str (la del session)
+        accion    : 'confirmado' | 'rechazado' | 'pendiente'
+        nota      : str (opcional)
+    """
+    data = session.get(_SESSION_DEP) or {}
+    firmas = {f["firma_dep"]: f for f in (data.get("filas") or [])
+              if f.get("firma_dep")}
+
+    firma = (request.form.get("firma_dep") or "").strip()
+    accion = (request.form.get("accion") or "").strip()
+    nota = (request.form.get("nota") or "").strip()
+    if not firma or firma not in firmas:
+        flash("Fila no encontrada en la sesión actual. Subí el Excel de nuevo.", "warn")
+        return redirect(url_for("conciliacion.depositos"))
+    if accion not in ("confirmado", "rechazado", "pendiente"):
+        flash(f"Acción inválida: {accion!r}", "error")
+        return redirect(url_for("conciliacion.depositos_resultado"))
+
+    fila = firmas[firma]
+    from datetime import date as _date
+    fdep = None
+    if fila.get("fecha"):
+        try:
+            fdep = _date.fromisoformat(fila["fecha"])
+        except ValueError:
+            fdep = None
+    try:
+        queries.marcar_deposito(
+            firma_dep=firma,
+            fecha_dep=fdep,
+            valor_dep=float(fila.get("valor") or 0),
+            codigo_dep=fila.get("codigo") or "",
+            concepto_dep=fila.get("concepto") or "",
+            accion=accion,
+            id_transaccion=fila.get("match_id"),
+            nota=nota,
+            usuario=(request.remote_user or "conciliacion"),
+        )
+    except Exception as e:
+        flash_exc("No se pudo marcar la fila", e)
+        return redirect(url_for("conciliacion.depositos_resultado"))
+
+    return redirect(url_for("conciliacion.depositos_resultado") + f"#fila-{firma}")
+
+
+@conciliacion_bp.route("/depositos/confirmar-verdes", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def depositos_confirmar_verdes():
+    """Confirma TODOS los matches verdes en bloque.
+
+    Acción rápida: solo los que el sistema cree exact-match y que el
+    usuario no haya rechazado previamente. Si alguno ya fue confirmado
+    o rechazado manualmente, se respeta esa decisión.
+    """
+    data = session.get(_SESSION_DEP) or {}
+    filas = data.get("filas") or []
+    firmas = [f["firma_dep"] for f in filas if f.get("firma_dep")]
+    estado_manual = queries.estado_actual_depositos(firmas)
+
+    confirmados = 0
+    saltados = 0
+    for fila in filas:
+        firma = fila.get("firma_dep")
+        if not firma:
+            continue
+        if fila.get("estado") != "verde":
+            continue
+        if estado_manual.get(firma, {}).get("accion"):
+            saltados += 1
+            continue
+        from datetime import date as _date
+        fdep = None
+        if fila.get("fecha"):
+            try:
+                fdep = _date.fromisoformat(fila["fecha"])
+            except ValueError:
+                pass
+        try:
+            queries.marcar_deposito(
+                firma_dep=firma,
+                fecha_dep=fdep,
+                valor_dep=float(fila.get("valor") or 0),
+                codigo_dep=fila.get("codigo") or "",
+                concepto_dep=fila.get("concepto") or "",
+                accion="confirmado",
+                id_transaccion=fila.get("match_id"),
+                nota="bulk: confirmar todos los verdes",
+                usuario=(request.remote_user or "conciliacion"),
+            )
+            confirmados += 1
+        except Exception:
+            pass
+    flash(f"Confirmados {confirmados} matches verdes. "
+          f"({saltados} ya tenían decisión previa, no se tocaron.)", "ok")
+    return redirect(url_for("conciliacion.depositos_resultado"))
