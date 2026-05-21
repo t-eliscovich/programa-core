@@ -895,14 +895,14 @@ def total_buscar(
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           AND (
                 %(kg_filter)s IS NULL
-             OR (%(kg_filter)s = 'gt0' AND COALESCE(c.kg, 0) > 0.01)
-             OR (%(kg_filter)s = 'eq0' AND COALESCE(c.kg, 0) <= 0.01)
+             OR (%(kg_filter)s = 'gt0' AND ABS(COALESCE(c.kg, 0)) > 0.01)
+             OR (%(kg_filter)s = 'eq0' AND ABS(COALESCE(c.kg, 0)) <= 0.01)
           )
           AND (
                 %(vista)s = 'todas'
              OR (%(vista)s = 'produccion'
                  AND UPPER(COALESCE(c.tipo, '')) = 'K'
-                 AND COALESCE(c.kg, 0) > 0.01)
+                 AND ABS(COALESCE(c.kg, 0)) > 0.01)
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
@@ -979,15 +979,15 @@ def buscar(
           -- TMT 2026-05-18 — filtro KG (>0 producción, =0 compras sin kg)
           AND (
                 %(kg_filter)s IS NULL
-             OR (%(kg_filter)s = 'gt0' AND COALESCE(c.kg, 0) > 0.01)
-             OR (%(kg_filter)s = 'eq0' AND COALESCE(c.kg, 0) <= 0.01)
+             OR (%(kg_filter)s = 'gt0' AND ABS(COALESCE(c.kg, 0)) > 0.01)
+             OR (%(kg_filter)s = 'eq0' AND ABS(COALESCE(c.kg, 0)) <= 0.01)
           )
           -- Filtro por vista (compras / producción / anticipos)
           AND (
                 %(vista)s = 'todas'
              OR (%(vista)s = 'produccion'
                  AND UPPER(COALESCE(c.tipo, '')) = 'K'
-                 AND COALESCE(c.kg, 0) > 0.01)
+                 AND ABS(COALESCE(c.kg, 0)) > 0.01)
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
@@ -1038,7 +1038,7 @@ def conteos_por_vista(
         SELECT
           CASE
             WHEN UPPER(COALESCE(c.tipo, '')) = 'K'
-                 AND COALESCE(c.kg, 0) > 0.01           THEN 'produccion'
+                 AND ABS(COALESCE(c.kg, 0)) > 0.01      THEN 'produccion'
             WHEN UPPER(COALESCE(c.tipo, '')) = 'A'      THEN 'anticipos'
             ELSE 'compras'
           END                                        AS bucket,

@@ -135,22 +135,32 @@
       <input type="date" name="hasta" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
-    {# TMT 2026-05-18 — filtro KG (útil cuando se filtra por PROV: kg>0 = producción diaria, kg=0 = compras sin kg) #}
+    {# TMT 2026-05-21 dueña: cambiar "Kg > 0" a "Kg ≠ 0" — los ajustes
+       negativos (correcciones) también son producción legítima. El valor
+       'gt0' se mantiene en el código por back-compat pero el SQL ahora
+       filtra <> 0. #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Kg</label>
       <select name="kg" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         <option value=""    {% if not kg_filter %}selected{% endif %}>(todos)</option>
-        <option value="gt0" {% if kg_filter == 'gt0' %}selected{% endif %}>Kg &gt; 0 (producción)</option>
+        <option value="gt0" {% if kg_filter == 'gt0' %}selected{% endif %}>Kg ≠ 0 (con movimiento)</option>
         <option value="eq0" {% if kg_filter == 'eq0' %}selected{% endif %}>Kg = 0 (sin kg)</option>
       </select>
     </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
-    {# TMT 2026-05-20 PASADA 6 Federico #16 — botón "Mes actual" en compras. #}
+    {# TMT 2026-05-21 dueña: botón Mes actual debe combinar con TODOS los
+       filtros activos (q, kg, vista, tipo). Antes perdía vista. #}
     {% set _hoy = g.now.date() if g.now else None %}
     {% if _hoy %}
-      <a href="{{ url_for('compras.lista', q=q, desde=_hoy.replace(day=1).isoformat(), hasta=_hoy.isoformat(), kg=kg_filter) }}"
+      <a href="{{ url_for('compras.lista',
+                          q=q,
+                          desde=_hoy.replace(day=1).isoformat(),
+                          hasta=_hoy.isoformat(),
+                          kg=kg_filter,
+                          vista=vista,
+                          anuladas='1' if incluir_anuladas else None) }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-         title="Setea desde=día 1 del mes actual, hasta=hoy">Mes actual</a>
+         title="Setea desde=día 1 del mes actual, hasta=hoy. Preserva los filtros activos.">Mes actual</a>
     {% endif %}
   </form>
 
