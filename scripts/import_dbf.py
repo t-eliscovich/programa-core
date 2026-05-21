@@ -110,6 +110,85 @@ def _int(v, default=None):
             return default
 
 
+# TMT 2026-05-20 v8 — coerciones extendidas para sync_dbase_actual.
+# Reemplazan a las versiones simples cuando el DBF trae el campo como
+# TEXT en vez de su tipo nativo (D / N). Pre-mortem 2c.
+def _date_robusto(v):
+    """Igual que _date() pero acepta también strings DD/MM/YYYY, YYYY-MM-DD,
+    DD-MM-YYYY. Para DBFs en los que la columna FECHA está declarada C en
+    vez de D (caso histórico)."""
+    if v is None or v == "":
+        return None
+    d = _date(v)
+    if d is not None:
+        return d
+    s = str(v).strip()
+    if not s or s.startswith("#"):
+        return None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(s[:19] if len(s) > 10 else s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _num_robusto(v, default=None):
+    """Igual que _num() pero acepta '1.234,56' (es-EC) y '(123.45)' (paréntesis
+    = negativo). Para campos numéricos venidos como TEXT del DBF."""
+    if v is None or v == "":
+        return default
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace(" ", "")
+    if not s:
+        return default
+    # Paréntesis = negativo (contabilidad)
+    if s.startswith("(") and s.endswith(")"):
+        s = "-" + s[1:-1]
+    # 1.234,56 (es-EC)  vs  1234.56 (ISO)
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return default
+
+
+# ─── Stat legacy → moderno ────────────────────────────────────────────────
+# Pre-mortem 2a. Mapea valores legacy del dBase a stats que la app entiende.
+# `None` significa "skipear esa fila" (no importar).
+_STAT_LEGACY_MAP_CHEQUE = {
+    "V": "B",   # Cheque depositado en Internacional → "B" (banco moderno)
+    "Y": None,  # Físicamente borrado en dBase
+    "*": None,  # Sentinel reemplazo
+}
+_STAT_LEGACY_MAP_FACTURA = {
+    "V": "A",   # Factura "vencida" legacy → "A" anulada parcial
+    "Y": None,
+    "*": None,
+}
+_STAT_LEGACY_MAP_GENERIC = {
+    "Y": None,
+    "*": None,
+}
+
+
+def _remap_stat(stat: str | None, mapping: dict) -> str | None:
+    """Aplica el mapeo legacy si stat está en él, sino lo deja pasar.
+
+    Retorna None si la fila debe ser skipeada (stat='Y' físicamente borrada).
+    """
+    if stat is None:
+        return stat
+    s = str(stat).strip().upper()
+    if s in mapping:
+        return mapping[s]
+    return stat
+
+
 # Mapeo nombre-de-mes (DBF) → número (Postgres requiere mesnum int).
 # El DBF tiene los meses en inglés ('Apr', 'Aug', 'Dec'…) pero algunos archivos
 # históricos quedaron en español. Aceptamos las dos formas — sino, los meses
@@ -141,17 +220,21 @@ def _mes_a_num(mes_str):
 
 
 def _map_factura(r):
+    stat_raw = _str(r.get("STAT"), 2)
+    stat = _remap_stat(stat_raw, _STAT_LEGACY_MAP_FACTURA)
+    if stat_raw and stat is None and stat_raw.upper() in _STAT_LEGACY_MAP_FACTURA:
+        return None
     return {
         "numf":         _int(r.get("NUMF"), 0) or 0,
-        "fecha":        _date(r.get("FECHA")) or date.today(),
+        "fecha":        _date_robusto(r.get("FECHA")) or date.today(),
         "codigo_cli":   _str(r.get("CLIENTE"), 5) or "",
-        "kg":           _num(r.get("KG"), 0) or 0,
-        "importe":      _num(r.get("IMPORTE"), 0) or 0,
-        "abono":        _num(r.get("ABONO"), 0) or 0,
-        "saldo":        _num(r.get("SALDO"), 0) or 0,
-        "stat":         _str(r.get("STAT"), 2),
+        "kg":           _num_robusto(r.get("KG"), 0) or 0,
+        "importe":      _num_robusto(r.get("IMPORTE"), 0) or 0,
+        "abono":        _num_robusto(r.get("ABONO"), 0) or 0,
+        "saldo":        _num_robusto(r.get("SALDO"), 0) or 0,
+        "stat":         stat,
         "condic":       _str(r.get("CONDIC"), 2),
-        "vencimiento":  _date(r.get("VENCIM")),
+        "vencimiento":  _date_robusto(r.get("VENCIM")),
         "tipo":         _str(r.get("TIPO"), 2),
         "clave":        _str(r.get("CLAVE"), 2),
         "pase":         _str(r.get("PASE"), 5),
@@ -160,16 +243,21 @@ def _map_factura(r):
 
 
 def _map_cheque(r):
+    stat_raw = _str(r.get("STAT"), 5)
+    stat = _remap_stat(stat_raw, _STAT_LEGACY_MAP_CHEQUE)
+    if stat_raw and stat is None and stat_raw.upper() in _STAT_LEGACY_MAP_CHEQUE:
+        # Devuelve None → import_one filtrará esta fila.
+        return None
     return {
-        "fecha":        _date(r.get("FECHA")) or date.today(),
-        "fechad":       _date(r.get("FECHAD")) or _date(r.get("FECHA")) or date.today(),
+        "fecha":        _date_robusto(r.get("FECHA")) or date.today(),
+        "fechad":       _date_robusto(r.get("FECHAD")) or _date_robusto(r.get("FECHA")) or date.today(),
         "codigo_cli":   _str(r.get("CLIENTE"), 5),
-        "importe":      _num(r.get("IMPORTE")),
+        "importe":      _num_robusto(r.get("IMPORTE")),
         "no_banco":     _int(r.get("NB")),
         "banco":        _str(r.get("BANCO"), 30),
-        "stat":         _str(r.get("STAT"), 5),
-        "fechaing":     _date(r.get("FECHING")),
-        "fechaout":     _date(r.get("FECHOUT")),
+        "stat":         stat,
+        "fechaing":     _date_robusto(r.get("FECHING")),
+        "fechaout":     _date_robusto(r.get("FECHOUT")),
         "prov":         _str(r.get("PROV"), 5),
         "clave":        _str(r.get("CLAVE"), 5),
         "usuario_crea": "dbf-import",
@@ -554,16 +642,64 @@ TABLE_MAP: dict[str, dict] = {
 # ============================================================================
 
 
-def _read_dbf(path: Path) -> list[dict]:
-    """Lee un DBF y devuelve lista de dicts. Encoding cp850 (típico dBase ES)."""
-    table = dbfread.DBF(
-        str(path),
-        encoding="cp850",
-        load=True,
-        ignore_missing_memofile=True,
-        char_decode_errors="replace",
-    )
-    return [dict(rec) for rec in table]
+_DEFAULT_ENCODING = "cp850"
+_TRY_ENCODINGS = ("cp850", "cp1252", "latin-1", "utf-8")
+
+# Override global desde --encoding (None = auto-detect).
+FORCED_ENCODING: str | None = None
+
+
+def _read_dbf(path: Path, encoding: str | None = None) -> list[dict]:
+    """Lee un DBF y devuelve lista de dicts.
+
+    TMT 2026-05-20 v8 — si `encoding` es None, prueba cp850 → cp1252 →
+    latin-1 → utf-8 y se queda con el primero que no genere `?`
+    (replacement char) en los primeros 200 caracteres de los string
+    fields. Pre-mortem 2e.
+    """
+    if encoding:
+        table = dbfread.DBF(
+            str(path),
+            encoding=encoding,
+            load=True,
+            ignore_missing_memofile=True,
+            char_decode_errors="replace",
+        )
+        return [dict(rec) for rec in table]
+
+    best_rows = None
+    best_replacements = None
+    best_enc = None
+    for enc in _TRY_ENCODINGS:
+        try:
+            table = dbfread.DBF(
+                str(path),
+                encoding=enc,
+                load=True,
+                ignore_missing_memofile=True,
+                char_decode_errors="replace",
+            )
+            rows = [dict(rec) for rec in table]
+        except Exception:
+            continue
+        # Cuenta '?' en los primeros 50 rows como heurística
+        sample = "".join(
+            str(v) for r in rows[:50] for v in r.values() if isinstance(v, str)
+        )
+        replacements = sample.count("?")
+        if best_replacements is None or replacements < best_replacements:
+            best_replacements = replacements
+            best_rows = rows
+            best_enc = enc
+        if replacements == 0:
+            break
+    if best_enc and best_enc != _DEFAULT_ENCODING:
+        import logging
+        logging.getLogger("import_dbf").info(
+            "Encoding detectado para %s: %s (replacements=%d)",
+            path.name, best_enc, best_replacements or 0,
+        )
+    return best_rows or []
 
 
 def _lookup_no_banco_pichincha() -> int | None:
@@ -625,8 +761,12 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
     """
     cfg = TABLE_MAP[dbf_name]
     pg_table = cfg["pg_table"]
-    raw_rows = _read_dbf(dbf_path)
-    pg_rows = [cfg["mapper"](r) for r in raw_rows]
+    raw_rows = _read_dbf(dbf_path, encoding=FORCED_ENCODING)
+    # TMT 2026-05-20 v8 — los mappers pueden devolver None para indicar
+    # "skipear esta fila" (caso: stat legacy 'Y' borrada físicamente).
+    mapped = [cfg["mapper"](r) for r in raw_rows]
+    pg_rows = [r for r in mapped if r is not None]
+    skipped_legacy = len(mapped) - len(pg_rows)
 
     # Post-load hooks (e.g. lookup no_banco for Pichincha) — sólo si NO es
     # dry-run, porque algunos hooks tocan la DB (pool no inicializado en dry-run).
@@ -677,11 +817,15 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             cur.execute(sql, [r[c] for c in cols])
             insertadas += 1
 
+    msg = f"{insertadas} filas cargadas en {pg_table}"
+    if skipped_legacy:
+        msg += f" (+{skipped_legacy} skipeadas por stat legacy)"
     return {
         "ok": True,
         "filas_leidas": leidas,
         "filas_insertadas": insertadas,
-        "msg": f"{insertadas} filas cargadas en {pg_table}",
+        "filas_skipeadas_legacy": skipped_legacy,
+        "msg": msg,
     }
 
 
@@ -699,6 +843,9 @@ def main():
                     help="Coma-separated DBF names (e.g. FACTURAS.DBF,CHEQUES.DBF)")
     ap.add_argument("--list", action="store_true",
                     help="Lista las tablas que el script sabe cargar y termina.")
+    ap.add_argument("--encoding", default=None,
+                    help=f"Forzar encoding (default: auto-detect entre {_TRY_ENCODINGS}). "
+                         "Si lo pasás, se usa para todos los DBFs.")
     args = ap.parse_args()
 
     if args.list:
@@ -708,6 +855,10 @@ def main():
             c = TABLE_MAP[name]
             print(f"{name:<14} {c['pg_table']:<35} {c['criticidad']:<8} {c['descripcion']}")
         return
+
+    if args.encoding:
+        global FORCED_ENCODING
+        FORCED_ENCODING = args.encoding
 
     src = Path(args.source_dir)
     if not src.exists():
