@@ -128,18 +128,13 @@
   <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
     {{ page_hero('Informe de Resultados', descripcion_safe=_desc) }}
     <div class="flex items-center gap-2">
-      {# TMT 2026-05-19 v6 — Features A+B: tabs/links a drill-downs nuevos. #}
-      <a href="{{ url_for('informes.balance_compras') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-        Compras del mes
-      </a>
-      {# TMT 2026-05-19 v7 — dueña: "no encontre el tab para ir a resultados
-         meses anteriores". Label más explícito + estilo prominente
-         (border-sky-500). Antes decía "Histórico 12m" y no se entendía. #}
+      {# TMT 2026-05-21 — link a resultados de meses anteriores (matriz
+         comparativa). Renombrado a "Historial". Estilo prominente
+         (border-sky-500) para que se encuentre fácil. #}
       <a href="{{ url_for('informes.historico_12m') }}"
          class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
-         title="Ver resultados de meses anteriores (matriz comparativa)">
-        ← Meses anteriores
+         title="Ver historial de resultados de meses anteriores (matriz comparativa)">
+        Historial
       </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
