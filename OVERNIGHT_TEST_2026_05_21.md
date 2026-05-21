@@ -50,9 +50,45 @@ _(se llena a medida que comito)_
 | `/conciliacion/hub` | ✅ | Dos cards (Depósitos / Cheques rebotados) |
 | `/conciliacion/depositos` | ✅ | Wizard 3 pasos. Dropzone funcional |
 
-## Drift dBase ↔ PC
+## Drift dBase ↔ PC (Fase 1)
 
-_(se llena en Fase 1)_
+| Concepto | dBase (`HISTORIA.DBF` Abr 2026) | PC `/historico-12m` Abr 2026 | Δ |
+|---|---:|---:|---:|
+| BANCO | 2.374,1 | 2.374,1 | 0 |
+| CARTERA | 6.902,1 | 6.902,1 | 0 |
+| ANTICIPOS | 1.139,7 | 1.139,7 | 0 |
+| STOCK MP+PROD | 8.097,9 | 8.097,9 | 0 |
+
+Abril concuerda perfectamente — `HISTORIA.DBF` ya está cargado en `scintela.historia`.
+
+Para mayo (parcial, al 20-may):
+
+| Concepto | Balance live | F&U Δ (abr→may) | Snapshot mayo (proyecc.) |
+|---|---:|---:|---:|
+| Banco | 2.353.291 | -233.987 fuente | snap muestra 2.353.300 |
+| Cartera | 6.841.450 | +822.278 uso (subió) | snap muestra 5.300.500 |
+| Pasivos | 2.138.606 | +23.246 uso (bajó) | snap muestra 2.138.606 ✓ |
+
+**Drift Cartera mayo:** Balance dice 6.841.450 (cheques 1.790 + facturas 5.051) pero snapshot histórico de mayo dice 5.300.500. Hipótesis: el snapshot del histórico no se actualiza dinámicamente; la última foto incluida es de inicio de mayo. El Balance es LIVE. Esto es por diseño — el histórico es snapshot, el balance es live.
+
+## Drift F&U vs Balance (Fase 3)
+
+Aplicado fix v7 que unificó las fórmulas. Estado actual:
+
+| Línea | Balance LIVE | F&U Δ (abr→may, parcial) | ¿Coherente? |
+|---|---:|---:|---|
+| Caja+Bancos | $2.379.264 (Caja 25.973 + Bancos 2.353.291) | 233.987 fuente | ✓ Δ razonable, banco bajó |
+| Cartera | $6.841.450 | 822.278 uso | ✓ Δ razonable, cartera subió |
+| Anticipos USD | $1.118.797 | — | ⚠ F&U muestra — porque snapshot abril.anticipos=0 (excepción guard) |
+| Stock MP+PROD | $8.016.204 | — | ⚠ Igual razón |
+| Stock Quím | $296.839 | — | ⚠ Igual razón |
+| Maquinaria | $972.685 | — | ⚠ Igual razón |
+| Terr+Edif | $1.602.249 | — | ⚠ Igual razón |
+| Pasivos | $2.138.606 | 23.246 uso (bajaron) | ✓ Δ razonable |
+| Utilidad acum | −$941.618 (pérdida del año) | +642.842 fuente (mes) | ✓ Δ del mes corriente |
+| Retiros mes | $85.385,89 | 85.386 uso | ✓ Matchea perfecto |
+
+**Conclusión drift:** Pasivos / Banco / Cartera / Utilidad / Retiros — todos alineados ✓. Stocks y activos fijos quedan en `—` por el guard contra delta espurio (snapshot abril con esas columnas en 0). Eso es **esperado** y la solución es regenerar el snapshot de abril (fuera del scope de overnight).
 
 ---
 

@@ -1159,7 +1159,13 @@ def reclasificar_concepto_bulk(
         # `REGEXP_REPLACE` quita cualquier marca [RECLASIF V<digit> usr=...]
         # previa antes de appendar la nueva. Si nunca se reclasificó, el
         # regex no hace nada y la concat es como antes.
-        db.execute(
+        #
+        # TMT 2026-05-21 [overnight] M-1: usar `RETURNING id_xgast` para
+        # contar las filas REALMENTE actualizadas (no el conteo previo del
+        # SELECT). Sin esto, si dos usuarios reclasifican el mismo
+        # concepto en paralelo, ambos veían "5 reclasificadas" cuando solo
+        # el primero efectivamente las tocó. Race-safe.
+        rows = db.fetch_all(
             """
             UPDATE scintela.xgast
                SET num = %s,
@@ -1177,14 +1183,20 @@ def reclasificar_concepto_bulk(
              WHERE TRIM(COALESCE(concepto, '')) = %s
                AND (num IS NULL OR num = 0 OR num NOT BETWEEN 1 AND 9)
                AND COALESCE(stat, '') <> 'Y'
+         RETURNING id_xgast, COALESCE(importe, 0) AS imp
             """,
             (num, marca, usuario, concepto),
             conn=conn_inner,
-        )
+        ) or []
+        filas_real = len(rows)
+        importe_real = sum(float(r.get("imp") or 0) for r in rows)
         return {
-            "filas_afectadas": n_pre,
-            "importe_total": total_pre,
+            "filas_afectadas": filas_real,
+            "importe_total": importe_real,
             "num": num,
+            # Diagnóstico race: si filas_real < n_pre, otro usuario nos pisó.
+            "filas_previas": n_pre,
+            "race_detectada": filas_real < n_pre,
         }
 
     if conn is not None:
