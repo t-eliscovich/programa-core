@@ -5835,41 +5835,89 @@ def fuentes_y_usos(
         elif d < -0.5:
             fuentes.append((f"Disminución {label.lower()}", abs(d)))
 
-    # Pasivos: Δ>0 = fuente, Δ<0 = uso.
-    if delta["deuda"] > 0.5:
-        fuentes.append(("Aumento de deuda con proveedores", delta["deuda"]))
-    elif delta["deuda"] < -0.5:
-        usos.append(("Disminución de deuda con proveedores", abs(delta["deuda"])))
+    # TMT 2026-05-20 v4 — REPLICA EXACTA del PRG L1730-1779: tabla
+    # unificada con orden fijo y 2 columnas (FUENTES | USOS).
+    # PRG: cada cuenta APARECE SIEMPRE con su valor absoluto del Δ,
+    # en la columna FUENTES si bajó (activos) o subió (pasivos), o
+    # en USOS si subió (activos) o bajó (pasivos). Mi versión vieja
+    # solo mostraba las cuentas con cambio significativo en listas
+    # separadas — pedido dueña: "lo hiciste mal, no entiendo porque
+    # tan bobo".
+    def _row(label: str, fuente: float, uso: float) -> dict:
+        return {"label": label, "fuente": fuente, "uso": uso}
 
-    total_fuentes = sum(m for _, m in fuentes)
-    total_usos    = sum(m for _, m in usos)
+    def _activo_row(label: str, key: str) -> dict:
+        d = delta[key]
+        # Activo: si Δ>0 sube el activo → uso. Si Δ<0 baja → fuente.
+        if d > 0:
+            return _row(label, 0.0, d)
+        else:
+            return _row(label, abs(d), 0.0)
 
-    # TMT 2026-05-19 item 14: balancing line para que los totales sean
-    # IDÉNTICOS por construcción (identidad contable). Si fuentes > usos,
-    # significa que acumulamos líquido — va como USO ("aumento de líquido").
-    # Si usos > fuentes, agotamos líquido — va como FUENTE.
-    delta_global = total_fuentes - total_usos
-    # TMT 2026-05-19 — dueña: "disminución está todo repetido, que sea más
-    # lindo". Renombramos la balancing line a "Ajuste — variación de caja
-    # y bancos" para que NO se confunda con un movimiento real y la línea
-    # se distinga visualmente en el template (italic + gris).
-    if delta_global > 0.5:
-        usos.append(("— Ajuste: variación de caja y bancos", delta_global))
-    elif delta_global < -0.5:
-        fuentes.append(("— Ajuste: variación de caja y bancos", abs(delta_global)))
+    # PRG orden exacto: CAJA Y BANCOS, CARTERA, ANTICIPOS,
+    # STOCK MP+PROD., STOCK QUIM., MAQUINARIA, TERR.Y EDIF.
+    cuentas: list[dict] = [
+        _activo_row("CAJA Y BANCOS",  "banco"),
+        _activo_row("CARTERA",        "cart"),
+        _activo_row("ANTICIPOS",      "anticipos"),
+        _activo_row("STOCK MP+PROD.", "ustock"),
+        _activo_row("STOCK QUIM.",    "uqui"),
+        _activo_row("MAQUINARIA",     "maquinaria"),
+        _activo_row("TERR.Y EDIF.",   "realty"),
+    ]
+    # Pasivos: PRG L1748 PASIVOS = ABS(DF-PI). Si DF<PI (bajó), es uso.
+    # Si DF>PI (subió), es fuente. Mi delta["deuda"]=fin-ini.
+    d_deuda = delta["deuda"]
+    if d_deuda > 0:
+        cuentas.append(_row("PASIVOS", d_deuda, 0.0))
+    else:
+        cuentas.append(_row("PASIVOS", 0.0, abs(d_deuda)))
+    # Utilidades / Pérdida del período.
+    if utilidad_periodo >= 0:
+        cuentas.append(_row("UTILIDADES", utilidad_periodo, 0.0))
+    else:
+        cuentas.append(_row("PÉRDIDA",    0.0, abs(utilidad_periodo)))
+    # PRG L1769-1774: RET > 0 → "RETIROS" en USOS; RET < 0 → "APORTES"
+    # en FUENTES (con ajuste FUENTES=FUENTES-RET, USOS=USOS-RET).
+    if retiros_periodo > 0:
+        cuentas.append(_row("RETIROS", 0.0, retiros_periodo))
+    elif retiros_periodo < 0:
+        cuentas.append(_row("APORTES", abs(retiros_periodo), 0.0))
+    else:
+        cuentas.append(_row("RETIROS", 0.0, 0.0))
 
-    total_fuentes = sum(m for _, m in fuentes)
-    total_usos    = sum(m for _, m in usos)
+    # TMT 2026-05-20 v4 — los totales se calculan sobre `cuentas` (la
+    # tabla unificada al estilo PRG), no sobre las listas viejas
+    # `fuentes`/`usos` (que siguen presentes para back-compat de
+    # callers que iteren). Identidad contable: por construcción
+    # SUM(fuente) == SUM(uso) si el snapshot inicial y final son del
+    # mismo balance (Activo = Pasivo + PN). Si no cuadra, agregamos
+    # una row de Ajuste para que cierre.
+    total_fuentes_cuentas = sum(c["fuente"] for c in cuentas)
+    total_usos_cuentas    = sum(c["uso"]    for c in cuentas)
+    delta_global = total_fuentes_cuentas - total_usos_cuentas
+    if abs(delta_global) > 0.5:
+        if delta_global > 0:
+            # fuentes > usos → exceso de fondos → "aumento de líquido" como uso
+            cuentas.append(_row("AJUSTE (variación caja+bancos)", 0.0, delta_global))
+        else:
+            cuentas.append(_row("AJUSTE (variación caja+bancos)", abs(delta_global), 0.0))
+
+    total_fuentes = sum(c["fuente"] for c in cuentas)
+    total_usos    = sum(c["uso"]    for c in cuentas)
 
     return {
         "anio": yy, "mes": mm,
         "anio_ini": yy_ant, "mes_ini": mm_ant,
         "h_ini": h_ini, "h_fin": h_fin,
+        # TMT 2026-05-20 v4 — `cuentas` es la tabla unificada estilo PRG
+        # con 1 row por concepto y columnas (fuente, uso). El template
+        # itera esta lista directo. `fuentes`/`usos` quedan para
+        # back-compat de calls externos pero ya no se usan en el UI.
+        "cuentas": cuentas,
         "fuentes": fuentes, "usos": usos,
         "total_fuentes": total_fuentes,
         "total_usos":    total_usos,
-        # `delta_liquido` queda en 0 (o casi) por el balancing.
-        "delta_liquido": total_fuentes - total_usos,
         "delta_banco":   delta["banco"],
         "error":         None,
     }

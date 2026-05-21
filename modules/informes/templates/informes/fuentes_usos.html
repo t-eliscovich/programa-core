@@ -86,67 +86,51 @@
     {% endif %}
   </form>
 
-  {% if data.fuentes or data.usos %}
-  {# TMT 2026-05-19 — dueña pidió "borrar recuadros de arriba, evitar
-     repeticiones". Los totales viven en el tfoot de cada tabla; no hace
-     falta repetirlos arriba. #}
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    {# FUENTES #}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-      <div class="px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-800">
-        <h2 class="text-sm font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Fuentes</h2>
-      </div>
-      <table class="w-full text-sm">
-        <tbody>
-          {% for label, monto in data.fuentes %}
-          {% set es_ajuste = label.startswith('— Ajuste') %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if es_ajuste %}italic text-slate-500 dark:text-slate-400{% endif %}">
-            <td class="px-4 py-2">{{ label }}</td>
-            <td class="px-4 py-2 text-right tabular-nums {% if es_ajuste %}text-slate-500{% else %}text-emerald-700 dark:text-emerald-400{% endif %}">{{ monto | num_es(0) }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="2" class="px-4 py-6 text-center text-slate-400">Sin fuentes en el período.</td></tr>
-          {% endfor %}
-        </tbody>
-        {% if data.fuentes %}
-        <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
-          <tr>
-            <td class="px-4 py-3 text-base font-bold">Total fuentes</td>
-            <td class="px-4 py-3 text-right tabular-nums text-lg font-bold text-emerald-700 dark:text-emerald-400">{{ data.total_fuentes | num_es(0) }}</td>
-          </tr>
-        </tfoot>
-        {% endif %}
-      </table>
-    </div>
-
-    {# USOS #}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-      <div class="px-4 py-3 bg-rose-50 dark:bg-rose-900/20 border-b border-rose-200 dark:border-rose-800">
-        <h2 class="text-sm font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Usos</h2>
-      </div>
-      <table class="w-full text-sm">
-        <tbody>
-          {% for label, monto in data.usos %}
-          {% set es_ajuste = label.startswith('— Ajuste') %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if es_ajuste %}italic text-slate-500 dark:text-slate-400{% endif %}">
-            <td class="px-4 py-2">{{ label }}</td>
-            <td class="px-4 py-2 text-right tabular-nums {% if es_ajuste %}text-slate-500{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ monto | num_es(0) }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="2" class="px-4 py-6 text-center text-slate-400">Sin usos en el período.</td></tr>
-          {% endfor %}
-        </tbody>
-        {% if data.usos %}
-        <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
-          <tr>
-            <td class="px-4 py-3 text-base font-bold">Total usos</td>
-            <td class="px-4 py-3 text-right tabular-nums text-lg font-bold text-rose-700 dark:text-rose-400">{{ data.total_usos | num_es(0) }}</td>
-          </tr>
-        </tfoot>
-        {% endif %}
-      </table>
-    </div>
+  {# TMT 2026-05-20 v4 — REPLICA del PRG dBase L1730-1779: tabla
+     unificada con 1 row por cuenta y 2 columnas (FUENTES | USOS).
+     Cada cuenta SIEMPRE aparece (con 0 si no cambió). Orden fijo
+     idéntico al PRG: CAJA Y BANCOS, CARTERA, ANTICIPOS, STOCK
+     MP+PROD, STOCK QUIM, MAQUINARIA, TERR.Y EDIF, PASIVOS,
+     UTILIDADES/PÉRDIDA, RETIROS/APORTES. #}
+  {% if data.cuentas %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden max-w-3xl">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold" style="width:50%">CONCEPTO</th>
+          <th class="px-4 py-3 text-right text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-400 font-semibold" style="width:25%">FUENTES</th>
+          <th class="px-4 py-3 text-right text-xs uppercase tracking-wider text-rose-700 dark:text-rose-400 font-semibold" style="width:25%">USOS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in data.cuentas %}
+        {% set es_ajuste = c.label.startswith('AJUSTE') %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if es_ajuste %}italic text-slate-400{% endif %}">
+          <td class="px-4 py-2 font-medium text-slate-700 dark:text-slate-300 {% if es_ajuste %}font-normal text-slate-400{% endif %}">{{ c.label }}</td>
+          <td class="px-4 py-2 text-right tabular-nums font-mono text-emerald-700 dark:text-emerald-400">
+            {% if c.fuente > 0 %}{{ c.fuente | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 text-right tabular-nums font-mono text-rose-700 dark:text-rose-400">
+            {% if c.uso > 0 %}{{ c.uso | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-t-2 border-slate-700">
+        <tr>
+          <td class="px-4 py-3 text-base font-bold uppercase tracking-wider">Total</td>
+          <td class="px-4 py-3 text-right tabular-nums font-mono text-lg font-bold">{{ data.total_fuentes | num_es(0) }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-mono text-lg font-bold">{{ data.total_usos | num_es(0) }}</td>
+        </tr>
+      </tfoot>
+    </table>
   </div>
+  <p class="mt-3 text-xs text-slate-500 max-w-3xl">
+    Cada fila es una <strong>cuenta del balance</strong>. Si subió un activo (o bajó un pasivo), va a <strong class="text-rose-700">USOS</strong>.
+    Si bajó un activo (o subió un pasivo), va a <strong class="text-emerald-700">FUENTES</strong>.
+    La fila <em>AJUSTE</em> aparece solo si los totales no cierran por sí solos — es la variación residual de caja+bancos.
+    Réplica del cuadro <code class="font-mono">PROCEDURE FUENTES</code> del INFORMES.PRG dBase original.
+  </p>
   {% endif %}
 </div>
 {% endblock %}
