@@ -688,7 +688,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     _t = db.fetch_one(
         """
         SELECT
-          COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(color, ''))) <> 'LAV'
+          COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(cod, ''))) <> 'LAV'
                             THEN kgn ELSE 0 END), 0)                  AS ktint,
           COALESCE(SUM(importe), 0)                                   AS itin,
           COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
@@ -722,8 +722,11 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     fuertes_us = _itin - bajos_us
     tint_kg = _ktint
     tint_us = _itin
-    bajos_pct = (bajos_kg / _ktint * 100.0) if _ktint else 0.0
-    fuertes_pct = (100.0 - bajos_pct) if _ktint else 0.0
+    # El % se reparte sobre KT = kg que ENTRAN a tinturar (crudo
+    # egresos = ktin); KTINT (= tint_kg) son los que SALEN tinturados.
+    # La diferencia entre ambos es el desperdicio del proceso.
+    bajos_pct = (bajos_kg / ktin * 100.0) if ktin else 0.0
+    fuertes_pct = (100.0 - bajos_pct) if ktin else 0.0
 
     # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
     # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
