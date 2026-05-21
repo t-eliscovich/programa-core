@@ -1,4 +1,5 @@
 """Bancos — lista, movimientos y emisión de cheques propios (chequera)."""
+
 from datetime import date
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
@@ -37,7 +38,8 @@ def lista():
         filas = filas_all
     else:
         filas = [
-            b for b in filas_all
+            b
+            for b in filas_all
             if round(float(b["saldo_stored"] or 0), 2) != 0.0
             or round(float(b["saldo_derivado"] or 0), 2) != 0.0
         ]
@@ -66,7 +68,7 @@ def lista():
         banco_actual = _busca_por_nombre("PICHINC")
     if banco_actual is None and filas_all:
         # Fallback: primer banco con saldo > 0, o el primero.
-        banco_actual = (filas[0] if filas else filas_all[0])
+        banco_actual = filas[0] if filas else filas_all[0]
 
     # Lista de otros bancos para el selector "Cambiar banco" (excluye el actual).
     # TMT 2026-05-19 v7 — dueña: "solo podemos cambiar al internacional".
@@ -82,14 +84,15 @@ def lista():
         return "PICHINC" in n or "INTERNAC" in n
 
     otros_bancos = [
-        b for b in filas_all
-        if _es_operativo(b)
-        and (not banco_actual or int(b["no_banco"]) != int(banco_actual["no_banco"]))
+        b
+        for b in filas_all
+        if _es_operativo(b) and (not banco_actual or int(b["no_banco"]) != int(banco_actual["no_banco"]))
     ]
 
     return render_template(
         "bancos/lista.html",
-        filas=filas, error=error,
+        filas=filas,
+        error=error,
         mostrar_todos=mostrar_todos,
         ocultos=ocultos,
         banco_actual=banco_actual,
@@ -116,20 +119,17 @@ def preview_concepto():
     """
     import concepto_parser
     import db as _db
+
     concepto = (request.args.get("concepto") or "").strip()
     if not concepto:
         return {"tipo_sugerido": None, "descripcion": "", "extras": {}}
 
     provs_validos = {
         (r.get("codigo_prov") or "").strip().upper()
-        for r in (_db.fetch_all(
-            "SELECT codigo_prov FROM scintela.proveedor"
-        ) or [])
+        for r in (_db.fetch_all("SELECT codigo_prov FROM scintela.proveedor") or [])
     }
     bancos_map: dict = {}
-    for b in _db.fetch_all(
-        "SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco"
-    ) or []:
+    for b in _db.fetch_all("SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco") or []:
         n = (b.get("nombre") or "").upper().strip()
         if "PICHINC" in n:
             bancos_map.setdefault("PICHINCHA", int(b["no_banco"]))
@@ -189,11 +189,11 @@ def transferir():
     # tiene 30 filas pero la mayoría son rubros contables del PRG legacy. TMT 2026-05-12.
     bancos = queries.bancos_operativos() or []
     if request.method == "POST":
-        no_origen  = parse_int(request.form.get("no_banco_origen"))
+        no_origen = parse_int(request.form.get("no_banco_origen"))
         no_destino = parse_int(request.form.get("no_banco_destino"))
-        importe    = parse_monto(request.form.get("importe"))
-        fecha      = parse_date(request.form.get("fecha")) or date.today()
-        concepto   = (request.form.get("concepto") or "").strip()
+        importe = parse_monto(request.form.get("importe"))
+        fecha = parse_date(request.form.get("fecha")) or date.today()
+        concepto = (request.form.get("concepto") or "").strip()
         confirmado = request.form.get("confirmado") in ("1", "true", "yes")
 
         # Validaciones básicas comunes (al paso 2 y al paso 3).
@@ -211,11 +211,15 @@ def transferir():
                 flash(e, "warn")
             return render_template(
                 "bancos/transferir.html",
-                bancos=bancos, hoy=date.today().isoformat(),
-                form={"no_banco_origen": no_origen, "no_banco_destino": no_destino,
-                      "importe": request.form.get("importe"),
-                      "fecha": request.form.get("fecha"),
-                      "concepto": concepto},
+                bancos=bancos,
+                hoy=date.today().isoformat(),
+                form={
+                    "no_banco_origen": no_origen,
+                    "no_banco_destino": no_destino,
+                    "importe": request.form.get("importe"),
+                    "fecha": request.form.get("fecha"),
+                    "concepto": concepto,
+                },
             )
 
         # Paso 2: si NO confirmó, mostrar wizard con saldo_preview.
@@ -228,12 +232,12 @@ def transferir():
                 saldo_preview = [
                     {
                         "label": f"{(bo or {}).get('nombre') or no_origen} (origen)",
-                        "antes":   float((bo or {}).get("saldo") or 0),
+                        "antes": float((bo or {}).get("saldo") or 0),
                         "despues": float((bo or {}).get("saldo") or 0) - imp_f,
                     },
                     {
                         "label": f"{(bd or {}).get('nombre') or no_destino} (destino)",
-                        "antes":   float((bd or {}).get("saldo") or 0),
+                        "antes": float((bd or {}).get("saldo") or 0),
                         "despues": float((bd or {}).get("saldo") or 0) + imp_f,
                     },
                 ]
@@ -247,21 +251,23 @@ def transferir():
             return render_template(
                 "_confirmar_accion.html",
                 titulo="Confirmar transferencia entre bancos",
-                resumen=(f"Vas a transferir <strong>$ {float(importe or 0):,.2f}</strong> "
-                         f"de {(bo or {}).get('nombre') or 'origen'} a "
-                         f"{(bd or {}).get('nombre') or 'destino'} "
-                         f"el {fecha.strftime('%d/%m/%Y')}."),
+                resumen=(
+                    f"Vas a transferir <strong>$ {float(importe or 0):,.2f}</strong> "
+                    f"de {(bo or {}).get('nombre') or 'origen'} a "
+                    f"{(bd or {}).get('nombre') or 'destino'} "
+                    f"el {fecha.strftime('%d/%m/%Y')}."
+                ),
                 concepto=concepto,
                 saldo_preview=saldo_preview,
                 accion_url=url_for("bancos.transferir"),
                 cancel_url=url_for("bancos.transferir"),
                 extras_hidden=[
-                    {"name": "no_banco_origen",  "value": no_origen},
+                    {"name": "no_banco_origen", "value": no_origen},
                     {"name": "no_banco_destino", "value": no_destino},
-                    {"name": "importe",          "value": request.form.get("importe") or ""},
-                    {"name": "fecha",            "value": fecha.isoformat()},
-                    {"name": "concepto",         "value": concepto},
-                    {"name": "confirmado",       "value": "1"},
+                    {"name": "importe", "value": request.form.get("importe") or ""},
+                    {"name": "fecha", "value": fecha.isoformat()},
+                    {"name": "concepto", "value": concepto},
+                    {"name": "confirmado", "value": "1"},
                 ],
                 motivo_obligatorio=False,
                 motivo_requerido=False,
@@ -338,10 +344,17 @@ def emitir_cheque():
         try:
             usuario = (g.user or {}).get("username", "web")
             r = queries.emitir_cheque(
-                tipo=tipo, no_banco=no_banco, importe=importe, fecha=fecha,
-                no_cheque=no_cheque, beneficiario=beneficiario, concepto=concepto,
-                id_posdat=id_posdat, de_socio=de_socio,
-                es_postdatado=es_postdatado, fechad=fechad,
+                tipo=tipo,
+                no_banco=no_banco,
+                importe=importe,
+                fecha=fecha,
+                no_cheque=no_cheque,
+                beneficiario=beneficiario,
+                concepto=concepto,
+                id_posdat=id_posdat,
+                de_socio=de_socio,
+                es_postdatado=es_postdatado,
+                fechad=fechad,
                 usuario=usuario,
                 xgast_num=xgast_num_val,
             )
@@ -358,6 +371,7 @@ def emitir_cheque():
 
     # GET o POST con error
     import contextlib
+
     posdats = []
     prov_filter = (request.args.get("prov") or "").strip().upper() or None
     with contextlib.suppress(Exception):
@@ -365,6 +379,7 @@ def emitir_cheque():
 
     # Autocomplete: conceptos históricos + proveedores activos.
     import contextlib as _ctx
+
     conceptos = []
     proveedores = []
     with _ctx.suppress(Exception):
@@ -376,8 +391,7 @@ def emitir_cheque():
     # desde sidebar), el template pre-selecciona esa card. Aceptamos los
     # 6 tipos válidos; cualquier otro valor se ignora.
     tipo_inicial = (request.args.get("tipo") or "").strip().lower()
-    if tipo_inicial not in ("proveedor", "retiro", "caja", "gasto",
-                            "anticipo_usd", "otro"):
+    if tipo_inicial not in ("proveedor", "retiro", "caja", "gasto", "anticipo_usd", "otro"):
         tipo_inicial = ""
 
     # TMT 2026-05-19 — item 19 (pedido dueña): si vienen con ?id_posdat=N
@@ -386,6 +400,7 @@ def emitir_cheque():
     # fila + pre-llenar importe/concepto. Antes el wizard llegaba "vacío"
     # y la dueña tenía que recordar todos los datos.
     import db as _db
+
     posdat_target = None
     id_posdat_param = (request.args.get("id_posdat") or "").strip()
     if id_posdat_param:
@@ -463,8 +478,7 @@ def emitir_cheque():
     )
 
 
-@bancos_bp.route("/bancos/cheque-emitido/<int:id_transaccion>/reversar",
-                 methods=["GET", "POST"])
+@bancos_bp.route("/bancos/cheque-emitido/<int:id_transaccion>/reversar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def reversar_cheque_emitido(id_transaccion: int):
@@ -474,6 +488,7 @@ def reversar_cheque_emitido(id_transaccion: int):
     POST: ejecuta queries.reversar_cheque_emitido (atómico, registra mov_doble).
     """
     import db as _db
+
     tx = _db.fetch_one(
         """
         SELECT t.id_transaccion, t.fecha, t.no_banco, t.documento,
@@ -491,17 +506,19 @@ def reversar_cheque_emitido(id_transaccion: int):
         abort(404)
     if (tx.get("documento") or "").strip().upper() != "CH":
         flash(
-            f"La transacción #{id_transaccion} no es un cheque emitido "
-            f"(documento={tx.get('documento')!r}).", "warn",
+            f"La transacción #{id_transaccion} no es un cheque emitido (documento={tx.get('documento')!r}).",
+            "warn",
         )
         return redirect(url_for("bancos.movimientos", no_banco=tx["no_banco"]))
 
     if request.method == "POST":
         motivo = (request.form.get("motivo") or "").strip()
-        if len(motivo) < 5:
+        if False:  # TMT 2026-05-21 dueña: motivo opcional sin minlen
             flash("Motivo requerido (mín. 5 caracteres).", "warn")
             return render_template(
-                "bancos/reversar_cheque_emitido.html", tx=tx, motivo=motivo,
+                "bancos/reversar_cheque_emitido.html",
+                tx=tx,
+                motivo=motivo,
             ), 400
         try:
             usuario = (g.user or {}).get("username", "web")
@@ -522,19 +539,22 @@ def reversar_cheque_emitido(id_transaccion: int):
         except ValueError as e:
             flash(str(e), "warn")
             return render_template(
-                "bancos/reversar_cheque_emitido.html", tx=tx, motivo=motivo,
+                "bancos/reversar_cheque_emitido.html",
+                tx=tx,
+                motivo=motivo,
             ), 400
         except Exception as e:
             flash_exc("No pude reversar el cheque emitido", e)
             return redirect(url_for("bancos.movimientos", no_banco=tx["no_banco"]))
 
     return render_template(
-        "bancos/reversar_cheque_emitido.html", tx=tx, motivo="",
+        "bancos/reversar_cheque_emitido.html",
+        tx=tx,
+        motivo="",
     )
 
 
-@bancos_bp.route("/bancos/transferencia/<int:id_mov_doble>/reversar",
-                 methods=["GET", "POST"])
+@bancos_bp.route("/bancos/transferencia/<int:id_mov_doble>/reversar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def reversar_transferencia(id_mov_doble: int):
@@ -546,6 +566,7 @@ def reversar_transferencia(id_mov_doble: int):
     TMT 2026-05-13.
     """
     import db as _db
+
     md = _db.fetch_one(
         """
         SELECT m.id_mov_doble, m.tipo, m.fecha_operacion, m.importe,
@@ -576,8 +597,8 @@ def reversar_transferencia(id_mov_doble: int):
         return redirect(url_for("historial.lista"))
     if md.get("estado") != "activo":
         flash(
-            f"La transferencia ya está en estado {md.get('estado')!r} — "
-            "no se puede reversar otra vez.", "warn",
+            f"La transferencia ya está en estado {md.get('estado')!r} — no se puede reversar otra vez.",
+            "warn",
         )
         return redirect(url_for("historial.lista"))
 
@@ -586,7 +607,9 @@ def reversar_transferencia(id_mov_doble: int):
         try:
             usuario = (g.user or {}).get("username", "web")
             r = queries.reversar_transferencia(
-                id_mov_doble=id_mov_doble, motivo=motivo, usuario=usuario,
+                id_mov_doble=id_mov_doble,
+                motivo=motivo,
+                usuario=usuario,
             )
             flash(
                 f"Transferencia reversada. NC en banco origen "
@@ -604,7 +627,7 @@ def reversar_transferencia(id_mov_doble: int):
     detalle = {
         "Importe": f"$ {float(md.get('importe') or 0):,.2f}",
         "Fecha": md.get("fecha_operacion"),
-        "Banco origen":  f"{md.get('banco_origen') or ''} (#{md.get('no_banco_origen') or '?'})",
+        "Banco origen": f"{md.get('banco_origen') or ''} (#{md.get('no_banco_origen') or '?'})",
         "Banco destino": f"{md.get('banco_destino') or ''} (#{md.get('no_banco_destino') or '?'})",
         "Concepto": md.get("concepto") or "—",
     }
@@ -663,6 +686,7 @@ def movimientos(no_banco):
         import io
 
         from flask import Response
+
         try:
             from openpyxl import Workbook
             from openpyxl.styles import Alignment, Font, PatternFill
@@ -679,14 +703,11 @@ def movimientos(no_banco):
         ws["A1"] = f"Movimientos · {banco.get('nombre') or ('Banco ' + str(no_banco))}"
         ws["A1"].font = Font(bold=True, size=14)
         if desde or hasta:
-            ws["A2"] = (
-                f"Período: {desde or 'inicio'} → {hasta or 'hoy'}"
-            )
+            ws["A2"] = f"Período: {desde or 'inicio'} → {hasta or 'hoy'}"
         ws["A3"] = f"Generado: {date.today().isoformat()}"
 
         # Headers de la tabla en la fila 5.
-        headers = ["Fecha", "Doc", "Concepto", "F. depósito",
-                   "Importe", "Saldo", "Estado"]
+        headers = ["Fecha", "Doc", "Concepto", "F. depósito", "Importe", "Saldo", "Estado"]
         for i, h in enumerate(headers, 1):
             c = ws.cell(row=5, column=i, value=h)
             c.font = bold
@@ -707,12 +728,13 @@ def movimientos(no_banco):
             ws.cell(row=row_idx, column=3, value=m.get("concepto") or "")
             ws.cell(row=row_idx, column=4, value=m.get("fechad"))
             c_imp = ws.cell(row=row_idx, column=5, value=imp_excel)
-            c_imp.number_format = '#,##0.00'
+            c_imp.number_format = "#,##0.00"
             c_sal = ws.cell(
-                row=row_idx, column=6,
+                row=row_idx,
+                column=6,
                 value=(float(m.get("saldo")) if m.get("saldo") is not None else None),
             )
-            c_sal.number_format = '#,##0.00'
+            c_sal.number_format = "#,##0.00"
             ws.cell(row=row_idx, column=7, value=estado)
             row_idx += 1
 
@@ -730,20 +752,17 @@ def movimientos(no_banco):
             total_imp += float(imp_abs) * (-1 if es_egreso else 1)
         t = ws.cell(row=total_row, column=5, value=total_imp)
         t.font = bold
-        t.number_format = '#,##0.00'
+        t.number_format = "#,##0.00"
         t.fill = hdr_fill
 
         # Anchos de columnas.
-        for col, w in [("A", 12), ("B", 8), ("C", 50),
-                       ("D", 12), ("E", 16), ("F", 16), ("G", 14)]:
+        for col, w in [("A", 12), ("B", 8), ("C", 50), ("D", 12), ("E", 16), ("F", 16), ("G", 14)]:
             ws.column_dimensions[col].width = w
 
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
-        filename = (
-            f"banco_{no_banco}_{desde or 'inicio'}_{hasta or 'hoy'}.xlsx"
-        )
+        filename = f"banco_{no_banco}_{desde or 'inicio'}_{hasta or 'hoy'}.xlsx"
         return Response(
             buf.getvalue(),
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -767,9 +786,11 @@ def movimientos(no_banco):
         if doc == "DE":
             j = i
             grupo = []
-            while (j < len(filas)
-                   and (filas[j].get("documento") or "").strip().upper() == "DE"
-                   and filas[j].get("fecha") == f.get("fecha")):
+            while (
+                j < len(filas)
+                and (filas[j].get("documento") or "").strip().upper() == "DE"
+                and filas[j].get("fecha") == f.get("fecha")
+            ):
                 grupo.append(filas[j])
                 j += 1
             if len(grupo) >= 2:
@@ -777,15 +798,17 @@ def movimientos(no_banco):
                 # El saldo del lote es el del PRIMER row (más nuevo en el
                 # orden DESC) — refleja el saldo después de TODO el lote.
                 saldo_lote = grupo[0].get("saldo")
-                items.append({
-                    "_kind":         "lote",
-                    "fecha":         f.get("fecha"),
-                    "n_cheques":     len(grupo),
-                    "importe_total": total_lote,
-                    "saldo":         saldo_lote,
-                    "lote_key":      f"lote-{grupo[0].get('id_transaccion')}",
-                    "children":      grupo,
-                })
+                items.append(
+                    {
+                        "_kind": "lote",
+                        "fecha": f.get("fecha"),
+                        "n_cheques": len(grupo),
+                        "importe_total": total_lote,
+                        "saldo": saldo_lote,
+                        "lote_key": f"lote-{grupo[0].get('id_transaccion')}",
+                        "children": grupo,
+                    }
+                )
                 i = j
                 continue
         # Default: fila individual
@@ -794,8 +817,12 @@ def movimientos(no_banco):
 
     return render_template(
         "bancos/movimientos.html",
-        banco=banco, filas=filas, items=items,
-        desde=desde, hasta=hasta, error=error,
+        banco=banco,
+        filas=filas,
+        items=items,
+        desde=desde,
+        hasta=hasta,
+        error=error,
     )
 
 
@@ -814,10 +841,14 @@ def recompute_saldos():
     """
     import bank_helpers
     import db as _db
+
     try:
-        bancos = _db.fetch_all(
-            "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco ORDER BY no_banco"
-        ) or []
+        bancos = (
+            _db.fetch_all(
+                "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco ORDER BY no_banco"
+            )
+            or []
+        )
         total_filas = 0
         bancos_sin_filas = 0
         # TX SEPARADA POR BANCO (TMT 2026-05-14 #20 audit):
@@ -858,8 +889,10 @@ def recompute_saldos():
                     ancla_id=int(ancla_id),
                 )
             total_filas += int(n or 0)
-        msg = (f"Saldos recalculados: {total_filas} fila(s) tocadas en "
-               f"{len(bancos) - bancos_sin_filas} banco(s).")
+        msg = (
+            f"Saldos recalculados: {total_filas} fila(s) tocadas en "
+            f"{len(bancos) - bancos_sin_filas} banco(s)."
+        )
         if bancos_sin_filas:
             msg += f" {bancos_sin_filas} banco(s) sin transacciones."
         flash(msg, "ok")
@@ -874,8 +907,8 @@ def recompute_saldos():
 # el mismo template.
 # ---------------------------------------------------------------------------
 _LABELS_DOC = {
-    "DE": ("Depósito",      "Suma al saldo del banco"),
-    "NC": ("Nota de crédito","Suma al saldo (devolución, intereses, reverso de cargo)"),
+    "DE": ("Depósito", "Suma al saldo del banco"),
+    "NC": ("Nota de crédito", "Suma al saldo (devolución, intereses, reverso de cargo)"),
     "ND": ("Nota de débito", "Resta del saldo (cargo del banco, comisión, ISI)"),
 }
 
@@ -910,18 +943,19 @@ def nuevo_movimiento():
         usuario = (g.user or {}).get("username", "web")
         try:
             r = queries.crear_movimiento_simple(
-                no_banco=no_banco, documento=doc,
-                importe=importe, fecha=fecha,
-                concepto=concepto, prov=prov,
+                no_banco=no_banco,
+                documento=doc,
+                importe=importe,
+                fecha=fecha,
+                concepto=concepto,
+                prov=prov,
                 usuario=usuario,
             )
             flash(
-                f"{label} registrada por $ {r['importe']:.2f}. "
-                f"Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
+                f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
                 "ok",
             )
-            return redirect(url_for("bancos.movimientos",
-                                    no_banco=r["no_banco"]))
+            return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:
@@ -929,6 +963,7 @@ def nuevo_movimiento():
 
     # GET o POST con error
     import contextlib as _ctx
+
     proveedores = []
     with _ctx.suppress(Exception):
         proveedores = queries.proveedores_activos(limite=500)
@@ -945,7 +980,9 @@ def nuevo_movimiento():
 
     return render_template(
         "bancos/nuevo_movimiento.html",
-        doc=doc, label=label, ayuda=ayuda,
+        doc=doc,
+        label=label,
+        ayuda=ayuda,
         bancos=bancos,
         no_banco_inicial=no_banco_inicial,
         proveedores=proveedores,
@@ -953,8 +990,7 @@ def nuevo_movimiento():
     )
 
 
-@bancos_bp.route("/bancos/mov-simple/<int:id_mov_doble>/reversar",
-                 methods=["GET", "POST"])
+@bancos_bp.route("/bancos/mov-simple/<int:id_mov_doble>/reversar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def confirmar_reverso_movimiento_simple(id_mov_doble: int):
@@ -964,6 +1000,7 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
     POST: ejecuta queries.reversar_movimiento_simple (atómico).
     """
     import db as _db
+
     md = _db.fetch_one(
         """
         SELECT id_mov_doble, tipo, origen_id, importe, fecha, concepto, estado
@@ -1022,14 +1059,13 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
             "estaba antes del alta."
         ),
         detalle_registro={
-            "Tipo":     tipo_legible,
-            "Banco":    tx.get("banco_nombre", "") if tx else "",
-            "Importe":  f"$ {md.get('importe', 0):.2f}",
+            "Tipo": tipo_legible,
+            "Banco": tx.get("banco_nombre", "") if tx else "",
+            "Importe": f"$ {md.get('importe', 0):.2f}",
             "Concepto": md.get("concepto") or "(sin concepto)",
-            "Fecha":    md.get("fecha"),
+            "Fecha": md.get("fecha"),
         },
-        accion_url=url_for("bancos.confirmar_reverso_movimiento_simple",
-                          id_mov_doble=id_mov_doble),
+        accion_url=url_for("bancos.confirmar_reverso_movimiento_simple", id_mov_doble=id_mov_doble),
         volver_url=url_for("historial.lista"),
         motivo_obligatorio=True,
         confirm_label="Reversar",

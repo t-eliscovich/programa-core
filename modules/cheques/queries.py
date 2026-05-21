@@ -25,6 +25,7 @@ Reglas de transición:
 Migración 0013 remapea las filas legacy `stat='D'` (depositado genérico)
 a `stat='B'`. Después de esa migración, 'D' es unambiguamente Daniela.
 """
+
 from datetime import date
 
 import db
@@ -55,6 +56,7 @@ def _domingo_a_lunes(f: date) -> date:
     """Si fecha cae domingo (weekday=6 en Python, 1 en Clipper DOW), shift a lunes."""
     if f and f.weekday() == 6:
         from datetime import timedelta as _td
+
         return f + _td(days=1)
     return f
 
@@ -91,8 +93,7 @@ def editar(
     asegurar_fecha_abierta(date.today())
 
     ch = db.fetch_one(
-        "SELECT id_cheque, no_cheque, stat, fechad, concepto "
-        "FROM scintela.cheque WHERE id_cheque = %s",
+        "SELECT id_cheque, no_cheque, stat, fechad, concepto FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
@@ -118,16 +119,13 @@ def editar(
 
     obs_marca = f"[E] {observacion[:120]}" if observacion else None
 
-    sql_set = ["fechad=%s", "usuario_modifica=%s",
-               "fecha_modifica=CURRENT_TIMESTAMP"]
+    sql_set = ["fechad=%s", "usuario_modifica=%s", "fecha_modifica=CURRENT_TIMESTAMP"]
     params: list = [fechad_nueva, usuario]
     if concepto is not None:
         sql_set.append("concepto=%s")
         params.append((concepto or "").strip()[:50] or None)
     if obs_marca:
-        sql_set.append(
-            "observacion = COALESCE(observacion||' | ','')||%s"
-        )
+        sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
         params.append(obs_marca)
     params.append(id_cheque)
 
@@ -212,8 +210,7 @@ def transicionar_stat(
     # 'V' (banco Internacional legacy) deprecado como destino. TMT 2026-05-14 (#17).
     if stat_destino == "V":
         raise ValueError(
-            "stat='V' (banco Internacional legacy) está deprecado. "
-            "Usá 'B' (Pichincha) o 'I' al depositar."
+            "stat='V' (banco Internacional legacy) está deprecado. Usá 'B' (Pichincha) o 'I' al depositar."
         )
 
     with db.tx() as conn:
@@ -221,7 +218,8 @@ def transicionar_stat(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, "
             "no_banco, banco, fechad "
             "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -241,6 +239,7 @@ def transicionar_stat(
         # 'V' está bloqueado arriba con ValueError. TMT 2026-05-14 (#17).
         if stat_destino in ("B", "I"):
             import bank_helpers
+
             banco_destino = no_banco or (1 if stat_destino == "B" else 2)
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
@@ -276,6 +275,7 @@ def transicionar_stat(
         # --- cobrado en caja ---
         elif stat_destino == "C":
             import caja_helpers
+
             res = caja_helpers.insert_movimiento_caja(
                 conn,
                 fecha=fecha,
@@ -304,6 +304,7 @@ def transicionar_stat(
             # TMT 2026-05-14.
             if stat_prev in STATS_DEPOSITADO:
                 import bank_helpers
+
                 banco_orig = ch.get("no_banco") or (1 if stat_prev == "B" else 2)
                 bank_helpers.insert_movimiento_bancario(
                     conn,
@@ -312,8 +313,9 @@ def transicionar_stat(
                     fecha=fecha,
                     documento="ND",
                     importe=importe,
-                    concepto=(f"REBOTE ch{ch.get('no_cheque') or id_cheque} "
-                              f"{ch.get('codigo_cli') or ''}").strip()[:50],
+                    concepto=(
+                        f"REBOTE ch{ch.get('no_cheque') or id_cheque} {ch.get('codigo_cli') or ''}"
+                    ).strip()[:50],
                     prov=ch.get("codigo_cli"),
                     numreferencia=id_cheque,
                     usuario=usuario,
@@ -327,7 +329,8 @@ def transicionar_stat(
                 VALUES (%s, %s, %s, %s, %s, %s, 0, %s)
                 """,
                 (
-                    fecha, fecha,
+                    fecha,
+                    fecha,
                     ch.get("codigo_cli"),
                     id_cheque,
                     importe,
@@ -346,8 +349,7 @@ def transicionar_stat(
             )
             if ch.get("codigo_cli"):
                 marca = (
-                    f"[S] CHEQUE {ch.get('no_cheque') or '#' + str(id_cheque)} "
-                    f"REBOTADO {fecha.isoformat()}"
+                    f"[S] CHEQUE {ch.get('no_cheque') or '#' + str(id_cheque)} REBOTADO {fecha.isoformat()}"
                 )
                 if motivo:
                     marca += f" — {motivo[:60]}"
@@ -416,21 +418,22 @@ def anular_por_error_de_carga(
     Todo en una sola transacción.
     """
     motivo = (motivo or "").strip()
-    if len(motivo) < 10:
-        raise ValueError("Motivo de error de carga requerido (mín. 10 caracteres).")
+    # TMT 2026-05-21 dueña: motivo opcional sin minlen.
 
     fecha = date.today()
     asegurar_fecha_abierta(fecha)
 
     # TMT 2026-05-15: caller puede pasar `conn` (batch atómico).
     import contextlib as _ctx
+
     _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
     with _tx as conn:
         ch = db.fetch_one(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, "
             "no_banco, fechad "
             "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -446,9 +449,9 @@ def anular_por_error_de_carga(
 
         # --- Reverse de aplicaciones a facturas (igual que reversar()) ---
         aplic = db.fetch_all(
-            "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact "
-            "WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact WHERE id_cheque = %s",
+            (id_cheque,),
+            conn=conn,
         )
         for ap in aplic:
             id_fact = ap["id_fact"]
@@ -457,7 +460,8 @@ def anular_por_error_de_carga(
                 continue
             f = db.fetch_one(
                 "SELECT importe, abono FROM scintela.factura WHERE id_factura = %s",
-                (id_fact,), conn=conn,
+                (id_fact,),
+                conn=conn,
             )
             if not f:
                 continue
@@ -480,6 +484,7 @@ def anular_por_error_de_carga(
         # --- Compensación bancaria/caja según stat actual ---
         if stat_prev in ("B", "V", "W", "I", "J", "K", "A"):
             import bank_helpers
+
             banco = ch.get("no_banco") or (1 if stat_prev == "B" else 2)
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
@@ -496,6 +501,7 @@ def anular_por_error_de_carga(
             compensacion = {"tipo": "banco", "id": res["id_transaccion"]}
         elif stat_prev == "C":
             import caja_helpers
+
             res = caja_helpers.insert_movimiento_caja(
                 conn,
                 fecha=fecha,
@@ -588,7 +594,8 @@ def reemplazar(
             "SELECT id_cheque, no_cheque, fecha, fechad, fecha_recibido, "
             "codigo_cli, importe, no_banco, banco, stat, prov, clave "
             "FROM scintela.cheque WHERE id_cheque = %s FOR UPDATE",
-            (id_cheque_viejo,), conn=conn,
+            (id_cheque_viejo,),
+            conn=conn,
         )
         if not ch_viejo:
             raise ValueError(f"Cheque {id_cheque_viejo} no existe.")
@@ -611,8 +618,9 @@ def reemplazar(
         # de espejo de anticipo, y para poder setear id_cheque_padre.
         fecha_nuevo = date.today()
         fechad_nuevo = ch_viejo.get("fechad") or fecha_nuevo
-        row_nuevo = db.execute_returning(
-            """
+        row_nuevo = (
+            db.execute_returning(
+                """
             INSERT INTO scintela.cheque
                 (no_cheque, fecha, fechad, fecha_recibido,
                  codigo_cli, importe, no_banco, banco,
@@ -621,20 +629,24 @@ def reemplazar(
                     'Z', CURRENT_DATE, %s, %s, %s, %s)
             RETURNING id_cheque
             """,
-            (
-                nuevo_no_cheque[:10],
-                fecha_nuevo, fechad_nuevo, date.today(),
-                ch_viejo.get("codigo_cli"),
-                importe_nuevo,
-                ch_viejo.get("no_banco"),
-                ch_viejo.get("banco"),
-                ch_viejo.get("prov"),
-                ch_viejo.get("clave"),
-                usuario[:50],
-                id_cheque_viejo,
-            ),
-            conn=conn,
-        ) or {}
+                (
+                    nuevo_no_cheque[:10],
+                    fecha_nuevo,
+                    fechad_nuevo,
+                    date.today(),
+                    ch_viejo.get("codigo_cli"),
+                    importe_nuevo,
+                    ch_viejo.get("no_banco"),
+                    ch_viejo.get("banco"),
+                    ch_viejo.get("prov"),
+                    ch_viejo.get("clave"),
+                    usuario[:50],
+                    id_cheque_viejo,
+                ),
+                conn=conn,
+            )
+            or {}
+        )
         id_cheque_nuevo = int(row_nuevo["id_cheque"])
 
         # 2) Migrar aplicaciones a facturas vivas: traer las que el viejo
@@ -649,11 +661,15 @@ def reemplazar(
         # el importe_nuevo, REHUSAMOS la operación — no podemos decidir auto-
         # máticamente cómo redistribuir; pedimos al usuario que primero
         # desaplique manualmente.
-        aplicaciones = db.fetch_all(
-            "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact "
-            "WHERE id_cheque = %s ORDER BY id_fact",  # orden estable → evita deadlocks
-            (id_cheque_viejo,), conn=conn,
-        ) or []
+        aplicaciones = (
+            db.fetch_all(
+                "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact "
+                "WHERE id_cheque = %s ORDER BY id_fact",  # orden estable → evita deadlocks
+                (id_cheque_viejo,),
+                conn=conn,
+            )
+            or []
+        )
         # Sanity: el total de aplicaciones del viejo no puede exceder el
         # importe_nuevo. Si pasa, el usuario debe desaplicar primero.
         total_aplicado_viejo = sum(float(a.get("importe") or 0) for a in aplicaciones)
@@ -674,6 +690,7 @@ def reemplazar(
         aplicaciones_migradas = 0
         # Agrupar aplicaciones por id_fact preservando el orden estable.
         from collections import OrderedDict
+
         por_factura: OrderedDict[int, list[dict]] = OrderedDict()
         for ap in aplicaciones:
             id_fact = ap.get("id_fact")
@@ -688,7 +705,8 @@ def reemplazar(
             f = db.fetch_one(
                 "SELECT id_factura, numf, importe, abono FROM scintela.factura "
                 "WHERE id_factura = %s FOR UPDATE",
-                (id_fact,), conn=conn,
+                (id_fact,),
+                conn=conn,
             )
             if not f:
                 continue
@@ -698,9 +716,9 @@ def reemplazar(
             id_chequesxfact = [int(a["id_chequexfact"]) for a in aps]
             placeholder = ",".join(["%s"] * len(id_chequesxfact))
             db.execute(
-                f"DELETE FROM scintela.chequesxfact "
-                f"WHERE id_chequexfact IN ({placeholder})",
-                tuple(id_chequesxfact), conn=conn,
+                f"DELETE FROM scintela.chequesxfact WHERE id_chequexfact IN ({placeholder})",
+                tuple(id_chequesxfact),
+                conn=conn,
             )
             # Estado post-migración: el abono neto no cambia (-sum + sum = 0),
             # pero rehacemos los cálculos a partir del estado actual de la
@@ -731,9 +749,15 @@ def reemplazar(
                     VALUES (%s, %s, CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        id_cheque_nuevo, id_fact, ch_viejo.get("codigo_cli"),
-                        imp_ap, ch_viejo.get("no_banco"),
-                        nuevo_abono, nuevo_saldo, nuevo_stat_f, usuario,
+                        id_cheque_nuevo,
+                        id_fact,
+                        ch_viejo.get("codigo_cli"),
+                        imp_ap,
+                        ch_viejo.get("no_banco"),
+                        nuevo_abono,
+                        nuevo_saldo,
+                        nuevo_stat_f,
+                        usuario,
                     ),
                     conn=conn,
                 )
@@ -788,7 +812,8 @@ def reemplazar(
             "   AND (anulada IS NOT TRUE OR anulada IS NULL)",
             (
                 f"reemplazo cheque #{id_cheque_viejo}→#{id_cheque_nuevo}",
-                usuario, id_cheque_viejo,
+                usuario,
+                id_cheque_viejo,
             ),
             conn=conn,
         )
@@ -802,6 +827,7 @@ def reemplazar(
         # con stat='X' como marca), ni invalida el mov_doble del alta.
         # El link viejo→nuevo queda en metadata + cheque.id_cheque_padre.
         import mov_doble as _md
+
         _md.registrar(
             conn=conn,
             tipo="cheque_reemplazo",
@@ -813,8 +839,7 @@ def reemplazar(
             fecha=date.today(),
             concepto=(
                 f"REEMPLAZO cheque #{ch_viejo.get('no_cheque') or id_cheque_viejo} "
-                f"→ #{nuevo_no_cheque}"
-                + (f" — {motivo}" if motivo else "")
+                f"→ #{nuevo_no_cheque}" + (f" — {motivo}" if motivo else "")
             )[:200],
             usuario=usuario,
             metadata={
@@ -871,15 +896,18 @@ def hijos(id_cheque: int) -> list[dict]:
     query devuelve la lista — vacía si no hubo anticipo. TMT 2026-05-14
     (#28).
     """
-    return db.fetch_all(
-        """
+    return (
+        db.fetch_all(
+            """
         SELECT id_cheque, no_cheque, importe, stat, fecha, fechad
           FROM scintela.cheque
          WHERE id_cheque_padre = %s
          ORDER BY id_cheque
         """,
-        (id_cheque,),
-    ) or []
+            (id_cheque,),
+        )
+        or []
+    )
 
 
 def depositar_lote(
@@ -922,27 +950,23 @@ def depositar_lote(
 
     # Validar todos los cheques antes de tocar nada
     placeholder = ",".join(["%s"] * len(ids_cheques))
-    rows = db.fetch_all(
-        f"""
+    rows = (
+        db.fetch_all(
+            f"""
         SELECT id_cheque, no_cheque, codigo_cli, importe, stat, fechad
         FROM scintela.cheque
         WHERE id_cheque IN ({placeholder})
         ORDER BY id_cheque
         """,
-        tuple(ids_cheques),
-    ) or []
+            tuple(ids_cheques),
+        )
+        or []
+    )
     if len(rows) != len(set(ids_cheques)):
-        raise ValueError(
-            f"Algunos cheques no existen ({len(rows)} de {len(set(ids_cheques))} encontrados)."
-        )
-    no_depositables = [
-        r for r in rows
-        if (r.get("stat") or "").upper() not in STATS_DEPOSITABLES
-    ]
+        raise ValueError(f"Algunos cheques no existen ({len(rows)} de {len(set(ids_cheques))} encontrados).")
+    no_depositables = [r for r in rows if (r.get("stat") or "").upper() not in STATS_DEPOSITABLES]
     if no_depositables:
-        ejemplos = ", ".join(
-            f"#{r['id_cheque']} (stat={r.get('stat')})" for r in no_depositables[:3]
-        )
+        ejemplos = ", ".join(f"#{r['id_cheque']} (stat={r.get('stat')})" for r in no_depositables[:3])
         raise ValueError(
             f"{len(no_depositables)} cheque(s) no son depositables: {ejemplos}"
             f"{'…' if len(no_depositables) > 3 else ''}"
@@ -999,9 +1023,9 @@ def depositar_lote(
                 fecha=fecha_deposito,
                 documento="DE",
                 importe=imp,
-                concepto=(concepto or
-                          f"Dep. cheque {r.get('no_cheque') or ''} "
-                          f"{r.get('codigo_cli') or ''}").strip()[:50],
+                concepto=(
+                    concepto or f"Dep. cheque {r.get('no_cheque') or ''} {r.get('codigo_cli') or ''}"
+                ).strip()[:50],
                 prov=(r.get("codigo_cli") or "")[:5],
                 numreferencia=r.get("id_cheque"),
                 stat="A",
@@ -1027,6 +1051,7 @@ def depositar_lote(
                 # 2026-05-16. El tipo `cheque_depositado` ya está mapeado en
                 # _REVERSO_DISPATCH para reversar Z→B con compensación banco.
                 import mov_doble as _md
+
                 _md.registrar(
                     conn=conn,
                     tipo="cheque_depositado",
@@ -1041,20 +1066,22 @@ def depositar_lote(
                         f"{r.get('codigo_cli') or ''}"
                     ).strip()[:200],
                     usuario=usuario,
-                    metadata={"id_cheque": int(r["id_cheque"]),
-                              "id_transaccion": int(id_t),
-                              "no_banco": no_banco,
-                              "banco_nombre": banco_nombre},
+                    metadata={
+                        "id_cheque": int(r["id_cheque"]),
+                        "id_transaccion": int(id_t),
+                        "no_banco": no_banco,
+                        "banco_nombre": banco_nombre,
+                    },
                 )
 
     return {
-        "n_depositados":      len(rows),
-        "total":              total,
-        "no_banco":           no_banco,
-        "banco_nombre":       banco_nombre,
-        "id_transacciones":   id_transacciones,
-        "fecha_deposito":     fecha_deposito,
-        "ids_cheques":        ids_cheques,
+        "n_depositados": len(rows),
+        "total": total,
+        "no_banco": no_banco,
+        "banco_nombre": banco_nombre,
+        "id_transacciones": id_transacciones,
+        "fecha_deposito": fecha_deposito,
+        "ids_cheques": ids_cheques,
     }
 
 
@@ -1100,8 +1127,7 @@ def boleta_deposito(
     """
     # Banco destino
     banco_row = db.fetch_one(
-        "SELECT no_banco, COALESCE(nombre, '') AS nombre "
-        "FROM scintela.banco WHERE no_banco = %s",
+        "SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco WHERE no_banco = %s",
         (no_banco,),
     )
     if not banco_row:
@@ -1120,8 +1146,9 @@ def boleta_deposito(
 
     # Cheques depositados ese día a ese banco vía chequextransaccion +
     # transacciones_bancarias.
-    cheques = db.fetch_all(
-        """
+    cheques = (
+        db.fetch_all(
+            """
         SELECT c.id_cheque, c.no_cheque,
                COALESCE(bco_e.nombre, c.banco, '') AS banco_emisor,
                c.no_banco AS banco_emisor_id,
@@ -1142,18 +1169,20 @@ def boleta_deposito(
            AND t.fecha     = %s
          ORDER BY c.importe DESC, c.id_cheque
         """,
-        (no_banco, fecha),
-    ) or []
+            (no_banco, fecha),
+        )
+        or []
+    )
 
     total = sum(float(c.get("importe") or 0) for c in cheques)
     return {
         "banco_nombre": banco_nombre,
-        "no_banco":     no_banco,
-        "no_cuenta":    no_cuenta,
-        "fecha":        fecha,
-        "cheques":      cheques,
-        "total":        total,
-        "n_cheques":    len(cheques),
+        "no_banco": no_banco,
+        "no_cuenta": no_cuenta,
+        "fecha": fecha,
+        "cheques": cheques,
+        "total": total,
+        "n_cheques": len(cheques),
     }
 
 
@@ -1184,14 +1213,14 @@ def depositos(id_cheque: int) -> list[dict]:
 #   - Filas con 'R' (rebotado genérico) — se muestran bajo "devueltos".
 #     Reversiones nuevas escriben '1' o '3' según el caso.
 STATS = {
-    "cartera":      ("Z",),                       # ingresado, sin movimiento
-    "depositados":  ("B", "A"),                   # B nuevo + A legacy
-    "devueltos":    ("1", "2", "3", "R"),         # rebotes (3=segundo rebote)
-    "daniela":      ("D",),                       # gestión Daniela
-    "postergados":  ("P",),                       # postergados con fecha nueva
-    "endosados":    ("E",),                       # endosados a proveedor (TMT 2026-05-12)
-    "eliminados":   ("X",),                       # reversados / anulados
-    "internacional": ("V",),                      # legacy banco Inter — no usar
+    "cartera": ("Z",),  # ingresado, sin movimiento
+    "depositados": ("B", "A"),  # B nuevo + A legacy
+    "devueltos": ("1", "2", "3", "R"),  # rebotes (3=segundo rebote)
+    "daniela": ("D",),  # gestión Daniela
+    "postergados": ("P",),  # postergados con fecha nueva
+    "endosados": ("E",),  # endosados a proveedor (TMT 2026-05-12)
+    "eliminados": ("X",),  # reversados / anulados
+    "internacional": ("V",),  # legacy banco Inter — no usar
     # TMT 2026-05-19 v2 (pedido dueña): "Cartera total" = suma de los 4
     # buckets visibles en pantalla — Cartera Z + Postergados + Daniela
     # + Devueltos. NO incluye Depositados (B/A) — esos ya están "en el
@@ -1229,67 +1258,109 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # transiciones ("no veo 1 y 2 en el dropdown"). Permiten marcar el
     # cheque como devuelto directo sin pasar por deposito + reverso.
     "Z": [
-        {"stat_destino": "B", "label": "Depositar (al banco)",
-         "kind": "WIZARD", "endpoint": "cheques.depositar_lote"},
-        {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
-        {"stat_destino": "D", "label": "Pasar a Daniela",
-         "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "1", "label": "Devuelto",
-         "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "2", "label": "Devuelto (2°)",
-         "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "X", "label": "Anular (error carga)",
-         "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
+        {
+            "stat_destino": "B",
+            "label": "Depositar (al banco)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.depositar_lote",
+        },
+        {
+            "stat_destino": "P",
+            "label": "Postergar fecha",
+            "kind": "POSTERGAR",
+            "endpoint": "cheques.postergar",
+        },
+        {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "1", "label": "Devuelto", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "2", "label": "Devuelto (2°)", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {
+            "stat_destino": "X",
+            "label": "Anular (error carga)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.anular_error_carga",
+        },
     ],
     # B = depositado en banco. Sólo se puede marcar rebote.
     "B": [
-        {"stat_destino": "9", "label": "Marcar como rebotado",
-         "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
+        {
+            "stat_destino": "9",
+            "label": "Marcar como rebotado",
+            "kind": "WIZARD",
+            "endpoint": "cheques.confirmar_reverso",
+        },
     ],
     "A": [
-        {"stat_destino": "9", "label": "Marcar como rebotado",
-         "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
+        {
+            "stat_destino": "9",
+            "label": "Marcar como rebotado",
+            "kind": "WIZARD",
+            "endpoint": "cheques.confirmar_reverso",
+        },
     ],
     "V": [
-        {"stat_destino": "9", "label": "Marcar como rebotado",
-         "kind": "WIZARD", "endpoint": "cheques.confirmar_reverso"},
+        {
+            "stat_destino": "9",
+            "label": "Marcar como rebotado",
+            "kind": "WIZARD",
+            "endpoint": "cheques.confirmar_reverso",
+        },
     ],
     # 1 / 2 = rebote en gestión.
     "1": [
-        {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
-        {"stat_destino": "D", "label": "Pasar a Daniela",
-         "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "X", "label": "Anular (incobrable)",
-         "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
+        {
+            "stat_destino": "P",
+            "label": "Postergar fecha",
+            "kind": "POSTERGAR",
+            "endpoint": "cheques.postergar",
+        },
+        {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {
+            "stat_destino": "X",
+            "label": "Anular (incobrable)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.anular_error_carga",
+        },
     ],
     "2": [
-        {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
-        {"stat_destino": "D", "label": "Pasar a Daniela",
-         "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "X", "label": "Anular (incobrable)",
-         "kind": "WIZARD", "endpoint": "cheques.anular_error_carga"},
+        {
+            "stat_destino": "P",
+            "label": "Postergar fecha",
+            "kind": "POSTERGAR",
+            "endpoint": "cheques.postergar",
+        },
+        {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {
+            "stat_destino": "X",
+            "label": "Anular (incobrable)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.anular_error_carga",
+        },
     ],
     # D = Daniela.
     "D": [
-        {"stat_destino": "P", "label": "Postergar fecha",
-         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
+        {
+            "stat_destino": "P",
+            "label": "Postergar fecha",
+            "kind": "POSTERGAR",
+            "endpoint": "cheques.postergar",
+        },
     ],
     # P = postergado. Volver a cartera (Z), Daniela, o re-postergar.
     "P": [
-        {"stat_destino": "D", "label": "Pasar a Daniela",
-         "kind": "POST", "endpoint": "cheques.transicionar"},
-        {"stat_destino": "P", "label": "Re-postergar (nueva fecha)",
-         "kind": "POSTERGAR", "endpoint": "cheques.postergar"},
+        {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {
+            "stat_destino": "P",
+            "label": "Re-postergar (nueva fecha)",
+            "kind": "POSTERGAR",
+            "endpoint": "cheques.postergar",
+        },
     ],
     # Estados terminales — sin transiciones disponibles.
-    "3": [],   # 2do rebote terminal
-    "R": [],   # rebote terminal legacy
-    "E": [],   # endosado — vive en /historial para reverso
-    "X": [],   # eliminado/anulado
-    "T": [],   # cobrado total
+    "3": [],  # 2do rebote terminal
+    "R": [],  # rebote terminal legacy
+    "E": [],  # endosado — vive en /historial para reverso
+    "X": [],  # eliminado/anulado
+    "T": [],  # cobrado total
 }
 
 
@@ -1297,6 +1368,7 @@ def transiciones_para(stat: str) -> list[dict]:
     """Devuelve la lista de transiciones legales desde un stat actual."""
     s = (stat or "").upper().strip()
     return TRANSICIONES_LEGALES.get(s, [])
+
 
 # Stats que pueden iniciar un depósito a banco. Z (cartera) es el flujo
 # típico. P (postdatado/postergado) también es válido cuando llega la fecha
@@ -1403,6 +1475,7 @@ def crear(
     # TMT 2026-05-15: caller puede pasar `conn` para compartir transacción
     # (multi-cheque atómico). Si no, abrimos tx propia.
     import contextlib as _ctx
+
     _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
     with _tx as conn:
         # Cheque principal — incluye fecha_recibido (columna agregada en
@@ -1418,8 +1491,9 @@ def crear(
         # snapshotea con COALESCE(fechad_original, fechad). Re-postergar no
         # lo toca (queda la 1ra fechad). Los displays usan NULL = "no
         # postergado".
-        row = db.execute_returning(
-            """
+        row = (
+            db.execute_returning(
+                """
             INSERT INTO scintela.cheque
                 (no_cheque, fecha, fechad, fecha_recibido,
                  codigo_cli, importe, no_banco,
@@ -1429,23 +1503,29 @@ def crear(
                     %s, %s, NULL, %s, %s, %s)
             RETURNING id_cheque, no_cheque
             """,
-            (
-                (no_cheque or "").strip()[:10],
-                fecha, fechad, fecha_recibido,
-                codigo_cli.upper().strip(),
-                importe_principal, no_banco,
-                (banco_texto or None),
-                stat,
-                (prov or None),
-                (clave or None) and clave[:5],
-                usuario,
-            ),
-            conn=conn,
-        ) or {}
+                (
+                    (no_cheque or "").strip()[:10],
+                    fecha,
+                    fechad,
+                    fecha_recibido,
+                    codigo_cli.upper().strip(),
+                    importe_principal,
+                    no_banco,
+                    (banco_texto or None),
+                    stat,
+                    (prov or None),
+                    (clave or None) and clave[:5],
+                    usuario,
+                ),
+                conn=conn,
+            )
+            or {}
+        )
         # mov_doble del alta del cheque (paridad con factura_emitida).
         # TMT 2026-05-14: antes el alta del cheque quedaba invisible en
         # /historial — sólo veías la aplicación / depósito posterior.
         import mov_doble as _md
+
         if row.get("id_cheque") and importe_principal != 0:
             _md.registrar(
                 conn=conn,
@@ -1456,14 +1536,15 @@ def crear(
                 destino_id=row["id_cheque"],
                 importe=importe_principal,
                 fecha=fecha,
-                concepto=(f"Cheque #{(no_cheque or '').strip()} "
-                          f"de {codigo_cli.upper().strip()}")[:200],
+                concepto=(f"Cheque #{(no_cheque or '').strip()} de {codigo_cli.upper().strip()}")[:200],
                 usuario=usuario,
-                metadata={"codigo_cli": codigo_cli.upper().strip(),
-                          "no_cheque": (no_cheque or "").strip(),
-                          "no_banco": no_banco,
-                          "stat_inicial": stat,
-                          "es_anticipo": bool(es_anticipo)},
+                metadata={
+                    "codigo_cli": codigo_cli.upper().strip(),
+                    "no_cheque": (no_cheque or "").strip(),
+                    "no_banco": no_banco,
+                    "stat_inicial": stat,
+                    "es_anticipo": bool(es_anticipo),
+                },
                 batch_id=batch_id,
             )
 
@@ -1475,21 +1556,27 @@ def crear(
         # side-effects basados en concepto_parser (riesgo de match falso).
         if no_banco == 99 and row.get("id_cheque") and importe_principal > 0:
             concepto_caja = f"99 {codigo_cli.upper().strip()} ch {(no_cheque or '').strip()}"[:80]
-            caja_row = db.execute_returning(
-                """
+            caja_row = (
+                db.execute_returning(
+                    """
                 INSERT INTO scintela.caja
                     (fecha, tipo, importe, concepto, saldo, clave,
                      id_cheque, usuario_crea)
                 VALUES (%s, 'E', %s, %s, NULL, %s, %s, %s)
                 RETURNING id_caja
                 """,
-                (
-                    fecha, importe_principal, concepto_caja,
-                    (clave or None) and clave[:3],
-                    row["id_cheque"], usuario,
-                ),
-                conn=conn,
-            ) or {}
+                    (
+                        fecha,
+                        importe_principal,
+                        concepto_caja,
+                        (clave or None) and clave[:3],
+                        row["id_cheque"],
+                        usuario,
+                    ),
+                    conn=conn,
+                )
+                or {}
+            )
             # mov_doble linkea cheque ↔ caja para que el reverso del
             # cheque pueda compensar la entrada de caja en automático.
             if caja_row.get("id_caja"):
@@ -1502,20 +1589,24 @@ def crear(
                     destino_id=caja_row["id_caja"],
                     importe=importe_principal,
                     fecha=fecha,
-                    concepto=(f"Cobro efectivo ch{(no_cheque or '').strip()} "
-                              f"de {codigo_cli.upper().strip()} → caja")[:200],
+                    concepto=(
+                        f"Cobro efectivo ch{(no_cheque or '').strip()} de {codigo_cli.upper().strip()} → caja"
+                    )[:200],
                     usuario=usuario,
-                    metadata={"codigo_cli": codigo_cli.upper().strip(),
-                              "no_banco": 99,
-                              "id_cheque": row["id_cheque"],
-                              "id_caja": caja_row["id_caja"]},
+                    metadata={
+                        "codigo_cli": codigo_cli.upper().strip(),
+                        "no_banco": 99,
+                        "id_cheque": row["id_cheque"],
+                        "id_caja": caja_row["id_caja"],
+                    },
                     batch_id=batch_id,
                 )
 
         # Espejo de anticipo (importe negativo) — sólo si flag activo y >0
         if es_anticipo and importe_principal > 0:
-            espejo = db.execute_returning(
-                """
+            espejo = (
+                db.execute_returning(
+                    """
                 INSERT INTO scintela.cheque
                     (no_cheque, fecha, fechad, fecha_recibido,
                      codigo_cli, importe, no_banco,
@@ -1526,20 +1617,24 @@ def crear(
                         %s, 'Z', CURRENT_DATE, %s, %s, %s, %s)
                 RETURNING id_cheque
                 """,
-                (
-                    (no_cheque or "").strip()[:10],
-                    fecha, fechad, fecha_recibido,
-                    codigo_cli.upper().strip(),
-                    -importe_principal,  # espejo negativo
-                    no_banco,
-                    (banco_texto or None),
-                    (prov or None),
-                    (clave or None) and clave[:5],
-                    usuario,
-                    row.get("id_cheque"),  # apunta al cheque "padre" para auditoría
-                ),
-                conn=conn,
-            ) or {}
+                    (
+                        (no_cheque or "").strip()[:10],
+                        fecha,
+                        fechad,
+                        fecha_recibido,
+                        codigo_cli.upper().strip(),
+                        -importe_principal,  # espejo negativo
+                        no_banco,
+                        (banco_texto or None),
+                        (prov or None),
+                        (clave or None) and clave[:5],
+                        usuario,
+                        row.get("id_cheque"),  # apunta al cheque "padre" para auditoría
+                    ),
+                    conn=conn,
+                )
+                or {}
+            )
             row["id_cheque_anticipo"] = espejo.get("id_cheque")
             # mov_doble del espejo — link cheque normal → cheque espejo.
             # TMT 2026-05-14 (issue #25).
@@ -1553,12 +1648,15 @@ def crear(
                     destino_id=espejo["id_cheque"],
                     importe=-importe_principal,  # espejo es negativo
                     fecha=fecha,
-                    concepto=(f"Espejo de anticipo ch{(no_cheque or '').strip()} "
-                              f"de {codigo_cli.upper().strip()}")[:200],
+                    concepto=(
+                        f"Espejo de anticipo ch{(no_cheque or '').strip()} de {codigo_cli.upper().strip()}"
+                    )[:200],
                     usuario=usuario,
-                    metadata={"codigo_cli": codigo_cli.upper().strip(),
-                              "id_cheque_padre": row["id_cheque"],
-                              "id_cheque_espejo": espejo["id_cheque"]},
+                    metadata={
+                        "codigo_cli": codigo_cli.upper().strip(),
+                        "id_cheque_padre": row["id_cheque"],
+                        "id_cheque_espejo": espejo["id_cheque"],
+                    },
                 )
     return row
 
@@ -1593,7 +1691,8 @@ def postergar(
         ch = db.fetch_one(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, fechad, importe "
             "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -1631,15 +1730,18 @@ def postergar(
             )
             """,
             (
-                nueva_fechad, ch["codigo_cli"], id_cheque,
-                float(ch["importe"] or 0), usuario,
-                id_cheque, ch["codigo_cli"],
+                nueva_fechad,
+                ch["codigo_cli"],
+                id_cheque,
+                float(ch["importe"] or 0),
+                usuario,
+                id_cheque,
+                ch["codigo_cli"],
             ),
             conn=conn,
         )
         db.execute(
-            "UPDATE scintela.posdat SET fecha=%s, usuario_modifica=%s "
-            "WHERE banc=0 AND num=%s AND prov=%s",
+            "UPDATE scintela.posdat SET fecha=%s, usuario_modifica=%s WHERE banc=0 AND num=%s AND prov=%s",
             (nueva_fechad, usuario, id_cheque, ch["codigo_cli"]),
             conn=conn,
         )
@@ -1670,15 +1772,14 @@ def marcar_daniela(
     with db.tx() as conn:
         ch = db.fetch_one(
             "SELECT id_cheque, stat FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
         stat_prev = (ch["stat"] or "").upper()
         if stat_prev != "Z":
-            raise ValueError(
-                f"Sólo desde cartera (Z) se puede pasar a Daniela. Stat actual: '{stat_prev}'."
-            )
+            raise ValueError(f"Sólo desde cartera (Z) se puede pasar a Daniela. Stat actual: '{stat_prev}'.")
         db.execute(
             "UPDATE scintela.cheque "
             "SET stat='D', usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
@@ -1751,7 +1852,8 @@ def endosar(
         ch = db.fetch_one(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, fechad "
             "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -1766,7 +1868,8 @@ def endosar(
         prov_row = db.fetch_one(
             "SELECT id_proveedor, COALESCE(nombre,'') AS nombre "
             "FROM scintela.proveedor WHERE codigo_prov = %s",
-            (codigo_prov,), conn=conn,
+            (codigo_prov,),
+            conn=conn,
         )
         if not prov_row:
             raise ValueError(f"Proveedor {codigo_prov!r} no existe.")
@@ -1775,14 +1878,9 @@ def endosar(
         if importe < 0:
             # Espejo de anticipo (importe negativo) — no se puede endosar.
             # TMT 2026-05-14 (#21).
-            raise ValueError(
-                "Este cheque es un espejo de anticipo (importe negativo). "
-                "No se puede endosar."
-            )
+            raise ValueError("Este cheque es un espejo de anticipo (importe negativo). No se puede endosar.")
         if importe <= 0:
-            raise ValueError(
-                f"Cheque con importe inválido ($ {importe:.2f}) — no se puede endosar."
-            )
+            raise ValueError(f"Cheque con importe inválido ($ {importe:.2f}) — no se puede endosar.")
 
         # Próximo número de compra (siguiente correlativo).
         row_n = db.fetch_one(
@@ -1794,13 +1892,13 @@ def endosar(
         # Concepto de compra: prefijo ENDOSO + texto del usuario.
         cli_txt = ch.get("codigo_cli") or ""
         concepto_compra = (
-            f"ENDOSO ch{ch.get('no_cheque') or id_cheque} {cli_txt} "
-            f"{(concepto or '').strip()}"
+            f"ENDOSO ch{ch.get('no_cheque') or id_cheque} {cli_txt} {(concepto or '').strip()}"
         ).strip()[:50]
 
         # INSERT compra ya pagada con cuenta_pagada='E' (endoso).
-        compra = db.execute_returning(
-            """
+        compra = (
+            db.execute_returning(
+                """
             INSERT INTO scintela.compra
                 (fecha, id_proveedor, codigo_prov, tipo, comprobante,
                  importe, numero, fecha_ing, fechad, concepto,
@@ -1810,18 +1908,25 @@ def endosar(
                     %s, %s, 'E', %s)
             RETURNING id_compra, numero
             """,
-            (
-                fecha, prov_row["id_proveedor"], codigo_prov,
-                tipo_norm, f"CH{ch.get('no_cheque') or id_cheque}"[:20],
-                importe, numero_compra,
-                fecha, concepto_compra,
-                (codigo_prov[:3] if codigo_prov else None),
-                usuario[:50],
-                f"Pagada por endoso del cheque #{id_cheque} "
-                f"(N° {ch.get('no_cheque') or ''}, cliente {cli_txt}).",
-            ),
-            conn=conn,
-        ) or {}
+                (
+                    fecha,
+                    prov_row["id_proveedor"],
+                    codigo_prov,
+                    tipo_norm,
+                    f"CH{ch.get('no_cheque') or id_cheque}"[:20],
+                    importe,
+                    numero_compra,
+                    fecha,
+                    concepto_compra,
+                    (codigo_prov[:3] if codigo_prov else None),
+                    usuario[:50],
+                    f"Pagada por endoso del cheque #{id_cheque} "
+                    f"(N° {ch.get('no_cheque') or ''}, cliente {cli_txt}).",
+                ),
+                conn=conn,
+            )
+            or {}
+        )
 
         # UPDATE cheque: stat='E', prov, fechaout, traza en observacion.
         marca = (
@@ -1849,6 +1954,7 @@ def endosar(
 
         # Historial unificado.
         import mov_doble as _md
+
         id_mov_doble = _md.registrar(
             conn=conn,
             tipo="endoso_cheque_a_proveedor",
@@ -1860,9 +1966,11 @@ def endosar(
             fecha=fecha,
             concepto=(concepto or f"ENDOSO ch{ch.get('no_cheque') or ''} a {codigo_prov}")[:200],
             usuario=usuario,
-            metadata={"codigo_cli": ch.get("codigo_cli"),
-                      "codigo_prov": codigo_prov,
-                      "numero_compra": compra.get("numero")},
+            metadata={
+                "codigo_cli": ch.get("codigo_cli"),
+                "codigo_prov": codigo_prov,
+                "numero_compra": compra.get("numero"),
+            },
         )
 
     return {
@@ -1909,34 +2017,37 @@ def desaplicar_factura(
 
     # TMT 2026-05-15: caller puede pasar `conn` (batch atómico).
     import contextlib as _ctx
+
     _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
     with _tx as conn:
         ch = db.fetch_one(
-            "SELECT id_cheque, no_cheque, stat FROM scintela.cheque "
-            "WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            "SELECT id_cheque, no_cheque, stat FROM scintela.cheque WHERE id_cheque = %s",
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
 
-        aplicaciones = db.fetch_all(
-            """
+        aplicaciones = (
+            db.fetch_all(
+                """
             SELECT id_chequexfact, importe FROM scintela.chequesxfact
              WHERE id_cheque = %s AND id_fact = %s
             """,
-            (id_cheque, id_factura), conn=conn,
-        ) or []
-        if not aplicaciones:
-            raise ValueError(
-                f"No hay aplicaciones de cheque {id_cheque} a factura {id_factura}."
+                (id_cheque, id_factura),
+                conn=conn,
             )
+            or []
+        )
+        if not aplicaciones:
+            raise ValueError(f"No hay aplicaciones de cheque {id_cheque} a factura {id_factura}.")
         total_desaplicar = sum(float(a.get("importe") or 0) for a in aplicaciones)
 
         # Recomputar factura
         f = db.fetch_one(
-            "SELECT id_factura, numf, importe, abono FROM scintela.factura "
-            "WHERE id_factura = %s",
-            (id_factura,), conn=conn,
+            "SELECT id_factura, numf, importe, abono FROM scintela.factura WHERE id_factura = %s",
+            (id_factura,),
+            conn=conn,
         )
         if not f:
             raise ValueError(f"Factura id={id_factura} no existe.")
@@ -1962,7 +2073,8 @@ def desaplicar_factura(
             DELETE FROM scintela.chequesxfact
              WHERE id_cheque = %s AND id_fact = %s
             """,
-            (id_cheque, id_factura), conn=conn,
+            (id_cheque, id_factura),
+            conn=conn,
         )
 
         # ─── Auto-anular cheque si quedó sin aplicaciones Y fue creado en la
@@ -1979,16 +2091,23 @@ def desaplicar_factura(
         #
         # Si el cheque está depositado (B) o endosado (E), NO se toca —
         # esos tienen sus propios flujos de reverso.
-        aplic_restantes = db.fetch_one(
-            "SELECT COUNT(*) AS n FROM scintela.chequesxfact WHERE id_cheque=%s",
-            (id_cheque,), conn=conn,
-        ) or {}
+        aplic_restantes = (
+            db.fetch_one(
+                "SELECT COUNT(*) AS n FROM scintela.chequesxfact WHERE id_cheque=%s",
+                (id_cheque,),
+                conn=conn,
+            )
+            or {}
+        )
         n_aplic_restantes = int(aplic_restantes.get("n") or 0)
-        cheque_aux = db.fetch_one(
-            "SELECT fecha, fechaing, no_banco, stat FROM scintela.cheque "
-            "WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
-        ) or {}
+        cheque_aux = (
+            db.fetch_one(
+                "SELECT fecha, fechaing, no_banco, stat FROM scintela.cheque WHERE id_cheque = %s",
+                (id_cheque,),
+                conn=conn,
+            )
+            or {}
+        )
         # No anular si ya está en estado no-anulable (depositado, endosado, etc).
         stat_actual = (cheque_aux.get("stat") or "").upper()
         anulable = stat_actual in ("Z", "P")
@@ -2013,6 +2132,7 @@ def desaplicar_factura(
         # SKILL.md "Lo que NO hacer": no `try/except: pass` silencioso
         # en mov_doble.registrar — si falla, debe burbujear. TMT 2026-05-14.
         import mov_doble as _md
+
         md_orig = db.fetch_one(
             """
             SELECT id_mov_doble, importe FROM scintela.mov_doble
@@ -2024,7 +2144,8 @@ def desaplicar_factura(
                AND estado        = 'activo'
              ORDER BY id_mov_doble DESC LIMIT 1
             """,
-            (id_cheque, id_factura), conn=conn,
+            (id_cheque, id_factura),
+            conn=conn,
         )
         _md.registrar(
             conn=conn,
@@ -2040,13 +2161,15 @@ def desaplicar_factura(
                 + (f" — {motivo}" if motivo else "")
             )[:200],
             usuario=usuario,
-            metadata={"id_cheque": id_cheque,
-                      "id_factura": id_factura,
-                      "numf": f.get("numf"),
-                      "importe_desaplicado": total_desaplicar,
-                      "saldo_factura_post": nuevo_saldo,
-                      "stat_factura_post": nuevo_stat,
-                      "motivo": motivo or ""},
+            metadata={
+                "id_cheque": id_cheque,
+                "id_factura": id_factura,
+                "numf": f.get("numf"),
+                "importe_desaplicado": total_desaplicar,
+                "saldo_factura_post": nuevo_saldo,
+                "stat_factura_post": nuevo_stat,
+                "motivo": motivo or "",
+            },
             id_original=md_orig["id_mov_doble"] if md_orig else None,
         )
 
@@ -2087,7 +2210,8 @@ def reversar_endoso(
         ch = db.fetch_one(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, prov, importe "
             "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -2109,7 +2233,8 @@ def reversar_endoso(
              ORDER BY id_mov_doble DESC
              LIMIT 1
             """,
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
 
         # 2) Compra hermana — del destino del mov_doble; fallback legacy
@@ -2158,7 +2283,8 @@ def reversar_endoso(
         stat_destino = "Z"
         marca = (
             f"[REVERSO_ENDOSO {date.today().isoformat()} — antes a {ch.get('prov') or '?'}"
-            + (f" — {motivo[:80]}" if motivo else "") + "]"
+            + (f" — {motivo[:80]}" if motivo else "")
+            + "]"
         )
         db.execute(
             "UPDATE scintela.cheque "
@@ -2172,11 +2298,9 @@ def reversar_endoso(
         )
 
         # 5) Registrar mov_doble del reverso linkeado al original.
-        importe_reverso = (
-            float(md_orig.get("importe") or 0) if md_orig else
-            float(ch.get("importe") or 0)
-        )
+        importe_reverso = float(md_orig.get("importe") or 0) if md_orig else float(ch.get("importe") or 0)
         import mov_doble as _md
+
         _md.registrar(
             conn=conn,
             tipo="reverso_endoso_cheque",
@@ -2187,16 +2311,17 @@ def reversar_endoso(
             importe=importe_reverso,
             fecha=date.today(),
             concepto=(
-                f"REVERSO endoso ch {ch.get('no_cheque') or id_cheque}"
-                + (f" — {motivo}" if motivo else "")
+                f"REVERSO endoso ch {ch.get('no_cheque') or id_cheque}" + (f" — {motivo}" if motivo else "")
             )[:200],
             usuario=usuario,
-            metadata={"id_cheque_reversado": id_cheque,
-                      "id_compra_anulada": id_compra,
-                      "prov_anterior": ch.get("prov"),
-                      "stat_previo": "E",
-                      "stat_nuevo": stat_destino,
-                      "motivo": motivo or ""},
+            metadata={
+                "id_cheque_reversado": id_cheque,
+                "id_compra_anulada": id_compra,
+                "prov_anterior": ch.get("prov"),
+                "stat_previo": "E",
+                "stat_nuevo": stat_destino,
+                "motivo": motivo or "",
+            },
             id_original=md_orig["id_mov_doble"] if md_orig else None,
         )
 
@@ -2247,12 +2372,14 @@ def aplicar_a_factura(
     # él la maneja (multi-cheque atómico). Usamos contextlib.nullcontext
     # para mantener el bloque `with` igual en ambos paths.
     import contextlib as _ctx
+
     _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
     with _tx as conn:
         ch = db.fetch_one(
             "SELECT id_cheque, codigo_cli, no_banco, importe, stat, fecha "
             "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -2291,7 +2418,8 @@ def aplicar_a_factura(
             f = db.fetch_one(
                 "SELECT id_factura, numf, importe, abono, saldo, stat "
                 "FROM scintela.factura WHERE id_factura = %s",
-                (id_fact,), conn=conn,
+                (id_fact,),
+                conn=conn,
             )
             if not f:
                 raise ValueError(f"Factura id={id_fact} no existe.")
@@ -2358,7 +2486,7 @@ def aplicar_a_factura(
             elif nuevo_abono > 0.01:
                 nuevo_stat = "A"
             else:
-                nuevo_stat = (f["stat"] or "Z")
+                nuevo_stat = f["stat"] or "Z"
 
             db.execute(
                 """
@@ -2368,8 +2496,15 @@ def aplicar_a_factura(
                 VALUES (%s, %s, CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    id_cheque, id_fact, ch["codigo_cli"], imp,
-                    ch["no_banco"], nuevo_abono, nuevo_saldo, nuevo_stat, usuario,
+                    id_cheque,
+                    id_fact,
+                    ch["codigo_cli"],
+                    imp,
+                    ch["no_banco"],
+                    nuevo_abono,
+                    nuevo_saldo,
+                    nuevo_stat,
+                    usuario,
                 ),
                 conn=conn,
             )
@@ -2390,6 +2525,7 @@ def aplicar_a_factura(
             # pass silencioso en mov_doble.registrar — debe burbujear.
             # TMT 2026-05-14.
             import mov_doble as _md
+
             # Fallback de fecha: ch.fecha puede ser NULL para cheques
             # legacy importados sin fecha — usar HOY. Antes pasaba None y
             # mov_doble guardaba fecha NULL. TMT 2026-05-14 (#29).
@@ -2403,14 +2539,15 @@ def aplicar_a_factura(
                 destino_id=id_fact,
                 importe=imp,
                 fecha=fecha_md,
-                concepto=(f"Cheque #{id_cheque} → Factura #{f.get('numf') or id_fact}"
-                          f" ({imp:.2f})")[:200],
+                concepto=(f"Cheque #{id_cheque} → Factura #{f.get('numf') or id_fact} ({imp:.2f})")[:200],
                 usuario=usuario,
-                metadata={"id_cheque": id_cheque,
-                          "id_factura": id_fact,
-                          "numf": f.get("numf"),
-                          "saldo_factura_post": nuevo_saldo,
-                          "stat_factura_post": nuevo_stat},
+                metadata={
+                    "id_cheque": id_cheque,
+                    "id_factura": id_fact,
+                    "numf": f.get("numf"),
+                    "saldo_factura_post": nuevo_saldo,
+                    "stat_factura_post": nuevo_stat,
+                },
                 batch_id=batch_id,
             )
 
@@ -2503,9 +2640,9 @@ def reversar(
 
     with db.tx() as conn:
         ch = db.fetch_one(
-            "SELECT id_cheque, no_cheque, stat, codigo_cli "
-            "FROM scintela.cheque WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            "SELECT id_cheque, no_cheque, stat, codigo_cli FROM scintela.cheque WHERE id_cheque = %s",
+            (id_cheque,),
+            conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
@@ -2516,7 +2653,8 @@ def reversar(
         # Traer aplicaciones para revertir
         aplic = db.fetch_all(
             "SELECT id_chequexfact, id_fact, importe FROM scintela.chequesxfact WHERE id_cheque = %s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         for ap in aplic:
             id_fact = ap["id_fact"]
@@ -2525,7 +2663,8 @@ def reversar(
                 continue
             f = db.fetch_one(
                 "SELECT importe, abono FROM scintela.factura WHERE id_factura = %s",
-                (id_fact,), conn=conn,
+                (id_fact,),
+                conn=conn,
             )
             if not f:
                 continue
@@ -2568,7 +2707,8 @@ def reversar(
         # bloquear futuras anulaciones de factura con falso "cheque vivo".
         db.execute(
             "DELETE FROM scintela.chequesxfact WHERE id_cheque=%s",
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
 
         # Rebote real (B/1/2/A → 1 o 3) ⇒ cliente a STOP.
@@ -2577,8 +2717,7 @@ def reversar(
         es_rebote_real = es_rebote_real and bool(ch["codigo_cli"])
         if es_rebote_real:
             marca = (
-                f"[S] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} "
-                f"REBOTADO {date.today().isoformat()}"
+                f"[S] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} REBOTADO {date.today().isoformat()}"
             )
             if motivo:
                 marca += f" — {motivo[:80]}"
@@ -2611,8 +2750,8 @@ def reversar(
         # `id_reverso=<id_nuevo>`. Antes el original quedaba `activo` y
         # rompía la trazabilidad histórico→reverso (audit C 2026-05-16).
         import mov_doble as _md
-        tipo_reverso = ("reverso_cheque_rebote" if es_rebote_real
-                        else "reverso_cheque_administrativo")
+
+        tipo_reverso = "reverso_cheque_rebote" if es_rebote_real else "reverso_cheque_administrativo"
         total_reversado = sum(float(a.get("importe") or 0) for a in aplic) or 1.0
         md_orig_cheque = db.fetch_one(
             """
@@ -2621,7 +2760,8 @@ def reversar(
                AND tipo='cheque_creado' AND estado='activo'
              ORDER BY id_mov_doble DESC LIMIT 1
             """,
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
         _md.registrar(
             conn=conn,
@@ -2632,17 +2772,20 @@ def reversar(
             destino_id=id_cheque,
             importe=total_reversado,
             fecha=date.today(),
-            concepto=(f"REVERSO cheque {ch.get('no_cheque') or id_cheque} "
-                      f"{stat_prev}→{stat_nuevo}"
-                      + (f" — {motivo}" if motivo else ""))[:200],
+            concepto=(
+                f"REVERSO cheque {ch.get('no_cheque') or id_cheque} "
+                f"{stat_prev}→{stat_nuevo}" + (f" — {motivo}" if motivo else "")
+            )[:200],
             usuario=usuario,
-            metadata={"id_cheque": id_cheque,
-                      "stat_previo": stat_prev,
-                      "stat_nuevo": stat_nuevo,
-                      "es_rebote_real": es_rebote_real,
-                      "stop_aplicado": stop_aplicado,
-                      "n_aplicaciones_reversadas": len(aplic),
-                      "motivo": motivo or ""},
+            metadata={
+                "id_cheque": id_cheque,
+                "stat_previo": stat_prev,
+                "stat_nuevo": stat_nuevo,
+                "es_rebote_real": es_rebote_real,
+                "stop_aplicado": stop_aplicado,
+                "n_aplicaciones_reversadas": len(aplic),
+                "motivo": motivo or "",
+            },
             id_original=md_orig_cheque["id_mov_doble"] if md_orig_cheque else None,
         )
         # También marcar como reversadas las aplicaciones del cheque
@@ -2654,7 +2797,8 @@ def reversar(
              WHERE origen_table='cheque' AND origen_id=%s
                AND tipo='cheque_aplicado_a_factura' AND estado='activo'
             """,
-            (id_cheque,), conn=conn,
+            (id_cheque,),
+            conn=conn,
         )
 
     return {
@@ -2767,8 +2911,10 @@ def total_buscar(
           AND COALESCE(c.stat, '') <> 'X'
         """,
         {
-            "q": q or None, "like": like,
-            "desde": desde or None, "hasta": hasta or None,
+            "q": q or None,
+            "like": like,
+            "desde": desde or None,
+            "hasta": hasta or None,
             "stats": list(stats) if stats else None,
             "cliente": (cliente or None),
             "monto_min": monto_min,
@@ -2793,15 +2939,15 @@ def buscar(
     ver_eliminados: bool = False,
 ) -> list[dict]:
     """Filtros (mismas reglas que /facturas):
-        cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
-                         Otra cantidad → LIKE fuzzy.
-        monto_min      — importe >= N
-        monto_max      — importe <= N
-        desde/hasta    — fecha de depósito (fechad)
-        q              — búsqueda libre: N° cheque, nombre cliente/prov endoso.
-        ver_eliminados — si False (default), excluye stat='X' del listado
-                         cuando estado='todos'. Tab "Eliminados" siempre los
-                         muestra. Pedido TMT 2026-05-14 (#40 audit).
+    cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
+                     Otra cantidad → LIKE fuzzy.
+    monto_min      — importe >= N
+    monto_max      — importe <= N
+    desde/hasta    — fecha de depósito (fechad)
+    q              — búsqueda libre: N° cheque, nombre cliente/prov endoso.
+    ver_eliminados — si False (default), excluye stat='X' del listado
+                     cuando estado='todos'. Tab "Eliminados" siempre los
+                     muestra. Pedido TMT 2026-05-14 (#40 audit).
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -2821,8 +2967,8 @@ def buscar(
     # porque filtraba por fechad y los depósitos tienen fechaing≠fechad.
     fecha_col_por_estado = {
         "depositados": "COALESCE(c.fechaing, c.fechad, c.fecha)",
-        "devueltos":   "COALESCE(c.fechaing, c.fechad, c.fecha)",
-        "daniela":     "COALESCE(c.fechaing, c.fechad, c.fecha)",
+        "devueltos": "COALESCE(c.fechaing, c.fechad, c.fecha)",
+        "daniela": "COALESCE(c.fechaing, c.fechad, c.fecha)",
     }
     fecha_col = fecha_col_por_estado.get(estado, "COALESCE(c.fechad, c.fecha)")
     # TMT 2026-05-19 v8 — refactor: cliente/banco/proveedor se traen vía
@@ -2900,26 +3046,34 @@ def buscar(
         LIMIT %(limite)s
         """
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
-    rows = db.fetch_all(
-        sql_buscar_cheques,
-        {
-            "q": q or None, "like": like,
-            "cliente": cliente or None, "cliente_like": cliente_like,
-            "cli_codigo_exacto": es_cli_codigo_exacto,
-            "monto_min": monto_min, "monto_max": monto_max,
-            "desde": desde or None, "hasta": hasta or None,
-            "stats": list(stats) if stats else None,
-            "excluir_eliminados": excluir_eliminados,
-            "limite": limite,
-        },
-    ) or []
+    rows = (
+        db.fetch_all(
+            sql_buscar_cheques,
+            {
+                "q": q or None,
+                "like": like,
+                "cliente": cliente or None,
+                "cliente_like": cliente_like,
+                "cli_codigo_exacto": es_cli_codigo_exacto,
+                "monto_min": monto_min,
+                "monto_max": monto_max,
+                "desde": desde or None,
+                "hasta": hasta or None,
+                "stats": list(stats) if stats else None,
+                "excluir_eliminados": excluir_eliminados,
+                "limite": limite,
+            },
+        )
+        or []
+    )
     # Running total cronológico. Listado en orden ASC.
     from datetime import date as _date
-    rows_asc = sorted(rows, key=lambda r: (r.get("fechad") or r.get("fecha") or _date.min,
-                                           r.get("id_cheque") or 0))
+
+    rows_asc = sorted(
+        rows, key=lambda r: (r.get("fechad") or r.get("fecha") or _date.min, r.get("id_cheque") or 0)
+    )
     acum = 0.0
     for r in rows_asc:
         acum += float(r.get("importe") or 0)
         r["saldo_acumulado"] = acum
     return rows_asc
-

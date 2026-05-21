@@ -1,4 +1,5 @@
 """Posdat — vista/CRUD de pasivos abiertos con proveedores."""
+
 from datetime import date as _date
 from datetime import datetime
 
@@ -38,8 +39,7 @@ def nueva():
         # Restaurar campos via query string — si veníamos de crear un
         # proveedor nuevo, /proveedores/nuevo nos redirige acá con los
         # datos del form anterior. TMT 2026-05-13.
-        for k in ("fecha", "fechad", "prov", "importe", "concepto",
-                  "tipo", "compr", "no_comp", "num"):
+        for k in ("fecha", "fechad", "prov", "importe", "concepto", "tipo", "compr", "no_comp", "num"):
             if request.args.get(k):
                 form[k] = request.args.get(k)
         return render_template("posdat/form.html", form=form, errores=errores, modo="crear")
@@ -67,16 +67,17 @@ def nueva():
         _permisos = getattr(g, "permisos", set()) or set()
         if "proveedores.crear" in _permisos or "*" in _permisos:
             from urllib.parse import urlencode
+
             restore_args = {
-                "fecha":    request.form.get("fecha") or "",
-                "fechad":   request.form.get("fechad") or "",
-                "prov":     prov,
-                "importe":  request.form.get("importe") or "",
+                "fecha": request.form.get("fecha") or "",
+                "fechad": request.form.get("fechad") or "",
+                "prov": prov,
+                "importe": request.form.get("importe") or "",
                 "concepto": concepto or "",
-                "tipo":     tipo or "",
-                "compr":    compr or "",
-                "no_comp":  no_comp or "",
-                "num":      request.form.get("num") or "",
+                "tipo": tipo or "",
+                "compr": compr or "",
+                "no_comp": no_comp or "",
+                "num": request.form.get("num") or "",
             }
             restore_args = {k: v for k, v in restore_args.items() if v}
             next_url = url_for("posdat.nueva") + "?" + urlencode(restore_args)
@@ -85,9 +86,7 @@ def nueva():
                 "crearlo y después seguís con el posdatado.",
                 "warning",
             )
-            return redirect(
-                url_for("proveedores.nuevo", codigo=prov, next=next_url)
-            )
+            return redirect(url_for("proveedores.nuevo", codigo=prov, next=next_url))
         errores.append(f"El proveedor {prov!r} no existe.")
     if importe is None or importe <= 0:
         errores.append("Importe debe ser mayor que cero.")
@@ -97,9 +96,12 @@ def nueva():
     form = {
         "fecha": request.form.get("fecha"),
         "fechad": request.form.get("fechad"),
-        "prov": prov, "importe": request.form.get("importe"),
-        "concepto": concepto, "tipo": tipo,
-        "compr": compr, "no_comp": no_comp,
+        "prov": prov,
+        "importe": request.form.get("importe"),
+        "concepto": concepto,
+        "tipo": tipo,
+        "compr": compr,
+        "no_comp": no_comp,
         "num": request.form.get("num"),
         "num_sugerido": queries.proximo_num(),
     }
@@ -110,10 +112,16 @@ def nueva():
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.crear(
-            fecha=fecha, fechad=fechad, prov=prov, importe=importe,
-            concepto=concepto, tipo=tipo or None,
-            compr=compr or None, no_comp=no_comp or None,
-            num=num, usuario=usuario,
+            fecha=fecha,
+            fechad=fechad,
+            prov=prov,
+            importe=importe,
+            concepto=concepto,
+            tipo=tipo or None,
+            compr=compr or None,
+            no_comp=no_comp or None,
+            num=num,
+            usuario=usuario,
         )
         flash(f"Posdat {r.get('num')} creado.", "ok")
         return redirect(url_for("posdat.lista"))
@@ -138,16 +146,18 @@ def editar(id_posdat: int):
         # Recientes — best-effort, no rompe el form si falla.
         try:
             from modules.recientes import queries as rec
+
             etiqueta = (
-                f"Posdat #{pd.get('num') or id_posdat} · "
-                f"{pd.get('prov') or ''} · {pd.get('concepto') or ''}"
+                f"Posdat #{pd.get('num') or id_posdat} · {pd.get('prov') or ''} · {pd.get('concepto') or ''}"
             )[:200]
             rec.registrar("posdat", id_posdat, etiqueta=etiqueta)
         except Exception:  # noqa: BLE001
             # TMT 2026-05-15 (re-audit M2): logeamos sin re-raise.
             import logging as _lg
+
             _lg.getLogger(__name__).exception(
-                "recientes.registrar(posdat, %s) falló", id_posdat,
+                "recientes.registrar(posdat, %s) falló",
+                id_posdat,
             )
         form = {
             "id_posdat": pd["id_posdat"],
@@ -183,9 +193,12 @@ def editar(id_posdat: int):
         usuario = (g.user or {}).get("username", "web")
         queries.editar(
             id_posdat,
-            fechad=fechad, importe=importe,
-            concepto=concepto, tipo=tipo or None,
-            compr=compr or None, no_comp=no_comp or None,
+            fechad=fechad,
+            importe=importe,
+            concepto=concepto,
+            tipo=tipo or None,
+            compr=compr or None,
+            no_comp=no_comp or None,
             usuario=usuario,
         )
         flash("Posdat actualizado.", "ok")
@@ -215,10 +228,7 @@ def marcar_pagada(id_posdat: int):
         "viejo dejaba el banco sin actualizar.",
         "warning",
     )
-    return redirect(
-        url_for("bancos.emitir_cheque", id_posdat=id_posdat,
-                prov=pd.get("prov") or "")
-    )
+    return redirect(url_for("bancos.emitir_cheque", id_posdat=id_posdat, prov=pd.get("prov") or ""))
 
 
 @posdat_bp.route("/posdat/<int:id_posdat>/reabrir", methods=["POST"])
@@ -278,15 +288,8 @@ def anular(id_posdat: int):
     if not pd:
         abort(404)
     motivo = (request.form.get("motivo") or "").strip()
-    # #22 (TMT 2026-05-14): motivo obligatorio (>=10 chars). Inconsistencia
-    # vs template viejo: el form pedía motivo pero el handler aceptaba vacío.
-    if not motivo or len(motivo) < 10:
-        flash(
-            "Motivo de anulación obligatorio (al menos 10 caracteres). "
-            "Dejá una traza clara del por qué.",
-            "warning",
-        )
-        return redirect(url_for("posdat.confirmar_anulacion", id_posdat=id_posdat))
+    # TMT 2026-05-21 dueña: motivo opcional sin minlen. Sigue logueando
+    # usuario + timestamp en la bitácora.
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.anular(id_posdat, motivo=motivo, usuario=usuario)
@@ -320,28 +323,44 @@ def lista():
 
     try:
         filas = queries.buscar(
-            prov=prov, q=q, solo_abiertas=solo_abiertas,
-            desde=desde, hasta=hasta, tab=tab,
+            prov=prov,
+            q=q,
+            solo_abiertas=solo_abiertas,
+            desde=desde,
+            hasta=hasta,
+            tab=tab,
         )
         # TMT 2026-05-19 — item 18: el resumen recibe los MISMOS filtros que
         # buscar() para que "X partidas" del hero coincida con las filas
         # visibles. Antes ignoraba q/desde/hasta/solo_abiertas y daba
         # contadores incongruentes.
         resumen = queries.resumen(
-            prov=prov, q=q, solo_abiertas=solo_abiertas,
-            desde=desde, hasta=hasta, tab=tab,
+            prov=prov,
+            q=q,
+            solo_abiertas=solo_abiertas,
+            desde=desde,
+            hasta=hasta,
+            tab=tab,
         )
         # TMT 2026-05-20 — conteos por tab para los badges del switcher.
         # Defensivo: si falla, dejamos 0 y la UI sigue.
         try:
             conteos_tab = {
                 "posdatados": queries.resumen(
-                    prov=prov, q=q, solo_abiertas=solo_abiertas,
-                    desde=desde, hasta=hasta, tab="posdatados",
+                    prov=prov,
+                    q=q,
+                    solo_abiertas=solo_abiertas,
+                    desde=desde,
+                    hasta=hasta,
+                    tab="posdatados",
                 ),
                 "yy": queries.resumen(
-                    prov=prov, q=q, solo_abiertas=solo_abiertas,
-                    desde=desde, hasta=hasta, tab="yy",
+                    prov=prov,
+                    q=q,
+                    solo_abiertas=solo_abiertas,
+                    desde=desde,
+                    hasta=hasta,
+                    tab="yy",
                 ),
             }
         except Exception:  # noqa: BLE001
@@ -378,20 +397,26 @@ def lista():
     # diaria derivada. → "Total Importe" (sum del column importe) y
     # "Total Cuota Mensual" (sum del column cuota_mensual). Coincide
     # con lo que se ve en la tabla.
-    total_importe       = 0.0
+    total_importe = 0.0
     total_cuota_mensual = 0.0
     if tab == "yy":
         for f in filas:
-            total_importe       += float(f.get("importe")       or 0)
+            total_importe += float(f.get("importe") or 0)
             total_cuota_mensual += float(f.get("cuota_mensual") or 0)
 
     return render_template(
         "posdat/lista.html",
-        filas=filas, resumen=resumen,
-        q=q, prov=prov, desde=desde, hasta=hasta,
-        solo_abiertas=solo_abiertas, error=error,
+        filas=filas,
+        resumen=resumen,
+        q=q,
+        prov=prov,
+        desde=desde,
+        hasta=hasta,
+        solo_abiertas=solo_abiertas,
+        error=error,
         # TMT 2026-05-20 — tab + conteos para el switcher de tabs.
-        tab=tab, conteos_tab=conteos_tab,
+        tab=tab,
+        conteos_tab=conteos_tab,
         total_importe=total_importe,
         total_cuota_mensual=total_cuota_mensual,
     )
@@ -411,14 +436,14 @@ def _posdat_to_dict(pd: dict) -> dict:
         return {}
     return {
         "id_posdat": pd.get("id_posdat"),
-        "num":       pd.get("num"),
-        "fecha":     pd["fecha"].isoformat() if pd.get("fecha") else None,
-        "fechad":    pd["fechad"].isoformat() if pd.get("fechad") else None,
-        "prov":      pd.get("prov") or "",
+        "num": pd.get("num"),
+        "fecha": pd["fecha"].isoformat() if pd.get("fecha") else None,
+        "fechad": pd["fechad"].isoformat() if pd.get("fechad") else None,
+        "prov": pd.get("prov") or "",
         "proveedor": pd.get("proveedor") or "",
-        "importe":   float(pd.get("importe") or 0),
-        "banc":      int(pd.get("banc") or 0),
-        "concepto":  pd.get("concepto") or "",
+        "importe": float(pd.get("importe") or 0),
+        "banc": int(pd.get("banc") or 0),
+        "concepto": pd.get("concepto") or "",
     }
 
 
@@ -434,8 +459,9 @@ def api_lista_flujo():
     como egresos. Excluye anuladas (soft-delete migración 0027).
     """
     try:
-        filas = db.fetch_all(
-            """
+        filas = (
+            db.fetch_all(
+                """
             SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                    pd.banc, pd.concepto,
                    COALESCE(p.nombre, '') AS proveedor
@@ -445,12 +471,16 @@ def api_lista_flujo():
                AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
              ORDER BY pd.fechad NULLS LAST, pd.id_posdat
             """
-        ) or []
-        return jsonify({
-            "ok": True,
-            "posdats": [_posdat_to_dict(r) for r in filas],
-            "total": sum(float(r.get("importe") or 0) for r in filas),
-        })
+            )
+            or []
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "posdats": [_posdat_to_dict(r) for r in filas],
+                "total": sum(float(r.get("importe") or 0) for r in filas),
+            }
+        )
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -487,7 +517,8 @@ def api_editar(id_posdat: int):
         usuario = (g.user or {}).get("username", "web")
         queries.editar(
             id_posdat,
-            fechad=fechad, importe=importe,
+            fechad=fechad,
+            importe=importe,
             concepto=concepto if concepto_provided else None,
             usuario=usuario,
         )
@@ -519,11 +550,7 @@ def api_anular(id_posdat: int):
     # spreadsheet ("que no me bloquee"). Para posdat normales sigue
     # vigente el mínimo de 10 chars (audit de proveedores reales).
     es_yy = (pd.get("prov") or "").upper() == "YY"
-    if not es_yy and len(motivo) < 10:
-        return jsonify({
-            "ok": False,
-            "error": "Motivo obligatorio (mínimo 10 caracteres).",
-        }), 400
+    # TMT 2026-05-21 dueña: motivo opcional sin minlen.
     if es_yy and not motivo:
         motivo = "Eliminado desde lista YY"
     try:
@@ -556,15 +583,13 @@ def api_nuevo():
     if fecha_raw:
         fecha = parse_date(fecha_raw)
         if fecha is None:
-            return jsonify({"ok": False,
-                            "error": f"Fecha inválida: {fecha_raw!r}."}), 400
+            return jsonify({"ok": False, "error": f"Fecha inválida: {fecha_raw!r}."}), 400
     else:
         fecha = _date.today()
     if fechad_raw:
         fechad = parse_date(fechad_raw)
         if fechad is None:
-            return jsonify({"ok": False,
-                            "error": f"Fecha venc. inválida: {fechad_raw!r}."}), 400
+            return jsonify({"ok": False, "error": f"Fecha venc. inválida: {fechad_raw!r}."}), 400
     else:
         fechad = fecha
     prov = (data.get("prov") or "").strip().upper()
@@ -584,8 +609,12 @@ def api_nuevo():
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.crear(
-            fecha=fecha, fechad=fechad, prov=prov, importe=importe,
-            concepto=concepto, usuario=usuario,
+            fecha=fecha,
+            fechad=fechad,
+            prov=prov,
+            importe=importe,
+            concepto=concepto,
+            usuario=usuario,
         )
         nuevo = queries.por_id(int(r.get("id_posdat") or 0)) if r else None
         return jsonify({"ok": True, "posdat": _posdat_to_dict(nuevo)})

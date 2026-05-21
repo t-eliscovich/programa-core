@@ -1,4 +1,5 @@
 """Listado, detalle y altas de cheques."""
+
 from datetime import date, datetime
 
 from flask import (
@@ -51,6 +52,7 @@ def nuevo():
 
     try:
         from modules.autocomplete.queries import clientes_para_datalist
+
         clientes_datalist = clientes_para_datalist()
     except Exception:
         clientes_datalist = []
@@ -67,16 +69,28 @@ def nuevo():
         # Restaurar campos via query string — si veníamos de crear un
         # cliente nuevo, /clientes/nuevo nos redirige con los datos del
         # form anterior. TMT 2026-05-13.
-        for k in ("fecha", "fecha_recibido", "fechad", "codigo_cli",
-                  "no_cheque", "importe", "no_banco", "banco_texto", "prov"):
+        for k in (
+            "fecha",
+            "fecha_recibido",
+            "fechad",
+            "codigo_cli",
+            "no_cheque",
+            "importe",
+            "no_banco",
+            "banco_texto",
+            "prov",
+        ):
             if request.args.get(k):
                 form[k] = request.args.get(k)
         if request.args.get("es_anticipo"):
-            form["es_anticipo"] = request.args.get("es_anticipo") in (
-                "1", "true", "True", "on"
-            )
-        return render_template("cheques/nuevo.html", form=form, errores=errores,
-                               bancos=_bancos(), clientes_datalist=clientes_datalist)
+            form["es_anticipo"] = request.args.get("es_anticipo") in ("1", "true", "True", "on")
+        return render_template(
+            "cheques/nuevo.html",
+            form=form,
+            errores=errores,
+            bancos=_bancos(),
+            clientes_datalist=clientes_datalist,
+        )
 
     # TMT 2026-05-15: simplificado — una sola fecha de cabecera. La
     # "fecha de emisión" del cheque NO interesa a la dueña; usamos
@@ -127,13 +141,15 @@ def nuevo():
             cheque_fechad = fd_parsed  # puede ser None → error abajo
         else:
             cheque_fechad = fd_parsed or fecha
-        cheques_in.append({
-            "no_cheque": n_clean,
-            "importe": parse_monto(i_clean),
-            "fechad": cheque_fechad,
-            "stat": st_clean,
-            "raw_importe": i_clean,
-        })
+        cheques_in.append(
+            {
+                "no_cheque": n_clean,
+                "importe": parse_monto(i_clean),
+                "fechad": cheque_fechad,
+                "stat": st_clean,
+                "raw_importe": i_clean,
+            }
+        )
     # `fechad` general (compat con resto del view + restore-on-error).
     fechad = cheques_in[0]["fechad"] if cheques_in else fecha
     # Backwards-compat para el resto del view: el "primer cheque" es el
@@ -157,14 +173,13 @@ def nuevo():
         errores.append("Fecha inválida.")
     if not codigo_cli:
         errores.append("Código de cliente requerido.")
-    elif not db.fetch_one(
-        "SELECT 1 AS x FROM scintela.cliente WHERE codigo_cli = %s", (codigo_cli,)
-    ):
+    elif not db.fetch_one("SELECT 1 AS x FROM scintela.cliente WHERE codigo_cli = %s", (codigo_cli,)):
         # Cliente no existe → flujo guiado a /clientes/nuevo, mismo patrón
         # que facturas.nueva. TMT 2026-05-13.
         _permisos = getattr(g, "permisos", set()) or set()
         if "clientes.crear" in _permisos or "*" in _permisos:
             from urllib.parse import urlencode
+
             # TMT 2026-05-15: el form ahora manda arrays (no_cheque[], importe[],
             # fechad[]). Para el restore-on-cliente-no-existe sólo conservamos
             # el PRIMER bloque — si la usuaria estaba multi-cargando, los
@@ -192,9 +207,7 @@ def nuevo():
                 "para crearlo y después seguís con el cheque.",
                 "warning",
             )
-            return redirect(
-                url_for("clientes.nuevo", codigo=codigo_cli, next=next_url)
-            )
+            return redirect(url_for("clientes.nuevo", codigo=codigo_cli, next=next_url))
         errores.append(f"El cliente {codigo_cli!r} no existe.")
     # Validación multi-cheque: TODOS los bloques deben tener n° y importe>0.
     if not cheques_in:
@@ -229,23 +242,30 @@ def nuevo():
     primer_no_raw = nos_cheque_raw[0] if nos_cheque_raw else ""
     primer_imp_raw = importes_raw[0] if importes_raw else ""
     primer_fechad_raw = fechads_raw[0] if fechads_raw else ""
-    form.update({
-        "fecha": request.form.get("fecha_recibido"),  # alias para compat
-        "fecha_recibido": request.form.get("fecha_recibido"),
-        "fechad": primer_fechad_raw,
-        "fechad_iso": primer_fechad_raw,
-        "codigo_cli": codigo_cli,
-        "no_cheque": primer_no_raw or no_cheque,
-        "importe": primer_imp_raw,
-        "no_banco": request.form.get("no_banco"),
-        "banco_texto": banco_texto or "",
-        "prov": prov or "",
-        "es_anticipo": es_anticipo,
-    })
+    form.update(
+        {
+            "fecha": request.form.get("fecha_recibido"),  # alias para compat
+            "fecha_recibido": request.form.get("fecha_recibido"),
+            "fechad": primer_fechad_raw,
+            "fechad_iso": primer_fechad_raw,
+            "codigo_cli": codigo_cli,
+            "no_cheque": primer_no_raw or no_cheque,
+            "importe": primer_imp_raw,
+            "no_banco": request.form.get("no_banco"),
+            "banco_texto": banco_texto or "",
+            "prov": prov or "",
+            "es_anticipo": es_anticipo,
+        }
+    )
 
     if errores:
-        return render_template("cheques/nuevo.html", form=form, errores=errores,
-                               bancos=_bancos(), clientes_datalist=clientes_datalist), 400
+        return render_template(
+            "cheques/nuevo.html",
+            form=form,
+            errores=errores,
+            bancos=_bancos(),
+            clientes_datalist=clientes_datalist,
+        ), 400
 
     # Aplicaciones inline (TMT 2026-05-11): la UI permite distribuir el
     # cheque a facturas abiertas del cliente desde el mismo form.
@@ -260,7 +280,7 @@ def nuevo():
             if not k.startswith("aplicar[") or not k.endswith("]"):
                 continue
             try:
-                id_fact = int(k[len("aplicar["):-1])
+                id_fact = int(k[len("aplicar[") : -1])
             except ValueError:
                 continue
             imp = parse_monto(v)
@@ -276,11 +296,13 @@ def nuevo():
             forzar_stat = (request.form.get(f"stat_final[{id_fact}]") or "").upper()
             if forzar_stat not in ("T", "A"):
                 forzar_stat = ""
-            aplicaciones_pre.append({
-                "id_fact": id_fact,
-                "importe": float(imp),
-                "forzar_stat": forzar_stat,
-            })
+            aplicaciones_pre.append(
+                {
+                    "id_fact": id_fact,
+                    "importe": float(imp),
+                    "forzar_stat": forzar_stat,
+                }
+            )
 
     # Sobre-aplicación: si la suma > TOTAL de cheques, error. Con multi-cheque,
     # el total disponible es la suma de todos los importes.
@@ -295,8 +317,13 @@ def nuevo():
                 f"La suma de las aplicaciones ({total_a_aplicar:.2f}) "
                 f"supera el total de cheques ({total_cheques:.2f}) por más de $50."
             )
-            return render_template("cheques/nuevo.html", form=form, errores=errores,
-                                   bancos=_bancos(), clientes_datalist=clientes_datalist), 400
+            return render_template(
+                "cheques/nuevo.html",
+                form=form,
+                errores=errores,
+                bancos=_bancos(),
+                clientes_datalist=clientes_datalist,
+            ), 400
 
     # ─── Wizard paso 2: confirmación con resumen de cambios ──────────
     # TMT 2026-05-15: antes de ejecutar, calculamos qué facturas van a
@@ -342,21 +369,23 @@ def nuevo():
             # Decidible si tiene saldo restante real (positivo o negativo
             # > centavos). Si saldo == 0 exacto, no hay decisión (T forzada).
             decidible = abs(nuevo_saldo) > 0.005
-            impacto_facturas.append({
-                "id_factura":     id_fact,
-                "numf":           f.get("numf"),
-                "fecha":          f.get("fecha"),
-                "vencimiento":    f.get("vencimiento"),
-                "importe":        float(f.get("importe") or 0),
-                "saldo_antes":    saldo_actual,
-                "aplicacion":     imp,
-                "saldo_despues":  nuevo_saldo,
-                "stat_antes":     f.get("stat") or "Z",
-                "stat_sugerido":  stat_sugerido,  # lo que el sistema sugiere
-                "stat_despues":   stat_actual,    # lo que va a quedar (con override)
-                "auto_t":         auto_t,
-                "decidible":      decidible,
-            })
+            impacto_facturas.append(
+                {
+                    "id_factura": id_fact,
+                    "numf": f.get("numf"),
+                    "fecha": f.get("fecha"),
+                    "vencimiento": f.get("vencimiento"),
+                    "importe": float(f.get("importe") or 0),
+                    "saldo_antes": saldo_actual,
+                    "aplicacion": imp,
+                    "saldo_despues": nuevo_saldo,
+                    "stat_antes": f.get("stat") or "Z",
+                    "stat_sugerido": stat_sugerido,  # lo que el sistema sugiere
+                    "stat_despues": stat_actual,  # lo que va a quedar (con override)
+                    "auto_t": auto_t,
+                    "decidible": decidible,
+                }
+            )
         # Renderizar la pantalla de confirmación con todos los datos
         # serializados para mandar al segundo POST.
         return render_template(
@@ -386,6 +415,7 @@ def nuevo():
         # transacción única — si cualquier paso falla, rollback total (no
         # quedan cheques colgados sin aplicaciones).
         import uuid as _uuid
+
         es_batch = len(cheques_in) > 1 or len(aplicaciones_pre or []) > 1
         batch_id = str(_uuid.uuid4()) if es_batch else None
 
@@ -400,12 +430,16 @@ def nuevo():
                     fecha_recibido=fecha_recibido,
                     codigo_cli=codigo_cli,
                     no_cheque=ch_in["no_cheque"],
-                    importe=ch_in["importe"], no_banco=no_banco,
-                    banco_texto=banco_texto, prov=prov,
+                    importe=ch_in["importe"],
+                    no_banco=no_banco,
+                    banco_texto=banco_texto,
+                    prov=prov,
                     # TMT 2026-05-20 — stat seleccionado en el dropdown
                     # (Z/P/D/B/X/1/2). queries.crear lo respeta si !=Z.
                     stat=ch_in.get("stat") or "Z",
-                    clave=clave, es_anticipo=es_anticipo, usuario=usuario,
+                    clave=clave,
+                    es_anticipo=es_anticipo,
+                    usuario=usuario,
                     batch_id=batch_id,
                     conn=conn,
                 )
@@ -423,12 +457,9 @@ def nuevo():
             # id_cheque correspondiente. Todo dentro de la MISMA tx — si
             # falla una, rollback total (los cheques tampoco se crean).
             if aplicaciones_pre:
-                por_cheque: dict[int, list[dict]] = {
-                    int(c["id_cheque"]): [] for c in cheques_creados
-                }
+                por_cheque: dict[int, list[dict]] = {int(c["id_cheque"]): [] for c in cheques_creados}
                 cheques_restantes = [
-                    {"id_cheque": int(c["id_cheque"]),
-                     "restante": float(c.get("importe") or 0)}
+                    {"id_cheque": int(c["id_cheque"]), "restante": float(c.get("importe") or 0)}
                     for c in cheques_creados
                 ]
                 for ap in aplicaciones_pre:
@@ -447,11 +478,13 @@ def nuevo():
                         else:
                             # Crédito: absorbemos entero en el cheque actual.
                             aplicar = rest_factura
-                        por_cheque[c["id_cheque"]].append({
-                            "id_fact": ap["id_fact"],
-                            "importe": aplicar,
-                            "forzar_stat": ap.get("forzar_stat") or "",
-                        })
+                        por_cheque[c["id_cheque"]].append(
+                            {
+                                "id_fact": ap["id_fact"],
+                                "importe": aplicar,
+                                "forzar_stat": ap.get("forzar_stat") or "",
+                            }
+                        )
                         c["restante"] -= aplicar
                         rest_factura -= aplicar
                         if rest_factura > 0 and c["restante"] <= 0.005:
@@ -480,8 +513,14 @@ def nuevo():
                         # significa "el último cheque cubre los 0.55 que
                         # faltaban / restamos los 0.55 que sobraban".
                         for c in reversed(cheques_restantes):
-                            ult = next((x for x in por_cheque.get(c["id_cheque"], [])
-                                        if x["id_fact"] == ap["id_fact"]), None)
+                            ult = next(
+                                (
+                                    x
+                                    for x in por_cheque.get(c["id_cheque"], [])
+                                    if x["id_fact"] == ap["id_fact"]
+                                ),
+                                None,
+                            )
                             if ult is not None:
                                 ult["importe"] += rest_factura
                                 rest_factura = 0
@@ -510,19 +549,18 @@ def nuevo():
                 # Multi-cheque + anticipo: cada cheque generó su propio espejo.
                 # TMT 2026-05-15.
                 n_espejos = sum(
-                    1 for c in cheques_creados
-                    if isinstance(c, dict) and c.get("id_cheque_anticipo")
+                    1 for c in cheques_creados if isinstance(c, dict) and c.get("id_cheque_anticipo")
                 )
                 if n_espejos:
-                    sufijo = (f" Cada uno generó su espejo negativo de "
-                              f"anticipo ({n_espejos} espejos en total).")
+                    sufijo = (
+                        f" Cada uno generó su espejo negativo de anticipo ({n_espejos} espejos en total)."
+                    )
             elif n_aplicaciones > 0:
                 # Multi-cheque con aplicaciones distribuidas FIFO.
                 # TMT 2026-05-15: antes el flash sólo decía "X cheques creados"
                 # y no mencionaba las aplicaciones, dejando dudas de si se
                 # habían aplicado o no.
-                sufijo = (f" Se distribuyeron {n_aplicaciones} aplicación(es) "
-                          "FIFO entre los cheques.")
+                sufijo = f" Se distribuyeron {n_aplicaciones} aplicación(es) FIFO entre los cheques."
             flash(
                 f"{len(cheques_creados)} cheques creados en cartera "
                 f"(total $ {total_creado:,.2f}): {nums}.{sufijo}",
@@ -538,8 +576,7 @@ def nuevo():
             )
         elif n_aplicaciones > 0:
             flash(
-                f"Cheque N° {ch.get('no_cheque')} creado y aplicado a "
-                f"{n_aplicaciones} factura(s).",
+                f"Cheque N° {ch.get('no_cheque')} creado y aplicado a {n_aplicaciones} factura(s).",
                 "ok",
             )
         else:
@@ -547,17 +584,28 @@ def nuevo():
         return redirect(url_for("cheques.detalle", id_cheque=ch["id_cheque"]))
     except ValueError as e:
         errores.append(str(e))
-        return render_template("cheques/nuevo.html", form=form, errores=errores,
-                               bancos=_bancos(), clientes_datalist=clientes_datalist), 400
+        return render_template(
+            "cheques/nuevo.html",
+            form=form,
+            errores=errores,
+            bancos=_bancos(),
+            clientes_datalist=clientes_datalist,
+        ), 400
     except Exception as e:  # noqa: BLE001
         # TMT 2026-05-15: temporariamente mostramos el detalle crudo
         # para diagnosticar el bug de multi-cheque. Volver a humanize()
         # una vez que esté estable.
         import logging
+
         logging.getLogger(__name__).exception("cheques.nuevo falló")
         errores.append(f"[DEBUG] {type(e).__name__}: {e}")
-        return render_template("cheques/nuevo.html", form=form, errores=errores,
-                               bancos=_bancos(), clientes_datalist=clientes_datalist), 500
+        return render_template(
+            "cheques/nuevo.html",
+            form=form,
+            errores=errores,
+            bancos=_bancos(),
+            clientes_datalist=clientes_datalist,
+        ), 500
 
 
 @cheques_bp.route("/cheques/_api/facturas-pendientes/<codigo_cli>")
@@ -601,15 +649,15 @@ def api_facturas_pendientes(codigo_cli: str):
         "banco_sugerido": banco_sugerido,
         "facturas": [
             {
-                "id_factura":    int(r["id_factura"]),
-                "numf":          r.get("numf"),
+                "id_factura": int(r["id_factura"]),
+                "numf": r.get("numf"),
                 "numf_completo": r.get("numf_completo") or "",
-                "fecha":         r["fecha"].isoformat() if r.get("fecha") else None,
-                "vencimiento":   r["vencimiento"].isoformat() if r.get("vencimiento") else None,
-                "importe":       float(r.get("importe") or 0),
-                "abono":         float(r.get("abono") or 0),
-                "saldo":         float(r.get("saldo") or 0),
-                "stat":          r.get("stat") or "",
+                "fecha": r["fecha"].isoformat() if r.get("fecha") else None,
+                "vencimiento": r["vencimiento"].isoformat() if r.get("vencimiento") else None,
+                "importe": float(r.get("importe") or 0),
+                "abono": float(r.get("abono") or 0),
+                "saldo": float(r.get("saldo") or 0),
+                "stat": r.get("stat") or "",
             }
             for r in rows
         ],
@@ -652,7 +700,10 @@ def aplicar(id_cheque: int):
                 break
         return render_template(
             "cheques/aplicar.html",
-            ch=ch, pendientes=pendientes, pre=pre, errores=[],
+            ch=ch,
+            pendientes=pendientes,
+            pre=pre,
+            errores=[],
         )
 
     errores: list[str] = []
@@ -668,13 +719,18 @@ def aplicar(id_cheque: int):
         errores.append("No indicaste ningún importe a aplicar.")
         return render_template(
             "cheques/aplicar.html",
-            ch=ch, pendientes=pendientes, pre={}, errores=errores,
+            ch=ch,
+            pendientes=pendientes,
+            pre={},
+            errores=errores,
         ), 400
 
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.aplicar_a_factura(
-            id_cheque=id_cheque, aplicaciones=aplicaciones, usuario=usuario,
+            id_cheque=id_cheque,
+            aplicaciones=aplicaciones,
+            usuario=usuario,
         )
         flash(
             f"Cheque aplicado a {r['n']} factura(s), total {r['total_aplicado']:.2f}.",
@@ -685,13 +741,19 @@ def aplicar(id_cheque: int):
         errores.append(str(e))
         return render_template(
             "cheques/aplicar.html",
-            ch=ch, pendientes=pendientes, pre={}, errores=errores,
+            ch=ch,
+            pendientes=pendientes,
+            pre={},
+            errores=errores,
         ), 400
     except Exception as e:
         errores.append(f"No pude aplicar el cheque: {e}")
         return render_template(
             "cheques/aplicar.html",
-            ch=ch, pendientes=pendientes, pre={}, errores=errores,
+            ch=ch,
+            pendientes=pendientes,
+            pre={},
+            errores=errores,
         ), 500
 
 
@@ -723,9 +785,8 @@ def confirmar_reverso(id_cheque: int):
     mensaje = (
         f"Vas a rebotar el cheque N° {ch.get('no_cheque')} por $ {ch.get('importe') or 0}. "
         "El cliente pasará automáticamente a STOP."
-        if es_rebote else
-        f"Vas a reversar el cheque N° {ch.get('no_cheque')} "
-        f"(anulación sin afectar al cliente)."
+        if es_rebote
+        else f"Vas a reversar el cheque N° {ch.get('no_cheque')} (anulación sin afectar al cliente)."
     )
     return render_template(
         "_confirmar_accion.html",
@@ -784,17 +845,14 @@ def postergar(id_cheque: int):
     # atrapada antes (queries.por_id, parse_date, period guard) cae acá
     # con flash + redirect en lugar de matar el process.
     import logging
+
     log = logging.getLogger("cheques.postergar")
 
     try:
         next_url = (request.form.get("next") or "").strip()
     except Exception:
         next_url = ""
-    es_next_local = (
-        next_url.startswith("/")
-        and not next_url.startswith("//")
-        and "://" not in next_url
-    )
+    es_next_local = next_url.startswith("/") and not next_url.startswith("//") and "://" not in next_url
 
     def _fallback_redirect():
         if es_next_local:
@@ -832,10 +890,12 @@ def postergar(id_cheque: int):
     if nueva_fechad is None:
         errores.append("Nueva fecha de depósito inválida.")
 
-    form.update({
-        "nueva_fechad": request.form.get("nueva_fechad"),
-        "motivo": motivo,
-    })
+    form.update(
+        {
+            "nueva_fechad": request.form.get("nueva_fechad"),
+            "motivo": motivo,
+        }
+    )
 
     if errores:
         # Inline (popover): no tirar wizard, flash + back al listado.
@@ -903,13 +963,16 @@ def confirmar_desaplicar(id_cheque: int, id_factura: int):
     )
     if not f:
         abort(404)
-    aplicaciones = db.fetch_all(
-        """
+    aplicaciones = (
+        db.fetch_all(
+            """
         SELECT importe FROM scintela.chequesxfact
          WHERE id_cheque = %s AND id_fact = %s
         """,
-        (id_cheque, id_factura),
-    ) or []
+            (id_cheque, id_factura),
+        )
+        or []
+    )
     if not aplicaciones:
         flash(
             f"No hay aplicaciones de cheque #{id_cheque} a factura #{id_factura}.",
@@ -948,8 +1011,10 @@ def desaplicar(id_cheque: int, id_factura: int):
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.desaplicar_factura(
-            id_cheque=id_cheque, id_factura=id_factura,
-            motivo=motivo, usuario=usuario,
+            id_cheque=id_cheque,
+            id_factura=id_factura,
+            motivo=motivo,
+            usuario=usuario,
         )
         flash(
             f"Cheque #{id_cheque} desaplicado de factura #{id_factura} "
@@ -1020,12 +1085,11 @@ def reversar_endoso(id_cheque: int):
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.reversar_endoso(
-            id_cheque=id_cheque, motivo=motivo, usuario=usuario,
+            id_cheque=id_cheque,
+            motivo=motivo,
+            usuario=usuario,
         )
-        msg = (
-            f"Endoso del cheque {id_cheque} reversado. "
-            f"Cheque vuelve a CARTERA (stat='{r['stat_nuevo']}'). "
-        )
+        msg = f"Endoso del cheque {id_cheque} reversado. Cheque vuelve a CARTERA (stat='{r['stat_nuevo']}'). "
         if r.get("id_compra_anulada"):
             msg += f"Compra #{r['id_compra_anulada']} anulada."
         else:
@@ -1062,13 +1126,16 @@ def endosar(id_cheque: int):
 
     # Cargar proveedores activos para el datalist + select.
     try:
-        proveedores = db.fetch_all(
-            "SELECT codigo_prov, COALESCE(nombre,'') AS nombre, "
-            "       COALESCE(tipo,'') AS tipo "
-            "FROM scintela.proveedor "
-            "WHERE COALESCE(activo, '1') NOT IN ('0', 'N') "
-            "ORDER BY codigo_prov"
-        ) or []
+        proveedores = (
+            db.fetch_all(
+                "SELECT codigo_prov, COALESCE(nombre,'') AS nombre, "
+                "       COALESCE(tipo,'') AS tipo "
+                "FROM scintela.proveedor "
+                "WHERE COALESCE(activo, '1') NOT IN ('0', 'N') "
+                "ORDER BY codigo_prov"
+            )
+            or []
+        )
     except Exception:
         proveedores = []
 
@@ -1093,12 +1160,14 @@ def endosar(id_cheque: int):
         tipo_compra = (request.form.get("tipo_compra") or "C").strip().upper()[:1]
         fecha = parse_date(request.form.get("fecha")) or date.today()
 
-        form.update({
-            "codigo_prov": codigo_prov,
-            "concepto": concepto,
-            "tipo_compra": tipo_compra,
-            "fecha": request.form.get("fecha") or fecha.isoformat(),
-        })
+        form.update(
+            {
+                "codigo_prov": codigo_prov,
+                "concepto": concepto,
+                "tipo_compra": tipo_compra,
+                "fecha": request.form.get("fecha") or fecha.isoformat(),
+            }
+        )
 
         if not codigo_prov:
             errores.append("Proveedor requerido.")
@@ -1111,6 +1180,7 @@ def endosar(id_cheque: int):
             _permisos = getattr(g, "permisos", set()) or set()
             if "proveedores.crear" in _permisos or "*" in _permisos:
                 from urllib.parse import urlencode
+
                 restore_args = {
                     "codigo_prov": codigo_prov,
                     "concepto": concepto or "",
@@ -1118,25 +1188,21 @@ def endosar(id_cheque: int):
                     "fecha": request.form.get("fecha") or "",
                 }
                 restore_args = {k: v for k, v in restore_args.items() if v}
-                next_url = (
-                    url_for("cheques.endosar", id_cheque=id_cheque)
-                    + "?" + urlencode(restore_args)
-                )
+                next_url = url_for("cheques.endosar", id_cheque=id_cheque) + "?" + urlencode(restore_args)
                 flash(
                     f"El proveedor {codigo_prov} no existe — completá los datos "
                     "para crearlo y después seguís con el endoso.",
                     "warning",
                 )
-                return redirect(
-                    url_for("proveedores.nuevo",
-                            codigo=codigo_prov, next=next_url)
-                )
+                return redirect(url_for("proveedores.nuevo", codigo=codigo_prov, next=next_url))
             errores.append(f"El proveedor {codigo_prov!r} no existe.")
         if errores:
             return render_template(
                 "cheques/endosar.html",
-                ch=ch, proveedores=proveedores,
-                form=form, errores=errores,
+                ch=ch,
+                proveedores=proveedores,
+                form=form,
+                errores=errores,
             ), 400
 
         try:
@@ -1159,8 +1225,10 @@ def endosar(id_cheque: int):
             errores.append(str(e))
             return render_template(
                 "cheques/endosar.html",
-                ch=ch, proveedores=proveedores,
-                form=form, errores=errores,
+                ch=ch,
+                proveedores=proveedores,
+                form=form,
+                errores=errores,
             ), 400
         except Exception as e:
             flash_exc("No pude endosar el cheque", e)
@@ -1168,8 +1236,10 @@ def endosar(id_cheque: int):
 
     return render_template(
         "cheques/endosar.html",
-        ch=ch, proveedores=proveedores,
-        form=form, errores=errores,
+        ch=ch,
+        proveedores=proveedores,
+        form=form,
+        errores=errores,
     )
 
 
@@ -1188,10 +1258,10 @@ def boleta_deposito():
       - no_banco=N        (default: 1 = Pichincha)
     """
     from datetime import datetime as _dt
+
     fecha_str = (request.args.get("fecha") or "").strip()
     try:
-        fecha = (_dt.strptime(fecha_str, "%Y-%m-%d").date()
-                 if fecha_str else date.today())
+        fecha = _dt.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else date.today()
     except ValueError:
         fecha = date.today()
     # TMT 2026-05-15 (re-audit H5): NO hardcodear no_banco=1 — en data 2026
@@ -1200,22 +1270,23 @@ def boleta_deposito():
     no_banco = parse_int(request.args.get("no_banco"))
     if not no_banco:
         import contextlib as _ctx
+
         all_bancos = []
         with _ctx.suppress(Exception):
-            all_bancos = db.fetch_all(
-                "SELECT no_banco, COALESCE(nombre, '') AS nombre "
-                "FROM scintela.banco ORDER BY no_banco"
-            ) or []
-        pichincha = [
-            b for b in all_bancos
-            if "PICHINC" in (b.get("nombre") or "").upper()
-        ]
+            all_bancos = (
+                db.fetch_all(
+                    "SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco ORDER BY no_banco"
+                )
+                or []
+            )
+        pichincha = [b for b in all_bancos if "PICHINC" in (b.get("nombre") or "").upper()]
         if pichincha:
             no_banco = int(pichincha[0]["no_banco"])
         elif all_bancos:
             # Fallback: primer banco operativo no-legacy
             fallback = [
-                b for b in all_bancos
+                b
+                for b in all_bancos
                 if "INTER" not in (b.get("nombre") or "").upper()
                 and "EFECTIVO" not in (b.get("nombre") or "").upper()
                 and "UKN" not in (b.get("nombre") or "").upper()
@@ -1236,12 +1307,15 @@ def boleta_deposito():
     # Lista dinámica de bancos para el dropdown — antes el template tenía
     # <option value="1"> hardcoded que no existe en la data real (Pichincha
     # es no_banco=10, Internacional 32). TMT 2026-05-16.
-    bancos_dropdown = db.fetch_all(
-        "SELECT no_banco, COALESCE(nombre,'') AS nombre "
-        "FROM scintela.banco WHERE EXISTS ("
-        "  SELECT 1 FROM scintela.transacciones_bancarias t WHERE t.no_banco = scintela.banco.no_banco"
-        ") ORDER BY no_banco"
-    ) or []
+    bancos_dropdown = (
+        db.fetch_all(
+            "SELECT no_banco, COALESCE(nombre,'') AS nombre "
+            "FROM scintela.banco WHERE EXISTS ("
+            "  SELECT 1 FROM scintela.transacciones_bancarias t WHERE t.no_banco = scintela.banco.no_banco"
+            ") ORDER BY no_banco"
+        )
+        or []
+    )
     return render_template(
         "cheques/boleta_deposito.html",
         boleta=boleta,
@@ -1289,7 +1363,9 @@ def reemplazar(id_cheque: int):
     if request.method == "GET":
         return render_template(
             "cheques/reemplazar.html",
-            ch=ch, form=form, errores=errores,
+            ch=ch,
+            form=form,
+            errores=errores,
         )
 
     nuevo_no_cheque = (request.form.get("nuevo_no_cheque") or "").strip()
@@ -1297,11 +1373,13 @@ def reemplazar(id_cheque: int):
     nuevo_importe = parse_monto(nuevo_importe_raw)
     motivo = (request.form.get("motivo") or "").strip()
 
-    form.update({
-        "nuevo_no_cheque": nuevo_no_cheque,
-        "nuevo_importe": nuevo_importe_raw or "",
-        "motivo": motivo,
-    })
+    form.update(
+        {
+            "nuevo_no_cheque": nuevo_no_cheque,
+            "nuevo_importe": nuevo_importe_raw or "",
+            "motivo": motivo,
+        }
+    )
 
     if not nuevo_no_cheque:
         errores.append("Número de cheque nuevo requerido.")
@@ -1311,7 +1389,9 @@ def reemplazar(id_cheque: int):
     if errores:
         return render_template(
             "cheques/reemplazar.html",
-            ch=ch, form=form, errores=errores,
+            ch=ch,
+            form=form,
+            errores=errores,
         ), 400
 
     try:
@@ -1334,7 +1414,9 @@ def reemplazar(id_cheque: int):
         errores.append(str(e))
         return render_template(
             "cheques/reemplazar.html",
-            ch=ch, form=form, errores=errores,
+            ch=ch,
+            form=form,
+            errores=errores,
         ), 400
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude reemplazar el cheque", e)
@@ -1355,21 +1437,28 @@ def detalle(id_cheque: int):
     hijos = queries.hijos(id_cheque)
     try:
         from modules.recientes import queries as rec
+
         rec.registrar(
-            "cheque", id_cheque,
-            etiqueta=f"Cheque {ch.get('no_cheque') or id_cheque} · {ch.get('codigo_cli','')}",
+            "cheque",
+            id_cheque,
+            etiqueta=f"Cheque {ch.get('no_cheque') or id_cheque} · {ch.get('codigo_cli', '')}",
         )
     except Exception:  # noqa: BLE001
         # TMT 2026-05-15 (re-audit M2): no rompemos el detalle si "recientes"
         # falla — es UX puro — pero LOGEAMOS el stack para no perder bugs.
         import logging as _lg
+
         _lg.getLogger(__name__).exception(
-            "recientes.registrar(cheque, %s) falló", id_cheque,
+            "recientes.registrar(cheque, %s) falló",
+            id_cheque,
         )
     return render_template(
         "cheques/detalle.html",
-        ch=ch, aplicaciones=aplicaciones, depositos=depositos,
-        total_aplicado=total_aplicado, hijos=hijos,
+        ch=ch,
+        aplicaciones=aplicaciones,
+        depositos=depositos,
+        total_aplicado=total_aplicado,
+        hijos=hijos,
     )
 
 
@@ -1406,15 +1495,20 @@ def editar(id_cheque: int):
         if is_depositado and fechad is not None and fechad != ch.get("fechad"):
             errores.append("Cheque depositado: la fecha no se puede editar.")
             fechad = None
-        form.update({
-            "concepto": concepto or "",
-            "fechad": fechad_str,
-            "observacion": observacion or "",
-        })
+        form.update(
+            {
+                "concepto": concepto or "",
+                "fechad": fechad_str,
+                "observacion": observacion or "",
+            }
+        )
         if errores:
             return render_template(
                 "cheques/editar.html",
-                ch=ch, form=form, errores=errores, is_depositado=is_depositado,
+                ch=ch,
+                form=form,
+                errores=errores,
+                is_depositado=is_depositado,
             ), 400
         try:
             usuario = (g.user or {}).get("username", "web")
@@ -1434,12 +1528,18 @@ def editar(id_cheque: int):
             errores.append(str(e))
             return render_template(
                 "cheques/editar.html",
-                ch=ch, form=form, errores=errores, is_depositado=is_depositado,
+                ch=ch,
+                form=form,
+                errores=errores,
+                is_depositado=is_depositado,
             ), 400
 
     return render_template(
         "cheques/editar.html",
-        ch=ch, form=form, errores=errores, is_depositado=is_depositado,
+        ch=ch,
+        form=form,
+        errores=errores,
+        is_depositado=is_depositado,
     )
 
 
@@ -1508,10 +1608,12 @@ def transicionar(id_cheque: int):
     # Match en Python — el LIKE de Postgres se comportaba raro acá.
     if stat_destino in ("B", "I", "V"):
         needle = "PICHINC" if stat_destino == "B" else "INTER"
-        all_b = db.fetch_all(
-            "SELECT no_banco, COALESCE(nombre,'') AS nombre "
-            "FROM scintela.banco ORDER BY no_banco"
-        ) or []
+        all_b = (
+            db.fetch_all(
+                "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco ORDER BY no_banco"
+            )
+            or []
+        )
         match = next(
             (b for b in all_b if needle in (b.get("nombre") or "").upper()),
             None,
@@ -1567,11 +1669,7 @@ def anular_error_carga(id_cheque: int):
         motivo = (request.form.get("motivo") or "").strip()
         id_reemp_str = (request.form.get("id_reemplazo") or "").strip()
         id_reemplazo = int(id_reemp_str) if id_reemp_str.isdigit() else None
-        if len(motivo) < 10:
-            flash("El motivo necesita al menos 10 caracteres.", "warn")
-            return render_template("cheques/anular_error_carga.html",
-                                   ch=ch, motivo=motivo,
-                                   id_reemplazo=id_reemplazo)
+        # TMT 2026-05-21 dueña: motivo opcional sin minlen.
         try:
             usuario = (g.user or {}).get("username", "web")
             res = queries.anular_por_error_de_carga(
@@ -1643,19 +1741,22 @@ def api_depositar_lote():
     if not no_banco:
         all_bancos = []
         with contextlib.suppress(Exception):
-            all_bancos = db.fetch_all(
-                "SELECT no_banco, COALESCE(nombre,'') AS nombre "
-                "FROM scintela.banco ORDER BY no_banco"
-            ) or []
-        pichincha = [b for b in all_bancos
-                     if "PICHINC" in (b.get("nombre") or "").upper()]
+            all_bancos = (
+                db.fetch_all(
+                    "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco ORDER BY no_banco"
+                )
+                or []
+            )
+        pichincha = [b for b in all_bancos if "PICHINC" in (b.get("nombre") or "").upper()]
         if pichincha:
             no_banco = int(pichincha[0]["no_banco"])
     if not no_banco:
-        return jsonify({
-            "ok": False,
-            "error": "Banco destino requerido (no encontré Pichincha por default).",
-        }), 400
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Banco destino requerido (no encontré Pichincha por default).",
+            }
+        ), 400
 
     fecha_raw = (data.get("fecha") or "").strip()
     try:
@@ -1672,8 +1773,10 @@ def api_depositar_lote():
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.depositar_lote(
-            ids_cheques=ids, no_banco=no_banco,
-            fecha_deposito=fecha_dep, usuario=usuario,
+            ids_cheques=ids,
+            no_banco=no_banco,
+            fecha_deposito=fecha_dep,
+            usuario=usuario,
         )
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -1686,22 +1789,24 @@ def api_depositar_lote():
     except Exception:  # noqa: BLE001
         saldo_despues = None
 
-    return jsonify({
-        "ok": True,
-        "n_depositados":  r["n_depositados"],
-        "total":          r["total"],
-        "no_banco":       r["no_banco"],
-        "banco_nombre":   r["banco_nombre"],
-        "fecha_deposito": r["fecha_deposito"].isoformat(),
-        "saldo_antes":    saldo_antes,
-        "saldo_despues":  saldo_despues,
-        # URL de la boleta imprimible — el JS puede ofrecerla como link.
-        "boleta_url": url_for(
-            "cheques.boleta_deposito",
-            fecha=r["fecha_deposito"].isoformat(),
-            no_banco=r["no_banco"],
-        ),
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "n_depositados": r["n_depositados"],
+            "total": r["total"],
+            "no_banco": r["no_banco"],
+            "banco_nombre": r["banco_nombre"],
+            "fecha_deposito": r["fecha_deposito"].isoformat(),
+            "saldo_antes": saldo_antes,
+            "saldo_despues": saldo_despues,
+            # URL de la boleta imprimible — el JS puede ofrecerla como link.
+            "boleta_url": url_for(
+                "cheques.boleta_deposito",
+                fecha=r["fecha_deposito"].isoformat(),
+                no_banco=r["no_banco"],
+            ),
+        }
+    )
 
 
 @cheques_bp.route("/cheques/depositar-lote", methods=["GET", "POST"])
@@ -1716,6 +1821,7 @@ def depositar_lote():
     """
     import contextlib
     from datetime import datetime as _dt
+
     # TMT 2026-05-11: los depósitos van SIEMPRES a Pichincha. Buscamos
     # por nombre, filtrando en Python para evitar quirks de LIKE/collation
     # de Postgres que en algún punto hicieron desaparecer el match.
@@ -1730,19 +1836,19 @@ def depositar_lote():
     # o flag bool en scintela.banco.
     all_bancos = []
     with contextlib.suppress(Exception):
-        all_bancos = db.fetch_all(
-            "SELECT no_banco, COALESCE(nombre, '') AS nombre "
-            "FROM scintela.banco ORDER BY no_banco"
-        ) or []
-    bancos = [
-        b for b in all_bancos
-        if "PICHINC" in (b.get("nombre") or "").upper()
-    ]
+        all_bancos = (
+            db.fetch_all(
+                "SELECT no_banco, COALESCE(nombre, '') AS nombre FROM scintela.banco ORDER BY no_banco"
+            )
+            or []
+        )
+    bancos = [b for b in all_bancos if "PICHINC" in (b.get("nombre") or "").upper()]
     if not bancos and all_bancos:
         # Fallback: primer banco no-internacional / no-contable.
         # Filtra los rubros legacy comunes para no devolver "UKN" o "EFECTIVO".
         bancos = [
-            b for b in all_bancos
+            b
+            for b in all_bancos
             if "INTER" not in (b.get("nombre") or "").upper()
             and "EFECTIVO" not in (b.get("nombre") or "").upper()
             and "UKN" not in (b.get("nombre") or "").upper()
@@ -1774,10 +1880,12 @@ def depositar_lote():
             return redirect(url_for("cheques.depositar_lote"))
         if not no_banco:
             # Listar bancos disponibles para que sea más fácil debugear.
-            todos = db.fetch_all(
-                "SELECT no_banco, COALESCE(nombre,'') AS nombre "
-                "FROM scintela.banco ORDER BY no_banco"
-            ) or []
+            todos = (
+                db.fetch_all(
+                    "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco ORDER BY no_banco"
+                )
+                or []
+            )
             opciones = ", ".join(f"{b['no_banco']}={b['nombre']}" for b in todos[:10]) or "(ninguno)"
             flash(
                 f"No encontré Pichincha en scintela.banco. Bancos existentes: {opciones}. "
@@ -1788,8 +1896,11 @@ def depositar_lote():
         try:
             usuario = (g.user or {}).get("username", "web")
             r = queries.depositar_lote(
-                ids_cheques=ids, no_banco=no_banco,
-                fecha_deposito=fecha_dep, concepto=concepto, usuario=usuario,
+                ids_cheques=ids,
+                no_banco=no_banco,
+                fecha_deposito=fecha_dep,
+                concepto=concepto,
+                usuario=usuario,
             )
             flash(
                 f"{r['n_depositados']} cheque(s) depositado(s) en {r['banco_nombre']} "
@@ -1798,11 +1909,13 @@ def depositar_lote():
             )
             # TMT 2026-05-15 (#6): tras depositar, redirigir directo a la
             # boleta imprimible (BOLEPICH / BOLEIN del legacy).
-            return redirect(url_for(
-                "cheques.boleta_deposito",
-                fecha=r["fecha_deposito"].isoformat(),
-                no_banco=r["no_banco"],
-            ))
+            return redirect(
+                url_for(
+                    "cheques.boleta_deposito",
+                    fecha=r["fecha_deposito"].isoformat(),
+                    no_banco=r["no_banco"],
+                )
+            )
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:
@@ -1815,14 +1928,12 @@ def depositar_lote():
     # pantalla es operativa, la contadora necesita ver el universo completo
     # (filtros cliente-side abajo). Default era 500, le faltaban filas.
     try:
-        cheques_cartera = queries.buscar(q="", estado="cartera",
-                                         desde=None, hasta=None, limite=10000)
-        cheques_posterg = queries.buscar(q="", estado="postergados",
-                                         desde=None, hasta=None, limite=10000)
+        cheques_cartera = queries.buscar(q="", estado="cartera", desde=None, hasta=None, limite=10000)
+        cheques_posterg = queries.buscar(q="", estado="postergados", desde=None, hasta=None, limite=10000)
         # Unir y deduplicar por id_cheque (defensivo).
         seen = set()
         cheques_lote: list = []
-        for c in (list(cheques_cartera) + list(cheques_posterg)):
+        for c in list(cheques_cartera) + list(cheques_posterg):
             cid = c.get("id_cheque")
             if cid in seen:
                 continue
@@ -1830,10 +1941,12 @@ def depositar_lote():
             cheques_lote.append(c)
         # Ordenar por fechad (los más urgentes de depositar primero) — los
         # que tienen fechad < hoy ya vencieron y son prioridad.
-        cheques_lote.sort(key=lambda c: (
-            c.get("fechad") or c.get("fecha") or date.max,
-            c.get("id_cheque") or 0,
-        ))
+        cheques_lote.sort(
+            key=lambda c: (
+                c.get("fechad") or c.get("fecha") or date.max,
+                c.get("id_cheque") or 0,
+            )
+        )
     except Exception as e:
         cheques_lote = []
         flash_exc("No pude cargar los cheques", e)
@@ -1859,6 +1972,7 @@ def lista():
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     cliente = request.args.get("cliente", "").strip()
+
     def _parse_num(s: str | None) -> float | None:
         if not s:
             return None
@@ -1866,6 +1980,7 @@ def lista():
             return float(str(s).replace(",", "."))
         except ValueError:
             return None
+
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
     # Show all (default 100k) — antes era 2000. Pedido TMT 2026-05-14.
@@ -1878,8 +1993,14 @@ def lista():
     ver_eliminados = request.args.get("ver_eliminados") in ("1", "true", "yes")
     try:
         filas = queries.buscar(
-            q, estado, desde, hasta, limite=limite,
-            cliente=cliente, monto_min=monto_min, monto_max=monto_max,
+            q,
+            estado,
+            desde,
+            hasta,
+            limite=limite,
+            cliente=cliente,
+            monto_min=monto_min,
+            monto_max=monto_max,
             ver_eliminados=ver_eliminados,
         )
         error = None
@@ -1909,8 +2030,9 @@ def lista():
     # a TOTC del balance (PRG línea 24: STAT $ "Z123PD" no incluye R).
     # TMT 2026-05-14 (#16).
     try:
-        conteos = db.fetch_all(
-            """
+        conteos = (
+            db.fetch_all(
+                """
             SELECT
               CASE
                 WHEN stat = 'Z'                       THEN 'cartera'
@@ -1927,7 +2049,9 @@ def lista():
             FROM scintela.cheque
             GROUP BY 1
             """
-        ) or []
+            )
+            or []
+        )
         conteos_por_bucket = {c["bucket"]: dict(c) for c in conteos}
         # Sub-bucket: devueltos EN GESTION (1+2+3) — los rebotados que
         # todavía cuentan en TOTC (excluye 'R' = rebote terminal incobrable).
@@ -1968,7 +2092,10 @@ def lista():
         # TMT 2026-05-20 PASADA 6 Federico #8 — pasar cliente/monto al
         # total_buscar para que el hero KPI refleje el filtro real.
         agg = queries.total_buscar(
-            q, estado, desde, hasta,
+            q,
+            estado,
+            desde,
+            hasta,
             cliente=cliente,
             monto_min=monto_min,
             monto_max=monto_max,
@@ -1980,9 +2107,17 @@ def lista():
         n_total = len(filas)
     return render_template(
         "cheques/lista.html",
-        filas=filas, q=q, estado=estado, desde=desde, hasta=hasta,
-        cliente=cliente, monto_min=monto_min, monto_max=monto_max,
-        total=total, n_total=n_total, error=error,
+        filas=filas,
+        q=q,
+        estado=estado,
+        desde=desde,
+        hasta=hasta,
+        cliente=cliente,
+        monto_min=monto_min,
+        monto_max=monto_max,
+        total=total,
+        n_total=n_total,
+        error=error,
         conteos=conteos_por_bucket,
         # TMT 2026-05-19 — pasamos el mapping de transiciones para que el
         # template arme el dropdown de "Editar estado" por fila.
@@ -1998,16 +2133,16 @@ def lista():
 # =====================================================================
 
 CHEQUES_CSV_COLS = [
-    ("fecha",        "Fecha",       True),
-    ("codigo_cli",   "Código cliente", True),
-    ("no_cheque",    "N° cheque",   True),
-    ("importe",      "Importe",     True),
-    ("no_banco",     "N° banco",    False),
-    ("banco_texto",  "Banco",       False),
-    ("fechad",       "Fecha depósito", False),
-    ("stat",         "Estado",      False),
-    ("prov",         "Proveedor",   False),
-    ("clave",        "Clave",       False),
+    ("fecha", "Fecha", True),
+    ("codigo_cli", "Código cliente", True),
+    ("no_cheque", "N° cheque", True),
+    ("importe", "Importe", True),
+    ("no_banco", "N° banco", False),
+    ("banco_texto", "Banco", False),
+    ("fechad", "Fecha depósito", False),
+    ("stat", "Estado", False),
+    ("prov", "Proveedor", False),
+    ("clave", "Clave", False),
 ]
 
 
@@ -2019,6 +2154,7 @@ def cargar_csv():
 
     if request.args.get("plantilla") == "1":
         from flask import Response
+
         csv_str = plantilla_csv(CHEQUES_CSV_COLS)
         resp = Response("\ufeff" + csv_str, mimetype="text/csv; charset=utf-8")
         resp.headers["Content-Disposition"] = 'attachment; filename="plantilla_cheques.csv"'
@@ -2031,13 +2167,16 @@ def cargar_csv():
             return redirect(url_for("cheques.cargar_csv"))
         raw = f.read()
         result = procesar_csv(
-            raw, CHEQUES_CSV_COLS, queries.crear,
+            raw,
+            CHEQUES_CSV_COLS,
+            queries.crear,
             usuario=(g.user or {}).get("username", "web"),
         )
         tono = "ok" if result.error == 0 else "warn"
         flash(f"Procesadas {result.total} filas — {result.ok} ok, {result.error} con error.", tono)
         return render_template(
             "cheques/cargar_csv_resultado.html",
-            result=result, cols=CHEQUES_CSV_COLS,
+            result=result,
+            cols=CHEQUES_CSV_COLS,
         )
     return render_template("cheques/cargar_csv.html", cols=CHEQUES_CSV_COLS)
