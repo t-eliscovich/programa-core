@@ -103,13 +103,21 @@ def main() -> int:
     try:
         with conn.cursor() as cur:
             # 1) Drop si existe (idempotente). DROP OWNED limpia grants previos.
-            # OJO: DROP OWNED BY falla con UndefinedObject si el rol no existe,
-            # así que primero chequeamos. DROP ROLE IF EXISTS solo no alcanza
-            # porque no limpia los grants.
+            # Dos gotchas:
+            #   a) DROP OWNED BY falla con UndefinedObject si el rol no existe,
+            #      por eso primero chequeamos.
+            #   b) En RDS el admin user NO es full-superuser, así que necesita
+            #      ser miembro del rol para droppearle objetos. Le damos
+            #      membership temporal con GRANT antes del DROP OWNED.
             cur.execute(
                 "SELECT 1 FROM pg_roles WHERE rolname = 'programa_core_reader'"
             )
             if cur.fetchone() is not None:
+                cur.execute(
+                    sql.SQL("GRANT programa_core_reader TO {}").format(
+                        sql.Identifier(admin["user"])
+                    )
+                )
                 cur.execute("DROP OWNED BY programa_core_reader CASCADE")
                 cur.execute("DROP ROLE programa_core_reader")
 
