@@ -6334,35 +6334,40 @@ def fuentes_y_usos(
             "_origen": "live",
         }
 
-    # TMT 2026-05-20 v6 — SIEMPRE usar balance_components_as_of() para AMBOS
-    # extremos. Razón: si usás un mix de informe_balance() LIVE + as_of, las
-    # queries internas son distintas (criterios de cart/totf cambian) y
-    # introducen un drift artificial en los Δ que invierte signos (Tamara
-    # vio CARTERA/ANTICIPOS/PASIVOS/RETIROS al revés). Usar la misma
-    # función para ambos garantiza simetría: las imperfecciones del cálculo
-    # se cancelan en la resta.
+    # TMT 2026-05-21 — Snapshot-first. Antes usábamos
+    # balance_components_as_of() para ambos extremos. Tenía drift contra los
+    # snapshots reales (cart 30x, banco 2x, pasivos 15x): mezclaba saldos
+    # post-sync LIVE con valores históricos del snapshot anterior. Los
+    # snapshots de scintela.historia son consistentes mes a mes (validados
+    # contra el dBase original y /historico-12m), así que arrancamos por
+    # ellos y solo caemos a as_of() si falta el snapshot del mes pedido.
     hoy = _date.today()
     es_mes_actual = yy == hoy.year and mm == hoy.month
 
-    last_day_fin = _cal.monthrange(yy, mm)[1]
-    fecha_fin = _date(yy, mm, last_day_fin) if not es_mes_actual else hoy
-
-    last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
-    fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
+    h_fin = _historia_en_mes(yy, mm)
+    h_ini = _historia_en_mes(yy_ant, mm_ant)
 
     comp_fin: dict = {}
     comp_ini: dict = {}
-    try:
-        comp_fin = balance_components_as_of(fecha_fin) or {}
-        h_fin = _row_desde_componentes(comp_fin, fecha_fin)
-    except Exception:
-        h_fin = _historia_en_mes(yy, mm)
 
-    try:
-        comp_ini = balance_components_as_of(fecha_ini) or {}
-        h_ini = _row_desde_componentes(comp_ini, fecha_ini)
-    except Exception:
-        h_ini = _historia_en_mes(yy_ant, mm_ant)
+    # Fallback HASTA: mes en curso sin snapshot todavía → as_of(today).
+    if not h_fin and es_mes_actual:
+        try:
+            comp_fin = balance_components_as_of(hoy) or {}
+            if comp_fin:
+                h_fin = _row_desde_componentes(comp_fin, hoy)
+        except Exception:
+            pass
+    # Fallback DESDE: mes inicial sin snapshot (raro) → as_of(last_day).
+    if not h_ini:
+        try:
+            last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
+            fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
+            comp_ini = balance_components_as_of(fecha_ini) or {}
+            if comp_ini:
+                h_ini = _row_desde_componentes(comp_ini, fecha_ini)
+        except Exception:
+            pass
 
     if not h_fin or not h_ini:
         return {
