@@ -213,13 +213,14 @@
         <col style="width: 8%">    <!-- N° -->
         <col style="width: 8%">    <!-- Fecha -->
         <col>                       <!-- Cliente: resto -->
-        <col style="width: 8%">    <!-- Kg -->
-        <col style="width: 7%">    <!-- Δ Kg AI -->
-        <col style="width: 10%">   <!-- Importe -->
-        <col style="width: 8%">    <!-- Δ USD AI -->
-        <col style="width: 10%">   <!-- Abonado -->
+        <col style="width: 7%">    <!-- Kg -->
+        <col style="width: 7%">    <!-- Kg AI -->
+        <col style="width: 9%">    <!-- Importe -->
+        <col style="width: 8%">    <!-- USD AI -->
+        <col style="width: 4%">    <!-- Tipo AI -->
+        <col style="width: 9%">    <!-- Abonado -->
         <col style="width: 10%">   <!-- Saldo -->
-        <col style="width: 11%">   <!-- Acum -->
+        <col style="width: 9%">    <!-- Acum -->
         <col style="width: 5%">    <!-- Stat -->
       </colgroup>
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
@@ -231,6 +232,7 @@
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Kg según Asinfo. Rojo si difiere de PC.">Kg AI</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Importe</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number" title="Importe USD según Asinfo. Rojo si difiere de PC.">USD AI</th>
+          <th class="px-2 py-2 text-center font-medium" title="Tipo de documento en Asinfo: F=Factura, D=Devolución">Tipo</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Abonado</th>
           <th class="px-2 py-2 text-right font-medium" data-sort-type="number">Saldo</th>
           <th class="px-2 py-2 text-right font-medium acum-col" title="Total facturado corrido" data-no-sort>Acum.</th>
@@ -279,13 +281,25 @@
               <span class="text-rose-600 dark:text-rose-400 font-semibold">{{ _ai_usd | money_es }}</span>
             {% endif %}
           </td>
+          {# Tipo AI = F (Factura) / D (Devolucion) según Asinfo. Si difiere
+             del esperado por signo del kg de PC, rojo. #}
+          {% set _ai_tipo = f.asinfo_tipo if f.asinfo_tipo is defined else none %}
+          <td class="px-2 py-1.5 text-center font-mono" title="{% if _ai_tipo == 'FACTURA' %}Factura en Asinfo{% elif _ai_tipo == 'DEVOLUCION' %}Devolución en Asinfo{% else %}sin tipo Asinfo{% endif %}">
+            {% if _ai_tipo == 'FACTURA' %}
+              <span class="text-slate-400">F</span>
+            {% elif _ai_tipo == 'DEVOLUCION' %}
+              <span class="text-amber-600 dark:text-amber-400">D</span>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.saldo_acumulado | money_es if f.saldo_acumulado is not none else '' }}</td>
           <td class="px-2 py-1.5 font-mono text-slate-500">{{ f.stat }}</td>
         </tr>
         {% else %}
-        {{ empty_row(11, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
+        {{ empty_row(12, 'Sin facturas en el filtro actual.', 'Probá ampliar el rango de fechas o quitar el cliente.') }}
         {% endfor %}
       </tbody>
     </table>

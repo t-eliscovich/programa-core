@@ -457,6 +457,7 @@ def lista():
         f["asinfo_usd"] = None
         f["asinfo_diff_kg"] = None
         f["asinfo_diff_usd"] = None
+        f["asinfo_tipo"] = None  # FACTURA / DEVOLUCION cuando matchea
         # True si la factura es de ANTES de cuando arrancó Asinfo "limpio"
         # → sabemos que no va a tener match, no es un error.
         f["asinfo_pre_cutoff"] = bool(f.get("fecha") and f["fecha"] < _ASINFO_CUTOFF)
@@ -479,44 +480,63 @@ def lista():
                 mn = max(min(fechas_2025_plus), ASINFO_DESDE_EFECTIVO)
                 mx = max(fechas_2025_plus)
                 asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
-                # Indexar por DOS claves para cubrir las dos formas en que
-                # PC almacena el número:
-                #   1) `numf_completo` ("001-099-000010588") → match directo
-                #      contra numero de Asinfo.
-                #   2) `numf` (int, 10588) → match contra los últimos dígitos
-                #      del numero de Asinfo. PC guarda numf corto y Asinfo lo
-                #      formatea como "001-099-000010588" (padding ceros).
-                # Solo tipo FACTURA — NCs y devoluciones tienen sus propios
-                # números que no matchean con facturas de PC.
-                asinfo_idx_completo: dict[str, dict] = {}
-                asinfo_idx_numf: dict[int, dict] = {}
+                # TMT 2026-05-21 — Doble índice por TIPO de Asinfo:
+                #   - FACTURA   → matchea contra filas PC con kg > 0
+                #   - DEVOLUCION → matchea contra filas PC con kg < 0
+                # Las kg=0 (NC_FINANCIERA) NO matchean por decisión de la dueña
+                # (son notas financieras, no comparan unidad-a-unidad con PC).
+                #
+                # Indexamos por DOS claves dentro de cada tipo:
+                #   1) `numero` completo ("001-099-000010588") → match directo
+                #   2) sufijo numérico (int 10588) → contra el numf chico de PC
+                idx_factura_completo: dict[str, dict] = {}
+                idx_factura_numf: dict[int, dict] = {}
+                idx_devolucion_completo: dict[str, dict] = {}
+                idx_devolucion_numf: dict[int, dict] = {}
                 for r in asinfo_rows:
-                    if r.get("tipo") != "FACTURA" or not r.get("numero"):
+                    tipo = r.get("tipo")
+                    numero = r.get("numero")
+                    if not numero:
                         continue
-                    asinfo_idx_completo[r["numero"]] = r
-                    # Extraer los últimos dígitos del numero como int.
-                    # "001-099-000010588" → "000010588" → "010588" → 10588.
-                    sufijo = r["numero"].split("-")[-1] if "-" in r["numero"] else r["numero"]
+                    if tipo == "FACTURA":
+                        c_idx, n_idx = idx_factura_completo, idx_factura_numf
+                    elif tipo == "DEVOLUCION":
+                        c_idx, n_idx = idx_devolucion_completo, idx_devolucion_numf
+                    else:
+                        continue  # NC_FINANCIERA, NTEN, NCNT: skip
+                    c_idx[numero] = r
+                    sufijo = numero.split("-")[-1] if "-" in numero else numero
                     try:
-                        asinfo_idx_numf[int(sufijo)] = r
+                        n_idx[int(sufijo)] = r
                     except (ValueError, TypeError):
                         pass
-                # Mergear: primero match por numf_completo, después por numf.
+                # Mergear: elegir índice según signo del kg de PC.
+                #   kg > 0  → buscar en FACTURA
+                #   kg < 0  → buscar en DEVOLUCION
+                #   kg == 0 → no matchear (NC financiera, ajustes)
                 for f in filas:
+                    pc_kg = float(f.get("kg") or 0)
+                    if pc_kg > 0:
+                        c_idx, n_idx = idx_factura_completo, idx_factura_numf
+                    elif pc_kg < 0:
+                        c_idx, n_idx = idx_devolucion_completo, idx_devolucion_numf
+                    else:
+                        continue  # kg=0 → skip
                     r_ai = None
                     numero = (f.get("numf_completo") or "").strip()
                     if numero:
-                        r_ai = asinfo_idx_completo.get(numero)
+                        r_ai = c_idx.get(numero)
                     if r_ai is None and f.get("numf"):
                         try:
-                            r_ai = asinfo_idx_numf.get(int(f["numf"]))
+                            r_ai = n_idx.get(int(f["numf"]))
                         except (ValueError, TypeError):
                             pass
                     if r_ai is not None:
                         f["asinfo_kg"] = float(r_ai.get("kg") or 0)
                         f["asinfo_usd"] = float(r_ai.get("usd") or 0)
-                        f["asinfo_diff_kg"] = round(f["asinfo_kg"] - float(f.get("kg") or 0), 3)
+                        f["asinfo_diff_kg"] = round(f["asinfo_kg"] - pc_kg, 3)
                         f["asinfo_diff_usd"] = round(f["asinfo_usd"] - float(f.get("importe") or 0), 2)
+                        f["asinfo_tipo"] = r_ai.get("tipo")
             except Exception as _e:
                 # Cualquier falla del bridge no debe romper la lista de facturas.
                 _LOG_ENRICH = __import__("logging").getLogger("programa_core.facturas")
