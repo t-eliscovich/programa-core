@@ -23,10 +23,11 @@ Audité dBase ↔ PC, recorrí ~25 pantallas en Chrome real, comparé F&U vs Res
 
 ## TODOs para Tamara
 
-1. **Decidir qué hacer con los 18 cheques `stat='W'`** (ver H-1). Mañana revisar uno en dBase y decidir mapeo.
+1. ~~Decidir qué hacer con los 18 cheques `stat='W'`~~ ✅ **Confirmado dueña 2026-05-21:** ya están en banco → remap a 'B'. Aplicado commit `4bda35ae`.
 2. **Regenerar snapshot de abril 2026** con todas las columnas (ustock/uqui/maq/realty/anticipos) para que /fuentes-y-usos muestre stocks/maquinaria en vez de "—". Botón `📸 Snapshot del mes seleccionado` en `/informes/fuentes-y-usos`.
 3. **Decidir si el "REVERSO id 522 — sin motivo"** se completa con motivo retroactivo (L-3).
-4. **Opcional**: revisar KPIs confusos de `/compras` y `/capital` (L-1, L-2).
+4. ~~`/capital`~~ → Tamara dice que **no se usa más** → considerar quitarlo del menú lateral.
+5. **Re-loguear con Google** en Chrome cuando empieces — mi sesión expiró por inactividad. Fase 4 (testing de flows en vivo con creación/cleanup) quedó bloqueada por eso. Si querés que la complete, dejame el browser logueado.
 
 ## Fixes aplicados (commit SHA)
 
