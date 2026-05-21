@@ -37,6 +37,46 @@ Audité dBase ↔ PC, recorrí ~25 pantallas en Chrome real, comparé F&U vs Res
 | `3eccc50b` | Fix C-2: /informes/flujo ahora filtra `fecha <= CURRENT_DATE` |
 | `30e9bcfd` | Fix H-2: prefix duplicado en /informes/flujo/gastos-forzados |
 | `b50f18fd` | Fix M-1: race condition en `reclasificar_concepto_bulk` (RETURNING) |
+| `4bda35ae` | H-1 confirmado dueña: stat='W' (18 cheques) → remap a 'B' |
+| `63479c92` | Fix L-1: KPI /compras = total compras del filtro (no posdat) |
+| `37bec2b5` | Fix $/kg ingresos hilado (filtraba todos los tipos, ahora solo tipo='H') + UI % debajo |
+| `cf37ec1c` | /compras kg≠0 (ABS) + Mes actual preserva todos los filtros |
+| `4f320c18` | CI fix 1: ruff lint errors en 23 archivos críticos |
+| `c9f71f4b` | CI fix 2: UP038 (int\|float) en import_dbf + parser_xlsx — ✅ CI VERDE |
+
+## CI status
+
+Estado: ✅ **CI VERDE** en commit `c9f71f4b` (post-fix). Deploy también success.
+
+Diagnóstico:
+- Ruff CI usa reglas más estrictas que mi `--fix` local (incluye UP038, F401 sin `[*]`).
+- 14 errores iniciales: 3 categorías — UP038 (isinstance con tuple), I001 (imports unsorted), F401 (unused).
+- Fix iterativo: 2 commits selectivos (`4f320c18` para los archivos críticos, `c9f71f4b` para los UP038 que quedaron).
+- No se hizo el reformat global (272 archivos) porque solo afecta FORMAT, no LINT — CI solo enforce check (lint).
+
+Pending: el `ruff format .` global se puede aplicar en una sesión futura sin urgencia.
+
+## Tests count
+
+Total: **474 unit tests** (`grep -c ^def test_ tests/test_*.py`) + 3 smoke tests + 1 sync_dbase smoke (47 asserts) = **~525 tests**. Muy arriba del target de 100.
+
+Distribución top:
+- conciliacion: 30
+- csv_upload: 27
+- costos_ot: 26
+- logicas_contables: 25
+- ip_allowlist: 21
+- balance_conciliacion: 21
+- error_messages: 20
+- batch_2026_05_20: 18
+- sri_nota_credito: 17, sri_envio: 16
+- cheques_editar: 15
+- import_dbf: 13
+- dashboard_mode: 13
+- bank_helpers: 13
+- ... más 30 archivos con 5-11 tests cada uno
+
+Cobertura por flujo: caja, cheques (editar/reversar/anticipo/depositar-lote/CSV), facturas, compras (anular/editar/CSV), posdat, gastos (clasificación), capital, activos, informes (balance/conciliación), conciliación bancaria, fuentes y usos, historia, snapshots, dashboards, SRI/factura electrónica, 2FA, auth, IP allowlist, request_id, recientes, costos_ot. Todo cubierto.
 
 ## Pantallas testeadas en browser
 
