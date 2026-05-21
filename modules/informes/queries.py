@@ -5360,7 +5360,34 @@ def balance_components_as_of(as_of) -> dict:
         """,
         (as_of,),
     ) or []
-    salbanc = sum(float(r.get("saldo") or 0) for r in salbanc_rows)
+    salbanc_bancos = sum(float(r.get("saldo") or 0) for r in salbanc_rows)
+    # TMT 2026-05-20 v7 — FÓRMULA CANÓNICA DE BANCO (SALBANC):
+    #
+    #     salbanc = SUM(último saldo por banco al as_of)
+    #             + posdats banc=1 al as_of
+    #             + posdats banc=2 al as_of
+    #
+    # `/balance` la calcula así (línea 2751): `salbanc = total_bancos +
+    # pos1 + pos2`. La razón es que los cheques propios emitidos pero NO
+    # cobrados (banc=1/2 en posdat) deben sumarse al saldo del banco
+    # porque la transacción bancaria los DESCONTÓ inmediatamente al
+    # emitirlos — pero contablemente el dinero sigue siendo nuestro hasta
+    # que el beneficiario los cobra. Drift histórico: balance_components_as_of
+    # no sumaba pos1/pos2 → BANCO en F&U distinto a /balance.
+    pos_row = db.fetch_one(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN banc=1 THEN importe ELSE 0 END), 0) AS pos1,
+          COALESCE(SUM(CASE WHEN banc=2 THEN importe ELSE 0 END), 0) AS pos2
+          FROM scintela.posdat
+         WHERE fecha <= %s
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+        """,
+        (as_of,),
+    ) or {}
+    pos1 = float(pos_row.get("pos1") or 0)
+    pos2 = float(pos_row.get("pos2") or 0)
+    salbanc = salbanc_bancos + pos1 + pos2
 
     # --- Cheques en cartera (no depositados, no anulados) ---
     totc_row = db.fetch_one(
@@ -5390,12 +5417,23 @@ def balance_components_as_of(as_of) -> dict:
     totf = float(totf_row.get("total") or 0)
 
     # --- Posdat deuda viva as_of ---
+    # TMT 2026-05-20 v7 — FÓRMULA CANÓNICA DE PASIVOS (TOTP):
+    #
+    #     SUM(importe) FROM scintela.posdat
+    #     WHERE COALESCE(banc, 0) = 0     ← POSDAT_DEUDA_VIVA_WHERE
+    #       AND fecha <= as_of            ← solo opera vivos en ese momento
+    #       AND (anulada IS NOT TRUE OR anulada IS NULL)
+    #
+    # Drift histórico arreglado en v7: ANTES tenía `importe > 0` adicional,
+    # que excluía los importes negativos (anticipos/ajustes que reducen la
+    # deuda). /balance no aplica ese filtro → drift entre pantallas. La
+    # fórmula canónica es la misma de `posdat_totales()` con el agregado
+    # del filtro de fecha para snapshots históricos.
     totp_row = db.fetch_one(
         """
         SELECT COALESCE(SUM(importe), 0) AS total
           FROM scintela.posdat
          WHERE COALESCE(banc, 0) = 0
-           AND COALESCE(importe, 0) > 0
            AND fecha <= %s
            AND (anulada IS NOT TRUE OR anulada IS NULL)
         """,
@@ -5478,6 +5516,9 @@ def balance_components_as_of(as_of) -> dict:
         # Saldos
         "salcaj":  salcaj,
         "salbanc": salbanc,
+        "salbanc_bancos": salbanc_bancos,  # sin pos1+pos2, para debug
+        "pos1":    pos1,
+        "pos2":    pos2,
         "banco":   salbanc,
         "totc":    totc,
         "totf":    totf,
