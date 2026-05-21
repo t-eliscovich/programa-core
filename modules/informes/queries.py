@@ -6368,6 +6368,11 @@ def fuentes_y_usos(
     hoy = _date.today()
     es_mes_actual = yy == hoy.year and mm == hoy.month
 
+    last_day_fin = _cal.monthrange(yy, mm)[1]
+    fecha_fin = _date(yy, mm, last_day_fin) if not es_mes_actual else hoy
+    last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
+    fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
+
     h_fin = _historia_en_mes(yy, mm)
     h_ini = _historia_en_mes(yy_ant, mm_ant)
 
