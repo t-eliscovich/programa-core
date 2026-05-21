@@ -107,7 +107,7 @@ def balance_compras():
 # (5 meses pasados + mes actual con múltiples snapshots para comparar).
 # Toma snapshot del mes actual al entrar (throttle 1h) y permite validar
 # o borrar cada snapshot del mes actual.
-@informes_bp.route("/informes/historico-12m")
+@informes_bp.route("/historico-12m")
 @requiere_login
 @requiere_permiso("informes.ver")
 def historico_12m():
@@ -185,7 +185,7 @@ def historico_12m():
     )
 
 
-@informes_bp.route("/informes/historico-12m/_api/<int:id_historia>/validar", methods=["POST"])
+@informes_bp.route("/historico-12m/_api/<int:id_historia>/validar", methods=["POST"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def historico_validar(id_historia: int):
@@ -202,7 +202,7 @@ def historico_validar(id_historia: int):
         return jsonify({"ok": False, "error": f"No pude validar: {e}"}), 500
 
 
-@informes_bp.route("/informes/historico-12m/_api/<int:id_historia>/borrar", methods=["POST"])
+@informes_bp.route("/historico-12m/_api/<int:id_historia>/borrar", methods=["POST"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def historico_borrar(id_historia: int):
@@ -214,7 +214,7 @@ def historico_borrar(id_historia: int):
         return jsonify({"ok": False, "error": f"No pude borrar: {e}"}), 500
 
 
-@informes_bp.route("/informes/historico-12m/_api/snapshot-ahora", methods=["POST"])
+@informes_bp.route("/historico-12m/_api/snapshot-ahora", methods=["POST"])
 @requiere_login
 @requiere_permiso("informes.ver")
 def historico_snapshot_ahora():
