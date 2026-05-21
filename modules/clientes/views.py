@@ -1,4 +1,5 @@
 """Listado y CRUD de clientes."""
+
 from flask import (
     Blueprint,
     abort,
@@ -67,8 +68,12 @@ def nuevo():
     if request.method == "GET":
         form = {"codigo_cli": pre_codigo} if pre_codigo else {}
         return render_template(
-            "clientes/form.html", form=form, errores=errores, modo="crear",
-            next_url=next_url, pre_codigo=pre_codigo,
+            "clientes/form.html",
+            form=form,
+            errores=errores,
+            modo="crear",
+            next_url=next_url,
+            pre_codigo=pre_codigo,
         )
 
     form = _form_from_request()
@@ -84,7 +89,10 @@ def nuevo():
 
     if errores:
         return render_template(
-            "clientes/form.html", form=form, errores=errores, modo="crear",
+            "clientes/form.html",
+            form=form,
+            errores=errores,
+            modo="crear",
             next_url=next_url,
         ), 400
 
@@ -92,13 +100,19 @@ def nuevo():
         usuario = (g.user or {}).get("username", "web")
         clave = (g.user or {}).get("clave") or usuario[:3].upper()
         queries.crear(
-            codigo_cli=form["codigo_cli"], nombre=form["nombre"],
-            ruc=form["ruc"] or None, telefono=form["telefono"] or None,
+            codigo_cli=form["codigo_cli"],
+            nombre=form["nombre"],
+            ruc=form["ruc"] or None,
+            telefono=form["telefono"] or None,
             correo=form["correo"] or None,
-            direccion1=form["direccion1"] or None, direccion2=form["direccion2"] or None,
-            pago=form["pago"] or None, cupo=cupo,
-            vend=form["vend"] or None, observacion=form["observacion"] or None,
-            clave=clave, usuario=usuario,
+            direccion1=form["direccion1"] or None,
+            direccion2=form["direccion2"] or None,
+            pago=form["pago"] or None,
+            cupo=cupo,
+            vend=form["vend"] or None,
+            observacion=form["observacion"] or None,
+            clave=clave,
+            usuario=usuario,
         )
         flash(f"Cliente {form['codigo_cli']} creado.", "ok")
         if next_url:
@@ -107,13 +121,19 @@ def nuevo():
     except ValueError as e:
         errores.append(str(e))
         return render_template(
-            "clientes/form.html", form=form, errores=errores, modo="crear",
+            "clientes/form.html",
+            form=form,
+            errores=errores,
+            modo="crear",
             next_url=next_url,
         ), 400
     except Exception as e:
         errores.append(f"No pude crear el cliente: {e}")
         return render_template(
-            "clientes/form.html", form=form, errores=errores, modo="crear",
+            "clientes/form.html",
+            form=form,
+            errores=errores,
+            modo="crear",
             next_url=next_url,
         ), 500
 
@@ -129,12 +149,17 @@ def editar(codigo_cli: str):
 
     if request.method == "GET":
         form = {
-            "codigo_cli": cli["codigo_cli"], "nombre": cli.get("nombre") or "",
-            "ruc": cli.get("ruc") or "", "telefono": cli.get("telefono") or "",
-            "correo": cli.get("correo") or "", "direccion1": cli.get("direccion1") or "",
+            "codigo_cli": cli["codigo_cli"],
+            "nombre": cli.get("nombre") or "",
+            "ruc": cli.get("ruc") or "",
+            "telefono": cli.get("telefono") or "",
+            "correo": cli.get("correo") or "",
+            "direccion1": cli.get("direccion1") or "",
             "direccion2": cli.get("direccion2") or "",
-            "pago": cli.get("pago") or "", "cupo": cli.get("cupo") or "",
-            "vend": cli.get("vend") or "", "observacion": cli.get("observacion") or "",
+            "pago": cli.get("pago") or "",
+            "cupo": cli.get("cupo") or "",
+            "vend": cli.get("vend") or "",
+            "observacion": cli.get("observacion") or "",
             "stop": cli.get("stop") or "N",
             "activo": cli.get("activo", True),
         }
@@ -153,11 +178,16 @@ def editar(codigo_cli: str):
         usuario = (g.user or {}).get("username", "web")
         queries.editar(
             cli["codigo_cli"],
-            nombre=form["nombre"], ruc=form["ruc"] or None,
-            telefono=form["telefono"] or None, correo=form["correo"] or None,
-            direccion1=form["direccion1"] or None, direccion2=form["direccion2"] or None,
-            pago=form["pago"] or None, cupo=cupo,
-            vend=form["vend"] or None, observacion=form["observacion"] or None,
+            nombre=form["nombre"],
+            ruc=form["ruc"] or None,
+            telefono=form["telefono"] or None,
+            correo=form["correo"] or None,
+            direccion1=form["direccion1"] or None,
+            direccion2=form["direccion2"] or None,
+            pago=form["pago"] or None,
+            cupo=cupo,
+            vend=form["vend"] or None,
+            observacion=form["observacion"] or None,
             usuario=usuario,
         )
         flash(f"Cliente {cli['codigo_cli']} actualizado.", "ok")
@@ -180,8 +210,7 @@ def toggle_stop(codigo_cli: str):
     # TMT 2026-05-13.
     if set_stop and not motivo:
         flash(
-            f"Motivo requerido para poner el cliente {codigo_cli} en STOP. "
-            "Queda en bitácora.",
+            f"Motivo requerido para poner el cliente {codigo_cli} en STOP. Queda en bitácora.",
             "warn",
         )
         return redirect(url_for("clientes.lista"))
@@ -197,6 +226,27 @@ def toggle_stop(codigo_cli: str):
     return redirect(url_for("clientes.lista"))
 
 
+@clientes_bp.route("/clientes/<codigo_cli>/quitar-stop", methods=["POST"])
+@requiere_login
+@requiere_permiso("stop_cliente.editar")
+def quitar_stop(codigo_cli: str):
+    """Quitar STOP rápido — botón inline en /clientes (TMT 2026-05-21 dueña).
+
+    Diferente de `toggle_stop`: no requiere motivo (sacar STOP es restitución,
+    no penalización). Idempotente: si ya está sin STOP, no rompe nada.
+    """
+    cli = queries.por_codigo(codigo_cli)
+    if not cli:
+        abort(404)
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        queries.set_stop(codigo_cli, False, usuario=usuario, motivo="")
+        flash(f"STOP quitado a {codigo_cli}.", "ok")
+    except Exception as e:
+        flash_exc("No pude quitar STOP", e)
+    return redirect(url_for("clientes.lista"))
+
+
 @clientes_bp.route("/clientes/<int:id_cliente>/eliminar", methods=["POST"])
 @requiere_login
 @requiere_permiso("clientes.editar")
@@ -207,10 +257,13 @@ def eliminar(id_cliente: int):
     también deben ser eliminables. Usamos id_cliente (PK) en lugar
     de codigo_cli para que NUNCA falle por URL malformada.
     """
-    fila = db.fetch_one(
-        "SELECT codigo_cli, nombre FROM scintela.cliente WHERE id_cliente = %s",
-        (int(id_cliente),),
-    ) or {}
+    fila = (
+        db.fetch_one(
+            "SELECT codigo_cli, nombre FROM scintela.cliente WHERE id_cliente = %s",
+            (int(id_cliente),),
+        )
+        or {}
+    )
     if not fila:
         abort(404)
     label = (fila.get("codigo_cli") or "(sin código)") + " — " + (fila.get("nombre") or "(sin nombre)")
@@ -280,7 +333,10 @@ def contactos():
 
     return render_template(
         "clientes/contactos.html",
-        filas=filas, q=q, resumen=resumen, error=error,
+        filas=filas,
+        q=q,
+        resumen=resumen,
+        error=error,
     )
 
 
@@ -289,7 +345,10 @@ def contactos():
 @requiere_permiso("clientes.ver")
 def lista():
     q = request.args.get("q", "").strip()
-    incluir_inactivos = request.args.get("inactivos") == "1"
+    # TMT 2026-05-21 dueña: ya no diferenciamos activos/inactivos en /clientes.
+    # Siempre incluir todos. Mantenemos `incluir_inactivos=True` hardcodeado
+    # para no romper la firma de queries.buscar/contar (otros callers la usan).
+    incluir_inactivos = True
     # TMT 2026-05-20 v2 — paginación pedido dueña.
     try:
         pag = max(1, int(request.args.get("pag") or 1))
@@ -298,9 +357,8 @@ def lista():
     POR_PAG = 200
     offset = (pag - 1) * POR_PAG
     try:
-        filas = queries.buscar(q, incluir_inactivos=incluir_inactivos,
-                               limite=POR_PAG, offset=offset)
-        total = queries.contar(q, incluir_inactivos=incluir_inactivos)
+        filas = queries.buscar(q, incluir_inactivos=True, limite=POR_PAG, offset=offset)
+        total = queries.contar(q, incluir_inactivos=True)
         error = None
     except Exception as e:
         filas, total, error = [], 0, str(e)
@@ -309,8 +367,7 @@ def lista():
     if request.args.get("export") == "csv":
         # CSV trae todo, sin paginación.
         try:
-            todos = queries.buscar(q, incluir_inactivos=incluir_inactivos,
-                                   limite=100000, offset=0)
+            todos = queries.buscar(q, incluir_inactivos=True, limite=100000, offset=0)
         except Exception:
             todos = filas
         return csv_response(
@@ -332,9 +389,14 @@ def lista():
 
     return render_template(
         "clientes/lista.html",
-        filas=filas, q=q, error=error,
+        filas=filas,
+        q=q,
+        error=error,
         incluir_inactivos=incluir_inactivos,
-        pag=pag, total_pag=total_pag, total=total, por_pag=POR_PAG,
+        pag=pag,
+        total_pag=total_pag,
+        total=total,
+        por_pag=POR_PAG,
     )
 
 
@@ -356,13 +418,13 @@ def cuenta(codigo_cli: str):
         return csv_response(
             data["movimientos"],
             columnas=[
-                ("fecha",    "Fecha"),
-                ("tipo",     "Tipo"),
-                ("doc",      "Documento"),
+                ("fecha", "Fecha"),
+                ("tipo", "Tipo"),
+                ("doc", "Documento"),
                 ("concepto", "Concepto"),
-                ("debe",     "Debe"),
-                ("haber",    "Haber"),
-                ("saldo",    "Saldo"),
+                ("debe", "Debe"),
+                ("haber", "Haber"),
+                ("saldo", "Saldo"),
             ],
             filename=f"cuenta_{codigo_cli.upper()}.csv",
         )
