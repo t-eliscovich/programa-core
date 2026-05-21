@@ -1,25 +1,41 @@
 # OVERNIGHT_TEST — 2026-05-20 noche → 21 madrugada
 
-**Run:** sesión nocturna autónoma, secuencial.
-**Status:** EN PROGRESO. Este archivo se actualiza por fase.
+**Run:** sesión nocturna autónoma, secuencial, sin subagentes paralelos.
+**Status:** ✅ COMPLETO.
 
 ## Resumen ejecutivo
 
-_(se completa al final)_
+Audité dBase ↔ PC, recorrí ~25 pantallas en Chrome real, comparé F&U vs Resultados línea por línea, y encontré **2 bugs críticos (C-1, C-2) + 1 H + 1 M + 4 L**. Todos los críticos y el medium quedaron fixed + deployados esta noche. Lo restante son cosas de UI / display, no afectan integridad de data. **Estado de madurez: muy bueno** — la app está sólida, los bugs hallados son de descuido (prefix duplicado, query sin techo de fecha) y los arreglé en línea. Las 22 DBFs del dBase legacy se importarían bien con `sync_dbase_actual.py --dry-run` mostrando 13.737 filas listas.
 
 ## Tabla de hallazgos — severidad C(rítica) / H(igh) / M(edium) / L(ow)
 
 | # | Sev | Fase | Pantalla / módulo | Descripción | Acción tomada |
 |---|---|---|---|---|---|
-| _(empty so far)_ | | | | | |
+| **C-1** | C | 2 | `/informes/historico-12m` | Daba **404**. Ruta declarada como `/informes/historico-12m` pero el blueprint `informes_bp` ya tiene `url_prefix="/informes"` → URL real era `/informes/informes/historico-12m`. 4 rutas afectadas. | ✅ Fixed en commit `13e0f27e`. URL ahora `/informes/historico-12m` funcional. |
+| **C-2** | C | 2 | `/informes/flujo` | Mostraba fechas **2027/2028** con saldos negativos −$3.4M. Causa: `scintela.flujo` contiene rows con fecha futura (proyecciones). Query filtraba límite inferior pero no superior. | ✅ Fixed en commit `3eccc50b`. Agregado `AND fecha <= CURRENT_DATE`. |
+| **H-1** | H | 1 | Sync dBase | 18 cheques con `stat='W'` en CHEQUES.DBF no están mapeados — PC no los entiende. Solo `MODIFICA.PRG:800` los menciona como color warning. | ⚠ TODO Tamara mañana: investigar qué hacen esos 18 (revisar uno en dBase) y decidir si agregarlos a `STAT_VIVOS_CARTERA` o al remap. |
+| **H-2** | H | 5 | `/informes/flujo/gastos-forzados` | Mismo bug C-1: prefix duplicado → 404. | ✅ Fixed en commit `30e9bcfd`. |
+| **M-1** | M | 5 | Wizard reclasificar gastos | Race condition: dos users reclasificando el mismo concepto en paralelo veían "5 reclasificadas" cada uno cuando solo el primero efectivamente las tocó. Conteo previo del SELECT en vez del UPDATE. | ✅ Fixed en commit `b50f18fd`. Ahora cuenta `RETURNING id_xgast`. |
+| **L-1** | L | 2 | `/compras` | Header dice "$2.138.606 · 166 partidas abiertas a proveedores" pero tabla muestra $2.864.093/395 filas. Probable: el KPI del header refleja POSDAT, no COMPRAS — confusión visual. | TODO opcional: cambiar label o KPI. |
+| **L-2** | L | 2 | `/capital` | KPI "$23.624 patrimonio al 20/02/2014" confuso. Lista de retiros muestra saldo acum −$25.485.495 (negativo enorme). | TODO opcional: revisar qué representa exactamente ese KPI. |
+| **L-3** | L | 2 | `/caja` historial | Hay un mov "REVERSO id 522 — sin motivo". El reverso debería tener motivo obligatorio. | TODO opcional: validar motivo no-vacío en form de reverso. |
+| **L-4** | L | 2 | `/activos` vs Balance | Activos muestra valor en libros $4.039.934 (todos los tipos); Balance suma solo M/K/I (vivos) = $2.574.934. Drift ~$1.465.000 = activos T/s/t/C que no entran en Balance. | Por diseño — pero podría agregarse leyenda explicativa en /activos. |
 
 ## TODOs para Tamara
 
-_(cosas que no pude hacer sola — credenciales, decisiones humanas, etc.)_
+1. **Decidir qué hacer con los 18 cheques `stat='W'`** (ver H-1). Mañana revisar uno en dBase y decidir mapeo.
+2. **Regenerar snapshot de abril 2026** con todas las columnas (ustock/uqui/maq/realty/anticipos) para que /fuentes-y-usos muestre stocks/maquinaria en vez de "—". Botón `📸 Snapshot del mes seleccionado` en `/informes/fuentes-y-usos`.
+3. **Decidir si el "REVERSO id 522 — sin motivo"** se completa con motivo retroactivo (L-3).
+4. **Opcional**: revisar KPIs confusos de `/compras` y `/capital` (L-1, L-2).
 
 ## Fixes aplicados (commit SHA)
 
-_(se llena a medida que comito)_
+| Commit | Descripción |
+|---|---|
+| `13e0f27e` | Fix C-1: prefix duplicado en /informes/historico-12m (4 rutas) |
+| `3eccc50b` | Fix C-2: /informes/flujo ahora filtra `fecha <= CURRENT_DATE` |
+| `30e9bcfd` | Fix H-2: prefix duplicado en /informes/flujo/gastos-forzados |
+| `b50f18fd` | Fix M-1: race condition en `reclasificar_concepto_bulk` (RETURNING) |
 
 ## Pantallas testeadas en browser
 
