@@ -605,7 +605,7 @@ def buscar(
                  AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
              OR f.stat = ANY(%(estados_para_in)s::text[])
           )
-        ORDER BY f.fecha ASC, f.numf ASC
+        ORDER BY f.fecha DESC, f.numf DESC
         LIMIT %(limite)s
         """,
         {
