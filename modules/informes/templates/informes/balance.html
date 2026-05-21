@@ -163,101 +163,49 @@
        Misma estructura de header rosa (dBase aesthetic). #}
     {% if b.resultados %}
     {% set r = b.resultados %}
-    {# TMT 2026-05-19 v8 — dueña: borrar los links de COL.QUI. y GS.PROC.
-       Esos rubros no tienen drill-down útil (los colorantes/proceso no
-       están en /informes/gastos como propios). Quedan como texto plano. #}
-    {% set _costo_links = {
-      'MAT.PR.':  url_for('compras.lista', vista='compras'),
-      'TEJIDO':   url_for('compras.lista', vista='produccion'),
-      'GASTOS':   url_for('informes.gastos'),
+    {# Links de drill-down de la tabla RESULTADOS — Federico 2026-05-21. #}
+    {% set _row_links = {
+      'Venta':            url_for('informes.ventas'),
+      'Materia Prima':    url_for('informes.flujo_produccion'),
+      'Tejeduría':        url_for('compras.lista', vista='produccion'),
+      'Tintorería':       url_for('informes.flujo_produccion'),
+      'Colorantes/Quím.': url_for('informes.flujo_produccion'),
+      'Administración':   url_for('informes.gastos'),
     } %}
     <div class="border-r border-slate-200 dark:border-slate-800">
       <table class="balance-table">
         <thead>
-          {# Una sola fila de header — labels de columnas alineadas con
-             las celdas. RESULTADOS es sólo el label de la columna 1; las
-             columnas 2-5 son Kg / U$/kg / U$ / Proy. #}
+          {# Tabla RESULTADOS rediseñada — Federico 2026-05-21.
+             Columnas: RESULTADOS (label) | Kg | U$/kg | U$. #}
           <tr>
             <th class="seccion-header" style="text-align:left">RESULTADOS</th>
             <th class="col-header" style="text-align:right">Kg</th>
             <th class="col-header" style="text-align:right">U$/kg</th>
             <th class="col-header" style="text-align:right">U$</th>
-            <th class="col-header" style="text-align:right">Proy.</th>
           </tr>
         </thead>
         <tbody>
-          {# ─── VENTAS ─── #}
-          <tr class="fila-dato">
-            <td class="label-cell"><a href="{{ url_for('informes.ventas') }}" class="hover:text-blue-600 hover:underline">Venta</a></td>
-            <td class="num-cell">{{ r.ventas.kg | num_es(0) }}</td>
-            <td class="num-cell">{{ r.ventas.ukg | num_es(3) }}</td>
-            <td class="num-cell">{{ r.ventas.us | num_es(0) }}</td>
-            <td class="num-cell">{{ r.ventas.proy_us | num_es(0) }}</td>
-          </tr>
-          <tr class="fila-aux">
-            <td class="label-cell"><a href="{{ url_for('informes.iniciales') }}" class="hover:text-blue-600 hover:underline">Proyección</a></td>
-            <td class="num-cell">{{ r.ventas.proy_kg | num_es(0) }}</td>
-            <td></td>
-            <td class="num-cell">{{ r.ventas.proy_us | num_es(0) }}</td>
-            <td></td>
-          </tr>
-          {# TMT 2026-05-19 — fila "Plazo cartera (días)" removida (pedido
-             dueña item 16: cuadritos auxiliares irrelevantes en Resultados).
-             El dato vive en /cartera con su análisis de aging completo. #}
-
-          {# ─── COSTOS — section divider que ocupa toda la fila ─── #}
+          {# Filas de r.tabla: label / kg / ukg / us / clase / ayuda.
+             Las filas 'seccion' son divisores; el resto se estila por clase. #}
+          {% set _clase_css = {'dato':'fila-dato','subtotal':'fila-aux','total':'fila-total','key':'fila-key'} %}
+          {% for row in r.tabla %}
+            {% if row.clase == 'seccion' %}
           <tr>
-            <th class="seccion-header" style="text-align:left" colspan="5">COSTOS</th>
+            <th class="seccion-header" style="text-align:left" colspan="4">{{ row.label }}</th>
           </tr>
-          {% for c in r.costos %}
-          <tr class="fila-dato" title="{{ c.ayuda }}">
-            <td class="label-cell">
-              {% if c.label in _costo_links %}
-                <a href="{{ _costo_links[c.label] }}" class="hover:text-blue-600 hover:underline">{{ c.label }}</a>
-              {% else %}{{ c.label }}{% endif %}
-            </td>
-            <td class="num-cell">{% if c.kg is not none %}{{ c.kg | num_es(0) }}{% endif %}</td>
-            <td class="num-cell">{{ c.ukg | num_es(3) }}{% if c.src == 'meta' %}<span class="src-tag">meta</span>{% elif c.src == 'none' %}<span class="src-tag none">sin datos</span>{% endif %}</td>
-            <td class="num-cell">{{ c.us | num_es(0) }}</td>
-            <td class="num-cell">{{ c.proy | num_es(0) }}</td>
+            {% else %}
+          <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
+            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}</td>
+            <td class="num-cell">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
+            <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
+            <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
           </tr>
+            {% endif %}
           {% endfor %}
-          <tr class="fila-total" title="Total con desperdicio (DESP+DESK %) aplicado a MAT.PR. y COL.QUI., per PRG INFORMES.PRG líneas 404-413.">
-            <td class="label-cell">Total</td>
-            <td class="num-cell" style="font-size:11px;color:rgb(100 116 139);font-weight:500">
-              {% if r.costo_total.desperdicio_pct %}
-                {{ r.costo_total.desperdicio_pct | num_es(1) }} %
-              {% endif %}
-            </td>
-            <td class="num-cell">{{ r.costo_total.ukg | num_es(3) }}</td>
-            <td class="num-cell">{{ r.costo_total.us | num_es(0) }}</td>
-            <td class="num-cell">{{ r.costo_total.proy_us | num_es(0) }}</td>
-          </tr>
 
-          {# ─── UTILIDAD — la fila más importante. Bigger + bold. ─── #}
-          {# Ocultamos pct y proy_us — TMT 2026-05-08: el % es contra ventas
-             del mes (volátil, confunde) y la proyección dobla la fila
-             "Utilidad Proyectada" de abajo. #}
-          {% set ut_pos = r.utilidad.us >= 0 %}
-          <tr class="fila-key">
-            <td class="label-cell">Utilidad Actual</td>
-            <td></td>
-            <td class="num-cell">{{ r.utilidad.ukg | num_es(3) }}</td>
-            <td class="num-cell {{ 'pos' if ut_pos else 'neg' }}">{{ r.utilidad.us | num_es(0) }}</td>
-            <td></td>
-          </tr>
-          {# TMT 2026-05-19 — bloques "Utilidad = PATR − PATANT" (explicación),
-             "Provisión pendiente del mes" y "Utilidad Proyectada" removidos
-             (pedido dueña item 16: cuadritos auxiliares irrelevantes).
-             La fila "Utilidad Actual" arriba ya tiene el dato. La explicación
-             vive en /informes/utilidad_debug para quien quiera auditarla. #}
-
-          {# ─── STOCK ─── #}
-          {# TMT 2026-05-19 v8 — dueña: "agregar link en la palabra stock
-             que me lleve a /informes/flujo-produccion". Header + etapas
-             + Total ahora linkean al dashboard nuevo TINT.BAT. #}
+          {# ─── STOCK ─── link al dashboard de flujo de producción. #}
           <tr>
-            <th class="seccion-header" colspan="5" style="text-align:left">
+            <th class="seccion-header" colspan="4" style="text-align:left">
               <a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">STOCK</a>
             </th>
           </tr>
@@ -268,7 +216,6 @@
             <td class="num-cell">{{ s.kg | num_es(0) }}</td>
             <td class="num-cell">{{ s.ukg | num_es(3) }}</td>
             <td class="num-cell">{{ s.us | num_es(0) }}</td>
-            <td></td>
           </tr>
           {% endfor %}
           <tr class="fila-total">
@@ -276,7 +223,6 @@
             <td class="num-cell">{{ r.stock.total.kg | num_es(0) }}</td>
             <td class="num-cell">{{ r.stock.total.ukg | num_es(3) }}</td>
             <td class="num-cell">{{ r.stock.total.us | num_es(0) }}</td>
-            <td></td>
           </tr>
         </tbody>
       </table>

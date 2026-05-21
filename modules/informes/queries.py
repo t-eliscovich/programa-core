@@ -2934,6 +2934,140 @@ def _eff_rate(live: float | None, meta: float | None) -> tuple[float, str]:
     return 0.0, "none"
 
 
+def resultados_costos_tabla(
+    *,
+    venta_kg: float,
+    venta_us: float,
+    dia_actual: int,
+    mp_ukg: float,
+    v1: float,
+    v2: float,
+    v3: float,
+    dtj: float,
+    kg_tejidos: float,
+    v4: float,
+    v5: float,
+    v6: float,
+    dcc: float,
+    itin: float,
+    ktint: float,
+    v7: float,
+    v8: float,
+    v9: float,
+    deprcar: float,
+    patr: float,
+    patant: float,
+    uret: float,
+) -> list[dict]:
+    """Tabla RESULTADOS del /informes/balance — rediseno Federico 2026-05-21.
+
+    Definida fila por fila con el dueno. Columnas: Kg | U$/kg | U$.
+    Cada fila es {label, kg, ukg, us, clase, ayuda}; `clase` da el estilo
+    al template: 'dato' | 'seccion' | 'subtotal' | 'total' | 'key'.
+    Las filas 'seccion' solo traen {label, clase}.
+
+    Formulas (mes en curso):
+      Venta          kg/us live de scintela.factura; u$/kg = us / kg.
+      Proyeccion     regla de 3 al dia 30 con el mismo precio promedio.
+      Materia Prima  solo u$/kg = costo del hilado consumido
+                     (flujo-produccion, HILADO egresos $/kg).
+      Tejeduria      us = V1+V2+V3 + amort.tejeduria; u$/kg = us / kg tejidos.
+      Tintoreria     us = V4+V5+V6 + amort.tintoreria; u$/kg = us / KTINT.
+      Colorantes     us = ITIN (SUM importe tinto del mes); u$/kg = ITIN/KTINT.
+      Subtotal +4.5% u$/kg = 1.045 * (MP + Tejed. + Tintor. + Colorantes).
+      Administracion us = V7+V8+V9 + amort.admin; u$/kg = us / kg vendidos.
+      Costo Total    u$/kg = Subtotal + Administracion; us = kg vend. * u$/kg.
+      Ut. Esperada   u$/kg = precio - Costo Total; us = kg vendidos * u$/kg.
+      Ut. Real       us = delta patrimonio + dividendos del mes
+                        = (patr - patant) + uret; u$/kg = us / kg vendidos.
+    """
+    def _div(a: float, b: float) -> float:
+        return (a / b) if b else 0.0
+
+    venta_kg = float(venta_kg or 0)
+    venta_us = float(venta_us or 0)
+    precio = _div(venta_us, venta_kg)
+
+    factor = (30.0 / dia_actual) if dia_actual else 0.0
+    proy_kg = venta_kg * factor
+    proy_us = proy_kg * precio
+
+    mp_ukg = float(mp_ukg or 0)
+
+    kg_tejidos = float(kg_tejidos or 0)
+    tej_us = float(v1 or 0) + float(v2 or 0) + float(v3 or 0) + float(dtj or 0)
+    tej_ukg = _div(tej_us, kg_tejidos)
+
+    ktint = float(ktint or 0)
+    tin_us = float(v4 or 0) + float(v5 or 0) + float(v6 or 0) + float(dcc or 0)
+    tin_ukg = _div(tin_us, ktint)
+
+    col_us = float(itin or 0)
+    col_ukg = _div(col_us, ktint)
+
+    sub_ukg = 1.045 * (mp_ukg + tej_ukg + tin_ukg + col_ukg)
+
+    adm_us = (float(v7 or 0) + float(v8 or 0) + float(v9 or 0)
+              + float(deprcar or 0))
+    adm_ukg = _div(adm_us, venta_kg)
+
+    ct_ukg = sub_ukg + adm_ukg
+    ct_us = venta_kg * ct_ukg
+
+    ue_ukg = precio - ct_ukg
+    ue_us = venta_kg * ue_ukg
+
+    ur_us = (float(patr or 0) - float(patant or 0)) + float(uret or 0)
+    ur_ukg = _div(ur_us, venta_kg)
+
+    return [
+        {"label": "Venta", "kg": venta_kg, "ukg": precio, "us": venta_us,
+         "clase": "dato",
+         "ayuda": "Facturas del mes en curso (stat != X). U$/kg = U$ / Kg."},
+        {"label": "Proyección", "kg": proy_kg, "ukg": precio, "us": proy_us,
+         "clase": "dato",
+         "ayuda": ("Regla de 3 al dia 30 con el mismo precio promedio: "
+                   "Kg vendidos * 30 / dia actual.")},
+        {"label": "COSTOS", "clase": "seccion"},
+        {"label": "Materia Prima", "kg": None, "ukg": mp_ukg, "us": None,
+         "clase": "dato",
+         "ayuda": ("Costo unitario del hilado consumido — sale del cuadro "
+                   "Flujo de produccion (HILADO, egresos $/kg).")},
+        {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
+         "clase": "dato",
+         "ayuda": ("Costo total = V1+V2+V3 + depreciacion de tejeduria. "
+                   "U$/kg = costo total / kg tejidos.")},
+        {"label": "Tintorería", "kg": ktint, "ukg": tin_ukg, "us": tin_us,
+         "clase": "dato",
+         "ayuda": ("Proceso de tintoreria = V4+V5+V6 + depreciacion de "
+                   "tintoreria. U$/kg = costo total / KTINT.")},
+        {"label": "Colorantes/Quím.", "kg": ktint, "ukg": col_ukg,
+         "us": col_us, "clase": "dato",
+         "ayuda": ("Suma de importes de todas las ordenes de tintura del "
+                   "mes (TINT). U$/kg = importe / KTINT.")},
+        {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": None,
+         "clase": "subtotal",
+         "ayuda": ("1.045 * (Materia Prima + Tejeduria + Tintoreria + "
+                   "Colorantes).")},
+        {"label": "Administración", "kg": None, "ukg": adm_ukg, "us": adm_us,
+         "clase": "dato",
+         "ayuda": ("Costo total = V7+V8+V9 + depreciacion de administracion. "
+                   "U$/kg = costo total / kg vendidos.")},
+        {"label": "Costo Total", "kg": None, "ukg": ct_ukg, "us": ct_us,
+         "clase": "total",
+         "ayuda": ("Subtotal +4.5% + Administracion. "
+                   "U$ = kg vendidos * Costo Total.")},
+        {"label": "Utilidad Esperada", "kg": None, "ukg": ue_ukg, "us": ue_us,
+         "clase": "key",
+         "ayuda": ("Precio de venta - Costo Total. "
+                   "U$ = kg vendidos * Utilidad Esperada.")},
+        {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
+         "clase": "key",
+         "ayuda": ("Delta Patrimonio + dividendos del mes = (patrimonio de "
+                   "hoy - patrimonio del cierre anterior) + retiros del mes.")},
+    ]
+
+
 def informe_balance() -> dict:
     """Arma el BALANCE equivalente al del INFORMES.PRG screen."""
     _totf = totf()
@@ -3423,6 +3557,45 @@ def informe_balance() -> dict:
     utilidad = patr - patant
     patr_para_utilidad = patr  # mismo que patr — exposed para el panel debug
 
+    # Tabla RESULTADOS rediseñada (Federico 2026-05-21) — definida fila por
+    # fila con el dueño. Reemplaza en balance.html el viejo bloque VENTA +
+    # 5 filas COSTOS + Total + Utilidad Actual. El costo unitario de Materia
+    # Prima sale de `mov` (flujo de producción, HILADO egresos $/kg). Las
+    # claves viejas del dict resultados se siguen calculando para no romper
+    # /informes/utilidad_debug ni otros consumidores.
+    mov = _try_movimientos_mes()
+    try:
+        _mp_ukg_flujo = float(
+            ((mov or {}).get("header") or {}).get("hilado", {}).get("egresos_ukg")
+            or 0
+        )
+    except Exception:
+        _mp_ukg_flujo = 0.0
+    tabla_resultados = resultados_costos_tabla(
+        venta_kg=h_kvent,
+        venta_us=h_uvent,
+        dia_actual=date.today().day,
+        mp_ukg=_mp_ukg_flujo,
+        v1=gxg["v1"],
+        v2=gxg["v2"],
+        v3=gxg["v3"],
+        dtj=amort["dtj"],
+        kg_tejidos=float(tej.get("kg_interno") or 0),
+        v4=gxg["v4"],
+        v5=gxg["v5"],
+        v6=gxg["v6"],
+        dcc=amort["dcc"],
+        itin=float(tin.get("itin") or 0),
+        ktint=float(tin.get("ktint") or 0),
+        v7=gxg["v7"],
+        v8=gxg["v8"],
+        v9=gxg["v9"],
+        deprcar=amort["deprcar"],
+        patr=patr,
+        patant=patant,
+        uret=_uret,
+    )
+
     resultados = {
         "ventas": {
             "kg": h_kvent,
@@ -3602,6 +3775,7 @@ def informe_balance() -> dict:
             "terminado": {"kg": h_terminado_kg, "ukg": h_uf, "us": val_terminado},
             "total": {"kg": stock_total_kg, "ukg": stock_ukg_prom, "us": stock_total_us},
         },
+        "tabla": tabla_resultados,
         "snapshot_fecha": snap_fecha,
         "iniciales_mes": (f"{inic.get('mesnom') or '?'} {inic.get('yy') or ''}" if inic else None),
     }
@@ -3649,7 +3823,7 @@ def informe_balance() -> dict:
         "conciliacion": conciliacion_balance(),
         # TMT 2026-05-19 — item 15b: cuadro MOVIMIENTOS MES estilo dBase.
         # Fallback a None si la query rompe (no debe tirar la página).
-        "movimientos_mes": _try_movimientos_mes(),
+        "movimientos_mes": mov,
     }
 
     # ---- Math check de invariantes — TODAS las sumas deben cuadrar.
