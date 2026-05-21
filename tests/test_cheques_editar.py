@@ -4,6 +4,7 @@ anular_por_error_de_carga(). Decisión 2026-04-30 (addendum batch 22).
 No tocan Postgres — monkeypatchean db.* y bank_helpers/caja_helpers para
 verificar que los side-effects se invocan con los args correctos.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -16,9 +17,13 @@ import pytest
 class _RecorderDB:
     """Stub flexible — devuelve filas pre-cargadas y registra todas las queries."""
 
-    def __init__(self, *, cheque: dict | None = None,
-                 aplic: list[dict] | None = None,
-                 facturas: dict[int, dict] | None = None):
+    def __init__(
+        self,
+        *,
+        cheque: dict | None = None,
+        aplic: list[dict] | None = None,
+        facturas: dict[int, dict] | None = None,
+    ):
         self.cheque = cheque
         self.aplic = list(aplic or [])
         self.facturas = dict(facturas or {})
@@ -36,21 +41,12 @@ class _RecorderDB:
             id_f = params[0] if params else None
             return dict(self.facturas[id_f]) if id_f in self.facturas else None
         # bank_helpers _saldo_previo: no_banco=X & order by fecha desc
-        if (
-            "from scintela.transacciones_bancarias" in s
-            and "order by fecha desc, id_transaccion desc" in s
-        ):
+        if "from scintela.transacciones_bancarias" in s and "order by fecha desc, id_transaccion desc" in s:
             return None  # banco vacío en estos tests
-        if (
-            "from scintela.transacciones_bancarias" in s
-            and "where id_transaccion =" in s
-        ):
+        if "from scintela.transacciones_bancarias" in s and "where id_transaccion =" in s:
             return None
         # caja _saldo_previo
-        if (
-            "from scintela.caja" in s
-            and "order by fecha desc, id_caja desc" in s
-        ):
+        if "from scintela.caja" in s and "order by fecha desc, id_caja desc" in s:
             return None
         return None
 
@@ -92,6 +88,7 @@ class _RecorderDB:
 @pytest.fixture(autouse=True)
 def _no_periodo_guard(monkeypatch):
     import periodo_guard
+
     monkeypatch.setattr(periodo_guard, "asegurar_fecha_abierta", lambda f: None)
 
 
@@ -106,14 +103,18 @@ def test_editar_concepto_y_observacion(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "fechad": date(2026, 5, 1), "concepto": "viejo",
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "fechad": date(2026, 5, 1),
+            "concepto": "viejo",
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    res = queries.editar(1, concepto="nuevo concepto", observacion="ajuste",
-                          usuario="tmt")
+    res = queries.editar(1, concepto="nuevo concepto", observacion="ajuste", usuario="tmt")
     assert res["id_cheque"] == 1
     assert res["fechad_shifted_lunes"] is False
     sqls = _executes_str(fake.executes)
@@ -126,10 +127,15 @@ def test_editar_fechad_domingo_shifta_a_lunes(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "fechad": date(2026, 5, 1), "concepto": "x",
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "fechad": date(2026, 5, 1),
+            "concepto": "x",
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     domingo = date(2026, 5, 3)  # mayo 3 2026 = domingo
@@ -143,10 +149,15 @@ def test_editar_depositado_no_permite_fechad(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "B",
-        "fechad": date(2026, 5, 1), "concepto": "x",
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "B",
+            "fechad": date(2026, 5, 1),
+            "concepto": "x",
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     with pytest.raises(ValueError, match="depositado"):
@@ -157,10 +168,15 @@ def test_editar_stat_terminal_falla(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "X",
-        "fechad": date(2026, 5, 1), "concepto": "x",
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "X",
+            "fechad": date(2026, 5, 1),
+            "concepto": "x",
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     with pytest.raises(ValueError, match="terminal"):
@@ -174,11 +190,18 @@ def test_transicionar_z_a_b_inserta_movimiento_bancario(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": None,
-        "fechad": date(2026, 5, 1), "banco": None,
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": None,
+            "fechad": date(2026, 5, 1),
+            "banco": None,
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     res = queries.transicionar_stat(1, stat_destino="B", no_banco=1, usuario="tmt")
@@ -195,11 +218,18 @@ def test_transicionar_z_a_c_inserta_caja(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": None,
-        "fechad": date(2026, 5, 1), "banco": None,
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": None,
+            "fechad": date(2026, 5, 1),
+            "banco": None,
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     res = queries.transicionar_stat(1, stat_destino="C", usuario="tmt")
@@ -213,11 +243,18 @@ def test_transicionar_a_9_marca_cliente_stop_y_crea_posdat(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "B",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": 1,
-        "fechad": date(2026, 5, 1), "banco": "Pichincha",
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "B",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": 1,
+            "fechad": date(2026, 5, 1),
+            "banco": "Pichincha",
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     res = queries.transicionar_stat(1, stat_destino="9", motivo="rebotado", usuario="tmt")
@@ -231,11 +268,18 @@ def test_transicion_no_valida_falla(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "B",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": 1,
-        "fechad": date(2026, 5, 1), "banco": None,
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "B",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": 1,
+            "fechad": date(2026, 5, 1),
+            "banco": None,
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
     # B no se puede ir a P (sólo a 9 o X)
@@ -246,19 +290,31 @@ def test_transicion_no_valida_falla(monkeypatch):
 # --- anular_por_error_de_carga() -----------------------------------------
 
 
-def test_anular_error_carga_motivo_corto_falla(monkeypatch):
+def test_anular_error_carga_motivo_corto_ahora_permitido(monkeypatch):
+    """TMT 2026-05-21 dueña: el motivo ya no tiene minlen 10.
+
+    Antes este test verificaba que motivo<10 chars levantara. Ahora
+    cualquier motivo (incluso vacío) se acepta — la dueña no quiere
+    fricción al anular un cheque cargado por error.
+    """
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": None,
-        "fechad": date(2026, 5, 1),
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": None,
+            "fechad": date(2026, 5, 1),
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    with pytest.raises(ValueError, match="10 caracteres"):
-        queries.anular_por_error_de_carga(1, motivo="corto", usuario="tmt")
+    # No debe levantar — motivo corto ya no es un blocker.
+    queries.anular_por_error_de_carga(1, motivo="corto", usuario="tmt")
 
 
 def test_anular_error_carga_z_no_compensa(monkeypatch):
@@ -266,16 +322,20 @@ def test_anular_error_carga_z_no_compensa(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": None,
-        "fechad": date(2026, 5, 1),
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": None,
+            "fechad": date(2026, 5, 1),
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    res = queries.anular_por_error_de_carga(
-        1, motivo="duplicado por error", usuario="tmt"
-    )
+    res = queries.anular_por_error_de_carga(1, motivo="duplicado por error", usuario="tmt")
     assert res["stat_nuevo"] == "X"
     assert res["compensacion"] is None
     rets = "\n".join(" ".join(s.split()).lower() for s, _ in fake.execute_returnings)
@@ -288,16 +348,20 @@ def test_anular_error_carga_b_inserta_compensacion_banco(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "B",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": 1,
-        "fechad": date(2026, 5, 1),
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "B",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": 1,
+            "fechad": date(2026, 5, 1),
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    res = queries.anular_por_error_de_carga(
-        1, motivo="importe mal cargado fue 50 no 500", usuario="tmt"
-    )
+    res = queries.anular_por_error_de_carga(1, motivo="importe mal cargado fue 50 no 500", usuario="tmt")
     assert res["stat_nuevo"] == "X"
     assert res["compensacion"] is not None
     assert res["compensacion"]["tipo"] == "banco"
@@ -310,16 +374,20 @@ def test_anular_error_carga_c_inserta_salida_caja(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "C",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": None,
-        "fechad": date(2026, 5, 1),
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "C",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": None,
+            "fechad": date(2026, 5, 1),
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    res = queries.anular_por_error_de_carga(
-        1, motivo="cliente equivocado fue ABC", usuario="tmt"
-    )
+    res = queries.anular_por_error_de_carga(1, motivo="cliente equivocado fue ABC", usuario="tmt")
     assert res["compensacion"]["tipo"] == "caja"
     rets = "\n".join(" ".join(s.split()).lower() for s, _ in fake.execute_returnings)
     assert "insert into scintela.caja" in rets
@@ -330,16 +398,20 @@ def test_anular_error_carga_NO_marca_cliente_stop(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "B",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": 1,
-        "fechad": date(2026, 5, 1),
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "B",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": 1,
+            "fechad": date(2026, 5, 1),
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    queries.anular_por_error_de_carga(
-        1, motivo="error de tipeo en importe", usuario="tmt"
-    )
+    queries.anular_por_error_de_carga(1, motivo="error de tipeo en importe", usuario="tmt")
     sqls = _executes_str(fake.executes)
     # Asegurar que NO hay UPDATE cliente SET stop='S'
     assert "update scintela.cliente" not in sqls or "stop='s'" not in sqls
@@ -350,16 +422,20 @@ def test_anular_error_carga_aplica_id_reemplazo_en_obs(monkeypatch):
     import db as db_mod
     from modules.cheques import queries
 
-    fake = _RecorderDB(cheque={
-        "id_cheque": 1, "no_cheque": "001", "stat": "Z",
-        "codigo_cli": "JTX", "importe": 500, "no_banco": None,
-        "fechad": date(2026, 5, 1),
-    })
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "Z",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": None,
+            "fechad": date(2026, 5, 1),
+        }
+    )
     fake.apply_to(monkeypatch, db_mod)
 
-    queries.anular_por_error_de_carga(
-        1, motivo="reemplaza por nuevo", id_reemplazo=42, usuario="tmt"
-    )
+    queries.anular_por_error_de_carga(1, motivo="reemplaza por nuevo", id_reemplazo=42, usuario="tmt")
     # La marca con "reemplaza por #42" tiene que estar en alguno de los params
     encontrado = False
     for _sql, params in fake.executes:
@@ -376,8 +452,12 @@ def test_anular_error_carga_revierte_aplicaciones_a_facturas(monkeypatch):
 
     fake = _RecorderDB(
         cheque={
-            "id_cheque": 1, "no_cheque": "001", "stat": "B",
-            "codigo_cli": "JTX", "importe": 500, "no_banco": 1,
+            "id_cheque": 1,
+            "no_cheque": "001",
+            "stat": "B",
+            "codigo_cli": "JTX",
+            "importe": 500,
+            "no_banco": 1,
             "fechad": date(2026, 5, 1),
         },
         aplic=[{"id_chequexfact": 1, "id_fact": 99, "importe": 300}],
@@ -385,12 +465,11 @@ def test_anular_error_carga_revierte_aplicaciones_a_facturas(monkeypatch):
     )
     fake.apply_to(monkeypatch, db_mod)
 
-    queries.anular_por_error_de_carga(
-        1, motivo="todo mal cargado", usuario="tmt"
-    )
+    queries.anular_por_error_de_carga(1, motivo="todo mal cargado", usuario="tmt")
     # Verifica que se actualizó factura.abono (revertido a 0) y saldo a 1000
     factura_updates = [
-        (sql, params) for sql, params in fake.executes
+        (sql, params)
+        for sql, params in fake.executes
         if "update scintela.factura" in " ".join(sql.split()).lower()
     ]
     assert len(factura_updates) >= 1
