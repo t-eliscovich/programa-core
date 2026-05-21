@@ -479,16 +479,39 @@ def lista():
                 mn = max(min(fechas_2025_plus), ASINFO_DESDE_EFECTIVO)
                 mx = max(fechas_2025_plus)
                 asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
-                # Indexar por numero (sólo tipo FACTURA — las NCs/devoluciones
-                # tienen sus propios números que no matchean con facturas de PC).
-                asinfo_idx: dict[str, dict] = {}
+                # Indexar por DOS claves para cubrir las dos formas en que
+                # PC almacena el número:
+                #   1) `numf_completo` ("001-099-000010588") → match directo
+                #      contra numero de Asinfo.
+                #   2) `numf` (int, 10588) → match contra los últimos dígitos
+                #      del numero de Asinfo. PC guarda numf corto y Asinfo lo
+                #      formatea como "001-099-000010588" (padding ceros).
+                # Solo tipo FACTURA — NCs y devoluciones tienen sus propios
+                # números que no matchean con facturas de PC.
+                asinfo_idx_completo: dict[str, dict] = {}
+                asinfo_idx_numf: dict[int, dict] = {}
                 for r in asinfo_rows:
-                    if r.get("tipo") == "FACTURA" and r.get("numero"):
-                        asinfo_idx[r["numero"]] = r
-                # Mergear
+                    if r.get("tipo") != "FACTURA" or not r.get("numero"):
+                        continue
+                    asinfo_idx_completo[r["numero"]] = r
+                    # Extraer los últimos dígitos del numero como int.
+                    # "001-099-000010588" → "000010588" → "010588" → 10588.
+                    sufijo = r["numero"].split("-")[-1] if "-" in r["numero"] else r["numero"]
+                    try:
+                        asinfo_idx_numf[int(sufijo)] = r
+                    except (ValueError, TypeError):
+                        pass
+                # Mergear: primero match por numf_completo, después por numf.
                 for f in filas:
+                    r_ai = None
                     numero = (f.get("numf_completo") or "").strip()
-                    r_ai = asinfo_idx.get(numero) if numero else None
+                    if numero:
+                        r_ai = asinfo_idx_completo.get(numero)
+                    if r_ai is None and f.get("numf"):
+                        try:
+                            r_ai = asinfo_idx_numf.get(int(f["numf"]))
+                        except (ValueError, TypeError):
+                            pass
                     if r_ai is not None:
                         f["asinfo_kg"] = float(r_ai.get("kg") or 0)
                         f["asinfo_usd"] = float(r_ai.get("usd") or 0)
