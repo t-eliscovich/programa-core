@@ -66,7 +66,7 @@ echo ""
 echo "→ Disparando sync vía SSM..."
 
 # PowerShell one-liner (newlines flatened — ver intela-aws-deploy SKILL gotcha)
-PS_CMD="\$ErrorActionPreference='Stop'; Invoke-WebRequest -Uri '$URL' -OutFile C:\\tmp\\dbf-fresh.tar.gz; if (Test-Path C:\\tmp\\dbf-fresh) { Remove-Item -Recurse -Force C:\\tmp\\dbf-fresh }; New-Item -ItemType Directory -Path C:\\tmp\\dbf-fresh | Out-Null; tar -xzf C:\\tmp\\dbf-fresh.tar.gz -C C:\\tmp\\dbf-fresh; cd C:\\programa-core; \$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL','Machine'); & 'C:\\Python312\\python.exe' scripts\\sync_dbase_actual.py --source C:\\tmp\\dbf-fresh"
+PS_CMD="\$ErrorActionPreference='Stop'; Invoke-WebRequest -Uri '$URL' -OutFile C:\\tmp\\dbf-fresh.tar.gz; if (Test-Path C:\\tmp\\dbf-fresh) { Remove-Item -Recurse -Force C:\\tmp\\dbf-fresh }; New-Item -ItemType Directory -Path C:\\tmp\\dbf-fresh | Out-Null; tar -xzf C:\\tmp\\dbf-fresh.tar.gz -C C:\\tmp\\dbf-fresh; cd C:\\programa-core; \$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL','Machine'); \$env:I_KNOW_THIS_IS_PROD = '1'; & 'C:\\Python312\\python.exe' scripts\\sync_dbase_actual.py --source C:\\tmp\\dbf-fresh"
 
 CMD=$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE_ID" \
     --document-name "AWS-RunPowerShellScript" \
