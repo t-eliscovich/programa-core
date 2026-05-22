@@ -907,8 +907,7 @@ def total_buscar(
         WHERE (%(incluir_anuladas)s OR COALESCE(c.stat, '') <> 'Y')
           AND COALESCE(c.stat, '') <> 'Y'
           AND (%(q)s IS NULL
-               OR UPPER(c.codigo_prov) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s))
+               OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           AND (
@@ -988,8 +987,7 @@ def buscar(
         LEFT JOIN scintela.banco b     ON b.no_banco    = c.no_banco
         WHERE (%(incluir_anuladas)s OR COALESCE(c.stat, '') <> 'Y')
           AND (%(q)s IS NULL
-               OR UPPER(c.codigo_prov) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s))
+               OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           -- TMT 2026-05-18 — filtro KG (>0 producción, =0 compras sin kg)
@@ -1037,15 +1035,24 @@ def buscar(
     return list(reversed(rows_asc))
 
 
-def proveedores_para_filtro() -> list[dict]:
-    """Proveedores a los que se les compró en los últimos 3 meses —
-    alimenta el datalist (sugerencias) del campo Proveedor del filtro de
-    /compras. Cada fila {codigo, nombre}, ordenada alfabéticamente por
-    nombre. Federico 2026-05-22.
+def proveedores_para_filtro(vista: str = "compras") -> list[dict]:
+    """Proveedores para el datalist (sugerencias) del campo Proveedor,
+    filtrado según la pantalla:
+      - vista 'produccion': solo los que proveen tejido — compras tipo K
+        con kg distinto de 0.
+      - vista 'compras': el resto (todo lo que no es esa producción).
+    Compras de los últimos 3 meses; cada fila {codigo, nombre}, ordenada
+    alfabéticamente por nombre. Federico 2026-05-22.
     """
+    if vista == "produccion":
+        cond = ("UPPER(COALESCE(c.tipo, '')) = 'K' "
+                "AND ABS(COALESCE(c.kg, 0)) > 0.01")
+    else:
+        cond = ("NOT (UPPER(COALESCE(c.tipo, '')) = 'K' "
+                "AND ABS(COALESCE(c.kg, 0)) > 0.01)")
     rows = (
         db.fetch_all(
-            """
+            f"""
         SELECT DISTINCT
                c.codigo_prov          AS codigo,
                COALESCE(p.nombre, '') AS nombre
@@ -1053,6 +1060,7 @@ def proveedores_para_filtro() -> list[dict]:
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
         WHERE COALESCE(c.codigo_prov, '') <> ''
           AND c.fecha >= CURRENT_DATE - INTERVAL '3 months'
+          AND {cond}
         """
         )
         or []

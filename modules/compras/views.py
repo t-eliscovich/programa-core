@@ -450,7 +450,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
     # Federico 2026-05-22 - proveedores para el datalist (sugerencias)
     # del campo Proveedor del filtro de /compras.
     try:
-        proveedores = queries.proveedores_para_filtro()
+        proveedores = queries.proveedores_para_filtro(vista)
     except Exception:
         proveedores = []
 
