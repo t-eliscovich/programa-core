@@ -728,6 +728,15 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     bajos_pct = (bajos_kg / ktin * 100.0) if ktin else 0.0
     fuertes_pct = (100.0 - bajos_pct) if ktin else 0.0
 
+    # TERMINADO ingresos = kg que SALEN tinturados (KTINT = _ktint),
+    # no los que ENTRAN a tintura (ktin/KT). El % es el rendimiento
+    # KTINT/KT, que refleja el desperdicio del proceso de tintura.
+    # stock_act se recalcula para que la columna cuadre.
+    # Federico 2026-05-22.
+    header["terminado"]["ingresos_kg"] = _ktint
+    header["terminado"]["ingresos_pct"] = _safe_div(_ktint, ktin) * 100
+    header["terminado"]["stock_act_kg"] = max(pf0 + _ktint - kvent, 0)
+
     # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
     # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
     # kg tinturados del mes (ktin de historia).
