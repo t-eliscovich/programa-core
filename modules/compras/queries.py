@@ -908,10 +908,7 @@ def total_buscar(
           AND COALESCE(c.stat, '') <> 'Y'
           AND (%(q)s IS NULL
                OR UPPER(c.codigo_prov) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(c.comprobante,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(c.concepto,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s)
-               OR CAST(c.numero AS TEXT) LIKE %(like)s)
+               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           AND (
@@ -992,10 +989,7 @@ def buscar(
         WHERE (%(incluir_anuladas)s OR COALESCE(c.stat, '') <> 'Y')
           AND (%(q)s IS NULL
                OR UPPER(c.codigo_prov) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(c.comprobante,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(c.concepto,'')) LIKE UPPER(%(like)s)
-               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s)
-               OR CAST(c.numero AS TEXT) LIKE %(like)s)
+               OR UPPER(COALESCE(p.nombre,'')) LIKE UPPER(%(like)s))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
           -- TMT 2026-05-18 — filtro KG (>0 producción, =0 compras sin kg)
