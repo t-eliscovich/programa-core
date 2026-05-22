@@ -44,9 +44,12 @@
                class="text-sky-600 hover:underline text-xs">Editar</a>
             {# TMT 2026-05-21 dueña: botón "Ver como" — solo Accionista puede
                impersonar. Si la dueña real (no impersonando) y el usuario está
-               activo y no es ella misma, mostramos el botón. #}
-            {% set _real = g.impersonating_from or g.user %}
-            {% if u.activo
+               activo y no es ella misma, mostramos el botón.
+               TMT 2026-05-22 fix: g.impersonating_from puede no estar
+               definido en contextos sin impersonación → AttributeError → 500.
+               Uso |default(none) para que la chain no rompa. #}
+            {% set _real = (g.impersonating_from|default(none)) or g.user|default(none) %}
+            {% if _real and u.activo
                   and (_real.nombre_rol or '')|lower == 'accionista'
                   and u.id_usuario != _real.id_usuario %}
               <form method="post" action="{{ url_for('auth.impersonate', id_usuario=u.id_usuario) }}"
