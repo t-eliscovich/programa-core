@@ -134,13 +134,13 @@
   <div class="no-print flex items-center gap-2 mb-4 flex-wrap">
     <a href="{{ url_for('informes.historico_12m', modo='matriz') }}"
        class="text-sm px-3 py-1.5 rounded border
-              {% if modo != 'mom' %}bg-slate-900 text-white border-slate-900
+              {% if modo != 'mom' %}bg-sky-200 text-sky-900 border-sky-400
               {% else %}border-slate-300 hover:bg-slate-100 text-slate-700{% endif %}">
       Últimos 5 meses + actual
     </a>
     <a href="{{ url_for('informes.historico_12m', modo='mom') }}"
        class="text-sm px-3 py-1.5 rounded border
-              {% if modo == 'mom' %}bg-slate-900 text-white border-slate-900
+              {% if modo == 'mom' %}bg-sky-200 text-sky-900 border-sky-400
               {% else %}border-slate-300 hover:bg-slate-100 text-slate-700{% endif %}">
       Mes vs mes
     </a>
@@ -209,7 +209,7 @@
           </select>
         </div>
       </div>
-      <button type="submit" class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">
+      <button type="submit" class="text-sm px-4 py-1.5 rounded bg-sky-200 text-sky-900">
         Comparar
       </button>
     </form>

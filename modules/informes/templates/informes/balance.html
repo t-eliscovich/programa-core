@@ -84,8 +84,8 @@
   .informe-balance tr.fila-key td {
     font-size: 17px;
     font-weight: 700;
-    background: rgb(15 23 42);
-    color: rgb(248 250 252);
+    background: rgb(186 230 253);
+    color: rgb(12 74 110);
     padding-top: 12px; padding-bottom: 12px;
   }
   .dark .informe-balance tr.fila-key td {
@@ -136,6 +136,11 @@
          title="Ver historial de resultados de meses anteriores (matriz comparativa)">
         Historial
       </a>
+      <a href="{{ url_for('informes.gastos') }}"
+         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
+         title="Detalle de gastos del mes: tejeduria, tintoreria y administracion.">
+        Gastos del mes
+      </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
         Imprimir
@@ -170,7 +175,6 @@
       'Tejeduría':        url_for('compras.lista', vista='produccion'),
       'Tintorería':       url_for('informes.flujo_produccion'),
       'Colorantes/Quím.': url_for('informes.flujo_produccion'),
-      'Administración':   url_for('informes.gastos'),
     } %}
     <div class="border-r border-slate-200 dark:border-slate-800">
       <table class="balance-table">
