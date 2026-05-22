@@ -6619,20 +6619,27 @@ def fuentes_y_usos(
     last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
     fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
 
-    h_fin = _historia_en_mes(yy, mm)
-    h_ini = _historia_en_mes(yy_ant, mm_ant)
-
     comp_fin: dict = {}
     comp_ini: dict = {}
 
-    # Fallback HASTA: mes en curso sin snapshot todavía → as_of(today).
-    if not h_fin and es_mes_actual:
+    # Federico 2026-05-22 — HASTA = mes en curso: NO se usa snapshot.
+    # El snapshot del mes actual lo crea la pantalla Historial por un
+    # camino distinto (script snapshot_historia_mensual) que no es fiel
+    # al balance. Para Fuentes y Usos el mes en curso se calcula SIEMPRE
+    # live con balance_components_as_of(hoy) — la misma foto que muestra
+    # Resultados. Así no hace falta cerrar ni regenerar ningún snapshot.
+    if es_mes_actual:
+        h_fin = None
         try:
             comp_fin = balance_components_as_of(hoy) or {}
             if comp_fin:
                 h_fin = _row_desde_componentes(comp_fin, hoy)
         except Exception:
             pass
+    else:
+        h_fin = _historia_en_mes(yy, mm)
+
+    h_ini = _historia_en_mes(yy_ant, mm_ant)
     # Fallback DESDE: mes inicial sin snapshot (raro) → as_of(last_day).
     if not h_ini:
         try:
@@ -6717,6 +6724,16 @@ def fuentes_y_usos(
     # La web crea varios snapshots de historia por mes (uno cada vez que
     # se entra al Historial). Para no contar el mismo mes dos veces se
     # toma UN snapshot por mes — el último no-vacío (patrimonio<>0).
+    # Federico 2026-05-22 — límite superior de la suma del Historial.
+    # Si h_fin es live (mes en curso) la suma NO debe incluir filas del
+    # propio mes en curso (la pantalla Historial pudo dejar una): su
+    # usuti/usret se agrega aparte desde el cálculo live. Cortamos al
+    # último día del mes anterior al HASTA para no contar el mes doble.
+    if h_fin.get("_origen") == "live":
+        _sy, _sm = _mes_anterior(yy, mm)
+        _sum_hasta = _date(_sy, _sm, _cal.monthrange(_sy, _sm)[1])
+    else:
+        _sum_hasta = h_fin.get("fecha")
     _sum_hist = db.fetch_one(
         """
         SELECT COALESCE(SUM(usuti), 0) AS uti,
@@ -6732,12 +6749,12 @@ def fuentes_y_usos(
                         EXTRACT(MONTH FROM fecha), fecha DESC
           ) m
         """,
-        (h_ini.get("fecha"), h_fin.get("fecha")),
+        (h_ini.get("fecha"), _sum_hasta),
     ) or {}
     utilidad_periodo = float(_sum_hist.get("uti") or 0)
     retiros_periodo = float(_sum_hist.get("ret") or 0)
-    # Mes en curso sin snapshot: el row final se calculó live y su
-    # usuti/usret todavía no está en la tabla → se suma aparte.
+    # Mes en curso: el row final se calculó live y su usuti/usret no
+    # está (o no es fiel) en la tabla → se suma aparte.
     if h_fin.get("_origen") == "live":
         utilidad_periodo += float(h_fin.get("usuti") or 0)
         retiros_periodo += float(h_fin.get("usret") or 0)
