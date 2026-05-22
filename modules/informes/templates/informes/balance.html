@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import page_hero %}
+{% from "_ui.html" import page_hero, nav_resultados %}
 {% block title %}Informe Resultados{% endblock %}
 {% block breadcrumb %}Informes / <strong>Informe Resultados — Balance</strong>{% endblock %}
 
@@ -125,27 +125,12 @@
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 {% set _desc %}Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>{% if b and b.snapshot_historia_fecha %} · Último cierre <span class="text-slate-700 dark:text-slate-300">{{ b.snapshot_historia_fecha | fecha_es }}</span>{% endif %}{% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}{% endset %}
 <div class="max-w-full informe-balance">
+  {{ nav_resultados('balance') }}
   <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
     {{ page_hero('Informe de Resultados', descripcion_safe=_desc) }}
     <div class="flex items-center gap-2">
-      {# TMT 2026-05-21 — link a resultados de meses anteriores (matriz
-         comparativa). Renombrado a "Historial". Estilo prominente
-         (border-sky-500) para que se encuentre fácil. #}
-      <a href="{{ url_for('informes.historico_12m') }}"
-         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
-         title="Ver historial de resultados de meses anteriores (matriz comparativa)">
-        Historial
-      </a>
-      <a href="{{ url_for('informes.gastos') }}"
-         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
-         title="Detalle de gastos del mes: tejeduria, tintoreria y administracion.">
-        Gastos del mes
-      </a>
-      <a href="{{ url_for('informes.flujo_produccion') }}"
-         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
-         title="Flujo de produccion del mes: hilado, tejido, tintoreria y stock.">
-        Flujo producción
-      </a>
+      {# Federico 2026-05-22 — navegación entre pantallas movida a la
+         barra nav_resultados (arriba del título). #}
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
         Imprimir

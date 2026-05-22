@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_hero, volver_a_resultados %}
+{% from "_ui.html" import empty_row, page_hero, nav_resultados %}
 {% block title %}Gastos del mes{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Gastos del mes</strong>{% endblock %}
 
@@ -94,6 +94,7 @@
 
 {% block content %}
 <div class="max-w-full">
+  {{ nav_resultados('gastos') }}
   {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
      Misma fila en ambas pantallas. TMT 2026-05-16. #}
   <div class="no-print flex items-end gap-1 mb-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
@@ -115,7 +116,6 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Gastos del mes en curso', descripcion='Matriz por rubro × tipo (V1..V9 del PRG) + movimientos detallados de bancos') }}
     <div class="no-print flex items-center gap-2">
-      {{ volver_a_resultados() }}
       <a href="?export=csv" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
     </div>

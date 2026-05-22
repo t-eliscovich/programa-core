@@ -328,3 +328,27 @@
   {{ valor | money_es }}
 </span>
 {% endmacro %}
+
+
+{#   ─────────────── NAV RESULTADOS — barra entre pantallas ───────────────
+   Federico 2026-05-22: barra de navegación persistente entre Resultados,
+   Historial, Gastos y Flujo producción. Permite saltar de una a otra sin
+   volver primero a Resultados. `actual` = endpoint actual sin el prefijo
+   'informes.' (balance / historico_12m / gastos / flujo_produccion).
+#}
+{% macro nav_resultados(actual='') %}
+<div class="no-print flex flex-wrap items-center gap-2 mb-4">
+  {% for _ep, _lbl in [
+        ('balance', 'Resultados'),
+        ('historico_12m', 'Historial'),
+        ('gastos', 'Gastos del mes'),
+        ('flujo_produccion', 'Flujo producción')] %}
+    {% if _ep == actual %}
+      <span class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 bg-sky-500 text-white font-medium">{{ _lbl }}</span>
+    {% else %}
+      <a href="{{ url_for('informes.' ~ _ep) }}"
+         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium">{{ _lbl }}</a>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}

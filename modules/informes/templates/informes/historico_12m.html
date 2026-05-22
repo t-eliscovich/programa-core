@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_resultados %}
 {% block title %}Historial{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
@@ -97,6 +98,8 @@
 {% set MES_ABRV = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
 <div class="page-shell page-shell--full">
 
+  {{ nav_resultados('historico_12m') }}
+
   {# ─── Header estándar (mismo patrón que provisiones/balance) ──────── #}
   <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
@@ -110,10 +113,6 @@
       </p>
     </div>
     <div class="no-print flex items-center gap-2">
-      <a href="{{ url_for('informes.balance') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
-        ← Resultados
-      </a>
       <button onclick="window.print()"
               class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
         Imprimir
