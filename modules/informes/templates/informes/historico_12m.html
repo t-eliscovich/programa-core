@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_ui.html" import nav_resultados %}
+{% from "_informes_design.html" import informes_styles %}
 {% block title %}Historial{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
@@ -36,6 +37,10 @@
 {% endmacro %}
 
 {% block head_extra %}
+{# TMT 2026-05-22 dueña: cargar estilos comunes para alinear el diseño
+   con /informes/balance (Resultados). Mismo padding-top, mismo h1, sin
+   blanco sobre negro. #}
+{{ informes_styles() }}
 <style>
   /* Acentos de fila — colores sutiles sobre blanco (vs cian/amarillo
      sobre negro del DOS). El nombre `row-color` lo sigue eligiendo el
@@ -91,19 +96,25 @@
     .no-print { display: none !important; }
     .h12-tbl tbody tr:hover td { background: transparent; }
   }
+
+  /* TMT 2026-05-22 dueña: alinear con /informes/balance.
+     Padding-top compacto + h1 16px + márgenes apretados (mismo look). */
+  .info-page.h12-page { padding-top: 4px; }
+  .h12-page h1 { font-size: 16px !important; line-height: 1.15; margin: 0; }
+  .h12-page > .mb-6 { margin-bottom: 4px !important; }
 </style>
 {% endblock %}
 
 {% block content %}
 {% set MES_ABRV = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
-<div class="page-shell page-shell--full">
+<div class="page-shell page-shell--full info-page h12-page">
 
   {{ nav_resultados('historico_12m') }}
 
   {# ─── Header estándar (mismo patrón que provisiones/balance) ──────── #}
   <div class="flex items-center justify-between mb-6 gap-4 flex-wrap">
     <div>
-      <h1 class="text-2xl font-semibold">Historial</h1>
+      <h1 class="font-semibold">Historial</h1>
       <p class="text-sm text-slate-500 mt-1">
         {% if modo == 'mom' %}
           Comparación mes vs mes — elegí dos meses para ver la diferencia.

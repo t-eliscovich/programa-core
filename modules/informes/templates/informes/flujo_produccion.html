@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_ui.html" import nav_resultados %}
+{% from "_informes_design.html" import informes_styles %}
 {% block title %}Flujo producción {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
@@ -7,7 +8,12 @@
 {% endblock %}
 
 {% block head_extra %}
+{{ informes_styles() }}
 <style>
+  /* TMT 2026-05-22 dueña: alinear diseño con Resultados/Historial */
+  .fp.info-page { padding-top: 4px; }
+  .fp h1 { font-size: 16px !important; line-height: 1.15; margin: 0; }
+  .fp > .mb-2 { margin-bottom: 4px !important; }
   /* TMT 2026-05-19 v8 — réplica visual de TINT.BAT (dBase) compactada
      para que entre TODO en una pantalla sin scroll. */
   .fp { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
@@ -42,7 +48,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-shell page-shell--full fp">
+<div class="page-shell page-shell--full fp info-page">
   {{ nav_resultados('flujo_produccion') }}
   <div class="flex items-center justify-between mb-2 no-print flex-wrap gap-2">
     <div>

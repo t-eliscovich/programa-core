@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero, nav_resultados %}
+{% from "_informes_design.html" import informes_styles %}
 {% block title %}Gastos del mes{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Gastos del mes</strong>{% endblock %}
 
 {% block head_extra %}
+{{ informes_styles() }}
 <style>
+  /* TMT 2026-05-22 dueña: alinear diseño con Resultados/Historial */
+  .gastos-page.info-page { padding-top: 4px; }
+  .gastos-page h1 { font-size: 16px !important; line-height: 1.15; margin: 0; }
+  .gastos-page > .mb-6 { margin-bottom: 4px !important; }
   /* Matriz 3×3 de gastos por rubro × tipo */
   .gastos-matriz { font-feature-settings: "tnum" 1; }
   .gastos-matriz .num { font-variant-numeric: tabular-nums; text-align: right; }
@@ -93,7 +99,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-full">
+<div class="max-w-full info-page gastos-page">
   {{ nav_resultados('gastos') }}
   {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
      Misma fila en ambas pantallas. TMT 2026-05-16. #}
