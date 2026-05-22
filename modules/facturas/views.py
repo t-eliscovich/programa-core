@@ -699,6 +699,121 @@ def lista():
 
 
 # =====================================================================
+# Backfill Asinfo — TMT 2026-05-22
+# =====================================================================
+# Reemplaza al script SSM standalone: corre adentro de la app Flask,
+# donde las env vars Metabase ya están cargadas y el matcher es el
+# mismo que usa /facturas (sin duplicación). Sólo accionistas.
+#
+# Política de auto-asociación:
+#   - score < 0.15 AND mismo cliente → asociar (escribe numf + numf_completo)
+#   - sin candidatos AND stat='T' AND saldo=0 → dejar como huérfana cobrada
+#     (cobranza vieja, no vale la pena)
+#   - sin candidatos AND saldo!=0 → flag para revisión manual (NO marca N
+#     automáticamente porque cambiaría la cartera)
+#   - score >= 0.15 → dejar para revisión manual
+
+_BACKFILL_SCORE_MAX = 0.15
+
+
+@facturas_bp.route("/facturas/backfill-asinfo", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def backfill_asinfo():
+    """Audit + backfill automático de huérfanas Asinfo.
+
+    GET  → muestra resumen sin tocar nada (preview).
+    POST → aplica los matches que cumplen el threshold.
+    """
+    from modules.facturas import audit_asinfo
+
+    apply = request.method == "POST"
+    huerfanas = audit_asinfo.auditar_huerfanas(top_k=3, limite=1000)
+
+    aplicados: list[dict] = []
+    saltadas_sin_candidatos: list[dict] = []
+    saltadas_score_alto: list[dict] = []
+
+    for item in huerfanas:
+        pc = item["pc_factura"]
+        cands = item["candidatos"]
+        mejor_score = item["mejor_score"]
+        cli_pc = (pc.get("codigo_cli") or "").strip().upper()
+
+        if not cands:
+            saltadas_sin_candidatos.append({
+                "id_factura": pc["id_factura"],
+                "fecha": pc.get("fecha"),
+                "codigo_cli": pc.get("codigo_cli"),
+                "cliente": pc.get("cliente"),
+                "kg": float(pc.get("kg") or 0),
+                "importe": float(pc.get("importe") or 0),
+                "saldo": float(pc.get("saldo") or 0),
+                "stat": pc.get("stat"),
+            })
+            continue
+
+        mejor = cands[0]
+        cli_ai = (mejor.get("ai_cliente_codigo") or "").strip().upper()
+        score = mejor["score"]
+
+        # Política: score bajo + mismo cliente → asociar.
+        if score < _BACKFILL_SCORE_MAX and cli_pc == cli_ai:
+            if apply:
+                audit_asinfo.asociar(
+                    pc["id_factura"],
+                    mejor["ai_numero"],
+                    usuario=getattr(g, "user", None) and g.user.get("username") or "web",
+                )
+            aplicados.append({
+                "id_factura": pc["id_factura"],
+                "fecha": pc.get("fecha"),
+                "codigo_cli": pc.get("codigo_cli"),
+                "kg_pc": float(pc.get("kg") or 0),
+                "usd_pc": float(pc.get("importe") or 0),
+                "ai_numero": mejor["ai_numero"],
+                "ai_tipo": mejor["ai_tipo"],
+                "score": score,
+            })
+        else:
+            saltadas_score_alto.append({
+                "id_factura": pc["id_factura"],
+                "fecha": pc.get("fecha"),
+                "codigo_cli": pc.get("codigo_cli"),
+                "cliente": pc.get("cliente"),
+                "kg": float(pc.get("kg") or 0),
+                "importe": float(pc.get("importe") or 0),
+                "saldo": float(pc.get("saldo") or 0),
+                "mejor_ai_numero": mejor["ai_numero"],
+                "mejor_ai_cli": mejor.get("ai_cliente_codigo"),
+                "mejor_ai_kg": mejor.get("ai_kg"),
+                "mejor_ai_usd": mejor.get("ai_usd"),
+                "mejor_score": score,
+            })
+
+    if apply:
+        # Invalidar cache Asinfo para que el próximo render de /facturas
+        # muestre los matches recién aplicados.
+        try:
+            from modules.asinfo import service as asinfo_service
+            asinfo_service.reset_facturas_cache()
+        except Exception:
+            pass
+
+    return {
+        "modo": "POST aplicado" if apply else "GET preview (no toca DB)",
+        "threshold_score": _BACKFILL_SCORE_MAX,
+        "huerfanas_total": len(huerfanas),
+        "aplicados_count": len(aplicados),
+        "saltadas_score_alto_count": len(saltadas_score_alto),
+        "saltadas_sin_candidatos_count": len(saltadas_sin_candidatos),
+        "aplicados": aplicados,
+        "saltadas_score_alto": saltadas_score_alto,
+        "saltadas_sin_candidatos": saltadas_sin_candidatos,
+    }
+
+
+# =====================================================================
 # Carga masiva CSV — batch 13. Mismas columnas que crear() / ALTAS.PRG.
 # =====================================================================
 
