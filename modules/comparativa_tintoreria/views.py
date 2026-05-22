@@ -5,6 +5,8 @@ url_prefix="/informes" para que la URL canónica sea /informes/comparativa-tinto
 """
 from __future__ import annotations
 
+import calendar
+import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -15,11 +17,102 @@ from exports import csv_response
 
 from . import queries
 
+_LOG = logging.getLogger("programa_core.tintoreria")
+
 comparativa_tintoreria_bp = Blueprint(
     "comparativa_tintoreria",
     __name__,
     template_folder="templates",
 )
+
+
+def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int = 12) -> dict | None:
+    """Devuelve la estructura {filas, promedio, total, limite_bajos} con los
+    últimos `n_meses` meses hasta (incluyendo) anio/mes. None si falla.
+    Se usa para inyectar en el template de /informes/flujo-produccion.
+    """
+    hasta = date(anio, mes, calendar.monthrange(anio, mes)[1])
+    # `n_meses` meses atrás (incluye el mes actual).
+    desde_mm = mes - (n_meses - 1)
+    desde_yy = anio
+    while desde_mm < 1:
+        desde_mm += 12
+        desde_yy -= 1
+    desde = date(desde_yy, desde_mm, 1)
+
+    raw = queries.tinto_bajos_fuertes_por_mes(desde, hasta) or []
+
+    meses_dict: dict[tuple, dict] = {}
+    for r in raw:
+        k = (int(r["yy"]), int(r["mm"]))
+        slot = meses_dict.setdefault(k, {"Bajos": {"kg": 0.0, "imp": 0.0},
+                                          "Fuertes": {"kg": 0.0, "imp": 0.0}})
+        slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
+        slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
+
+    def _calc(b_kg, b_imp, f_kg, f_imp):
+        tot_kg = b_kg + f_kg
+        tot_imp = b_imp + f_imp
+        return {
+            "b_pct": (b_kg / tot_kg * 100.0) if tot_kg else 0.0,
+            "b_kg": b_kg,
+            "b_ukg": (b_imp / b_kg) if b_kg else None,
+            "b_imp": b_imp,
+            "f_pct": (f_kg / tot_kg * 100.0) if tot_kg else 0.0,
+            "f_kg": f_kg,
+            "f_ukg": (f_imp / f_kg) if f_kg else None,
+            "f_imp": f_imp,
+            "t_kg": tot_kg,
+            "t_ukg": (tot_imp / tot_kg) if tot_kg else None,
+            "t_imp": tot_imp,
+        }
+
+    filas = []
+    tb_kg = tb_imp = tf_kg = tf_imp = 0.0
+    for (yy, mm), slot in sorted(meses_dict.items()):
+        b_kg, b_imp = slot["Bajos"]["kg"], slot["Bajos"]["imp"]
+        f_kg, f_imp = slot["Fuertes"]["kg"], slot["Fuertes"]["imp"]
+        tb_kg += b_kg; tb_imp += b_imp
+        tf_kg += f_kg; tf_imp += f_imp
+        row = {"yy": yy, "mm": mm, "label": f"{mm:02d}/{yy}"}
+        row.update(_calc(b_kg, b_imp, f_kg, f_imp))
+        filas.append(row)
+
+    n = len(filas) or 1
+    promedio = {"label": "PROMEDIO"}
+    promedio.update(_calc(tb_kg / n, tb_imp / n, tf_kg / n, tf_imp / n))
+    total = {"label": "TOTAL"}
+    total.update(_calc(tb_kg, tb_imp, tf_kg, tf_imp))
+
+    return {
+        "filas": filas,
+        "promedio": promedio,
+        "total": total,
+        "desde": desde,
+        "hasta": hasta,
+    }
+
+
+@comparativa_tintoreria_bp.app_context_processor
+def _inject_tintoreria_mensual():
+    """Inyecta `tintoreria_mensual` solo cuando se renderiza el template de
+    /informes/flujo-produccion. Lo demás se ignora (devuelve {}).
+
+    Esto permite agregar la tabla mensual al final de flujo_produccion.html
+    sin tocar modules/informes/views.py (que Federico edita en paralelo).
+    """
+    if request.endpoint != "informes.flujo_produccion":
+        return {}
+    try:
+        from datetime import date as _date
+        hoy = _date.today()
+        anio = int(request.args.get("anio") or hoy.year)
+        mes = max(1, min(12, int(request.args.get("mes") or hoy.month)))
+        data = _build_tintoreria_mensual(anio, mes, n_meses=12)
+        return {"tintoreria_mensual": data}
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("inject_tintoreria_mensual falló: %s", e)
+        return {}
 
 
 def _parse_date(s: str | None, default: date) -> date:

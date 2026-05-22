@@ -267,5 +267,72 @@
       Bajos/Fuertes: $/kg &lt; 0.4 → Bajos, ≥ 0.4 → Fuertes. Mes Ant.: del mes pasado (scintela.historia).
     </p>
   {% endif %}
+
+  {# TMT 2026-05-22 — resumen últimos 12 meses Bajos/Fuertes inyectado por
+     comparativa_tintoreria_bp.app_context_processor. Aislado del resto del
+     template; solo aparece si la variable se inyectó (i.e. el endpoint es
+     informes.flujo_produccion y los datos cargaron OK). #}
+  {% if tintoreria_mensual and tintoreria_mensual.filas %}
+    <div class="blk blk-cs mt-3" style="margin-top: 12px;">
+      <div class="blk-title">COSTOS DE TINTORERÍA · ÚLTIMOS {{ tintoreria_mensual.filas | length }} MESES</div>
+      <table>
+        <colgroup>
+          <col style="width: 7%">
+          <col style="width: 5%"><col style="width: 7%"><col style="width: 7%"><col style="width: 8%">
+          <col style="width: 5%"><col style="width: 7%"><col style="width: 7%"><col style="width: 8%">
+          <col style="width: 7%"><col style="width: 7%"><col style="width: 8%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="lbl" rowspan="2">MES</th>
+            <th colspan="4" style="text-align: center; color: rgb(220 38 38);">BAJOS</th>
+            <th colspan="4" style="text-align: center; color: rgb(220 38 38);">FUERTES</th>
+            <th colspan="3" style="text-align: center; color: rgb(30 64 175);">TOTAL</th>
+          </tr>
+          <tr>
+            <th>%</th><th>KG</th><th>$/KG</th><th>$</th>
+            <th>%</th><th>KG</th><th>$/KG</th><th>$</th>
+            <th>KG</th><th>$/KG</th><th>$</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in tintoreria_mensual.filas %}
+            <tr>
+              <td class="lbl">{{ f.label }}</td>
+              <td class="num">{{ '%.1f' % f.b_pct }}</td>
+              <td class="num">{{ f.b_kg | num_es(0) }}</td>
+              <td class="num">{% if f.b_ukg is not none %}{{ '%.3f' % f.b_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.b_imp | num_es(0) }}</td>
+              <td class="num">{{ '%.1f' % f.f_pct }}</td>
+              <td class="num">{{ f.f_kg | num_es(0) }}</td>
+              <td class="num">{% if f.f_ukg is not none %}{{ '%.3f' % f.f_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.f_imp | num_es(0) }}</td>
+              <td class="num">{{ f.t_kg | num_es(0) }}</td>
+              <td class="num">{% if f.t_ukg is not none %}{{ '%.3f' % f.t_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.t_imp | num_es(0) }}</td>
+            </tr>
+          {% endfor %}
+          <tr class="total">
+            <td class="lbl">PROMEDIO</td>
+            <td class="num">{{ '%.1f' % tintoreria_mensual.promedio.b_pct }}</td>
+            <td class="num">{{ tintoreria_mensual.promedio.b_kg | num_es(0) }}</td>
+            <td class="num">{% if tintoreria_mensual.promedio.b_ukg is not none %}{{ '%.3f' % tintoreria_mensual.promedio.b_ukg }}{% else %}—{% endif %}</td>
+            <td class="num">{{ tintoreria_mensual.promedio.b_imp | num_es(0) }}</td>
+            <td class="num">{{ '%.1f' % tintoreria_mensual.promedio.f_pct }}</td>
+            <td class="num">{{ tintoreria_mensual.promedio.f_kg | num_es(0) }}</td>
+            <td class="num">{% if tintoreria_mensual.promedio.f_ukg is not none %}{{ '%.3f' % tintoreria_mensual.promedio.f_ukg }}{% else %}—{% endif %}</td>
+            <td class="num">{{ tintoreria_mensual.promedio.f_imp | num_es(0) }}</td>
+            <td class="num">{{ tintoreria_mensual.promedio.t_kg | num_es(0) }}</td>
+            <td class="num">{% if tintoreria_mensual.promedio.t_ukg is not none %}{{ '%.3f' % tintoreria_mensual.promedio.t_ukg }}{% else %}—{% endif %}</td>
+            <td class="num">{{ tintoreria_mensual.promedio.t_imp | num_es(0) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="mt-2 text-[10px] text-slate-500">
+        Bajos: $/kg ≤ 0.40 (línea por línea de <code>scintela.tinto</code>) · Fuertes: el resto.
+        % sobre kg del mes. $/kg ponderado. PROMEDIO = Σ meses / cantidad de meses.
+      </p>
+    </div>
+  {% endif %}
 </div>
 {% endblock %}
