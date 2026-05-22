@@ -70,26 +70,24 @@
     </div>
   {% endif %}
 
-  {# KPIs #}
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+  {# KPIs — solo "productos" y "valor U$".
+     NO mostramos "Kg totales" porque formulas_app mezcla unidades (%, G, KG)
+     y sumarlas sería engañoso. La cantidad va con su unidad en cada fila. #}
+  <div class="grid grid-cols-2 gap-3 mb-4">
     <div class="kpi">
       <div class="kpi-label">Productos con stock</div>
       <div class="kpi-val">{{ '{:,}'.format(total_productos).replace(',', '.') }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Kg totales</div>
-      <div class="kpi-val">{{ total_kg | num_es(0) }}</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label">Valor U$</div>
+      <div class="kpi-label">Valor U$ total</div>
       <div class="kpi-val">$ {{ total_us | num_es(0) }}</div>
     </div>
   </div>
 
-  {# Distribución por familia — barras visuales #}
+  {# Distribución por familia — barras visuales (solo valor U$, sin kg) #}
   {% if distribucion %}
   <div class="mb-4 p-4 bg-white border border-slate-200 rounded">
-    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Distribución por familia</div>
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Distribución por familia · Valor U$</div>
     {% set _max_us = (distribucion[0][1].us) or 1 %}
     {% for f, slot in distribucion[:12] %}
       <div class="flex items-center gap-2 text-xs mb-1">
@@ -98,7 +96,6 @@
           <div class="bg-emerald-500 h-4" style="width: {{ (slot.us / _max_us * 100) | round(1) }}%;"></div>
         </div>
         <div class="w-24 text-right font-mono">$ {{ slot.us | num_es(0) }}</div>
-        <div class="w-20 text-right text-slate-500 font-mono">{{ slot.kg | num_es(0) }} kg</div>
         <div class="w-12 text-right text-slate-400">{{ slot.n }} prod</div>
       </div>
     {% endfor %}
@@ -112,11 +109,10 @@
           <th style="width: 14%">Familia</th>
           <th style="width: 5%">N°</th>
           <th>Nombre</th>
-          <th style="width: 6%">Unidad</th>
-          <th class="text-right" style="width: 11%">Stock</th>
-          <th class="text-right" style="width: 10%">U$/un.</th>
-          <th class="text-right" style="width: 12%">Valor U$</th>
-          <th style="width: 10%">Últ. lectura</th>
+          <th class="text-right" style="width: 14%">Cantidad</th>
+          <th class="text-right" style="width: 12%">U$/un.</th>
+          <th class="text-right" style="width: 13%">Valor U$</th>
+          <th style="width: 11%">Últ. lectura</th>
         </tr>
       </thead>
       <tbody>
@@ -125,8 +121,10 @@
             <td>{% if r.familia %}<span class="chip">{{ r.familia }}</span>{% endif %}</td>
             <td class="text-slate-500">{{ r.num_visible }}</td>
             <td>{{ r.nombre }}</td>
-            <td class="text-slate-500">{{ r.unidad or '—' }}</td>
-            <td class="num">{{ r.stock_al_dia_kg | num_es(2) }}</td>
+            <td class="num">
+              {{ r.stock_al_dia_kg | num_es(2) }}
+              <span class="text-slate-400 text-xs ml-1">{{ r.unidad or '' }}</span>
+            </td>
             <td class="num {% if not r.precio_us %}muted{% endif %}">
               {% if r.precio_us %}{{ r.precio_us | num_es(4) }}{% else %}—{% endif %}
             </td>
@@ -138,7 +136,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+          <tr><td colspan="7" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin productos en el filtro.{% endif %}
           </td></tr>
         {% endfor %}
@@ -150,8 +148,9 @@
     Fuente: <code>formulas_app</code> (database 3 del RDS). Cálculo replica
     <code>compute_stock_al_dia</code> de la app de tintorería:
     base = última lectura ≤ corte, + ajustes posteriores, + compras posteriores,
-    − consumo de órdenes terminadas posteriores. NO incluye ajustes JSONB
-    intra-línea (aproximación).
+    − consumo de órdenes terminadas posteriores. Cada producto tiene su unidad
+    propia (% / G / KG) — por eso no sumamos "kg totales". El total comparable
+    contra otros sistemas es el <strong>valor U$</strong>.
   </p>
 </div>
 {% endblock %}
