@@ -633,10 +633,14 @@
         {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.hub', 'Conciliar con banco', 'check') }}{% endif %}
       </details>
 
+      {# TMT 2026-05-22 dueña: si el rol no tiene `informes.ver`, ocultar
+         la sección entera del menú (antes mostraba "Informes" vacío
+         para Alex). #}
+      {% if tiene_permiso('informes.ver') %}
       <details class="sidebar-section" data-key="informes">
         <summary>Informes</summary>
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.balance', 'Resultados', 'report') }}{% endif %}
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}{% endif %}
+        {{ nav_link('informes.balance', 'Resultados', 'report') }}
+        {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
         {# TMT 2026-05-20 PASADA 6 (Federico #9): "Check totales" sacado
            del menú principal. Accesible vía URL /informes/check-totales y
            desde el footer (link "Admin").
@@ -644,7 +648,7 @@
            — ya se accede desde Resultados (panel anticipos clickable).
            PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
            menú — su contenido se mergea con /posdat (decisión Tamara). #}
-        {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}{% endif %}
+        {{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}
         {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
            (pedido dueña: "para retiros tenemos demasiadas pantallas.
            Este borralo: /capital"). Los dividendos se ven desde
@@ -654,6 +658,7 @@
            de Recientes (pedido dueña: "La tab historial de moviemientos
            podemos ponerlo debajo de recientes?"). #}
       </details>
+      {% endif %}
 
       <details class="sidebar-section" data-key="datos">
         <summary>Datos base</summary>

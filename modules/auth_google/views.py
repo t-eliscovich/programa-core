@@ -287,21 +287,30 @@ def _upsert_owner(*, email: str, display_name: str) -> int:
         raise _DuenoRoleMissing()
     id_rol = role["id_rol"]
 
-    # Buscamos por username = email (case-insensitive).
+    # TMT 2026-05-22 dueña: resolver primero por columna `email` (consolidación
+    # opción A — un usuario por persona con username corto + email separado).
+    # Fallback al esquema viejo (username == email) por compat con instalaciones
+    # sin la migración 0045.
     existing = db.fetch_one(
-        "SELECT id_usuario FROM seguridad.usuario WHERE lower(username) = %s",
+        "SELECT id_usuario FROM seguridad.usuario WHERE lower(email) = %s",
         (email,),
     )
+    if not existing:
+        existing = db.fetch_one(
+            "SELECT id_usuario FROM seguridad.usuario WHERE lower(username) = %s",
+            (email,),
+        )
     if existing:
-        # Aseguramos que esté activo y con rol Dueño.
+        # Aseguramos que esté activo, con rol correcto y el email seteado.
         db.execute(
             """
             UPDATE seguridad.usuario
                SET activo = TRUE,
-                   id_rol = %s
+                   id_rol = %s,
+                   email  = COALESCE(email, %s)
              WHERE id_usuario = %s
             """,
-            (id_rol, existing["id_usuario"]),
+            (id_rol, email, existing["id_usuario"]),
         )
         return existing["id_usuario"]
 
@@ -313,13 +322,28 @@ def _upsert_owner(*, email: str, display_name: str) -> int:
     # password_debe_cambiar). Asumimos defaults razonables (NULL / FALSE)
     # en el schema. Si la tabla tiene NOT NULL en alguna, ajustar al
     # restaurar el dump.
+    # TMT 2026-05-22 — username = prefijo antes de @ (federico, andres),
+    # email = mail completo. Si el username ya existe (race), agregamos
+    # un sufijo numérico.
+    username = email.split("@")[0].lower() or email.lower()
+    sufijo = 0
+    while db.fetch_one(
+        "SELECT 1 FROM seguridad.usuario WHERE lower(username) = %s",
+        (username if sufijo == 0 else f"{username}{sufijo}",),
+    ):
+        sufijo += 1
+        if sufijo > 99:
+            username = email.lower()  # fallback final
+            break
+    if sufijo > 0:
+        username = f"{username}{sufijo}"
     row = db.execute_returning(
         """
-        INSERT INTO seguridad.usuario (username, password_hash, id_rol, activo)
-        VALUES (%s, %s, %s, TRUE)
+        INSERT INTO seguridad.usuario (username, email, password_hash, id_rol, activo)
+        VALUES (%s, %s, %s, %s, TRUE)
         RETURNING id_usuario
         """,
-        (email, pw_hash, id_rol),
+        (username, email.lower(), pw_hash, id_rol),
     )
     if not row:
         raise RuntimeError(f"INSERT seguridad.usuario no devolvió id (email={email})")

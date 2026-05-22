@@ -115,6 +115,7 @@ def editar(id_usuario: int):
         form = {
             "id_usuario": u["id_usuario"],
             "username": u["username"],
+            "email": u.get("email") or "",
             "id_rol": u["id_rol"],
             "clave": u.get("clave") or "",
             "activo": u.get("activo", True),
@@ -124,6 +125,7 @@ def editar(id_usuario: int):
 
     id_rol = parse_int(request.form.get("id_rol")) or u["id_rol"]
     clave = (request.form.get("clave") or "").strip().upper() or None
+    email = (request.form.get("email") or "").strip().lower() or None
     activo = (request.form.get("activo") or "").strip() == "1"
     password = request.form.get("password") or ""
     password_confirm = request.form.get("password_confirm") or ""
@@ -142,6 +144,7 @@ def editar(id_usuario: int):
         queries.editar(
             id_usuario, id_rol=id_rol, clave=clave,
             activo=activo, password=password or None,
+            email=email,
         )
         flash(f"Usuario {u['username']} actualizado.", "ok")
         return redirect(url_for("usuarios.lista"))

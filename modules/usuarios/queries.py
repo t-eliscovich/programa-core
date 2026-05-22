@@ -27,7 +27,7 @@ def _normalizar_clave(clave: str | None) -> str | None:
 def listar() -> list[dict]:
     return db.fetch_all(
         """
-        SELECT u.id_usuario, u.username, u.activo, u.id_rol,
+        SELECT u.id_usuario, u.username, u.email, u.activo, u.id_rol,
                r.nombre_rol, u.clave
         FROM seguridad.usuario u
         LEFT JOIN seguridad.rol r USING (id_rol)
@@ -39,7 +39,7 @@ def listar() -> list[dict]:
 def por_id(id_usuario: int) -> dict | None:
     return db.fetch_one(
         """
-        SELECT u.id_usuario, u.username, u.activo, u.id_rol,
+        SELECT u.id_usuario, u.username, u.email, u.activo, u.id_rol,
                r.nombre_rol, u.clave
         FROM seguridad.usuario u
         LEFT JOIN seguridad.rol r USING (id_rol)
@@ -92,6 +92,7 @@ def editar(
     clave: str | None = None,
     activo: bool | None = None,
     password: str | None = None,
+    email: str | None = None,
 ) -> int:
     campos = []
     params: list = []
@@ -105,6 +106,10 @@ def editar(
     if activo is not None:
         campos.append("activo = %s")
         params.append(bool(activo))
+    if email is not None:
+        # NULL si viene string vacío. Normalizar a lowercase.
+        campos.append("email = %s")
+        params.append((email or "").strip().lower() or None)
     if password:
         if len(password) < 6:
             raise ValueError("Password debe tener al menos 6 caracteres.")

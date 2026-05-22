@@ -26,6 +26,15 @@
              {% if modo=='editar' %}readonly{% endif %}>
     </label>
 
+    {# TMT 2026-05-22 — email asociado al usuario (para login con Google).
+       Editable en modo 'editar' por la dueña. Vacío = no se vincula OAuth. #}
+    <label class="flex flex-col mb-3">
+      <span class="text-sm text-slate-600">Email (para login con Google)</span>
+      <input type="email" name="email" value="{{ form.email or '' }}"
+             class="border rounded px-2 py-1 mt-1" maxlength="150"
+             placeholder="usuario@gmail.com">
+    </label>
+
     <label class="flex flex-col mb-3">
       <span class="text-sm text-slate-600">Rol <span class="text-red-500">*</span></span>
       <select name="id_rol" class="border rounded px-2 py-1 mt-1" required>
