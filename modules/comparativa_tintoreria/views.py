@@ -35,74 +35,97 @@ def _parse_date(s: str | None, default: date) -> date:
 @requiere_login
 @requiere_permiso("informes.ver")
 def tintoreria_detalle():
-    """Tabla plana: fecha terminado, color, kg, importe, precio unitario.
+    """Resumen mensual de tintorería: Bajos vs Fuertes vs Total.
 
-    Fuente: `scintela.tinto` agrupado por (fecha, cod). Una fila por
-    combinación (fecha, color). Precio unitario = importe / kg.
+    Regla: $/kg <= 0.4 → Bajos ; > 0.4 → Fuertes (mismo límite que
+    `_LIM_TINT` en informes/queries.py — replica TINT.BAT).
+
+    Por cada mes muestra para Bajos / Fuertes / Total:
+        % kg sobre el total del mes, kg, $/kg promedio, $
+    Y al final una fila PROMEDIO mensual.
     """
     hoy = date.today()
-    default_desde = hoy - timedelta(days=30)
+    # Default: últimos 12 meses completos hasta hoy.
+    default_desde = (hoy.replace(day=1) - timedelta(days=365)).replace(day=1)
     desde = _parse_date(request.args.get("desde"), default_desde)
     hasta = _parse_date(request.args.get("hasta"), hoy)
-    cod_filtro = (request.args.get("cod") or "").strip().upper()
 
     error = None
-    rows: list[dict] = []
+    raw: list[dict] = []
     try:
-        rows = queries.tinto_pc_por_dia_color(desde, hasta) or []
+        raw = queries.tinto_bajos_fuertes_por_mes(desde, hasta) or []
     except Exception as e:  # noqa: BLE001
         error = str(e)
 
-    # Universo de colores para el dropdown (sobre todo lo traído)
-    cods_universo = sorted({r.get("cod") or "" for r in rows if r.get("cod")})
+    # Pivotear: por (yy, mm), Bajos y Fuertes.
+    meses: dict[tuple, dict] = {}
+    for r in raw:
+        k = (int(r["yy"]), int(r["mm"]))
+        slot = meses.setdefault(k, {"Bajos": {"kg": 0.0, "imp": 0.0},
+                                     "Fuertes": {"kg": 0.0, "imp": 0.0}})
+        slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
+        slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
 
-    # Filtro por color
-    if cod_filtro:
-        rows = [r for r in rows if (r.get("cod") or "").upper() == cod_filtro]
+    def _calc(b_kg, b_imp, f_kg, f_imp):
+        tot_kg = b_kg + f_kg
+        tot_imp = b_imp + f_imp
+        bp = (b_kg / tot_kg * 100.0) if tot_kg else 0.0
+        fp = (f_kg / tot_kg * 100.0) if tot_kg else 0.0
+        b_ukg = (b_imp / b_kg) if b_kg else None
+        f_ukg = (f_imp / f_kg) if f_kg else None
+        t_ukg = (tot_imp / tot_kg) if tot_kg else None
+        return {
+            "b_pct": bp, "b_kg": b_kg, "b_ukg": b_ukg, "b_imp": b_imp,
+            "f_pct": fp, "f_kg": f_kg, "f_ukg": f_ukg, "f_imp": f_imp,
+            "t_pct": 100.0 if tot_kg else 0.0,
+            "t_kg": tot_kg, "t_ukg": t_ukg, "t_imp": tot_imp,
+        }
 
-    # Calcular precio unitario y armar filas finales
     filas = []
-    tot_kg = 0.0
-    tot_importe = 0.0
-    for r in rows:
-        kg = float(r.get("kg") or 0)
-        imp = float(r.get("importe") or 0)
-        precio = (imp / kg) if kg else None
-        tot_kg += kg
-        tot_importe += imp
-        filas.append({
-            "fecha": r["fecha"],
-            "cod": r.get("cod") or "",
-            "kg": kg,
-            "importe": imp,
-            "precio_unitario": precio,
-            "n_lineas": int(r.get("n_lineas") or 0),
-        })
-    precio_promedio = (tot_importe / tot_kg) if tot_kg else None
+    tot_b_kg = tot_b_imp = tot_f_kg = tot_f_imp = 0.0
+    for (yy, mm), slot in sorted(meses.items()):
+        b_kg, b_imp = slot["Bajos"]["kg"], slot["Bajos"]["imp"]
+        f_kg, f_imp = slot["Fuertes"]["kg"], slot["Fuertes"]["imp"]
+        tot_b_kg += b_kg; tot_b_imp += b_imp
+        tot_f_kg += f_kg; tot_f_imp += f_imp
+        fila = {"yy": yy, "mm": mm, "label": f"{mm:02d}/{yy}"}
+        fila.update(_calc(b_kg, b_imp, f_kg, f_imp))
+        filas.append(fila)
+
+    # Fila PROMEDIO mensual (no del año total, sino el promedio por mes con data)
+    n_meses = len(filas) or 1
+    promedio = {"label": "PROMEDIO"}
+    promedio.update(_calc(tot_b_kg / n_meses, tot_b_imp / n_meses,
+                           tot_f_kg / n_meses, tot_f_imp / n_meses))
+
+    # Fila TOTAL del rango
+    total = {"label": "TOTAL RANGO"}
+    total.update(_calc(tot_b_kg, tot_b_imp, tot_f_kg, tot_f_imp))
 
     if request.args.get("export") == "csv":
+        csv_rows = []
+        for f in filas + [promedio, total]:
+            csv_rows.append({
+                "mes": f["label"],
+                "b_pct": f"{f['b_pct']:.1f}", "b_kg": f"{f['b_kg']:.2f}",
+                "b_ukg": (f"{f['b_ukg']:.4f}" if f["b_ukg"] is not None else ""),
+                "b_imp": f"{f['b_imp']:.2f}",
+                "f_pct": f"{f['f_pct']:.1f}", "f_kg": f"{f['f_kg']:.2f}",
+                "f_ukg": (f"{f['f_ukg']:.4f}" if f["f_ukg"] is not None else ""),
+                "f_imp": f"{f['f_imp']:.2f}",
+                "t_kg": f"{f['t_kg']:.2f}",
+                "t_ukg": (f"{f['t_ukg']:.4f}" if f["t_ukg"] is not None else ""),
+                "t_imp": f"{f['t_imp']:.2f}",
+            })
         return csv_response(
-            [
-                {
-                    "fecha": f["fecha"].isoformat(),
-                    "color": f["cod"],
-                    "kg": f["kg"],
-                    "importe": f["importe"],
-                    "precio_unitario": (
-                        f"{f['precio_unitario']:.4f}"
-                        if f["precio_unitario"] is not None else ""
-                    ),
-                    "n_lineas": f["n_lineas"],
-                }
-                for f in filas
-            ],
+            csv_rows,
             columnas=[
-                ("fecha", "Fecha"),
-                ("color", "Color"),
-                ("kg", "Kg"),
-                ("importe", "Importe (US)"),
-                ("precio_unitario", "Precio unitario (US/kg)"),
-                ("n_lineas", "Líneas"),
+                ("mes", "Mes"),
+                ("b_pct", "Bajos %"), ("b_kg", "Bajos Kg"),
+                ("b_ukg", "Bajos $/kg"), ("b_imp", "Bajos $"),
+                ("f_pct", "Fuertes %"), ("f_kg", "Fuertes Kg"),
+                ("f_ukg", "Fuertes $/kg"), ("f_imp", "Fuertes $"),
+                ("t_kg", "Total Kg"), ("t_ukg", "Total $/kg"), ("t_imp", "Total $"),
             ],
             filename=f"tintoreria_{desde}_{hasta}.csv",
         )
@@ -110,13 +133,10 @@ def tintoreria_detalle():
     return render_template(
         "comparativa_tintoreria/tintoreria.html",
         filas=filas,
+        promedio=promedio,
+        total=total,
         desde=desde,
         hasta=hasta,
-        cod_filtro=cod_filtro,
-        cods_universo=cods_universo,
-        tot_kg=tot_kg,
-        tot_importe=tot_importe,
-        precio_promedio=precio_promedio,
         error=error,
     )
 

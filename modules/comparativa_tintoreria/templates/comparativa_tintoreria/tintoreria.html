@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Tintorería · detalle{% endblock %}
+{% block title %}Tintorería · resumen mensual{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
   <strong>Tintorería</strong>
@@ -8,26 +8,42 @@
 {% block head_extra %}
 <style>
   .td { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
-  .td table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  .td th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
-           font-weight: 600; font-size: 11px; text-transform: uppercase;
+  .td table { border-collapse: collapse; width: 100%; font-size: 12px;
+              table-layout: fixed; }
+  .td th { background: rgb(248 250 252); padding: 6px 8px;
+           font-weight: 600; font-size: 10px; text-transform: uppercase;
            color: rgb(71 85 105); letter-spacing: 0.03em;
-           border-bottom: 1px solid rgb(203 213 225); }
-  .td th.text-right { text-align: right; }
-  .td table { table-layout: fixed; }
-  .td td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
-  .td td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+           border-bottom: 1px solid rgb(203 213 225); text-align: right; }
+  .td th.lbl { text-align: left; }
+  .td th.grp-b { background: rgb(254 226 226); color: rgb(153 27 27);
+                 text-align: center; border-left: 2px solid rgb(252 165 165); }
+  .td th.grp-f { background: rgb(220 252 231); color: rgb(22 101 52);
+                 text-align: center; border-left: 2px solid rgb(134 239 172); }
+  .td th.grp-t { background: rgb(219 234 254); color: rgb(30 64 175);
+                 text-align: center; border-left: 2px solid rgb(147 197 253); }
+  .td th.sub { font-size: 9px; padding-top: 4px; padding-bottom: 6px;
+               border-bottom: 1px solid rgb(203 213 225); }
+  .td th.sub-b { background: rgb(254 242 242); border-left: 2px solid rgb(252 165 165); }
+  .td th.sub-f { background: rgb(240 253 244); border-left: 2px solid rgb(134 239 172); }
+  .td th.sub-t { background: rgb(239 246 255); border-left: 2px solid rgb(147 197 253); }
+  .td td { padding: 6px 8px; border-bottom: 1px solid rgb(241 245 249);
+           text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .td td.lbl { text-align: left; font-family: inherit; font-weight: 600;
+               color: rgb(15 23 42); }
+  .td td.bord-b { border-left: 2px solid rgb(252 165 165); }
+  .td td.bord-f { border-left: 2px solid rgb(134 239 172); }
+  .td td.bord-t { border-left: 2px solid rgb(147 197 253); background: rgb(248 250 252); }
   .td td.muted { color: rgb(148 163 184); }
+  .td tr.promedio td { background: rgb(15 23 42); color: white; font-weight: 700;
+                       border-bottom: none; }
+  .td tr.promedio td.bord-t { background: rgb(30 41 59); }
+  .td tr.total td { background: rgb(51 65 85); color: white; font-weight: 700;
+                    border-bottom: none; }
   .td .kpi { background: white; border: 1px solid rgb(226 232 240);
              border-radius: 8px; padding: 12px 16px; }
   .td .kpi-label { color: rgb(100 116 139); font-size: 11px;
                    text-transform: uppercase; letter-spacing: 0.05em; }
-  .td .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
-  .td .chip { display: inline-block; padding: 2px 8px; border-radius: 9999px;
-              font-size: 10px; font-weight: 600; background: rgb(241 245 249);
-              color: rgb(51 65 85); text-transform: uppercase; letter-spacing: 0.04em; }
-  .td tr.total td { background: rgb(15 23 42); color: white; font-weight: 700;
-                    border-bottom: none; }
+  .td .kpi-val { font-size: 18px; font-weight: 700; margin-top: 4px; }
 </style>
 {% endblock %}
 
@@ -36,9 +52,9 @@
 
   <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
     <div>
-      <h1 class="text-xl font-semibold">Tintorería · detalle</h1>
+      <h1 class="text-xl font-semibold">Tintorería · resumen mensual</h1>
       <p class="text-xs text-slate-500">
-        Una fila por fecha + color. Datos: <code>scintela.tinto</code>.
+        Bajos: $/kg ≤ 0.40 · Fuertes: $/kg &gt; 0.40 · Fuente <code>scintela.tinto</code>.
       </p>
     </div>
     <form method="get" class="flex items-end gap-2">
@@ -52,19 +68,9 @@
         <input type="date" name="hasta" value="{{ hasta.isoformat() }}"
                class="rounded border border-slate-300 px-2 py-1 text-sm">
       </div>
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Color</label>
-        <select name="cod" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
-          <option value="">Todos</option>
-          {% for c in cods_universo %}
-            <option value="{{ c }}" {% if c == cod_filtro %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
-      </div>
       <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
       <a href="{{ url_for('comparativa_tintoreria.tintoreria_detalle',
-                          desde=desde.isoformat(), hasta=hasta.isoformat(),
-                          cod=cod_filtro, export='csv') }}"
+                          desde=desde.isoformat(), hasta=hasta.isoformat(), export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
     </form>
   </div>
@@ -75,24 +81,24 @@
     </div>
   {% endif %}
 
-  {# KPIs #}
+  {# KPIs del rango #}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="kpi">
-      <div class="kpi-label">Filas</div>
-      <div class="kpi-val">{{ '{:,}'.format(filas | length).replace(',', '.') }}</div>
+      <div class="kpi-label">Meses</div>
+      <div class="kpi-val">{{ filas | length }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Kg totales</div>
-      <div class="kpi-val">{{ tot_kg | num_es(1) }}</div>
+      <div class="kpi-label">Total Kg</div>
+      <div class="kpi-val">{{ total.t_kg | num_es(0) }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Importe total (US)</div>
-      <div class="kpi-val">$ {{ tot_importe | num_es(0) }}</div>
+      <div class="kpi-label">Total $</div>
+      <div class="kpi-val">$ {{ total.t_imp | num_es(0) }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Precio promedio (US/kg)</div>
+      <div class="kpi-label">$/Kg promedio</div>
       <div class="kpi-val">
-        {% if precio_promedio is not none %}{{ precio_promedio | num_es(2) }}{% else %}—{% endif %}
+        {% if total.t_ukg is not none %}{{ total.t_ukg | num_es(4) }}{% else %}—{% endif %}
       </div>
     </div>
   </div>
@@ -100,49 +106,100 @@
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
     <table>
       <colgroup>
-        <col style="width: 13%">
-        <col style="width: 13%">
-        <col style="width: 17%">
-        <col style="width: 22%">
-        <col style="width: 25%">
-        <col style="width: 10%">
+        <col style="width: 8%">                              <!-- mes -->
+        <col style="width: 6%"><col style="width: 8%"><col style="width: 7%"><col style="width: 9%">   <!-- Bajos -->
+        <col style="width: 6%"><col style="width: 8%"><col style="width: 7%"><col style="width: 9%">   <!-- Fuertes -->
+        <col style="width: 8%"><col style="width: 7%"><col style="width: 9%">                           <!-- Total -->
       </colgroup>
       <thead>
         <tr>
-          <th>Fecha</th>
-          <th>Color</th>
-          <th class="text-right">Kilos</th>
-          <th class="text-right">Importe (US)</th>
-          <th class="text-right">Precio unitario (US/kg)</th>
-          <th class="text-right">Líneas</th>
+          <th class="lbl" rowspan="2">Mes</th>
+          <th class="grp-b" colspan="4">BAJOS ($/kg ≤ 0,40)</th>
+          <th class="grp-f" colspan="4">FUERTES ($/kg &gt; 0,40)</th>
+          <th class="grp-t" colspan="3">TOTAL</th>
+        </tr>
+        <tr>
+          <th class="sub sub-b">%</th>
+          <th class="sub sub-b">Kg</th>
+          <th class="sub sub-b">$/kg</th>
+          <th class="sub sub-b">$</th>
+          <th class="sub sub-f">%</th>
+          <th class="sub sub-f">Kg</th>
+          <th class="sub sub-f">$/kg</th>
+          <th class="sub sub-f">$</th>
+          <th class="sub sub-t">Kg</th>
+          <th class="sub sub-t">$/kg</th>
+          <th class="sub sub-t">$</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
           <tr>
-            <td>{{ f.fecha.strftime('%d/%m/%Y') }}</td>
-            <td>{% if f.cod %}<span class="chip">{{ f.cod }}</span>{% endif %}</td>
-            <td class="num">{{ f.kg | num_es(2) }}</td>
-            <td class="num">$ {{ f.importe | num_es(2) }}</td>
-            <td class="num {% if f.precio_unitario is none %}muted{% endif %}">
-              {% if f.precio_unitario is not none %}{{ f.precio_unitario | num_es(4) }}{% else %}—{% endif %}
+            <td class="lbl">{{ f.label }}</td>
+            <td class="bord-b">{{ '%.1f' % f.b_pct }}%</td>
+            <td>{{ f.b_kg | num_es(0) }}</td>
+            <td class="{% if f.b_ukg is none %}muted{% endif %}">
+              {% if f.b_ukg is not none %}{{ f.b_ukg | num_es(4) }}{% else %}—{% endif %}
             </td>
-            <td class="num text-slate-500">{{ f.n_lineas }}</td>
+            <td>{{ f.b_imp | num_es(0) }}</td>
+            <td class="bord-f">{{ '%.1f' % f.f_pct }}%</td>
+            <td>{{ f.f_kg | num_es(0) }}</td>
+            <td class="{% if f.f_ukg is none %}muted{% endif %}">
+              {% if f.f_ukg is not none %}{{ f.f_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td>{{ f.f_imp | num_es(0) }}</td>
+            <td class="bord-t">{{ f.t_kg | num_es(0) }}</td>
+            <td class="bord-t {% if f.t_ukg is none %}muted{% endif %}">
+              {% if f.t_ukg is not none %}{{ f.t_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td class="bord-t">{{ f.t_imp | num_es(0) }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-center py-8 text-slate-500">
+          <tr><td colspan="12" class="text-center py-8 text-slate-500"
+                  style="font-family: inherit; text-align: center;">
             Sin datos en el rango seleccionado.
           </td></tr>
         {% endfor %}
         {% if filas %}
-          <tr class="total">
-            <td colspan="2">TOTAL</td>
-            <td class="num">{{ tot_kg | num_es(2) }}</td>
-            <td class="num">$ {{ tot_importe | num_es(2) }}</td>
-            <td class="num">
-              {% if precio_promedio is not none %}{{ precio_promedio | num_es(4) }}{% else %}—{% endif %}
+          <tr class="promedio">
+            <td class="lbl">PROMEDIO</td>
+            <td class="bord-b">{{ '%.1f' % promedio.b_pct }}%</td>
+            <td>{{ promedio.b_kg | num_es(0) }}</td>
+            <td>
+              {% if promedio.b_ukg is not none %}{{ promedio.b_ukg | num_es(4) }}{% else %}—{% endif %}
             </td>
-            <td></td>
+            <td>{{ promedio.b_imp | num_es(0) }}</td>
+            <td class="bord-f">{{ '%.1f' % promedio.f_pct }}%</td>
+            <td>{{ promedio.f_kg | num_es(0) }}</td>
+            <td>
+              {% if promedio.f_ukg is not none %}{{ promedio.f_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td>{{ promedio.f_imp | num_es(0) }}</td>
+            <td class="bord-t">{{ promedio.t_kg | num_es(0) }}</td>
+            <td class="bord-t">
+              {% if promedio.t_ukg is not none %}{{ promedio.t_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td class="bord-t">{{ promedio.t_imp | num_es(0) }}</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">TOTAL</td>
+            <td class="bord-b">{{ '%.1f' % total.b_pct }}%</td>
+            <td>{{ total.b_kg | num_es(0) }}</td>
+            <td>
+              {% if total.b_ukg is not none %}{{ total.b_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td>{{ total.b_imp | num_es(0) }}</td>
+            <td class="bord-f">{{ '%.1f' % total.f_pct }}%</td>
+            <td>{{ total.f_kg | num_es(0) }}</td>
+            <td>
+              {% if total.f_ukg is not none %}{{ total.f_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td>{{ total.f_imp | num_es(0) }}</td>
+            <td class="bord-t">{{ total.t_kg | num_es(0) }}</td>
+            <td class="bord-t">
+              {% if total.t_ukg is not none %}{{ total.t_ukg | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td class="bord-t">{{ total.t_imp | num_es(0) }}</td>
           </tr>
         {% endif %}
       </tbody>
@@ -150,9 +207,11 @@
   </div>
 
   <p class="text-xs text-slate-500 mt-3">
-    Fuente: <code>scintela.tinto</code> · filas con <code>stat NOT IN ('X','Y')</code> ·
-    color = <code>tinto.cod</code>. Precio unitario = importe / kg por fila.
-    Si una fila tiene importe pero kg=0, el precio se muestra como "—".
+    Bajos / Fuertes se clasifican por línea individual de <code>scintela.tinto</code>
+    según <code>importe/kg</code>. El % es sobre kg del mes. <code>$/kg</code> de cada
+    grupo y total es ponderado (Σ$ / Σkg). PROMEDIO = suma de los {{ filas | length }}
+    meses dividido por {{ filas | length }} (promedio por mes, no del año total).
+    TOTAL = suma de los meses del rango.
   </p>
 </div>
 {% endblock %}
