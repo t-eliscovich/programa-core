@@ -14,6 +14,7 @@ def lista(
     cta: str | None = None,
     solo_vivos: bool = True,
     limite: int = 1000,
+    pedido: str | None = None,
 ) -> list[dict]:
     """Movimientos en scintela.dolares (anticipos USD).
 
@@ -30,6 +31,8 @@ def lista(
     sobre el universo filtrado. Si filtrás por cuenta, ves su corrida; si
     no, cada fila muestra el saldo de SU cuenta hasta ese movimiento.
     """
+    # Federico 2026-05-22 — filtro "Pedido Num.": texto incluido en concepto.
+    pedido_param = f"%{pedido.strip()}%" if pedido and pedido.strip() else None
     rows = db.fetch_all(
         """
         SELECT d.id_dolares, d.fecha, d.cta, d.concepto, d.importe,
@@ -38,6 +41,7 @@ def lista(
         WHERE (%(desde)s::date IS NULL OR d.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR d.fecha <= %(hasta)s::date)
           AND (%(cta)s IS NULL OR UPPER(d.cta) = UPPER(%(cta)s))
+          AND (%(pedido)s IS NULL OR d.concepto ILIKE %(pedido)s)
           AND (NOT %(solo_vivos)s
                OR d.st IS NULL OR d.st IN ('', ' '))
         ORDER BY d.fecha DESC, d.id_dolares DESC
@@ -46,6 +50,7 @@ def lista(
         {
             "desde": desde or None, "hasta": hasta or None,
             "cta": cta or None,
+            "pedido": pedido_param,
             "solo_vivos": bool(solo_vivos),
             "limite": int(limite),
         },
