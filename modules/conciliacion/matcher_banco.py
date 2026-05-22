@@ -32,7 +32,7 @@ from modules.conciliacion.parser_banco import MovBanco
 # Mapping tipo banco ↔ documento BANCSIS
 _DOCS_CREDITO = ("DE", "TR", "AC", "NC")  # entra plata
 _DOCS_DEBITO = ("CH", "ND", "DB")          # sale plata
-_BANCO_PICHINCHA_NO = 1
+_BANCO_PICHINCHA_NO = 10  # confirmado en /bancos/10 (2026-05-22)
 
 
 @dataclass
