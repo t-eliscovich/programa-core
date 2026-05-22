@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Comparativa Tintorería · PC vs Form{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <strong>Comparativa Tintorería</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .ct { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .ct table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .ct th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); letter-spacing: 0.03em;
+           border-bottom: 1px solid rgb(203 213 225); }
+  .ct td { padding: 8px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .ct td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .ct tr.det td { background: rgb(248 250 252); font-size: 11px;
+                  color: rgb(71 85 105); padding: 4px 10px 4px 28px; }
+  .ct tr.det td.num { font-family: ui-monospace, Menlo, monospace; }
+  .ct .pill { display: inline-block; padding: 1px 8px; border-radius: 9999px;
+              font-size: 10px; font-weight: 600; text-transform: uppercase;
+              letter-spacing: 0.04em; }
+  .ct .pill-ok    { background: rgb(220 252 231); color: rgb(22 101 52); }
+  .ct .pill-warn  { background: rgb(254 243 199); color: rgb(133 77 14); }
+  .ct .pill-bad   { background: rgb(254 226 226); color: rgb(153 27 27); }
+  .ct .pill-info  { background: rgb(219 234 254); color: rgb(30 64 175); }
+  .ct .delta-pos  { color: rgb(180 83 9); }
+  .ct .delta-neg  { color: rgb(153 27 27); }
+  .ct .delta-zero { color: rgb(100 116 139); }
+  .ct details summary { cursor: pointer; user-select: none; list-style: none; }
+  .ct details summary::-webkit-details-marker { display: none; }
+  .ct .caret { display: inline-block; width: 12px; transition: transform 0.15s; }
+  .ct details[open] .caret { transform: rotate(90deg); }
+  .ct tr.total td { background: rgb(15 23 42); color: white; font-weight: 700;
+                    border-bottom: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full ct">
+
+  <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
+    <div>
+      <h1 class="text-xl font-semibold">Comparativa Tintorería</h1>
+      <p class="text-xs text-slate-500">
+        kg/día — Programa Core (<code>scintela.tinto</code>) vs Formulas App
+        (<code>ordenes.tela_terminada_kg</code>)
+      </p>
+    </div>
+    <form method="get" class="flex items-end gap-2">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Desde</label>
+        <input type="date" name="desde" value="{{ desde.isoformat() }}"
+               class="rounded border border-slate-300 px-2 py-1 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+        <input type="date" name="hasta" value="{{ hasta.isoformat() }}"
+               class="rounded border border-slate-300 px-2 py-1 text-sm">
+      </div>
+      <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
+      <a href="{{ url_for('comparativa_tintoreria.comparativa_tintoreria',
+                          desde=desde.isoformat(), hasta=hasta.isoformat(), export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+    </form>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-amber-50 text-amber-900 border border-amber-200 text-sm">
+      <strong>Aviso:</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  {# KPI fila — totales del rango #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">PC kg</div>
+      <div class="text-xl font-semibold mt-1">{{ '%s' % (tot_pc_kg | round(0, 'common') | int) | num_es(0) if tot_pc_kg else '—' }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Form kg</div>
+      <div class="text-xl font-semibold mt-1">{{ '%s' % (tot_form_kg | round(0, 'common') | int) | num_es(0) if tot_form_kg else '—' }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Δ kg</div>
+      <div class="text-xl font-semibold mt-1
+                  {% if tot_diff_kg > 0 %}delta-pos{% elif tot_diff_kg < 0 %}delta-neg{% else %}delta-zero{% endif %}">
+        {{ tot_diff_kg | num_es(0) }}
+        {% if tot_diff_pct is not none %}
+          <span class="text-xs font-normal text-slate-500">({{ '%.1f' % tot_diff_pct }}%)</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Importe PC (US)</div>
+      <div class="text-xl font-semibold mt-1">$ {{ tot_pc_us | num_es(0) }}</div>
+    </div>
+  </div>
+
+  {# Tabla principal #}
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 14%">Fecha</th>
+          <th class="text-right" style="width: 14%">PC kg</th>
+          <th class="text-right" style="width: 14%">Form kg</th>
+          <th class="text-right" style="width: 12%">Δ kg</th>
+          <th class="text-right" style="width: 10%">Δ %</th>
+          <th class="text-right" style="width: 16%">Importe PC (US)</th>
+          <th class="text-right" style="width: 8%">OTs Form</th>
+          <th class="text-center" style="width: 12%">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in filas %}
+          <tr>
+            <td>
+              <details>
+                <summary>
+                  <span class="caret">▶</span>
+                  <strong>{{ fila.fecha.strftime('%d/%m/%Y') }}</strong>
+                </summary>
+              </details>
+            </td>
+            <td class="num">{{ fila.pc_kg | num_es(1) }}</td>
+            <td class="num">{{ fila.form_kg | num_es(1) }}</td>
+            <td class="num {% if fila.diff_kg > 0 %}delta-pos{% elif fila.diff_kg < 0 %}delta-neg{% else %}delta-zero{% endif %}">
+              {{ fila.diff_kg | num_es(1) }}
+            </td>
+            <td class="num">
+              {% if fila.diff_pct is not none %}{{ '%.1f' % fila.diff_pct }}%{% else %}—{% endif %}
+            </td>
+            <td class="num">{{ '$ ' ~ (fila.pc_us | num_es(0)) if fila.pc_us else '—' }}</td>
+            <td class="num">{{ fila.form_ots if fila.form_ots else '—' }}</td>
+            <td class="text-center">
+              {% if fila.estado == 'ok' %}
+                <span class="pill pill-ok">OK</span>
+              {% elif fila.estado == 'discrepancia' %}
+                <span class="pill pill-bad">Discrepancia</span>
+              {% elif fila.estado == 'solo_pc' %}
+                <span class="pill pill-warn">Solo PC</span>
+              {% elif fila.estado == 'solo_form' %}
+                <span class="pill pill-info">Solo Form</span>
+              {% endif %}
+            </td>
+          </tr>
+          {# Filas hijas: PC por color + OTs de form #}
+          {% if fila.detalle_color or fila.detalle_ots %}
+            {% for c in fila.detalle_color %}
+              <tr class="det">
+                <td>· PC {{ c.cod }}</td>
+                <td class="num">{{ c.kg | num_es(1) }}</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="num">{{ '$ ' ~ (c.importe | num_es(0)) if c.importe else '' }}</td>
+                <td class="num">{{ c.n_lineas }} línea{{ 's' if c.n_lineas != 1 else '' }}</td>
+                <td></td>
+              </tr>
+            {% endfor %}
+            {% for o in fila.detalle_ots %}
+              <tr class="det">
+                <td>· Form OT {{ o.numero }} ({{ o.color or '—' }})</td>
+                <td></td>
+                <td class="num">{{ (o.tela_terminada_kg or 0) | num_es(1) }}</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>
+                  {% if o.es_reproceso %}<span class="pill pill-warn">Reproceso</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        {% else %}
+          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+            Sin datos en el rango seleccionado.
+          </td></tr>
+        {% endfor %}
+        {% if filas %}
+          <tr class="total">
+            <td>TOTAL</td>
+            <td class="num">{{ tot_pc_kg | num_es(1) }}</td>
+            <td class="num">{{ tot_form_kg | num_es(1) }}</td>
+            <td class="num">{{ tot_diff_kg | num_es(1) }}</td>
+            <td class="num">
+              {% if tot_diff_pct is not none %}{{ '%.1f' % tot_diff_pct }}%{% else %}—{% endif %}
+            </td>
+            <td class="num">$ {{ tot_pc_us | num_es(0) }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    <strong>Nota:</strong> el cruce es por fecha (PC <code>tinto.fecha</code> vs
+    Form <code>ordenes.fecha_terminado</code>). <code>scintela.tinto</code> no
+    guarda OT, por lo que el detalle por orden viene solo del lado Form.
+    Diferencias chicas son esperables (orden cargada en un día y terminada en otro;
+    reprocesos; reordenamientos manuales del operario). Discrepancias >2% o >15 kg
+    valen investigarse.
+  </p>
+</div>
+{% endblock %}

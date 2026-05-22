@@ -204,6 +204,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(informes_bp, url_prefix="/informes")
 
+    # TMT 2026-05-22 — blueprint propio (bajo /informes) que cruza
+    # tintorería PC vs formulas_app. Aislado del informes_bp para evitar
+    # conflictos con cambios en paralelo de modules/informes/views.py.
+    from modules.comparativa_tintoreria.views import comparativa_tintoreria_bp
+
+    app.register_blueprint(comparativa_tintoreria_bp, url_prefix="/informes")
+
     from modules.clientes.views import clientes_bp
 
     app.register_blueprint(clientes_bp)
