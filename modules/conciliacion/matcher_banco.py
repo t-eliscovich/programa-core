@@ -129,10 +129,10 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
         MovBancsis(
             id_transaccion=int(r["id_transaccion"]),
             fecha=r["fecha"],
-            documento=(r.get("documento") or "").strip().upper(),
-            concepto=(r.get("concepto") or "").strip(),
+            documento=str(r.get("documento") or "").strip().upper(),
+            concepto=str(r.get("concepto") or "").strip(),
             importe=float(r.get("importe") or 0),
-            numreferencia=(r.get("numreferencia") or "").strip(),
+            numreferencia=str(r.get("numreferencia") or "").strip(),
             no_banco=int(r.get("no_banco") or 0),
             saldo=float(r.get("saldo")) if r.get("saldo") is not None else None,
         )
