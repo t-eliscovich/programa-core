@@ -162,6 +162,10 @@
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
          title="Setea desde=día 1 del mes actual, hasta=hoy. Preserva los filtros activos.">Mes actual</a>
     {% endif %}
+    {# Federico 2026-05-22 - boton rapido: solo produccion propia de INTELA (KK). #}
+    <a href="{{ url_for('compras.lista', q='KK', desde=desde, hasta=hasta, kg=kg_filter, vista=vista, anuladas='1' if incluir_anuladas else None) }}"
+       class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium{% if q == 'KK' %} bg-sky-100 dark:bg-sky-900/30{% endif %}"
+       title="Muestra solo la produccion de tejido propia de INTELA (proveedor KK).">Solo INTELA</a>
   </form>
 
   {% if error %}

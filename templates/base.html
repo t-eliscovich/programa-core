@@ -618,7 +618,7 @@
         <summary>Modificar</summary>
         {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques de clientes', 'check') }}{% endif %}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
-        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Historial de Compras', 'shopping') }}{% endif %}
+        {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras y Producción Tejeduría', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
         {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
            (pedido dueña: "no debe estar colgada de informes"). #}
