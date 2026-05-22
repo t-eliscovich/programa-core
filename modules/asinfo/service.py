@@ -318,18 +318,37 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
             qty = float(r.get("cantidad_total") or 0)
             if qty < min_saldo:
                 continue
+            nombre = str(r.get("nombre") or "").strip()
+            codigo = str(r.get("codigo") or "").strip()
+            # Extraer "código de color" desde el nombre o código.
+            # El convenio en Asinfo es que el color va al final, separado por
+            # espacio o guion (ej. "Jersey 3.5 BLA", "20/1-65:35-PEI-KW").
+            # Tomamos el último token alfa-mayúsculas del nombre; fallback al
+            # último token del código si el nombre no tiene uno claro.
+            color_cod = ""
+            for token in reversed(nombre.split()):
+                t = token.strip().upper()
+                if t.isalpha() and 2 <= len(t) <= 5:
+                    color_cod = t
+                    break
+            if not color_cod:
+                # Fallback: último token del código separado por '-'
+                last = codigo.split("-")[-1].strip().upper()
+                if last.isalpha() and 2 <= len(last) <= 5:
+                    color_cod = last
             out.append({
-                "codigo": str(r.get("codigo") or "").strip(),
-                "nombre": str(r.get("nombre") or "").strip(),
+                "codigo": codigo,
+                "nombre": nombre,
                 "nombre_comercial": str(r.get("nombre_comercial") or "").strip(),
                 "tejido": str(r.get("tejido") or "").strip(),
                 "subcategoria": str(r.get("subcategoria") or "").strip(),
-                "color": str(r.get("color") or "").strip(),
+                "color_hex": str(r.get("color") or "").strip(),  # hex Asinfo (a menudo no es real)
+                "color": color_cod,                              # el "código de color" útil (BLA/NEG/etc.)
                 "cantidad_total": qty,
                 "n_bodegas": int(r.get("n_bodegas") or 0),
                 "precio_ultima": float(r.get("precio_ultima") or 0),
                 # Compat con código viejo que esperaba estos nombres:
-                "descripcion": str(r.get("nombre") or "").strip(),
+                "descripcion": nombre,
                 "bodegas_detalle": "",
             })
         except (TypeError, ValueError):

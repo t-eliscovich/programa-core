@@ -37,7 +37,7 @@ def lista():
 
     q = (request.args.get("q") or "").strip().upper()
     tejido_filtro = (request.args.get("tejido") or "").strip()
-    color_filtro = (request.args.get("color") or "").strip().lower()
+    color_filtro = (request.args.get("color") or "").strip().upper()
 
     error = None
     rows = []
@@ -50,13 +50,14 @@ def lista():
     # Catálogos para los dropdowns — SE CALCULAN SOBRE TODO EL UNIVERSO,
     # no sobre lo filtrado, para que la dueña vea siempre el mismo set.
     tejidos_universo = sorted({(r.get("tejido") or "") for r in rows if r.get("tejido")})
+    # `color` ahora es el código de color extraído del nombre (BLA/NEG/MAR/etc.)
     colores_universo = sorted({(r.get("color") or "") for r in rows if r.get("color")})
 
     # Aplicar filtros (post-cache, en memoria — son ~3500 filas, irrelevante)
     if tejido_filtro:
         rows = [r for r in rows if r.get("tejido") == tejido_filtro]
     if color_filtro:
-        rows = [r for r in rows if (r.get("color") or "").lower() == color_filtro]
+        rows = [r for r in rows if (r.get("color") or "").upper() == color_filtro]
     if q:
         rows = [
             r for r in rows

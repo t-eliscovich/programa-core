@@ -134,26 +134,25 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 13%">Código</th>
-          <th>Nombre</th>
-          <th style="width: 10%">Tejido</th>
-          <th style="width: 7%">Color</th>
-          <th class="text-right" style="width: 11%">Cantidad</th>
-          <th class="text-right" style="width: 6%">Bodegas</th>
-          <th class="text-right" style="width: 11%">Precio últ.</th>
-          <th class="text-right" style="width: 13%">Valor estimado</th>
+          <th style="width: 16%">Tejido</th>
+          <th style="width: 18%">Variante</th>
+          <th style="width: 10%">Color</th>
+          <th class="text-right" style="width: 12%">Cantidad</th>
+          <th class="text-right" style="width: 7%">Bodegas</th>
+          <th class="text-right" style="width: 13%">Precio últ.</th>
+          <th class="text-right" style="width: 14%">Valor estimado</th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
-          <tr>
-            <td><code>{{ r.codigo }}</code></td>
-            <td>{{ r.nombre or '—' }}</td>
+          <tr title="{{ r.codigo }} — {{ r.nombre }}">
             <td>{% if r.tejido %}<span class="chip">{{ r.tejido }}</span>{% endif %}</td>
+            <td class="text-slate-600">{{ r.subcategoria or '—' }}</td>
             <td>
               {% if r.color %}
-                <span class="swatch" style="background: {{ r.color }};" title="{{ r.color }}"></span>
-                <span class="text-xs text-slate-500">{{ r.color }}</span>
+                <span class="chip" style="background: rgb(241 245 249); color: rgb(15 23 42);">{{ r.color }}</span>
+              {% else %}
+                <span class="text-slate-300">—</span>
               {% endif %}
             </td>
             <td class="num">{{ r.cantidad_total | num_es(2) }}</td>
@@ -166,7 +165,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+          <tr><td colspan="7" class="text-center py-8 text-slate-500">
             {% if error %}
               Error en la consulta.
             {% else %}
