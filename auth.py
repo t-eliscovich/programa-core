@@ -195,7 +195,11 @@ def requiere_permiso(nombre_opcion: str):
             if not g.get("user"):
                 return redirect(url_for("auth.login", next=request.path))
             if nombre_opcion not in g.permisos and "*" not in g.permisos:
-                return render_template("403.html", accion=nombre_opcion), 403
+                # TMT 2026-05-22 dueña: si el usuario no tiene el permiso,
+                # mostrar "no existe" (404) en vez de "no tenés permiso" (403).
+                # Decisión de UX: que Alex no vea que existen secciones a las
+                # que no puede entrar — mejor que parezca que la URL es inválida.
+                return render_template("404.html"), 404
             return view(*args, **kwargs)
 
         return wrapped
