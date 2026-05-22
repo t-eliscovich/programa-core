@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_hero, nav_resultados %}
+{% from "_informes_design.html" import informes_styles %}
 {% block title %}Informe Resultados{% endblock %}
 {% block breadcrumb %}Informes / <strong>Informe Resultados — Balance</strong>{% endblock %}
 
 {% block head_extra %}
+{# TMT 2026-05-22 dueña: cargar estilos comunes /informes para que el padding-top
+   del título quede ALINEADO con las demás páginas (.info-page). El <style>
+   propio sigue activo y manda sobre los selectores específicos de .informe-balance. #}
+{{ informes_styles() }}
 <style>
   /* ====== TIPOGRAFÍA UNIFORME — limpieza UX 2026-05-06 (TMT) ===========
      Una sola familia, una sola tabla de tamaños:
@@ -124,7 +129,7 @@
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 {% set _desc %}Fecha <span class="text-slate-700 dark:text-slate-300 font-medium">{{ b.fecha | fecha_es if b else "" }}</span>{% if b and b.snapshot_historia_fecha %} · Último cierre <span class="text-slate-700 dark:text-slate-300">{{ b.snapshot_historia_fecha | fecha_es }}</span>{% endif %}{% if b and b.resultados and b.resultados.iniciales_mes %} · Proyección <span class="text-slate-700 dark:text-slate-300">{{ b.resultados.iniciales_mes }}</span>{% endif %}{% endset %}
-<div class="max-w-full informe-balance">
+<div class="max-w-full informe-balance info-page">
   {{ nav_resultados('balance') }}
   <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
     {{ page_hero('Informe de Resultados', descripcion_safe=_desc) }}
