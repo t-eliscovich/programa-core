@@ -29,7 +29,32 @@ import sys
 from datetime import date
 
 # Asegurar que podemos importar los modules del proyecto
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+
+# Cargar .env automáticamente (busca primero .env.prod, luego .env)
+for _env_name in (".env.prod", ".env"):
+    _env_path = os.path.join(_ROOT, _env_name)
+    if os.path.isfile(_env_path):
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(_env_path, override=False)
+            print(f"[env] Cargado {_env_name}", file=sys.stderr)
+            break
+        except ImportError:
+            # Fallback manual si python-dotenv no está instalado
+            with open(_env_path) as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if not _line or _line.startswith("#") or "=" not in _line:
+                        continue
+                    _k, _v = _line.split("=", 1)
+                    _k = _k.strip()
+                    _v = _v.strip().strip('"').strip("'")
+                    if _k and _k not in os.environ:
+                        os.environ[_k] = _v
+            print(f"[env] Cargado {_env_name} (manual)", file=sys.stderr)
+            break
 
 import psycopg2
 import psycopg2.extras

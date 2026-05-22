@@ -335,5 +335,66 @@
       </div>
     {% endif %}
   </div>
+
+  {# TMT 2026-05-22 — Controles de paginación. Solo cuando paginamos
+     (no en CSV ni en modo huérfanas). #}
+  {% if paginado and total_filtrado_n > 0 %}
+    {% set _n_pages = ((total_filtrado_n - 1) // por_pagina) + 1 %}
+    {% set _ini = (page - 1) * por_pagina + 1 %}
+    {% set _fin = [_ini + (filas | length) - 1, total_filtrado_n] | min %}
+    <div class="no-print mt-3 flex items-center justify-between flex-wrap gap-2 text-sm">
+      <div class="text-slate-600 dark:text-slate-400">
+        Mostrando <strong>{{ '{:,}'.format(_ini).replace(',', '.') }}–{{ '{:,}'.format(_fin).replace(',', '.') }}</strong>
+        de <strong>{{ '{:,}'.format(total_filtrado_n).replace(',', '.') }}</strong>
+        · Importe total filtrado: <strong>$ {{ total_filtrado_importe | num_es(0) }}</strong>
+        · Saldo total filtrado: <strong>$ {{ total_filtrado_saldo | num_es(0) }}</strong>
+      </div>
+      {% if _n_pages > 1 %}
+      <div class="flex items-center gap-1">
+        {% set _qs = {
+          'q': q, 'desde': desde, 'hasta': hasta, 'cliente': cliente,
+          'monto_min': monto_min, 'monto_max': monto_max,
+          'vista': vista, 'estado': estado,
+          'por_pagina': por_pagina if por_pagina != 500 else None,
+        } %}
+        {# ← Anterior #}
+        {% if page > 1 %}
+          <a href="{{ url_for('facturas.lista', page=page-1, **_qs) }}"
+             class="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+            ← Anterior
+          </a>
+        {% else %}
+          <span class="px-3 py-1 rounded border border-slate-200 dark:border-slate-800 text-slate-400">← Anterior</span>
+        {% endif %}
+        {# Indicador de página #}
+        <span class="px-3 py-1 text-slate-600 dark:text-slate-400">
+          Página <strong>{{ page }}</strong> de {{ _n_pages }}
+        </span>
+        {# Siguiente → #}
+        {% if page < _n_pages %}
+          <a href="{{ url_for('facturas.lista', page=page+1, **_qs) }}"
+             class="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+            Siguiente →
+          </a>
+        {% else %}
+          <span class="px-3 py-1 rounded border border-slate-200 dark:border-slate-800 text-slate-400">Siguiente →</span>
+        {% endif %}
+        {# Saltar a página específica #}
+        <form method="get" class="flex items-center gap-1 ml-2">
+          {% for k, v in _qs.items() if v is not none and v != '' %}
+            <input type="hidden" name="{{ k }}" value="{{ v }}">
+          {% endfor %}
+          <label class="text-xs text-slate-500">Ir a:</label>
+          <input type="number" name="page" min="1" max="{{ _n_pages }}" value="{{ page }}"
+                 class="w-16 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    <p class="no-print text-[11px] text-slate-400 mt-1">
+      <strong>Nota:</strong> la columna <em>Acum</em> reinicia en cada página.
+      Los totales del header siempre reflejan el universo filtrado completo.
+    </p>
+  {% endif %}
 </div>
 {% endblock %}

@@ -484,6 +484,11 @@ def buscar(
                           # 'facturas, acum total, no es igual al total'.
                           # 10k cubre con margen — si las facturas crecen
                           # mucho más, paginamos.
+                          # TMT 2026-05-22 — paginación opt-in via `offset`.
+                          # `lista()` ahora pagina default 500 con controles
+                          # de página; el limite=10000 sigue funcionando
+                          # para callers externos sin offset.
+    offset: int = 0,
     vista: str = "cartera",
     cliente: str = "",
     monto_min: float | None = None,
@@ -606,7 +611,7 @@ def buscar(
              OR f.stat = ANY(%(estados_para_in)s::text[])
           )
         ORDER BY f.fecha DESC, f.numf DESC
-        LIMIT %(limite)s
+        LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
             "q": q or None, "like": like,
@@ -622,6 +627,7 @@ def buscar(
             "estado_incluye_z": estado_incluye_z,
             "estados_para_in": estados_para_in,
             "limite": limite,
+            "offset": offset,
         },
     ) or []
     # Running total cronológico (ascendente).
@@ -643,6 +649,118 @@ def buscar(
     # 2026-05-21: las nuevas arriba). El SQL ya devuelve DESC; lo único
     # que necesitamos hacer es invertir el resultado del sort ASC.
     return list(reversed(rows_asc))
+
+
+def contar_filtrado(
+    q: str = "",
+    desde: str | None = None,
+    hasta: str | None = None,
+    solo_abiertas: bool = False,
+    vista: str = "cartera",
+    cliente: str = "",
+    monto_min: float | None = None,
+    monto_max: float | None = None,
+    estado: str = "",
+    estados: list[str] | None = None,
+) -> dict:
+    """COUNT(*) + SUM(saldo) + SUM(importe) con los MISMOS filtros que `buscar()`.
+
+    TMT 2026-05-22 — usado por la paginación de `/facturas` para mostrar
+    "Mostrando X-Y de Z" y el total de importes / saldos del UNIVERSO filtrado
+    (no solo la página visible).
+    """
+    q = (q or "").strip()
+    like = f"%{q}%" if q else None
+    vista = (vista or "cartera").lower().strip()
+    if vista == "todas":
+        vista = "estado"
+    estado = (estado or "").upper().strip()
+    estados_validos = ("Z", "A", "T", "X")
+    estados_lista = [
+        s.upper().strip() for s in (estados or [])
+        if s and s.upper().strip() in estados_validos
+    ]
+    seen: set[str] = set()
+    estados_lista = [s for s in estados_lista if not (s in seen or seen.add(s))]
+    if not estados_lista and estado in estados_validos:
+        estados_lista = [estado]
+    estado_incluye_z = "Z" in estados_lista
+    estados_para_in = [s for s in estados_lista if s != "Z"] or [""]
+    cliente = (cliente or "").strip().upper()
+    q_upper = q.upper() if q else ""
+    es_q_codigo_exacto = bool(q_upper) and len(q_upper) == 3 and q_upper.replace("_", "").isalnum()
+    es_cli_codigo_exacto = bool(cliente) and len(cliente) == 3 and cliente.replace("_", "").isalnum()
+    cliente_like = f"%{cliente}%" if cliente else None
+    row = db.fetch_one(
+        """
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(f.importe), 0) AS total_importe,
+               COALESCE(SUM(f.saldo), 0)   AS total_saldo
+        FROM scintela.factura f
+        LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+        WHERE (
+                %(q)s IS NULL
+             OR (
+                  %(q_codigo_exacto)s
+                  AND UPPER(TRIM(COALESCE(f.codigo_cli, ''))) = %(q_upper)s
+                )
+             OR (
+                  NOT %(q_codigo_exacto)s
+                  AND (
+                       UPPER(f.codigo_cli) LIKE UPPER(%(like)s)
+                    OR UPPER(COALESCE(f.numf_completo,'')) LIKE UPPER(%(like)s)
+                    OR CAST(f.numf AS TEXT) LIKE %(like)s
+                    OR UPPER(c.nombre) LIKE UPPER(%(like)s)
+                  )
+                )
+              )
+          AND (
+                %(cliente)s IS NULL
+             OR (%(cli_codigo_exacto)s
+                 AND UPPER(TRIM(COALESCE(f.codigo_cli, ''))) = %(cliente)s)
+             OR (NOT %(cli_codigo_exacto)s
+                 AND UPPER(COALESCE(f.codigo_cli, '')) LIKE UPPER(%(cliente_like)s))
+              )
+          AND (%(monto_min)s::numeric IS NULL OR COALESCE(f.importe, 0) >= %(monto_min)s::numeric)
+          AND (%(monto_max)s::numeric IS NULL OR COALESCE(f.importe, 0) <= %(monto_max)s::numeric)
+          AND (%(desde)s::date IS NULL OR f.fecha >= %(desde)s::date)
+          AND (%(hasta)s::date IS NULL OR f.fecha <= %(hasta)s::date)
+          AND (NOT %(solo_abiertas)s OR COALESCE(f.saldo, 0) > 0)
+          AND (
+                %(vista)s = 'estado'
+             OR (%(vista)s = 'cartera'
+                 AND COALESCE(f.saldo, 0) <> 0
+                 AND (f.stat IS NULL OR f.stat IN ('Z','A','',' ')))
+             OR (%(vista)s = 'canceladas' AND f.stat = 'T')
+             OR (%(vista)s = 'eliminadas' AND f.stat = 'X')
+          )
+          AND (
+                %(estados_vacia)s
+             OR (%(estado_incluye_z)s
+                 AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
+             OR f.stat = ANY(%(estados_para_in)s::text[])
+          )
+        """,
+        {
+            "q": q or None, "like": like,
+            "q_upper": q_upper, "q_codigo_exacto": es_q_codigo_exacto,
+            "cliente": cliente or None, "cliente_like": cliente_like,
+            "cli_codigo_exacto": es_cli_codigo_exacto,
+            "monto_min": monto_min, "monto_max": monto_max,
+            "desde": desde or None, "hasta": hasta or None,
+            "solo_abiertas": solo_abiertas,
+            "vista": vista,
+            "estado": estado,
+            "estados_vacia": not estados_lista,
+            "estado_incluye_z": estado_incluye_z,
+            "estados_para_in": estados_para_in,
+        },
+    ) or {}
+    return {
+        "n": int(row.get("n") or 0),
+        "total_importe": float(row.get("total_importe") or 0),
+        "total_saldo": float(row.get("total_saldo") or 0),
+    }
 
 
 def conteos_por_vista() -> dict:

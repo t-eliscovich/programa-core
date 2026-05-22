@@ -241,3 +241,88 @@ def disponible() -> bool:
             "ASINFO_CARD_FACTURAS",
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Stock — cantidad por producto (sin costo: Asinfo no tiene costos cargados)
+# ---------------------------------------------------------------------------
+# Confirmado 2026-05-22: ninguno de los 20.064 productos activos tiene
+# `costo_estandar` ni `precio_referencial_compra` > 0. Solo `precio_ultima_venta`
+# tiene data para ~24% de los productos. Por eso `stock_asinfo()` devuelve
+# CANTIDAD de stock (saldo_producto.saldo) sin costo. Si en algún momento
+# se cargan costos en el ERP, esta función puede ampliarse para incluirlos.
+
+_STOCK_TTL_SECS = 600  # 10 minutos
+_STOCK_CACHE: dict = {}
+
+
+def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
+    """Stock por producto desde Asinfo (saldo_producto agregado por producto).
+
+    Cada fila:
+        codigo            — código SKU del producto
+        descripcion       — nombre/descripción
+        cantidad_total    — SUM(sp.saldo) sobre todas las bodegas
+        bodegas           — lista de strings "BODEGA: NN.NN" (top 4)
+        n_bodegas         — cuántas bodegas tienen stock
+        precio_ultima     — precio_ultima_venta del producto (puede ser 0)
+
+    Args:
+        min_saldo: filtra a productos con cantidad_total > min_saldo. Default 0.
+
+    Returns:
+        Lista de dicts ordenada por cantidad_total DESC. [] si Metabase no
+        está configurado o si falla.
+    """
+    import time as _time
+    cache_key = f"min_{min_saldo}"
+    now = _time.time()
+    cached = _STOCK_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _STOCK_TTL_SECS:
+        return cached[1]
+
+    sql = """
+        WITH stock AS (
+            SELECT sp.id_producto,
+                   SUM(sp.saldo) AS cantidad,
+                   STRING_AGG(CAST(b.nombre AS varchar(MAX)) + ':' + CAST(sp.saldo AS varchar(20)), ' | ')
+                       AS bodegas_detalle,
+                   COUNT(DISTINCT sp.id_bodega) AS n_bodegas
+              FROM saldo_producto sp
+              INNER JOIN bodega b ON b.id_bodega = sp.id_bodega
+             WHERE sp.saldo > 0
+             GROUP BY sp.id_producto
+        )
+        SELECT p.codigo,
+               COALESCE(p.descripcion, p.codigo) AS descripcion,
+               s.cantidad                        AS cantidad_total,
+               s.bodegas_detalle,
+               s.n_bodegas,
+               COALESCE(p.precio_ultima_venta, 0) AS precio_ultima
+          FROM stock s
+          INNER JOIN producto p ON p.id_producto = s.id_producto
+         WHERE s.cantidad > 0
+         ORDER BY s.cantidad DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql)
+    if not rows:
+        return []
+    # Normalizar para que la vista no rompa con nulls
+    out = []
+    for r in rows:
+        try:
+            qty = float(r.get("cantidad_total") or 0)
+            if qty < min_saldo:
+                continue
+            out.append({
+                "codigo": str(r.get("codigo") or "").strip(),
+                "descripcion": str(r.get("descripcion") or "").strip(),
+                "cantidad_total": qty,
+                "bodegas_detalle": str(r.get("bodegas_detalle") or "").strip(),
+                "n_bodegas": int(r.get("n_bodegas") or 0),
+                "precio_ultima": float(r.get("precio_ultima") or 0),
+            })
+        except (TypeError, ValueError):
+            continue
+    _STOCK_CACHE[cache_key] = (now, out)
+    return out

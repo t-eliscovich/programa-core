@@ -239,6 +239,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(stock_bp)
 
+    # TMT 2026-05-22 — blueprint nuevo /stock/asinfo (cantidad stock desde
+    # ERP via Metabase). Aislado del stock_bp para no tocar modules/stock/.
+    from modules.stock_asinfo.views import stock_asinfo_bp
+
+    app.register_blueprint(stock_asinfo_bp, url_prefix="/stock")
+
     from modules.retenciones.views import retenciones_bp
 
     app.register_blueprint(retenciones_bp)

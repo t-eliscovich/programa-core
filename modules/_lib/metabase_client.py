@@ -112,6 +112,73 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
         return []
 
 
+def fetch_dataset(database_id: int, sql: str, params: list | None = None) -> list[dict]:
+    """POST /api/dataset — query SQL ad-hoc contra una base configurada en Metabase.
+
+    Útil cuando no hay (o no querés crear) una card guardada para un caso
+    puntual. La SQL la escribís VOS — NO interpoles datos del usuario sin
+    sanitizar.
+
+    Args:
+        database_id: id Metabase de la base (2 = Asinfo, 3 = formulas_app).
+        sql: SQL nativa. Puede usar `{{tag}}` template-tags pero la mayoría
+            de usos son SQL pura.
+        params: opcional, lista de positional/template parameters.
+
+    Returns:
+        Lista de dicts (una por fila). [] si falla, si la base no existe
+        o si no hay conexión configurada. Fail-soft idéntico a fetch_card().
+    """
+    if not disponible():
+        return []
+    try:
+        import requests
+    except ImportError:
+        _log.warning("requests no disponible — Metabase bridge devuelve []")
+        return []
+
+    global _session_token
+    token = _session_token or _login(requests)
+    if not token:
+        return []
+
+    body = {
+        "database": database_id,
+        "type": "native",
+        "native": {"query": sql},
+    }
+    if params:
+        body["parameters"] = params
+
+    def _do():
+        return requests.post(
+            f"{_url()}/api/dataset",
+            json=body,
+            headers={"X-Metabase-Session": _session_token, "Content-Type": "application/json"},
+            timeout=20,
+        )
+
+    try:
+        r = _do()
+        if r.status_code == 401:
+            _session_token = None
+            token2 = _login(requests)
+            if not token2:
+                return []
+            r = _do()
+        r.raise_for_status()
+        data = r.json() or {}
+        cols = [c.get("name") or "" for c in (data.get("data", {}).get("cols") or [])]
+        rows = data.get("data", {}).get("rows") or []
+        return [
+            {cols[i]: v for i, v in enumerate(row) if i < len(cols)}
+            for row in rows
+        ]
+    except Exception as e:
+        _log.warning("Metabase fetch_dataset(db=%s) falló: %s", database_id, e)
+        return []
+
+
 def reset_session() -> None:
     """Forzar re-login en la próxima llamada. Útil para tests."""
     global _session_token

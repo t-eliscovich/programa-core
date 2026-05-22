@@ -424,25 +424,53 @@ def lista():
     # Compat con el flag scalar viejo (templates / código externo que
     # consume `estado`).
     estado_filtro = estados_filtro[0] if len(estados_filtro) == 1 else ""
-    # Por default mostrar TODAS las facturas (sin tope de 500).
-    # Si en el futuro la base crece a > 100k filas y se vuelve lento,
-    # se puede pasar `?limite=500` para acotar. Pedido TMT 2026-05-14.
+    # TMT 2026-05-22 — paginación server-side. Default 500/página para que
+    # el render sea rápido. ?por_pagina=N (max 5000) y ?page=N. Con paginación
+    # ACUM solo refleja la página visible — el header sigue mostrando el total
+    # del UNIVERSO filtrado, calculado por contar_filtrado().
+    # Casos especiales: si export=csv, traemos TODO (sin paginar) para que
+    # el CSV sea completo; si solo_huerfanas, también traemos todo porque el
+    # filtro post-enriquecimiento corta filas y la paginación SQL no aplica.
+    is_export = request.args.get("export") == "csv"
     try:
-        limite = int(request.args.get("limite") or 100000)
+        por_pagina = max(1, min(5000, int(request.args.get("por_pagina") or 500)))
     except (TypeError, ValueError):
-        limite = 100000
+        por_pagina = 500
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    # Si exporta CSV o pidió huérfanas → sin paginar (vamos por TODO).
+    if is_export or solo_huerfanas:
+        limite_efectivo = 100000
+        offset_efectivo = 0
+    else:
+        limite_efectivo = por_pagina
+        offset_efectivo = (page - 1) * por_pagina
     try:
         filas = queries.buscar(
             q, desde, hasta, solo_abiertas,
-            vista=vista, limite=limite,
+            vista=vista, limite=limite_efectivo, offset=offset_efectivo,
             cliente=cliente, monto_min=monto_min, monto_max=monto_max,
             estado=estado_filtro,
             estados=estados_filtro,
         )
         conteos = queries.conteos_por_vista()
+        # Total del universo filtrado (sin LIMIT/OFFSET) — para el contador.
+        if is_export or solo_huerfanas:
+            # No tiene sentido el conteo SQL: con solo_huerfanas el conteo
+            # real lo da el filtro post-enriquecimiento.
+            total_filtrado = {"n": len(filas), "total_importe": 0.0, "total_saldo": 0.0}
+        else:
+            total_filtrado = queries.contar_filtrado(
+                q, desde, hasta, solo_abiertas,
+                vista=vista, cliente=cliente,
+                monto_min=monto_min, monto_max=monto_max,
+                estado=estado_filtro, estados=estados_filtro,
+            )
         error = None
     except Exception as e:
-        filas, conteos, error = [], {}, str(e)
+        filas, conteos, total_filtrado, error = [], {}, {"n": 0}, str(e)
 
     # ===== Enriquecimiento con Asinfo (read-only, fail-soft) =====
     # Para cada factura de PC, intentamos matchear contra la card 199 de
@@ -588,6 +616,13 @@ def lista():
         error=error,
         asinfo_intentado=_asinfo_intentado,
         solo_huerfanas=solo_huerfanas,
+        # TMT 2026-05-22 — paginación
+        page=page,
+        por_pagina=por_pagina,
+        total_filtrado_n=total_filtrado.get("n", 0),
+        total_filtrado_importe=total_filtrado.get("total_importe", 0.0),
+        total_filtrado_saldo=total_filtrado.get("total_saldo", 0.0),
+        paginado=not (is_export or solo_huerfanas),
     )
 
 
