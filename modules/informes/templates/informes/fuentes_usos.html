@@ -105,6 +105,18 @@
     {% endif %}
   </form>
 
+  {# Federico 2026-05-22 — aviso si Fuentes ≠ Usos (ya no se fuerza ajuste). #}
+  {% if data.descuadre is defined and (data.descuadre | abs) > 0.5 %}
+    <div class="mb-4 max-w-3xl bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 rounded-lg p-3 text-sm">
+      <div class="font-semibold text-rose-800 dark:text-rose-300">⚠ Fuentes y Usos no coinciden</div>
+      <p class="mt-1 text-rose-700 dark:text-rose-400">
+        Diferencia de <strong>{{ data.descuadre | abs | num_es(0) }}</strong> entre los dos totales.
+        Tienen que dar idénticos — revisá los snapshots de cierre de
+        {{ '%02d/%d' % (data.mes_ini, data.anio_ini) }} y {{ '%02d/%d' % (data.mes, data.anio) }}.
+      </p>
+    </div>
+  {% endif %}
+
   {# TMT 2026-05-20 v4 — REPLICA del PRG dBase L1730-1779: tabla
      unificada con 1 row por cuenta y 2 columnas (FUENTES | USOS).
      Cada cuenta SIEMPRE aparece (con 0 si no cambió). Orden fijo
@@ -123,9 +135,8 @@
       </thead>
       <tbody>
         {% for c in data.cuentas %}
-        {% set es_ajuste = c.label.startswith('AJUSTE') %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 {% if es_ajuste %}italic text-slate-400{% endif %}">
-          <td class="px-4 py-2 font-medium text-slate-700 dark:text-slate-300 {% if es_ajuste %}font-normal text-slate-400{% endif %}">{{ c.label }}</td>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-2 font-medium text-slate-700 dark:text-slate-300">{{ c.label }}</td>
           <td class="px-4 py-2 text-right tabular-nums font-mono text-emerald-700 dark:text-emerald-400">
             {% if c.fuente > 0 %}{{ c.fuente | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
@@ -147,7 +158,8 @@
   <p class="mt-3 text-xs text-slate-500 max-w-3xl">
     Cada fila es una <strong>cuenta del balance</strong>. Si subió un activo (o bajó un pasivo), va a <strong class="text-rose-700">USOS</strong>.
     Si bajó un activo (o subió un pasivo), va a <strong class="text-emerald-700">FUENTES</strong>.
-    La fila <em>AJUSTE</em> aparece solo si los totales no cierran por sí solos — es la variación residual de caja+bancos.
+    UTILIDADES y RETIROS salen del Historial (suma de <code class="font-mono">usuti</code> / <code class="font-mono">usret</code> del período).
+    Los dos totales deben dar idénticos; no se fuerza ningún ajuste.
     Réplica del cuadro <code class="font-mono">PROCEDURE FUENTES</code> del INFORMES.PRG dBase original.
   </p>
   {% endif %}

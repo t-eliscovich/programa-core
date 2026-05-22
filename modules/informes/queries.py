@@ -6687,32 +6687,28 @@ def fuentes_y_usos(
         if f(h_ini, k) == 0 and f(h_fin, k) > 1.0:
             columnas_ini_vacias.append(k)
 
-    # TMT 2026-05-20 v6 — utilidad y retiros del PERÍODO.
-    #
-    # Retiros del período: SUM directo de scintela.retiros entre las dos
-    # fechas. Es la fuente de verdad (no scintela.historia.usret, que solo
-    # se rellena si el snapshot mensual quedó bien generado).
-    # NOTA: la columna de monto es `ret` (no `importe`). Ver L395 misma tabla.
-    retiros_row = (
-        db.fetch_one(
-            """
-        SELECT COALESCE(SUM(ret), 0) AS total
-          FROM scintela.retiros
+    # Federico 2026-05-22 — UTILIDADES y RETIROS del período salen del
+    # Historial, fiel al dBase PROCEDURE FUENTES:
+    #   SUM ALL USUTI/USRET FOR RECNO()>RECI .AND. RECNO()<=RECF
+    # = suma de usuti / usret de los snapshots posteriores al inicial y
+    # hasta el final inclusive. Antes la web usaba ΔPatrimonio y la tabla
+    # scintela.retiros — no salía del Historial.
+    _sum_hist = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(usuti), 0) AS uti,
+               COALESCE(SUM(usret), 0) AS ret
+          FROM scintela.historia
          WHERE fecha > %s AND fecha <= %s
         """,
-            (fecha_ini, fecha_fin),
-        )
-        or {}
-    )
-    retiros_periodo = float(retiros_row.get("total") or 0)
-
-    # Utilidad del período = ΔPatrimonio + Retiros − Aportes. Aportes no
-    # se modelan separadamente (los retiros negativos en la tabla actúan
-    # como aportes). Entonces:
-    #   utilidad_periodo = (patr_fin - patr_ini) + retiros_periodo
-    patr_fin = float(comp_fin.get("patr") or h_fin.get("patrimonio") or 0)
-    patr_ini = float(comp_ini.get("patr") or h_ini.get("patrimonio") or 0)
-    utilidad_periodo = (patr_fin - patr_ini) + retiros_periodo
+        (h_ini.get("fecha"), h_fin.get("fecha")),
+    ) or {}
+    utilidad_periodo = float(_sum_hist.get("uti") or 0)
+    retiros_periodo = float(_sum_hist.get("ret") or 0)
+    # Mes en curso sin snapshot: el row final se calculó live y su
+    # usuti/usret todavía no está en la tabla → se suma aparte.
+    if h_fin.get("_origen") == "live":
+        utilidad_periodo += float(h_fin.get("usuti") or 0)
+        retiros_periodo += float(h_fin.get("usret") or 0)
 
     fuentes: list[tuple[str, float]] = []
     usos: list[tuple[str, float]] = []
@@ -6796,25 +6792,13 @@ def fuentes_y_usos(
     else:
         cuentas.append(_row("RETIROS", 0.0, 0.0))
 
-    # TMT 2026-05-20 v4 — los totales se calculan sobre `cuentas` (la
-    # tabla unificada al estilo PRG), no sobre las listas viejas
-    # `fuentes`/`usos` (que siguen presentes para back-compat de
-    # callers que iteren). Identidad contable: por construcción
-    # SUM(fuente) == SUM(uso) si el snapshot inicial y final son del
-    # mismo balance (Activo = Pasivo + PN). Si no cuadra, agregamos
-    # una row de Ajuste para que cierre.
-    total_fuentes_cuentas = sum(c["fuente"] for c in cuentas)
-    total_usos_cuentas = sum(c["uso"] for c in cuentas)
-    delta_global = total_fuentes_cuentas - total_usos_cuentas
-    if abs(delta_global) > 0.5:
-        if delta_global > 0:
-            # fuentes > usos → exceso de fondos → "aumento de líquido" como uso
-            cuentas.append(_row("AJUSTE (variación caja+bancos)", 0.0, delta_global))
-        else:
-            cuentas.append(_row("AJUSTE (variación caja+bancos)", abs(delta_global), 0.0))
-
+    # Federico 2026-05-22 — sin fila de AJUSTE. El dBase no fuerza nada:
+    # FUENTES y USOS tienen que dar idénticos por sí solos. Si no
+    # coinciden, hay un problema en los snapshots y hay que verlo, no
+    # taparlo con un ajuste.
     total_fuentes = sum(c["fuente"] for c in cuentas)
     total_usos = sum(c["uso"] for c in cuentas)
+    descuadre = total_fuentes - total_usos
 
     return {
         "anio": yy,
@@ -6832,6 +6816,7 @@ def fuentes_y_usos(
         "usos": usos,
         "total_fuentes": total_fuentes,
         "total_usos": total_usos,
+        "descuadre": descuadre,
         "delta_banco": delta["banco"],
         # v5c: lista de columnas que el snapshot inicial no tiene
         # rellenas — el template muestra un warning.
