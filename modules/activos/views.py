@@ -53,8 +53,10 @@ def lista():
                 ("proveedor",        "Proveedor"),
                 ("inicial",          "Valor inicial"),
                 ("amortizac",        "Amort. acum."),
-                ("amortimes",        "Cuota mensual"),
+                ("cuota",            "Cuota"),
+                ("amortimes",        "Porción este mes"),
                 ("valor_libros",     "Valor en libros"),
+                ("resto_vida",       "Resto vida (meses)"),
                 ("pct_depreciado",   "% depreciado"),
                 ("vida_util",        "Vida útil (m)"),
                 ("ult_mes_amortizado", "Últ. mes amort."),
@@ -70,13 +72,14 @@ def lista():
         cat = int(f.get("categoria_orden") or 99)
         s = subtotales.setdefault(cat, {
             "n": 0, "inicial": 0.0, "amortizac": 0.0,
-            "valor_libros": 0.0, "amortimes": 0.0,
+            "valor_libros": 0.0, "amortimes": 0.0, "cuota": 0.0,
         })
         s["n"]            += 1
         s["inicial"]      += float(f.get("inicial")      or 0)
         s["amortizac"]    += float(f.get("amortizac")    or 0)
         s["valor_libros"] += float(f.get("valor_libros") or 0)
         s["amortimes"]    += float(f.get("amortimes")    or 0)
+        s["cuota"]        += float(f.get("cuota")        or 0)
 
     return render_template(
         "activos/lista.html",
