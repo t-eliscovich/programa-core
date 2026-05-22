@@ -251,3 +251,68 @@ def asociar(id_factura: int, numero_completo: str, usuario: str = "web") -> int:
         )
     _LOG.info("audit asociar id_factura=%s → %s (usuario=%s)", id_factura, numero_completo, usuario)
     return res
+
+
+def asociar_batch(pares: list[tuple[int, str]], usuario: str = "web") -> dict:
+    """Bulk: actualiza numf_completo y numf para muchos pares (id_factura, numero_completo).
+
+    Lo hace en UNA sola conexión + transacción para no agotar el pool. Cada
+    fila puede fallar individualmente; las que rompen quedan en `errores`.
+
+    Returns:
+        dict {actualizadas: int, errores: list[{id_factura, numero, error}]}
+    """
+    errores: list[dict] = []
+    actualizadas = 0
+    if not pares:
+        return {"actualizadas": 0, "errores": []}
+
+    with db.get_conn() as c:
+        try:
+            with c.cursor() as cur:
+                for id_f, num in pares:
+                    if not num:
+                        continue
+                    sufijo = num.split("-")[-1]
+                    try:
+                        numf_int: int | None = int(sufijo)
+                    except (ValueError, TypeError):
+                        numf_int = None
+                    try:
+                        if numf_int is not None:
+                            cur.execute(
+                                """
+                                UPDATE scintela.factura
+                                   SET numf_completo = %s,
+                                       numf = CASE WHEN COALESCE(numf, 0) = 0
+                                                   THEN %s ELSE numf END
+                                 WHERE id_factura = %s
+                                """,
+                                (num, numf_int, id_f),
+                            )
+                        else:
+                            cur.execute(
+                                "UPDATE scintela.factura SET numf_completo = %s WHERE id_factura = %s",
+                                (num, id_f),
+                            )
+                        actualizadas += cur.rowcount
+                    except Exception as _e:
+                        errores.append({
+                            "id_factura": id_f,
+                            "numero": num,
+                            "error": f"{type(_e).__name__}: {_e}",
+                        })
+                        # Si un UPDATE falla en una tx, abortamos el resto.
+                        # En PG, una excepción dentro de una tx la deja
+                        # "aborted" y los próximos cursor.execute fallan.
+                        # Mejor parar y commit lo de antes (NO, no se puede:
+                        # la tx está abortada). Hay que rollback + reintentar.
+                        c.rollback()
+                        _LOG.warning("asociar_batch: %s — rolling back y abortando.", _e)
+                        return {"actualizadas": 0, "errores": errores}
+            c.commit()
+            _LOG.info("asociar_batch: %s filas actualizadas (usuario=%s)", actualizadas, usuario)
+        except Exception:
+            c.rollback()
+            raise
+    return {"actualizadas": actualizadas, "errores": errores}

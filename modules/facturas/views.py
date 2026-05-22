@@ -493,6 +493,10 @@ def lista():
         f["asinfo_diff_kg"] = None
         f["asinfo_diff_usd"] = None
         f["asinfo_tipo"] = None  # FACTURA / DEVOLUCION cuando matchea
+        # TMT 2026-05-22 — flag para PC kg<0 que matchea con FACTURA/NTEN
+        # positiva en Asinfo (mismo |kg| y |usd|). Indica bug de carga: PC
+        # cargó como devolución algo que en Asinfo es factura.
+        f["asinfo_signo_invertido"] = False
         # True si la factura es de ANTES de cuando arrancó Asinfo "limpio"
         # → sabemos que no va a tener match, no es un error.
         f["asinfo_pre_cutoff"] = bool(f.get("fecha") and f["fecha"] < _ASINFO_CUTOFF)
@@ -562,6 +566,10 @@ def lista():
                 # un índice compuesto para el fallback heurístico.
                 from collections import defaultdict as _dd
                 idx_compuesto: dict[tuple, list[dict]] = _dd(list)
+                # TMT 2026-05-22 — índice ABS (sin signo). Para detectar
+                # misregistros: PC cargada como devolución (kg<0) cuando en
+                # Asinfo es FACTURA con kg>0 (mismo |kg|, mismo |usd|).
+                idx_compuesto_abs: dict[tuple, list[dict]] = _dd(list)
                 for r in asinfo_rows:
                     tipo = r.get("tipo")
                     if tipo not in (_TIPOS_POSITIVOS + _TIPOS_NEGATIVOS):
@@ -575,6 +583,8 @@ def lista():
                     # formato. usd queda en la fila para validación posterior.
                     key = (cli, str(fecha_ai)[:10], round(kg_ai, 2))
                     idx_compuesto[key].append(r)
+                    key_abs = (cli, str(fecha_ai)[:10], round(abs(kg_ai), 2))
+                    idx_compuesto_abs[key_abs].append(r)
 
                 # Mergear: elegir índice según signo del kg de PC.
                 #   kg > 0  → buscar en FACTURA+NTEN+NC_FINANCIERA
@@ -622,12 +632,45 @@ def lista():
                                   if abs(float(c.get("usd") or 0) - pc_imp) < 0.5]
                             if len(ok) == 1:
                                 r_ai = ok[0]
+                    # TMT 2026-05-22 — Detección de signo invertido. Cuando PC
+                    # tiene kg<0 (cargada como devolución) y Asinfo tiene una
+                    # FACTURA/NTEN positiva con mismo |kg| y mismo |usd|,
+                    # asumimos que PC se cargó con signo invertido por error.
+                    # Match con tolerancia más amplia porque el USD de PC
+                    # podría tener IVA (la card 199 lo trae sin IVA).
+                    signo_invertido = False
+                    if r_ai is None and pc_kg < 0:
+                        cli_pc = (f.get("codigo_cli") or "").strip().upper()
+                        fecha_pc = f.get("fecha")
+                        if cli_pc and fecha_pc:
+                            key_abs = (cli_pc, str(fecha_pc)[:10], round(abs(pc_kg), 2))
+                            candidatos = idx_compuesto_abs.get(key_abs, [])
+                            pc_imp_abs = abs(float(f.get("importe") or 0))
+                            # Tolerancia 15% para absorber IVA (USA: típico 12-14%
+                            # ya neteado o no). Filtramos a tipos POSITIVOS y
+                            # validamos que el kg sea positivo en Asinfo.
+                            ok = []
+                            for c in candidatos:
+                                if c.get("tipo") not in _TIPOS_POSITIVOS:
+                                    continue
+                                if float(c.get("kg") or 0) <= 0:
+                                    continue
+                                ai_usd_abs = abs(float(c.get("usd") or 0))
+                                # Aceptamos si los USD coinciden ± 15% (IVA tolerancia)
+                                # PERO no más de $5 absoluto en cifras chicas.
+                                margen = max(pc_imp_abs * 0.15, 5.0)
+                                if abs(ai_usd_abs - pc_imp_abs) <= margen:
+                                    ok.append(c)
+                            if len(ok) == 1:
+                                r_ai = ok[0]
+                                signo_invertido = True
                     if r_ai is not None:
                         f["asinfo_kg"] = float(r_ai.get("kg") or 0)
                         f["asinfo_usd"] = float(r_ai.get("usd") or 0)
                         f["asinfo_diff_kg"] = round(f["asinfo_kg"] - pc_kg, 3)
                         f["asinfo_diff_usd"] = round(f["asinfo_usd"] - float(f.get("importe") or 0), 2)
                         f["asinfo_tipo"] = r_ai.get("tipo")
+                        f["asinfo_signo_invertido"] = signo_invertido
             except Exception as _e:
                 # Cualquier falla del bridge no debe romper la lista de facturas.
                 _LOG_ENRICH = __import__("logging").getLogger("programa_core.facturas")

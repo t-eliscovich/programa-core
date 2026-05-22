@@ -279,7 +279,11 @@
       </thead>
       <tbody>
         {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        {# TMT 2026-05-22: si Asinfo encontró un match con signo invertido
+           (PC kg<0 ↔ Asinfo kg>0 mismo |kg| |usd|) → bug de carga PC.
+           Pintar la fila roja para que se vea. #}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if f.asinfo_signo_invertido %} bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/50{% endif %}"
+            {% if f.asinfo_signo_invertido %}title="Signo invertido: PC cargó como devolución pero Asinfo tiene FACTURA/NTEN positiva con mismo |kg| y |usd|. Revisar carga PC."{% endif %}>
           <td class="px-2 py-1.5 font-mono truncate" style="white-space: nowrap;">
             <a href="{{ url_for('facturas.detalle', id_factura=f.id_factura) }}" class="hover:text-blue-600">{% if f.numf_completo %}{{ f.numf_completo }}{% elif f.numf and f.numf != 0 %}{{ f.numf }}{% else %}<span class="text-slate-400">#{{ f.id_factura }}</span>{% endif %}</a>
           </td>
