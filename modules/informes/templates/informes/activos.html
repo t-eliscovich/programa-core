@@ -1,59 +1,65 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_hero %}
+{% from "_informes_design.html" import informes_styles, informes_page %}
 {% block title %}Activos fijos{% endblock %}
 {% block breadcrumb %}Informes / <strong>Activos fijos</strong>{% endblock %}
 
+{% block head_extra %}{{ informes_styles() }}{% endblock %}
+
 {% block content %}
-{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
-<div class="max-w-6xl">
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Activos fijos', descripcion='Terrenos, edificios, maquinaria — con amortización') }}
-    <button onclick="window.print()" class="no-print text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-  </div>
+{% set _actions %}
+  <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
+{% endset %}
+
+{% call informes_page(
+    titulo="Activos fijos",
+    descripcion="Terrenos, edificios, maquinaria — con amortización.",
+    actions_safe=_actions,
+) %}
 
   {% if error %}
-    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
       <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
     </div>
   {% endif %}
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="info-table">
+      <thead>
         <tr>
-          <th class="px-4 py-3 text-left font-medium">Fecha</th>
-          <th class="px-4 py-3 text-left font-medium">Tipo</th>
-          <th class="px-4 py-3 text-left font-medium">Concepto</th>
-          <th class="px-4 py-3 text-left font-medium">Proveedor</th>
-          <th class="px-4 py-3 text-right font-medium">Inicial</th>
-          <th class="px-4 py-3 text-right font-medium">Amortiz. acum.</th>
-          <th class="px-4 py-3 text-right font-medium">Amortiz. mes</th>
-          <th class="px-4 py-3 text-right font-medium">Valor</th>
-          <th class="px-4 py-3 text-right font-medium">Vida útil</th>
+          <th>Fecha</th>
+          <th>Tipo</th>
+          <th>Concepto</th>
+          <th>Proveedor</th>
+          <th class="num">Inicial</th>
+          <th class="num">Amortiz. acum.</th>
+          <th class="num">Amortiz. mes</th>
+          <th class="num">Valor</th>
+          <th class="num">Vida útil</th>
         </tr>
       </thead>
       <tbody>
         {% for r in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2" style="white-space: nowrap;">{{ r.fecha | fecha_es }}</td>
-          <td class="px-4 py-2 font-mono text-xs">{{ r.tipo }}</td>
-          <td class="px-4 py-2">{{ r.concepto | cleanstr }}</td>
-          <td class="px-4 py-2 text-slate-500">{{ r.proveedor }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ r.inicial | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ r.amortizac | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ r.amortimes | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono font-semibold">{{ r.valor | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ r.vida_util or '' }}</td>
+        <tr>
+          <td style="white-space: nowrap;">{{ r.fecha | fecha_es }}</td>
+          <td class="font-mono text-xs">{{ r.tipo }}</td>
+          <td>{{ r.concepto | cleanstr }}</td>
+          <td class="text-slate-500">{{ r.proveedor }}</td>
+          <td class="num">{{ r.inicial | money_es }}</td>
+          <td class="num">{{ r.amortizac | money_es }}</td>
+          <td class="num">{{ r.amortimes | money_es }}</td>
+          <td class="num" style="font-weight: 600;">{{ r.valor | money_es }}</td>
+          <td class="num">{{ r.vida_util or '' }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin activos cargados.') }}
+        <tr><td colspan="9" class="info-empty">Sin activos cargados.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
-  <p class="mt-4 text-xs text-slate-400 no-print">
+  <p class="mt-3 text-xs text-slate-400 no-print">
     Tipos: <code>I</code> = inmueble / instalación · <code>M</code> = maquinaria · <code>C</code> = carros · <code>K</code> = tejeduría
   </p>
-</div>
+
+{% endcall %}
 {% endblock %}

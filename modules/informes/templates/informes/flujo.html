@@ -1,61 +1,68 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_hero %}
+{% from "_informes_design.html" import informes_styles, informes_page %}
 {% block title %}Flujo{% endblock %}
 {% block breadcrumb %}Informes / <strong>Flujo</strong>{% endblock %}
 
+{% block head_extra %}{{ informes_styles() }}{% endblock %}
+
 {% block content %}
-{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
-<div class="max-w-7xl">
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Flujo de caja', descripcion='Últimos ' ~ dias ~ ' días') }}
-    <div class="no-print flex items-center gap-3">
-      <form class="flex items-center gap-2">
-        <label class="text-xs text-slate-500">Días:</label>
-        <input type="number" name="dias" value="{{ dias }}" min="1" max="365"
-               class="w-20 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
-        <button class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Ver</button>
-      </form>
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-    </div>
-  </div>
+{% set _actions %}
+  <form class="flex items-center gap-2" method="get">
+    <label class="text-xs text-slate-500">Días:</label>
+    <input type="number" name="dias" value="{{ dias }}" min="1" max="365"
+           class="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-sm">
+    <button class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver</button>
+  </form>
+  <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
+{% endset %}
+
+{% call informes_page(
+    titulo="Flujo de caja",
+    descripcion="Últimos " ~ dias ~ " días.",
+    actions_safe=_actions,
+) %}
 
   {% if error %}
-    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
       <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
     </div>
   {% endif %}
 
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="info-table">
+      <thead>
         <tr>
-          <th class="px-4 py-3 text-left font-medium" style="white-space: nowrap;">Fecha</th>
-          <th class="px-4 py-3 text-right font-medium">Facturas</th>
-          <th class="px-4 py-3 text-right font-medium">Cheques</th>
-          <th class="px-4 py-3 text-right font-medium">{{ L.BANCO_PICHINCHA }}</th>
-          <th class="px-4 py-3 text-right font-medium">{{ L.BANCO_INTERNACIONAL }}</th>
-          <th class="px-4 py-3 text-right font-medium">Gastos</th>
-          <th class="px-4 py-3 text-right font-medium">Pagos</th>
-          <th class="px-4 py-3 text-right font-medium">Saldo</th>
+          <th style="white-space: nowrap;">Fecha</th>
+          <th class="num">Facturas</th>
+          <th class="num">Cheques</th>
+          <th class="num">{{ L.BANCO_PICHINCHA }}</th>
+          <th class="num">{{ L.BANCO_INTERNACIONAL }}</th>
+          <th class="num">Gastos</th>
+          <th class="num">Pagos</th>
+          <th class="num">Saldo</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.facturas | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.cheques | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.pichincha | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.inter | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.gastos | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.pagos | money_es }}</td>
-          <td class="px-4 py-2 text-right text-mono font-semibold">{{ f.saldo | money_es }}</td>
+        <tr>
+          <td style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+          <td class="num">{{ f.facturas | money_es }}</td>
+          <td class="num">{{ f.cheques | money_es }}</td>
+          <td class="num">{{ f.pichincha | money_es }}</td>
+          <td class="num">{{ f.inter | money_es }}</td>
+          <td class="num">{{ f.gastos | money_es }}</td>
+          <td class="num">{{ f.pagos | money_es }}</td>
+          <td class="num" style="font-weight: 600;">{{ f.saldo | money_es }}</td>
         </tr>
         {% else %}
-        {{ empty_row(8, 'Sin datos para el período.', 'Probá con un rango de fechas más amplio.') }}
+        <tr><td colspan="8" class="info-empty">
+          Sin datos para el período.
+          <div class="hint">Probá con un rango de fechas más amplio.</div>
+        </td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</div>
+
+{% endcall %}
 {% endblock %}

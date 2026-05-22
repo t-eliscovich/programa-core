@@ -1,27 +1,30 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, saldo_pill, page_hero, volver_a_resultados %}
+{% from "_ui.html" import volver_a_resultados %}
+{% from "_informes_design.html" import informes_styles, informes_page %}
 {% block title %}Cartera — resumen{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Cartera — resumen</strong>{% endblock %}
 
-{% block content %}
-{# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
-<div class="max-w-5xl">
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Cartera — resumen', descripcion='Saldos por cobrar a clientes (vista compacta)') }}
-    <div class="no-print flex items-center gap-2">
-      {{ volver_a_resultados() }}
-      <a href="{{ url_for('cartera.aging') }}"
-         class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90 inline-flex items-center gap-1.5">
-        Ver con buckets de mora
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-      </a>
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-    </div>
-  </div>
+{% block head_extra %}{{ informes_styles() }}{% endblock %}
 
-  {# Banner explicando la diferencia con la vista de aging — ayuda a no
-     confundir las dos pantallas (resumen ≠ aging por mora). #}
-  <div class="mb-4 px-4 py-3 rounded bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 max-w-2xl">
+{% block content %}
+{% set _actions %}
+  {{ volver_a_resultados() }}
+  <a href="{{ url_for('cartera.aging') }}"
+     class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100 inline-flex items-center gap-1.5">
+    Ver con buckets de mora
+    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  </a>
+  <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
+{% endset %}
+
+{% call informes_page(
+    titulo="Cartera — resumen",
+    descripcion="Saldos por cobrar a clientes (vista compacta, ordenada por % del total).",
+    actions_safe=_actions,
+) %}
+
+  {# Banner aclaratorio — esta vista vs aging por mora #}
+  <div class="info-block" style="max-width: 640px; font-size: 12px; color: rgb(71 85 105);">
     Esta vista lista <strong>quién te debe y cuánto</strong>, ordenado por
     saldo. Para ver la antigüedad de la mora con buckets 0-30 / 31-60 /
     61-90 / +90 días y la acción "stop automático", abrí
@@ -29,66 +32,64 @@
   </div>
 
   {% if error %}
-    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
       <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
     </div>
   {% endif %}
 
-  {# TMT 2026-05-18 — Pedido dueña: 5 columnas CLIENTE | CHEQUES | FACTURAS
-     | TOTAL | % DEL TOTAL, ordenado por % desc (mayores deudores primero). #}
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="info-table">
+      <thead>
         <tr>
-          <th class="px-5 py-3 text-left font-medium">Cliente</th>
-          <th class="px-5 py-3 text-right font-medium">Cheques</th>
-          <th class="px-5 py-3 text-right font-medium">Facturas</th>
-          <th class="px-5 py-3 text-right font-medium">Total</th>
-          <th class="px-5 py-3 text-right font-medium">% del total</th>
+          <th>Cliente</th>
+          <th class="num">Cheques</th>
+          <th class="num">Facturas</th>
+          <th class="num">Total</th>
+          <th class="num">% del total</th>
         </tr>
       </thead>
       <tbody>
         {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+        <tr class="hover:bg-slate-50 cursor-pointer"
             onclick="window.location='{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}'">
-          <td class="px-5 py-2">
+          <td>
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}"
                class="hover:text-sky-600 hover:underline">
               <span class="font-mono text-xs text-slate-500">{{ f.codigo_cli }}</span>
               <span class="ml-1">{{ f.nombre }}</span>
             </a>
           </td>
-          <td class="px-5 py-2 text-right text-mono text-slate-500">
+          <td class="num {% if not f.cheques %}muted{% endif %}">
             {{ (f.cheques or 0) | money_es if (f.cheques or 0) > 0 else '—' }}
           </td>
-          <td class="px-5 py-2 text-right text-mono">{{ (f.facturas or 0) | money_es }}</td>
-          <td class="px-5 py-2 text-right text-mono font-semibold">{{ (f.saldo_total or 0) | money_es }}</td>
-          <td class="px-5 py-2 text-right text-mono">
-            <span class="inline-block min-w-[3.5rem] {% if (f.pct or 0) >= 10 %}font-semibold text-rose-700 dark:text-rose-400
-                  {% elif (f.pct or 0) >= 5 %}text-amber-700 dark:text-amber-400
+          <td class="num">{{ (f.facturas or 0) | money_es }}</td>
+          <td class="num" style="font-weight: 600;">{{ (f.saldo_total or 0) | money_es }}</td>
+          <td class="num">
+            <span class="inline-block min-w-[3.5rem] {% if (f.pct or 0) >= 10 %}font-semibold text-rose-700
+                  {% elif (f.pct or 0) >= 5 %}text-amber-700
                   {% else %}text-slate-500{% endif %}">
               {{ f.pct }}%
             </span>
           </td>
         </tr>
         {% else %}
-        {{ empty_row(5, 'Sin saldos por cobrar.', 'Todas las facturas están pagadas.') }}
+        <tr><td colspan="5" class="info-empty">
+          Sin saldos por cobrar.
+          <div class="hint">Todas las facturas están pagadas.</div>
+        </td></tr>
         {% endfor %}
-      </tbody>
-      {% if filas %}
-      <tfoot class="bg-slate-100 dark:bg-slate-800/60 border-t-2 border-slate-300 dark:border-slate-700">
-        <tr>
-          <td class="px-5 py-3 text-base font-bold text-slate-900 dark:text-slate-100">
-            Total <span class="text-xs font-normal text-slate-500 ml-1">({{ filas | length }} clientes)</span>
-          </td>
-          <td class="px-5 py-3 text-right text-mono text-base font-semibold">{{ filas | sum(attribute='cheques') | money_es }}</td>
-          <td class="px-5 py-3 text-right text-mono text-base font-semibold">{{ filas | sum(attribute='facturas') | money_es }}</td>
-          <td class="px-5 py-3 text-right text-mono text-lg font-bold text-slate-900 dark:text-slate-100">{{ total | money_es }}</td>
-          <td class="px-5 py-3 text-right text-mono text-base font-semibold text-slate-500">100%</td>
+        {% if filas %}
+        <tr class="total">
+          <td>Total <span class="text-xs font-normal" style="opacity:.7;">({{ filas | length }} clientes)</span></td>
+          <td class="num">{{ filas | sum(attribute='cheques') | money_es }}</td>
+          <td class="num">{{ filas | sum(attribute='facturas') | money_es }}</td>
+          <td class="num">{{ total | money_es }}</td>
+          <td class="num">100%</td>
         </tr>
-      </tfoot>
-      {% endif %}
+        {% endif %}
+      </tbody>
     </table>
   </div>
-</div>
+
+{% endcall %}
 {% endblock %}

@@ -1,86 +1,75 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_hero, volver_a_resultados %}
+{% from "_ui.html" import volver_a_resultados %}
+{% from "_informes_design.html" import informes_styles, informes_page, informes_kpi_row %}
 {% block title %}Ventas {{ anio }}{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Ventas {{ anio }}</strong>{% endblock %}
 
+{% block head_extra %}{{ informes_styles() }}{% endblock %}
+
 {% block content %}
-{# TMT 2026-05-20 — pantalla simple pedida por la dueña: ventas mes a
-   mes del año en curso con acumulado. Drilldown desde /informes/balance
-   al click 'Ventas del año'. #}
-<div class="max-w-4xl">
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Ventas del año ' ~ anio, 'Mes a mes desde enero · facturación con kg, precio promedio U$/kg, importe y acumulado.') }}
-    <div class="no-print flex items-center gap-2">
-      {{ volver_a_resultados() }}
-      <a href="{{ url_for('informes.ventas_anio', export='csv') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
-      <button onclick="window.print()"
-              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-    </div>
-  </div>
+{% set _actions %}
+  {{ volver_a_resultados() }}
+  <a href="{{ url_for('informes.ventas_anio', export='csv') }}"
+     class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
+  <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
+{% endset %}
+
+{% call informes_page(
+    titulo="Ventas del año " ~ anio,
+    descripcion="Mes a mes desde enero · facturación con kg, precio promedio U$/kg, importe y acumulado.",
+    actions_safe=_actions,
+) %}
 
   {% if error %}
-    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
       <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
     </div>
   {% endif %}
 
-  {# ── KPIs del año ───────────────────────────────────────────────── #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Kg totales</div>
-      <div class="mt-1 text-2xl font-semibold text-mono">{{ total_kg | num_es(0) }}</div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Precio promedio</div>
-      <div class="mt-1 text-2xl font-semibold text-mono">{{ precio_prom | num_es(2) }} <span class="text-xs text-slate-400">U$/kg</span></div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Importe total</div>
-      <div class="mt-1 text-2xl font-semibold text-mono">{{ total_importe | money_es }}</div>
-    </div>
-  </div>
+  {{ informes_kpi_row([
+    {"label": "Kg totales", "value": total_kg | num_es(0)},
+    {"label": "Precio promedio", "value": (precio_prom | num_es(2)) ~ ' U$/kg'},
+    {"label": "Importe total", "value": total_importe | money_es, "primary": true},
+  ]) }}
 
-  {# ── Tabla mes/kg/precio/importe/acum ─────────────────────────────── #}
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="info-table">
+      <thead>
         <tr>
-          <th class="px-5 py-3 text-left font-medium">Mes</th>
-          <th class="px-5 py-3 text-right font-medium">Kg</th>
-          <th class="px-5 py-3 text-right font-medium">Precio U$/kg</th>
-          <th class="px-5 py-3 text-right font-medium">Importe</th>
-          <th class="px-5 py-3 text-right font-medium">Acumulado</th>
+          <th>Mes</th>
+          <th class="num">Kg</th>
+          <th class="num">Precio U$/kg</th>
+          <th class="num">Importe</th>
+          <th class="num">Acumulado</th>
         </tr>
       </thead>
       <tbody>
         {% for r in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-5 py-2">
+        <tr>
+          <td>
             <a href="{{ url_for('informes.ventas', anio=anio, mes=r.mes_num) }}"
                class="hover:text-blue-600 hover:underline">{{ r.mes_nombre }}</a>
           </td>
-          <td class="px-5 py-2 text-right text-mono">{{ r.kg | num_es(0) }}</td>
-          <td class="px-5 py-2 text-right text-mono text-slate-500">{{ r.precio | num_es(2) }}</td>
-          <td class="px-5 py-2 text-right text-mono">{{ r.importe | money_es }}</td>
-          <td class="px-5 py-2 text-right text-mono font-semibold">{{ r.acum | money_es }}</td>
+          <td class="num">{{ r.kg | num_es(0) }}</td>
+          <td class="num muted">{{ r.precio | num_es(2) }}</td>
+          <td class="num">{{ r.importe | money_es }}</td>
+          <td class="num" style="font-weight: 600;">{{ r.acum | money_es }}</td>
         </tr>
         {% else %}
-        {{ empty_row(5, 'Sin ventas registradas en ' ~ anio ~ '.') }}
+        <tr><td colspan="5" class="info-empty">Sin ventas registradas en {{ anio }}.</td></tr>
         {% endfor %}
-      </tbody>
-      {% if filas %}
-      <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-200 dark:border-slate-700">
-        <tr>
-          <td class="px-5 py-3 font-semibold uppercase text-xs tracking-wider text-slate-500">Total</td>
-          <td class="px-5 py-3 text-right text-mono font-semibold">{{ total_kg | num_es(0) }}</td>
-          <td class="px-5 py-3 text-right text-mono text-slate-500">{{ precio_prom | num_es(2) }}</td>
-          <td class="px-5 py-3 text-right text-mono font-semibold">{{ total_importe | money_es }}</td>
-          <td class="px-5 py-3 text-right text-mono"></td>
+        {% if filas %}
+        <tr class="total">
+          <td>TOTAL</td>
+          <td class="num">{{ total_kg | num_es(0) }}</td>
+          <td class="num">{{ precio_prom | num_es(2) }}</td>
+          <td class="num">{{ total_importe | money_es }}</td>
+          <td class="num"></td>
         </tr>
-      </tfoot>
-      {% endif %}
+        {% endif %}
+      </tbody>
     </table>
   </div>
-</div>
+
+{% endcall %}
 {% endblock %}
