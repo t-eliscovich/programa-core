@@ -372,18 +372,30 @@ def editar(id_compra: int):
 @requiere_login
 @requiere_permiso("compras.ver")
 def lista():
+    """Pantalla Compras — todas las compras menos la producción de tejido."""
+    return _pantalla_compras("compras", "Compras", "compras.lista")
+
+
+@compras_bp.route("/produccion-tejeduria")
+@requiere_login
+@requiere_permiso("compras.ver")
+def produccion_tejeduria():
+    """Pantalla Producción Tejeduría — solo la producción de tejido."""
+    return _pantalla_compras(
+        "produccion", "Producción Tejeduría", "compras.produccion_tejeduria",
+    )
+
+
+def _pantalla_compras(vista, titulo, endpoint_actual):
+    """Lógica compartida de Compras y Producción Tejeduría. La `vista` la
+    fija la ruta (no el query string); `endpoint_actual` es el endpoint de
+    esta misma pantalla, para que el form y los botones apunten acá.
+    Federico 2026-05-22.
+    """
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     incluir_anuladas = request.args.get("anuladas") == "1"
-    # Vista canónica (2026-04-29): todas / compras / produccion / anticipos.
-    vista = request.args.get("vista", "compras").lower()
-    if vista not in ("todas", "compras", "produccion", "anticipos"):
-        vista = "todas"
-    # TMT 2026-05-18 — filtro KG: 'gt0' (producción) o 'eq0' (compras sin kg).
-    kg_filter = (request.args.get("kg") or "").strip().lower() or None
-    if kg_filter not in ("gt0", "eq0", None):
-        kg_filter = None
     # Federico 2026-05-22 — "Solo INTELA" (q=KK) muestra la producción
     # propia; no aplica en la vista Compras, que justamente excluye la
     # producción. Si se entra a Compras con ese filtro prendido, se apaga.
@@ -394,7 +406,6 @@ def lista():
             q, desde, hasta,
             incluir_anuladas=incluir_anuladas,
             vista=vista,
-            kg_filter=kg_filter,
         )
         error = None
     except Exception as e:
@@ -428,7 +439,6 @@ def lista():
         agg = queries.total_buscar(
             q, desde, hasta,
             incluir_anuladas=incluir_anuladas, vista=vista,
-            kg_filter=kg_filter,
         )
         total_importe = agg["total"]
         total_kg = agg["total_kg"]
@@ -437,28 +447,6 @@ def lista():
                             if (r.get("stat") or "").upper() != "Y")
         total_kg = sum(float(r["kg"] or 0) for r in filas
                        if (r.get("stat") or "").upper() != "Y")
-    # Conteos por vista para los tabs — query separado sobre el universo
-    # completo (con los filtros de fecha aplicados pero SIN el filtro de
-    # vista), porque sino los buckets no-activos siempre dan 0. Cada
-    # bucket trae {n, total} para mostrar conteo + monto en cada tab.
-    _empty_bucket = {"n": 0, "total": 0.0}
-    try:
-        conteos = queries.conteos_por_vista(
-            desde=desde, hasta=hasta, incluir_anuladas=incluir_anuladas,
-        )
-    except Exception:
-        conteos = {k: dict(_empty_bucket)
-                   for k in ("todas", "compras", "produccion", "anticipos")}
-
-    # Deuda con proveedores — KPI primario de la pantalla. Es el "TOTP"
-    # del balance, vive en posdat (no en compra). Independiente de los
-    # filtros de fecha/proveedor — siempre mostramos el saldo total.
-    try:
-        deuda = queries.deuda_proveedores()
-    except Exception:
-        deuda = {"total": 0.0, "n_partidas": 0, "n_proveedores": 0,
-                 "vencido": 0.0, "vence_pronto": 0.0}
-
     # Federico 2026-05-22 - proveedores para el datalist (sugerencias)
     # del campo Proveedor del filtro de /compras.
     try:
@@ -472,12 +460,8 @@ def lista():
         total_importe=total_importe, total_kg=total_kg,
         incluir_anuladas=incluir_anuladas,
         vista=vista,
-        kg_filter=kg_filter,
-        bucket_todas=conteos.get("todas", _empty_bucket),
-        bucket_compras=conteos.get("compras", _empty_bucket),
-        bucket_produccion=conteos.get("produccion", _empty_bucket),
-        bucket_anticipos=conteos.get("anticipos", _empty_bucket),
-        deuda=deuda,
+        titulo=titulo,
+        endpoint_actual=endpoint_actual,
         proveedores=proveedores,
         error=error,
     )

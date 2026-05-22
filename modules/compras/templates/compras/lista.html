@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero, kpi_card %}
-{% block title %}Compras y Producción Tejeduría{% endblock %}
+{% block title %}{{ titulo }}{% endblock %}
 {% block breadcrumb %}
-  {% if q or desde or hasta or kg_filter or vista != 'todas' %}
-    <a href="{{ url_for('compras.lista') }}" class="hover:underline">Compras</a> /
+  {% if q or desde or hasta %}
+    <a href="{{ url_for(endpoint_actual) }}" class="hover:underline">{{ titulo }}</a> /
     <strong>Filtro activo</strong>
   {% else %}
-    <strong>Compras</strong>
+    <strong>{{ titulo }}</strong>
   {% endif %}
 {% endblock %}
 
@@ -21,15 +21,15 @@
        de compras del filtro activo. La deuda viva sigue siendo
        accesible vía /posdat. #}
     {{ page_hero(
-        'Compras y Producción Tejeduría',
+        titulo,
         kpi_valor='$ ' ~ (total_importe | num_es(0)),
-        kpi_extra='· ' ~ (filas | length | string) ~ ' compras en pantalla'
+        kpi_extra='· ' ~ (filas | length | string) ~ ' filas en pantalla'
                    ~ ' · ' ~ (total_kg | num_es(0)) ~ ' kg'
     ) }}
 
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if q or desde or hasta or kg_filter or vista != 'todas' %}
-        <a href="{{ url_for('compras.lista') }}"
+      {% if q or desde or hasta %}
+        <a href="{{ url_for(endpoint_actual) }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
            title="Volver al listado completo, sin filtros">
           ← Volver
@@ -64,14 +64,14 @@
               <div class="font-medium">Descargar plantilla CSV</div>
             </a>
           {% endif %}
-          <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta,
+          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta,
                                anuladas=('0' if incluir_anuladas else '1')) }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">
               {% if incluir_anuladas %}Ocultar anuladas{% else %}Ver anuladas{% endif %}
             </div>
           </a>
-          <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta, export='csv') }}"
+          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta, export='csv') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">Exportar CSV</div>
           </a>
@@ -89,24 +89,8 @@
      cards extras encima de la tabla). El detalle de vencidos vive en
      /posdat. #}
 
-  {# Tabs canónicos (2026-04-29): "Todas" primero (default), después los
-     específicos. Cada tab muestra conteo + monto $ del filtro de fecha
-     activo (no del bucket activo — son contadores globales). #}
-  <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
-    {% set tabs = [
-      ('compras', 'Compras', bucket_compras),
-      ('produccion', 'Producción', bucket_produccion),
-    ] %}
-    {% for key, label, b in tabs %}
-      <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta, vista=key, anuladas=('1' if incluir_anuladas else None)) }}"
-         class="px-4 py-2 text-sm rounded-t border-b-2 transition-colors whitespace-nowrap
-                {% if vista == key %}border-sky-600 text-sky-700 dark:text-sky-300 font-medium{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
-        {{ label }}
-        {# TMT 2026-05-18 — solo conteo (R3) #}
-        <span class="ml-1 text-xs text-slate-400">{{ b.n }}</span>
-      </a>
-    {% endfor %}
-  </div>
+  {# TMT 2026-05-22 — pestañas Compras/Producción removidas: ahora son dos
+     páginas separadas, cada una con su item en el menú principal. #}
 
   {# Strip de contexto de la vista actual — sigue siendo útil para ver
      kg + importe filtrados sin tener que sumar a mano. #}
@@ -117,7 +101,6 @@
   </div>
 
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-    <input type="hidden" name="vista" value="{{ vista }}">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
       <input type="text" name="q" value="{{ q }}" placeholder="Código o nombre del proveedor"
@@ -146,20 +129,21 @@
        filtros activos (q, kg, vista, tipo). Antes perdía vista. #}
     {% set _hoy = g.now.date() if g.now else None %}
     {% if _hoy %}
-      <a href="{{ url_for('compras.lista',
+      <a href="{{ url_for(endpoint_actual,
                           q=q,
                           desde=_hoy.replace(day=1).isoformat(),
                           hasta=_hoy.isoformat(),
-                          kg=kg_filter,
-                          vista=vista,
                           anuladas='1' if incluir_anuladas else None) }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
          title="Setea desde=día 1 del mes actual, hasta=hoy. Preserva los filtros activos.">Mes actual</a>
     {% endif %}
-    {# Federico 2026-05-22 - boton rapido: solo produccion propia de INTELA (KK). #}
-    <a href="{{ url_for('compras.lista', q=(none if q == 'KK' else 'KK'), desde=desde, hasta=hasta, kg=kg_filter, vista=vista, anuladas='1' if incluir_anuladas else None) }}"
+    {# Federico 2026-05-22 - boton rapido: solo produccion propia de INTELA
+       (KK). Solo se muestra en la pantalla Producción Tejeduría. #}
+    {% if vista == 'produccion' %}
+    <a href="{{ url_for(endpoint_actual, q=(none if q == 'KK' else 'KK'), desde=desde, hasta=hasta, anuladas='1' if incluir_anuladas else None) }}"
        class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium{% if q == 'KK' %} bg-sky-100 dark:bg-sky-900/30{% endif %}"
        title="Muestra solo la produccion de tejido propia de INTELA (proveedor KK).">Solo INTELA</a>
+    {% endif %}
   </form>
 
   {% if error %}
