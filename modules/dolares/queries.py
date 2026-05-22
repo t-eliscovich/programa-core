@@ -19,7 +19,7 @@ def lista(
     """Movimientos en scintela.dolares (anticipos USD).
 
     Cada fila tiene: fecha, cta (3-char), concepto, importe, st, clave,
-    saldo_acumulado (running por cuenta).
+    saldo_acumulado (suma acumulada fila por fila).
 
     Convención del campo `st`:
         NULL / '' / ' ' → anticipo VIVO (suma a ANTICIPOS del balance).
@@ -27,9 +27,10 @@ def lista(
 
     `solo_vivos=True` filtra a los anticipos abiertos.
 
-    Saldo acumulado (TMT 2026-05-12): running balance POR CUENTA, calculado
-    sobre el universo filtrado. Si filtrás por cuenta, ves su corrida; si
-    no, cada fila muestra el saldo de SU cuenta hasta ese movimiento.
+    Acumulado (Federico 2026-05-22): suma acumulada simple de los importes,
+    fila por fila, en el mismo orden en que se muestra la tabla (fecha
+    DESC). La última fila lleva el total del filtro. Antes era un running
+    balance POR CUENTA — la dueña pidió un único acumulado corrido.
     """
     # Federico 2026-05-22 — filtro "Pedido Num.": texto incluido en concepto.
     pedido_param = f"%{pedido.strip()}%" if pedido and pedido.strip() else None
@@ -56,19 +57,15 @@ def lista(
         },
     ) or []
 
-    # Running balance por cuenta: ordenar ASC, acumular, marcar cada fila,
-    # devolver DESC (que es el orden original). Bug TMT 2026-05-12: el
-    # fallback `or ""` mezclaba date con string y rompía el sort —
-    # `_date.min` mantiene el tipo consistente.
-    rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
-                                            r.get("id_dolares") or 0))
-    acum_por_cta: dict[str, float] = {}
-    for r in rows_asc:
-        cta_key = (r.get("cta") or "").strip().upper()
-        acum_por_cta[cta_key] = acum_por_cta.get(cta_key, 0.0) + float(r.get("importe") or 0)
-        r["saldo_acumulado"] = acum_por_cta[cta_key]
-    # Volver al orden DESC.
-    return list(reversed(rows_asc))
+    # Federico 2026-05-22 — columna "Acum.": suma acumulada simple de los
+    # importes, fila por fila, en el orden en que se muestra la tabla
+    # (fecha DESC, tal como vienen de la query). La última fila lleva el
+    # total del filtro. Antes era un saldo corrido POR CUENTA.
+    acum = 0.0
+    for r in rows:
+        acum += float(r.get("importe") or 0)
+        r["saldo_acumulado"] = acum
+    return rows
 
 
 def por_cuenta(solo_vivos: bool = True) -> list[dict]:
