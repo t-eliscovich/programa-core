@@ -396,6 +396,9 @@ def lista():
     # PC tiene pero Asinfo NO matchea (excluyendo legacy y NC kg=0).
     # Sirve para encontrar discrepancias reales entre los sistemas.
     solo_huerfanas = request.args.get("solo_huerfanas") == "1"
+    # TMT 2026-05-22 — filtro por tipo Asinfo (F=FACTURA, D=DEVOLUCION,
+    # N=NTEN, NC=NC_FINANCIERA, NCNT). Vacío = todos.
+    tipo_ai_filtro = (request.args.get("tipo_ai") or "").strip().upper()
     # Vista canónica:
     #  - cartera (Z+A vivas)
     #  - estado (= antes "todas"; muestra todo el universo, filtrable por ?estado=)
@@ -579,12 +582,21 @@ def lista():
                 #   kg == 0 → no matchear (NC financiera, ajustes)
                 for f in filas:
                     pc_kg = float(f.get("kg") or 0)
+                    # TMT 2026-05-22 — antes kg=0 se saltaba. Ahora también
+                    # intentamos matchear NC financieras (kg=0, importe negativo)
+                    # por el universo "positivo" (que ya incluye NC_FINANCIERA).
                     if pc_kg > 0:
                         c_idx, n_idx = idx_factura_completo, idx_factura_numf
                     elif pc_kg < 0:
                         c_idx, n_idx = idx_devolucion_completo, idx_devolucion_numf
                     else:
-                        continue  # kg=0 → skip
+                        # kg=0 → intentar contra ambos índices, prefiriendo el negativo
+                        # si el importe PC es negativo.
+                        pc_imp_signo = float(f.get("importe") or 0)
+                        if pc_imp_signo < 0:
+                            c_idx, n_idx = idx_devolucion_completo, idx_devolucion_numf
+                        else:
+                            c_idx, n_idx = idx_factura_completo, idx_factura_numf
                     r_ai = None
                     numero = (f.get("numf_completo") or "").strip()
                     if numero:
@@ -632,6 +644,18 @@ def lista():
             and float(f.get("kg") or 0) != 0
         ]
 
+    # TMT 2026-05-22 — filtro por tipo Asinfo (post-enriquecimiento).
+    if tipo_ai_filtro:
+        _MAP_TIPO = {
+            "F": "FACTURA",
+            "D": "DEVOLUCION",
+            "N": "NTEN",
+            "NC": "NC_FINANCIERA",
+            "NCNT": "NCNT",
+        }
+        tipo_buscado = _MAP_TIPO.get(tipo_ai_filtro, tipo_ai_filtro)
+        filas = [f for f in filas if f.get("asinfo_tipo") == tipo_buscado]
+
     if request.args.get("export") == "csv":
         return csv_response(
             filas,
@@ -663,6 +687,7 @@ def lista():
         error=error,
         asinfo_intentado=_asinfo_intentado,
         solo_huerfanas=solo_huerfanas,
+        tipo_ai_filtro=tipo_ai_filtro,
         # TMT 2026-05-22 — paginación
         page=page,
         por_pagina=por_pagina,

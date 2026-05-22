@@ -194,6 +194,19 @@
       <input type="text" name="q" value="{{ q }}" placeholder="N° factura, nombre…"
              class="w-44 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
+    {# TMT 2026-05-22 dueña: filtro por tipo AI (F/D/N/NC) #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Tipo AI</label>
+      <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <option value="">Todos</option>
+        <option value="F" {% if tipo_ai_filtro == 'F' %}selected{% endif %}>F · Factura</option>
+        <option value="D" {% if tipo_ai_filtro == 'D' %}selected{% endif %}>D · Devolución</option>
+        <option value="N" {% if tipo_ai_filtro == 'N' %}selected{% endif %}>N · NTEN</option>
+        <option value="NC" {% if tipo_ai_filtro == 'NC' %}selected{% endif %}>NC · NC Financiera</option>
+        <option value="NCNT" {% if tipo_ai_filtro == 'NCNT' %}selected{% endif %}>NCNT</option>
+      </select>
+    </div>
+
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
   </form>
 
@@ -306,17 +319,25 @@
               <span class="text-rose-600 dark:text-rose-400 font-semibold">{{ _ai_usd | money_es }}</span>
             {% endif %}
           </td>
-          {# Tipo AI = F (Factura) / D (Devolucion) según Asinfo. Si difiere
-             del esperado por signo del kg de PC, rojo. #}
+          {# Tipo AI: F=Factura, D=Devolución, N=NTEN, NC=NC financiera,
+             NCNT=NCNT. TMT 2026-05-22: agregados N + NC + NCNT. #}
           {% set _ai_tipo = f.asinfo_tipo if f.asinfo_tipo is defined else none %}
-          <td class="px-2 py-1.5 text-center font-mono" title="{% if _ai_tipo == 'FACTURA' %}Factura en Asinfo{% elif _ai_tipo == 'DEVOLUCION' %}Devolución en Asinfo{% else %}sin tipo Asinfo{% endif %}">
-            {% if _ai_tipo == 'FACTURA' %}
-              <span class="text-slate-400">F</span>
-            {% elif _ai_tipo == 'DEVOLUCION' %}
-              <span class="text-amber-600 dark:text-amber-400">D</span>
-            {% else %}
-              <span class="text-slate-300">—</span>
-            {% endif %}
+          {% set _ai_letra = {
+              'FACTURA': 'F',
+              'DEVOLUCION': 'D',
+              'NTEN': 'N',
+              'NC_FINANCIERA': 'NC',
+              'NCNT': 'NCNT',
+          }.get(_ai_tipo, '—') %}
+          {% set _ai_color = {
+              'FACTURA': 'text-slate-400',
+              'DEVOLUCION': 'text-amber-600',
+              'NTEN': 'text-sky-600',
+              'NC_FINANCIERA': 'text-rose-600',
+              'NCNT': 'text-rose-700',
+          }.get(_ai_tipo, 'text-slate-300') %}
+          <td class="px-2 py-1.5 text-center font-mono" title="{% if _ai_tipo %}{{ _ai_tipo | replace('_', ' ') | title }} en Asinfo{% else %}sin tipo Asinfo{% endif %}">
+            <span class="{{ _ai_color }}">{{ _ai_letra }}</span>
           </td>
           <td class="px-2 py-1.5 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-2 py-1.5 text-right">{{ saldo_pill(f.saldo) }}</td>
