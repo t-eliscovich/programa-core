@@ -377,7 +377,7 @@ def lista():
     hasta = request.args.get("hasta") or None
     incluir_anuladas = request.args.get("anuladas") == "1"
     # Vista canónica (2026-04-29): todas / compras / produccion / anticipos.
-    vista = request.args.get("vista", "todas").lower()
+    vista = request.args.get("vista", "compras").lower()
     if vista not in ("todas", "compras", "produccion", "anticipos"):
         vista = "todas"
     # TMT 2026-05-18 — filtro KG: 'gt0' (producción) o 'eq0' (compras sin kg).

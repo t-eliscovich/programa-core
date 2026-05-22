@@ -94,10 +94,8 @@
      activo (no del bucket activo — son contadores globales). #}
   <div class="no-print flex items-end gap-1 mb-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     {% set tabs = [
-      ('todas', 'Todas', bucket_todas),
       ('compras', 'Compras', bucket_compras),
       ('produccion', 'Producción', bucket_produccion),
-      ('anticipos', 'Anticipos', bucket_anticipos),
     ] %}
     {% for key, label, b in tabs %}
       <a href="{{ url_for('compras.lista', q=q, desde=desde, hasta=hasta, vista=key, anuladas=('1' if incluir_anuladas else None)) }}"
@@ -134,18 +132,6 @@
       <label class="block text-xs text-slate-500 mb-1">Hasta</label>
       <input type="date" name="hasta" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
-    </div>
-    {# TMT 2026-05-21 dueña: cambiar "Kg > 0" a "Kg ≠ 0" — los ajustes
-       negativos (correcciones) también son producción legítima. El valor
-       'gt0' se mantiene en el código por back-compat pero el SQL ahora
-       filtra <> 0. #}
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Kg</label>
-      <select name="kg" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
-        <option value=""    {% if not kg_filter %}selected{% endif %}>(todos)</option>
-        <option value="gt0" {% if kg_filter == 'gt0' %}selected{% endif %}>Kg ≠ 0 (con movimiento)</option>
-        <option value="eq0" {% if kg_filter == 'eq0' %}selected{% endif %}>Kg = 0 (sin kg)</option>
-      </select>
     </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
     {# TMT 2026-05-21 dueña: botón Mes actual debe combinar con TODOS los
