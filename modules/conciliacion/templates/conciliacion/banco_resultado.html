@@ -6,10 +6,7 @@
 
   <div class="flex items-baseline justify-between mb-3">
     <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación Banco · Pichincha</h1>
-    <form method="POST" action="{{ url_for('conciliacion.banco_limpiar') }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro archivo</button>
-    </form>
+    <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro archivo</a>
   </div>
 
   {# === Banner de saldo === #}
@@ -60,8 +57,9 @@
       ✓ {{ n_match }} matches encontrados (REAL ↔ BANCSIS)
     </summary>
     {% if n_match > 0 %}
-    <form method="POST" action="{{ url_for('conciliacion.banco_confirmar_matches') }}" class="mb-3">
+    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mb-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="matches_json" value="{{ matches_json|e }}">
       <button class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
         ✓ Confirmar TODOS los matches ({{ n_match }})
       </button>
@@ -170,7 +168,7 @@
             <td class="px-2 py-1.5 truncate max-w-xs" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
             <td class="px-2 py-1.5 font-mono text-slate-500">{{ b.numreferencia }}</td>
             <td class="px-2 py-1.5">
-              <form method="POST" action="{{ url_for('conciliacion.banco_aceptar_bancsis_only') }}" class="inline">
+              <form method="POST" action="{{ url_for('conciliacion.hub_aceptar_bancsis_only') }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="id_transaccion" value="{{ b.id_transaccion }}">
                 <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
