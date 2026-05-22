@@ -105,8 +105,9 @@
     {% endif %}
   </form>
 
-  {# Federico 2026-05-22 — aviso si Fuentes ≠ Usos (ya no se fuerza ajuste). #}
-  {% if data.descuadre is defined and (data.descuadre | abs) > 0.5 %}
+  {# Federico 2026-05-22 — aviso si Fuentes ≠ Usos (ya no se fuerza ajuste).
+     Tolerancia de $100: por debajo es redondeo de los snapshots, no un error. #}
+  {% if data.descuadre is defined and (data.descuadre | abs) > 100 %}
     <div class="mb-4 max-w-3xl bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 rounded-lg p-3 text-sm">
       <div class="font-semibold text-rose-800 dark:text-rose-300">⚠ Fuentes y Usos no coinciden</div>
       <p class="mt-1 text-rose-700 dark:text-rose-400">
