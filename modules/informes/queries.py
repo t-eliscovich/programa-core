@@ -6604,8 +6604,11 @@ def fuentes_y_usos(
     comp_fin: dict = {}
     comp_ini: dict = {}
 
-    # Fallback HASTA: mes en curso sin snapshot todavía → as_of(today).
-    if not h_fin and es_mes_actual:
+    # HASTA = mes en curso → SIEMPRE se calcula en vivo (como la pantalla
+    # Resultados), no del snapshot guardado: el snapshot del mes corriente
+    # es parcial y poco confiable. Los meses cerrados sí van del snapshot.
+    # Federico 2026-05-22.
+    if es_mes_actual:
         try:
             comp_fin = balance_components_as_of(hoy) or {}
             if comp_fin:
@@ -6696,6 +6699,14 @@ def fuentes_y_usos(
     # La web crea varios snapshots de historia por mes (uno cada vez que
     # se entra al Historial). Para no contar el mismo mes dos veces se
     # toma UN snapshot por mes — el último no-vacío (patrimonio<>0).
+    # Tope de la suma: si el mes HASTA se calculó en vivo (mes en curso),
+    # la tabla se suma solo hasta el fin del mes ANTERIOR — el mes en
+    # curso lo aporta el row live, abajo. Federico 2026-05-22.
+    if h_fin.get("_origen") == "live":
+        _py, _pm = (yy, mm - 1) if mm > 1 else (yy - 1, 12)
+        _tope_sum = _date(_py, _pm, _cal.monthrange(_py, _pm)[1])
+    else:
+        _tope_sum = h_fin.get("fecha")
     _sum_hist = db.fetch_one(
         """
         SELECT COALESCE(SUM(usuti), 0) AS uti,
@@ -6711,7 +6722,7 @@ def fuentes_y_usos(
                         EXTRACT(MONTH FROM fecha), fecha DESC
           ) m
         """,
-        (h_ini.get("fecha"), h_fin.get("fecha")),
+        (h_ini.get("fecha"), _tope_sum),
     ) or {}
     utilidad_periodo = float(_sum_hist.get("uti") or 0)
     retiros_periodo = float(_sum_hist.get("ret") or 0)
