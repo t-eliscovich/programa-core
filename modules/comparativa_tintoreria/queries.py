@@ -79,17 +79,59 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
     )
 
 
+def _amortizacion_dcc_por_mes(desde: date, hasta: date) -> dict:
+    """Replica DCC = deprmaq + depract*0.5 (amortización tintorería) mes-por-mes.
+
+    Aproximación: usa la cuota mensual ACTUAL de cada activo (la columna
+    `scintela.activos.cuota`) y la aplica a cada mes del rango. Asume que
+    los activos existían y depreciaban con la misma cuota durante todo el
+    rango — para periodos cortos (12 meses) suele ser razonable.
+
+    Para el mes actual: prorratea por día (COEF = min(día, 30)/30), igual
+    que la función `amortizaciones_mensuales()` de informes/queries.py.
+    Para meses pasados: cuota completa (COEF = 1.0).
+    """
+    rows = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(tipo)) AS tipo,
+               COALESCE(SUM(cuota), 0) AS total
+          FROM scintela.activos
+         WHERE COALESCE(cuota, 0) > 0
+         GROUP BY 1
+        """
+    ) or []
+    by = {r.get("tipo"): float(r.get("total") or 0) for r in rows}
+    deprmaq = by.get("M", 0.0)
+    depract = by.get("I", 0.0)
+    dcc_full = deprmaq + depract * 0.5
+
+    from datetime import date as _date
+    hoy = _date.today()
+    res: dict = {}
+    cur_yy, cur_mm = desde.year, desde.month
+    end_yy, end_mm = hasta.year, hasta.month
+    while (cur_yy, cur_mm) <= (end_yy, end_mm):
+        if cur_yy == hoy.year and cur_mm == hoy.month:
+            coef = min(hoy.day, 30) / 30.0
+            res[(cur_yy, cur_mm)] = dcc_full * coef
+        else:
+            res[(cur_yy, cur_mm)] = dcc_full
+        cur_mm += 1
+        if cur_mm > 12:
+            cur_mm = 1
+            cur_yy += 1
+    return res
+
+
 def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
-    """Aproxima "Gs. Producción Tintorería" mes-por-mes.
+    """Replica "Gs. Producción Tintorería" = `_gs_tin` de informes/queries.py
+    mes-por-mes:
+        = V4 + V5 + V6 de scintela.xgast        (gastos directos tintorería)
+        + compras tipo 'T' de scintela.compra   (tintura tercerizada)
+        + amortización DCC                      (= deprmaq + depract * 0.5)
 
-    Replica el cálculo de `_gs_tin = gtin_sin_dcc + dcc` de
-    `modules/informes/queries.py` pero parametrizado por mes y simplificado:
-        - V4 + V5 + V6 de scintela.xgast (gastos directos tintorería)
-        - + compras tipo 'T' de scintela.compra (tintura tercerizada)
-        - NO incluye amortización DCC mes-a-mes (es un componente menor
-          y la tabla `scintela.amortizacion` no expone histórico simple).
-
-    Devuelve dict {(yy, mm): total_us}. Meses sin gastos devuelven 0.
+    Devuelve dict {(yy, mm): total_us}. Meses sin gastos devuelven el DCC
+    (porque la amortización corre aunque no haya xgast).
     """
     rows = db.fetch_all(
         """
@@ -125,8 +167,18 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
         """,
         (desde, hasta, desde, hasta),
     )
-    return {(int(r["yy"]), int(r["mm"])): float(r["total"] or 0)
-            for r in rows}
+    out = {(int(r["yy"]), int(r["mm"])): float(r["total"] or 0)
+           for r in rows}
+
+    # Sumar amortización DCC por mes (= deprmaq + depract*0.5)
+    try:
+        dcc = _amortizacion_dcc_por_mes(desde, hasta)
+        for k, v in dcc.items():
+            out[k] = out.get(k, 0.0) + v
+    except Exception:
+        pass
+
+    return out
 
 
 def tinto_pc_por_dia(desde: date, hasta: date) -> list[dict]:
