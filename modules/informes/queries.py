@@ -738,12 +738,12 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     fuertes_pct = (100.0 - bajos_pct) if ktin else 0.0
 
     # TERMINADO ingresos = kg que SALEN tinturados (KTINT = _ktint),
-    # no los que ENTRAN a tintura (ktin/KT). El % es el rendimiento
-    # KTINT/KT, que refleja el desperdicio del proceso de tintura.
-    # stock_act se recalcula para que la columna cuadre.
-    # Federico 2026-05-22.
+    # no los que ENTRAN a tintura (ktin/KT). El % es el DESPERDICIO del
+    # proceso de tintura = (KT - KTINT) / KT, para igualar al dBase
+    # (que muestra ~4%). stock_act se recalcula para que la columna
+    # cuadre. Federico 2026-05-22.
     header["terminado"]["ingresos_kg"] = _ktint
-    header["terminado"]["ingresos_pct"] = _safe_div(_ktint, ktin) * 100
+    header["terminado"]["ingresos_pct"] = _safe_div(ktin - _ktint, ktin) * 100
     header["terminado"]["stock_act_kg"] = max(pf0 + _ktint - kvent, 0)
 
     # CRUDO ingresos = produccion de tejido del mes EN VIVO (total
@@ -754,7 +754,9 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     _kg_tej = float(sum_kg_tej or 0)
     _kh = _kg_tej * 1.005
     header["tejido"]["ingresos_kg"] = _kg_tej
-    header["tejido"]["ingresos_pct"] = _safe_div(ktin, _kg_tej) * 100
+    # % de CRUDO ingresos = desperdicio de tejeduria (0,5%), igual que el
+    # dBase. _kh es el hilado consumido (tejido + 0,5%). Federico 2026-05-22.
+    header["tejido"]["ingresos_pct"] = _safe_div(_kh - _kg_tej, _kg_tej) * 100
     header["tejido"]["stock_act_kg"] = max(tj0 + _kg_tej - ktin, 0)
     header["hilado"]["egresos_kg"] = _kh
     header["hilado"]["egresos_us"] = _kh * um_act
