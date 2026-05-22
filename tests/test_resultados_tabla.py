@@ -102,11 +102,11 @@ def test_costo_total_subtotal_mas_admin():
     assert ct["kg"] is None
 
 
-def test_utilidad_esperada_precio_menos_costo():
-    """Utilidad Esperada u$/kg = precio - Costo Total."""
+def test_utilidad_no_estandarizada_precio_menos_costo():
+    """Utilidad no estandarizada u$/kg = precio - Costo Total."""
     tab = _tabla()
     ct = _row(tab, "Costo Total")["ukg"]
-    ue = _row(tab, "Utilidad Esperada")
+    ue = _row(tab, "Utilidad no estandarizada")
     assert abs(ue["ukg"] - (5.0 - ct)) < 1e-9
     assert abs(ue["us"] - 200000.0 * ue["ukg"]) < 1e-6
 

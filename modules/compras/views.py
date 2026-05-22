@@ -384,6 +384,11 @@ def lista():
     kg_filter = (request.args.get("kg") or "").strip().lower() or None
     if kg_filter not in ("gt0", "eq0", None):
         kg_filter = None
+    # Federico 2026-05-22 — "Solo INTELA" (q=KK) muestra la producción
+    # propia; no aplica en la vista Compras, que justamente excluye la
+    # producción. Si se entra a Compras con ese filtro prendido, se apaga.
+    if vista == "compras" and q.upper() == "KK":
+        q = ""
     try:
         filas = queries.buscar(
             q, desde, hasta,

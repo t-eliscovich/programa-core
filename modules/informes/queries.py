@@ -3103,10 +3103,10 @@ def resultados_costos_tabla(
          "clase": "total",
          "ayuda": ("Subtotal +4.5% + Administracion. "
                    "U$ = kg vendidos * Costo Total.")},
-        {"label": "Utilidad Esperada", "kg": None, "ukg": ue_ukg, "us": ue_us,
-         "clase": "dato",
+        {"label": "Utilidad no estandarizada", "kg": None, "ukg": ue_ukg,
+         "us": ue_us, "clase": "dato",
          "ayuda": ("Precio de venta - Costo Total. "
-                   "U$ = kg vendidos * Utilidad Esperada.")},
+                   "U$ = kg vendidos * Utilidad no estandarizada.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
          "clase": "key",
          "ayuda": ("Utilidad del mes ya calculada en scintela.historia "
