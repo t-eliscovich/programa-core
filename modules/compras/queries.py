@@ -927,10 +927,8 @@ def total_buscar(
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
-                 AND (UPPER(COALESCE(c.tipo, '')) IN ('H', 'Q', 'C')
-                      OR (UPPER(COALESCE(c.tipo, '')) = 'K'
-                          AND COALESCE(c.kg, 0) <= 0.01)
-                      OR COALESCE(c.tipo, '') = ''))
+                 AND NOT (UPPER(COALESCE(c.tipo, '')) = 'K'
+                          AND ABS(COALESCE(c.kg, 0)) > 0.01))
           )
         """,
         {
@@ -1015,10 +1013,8 @@ def buscar(
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
-                 AND (UPPER(COALESCE(c.tipo, '')) IN ('H', 'Q', 'C')
-                      OR (UPPER(COALESCE(c.tipo, '')) = 'K'
-                          AND COALESCE(c.kg, 0) <= 0.01)
-                      OR COALESCE(c.tipo, '') = ''))
+                 AND NOT (UPPER(COALESCE(c.tipo, '')) = 'K'
+                          AND ABS(COALESCE(c.kg, 0)) > 0.01))
           )
         ORDER BY c.fecha DESC, c.id_compra DESC
         LIMIT %(limite)s
@@ -1067,7 +1063,7 @@ def conteos_por_vista(
           CASE
             WHEN UPPER(COALESCE(c.tipo, '')) = 'K'
                  AND ABS(COALESCE(c.kg, 0)) > 0.01      THEN 'produccion'
-            WHEN UPPER(COALESCE(c.tipo, '')) = 'A'      THEN 'anticipos'
+            WHEN UPPER(COALESCE(c.tipo, '')) = 'A'      THEN 'compras'
             ELSE 'compras'
           END                                        AS bucket,
           COUNT(*)                                   AS n,
