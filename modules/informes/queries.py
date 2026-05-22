@@ -6102,131 +6102,27 @@ def balance_components_as_of(as_of) -> dict:
     )
     totp = float(totp_row.get("total") or 0)
 
-    # --- Stock / activos / anticipos FROM-RAW (TMT 2026-05-21 v9) ---
-    # Antes esto leía del último snapshot de scintela.historia, lo que
-    # generaba drift cuando había desfase entre snapshots (cart 30x,
-    # banco 2x, pasivos signo invertido). Pedido dueña: "no fotos, info
-    # de las bases" — calcular todo from-raw para que F&U funcione sin
-    # depender de snapshots manuales.
-    #
-    # Fuentes raw por componente:
-    #   vsto, vqx → scintela.iniciales del mes pertinente
-    #               (mes siguiente al as_of si es cierre cerrado;
-    #                mes propio si es mes en curso). iniciales viene
-    #                del DBF de fábrica, es la fuente oficial del stock.
-    #   umaq, uact → scintela.activos con amortización lineal at as_of.
-    #   antic      → scintela.dolares (anticipos vivos, sin fecha porque
-    #                el dato no tiene historia, es saldo actual).
-    #   patant     → ya no se usa para utilidad del período en F&U;
-    #                la utilidad se computa Δpatr + retiros, donde patr
-    #                viene de este mismo cálculo for both extremos.
-    from datetime import date as _d2
-
-    _hoy_local = _d2.today()
-    _es_mes_actual_local = (as_of.year == _hoy_local.year and as_of.month == _hoy_local.month)
-
-    # iniciales del mes que TIENE el stock al cierre del mes de as_of.
-    # Para mes cerrado (pasado): iniciales del mes siguiente (cierre del mes as_of = apertura del siguiente).
-    # Para mes en curso: iniciales del mes propio.
-    if _es_mes_actual_local:
-        _ini_mm, _ini_yy = as_of.month, as_of.year
-    else:
-        _ini_mm = as_of.month + 1
-        _ini_yy = as_of.year
-        if _ini_mm > 12:
-            _ini_mm = 1
-            _ini_yy += 1
-
-    ini_row = (
+    # --- Stock / activos del último snapshot histórico <= as_of ---
+    hist_prev = (
         db.fetch_one(
             """
-        SELECT hilado, tejido, terminado, um, uk, uf, uq, vq
-          FROM scintela.iniciales
-         WHERE mesnum = %s AND yy = %s
-         ORDER BY id_iniciales DESC
+        SELECT fecha, stock, ustock, uqui, maquinaria, realty, anticipos,
+               patrimonio, usret, usuti
+          FROM scintela.historia
+         WHERE fecha <= %s
+         ORDER BY fecha DESC
          LIMIT 1
-        """,
-            (_ini_mm, _ini_yy),
-        )
-        or {}
-    )
-    if not ini_row:
-        # Fallback: iniciales del propio mes si el siguiente no existe.
-        ini_row = (
-            db.fetch_one(
-                """
-            SELECT hilado, tejido, terminado, um, uk, uf, uq, vq
-              FROM scintela.iniciales
-             WHERE mesnum = %s AND yy = %s
-             ORDER BY id_iniciales DESC
-             LIMIT 1
-            """,
-                (as_of.month, as_of.year),
-            )
-            or {}
-        )
-
-    _ini_hilado = float(ini_row.get("hilado") or 0)
-    _ini_tejido = float(ini_row.get("tejido") or 0)
-    _ini_term = float(ini_row.get("terminado") or 0)
-    _ini_um = float(ini_row.get("um") or 0)
-    _ini_uk = float(ini_row.get("uk") or 0)
-    _ini_uf = float(ini_row.get("uf") or 0)
-    _ini_vq = float(ini_row.get("vq") or 0)
-
-    # VSTO = kg por etapa × tarifa por etapa (replica panel STOCK del balance).
-    vsto = _ini_hilado * _ini_um + _ini_tejido * _ini_uk + _ini_term * _ini_uf
-
-    # VQX = stock químicos en US$ del DBF (campo vq de iniciales).
-    vqx = _ini_vq
-
-    # Maquinaria + Terreno/edif. usando amortización lineal at as_of.
-    _activos_at = (
-        db.fetch_one(
-            """
-        WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM %s::date)::numeric, 30) / 30.0 AS c
-        ),
-        v AS (
-          SELECT
-            tipo,
-            COALESCE(inicial, 0)
-              - COALESCE(amortizac, 0)
-              - (SELECT c FROM coef) * COALESCE(cuota, 0) AS valor_calc
-          FROM scintela.activos
-        )
-        SELECT
-          COALESCE(SUM(CASE WHEN tipo IN ('M','C','K') THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS umaq,
-          COALESCE(SUM(CASE WHEN tipo = 'I'           THEN GREATEST(valor_calc, 0) ELSE 0 END), 0) AS uact
-        FROM v
         """,
             (as_of,),
         )
         or {}
     )
-    umaq = float(_activos_at.get("umaq") or 0)
-    uact = float(_activos_at.get("uact") or 0)
-
-    # Anticipos: saldo vivo desde scintela.dolares (sin filtro de fecha,
-    # es saldo actual — no hay tabla de historia de anticipos).
-    _antic_row = (
-        db.fetch_one(
-            """
-        SELECT COALESCE(SUM(importe), 0) AS total
-          FROM scintela.dolares
-         WHERE st IS NULL OR st IN ('', ' ')
-        """
-        )
-        or {}
-    )
-    antic = float(_antic_row.get("total") or 0)
-
-    # patant: para utilidad-del-mes legacy. F&U calcula utilidad como
-    # Δpatr + retiros (no usa patant), pero lo conservamos por compat
-    # con otros consumidores. Lo dejamos en 0 (la utilidad correcta para
-    # F&U se computa en la función fuentes_y_usos directamente).
-    patant = 0.0
-    hist_prev = {}  # compat con el return de abajo que lee hist_prev.get("stock")
+    vsto = float(hist_prev.get("ustock") or 0)
+    vqx = float(hist_prev.get("uqui") or 0)
+    umaq = float(hist_prev.get("maquinaria") or 0)
+    uact = float(hist_prev.get("realty") or 0)
+    antic = float(hist_prev.get("anticipos") or 0)
+    patant = float(hist_prev.get("patrimonio") or 0)
 
     # --- Flujos del mes (mes que contiene as_of) ---
     kcom_row = (
@@ -6636,35 +6532,45 @@ def fuentes_y_usos(
             "_origen": "live",
         }
 
-    # TMT 2026-05-21 v9 — FROM-RAW siempre. balance_components_as_of() ahora
-    # calcula vsto/vqx/umaq/uact/antic desde tablas raw (scintela.iniciales,
-    # scintela.activos, scintela.dolares); no toca scintela.historia para
-    # esos componentes. F&U deja de depender del botón 📸 Snapshot.
+    # TMT 2026-05-21 — Snapshot-first. Antes usábamos
+    # balance_components_as_of() para ambos extremos. Tenía drift contra los
+    # snapshots reales (cart 30x, banco 2x, pasivos 15x): mezclaba saldos
+    # post-sync LIVE con valores históricos del snapshot anterior. Los
+    # snapshots de scintela.historia son consistentes mes a mes (validados
+    # contra el dBase original y /historico-12m), así que arrancamos por
+    # ellos y solo caemos a as_of() si falta el snapshot del mes pedido.
     hoy = _date.today()
     es_mes_actual = yy == hoy.year and mm == hoy.month
 
-    # Fechas efectivas: HASTA mes en curso → hoy (foto live); HASTA mes pasado
-    # o DESDE → último día del mes.
     last_day_fin = _cal.monthrange(yy, mm)[1]
     fecha_fin = _date(yy, mm, last_day_fin) if not es_mes_actual else hoy
     last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
     fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
 
+    h_fin = _historia_en_mes(yy, mm)
+    h_ini = _historia_en_mes(yy_ant, mm_ant)
+
     comp_fin: dict = {}
     comp_ini: dict = {}
-    try:
-        comp_fin = balance_components_as_of(fecha_fin) or {}
-        h_fin = _row_desde_componentes(comp_fin, fecha_fin)
-    except Exception:
-        # Fallback ultra-defensivo: snapshot scintela.historia si falla.
-        h_fin = _historia_en_mes(yy, mm)
 
-    try:
-        comp_ini = balance_components_as_of(fecha_ini) or {}
-        h_ini = _row_desde_componentes(comp_ini, fecha_ini)
-    except Exception:
-        # Fallback ultra-defensivo: snapshot scintela.historia si falla.
-        h_ini = _historia_en_mes(yy_ant, mm_ant)
+    # Fallback HASTA: mes en curso sin snapshot todavía → as_of(today).
+    if not h_fin and es_mes_actual:
+        try:
+            comp_fin = balance_components_as_of(hoy) or {}
+            if comp_fin:
+                h_fin = _row_desde_componentes(comp_fin, hoy)
+        except Exception:
+            pass
+    # Fallback DESDE: mes inicial sin snapshot (raro) → as_of(last_day).
+    if not h_ini:
+        try:
+            last_day_ini = _cal.monthrange(yy_ant, mm_ant)[1]
+            fecha_ini = _date(yy_ant, mm_ant, last_day_ini)
+            comp_ini = balance_components_as_of(fecha_ini) or {}
+            if comp_ini:
+                h_ini = _row_desde_componentes(comp_ini, fecha_ini)
+        except Exception:
+            pass
 
     if not h_fin or not h_ini:
         return {
