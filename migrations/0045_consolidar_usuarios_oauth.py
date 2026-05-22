@@ -96,8 +96,8 @@ def run(conn) -> None:
         if consolidados:
             print("    consolidados (OAuth desactivada, email pegado al legacy):")
             for u, m in consolidados:
-                print(f"      • {u} ← {m}")
+                print(f"      - {u} <- {m}")
         if sin_oauth:
             print("    sin contraparte OAuth (solo email seteado en legacy):")
             for u, m in sin_oauth:
-                print(f"      • {u} ({m})")
+                print(f"      - {u} ({m})")
