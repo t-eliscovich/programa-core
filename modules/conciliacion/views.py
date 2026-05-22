@@ -511,6 +511,20 @@ def hub():
     try:
         resultado = matchear_extracto_banco(movs_real, no_banco=_BANCO_PICHINCHA)
     except Exception as e:
+        # TMT 2026-05-22 — debug: si ?debug=1 devolver el traceback completo
+        # para diagnóstico rápido sin tener que ir al log del server.
+        if request.args.get("debug") == "1":
+            import traceback
+            return {
+                "error": f"{type(e).__name__}: {e}",
+                "traceback": traceback.format_exc(),
+                "movs_real_count": len(movs_real),
+                "sample_real": [
+                    {"fecha": str(m.fecha), "monto": float(m.monto), "tipo": m.tipo,
+                     "documento": m.documento}
+                    for m in movs_real[:5]
+                ],
+            }, 500
         flash_exc("Falló el matching contra BANCSIS.", e)
         return redirect(url_for("conciliacion.hub"))
 
