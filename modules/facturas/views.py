@@ -737,6 +737,7 @@ def backfill_asinfo():
     aplicados: list[dict] = []
     saltadas_sin_candidatos: list[dict] = []
     saltadas_score_alto: list[dict] = []
+    errores_apply: list[dict] = []
 
     for item in huerfanas:
         pc = item["pc_factura"]
@@ -764,11 +765,22 @@ def backfill_asinfo():
         # Política: score bajo + mismo cliente → asociar.
         if score < _BACKFILL_SCORE_MAX and cli_pc == cli_ai:
             if apply:
-                audit_asinfo.asociar(
-                    pc["id_factura"],
-                    mejor["ai_numero"],
-                    usuario=getattr(g, "user", None) and g.user.get("username") or "web",
-                )
+                try:
+                    audit_asinfo.asociar(
+                        pc["id_factura"],
+                        mejor["ai_numero"],
+                        usuario="web",
+                    )
+                except Exception as _e:
+                    errores_apply.append({
+                        "id_factura": pc["id_factura"],
+                        "ai_numero": mejor.get("ai_numero"),
+                        "error": f"{type(_e).__name__}: {_e}",
+                    })
+                    # Si más del 5% falla, parar para no spamear.
+                    if len(errores_apply) > max(20, int(0.05 * len(huerfanas))):
+                        break
+                    continue
             aplicados.append({
                 "id_factura": pc["id_factura"],
                 "fecha": pc.get("fecha"),
@@ -805,15 +817,17 @@ def backfill_asinfo():
             pass
 
     return {
-        "modo": "POST aplicado" if apply else "GET preview (no toca DB)",
+        "modo": "apply" if apply else "preview",
         "threshold_score": _BACKFILL_SCORE_MAX,
         "huerfanas_total": len(huerfanas),
         "aplicados_count": len(aplicados),
         "saltadas_score_alto_count": len(saltadas_score_alto),
         "saltadas_sin_candidatos_count": len(saltadas_sin_candidatos),
-        "aplicados": aplicados,
+        "errores_apply_count": len(errores_apply),
+        "aplicados": aplicados[:20] if apply else aplicados,
         "saltadas_score_alto": saltadas_score_alto,
         "saltadas_sin_candidatos": saltadas_sin_candidatos,
+        "errores_apply": errores_apply[:20],
     }
 
 
