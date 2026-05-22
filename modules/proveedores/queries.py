@@ -172,7 +172,7 @@ def eliminar(codigo_prov: str) -> int:
     return eliminar_por_id(int(fila["id_proveedor"]))
 
 
-def contar(q: str = "") -> int:
+def contar(q: str = "", tipo: str | None = None) -> int:
     """COUNT(*) total para paginación."""
     q = (q or "").strip()
     like = f"%{q}%" if q else None
@@ -180,17 +180,20 @@ def contar(q: str = "") -> int:
         """
         SELECT COUNT(*) AS n
           FROM scintela.proveedor p
-         WHERE %(q)s IS NULL
-            OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
-            OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
-            OR p.ruc LIKE %(like)s
+         WHERE (%(q)s IS NULL
+                OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
+                OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
+                OR p.ruc LIKE %(like)s)
+           AND (%(tipo)s IS NULL
+                OR UPPER(TRIM(COALESCE(p.tipo, ''))) = %(tipo)s)
         """,
-        {"q": q or None, "like": like},
+        {"q": q or None, "like": like, "tipo": tipo},
     ) or {}
     return int(row.get("n") or 0)
 
 
-def buscar(q: str = "", limite: int = 300, offset: int = 0) -> list[dict]:
+def buscar(q: str = "", tipo: str | None = None,
+           limite: int = 300, offset: int = 0) -> list[dict]:
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     return db.fetch_all(
@@ -207,16 +210,18 @@ def buscar(q: str = "", limite: int = 300, offset: int = 0) -> list[dict]:
               AND (anulada IS NOT TRUE OR anulada IS NULL)
             GROUP BY prov
         ) d ON d.codigo_prov = p.codigo_prov
-        WHERE %(q)s IS NULL
-           OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
-           OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
-           OR p.ruc LIKE %(like)s
+        WHERE (%(q)s IS NULL
+               OR UPPER(p.codigo_prov) LIKE UPPER(%(like)s)
+               OR UPPER(p.nombre)      LIKE UPPER(%(like)s)
+               OR p.ruc LIKE %(like)s)
+          AND (%(tipo)s IS NULL
+               OR UPPER(TRIM(COALESCE(p.tipo, ''))) = %(tipo)s)
         -- TMT 2026-05-20 v2 — pedido dueña: "provedores sort by tipo,
         -- then nombre". Antes ordenaba por saldo DESC (= mostraba la
         -- columna Deuda que ya se eliminó del listado).
         ORDER BY COALESCE(p.tipo, '') ASC, p.nombre ASC
         LIMIT %(limite)s OFFSET %(offset)s
         """,
-        {"q": q or None, "like": like, "limite": limite,
+        {"q": q or None, "like": like, "tipo": tipo, "limite": limite,
          "offset": int(offset or 0)},
     )

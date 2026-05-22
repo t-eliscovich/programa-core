@@ -280,6 +280,17 @@ def api_editar_tipo(id_proveedor: int):
 @requiere_permiso("proveedores.ver")
 def lista():
     q = request.args.get("q", "").strip()
+    # Federico 2026-05-22 — filtro por tipo de proveedor.
+    #   ''    -> Todos (sin filtro)
+    #   'SIN' -> proveedores sin tipo cargado
+    #   letra -> ese tipo (U/H/Q/B/Y/K)
+    tipo_sel = (request.args.get("tipo") or "").strip().upper()
+    if tipo_sel == "":
+        tipo_filtro = None
+    elif tipo_sel == "SIN":
+        tipo_filtro = ""
+    else:
+        tipo_filtro = tipo_sel
     # TMT 2026-05-20 v2 — paginación pedido dueña.
     try:
         pag = max(1, int(request.args.get("pag") or 1))
@@ -288,8 +299,8 @@ def lista():
     POR_PAG = 200
     offset = (pag - 1) * POR_PAG
     try:
-        filas = queries.buscar(q, limite=POR_PAG, offset=offset)
-        total = queries.contar(q)
+        filas = queries.buscar(q, tipo=tipo_filtro, limite=POR_PAG, offset=offset)
+        total = queries.contar(q, tipo=tipo_filtro)
         error = None
     except Exception as e:
         filas, total, error = [], 0, str(e)
@@ -297,7 +308,7 @@ def lista():
 
     if request.args.get("export") == "csv":
         try:
-            todos = queries.buscar(q, limite=100000, offset=0)
+            todos = queries.buscar(q, tipo=tipo_filtro, limite=100000, offset=0)
         except Exception:
             todos = filas
         return csv_response(
@@ -318,6 +329,6 @@ def lista():
 
     return render_template(
         "proveedores/lista.html",
-        filas=filas, q=q, error=error,
+        filas=filas, q=q, tipo_sel=tipo_sel, error=error,
         pag=pag, total_pag=total_pag, total=total, por_pag=POR_PAG,
     )

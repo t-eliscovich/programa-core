@@ -12,9 +12,18 @@
       <form class="flex items-center gap-2">
         <input type="text" name="q" value="{{ q }}" placeholder="Código, nombre o RUC…" autofocus
                class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        {# Federico 2026-05-22 — filtro por tipo de proveedor. #}
+        <select name="tipo" onchange="this.form.submit()"
+                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
+          <option value="">Todos los tipos</option>
+          {% for code, lbl in [('U','U · Máquina'),('H','H · Hilado'),('Q','Q · Químicos'),('B','B · Bancos'),('Y','Y · Otro'),('K','K · Tejido')] %}
+            <option value="{{ code }}" {% if tipo_sel == code %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+          <option value="SIN" {% if tipo_sel == 'SIN' %}selected{% endif %}>Sin tipo</option>
+        </select>
         <button class="text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Buscar</button>
       </form>
-      <a href="{{ url_for('proveedores.lista', q=q, export='csv') }}"
+      <a href="{{ url_for('proveedores.lista', q=q, tipo=tipo_sel, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
       {% if tiene_permiso('proveedores.crear') %}
       <a href="{{ url_for('proveedores.nuevo') }}"
@@ -124,14 +133,14 @@
     {% if total_pag > 1 %}
     <nav class="flex items-center gap-2 text-sm">
       {% if pag > 1 %}
-        <a href="{{ url_for('proveedores.lista', q=q, pag=pag-1) }}"
+        <a href="{{ url_for('proveedores.lista', q=q, tipo=tipo_sel, pag=pag-1) }}"
            class="px-3 py-1 rounded border border-slate-300 hover:bg-slate-100">‹ Anterior</a>
       {% else %}
         <span class="px-3 py-1 rounded border border-slate-200 text-slate-300">‹ Anterior</span>
       {% endif %}
       <span class="text-xs text-slate-500">Página <strong>{{ pag }}</strong> de <strong>{{ total_pag }}</strong></span>
       {% if pag < total_pag %}
-        <a href="{{ url_for('proveedores.lista', q=q, pag=pag+1) }}"
+        <a href="{{ url_for('proveedores.lista', q=q, tipo=tipo_sel, pag=pag+1) }}"
            class="px-3 py-1 rounded border border-slate-300 hover:bg-slate-100">Siguiente ›</a>
       {% else %}
         <span class="px-3 py-1 rounded border border-slate-200 text-slate-300">Siguiente ›</span>
