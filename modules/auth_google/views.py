@@ -216,7 +216,7 @@ def _email_to_role_map() -> dict[str, str]:
     """Mapeo email→nombre_rol leído de env var OAUTH_ROLE_MAP.
 
     Formato: 'email1=Rol1,email2=Rol2,...' (case-insensitive en email).
-    Ej.: 'alex@gmail.com=Operario,andres@gmail.com=Administrador'.
+    Ej.: 'alex@gmail.com=Alex,andres@gmail.com=Administrador'.
 
     Si la env var no está seteada o el email no figura, el caller debe
     fallback al rol default (Accionista). TMT 2026-05-21.
@@ -250,7 +250,7 @@ def _upsert_owner(*, email: str, display_name: str) -> int:
     Si el rol no existe en seguridad.rol, levanta _DuenoRoleMissing
     para que el caller devuelva un 500 con mensaje claro.
     """
-    # TMT 2026-05-21 dueña: rol asignado por email. Alex va a 'Operario'
+    # TMT 2026-05-21 dueña: rol asignado por email. Alex va a 'Alex'
     # (ver pantallas operativas pero NO Informes). Andres va a
     # 'Administrador'. Si no hay mapping, default a Accionista (compat).
     role_map = _email_to_role_map()

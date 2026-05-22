@@ -1,13 +1,13 @@
 """Refresh permisos: comisiones.ver / ventas.ver / gastos.ver granulares.
 
 Las vistas de /comisiones, /informes/ventas-anio y /informes/gastos antes
-exigían `informes.ver`. La dueña 2026-05-21 pidió que Alex (rol Operario)
+exigían `informes.ver`. La dueña 2026-05-21 pidió que Alex (rol Alex)
 las pueda ver SIN darle acceso a TODO el módulo Informes. Así que cambiamos
 los decoradores a `comisiones.ver`, `ventas.ver`, `gastos.ver` respectivamente.
 
 Esta migración:
-  1) Refresca los permisos del rol 'Operario' desde config/roles.py
-     (DELETE + INSERT). Tras esto Operario tiene los 3 permisos nuevos.
+  1) Refresca los permisos del rol 'Alex' desde config/roles.py
+     (DELETE + INSERT). Tras esto Alex tiene los 3 permisos nuevos.
   2) Inserta `comisiones.ver` en TODOS los roles que ya tenían
      `informes.ver` — de lo contrario el cambio de decorador les corta
      el acceso (Administrador/Gerente/Contabilidad/Cobranzas/Lectura).
@@ -35,22 +35,22 @@ from config.roles import ROLES  # noqa: E402
 def run(conn) -> None:
     cur = conn.cursor()
 
-    # 1) Refrescar permisos del rol 'Operario' desde la fuente canónica.
+    # 1) Refrescar permisos del rol 'Alex' desde la fuente canónica.
     operario_perms = None
     for nombre, perms in ROLES:
-        if nombre == "Operario":
+        if nombre == "Alex":
             operario_perms = perms
             break
     if operario_perms is None:
-        raise RuntimeError("Rol 'Operario' no está en config/roles.py.")
+        raise RuntimeError("Rol 'Alex' no está en config/roles.py.")
 
-    cur.execute("SELECT id_rol FROM seguridad.rol WHERE nombre_rol = 'Operario'")
+    cur.execute("SELECT id_rol FROM seguridad.rol WHERE nombre_rol = 'Alex'")
     row = cur.fetchone()
     if not row:
         # Si el rol no existe todavía (migración 0043 no corrió), lo creamos.
         cur.execute(
             "INSERT INTO seguridad.rol (nombre_rol) VALUES (%s) RETURNING id_rol",
-            ("Operario",),
+            ("Alex",),
         )
         row = cur.fetchone()
     id_rol_operario = row[0]
@@ -78,5 +78,5 @@ def run(conn) -> None:
     cur.close()
 
     if os.environ.get("MIGRATE_VERBOSE"):
-        print(f"    Operario refrescado con {len(operario_perms)} permisos")
+        print(f"    Alex refrescado con {len(operario_perms)} permisos")
         print(f"    comisiones.ver insertado en {n_comisiones} rol(es)")

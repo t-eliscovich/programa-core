@@ -27,14 +27,14 @@ import os
 import bcrypt
 
 # Mapeo username → (clave canónica, nombre_rol a asignar si lo creamos de cero)
-# TMT 2026-05-21 dueña: Alex va a 'Operario' (ver pantallas operativas pero
-# NO Informes). Andres queda en 'Administrador'. Federico/Tamara son dueños
-# (rol Accionista). Si el usuario ya existe, NO le pisamos el rol — sólo
-# asignamos la clave.
+# TMT 2026-05-22 dueña: el rol de Alex se llama 'Alex' (no 'Operario'). Es un
+# rol propio que cubre operativa diaria menos Informes. Andres queda en
+# 'Administrador'. Federico/Tamara son dueños (Accionista). Si el usuario
+# ya existe, NO le pisamos el rol — sólo asignamos la clave.
 USUARIOS_CANONICOS = [
     ("federico", "FED", "Accionista"),
     ("tamara", "TAM", "Accionista"),
-    ("alex", "ALX", "Operario"),
+    ("alex", "ALX", "Alex"),
     ("andres", "ADR", "Administrador"),
 ]
 
@@ -51,6 +51,13 @@ def run(conn) -> None:
         ALTER TABLE seguridad.usuario
             ADD COLUMN IF NOT EXISTS clave varchar(3)
     """)
+
+    # TMT 2026-05-22 — asegurar que el rol 'Alex' exista antes de asignarlo.
+    # Sus permisos los carga 0043 (DELETE + INSERT desde config/roles.py).
+    # Acá solo creamos el rol vacío para que el INSERT de usuario no falle.
+    cur.execute(
+        "INSERT INTO seguridad.rol (nombre_rol) VALUES ('Alex') ON CONFLICT (nombre_rol) DO NOTHING"
+    )
 
     # 2) Resolver id_rol por nombre. Cache en dict para no consultar
     #    repetido. Si el rol no existe (ej. 'Operario' antes de re-seed),

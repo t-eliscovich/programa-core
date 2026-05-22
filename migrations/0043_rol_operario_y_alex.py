@@ -1,19 +1,21 @@
-"""Seed del rol 'Operario' y migrar a Alex al rol nuevo.
+"""Seed de los permisos del rol 'Alex' y migrar a alex al rol correcto si aplica.
 
-Contexto: la migración 0042 corrió antes de que existiera el rol 'Operario'
-y dejó al usuario 'alex' con rol 'Administrador'. Pedido dueña 2026-05-21:
-Alex debe ver/editar todo MENOS Informes y todo lo que se accede desde ahí.
+Pedido dueña 2026-05-21/22: Alex debe ver/editar todo MENOS Informes y todo
+lo que se accede desde ahí. La dueña pidió que el rol se llame literalmente
+'Alex' (no 'Operario').
 
 Esta migración:
-  1) Lee `config/roles.py` y asegura que 'Operario' exista en seguridad.rol
-     con TODOS sus permisos sincronizados (DELETE + INSERT). Idempotente.
-  2) Si el usuario 'alex' tiene rol 'Administrador' (heredado de 0042),
-     lo baja a 'Operario'. Si ya está en otro rol (porque la dueña lo
-     cambió manualmente), no toca nada.
+  1) Lee `config/roles.py` y asegura que el rol 'Alex' exista en
+     seguridad.rol con TODOS sus permisos sincronizados (DELETE + INSERT).
+     Idempotente. El rol vacío puede haberlo creado 0042; acá le pegamos
+     los permisos definitivos.
+  2) Si el usuario 'alex' tiene rol 'Administrador' (por una corrida previa
+     de 0042 antes de existir el rol 'Alex'), lo baja a 'Alex'. Si ya está
+     en otro rol porque la dueña lo cambió manualmente, no toca nada.
 
-NOTA: para que el seed de Operario se mantenga en sync con cambios futuros
-en config/roles.py, hay que re-correr la migración 0003 con --force, o
-bien repetir el patrón de DELETE+INSERT de esta misma migración.
+NOTA: para que el seed de 'Alex' se mantenga en sync con cambios futuros en
+config/roles.py, hay que re-correr la migración 0003 con --force, o bien
+repetir el patrón de DELETE+INSERT de esta misma migración.
 """
 
 from __future__ import annotations
@@ -32,14 +34,14 @@ from config.roles import ROLES  # noqa: E402
 def run(conn) -> None:
     cur = conn.cursor()
 
-    # 1) Buscar el rol Operario en config/roles.py
-    operario_perms = None
+    # 1) Buscar el rol 'Alex' en config/roles.py
+    alex_perms = None
     for nombre, perms in ROLES:
-        if nombre == "Operario":
-            operario_perms = perms
+        if nombre == "Alex":
+            alex_perms = perms
             break
-    if operario_perms is None:
-        raise RuntimeError("Rol 'Operario' no está en config/roles.py — agregarlo primero.")
+    if alex_perms is None:
+        raise RuntimeError("Rol 'Alex' no está en config/roles.py — agregarlo primero.")
 
     # 2) Upsert rol + refrescar permisos.
     cur.execute(
@@ -50,18 +52,19 @@ def run(conn) -> None:
             SET nombre_rol = EXCLUDED.nombre_rol
         RETURNING id_rol
         """,
-        ("Operario",),
+        ("Alex",),
     )
-    id_rol_operario = cur.fetchone()[0]
+    id_rol_alex = cur.fetchone()[0]
 
-    cur.execute("DELETE FROM seguridad.permiso WHERE id_rol = %s", (id_rol_operario,))
-    if operario_perms:
+    cur.execute("DELETE FROM seguridad.permiso WHERE id_rol = %s", (id_rol_alex,))
+    if alex_perms:
         cur.executemany(
             "INSERT INTO seguridad.permiso (id_rol, nombre_opcion) VALUES (%s, %s)",
-            [(id_rol_operario, p) for p in operario_perms],
+            [(id_rol_alex, p) for p in alex_perms],
         )
 
-    # 3) Migrar alex de Administrador → Operario (si aplica).
+    # 3) Migrar alex de Administrador → Alex (si quedó en Administrador por
+    #    una corrida previa donde el rol 'Alex' no existía).
     cur.execute(
         """
         UPDATE seguridad.usuario u
@@ -71,13 +74,13 @@ def run(conn) -> None:
                SELECT id_rol FROM seguridad.rol WHERE nombre_rol = 'Administrador'
            )
         """,
-        (id_rol_operario,),
+        (id_rol_alex,),
     )
     n_migrados = cur.rowcount
 
     cur.close()
 
     if os.environ.get("MIGRATE_VERBOSE"):
-        print(f"    rol 'Operario' sincronizado con {len(operario_perms)} permisos")
+        print(f"    rol 'Alex' sincronizado con {len(alex_perms)} permisos")
         if n_migrados:
-            print(f"    alex bajado de Administrador → Operario ({n_migrados} fila)")
+            print(f"    alex bajado de Administrador → Alex ({n_migrados} fila)")

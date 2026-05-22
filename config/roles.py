@@ -255,7 +255,8 @@ ROLES: list[tuple[str, list[str]]] = [
         # todo MENOS Informes y todas las pantallas que salgan solo desde
         # Informes (utilidades, retiros, ventas, comisiones, F&U, etc)".
         # Cartera/bancos/caja/cheques/compras/facturas/clientes/proveedores SÍ.
-        "Operario",
+        # TMT 2026-05-22 — la dueña pidió que el rol se llame "Alex" (no Operario).
+        "Alex",
         [
             # Operativa diaria — todo el flujo de cheques, caja, bancos.
             "caja.ver",
