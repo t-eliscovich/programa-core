@@ -923,8 +923,12 @@ def total_buscar(
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
-                 AND NOT (UPPER(COALESCE(c.tipo, '')) = 'K'
-                          AND ABS(COALESCE(c.kg, 0)) > 0.01))
+                 AND NOT EXISTS (
+                       SELECT 1 FROM scintela.compra k
+                       WHERE UPPER(TRIM(COALESCE(k.codigo_prov, ''))) =
+                             UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                         AND UPPER(COALESCE(k.tipo, '')) = 'K'
+                         AND ABS(COALESCE(k.kg, 0)) > 0.01))
           )
         """,
         {
@@ -1005,8 +1009,12 @@ def buscar(
              OR (%(vista)s = 'anticipos'
                  AND UPPER(COALESCE(c.tipo, '')) = 'A')
              OR (%(vista)s = 'compras'
-                 AND NOT (UPPER(COALESCE(c.tipo, '')) = 'K'
-                          AND ABS(COALESCE(c.kg, 0)) > 0.01))
+                 AND NOT EXISTS (
+                       SELECT 1 FROM scintela.compra k
+                       WHERE UPPER(TRIM(COALESCE(k.codigo_prov, ''))) =
+                             UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                         AND UPPER(COALESCE(k.tipo, '')) = 'K'
+                         AND ABS(COALESCE(k.kg, 0)) > 0.01))
           )
         ORDER BY c.fecha DESC, c.id_compra DESC
         LIMIT %(limite)s
@@ -1048,8 +1056,13 @@ def proveedores_para_filtro(vista: str = "compras") -> list[dict]:
         cond = ("UPPER(COALESCE(c.tipo, '')) = 'K' "
                 "AND ABS(COALESCE(c.kg, 0)) > 0.01")
     else:
-        cond = ("NOT (UPPER(COALESCE(c.tipo, '')) = 'K' "
-                "AND ABS(COALESCE(c.kg, 0)) > 0.01)")
+        # Compras = proveedores que NO son de tejido: ningún proveedor que
+        # aparezca en una compra tipo K con kg. Federico 2026-05-22.
+        cond = ("NOT EXISTS (SELECT 1 FROM scintela.compra k "
+                "WHERE UPPER(TRIM(COALESCE(k.codigo_prov, ''))) = "
+                "UPPER(TRIM(COALESCE(c.codigo_prov, ''))) "
+                "AND UPPER(COALESCE(k.tipo, '')) = 'K' "
+                "AND ABS(COALESCE(k.kg, 0)) > 0.01)")
     rows = (
         db.fetch_all(
             f"""
