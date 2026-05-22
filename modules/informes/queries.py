@@ -6693,12 +6693,23 @@ def fuentes_y_usos(
     # = suma de usuti / usret de los snapshots posteriores al inicial y
     # hasta el final inclusive. Antes la web usaba ΔPatrimonio y la tabla
     # scintela.retiros — no salía del Historial.
+    # La web crea varios snapshots de historia por mes (uno cada vez que
+    # se entra al Historial). Para no contar el mismo mes dos veces se
+    # toma UN snapshot por mes — el último no-vacío (patrimonio<>0).
     _sum_hist = db.fetch_one(
         """
         SELECT COALESCE(SUM(usuti), 0) AS uti,
                COALESCE(SUM(usret), 0) AS ret
-          FROM scintela.historia
-         WHERE fecha > %s AND fecha <= %s
+          FROM (
+              SELECT DISTINCT ON (EXTRACT(YEAR FROM fecha),
+                                  EXTRACT(MONTH FROM fecha))
+                     usuti, usret
+                FROM scintela.historia
+               WHERE fecha > %s AND fecha <= %s
+                 AND COALESCE(patrimonio, 0) <> 0
+               ORDER BY EXTRACT(YEAR FROM fecha),
+                        EXTRACT(MONTH FROM fecha), fecha DESC
+          ) m
         """,
         (h_ini.get("fecha"), h_fin.get("fecha")),
     ) or {}
