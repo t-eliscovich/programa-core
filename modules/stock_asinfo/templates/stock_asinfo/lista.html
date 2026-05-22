@@ -21,6 +21,11 @@
   .sa .kpi-label { color: rgb(100 116 139); font-size: 11px;
                    text-transform: uppercase; letter-spacing: 0.05em; }
   .sa .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .sa .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+                border: 1px solid rgb(203 213 225); vertical-align: -3px; margin-right: 4px; }
+  .sa .chip { display: inline-block; padding: 2px 8px; border-radius: 9999px;
+              font-size: 10px; font-weight: 600; background: rgb(241 245 249);
+              color: rgb(51 65 85); text-transform: uppercase; letter-spacing: 0.04em; }
 </style>
 {% endblock %}
 
@@ -31,26 +36,48 @@
     <div>
       <h1 class="text-xl font-semibold">Stock Asinfo</h1>
       <p class="text-xs text-slate-500">
-        Cantidad por producto desde el ERP (<code>saldo_producto</code>).
-        Precio: <code>producto.precio_ultima_venta</code> como referencial.
+        Cantidad por producto desde el ERP (<code>v_saldo_producto_vista</code>).
+        Tejido = categoría, color = hex Asinfo, precio = última venta como referencial.
       </p>
     </div>
-    <form method="get" class="flex items-end gap-2">
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Buscar</label>
-        <input type="text" name="q" value="{{ q }}" placeholder="código o descripción"
-               class="w-48 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
-      </div>
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Cantidad mín.</label>
-        <input type="number" step="0.01" name="min" value="{{ min_saldo if min_saldo else '' }}"
-               placeholder="0" class="w-24 rounded border border-slate-300 px-2 py-1 text-sm">
-      </div>
-      <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
-      <a href="{{ url_for('stock_asinfo.lista', q=q, min=min_saldo, export='csv') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
-    </form>
   </div>
+
+  {# Filtros #}
+  <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="código / nombre / tejido"
+             class="w-56 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Tejido</label>
+      <select name="tejido" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+        <option value="">Todos</option>
+        {% for t in tejidos_universo %}
+          <option value="{{ t }}" {% if t == tejido_filtro %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Color</label>
+      <select name="color" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+        <option value="">Todos</option>
+        {% for c in colores_universo %}
+          <option value="{{ c }}" {% if c == color_filtro %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cantidad mín.</label>
+      <input type="number" step="0.01" name="min" value="{{ min_saldo if min_saldo else '' }}"
+             placeholder="0" class="w-24 rounded border border-slate-300 px-2 py-1 text-sm">
+    </div>
+    <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
+    <a href="{{ url_for('stock_asinfo.lista') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
+    <a href="{{ url_for('stock_asinfo.lista', q=q, tejido=tejido_filtro, color=color_filtro, min=min_saldo, export='csv') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+  </form>
 
   {% if error %}
     <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
@@ -77,10 +104,29 @@
       <div class="kpi-val">$ {{ valor_proxy | num_es(0) }}</div>
     </div>
   </div>
+
+  {# Distribución por tejido — barras visuales #}
+  {% if distribucion %}
+  <div class="mb-4 p-4 bg-white border border-slate-200 rounded">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Distribución por tejido</div>
+    {% set _max_kg = (distribucion[0][1].kg) or 1 %}
+    {% for t, slot in distribucion[:12] %}
+      <div class="flex items-center gap-2 text-xs mb-1">
+        <div class="w-28 truncate" title="{{ t }}">{{ t }}</div>
+        <div class="flex-1 bg-slate-100 rounded h-4 relative overflow-hidden">
+          <div class="bg-sky-500 h-4" style="width: {{ (slot.kg / _max_kg * 100) | round(1) }}%;"></div>
+        </div>
+        <div class="w-20 text-right font-mono">{{ slot.kg | num_es(0) }}</div>
+        <div class="w-12 text-right text-slate-400">{{ slot.n }} prod</div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <p class="text-[11px] text-slate-500 mb-3">
     * Valor estimado usa <code>precio_ultima_venta</code> donde está cargado.
-    Asinfo no tiene costos en el master de producto — este número subestima
-    el inventario porque solo <strong>{{ productos_con_precio }}</strong> de
+    Asinfo no tiene <code>costo_estandar</code> en el master de producto — este
+    número subestima el inventario porque solo <strong>{{ productos_con_precio }}</strong> de
     los productos tienen precio. Es una referencia, no contabilidad.
   </p>
 
@@ -88,19 +134,28 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 14%">Código</th>
-          <th>Descripción</th>
-          <th class="text-right" style="width: 12%">Cantidad</th>
-          <th class="text-right" style="width: 8%">Bodegas</th>
-          <th class="text-right" style="width: 12%">Precio últ.venta</th>
-          <th class="text-right" style="width: 14%">Valor estimado</th>
+          <th style="width: 13%">Código</th>
+          <th>Nombre</th>
+          <th style="width: 10%">Tejido</th>
+          <th style="width: 7%">Color</th>
+          <th class="text-right" style="width: 11%">Cantidad</th>
+          <th class="text-right" style="width: 6%">Bodegas</th>
+          <th class="text-right" style="width: 11%">Precio últ.</th>
+          <th class="text-right" style="width: 13%">Valor estimado</th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
           <tr>
             <td><code>{{ r.codigo }}</code></td>
-            <td>{{ r.descripcion or '—' }}</td>
+            <td>{{ r.nombre or '—' }}</td>
+            <td>{% if r.tejido %}<span class="chip">{{ r.tejido }}</span>{% endif %}</td>
+            <td>
+              {% if r.color %}
+                <span class="swatch" style="background: {{ r.color }};" title="{{ r.color }}"></span>
+                <span class="text-xs text-slate-500">{{ r.color }}</span>
+              {% endif %}
+            </td>
             <td class="num">{{ r.cantidad_total | num_es(2) }}</td>
             <td class="num">{{ r.n_bodegas }}</td>
             <td class="num {% if not r.precio_ultima %}muted{% endif %}">
@@ -111,11 +166,11 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-center py-8 text-slate-500">
+          <tr><td colspan="8" class="text-center py-8 text-slate-500">
             {% if error %}
               Error en la consulta.
             {% else %}
-              Sin productos con stock. Verificá la conexión a Metabase.
+              Sin productos con stock en el filtro actual.
             {% endif %}
           </td></tr>
         {% endfor %}
@@ -124,10 +179,11 @@
   </div>
 
   <p class="text-xs text-slate-500 mt-3">
-    Fuente: <code>saldo_producto + producto</code> en Asinfo (database 2 de
-    Metabase). Cache 10 min. <code>precio_ultima_venta</code> es lo más cerca
-    a un costo que el ERP expone hoy — si se cargan <code>costo_estandar</code>
-    los productos, esta vista se actualiza automáticamente.
+    Fuente: <code>v_saldo_producto_vista</code> en Asinfo (database 2 Metabase).
+    Cache 10 min. El color es el hex que carga Asinfo (no nombre); el
+    "nombre del color" suele estar en el sufijo del código (BLA = blanco,
+    NEG = negro, MAR = marrón, etc.). Si se carga <code>costo_estandar</code>
+    en los productos, esta vista se actualiza automáticamente.
   </p>
 </div>
 {% endblock %}

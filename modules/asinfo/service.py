@@ -257,14 +257,22 @@ _STOCK_CACHE: dict = {}
 
 
 def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
-    """Stock por producto desde Asinfo (saldo_producto agregado por producto).
+    """Stock por producto desde Asinfo, usando la vista pre-calculada
+    `v_saldo_producto_vista` que ya:
+      - consolida el saldo más reciente por producto+bodega,
+      - expone tejido (categoría), subcategoría, color (hex),
+      - incluye nombre_producto y nombre_comercial.
 
     Cada fila:
         codigo            — código SKU del producto
-        descripcion       — nombre/descripción
-        cantidad_total    — SUM(sp.saldo) sobre todas las bodegas
-        bodegas           — lista de strings "BODEGA: NN.NN" (top 4)
-        n_bodegas         — cuántas bodegas tienen stock
+        nombre            — nombre_producto (p.ej. "Jersey 3.5 BLA")
+        nombre_comercial  — alternativo (puede estar vacío)
+        tejido            — nombre_categoria_producto (Jersey / Fleece / Pique / Rib / etc.)
+        subcategoria      — variante (3.5 / 1.2x2.3 / 24/1 / etc.)
+        color             — hex Asinfo (#ffffff). El "nombre" del color va embebido
+                            en codigo (BLA, NEG, MAR, ...) y nombre.
+        cantidad_total    — SUM(saldo_acumulado) sobre todas las bodegas del producto
+        n_bodegas         — cuántas bodegas distintas tienen stock
         precio_ultima     — precio_ultima_venta del producto (puede ser 0)
 
     Args:
@@ -273,6 +281,9 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
     Returns:
         Lista de dicts ordenada por cantidad_total DESC. [] si Metabase no
         está configurado o si falla.
+
+    Nota perf 2026-05-22: la vista trae ~3500 productos con stock. Subimos
+    el max-results de Metabase a 10000 para no truncar (default 2000).
     """
     import time as _time
     cache_key = f"min_{min_saldo}"
@@ -281,44 +292,26 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
     if cached and (now - cached[0]) < _STOCK_TTL_SECS:
         return cached[1]
 
-    # CRITICAL: saldo_producto tiene MÚLTIPLES filas por (producto, bodega) — son
-    # snapshots históricos. NO sumamos todo (sumaría 30 snapshots por producto y
-    # daría cantidades absurdas como 173M). Tomamos el MÁS RECIENTE por (producto,
-    # bodega) via ROW_NUMBER() y después agregamos por producto.
-    # Verificado 2026-05-22 con Tamara — sin este fix /stock/asinfo mostraba
-    # cantidades infladas 100-1000×.
     sql = """
-        WITH ultimo_saldo AS (
-            SELECT id_producto, id_bodega, saldo,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY id_producto, id_bodega
-                       ORDER BY fecha DESC, id_saldo_producto DESC
-                   ) AS rn
-              FROM saldo_producto
-        ),
-        stock AS (
-            SELECT id_producto,
-                   SUM(saldo) AS cantidad,
-                   COUNT(DISTINCT id_bodega) AS n_bodegas
-              FROM ultimo_saldo
-             WHERE rn = 1 AND saldo > 0
-             GROUP BY id_producto
-        )
-        SELECT p.codigo,
-               COALESCE(NULLIF(p.descripcion, ''), p.nombre, p.codigo) AS descripcion,
-               s.cantidad                        AS cantidad_total,
-               ''                                AS bodegas_detalle,
-               s.n_bodegas,
-               COALESCE(p.precio_ultima_venta, 0) AS precio_ultima
-          FROM stock s
-          INNER JOIN producto p ON p.id_producto = s.id_producto
-         WHERE s.cantidad > 0
-         ORDER BY s.cantidad DESC
+        SELECT codigo_producto                       AS codigo,
+               nombre_producto                       AS nombre,
+               COALESCE(nombre_comercial, '')        AS nombre_comercial,
+               COALESCE(nombre_categoria_producto, '') AS tejido,
+               COALESCE(nombre_subcategoria_producto, '') AS subcategoria,
+               COALESCE(color, '')                   AS color,
+               SUM(saldo)                            AS cantidad_total,
+               COUNT(DISTINCT id_bodega)             AS n_bodegas,
+               MAX(COALESCE(precio_ultima_venta, 0)) AS precio_ultima
+          FROM v_saldo_producto_vista
+         WHERE saldo > 0
+         GROUP BY codigo_producto, nombre_producto, nombre_comercial,
+                  nombre_categoria_producto, nombre_subcategoria_producto, color
+        HAVING SUM(saldo) > 0
+         ORDER BY SUM(saldo) DESC
     """
-    rows = metabase_client.fetch_dataset(2, sql)
+    rows = metabase_client.fetch_dataset(2, sql, max_results=10000)
     if not rows:
         return []
-    # Normalizar para que la vista no rompa con nulls
     out = []
     for r in rows:
         try:
@@ -327,11 +320,17 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
                 continue
             out.append({
                 "codigo": str(r.get("codigo") or "").strip(),
-                "descripcion": str(r.get("descripcion") or "").strip(),
+                "nombre": str(r.get("nombre") or "").strip(),
+                "nombre_comercial": str(r.get("nombre_comercial") or "").strip(),
+                "tejido": str(r.get("tejido") or "").strip(),
+                "subcategoria": str(r.get("subcategoria") or "").strip(),
+                "color": str(r.get("color") or "").strip(),
                 "cantidad_total": qty,
-                "bodegas_detalle": str(r.get("bodegas_detalle") or "").strip(),
                 "n_bodegas": int(r.get("n_bodegas") or 0),
                 "precio_ultima": float(r.get("precio_ultima") or 0),
+                # Compat con código viejo que esperaba estos nombres:
+                "descripcion": str(r.get("nombre") or "").strip(),
+                "bodegas_detalle": "",
             })
         except (TypeError, ValueError):
             continue

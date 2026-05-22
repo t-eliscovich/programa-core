@@ -1,9 +1,15 @@
 """/stock/asinfo — vista de stock por producto desde Asinfo.
 
 Blueprint propio (aislado de modules/stock/) montado bajo url_prefix="/stock".
-Lee la tabla `saldo_producto` del ERP vía Metabase API. Asinfo NO tiene
+Lee `v_saldo_producto_vista` del ERP vía Metabase API. Asinfo NO tiene
 costos cargados (confirmado 2026-05-22), así que solo se muestra cantidad
-y `precio_ultima_venta` como proxy informativo para el 24% que lo tiene.
+y `precio_ultima_venta` como proxy informativo para el ~50% que lo tiene.
+
+Filtros disponibles (query string):
+    q       — busca en código, nombre y tejido
+    tejido  — filtra exactamente por categoría (Jersey / Fleece / Pique / etc.)
+    color   — filtra por color hex (#ffffff, #000000, …)
+    min     — cantidad mínima
 """
 from __future__ import annotations
 
@@ -29,6 +35,10 @@ def lista():
     except (TypeError, ValueError):
         min_saldo = 0.0
 
+    q = (request.args.get("q") or "").strip().upper()
+    tejido_filtro = (request.args.get("tejido") or "").strip()
+    color_filtro = (request.args.get("color") or "").strip().lower()
+
     error = None
     rows = []
     try:
@@ -37,13 +47,23 @@ def lista():
     except Exception as e:  # noqa: BLE001
         error = str(e)
 
-    # Búsqueda por código/descripcion (client-side simple)
-    q = (request.args.get("q") or "").strip().upper()
+    # Catálogos para los dropdowns — SE CALCULAN SOBRE TODO EL UNIVERSO,
+    # no sobre lo filtrado, para que la dueña vea siempre el mismo set.
+    tejidos_universo = sorted({(r.get("tejido") or "") for r in rows if r.get("tejido")})
+    colores_universo = sorted({(r.get("color") or "") for r in rows if r.get("color")})
+
+    # Aplicar filtros (post-cache, en memoria — son ~3500 filas, irrelevante)
+    if tejido_filtro:
+        rows = [r for r in rows if r.get("tejido") == tejido_filtro]
+    if color_filtro:
+        rows = [r for r in rows if (r.get("color") or "").lower() == color_filtro]
     if q:
         rows = [
             r for r in rows
             if q in (r.get("codigo") or "").upper()
-            or q in (r.get("descripcion") or "").upper()
+            or q in (r.get("nombre") or "").upper()
+            or q in (r.get("tejido") or "").upper()
+            or q in (r.get("subcategoria") or "").upper()
         ]
 
     # Stats
@@ -55,16 +75,28 @@ def lista():
     )
     productos_con_precio = sum(1 for r in rows if r["precio_ultima"] > 0)
 
+    # Distribución por tejido (siempre sobre lo filtrado, para que ayude
+    # a explorar): label → {n, kg}
+    por_tejido: dict[str, dict] = {}
+    for r in rows:
+        t = r.get("tejido") or "(s/categoría)"
+        slot = por_tejido.setdefault(t, {"n": 0, "kg": 0.0})
+        slot["n"] += 1
+        slot["kg"] += r["cantidad_total"]
+    distribucion = sorted(por_tejido.items(), key=lambda kv: -kv[1]["kg"])
+
     if request.args.get("export") == "csv":
         return csv_response(
             rows,
             columnas=[
                 ("codigo", "Código"),
-                ("descripcion", "Descripción"),
+                ("nombre", "Nombre"),
+                ("tejido", "Tejido"),
+                ("subcategoria", "Subcategoría"),
+                ("color", "Color (hex)"),
                 ("cantidad_total", "Cantidad"),
                 ("n_bodegas", "Bodegas"),
                 ("precio_ultima", "Precio última venta (US)"),
-                ("bodegas_detalle", "Detalle bodegas"),
             ],
             filename="stock_asinfo.csv",
         )
@@ -78,5 +110,10 @@ def lista():
         productos_con_precio=productos_con_precio,
         q=q,
         min_saldo=min_saldo,
+        tejido_filtro=tejido_filtro,
+        color_filtro=color_filtro,
+        tejidos_universo=tejidos_universo,
+        colores_universo=colores_universo,
+        distribucion=distribucion,
         error=error,
     )

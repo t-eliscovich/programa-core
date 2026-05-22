@@ -112,7 +112,12 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
         return []
 
 
-def fetch_dataset(database_id: int, sql: str, params: list | None = None) -> list[dict]:
+def fetch_dataset(
+    database_id: int,
+    sql: str,
+    params: list | None = None,
+    max_results: int = 10000,
+) -> list[dict]:
     """POST /api/dataset — query SQL ad-hoc contra una base configurada en Metabase.
 
     Útil cuando no hay (o no querés crear) una card guardada para un caso
@@ -124,6 +129,9 @@ def fetch_dataset(database_id: int, sql: str, params: list | None = None) -> lis
         sql: SQL nativa. Puede usar `{{tag}}` template-tags pero la mayoría
             de usos son SQL pura.
         params: opcional, lista de positional/template parameters.
+        max_results: límite de filas. Metabase default es 2000 (cliente) /
+            2000 (bare-rows). Para datasets que devuelven >2000 productos,
+            subirlo evita truncar silenciosamente. Default acá 10.000.
 
     Returns:
         Lista de dicts (una por fila). [] si falla, si la base no existe
@@ -146,6 +154,10 @@ def fetch_dataset(database_id: int, sql: str, params: list | None = None) -> lis
         "database": database_id,
         "type": "native",
         "native": {"query": sql},
+        "constraints": {
+            "max-results": int(max_results),
+            "max-results-bare-rows": int(max_results),
+        },
     }
     if params:
         body["parameters"] = params
