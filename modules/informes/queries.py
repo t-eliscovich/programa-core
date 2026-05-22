@@ -839,6 +839,17 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     except Exception:
         pass
 
+    # Gs. Tintoreria para COSTOS UNITARIOS = misma cuenta que la fila
+    # Tintoreria del Informe de Resultados: V4+V5+V6 + amortizacion DCC.
+    # Federico 2026-05-22.
+    try:
+        _gxg = gastos_xgast_v1_a_v9_mes()
+        _amort = amortizaciones_mensuales()
+        _gs_tin = (float(_gxg.get("gtin_sin_dcc") or 0)
+                   + float(_amort.get("dcc") or 0))
+    except Exception:
+        _gs_tin = 0.0
+
     return {
         "anio": yy,
         "mes": mm,
@@ -859,26 +870,34 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
                 "us": tint_us,
                 "ukg": _safe_div(tint_us, tint_kg),
                 "pct": 100.0 if tint_kg else 0.0,
-                "ant": tint_ukg_ant,
+                "ant": None,
             },
             "bajos": {
                 "kg": bajos_kg,
                 "us": bajos_us,
                 "ukg": _safe_div(bajos_us, bajos_kg),
                 "pct": bajos_pct,
-                "ant": tint_ukg_ant,
+                "ant": None,
             },
             "fuertes": {
                 "kg": fuertes_kg,
                 "us": fuertes_us,
                 "ukg": _safe_div(fuertes_us, fuertes_kg),
                 "pct": fuertes_pct,
-                "ant": tint_ukg_ant,
+                "ant": None,
             },
         },
         "cs": {
-            "colorantes": {"kg": ktin, "ukg": cs_col_ukg, "us": cs_col_us, "ant": cs_col_ukg_ant},
-            "produccion": {"kg": cs_prod_kg, "ukg": cs_prod_ukg, "us": cs_prod_us, "ant": cs_prod_ukg_ant},
+            # COSTOS UNITARIOS - kg = producidos (KTINT); $/kg = $/kg.
+            # Colorantes: $ = compras quimicos del mes. Gs. Tintoreria:
+            # $ = misma cuenta que la fila Tintoreria de Resultados.
+            # ant = None hasta retener los cierres mensuales.
+            "colorantes": {"kg": _ktint,
+                           "ukg": _safe_div(cs_col_us, _ktint),
+                           "us": cs_col_us, "ant": None},
+            "produccion": {"kg": _ktint,
+                           "ukg": _safe_div(_gs_tin, _ktint),
+                           "us": _gs_tin, "ant": None},
         },
     }
 

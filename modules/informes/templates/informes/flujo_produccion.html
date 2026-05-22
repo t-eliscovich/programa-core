@@ -216,7 +216,7 @@
         <table>
           <thead>
             <tr>
-              <th class="lbl"></th><th>%</th><th>Kg</th><th>$/Kg</th><th>Ant.</th><th>$</th>
+              <th class="lbl"></th><th>%</th><th>Kg</th><th>$/Kg</th><th>Mes Ant.</th><th>$</th>
             </tr>
           </thead>
           <tbody>
@@ -257,7 +257,7 @@
         <div class="blk-title" style="color:rgb(30 64 175)">Costos unitarios</div>
         <table>
           <thead>
-            <tr><th class="lbl"></th><th>Kg</th><th>$/Kg</th><th>Ant.</th><th>$</th></tr>
+            <tr><th class="lbl"></th><th>Kg</th><th>$/Kg</th><th>Mes Ant.</th><th>$</th></tr>
           </thead>
           <tbody>
             <tr>
@@ -268,7 +268,7 @@
               <td class="num">{{ csc.us | num_es(0) if csc.us else '—' }}</td>
             </tr>
             <tr>
-              <td class="lbl">CS · Producción</td>
+              <td class="lbl">Gs. Tintorería</td>
               <td class="num">{{ csp.kg | num_es(0) if csp.kg else '—' }}</td>
               <td class="num">{{ '%.3f' % (csp.ukg or 0) if csp.ukg else '—' }}</td>
               <td class="num">{{ '%.3f' % (csp.ant or 0) if csp.ant else '—' }}</td>
