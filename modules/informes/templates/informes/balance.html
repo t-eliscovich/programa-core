@@ -141,6 +141,11 @@
          title="Detalle de gastos del mes: tejeduria, tintoreria y administracion.">
         Gastos del mes
       </a>
+      <a href="{{ url_for('informes.flujo_produccion') }}"
+         class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium inline-flex items-center gap-1.5"
+         title="Flujo de produccion del mes: hilado, tejido, tintoreria y stock.">
+        Flujo producción
+      </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
         Imprimir
@@ -328,7 +333,7 @@
           {# ─── PATRIMONIO NETO — la fila más importante. Bigger + bold. ─── #}
           <tr class="fila-key">
             <td class="label-cell">Patrimonio neto</td>
-            <td class="num-cell pos">{{ (b.patr - b.uret) | num_es(0) }}</td>
+            <td class="num-cell">{{ (b.patr - b.uret) | num_es(0) }}</td>
           </tr>
         </tbody>
       </table>
