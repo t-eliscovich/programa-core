@@ -31,6 +31,96 @@ def _parse_date(s: str | None, default: date) -> date:
         return default
 
 
+@comparativa_tintoreria_bp.route("/tintoreria")
+@requiere_login
+@requiere_permiso("informes.ver")
+def tintoreria_detalle():
+    """Tabla plana: fecha terminado, color, kg, importe, precio unitario.
+
+    Fuente: `scintela.tinto` agrupado por (fecha, cod). Una fila por
+    combinación (fecha, color). Precio unitario = importe / kg.
+    """
+    hoy = date.today()
+    default_desde = hoy - timedelta(days=30)
+    desde = _parse_date(request.args.get("desde"), default_desde)
+    hasta = _parse_date(request.args.get("hasta"), hoy)
+    cod_filtro = (request.args.get("cod") or "").strip().upper()
+
+    error = None
+    rows: list[dict] = []
+    try:
+        rows = queries.tinto_pc_por_dia_color(desde, hasta) or []
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+
+    # Universo de colores para el dropdown (sobre todo lo traído)
+    cods_universo = sorted({r.get("cod") or "" for r in rows if r.get("cod")})
+
+    # Filtro por color
+    if cod_filtro:
+        rows = [r for r in rows if (r.get("cod") or "").upper() == cod_filtro]
+
+    # Calcular precio unitario y armar filas finales
+    filas = []
+    tot_kg = 0.0
+    tot_importe = 0.0
+    for r in rows:
+        kg = float(r.get("kg") or 0)
+        imp = float(r.get("importe") or 0)
+        precio = (imp / kg) if kg else None
+        tot_kg += kg
+        tot_importe += imp
+        filas.append({
+            "fecha": r["fecha"],
+            "cod": r.get("cod") or "",
+            "kg": kg,
+            "importe": imp,
+            "precio_unitario": precio,
+            "n_lineas": int(r.get("n_lineas") or 0),
+        })
+    precio_promedio = (tot_importe / tot_kg) if tot_kg else None
+
+    if request.args.get("export") == "csv":
+        return csv_response(
+            [
+                {
+                    "fecha": f["fecha"].isoformat(),
+                    "color": f["cod"],
+                    "kg": f["kg"],
+                    "importe": f["importe"],
+                    "precio_unitario": (
+                        f"{f['precio_unitario']:.4f}"
+                        if f["precio_unitario"] is not None else ""
+                    ),
+                    "n_lineas": f["n_lineas"],
+                }
+                for f in filas
+            ],
+            columnas=[
+                ("fecha", "Fecha"),
+                ("color", "Color"),
+                ("kg", "Kg"),
+                ("importe", "Importe (US)"),
+                ("precio_unitario", "Precio unitario (US/kg)"),
+                ("n_lineas", "Líneas"),
+            ],
+            filename=f"tintoreria_{desde}_{hasta}.csv",
+        )
+
+    return render_template(
+        "comparativa_tintoreria/tintoreria.html",
+        filas=filas,
+        desde=desde,
+        hasta=hasta,
+        cod_filtro=cod_filtro,
+        cods_universo=cods_universo,
+        tot_kg=tot_kg,
+        tot_importe=tot_importe,
+        precio_promedio=precio_promedio,
+        error=error,
+    )
+
+
 @comparativa_tintoreria_bp.route("/comparativa-tintoreria")
 @requiere_login
 @requiere_permiso("informes.ver")

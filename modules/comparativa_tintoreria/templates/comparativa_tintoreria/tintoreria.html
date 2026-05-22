@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Tintorería · detalle{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <strong>Tintorería</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .td { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .td table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .td th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); letter-spacing: 0.03em;
+           border-bottom: 1px solid rgb(203 213 225); }
+  .td td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .td td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .td td.muted { color: rgb(148 163 184); }
+  .td .kpi { background: white; border: 1px solid rgb(226 232 240);
+             border-radius: 8px; padding: 12px 16px; }
+  .td .kpi-label { color: rgb(100 116 139); font-size: 11px;
+                   text-transform: uppercase; letter-spacing: 0.05em; }
+  .td .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .td .chip { display: inline-block; padding: 2px 8px; border-radius: 9999px;
+              font-size: 10px; font-weight: 600; background: rgb(241 245 249);
+              color: rgb(51 65 85); text-transform: uppercase; letter-spacing: 0.04em; }
+  .td tr.total td { background: rgb(15 23 42); color: white; font-weight: 700;
+                    border-bottom: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full td">
+
+  <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
+    <div>
+      <h1 class="text-xl font-semibold">Tintorería · detalle</h1>
+      <p class="text-xs text-slate-500">
+        Una fila por fecha + color. Datos: <code>scintela.tinto</code>.
+      </p>
+    </div>
+    <form method="get" class="flex items-end gap-2">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Desde</label>
+        <input type="date" name="desde" value="{{ desde.isoformat() }}"
+               class="rounded border border-slate-300 px-2 py-1 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Hasta</label>
+        <input type="date" name="hasta" value="{{ hasta.isoformat() }}"
+               class="rounded border border-slate-300 px-2 py-1 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Color</label>
+        <select name="cod" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+          <option value="">Todos</option>
+          {% for c in cods_universo %}
+            <option value="{{ c }}" {% if c == cod_filtro %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
+      <a href="{{ url_for('comparativa_tintoreria.tintoreria_detalle',
+                          desde=desde.isoformat(), hasta=hasta.isoformat(),
+                          cod=cod_filtro, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+    </form>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-amber-50 text-amber-900 border border-amber-200 text-sm">
+      <strong>Aviso:</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  {# KPIs #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="kpi">
+      <div class="kpi-label">Filas</div>
+      <div class="kpi-val">{{ '{:,}'.format(filas | length).replace(',', '.') }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Kg totales</div>
+      <div class="kpi-val">{{ tot_kg | num_es(1) }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Importe total (US)</div>
+      <div class="kpi-val">$ {{ tot_importe | num_es(0) }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Precio promedio (US/kg)</div>
+      <div class="kpi-val">
+        {% if precio_promedio is not none %}{{ precio_promedio | num_es(2) }}{% else %}—{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 14%">Fecha</th>
+          <th style="width: 12%">Color</th>
+          <th class="text-right" style="width: 16%">Kilos</th>
+          <th class="text-right" style="width: 20%">Importe (US)</th>
+          <th class="text-right" style="width: 20%">Precio unitario (US/kg)</th>
+          <th class="text-right" style="width: 8%">Líneas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+          <tr>
+            <td>{{ f.fecha.strftime('%d/%m/%Y') }}</td>
+            <td>{% if f.cod %}<span class="chip">{{ f.cod }}</span>{% endif %}</td>
+            <td class="num">{{ f.kg | num_es(2) }}</td>
+            <td class="num">$ {{ f.importe | num_es(2) }}</td>
+            <td class="num {% if f.precio_unitario is none %}muted{% endif %}">
+              {% if f.precio_unitario is not none %}{{ f.precio_unitario | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td class="num text-slate-500">{{ f.n_lineas }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-center py-8 text-slate-500">
+            Sin datos en el rango seleccionado.
+          </td></tr>
+        {% endfor %}
+        {% if filas %}
+          <tr class="total">
+            <td colspan="2">TOTAL</td>
+            <td class="num">{{ tot_kg | num_es(2) }}</td>
+            <td class="num">$ {{ tot_importe | num_es(2) }}</td>
+            <td class="num">
+              {% if precio_promedio is not none %}{{ precio_promedio | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td></td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Fuente: <code>scintela.tinto</code> · filas con <code>stat NOT IN ('X','Y')</code> ·
+    color = <code>tinto.cod</code>. Precio unitario = importe / kg por fila.
+    Si una fila tiene importe pero kg=0, el precio se muestra como "—".
+  </p>
+</div>
+{% endblock %}
