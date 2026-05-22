@@ -25,6 +25,105 @@ stock_asinfo_bp = Blueprint(
 )
 
 
+@stock_asinfo_bp.route("/quimicos")
+@requiere_login
+@requiere_permiso("informes.ver")
+def quimicos():
+    """Stock de químicos desde formulas_app (modules/tintura/service).
+
+    Replica la lógica de stock_al_dia: última lectura de inventario por
+    producto, ± ajustes, + compras, − consumo (de órdenes terminadas).
+    Es la fuente confiable de químicos — no Asinfo, que solo tiene 55K kg
+    (vs ~396K kg reales en formulas_app/PC).
+    """
+    from datetime import date as _date
+    error = None
+    rows = []
+    fecha_corte = _date.today()
+    try:
+        from modules.tintura import service as tintura
+        rows = tintura.stock_quimicos_al_dia(fecha_corte)
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+
+    # Filtros UI
+    q = (request.args.get("q") or "").strip().upper()
+    familia_filtro = (request.args.get("familia") or "").strip()
+
+    familias_universo = sorted({(r.familia or "") for r in rows if r.familia})
+
+    if familia_filtro:
+        rows = [r for r in rows if r.familia == familia_filtro]
+    if q:
+        rows = [
+            r for r in rows
+            if q in (r.nombre or "").upper()
+            or q in (r.familia or "").upper()
+        ]
+
+    # Quedarse solo con los que tienen algo de stock (o que se movieron)
+    rows_con_stock = [r for r in rows if abs(r.stock_al_dia_kg) > 0.001]
+
+    total_productos = len(rows_con_stock)
+    total_kg = sum(r.stock_al_dia_kg for r in rows_con_stock)
+    total_us = sum(r.stock_al_dia_kg * r.precio_us for r in rows_con_stock)
+
+    # Distribución por familia
+    por_familia: dict[str, dict] = {}
+    for r in rows_con_stock:
+        f = r.familia or "(s/familia)"
+        slot = por_familia.setdefault(f, {"n": 0, "kg": 0.0, "us": 0.0})
+        slot["n"] += 1
+        slot["kg"] += r.stock_al_dia_kg
+        slot["us"] += r.stock_al_dia_kg * r.precio_us
+    distribucion = sorted(por_familia.items(), key=lambda kv: -kv[1]["us"])
+
+    if request.args.get("export") == "csv":
+        export_rows = [
+            {
+                "familia": r.familia,
+                "num_visible": r.num_visible,
+                "nombre": r.nombre,
+                "unidad": r.unidad,
+                "stock_kg": round(r.stock_al_dia_kg, 3),
+                "precio_us": round(r.precio_us, 4),
+                "valor_us": round(r.stock_al_dia_kg * r.precio_us, 2),
+                "fecha_lectura": (
+                    r.fecha_lectura.isoformat() if r.fecha_lectura else ""
+                ),
+            }
+            for r in rows_con_stock
+        ]
+        return csv_response(
+            export_rows,
+            columnas=[
+                ("familia", "Familia"),
+                ("num_visible", "N°"),
+                ("nombre", "Nombre"),
+                ("unidad", "Unidad"),
+                ("stock_kg", "Stock"),
+                ("precio_us", "U$/unidad"),
+                ("valor_us", "Valor U$"),
+                ("fecha_lectura", "Última lectura"),
+            ],
+            filename="stock_quimicos.csv",
+        )
+
+    return render_template(
+        "stock_asinfo/quimicos.html",
+        rows=rows_con_stock,
+        total_productos=total_productos,
+        total_kg=total_kg,
+        total_us=total_us,
+        distribucion=distribucion,
+        familias_universo=familias_universo,
+        familia_filtro=familia_filtro,
+        q=q,
+        fecha_corte=fecha_corte,
+        error=error,
+    )
+
+
 @stock_asinfo_bp.route("/asinfo")
 @requiere_login
 @requiere_permiso("informes.ver")

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Stock Químicos · formulas_app{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('stock.lista') }}" class="hover:underline">Stock</a> /
+  <strong>Químicos</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .sq { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .sq table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .sq th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); letter-spacing: 0.03em;
+           border-bottom: 1px solid rgb(203 213 225); }
+  .sq td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .sq td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .sq td.muted { color: rgb(148 163 184); }
+  .sq .kpi { background: white; border: 1px solid rgb(226 232 240);
+             border-radius: 8px; padding: 12px 16px; }
+  .sq .kpi-label { color: rgb(100 116 139); font-size: 11px;
+                   text-transform: uppercase; letter-spacing: 0.05em; }
+  .sq .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .sq .chip { display: inline-block; padding: 2px 8px; border-radius: 9999px;
+              font-size: 10px; font-weight: 600; background: rgb(241 245 249);
+              color: rgb(51 65 85); text-transform: uppercase; letter-spacing: 0.04em; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full sq">
+
+  <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
+    <div>
+      <h1 class="text-xl font-semibold">Stock Químicos</h1>
+      <p class="text-xs text-slate-500">
+        Inventario de colorantes y auxiliares desde <code>formulas_app</code>.
+        Stock al día = última lectura + ajustes + compras − consumo en
+        órdenes terminadas. Fecha corte: <strong>{{ fecha_corte.strftime('%d/%m/%Y') }}</strong>.
+      </p>
+    </div>
+  </div>
+
+  {# Filtros #}
+  <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="nombre / familia"
+             class="w-56 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Familia</label>
+      <select name="familia" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+        <option value="">Todas</option>
+        {% for f in familias_universo %}
+          <option value="{{ f }}" {% if f == familia_filtro %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
+    <a href="{{ url_for('stock_asinfo.quimicos') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
+    <a href="{{ url_for('stock_asinfo.quimicos', q=q, familia=familia_filtro, export='csv') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+  </form>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      <strong>Error consultando formulas_app:</strong> <code>{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# KPIs #}
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+    <div class="kpi">
+      <div class="kpi-label">Productos con stock</div>
+      <div class="kpi-val">{{ '{:,}'.format(total_productos).replace(',', '.') }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Kg totales</div>
+      <div class="kpi-val">{{ total_kg | num_es(0) }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Valor U$</div>
+      <div class="kpi-val">$ {{ total_us | num_es(0) }}</div>
+    </div>
+  </div>
+
+  {# Distribución por familia — barras visuales #}
+  {% if distribucion %}
+  <div class="mb-4 p-4 bg-white border border-slate-200 rounded">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Distribución por familia</div>
+    {% set _max_us = (distribucion[0][1].us) or 1 %}
+    {% for f, slot in distribucion[:12] %}
+      <div class="flex items-center gap-2 text-xs mb-1">
+        <div class="w-32 truncate" title="{{ f }}">{{ f }}</div>
+        <div class="flex-1 bg-slate-100 rounded h-4 relative overflow-hidden">
+          <div class="bg-emerald-500 h-4" style="width: {{ (slot.us / _max_us * 100) | round(1) }}%;"></div>
+        </div>
+        <div class="w-24 text-right font-mono">$ {{ slot.us | num_es(0) }}</div>
+        <div class="w-20 text-right text-slate-500 font-mono">{{ slot.kg | num_es(0) }} kg</div>
+        <div class="w-12 text-right text-slate-400">{{ slot.n }} prod</div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 14%">Familia</th>
+          <th style="width: 5%">N°</th>
+          <th>Nombre</th>
+          <th style="width: 6%">Unidad</th>
+          <th class="text-right" style="width: 11%">Stock</th>
+          <th class="text-right" style="width: 10%">U$/un.</th>
+          <th class="text-right" style="width: 12%">Valor U$</th>
+          <th style="width: 10%">Últ. lectura</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>{% if r.familia %}<span class="chip">{{ r.familia }}</span>{% endif %}</td>
+            <td class="text-slate-500">{{ r.num_visible }}</td>
+            <td>{{ r.nombre }}</td>
+            <td class="text-slate-500">{{ r.unidad or '—' }}</td>
+            <td class="num">{{ r.stock_al_dia_kg | num_es(2) }}</td>
+            <td class="num {% if not r.precio_us %}muted{% endif %}">
+              {% if r.precio_us %}{{ r.precio_us | num_es(4) }}{% else %}—{% endif %}
+            </td>
+            <td class="num {% if not r.precio_us %}muted{% endif %}">
+              {% if r.precio_us %}$ {{ (r.stock_al_dia_kg * r.precio_us) | num_es(2) }}{% else %}—{% endif %}
+            </td>
+            <td class="text-slate-500 text-xs">
+              {% if r.fecha_lectura %}{{ r.fecha_lectura.strftime('%d/%m/%Y') }}{% else %}—{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+            {% if error %}Error en la consulta.{% else %}Sin productos en el filtro.{% endif %}
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Fuente: <code>formulas_app</code> (database 3 del RDS). Cálculo replica
+    <code>compute_stock_al_dia</code> de la app de tintorería:
+    base = última lectura ≤ corte, + ajustes posteriores, + compras posteriores,
+    − consumo de órdenes terminadas posteriores. NO incluye ajustes JSONB
+    intra-línea (aproximación).
+  </p>
+</div>
+{% endblock %}
