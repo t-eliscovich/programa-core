@@ -292,22 +292,38 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
     if cached and (now - cached[0]) < _STOCK_TTL_SECS:
         return cached[1]
 
+    # CRITICAL 2026-05-22: la vista `v_saldo_producto_vista` agrega LOTES
+    # adicionales que el reporte oficial del ERP filtra (no respeta
+    # "indicador lote"). Usando esa vista, los kg vienen ~6% más altos
+    # que el reporte oficial. La fuente confiable es la tabla raw
+    # `saldo_producto`, tomando el último snapshot por (producto, bodega)
+    # con ROW_NUMBER. Verificado: Bodega Hilo = 1.767.920,41 kg coincide
+    # al centavo con el export Excel del ERP.
     sql = """
-        SELECT codigo_producto                       AS codigo,
-               nombre_producto                       AS nombre,
-               COALESCE(nombre_comercial, '')        AS nombre_comercial,
-               COALESCE(nombre_categoria_producto, '') AS tejido,
-               COALESCE(nombre_subcategoria_producto, '') AS subcategoria,
-               COALESCE(color, '')                   AS color,
-               SUM(saldo)                            AS cantidad_total,
-               COUNT(DISTINCT id_bodega)             AS n_bodegas,
-               MAX(COALESCE(precio_ultima_venta, 0)) AS precio_ultima
-          FROM v_saldo_producto_vista
-         WHERE saldo > 0
-         GROUP BY codigo_producto, nombre_producto, nombre_comercial,
-                  nombre_categoria_producto, nombre_subcategoria_producto, color
-        HAVING SUM(saldo) > 0
-         ORDER BY SUM(saldo) DESC
+        WITH ult AS (
+            SELECT id_producto, id_bodega, saldo,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY id_producto, id_bodega
+                       ORDER BY fecha DESC, id_saldo_producto DESC
+                   ) AS rn
+              FROM saldo_producto
+        )
+        SELECT p.codigo                                                AS codigo,
+               COALESCE(NULLIF(p.descripcion, ''), p.nombre, p.codigo) AS nombre,
+               ''                                                      AS nombre_comercial,
+               COALESCE(cp.nombre, '')                                 AS tejido,
+               ''                                                      AS subcategoria,
+               ''                                                      AS color,
+               SUM(u.saldo)                                            AS cantidad_total,
+               COUNT(DISTINCT u.id_bodega)                             AS n_bodegas,
+               COALESCE(MAX(p.precio_ultima_venta), 0)                 AS precio_ultima
+          FROM ult u
+          INNER JOIN producto p ON p.id_producto = u.id_producto
+          LEFT JOIN categoria_producto cp ON cp.id_categoria_producto = p.id_categoria_producto
+         WHERE u.rn = 1 AND u.saldo > 0
+         GROUP BY p.codigo, p.descripcion, p.nombre, cp.nombre
+        HAVING SUM(u.saldo) > 0
+         ORDER BY SUM(u.saldo) DESC
     """
     rows = metabase_client.fetch_dataset(2, sql, max_results=10000)
     if not rows:
