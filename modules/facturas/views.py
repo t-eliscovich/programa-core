@@ -552,9 +552,30 @@ def lista():
                             n_idx[sufijo_int] = r
                     except (ValueError, TypeError):
                         pass
+                # TMT 2026-05-22 — índice por (cliente, fecha, kg redondeado).
+                # Muchas filas PC tienen numf=0 (sin número Asinfo cargado) y
+                # el match por número no funciona. Pero los importes USD coinciden
+                # exactamente con la card 199 (que ya viene sin IVA). Hacemos
+                # un índice compuesto para el fallback heurístico.
+                from collections import defaultdict as _dd
+                idx_compuesto: dict[tuple, list[dict]] = _dd(list)
+                for r in asinfo_rows:
+                    tipo = r.get("tipo")
+                    if tipo not in (_TIPOS_POSITIVOS + _TIPOS_NEGATIVOS):
+                        continue
+                    cli = (r.get("cliente_codigo") or "").strip().upper()
+                    fecha_ai = r.get("fecha")
+                    kg_ai = float(r.get("kg") or 0)
+                    if not (cli and fecha_ai):
+                        continue
+                    # Redondeamos kg a 2 decimales para tolerar drift mínimo de
+                    # formato. usd queda en la fila para validación posterior.
+                    key = (cli, str(fecha_ai)[:10], round(kg_ai, 2))
+                    idx_compuesto[key].append(r)
+
                 # Mergear: elegir índice según signo del kg de PC.
-                #   kg > 0  → buscar en FACTURA
-                #   kg < 0  → buscar en DEVOLUCION
+                #   kg > 0  → buscar en FACTURA+NTEN+NC_FINANCIERA
+                #   kg < 0  → buscar en DEVOLUCION+NCNT
                 #   kg == 0 → no matchear (NC financiera, ajustes)
                 for f in filas:
                     pc_kg = float(f.get("kg") or 0)
@@ -573,6 +594,22 @@ def lista():
                             r_ai = n_idx.get(int(f["numf"]))
                         except (ValueError, TypeError):
                             pass
+                    # TMT 2026-05-22 — Fallback heurístico para PC sin numf:
+                    # match por (codigo_cli + fecha + kg exacto) y validar
+                    # que los importes coincidan (PC sin IVA == card 199 usd).
+                    if r_ai is None:
+                        cli_pc = (f.get("codigo_cli") or "").strip().upper()
+                        fecha_pc = f.get("fecha")
+                        if cli_pc and fecha_pc:
+                            key = (cli_pc, str(fecha_pc)[:10], round(pc_kg, 2))
+                            candidatos = idx_compuesto.get(key, [])
+                            # Solo match si hay UN candidato (evitar ambigüedad).
+                            # Validar usd con tolerancia ±0.5 USD.
+                            pc_imp = float(f.get("importe") or 0)
+                            ok = [c for c in candidatos
+                                  if abs(float(c.get("usd") or 0) - pc_imp) < 0.5]
+                            if len(ok) == 1:
+                                r_ai = ok[0]
                     if r_ai is not None:
                         f["asinfo_kg"] = float(r_ai.get("kg") or 0)
                         f["asinfo_usd"] = float(r_ai.get("usd") or 0)
