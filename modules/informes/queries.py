@@ -6225,25 +6225,46 @@ def balance_components_as_of(as_of) -> dict:
     )
     gasto = float(gasto_row.get("importe") or 0)
 
-    # USRET (retiros del mes) — aproximación: el snapshot del mes los
-    # recalcula al cierre. USUTI sale de utilidad calculada abajo.
-    usret = 0.0
+    # USRET — retiros del mes (de scintela.retiros). Federico 2026-05-22:
+    # antes estaba hardcodeado en 0.0, lo que rompía la identidad
+    # utilidad = Δ patrimonio + retiros (el snapshot quedaba con utilidad
+    # de menos y usret en cero).
+    usret_row = (
+        db.fetch_one(
+            """
+        SELECT COALESCE(SUM(ret), 0) AS total
+          FROM scintela.retiros
+         WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
+           AND fecha <= %s
+        """,
+            (as_of, as_of),
+        )
+        or {}
+    )
+    usret = float(usret_row.get("total") or 0)
 
     # Computar cartera (totc + totf), subt, totl, patr, retiro
     cart = totc + totf
     subt = salbanc + salcaj + cart
     totl = subt + vsto + vqx + umaq + uact + antic
     patr = totl - totp
-    utilidad = patr - patant
+    # Utilidad del mes = Δ patrimonio + retiros: los retiros bajaron el
+    # patrimonio, así que se re-suman para llegar a la utilidad real.
+    utilidad = (patr - patant) + usret
 
     return {
         # Saldos
         "salcaj": salcaj,
-        "salbanc": salbanc,
-        "salbanc_bancos": salbanc_bancos,  # sin pos1+pos2, para debug
+        # Federico 2026-05-22 — `salbanc` y `banco` incluyen la CAJA
+        # (caja y bancos). El patrimonio ya incluía la caja vía `subt`,
+        # pero la columna `banco` del snapshot guardaba solo bancos →
+        # el Historial mostraba Activo-Pasivo de menos por el monto de
+        # la caja.
+        "salbanc": salbanc + salcaj,
+        "salbanc_bancos": salbanc_bancos,  # solo bancos, sin caja — debug
         "pos1": pos1,
         "pos2": pos2,
-        "banco": salbanc,
+        "banco": salbanc + salcaj,
         "totc": totc,
         "totf": totf,
         "cart": cart,
