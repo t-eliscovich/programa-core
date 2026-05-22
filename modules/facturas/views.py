@@ -716,18 +716,22 @@ def lista():
 _BACKFILL_SCORE_MAX = 0.15
 
 
-@facturas_bp.route("/facturas/backfill-asinfo", methods=["GET", "POST"])
+@facturas_bp.route("/facturas/backfill-asinfo", methods=["GET"])
 @requiere_login
 @requiere_permiso("facturas.editar")
 def backfill_asinfo():
     """Audit + backfill automático de huérfanas Asinfo.
 
-    GET  → muestra resumen sin tocar nada (preview).
-    POST → aplica los matches que cumplen el threshold.
+    GET sin args      → preview (no toca DB).
+    GET ?apply=1      → aplica los matches que cumplen el threshold.
+
+    Devuelve JSON con conteos + detalle. Pensado para correr desde Chrome
+    (un click). No usa POST para evitar tener que cargar CSRF token desde
+    una herramienta admin one-shot.
     """
     from modules.facturas import audit_asinfo
 
-    apply = request.method == "POST"
+    apply = request.args.get("apply") == "1"
     huerfanas = audit_asinfo.auditar_huerfanas(top_k=3, limite=1000)
 
     aplicados: list[dict] = []
