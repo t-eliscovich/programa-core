@@ -416,7 +416,7 @@ def lista():
     estados_raw = request.args.getlist("estado")
     estados_filtro = [
         s.upper().strip() for s in estados_raw
-        if s and s.upper().strip() in ("Z", "A", "T", "X")
+        if s and s.upper().strip() in ("Z", "A", "T", "X", "N")
     ]
     # De-dup preservando orden — útil si el form reenvía duplicados.
     seen: set[str] = set()
@@ -512,34 +512,44 @@ def lista():
                 mn = max(min(fechas_2025_plus), ASINFO_DESDE_EFECTIVO)
                 mx = max(fechas_2025_plus)
                 asinfo_rows = asinfo_service.facturas_periodo(mn, mx)
-                # TMT 2026-05-21 — Doble índice por TIPO de Asinfo:
-                #   - FACTURA   → matchea contra filas PC con kg > 0
-                #   - DEVOLUCION → matchea contra filas PC con kg < 0
-                # Las kg=0 (NC_FINANCIERA) NO matchean por decisión de la dueña
-                # (son notas financieras, no comparan unidad-a-unidad con PC).
+                # TMT 2026-05-22 — extendido: muchos clientes (BED, EDU, BAN…)
+                # facturan via NTEN (nota de entrega) en lugar de FACTURA común.
+                # Hasta ahora el matcher solo veía FACTURA/DEVOLUCION y dejaba
+                # cientos de facturas PC con kg>0 sin match.
+                #   - FACTURA + NTEN + NC_FINANCIERA  → contra PC kg > 0
+                #     (NTEN tiene kg positivos como FACTURA. NC_FINANCIERA va
+                #     acá también para que kg=0 pueda matchearlas si tienen
+                #     número completo coincidente.)
+                #   - DEVOLUCION + NCNT              → contra PC kg < 0
                 #
-                # Indexamos por DOS claves dentro de cada tipo:
-                #   1) `numero` completo ("001-099-000010588") → match directo
-                #   2) sufijo numérico (int 10588) → contra el numf chico de PC
+                # Indexamos por DOS claves dentro de cada universo:
+                #   1) `numero` completo ("001-099-000010588" o "NTEN-10309") → match directo
+                #   2) sufijo numérico (int 10588 / 10309) → contra el numf chico de PC
                 idx_factura_completo: dict[str, dict] = {}
                 idx_factura_numf: dict[int, dict] = {}
                 idx_devolucion_completo: dict[str, dict] = {}
                 idx_devolucion_numf: dict[int, dict] = {}
+                _TIPOS_POSITIVOS = ("FACTURA", "NTEN", "NC_FINANCIERA")
+                _TIPOS_NEGATIVOS = ("DEVOLUCION", "NCNT")
                 for r in asinfo_rows:
                     tipo = r.get("tipo")
                     numero = r.get("numero")
                     if not numero:
                         continue
-                    if tipo == "FACTURA":
+                    if tipo in _TIPOS_POSITIVOS:
                         c_idx, n_idx = idx_factura_completo, idx_factura_numf
-                    elif tipo == "DEVOLUCION":
+                    elif tipo in _TIPOS_NEGATIVOS:
                         c_idx, n_idx = idx_devolucion_completo, idx_devolucion_numf
                     else:
-                        continue  # NC_FINANCIERA, NTEN, NCNT: skip
-                    c_idx[numero] = r
+                        continue
+                    # No pisar si ya hay match con FACTURA (más confiable que NTEN).
+                    if numero not in c_idx:
+                        c_idx[numero] = r
                     sufijo = numero.split("-")[-1] if "-" in numero else numero
                     try:
-                        n_idx[int(sufijo)] = r
+                        sufijo_int = int(sufijo)
+                        if sufijo_int not in n_idx:
+                            n_idx[sufijo_int] = r
                     except (ValueError, TypeError):
                         pass
                 # Mergear: elegir índice según signo del kg de PC.

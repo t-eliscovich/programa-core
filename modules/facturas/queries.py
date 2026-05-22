@@ -510,7 +510,8 @@ def buscar(
             'canceladas' → stat = T  (cobradas total)
             'eliminadas' → stat = X  (eliminadas — Y removido 2026-05-19, no existe)
         estado (TMT 2026-05-19, sólo aplica con vista='estado'):
-            'Z' | 'A' | 'T' | 'X' o '' (vacío = todos). 'Y' retirado.
+            'Z' | 'A' | 'T' | 'X' | 'N' o '' (vacío = todos). 'Y' retirado.
+            'N' = anulada en Asinfo (sincronizada por el bridge — 2026-05-22).
         estados (TMT 2026-05-19 v8, sólo aplica con vista='estado'):
             lista de stats — permite filtrar por VARIOS estados a la vez,
             ej. ['Z','A','T']. Lista vacía o None = todos. Si `estados` se
@@ -525,7 +526,7 @@ def buscar(
     estado = (estado or "").upper().strip()
     # TMT 2026-05-19 v8 — multi-estado. Filtrar/normalizar.
     # TMT 2026-05-19 v8 — 'Y' retirado del universo de stats.
-    estados_validos = ("Z", "A", "T", "X")
+    estados_validos = ("Z", "A", "T", "X", "N")
     estados_lista = [
         s.upper().strip() for s in (estados or [])
         if s and s.upper().strip() in estados_validos
@@ -675,7 +676,7 @@ def contar_filtrado(
     if vista == "todas":
         vista = "estado"
     estado = (estado or "").upper().strip()
-    estados_validos = ("Z", "A", "T", "X")
+    estados_validos = ("Z", "A", "T", "X", "N")
     estados_lista = [
         s.upper().strip() for s in (estados or [])
         if s and s.upper().strip() in estados_validos
