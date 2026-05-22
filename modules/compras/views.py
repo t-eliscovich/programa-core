@@ -454,6 +454,13 @@ def lista():
         deuda = {"total": 0.0, "n_partidas": 0, "n_proveedores": 0,
                  "vencido": 0.0, "vence_pronto": 0.0}
 
+    # Federico 2026-05-22 - proveedores para el datalist (sugerencias)
+    # del campo Proveedor del filtro de /compras.
+    try:
+        proveedores = queries.proveedores_para_filtro()
+    except Exception:
+        proveedores = []
+
     return render_template(
         "compras/lista.html",
         filas=filas, q=q, desde=desde, hasta=hasta,
@@ -466,6 +473,7 @@ def lista():
         bucket_produccion=conteos.get("produccion", _empty_bucket),
         bucket_anticipos=conteos.get("anticipos", _empty_bucket),
         deuda=deuda,
+        proveedores=proveedores,
         error=error,
     )
 

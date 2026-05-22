@@ -1037,6 +1037,30 @@ def buscar(
     return list(reversed(rows_asc))
 
 
+def proveedores_para_filtro() -> list[dict]:
+    """Proveedores que aparecen en compras — alimenta el datalist (la
+    'flechita' de sugerencias) del campo Proveedor del filtro de /compras.
+
+    Solo devuelve proveedores con al menos una compra registrada, asi el
+    dropdown no se llena de codigos muertos. Cada fila: {codigo, nombre}.
+    """
+    rows = (
+        db.fetch_all(
+            """
+        SELECT DISTINCT
+               c.codigo_prov          AS codigo,
+               COALESCE(p.nombre, '') AS nombre
+        FROM scintela.compra c
+        LEFT JOIN scintela.proveedor p ON p.codigo_prov = c.codigo_prov
+        WHERE COALESCE(c.codigo_prov, '') <> ''
+        ORDER BY 1
+        """
+        )
+        or []
+    )
+    return [{"codigo": r["codigo"], "nombre": r["nombre"]} for r in rows]
+
+
 def conteos_por_vista(
     desde: str | None = None,
     hasta: str | None = None,

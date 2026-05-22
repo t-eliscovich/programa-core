@@ -121,7 +121,15 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
       <input type="text" name="q" value="{{ q }}" placeholder="Código o nombre del proveedor"
+             list="prov-list" autocomplete="off"
              class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+      {# Federico 2026-05-22 — datalist: sugiere proveedores al escribir / al
+         abrir la flechita. El value es el código (lo que filtra buscar()). #}
+      <datalist id="prov-list">
+        {% for pr in proveedores %}
+          <option value="{{ pr.codigo }}">{{ pr.codigo }} - {{ pr.nombre }}</option>
+        {% endfor %}
+      </datalist>
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
