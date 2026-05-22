@@ -1,8 +1,11 @@
 """Usuarios — administración: listar / crear / editar / desactivar."""
+import logging
+
 from flask import (
     Blueprint,
     abort,
     flash,
+    g,
     redirect,
     render_template,
     request,
@@ -15,6 +18,8 @@ from parsers import parse_int
 
 from . import queries
 
+_LOG = logging.getLogger("programa_core.usuarios")
+
 usuarios_bp = Blueprint("usuarios", __name__, template_folder="templates")
 
 
@@ -22,8 +27,28 @@ usuarios_bp = Blueprint("usuarios", __name__, template_folder="templates")
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def lista():
-    filas = queries.listar()
-    return render_template("usuarios/lista.html", filas=filas)
+    try:
+        filas = queries.listar()
+    except Exception as e:  # noqa: BLE001
+        _LOG.exception("usuarios.listar() falló: %s", e)
+        flash(f"No pude cargar la lista de usuarios: {e}", "error")
+        filas = []
+
+    # TMT 2026-05-22 — defensive: calcular "_real" (usuario real para
+    # impersonación) acá en vez del template, donde g.impersonating_from
+    # puede no estar definido en algunos contextos.
+    real_user = getattr(g, "impersonating_from", None) or getattr(g, "user", None)
+    real_id = real_user.get("id_usuario") if real_user else None
+    real_es_accionista = bool(
+        real_user and (real_user.get("nombre_rol") or "").strip().lower() == "accionista"
+    )
+
+    return render_template(
+        "usuarios/lista.html",
+        filas=filas,
+        real_id=real_id,
+        real_es_accionista=real_es_accionista,
+    )
 
 
 @usuarios_bp.route("/usuarios/nuevo", methods=["GET", "POST"])

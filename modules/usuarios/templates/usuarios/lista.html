@@ -42,16 +42,9 @@
           <td class="px-3 py-2 whitespace-nowrap">
             <a href="{{ url_for('usuarios.editar', id_usuario=u.id_usuario) }}"
                class="text-sky-600 hover:underline text-xs">Editar</a>
-            {# TMT 2026-05-21 dueña: botón "Ver como" — solo Accionista puede
-               impersonar. Si la dueña real (no impersonando) y el usuario está
-               activo y no es ella misma, mostramos el botón.
-               TMT 2026-05-22 fix: g.impersonating_from puede no estar
-               definido en contextos sin impersonación → AttributeError → 500.
-               Uso |default(none) para que la chain no rompa. #}
-            {% set _real = (g.impersonating_from|default(none)) or g.user|default(none) %}
-            {% if _real and u.activo
-                  and (_real.nombre_rol or '')|lower == 'accionista'
-                  and u.id_usuario != _real.id_usuario %}
+            {# TMT 2026-05-22 — `real_es_accionista` y `real_id` los pasa
+               la view (defensive contra g.impersonating_from undefined). #}
+            {% if u.activo and real_es_accionista and u.id_usuario != real_id %}
               <form method="post" action="{{ url_for('auth.impersonate', id_usuario=u.id_usuario) }}"
                     style="display:inline" class="ml-2"
                     onsubmit="return confirm('¿Ver el sistema como {{ u.username }}? Vas a navegar con sus permisos hasta que vuelvas con el botón ‘Volver a mi cuenta’.');">
