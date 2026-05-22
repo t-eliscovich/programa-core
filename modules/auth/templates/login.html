@@ -16,9 +16,10 @@
       {% endif %}
     {% endwith %}
 
+    {# TMT 2026-05-22 dueña: además de Google, dejar siempre disponible el
+       form user/password (Alex y Andrés todavía no tienen Gmail asociado).
+       Si OAuth está prendido se muestra Google ARRIBA + separador + form. #}
     {% if google_oauth_enabled() %}
-      {# Producción: sólo Google OAuth. La allowlist de emails se valida
-         en /auth/google/callback. #}
       <a href="{{ url_for('auth_google.login') }}"
          class="w-full flex items-center justify-center gap-3 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 py-2.5 px-4 text-sm font-medium text-slate-800 dark:text-slate-100 transition">
         <svg viewBox="0 0 18 18" class="w-4 h-4" aria-hidden="true">
@@ -29,28 +30,37 @@
         </svg>
         <span>Iniciar sesión con Google</span>
       </a>
+
+      {# Separador "ó" entre Google y user/pass #}
+      <div class="flex items-center my-5 text-xs text-slate-400">
+        <div class="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+        <span class="mx-3 uppercase tracking-wider">o con usuario</span>
+        <div class="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+      </div>
+    {% endif %}
+
+    <form method="post" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Usuario</label>
+        <input name="username" required autocomplete="username"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Contraseña</label>
+        <input name="password" type="password" required autocomplete="current-password"
+               class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <button type="submit"
+              class="w-full rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 py-2 text-sm font-medium hover:opacity-90">
+        Ingresar
+      </button>
+    </form>
+
+    {% if google_oauth_enabled() %}
       <p class="mt-6 text-xs text-center text-slate-500 dark:text-slate-500">
         Sólo cuentas autorizadas pueden ingresar.
       </p>
-    {% else %}
-      {# Desarrollo local sin Google OAuth: form clásico user/password. #}
-      <form method="post" class="space-y-4">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div>
-          <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Usuario</label>
-          <input name="username" required autofocus autocomplete="username"
-                 class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Contraseña</label>
-          <input name="password" type="password" required autocomplete="current-password"
-                 class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <button type="submit"
-                class="w-full rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 py-2 text-sm font-medium hover:opacity-90">
-          Ingresar
-        </button>
-      </form>
     {% endif %}
   </div>
 </div>

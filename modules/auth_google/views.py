@@ -301,17 +301,32 @@ def _upsert_owner(*, email: str, display_name: str) -> int:
             (email,),
         )
     if existing:
-        # Aseguramos que esté activo, con rol correcto y el email seteado.
-        db.execute(
-            """
-            UPDATE seguridad.usuario
-               SET activo = TRUE,
-                   id_rol = %s,
-                   email  = COALESCE(email, %s)
-             WHERE id_usuario = %s
-            """,
-            (id_rol, email, existing["id_usuario"]),
-        )
+        # TMT 2026-05-22 dueña: NO pisar el id_rol del usuario existente. Si
+        # la dueña asignó un rol manualmente en /usuarios (ej. Alex queda en
+        # 'Alex'), un login OAuth no debe revertirlo a Accionista. Solo
+        # cambiamos el rol cuando el OAUTH_ROLE_MAP tiene un mapeo EXPLÍCITO
+        # para este email (decisión consciente de la dueña vía env var).
+        if nombre_rol_deseado:
+            db.execute(
+                """
+                UPDATE seguridad.usuario
+                   SET activo = TRUE,
+                       id_rol = %s,
+                       email  = COALESCE(email, %s)
+                 WHERE id_usuario = %s
+                """,
+                (id_rol, email, existing["id_usuario"]),
+            )
+        else:
+            db.execute(
+                """
+                UPDATE seguridad.usuario
+                   SET activo = TRUE,
+                       email  = COALESCE(email, %s)
+                 WHERE id_usuario = %s
+                """,
+                (email, existing["id_usuario"]),
+            )
         return existing["id_usuario"]
 
     # Insert nuevo. Password hash random — nunca se usa para login con OAuth.
