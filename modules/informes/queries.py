@@ -6608,6 +6608,38 @@ def fuentes_y_usos(
             "_origen": "live",
         }
 
+    def _row_desde_informe_balance(b: dict) -> dict:
+        """h_fin del mes en curso desde informe_balance() — LIVE, los
+        mismos valores que muestra la pantalla Resultados, cuenta por
+        cuenta. Federico 2026-05-22: antes el mes en curso salía de
+        balance_components_as_of(), que copiaba stock / anticipos /
+        activos del cierre anterior → esas filas daban Δ=0 y la plata que
+        entró a inventario aparecía como pérdida."""
+
+        def _g(k: str) -> float:
+            return float(b.get(k) or 0)
+
+        return {
+            "fecha": _date.today(),
+            # CAJA Y BANCOS = bancos + caja (Resultados: salbanc + salcaj).
+            "banco": _g("salbanc") + _g("salcaj"),
+            # CARTERA = cheques + facturas.
+            "cart": _g("totc") + _g("totf"),
+            "anticipos": _g("antic"),
+            "ustock": _g("vsto"),
+            "uqui": _g("vqx"),
+            "maquinaria": _g("umaq"),
+            "realty": _g("uact"),
+            "deuda": _g("totp"),
+            # Patrimonio neto = PATR − URET (idéntico al que muestra
+            # Resultados — balance.html fila "Patrimonio neto").
+            "patrimonio": _g("patr") - _g("uret"),
+            "usret": _g("uret"),
+            # La utilidad del período se calcula como Δpatrimonio + retiros.
+            "usuti": 0.0,
+            "_origen": "live",
+        }
+
     # TMT 2026-05-21 — Snapshot-first. Antes usábamos
     # balance_components_as_of() para ambos extremos. Tenía drift contra los
     # snapshots reales (cart 30x, banco 2x, pasivos 15x): mezclaba saldos
@@ -6627,17 +6659,17 @@ def fuentes_y_usos(
     comp_ini: dict = {}
 
     # Federico 2026-05-22 — HASTA = mes en curso: NO se usa snapshot.
-    # El snapshot del mes actual lo crea la pantalla Historial por un
-    # camino distinto (script snapshot_historia_mensual) que no es fiel
-    # al balance. Para Fuentes y Usos el mes en curso se calcula SIEMPRE
-    # live con balance_components_as_of(hoy) — la misma foto que muestra
-    # Resultados. Así no hace falta cerrar ni regenerar ningún snapshot.
+    # El mes en curso se calcula LIVE con informe_balance() — exactamente
+    # los mismos valores que muestra la pantalla Resultados, cuenta por
+    # cuenta (caja+bancos, cartera, anticipos, stock MP+PROD, stock quím.,
+    # maquinaria, terrenos, pasivos). Así cada fila del cuadro lleva su
+    # diferencia real. No hace falta cerrar ni regenerar ningún snapshot.
     if es_mes_actual:
         h_fin = None
         try:
-            comp_fin = balance_components_as_of(hoy) or {}
-            if comp_fin:
-                h_fin = _row_desde_componentes(comp_fin, hoy)
+            _bal_live = informe_balance() or {}
+            if _bal_live and not _bal_live.get("error"):
+                h_fin = _row_desde_informe_balance(_bal_live)
         except Exception:
             pass
     else:
@@ -6785,11 +6817,23 @@ def fuentes_y_usos(
     ) or {}
     utilidad_periodo = float(_sum_hist.get("uti") or 0)
     retiros_periodo = float(_sum_hist.get("ret") or 0)
-    # Mes en curso: el row final se calculó live y su usuti/usret no
-    # está (o no es fiel) en la tabla → se suma aparte.
+    # Mes en curso (h_fin live): su utilidad NO está en el Historial. Se
+    # calcula con la identidad contable utilidad = Δpatrimonio + retiros
+    # (lo mismo que el dBase guarda en USUTI al cerrar el mes). El
+    # patrimonio del cierre anterior es el del snapshot del mes previo al
+    # HASTA — para una ventana de 1 mes ese cierre es el propio h_ini.
     if h_fin.get("_origen") == "live":
-        utilidad_periodo += float(h_fin.get("usuti") or 0)
-        retiros_periodo += float(h_fin.get("usret") or 0)
+        _ant_y, _ant_m = _mes_anterior(yy, mm)
+        if (_ant_y, _ant_m) == (yy_ant, mm_ant):
+            _h_ant = h_ini
+        else:
+            _h_ant = _historia_en_mes(_ant_y, _ant_m) or {}
+        _patr_ant = float((_h_ant or {}).get("patrimonio") or 0)
+        _retiros_mes = float(h_fin.get("usret") or 0)
+        utilidad_periodo += (
+            float(h_fin.get("patrimonio") or 0) - _patr_ant
+        ) + _retiros_mes
+        retiros_periodo += _retiros_mes
 
     fuentes: list[tuple[str, float]] = []
     usos: list[tuple[str, float]] = []
