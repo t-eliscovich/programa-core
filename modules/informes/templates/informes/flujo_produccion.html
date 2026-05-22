@@ -183,7 +183,7 @@
           <tbody>
             {% for r in data.produc_tejido %}
               <tr>
-                <td class="lbl">{{ r.prov }}</td>
+                <td class="lbl">{{ 'INTELA' if r.prov == 'KK' else r.prov }}</td>
                 <td class="num">{{ r.kg | num_es(0) }}</td>
                 <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
                 <td class="num">{{ r.importe | num_es(0) }}</td>
