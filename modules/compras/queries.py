@@ -887,6 +887,7 @@ def total_buscar(
     incluir_anuladas: bool = False,
     vista: str = "todas",
     kg_filter: str | None = None,
+    pedido: str | None = None,
 ) -> dict:
     """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
 
@@ -897,6 +898,8 @@ def total_buscar(
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    # Federico 2026-05-22 — filtro "Pedido Num.": texto incluido en concepto.
+    pedido_param = f"%{pedido.strip()}%" if pedido and pedido.strip() else None
     row = db.fetch_one(
         """
         SELECT COUNT(*)                    AS n,
@@ -910,6 +913,7 @@ def total_buscar(
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          AND (%(pedido)s IS NULL OR c.concepto ILIKE %(pedido)s)
           AND (
                 %(kg_filter)s IS NULL
              OR (%(kg_filter)s = 'gt0' AND ABS(COALESCE(c.kg, 0)) > 0.01)
@@ -939,6 +943,7 @@ def total_buscar(
             "incluir_anuladas": bool(incluir_anuladas),
             "vista": (vista or "todas").lower(),
             "kg_filter": kg_filter,
+            "pedido": pedido_param,
         },
     )
     return {
@@ -956,6 +961,7 @@ def buscar(
     incluir_anuladas: bool = False,
     vista: str = "todas",
     kg_filter: str | None = None,
+    pedido: str | None = None,
 ) -> list[dict]:
     """Histórico de compras filtrable por proveedor/concepto/comprobante + fecha.
 
@@ -976,6 +982,8 @@ def buscar(
     q = (q or "").strip()
     like = f"%{q}%" if q else None
     vista = (vista or "todas").lower().strip()
+    # Federico 2026-05-22 — filtro "Pedido Num.": texto incluido en concepto.
+    pedido_param = f"%{pedido.strip()}%" if pedido and pedido.strip() else None
     rows = (
         db.fetch_all(
             """
@@ -994,6 +1002,9 @@ def buscar(
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          -- Federico 2026-05-22 — filtro "Pedido Num.": el N° de pedido va
+          -- escrito dentro del concepto; un proveedor puede tener varios.
+          AND (%(pedido)s IS NULL OR c.concepto ILIKE %(pedido)s)
           -- TMT 2026-05-18 — filtro KG (>0 producción, =0 compras sin kg)
           AND (
                 %(kg_filter)s IS NULL
@@ -1028,6 +1039,7 @@ def buscar(
                 "incluir_anuladas": bool(incluir_anuladas),
                 "vista": vista,
                 "kg_filter": (kg_filter or None),
+                "pedido": pedido_param,
             },
         )
         or []

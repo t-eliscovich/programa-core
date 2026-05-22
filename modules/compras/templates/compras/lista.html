@@ -2,7 +2,7 @@
 {% from "_ui.html" import empty_row, page_hero, kpi_card %}
 {% block title %}{{ titulo }}{% endblock %}
 {% block breadcrumb %}
-  {% if q or desde or hasta %}
+  {% if q or desde or hasta or pedido %}
     <a href="{{ url_for(endpoint_actual) }}" class="hover:underline">{{ titulo }}</a> /
     <strong>Filtro activo</strong>
   {% else %}
@@ -28,7 +28,7 @@
     ) }}
 
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if q or desde or hasta %}
+      {% if q or desde or hasta or pedido %}
         <a href="{{ url_for(endpoint_actual) }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
            title="Volver al listado completo, sin filtros">
@@ -64,14 +64,14 @@
               <div class="font-medium">Descargar plantilla CSV</div>
             </a>
           {% endif %}
-          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta,
+          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta, pedido=pedido,
                                anuladas=('0' if incluir_anuladas else '1')) }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">
               {% if incluir_anuladas %}Ocultar anuladas{% else %}Ver anuladas{% endif %}
             </div>
           </a>
-          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta, export='csv') }}"
+          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta, pedido=pedido, export='csv') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">Exportar CSV</div>
           </a>
@@ -115,6 +115,17 @@
       </select>
     </div>
     <div>
+      <label class="block text-xs text-slate-500 mb-1">Pedido Num.</label>
+      {# Federico 2026-05-22 — filtra por texto/número incluido en el
+         concepto de la compra. Un proveedor puede tener varios pedidos o
+         anticipos en curso; cada uno se identifica con un N° en el
+         concepto. Se combina con el filtro de Proveedor. #}
+      <input type="text" name="pedido" value="{{ pedido or '' }}"
+             placeholder="ej. 83"
+             title="Filtra las compras cuyo concepto incluya este número o texto de pedido. Se combina con el filtro de Proveedor."
+             class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
       <input type="date" name="desde" value="{{ desde or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
@@ -131,6 +142,7 @@
     {% if _hoy %}
       <a href="{{ url_for(endpoint_actual,
                           q=q,
+                          pedido=pedido,
                           desde=_hoy.replace(day=1).isoformat(),
                           hasta=_hoy.isoformat(),
                           anuladas='1' if incluir_anuladas else None) }}"
@@ -140,7 +152,7 @@
     {# Federico 2026-05-22 - boton rapido: solo produccion propia de INTELA
        (KK). Solo se muestra en la pantalla Producción Tejeduría. #}
     {% if vista == 'produccion' %}
-    <a href="{{ url_for(endpoint_actual, q=(none if q == 'KK' else 'KK'), desde=desde, hasta=hasta, anuladas='1' if incluir_anuladas else None) }}"
+    <a href="{{ url_for(endpoint_actual, q=(none if q == 'KK' else 'KK'), pedido=pedido, desde=desde, hasta=hasta, anuladas='1' if incluir_anuladas else None) }}"
        class="text-sm px-3 py-1.5 rounded border-2 border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 font-medium{% if q == 'KK' %} bg-sky-100 dark:bg-sky-900/30{% endif %}"
        title="Muestra solo la produccion de tejido propia de INTELA (proveedor KK).">Solo INTELA</a>
     {% endif %}

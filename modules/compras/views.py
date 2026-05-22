@@ -395,6 +395,10 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
+    # Federico 2026-05-22 — filtro "Pedido Num.": texto/número que va dentro
+    # del concepto. Un proveedor puede tener varios pedidos/anticipos en
+    # curso; este filtro combina con el de Proveedor.
+    pedido = request.args.get("pedido", "").strip() or None
     incluir_anuladas = request.args.get("anuladas") == "1"
     # Federico 2026-05-22 — "Solo INTELA" (q=KK) muestra la producción
     # propia; no aplica en la vista Compras, que justamente excluye la
@@ -406,6 +410,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
             q, desde, hasta,
             incluir_anuladas=incluir_anuladas,
             vista=vista,
+            pedido=pedido,
         )
         error = None
     except Exception as e:
@@ -439,6 +444,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
         agg = queries.total_buscar(
             q, desde, hasta,
             incluir_anuladas=incluir_anuladas, vista=vista,
+            pedido=pedido,
         )
         total_importe = agg["total"]
         total_kg = agg["total_kg"]
@@ -457,6 +463,7 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
     return render_template(
         "compras/lista.html",
         filas=filas, q=q, desde=desde, hasta=hasta,
+        pedido=pedido,
         total_importe=total_importe, total_kg=total_kg,
         incluir_anuladas=incluir_anuladas,
         vista=vista,
