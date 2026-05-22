@@ -228,7 +228,14 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         "uqui":       float(bal.get("vqx", 0) or 0),
         "maquinaria": float(bal.get("umaq", 0) or 0),
         "realty":     float(bal.get("uact", 0) or 0),
-        "patrimonio": float(bal.get("patr", 0) or 0),
+        # Federico 2026-05-22 — PATRIMONIO NETO de retiros. informe_balance()
+        # arma totl con +URET (truco del dBase para que utilidad=PATR-PATANT
+        # incluya los retiros del mes). El dBase lo corrige al cerrar —
+        # INFORMES.PRG L1347: `REPLA PATRIMONIO WITH PATR-URET`. El snapshot
+        # web se saltaba ese paso → el patrimonio guardado quedaba inflado
+        # por el monto exacto de los retiros. Esto es justamente el
+        # "Patrimonio neto" que muestra la pantalla Resultados (= patr-uret).
+        "patrimonio": float(bal.get("patr", 0) or 0) - float(bal.get("uret", 0) or retiro),
         "usuti":      float(bal.get("utilidad", 0) or 0),
         "usret":      float(bal.get("uret", 0) or retiro),
     }

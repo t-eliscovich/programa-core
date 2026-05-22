@@ -6153,14 +6153,18 @@ def balance_components_as_of(as_of) -> dict:
     )
     totp = float(totp_row.get("total") or 0)
 
-    # --- Stock / activos del último snapshot histórico <= as_of ---
+    # --- Stock / activos / patrimonio del último CIERRE MENSUAL anterior ---
+    # Federico 2026-05-22 — antes era `fecha <= as_of`, que para el mes en
+    # curso agarraba un snapshot del propio mes (la pantalla Historial crea
+    # uno al entrar) → PATANT = mes actual y la utilidad daba ~0. El cierre
+    # de referencia tiene que ser el del MES ANTERIOR al de as_of.
     hist_prev = (
         db.fetch_one(
             """
         SELECT fecha, stock, ustock, uqui, maquinaria, realty, anticipos,
                patrimonio, usret, usuti
           FROM scintela.historia
-         WHERE fecha <= %s
+         WHERE fecha < DATE_TRUNC('month', %s::date)
          ORDER BY fecha DESC
          LIMIT 1
         """,
@@ -6650,6 +6654,34 @@ def fuentes_y_usos(
                 h_ini = _row_desde_componentes(comp_ini, fecha_ini)
         except Exception:
             pass
+
+    # Federico 2026-05-22 — emparejar la convención de caja entre los dos
+    # extremos. Snapshots viejos guardaban `banco` SIN la caja mientras que
+    # el mes en curso (live) SÍ la trae; sin esto la fila CAJA Y BANCOS
+    # descuadraría el cuadro por el monto de la caja. _normalizar_caja le
+    # suma a `banco` el faltante detectado contra el patrimonio guardado,
+    # de modo que Σactivos − deuda == patrimonio en ambos extremos.
+    def _normalizar_caja(row: dict | None) -> None:
+        if not row:
+            return
+        _patr = float(row.get("patrimonio") or 0)
+        if _patr == 0:
+            return
+        _activos = (
+            float(row.get("banco") or 0)
+            + float(row.get("cart") or 0)
+            + float(row.get("anticipos") or 0)
+            + float(row.get("ustock") or 0)
+            + float(row.get("uqui") or 0)
+            + float(row.get("maquinaria") or 0)
+            + float(row.get("realty") or 0)
+        )
+        _falta = _patr - (_activos - float(row.get("deuda") or 0))
+        if abs(_falta) > 1.0:
+            row["banco"] = float(row.get("banco") or 0) + _falta
+
+    _normalizar_caja(h_ini)
+    _normalizar_caja(h_fin)
 
     if not h_fin or not h_ini:
         return {
