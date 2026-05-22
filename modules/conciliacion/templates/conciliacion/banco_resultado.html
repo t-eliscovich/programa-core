@@ -1,82 +1,56 @@
 {% extends "base.html" %}
-{% block titulo %}Resultado conciliación — Programa Core{% endblock %}
+{% block titulo %}Banco Pichincha{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto py-4 px-4">
 
   <div class="flex items-baseline justify-between mb-3">
-    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación Banco · Pichincha</h1>
-    <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro archivo</a>
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Banco Pichincha</h1>
+    <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro</a>
   </div>
 
-  {# === Banner de saldo === #}
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+  {# === Saldos === #}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500">Saldo REAL banco
-        {% if data.saldo_real_fecha %}<span class="text-slate-400">({{ data.saldo_real_fecha }})</span>{% endif %}
-      </div>
+      <div class="text-xs text-slate-500">Banco Pichincha Real{% if data.saldo_real_fecha %} · {{ data.saldo_real_fecha }}{% endif %}</div>
       <div class="text-lg font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_real) }}</div>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500">Saldo BANCSIS
-        {% if data.saldo_bancsis_fecha %}<span class="text-slate-400">({{ data.saldo_bancsis_fecha }})</span>{% endif %}
-      </div>
+      <div class="text-xs text-slate-500">Banco Pichincha Programa{% if data.saldo_bancsis_fecha %} · {{ data.saldo_bancsis_fecha }}{% endif %}</div>
       <div class="text-lg font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_bancsis) }}</div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500">+ Σ REAL no en BANCSIS (Mov 1)</div>
-      <div class="text-lg font-semibold {% if sum_real_only > 0 %}text-emerald-600{% elif sum_real_only < 0 %}text-rose-600{% else %}text-slate-900 dark:text-slate-100{% endif %}">
-        $ {{ '{:,.2f}'.format(sum_real_only) }}
+    <div class="rounded p-3 {% if cuadra %}bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300{% else %}bg-rose-50 dark:bg-rose-900/30 border border-rose-300{% endif %}">
+      <div class="text-xs {% if cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">Diferencia</div>
+      <div class="text-lg font-semibold {% if cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+        $ {{ '{:,.2f}'.format(diff) }}
       </div>
-    </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500">− Σ BANCSIS no en REAL (Mov 2)</div>
-      <div class="text-lg font-semibold {% if sum_bancsis_only > 0 %}text-rose-600{% elif sum_bancsis_only < 0 %}text-emerald-600{% else %}text-slate-900 dark:text-slate-100{% endif %}">
-        $ {{ '{:,.2f}'.format(sum_bancsis_only) }}
-      </div>
-    </div>
-  </div>
-
-  <div class="mb-5 p-3 rounded border {% if cuadra %}bg-emerald-50 dark:bg-emerald-900/30 border-emerald-300{% else %}bg-rose-50 dark:bg-rose-900/30 border-rose-300{% endif %}">
-    <div class="text-sm">
-      <span class="font-medium">Ecuación:</span>
-      $ {{ '{:,.2f}'.format(saldo_bancsis) }} (BANCSIS)
-      + $ {{ '{:,.2f}'.format(sum_real_only) }} (Mov 1)
-      − $ {{ '{:,.2f}'.format(sum_bancsis_only) }} (Mov 2)
-      = <span class="font-semibold">$ {{ '{:,.2f}'.format(esperado) }}</span>
-      <span class="text-slate-500">vs Real $ {{ '{:,.2f}'.format(saldo_real) }}</span>
-    </div>
-    <div class="text-base font-semibold mt-1 {% if cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
-      {% if cuadra %}✓ Cuadra (diferencia $ {{ '{:,.2f}'.format(diff) }} &lt; $100){% else %}✗ Diferencia $ {{ '{:,.2f}'.format(diff) }} (&gt; $100 — revisar matches){% endif %}
     </div>
   </div>
 
   {# === Matches === #}
-  <details class="mb-5" {% if n_match > 0 %}open{% endif %}>
-    <summary class="cursor-pointer text-sm font-medium text-emerald-700 dark:text-emerald-400 mb-2">
-      ✓ {{ n_match }} matches encontrados (REAL ↔ BANCSIS)
+  <details class="mb-4" {% if n_match > 0 %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium text-emerald-700 dark:text-emerald-400">
+      Coinciden · {{ n_match }}
     </summary>
     {% if n_match > 0 %}
-    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mb-3">
+    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mt-2 mb-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="matches_json" value="{{ matches_json|e }}">
-      <button class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
-        ✓ Confirmar TODOS los matches ({{ n_match }})
+      <button class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
+        Confirmar los {{ n_match }}
       </button>
-      <span class="ml-2 text-xs text-slate-500">Quedan guardados — no vuelven a aparecer.</span>
     </form>
     <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
       <table class="w-full text-xs">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
-            <th class="px-2 py-1.5">Fecha REAL</th>
-            <th class="px-2 py-1.5">Doc.</th>
+            <th class="px-2 py-1.5">Fecha</th>
+            <th class="px-2 py-1.5">Doc real</th>
             <th class="px-2 py-1.5 text-right">Monto</th>
-            <th class="px-2 py-1.5">T</th>
-            <th class="px-2 py-1.5">Concepto REAL</th>
-            <th class="px-2 py-1.5 text-right">BANCSIS #</th>
-            <th class="px-2 py-1.5">BANCSIS doc</th>
-            <th class="px-2 py-1.5">Razón</th>
+            <th class="px-2 py-1.5">Tipo</th>
+            <th class="px-2 py-1.5">Concepto real</th>
+            <th class="px-2 py-1.5 text-right">id Programa</th>
+            <th class="px-2 py-1.5">Doc Prog.</th>
           </tr>
         </thead>
         <tbody>
@@ -89,7 +63,6 @@
             <td class="px-2 py-1.5 truncate max-w-xs" title="{{ m.real.concepto }}">{{ m.real.concepto[:50] }}</td>
             <td class="px-2 py-1.5 text-right font-mono">{{ m.bancsis.id_transaccion }}</td>
             <td class="px-2 py-1.5 font-mono">{{ m.bancsis.documento }}</td>
-            <td class="px-2 py-1.5 text-slate-500">{{ m.razon }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -98,20 +71,20 @@
     {% endif %}
   </details>
 
-  {# === REAL only — están en el extracto pero no en BANCSIS === #}
-  <details class="mb-5" {% if n_real_only > 0 %}open{% endif %}>
-    <summary class="cursor-pointer text-sm font-medium text-amber-700 dark:text-amber-400 mb-2">
-      ⚠ {{ n_real_only }} movimientos en REAL que no están en BANCSIS (Mov 1)
+  {# === Solo en Real === #}
+  <details class="mb-4" {% if n_real_only > 0 %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium text-amber-700 dark:text-amber-400">
+      Solo en Banco Pichincha Real · {{ n_real_only }}
     </summary>
     {% if n_real_only > 0 %}
-    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mt-2">
       <table class="w-full text-xs">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5">Fecha</th>
             <th class="px-2 py-1.5">Doc.</th>
             <th class="px-2 py-1.5 text-right">Monto</th>
-            <th class="px-2 py-1.5">T</th>
+            <th class="px-2 py-1.5">Tipo</th>
             <th class="px-2 py-1.5">Concepto</th>
             <th class="px-2 py-1.5">Oficina</th>
           </tr>
@@ -135,21 +108,21 @@
     {% endif %}
   </details>
 
-  {# === BANCSIS only — están en sistema pero no en banco === #}
-  <details class="mb-5" {% if n_bancsis_only > 0 %}open{% endif %}>
-    <summary class="cursor-pointer text-sm font-medium text-rose-700 dark:text-rose-400 mb-2">
-      ✗ {{ n_bancsis_only }} movimientos en BANCSIS que no están en REAL (Mov 2)
+  {# === Solo en Programa === #}
+  <details class="mb-4" {% if n_bancsis_only > 0 %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium text-rose-700 dark:text-rose-400">
+      Solo en Banco Pichincha Programa · {{ n_bancsis_only }}
     </summary>
     {% if n_bancsis_only > 0 %}
-    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mt-2">
       <table class="w-full text-xs">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5">Fecha</th>
-            <th class="px-2 py-1.5 text-right">id_tx</th>
+            <th class="px-2 py-1.5 text-right">id</th>
             <th class="px-2 py-1.5">Doc.</th>
             <th class="px-2 py-1.5 text-right">Importe</th>
-            <th class="px-2 py-1.5">T(eq)</th>
+            <th class="px-2 py-1.5">Tipo</th>
             <th class="px-2 py-1.5">Concepto</th>
             <th class="px-2 py-1.5">Ref</th>
             <th class="px-2 py-1.5"></th>
@@ -171,8 +144,7 @@
               <form method="POST" action="{{ url_for('conciliacion.hub_aceptar_bancsis_only') }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="id_transaccion" value="{{ b.id_transaccion }}">
-                <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                        title="Aceptar como diferencia legítima">✓ aceptar</button>
+                <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">✓</button>
               </form>
             </td>
           </tr>

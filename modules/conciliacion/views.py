@@ -32,7 +32,7 @@ conciliacion_bp = Blueprint(
 
 _SESSION_KEY = "_conciliacion_sospechosos"
 _SESSION_DEP = "_conciliacion_depositos_resultado"
-_BANCO_PICHINCHA = 1
+_BANCO_PICHINCHA = 10  # /bancos/10 — confirmado 2026-05-22
 
 
 @conciliacion_bp.route("/", methods=["GET", "POST"])
