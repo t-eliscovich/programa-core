@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero, kpi_card %}
-{% block title %}Compras{% endblock %}
+{% block title %}Compras y Producción Tejeduría{% endblock %}
 {% block breadcrumb %}
   {% if q or desde or hasta or kg_filter or vista != 'todas' %}
     <a href="{{ url_for('compras.lista') }}" class="hover:underline">Compras</a> /
@@ -21,7 +21,7 @@
        de compras del filtro activo. La deuda viva sigue siendo
        accesible vía /posdat. #}
     {{ page_hero(
-        'Compras',
+        'Compras y Producción Tejeduría',
         kpi_valor='$ ' ~ (total_importe | num_es(0)),
         kpi_extra='· ' ~ (filas | length | string) ~ ' compras en pantalla'
                    ~ ' · ' ~ (total_kg | num_es(0)) ~ ' kg'
