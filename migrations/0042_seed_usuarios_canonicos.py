@@ -110,9 +110,9 @@ def run(conn) -> None:
     if os.environ.get("MIGRATE_VERBOSE"):
         if creados:
             print(f"    creados (password placeholder='{PASSWORD_PLACEHOLDER}'):")
-            for u, c in creados:
-                print(f"      • {u}  clave={c}")
+            for u, c, rol in creados:
+                print(f"      • {u}  clave={c}  rol={rol}")
         if actualizados:
             print("    clave asignada a:")
-            for u, c in actualizados:
-                print(f"      • {u}  clave={c}")
+            for u, c, rol in actualizados:
+                print(f"      • {u}  clave={c}  rol={rol}")
