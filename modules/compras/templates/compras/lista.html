@@ -103,16 +103,16 @@
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="Código o nombre del proveedor"
-             list="prov-list" autocomplete="off"
-             class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
-      {# Federico 2026-05-22 — datalist: sugiere proveedores al escribir / al
-         abrir la flechita. El value es el código (lo que filtra buscar()). #}
-      <datalist id="prov-list">
+      {# Federico 2026-05-22 — <select> en vez de datalist: la flechita
+         siempre despliega la lista completa de proveedores, aunque ya
+         haya uno elegido (el datalist nativo no hacía eso). #}
+      <select name="q"
+              class="w-72 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <option value="">— Todos los proveedores —</option>
         {% for pr in proveedores %}
-          <option value="{{ pr.codigo }}">{{ pr.codigo }} - {{ pr.nombre }}</option>
+          <option value="{{ pr.codigo }}"{% if q == pr.codigo %} selected{% endif %}>{{ pr.codigo }} - {{ pr.nombre }}</option>
         {% endfor %}
-      </datalist>
+      </select>
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>
