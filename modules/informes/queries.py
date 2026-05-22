@@ -3063,8 +3063,8 @@ def resultados_costos_tabla(
                    "U$ = kg vendidos * Utilidad Esperada.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
          "clase": "key",
-         "ayuda": ("Delta Patrimonio + dividendos del mes = (patrimonio de "
-                   "hoy - patrimonio del cierre anterior) + retiros del mes.")},
+         "ayuda": ("Utilidad del mes ya calculada en scintela.historia "
+                   "(la fila UTILIDADES del Historial).")},
     ]
 
 
@@ -3591,9 +3591,12 @@ def informe_balance() -> dict:
         v8=gxg["v8"],
         v9=gxg["v9"],
         deprcar=amort["deprcar"],
-        patr=patr,
-        patant=patant,
-        uret=_uret,
+        # Utilidad Real = utilidad del mes ya calculada en scintela.historia
+        # (fila UTILIDADES del Historial = historia_ultimo_snapshot.usuti).
+        # patant/uret en 0 => ur_us = (patr-patant)+uret = usuti.
+        patr=float(hist_live.get("usuti") or 0),
+        patant=0.0,
+        uret=0.0,
     )
 
     resultados = {
