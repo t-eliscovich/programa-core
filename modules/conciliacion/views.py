@@ -578,6 +578,64 @@ def hub_confirmar_matches():
     return redirect(url_for("conciliacion.hub"))
 
 
+@conciliacion_bp.route("/hub/diag", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_diag():
+    """Diagnóstico: muestra bancos disponibles y conteo de transacciones por
+    no_banco para mayo 2026. Sirve para confirmar que el matcher apunta al
+    no_banco correcto.
+    """
+    import db as _db
+    bancos = _db.fetch_all("SELECT no_banco, nombre FROM scintela.banco ORDER BY no_banco") or []
+    counts = _db.fetch_all(
+        """
+        SELECT no_banco, COUNT(*) AS n,
+               MIN(fecha) AS dmin, MAX(fecha) AS dmax,
+               COUNT(*) FILTER (WHERE fecha BETWEEN '2026-05-01' AND '2026-05-31') AS n_mayo,
+               COUNT(*) FILTER (WHERE fecha BETWEEN '2026-05-10' AND '2026-05-20') AS n_ventana
+          FROM scintela.transacciones_bancarias
+         GROUP BY no_banco
+         ORDER BY no_banco
+        """
+    ) or []
+    # Sample 5 transacciones del banco Pichincha en mayo
+    sample = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, concepto, no_banco
+          FROM scintela.transacciones_bancarias
+         WHERE fecha BETWEEN '2026-05-12' AND '2026-05-20'
+         ORDER BY fecha DESC, id_transaccion DESC
+         LIMIT 8
+        """
+    ) or []
+    return {
+        "bancos": [{"no_banco": b["no_banco"], "nombre": b.get("nombre")} for b in bancos],
+        "counts_por_banco": [
+            {
+                "no_banco": c["no_banco"],
+                "total": c["n"],
+                "fecha_min": c["dmin"].isoformat() if c.get("dmin") else None,
+                "fecha_max": c["dmax"].isoformat() if c.get("dmax") else None,
+                "n_mayo": c["n_mayo"],
+                "n_ventana_12_20": c["n_ventana"],
+            }
+            for c in counts
+        ],
+        "sample_12_20_mayo": [
+            {
+                "id_transaccion": s["id_transaccion"],
+                "fecha": s["fecha"].isoformat() if s.get("fecha") else None,
+                "documento": s.get("documento"),
+                "importe": float(s.get("importe") or 0),
+                "concepto": (s.get("concepto") or "")[:60],
+                "no_banco": s.get("no_banco"),
+            }
+            for s in sample
+        ],
+    }
+
+
 @conciliacion_bp.route("/hub/aceptar-bancsis-only", methods=["POST"])
 @conciliacion_bp.route("/banco/aceptar-bancsis-only", methods=["POST"])  # alias compat
 @requiere_login
