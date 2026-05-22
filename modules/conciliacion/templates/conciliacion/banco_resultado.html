@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block titulo %}Resultado conciliación — Programa Core{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto py-4 px-4">
+
+  <div class="flex items-baseline justify-between mb-3">
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación Banco · Pichincha</h1>
+    <form method="POST" action="{{ url_for('conciliacion.banco_limpiar') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro archivo</button>
+    </form>
+  </div>
+
+  {# === Banner de saldo === #}
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs text-slate-500">Saldo REAL banco
+        {% if data.saldo_real_fecha %}<span class="text-slate-400">({{ data.saldo_real_fecha }})</span>{% endif %}
+      </div>
+      <div class="text-lg font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_real) }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs text-slate-500">Saldo BANCSIS
+        {% if data.saldo_bancsis_fecha %}<span class="text-slate-400">({{ data.saldo_bancsis_fecha }})</span>{% endif %}
+      </div>
+      <div class="text-lg font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_bancsis) }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs text-slate-500">+ Σ REAL no en BANCSIS (Mov 1)</div>
+      <div class="text-lg font-semibold {% if sum_real_only > 0 %}text-emerald-600{% elif sum_real_only < 0 %}text-rose-600{% else %}text-slate-900 dark:text-slate-100{% endif %}">
+        $ {{ '{:,.2f}'.format(sum_real_only) }}
+      </div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-xs text-slate-500">− Σ BANCSIS no en REAL (Mov 2)</div>
+      <div class="text-lg font-semibold {% if sum_bancsis_only > 0 %}text-rose-600{% elif sum_bancsis_only < 0 %}text-emerald-600{% else %}text-slate-900 dark:text-slate-100{% endif %}">
+        $ {{ '{:,.2f}'.format(sum_bancsis_only) }}
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-5 p-3 rounded border {% if cuadra %}bg-emerald-50 dark:bg-emerald-900/30 border-emerald-300{% else %}bg-rose-50 dark:bg-rose-900/30 border-rose-300{% endif %}">
+    <div class="text-sm">
+      <span class="font-medium">Ecuación:</span>
+      $ {{ '{:,.2f}'.format(saldo_bancsis) }} (BANCSIS)
+      + $ {{ '{:,.2f}'.format(sum_real_only) }} (Mov 1)
+      − $ {{ '{:,.2f}'.format(sum_bancsis_only) }} (Mov 2)
+      = <span class="font-semibold">$ {{ '{:,.2f}'.format(esperado) }}</span>
+      <span class="text-slate-500">vs Real $ {{ '{:,.2f}'.format(saldo_real) }}</span>
+    </div>
+    <div class="text-base font-semibold mt-1 {% if cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+      {% if cuadra %}✓ Cuadra (diferencia $ {{ '{:,.2f}'.format(diff) }} &lt; $100){% else %}✗ Diferencia $ {{ '{:,.2f}'.format(diff) }} (&gt; $100 — revisar matches){% endif %}
+    </div>
+  </div>
+
+  {# === Matches === #}
+  <details class="mb-5" {% if n_match > 0 %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium text-emerald-700 dark:text-emerald-400 mb-2">
+      ✓ {{ n_match }} matches encontrados (REAL ↔ BANCSIS)
+    </summary>
+    {% if n_match > 0 %}
+    <form method="POST" action="{{ url_for('conciliacion.banco_confirmar_matches') }}" class="mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
+        ✓ Confirmar TODOS los matches ({{ n_match }})
+      </button>
+      <span class="ml-2 text-xs text-slate-500">Quedan guardados — no vuelven a aparecer.</span>
+    </form>
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
+          <tr>
+            <th class="px-2 py-1.5">Fecha REAL</th>
+            <th class="px-2 py-1.5">Doc.</th>
+            <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5">T</th>
+            <th class="px-2 py-1.5">Concepto REAL</th>
+            <th class="px-2 py-1.5 text-right">BANCSIS #</th>
+            <th class="px-2 py-1.5">BANCSIS doc</th>
+            <th class="px-2 py-1.5">Razón</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in data.matches %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/50 dark:bg-emerald-900/10{% endif %}">
+            <td class="px-2 py-1.5 font-mono">{{ m.real.fecha }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ m.real.documento }}</td>
+            <td class="px-2 py-1.5 text-right font-mono">{{ '{:,.2f}'.format(m.real.monto) }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ m.real.tipo }}</td>
+            <td class="px-2 py-1.5 truncate max-w-xs" title="{{ m.real.concepto }}">{{ m.real.concepto[:50] }}</td>
+            <td class="px-2 py-1.5 text-right font-mono">{{ m.bancsis.id_transaccion }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ m.bancsis.documento }}</td>
+            <td class="px-2 py-1.5 text-slate-500">{{ m.razon }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </details>
+
+  {# === REAL only — están en el extracto pero no en BANCSIS === #}
+  <details class="mb-5" {% if n_real_only > 0 %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium text-amber-700 dark:text-amber-400 mb-2">
+      ⚠ {{ n_real_only }} movimientos en REAL que no están en BANCSIS (Mov 1)
+    </summary>
+    {% if n_real_only > 0 %}
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
+          <tr>
+            <th class="px-2 py-1.5">Fecha</th>
+            <th class="px-2 py-1.5">Doc.</th>
+            <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5">T</th>
+            <th class="px-2 py-1.5">Concepto</th>
+            <th class="px-2 py-1.5">Oficina</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in data.real_only %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-2 py-1.5 font-mono">{{ r.fecha }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ r.documento }}</td>
+            <td class="px-2 py-1.5 text-right font-mono {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
+            </td>
+            <td class="px-2 py-1.5 font-mono">{{ r.tipo }}</td>
+            <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.concepto }}">{{ r.concepto[:60] }}</td>
+            <td class="px-2 py-1.5 text-slate-500">{{ r.oficina }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </details>
+
+  {# === BANCSIS only — están en sistema pero no en banco === #}
+  <details class="mb-5" {% if n_bancsis_only > 0 %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium text-rose-700 dark:text-rose-400 mb-2">
+      ✗ {{ n_bancsis_only }} movimientos en BANCSIS que no están en REAL (Mov 2)
+    </summary>
+    {% if n_bancsis_only > 0 %}
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
+          <tr>
+            <th class="px-2 py-1.5">Fecha</th>
+            <th class="px-2 py-1.5 text-right">id_tx</th>
+            <th class="px-2 py-1.5">Doc.</th>
+            <th class="px-2 py-1.5 text-right">Importe</th>
+            <th class="px-2 py-1.5">T(eq)</th>
+            <th class="px-2 py-1.5">Concepto</th>
+            <th class="px-2 py-1.5">Ref</th>
+            <th class="px-2 py-1.5"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in data.bancsis_only %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-2 py-1.5 font-mono">{{ b.fecha }}</td>
+            <td class="px-2 py-1.5 text-right font-mono">{{ b.id_transaccion }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ b.documento }}</td>
+            <td class="px-2 py-1.5 text-right font-mono {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              {% if b.tipo_real == 'D' %}-{% endif %}{{ '{:,.2f}'.format(b.importe) }}
+            </td>
+            <td class="px-2 py-1.5 font-mono">{{ b.tipo_real }}</td>
+            <td class="px-2 py-1.5 truncate max-w-xs" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
+            <td class="px-2 py-1.5 font-mono text-slate-500">{{ b.numreferencia }}</td>
+            <td class="px-2 py-1.5">
+              <form method="POST" action="{{ url_for('conciliacion.banco_aceptar_bancsis_only') }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="id_transaccion" value="{{ b.id_transaccion }}">
+                <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                        title="Aceptar como diferencia legítima">✓ aceptar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </details>
+
+</div>
+{% endblock %}

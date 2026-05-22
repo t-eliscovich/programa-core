@@ -16,6 +16,12 @@ from modules.conciliacion.matcher_depositos import (
 )
 from modules.conciliacion.parser import parse_csv
 from modules.conciliacion.parser_xlsx import parse_xlsx
+from modules.conciliacion.parser_banco import parse_banco_xlsx
+from modules.conciliacion.matcher_banco import (
+    matchear_extracto_banco,
+    confirmar_match,
+    confirmar_bancsis_only,
+)
 
 conciliacion_bp = Blueprint(
     "conciliacion",
@@ -26,6 +32,8 @@ conciliacion_bp = Blueprint(
 
 _SESSION_KEY = "_conciliacion_sospechosos"
 _SESSION_DEP = "_conciliacion_depositos_resultado"
+_SESSION_BANCO = "_conciliacion_banco_resultado"
+_BANCO_PICHINCHA = 1
 
 
 @conciliacion_bp.route("/", methods=["GET", "POST"])
@@ -380,3 +388,233 @@ def depositos_confirmar_verdes():
         "ok",
     )
     return redirect(url_for("conciliacion.depositos_resultado"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# /conciliacion/banco — TMT 2026-05-22
+# Conciliación bidireccional: extracto Pichincha (.xlsx) ↔ BANCSIS.
+# Muestra movimientos en REAL no en BANCSIS, BANCSIS no en REAL, matches.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _serialize_resultado_banco(res, no_banco: int) -> dict:
+    """ConciliacionBanco → dict serializable para session."""
+    return {
+        "no_banco": no_banco,
+        "matches": [
+            {
+                "real": {
+                    "fecha": m.real.fecha.isoformat() if m.real.fecha else None,
+                    "concepto": m.real.concepto,
+                    "documento": m.real.documento,
+                    "monto": float(m.real.monto),
+                    "tipo": m.real.tipo,
+                    "codigo": m.real.codigo,
+                    "oficina": m.real.oficina,
+                },
+                "bancsis": {
+                    "id_transaccion": m.bancsis.id_transaccion,
+                    "fecha": m.bancsis.fecha.isoformat() if m.bancsis.fecha else None,
+                    "documento": m.bancsis.documento,
+                    "concepto": m.bancsis.concepto,
+                    "importe": m.bancsis.importe,
+                    "numreferencia": m.bancsis.numreferencia,
+                },
+                "score": m.score,
+                "razon": m.razon,
+                "es_exacto": m.score < 0.01,
+            }
+            for m in res.matches
+        ],
+        "real_only": [
+            {
+                "fecha": r.fecha.isoformat() if r.fecha else None,
+                "concepto": r.concepto,
+                "documento": r.documento,
+                "monto": float(r.monto),
+                "tipo": r.tipo,
+                "codigo": r.codigo,
+                "oficina": r.oficina,
+            }
+            for r in res.real_only
+        ],
+        "bancsis_only": [
+            {
+                "id_transaccion": b.id_transaccion,
+                "fecha": b.fecha.isoformat() if b.fecha else None,
+                "documento": b.documento,
+                "concepto": b.concepto,
+                "importe": b.importe,
+                "numreferencia": b.numreferencia,
+                "tipo_real": b.tipo_real,
+            }
+            for b in res.bancsis_only
+        ],
+        "saldo_real_final": float(res.saldo_real_final),
+        "saldo_real_fecha": res.saldo_real_fecha.isoformat() if res.saldo_real_fecha else None,
+        "saldo_bancsis_final": float(res.saldo_bancsis_final),
+        "saldo_bancsis_fecha": res.saldo_bancsis_fecha.isoformat() if res.saldo_bancsis_fecha else None,
+        "total_real_only_signed": float(res.total_real_only_signed),
+        "total_bancsis_only_signed": float(res.total_bancsis_only_signed),
+    }
+
+
+@conciliacion_bp.route("/banco", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco():
+    """GET = formulario upload. POST = procesa xlsx Pichincha + render resultado."""
+    if request.method == "GET":
+        # Si ya hay resultado en session, mostrarlo. Sino, upload.
+        if session.get(_SESSION_BANCO):
+            return redirect(url_for("conciliacion.banco_resultado"))
+        return render_template("conciliacion/banco_upload.html")
+
+    # POST: procesar archivo subido
+    f = request.files.get("archivo")
+    if not f or not f.filename:
+        flash("Subí un archivo .xlsx del banco.", "warn")
+        return redirect(url_for("conciliacion.banco"))
+    if not f.filename.lower().endswith(".xlsx"):
+        flash("El archivo tiene que ser .xlsx (Excel).", "warn")
+        return redirect(url_for("conciliacion.banco"))
+
+    try:
+        raw = f.read()
+        movs_real = parse_banco_xlsx(raw)
+    except Exception as e:
+        flash_exc("No pude leer el archivo. Asegurate de que es el extracto Pichincha.", e)
+        return redirect(url_for("conciliacion.banco"))
+
+    if not movs_real:
+        flash("El archivo no tiene movimientos parseables.", "warn")
+        return redirect(url_for("conciliacion.banco"))
+
+    try:
+        resultado = matchear_extracto_banco(movs_real, no_banco=_BANCO_PICHINCHA)
+    except Exception as e:
+        flash_exc("Falló el matching contra BANCSIS.", e)
+        return redirect(url_for("conciliacion.banco"))
+
+    session[_SESSION_BANCO] = _serialize_resultado_banco(resultado, _BANCO_PICHINCHA)
+    return redirect(url_for("conciliacion.banco_resultado"))
+
+
+@conciliacion_bp.route("/banco/resultado")
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_resultado():
+    """Renderiza el último resultado guardado en session."""
+    data = session.get(_SESSION_BANCO)
+    if not data:
+        flash("Subí un archivo del banco para empezar.", "warn")
+        return redirect(url_for("conciliacion.banco"))
+
+    # Cálculos derivados para el template
+    n_match = len(data["matches"])
+    n_real_only = len(data["real_only"])
+    n_bancsis_only = len(data["bancsis_only"])
+    saldo_real = data["saldo_real_final"] or 0
+    saldo_bancsis = data["saldo_bancsis_final"] or 0
+    sum_real_only = data["total_real_only_signed"] or 0
+    sum_bancsis_only = data["total_bancsis_only_signed"] or 0
+    # Ecuación: SALDO_REAL = SALDO_BANCSIS + Σreal_only - Σbancsis_only
+    esperado = saldo_bancsis + sum_real_only - sum_bancsis_only
+    diff = saldo_real - esperado
+
+    return render_template(
+        "conciliacion/banco_resultado.html",
+        data=data,
+        n_match=n_match,
+        n_real_only=n_real_only,
+        n_bancsis_only=n_bancsis_only,
+        saldo_real=saldo_real,
+        saldo_bancsis=saldo_bancsis,
+        sum_real_only=sum_real_only,
+        sum_bancsis_only=sum_bancsis_only,
+        esperado=esperado,
+        diff=diff,
+        cuadra=abs(diff) < 100,
+    )
+
+
+@conciliacion_bp.route("/banco/limpiar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_limpiar():
+    session.pop(_SESSION_BANCO, None)
+    return redirect(url_for("conciliacion.banco"))
+
+
+@conciliacion_bp.route("/banco/confirmar-matches", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_confirmar_matches():
+    """Confirma TODOS los matches del resultado actual (los persiste en banco_conciliacion_match).
+
+    Después de confirmar, esos matches ya no van a aparecer en futuras
+    conciliaciones (ni del lado REAL ni del lado BANCSIS).
+    """
+    data = session.get(_SESSION_BANCO) or {}
+    matches = data.get("matches") or []
+    no_banco = data.get("no_banco") or _BANCO_PICHINCHA
+
+    from datetime import date as _date
+    from decimal import Decimal as _Dec
+    from modules.conciliacion.parser_banco import MovBanco as _MB
+
+    confirmados = 0
+    errores = 0
+    usuario = request.remote_user or "conciliacion"
+    for m in matches:
+        try:
+            r = m["real"]
+            real = _MB(
+                fecha=_date.fromisoformat(r["fecha"]) if r["fecha"] else None,
+                concepto=r["concepto"] or "",
+                documento=r["documento"] or "",
+                monto=_Dec(str(r["monto"])),
+                saldo=_Dec("0"),
+                codigo=r["codigo"] or "",
+                tipo=r["tipo"] or "",
+                oficina=r["oficina"] or "",
+            )
+            confirmar_match(
+                no_banco=no_banco,
+                real=real,
+                id_transaccion=m["bancsis"]["id_transaccion"],
+                estado="matched",
+                usuario=usuario,
+            )
+            confirmados += 1
+        except Exception:
+            errores += 1
+    if confirmados:
+        flash(f"Confirmados {confirmados} matches. Ya no van a volver a aparecer.", "ok")
+    if errores:
+        flash(f"{errores} no se pudieron persistir (revisar log).", "warn")
+    # Limpiamos session — el usuario sube el archivo otra vez para ver lo que quedó.
+    session.pop(_SESSION_BANCO, None)
+    return redirect(url_for("conciliacion.banco"))
+
+
+@conciliacion_bp.route("/banco/aceptar-bancsis-only", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_aceptar_bancsis_only():
+    """Acepta que UN mov BANCSIS no está en REAL (es una diferencia legítima).
+
+    Form param: id_transaccion
+    """
+    data = session.get(_SESSION_BANCO) or {}
+    no_banco = data.get("no_banco") or _BANCO_PICHINCHA
+    try:
+        idtx = int(request.form.get("id_transaccion") or 0)
+    except (TypeError, ValueError):
+        idtx = 0
+    if idtx <= 0:
+        flash("id_transaccion inválido.", "error")
+        return redirect(url_for("conciliacion.banco_resultado"))
+    confirmar_bancsis_only(no_banco, idtx, usuario=(request.remote_user or "conciliacion"))
+    flash(f"Mov BANCSIS #{idtx} aceptado como diferencia legítima.", "ok")
+    return redirect(url_for("conciliacion.banco_resultado"))

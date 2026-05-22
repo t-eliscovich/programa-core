@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titulo %}Conciliación bancaria — Programa Core{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto py-6 px-4">
+
+  <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">Conciliación con Banco</h1>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
+    Subí el extracto en .xlsx del Banco Pichincha. Te muestro:
+    <span class="font-medium text-emerald-700 dark:text-emerald-400">los movimientos que coinciden</span>,
+    <span class="font-medium text-amber-700 dark:text-amber-400">los que están en REAL y faltan en BANCSIS</span>,
+    y <span class="font-medium text-rose-700 dark:text-rose-400">los que están en BANCSIS y faltan en REAL</span>.
+  </p>
+
+  <form method="POST" enctype="multipart/form-data"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block mb-4">
+      <span class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+        Archivo .xlsx del banco (Pichincha)
+      </span>
+      <input type="file" name="archivo" accept=".xlsx" required
+             class="block w-full text-sm text-slate-600 dark:text-slate-300
+                    file:mr-4 file:py-2 file:px-4 file:rounded
+                    file:border-0 file:bg-slate-900 file:text-white dark:file:bg-slate-100 dark:file:text-slate-900
+                    file:cursor-pointer">
+    </label>
+
+    <div class="text-xs text-slate-500 dark:text-slate-400 mb-6">
+      Formato esperado: primera fila = headers
+      (<code>Fecha</code> | <code>Concepto</code> | <code>Documento</code> | <code>Monto</code> | <code>Saldo</code> | <code>Codigo</code> | <code>Tipo</code> | <code>Oficina</code>).
+      El archivo puede tener 1 o varios días. Tipo C = crédito, D = débito.
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="submit"
+              class="px-4 py-2 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm">
+        Procesar extracto →
+      </button>
+      <a href="{{ url_for('conciliacion.hub') }}"
+         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Volver al hub</a>
+    </div>
+  </form>
+
+  <div class="mt-6 text-xs text-slate-500 dark:text-slate-400">
+    <p>Después de procesar, vas a ver una tabla con 3 grupos. Los matches que aceptes
+       quedan guardados — no van a volver a aparecer la próxima vez que subas el extracto.</p>
+  </div>
+</div>
+{% endblock %}
