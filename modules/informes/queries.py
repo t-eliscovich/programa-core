@@ -737,6 +737,22 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     header["terminado"]["ingresos_pct"] = _safe_div(_ktint, ktin) * 100
     header["terminado"]["stock_act_kg"] = max(pf0 + _ktint - kvent, 0)
 
+    # CRUDO ingresos = produccion de tejido del mes EN VIVO (total
+    # compras tipo K = sum_kg_tej), no el snapshot historia.ktej.
+    # HILADO egresos = ese tejido + 0,5% de desperdicio de tejeduria.
+    # Recalculo los stock actuales de Hilado y Crudo para que cuadren.
+    # Federico 2026-05-22.
+    _kg_tej = float(sum_kg_tej or 0)
+    _kh = _kg_tej * 1.005
+    header["tejido"]["ingresos_kg"] = _kg_tej
+    header["tejido"]["ingresos_pct"] = _safe_div(ktin, _kg_tej) * 100
+    header["tejido"]["stock_act_kg"] = max(tj0 + _kg_tej - ktin, 0)
+    header["hilado"]["egresos_kg"] = _kh
+    header["hilado"]["egresos_us"] = _kh * um_act
+    _hil_act = max(hi0 + kcom - _kh, 0)
+    header["hilado"]["stock_act_kg"] = _hil_act
+    header["hilado"]["stock_act_us"] = _hil_act * um_act
+
     # CS.COLORANTES — costo unitario colorantes consumidos / kg tinturados.
     # Aproximación: importe de compras de químicos del mes (tipo='Q') sobre
     # kg tinturados del mes (ktin de historia).
@@ -3608,7 +3624,7 @@ def informe_balance() -> dict:
         v2=gxg["v2"],
         v3=gxg["v3"],
         dtj=amort["dtj"],
-        kg_tejidos=float(tej.get("kg_interno") or 0),
+        kg_tejidos=float(tej.get("kg_total") or 0),
         v4=gxg["v4"],
         v5=gxg["v5"],
         v6=gxg["v6"],
