@@ -653,30 +653,39 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(codigo_prov, '') <> ''
          GROUP BY codigo_prov
-         ORDER BY SUM(importe) DESC
+         ORDER BY SUM(kg) DESC
          LIMIT 20
         """,
             (yy, mm),
         )
         or []
     )
-    # TMT 2026-05-19 v8 — dueña: "calcula costo por kg no puede ser tan
-    # dificil". Producción tejido KK (INTELA, autoproducción) viene con
-    # importe=0 en scintela.compra. El costo real es historia.utej. Si
-    # TODAS las filas tienen importe=0, asignamos el costo unitario
-    # promedio = utej / sum(kg) — eso es lo que el dBase muestra como
-    # INTELA / 87565 / 0.669 / 58596.
+    # Producción tejido — costo por proveedor. Federico 2026-05-22.
+    # Los tejedores tercerizados (AP, UN, ...) traen su importe real
+    # facturado en scintela.compra. La autoproducción de INTELA (KK)
+    # llega con importe=0 -- INTELA no se factura a sí misma --, así que
+    # su costo es el gasto de tejeduría: V1+V2+V3 + amortización DTJ, la
+    # misma cuenta que la fila Tejeduría del Informe de Resultados. Ese
+    # gasto (_gs_tej) se reparte entre las filas con importe=0,
+    # prorrateado por kg. La tabla va ordenada por kg desc (INTELA arriba).
+    try:
+        _gxg = gastos_xgast_v1_a_v9_mes()
+        _amort = amortizaciones_mensuales()
+    except Exception:
+        _gxg, _amort = {}, {}
+    _gs_tej = float(_gxg.get("gtej_sin_dtj") or 0) + float(_amort.get("dtj") or 0)
+    _gs_tin = float(_gxg.get("gtin_sin_dcc") or 0) + float(_amort.get("dcc") or 0)
+
     sum_kg_tej = sum(float(r.get("kg") or 0) for r in produc_tejido)
-    sum_us_tej = sum(float(r.get("importe") or 0) for r in produc_tejido)
-    if sum_kg_tej > 0 and sum_us_tej == 0 and utej > 0:
-        ukg_fallback = _safe_div(utej, sum_kg_tej)
-        for r in produc_tejido:
-            kkg = float(r.get("kg") or 0)
-            r["importe"] = kkg * ukg_fallback
-            r["ukg"] = ukg_fallback
-    else:
-        for r in produc_tejido:
-            r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
+    _filas_intela = [r for r in produc_tejido
+                     if float(r.get("importe") or 0) == 0]
+    _kg_intela = sum(float(r.get("kg") or 0) for r in _filas_intela)
+    for r in produc_tejido:
+        _imp = float(r.get("importe") or 0)
+        _kg = float(r.get("kg") or 0)
+        if _imp == 0 and _kg_intela > 0:
+            r["importe"] = _gs_tej * (_kg / _kg_intela)
+        r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
     # TINTORERIA — replica el PROCEDURE COMPRAS del dBase INFORMES.PRG.
     # Bajos vs Fuertes: corte IMPORTE/KG < 0.4, combinando dos fuentes:
@@ -855,16 +864,9 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     except Exception:
         pass
 
-    # Gs. Tintoreria para COSTOS UNITARIOS = misma cuenta que la fila
-    # Tintoreria del Informe de Resultados: V4+V5+V6 + amortizacion DCC.
-    # Federico 2026-05-22.
-    try:
-        _gxg = gastos_xgast_v1_a_v9_mes()
-        _amort = amortizaciones_mensuales()
-        _gs_tin = (float(_gxg.get("gtin_sin_dcc") or 0)
-                   + float(_amort.get("dcc") or 0))
-    except Exception:
-        _gs_tin = 0.0
+    # _gs_tin (Gs. Tintorería para COSTOS UNITARIOS = V4+V5+V6 + DCC) y
+    # _gs_tej ya se calcularon más arriba, junto con la tabla Producción
+    # tejido. Federico 2026-05-22.
 
     return {
         "anio": yy,
