@@ -281,22 +281,33 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
     if cached and (now - cached[0]) < _STOCK_TTL_SECS:
         return cached[1]
 
+    # CRITICAL: saldo_producto tiene MÚLTIPLES filas por (producto, bodega) — son
+    # snapshots históricos. NO sumamos todo (sumaría 30 snapshots por producto y
+    # daría cantidades absurdas como 173M). Tomamos el MÁS RECIENTE por (producto,
+    # bodega) via ROW_NUMBER() y después agregamos por producto.
+    # Verificado 2026-05-22 con Tamara — sin este fix /stock/asinfo mostraba
+    # cantidades infladas 100-1000×.
     sql = """
-        WITH stock AS (
-            SELECT sp.id_producto,
-                   SUM(sp.saldo) AS cantidad,
-                   STRING_AGG(CAST(b.nombre AS varchar(MAX)) + ':' + CAST(sp.saldo AS varchar(20)), ' | ')
-                       AS bodegas_detalle,
-                   COUNT(DISTINCT sp.id_bodega) AS n_bodegas
-              FROM saldo_producto sp
-              INNER JOIN bodega b ON b.id_bodega = sp.id_bodega
-             WHERE sp.saldo > 0
-             GROUP BY sp.id_producto
+        WITH ultimo_saldo AS (
+            SELECT id_producto, id_bodega, saldo,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY id_producto, id_bodega
+                       ORDER BY fecha DESC, id_saldo_producto DESC
+                   ) AS rn
+              FROM saldo_producto
+        ),
+        stock AS (
+            SELECT id_producto,
+                   SUM(saldo) AS cantidad,
+                   COUNT(DISTINCT id_bodega) AS n_bodegas
+              FROM ultimo_saldo
+             WHERE rn = 1 AND saldo > 0
+             GROUP BY id_producto
         )
         SELECT p.codigo,
-               COALESCE(p.descripcion, p.codigo) AS descripcion,
+               COALESCE(NULLIF(p.descripcion, ''), p.nombre, p.codigo) AS descripcion,
                s.cantidad                        AS cantidad_total,
-               s.bodegas_detalle,
+               ''                                AS bodegas_detalle,
                s.n_bodegas,
                COALESCE(p.precio_ultima_venta, 0) AS precio_ultima
           FROM stock s
