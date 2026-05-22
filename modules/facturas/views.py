@@ -392,6 +392,10 @@ def lista():
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
     solo_abiertas = request.args.get("abiertas") == "1"
+    # TMT 2026-05-22 — modo auditoría: muestra solo las facturas que
+    # PC tiene pero Asinfo NO matchea (excluyendo legacy y NC kg=0).
+    # Sirve para encontrar discrepancias reales entre los sistemas.
+    solo_huerfanas = request.args.get("solo_huerfanas") == "1"
     # Vista canónica:
     #  - cartera (Z+A vivas)
     #  - estado (= antes "todas"; muestra todo el universo, filtrable por ?estado=)
@@ -542,6 +546,17 @@ def lista():
                 _LOG_ENRICH = __import__("logging").getLogger("programa_core.facturas")
                 _LOG_ENRICH.warning("Enriquecimiento Asinfo falló: %s", _e)
 
+    # TMT 2026-05-22 — filtro de auditoría: solo mostrar facturas que PC tiene
+    # pero Asinfo NO matcheó, excluyendo legacy (<2025-01-01) y NC kg=0.
+    # Esas son las "huérfanas" reales que ameritan investigar.
+    if solo_huerfanas and _asinfo_intentado:
+        filas = [
+            f for f in filas
+            if f.get("asinfo_tipo") is None
+            and not f.get("asinfo_pre_cutoff")
+            and float(f.get("kg") or 0) != 0
+        ]
+
     if request.args.get("export") == "csv":
         return csv_response(
             filas,
@@ -572,6 +587,7 @@ def lista():
         total_importe=total_importe, total_saldo=total_saldo,
         error=error,
         asinfo_intentado=_asinfo_intentado,
+        solo_huerfanas=solo_huerfanas,
     )
 
 
