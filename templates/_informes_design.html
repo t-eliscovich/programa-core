@@ -1,0 +1,381 @@
+{#
+  Sistema de diseño unificado para /informes/*.
+  TMT 2026-05-22 (dueña): "necesito todo lo de adentro de informes quede prolijo
+  y con el mismo diseño". Reglas duras:
+    - Headers de página SIEMPRE a la misma altura vertical.
+    - NUNCA blanco sobre negro: filas total/promedio van en azul claro.
+
+  Cómo se usa:
+
+      {% extends "base.html" %}
+      {% from "_informes_design.html" import
+            informes_page, informes_filter_bar, informes_data_table,
+            informes_kpi_row, informes_empty_state, informes_section,
+            informes_styles %}
+
+      {% block head_extra %}{{ informes_styles() }}{% endblock %}
+
+      {% block content %}
+      {% call informes_page(titulo="Mi Reporte",
+                            descripcion="Algo descriptivo aquí.",
+                            breadcrumb_padre="informes.balance",
+                            breadcrumb_padre_label="Resultados") %}
+        {{ informes_kpi_row([
+          {"label": "Total Kg",  "value": "1.234"},
+          {"label": "Total US$", "value": "$ 5.678"},
+        ]) }}
+        {% call informes_filter_bar(action_endpoint="informes.mi_reporte") %}
+          ...campos del form...
+        {% endcall %}
+        {{ informes_data_table(
+            cols=[
+                {"label": "Mes",   "key": "mes"},
+                {"label": "Kg",    "key": "kg",  "num": True},
+                {"label": "$",     "key": "us",  "num": True},
+            ],
+            rows=mis_filas,
+            total_row=mi_total,
+        ) }}
+      {% endcall %}
+      {% endblock %}
+
+  Sin importar las macros, las páginas existentes siguen funcionando como antes
+  (este archivo solo agrega macros nuevas, no toca _ui.html ni base.html).
+#}
+
+
+{# ─────────────── 1. ESTILOS GLOBALES DEL SISTEMA ─────────────── #}
+{% macro informes_styles() %}
+<style>
+  /* TMT 2026-05-22 dueña: design system /informes/*.
+     Variables centrales — cambiar acá afecta a todas las páginas que importan. */
+  :root {
+    --info-page-pt: 24px;          /* padding-top fijo de toda página /informes —
+                                      esto SÍ garantiza que los títulos queden
+                                      a la misma altura desde el top del viewport.
+                                      NO min-height en el hero: no agregamos espacio
+                                      fantasma si la página no tiene KPIs. */
+    --info-tot-bg: rgb(239 246 255);     /* azul-50 — fondo de filas TOTAL */
+    --info-tot-text: rgb(30 64 175);     /* azul-800 — texto de filas TOTAL */
+    --info-tot-border: rgb(147 197 253); /* azul-300 — borde superior del TOTAL */
+
+    --info-prom-bg: rgb(238 242 255);    /* indigo-50 — fondo de filas PROMEDIO */
+    --info-prom-text: rgb(55 48 163);    /* indigo-800 — texto de PROMEDIO */
+
+    --info-th-bg: rgb(248 250 252);      /* slate-50 — header de tabla */
+    --info-th-text: rgb(71 85 105);      /* slate-600 — texto de header */
+    --info-th-border: rgb(203 213 225);  /* slate-300 — border-bottom del header */
+  }
+
+  /* Wrapper canónico de una página /informes */
+  .info-page {
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+    padding-top: var(--info-page-pt);
+  }
+
+  /* Header: layout flex limpio. Sin min-height — el bloque se ajusta a su
+     contenido. La consistencia de altura entre páginas viene del padding-top
+     fijo de .info-page, no de rellenar el hero con espacio vacío. */
+  .info-page .info-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  /* Tabla canónica */
+  .info-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .info-table th {
+    background: var(--info-th-bg);
+    color: var(--info-th-text);
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--info-th-border);
+  }
+  .info-table th.num { text-align: right; }
+  .info-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgb(241 245 249);
+  }
+  .info-table td.num {
+    text-align: right;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .info-table td.muted { color: rgb(148 163 184); }
+
+  /* Total row — azul claro sobre azul oscuro. NUNCA blanco sobre negro. */
+  .info-table tr.total td {
+    background: var(--info-tot-bg);
+    color: var(--info-tot-text);
+    font-weight: 700;
+    border-top: 1px solid var(--info-tot-border);
+    border-bottom: 1px solid var(--info-tot-border);
+  }
+
+  /* Promedio row — indigo. */
+  .info-table tr.promedio td {
+    background: var(--info-prom-bg);
+    color: var(--info-prom-text);
+    font-weight: 700;
+    border-bottom: 1px solid var(--info-prom-bg);
+  }
+
+  /* Sub-row (detalles dentro de un grupo) — más chico, sangrado */
+  .info-table tr.sub td {
+    background: rgb(250 250 252);
+    font-size: 11px;
+    color: rgb(71 85 105);
+    padding-left: 28px;
+  }
+
+  /* Bloque genérico de sección (filter bar, panel, etc.) */
+  .info-block {
+    background: white;
+    border: 1px solid rgb(226 232 240);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .info-block-title {
+    color: rgb(71 85 105);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+
+  /* KPI row — grid de tarjetas */
+  .info-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .info-kpi {
+    background: white;
+    border: 1px solid rgb(226 232 240);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .info-kpi-label {
+    color: rgb(100 116 139);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .info-kpi-val {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+    color: rgb(15 23 42);
+    font-feature-settings: "tnum" 1;
+  }
+  .info-kpi-sub {
+    font-size: 11px;
+    color: rgb(100 116 139);
+    margin-top: 2px;
+  }
+  /* Tono "primario" (azul) para el KPI principal — sin negro sobre blanco */
+  .info-kpi.primary {
+    background: var(--info-tot-bg);
+    border-color: var(--info-tot-border);
+  }
+  .info-kpi.primary .info-kpi-val { color: var(--info-tot-text); }
+
+  /* Filter bar */
+  .info-filter {
+    background: white;
+    border: 1px solid rgb(226 232 240);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .info-filter label { display: flex; flex-direction: column; font-size: 12px; }
+  .info-filter label > span {
+    color: rgb(100 116 139);
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  .info-filter input, .info-filter select {
+    border: 1px solid rgb(203 213 225);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 13px;
+    background: white;
+  }
+  .info-filter button.primary {
+    background: rgb(15 23 42);
+    color: white;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+  }
+  .info-filter a.secondary {
+    border: 1px solid rgb(203 213 225);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: rgb(71 85 105);
+    text-decoration: none;
+  }
+
+  /* Empty state */
+  .info-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: rgb(100 116 139);
+    font-size: 14px;
+  }
+  .info-empty .hint {
+    font-size: 12px;
+    color: rgb(148 163 184);
+    margin-top: 6px;
+  }
+
+  /* Section header (encima de una tabla o bloque) */
+  .info-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgb(15 23 42);
+    margin-bottom: 8px;
+    margin-top: 16px;
+  }
+</style>
+{% endmacro %}
+
+
+{# ─────────────── 2. WRAPPER DE PÁGINA ─────────────── #}
+{% macro informes_page(titulo, descripcion="", breadcrumb_padre=None, breadcrumb_padre_label="Resultados", actions_safe="") %}
+<div class="page-shell page-shell--full info-page">
+  <div class="info-hero">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{{ titulo }}</h1>
+      {% if descripcion %}
+        <p class="text-sm text-slate-500 mt-1">{{ descripcion }}</p>
+      {% endif %}
+    </div>
+    {% if actions_safe %}
+      <div class="no-print flex items-center gap-2 shrink-0">
+        {{ actions_safe | safe }}
+      </div>
+    {% endif %}
+  </div>
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+
+{# ─────────────── 3. FILA DE KPIs ─────────────── #}
+{% macro informes_kpi_row(kpis) %}
+{# kpis = lista de dicts {"label", "value", "sub" (opcional), "primary" (opcional)} #}
+<div class="info-kpi-row">
+  {% for kpi in kpis %}
+    <div class="info-kpi {% if kpi.primary %}primary{% endif %}">
+      <div class="info-kpi-label">{{ kpi.label }}</div>
+      <div class="info-kpi-val">{{ kpi.value }}</div>
+      {% if kpi.sub %}<div class="info-kpi-sub">{{ kpi.sub }}</div>{% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# ─────────────── 4. FILTER BAR ─────────────── #}
+{% macro informes_filter_bar(action_endpoint=None, action_url=None) %}
+<form method="get"
+      {% if action_endpoint %}action="{{ url_for(action_endpoint) }}"
+      {% elif action_url %}action="{{ action_url }}"{% endif %}
+      class="info-filter no-print">
+  {{ caller() }}
+</form>
+{% endmacro %}
+
+
+{# ─────────────── 5. TABLA UNIFICADA ───────────────
+   cols = lista de {"label", "key", "num" (bool), "width" (opcional %), "format" (opcional)}
+   rows = lista de dicts (las keys deben matchear cols.key)
+   total_row = dict opcional con las mismas keys → render con class="total"
+   promedio_row = dict opcional → class="promedio"
+   empty_msg = mensaje si rows está vacío
+#}
+{% macro informes_data_table(cols, rows, total_row=None, promedio_row=None, empty_msg="Sin datos.") %}
+<div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+  <table class="info-table">
+    {% if cols | selectattr('width', 'defined') | list %}
+      <colgroup>
+        {% for c in cols %}<col {% if c.width %}style="width: {{ c.width }}"{% endif %}>{% endfor %}
+      </colgroup>
+    {% endif %}
+    <thead>
+      <tr>
+        {% for c in cols %}
+          <th class="{% if c.num %}num{% endif %}">{{ c.label }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          {% for c in cols %}
+            <td class="{% if c.num %}num{% endif %}{% if r.get(c.key) is none or r.get(c.key) == '' %} muted{% endif %}">
+              {{ r.get(c.key, '—') if r.get(c.key) not in (None, '') else '—' }}
+            </td>
+          {% endfor %}
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ cols | length }}" class="info-empty">{{ empty_msg }}</td></tr>
+      {% endfor %}
+      {% if promedio_row %}
+        <tr class="promedio">
+          {% for c in cols %}
+            <td class="{% if c.num %}num{% endif %}">
+              {{ promedio_row.get(c.key, '') }}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endif %}
+      {% if total_row %}
+        <tr class="total">
+          {% for c in cols %}
+            <td class="{% if c.num %}num{% endif %}">
+              {{ total_row.get(c.key, '') }}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+
+{# ─────────────── 6. EMPTY STATE INDEPENDIENTE ─────────────── #}
+{% macro informes_empty_state(mensaje, hint="") %}
+<div class="info-empty">
+  {{ mensaje }}
+  {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{# ─────────────── 7. SECTION BLOCK (panel genérico con título) ─────────────── #}
+{% macro informes_section(titulo="") %}
+<div class="info-block">
+  {% if titulo %}<div class="info-block-title">{{ titulo }}</div>{% endif %}
+  {{ caller() }}
+</div>
+{% endmacro %}
