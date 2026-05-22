@@ -297,7 +297,7 @@
         <tbody>
           {% for f in tintoreria_mensual.filas %}
             <tr>
-              <td class="lbl" rowspan="3">{{ f.label }}</td>
+              <td class="lbl" rowspan="4">{{ f.label }}</td>
               <td class="lbl">Bajos</td>
               <td class="num">{{ '%.1f' % f.b_pct }}</td>
               <td class="num">{{ f.b_kg | num_es(0) }}</td>
@@ -318,10 +318,17 @@
               <td class="num">{% if f.t_ukg is not none %}{{ '%.3f' % f.t_ukg }}{% else %}—{% endif %}</td>
               <td class="num">{{ f.t_imp | num_es(0) }}</td>
             </tr>
+            <tr>
+              <td class="lbl">Gs. Producción</td>
+              <td class="num">—</td>
+              <td class="num">{{ f.gp_kg | num_es(0) }}</td>
+              <td class="num">{% if f.gp_ukg is not none %}{{ '%.3f' % f.gp_ukg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ f.gp_imp | num_es(0) }}</td>
+            </tr>
           {% endfor %}
           {% set p = tintoreria_mensual.promedio %}
           <tr>
-            <td class="lbl" rowspan="3" style="color: rgb(30 64 175);">PROMEDIO</td>
+            <td class="lbl" rowspan="4" style="color: rgb(30 64 175);">PROMEDIO</td>
             <td class="lbl" style="color: rgb(30 64 175);">Bajos</td>
             <td class="num" style="color: rgb(30 64 175);">{{ '%.1f' % p.b_pct }}</td>
             <td class="num" style="color: rgb(30 64 175);">{{ p.b_kg | num_es(0) }}</td>
@@ -342,10 +349,19 @@
             <td class="num">{% if p.t_ukg is not none %}{{ '%.3f' % p.t_ukg }}{% else %}—{% endif %}</td>
             <td class="num">{{ p.t_imp | num_es(0) }}</td>
           </tr>
+          <tr>
+            <td class="lbl" style="color: rgb(30 64 175);">Gs. Producción</td>
+            <td class="num" style="color: rgb(30 64 175);">—</td>
+            <td class="num" style="color: rgb(30 64 175);">{{ p.gp_kg | num_es(0) }}</td>
+            <td class="num" style="color: rgb(30 64 175);">{% if p.gp_ukg is not none %}{{ '%.3f' % p.gp_ukg }}{% else %}—{% endif %}</td>
+            <td class="num" style="color: rgb(30 64 175);">{{ p.gp_imp | num_es(0) }}</td>
+          </tr>
         </tbody>
       </table>
       <p class="mt-2 text-[10px] text-slate-500">
         Bajos: $/kg ≤ 0.40 (línea por línea de <code>scintela.tinto</code>) · Fuertes: el resto.
+        Gs. Producción: V4+V5+V6 de <code>xgast</code> + compras tipo T del mes (sin amortización DCC,
+        que es un componente menor — el número final puede diferir levemente del cuadro mensual de arriba).
         % sobre kg del mes. $/kg ponderado. PROMEDIO = Σ meses / cantidad de meses.
       </p>
     </div>

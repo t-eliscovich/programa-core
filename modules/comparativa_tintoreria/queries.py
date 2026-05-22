@@ -79,6 +79,56 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
     )
 
 
+def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
+    """Aproxima "Gs. Producción Tintorería" mes-por-mes.
+
+    Replica el cálculo de `_gs_tin = gtin_sin_dcc + dcc` de
+    `modules/informes/queries.py` pero parametrizado por mes y simplificado:
+        - V4 + V5 + V6 de scintela.xgast (gastos directos tintorería)
+        - + compras tipo 'T' de scintela.compra (tintura tercerizada)
+        - NO incluye amortización DCC mes-a-mes (es un componente menor
+          y la tabla `scintela.amortizacion` no expone histórico simple).
+
+    Devuelve dict {(yy, mm): total_us}. Meses sin gastos devuelven 0.
+    """
+    rows = db.fetch_all(
+        """
+        WITH xg AS (
+            SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
+                   EXTRACT(MONTH FROM fecha)::int  AS mm,
+                   COALESCE(SUM(importe), 0)::float AS us
+              FROM scintela.xgast
+             WHERE fecha BETWEEN %s AND %s
+               AND COALESCE(stat, '') NOT IN ('X', 'Y')
+               AND COALESCE(num, 0) IN (4, 5, 6)
+             GROUP BY yy, mm
+        ),
+        cp AS (
+            SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
+                   EXTRACT(MONTH FROM fecha)::int  AS mm,
+                   COALESCE(SUM(importe), 0)::float AS us
+              FROM scintela.compra
+             WHERE fecha BETWEEN %s AND %s
+               AND COALESCE(stat, '') NOT IN ('X', 'Y')
+               AND UPPER(TRIM(COALESCE(tipo, ''))) = 'T'
+             GROUP BY yy, mm
+        ),
+        union_all AS (
+            SELECT yy, mm, us FROM xg
+            UNION ALL
+            SELECT yy, mm, us FROM cp
+        )
+        SELECT yy, mm, SUM(us) AS total
+          FROM union_all
+         GROUP BY yy, mm
+         ORDER BY yy, mm
+        """,
+        (desde, hasta, desde, hasta),
+    )
+    return {(int(r["yy"]), int(r["mm"])): float(r["total"] or 0)
+            for r in rows}
+
+
 def tinto_pc_por_dia(desde: date, hasta: date) -> list[dict]:
     """Agregado de scintela.tinto por fecha (sin desglosar color).
 

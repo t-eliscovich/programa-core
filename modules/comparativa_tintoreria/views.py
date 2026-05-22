@@ -41,6 +41,10 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int = 12) -> dict | 
     desde = date(desde_yy, desde_mm, 1)
 
     raw = queries.tinto_bajos_fuertes_por_mes(desde, hasta) or []
+    try:
+        gp = queries.gs_produccion_tintoreria_por_mes(desde, hasta) or {}
+    except Exception:
+        gp = {}
 
     meses_dict: dict[tuple, dict] = {}
     for r in raw:
@@ -50,7 +54,7 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int = 12) -> dict | 
         slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
         slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
 
-    def _calc(b_kg, b_imp, f_kg, f_imp):
+    def _calc(b_kg, b_imp, f_kg, f_imp, gp_us=0.0):
         tot_kg = b_kg + f_kg
         tot_imp = b_imp + f_imp
         return {
@@ -65,24 +69,30 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int = 12) -> dict | 
             "t_kg": tot_kg,
             "t_ukg": (tot_imp / tot_kg) if tot_kg else None,
             "t_imp": tot_imp,
+            # Gs. Producción Tintorería — comparten kg con Total
+            "gp_kg": tot_kg,
+            "gp_ukg": (gp_us / tot_kg) if tot_kg else None,
+            "gp_imp": gp_us,
         }
 
     filas = []
-    tb_kg = tb_imp = tf_kg = tf_imp = 0.0
+    tb_kg = tb_imp = tf_kg = tf_imp = tgp = 0.0
     for (yy, mm), slot in sorted(meses_dict.items()):
         b_kg, b_imp = slot["Bajos"]["kg"], slot["Bajos"]["imp"]
         f_kg, f_imp = slot["Fuertes"]["kg"], slot["Fuertes"]["imp"]
+        gp_us = float(gp.get((yy, mm), 0.0))
         tb_kg += b_kg; tb_imp += b_imp
         tf_kg += f_kg; tf_imp += f_imp
+        tgp += gp_us
         row = {"yy": yy, "mm": mm, "label": f"{mm:02d}/{yy}"}
-        row.update(_calc(b_kg, b_imp, f_kg, f_imp))
+        row.update(_calc(b_kg, b_imp, f_kg, f_imp, gp_us))
         filas.append(row)
 
     n = len(filas) or 1
     promedio = {"label": "PROMEDIO"}
-    promedio.update(_calc(tb_kg / n, tb_imp / n, tf_kg / n, tf_imp / n))
+    promedio.update(_calc(tb_kg / n, tb_imp / n, tf_kg / n, tf_imp / n, tgp / n))
     total = {"label": "TOTAL"}
-    total.update(_calc(tb_kg, tb_imp, tf_kg, tf_imp))
+    total.update(_calc(tb_kg, tb_imp, tf_kg, tf_imp, tgp))
 
     return {
         "filas": filas,
