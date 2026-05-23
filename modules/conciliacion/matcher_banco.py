@@ -29,9 +29,12 @@ import db
 from modules.conciliacion.parser_banco import MovBanco
 
 
-# Mapping tipo banco ↔ documento BANCSIS
-_DOCS_CREDITO = ("DE", "TR", "AC", "NC")  # entra plata
-_DOCS_DEBITO = ("CH", "ND", "DB")          # sale plata
+# Mapping tipo banco ↔ documento BANCSIS.
+# Coincide con bank_helpers.DOCS_ENTRADA (la fuente canónica del programa).
+# Todo doc que NO esté en _DOCS_CREDITO se considera débito.
+_DOCS_CREDITO = ("DE", "TR", "XX", "NC", "IN", "AC")  # entra plata
+# _DOCS_DEBITO sigue para tipos conocidos; el resto se infiere por exclusión.
+_DOCS_DEBITO_CONOCIDOS = ("CH", "ND", "DB", "GS", "PA")
 _BANCO_PICHINCHA_NO = 10  # confirmado en /bancos/10 (2026-05-22)
 
 
@@ -73,6 +76,19 @@ class Match:
 
 
 @dataclass
+class MatchGrupal:
+    """N cheques del banco → 1 mov agrupado del programa (dep.N ch).
+
+    No se persiste 1-a-1 (limita el schema). Visual + KPI solo.
+    """
+    bancsis: MovBancsis           # el agrupado del programa
+    reales: list[MovBanco] = field(default_factory=list)
+    suma_reales: float = 0.0
+    diff_monto: float = 0.0
+    razon: str = ""
+
+
+@dataclass
 class Categorizado:
     """Categoría asociada a un mov (banco real o BANCSIS).
 
@@ -106,6 +122,9 @@ class ConciliacionBanco:
     sugerencias_real_only: dict = field(default_factory=dict)
     # Conteos por pasada del matcher (P1/P2/P3/P4): para mostrar en UI
     matches_por_pasada: dict = field(default_factory=lambda: {"P1": 0, "P2": 0, "P3": 0, "P4": 0})
+    # Agrupados del programa (dep.N ch) — excluidos de la conciliación 1-a-1.
+    # Solo se reportan como info en el header.
+    bancsis_agrupados: list[MovBancsis] = field(default_factory=list)
     # Saldos del extracto
     saldo_real_final: Decimal = Decimal(0)
     saldo_real_fecha: date | None = None
@@ -538,6 +557,14 @@ def matchear_extracto_banco(
     res.real_only = aun_sin_match_p4
 
     res.matches_por_pasada = {"P1": cont_p1, "P2": cont_p2, "P3": cont_p3, "P4": cont_p4}
+
+    # ─── Excluir AGRUPADOS de bancsis_only ─────────────────────────────
+    # Tamara 2026-05-23: "los 25 cheques agrupados no se comparan, los
+    # cheques uno por uno ya están en el banco real". El mov agrupado
+    # del programa no debe aparecer en 'Solo en programa' — es un
+    # totalizador de N cheques, no un mov independiente.
+    res.bancsis_agrupados = [b for b in res.bancsis_only if b.es_agrupado]
+    res.bancsis_only = [b for b in res.bancsis_only if not b.es_agrupado]
 
     # BANCSIS sin match.
     for bk in bancsis:

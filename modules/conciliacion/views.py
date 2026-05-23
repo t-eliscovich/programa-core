@@ -477,6 +477,9 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
         "extracto_hasta": res.extracto_hasta.isoformat() if res.extracto_hasta else None,
         "ventana_dias": res.ventana_dias,
         "bancsis_cargados": res.bancsis_cargados,
+        "n_agrupados": len(getattr(res, "bancsis_agrupados", []) or []),
+        "n_cheques_agrupados": sum(b.n_cheques for b in (getattr(res, "bancsis_agrupados", []) or [])),
+        "monto_agrupados": sum(float(b.importe) for b in (getattr(res, "bancsis_agrupados", []) or [])),
         "saldo_real_final": float(res.saldo_real_final),
         "saldo_real_fecha": res.saldo_real_fecha.isoformat() if res.saldo_real_fecha else None,
         "saldo_bancsis_final": float(res.saldo_bancsis_final),
@@ -687,6 +690,87 @@ def hub_confirmar_matches():
     if errores:
         flash(f"{errores} no se pudieron persistir.", "warn")
     return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/hub/kpi-debug", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_kpi_debug():
+    """Sube un xlsx y devuelve el desglose de los KPIs en JSON."""
+    f = request.files.get("archivo")
+    if not f or not f.filename:
+        return {"error": "no file"}, 400
+    raw = f.read()
+    try:
+        movs_real = parse_banco_xlsx(raw)
+    except Exception as e:
+        return {"error": str(e)}, 500
+    no_banco = _BANCO_PICHINCHA
+    try:
+        resultado = matchear_extracto_banco(movs_real, no_banco=no_banco)
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "tb": traceback.format_exc().split("\n")[-15:]}, 500
+
+    data = _serialize_resultado_banco(resultado, no_banco)
+    kpis = _calc_kpis(data)
+
+    # Desglose detallado
+    matches = data.get("matches") or []
+    sum_match_real = sum((1 if m["real"]["tipo"] == "C" else -1) * float(m["real"]["monto"]) for m in matches)
+    sum_match_bancsis = sum(
+        (1 if m["bancsis"]["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(m["bancsis"]["importe"])
+        for m in matches
+    )
+
+    bancsis_only = data.get("bancsis_only") or []
+    n_agrup = sum(1 for b in bancsis_only if b.get("es_agrupado"))
+    sum_agrup = sum(
+        (1 if b["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(b["importe"])
+        for b in bancsis_only if b.get("es_agrupado")
+    )
+    sum_no_agrup_total = sum(
+        (1 if b["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(b["importe"])
+        for b in bancsis_only if not b.get("es_agrupado")
+    )
+    en_rango = [b for b in bancsis_only if data.get("extracto_desde") <= (b.get("fecha") or "") <= data.get("extracto_hasta") and not b.get("es_agrupado")]
+    sum_en_rango = sum(
+        (1 if b["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(b["importe"])
+        for b in en_rango
+    )
+
+    return {
+        "rango": {"desde": data.get("extracto_desde"), "hasta": data.get("extracto_hasta")},
+        "n_matches": len(matches),
+        "sum_match_real": round(sum_match_real, 2),
+        "sum_match_bancsis": round(sum_match_bancsis, 2),
+        "real_only": {
+            "n": len(data.get("real_only") or []),
+            "suma": round(data.get("total_real_only_signed") or 0, 2),
+        },
+        "bancsis_only": {
+            "n_total": len(bancsis_only),
+            "n_agrupados": n_agrup,
+            "n_no_agrup_en_rango": len(en_rango),
+            "suma_agrupados": round(sum_agrup, 2),
+            "suma_no_agrup_total": round(sum_no_agrup_total, 2),
+            "suma_no_agrup_en_rango": round(sum_en_rango, 2),
+        },
+        "kpis_calculados": {
+            "mov_banco": round(kpis["mov_banco"], 2),
+            "mov_programa": round(kpis["mov_programa"], 2),
+            "diff": round(kpis["diff"], 2),
+        },
+        "muestra_bancsis_only": [
+            {
+                "fecha": b.get("fecha"), "documento": b.get("documento"),
+                "importe": b.get("importe"), "prov": b.get("prov"),
+                "concepto": (b.get("concepto") or "")[:50],
+                "es_agrupado": b.get("es_agrupado"),
+            }
+            for b in bancsis_only[:20]
+        ],
+    }
 
 
 @conciliacion_bp.route("/hub/diag", methods=["GET"])
