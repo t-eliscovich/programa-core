@@ -34,7 +34,7 @@
     {{ kpi_card(
         'Movimientos programa',
         '$ ' ~ '{:,.2f}'.format(mov_programa),
-        extra=(n_match + n_bancsis_only)|string ~ ' movs en el periodo',
+        extra=(n_match + n_bancsis_only_periodo)|string ~ ' movs en el periodo' ~ (' (+' ~ (n_bancsis_only - n_bancsis_only_periodo)|string ~ ' fuera de rango)' if (n_bancsis_only - n_bancsis_only_periodo) > 0 else ''),
         tono='slate'
     ) }}
     {{ kpi_card(

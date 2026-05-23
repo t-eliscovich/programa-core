@@ -490,13 +490,30 @@ def _calc_kpis(data: dict) -> dict:
     saldo_real = data.get("saldo_real_final") or 0
     saldo_bancsis = data.get("saldo_bancsis_final") or 0
     sum_real_only = data.get("total_real_only_signed") or 0
+
+    # Filtramos bancsis_only por fecha en el rango del extracto: los movs
+    # FUTUROS al extracto (cargados con ventana ±15d para matching con drift)
+    # no deben inflar el KPI 'Movimientos programa'.
+    extracto_desde = data.get("extracto_desde")
+    extracto_hasta = data.get("extracto_hasta")
+    bancsis_only = data.get("bancsis_only") or []
+    bancsis_only_en_rango = []
+    for b in bancsis_only:
+        f = b.get("fecha")
+        if extracto_desde and extracto_hasta and f:
+            if extracto_desde <= f <= extracto_hasta:
+                bancsis_only_en_rango.append(b)
+        else:
+            bancsis_only_en_rango.append(b)
+
+    sum_bancsis_only_periodo = 0.0
+    for b in bancsis_only_en_rango:
+        signo = 1 if b.get("documento") in ("DE", "TR", "AC", "NC") else -1
+        sum_bancsis_only_periodo += signo * float(b.get("importe") or 0)
+
     sum_bancsis_only = data.get("total_bancsis_only_signed") or 0
 
     # KPIs de conciliación: cuánto se movió EN EL PERIODO en cada lado.
-    # mov_banco = suma firmada de TODOS los movs del extracto (matches +
-    #             real_only). mov_programa = matches + bancsis_only.
-    # Si los dos coinciden → conciliación cuadra (todo está reflejado en
-    # ambos lados); sino → algo le falta a uno de los lados.
     def _suma_firmada_matches(side: str) -> float:
         total = 0.0
         for m in (data.get("matches") or []):
@@ -511,19 +528,19 @@ def _calc_kpis(data: dict) -> dict:
     mov_banco_matches = _suma_firmada_matches("real")
     mov_programa_matches = _suma_firmada_matches("bancsis")
     mov_banco = mov_banco_matches + sum_real_only
-    mov_programa = mov_programa_matches + sum_bancsis_only
+    mov_programa = mov_programa_matches + sum_bancsis_only_periodo
 
-    # Diferencia de movimientos = lo que está en banco pero no en programa
-    #                          - lo que está en programa pero no en banco.
     diff = mov_banco - mov_programa
     return {
         "n_match": len(data.get("matches") or []),
         "n_real_only": len(data.get("real_only") or []),
         "n_bancsis_only": len(data.get("bancsis_only") or []),
+        "n_bancsis_only_periodo": len(bancsis_only_en_rango),
         "saldo_real": saldo_real,
         "saldo_bancsis": saldo_bancsis,
         "sum_real_only": sum_real_only,
         "sum_bancsis_only": sum_bancsis_only,
+        "sum_bancsis_only_periodo": sum_bancsis_only_periodo,
         "mov_banco": mov_banco,
         "mov_programa": mov_programa,
         "diff": diff,
