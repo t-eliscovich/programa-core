@@ -133,6 +133,9 @@
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ m.real.tipo }}"
               data-grupo="{{ m.cat.grupo or 'OTRO' }}"
+              data-cat="{{ m.cat.codigo or 'OTRO' }}"
+              data-monto="{{ m.real.monto }}"
+              data-fecha="{{ m.real.fecha or '' }}"
               data-exacto="{{ '1' if m.es_exacto else '0' }}"
               data-match='{{ m|tojson|forceescape }}'
               data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.concepto ~ ' ' ~ (m.bancsis.prov or '') ~ ' ' ~ (m.bancsis.prov_nombre or '') ~ ' ' ~ (m.cat.cliente or ''))|lower }}">
@@ -150,7 +153,7 @@
             <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap {% if fecha_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
               {{ m.bancsis.fecha }}
             </td>
-            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
               {% if m.real.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(m.real.monto) }}
             </td>
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-xs {% if monto_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
@@ -217,7 +220,7 @@
                 title="{{ r.cat.label }}">{{ r.cat.abrev }}</span>
             </td>
             <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap">{{ r.fecha }}</td>
-            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
               {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
@@ -312,6 +315,9 @@
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ r.tipo }}"
               data-grupo="{{ r.cat.grupo or 'OTRO' }}"
+              data-cat="{{ r.cat.codigo or 'OTRO' }}"
+              data-monto="{{ r.monto }}"
+              data-fecha="{{ r.fecha or '' }}"
               data-search="{{ (r.concepto ~ ' ' ~ r.documento ~ ' ' ~ r.oficina ~ ' ' ~ (r.cat.cliente or '') ~ ' ' ~ r.cat.label)|lower }}">
             <td class="px-2 py-2">
               {% set _gc = r.cat.grupo or 'OTRO' %}
@@ -323,7 +329,7 @@
                 title="{{ r.cat.label or 'Sin categorizar' }}">{{ r.cat.abrev or '?' }}</span>
             </td>
             <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ r.fecha }}</td>
-            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
               {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
@@ -414,6 +420,9 @@
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ b.tipo_real }}"
               data-grupo="{{ b.cat.grupo or 'OTRO' }}"
+              data-cat="{{ b.cat.codigo or 'OTRO' }}"
+              data-monto="{{ b.importe }}"
+              data-fecha="{{ b.fecha or '' }}"
               data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ (b.prov or '') ~ ' ' ~ (b.prov_nombre or '') ~ ' ' ~ (b.cat.cliente or ''))|lower }}">
             <td class="px-2 py-2">
               {% set _gc = b.cat.grupo or 'OTRO' %}
@@ -433,6 +442,9 @@
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate" title="{{ b.concepto }} (id {{ b.id_transaccion }})">
+                {% if b.es_agrupado %}
+                  <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 mr-1">📦 {{ b.n_cheques }} ch</span>
+                {% endif %}
                 {% if b.prov_nombre %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ b.prov_nombre }}</span>
                 {% else %}<span class="text-slate-500 text-xs">{{ b.concepto[:60] }}</span>{% endif %}
               </div>
@@ -605,10 +617,24 @@
       tbody.querySelectorAll('tr.sep-grupo').forEach(tr => tr.remove());
       const rows = Array.from(tbody.querySelectorAll('tr.fila'));
       const ncols = (tbl.querySelectorAll('thead th') || []).length || 8;
+      // Ordenar por: grupo, subcategoria (codigo cat), monto-chiquito al fondo, fecha
       rows.sort((a, b) => {
         const ga = ORDEN_GRUPO[a.dataset.grupo] || 9;
         const gb = ORDEN_GRUPO[b.dataset.grupo] || 9;
-        return ga - gb;
+        if (ga !== gb) return ga - gb;
+        const ca = a.dataset.cat || '';
+        const cb = b.dataset.cat || '';
+        if (ca !== cb) return ca.localeCompare(cb);
+        // Chiquitos al fondo: |monto| < 5 va al final del subgrupo
+        const ma = Math.abs(parseFloat(a.dataset.monto) || 0);
+        const mb = Math.abs(parseFloat(b.dataset.monto) || 0);
+        const aChico = ma < 5 ? 1 : 0;
+        const bChico = mb < 5 ? 1 : 0;
+        if (aChico !== bChico) return aChico - bChico;
+        // Después por fecha (asc)
+        const fa = a.dataset.fecha || '';
+        const fb = b.dataset.fecha || '';
+        return fa.localeCompare(fb);
       });
       let lastGrupo = null;
       rows.forEach(r => {

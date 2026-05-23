@@ -467,6 +467,8 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "tipo_real": b.tipo_real,
                 "prov": b.prov,
                 "prov_nombre": b.prov_nombre,
+                "es_agrupado": b.es_agrupado,
+                "n_cheques": b.n_cheques,
                 "cat": _cat_to_dict(_cats_bancsis[i]) if i < len(_cats_bancsis) and _cats_bancsis[i] else _cat_to_dict(None),
             }
             for i, b in enumerate(res.bancsis_only)
@@ -507,7 +509,13 @@ def _calc_kpis(data: dict) -> dict:
             bancsis_only_en_rango.append(b)
 
     sum_bancsis_only_periodo = 0.0
+    bancsis_only_agrupados = []
+    bancsis_only_no_agrupados_en_rango = []
     for b in bancsis_only_en_rango:
+        if b.get("es_agrupado"):
+            bancsis_only_agrupados.append(b)
+            continue  # agrupados NO se cuentan — son N cheques sumados
+        bancsis_only_no_agrupados_en_rango.append(b)
         signo = 1 if b.get("documento") in ("DE", "TR", "AC", "NC") else -1
         sum_bancsis_only_periodo += signo * float(b.get("importe") or 0)
 
@@ -535,7 +543,8 @@ def _calc_kpis(data: dict) -> dict:
         "n_match": len(data.get("matches") or []),
         "n_real_only": len(data.get("real_only") or []),
         "n_bancsis_only": len(data.get("bancsis_only") or []),
-        "n_bancsis_only_periodo": len(bancsis_only_en_rango),
+        "n_bancsis_only_periodo": len(bancsis_only_no_agrupados_en_rango),
+        "n_bancsis_only_agrupados": len(bancsis_only_agrupados),
         "saldo_real": saldo_real,
         "saldo_bancsis": saldo_bancsis,
         "sum_real_only": sum_real_only,

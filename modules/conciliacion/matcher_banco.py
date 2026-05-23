@@ -49,6 +49,8 @@ class MovBancsis:
     saldo: float | None
     prov: str = ""           # código cliente/proveedor (CLI/PROV)
     prov_nombre: str = ""    # nombre legible (vía LEFT JOIN clientes)
+    es_agrupado: bool = False  # mov del programa que suma N cheques (dep.N ch)
+    n_cheques: int = 0         # cuántos cheques agrupa
 
     @property
     def tipo_real(self) -> str:
@@ -220,6 +222,26 @@ def _codigo_desde_concepto(concepto: str) -> str:
     return _extraer_cliente_concepto(concepto)[0]
 
 
+# Detecta agrupados del programa tipo "dep.25 ch.", "dep 25 ch", "25 ch.LTM", etc.
+# Cuando N >= 2 es un agrupado (1 deposito que suma N cheques).
+_RE_AGRUPADO = _re.compile(r"\b(?:dep\.?|deposito|dep\s+ch)\s*\.?\s*(\d+)\s*ch\b|\b(\d+)\s+ch\.", _re.IGNORECASE)
+
+
+def _detectar_agrupado(concepto: str) -> int:
+    """Devuelve N (>=2) si el concepto es un depósito agrupado, 0 si no."""
+    if not concepto:
+        return 0
+    m = _RE_AGRUPADO.search(concepto)
+    if not m:
+        return 0
+    n_str = m.group(1) or m.group(2)
+    try:
+        n = int(n_str)
+    except (ValueError, TypeError):
+        return 0
+    return n if n >= 2 else 0
+
+
 def _resolver_clientes(rows: list[dict]) -> dict[str, str]:
     """Para cada `prov` (explícito o extraído del concepto), trae el nombre.
 
@@ -277,17 +299,21 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
         prov_resuelto = (prov_explicito or codigo_concepto or "").upper()
         # Nombre: 1) BD si hay match por código, 2) nombre largo extraído, 3) nada
         prov_nombre = nombre_por_codigo.get(prov_resuelto, "") or nombre_concepto
+        concepto_str = str(r.get("concepto") or "").strip()
+        n_ch = _detectar_agrupado(concepto_str)
         out.append(MovBancsis(
             id_transaccion=int(r["id_transaccion"]),
             fecha=r["fecha"],
             documento=str(r.get("documento") or "").strip().upper(),
-            concepto=str(r.get("concepto") or "").strip(),
+            concepto=concepto_str,
             importe=float(r.get("importe") or 0),
             numreferencia=str(r.get("numreferencia") or "").strip(),
             no_banco=int(r.get("no_banco") or 0),
             saldo=float(r.get("saldo")) if r.get("saldo") is not None else None,
             prov=prov_resuelto,
             prov_nombre=prov_nombre,
+            es_agrupado=(n_ch > 0),
+            n_cheques=n_ch,
         ))
     return out
 
