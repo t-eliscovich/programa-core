@@ -394,6 +394,87 @@ def depositos_confirmar_verdes():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _render_demo_v2():
+    """QA temporal."""
+    from modules.conciliacion.categorizar import categorizar
+    import json as _json
+    def _cat(c, t, cli=""):
+        x = categorizar(c, t)
+        return {"codigo": x.codigo, "grupo": x.grupo, "label": x.label,
+                "abrev": x.abrev, "cliente": cli, "descripcion": "", "fuente": "regex"}
+    matches = [
+        {"real": {"fecha": "2026-05-18", "concepto": "1 ch.LTM",
+                  "documento": "0", "monto": 763.04, "tipo": "C",
+                  "codigo": "001045", "oficina": "AG. NORTE"},
+         "bancsis": {"id_transaccion": 122774547, "fecha": "2026-05-18", "documento": "DE",
+                     "concepto": "Dep ch LTM", "importe": 763.04,
+                     "numreferencia": "", "prov": "LTM", "prov_nombre": "Almacen Lopez"},
+         "score": 0, "razon": "exacto", "es_exacto": True,
+         "cat": _cat("1 ch.LTM", "C", "LTM")},
+    ]
+    real = [
+        {"fecha": "2026-05-18", "concepto": "DEPOSITO CALDERON 500",
+         "documento": "122684668", "monto": 500.00, "tipo": "C",
+         "codigo": "001045", "oficina": "AG. NORTE",
+         "cat": _cat("DEPOSITO CALDERON", "C"),
+         "sugerencias": [
+            {"id_transaccion": 7001, "fecha": "2026-05-17", "importe": 500.00,
+             "documento": "DE", "concepto": "Dep ch JTX", "prov": "JTX",
+             "prov_nombre": "Juan Toledo Xavier", "diff_dias": 1},
+            {"id_transaccion": 7002, "fecha": "2026-05-18", "importe": 500.00,
+             "documento": "DE", "concepto": "Dep ch BFV", "prov": "BFV",
+             "prov_nombre": "Banco Fundacion Valle", "diff_dias": 0},
+            {"id_transaccion": 7003, "fecha": "2026-05-19", "importe": 500.00,
+             "documento": "DE", "concepto": "Dep ch MGR", "prov": "MGR",
+             "prov_nombre": "Maria Gomez Ramirez", "diff_dias": 1},
+         ]},
+        {"fecha": "2026-05-18", "concepto": "DEPOSITO CALDERON 500 #2",
+         "documento": "122651890", "monto": 500.00, "tipo": "C",
+         "codigo": "001045", "oficina": "AG. NORTE",
+         "cat": _cat("DEPOSITO CALDERON", "C"),
+         "sugerencias": [
+            {"id_transaccion": 7001, "fecha": "2026-05-17", "importe": 500.00,
+             "documento": "DE", "concepto": "Dep ch JTX", "prov": "JTX",
+             "prov_nombre": "Juan Toledo Xavier", "diff_dias": 1},
+            {"id_transaccion": 7002, "fecha": "2026-05-18", "importe": 500.00,
+             "documento": "DE", "concepto": "Dep ch BFV", "prov": "BFV",
+             "prov_nombre": "Banco Fundacion Valle", "diff_dias": 0},
+         ]},
+        {"fecha": "2026-05-18", "concepto": "GS MEGADATOS",
+         "documento": "999", "monto": 220.65, "tipo": "D",
+         "codigo": "001045", "oficina": "AG. NORTE",
+         "cat": _cat("GS MEGADATOS", "D"),
+         "sugerencias": []},
+        {"fecha": "2026-05-18", "concepto": "RR OP AC",
+         "documento": "888", "monto": 26404.00, "tipo": "D",
+         "codigo": "001045", "oficina": "AG. NORTE",
+         "cat": _cat("RR OP AC", "D"),
+         "sugerencias": []},
+    ]
+    bancsis = [
+        {"id_transaccion": 9999, "fecha": "2026-05-18", "concepto": "Pago LTM",
+         "documento": "CH", "importe": 1200.00, "numreferencia": "5500", "tipo_real": "D",
+         "prov": "LTM", "prov_nombre": "Almacen Lopez",
+         "cat": _cat("Pago LTM", "D")},
+    ]
+    data = {
+        "no_banco": _BANCO_PICHINCHA, "matches": matches,
+        "real_only": real, "bancsis_only": bancsis,
+        "saldo_real_final": 18118.0, "saldo_real_fecha": "2026-05-18",
+        "saldo_bancsis_final": 17518.0, "saldo_bancsis_fecha": "2026-05-18",
+        "total_real_only_signed": 1000.0 - 220.65 - 26404.0,
+        "total_bancsis_only_signed": -1200.0,
+        "extracto_desde": "2026-05-18", "extracto_hasta": "2026-05-18",
+        "ventana_dias": 2, "bancsis_cargados": 311,
+    }
+    kpis = _calc_kpis(data)
+    return render_template("conciliacion/banco_resultado.html",
+        data=data, matches_json=_json.dumps(matches),
+        real_only_json=_json.dumps(real), bancsis_only_json=_json.dumps(bancsis),
+        no_banco=_BANCO_PICHINCHA, banco_nombre="PICHINCHA", **kpis,
+    )
+
+
 def _cat_to_dict(cat) -> dict:
     return {
         "codigo": getattr(cat, "codigo", "OTRO"),
@@ -545,6 +626,8 @@ def hub():
           "Aceptar bancsis-only" viajan inline en hidden form fields.
     """
     if request.method == "GET":
+        if request.args.get("demo") == "1":
+            return _render_demo_v2()
         bancos = queries.bancos_disponibles()
         ultimos = queries.ultimos_extractos(limit=5)
         return render_template(
