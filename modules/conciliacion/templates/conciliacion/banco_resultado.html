@@ -223,6 +223,19 @@
               <div class="truncate text-slate-500 text-[11px]" title="{{ r.concepto }}">{{ r.concepto }}</div>
             </td>
             <td class="px-2 py-2 text-right whitespace-nowrap">
+              {% if r.sugerencias and r.sugerencias|length > 0 %}
+              <button type="button"
+                      class="px-2 py-1 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium btn-sugerencias"
+                      data-sugerencias='{{ r.sugerencias|tojson|forceescape }}'
+                      data-fecha="{{ r.fecha }}"
+                      data-concepto="{{ r.concepto|e }}"
+                      data-documento="{{ r.documento|e }}"
+                      data-monto="{{ r.monto }}"
+                      data-tipo="{{ r.tipo }}"
+                      data-codigo="{{ r.codigo|e }}"
+                      data-oficina="{{ r.oficina|e }}"
+                      title="{{ r.sugerencias|length }} mov del programa coinciden por monto">💡 {{ r.sugerencias|length }}</button>
+              {% endif %}
               <form method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="no_banco" value="{{ no_banco }}">
@@ -599,6 +612,48 @@
 
   document.querySelectorAll('.btn-match-manual').forEach(b => {
     b.addEventListener('click', () => abrirModal({...b.dataset}));
+  });
+
+  // Botón 💡 — abre el modal con sugerencias precargadas (sin fetch).
+  function abrirModalConSugerencias(d, sugerencias) {
+    setRealCampos(d);
+    mmSummary.textContent = `Banco: ${d.fecha} · ${d.tipo} · $${Number(d.monto).toFixed(2)} · ${d.concepto || ''}`;
+    mmLoading.classList.add('hidden');
+    mmEmpty.classList.add('hidden');
+    mmTbody.innerHTML = '';
+    sugerencias.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40';
+      const cli = c.prov_nombre ? `<span class="text-slate-900 dark:text-slate-100">${c.prov_nombre.substring(0,22)}</span>`
+                : (c.prov ? `<span class="text-slate-500 font-mono text-xs">${c.prov}</span>` : '<span class="text-slate-300">—</span>');
+      tr.innerHTML = `
+        <td class="px-3 py-2 tabular-nums">${c.fecha || ''}</td>
+        <td class="px-3 py-2 text-right tabular-nums">$ ${Number(c.importe).toFixed(2)}</td>
+        <td class="px-3 py-2 font-mono text-slate-500 text-xs">${c.documento || ''}</td>
+        <td class="px-3 py-2 truncate max-w-[160px]" title="${c.prov_nombre || c.prov || ''}">${cli}</td>
+        <td class="px-3 py-2 truncate max-w-xs text-slate-500 text-xs" title="${c.concepto || ''}">${(c.concepto || '').substring(0, 50)}</td>
+        <td class="px-3 py-2 text-xs text-slate-400">${c.diff_dias || 0}d</td>
+        <td class="px-3 py-2 text-right">
+          <button type="button" class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium" data-idtx="${c.id_transaccion}">Vincular</button>
+        </td>`;
+      tr.querySelector('button').addEventListener('click', () => {
+        document.getElementById('mm-id_transaccion').value = c.id_transaccion;
+        mmForm.submit();
+      });
+      mmTbody.appendChild(tr);
+    });
+    mmTabla.classList.remove('hidden');
+    modal.classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.btn-sugerencias').forEach(b => {
+    b.addEventListener('click', () => {
+      let sugerencias = [];
+      try { sugerencias = JSON.parse(b.dataset.sugerencias || '[]'); } catch (e) {}
+      const d = {...b.dataset};
+      delete d.sugerencias;
+      abrirModalConSugerencias(d, sugerencias);
+    });
   });
   mmClose.addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });

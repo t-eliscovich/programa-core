@@ -452,6 +452,7 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "codigo": r.codigo,
                 "oficina": r.oficina,
                 "cat": _cat_to_dict(_cats_real[i]) if i < len(_cats_real) and _cats_real[i] else _cat_to_dict(None),
+                "sugerencias": (getattr(res, "sugerencias_real_only", {}) or {}).get(i, []),
             }
             for i, r in enumerate(res.real_only)
         ],

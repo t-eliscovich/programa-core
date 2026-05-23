@@ -91,7 +91,7 @@ def _label(codigo: str) -> tuple[str, str, str]:
 _REGLAS: list[tuple[re.Pattern, str | None, str]] = [
     # COMISIONES / IMPUESTOS (alta prioridad — son chicos)
     (re.compile(r"\b(comision|comisi[oó]n|cargo\s+por|servicio\s+banco)\b", re.I), None, "COMISION_BANCARIA"),
-    (re.compile(r"\b(iva|retenci[oó]n|impuesto|isr|sri)\b", re.I), None, "IMPUESTO"),
+    (re.compile(r"\b(iva|retenci[oó]n|impuesto|isr|sri|^rr\s|^rr-)", re.I), None, "IMPUESTO"),
 
     # ENTRADAS
     (re.compile(r"transferencia\s+(directa|interbancaria|interna)?\s*(de|recibida)", re.I), "C", "ENTRADA_COBRO_TRANSFERENCIA"),
@@ -102,13 +102,17 @@ _REGLAS: list[tuple[re.Pattern, str | None, str]] = [
     (re.compile(r"nota\s+(de\s+)?cr[eé]dito|\bnc\b", re.I), "C", "ENTRADA_NOTA_CREDITO"),
 
     # SALIDAS específicas (orden importa)
-    (re.compile(r"pag[\.\-]?\s*anticipo|p[\.\-]ant", re.I), "D", "SALIDA_PAGO_ANTICIPO"),
-    (re.compile(r"pag[\.\-]?\s*(vaca|nomina|sueldo|decimo|d[eé]cimo|util|rrhh)", re.I), "D", "SALIDA_PAGO_NOMINA"),
-    (re.compile(r"pag[\.\-]?\s*(dhl|luz|agua|tel[eé]fono|internet|servicio|transporte)", re.I), "D", "SALIDA_PAGO_SERVICIO"),
+    (re.compile(r"pag[\.\-]?\s*anticipo|p[\.\-]ant|\banticipo\b|^ac\s|^ac-", re.I), "D", "SALIDA_PAGO_ANTICIPO"),
+    (re.compile(r"pag[\.\-]?\s*(vaca|nomina|sueldo|decimo|d[eé]cimo|util|rrhh|empleado)", re.I), "D", "SALIDA_PAGO_NOMINA"),
+    # Servicios (con catálogo de proveedores conocidos Ecuador)
+    (re.compile(r"pag[\.\-]?\s*(dhl|luz|agua|tel[eé]fono|internet|servicio|transporte|emaap|cnel|epmaps|cnt|claro|movistar|tuenti|directv|netlife|punto\s*net|megadatos|conecel|otecel|repsol|emelec|empresa\s+el[eé]ctrica)", re.I), "D", "SALIDA_PAGO_SERVICIO"),
+    (re.compile(r"\b(megadatos|emaap|emaapq|cnel|epmaps|cnt|directv|netlife|punto\s*net)\b", re.I), "D", "SALIDA_PAGO_SERVICIO"),
     (re.compile(r"pag[\.\-]?\s*cash|\bcash\b", re.I), "D", "SALIDA_PAGO_PROVEEDOR"),
     (re.compile(r"\bpago\s+(a|de)\b|^pag-|intela\s+c[\.\-]pag", re.I), "D", "SALIDA_PAGO_PROVEEDOR"),
-    (re.compile(r"transferencia\s+enviada|tr\s+a\s+\w+", re.I), "D", "SALIDA_TRANSFERENCIA"),
-    (re.compile(r"\bcheque\b|\bch\b\s|^ch\.", re.I), "D", "SALIDA_CHEQUE_EMITIDO"),
+    (re.compile(r"transferencia\s+enviada|tr\s+a\s+\w+|^tr-|^trf-", re.I), "D", "SALIDA_TRANSFERENCIA"),
+    (re.compile(r"\bcheque\b|\bch\b\s|^ch\.|\bch\s+prot|protesto", re.I), "D", "SALIDA_CHEQUE_EMITIDO"),
+    # Códigos de tipo de tx interna del banco (genéricos — tipo pago a proveedor)
+    (re.compile(r"^(gs|cc|in|op)\b|^(gs|cc|in|op)-", re.I), "D", "SALIDA_PAGO_PROVEEDOR"),
 ]
 
 
@@ -133,13 +137,16 @@ def categorizar(concepto: str, tipo: str) -> Categoria:
             grupo, label, abrev = _label(codigo)
             return Categoria(codigo=codigo, grupo=grupo, label=label, abrev=abrev, confianza=1.0, fuente="regex")
 
-    # Fallback por tipo
+    # Fallback por tipo — asumir lo más común:
+    #   Entrada sin patrón = cobro por transferencia (TR), la entrada más común.
+    #   Salida sin patrón = pago a proveedor (P), la salida más común.
+    # Confianza baja para que la AI lo pueda mejorar si está habilitada.
     if tipo == "C":
-        grupo, label, abrev = _label("ENTRADA_OTRO")
-        return Categoria("ENTRADA_OTRO", grupo, label, abrev, confianza=0.3, fuente="tipo-fallback")
+        grupo, label, abrev = _label("ENTRADA_COBRO_TRANSFERENCIA")
+        return Categoria("ENTRADA_COBRO_TRANSFERENCIA", grupo, label, abrev, confianza=0.4, fuente="tipo-fallback")
     if tipo == "D":
-        grupo, label, abrev = _label("SALIDA_OTRO")
-        return Categoria("SALIDA_OTRO", grupo, label, abrev, confianza=0.3, fuente="tipo-fallback")
+        grupo, label, abrev = _label("SALIDA_PAGO_PROVEEDOR")
+        return Categoria("SALIDA_PAGO_PROVEEDOR", grupo, label, abrev, confianza=0.4, fuente="tipo-fallback")
     grupo, label, abrev = _label("OTRO")
     return Categoria("OTRO", grupo, label, abrev, confianza=0.0, fuente="tipo-fallback")
 

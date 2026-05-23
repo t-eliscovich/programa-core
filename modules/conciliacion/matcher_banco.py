@@ -100,6 +100,8 @@ class ConciliacionBanco:
     extracto_hasta: date | None = None
     ventana_dias: int = 0
     bancsis_cargados: int = 0  # cuántas tx BANCSIS entraron al matcher
+    # Sugerencias por real_only: índice → [{id_transaccion, importe, fecha, prov, ...}]
+    sugerencias_real_only: dict = field(default_factory=dict)
     # Saldos del extracto
     saldo_real_final: Decimal = Decimal(0)
     saldo_real_fecha: date | None = None
@@ -377,8 +379,9 @@ def matchear_extracto_banco(
     res.ventana_dias = dias_tolerancia
     res.bancsis_cargados = bancsis_total
 
-    # Greedy: para cada REAL, buscar el mejor match no usado en BANCSIS.
+    # ─── PASS 1: estricto (tipo + monto±tol + fecha±tol) ────────────────
     bancsis_usado: set[int] = set()
+    real_sin_match: list[MovBanco] = []
 
     for real in movs_real_filtrados:
         candidatos: list[tuple[float, MovBancsis]] = []
@@ -393,29 +396,112 @@ def matchear_extracto_banco(
             diff_dias = abs((real.fecha - bk.fecha).days)
             if diff_dias > dias_tolerancia:
                 continue
-            score = diff_dias + diff_monto * 10  # cada $1 de drift = 10 días equivalentes
+            score = diff_dias + diff_monto * 10
             candidatos.append((score, bk))
         if candidatos:
             candidatos.sort(key=lambda t: t[0])
             score, bk = candidatos[0]
             diff_dias = abs((real.fecha - bk.fecha).days)
             diff_monto = abs(float(real.monto) - bk.importe)
-            if diff_dias == 0 and diff_monto < 0.01:
-                razon = f"Match exacto · BANCSIS #{bk.id_transaccion} ({bk.documento})"
-            else:
-                razon = (
-                    f"Match probable · BANCSIS #{bk.id_transaccion} ({bk.documento}) "
-                    f"· Δfecha {diff_dias}d · Δmonto ${diff_monto:.2f}"
-                )
+            razon = (
+                f"P1·exacto · BANCSIS #{bk.id_transaccion}"
+                if (diff_dias == 0 and diff_monto < 0.01)
+                else f"P1·probable · BANCSIS #{bk.id_transaccion} · Δ{diff_dias}d ${diff_monto:.2f}"
+            )
             res.matches.append(Match(real=real, bancsis=bk, score=score, razon=razon))
             bancsis_usado.add(bk.id_transaccion)
         else:
-            res.real_only.append(real)
+            real_sin_match.append(real)
+
+    # ─── PASS 2: cliente extraído + monto exacto (fecha cualquiera) ─────
+    # Para los REAL sin match en P1, buscar BANCSIS con mismo CLIENTE
+    # (código corto extraído del concepto vs prov de BANCSIS) y monto exacto.
+    # Cubre el caso de drift de fecha grande con cliente conocido.
+    aun_sin_match: list[MovBanco] = []
+    for real in real_sin_match:
+        codigo_concepto, _nombre = _extraer_cliente_concepto(real.concepto)
+        if not codigo_concepto:
+            aun_sin_match.append(real)
+            continue
+        candidatos: list[tuple[int, MovBancsis]] = []
+        for bk in bancsis:
+            if bk.id_transaccion in bancsis_usado:
+                continue
+            if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            if abs(float(real.monto) - bk.importe) > monto_tolerancia:
+                continue
+            # Match por cliente: prov BANCSIS == código extraído del banco
+            if (bk.prov or "").upper().strip() != codigo_concepto.upper():
+                continue
+            diff_dias = abs((real.fecha - bk.fecha).days)
+            candidatos.append((diff_dias, bk))
+        if candidatos:
+            candidatos.sort(key=lambda t: t[0])
+            diff_dias, bk = candidatos[0]
+            diff_monto = abs(float(real.monto) - bk.importe)
+            razon = f"P2·cliente {codigo_concepto} · BANCSIS #{bk.id_transaccion} · Δ{diff_dias}d ${diff_monto:.2f}"
+            res.matches.append(Match(real=real, bancsis=bk, score=diff_dias + 100, razon=razon))
+            bancsis_usado.add(bk.id_transaccion)
+        else:
+            aun_sin_match.append(real)
+
+    # ─── PASS 3: monto EXACTO único (fecha cualquiera, sin cliente) ─────
+    # Si para un REAL sin match hay exactamente 1 BANCSIS sin usar del mismo
+    # monto + tipo, lo enlazamos. Si hay varios, lo dejamos como real_only
+    # (Tamara lo resuelve manualmente desde la UI).
+    sin_match_pass3: list[MovBanco] = []
+    for real in aun_sin_match:
+        candidatos = []
+        for bk in bancsis:
+            if bk.id_transaccion in bancsis_usado:
+                continue
+            if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            if abs(float(real.monto) - bk.importe) > 0.01:  # exacto
+                continue
+            candidatos.append(bk)
+        if len(candidatos) == 1:
+            bk = candidatos[0]
+            diff_dias = abs((real.fecha - bk.fecha).days)
+            razon = f"P3·monto único · BANCSIS #{bk.id_transaccion} · Δ{diff_dias}d"
+            res.matches.append(Match(real=real, bancsis=bk, score=diff_dias + 200, razon=razon))
+            bancsis_usado.add(bk.id_transaccion)
+        else:
+            sin_match_pass3.append(real)
+
+    res.real_only = sin_match_pass3
 
     # BANCSIS sin match.
     for bk in bancsis:
         if bk.id_transaccion not in bancsis_usado:
             res.bancsis_only.append(bk)
+
+    # ─── SUGERENCIAS INLINE (Tamara 2026-05-23) ───────────────────────
+    # Para cada real_only, listar bancsis_only candidatos del mismo monto
+    # exacto y tipo compatible. Si hay 1+, los mostramos en la UI para que
+    # ella vincule manualmente con un solo click. Ya no van por el modal.
+    _sugerencias_por_real: dict[int, list[dict]] = {}
+    for i, real in enumerate(res.real_only):
+        candidatos = []
+        for bk in res.bancsis_only:
+            if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            if abs(float(real.monto) - bk.importe) > 0.01:
+                continue
+            candidatos.append({
+                "id_transaccion": bk.id_transaccion,
+                "fecha": bk.fecha.isoformat() if bk.fecha else None,
+                "importe": float(bk.importe),
+                "documento": bk.documento,
+                "concepto": bk.concepto,
+                "prov": bk.prov,
+                "prov_nombre": bk.prov_nombre,
+                "diff_dias": abs((real.fecha - bk.fecha).days) if bk.fecha and real.fecha else 0,
+            })
+        candidatos.sort(key=lambda c: c["diff_dias"])
+        _sugerencias_por_real[i] = candidatos[:5]  # máx 5 sugerencias
+    res.sugerencias_real_only = _sugerencias_por_real
 
     # Saldos.
     if movs_real:
