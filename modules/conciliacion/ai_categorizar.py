@@ -196,11 +196,12 @@ def _llamar_api(concepto: str, tipo: str) -> dict | None:
     cat = (parsed.get("categoria") or "OTRO").strip().upper()
     if cat not in _CATEGORIAS_VALIDAS:
         cat = "OTRO"
-    grupo, label = GRUPO_LABEL.get(cat, ("OTRO", "Sin categorizar"))
+    grupo, label, abrev = GRUPO_LABEL.get(cat, ("OTRO", "Sin categorizar", "?"))
     return {
         "categoria": cat,
         "grupo": grupo,
         "label": label,
+        "abrev": abrev,
         "cliente": (parsed.get("cliente") or None),
         "descripcion": (parsed.get("descripcion") or None),
         "confianza": float(parsed.get("confianza") or 0.5),
@@ -233,10 +234,12 @@ def categorizar_con_ai(concepto: str, tipo: str) -> tuple[Categoria, dict]:
     concepto_norm = normalizar_concepto(concepto)
     cached = _leer_cache(concepto_norm, tipo)
     if cached:
+        _grp, _lbl, _abr = GRUPO_LABEL.get(cached["categoria"], ("OTRO", "Sin categorizar", "?"))
         cat = Categoria(
             codigo=cached["categoria"],
             grupo=cached["grupo"],
             label=cached["label"],
+            abrev=_abr,
             confianza=float(cached["confianza"] or 0.5),
             fuente="ai-cache",
         )
@@ -252,6 +255,7 @@ def categorizar_con_ai(concepto: str, tipo: str) -> tuple[Categoria, dict]:
         codigo=parsed["categoria"],
         grupo=parsed["grupo"],
         label=parsed["label"],
+        abrev=parsed.get("abrev") or "?",
         confianza=parsed["confianza"],
         fuente="ai",
     )

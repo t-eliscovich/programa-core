@@ -469,6 +469,10 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
             }
             for i, b in enumerate(res.bancsis_only)
         ],
+        "extracto_desde": res.extracto_desde.isoformat() if res.extracto_desde else None,
+        "extracto_hasta": res.extracto_hasta.isoformat() if res.extracto_hasta else None,
+        "ventana_dias": res.ventana_dias,
+        "bancsis_cargados": res.bancsis_cargados,
         "saldo_real_final": float(res.saldo_real_final),
         "saldo_real_fecha": res.saldo_real_fecha.isoformat() if res.saldo_real_fecha else None,
         "saldo_bancsis_final": float(res.saldo_bancsis_final),

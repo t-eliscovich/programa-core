@@ -44,27 +44,28 @@ from dataclasses import dataclass
 
 # ─── Constantes ───────────────────────────────────────────────────────────
 
-# Mapeo categoría → (grupo, label legible).
-GRUPO_LABEL: dict[str, tuple[str, str]] = {
+# Mapeo categoría → (grupo, label legible, abreviatura compacta).
+# La abreviatura se usa como chip en la UI (1-3 chars). Tooltip muestra label.
+GRUPO_LABEL: dict[str, tuple[str, str, str]] = {
     # Entradas
-    "ENTRADA_COBRO_TRANSFERENCIA": ("ENTRADA", "Cobro por transferencia"),
-    "ENTRADA_COBRO_CHEQUE":        ("ENTRADA", "Depósito de cheque"),
-    "ENTRADA_DEPOSITO_EFECTIVO":   ("ENTRADA", "Depósito en efectivo"),
-    "ENTRADA_NOTA_CREDITO":        ("ENTRADA", "Nota de crédito banco"),
-    "ENTRADA_OTRO":                ("ENTRADA", "Entrada (otro)"),
+    "ENTRADA_COBRO_TRANSFERENCIA": ("ENTRADA", "Cobro por transferencia", "TR"),
+    "ENTRADA_COBRO_CHEQUE":        ("ENTRADA", "Depósito de cheque",       "CH"),
+    "ENTRADA_DEPOSITO_EFECTIVO":   ("ENTRADA", "Depósito en efectivo",     "DEP"),
+    "ENTRADA_NOTA_CREDITO":        ("ENTRADA", "Nota de crédito banco",    "NC"),
+    "ENTRADA_OTRO":                ("ENTRADA", "Entrada (otro)",            "?↓"),
     # Salidas
-    "SALIDA_PAGO_PROVEEDOR":       ("SALIDA",  "Pago a proveedor"),
-    "SALIDA_PAGO_NOMINA":          ("SALIDA",  "Pago de nómina / vacaciones"),
-    "SALIDA_PAGO_SERVICIO":        ("SALIDA",  "Pago de servicio"),
-    "SALIDA_PAGO_ANTICIPO":        ("SALIDA",  "Pago de anticipo"),
-    "SALIDA_CHEQUE_EMITIDO":       ("SALIDA",  "Cheque emitido"),
-    "SALIDA_TRANSFERENCIA":        ("SALIDA",  "Transferencia enviada"),
-    "SALIDA_OTRO":                 ("SALIDA",  "Salida (otro)"),
+    "SALIDA_PAGO_PROVEEDOR":       ("SALIDA",  "Pago a proveedor",          "P"),
+    "SALIDA_PAGO_NOMINA":          ("SALIDA",  "Pago de nómina/vacaciones", "N"),
+    "SALIDA_PAGO_SERVICIO":        ("SALIDA",  "Pago de servicio",          "S"),
+    "SALIDA_PAGO_ANTICIPO":        ("SALIDA",  "Pago de anticipo",          "A"),
+    "SALIDA_CHEQUE_EMITIDO":       ("SALIDA",  "Cheque emitido",            "CH"),
+    "SALIDA_TRANSFERENCIA":        ("SALIDA",  "Transferencia enviada",     "TR"),
+    "SALIDA_OTRO":                 ("SALIDA",  "Salida (otro)",             "?↑"),
     # Comisiones / impuestos (van aparte)
-    "COMISION_BANCARIA":           ("COMISION", "Comisión bancaria"),
-    "IMPUESTO":                    ("COMISION", "Impuesto / retención"),
+    "COMISION_BANCARIA":           ("COMISION", "Comisión bancaria",        "COM"),
+    "IMPUESTO":                    ("COMISION", "Impuesto / retención",     "IMP"),
     # Sin clasificar
-    "OTRO":                        ("OTRO",    "Sin categorizar"),
+    "OTRO":                        ("OTRO",    "Sin categorizar",           "?"),
 }
 
 
@@ -73,13 +74,14 @@ class Categoria:
     codigo: str       # ej: "SALIDA_PAGO_PROVEEDOR"
     grupo: str        # ENTRADA | SALIDA | COMISION | OTRO
     label: str        # "Pago a proveedor"
+    abrev: str        # "P" | "TR" | "CH" | etc. — chip compacto en UI
     confianza: float  # 0..1 — 1.0 si regex acertó certero; 0.5 si fallback por Tipo
     fuente: str       # "regex" | "ai" | "tipo-fallback"
 
 
-def _label(codigo: str) -> tuple[str, str]:
-    """Devuelve (grupo, label) para un codigo."""
-    return GRUPO_LABEL.get(codigo, ("OTRO", "Sin categorizar"))
+def _label(codigo: str) -> tuple[str, str, str]:
+    """Devuelve (grupo, label, abrev) para un codigo."""
+    return GRUPO_LABEL.get(codigo, ("OTRO", "Sin categorizar", "?"))
 
 
 # ─── Reglas (orden importa: la primera que matchea gana) ─────────────────
@@ -128,18 +130,18 @@ def categorizar(concepto: str, tipo: str) -> Categoria:
         if tipo_filtro and tipo_filtro != tipo:
             continue
         if rx.search(concepto):
-            grupo, label = _label(codigo)
-            return Categoria(codigo=codigo, grupo=grupo, label=label, confianza=1.0, fuente="regex")
+            grupo, label, abrev = _label(codigo)
+            return Categoria(codigo=codigo, grupo=grupo, label=label, abrev=abrev, confianza=1.0, fuente="regex")
 
     # Fallback por tipo
     if tipo == "C":
-        grupo, label = _label("ENTRADA_OTRO")
-        return Categoria("ENTRADA_OTRO", grupo, label, confianza=0.3, fuente="tipo-fallback")
+        grupo, label, abrev = _label("ENTRADA_OTRO")
+        return Categoria("ENTRADA_OTRO", grupo, label, abrev, confianza=0.3, fuente="tipo-fallback")
     if tipo == "D":
-        grupo, label = _label("SALIDA_OTRO")
-        return Categoria("SALIDA_OTRO", grupo, label, confianza=0.3, fuente="tipo-fallback")
-    grupo, label = _label("OTRO")
-    return Categoria("OTRO", grupo, label, confianza=0.0, fuente="tipo-fallback")
+        grupo, label, abrev = _label("SALIDA_OTRO")
+        return Categoria("SALIDA_OTRO", grupo, label, abrev, confianza=0.3, fuente="tipo-fallback")
+    grupo, label, abrev = _label("OTRO")
+    return Categoria("OTRO", grupo, label, abrev, confianza=0.0, fuente="tipo-fallback")
 
 
 def necesita_ai(cat: Categoria) -> bool:

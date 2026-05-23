@@ -80,6 +80,7 @@ class Categorizado:
     codigo: str            # ej: SALIDA_PAGO_PROVEEDOR
     grupo: str             # ENTRADA | SALIDA | COMISION | OTRO
     label: str             # "Pago a proveedor"
+    abrev: str = "?"       # "P" | "TR" | "CH" | etc — chip compacto
     cliente: str = ""      # extraído del concepto o por AI
     descripcion: str = ""  # frase legible (solo cuando hay AI)
     fuente: str = "regex"  # regex | ai | ai-cache | tipo-fallback
@@ -94,6 +95,11 @@ class ConciliacionBanco:
     real_only_cats: list[Categorizado] = field(default_factory=list)
     bancsis_only_cats: list[Categorizado] = field(default_factory=list)
     matches_cats: list[Categorizado] = field(default_factory=list)
+    # Info de la ventana usada (para mostrar en la UI)
+    extracto_desde: date | None = None
+    extracto_hasta: date | None = None
+    ventana_dias: int = 0
+    bancsis_cargados: int = 0  # cuántas tx BANCSIS entraron al matcher
     # Saldos del extracto
     saldo_real_final: Decimal = Decimal(0)
     saldo_real_fecha: date | None = None
@@ -299,21 +305,24 @@ def _es_tipo_compatible(tipo_real: str, doc_bancsis: str) -> bool:
     return False
 
 
-def _calcular_ventana_dias(fechas: list[date], default: int = 1) -> int:
+def _calcular_ventana_dias(fechas: list[date], default: int = 2) -> int:
     """Calcula días de tolerancia según la regla de Tamara (2026-05-23):
 
-      - Default: ±1 día.
-      - Si la fecha más reciente del extracto es VIERNES, +3 días
-        (porque las tx del fin de semana se acreditan el lunes).
+      - Default: ±2 días.
+      - Si la fecha más reciente o la primera del extracto cae en
+        VIERNES o LUNES → ±4 días, para cubrir el fin de semana en
+        cualquier dirección (las tx del sábado/domingo se acreditan
+        el lunes; las del lunes pueden estar relacionadas con el viernes).
 
     Cualquier sesión puede ampliar manualmente pasando otro `dias_tolerancia`.
     """
     if not fechas:
         return default
     ultima = max(fechas)
+    primera = min(fechas)
     # weekday(): lunes=0, viernes=4, sábado=5, domingo=6
-    if ultima.weekday() == 4:
-        return 3
+    if ultima.weekday() in (0, 4) or primera.weekday() in (0, 4):
+        return 4
     return default
 
 
@@ -349,6 +358,7 @@ def matchear_extracto_banco(
     # Cargamos BANCSIS en una ventana más amplia para absorver drift.
     ventana = timedelta(days=dias_tolerancia)
     bancsis = cargar_bancsis(no_banco, desde - ventana, hasta + ventana)
+    bancsis_total = len(bancsis)
 
     # Excluimos los ya conciliados.
     ids_excl, firmas_excl = _ya_conciliadas(no_banco, desde, hasta)
@@ -356,6 +366,10 @@ def matchear_extracto_banco(
     movs_real_filtrados = [m for m in movs_real if _firma_real(m) not in firmas_excl]
 
     res = ConciliacionBanco()
+    res.extracto_desde = desde
+    res.extracto_hasta = hasta
+    res.ventana_dias = dias_tolerancia
+    res.bancsis_cargados = bancsis_total
 
     # Greedy: para cada REAL, buscar el mejor match no usado en BANCSIS.
     bancsis_usado: set[int] = set()
@@ -455,6 +469,7 @@ def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
                 cat, extra = categorizar_con_ai(concepto, tipo)
                 return Categorizado(
                     codigo=cat.codigo, grupo=cat.grupo, label=cat.label,
+                    abrev=getattr(cat, "abrev", "?"),
                     cliente=extra.get("cliente") or "",
                     descripcion=extra.get("descripcion") or "",
                     fuente=cat.fuente,
@@ -462,12 +477,13 @@ def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
             cat = categorizar_con_ai(concepto, tipo)  # type: ignore
             return Categorizado(
                 codigo=cat.codigo, grupo=cat.grupo, label=cat.label,
+                abrev=getattr(cat, "abrev", "?"),
                 cliente="", descripcion="", fuente=cat.fuente,
             )
         except Exception:
             return Categorizado(
                 codigo="OTRO", grupo="OTRO", label="Sin categorizar",
-                cliente="", descripcion="", fuente="error",
+                abrev="?", cliente="", descripcion="", fuente="error",
             )
 
     res.real_only_cats = [_to_cat(m.concepto, m.tipo) for m in res.real_only]
