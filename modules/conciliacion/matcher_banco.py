@@ -453,8 +453,7 @@ def matchear_extracto_banco(
 
     # ─── PASS 3: monto EXACTO único (fecha cualquiera, sin cliente) ─────
     # Si para un REAL sin match hay exactamente 1 BANCSIS sin usar del mismo
-    # monto + tipo, lo enlazamos. Si hay varios, lo dejamos como real_only
-    # (Tamara lo resuelve manualmente desde la UI).
+    # monto + tipo, lo enlazamos. Si hay varios, sigue a P4 (match grupal).
     sin_match_pass3: list[MovBanco] = []
     for real in aun_sin_match:
         candidatos = []
@@ -463,7 +462,7 @@ def matchear_extracto_banco(
                 continue
             if not _es_tipo_compatible(real.tipo, bk.documento):
                 continue
-            if abs(float(real.monto) - bk.importe) > 0.01:  # exacto
+            if abs(float(real.monto) - bk.importe) > 0.01:
                 continue
             candidatos.append(bk)
         if len(candidatos) == 1:
@@ -472,29 +471,86 @@ def matchear_extracto_banco(
             razon = f"P3·monto único · BANCSIS #{bk.id_transaccion} · Δ{diff_dias}d"
             res.matches.append(Match(real=real, bancsis=bk, score=diff_dias + 200, razon=razon))
             bancsis_usado.add(bk.id_transaccion)
+            cont_p3 += 1
         else:
             sin_match_pass3.append(real)
 
-    res.real_only = sin_match_pass3
+    # ─── PASS 4: match GRUPAL por (tipo, monto) ─────────────────────────
+    # Tamara 2026-05-23: "si hay 5 de 500 en banco y 5 de 500 en programa,
+    # no hace falta asignar uno por uno". Si la cardinalidad coincide,
+    # matcheamos arbitrariamente (cualquier asignación da la misma suma).
+    from collections import defaultdict
+    pendientes_real: dict[tuple, list[MovBanco]] = defaultdict(list)
+    for real in sin_match_pass3:
+        key = (real.tipo, round(float(real.monto), 2))
+        pendientes_real[key].append(real)
+
+    pendientes_bancsis: dict[tuple, list[MovBancsis]] = defaultdict(list)
+    for bk in bancsis:
+        if bk.id_transaccion in bancsis_usado:
+            continue
+        tipo_bk = "C" if bk.documento in _DOCS_CREDITO else "D" if bk.documento in _DOCS_DEBITO else "?"
+        key = (tipo_bk, round(bk.importe, 2))
+        pendientes_bancsis[key].append(bk)
+
+    aun_sin_match_p4: list[MovBanco] = []
+    for key, reals_grupo in pendientes_real.items():
+        bks_grupo = pendientes_bancsis.get(key, [])
+        if len(reals_grupo) == len(bks_grupo) and len(reals_grupo) > 0:
+            # Match grupal arbitrario (FIFO por fecha cercana)
+            reals_sorted = sorted(reals_grupo, key=lambda m: m.fecha or date.min)
+            bks_sorted = sorted(bks_grupo, key=lambda b: b.fecha or date.min)
+            for real, bk in zip(reals_sorted, bks_sorted):
+                diff_dias = abs((real.fecha - bk.fecha).days) if (real.fecha and bk.fecha) else 0
+                razon = f"P4·grupo {key[0]} ${key[1]} ({len(reals_grupo)} pares) · BANCSIS #{bk.id_transaccion}"
+                res.matches.append(Match(real=real, bancsis=bk, score=diff_dias + 300, razon=razon))
+                bancsis_usado.add(bk.id_transaccion)
+                cont_p4 += 1
+        else:
+            aun_sin_match_p4.extend(reals_grupo)
+
+    res.real_only = aun_sin_match_p4
+
+    res.matches_por_pasada = {"P1": cont_p1, "P2": cont_p2, "P3": cont_p3, "P4": cont_p4}
 
     # BANCSIS sin match.
     for bk in bancsis:
         if bk.id_transaccion not in bancsis_usado:
             res.bancsis_only.append(bk)
 
-    # ─── SUGERENCIAS INLINE (Tamara 2026-05-23) ───────────────────────
-    # Para cada real_only, listar bancsis_only candidatos del mismo monto
-    # exacto y tipo compatible. Si hay 1+, los mostramos en la UI para que
-    # ella vincule manualmente con un solo click. Ya no van por el modal.
+    # ─── SUGERENCIAS INLINE — más laxas (Tamara 2026-05-23) ─────────────
+    # Para cada real_only, listar bancsis_only candidatos con cualquier
+    # señal de match razonable:
+    #   - mismo monto ±$5 + tipo compatible, O
+    #   - mismo cliente extraído del concepto + tipo, O
+    #   - monto cercano (±10%) + tipo + fecha ≤30d.
+    # Ordenadas por "cercanía" (delta días + delta monto chico arriba).
     _sugerencias_por_real: dict[int, list[dict]] = {}
     for i, real in enumerate(res.real_only):
+        codigo_concepto, _ = _extraer_cliente_concepto(real.concepto)
+        codigo_concepto_up = codigo_concepto.upper() if codigo_concepto else ""
         candidatos = []
+        seen_ids: set[int] = set()
         for bk in res.bancsis_only:
+            if bk.id_transaccion in seen_ids:
+                continue
             if not _es_tipo_compatible(real.tipo, bk.documento):
                 continue
-            if abs(float(real.monto) - bk.importe) > 0.01:
+            diff_monto = abs(float(real.monto) - bk.importe)
+            diff_dias = abs((real.fecha - bk.fecha).days) if bk.fecha and real.fecha else 99
+            # Filtros de relevancia (OR)
+            es_monto_cerca = diff_monto <= 5.0
+            es_cliente_match = codigo_concepto_up and (bk.prov or "").upper().strip() == codigo_concepto_up
+            es_monto_proporcional = diff_monto <= max(5.0, float(real.monto) * 0.1) and diff_dias <= 30
+            if not (es_monto_cerca or es_cliente_match or es_monto_proporcional):
                 continue
-            candidatos.append({
+            # Score: monto exacto > cliente match > cercano. Diff días desempata.
+            score = diff_dias + diff_monto * 10
+            if es_cliente_match:
+                score -= 50  # boost
+            if diff_monto < 0.01:
+                score -= 100  # boost monto exacto
+            candidatos.append((score, {
                 "id_transaccion": bk.id_transaccion,
                 "fecha": bk.fecha.isoformat() if bk.fecha else None,
                 "importe": float(bk.importe),
@@ -502,10 +558,12 @@ def matchear_extracto_banco(
                 "concepto": bk.concepto,
                 "prov": bk.prov,
                 "prov_nombre": bk.prov_nombre,
-                "diff_dias": abs((real.fecha - bk.fecha).days) if bk.fecha and real.fecha else 0,
-            })
-        candidatos.sort(key=lambda c: c["diff_dias"])
-        _sugerencias_por_real[i] = candidatos[:5]  # máx 5 sugerencias
+                "diff_dias": diff_dias,
+                "diff_monto": round(diff_monto, 2),
+            }))
+            seen_ids.add(bk.id_transaccion)
+        candidatos.sort(key=lambda t: t[0])
+        _sugerencias_por_real[i] = [c for _s, c in candidatos[:10]]  # hasta 10
     res.sugerencias_real_only = _sugerencias_por_real
 
     # Saldos.

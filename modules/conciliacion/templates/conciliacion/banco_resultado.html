@@ -147,13 +147,13 @@
                 title="{{ m.cat.label or 'Sin categorizar' }}">{{ m.cat.abrev or '?' }}</span>
             </td>
             <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ m.real.fecha }}</td>
-            <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap {% if fecha_diff %}text-amber-700 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
+            <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap {% if fecha_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
               {{ m.bancsis.fecha }}
             </td>
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if m.real.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(m.real.monto) }}
             </td>
-            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-xs {% if monto_diff %}text-amber-700 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-xs {% if monto_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
               {{ '{:,.2f}'.format(m.bancsis.importe) }}
             </td>
             <td class="px-2 py-2 font-mono text-xs text-slate-700 dark:text-slate-300 truncate" title="{{ m.bancsis.prov_nombre or '' }} (id {{ m.bancsis.id_transaccion }})">
