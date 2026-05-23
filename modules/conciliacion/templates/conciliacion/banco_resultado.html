@@ -84,31 +84,51 @@
       <table class="w-full text-xs" id="tbl-matches">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
-            <th class="px-2 py-1.5">Fecha</th>
-            <th class="px-2 py-1.5">Doc banco</th>
-            <th class="px-2 py-1.5 text-right">Monto</th>
             <th class="px-2 py-1.5">Tipo</th>
+            <th class="px-2 py-1.5">Fecha banco</th>
+            <th class="px-2 py-1.5">Fecha programa</th>
+            <th class="px-2 py-1.5 text-right">Monto banco</th>
+            <th class="px-2 py-1.5 text-right">Monto programa</th>
+            <th class="px-2 py-1.5">Doc/Ref</th>
+            <th class="px-2 py-1.5">Cliente</th>
             <th class="px-2 py-1.5">Concepto banco</th>
-            <th class="px-2 py-1.5 text-right">id Programa</th>
-            <th class="px-2 py-1.5">Doc Programa</th>
-            <th class="px-2 py-1.5"></th>
+            <th class="px-2 py-1.5">Concepto programa</th>
+            <th class="px-2 py-1.5 text-right">id</th>
           </tr>
         </thead>
         <tbody>
           {% for m in data.matches %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/50 dark:bg-emerald-900/10{% endif %} fila"
+          {% set fecha_diff = (m.real.fecha != m.bancsis.fecha) %}
+          {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/30 dark:bg-emerald-900/10{% endif %} fila"
               data-tipo="{{ m.real.tipo }}"
-              data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.documento ~ ' ' ~ m.bancsis.id_transaccion)|lower }}">
+              data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.concepto ~ ' ' ~ m.bancsis.id_transaccion ~ ' ' ~ (m.bancsis.prov or '') ~ ' ' ~ (m.bancsis.prov_nombre or ''))|lower }}">
+            <td class="px-2 py-1.5 font-mono {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ m.real.tipo }}</td>
             <td class="px-2 py-1.5 font-mono">{{ m.real.fecha }}</td>
-            <td class="px-2 py-1.5 font-mono">{{ m.real.documento }}</td>
-            <td class="px-2 py-1.5 text-right font-mono">{{ '{:,.2f}'.format(m.real.monto) }}</td>
-            <td class="px-2 py-1.5 font-mono">{{ m.real.tipo }}</td>
-            <td class="px-2 py-1.5 truncate max-w-xs" title="{{ m.real.concepto }}">{{ m.real.concepto[:50] }}</td>
-            <td class="px-2 py-1.5 text-right font-mono">{{ m.bancsis.id_transaccion }}</td>
-            <td class="px-2 py-1.5 font-mono">{{ m.bancsis.documento }}</td>
-            <td class="px-2 py-1.5 text-xs text-slate-400" title="{{ m.razon }}">
-              {% if m.es_exacto %}exacto{% else %}probable{% endif %}
+            <td class="px-2 py-1.5 font-mono {% if fecha_diff %}text-amber-700 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}"
+                {% if fecha_diff %}title="Drift de fecha: {{ m.razon }}"{% endif %}>
+              {{ m.bancsis.fecha }}{% if fecha_diff %} ⚠{% endif %}
             </td>
+            <td class="px-2 py-1.5 text-right font-mono">{{ '{:,.2f}'.format(m.real.monto) }}</td>
+            <td class="px-2 py-1.5 text-right font-mono {% if monto_diff %}text-amber-700 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
+              {{ '{:,.2f}'.format(m.bancsis.importe) }}{% if monto_diff %} ⚠{% endif %}
+            </td>
+            <td class="px-2 py-1.5 font-mono text-slate-600 dark:text-slate-400"
+                title="Banco doc: {{ m.real.documento }} · Programa ref: {{ m.bancsis.numreferencia }}">
+              {{ m.real.documento }}{% if m.bancsis.numreferencia and m.bancsis.numreferencia != m.real.documento %} / {{ m.bancsis.numreferencia }}{% endif %}
+            </td>
+            <td class="px-2 py-1.5 truncate max-w-[120px]" title="{{ m.bancsis.prov_nombre or m.bancsis.prov or '' }}">
+              {% if m.bancsis.prov_nombre %}
+                <span class="text-slate-900 dark:text-slate-100">{{ m.bancsis.prov_nombre[:18] }}</span>
+              {% elif m.bancsis.prov %}
+                <span class="text-slate-500 font-mono">{{ m.bancsis.prov }}</span>
+              {% else %}
+                <span class="text-slate-300">—</span>
+              {% endif %}
+            </td>
+            <td class="px-2 py-1.5 truncate max-w-[180px] text-slate-600" title="{{ m.real.concepto }}">{{ m.real.concepto[:40] }}</td>
+            <td class="px-2 py-1.5 truncate max-w-[180px] text-slate-600" title="{{ m.bancsis.concepto }}">{{ m.bancsis.concepto[:40] }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-slate-400">{{ m.bancsis.id_transaccion }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -217,13 +237,13 @@
       <table class="w-full text-xs" id="tbl-bancsis">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
-            <th class="px-2 py-1.5">Fecha</th>
-            <th class="px-2 py-1.5 text-right">id</th>
-            <th class="px-2 py-1.5">Doc.</th>
-            <th class="px-2 py-1.5 text-right">Importe</th>
             <th class="px-2 py-1.5">Tipo</th>
+            <th class="px-2 py-1.5">Fecha</th>
+            <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5">Ref/Doc</th>
+            <th class="px-2 py-1.5">Cliente</th>
             <th class="px-2 py-1.5">Concepto</th>
-            <th class="px-2 py-1.5">Ref</th>
+            <th class="px-2 py-1.5 text-right">id</th>
             <th class="px-2 py-1.5 text-right">Acción</th>
           </tr>
         </thead>
@@ -231,16 +251,26 @@
           {% for b in data.bancsis_only %}
           <tr class="border-t border-slate-100 dark:border-slate-800 fila"
               data-tipo="{{ b.tipo_real }}"
-              data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ b.id_transaccion)|lower }}">
+              data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ b.id_transaccion ~ ' ' ~ (b.prov or '') ~ ' ' ~ (b.prov_nombre or ''))|lower }}">
+            <td class="px-2 py-1.5 font-mono {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ b.tipo_real }}</td>
             <td class="px-2 py-1.5 font-mono">{{ b.fecha }}</td>
-            <td class="px-2 py-1.5 text-right font-mono">{{ b.id_transaccion }}</td>
-            <td class="px-2 py-1.5 font-mono">{{ b.documento }}</td>
-            <td class="px-2 py-1.5 text-right font-mono {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-1.5 text-right font-mono">
               {% if b.tipo_real == 'D' %}-{% endif %}{{ '{:,.2f}'.format(b.importe) }}
             </td>
-            <td class="px-2 py-1.5 font-mono">{{ b.tipo_real }}</td>
-            <td class="px-2 py-1.5 truncate max-w-xs" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
-            <td class="px-2 py-1.5 font-mono text-slate-500">{{ b.numreferencia }}</td>
+            <td class="px-2 py-1.5 font-mono text-slate-600" title="Doc: {{ b.documento }}{% if b.numreferencia %} · Ref: {{ b.numreferencia }}{% endif %}">
+              {{ b.numreferencia or b.documento }}
+            </td>
+            <td class="px-2 py-1.5 truncate max-w-[140px]" title="{{ b.prov_nombre or b.prov or '' }}">
+              {% if b.prov_nombre %}
+                <span class="text-slate-900 dark:text-slate-100">{{ b.prov_nombre[:20] }}</span>
+              {% elif b.prov %}
+                <span class="text-slate-500 font-mono">{{ b.prov }}</span>
+              {% else %}
+                <span class="text-slate-300">—</span>
+              {% endif %}
+            </td>
+            <td class="px-2 py-1.5 truncate max-w-xs text-slate-600" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-slate-400">{{ b.id_transaccion }}</td>
             <td class="px-2 py-1.5 text-right whitespace-nowrap">
               <form method="POST" action="{{ url_for('conciliacion.hub_aceptar_bancsis_only') }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -285,10 +315,10 @@
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5">Fecha</th>
-            <th class="px-2 py-1.5">Doc.</th>
-            <th class="px-2 py-1.5 text-right">Importe</th>
+            <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5">Ref/Doc</th>
+            <th class="px-2 py-1.5">Cliente</th>
             <th class="px-2 py-1.5">Concepto</th>
-            <th class="px-2 py-1.5">Ref</th>
             <th class="px-2 py-1.5">Δd / Δ$</th>
             <th class="px-2 py-1.5"></th>
           </tr>
@@ -397,12 +427,17 @@
         candidatos.forEach(c => {
           const tr = document.createElement('tr');
           tr.className = 'border-t border-slate-100 dark:border-slate-800';
+          const clienteTxt = c.prov_nombre
+            ? `<span class="text-slate-900 dark:text-slate-100">${c.prov_nombre.substring(0,20)}</span>`
+            : (c.prov
+                ? `<span class="text-slate-500 font-mono">${c.prov}</span>`
+                : '<span class="text-slate-300">—</span>');
           tr.innerHTML = `
             <td class="px-2 py-1.5 font-mono">${c.fecha || ''}</td>
-            <td class="px-2 py-1.5 font-mono">${c.documento || ''}</td>
             <td class="px-2 py-1.5 text-right font-mono">$ ${Number(c.importe).toFixed(2)}</td>
-            <td class="px-2 py-1.5 truncate max-w-xs" title="${c.concepto || ''}">${(c.concepto || '').substring(0, 60)}</td>
-            <td class="px-2 py-1.5 font-mono text-slate-500">${c.numreferencia || ''}</td>
+            <td class="px-2 py-1.5 font-mono text-slate-600" title="Doc: ${c.documento || ''} · Ref: ${c.numreferencia || ''}">${c.numreferencia || c.documento || ''}</td>
+            <td class="px-2 py-1.5 truncate max-w-[140px]" title="${c.prov_nombre || c.prov || ''}">${clienteTxt}</td>
+            <td class="px-2 py-1.5 truncate max-w-xs text-slate-600" title="${c.concepto || ''}">${(c.concepto || '').substring(0, 50)}</td>
             <td class="px-2 py-1.5 text-xs text-slate-400">${c.diff_dias}d / $${Number(c.diff_monto).toFixed(2)}</td>
             <td class="px-2 py-1.5 text-right">
               <button type="button" class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs" data-idtx="${c.id_transaccion}">

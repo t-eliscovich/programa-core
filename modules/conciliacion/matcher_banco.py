@@ -47,6 +47,8 @@ class MovBancsis:
     numreferencia: str
     no_banco: int
     saldo: float | None
+    prov: str = ""           # código cliente/proveedor (CLI/PROV)
+    prov_nombre: str = ""    # nombre legible (vía LEFT JOIN clientes)
 
     @property
     def tipo_real(self) -> str:
@@ -136,15 +138,22 @@ def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], 
 
 
 def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
-    """Trae todas las transacciones BANCSIS del banco en el rango."""
+    """Trae todas las transacciones BANCSIS del banco en el rango.
+
+    Joinea contra `scintela.cliente` para traer el nombre legible cuando
+    `prov` matchea con un cliente conocido (el código suele apuntar al
+    cliente del cheque depositado o del proveedor pagado).
+    """
     rows = db.fetch_all(
         """
-        SELECT id_transaccion, fecha, documento, concepto, importe,
-               numreferencia, no_banco, saldo
-          FROM scintela.transacciones_bancarias
-         WHERE no_banco = %s
-           AND fecha BETWEEN %s AND %s
-         ORDER BY fecha ASC, id_transaccion ASC
+        SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
+               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov,
+               c.nombre AS prov_nombre
+          FROM scintela.transacciones_bancarias tb
+          LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(tb.prov))
+         WHERE tb.no_banco = %s
+           AND tb.fecha BETWEEN %s AND %s
+         ORDER BY tb.fecha ASC, tb.id_transaccion ASC
         """,
         (no_banco, desde, hasta),
     ) or []
@@ -158,6 +167,8 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
             numreferencia=str(r.get("numreferencia") or "").strip(),
             no_banco=int(r.get("no_banco") or 0),
             saldo=float(r.get("saldo")) if r.get("saldo") is not None else None,
+            prov=str(r.get("prov") or "").strip(),
+            prov_nombre=str(r.get("prov_nombre") or "").strip(),
         )
         for r in rows
     ]
@@ -626,16 +637,17 @@ def candidatos_match_manual(
 
     rows = db.fetch_all(
         f"""
-        SELECT id_transaccion, fecha, documento, concepto, importe,
-               numreferencia,
-               ABS(EXTRACT(DAY FROM fecha - %s))::int AS diff_dias,
-               ABS(importe - %s) AS diff_monto
-          FROM scintela.transacciones_bancarias
-         WHERE no_banco = %s
-           AND fecha BETWEEN %s AND %s
-           AND ABS(importe - %s) <= %s
-           AND UPPER(TRIM(documento)) = ANY(%s)
-           AND id_transaccion NOT IN (
+        SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
+               tb.numreferencia, tb.prov, c.nombre AS prov_nombre,
+               ABS(EXTRACT(DAY FROM tb.fecha - %s))::int AS diff_dias,
+               ABS(tb.importe - %s) AS diff_monto
+          FROM scintela.transacciones_bancarias tb
+          LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(tb.prov))
+         WHERE tb.no_banco = %s
+           AND tb.fecha BETWEEN %s AND %s
+           AND ABS(tb.importe - %s) <= %s
+           AND UPPER(TRIM(tb.documento)) = ANY(%s)
+           AND tb.id_transaccion NOT IN (
               SELECT id_transaccion
                 FROM scintela.banco_conciliacion_match
                WHERE id_transaccion IS NOT NULL
@@ -664,6 +676,8 @@ def candidatos_match_manual(
             "concepto": (r.get("concepto") or "").strip(),
             "importe": float(r.get("importe") or 0),
             "numreferencia": (r.get("numreferencia") or ""),
+            "prov": (r.get("prov") or "").strip(),
+            "prov_nombre": (r.get("prov_nombre") or "").strip(),
             "diff_dias": int(r.get("diff_dias") or 0),
             "diff_monto": float(r.get("diff_monto") or 0),
         }

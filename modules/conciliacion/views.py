@@ -416,6 +416,8 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                     "concepto": m.bancsis.concepto,
                     "importe": m.bancsis.importe,
                     "numreferencia": m.bancsis.numreferencia,
+                    "prov": m.bancsis.prov,
+                    "prov_nombre": m.bancsis.prov_nombre,
                 },
                 "score": m.score,
                 "razon": m.razon,
@@ -444,6 +446,8 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "importe": b.importe,
                 "numreferencia": b.numreferencia,
                 "tipo_real": b.tipo_real,
+                "prov": b.prov,
+                "prov_nombre": b.prov_nombre,
             }
             for b in res.bancsis_only
         ],
