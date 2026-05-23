@@ -519,7 +519,7 @@ def _calc_kpis(data: dict) -> dict:
             bancsis_only_agrupados.append(b)
             continue  # agrupados NO se cuentan — son N cheques sumados
         bancsis_only_no_agrupados_en_rango.append(b)
-        signo = 1 if b.get("documento") in ("DE", "TR", "AC", "NC") else -1
+        signo = 1 if b.get("documento") in ("DE", "TR", "XX", "NC", "IN", "AC") else -1
         sum_bancsis_only_periodo += signo * float(b.get("importe") or 0)
 
     sum_bancsis_only = data.get("total_bancsis_only_signed") or 0
@@ -532,7 +532,7 @@ def _calc_kpis(data: dict) -> dict:
                 signo = 1 if m.get("real", {}).get("tipo") == "C" else -1
                 total += signo * float(m.get("real", {}).get("monto") or 0)
             else:
-                signo = 1 if m.get("bancsis", {}).get("documento") in ("DE", "TR", "AC", "NC") else -1
+                signo = 1 if m.get("bancsis", {}).get("documento") in ("DE", "TR", "XX", "NC", "IN", "AC") else -1
                 total += signo * float(m.get("bancsis", {}).get("importe") or 0)
         return total
 
@@ -719,23 +719,23 @@ def hub_kpi_debug():
     matches = data.get("matches") or []
     sum_match_real = sum((1 if m["real"]["tipo"] == "C" else -1) * float(m["real"]["monto"]) for m in matches)
     sum_match_bancsis = sum(
-        (1 if m["bancsis"]["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(m["bancsis"]["importe"])
+        (1 if m["bancsis"]["documento"] in ("DE", "TR", "XX", "NC", "IN", "AC") else -1) * float(m["bancsis"]["importe"])
         for m in matches
     )
 
     bancsis_only = data.get("bancsis_only") or []
     n_agrup = sum(1 for b in bancsis_only if b.get("es_agrupado"))
     sum_agrup = sum(
-        (1 if b["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(b["importe"])
+        (1 if b["documento"] in ("DE", "TR", "XX", "NC", "IN", "AC") else -1) * float(b["importe"])
         for b in bancsis_only if b.get("es_agrupado")
     )
     sum_no_agrup_total = sum(
-        (1 if b["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(b["importe"])
+        (1 if b["documento"] in ("DE", "TR", "XX", "NC", "IN", "AC") else -1) * float(b["importe"])
         for b in bancsis_only if not b.get("es_agrupado")
     )
     en_rango = [b for b in bancsis_only if data.get("extracto_desde") <= (b.get("fecha") or "") <= data.get("extracto_hasta") and not b.get("es_agrupado")]
     sum_en_rango = sum(
-        (1 if b["documento"] in ("DE", "TR", "AC", "NC") else -1) * float(b["importe"])
+        (1 if b["documento"] in ("DE", "TR", "XX", "NC", "IN", "AC") else -1) * float(b["importe"])
         for b in en_rango
     )
 

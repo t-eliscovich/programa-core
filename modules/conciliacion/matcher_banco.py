@@ -30,11 +30,10 @@ from modules.conciliacion.parser_banco import MovBanco
 
 
 # Mapping tipo banco ↔ documento BANCSIS.
-# Coincide con bank_helpers.DOCS_ENTRADA (la fuente canónica del programa).
-# Todo doc que NO esté en _DOCS_CREDITO se considera débito.
+# Créditos coinciden con bank_helpers.DOCS_ENTRADA (canónico del programa).
+# Débitos: lista expandida + cualquier doc no-crédito se trata como débito.
 _DOCS_CREDITO = ("DE", "TR", "XX", "NC", "IN", "AC")  # entra plata
-# _DOCS_DEBITO sigue para tipos conocidos; el resto se infiere por exclusión.
-_DOCS_DEBITO_CONOCIDOS = ("CH", "ND", "DB", "GS", "PA")
+_DOCS_DEBITO = ("CH", "ND", "DB", "GS", "PA")          # sale plata (lista de los más comunes)
 _BANCO_PICHINCHA_NO = 10  # confirmado en /bancos/10 (2026-05-22)
 
 
@@ -347,10 +346,18 @@ def _firma_real(m: MovBanco) -> tuple:
 
 
 def _es_tipo_compatible(tipo_real: str, doc_bancsis: str) -> bool:
+    """Compatibilidad Tipo C/D del banco real ↔ doc BANCSIS.
+
+    Doc en _DOCS_CREDITO → crédito.
+    Doc en _DOCS_DEBITO + cualquier OTRO → débito (asunción canónica
+    de bank_helpers: 'cualquier otro RESTA').
+    """
+    doc = (doc_bancsis or "").upper().strip()
+    es_credito = doc in _DOCS_CREDITO
     if tipo_real == "C":
-        return doc_bancsis in _DOCS_CREDITO
+        return es_credito
     if tipo_real == "D":
-        return doc_bancsis in _DOCS_DEBITO
+        return not es_credito  # cualquier no-crédito es débito
     return False
 
 
@@ -558,18 +565,16 @@ def matchear_extracto_banco(
 
     res.matches_por_pasada = {"P1": cont_p1, "P2": cont_p2, "P3": cont_p3, "P4": cont_p4}
 
-    # ─── Excluir AGRUPADOS de bancsis_only ─────────────────────────────
-    # Tamara 2026-05-23: "los 25 cheques agrupados no se comparan, los
-    # cheques uno por uno ya están en el banco real". El mov agrupado
-    # del programa no debe aparecer en 'Solo en programa' — es un
-    # totalizador de N cheques, no un mov independiente.
-    res.bancsis_agrupados = [b for b in res.bancsis_only if b.es_agrupado]
-    res.bancsis_only = [b for b in res.bancsis_only if not b.es_agrupado]
+    # BANCSIS sin match — primero recolectamos todos.
+    bancsis_sin_match = [bk for bk in bancsis if bk.id_transaccion not in bancsis_usado]
 
-    # BANCSIS sin match.
-    for bk in bancsis:
-        if bk.id_transaccion not in bancsis_usado:
-            res.bancsis_only.append(bk)
+    # ─── Excluir AGRUPADOS (Tamara 2026-05-23) ─────────────────────────
+    # "Los 25 cheques agrupados no se comparan; los cheques uno por uno
+    # ya están en el banco real". El mov agrupado del programa NO debe
+    # aparecer en 'Solo en programa' — es un totalizador, no un mov
+    # independiente comparable 1-a-1.
+    res.bancsis_agrupados = [b for b in bancsis_sin_match if b.es_agrupado]
+    res.bancsis_only = [b for b in bancsis_sin_match if not b.es_agrupado]
 
     # ─── SUGERENCIAS INLINE — más laxas (Tamara 2026-05-23) ─────────────
     # Para cada real_only, listar bancsis_only candidatos con cualquier
