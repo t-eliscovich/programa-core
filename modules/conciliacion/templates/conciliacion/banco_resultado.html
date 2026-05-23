@@ -204,6 +204,7 @@
         </thead>
         <tbody>
           {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 %}
+          {% set _idx = 'sug-' ~ loop.index0 %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
               data-tipo="{{ r.tipo }}" data-grupo="{{ r.cat.grupo or 'OTRO' }}">
             <td class="px-2 py-2">
@@ -228,17 +229,47 @@
               <div class="truncate text-slate-500 text-[11px]" title="{{ r.concepto }}">{{ r.concepto }}</div>
             </td>
             <td class="px-2 py-2 text-right whitespace-nowrap">
-              <script type="application/json" id="sug2-{{ loop.index0 }}">{{ r.sugerencias|tojson }}</script>
               <button type="button"
-                      class="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold btn-sugerencias"
-                      data-sug-id="sug2-{{ loop.index0 }}"
-                      data-fecha="{{ r.fecha }}"
-                      data-concepto="{{ r.concepto|e }}"
-                      data-documento="{{ r.documento|e }}"
-                      data-monto="{{ r.monto }}"
-                      data-tipo="{{ r.tipo }}"
-                      data-codigo="{{ r.codigo|e }}"
-                      data-oficina="{{ r.oficina|e }}">💡 {{ r.sugerencias|length }} cruces</button>
+                      class="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold btn-toggle-sug"
+                      data-target="{{ _idx }}">💡 {{ r.sugerencias|length }} cruces ▾</button>
+            </td>
+          </tr>
+          <tr id="{{ _idx }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-900/10">
+            <td colspan="5" class="px-2 py-2">
+              <div class="text-[11px] text-slate-500 mb-1.5 ml-2">Elegí el mov del programa que corresponde:</div>
+              <table class="w-full text-xs">
+                <tbody>
+                  {% for c in r.sugerencias %}
+                  <tr class="border-t border-amber-200/50 dark:border-amber-800/30">
+                    <td class="px-2 py-1.5 tabular-nums text-slate-600 whitespace-nowrap w-24">{{ c.fecha }}</td>
+                    <td class="px-2 py-1.5 text-right tabular-nums whitespace-nowrap w-24">$ {{ '{:,.2f}'.format(c.importe) }}</td>
+                    <td class="px-2 py-1.5 font-mono text-slate-500 w-12">{{ c.documento or '' }}</td>
+                    <td class="px-2 py-1.5">
+                      {% if c.prov_nombre %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ c.prov_nombre }}</span>
+                      {% elif c.prov %}<span class="text-slate-500 font-mono">{{ c.prov }}</span>
+                      {% else %}<span class="text-slate-300">—</span>{% endif %}
+                      {% if c.concepto %}<span class="text-slate-400 text-[10px] ml-2">{{ c.concepto[:40] }}</span>{% endif %}
+                    </td>
+                    <td class="px-2 py-1.5 text-xs text-slate-400 whitespace-nowrap w-12">{{ c.diff_dias }}d</td>
+                    <td class="px-2 py-1.5 text-right whitespace-nowrap w-24">
+                      <form method="POST" action="{{ url_for('conciliacion.hub_match_manual') }}" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="no_banco" value="{{ no_banco }}">
+                        <input type="hidden" name="id_transaccion" value="{{ c.id_transaccion }}">
+                        <input type="hidden" name="real_fecha" value="{{ r.fecha }}">
+                        <input type="hidden" name="real_concepto" value="{{ r.concepto }}">
+                        <input type="hidden" name="real_documento" value="{{ r.documento }}">
+                        <input type="hidden" name="real_monto" value="{{ r.monto }}">
+                        <input type="hidden" name="real_tipo" value="{{ r.tipo }}">
+                        <input type="hidden" name="real_codigo" value="{{ r.codigo }}">
+                        <input type="hidden" name="real_oficina" value="{{ r.oficina }}">
+                        <button class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium">Vincular</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
             </td>
           </tr>
           {% endif %}{% endfor %}
@@ -751,6 +782,18 @@
       const d = {...b.dataset};
       delete d.sugId;
       abrirModalConSugerencias(d, sugerencias);
+    });
+  });
+
+  // Toggle inline sugerencias (dropdown debajo de la fila — NO modal)
+  document.querySelectorAll('.btn-toggle-sug').forEach(b => {
+    b.addEventListener('click', () => {
+      const tr = document.getElementById(b.dataset.target);
+      if (!tr) return;
+      const oculto = tr.classList.contains('hidden');
+      tr.classList.toggle('hidden');
+      // Cambiar ▾ / ▴ en el botón
+      b.innerHTML = b.innerHTML.replace(oculto ? '▾' : '▴', oculto ? '▴' : '▾');
     });
   });
   mmClose.addEventListener('click', () => modal.classList.add('hidden'));
