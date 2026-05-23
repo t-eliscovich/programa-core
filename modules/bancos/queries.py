@@ -134,13 +134,22 @@ def movimientos(
             md.usuario             AS mov_usuario,
             md.concepto            AS mov_concepto,
             md.id_original         AS mov_id_original,
-            md.id_reverso          AS mov_id_reverso
+            md.id_reverso          AS mov_id_reverso,
+            bcm.id                 AS conciliacion_id,
+            bcm.creado_en          AS conciliado_en,
+            bcm.usuario            AS conciliado_por,
+            bcm.real_fecha         AS conciliado_real_fecha,
+            bcm.real_documento     AS conciliado_real_doc,
+            bcm.estado             AS conciliado_estado
         FROM scintela.transacciones_bancarias t
         LEFT JOIN scintela.mov_doble md
                ON (md.origen_table  = 'transacciones_bancarias'
                    AND md.origen_id  = t.id_transaccion)
                OR (md.destino_table = 'transacciones_bancarias'
                    AND md.destino_id = t.id_transaccion)
+        LEFT JOIN scintela.banco_conciliacion_match bcm
+               ON bcm.id_transaccion = t.id_transaccion
+              AND bcm.deshecho_en IS NULL
         WHERE t.no_banco = %(no_banco)s
           AND (%(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
