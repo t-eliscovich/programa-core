@@ -425,7 +425,11 @@ Todos en `historial.views._REVERSO_DISPATCH`. Botón "↺ reversar" en cada fila
 
 ## Conciliación bancaria
 
-`/conciliacion/` (link "Conciliar con banco" en sidebar). Sube CSV del banco real → cruza con cheques+depósitos → muestra sospechosos. POST "confirmar rebote" llama a `cheques.reversar` con motivo editable.
+Tres flows conviven bajo `/conciliacion/`:
+
+1. **`/conciliacion/banco` (o `/hub`) — PRINCIPAL desde 2026-05-22.** Subís el xlsx del extracto del banco (Pichincha, `no_banco=10` hardcoded por ahora). El matcher bidireccional `matchear_extracto_banco` cruza contra `scintela.transacciones_bancarias` (BANCSIS) y devuelve 3 grupos: matches, solo-en-real, solo-en-bancsis. Persistencia en `scintela.banco_conciliacion_match` (dedupe por firma REAL + `id_transaccion` UNIQUE). Plan de cierre y backlog ordenado: [`docs/PLAN_CONCILIACION_BANCO_2026_05_23.md`](../../docs/PLAN_CONCILIACION_BANCO_2026_05_23.md). Mapeo Tipo↔doc: C ↔ (DE,TR,AC,NC), D ↔ (CH,ND,DB). **Para crear una tx BANCSIS desde un real_only** usar `bank_helpers.insert_movimiento_bancario` dentro de `db.tx()`.
+2. **`/conciliacion/depositos`** (xlsx de depósitos pendientes del sistema). Útil cuando solo querés ver los depósitos cargados que el banco no confirmó, sin todo el extracto. Persistencia en `scintela.conciliacion_manual_log` (append-only).
+3. **`/conciliacion/`** (CSV legacy del banco). Cazar rebotes — el POST "confirmar rebote" llama a `cheques.reversar` con motivo editable + dispara STOP al cliente si corresponde. **No replicado por el flow #1** — mantener vivo para ese side-effect.
 
 ## Backfill / limpieza si los números no cuadran
 

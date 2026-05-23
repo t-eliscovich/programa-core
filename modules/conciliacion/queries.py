@@ -103,6 +103,89 @@ def marcar_deposito(
     return {"id": int(row["id"]), "creado_en": row["creado_en"]} if row else {}
 
 
+# ─── Selector de banco (Fase C — 2026-05-23) ─────────────────────────────
+
+
+def bancos_disponibles() -> list[dict]:
+    """Lista de bancos para el dropdown del upload.
+
+    Ordenamos Pichincha primero (default), después por no_banco ASC.
+    Si la columna `nombre` no existe en `scintela.banco` (legacy schemas),
+    devolvemos solo el id como nombre.
+    """
+    rows = db.fetch_all(
+        """
+        SELECT no_banco,
+               COALESCE(nombre, 'Banco ' || no_banco::text) AS nombre
+          FROM scintela.banco
+         ORDER BY (no_banco = 10) DESC, no_banco ASC
+        """
+    ) or []
+    return [{"no_banco": int(r["no_banco"]), "nombre": r["nombre"]} for r in rows]
+
+
+def nombre_banco(no_banco: int) -> str | None:
+    """Nombre legible de un banco, o None si no existe."""
+    row = db.fetch_one(
+        "SELECT COALESCE(nombre, 'Banco ' || no_banco::text) AS nombre "
+        "FROM scintela.banco WHERE no_banco = %s",
+        (int(no_banco),),
+    )
+    return row["nombre"] if row else None
+
+
+# ─── Últimos extractos procesados (Fase E — 2026-05-23) ───────────────────
+
+
+def ultimos_extractos(no_banco: int | None = None, limit: int = 5) -> list[dict]:
+    """Resumen de las últimas conciliaciones realizadas.
+
+    Agrupa filas de banco_conciliacion_match por (no_banco, día) — proxy
+    razonable para "extracto subido el dd/mm".
+    """
+    if no_banco is not None:
+        rows = db.fetch_all(
+            """
+            SELECT no_banco,
+                   DATE(creado_en) AS dia_proceso,
+                   COUNT(*) AS n_movs,
+                   MIN(real_fecha) AS desde_fecha,
+                   MAX(real_fecha) AS hasta_fecha
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s
+             GROUP BY no_banco, DATE(creado_en)
+             ORDER BY DATE(creado_en) DESC
+             LIMIT %s
+            """,
+            (int(no_banco), int(limit)),
+        ) or []
+    else:
+        rows = db.fetch_all(
+            """
+            SELECT no_banco,
+                   DATE(creado_en) AS dia_proceso,
+                   COUNT(*) AS n_movs,
+                   MIN(real_fecha) AS desde_fecha,
+                   MAX(real_fecha) AS hasta_fecha
+              FROM scintela.banco_conciliacion_match
+             GROUP BY no_banco, DATE(creado_en)
+             ORDER BY DATE(creado_en) DESC
+             LIMIT %s
+            """,
+            (int(limit),),
+        ) or []
+    return [
+        {
+            "no_banco": int(r["no_banco"]),
+            "dia_proceso": r["dia_proceso"],
+            "n_movs": int(r["n_movs"]),
+            "desde_fecha": r["desde_fecha"],
+            "hasta_fecha": r["hasta_fecha"],
+        }
+        for r in rows
+    ]
+
+
 def estado_actual_depositos(firmas: list[str]) -> dict[str, dict]:
     """Devuelve el último estado de cada firma_dep solicitada.
 

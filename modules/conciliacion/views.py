@@ -21,6 +21,12 @@ from modules.conciliacion.matcher_banco import (
     matchear_extracto_banco,
     confirmar_match,
     confirmar_bancsis_only,
+    confirmar_real_only,
+    crear_transaccion_desde_real,
+    match_manual,
+    romper_match,
+    historial as historial_matches,
+    candidatos_match_manual,
 )
 
 conciliacion_bp = Blueprint(
@@ -486,9 +492,22 @@ def hub():
           "Aceptar bancsis-only" viajan inline en hidden form fields.
     """
     if request.method == "GET":
-        return render_template("conciliacion/banco_upload.html")
+        bancos = queries.bancos_disponibles()
+        ultimos = queries.ultimos_extractos(limit=5)
+        return render_template(
+            "conciliacion/banco_upload.html",
+            bancos=bancos,
+            no_banco_default=_BANCO_PICHINCHA,
+            ultimos=ultimos,
+        )
 
     # ── POST ────────────────────────────────────────────────────────────
+    # Banco elegido (default: Pichincha).
+    try:
+        no_banco = int(request.form.get("no_banco") or _BANCO_PICHINCHA)
+    except (TypeError, ValueError):
+        no_banco = _BANCO_PICHINCHA
+
     f = request.files.get("archivo")
     if not f or not f.filename:
         flash("Subí un archivo .xlsx del banco.", "warn")
@@ -509,36 +528,35 @@ def hub():
         return redirect(url_for("conciliacion.hub"))
 
     try:
-        resultado = matchear_extracto_banco(movs_real, no_banco=_BANCO_PICHINCHA)
+        resultado = matchear_extracto_banco(movs_real, no_banco=no_banco)
     except Exception as e:
-        # TMT 2026-05-22 — debug: si ?debug=1 devolver el traceback completo
-        # para diagnóstico rápido sin tener que ir al log del server.
-        if request.args.get("debug") == "1":
-            import traceback
-            return {
-                "error": f"{type(e).__name__}: {e}",
-                "traceback": traceback.format_exc(),
-                "movs_real_count": len(movs_real),
-                "sample_real": [
-                    {"fecha": str(m.fecha), "monto": float(m.monto), "tipo": m.tipo,
-                     "documento": m.documento}
-                    for m in movs_real[:5]
-                ],
-            }, 500
-        flash_exc("Falló el matching contra BANCSIS.", e)
+        # TMT 2026-05-23 — sin JSON inline en prod. Loguear y redirigir.
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "matchear_extracto_banco falló (no_banco=%s, n_movs=%s)",
+            no_banco, len(movs_real),
+        )
+        flash_exc("No se pudo conciliar contra el banco", e)
         return redirect(url_for("conciliacion.hub"))
 
-    data = _serialize_resultado_banco(resultado, _BANCO_PICHINCHA)
+    data = _serialize_resultado_banco(resultado, no_banco)
     kpis = _calc_kpis(data)
+    banco_nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
 
     # JSON inline (para botón "Confirmar matches" sin guardar en session).
     import json as _json
     matches_json = _json.dumps(data.get("matches") or [], separators=(",", ":"))
+    real_only_json = _json.dumps(data.get("real_only") or [], separators=(",", ":"))
+    bancsis_only_json = _json.dumps(data.get("bancsis_only") or [], separators=(",", ":"))
 
     return render_template(
         "conciliacion/banco_resultado.html",
         data=data,
         matches_json=matches_json,
+        real_only_json=real_only_json,
+        bancsis_only_json=bancsis_only_json,
+        no_banco=no_banco,
+        banco_nombre=banco_nombre,
         **kpis,
     )
 
@@ -666,6 +684,229 @@ def hub_aceptar_bancsis_only():
     if idtx <= 0:
         flash("id_transaccion inválido.", "error")
         return redirect(url_for("conciliacion.hub"))
-    confirmar_bancsis_only(_BANCO_PICHINCHA, idtx, usuario=(request.remote_user or "conciliacion"))
-    flash(f"BANCSIS #{idtx} aceptado.", "ok")
+    no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
+    confirmar_bancsis_only(no_banco, idtx, usuario=(request.remote_user or "conciliacion"))
+    nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+    flash(f"Movimiento #{idtx} de {nombre} Programa aceptado como diferencia legítima.", "ok")
     return redirect(url_for("conciliacion.hub"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Fase B + D (2026-05-23) — endpoints adicionales
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _form_no_banco(req) -> int | None:
+    """Lee `no_banco` del form (form-encoded). None si no vino."""
+    try:
+        v = req.form.get("no_banco")
+        return int(v) if v else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _reconstruir_real(form) -> "MovBanco":
+    """Reconstruye un MovBanco desde fields ocultos del template."""
+    from datetime import date as _date
+    from decimal import Decimal as _Dec
+    from modules.conciliacion.parser_banco import MovBanco as _MB
+    fecha_s = (form.get("real_fecha") or "").strip()
+    return _MB(
+        fecha=_date.fromisoformat(fecha_s) if fecha_s else None,
+        concepto=(form.get("real_concepto") or "").strip(),
+        documento=(form.get("real_documento") or "").strip(),
+        monto=_Dec(form.get("real_monto") or "0"),
+        saldo=_Dec("0"),
+        codigo=(form.get("real_codigo") or "").strip(),
+        tipo=(form.get("real_tipo") or "").strip().upper(),
+        oficina=(form.get("real_oficina") or "").strip(),
+    )
+
+
+@conciliacion_bp.route("/banco/crear-bancsis", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_crear_bancsis():
+    """Crea una tx en BANCSIS a partir de un real_only y la concilia.
+
+    Form: real_fecha, real_concepto, real_documento, real_monto, real_tipo,
+          real_codigo, real_oficina, no_banco, [documento_override].
+    """
+    no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
+    try:
+        real = _reconstruir_real(request.form)
+    except Exception as e:
+        flash_exc("Datos del movimiento inválidos", e)
+        return redirect(url_for("conciliacion.hub"))
+    if not real.fecha or float(real.monto) == 0 or real.tipo not in ("C", "D"):
+        flash("Faltan datos del movimiento (fecha/monto/tipo).", "warn")
+        return redirect(url_for("conciliacion.hub"))
+    doc_override = (request.form.get("documento_override") or "").strip().upper() or None
+    try:
+        res = crear_transaccion_desde_real(
+            no_banco=no_banco,
+            real=real,
+            usuario=(request.remote_user or "conciliacion"),
+            documento=doc_override,
+        )
+    except Exception as e:
+        nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+        flash_exc(f"No se pudo crear el movimiento en {nombre}", e)
+        return redirect(url_for("conciliacion.hub"))
+    nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+    flash(
+        f"Creado en {nombre} Programa: #{res['id_transaccion']} ({res['documento']}, "
+        f"saldo nuevo $ {res['saldo_nuevo']:,.2f}).",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco/aceptar-real-only", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_aceptar_real_only():
+    """Marca un real_only como diferencia legítima (sin crear tx BANCSIS)."""
+    no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
+    try:
+        real = _reconstruir_real(request.form)
+    except Exception as e:
+        flash_exc("Datos del movimiento inválidos", e)
+        return redirect(url_for("conciliacion.hub"))
+    if not real.fecha or real.tipo not in ("C", "D"):
+        flash("Faltan datos del movimiento (fecha/tipo).", "warn")
+        return redirect(url_for("conciliacion.hub"))
+    confirmar_real_only(
+        no_banco=no_banco,
+        real=real,
+        usuario=(request.remote_user or "conciliacion"),
+    )
+    nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+    flash(f"Movimiento del extracto de {nombre} aceptado como diferencia legítima.", "ok")
+    return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco/match-manual", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_match_manual():
+    """Fuerza match REAL ↔ BANCSIS (modal de match manual)."""
+    no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
+    try:
+        idtx = int(request.form.get("id_transaccion") or 0)
+    except (TypeError, ValueError):
+        idtx = 0
+    if idtx <= 0:
+        flash("Falta el id del movimiento de Programa a vincular.", "error")
+        return redirect(url_for("conciliacion.hub"))
+    try:
+        real = _reconstruir_real(request.form)
+    except Exception as e:
+        flash_exc("Datos del movimiento inválidos", e)
+        return redirect(url_for("conciliacion.hub"))
+    n = match_manual(
+        no_banco=no_banco,
+        real=real,
+        id_transaccion=idtx,
+        usuario=(request.remote_user or "conciliacion"),
+    )
+    nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+    if n:
+        flash(f"Match manual creado contra {nombre} Programa #{idtx}.", "ok")
+    else:
+        flash(f"No pude vincular contra {nombre} Programa #{idtx} (¿ya estaba conciliado?).", "warn")
+    return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco/candidatos-match", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_candidatos_match():
+    """Devuelve JSON con candidatos BANCSIS para el modal de match manual.
+
+    Query: no_banco, fecha, monto, tipo (C/D).
+    """
+    try:
+        no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+        fecha_s = (request.args.get("fecha") or "").strip()
+        monto = float(request.args.get("monto") or 0)
+        tipo = (request.args.get("tipo") or "").strip().upper()
+        from datetime import date as _date
+        fecha = _date.fromisoformat(fecha_s) if fecha_s else None
+    except Exception as e:
+        return {"error": str(e), "candidatos": []}, 400
+    if not fecha or monto == 0 or tipo not in ("C", "D"):
+        return {"error": "fecha/monto/tipo requeridos", "candidatos": []}, 400
+    candidatos = candidatos_match_manual(
+        no_banco=no_banco,
+        fecha_real=fecha,
+        monto_real=monto,
+        tipo_real=tipo,
+    )
+    return {"candidatos": candidatos}
+
+
+@conciliacion_bp.route("/banco/historial", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_historial():
+    """Lista de conciliaciones realizadas, con botón para deshacer."""
+    from datetime import date as _date
+    bancos = queries.bancos_disponibles()
+    no_banco_arg = request.args.get("no_banco")
+    no_banco = None
+    if no_banco_arg:
+        try:
+            no_banco = int(no_banco_arg)
+        except (TypeError, ValueError):
+            no_banco = None
+    desde = request.args.get("desde")
+    hasta = request.args.get("hasta")
+    try:
+        desde_d = _date.fromisoformat(desde) if desde else None
+    except ValueError:
+        desde_d = None
+    try:
+        hasta_d = _date.fromisoformat(hasta) if hasta else None
+    except ValueError:
+        hasta_d = None
+    incluir_deshechos = request.args.get("deshechos") == "1"
+    rows = historial_matches(
+        no_banco=no_banco,
+        desde=desde_d,
+        hasta=hasta_d,
+        incluir_deshechos=incluir_deshechos,
+        limit=300,
+    )
+    return render_template(
+        "conciliacion/banco_historial.html",
+        rows=rows,
+        bancos=bancos,
+        no_banco=no_banco,
+        desde=desde or "",
+        hasta=hasta or "",
+        incluir_deshechos=incluir_deshechos,
+    )
+
+
+@conciliacion_bp.route("/banco/deshacer", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_deshacer():
+    """Soft-undo de un match. La fila queda con deshecho_en + deshecho_por."""
+    try:
+        match_id = int(request.form.get("match_id") or 0)
+    except (TypeError, ValueError):
+        match_id = 0
+    if match_id <= 0:
+        flash("match_id inválido.", "error")
+        return redirect(url_for("conciliacion.banco_historial"))
+    n = romper_match(
+        match_id=match_id,
+        usuario=(request.remote_user or "conciliacion"),
+    )
+    if n:
+        flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")
+    else:
+        flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
+    return redirect(url_for("conciliacion.banco_historial"))

@@ -1,22 +1,29 @@
 {% extends "base.html" %}
-{% block titulo %}Banco Pichincha{% endblock %}
+{% block titulo %}Conciliación {{ banco_nombre or 'banco' }}{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto py-4 px-4">
+<div class="max-w-7xl mx-auto py-4 px-4" id="conciliacion-banco-app">
 
   <div class="flex items-baseline justify-between mb-3">
-    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Banco Pichincha</h1>
-    <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro</a>
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">
+      Conciliación · {{ banco_nombre or ('Banco ' ~ no_banco) }}
+    </h1>
+    <div class="text-xs flex gap-3 items-baseline">
+      <a href="{{ url_for('conciliacion.banco_historial', no_banco=no_banco) }}"
+         class="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Historial · Deshacer</a>
+      <a href="{{ url_for('conciliacion.hub') }}"
+         class="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Subir otro</a>
+    </div>
   </div>
 
   {# === Saldos === #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500">Banco Pichincha Real{% if data.saldo_real_fecha %} · {{ data.saldo_real_fecha }}{% endif %}</div>
+      <div class="text-xs text-slate-500">{{ banco_nombre }} Real{% if data.saldo_real_fecha %} · {{ data.saldo_real_fecha }}{% endif %}</div>
       <div class="text-lg font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_real) }}</div>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500">Banco Pichincha Programa{% if data.saldo_bancsis_fecha %} · {{ data.saldo_bancsis_fecha }}{% endif %}</div>
+      <div class="text-xs text-slate-500">{{ banco_nombre }} Programa{% if data.saldo_bancsis_fecha %} · {{ data.saldo_bancsis_fecha }}{% endif %}</div>
       <div class="text-lg font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_bancsis) }}</div>
     </div>
     <div class="rounded p-3 {% if cuadra %}bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300{% else %}bg-rose-50 dark:bg-rose-900/30 border border-rose-300{% endif %}">
@@ -27,35 +34,71 @@
     </div>
   </div>
 
-  {# === Matches === #}
-  <details class="mb-4" {% if n_match > 0 %}open{% endif %}>
-    <summary class="cursor-pointer text-sm font-medium text-emerald-700 dark:text-emerald-400">
-      Coinciden · {{ n_match }}
-    </summary>
+  {# Resumen "por qué no cuadran" #}
+  {% if not cuadra %}
+  <div class="mb-4 text-xs text-slate-600 dark:text-slate-400 px-3 py-2 bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded">
+    Para que cuadre falta resolver:
+    <strong>{{ n_real_only }}</strong> mov. solo en {{ banco_nombre }} Real
+    (suma firmada $ {{ '{:,.2f}'.format(sum_real_only) }}),
+    <strong>{{ n_bancsis_only }}</strong> mov. solo en {{ banco_nombre }} Programa
+    (suma firmada $ {{ '{:,.2f}'.format(sum_bancsis_only) }}).
+  </div>
+  {% endif %}
+
+  {# === Tabs === #}
+  <div class="border-b border-slate-200 dark:border-slate-800 mb-3 flex gap-1 text-sm" role="tablist">
+    <button type="button" class="tab-btn px-3 py-1.5 border-b-2 border-sky-500 text-sky-700 dark:text-sky-400 font-medium"
+            data-tab="matches">Coinciden · <span class="font-mono">{{ n_match }}</span></button>
+    <button type="button" class="tab-btn px-3 py-1.5 border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900"
+            data-tab="real">Solo en {{ banco_nombre }} Real · <span class="font-mono">{{ n_real_only }}</span></button>
+    <button type="button" class="tab-btn px-3 py-1.5 border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900"
+            data-tab="bancsis">Solo en {{ banco_nombre }} Programa · <span class="font-mono">{{ n_bancsis_only }}</span></button>
+  </div>
+
+  {# Filtro global #}
+  <div class="mb-3 flex items-center gap-2">
+    <input type="text" id="filtro-texto" placeholder="Filtrar (concepto, documento, ref)…"
+           class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700
+                  bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 w-72">
+    <select id="filtro-tipo" class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+      <option value="">Tipo: todos</option>
+      <option value="C">C (entran)</option>
+      <option value="D">D (salen)</option>
+    </select>
+    <span class="ml-auto text-xs text-slate-500" id="filtro-info"></span>
+  </div>
+
+  {# === Tab: matches === #}
+  <div data-tabpane="matches" class="tabpane">
     {% if n_match > 0 %}
-    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mt-2 mb-2">
+    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mb-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="matches_json" value="{{ matches_json|e }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco }}">
       <button class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
         Confirmar los {{ n_match }}
       </button>
+      <span class="ml-2 text-xs text-slate-500">Los confirmados no vuelven a aparecer en próximos extractos.</span>
     </form>
     <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-      <table class="w-full text-xs">
+      <table class="w-full text-xs" id="tbl-matches">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5">Fecha</th>
-            <th class="px-2 py-1.5">Doc real</th>
+            <th class="px-2 py-1.5">Doc banco</th>
             <th class="px-2 py-1.5 text-right">Monto</th>
             <th class="px-2 py-1.5">Tipo</th>
-            <th class="px-2 py-1.5">Concepto real</th>
+            <th class="px-2 py-1.5">Concepto banco</th>
             <th class="px-2 py-1.5 text-right">id Programa</th>
-            <th class="px-2 py-1.5">Doc Prog.</th>
+            <th class="px-2 py-1.5">Doc Programa</th>
+            <th class="px-2 py-1.5"></th>
           </tr>
         </thead>
         <tbody>
           {% for m in data.matches %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/50 dark:bg-emerald-900/10{% endif %}">
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/50 dark:bg-emerald-900/10{% endif %} fila"
+              data-tipo="{{ m.real.tipo }}"
+              data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.documento ~ ' ' ~ m.bancsis.id_transaccion)|lower }}">
             <td class="px-2 py-1.5 font-mono">{{ m.real.fecha }}</td>
             <td class="px-2 py-1.5 font-mono">{{ m.real.documento }}</td>
             <td class="px-2 py-1.5 text-right font-mono">{{ '{:,.2f}'.format(m.real.monto) }}</td>
@@ -63,22 +106,30 @@
             <td class="px-2 py-1.5 truncate max-w-xs" title="{{ m.real.concepto }}">{{ m.real.concepto[:50] }}</td>
             <td class="px-2 py-1.5 text-right font-mono">{{ m.bancsis.id_transaccion }}</td>
             <td class="px-2 py-1.5 font-mono">{{ m.bancsis.documento }}</td>
+            <td class="px-2 py-1.5 text-xs text-slate-400" title="{{ m.razon }}">
+              {% if m.es_exacto %}exacto{% else %}probable{% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% else %}
+    <div class="text-sm text-slate-500 italic">Sin matches aún.</div>
     {% endif %}
-  </details>
+  </div>
 
-  {# === Solo en Real === #}
-  <details class="mb-4" {% if n_real_only > 0 %}open{% endif %}>
-    <summary class="cursor-pointer text-sm font-medium text-amber-700 dark:text-amber-400">
-      Solo en Banco Pichincha Real · {{ n_real_only }}
-    </summary>
+  {# === Tab: solo en banco (real_only) === #}
+  <div data-tabpane="real" class="tabpane hidden">
     {% if n_real_only > 0 %}
-    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mt-2">
-      <table class="w-full text-xs">
+    <div class="text-xs text-slate-500 mb-2">
+      Movimientos del extracto que NO encontré en {{ banco_nombre }} Programa. Para cada uno:
+      <strong>Crear en {{ banco_nombre }}</strong> (inserta el movimiento),
+      <strong>Aceptar diferencia</strong> (marca como diferencia legítima sin crear nada),
+      o <strong>Match manual</strong> (vinculá con un mov "Solo en {{ banco_nombre }} Programa" que el matcher no detectó).
+    </div>
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-xs" id="tbl-real">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5">Fecha</th>
@@ -87,11 +138,14 @@
             <th class="px-2 py-1.5">Tipo</th>
             <th class="px-2 py-1.5">Concepto</th>
             <th class="px-2 py-1.5">Oficina</th>
+            <th class="px-2 py-1.5 text-right">Acciones</th>
           </tr>
         </thead>
         <tbody>
           {% for r in data.real_only %}
-          <tr class="border-t border-slate-100 dark:border-slate-800">
+          <tr class="border-t border-slate-100 dark:border-slate-800 fila"
+              data-tipo="{{ r.tipo }}"
+              data-search="{{ (r.concepto ~ ' ' ~ r.documento ~ ' ' ~ r.oficina)|lower }}">
             <td class="px-2 py-1.5 font-mono">{{ r.fecha }}</td>
             <td class="px-2 py-1.5 font-mono">{{ r.documento }}</td>
             <td class="px-2 py-1.5 text-right font-mono {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
@@ -100,22 +154,67 @@
             <td class="px-2 py-1.5 font-mono">{{ r.tipo }}</td>
             <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.concepto }}">{{ r.concepto[:60] }}</td>
             <td class="px-2 py-1.5 text-slate-500">{{ r.oficina }}</td>
+            <td class="px-2 py-1.5 text-right whitespace-nowrap">
+              {# Crear en sistema #}
+              <form method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="no_banco" value="{{ no_banco }}">
+                <input type="hidden" name="real_fecha" value="{{ r.fecha }}">
+                <input type="hidden" name="real_concepto" value="{{ r.concepto }}">
+                <input type="hidden" name="real_documento" value="{{ r.documento }}">
+                <input type="hidden" name="real_monto" value="{{ r.monto }}">
+                <input type="hidden" name="real_tipo" value="{{ r.tipo }}">
+                <input type="hidden" name="real_codigo" value="{{ r.codigo }}">
+                <input type="hidden" name="real_oficina" value="{{ r.oficina }}">
+                <button class="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs"
+                        title="Crear movimiento en {{ banco_nombre }} a partir del extracto">+ Crear en {{ banco_nombre }}</button>
+              </form>
+              {# Match manual #}
+              <button type="button"
+                      class="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 btn-match-manual"
+                      data-fecha="{{ r.fecha }}"
+                      data-concepto="{{ r.concepto|e }}"
+                      data-documento="{{ r.documento|e }}"
+                      data-monto="{{ r.monto }}"
+                      data-tipo="{{ r.tipo }}"
+                      data-codigo="{{ r.codigo|e }}"
+                      data-oficina="{{ r.oficina|e }}"
+                      title="Buscar manualmente un mov de {{ banco_nombre }} Programa para vincular">🔗 Manual</button>
+              {# Aceptar diferencia #}
+              <form method="POST" action="{{ url_for('conciliacion.hub_aceptar_real_only') }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="no_banco" value="{{ no_banco }}">
+                <input type="hidden" name="real_fecha" value="{{ r.fecha }}">
+                <input type="hidden" name="real_concepto" value="{{ r.concepto }}">
+                <input type="hidden" name="real_documento" value="{{ r.documento }}">
+                <input type="hidden" name="real_monto" value="{{ r.monto }}">
+                <input type="hidden" name="real_tipo" value="{{ r.tipo }}">
+                <input type="hidden" name="real_codigo" value="{{ r.codigo }}">
+                <input type="hidden" name="real_oficina" value="{{ r.oficina }}">
+                <button class="px-2 py-0.5 rounded text-xs text-slate-500 hover:text-slate-700"
+                        title="Aceptar como diferencia legítima sin crear nada">Aceptar diferencia</button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% else %}
+    <div class="text-sm text-slate-500 italic">Todo lo del extracto tiene contraparte en {{ banco_nombre }} Programa. 🎉</div>
     {% endif %}
-  </details>
+  </div>
 
-  {# === Solo en Programa === #}
-  <details class="mb-4" {% if n_bancsis_only > 0 %}open{% endif %}>
-    <summary class="cursor-pointer text-sm font-medium text-rose-700 dark:text-rose-400">
-      Solo en Banco Pichincha Programa · {{ n_bancsis_only }}
-    </summary>
+  {# === Tab: solo en {{ banco_nombre }} Programa === #}
+  <div data-tabpane="bancsis" class="tabpane hidden">
     {% if n_bancsis_only > 0 %}
-    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mt-2">
-      <table class="w-full text-xs">
+    <div class="text-xs text-slate-500 mb-2">
+      Movimientos en {{ banco_nombre }} Programa que NO aparecen en el extracto. Aceptá como diferencia
+      legítima los que el banco aún no procesó, o usá <strong>match manual</strong>
+      para vincular con un "Solo en {{ banco_nombre }} Real".
+    </div>
+    <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-xs" id="tbl-bancsis">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5">Fecha</th>
@@ -125,12 +224,14 @@
             <th class="px-2 py-1.5">Tipo</th>
             <th class="px-2 py-1.5">Concepto</th>
             <th class="px-2 py-1.5">Ref</th>
-            <th class="px-2 py-1.5"></th>
+            <th class="px-2 py-1.5 text-right">Acción</th>
           </tr>
         </thead>
         <tbody>
           {% for b in data.bancsis_only %}
-          <tr class="border-t border-slate-100 dark:border-slate-800">
+          <tr class="border-t border-slate-100 dark:border-slate-800 fila"
+              data-tipo="{{ b.tipo_real }}"
+              data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ b.id_transaccion)|lower }}">
             <td class="px-2 py-1.5 font-mono">{{ b.fecha }}</td>
             <td class="px-2 py-1.5 text-right font-mono">{{ b.id_transaccion }}</td>
             <td class="px-2 py-1.5 font-mono">{{ b.documento }}</td>
@@ -140,11 +241,13 @@
             <td class="px-2 py-1.5 font-mono">{{ b.tipo_real }}</td>
             <td class="px-2 py-1.5 truncate max-w-xs" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
             <td class="px-2 py-1.5 font-mono text-slate-500">{{ b.numreferencia }}</td>
-            <td class="px-2 py-1.5">
+            <td class="px-2 py-1.5 text-right whitespace-nowrap">
               <form method="POST" action="{{ url_for('conciliacion.hub_aceptar_bancsis_only') }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="no_banco" value="{{ no_banco }}">
                 <input type="hidden" name="id_transaccion" value="{{ b.id_transaccion }}">
-                <button class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">✓</button>
+                <button class="px-2 py-0.5 rounded bg-slate-600 hover:bg-slate-700 text-white text-xs"
+                        title="Aceptar como diferencia legítima">Aceptar diferencia</button>
               </form>
             </td>
           </tr>
@@ -152,8 +255,204 @@
         </tbody>
       </table>
     </div>
+    {% else %}
+    <div class="text-sm text-slate-500 italic">Todo lo cargado en {{ banco_nombre }} Programa apareció en el extracto. ✅</div>
     {% endif %}
-  </details>
+  </div>
+
+  {# Descargar reporte CSV — embed en cliente #}
+  <div class="mt-4 text-xs text-slate-500">
+    <button type="button" id="btn-download-csv" class="hover:underline">↓ Descargar reporte (CSV)</button>
+  </div>
 
 </div>
+
+{# ===== Modal: Match manual ===== #}
+<div id="match-manual-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  <div class="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div class="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-start">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">Match manual</h3>
+        <p class="text-xs text-slate-500 mt-1" id="mm-real-summary"></p>
+      </div>
+      <button type="button" id="mm-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+    <div class="p-4 overflow-y-auto flex-1">
+      <p class="text-xs text-slate-500 mb-2">Candidatos en {{ banco_nombre }} Programa (±30 días, ±$50, mismo tipo):</p>
+      <div id="mm-loading" class="text-xs text-slate-400 italic hidden">Buscando candidatos…</div>
+      <div id="mm-empty" class="text-xs text-slate-400 italic hidden">Sin candidatos cercanos. Cerrá este modal y usá "+ Crear en {{ banco_nombre }}" para insertar el movimiento.</div>
+      <table class="w-full text-xs hidden" id="mm-tabla">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
+          <tr>
+            <th class="px-2 py-1.5">Fecha</th>
+            <th class="px-2 py-1.5">Doc.</th>
+            <th class="px-2 py-1.5 text-right">Importe</th>
+            <th class="px-2 py-1.5">Concepto</th>
+            <th class="px-2 py-1.5">Ref</th>
+            <th class="px-2 py-1.5">Δd / Δ$</th>
+            <th class="px-2 py-1.5"></th>
+          </tr>
+        </thead>
+        <tbody id="mm-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# Form oculto para enviar el match manual con CSRF + datos del REAL #}
+<form id="mm-form" method="POST" action="{{ url_for('conciliacion.hub_match_manual') }}" class="hidden">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="no_banco" value="{{ no_banco }}">
+  <input type="hidden" name="id_transaccion" id="mm-id_transaccion">
+  <input type="hidden" name="real_fecha" id="mm-real_fecha">
+  <input type="hidden" name="real_concepto" id="mm-real_concepto">
+  <input type="hidden" name="real_documento" id="mm-real_documento">
+  <input type="hidden" name="real_monto" id="mm-real_monto">
+  <input type="hidden" name="real_tipo" id="mm-real_tipo">
+  <input type="hidden" name="real_codigo" id="mm-real_codigo">
+  <input type="hidden" name="real_oficina" id="mm-real_oficina">
+</form>
+
+<script>
+(function() {
+  // ---- Tabs ----
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panes = document.querySelectorAll('.tabpane');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    const name = t.dataset.tab;
+    tabs.forEach(x => {
+      x.classList.remove('border-sky-500', 'text-sky-700', 'dark:text-sky-400', 'font-medium');
+      x.classList.add('border-transparent', 'text-slate-600', 'dark:text-slate-400');
+    });
+    t.classList.add('border-sky-500', 'text-sky-700', 'dark:text-sky-400', 'font-medium');
+    t.classList.remove('border-transparent');
+    panes.forEach(p => p.classList.toggle('hidden', p.dataset.tabpane !== name));
+    aplicarFiltros();
+  }));
+
+  // ---- Filtros (texto + tipo) ----
+  const inpTexto = document.getElementById('filtro-texto');
+  const selTipo = document.getElementById('filtro-tipo');
+  const info = document.getElementById('filtro-info');
+  function aplicarFiltros() {
+    const q = (inpTexto.value || '').toLowerCase().trim();
+    const tipo = selTipo.value || '';
+    let visibles = 0, total = 0;
+    const paneActivo = document.querySelector('.tabpane:not(.hidden)');
+    if (!paneActivo) return;
+    paneActivo.querySelectorAll('tr.fila').forEach(tr => {
+      total++;
+      const matchTexto = !q || (tr.dataset.search || '').includes(q);
+      const matchTipo = !tipo || (tr.dataset.tipo === tipo);
+      const visible = matchTexto && matchTipo;
+      tr.classList.toggle('hidden', !visible);
+      if (visible) visibles++;
+    });
+    info.textContent = (q || tipo) ? `${visibles} de ${total} filas` : '';
+  }
+  inpTexto.addEventListener('input', aplicarFiltros);
+  selTipo.addEventListener('change', aplicarFiltros);
+
+  // ---- Match manual modal ----
+  const modal = document.getElementById('match-manual-modal');
+  const mmClose = document.getElementById('mm-close');
+  const mmTabla = document.getElementById('mm-tabla');
+  const mmTbody = document.getElementById('mm-tbody');
+  const mmLoading = document.getElementById('mm-loading');
+  const mmEmpty = document.getElementById('mm-empty');
+  const mmSummary = document.getElementById('mm-real-summary');
+  const mmForm = document.getElementById('mm-form');
+
+  function setRealCampos(d) {
+    document.getElementById('mm-real_fecha').value = d.fecha || '';
+    document.getElementById('mm-real_concepto').value = d.concepto || '';
+    document.getElementById('mm-real_documento').value = d.documento || '';
+    document.getElementById('mm-real_monto').value = d.monto || '';
+    document.getElementById('mm-real_tipo').value = d.tipo || '';
+    document.getElementById('mm-real_codigo').value = d.codigo || '';
+    document.getElementById('mm-real_oficina').value = d.oficina || '';
+  }
+
+  function abrirModal(d) {
+    setRealCampos(d);
+    mmSummary.textContent = `Banco: ${d.fecha} · ${d.tipo} · $${Number(d.monto).toFixed(2)} · ${d.concepto || ''}`;
+    mmTabla.classList.add('hidden');
+    mmEmpty.classList.add('hidden');
+    mmLoading.classList.remove('hidden');
+    modal.classList.remove('hidden');
+
+    const params = new URLSearchParams({
+      no_banco: {{ no_banco }},
+      fecha: d.fecha,
+      monto: d.monto,
+      tipo: d.tipo,
+    });
+    fetch(`{{ url_for('conciliacion.hub_candidatos_match') }}?${params}`)
+      .then(r => r.json())
+      .then(data => {
+        mmLoading.classList.add('hidden');
+        mmTbody.innerHTML = '';
+        const candidatos = data.candidatos || [];
+        if (!candidatos.length) { mmEmpty.classList.remove('hidden'); return; }
+        candidatos.forEach(c => {
+          const tr = document.createElement('tr');
+          tr.className = 'border-t border-slate-100 dark:border-slate-800';
+          tr.innerHTML = `
+            <td class="px-2 py-1.5 font-mono">${c.fecha || ''}</td>
+            <td class="px-2 py-1.5 font-mono">${c.documento || ''}</td>
+            <td class="px-2 py-1.5 text-right font-mono">$ ${Number(c.importe).toFixed(2)}</td>
+            <td class="px-2 py-1.5 truncate max-w-xs" title="${c.concepto || ''}">${(c.concepto || '').substring(0, 60)}</td>
+            <td class="px-2 py-1.5 font-mono text-slate-500">${c.numreferencia || ''}</td>
+            <td class="px-2 py-1.5 text-xs text-slate-400">${c.diff_dias}d / $${Number(c.diff_monto).toFixed(2)}</td>
+            <td class="px-2 py-1.5 text-right">
+              <button type="button" class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs" data-idtx="${c.id_transaccion}">
+                Vincular
+              </button>
+            </td>`;
+          tr.querySelector('button').addEventListener('click', () => {
+            document.getElementById('mm-id_transaccion').value = c.id_transaccion;
+            mmForm.submit();
+          });
+          mmTbody.appendChild(tr);
+        });
+        mmTabla.classList.remove('hidden');
+      })
+      .catch(err => {
+        mmLoading.classList.add('hidden');
+        mmEmpty.textContent = 'Error al buscar candidatos: ' + err;
+        mmEmpty.classList.remove('hidden');
+      });
+  }
+
+  document.querySelectorAll('.btn-match-manual').forEach(b => {
+    b.addEventListener('click', () => abrirModal({...b.dataset}));
+  });
+  mmClose.addEventListener('click', () => modal.classList.add('hidden'));
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  // ---- Descargar CSV ----
+  document.getElementById('btn-download-csv').addEventListener('click', () => {
+    const rows = [['grupo','fecha','tipo','documento','monto','concepto','id_sistema','doc_sis']];
+    document.querySelectorAll('#tbl-matches tbody tr').forEach(tr => {
+      const tds = tr.querySelectorAll('td');
+      rows.push(['match', tds[0]?.innerText, tds[3]?.innerText, tds[1]?.innerText, tds[2]?.innerText, tds[4]?.innerText, tds[5]?.innerText, tds[6]?.innerText]);
+    });
+    document.querySelectorAll('#tbl-real tbody tr').forEach(tr => {
+      const tds = tr.querySelectorAll('td');
+      rows.push(['solo_banco', tds[0]?.innerText, tds[3]?.innerText, tds[1]?.innerText, tds[2]?.innerText, tds[4]?.innerText, '', '']);
+    });
+    document.querySelectorAll('#tbl-bancsis tbody tr').forEach(tr => {
+      const tds = tr.querySelectorAll('td');
+      rows.push(['solo_sistema', tds[0]?.innerText, tds[4]?.innerText, tds[2]?.innerText, tds[3]?.innerText, tds[5]?.innerText, tds[1]?.innerText, tds[2]?.innerText]);
+    });
+    const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(';')).join('\n');
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `conciliacion_banco_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  });
+})();
+</script>
+
 {% endblock %}

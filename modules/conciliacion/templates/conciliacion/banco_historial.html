@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block titulo %}Historial de conciliaciones{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto py-4 px-4">
+
+  <div class="flex items-baseline justify-between mb-3">
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Historial de conciliaciones</h1>
+    <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Volver al upload</a>
+  </div>
+
+  {# Filtros #}
+  <form method="GET" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 mb-3 flex flex-wrap items-end gap-3 text-sm">
+    <label>
+      <span class="block text-xs text-slate-500">Banco</span>
+      <select name="no_banco" class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+        <option value="">Todos</option>
+        {% for b in bancos %}
+          <option value="{{ b.no_banco }}" {% if no_banco == b.no_banco %}selected{% endif %}>{{ b.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span class="block text-xs text-slate-500">Desde</span>
+      <input type="date" name="desde" value="{{ desde }}"
+             class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+    </label>
+    <label>
+      <span class="block text-xs text-slate-500">Hasta</span>
+      <input type="date" name="hasta" value="{{ hasta }}"
+             class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+    </label>
+    <label class="text-xs text-slate-600 dark:text-slate-400 inline-flex items-center gap-1.5">
+      <input type="checkbox" name="deshechos" value="1" {% if incluir_deshechos %}checked{% endif %}>
+      Mostrar deshechos
+    </label>
+    <button class="px-3 py-1 rounded bg-slate-900 hover:bg-slate-700 text-white text-xs">Filtrar</button>
+    <a href="{{ url_for('conciliacion.banco_historial') }}" class="text-xs text-slate-500 hover:underline">limpiar</a>
+  </form>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
+        <tr>
+          <th class="px-2 py-1.5">Conciliado el</th>
+          <th class="px-2 py-1.5">Banco</th>
+          <th class="px-2 py-1.5">Método</th>
+          <th class="px-2 py-1.5">Estado</th>
+          <th class="px-2 py-1.5">Fecha mov.</th>
+          <th class="px-2 py-1.5">Doc.</th>
+          <th class="px-2 py-1.5 text-right">Monto</th>
+          <th class="px-2 py-1.5">Tipo</th>
+          <th class="px-2 py-1.5">Concepto</th>
+          <th class="px-2 py-1.5 text-right">id Programa</th>
+          <th class="px-2 py-1.5">Usuario</th>
+          <th class="px-2 py-1.5"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if r.deshecho_en %}opacity-50 line-through{% endif %}">
+          <td class="px-2 py-1.5 font-mono">{{ r.creado_en.strftime('%Y-%m-%d %H:%M') if r.creado_en else '' }}</td>
+          <td class="px-2 py-1.5 font-mono">{{ r.no_banco }}</td>
+          <td class="px-2 py-1.5">
+            {% if r.metodo == 'matched_auto' %}<span class="text-emerald-700 dark:text-emerald-400">auto</span>
+            {% elif r.metodo == 'matched_manual' %}<span class="text-sky-700 dark:text-sky-400">manual</span>
+            {% elif r.metodo == 'created_from_real' %}<span class="text-violet-700 dark:text-violet-400">creado</span>
+            {% elif r.metodo == 'real_only_ok' %}<span class="text-amber-700 dark:text-amber-400">acepta-real</span>
+            {% elif r.metodo == 'bancsis_only_ok' %}<span class="text-amber-700 dark:text-amber-400">acepta-prog</span>
+            {% else %}{{ r.metodo or '?' }}{% endif %}
+          </td>
+          <td class="px-2 py-1.5">{{ r.estado }}</td>
+          <td class="px-2 py-1.5 font-mono">{{ r.real_fecha or r.bancsis_fecha or '' }}</td>
+          <td class="px-2 py-1.5 font-mono">{{ r.real_documento or r.bancsis_documento or '' }}</td>
+          <td class="px-2 py-1.5 text-right font-mono">
+            {% if r.real_monto is not none %}{{ '{:,.2f}'.format(r.real_monto|float) }}
+            {% elif r.bancsis_importe is not none %}{{ '{:,.2f}'.format(r.bancsis_importe|float) }}{% endif %}
+          </td>
+          <td class="px-2 py-1.5 font-mono">{{ r.real_tipo or '' }}</td>
+          <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.real_concepto or r.bancsis_concepto or '' }}">
+            {{ (r.real_concepto or r.bancsis_concepto or '')[:60] }}
+          </td>
+          <td class="px-2 py-1.5 text-right font-mono">{{ r.id_transaccion or '' }}</td>
+          <td class="px-2 py-1.5 text-slate-500">{{ r.usuario }}</td>
+          <td class="px-2 py-1.5 text-right">
+            {% if not r.deshecho_en %}
+            <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="match_id" value="{{ r.id }}">
+              <button class="px-2 py-0.5 rounded text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30">Deshacer</button>
+            </form>
+            {% else %}
+            <span class="text-xs text-slate-400" title="Deshecho por {{ r.deshecho_por }} el {{ r.deshecho_en.strftime('%Y-%m-%d %H:%M') if r.deshecho_en else '' }}">deshecho</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="12" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    <strong>Deshacer</strong>: marca la fila como deshecha (soft-undo, no se borra). El movimiento vuelve a aparecer en el próximo upload del extracto.
+  </p>
+
+</div>
+{% endblock %}

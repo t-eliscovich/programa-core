@@ -85,7 +85,7 @@ class ConciliacionBanco:
 
 def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], set[tuple]]:
     """Devuelve:
-        set de id_transaccion (BANCSIS) ya conciliados
+        set de id_transaccion (BANCSIS) ya conciliados (y NO deshechos)
         set de firma REAL (fecha, documento, monto str, tipo) ya conciliados
     """
     rows = db.fetch_all(
@@ -93,6 +93,7 @@ def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], 
         SELECT id_transaccion, real_fecha, real_documento, real_monto, real_tipo
           FROM scintela.banco_conciliacion_match
          WHERE no_banco = %s
+           AND deshecho_en IS NULL
            AND (real_fecha IS NULL OR real_fecha BETWEEN %s AND %s)
         """,
         (no_banco, desde - timedelta(days=30), hasta + timedelta(days=30)),
@@ -276,32 +277,38 @@ def confirmar_match(
     id_transaccion: int | None,
     estado: str = "matched",
     usuario: str = "web",
+    metodo: str = "matched_auto",
+    conn=None,
 ) -> int:
     """Inserta un match (o aceptación unilateral) en banco_conciliacion_match.
 
     estado: 'matched' | 'real_only_ok' | 'bancsis_only_ok'.
+    metodo: 'matched_auto' | 'matched_manual' | 'created_from_real' |
+            'real_only_ok' | 'bancsis_only_ok'.
 
     Idempotente: el unique index (no_banco, real_fecha, real_documento, real_monto, real_tipo)
-    + ON CONFLICT DO NOTHING evita duplicados.
+    WHERE deshecho_en IS NULL + ON CONFLICT DO NOTHING evita duplicados activos.
+    Si la firma estaba conciliada y deshecha, se puede re-insertar.
     """
     return db.execute(
         """
         INSERT INTO scintela.banco_conciliacion_match (
-            no_banco, estado,
+            no_banco, estado, metodo,
             real_fecha, real_concepto, real_documento, real_monto, real_tipo,
             real_codigo, real_oficina,
             id_transaccion, usuario
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT DO NOTHING
         """,
         (
-            no_banco, estado,
+            no_banco, estado, metodo,
             real.fecha, real.concepto, real.documento,
             real.monto, real.tipo,
             real.codigo, real.oficina,
             id_transaccion, usuario,
         ),
+        conn=conn,
     )
 
 
@@ -314,9 +321,284 @@ def confirmar_bancsis_only(
     return db.execute(
         """
         INSERT INTO scintela.banco_conciliacion_match
-            (no_banco, estado, id_transaccion, usuario)
-        VALUES (%s, 'bancsis_only_ok', %s, %s)
+            (no_banco, estado, metodo, id_transaccion, usuario)
+        VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s, %s)
         ON CONFLICT DO NOTHING
         """,
         (no_banco, id_transaccion, usuario),
     )
+
+
+def confirmar_real_only(
+    no_banco: int,
+    real: MovBanco,
+    usuario: str = "web",
+) -> int:
+    """Aceptar que un mov REAL NO está en BANCSIS (legítima diferencia,
+    sin crear la tx BANCSIS)."""
+    return confirmar_match(
+        no_banco=no_banco,
+        real=real,
+        id_transaccion=None,
+        estado="real_only_ok",
+        metodo="real_only_ok",
+        usuario=usuario,
+    )
+
+
+# ─── Fase B (2026-05-23) — Crear tx BANCSIS desde un real_only ────────────
+
+
+def _documento_bancsis_desde_tipo(tipo: str) -> str:
+    """Mapea Tipo C/D del extracto al documento BANCSIS canónico.
+
+    Real Tipo='C' (entrada) → 'DE' (depósito) por defecto. El usuario podrá
+    cambiarlo después editando la tx si fuera TR, NC, etc.
+    Real Tipo='D' (salida) → 'CH' (cheque emitido) por defecto.
+    """
+    t = (tipo or "").strip().upper()
+    if t == "C":
+        return "DE"
+    if t == "D":
+        return "CH"
+    raise ValueError(f"Tipo banco desconocido: {tipo!r}")
+
+
+def crear_transaccion_desde_real(
+    no_banco: int,
+    real: MovBanco,
+    usuario: str = "web",
+    documento: str | None = None,
+    no_cta: str | None = None,
+) -> dict:
+    """Crea una tx en BANCSIS a partir de un mov real_only y la deja conciliada.
+
+    Atómico: insert tx + recompute saldos + insert match en una sola db.tx().
+    Si la fila se inserta al medio (fecha pasada) dispara walk-forward para
+    mantener `transacciones_bancarias.saldo` consistente.
+
+    Args:
+        no_banco: banco destino.
+        real: el MovBanco del extracto que queremos materializar.
+        usuario: para auditoría.
+        documento: si querés forzar 'TR' o 'NC' en vez del default ('DE'/'CH').
+        no_cta: cuenta opcional dentro del banco.
+
+    Returns:
+        {id_transaccion, saldo_nuevo, match_insertado}
+    """
+    import bank_helpers
+
+    doc = (documento or _documento_bancsis_desde_tipo(real.tipo)).upper()
+    concepto = (real.concepto or "")[:50] or f"Extracto {real.tipo} #{real.documento}"
+    numref = None
+    if real.documento:
+        try:
+            numref = int(str(real.documento).strip().lstrip("0") or "0")
+        except ValueError:
+            numref = None
+
+    with db.tx() as conn:
+        ins = bank_helpers.insert_movimiento_bancario(
+            conn,
+            no_banco=no_banco,
+            no_cta=no_cta,
+            fecha=real.fecha,
+            documento=doc,
+            importe=float(real.monto),
+            concepto=concepto,
+            numreferencia=numref,
+            usuario=usuario,
+        )
+        new_id = ins.get("id_transaccion")
+
+        # Walk-forward: si la fila quedó al medio, recomputar saldos posteriores.
+        bank_helpers.recompute_saldos_desde(
+            conn,
+            no_banco=no_banco,
+            no_cta=no_cta,
+            ancla_id=int(new_id),
+        )
+
+        # Persistir match en la misma tx.
+        n = confirmar_match(
+            no_banco=no_banco,
+            real=real,
+            id_transaccion=int(new_id) if new_id else None,
+            estado="matched",
+            usuario=usuario,
+            metodo="created_from_real",
+            conn=conn,
+        )
+
+    return {
+        "id_transaccion": new_id,
+        "saldo_nuevo": ins.get("saldo_nuevo"),
+        "saldo_anterior": ins.get("saldo_anterior"),
+        "documento": doc,
+        "match_insertado": bool(n),
+    }
+
+
+# ─── Fase D (2026-05-23) — Match manual, romper match, historial, undo ────
+
+
+def match_manual(
+    no_banco: int,
+    real: MovBanco,
+    id_transaccion: int,
+    usuario: str = "web",
+) -> int:
+    """Fuerza un match REAL ↔ BANCSIS sin pasar por el scorer.
+
+    Usado desde el modal "Match manual" cuando el matcher no acertó
+    (por ejemplo, drift de fecha > 5 días o monto > $1).
+    """
+    return confirmar_match(
+        no_banco=no_banco,
+        real=real,
+        id_transaccion=int(id_transaccion),
+        estado="matched",
+        usuario=usuario,
+        metodo="matched_manual",
+    )
+
+
+def romper_match(
+    match_id: int,
+    usuario: str = "web",
+) -> int:
+    """Marca una fila de banco_conciliacion_match como deshecha.
+
+    No DELETEa — soft undo. La fila queda con `deshecho_en` y `deshecho_por`
+    para auditoría. El matcher la excluye así que el mov vuelve a aparecer
+    en el próximo upload.
+    """
+    return db.execute(
+        """
+        UPDATE scintela.banco_conciliacion_match
+           SET deshecho_en = CURRENT_TIMESTAMP,
+               deshecho_por = %s
+         WHERE id = %s
+           AND deshecho_en IS NULL
+        """,
+        (usuario[:50], int(match_id)),
+    )
+
+
+def historial(
+    no_banco: int | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    incluir_deshechos: bool = False,
+    limit: int = 200,
+) -> list[dict]:
+    """Lista conciliaciones (matches + aceptaciones) para la vista de historial."""
+    where = ["1=1"]
+    params: list = []
+    if no_banco is not None:
+        where.append("bcm.no_banco = %s")
+        params.append(int(no_banco))
+    if desde is not None:
+        where.append("(bcm.real_fecha >= %s OR bcm.creado_en::date >= %s)")
+        params.extend([desde, desde])
+    if hasta is not None:
+        where.append("(bcm.real_fecha <= %s OR bcm.creado_en::date <= %s)")
+        params.extend([hasta, hasta])
+    if not incluir_deshechos:
+        where.append("bcm.deshecho_en IS NULL")
+    params.append(int(limit))
+
+    rows = db.fetch_all(
+        f"""
+        SELECT bcm.id,
+               bcm.no_banco,
+               bcm.estado,
+               bcm.metodo,
+               bcm.real_fecha,
+               bcm.real_concepto,
+               bcm.real_documento,
+               bcm.real_monto,
+               bcm.real_tipo,
+               bcm.id_transaccion,
+               bcm.usuario,
+               bcm.creado_en,
+               bcm.deshecho_en,
+               bcm.deshecho_por,
+               tb.documento  AS bancsis_documento,
+               tb.importe    AS bancsis_importe,
+               tb.fecha      AS bancsis_fecha,
+               tb.concepto   AS bancsis_concepto
+          FROM scintela.banco_conciliacion_match bcm
+          LEFT JOIN scintela.transacciones_bancarias tb
+            ON tb.id_transaccion = bcm.id_transaccion
+         WHERE {" AND ".join(where)}
+         ORDER BY bcm.creado_en DESC, bcm.id DESC
+         LIMIT %s
+        """,
+        tuple(params),
+    ) or []
+    return [dict(r) for r in rows]
+
+
+def candidatos_match_manual(
+    no_banco: int,
+    fecha_real: date,
+    monto_real: float,
+    tipo_real: str,
+    ventana_dias: int = 30,
+    ventana_monto: float = 50.0,
+    limit: int = 30,
+) -> list[dict]:
+    """BANCSIS filas candidatas para hacer match manual.
+
+    Más laxo que el scorer: ±30 días, ±$50, mismo Tipo C/D. Ordenado por
+    'cercanía' (suma absoluta de drift de fecha y monto, igual al scorer).
+    """
+    doc_filter_in = _DOCS_CREDITO if (tipo_real or "").upper() == "C" else _DOCS_DEBITO
+
+    rows = db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, concepto, importe,
+               numreferencia,
+               ABS(EXTRACT(DAY FROM fecha - %s))::int AS diff_dias,
+               ABS(importe - %s) AS diff_monto
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND fecha BETWEEN %s AND %s
+           AND ABS(importe - %s) <= %s
+           AND UPPER(TRIM(documento)) = ANY(%s)
+           AND id_transaccion NOT IN (
+              SELECT id_transaccion
+                FROM scintela.banco_conciliacion_match
+               WHERE id_transaccion IS NOT NULL
+                 AND deshecho_en IS NULL
+           )
+         ORDER BY diff_dias ASC, diff_monto ASC
+         LIMIT %s
+        """,
+        (
+            fecha_real,
+            float(monto_real),
+            int(no_banco),
+            fecha_real - timedelta(days=ventana_dias),
+            fecha_real + timedelta(days=ventana_dias),
+            float(monto_real),
+            float(ventana_monto),
+            list(doc_filter_in),
+            int(limit),
+        ),
+    ) or []
+    return [
+        {
+            "id_transaccion": int(r["id_transaccion"]),
+            "fecha": r["fecha"].isoformat() if r.get("fecha") else None,
+            "documento": (r.get("documento") or "").strip(),
+            "concepto": (r.get("concepto") or "").strip(),
+            "importe": float(r.get("importe") or 0),
+            "numreferencia": (r.get("numreferencia") or ""),
+            "diff_dias": int(r.get("diff_dias") or 0),
+            "diff_monto": float(r.get("diff_monto") or 0),
+        }
+        for r in rows
+    ]
