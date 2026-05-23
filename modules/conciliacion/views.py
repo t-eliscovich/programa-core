@@ -410,7 +410,38 @@ def _render_demo():
             "abrev": c.abrev, "cliente": "", "descripcion": "", "fuente": "regex",
         }
 
-    sample_matches = []
+    sample_matches = [
+        {
+            "real": {"fecha": "2026-05-14", "concepto": "TRANSFERENCIA DIRECTA DE FRANKLIN PEREZ MORA",
+                     "documento": "26140625", "monto": 1000.00, "tipo": "C",
+                     "codigo": "001045", "oficina": "AG. NORTE"},
+            "bancsis": {"id_transaccion": 6701, "fecha": "2026-05-14", "documento": "TR",
+                        "concepto": "TR Franklin Perez", "importe": 1000.00,
+                        "numreferencia": "26140625", "prov": "FRP", "prov_nombre": "Franklin Perez Mora"},
+            "score": 0.0, "razon": "exacto", "es_exacto": True,
+            "cat": _cat("TRANSFERENCIA DIRECTA DE FRANKLIN PEREZ MORA", "C") | {"cliente": "Franklin Perez Mora"},
+        },
+        {
+            "real": {"fecha": "2026-05-15", "concepto": "1 ch.DPS",
+                     "documento": "0", "monto": 500.00, "tipo": "C",
+                     "codigo": "001045", "oficina": "AG. NORTE"},
+            "bancsis": {"id_transaccion": 6708, "fecha": "2026-05-15", "documento": "DE",
+                        "concepto": "Dep cheque DPS", "importe": 500.00,
+                        "numreferencia": "", "prov": "DPS", "prov_nombre": "David Pedro Sanchez Co"},
+            "score": 0.0, "razon": "exacto", "es_exacto": True,
+            "cat": _cat("1 ch.DPS", "C") | {"cliente": "DPS"},
+        },
+        {
+            "real": {"fecha": "2026-05-15", "concepto": "2605150C3DCE-INTELA C-PAG-CASH 05 15",
+                     "documento": "44675401", "monto": 92896.86, "tipo": "D",
+                     "codigo": "001045", "oficina": "AG. NORTE"},
+            "bancsis": {"id_transaccion": 6720, "fecha": "2026-05-15", "documento": "CH",
+                        "concepto": "Pago cash 05/15", "importe": 92896.86,
+                        "numreferencia": "5501", "prov": "PRV", "prov_nombre": "Proveedores Varios"},
+            "score": 0.5, "razon": "exacto", "es_exacto": True,
+            "cat": _cat("2605150C3DCE-INTELA C-PAG-CASH 05 15", "D"),
+        },
+    ]
     sample_real = [
         {"fecha": "2026-05-14", "concepto": "TRANSFERENCIA DIRECTA DE AGUILAR RUIZ JACQUELINE DEL CARMEN",
          "documento": "53051839", "monto": 2517.51, "tipo": "C",

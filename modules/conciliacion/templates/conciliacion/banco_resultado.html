@@ -93,17 +93,22 @@
       <button type="button" id="btn-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
     </form>
 
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-      <table class="w-full text-sm" id="tbl-matches">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-sm table-fixed" id="tbl-matches">
+        <colgroup>
+          <col class="w-10">
+          <col class="w-12">
+          <col class="w-24">
+          <col class="w-28">
+          <col>
+        </colgroup>
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th class="px-3 py-2 w-8"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="px-3 py-2 text-left w-12">Cat</th>
-            <th class="px-3 py-2 text-left">Fecha</th>
-            <th class="px-3 py-2 text-right">Monto</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-left">Ref</th>
-            <th class="px-3 py-2 text-left">Concepto banco</th>
+            <th class="px-2 py-2"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th class="px-2 py-2 text-left">Cat</th>
+            <th class="px-2 py-2 text-left">Fecha</th>
+            <th class="px-2 py-2 text-right">Monto</th>
+            <th class="px-2 py-2 text-left">Cliente · Concepto</th>
           </tr>
         </thead>
         <tbody>
@@ -111,14 +116,15 @@
           {% set fecha_diff = (m.real.fecha != m.bancsis.fecha) %}
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
           {% set _cli = m.bancsis.prov_nombre or m.cat.cliente or m.bancsis.prov %}
+          {% set _ref = m.real.documento or m.bancsis.numreferencia %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ m.real.tipo }}"
               data-grupo="{{ m.cat.grupo or 'OTRO' }}"
               data-exacto="{{ '1' if m.es_exacto else '0' }}"
               data-match='{{ m|tojson|forceescape }}'
               data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.concepto ~ ' ' ~ (m.bancsis.prov or '') ~ ' ' ~ (m.bancsis.prov_nombre or '') ~ ' ' ~ (m.cat.cliente or ''))|lower }}">
-            <td class="px-3 py-2"><input type="checkbox" class="chk-match"></td>
-            <td class="px-3 py-2">
+            <td class="px-2 py-2"><input type="checkbox" class="chk-match"></td>
+            <td class="px-2 py-2">
               {% set _gc = m.cat.grupo or 'OTRO' %}
               <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold tabular-nums
                 {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200
@@ -127,20 +133,24 @@
                 {% else %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300{% endif %}"
                 title="{{ m.cat.label or 'Sin categorizar' }}">{{ m.cat.abrev or '?' }}</span>
             </td>
-            <td class="px-3 py-2 tabular-nums text-slate-700 dark:text-slate-300">
+            <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">
               {{ m.real.fecha }}
-              {% if fecha_diff %}<span class="text-amber-600 text-xs" title="Programa: {{ m.bancsis.fecha }}">≠{{ m.bancsis.fecha[-5:] }}</span>{% endif %}
+              {% if fecha_diff %}<span class="text-amber-600 text-[10px] block" title="Programa: {{ m.bancsis.fecha }}">≠{{ m.bancsis.fecha[-5:] }}</span>{% endif %}
             </td>
-            <td class="px-3 py-2 text-right tabular-nums {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if m.real.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(m.real.monto) }}
-              {% if monto_diff %}<span class="text-amber-600 text-xs ml-1" title="Programa: $ {{ '{:,.2f}'.format(m.bancsis.importe) }}">≠</span>{% endif %}
+              {% if monto_diff %}<span class="text-amber-600 text-[10px] block" title="Programa: $ {{ '{:,.2f}'.format(m.bancsis.importe) }}">≠</span>{% endif %}
             </td>
-            <td class="px-3 py-2 truncate max-w-[200px]" title="{{ _cli or '' }}">
-              {% if _cli %}<span class="text-slate-900 dark:text-slate-100">{{ _cli[:28] }}</span>
-              {% else %}<span class="text-slate-300">—</span>{% endif %}
+            <td class="px-2 py-2 overflow-hidden">
+              <div class="truncate">
+                {% if _cli %}<span class="text-slate-900 dark:text-slate-100 font-medium" title="{{ _cli }}">{{ _cli }}</span>
+                {% else %}<span class="text-slate-300">—</span>{% endif %}
+                {% if _ref %}<span class="text-slate-400 font-mono text-[10px] ml-1">{{ _ref }}</span>{% endif %}
+              </div>
+              <div class="truncate text-slate-500 text-[11px]" title="{{ m.real.concepto }} · prog: {{ m.bancsis.concepto }} · id {{ m.bancsis.id_transaccion }}">
+                {{ m.real.concepto }}
+              </div>
             </td>
-            <td class="px-3 py-2 font-mono text-slate-500 text-xs">{{ m.real.documento or m.bancsis.numreferencia or '' }}</td>
-            <td class="px-3 py-2 truncate max-w-[280px] text-slate-500 text-xs" title="{{ m.real.concepto }} · prog: {{ m.bancsis.concepto }}">{{ m.real.concepto[:45] }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -158,17 +168,22 @@
      ═════════════════════════════════════════════════════════════════════ #}
   <div data-tabpane="real" class="tabpane hidden">
     {% if n_real_only > 0 %}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-      <table class="w-full text-sm" id="tbl-real">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-sm table-fixed" id="tbl-real">
+        <colgroup>
+          <col class="w-12">
+          <col class="w-24">
+          <col class="w-28">
+          <col>
+          <col class="w-28">
+        </colgroup>
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th class="px-3 py-2 text-left w-12">Cat</th>
-            <th class="px-3 py-2 text-left">Fecha</th>
-            <th class="px-3 py-2 text-right">Monto</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-left">Ref</th>
-            <th class="px-3 py-2 text-left">Concepto banco</th>
-            <th class="px-3 py-2 text-right">Acción</th>
+            <th class="px-2 py-2 text-left">Cat</th>
+            <th class="px-2 py-2 text-left">Fecha</th>
+            <th class="px-2 py-2 text-right">Monto</th>
+            <th class="px-2 py-2 text-left">Cliente · Concepto</th>
+            <th class="px-2 py-2 text-right">Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -178,7 +193,7 @@
               data-tipo="{{ r.tipo }}"
               data-grupo="{{ r.cat.grupo or 'OTRO' }}"
               data-search="{{ (r.concepto ~ ' ' ~ r.documento ~ ' ' ~ r.oficina ~ ' ' ~ (r.cat.cliente or '') ~ ' ' ~ r.cat.label)|lower }}">
-            <td class="px-3 py-2">
+            <td class="px-2 py-2">
               {% set _gc = r.cat.grupo or 'OTRO' %}
               <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold tabular-nums
                 {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200
@@ -187,18 +202,20 @@
                 {% else %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300{% endif %}"
                 title="{{ r.cat.label or 'Sin categorizar' }}">{{ r.cat.abrev or '?' }}</span>
             </td>
-            <td class="px-3 py-2 tabular-nums text-slate-700 dark:text-slate-300">{{ r.fecha }}</td>
-            <td class="px-3 py-2 text-right tabular-nums {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ r.fecha }}</td>
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
             </td>
-            <td class="px-3 py-2 truncate max-w-[220px]" title="{{ _cli or r.oficina or '' }}">
-              {% if _cli %}<span class="text-slate-900 dark:text-slate-100">{{ _cli[:30] }}</span>
-              {% elif r.oficina %}<span class="text-slate-400 text-xs">{{ r.oficina }}</span>
-              {% else %}<span class="text-slate-300">—</span>{% endif %}
+            <td class="px-2 py-2 overflow-hidden">
+              <div class="truncate">
+                {% if _cli %}<span class="text-slate-900 dark:text-slate-100 font-medium" title="{{ _cli }}">{{ _cli }}</span>
+                {% elif r.oficina %}<span class="text-slate-400">{{ r.oficina }}</span>
+                {% else %}<span class="text-slate-300">—</span>{% endif %}
+                {% if r.documento and r.documento != '0' %}<span class="text-slate-400 font-mono text-[10px] ml-1">{{ r.documento }}</span>{% endif %}
+              </div>
+              <div class="truncate text-slate-500 text-[11px]" title="{{ r.concepto }}">{{ r.concepto }}</div>
             </td>
-            <td class="px-3 py-2 font-mono text-slate-500 text-xs">{{ r.documento }}</td>
-            <td class="px-3 py-2 truncate max-w-[260px] text-slate-500 text-xs" title="{{ r.concepto }}">{{ r.concepto[:60] }}</td>
-            <td class="px-3 py-2 text-right whitespace-nowrap">
+            <td class="px-2 py-2 text-right whitespace-nowrap">
               <form method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="no_banco" value="{{ no_banco }}">
@@ -213,7 +230,7 @@
                         title="Crear el movimiento en programa Pichincha">+ Crear</button>
               </form>
               <button type="button"
-                      class="px-2 py-1 rounded text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 btn-match-manual"
+                      class="px-1.5 py-1 rounded text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 btn-match-manual"
                       data-fecha="{{ r.fecha }}"
                       data-concepto="{{ r.concepto|e }}"
                       data-documento="{{ r.documento|e }}"
@@ -221,7 +238,7 @@
                       data-tipo="{{ r.tipo }}"
                       data-codigo="{{ r.codigo|e }}"
                       data-oficina="{{ r.oficina|e }}"
-                      title="Buscar y vincular con un mov del programa">🔗</button>
+                      title="Vincular manualmente con un mov del programa">🔗</button>
             </td>
           </tr>
           {% endfor %}
@@ -240,26 +257,31 @@
      ═════════════════════════════════════════════════════════════════════ #}
   <div data-tabpane="bancsis" class="tabpane hidden">
     {% if n_bancsis_only > 0 %}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-      <table class="w-full text-sm" id="tbl-bancsis">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-sm table-fixed" id="tbl-bancsis">
+        <colgroup>
+          <col class="w-12">
+          <col class="w-24">
+          <col class="w-28">
+          <col>
+        </colgroup>
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th class="px-3 py-2 text-left w-12">Cat</th>
-            <th class="px-3 py-2 text-left">Fecha</th>
-            <th class="px-3 py-2 text-right">Monto</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-left">Ref</th>
-            <th class="px-3 py-2 text-left">Concepto</th>
+            <th class="px-2 py-2 text-left">Cat</th>
+            <th class="px-2 py-2 text-left">Fecha</th>
+            <th class="px-2 py-2 text-right">Monto</th>
+            <th class="px-2 py-2 text-left">Cliente · Concepto</th>
           </tr>
         </thead>
         <tbody>
           {% for b in data.bancsis_only %}
           {% set _cli = b.prov_nombre or b.cat.cliente or b.prov %}
+          {% set _ref = b.numreferencia or b.documento %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ b.tipo_real }}"
               data-grupo="{{ b.cat.grupo or 'OTRO' }}"
               data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ (b.prov or '') ~ ' ' ~ (b.prov_nombre or '') ~ ' ' ~ (b.cat.cliente or ''))|lower }}">
-            <td class="px-3 py-2">
+            <td class="px-2 py-2">
               {% set _gc = b.cat.grupo or 'OTRO' %}
               <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold tabular-nums
                 {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200
@@ -268,16 +290,18 @@
                 {% else %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300{% endif %}"
                 title="{{ b.cat.label or 'Sin categorizar' }}">{{ b.cat.abrev or '?' }}</span>
             </td>
-            <td class="px-3 py-2 tabular-nums text-slate-700 dark:text-slate-300">{{ b.fecha }}</td>
-            <td class="px-3 py-2 text-right tabular-nums {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+            <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ b.fecha }}</td>
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if b.tipo_real == 'D' %}-{% endif %}{{ '{:,.2f}'.format(b.importe) }}
             </td>
-            <td class="px-3 py-2 truncate max-w-[220px]" title="{{ _cli or '' }}">
-              {% if _cli %}<span class="text-slate-900 dark:text-slate-100">{{ _cli[:30] }}</span>
-              {% else %}<span class="text-slate-300">—</span>{% endif %}
+            <td class="px-2 py-2 overflow-hidden">
+              <div class="truncate">
+                {% if _cli %}<span class="text-slate-900 dark:text-slate-100 font-medium" title="{{ _cli }}">{{ _cli }}</span>
+                {% else %}<span class="text-slate-300">—</span>{% endif %}
+                {% if _ref %}<span class="text-slate-400 font-mono text-[10px] ml-1">{{ _ref }}</span>{% endif %}
+              </div>
+              <div class="truncate text-slate-500 text-[11px]" title="{{ b.concepto }} (id {{ b.id_transaccion }})">{{ b.concepto }}</div>
             </td>
-            <td class="px-3 py-2 font-mono text-slate-500 text-xs">{{ b.numreferencia or b.documento }}</td>
-            <td class="px-3 py-2 truncate max-w-[300px] text-slate-500 text-xs" title="{{ b.concepto }} (id {{ b.id_transaccion }})">{{ b.concepto[:60] }}</td>
           </tr>
           {% endfor %}
         </tbody>
