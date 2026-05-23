@@ -394,119 +394,6 @@ def depositos_confirmar_verdes():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _render_demo():
-    """Renderea banco_resultado.html con datos sample para QA del diseño.
-
-    TMT 2026-05-23 — temporal. Permite ver la pantalla del rediseño sin
-    necesidad de subir un xlsx real. Borrar este branch cuando esté validado.
-    """
-    from modules.conciliacion.categorizar import categorizar, GRUPO_LABEL
-    import json as _json
-
-    def _cat(concepto, tipo):
-        c = categorizar(concepto, tipo)
-        return {
-            "codigo": c.codigo, "grupo": c.grupo, "label": c.label,
-            "abrev": c.abrev, "cliente": "", "descripcion": "", "fuente": "regex",
-        }
-
-    sample_matches = [
-        {
-            "real": {"fecha": "2026-05-14", "concepto": "TRANSFERENCIA DIRECTA DE FRANKLIN PEREZ MORA",
-                     "documento": "26140625", "monto": 1000.00, "tipo": "C",
-                     "codigo": "001045", "oficina": "AG. NORTE"},
-            "bancsis": {"id_transaccion": 6701, "fecha": "2026-05-14", "documento": "TR",
-                        "concepto": "TR Franklin Perez", "importe": 1000.00,
-                        "numreferencia": "26140625", "prov": "FRP", "prov_nombre": "Franklin Perez Mora"},
-            "score": 0.0, "razon": "exacto", "es_exacto": True,
-            "cat": _cat("TRANSFERENCIA DIRECTA DE FRANKLIN PEREZ MORA", "C") | {"cliente": "Franklin Perez Mora"},
-        },
-        {
-            "real": {"fecha": "2026-05-15", "concepto": "1 ch.DPS",
-                     "documento": "0", "monto": 500.00, "tipo": "C",
-                     "codigo": "001045", "oficina": "AG. NORTE"},
-            "bancsis": {"id_transaccion": 6708, "fecha": "2026-05-15", "documento": "DE",
-                        "concepto": "Dep cheque DPS", "importe": 500.00,
-                        "numreferencia": "", "prov": "DPS", "prov_nombre": "David Pedro Sanchez Co"},
-            "score": 0.0, "razon": "exacto", "es_exacto": True,
-            "cat": _cat("1 ch.DPS", "C") | {"cliente": "DPS"},
-        },
-        {
-            "real": {"fecha": "2026-05-15", "concepto": "2605150C3DCE-INTELA C-PAG-CASH 05 15",
-                     "documento": "44675401", "monto": 92896.86, "tipo": "D",
-                     "codigo": "001045", "oficina": "AG. NORTE"},
-            "bancsis": {"id_transaccion": 6720, "fecha": "2026-05-15", "documento": "CH",
-                        "concepto": "Pago cash 05/15", "importe": 92896.86,
-                        "numreferencia": "5501", "prov": "PRV", "prov_nombre": "Proveedores Varios"},
-            "score": 0.5, "razon": "exacto", "es_exacto": True,
-            "cat": _cat("2605150C3DCE-INTELA C-PAG-CASH 05 15", "D"),
-        },
-    ]
-    sample_real = [
-        {"fecha": "2026-05-14", "concepto": "TRANSFERENCIA DIRECTA DE AGUILAR RUIZ JACQUELINE DEL CARMEN",
-         "documento": "53051839", "monto": 2517.51, "tipo": "C",
-         "codigo": "001045", "oficina": "AG. NORTE",
-         "cat": _cat("TRANSFERENCIA DIRECTA DE AGUILAR RUIZ JACQUELINE DEL CARMEN", "C") | {"cliente": "AGUILAR RUIZ JACQUELINE"}},
-        {"fecha": "2026-05-14", "concepto": "DEPOSITO EFECTIVIZADO",
-         "documento": "45212368", "monto": 871.22, "tipo": "C",
-         "codigo": "001010", "oficina": "MERCADO CENTRAL",
-         "cat": _cat("DEPOSITO EFECTIVIZADO", "C")},
-        {"fecha": "2026-05-15", "concepto": "2605150C3EHP-INTELA C-PAG-ANTICIPO",
-         "documento": "44669482", "monto": 15900.00, "tipo": "D",
-         "codigo": "001045", "oficina": "AG. NORTE",
-         "cat": _cat("2605150C3EHP-INTELA C-PAG-ANTICIPO", "D")},
-        {"fecha": "2026-05-15", "concepto": "2605150C3DLS-INTELA C-PAG-DHL",
-         "documento": "44652718", "monto": 460.26, "tipo": "D",
-         "codigo": "001045", "oficina": "AG. NORTE",
-         "cat": _cat("2605150C3DLS-INTELA C-PAG-DHL", "D")},
-        {"fecha": "2026-05-16", "concepto": "Comision por servicio bancario",
-         "documento": "10001", "monto": 8.50, "tipo": "D",
-         "codigo": "001045", "oficina": "AG. NORTE",
-         "cat": _cat("Comision por servicio bancario", "D")},
-        {"fecha": "2026-05-16", "concepto": "1 ch.LTM",
-         "documento": "0", "monto": 381.36, "tipo": "C",
-         "codigo": "001045", "oficina": "AG. NORTE",
-         "cat": _cat("1 ch.LTM", "C") | {"cliente": "LTM"}},
-    ]
-    sample_bancsis = [
-        {"id_transaccion": 9999, "fecha": "2026-05-15", "concepto": "Pago proveedor LTM",
-         "documento": "CH", "importe": 1200.00, "numreferencia": "5500", "tipo_real": "D",
-         "prov": "LTM", "prov_nombre": "Almacen Lopez Martinez",
-         "cat": _cat("Pago proveedor LTM", "D") | {"cliente": "Almacen Lopez Martinez"}},
-        {"id_transaccion": 10001, "fecha": "2026-05-16", "concepto": "Dep. JTX",
-         "documento": "DE", "importe": 800.00, "numreferencia": "", "tipo_real": "C",
-         "prov": "JTX", "prov_nombre": "Juan Toledo Xavier",
-         "cat": _cat("Dep. JTX", "C") | {"cliente": "Juan Toledo Xavier"}},
-    ]
-    data = {
-        "no_banco": _BANCO_PICHINCHA,
-        "matches": sample_matches,
-        "real_only": sample_real,
-        "bancsis_only": sample_bancsis,
-        "saldo_real_final": 18118.00,
-        "saldo_real_fecha": "2026-05-16",
-        "saldo_bancsis_final": 17518.00,
-        "saldo_bancsis_fecha": "2026-05-16",
-        "total_real_only_signed": -13624.39,
-        "total_bancsis_only_signed": -400.00,
-        "extracto_desde": "2026-05-14",
-        "extracto_hasta": "2026-05-16",
-        "ventana_dias": 2,
-        "bancsis_cargados": 8,
-    }
-    kpis = _calc_kpis(data)
-    return render_template(
-        "conciliacion/banco_resultado.html",
-        data=data,
-        matches_json=_json.dumps(sample_matches),
-        real_only_json=_json.dumps(sample_real),
-        bancsis_only_json=_json.dumps(sample_bancsis),
-        no_banco=_BANCO_PICHINCHA,
-        banco_nombre="PICHINCHA",
-        **kpis,
-    )
-
-
 def _cat_to_dict(cat) -> dict:
     return {
         "codigo": getattr(cat, "codigo", "OTRO"),
@@ -631,10 +518,6 @@ def hub():
           "Aceptar bancsis-only" viajan inline en hidden form fields.
     """
     if request.method == "GET":
-        # TMT 2026-05-23 — branch QA temporal. ?demo=1 renderea el resultado
-        # con datos sample. Quitar cuando el rediseño esté validado.
-        if request.args.get("demo") == "1":
-            return _render_demo()
         bancos = queries.bancos_disponibles()
         ultimos = queries.ultimos_extractos(limit=5)
         return render_template(
