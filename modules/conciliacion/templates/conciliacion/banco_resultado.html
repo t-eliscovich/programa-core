@@ -470,6 +470,16 @@
 
 <script>
 (function() {
+  // ---- Mover modal a body (fix posicionamiento con parents transformados) ----
+  const _modal = document.getElementById('match-manual-modal');
+  if (_modal && _modal.parentElement !== document.body) {
+    document.body.appendChild(_modal);
+  }
+  const _mmForm = document.getElementById('mm-form');
+  if (_mmForm && _mmForm.parentElement !== document.body) {
+    document.body.appendChild(_mmForm);
+  }
+
   // ---- Checkboxes de confirmación ----
   const chkAll = document.getElementById('chk-all');
   const chkInputs = () => document.querySelectorAll('#tbl-matches tbody tr.fila:not(.hidden) .chk-match');
