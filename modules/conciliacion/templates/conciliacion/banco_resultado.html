@@ -46,14 +46,22 @@
   </div>
 
   {# ───── Tabs ───── #}
+  {% set n_real_con_sug = data.real_only|selectattr('sugerencias')|list|length %}
+  {% set n_real_sin_sug = n_real_only - n_real_con_sug %}
   <div class="flex items-end gap-1 mb-3 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     <button type="button" data-tab="matches"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-sky-600 text-sky-700 dark:text-sky-400 font-medium whitespace-nowrap">
       Coinciden <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_match }}</span>
     </button>
+    {% if n_real_con_sug > 0 %}
+    <button type="button" data-tab="sugerencias"
+            class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-transparent text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 whitespace-nowrap font-medium">
+      💡 Cruces sugeridos <span class="ml-1 text-xs text-amber-500 tabular-nums">{{ n_real_con_sug }}</span>
+    </button>
+    {% endif %}
     <button type="button" data-tab="real"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 whitespace-nowrap">
-      Solo en banco <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_real_only }}</span>
+      Solo en banco <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_real_sin_sug }}</span>
     </button>
     <button type="button" data-tab="bancsis"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 whitespace-nowrap">
@@ -171,10 +179,84 @@
   </div>
 
   {# ═════════════════════════════════════════════════════════════════════
-     TAB 2 — SOLO EN BANCO REAL
+     TAB 2A — CRUCES SUGERIDOS (real_only con sugerencias del programa)
+     ═════════════════════════════════════════════════════════════════════ #}
+  <div data-tabpane="sugerencias" class="tabpane hidden">
+    {% if n_real_con_sug > 0 %}
+    <p class="text-xs text-slate-500 mb-2">
+      Movimientos del extracto que tienen 1 o más candidatos del programa con el mismo monto.
+      Hacé click en <span class="bg-amber-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">💡 N</span>
+      y elegí cuál corresponde.
+    </p>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+      <table class="w-full text-sm table-fixed">
+        <colgroup>
+          <col class="w-10"><col class="w-20"><col class="w-24"><col><col class="w-36">
+        </colgroup>
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-2 py-2 text-left">Cat</th>
+            <th class="px-2 py-2 text-left">Fecha R</th>
+            <th class="px-2 py-2 text-right">Monto R</th>
+            <th class="px-2 py-2 text-left">Cliente banco</th>
+            <th class="px-2 py-2 text-right">Sugerencias</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              data-tipo="{{ r.tipo }}" data-grupo="{{ r.cat.grupo or 'OTRO' }}">
+            <td class="px-2 py-2">
+              {% set _gc = r.cat.grupo or 'OTRO' %}
+              <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold tabular-nums
+                {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200
+                {% elif _gc == 'SALIDA' %}bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200
+                {% elif _gc == 'COMISION' %}bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200
+                {% else %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300{% endif %}"
+                title="{{ r.cat.label }}">{{ r.cat.abrev }}</span>
+            </td>
+            <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap">{{ r.fecha }}</td>
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
+            </td>
+            <td class="px-2 py-2 overflow-hidden">
+              <div class="truncate">
+                {% if r.cat.cliente %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ r.cat.cliente }}</span>
+                {% elif r.oficina %}<span class="text-slate-400">{{ r.oficina }}</span>
+                {% else %}<span class="text-slate-300">—</span>{% endif %}
+              </div>
+              <div class="truncate text-slate-500 text-[11px]" title="{{ r.concepto }}">{{ r.concepto }}</div>
+            </td>
+            <td class="px-2 py-2 text-right whitespace-nowrap">
+              <script type="application/json" id="sug2-{{ loop.index0 }}">{{ r.sugerencias|tojson }}</script>
+              <button type="button"
+                      class="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold btn-sugerencias"
+                      data-sug-id="sug2-{{ loop.index0 }}"
+                      data-fecha="{{ r.fecha }}"
+                      data-concepto="{{ r.concepto|e }}"
+                      data-documento="{{ r.documento|e }}"
+                      data-monto="{{ r.monto }}"
+                      data-tipo="{{ r.tipo }}"
+                      data-codigo="{{ r.codigo|e }}"
+                      data-oficina="{{ r.oficina|e }}">💡 {{ r.sugerencias|length }} cruces</button>
+            </td>
+          </tr>
+          {% endif %}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-8 text-center text-sm text-slate-500">
+      No hay cruces sugeridos.
+    </div>
+    {% endif %}
+  </div>
+
+  {# ═════════════════════════════════════════════════════════════════════
+     TAB 2B — SOLO EN BANCO REAL (sin sugerencias)
      ═════════════════════════════════════════════════════════════════════ #}
   <div data-tabpane="real" class="tabpane hidden">
-    {% if n_real_only > 0 %}
+    {% if n_real_sin_sug > 0 %}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
       <table class="w-full text-sm table-fixed" id="tbl-real">
         <colgroup>
@@ -194,7 +276,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for r in data.real_only %}
+          {% for r in data.real_only %}{% if not r.sugerencias or r.sugerencias|length == 0 %}
           {% set _cli = r.cat.cliente %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ r.tipo }}"
@@ -224,9 +306,10 @@
             </td>
             <td class="px-2 py-2 text-right whitespace-nowrap">
               {% if r.sugerencias and r.sugerencias|length > 0 %}
+              <script type="application/json" id="sug-{{ loop.index0 }}">{{ r.sugerencias|tojson }}</script>
               <button type="button"
                       class="px-2 py-1 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium btn-sugerencias"
-                      data-sugerencias='{{ r.sugerencias|tojson|forceescape }}'
+                      data-sug-id="sug-{{ loop.index0 }}"
                       data-fecha="{{ r.fecha }}"
                       data-concepto="{{ r.concepto|e }}"
                       data-documento="{{ r.documento|e }}"
@@ -261,13 +344,13 @@
                       title="Vincular manualmente con un mov del programa">🔗</button>
             </td>
           </tr>
-          {% endfor %}
+          {% endif %}{% endfor %}
         </tbody>
       </table>
     </div>
     {% else %}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-8 text-center text-sm text-slate-500">
-      Todo el extracto tiene contraparte en el programa.
+      Nada del extracto quedó sin contraparte ni sugerencias.
     </div>
     {% endif %}
   </div>
@@ -649,9 +732,12 @@
   document.querySelectorAll('.btn-sugerencias').forEach(b => {
     b.addEventListener('click', () => {
       let sugerencias = [];
-      try { sugerencias = JSON.parse(b.dataset.sugerencias || '[]'); } catch (e) {}
+      try {
+        const el = document.getElementById(b.dataset.sugId);
+        if (el) sugerencias = JSON.parse(el.textContent || '[]');
+      } catch (e) { console.error('sug parse', e); }
       const d = {...b.dataset};
-      delete d.sugerencias;
+      delete d.sugId;
       abrirModalConSugerencias(d, sugerencias);
     });
   });

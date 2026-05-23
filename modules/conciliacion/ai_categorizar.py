@@ -234,9 +234,14 @@ def categorizar_con_ai(concepto: str, tipo: str) -> tuple[Categoria, dict]:
     concepto_norm = normalizar_concepto(concepto)
     cached = _leer_cache(concepto_norm, tipo)
     if cached:
-        _grp, _lbl, _abr = GRUPO_LABEL.get(cached["categoria"], ("OTRO", "Sin categorizar", "?"))
+        # Si la cache tiene OTRO/ENTRADA_OTRO/SALIDA_OTRO, IGNORAR — la regex
+        # nueva categoriza mejor que la cache vieja. Fix Tamara 2026-05-23.
+        cat_cached = cached["categoria"]
+        if cat_cached in ("OTRO", "ENTRADA_OTRO", "SALIDA_OTRO"):
+            return cat_regex, info_extra
+        _grp, _lbl, _abr = GRUPO_LABEL.get(cat_cached, ("OTRO", "Sin categorizar", "?"))
         cat = Categoria(
-            codigo=cached["categoria"],
+            codigo=cat_cached,
             grupo=cached["grupo"],
             label=cached["label"],
             abrev=_abr,

@@ -152,5 +152,10 @@ def categorizar(concepto: str, tipo: str) -> Categoria:
 
 
 def necesita_ai(cat: Categoria) -> bool:
-    """¿Vale la pena pasarlo por AI?"""
-    return cat.codigo in ("ENTRADA_OTRO", "SALIDA_OTRO", "OTRO") or cat.confianza < 0.5
+    """¿Vale la pena pasarlo por AI?
+
+    Solo cuando la regex devolvió 'OTRO' explícito. NO por confianza baja:
+    el fallback por tipo (P para salida, TR para entrada) es un default
+    razonable que NO queremos que la cache pisotee con un 'OTRO' viejo.
+    """
+    return cat.codigo in ("ENTRADA_OTRO", "SALIDA_OTRO", "OTRO")

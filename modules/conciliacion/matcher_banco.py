@@ -102,6 +102,8 @@ class ConciliacionBanco:
     bancsis_cargados: int = 0  # cuántas tx BANCSIS entraron al matcher
     # Sugerencias por real_only: índice → [{id_transaccion, importe, fecha, prov, ...}]
     sugerencias_real_only: dict = field(default_factory=dict)
+    # Conteos por pasada del matcher (P1/P2/P3/P4): para mostrar en UI
+    matches_por_pasada: dict = field(default_factory=lambda: {"P1": 0, "P2": 0, "P3": 0, "P4": 0})
     # Saldos del extracto
     saldo_real_final: Decimal = Decimal(0)
     saldo_real_fecha: date | None = None
@@ -357,14 +359,15 @@ def matchear_extracto_banco(
     if dias_tolerancia is None:
         dias_tolerancia = _calcular_ventana_dias(fechas_real, default=1)
 
-    # Cargamos BANCSIS con ventana ASIMÉTRICA: solo 1 día antes (para el caso
-    # raro de carga programa = día anterior a banco), y +ventana_dias después
-    # (para el caso típico de banco que se atrasa unos días). Tamara 2026-05-23:
-    # "no me sigas trayendo cosas viejas (13/14) si subí el extracto del 14-19".
+    # Cargamos BANCSIS con ventana AMPLIA hacia adelante (banco se atrasa) y
+    # un poco hacia atrás (programa cargado antes que banco). Las pasadas
+    # P2-P4 trabajan dentro de este universo cargado.
+    ventana_carga_atras = 1
+    ventana_carga_adelante = max(dias_tolerancia, 15)
     bancsis = cargar_bancsis(
         no_banco,
-        desde - timedelta(days=1),
-        hasta + timedelta(days=dias_tolerancia),
+        desde - timedelta(days=ventana_carga_atras),
+        hasta + timedelta(days=ventana_carga_adelante),
     )
     bancsis_total = len(bancsis)
 
@@ -382,6 +385,7 @@ def matchear_extracto_banco(
     # ─── PASS 1: estricto (tipo + monto±tol + fecha±tol) ────────────────
     bancsis_usado: set[int] = set()
     real_sin_match: list[MovBanco] = []
+    cont_p1 = cont_p2 = cont_p3 = cont_p4 = 0
 
     for real in movs_real_filtrados:
         candidatos: list[tuple[float, MovBancsis]] = []
@@ -410,6 +414,7 @@ def matchear_extracto_banco(
             )
             res.matches.append(Match(real=real, bancsis=bk, score=score, razon=razon))
             bancsis_usado.add(bk.id_transaccion)
+            cont_p1 += 1
         else:
             real_sin_match.append(real)
 
