@@ -638,13 +638,27 @@ def hub_diag():
     # Sample 5 transacciones del banco Pichincha en mayo
     sample = _db.fetch_all(
         """
-        SELECT id_transaccion, fecha, documento, importe, concepto, no_banco
-          FROM scintela.transacciones_bancarias
-         WHERE fecha BETWEEN '2026-05-12' AND '2026-05-20'
-         ORDER BY fecha DESC, id_transaccion DESC
+        SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.importe, tb.concepto,
+               tb.no_banco, tb.prov, c.nombre AS prov_nombre, tb.numreferencia
+          FROM scintela.transacciones_bancarias tb
+          LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(tb.prov))
+         WHERE tb.fecha BETWEEN '2026-05-12' AND '2026-05-20'
+         ORDER BY tb.fecha DESC, tb.id_transaccion DESC
          LIMIT 8
         """
     ) or []
+    # Cobertura de prov: cuántas tx tienen prov no-vacío y cuántas matchean cliente
+    cobertura = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE COALESCE(NULLIF(TRIM(tb.prov),''),'') <> '') AS con_prov,
+               COUNT(c.codigo_cli) AS con_cliente
+          FROM scintela.transacciones_bancarias tb
+          LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(tb.prov))
+         WHERE tb.no_banco = 10
+           AND tb.fecha BETWEEN '2026-05-01' AND '2026-05-31'
+        """
+    ) or {}
     return {
         "bancos": [{"no_banco": b["no_banco"], "nombre": b.get("nombre")} for b in bancos],
         "counts_por_banco": [
@@ -666,9 +680,17 @@ def hub_diag():
                 "importe": float(s.get("importe") or 0),
                 "concepto": (s.get("concepto") or "")[:60],
                 "no_banco": s.get("no_banco"),
+                "prov": s.get("prov"),
+                "prov_nombre": s.get("prov_nombre"),
+                "numreferencia": s.get("numreferencia"),
             }
             for s in sample
         ],
+        "cobertura_prov_mayo_pichincha": {
+            "total": int(cobertura.get("total") or 0),
+            "con_prov_no_vacio": int(cobertura.get("con_prov") or 0),
+            "matchea_cliente": int(cobertura.get("con_cliente") or 0),
+        },
     }
 
 

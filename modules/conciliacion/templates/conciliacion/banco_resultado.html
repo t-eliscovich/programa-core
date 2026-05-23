@@ -71,19 +71,26 @@
   {# === Tab: matches === #}
   <div data-tabpane="matches" class="tabpane">
     {% if n_match > 0 %}
-    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mb-2">
+    <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="mb-2 flex items-center gap-2 flex-wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="matches_json" value="{{ matches_json|e }}">
       <input type="hidden" name="no_banco" value="{{ no_banco }}">
-      <button class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
-        Confirmar los {{ n_match }}
+      {# matches_seleccionados_json se rellena con JS antes de submit #}
+      <input type="hidden" name="matches_json" id="matches_seleccionados_json" value="[]">
+      <button type="submit" id="btn-confirmar-seleccionados"
+              class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs"
+              disabled>
+        Confirmar seleccionados (<span id="cnt-seleccionados">0</span>)
       </button>
+      <span class="text-xs text-slate-500">·</span>
+      <button type="button" id="btn-marcar-todos" class="text-xs text-sky-600 hover:underline">Marcar todos los exactos</button>
+      <button type="button" id="btn-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
       <span class="ml-2 text-xs text-slate-500">Los confirmados no vuelven a aparecer en próximos extractos.</span>
     </form>
     <div class="overflow-x-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
       <table class="w-full text-xs" id="tbl-matches">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
+            <th class="px-2 py-1.5"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
             <th class="px-2 py-1.5">Tipo</th>
             <th class="px-2 py-1.5">Fecha banco</th>
             <th class="px-2 py-1.5">Fecha programa</th>
@@ -102,7 +109,10 @@
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
           <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/30 dark:bg-emerald-900/10{% endif %} fila"
               data-tipo="{{ m.real.tipo }}"
+              data-exacto="{{ '1' if m.es_exacto else '0' }}"
+              data-match='{{ m|tojson|forceescape }}'
               data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.concepto ~ ' ' ~ m.bancsis.id_transaccion ~ ' ' ~ (m.bancsis.prov or '') ~ ' ' ~ (m.bancsis.prov_nombre or ''))|lower }}">
+            <td class="px-2 py-1.5"><input type="checkbox" class="chk-match"></td>
             <td class="px-2 py-1.5 font-mono {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ m.real.tipo }}</td>
             <td class="px-2 py-1.5 font-mono">{{ m.real.fecha }}</td>
             <td class="px-2 py-1.5 font-mono {% if fecha_diff %}text-amber-700 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}"
@@ -345,6 +355,68 @@
 
 <script>
 (function() {
+  // ---- Checkboxes de confirmación de matches ----
+  const chkAll = document.getElementById('chk-all');
+  const chkInputs = () => document.querySelectorAll('#tbl-matches tbody tr.fila:not(.hidden) .chk-match');
+  const cntSpan = document.getElementById('cnt-seleccionados');
+  const btnConfirmar = document.getElementById('btn-confirmar-seleccionados');
+  const btnMarcarTodos = document.getElementById('btn-marcar-todos');
+  const btnDesmarcar = document.getElementById('btn-desmarcar');
+  const hiddenJson = document.getElementById('matches_seleccionados_json');
+
+  function actualizarSeleccion() {
+    const chks = document.querySelectorAll('#tbl-matches tbody tr.fila .chk-match');
+    let n = 0;
+    chks.forEach(c => { if (c.checked) n++; });
+    if (cntSpan) cntSpan.textContent = n;
+    if (btnConfirmar) btnConfirmar.disabled = (n === 0);
+  }
+
+  function buildPayload() {
+    const payload = [];
+    document.querySelectorAll('#tbl-matches tbody tr.fila').forEach(tr => {
+      const chk = tr.querySelector('.chk-match');
+      if (chk && chk.checked) {
+        try { payload.push(JSON.parse(tr.dataset.match)); }
+        catch (e) { /* ignore */ }
+      }
+    });
+    return payload;
+  }
+
+  if (chkAll) {
+    chkAll.addEventListener('change', () => {
+      chkInputs().forEach(c => { c.checked = chkAll.checked; });
+      actualizarSeleccion();
+    });
+  }
+  document.querySelectorAll('.chk-match').forEach(c => {
+    c.addEventListener('change', actualizarSeleccion);
+  });
+  if (btnMarcarTodos) {
+    btnMarcarTodos.addEventListener('click', () => {
+      document.querySelectorAll('#tbl-matches tbody tr.fila:not(.hidden)').forEach(tr => {
+        if (tr.dataset.exacto === '1') {
+          const c = tr.querySelector('.chk-match');
+          if (c) c.checked = true;
+        }
+      });
+      actualizarSeleccion();
+    });
+  }
+  if (btnDesmarcar) {
+    btnDesmarcar.addEventListener('click', () => {
+      document.querySelectorAll('.chk-match').forEach(c => { c.checked = false; });
+      if (chkAll) chkAll.checked = false;
+      actualizarSeleccion();
+    });
+  }
+  if (btnConfirmar) {
+    btnConfirmar.form.addEventListener('submit', (e) => {
+      hiddenJson.value = JSON.stringify(buildPayload());
+    });
+  }
+
   // ---- Tabs ----
   const tabs = document.querySelectorAll('.tab-btn');
   const panes = document.querySelectorAll('.tabpane');
