@@ -708,8 +708,8 @@ def hub_selftest():
     Movimientos banco == Movimientos programa.
     """
     import db as _db
-    from datetime import date as _date
-    # Buscar la fecha máxima de tx del banco Pichincha
+    from datetime import date as _date, timedelta as _td
+    # Tomar últimos 5 días con txs Pichincha
     row = _db.fetch_one(
         "SELECT MAX(fecha) AS fmax FROM scintela.transacciones_bancarias WHERE no_banco = 10"
     )
@@ -717,21 +717,20 @@ def hub_selftest():
         return {"error": "sin txs Pichincha"}, 500
     fmax = row["fmax"]
     dia_max = fmax if isinstance(fmax, _date) else _date.fromisoformat(str(fmax))
+    dia_min = dia_max - _td(days=4)
 
-    # Cargar el día completo
     txs = _db.fetch_all(
         """
         SELECT id_transaccion, fecha, documento, concepto, importe, prov, numreferencia
           FROM scintela.transacciones_bancarias
          WHERE no_banco = 10
-           AND fecha = %s
-         ORDER BY id_transaccion
-         LIMIT 100
+           AND fecha BETWEEN %s AND %s
+         ORDER BY fecha, id_transaccion
         """,
-        (dia_max,),
+        (dia_min, dia_max),
     ) or []
     if not txs:
-        return {"error": f"sin txs en {dia_max}", "fecha": str(dia_max)}, 500
+        return {"error": f"sin txs entre {dia_min} y {dia_max}"}, 500
 
     # Generar MovBanco equivalentes (uno por tx del programa)
     from modules.conciliacion.parser_banco import MovBanco
