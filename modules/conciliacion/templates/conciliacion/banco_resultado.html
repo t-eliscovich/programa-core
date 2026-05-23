@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_hero, kpi_card %}
 {% block titulo %}Conciliación {{ banco_nombre or 'banco' }}{% endblock %}
-{% block breadcrumb %}<strong>Conciliación · {{ banco_nombre }}</strong>{% endblock %}
 
 {% block content %}
 <div class="page-shell page-shell--full max-w-7xl mx-auto px-4 py-5" id="conciliacion-banco-app">
@@ -210,8 +209,8 @@
                 <input type="hidden" name="real_tipo" value="{{ r.tipo }}">
                 <input type="hidden" name="real_codigo" value="{{ r.codigo }}">
                 <input type="hidden" name="real_oficina" value="{{ r.oficina }}">
-                <button class="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
-                        title="Insertar el movimiento en programa Pichincha y conciliar">+ Crear en programa</button>
+                <button class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
+                        title="Crear el movimiento en programa Pichincha">+ Crear</button>
               </form>
               <button type="button"
                       class="px-2 py-1 rounded text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 btn-match-manual"
@@ -222,7 +221,7 @@
                       data-tipo="{{ r.tipo }}"
                       data-codigo="{{ r.codigo|e }}"
                       data-oficina="{{ r.oficina|e }}"
-                      title="Buscar y vincular con un mov del programa">Match manual</button>
+                      title="Buscar y vincular con un mov del programa">🔗</button>
             </td>
           </tr>
           {% endfor %}
