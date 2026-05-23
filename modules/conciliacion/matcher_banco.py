@@ -527,6 +527,45 @@ def matchear_extracto_banco(
         else:
             sin_match_pass3.append(real)
 
+    # ─── PASS 3.5: cliente + monto CERCANO (±10%, fecha ≤7d) ───────────
+    # Para los reales con cliente extraído sin match: si hay un único
+    # BANCSIS del mismo cliente con monto razonablemente cercano y fecha
+    # cercana, los matcheamos. Cubre redondeos y cambios chicos de monto.
+    aun_sin_match_p35: list[MovBanco] = []
+    for real in aun_sin_match:
+        codigo_concepto, _ = _extraer_cliente_concepto(real.concepto)
+        if not codigo_concepto:
+            aun_sin_match_p35.append(real)
+            continue
+        candidatos = []
+        for bk in bancsis:
+            if bk.id_transaccion in bancsis_usado:
+                continue
+            if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            if (bk.prov or "").upper().strip() != codigo_concepto.upper():
+                continue
+            diff_monto = abs(float(real.monto) - bk.importe)
+            tope = max(5.0, float(real.monto) * 0.1)
+            if diff_monto > tope:
+                continue
+            diff_dias = abs((real.fecha - bk.fecha).days) if (real.fecha and bk.fecha) else 99
+            if diff_dias > 7:
+                continue
+            candidatos.append((diff_dias + diff_monto, bk))
+        if len(candidatos) >= 1:
+            candidatos.sort(key=lambda t: t[0])
+            _, bk = candidatos[0]
+            diff_dias = abs((real.fecha - bk.fecha).days)
+            diff_monto = abs(float(real.monto) - bk.importe)
+            razon = f"P3.5·cliente {codigo_concepto} ±10% · BANCSIS #{bk.id_transaccion} · Δ{diff_dias}d ${diff_monto:.2f}"
+            res.matches.append(Match(real=real, bancsis=bk, score=diff_dias + 150, razon=razon))
+            bancsis_usado.add(bk.id_transaccion)
+            cont_p2 += 1  # contado como variante de P2
+        else:
+            aun_sin_match_p35.append(real)
+    aun_sin_match = aun_sin_match_p35
+
     # ─── PASS 4: match GRUPAL por (tipo, monto) ─────────────────────────
     # Tamara 2026-05-23: "si hay 5 de 500 en banco y 5 de 500 en programa,
     # no hace falta asignar uno por uno". Si la cardinalidad coincide,

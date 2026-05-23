@@ -28,13 +28,13 @@
     {{ kpi_card(
         'Movimientos banco',
         '$ ' ~ '{:,.2f}'.format(mov_banco),
-        extra=(n_match + n_real_only)|string ~ ' movs en el extracto',
+        extra='matches $ ' ~ '{:,.2f}'.format(mov_banco_matches) ~ ' · solo banco $ ' ~ '{:,.2f}'.format(sum_real_only),
         tono='slate'
     ) }}
     {{ kpi_card(
         'Movimientos programa',
         '$ ' ~ '{:,.2f}'.format(mov_programa),
-        extra=(n_match + n_bancsis_only_periodo)|string ~ ' movs en el periodo' ~ (' (+' ~ (n_bancsis_only - n_bancsis_only_periodo)|string ~ ' fuera de rango)' if (n_bancsis_only - n_bancsis_only_periodo) > 0 else ''),
+        extra='matches $ ' ~ '{:,.2f}'.format(mov_programa_matches) ~ ' · solo programa $ ' ~ '{:,.2f}'.format(sum_bancsis_only_periodo),
         tono='slate'
     ) }}
     {{ kpi_card(

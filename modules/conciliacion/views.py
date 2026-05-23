@@ -553,6 +553,8 @@ def _calc_kpis(data: dict) -> dict:
         "sum_real_only": sum_real_only,
         "sum_bancsis_only": sum_bancsis_only,
         "sum_bancsis_only_periodo": sum_bancsis_only_periodo,
+        "mov_banco_matches": mov_banco_matches,
+        "mov_programa_matches": mov_programa_matches,
         "mov_banco": mov_banco,
         "mov_programa": mov_programa,
         "diff": diff,
