@@ -594,10 +594,11 @@ def hub():
 
     f = request.files.get("archivo")
     if not f or not f.filename:
-        flash("Subí un archivo .xlsx del banco.", "warn")
+        flash("Subí un archivo del banco (.xlsx / .xls).", "warn")
         return redirect(url_for("conciliacion.hub"))
-    if not f.filename.lower().endswith(".xlsx"):
-        flash("El archivo tiene que ser .xlsx.", "warn")
+    fname_lower = f.filename.lower()
+    if not any(fname_lower.endswith(ext) for ext in (".xlsx", ".xls", ".xlsm", ".xlsb", ".ods")):
+        flash(f"El archivo debe ser una planilla (.xlsx, .xls, .xlsm). Recibí: {f.filename}", "warn")
         return redirect(url_for("conciliacion.hub"))
 
     try:
