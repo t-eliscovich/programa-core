@@ -13,23 +13,9 @@
         class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    {# Selector de banco #}
-    <label class="block">
-      <span class="text-xs text-slate-500 dark:text-slate-400">Banco</span>
-      <select name="no_banco"
-              class="mt-1 block w-full text-sm rounded border border-slate-300 dark:border-slate-700
-                     bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 py-1.5 px-2">
-        {% if not bancos %}
-          <option value="{{ no_banco_default }}">Pichincha (default)</option>
-        {% endif %}
-        {% for b in bancos %}
-          <option value="{{ b.no_banco }}"
-                  {% if b.no_banco == no_banco_default %}selected{% endif %}>
-            {{ b.nombre }}
-          </option>
-        {% endfor %}
-      </select>
-    </label>
+    {# Banco siempre Pichincha — TMT 2026-05-23. Si en el futuro
+       agregás otros bancos, este hidden vuelve a ser un <select>. #}
+    <input type="hidden" name="no_banco" value="{{ no_banco_default }}">
 
     {# Archivo #}
     <label class="block">
@@ -72,19 +58,6 @@
   {# Link a historial #}
   <div class="mt-6 text-xs text-slate-500">
     <a href="{{ url_for('conciliacion.banco_historial') }}" class="hover:underline">Ver historial de conciliaciones (deshacer matches) →</a>
-  </div>
-
-  {# Atajos: flows secundarios para casos puntuales #}
-  <div class="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800">
-    <p class="text-xs uppercase tracking-wider text-slate-500 mb-2">Atajos</p>
-    <div class="text-xs text-slate-500 space-y-1">
-      <div>
-        <a href="{{ url_for('conciliacion.depositos') }}" class="hover:underline">Solo depósitos pendientes (xlsx del sistema) →</a>
-      </div>
-      <div>
-        <a href="{{ url_for('conciliacion.index') }}" class="hover:underline">Cazar cheques rebotados (CSV viejo · dispara reverso + STOP cliente) →</a>
-      </div>
-    </div>
   </div>
 
 </div>

@@ -65,6 +65,9 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(matcher_banco.db, "fetch_all", fake_fetch_all)
     monkeypatch.setattr(matcher_banco.db, "fetch_one", fake_fetch_one)
     monkeypatch.setattr(matcher_banco.db, "tx", fake_tx)
+    # Por defecto: asumir migration 0047 corrida (tests del happy path).
+    # Para testear el fallback pre-migration, usar el fixture pre_migration.
+    matcher_banco._tiene_migration_47._cache = True
     # Y el bank_helpers que importa crear_transaccion_desde_real
     import bank_helpers
     monkeypatch.setattr(bank_helpers.db, "execute", fake_execute)
@@ -72,7 +75,17 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(bank_helpers.db, "fetch_all", fake_fetch_all)
     monkeypatch.setattr(bank_helpers.db, "execute_returning", fake_execute_returning)
 
-    return state
+    yield state
+    # Limpiar el cache para no contaminar otros tests.
+    if hasattr(matcher_banco._tiene_migration_47, "_cache"):
+        del matcher_banco._tiene_migration_47._cache
+
+
+@pytest.fixture
+def fake_db_pre_migration(monkeypatch, fake_db):
+    """Variante: la migration 0047 NO corrió todavía."""
+    matcher_banco._tiene_migration_47._cache = False
+    return fake_db
 
 
 # ─── Fase B — crear_transaccion_desde_real ─────────────────────────────────
@@ -242,6 +255,27 @@ def test_confirmar_match_default_metodo_es_matched_auto(fake_db):
 
 
 # ─── Fase A — parseo de error ya no devuelve JSON ──────────────────────────
+
+
+# ─── Tolerancia pre-migration (Fase D hotfix 2026-05-23) ───────────────────
+
+
+def test_confirmar_match_sin_migration_omite_metodo(fake_db_pre_migration):
+    """Si la migration 0047 no corrió, el INSERT no incluye `metodo`."""
+    real = _mov_credito()
+    matcher_banco.confirmar_match(no_banco=10, real=real, id_transaccion=1, usuario="u")
+    sql, params, _ = fake_db_pre_migration["executes"][-1]
+    # El SQL no debe mencionar 'metodo' como columna
+    assert "metodo" not in sql.lower()
+    # El segundo param sigue siendo estado='matched'
+    assert params[1] == "matched"
+
+
+def test_romper_match_sin_migration_hace_delete(fake_db_pre_migration):
+    matcher_banco.romper_match(match_id=42, usuario="u")
+    sql, _params, _ = fake_db_pre_migration["executes"][-1]
+    assert "DELETE" in sql.upper()
+    assert "deshecho_en" not in sql.lower()
 
 
 def test_views_error_parser_no_devuelve_json():

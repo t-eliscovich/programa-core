@@ -83,17 +83,39 @@ class ConciliacionBanco:
     total_bancsis_only_signed: float = 0.0
 
 
+def _tiene_migration_47() -> bool:
+    """¿Corrió la migration 0047 (columnas deshecho_en/metodo)?
+
+    Cacheado por proceso. Si la migration no corrió todavía, el código
+    sigue andando con la lógica vieja (sin soft-undo, sin método).
+    """
+    if hasattr(_tiene_migration_47, "_cache"):
+        return _tiene_migration_47._cache
+    row = db.fetch_one(
+        """
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = 'scintela'
+           AND table_name = 'banco_conciliacion_match'
+           AND column_name = 'deshecho_en'
+        """
+    )
+    _tiene_migration_47._cache = bool(row)
+    return _tiene_migration_47._cache
+
+
 def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], set[tuple]]:
     """Devuelve:
         set de id_transaccion (BANCSIS) ya conciliados (y NO deshechos)
         set de firma REAL (fecha, documento, monto str, tipo) ya conciliados
     """
+    filtro_undo = "AND deshecho_en IS NULL" if _tiene_migration_47() else ""
     rows = db.fetch_all(
-        """
+        f"""
         SELECT id_transaccion, real_fecha, real_documento, real_monto, real_tipo
           FROM scintela.banco_conciliacion_match
          WHERE no_banco = %s
-           AND deshecho_en IS NULL
+           {filtro_undo}
            AND (real_fecha IS NULL OR real_fecha BETWEEN %s AND %s)
         """,
         (no_banco, desde - timedelta(days=30), hasta + timedelta(days=30)),
@@ -289,20 +311,44 @@ def confirmar_match(
     Idempotente: el unique index (no_banco, real_fecha, real_documento, real_monto, real_tipo)
     WHERE deshecho_en IS NULL + ON CONFLICT DO NOTHING evita duplicados activos.
     Si la firma estaba conciliada y deshecha, se puede re-insertar.
+
+    Si la migration 0047 no corrió todavía, omitimos la columna `metodo`.
     """
+    if _tiene_migration_47():
+        return db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match (
+                no_banco, estado, metodo,
+                real_fecha, real_concepto, real_documento, real_monto, real_tipo,
+                real_codigo, real_oficina,
+                id_transaccion, usuario
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (
+                no_banco, estado, metodo,
+                real.fecha, real.concepto, real.documento,
+                real.monto, real.tipo,
+                real.codigo, real.oficina,
+                id_transaccion, usuario,
+            ),
+            conn=conn,
+        )
+    # Fallback pre-migration: schema sin columna `metodo`.
     return db.execute(
         """
         INSERT INTO scintela.banco_conciliacion_match (
-            no_banco, estado, metodo,
+            no_banco, estado,
             real_fecha, real_concepto, real_documento, real_monto, real_tipo,
             real_codigo, real_oficina,
             id_transaccion, usuario
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT DO NOTHING
         """,
         (
-            no_banco, estado, metodo,
+            no_banco, estado,
             real.fecha, real.concepto, real.documento,
             real.monto, real.tipo,
             real.codigo, real.oficina,
@@ -318,11 +364,21 @@ def confirmar_bancsis_only(
     usuario: str = "web",
 ) -> int:
     """Aceptar que un mov BANCSIS NO está en REAL (legítima diferencia)."""
+    if _tiene_migration_47():
+        return db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match
+                (no_banco, estado, metodo, id_transaccion, usuario)
+            VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (no_banco, id_transaccion, usuario),
+        )
     return db.execute(
         """
         INSERT INTO scintela.banco_conciliacion_match
-            (no_banco, estado, metodo, id_transaccion, usuario)
-        VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s, %s)
+            (no_banco, estado, id_transaccion, usuario)
+        VALUES (%s, 'bancsis_only_ok', %s, %s)
         ON CONFLICT DO NOTHING
         """,
         (no_banco, id_transaccion, usuario),
@@ -470,19 +526,25 @@ def romper_match(
 ) -> int:
     """Marca una fila de banco_conciliacion_match como deshecha.
 
-    No DELETEa — soft undo. La fila queda con `deshecho_en` y `deshecho_por`
-    para auditoría. El matcher la excluye así que el mov vuelve a aparecer
-    en el próximo upload.
+    Si la migration 0047 corrió: soft-undo (UPDATE deshecho_en).
+    Si NO corrió: hard-delete (la fila desaparece — sin audit trail pero
+    el mov vuelve a aparecer en el próximo upload).
     """
+    if _tiene_migration_47():
+        return db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET deshecho_en = CURRENT_TIMESTAMP,
+                   deshecho_por = %s
+             WHERE id = %s
+               AND deshecho_en IS NULL
+            """,
+            (usuario[:50], int(match_id)),
+        )
+    # Fallback pre-migration: hard delete
     return db.execute(
-        """
-        UPDATE scintela.banco_conciliacion_match
-           SET deshecho_en = CURRENT_TIMESTAMP,
-               deshecho_por = %s
-         WHERE id = %s
-           AND deshecho_en IS NULL
-        """,
-        (usuario[:50], int(match_id)),
+        "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
+        (int(match_id),),
     )
 
 
@@ -505,16 +567,22 @@ def historial(
     if hasta is not None:
         where.append("(bcm.real_fecha <= %s OR bcm.creado_en::date <= %s)")
         params.extend([hasta, hasta])
-    if not incluir_deshechos:
+    tiene_47 = _tiene_migration_47()
+    if not incluir_deshechos and tiene_47:
         where.append("bcm.deshecho_en IS NULL")
     params.append(int(limit))
+
+    if tiene_47:
+        select_extra = "bcm.metodo, bcm.deshecho_en, bcm.deshecho_por,"
+    else:
+        select_extra = "NULL::text AS metodo, NULL::timestamp AS deshecho_en, NULL::text AS deshecho_por,"
 
     rows = db.fetch_all(
         f"""
         SELECT bcm.id,
                bcm.no_banco,
                bcm.estado,
-               bcm.metodo,
+               {select_extra}
                bcm.real_fecha,
                bcm.real_concepto,
                bcm.real_documento,
@@ -523,8 +591,6 @@ def historial(
                bcm.id_transaccion,
                bcm.usuario,
                bcm.creado_en,
-               bcm.deshecho_en,
-               bcm.deshecho_por,
                tb.documento  AS bancsis_documento,
                tb.importe    AS bancsis_importe,
                tb.fecha      AS bancsis_fecha,
@@ -556,9 +622,10 @@ def candidatos_match_manual(
     'cercanía' (suma absoluta de drift de fecha y monto, igual al scorer).
     """
     doc_filter_in = _DOCS_CREDITO if (tipo_real or "").upper() == "C" else _DOCS_DEBITO
+    ya_excluido_clause = "AND deshecho_en IS NULL" if _tiene_migration_47() else ""
 
     rows = db.fetch_all(
-        """
+        f"""
         SELECT id_transaccion, fecha, documento, concepto, importe,
                numreferencia,
                ABS(EXTRACT(DAY FROM fecha - %s))::int AS diff_dias,
@@ -572,7 +639,7 @@ def candidatos_match_manual(
               SELECT id_transaccion
                 FROM scintela.banco_conciliacion_match
                WHERE id_transaccion IS NOT NULL
-                 AND deshecho_en IS NULL
+                 {ya_excluido_clause}
            )
          ORDER BY diff_dias ASC, diff_monto ASC
          LIMIT %s
