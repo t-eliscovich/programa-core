@@ -56,15 +56,16 @@
   </div>
 
   {# Filtro global #}
-  <div class="mb-3 flex items-center gap-2">
-    <input type="text" id="filtro-texto" placeholder="Filtrar (concepto, documento, ref)…"
+  <div class="mb-3 flex items-center gap-2 flex-wrap">
+    <input type="text" id="filtro-texto" placeholder="Filtrar (concepto, cliente, documento, ref)…"
            class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700
                   bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 w-72">
-    <select id="filtro-tipo" class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
-      <option value="">Tipo: todos</option>
-      <option value="C">C (entran)</option>
-      <option value="D">D (salen)</option>
-    </select>
+    <div class="flex gap-1 text-xs" id="chips-grupo">
+      <button type="button" data-grupo="" class="chip-grupo px-2 py-1 rounded-full bg-slate-900 text-white">Todos</button>
+      <button type="button" data-grupo="ENTRADA" class="chip-grupo px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/30">↓ Entradas</button>
+      <button type="button" data-grupo="SALIDA" class="chip-grupo px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-rose-100 dark:hover:bg-rose-900/30">↑ Salidas</button>
+      <button type="button" data-grupo="COMISION" class="chip-grupo px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-amber-100 dark:hover:bg-amber-900/30">⚙ Comisiones</button>
+    </div>
     <span class="ml-auto text-xs text-slate-500" id="filtro-info"></span>
   </div>
 
@@ -91,7 +92,7 @@
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
             <th class="px-2 py-1.5"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="px-2 py-1.5">Tipo</th>
+            <th class="px-2 py-1.5">Categoría</th>
             <th class="px-2 py-1.5">Fecha banco</th>
             <th class="px-2 py-1.5">Fecha programa</th>
             <th class="px-2 py-1.5 text-right">Monto banco</th>
@@ -109,11 +110,19 @@
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
           <tr class="border-t border-slate-100 dark:border-slate-800 {% if m.es_exacto %}bg-emerald-50/30 dark:bg-emerald-900/10{% endif %} fila"
               data-tipo="{{ m.real.tipo }}"
+              data-grupo="{{ m.cat.grupo }}"
               data-exacto="{{ '1' if m.es_exacto else '0' }}"
               data-match='{{ m|tojson|forceescape }}'
-              data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.concepto ~ ' ' ~ m.bancsis.id_transaccion ~ ' ' ~ (m.bancsis.prov or '') ~ ' ' ~ (m.bancsis.prov_nombre or ''))|lower }}">
+              data-search="{{ (m.real.concepto ~ ' ' ~ m.real.documento ~ ' ' ~ m.bancsis.concepto ~ ' ' ~ m.bancsis.id_transaccion ~ ' ' ~ (m.bancsis.prov or '') ~ ' ' ~ (m.bancsis.prov_nombre or '') ~ ' ' ~ (m.cat.cliente or '') ~ ' ' ~ m.cat.label)|lower }}">
             <td class="px-2 py-1.5"><input type="checkbox" class="chk-match"></td>
-            <td class="px-2 py-1.5 font-mono {% if m.real.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ m.real.tipo }}</td>
+            <td class="px-2 py-1.5">
+              {% set _gc = m.cat.grupo %}
+              <span class="inline-block px-1.5 py-0.5 rounded text-xs whitespace-nowrap
+                {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400
+                {% elif _gc == 'SALIDA' %}bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400
+                {% elif _gc == 'COMISION' %}bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400
+                {% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400{% endif %}">{{ m.cat.label }}</span>
+            </td>
             <td class="px-2 py-1.5 font-mono">{{ m.real.fecha }}</td>
             <td class="px-2 py-1.5 font-mono {% if fecha_diff %}text-amber-700 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}"
                 {% if fecha_diff %}title="Drift de fecha: {{ m.razon }}"{% endif %}>
@@ -127,11 +136,10 @@
                 title="Banco doc: {{ m.real.documento }} · Programa ref: {{ m.bancsis.numreferencia }}">
               {{ m.real.documento }}{% if m.bancsis.numreferencia and m.bancsis.numreferencia != m.real.documento %} / {{ m.bancsis.numreferencia }}{% endif %}
             </td>
-            <td class="px-2 py-1.5 truncate max-w-[120px]" title="{{ m.bancsis.prov_nombre or m.bancsis.prov or '' }}">
-              {% if m.bancsis.prov_nombre %}
-                <span class="text-slate-900 dark:text-slate-100">{{ m.bancsis.prov_nombre[:18] }}</span>
-              {% elif m.bancsis.prov %}
-                <span class="text-slate-500 font-mono">{{ m.bancsis.prov }}</span>
+            <td class="px-2 py-1.5 truncate max-w-[160px]" title="{{ m.bancsis.prov_nombre or m.cat.cliente or m.bancsis.prov or '' }}">
+              {% set _cli = m.bancsis.prov_nombre or m.cat.cliente or m.bancsis.prov %}
+              {% if _cli %}
+                <span class="text-slate-900 dark:text-slate-100">{{ _cli[:22] }}</span>
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
@@ -162,11 +170,11 @@
       <table class="w-full text-xs" id="tbl-real">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
+            <th class="px-2 py-1.5">Categoría</th>
             <th class="px-2 py-1.5">Fecha</th>
-            <th class="px-2 py-1.5">Doc.</th>
             <th class="px-2 py-1.5 text-right">Monto</th>
-            <th class="px-2 py-1.5">Tipo</th>
-            <th class="px-2 py-1.5">Concepto</th>
+            <th class="px-2 py-1.5">Cliente / Detalle</th>
+            <th class="px-2 py-1.5">Concepto banco</th>
             <th class="px-2 py-1.5">Oficina</th>
             <th class="px-2 py-1.5 text-right">Acciones</th>
           </tr>
@@ -175,14 +183,32 @@
           {% for r in data.real_only %}
           <tr class="border-t border-slate-100 dark:border-slate-800 fila"
               data-tipo="{{ r.tipo }}"
-              data-search="{{ (r.concepto ~ ' ' ~ r.documento ~ ' ' ~ r.oficina)|lower }}">
+              data-grupo="{{ r.cat.grupo }}"
+              data-search="{{ (r.concepto ~ ' ' ~ r.documento ~ ' ' ~ r.oficina ~ ' ' ~ (r.cat.cliente or '') ~ ' ' ~ (r.cat.descripcion or '') ~ ' ' ~ r.cat.label)|lower }}">
+            <td class="px-2 py-1.5">
+              {% set _gc = r.cat.grupo %}
+              <span class="inline-block px-1.5 py-0.5 rounded text-xs
+                {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400
+                {% elif _gc == 'SALIDA' %}bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400
+                {% elif _gc == 'COMISION' %}bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400
+                {% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400{% endif %}"
+                title="{{ r.cat.fuente }}">{{ r.cat.label }}</span>
+            </td>
             <td class="px-2 py-1.5 font-mono">{{ r.fecha }}</td>
-            <td class="px-2 py-1.5 font-mono">{{ r.documento }}</td>
             <td class="px-2 py-1.5 text-right font-mono {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if r.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(r.monto) }}
             </td>
-            <td class="px-2 py-1.5 font-mono">{{ r.tipo }}</td>
-            <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.concepto }}">{{ r.concepto[:60] }}</td>
+            <td class="px-2 py-1.5 truncate max-w-[220px]">
+              {% if r.cat.cliente %}
+                <span class="text-slate-900 dark:text-slate-100">{{ r.cat.cliente[:30] }}</span>
+                {% if r.cat.descripcion %}<div class="text-slate-400 text-[10px]">{{ r.cat.descripcion[:60] }}</div>{% endif %}
+              {% elif r.cat.descripcion %}
+                <span class="text-slate-700 dark:text-slate-300">{{ r.cat.descripcion[:60] }}</span>
+              {% else %}
+                <span class="text-slate-300">—</span>
+              {% endif %}
+            </td>
+            <td class="px-2 py-1.5 truncate max-w-[260px] text-slate-500" title="{{ r.concepto }}">{{ r.concepto[:60] }}</td>
             <td class="px-2 py-1.5 text-slate-500">{{ r.oficina }}</td>
             <td class="px-2 py-1.5 text-right whitespace-nowrap">
               {# Crear en sistema #}
@@ -247,11 +273,11 @@
       <table class="w-full text-xs" id="tbl-bancsis">
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
           <tr>
-            <th class="px-2 py-1.5">Tipo</th>
+            <th class="px-2 py-1.5">Categoría</th>
             <th class="px-2 py-1.5">Fecha</th>
             <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5">Cliente / Detalle</th>
             <th class="px-2 py-1.5">Ref/Doc</th>
-            <th class="px-2 py-1.5">Cliente</th>
             <th class="px-2 py-1.5">Concepto</th>
             <th class="px-2 py-1.5 text-right">id</th>
             <th class="px-2 py-1.5 text-right">Acción</th>
@@ -261,25 +287,33 @@
           {% for b in data.bancsis_only %}
           <tr class="border-t border-slate-100 dark:border-slate-800 fila"
               data-tipo="{{ b.tipo_real }}"
-              data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ b.id_transaccion ~ ' ' ~ (b.prov or '') ~ ' ' ~ (b.prov_nombre or ''))|lower }}">
-            <td class="px-2 py-1.5 font-mono {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ b.tipo_real }}</td>
+              data-grupo="{{ b.cat.grupo }}"
+              data-search="{{ (b.concepto ~ ' ' ~ b.documento ~ ' ' ~ b.numreferencia ~ ' ' ~ b.id_transaccion ~ ' ' ~ (b.prov or '') ~ ' ' ~ (b.prov_nombre or '') ~ ' ' ~ (b.cat.cliente or '') ~ ' ' ~ b.cat.label)|lower }}">
+            <td class="px-2 py-1.5">
+              {% set _gc = b.cat.grupo %}
+              <span class="inline-block px-1.5 py-0.5 rounded text-xs
+                {% if _gc == 'ENTRADA' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400
+                {% elif _gc == 'SALIDA' %}bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400
+                {% elif _gc == 'COMISION' %}bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400
+                {% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400{% endif %}">{{ b.cat.label }}</span>
+            </td>
             <td class="px-2 py-1.5 font-mono">{{ b.fecha }}</td>
-            <td class="px-2 py-1.5 text-right font-mono">
+            <td class="px-2 py-1.5 text-right font-mono {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if b.tipo_real == 'D' %}-{% endif %}{{ '{:,.2f}'.format(b.importe) }}
             </td>
-            <td class="px-2 py-1.5 font-mono text-slate-600" title="Doc: {{ b.documento }}{% if b.numreferencia %} · Ref: {{ b.numreferencia }}{% endif %}">
-              {{ b.numreferencia or b.documento }}
-            </td>
-            <td class="px-2 py-1.5 truncate max-w-[140px]" title="{{ b.prov_nombre or b.prov or '' }}">
-              {% if b.prov_nombre %}
-                <span class="text-slate-900 dark:text-slate-100">{{ b.prov_nombre[:20] }}</span>
-              {% elif b.prov %}
-                <span class="text-slate-500 font-mono">{{ b.prov }}</span>
+            <td class="px-2 py-1.5 truncate max-w-[200px]" title="{{ b.prov_nombre or b.cat.cliente or b.prov or '' }}">
+              {% set _cli = b.prov_nombre or b.cat.cliente or b.prov %}
+              {% if _cli %}
+                <span class="text-slate-900 dark:text-slate-100">{{ _cli[:28] }}</span>
+                {% if b.cat.descripcion %}<div class="text-slate-400 text-[10px]">{{ b.cat.descripcion[:60] }}</div>{% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
             </td>
-            <td class="px-2 py-1.5 truncate max-w-xs text-slate-600" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
+            <td class="px-2 py-1.5 font-mono text-slate-600" title="Doc: {{ b.documento }}{% if b.numreferencia %} · Ref: {{ b.numreferencia }}{% endif %}">
+              {{ b.numreferencia or b.documento }}
+            </td>
+            <td class="px-2 py-1.5 truncate max-w-[260px] text-slate-500" title="{{ b.concepto }}">{{ b.concepto[:60] }}</td>
             <td class="px-2 py-1.5 text-right font-mono text-slate-400">{{ b.id_transaccion }}</td>
             <td class="px-2 py-1.5 text-right whitespace-nowrap">
               <form method="POST" action="{{ url_for('conciliacion.hub_aceptar_bancsis_only') }}" class="inline">
@@ -432,28 +466,90 @@
     aplicarFiltros();
   }));
 
-  // ---- Filtros (texto + tipo) ----
+  // ---- Filtros (texto + grupo chip) + agrupación por grupo ----
   const inpTexto = document.getElementById('filtro-texto');
-  const selTipo = document.getElementById('filtro-tipo');
   const info = document.getElementById('filtro-info');
+  const chipsGrupo = document.querySelectorAll('.chip-grupo');
+  let grupoActivo = '';
+
+  // Orden canónico de grupos: ENTRADA primero, después SALIDA, después COMISION, OTRO al final.
+  const ORDEN_GRUPO = {ENTRADA: 1, SALIDA: 2, COMISION: 3, OTRO: 4};
+
+  function ordenarYInsertarSeparadores() {
+    document.querySelectorAll('table[id^="tbl-"]').forEach(tbl => {
+      const tbody = tbl.querySelector('tbody');
+      if (!tbody) return;
+      // Eliminar separadores previos
+      tbody.querySelectorAll('tr.sep-grupo').forEach(tr => tr.remove());
+      // Recolectar filas y ordenar por grupo
+      const rows = Array.from(tbody.querySelectorAll('tr.fila'));
+      const ncols = (tbl.querySelectorAll('thead th') || []).length || 8;
+      rows.sort((a, b) => {
+        const ga = ORDEN_GRUPO[a.dataset.grupo] || 9;
+        const gb = ORDEN_GRUPO[b.dataset.grupo] || 9;
+        return ga - gb;
+      });
+      // Insertar al tbody en orden, con separadores
+      let lastGrupo = null;
+      rows.forEach(r => {
+        const g = r.dataset.grupo || 'OTRO';
+        if (g !== lastGrupo) {
+          const sep = document.createElement('tr');
+          sep.className = 'sep-grupo bg-slate-100 dark:bg-slate-800/70';
+          const label = ({ENTRADA: '↓ Entradas', SALIDA: '↑ Salidas', COMISION: '⚙ Comisiones', OTRO: 'Otros'})[g] || g;
+          sep.innerHTML = `<td colspan="${ncols}" class="px-2 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">${label}</td>`;
+          tbody.appendChild(sep);
+          lastGrupo = g;
+        }
+        tbody.appendChild(r);
+      });
+    });
+  }
+
   function aplicarFiltros() {
     const q = (inpTexto.value || '').toLowerCase().trim();
-    const tipo = selTipo.value || '';
     let visibles = 0, total = 0;
     const paneActivo = document.querySelector('.tabpane:not(.hidden)');
     if (!paneActivo) return;
     paneActivo.querySelectorAll('tr.fila').forEach(tr => {
       total++;
       const matchTexto = !q || (tr.dataset.search || '').includes(q);
-      const matchTipo = !tipo || (tr.dataset.tipo === tipo);
-      const visible = matchTexto && matchTipo;
+      const matchGrupo = !grupoActivo || (tr.dataset.grupo === grupoActivo);
+      const visible = matchTexto && matchGrupo;
       tr.classList.toggle('hidden', !visible);
       if (visible) visibles++;
     });
-    info.textContent = (q || tipo) ? `${visibles} de ${total} filas` : '';
+    // Esconder separadores cuyo grupo no tiene filas visibles
+    paneActivo.querySelectorAll('tr.sep-grupo').forEach(sep => {
+      const next = sep.nextElementSibling;
+      let tieneVisible = false;
+      let cur = next;
+      while (cur && !cur.classList.contains('sep-grupo')) {
+        if (cur.classList.contains('fila') && !cur.classList.contains('hidden')) {
+          tieneVisible = true;
+          break;
+        }
+        cur = cur.nextElementSibling;
+      }
+      sep.classList.toggle('hidden', !tieneVisible);
+    });
+    info.textContent = (q || grupoActivo) ? `${visibles} de ${total} filas` : '';
   }
+
   inpTexto.addEventListener('input', aplicarFiltros);
-  selTipo.addEventListener('change', aplicarFiltros);
+  chipsGrupo.forEach(c => c.addEventListener('click', () => {
+    grupoActivo = c.dataset.grupo || '';
+    chipsGrupo.forEach(x => {
+      x.classList.remove('bg-slate-900', 'text-white');
+      x.classList.add('bg-slate-100', 'dark:bg-slate-800', 'text-slate-700', 'dark:text-slate-300');
+    });
+    c.classList.add('bg-slate-900', 'text-white');
+    c.classList.remove('bg-slate-100', 'dark:bg-slate-800', 'text-slate-700', 'dark:text-slate-300');
+    aplicarFiltros();
+  }));
+
+  // Una vez al cargar
+  ordenarYInsertarSeparadores();
 
   // ---- Match manual modal ----
   const modal = document.getElementById('match-manual-modal');

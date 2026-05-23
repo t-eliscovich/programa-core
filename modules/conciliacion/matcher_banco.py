@@ -71,10 +71,29 @@ class Match:
 
 
 @dataclass
+class Categorizado:
+    """Categoría asociada a un mov (banco real o BANCSIS).
+
+    Se calcula post-match y se adjunta al resultado para que el template
+    pueda agrupar y mostrar labels legibles.
+    """
+    codigo: str            # ej: SALIDA_PAGO_PROVEEDOR
+    grupo: str             # ENTRADA | SALIDA | COMISION | OTRO
+    label: str             # "Pago a proveedor"
+    cliente: str = ""      # extraído del concepto o por AI
+    descripcion: str = ""  # frase legible (solo cuando hay AI)
+    fuente: str = "regex"  # regex | ai | ai-cache | tipo-fallback
+
+
+@dataclass
 class ConciliacionBanco:
     matches: list[Match] = field(default_factory=list)
     real_only: list[MovBanco] = field(default_factory=list)
     bancsis_only: list[MovBancsis] = field(default_factory=list)
+    # Categorías paralelas: misma longitud y orden que real_only/bancsis_only
+    real_only_cats: list[Categorizado] = field(default_factory=list)
+    bancsis_only_cats: list[Categorizado] = field(default_factory=list)
+    matches_cats: list[Categorizado] = field(default_factory=list)
     # Saldos del extracto
     saldo_real_final: Decimal = Decimal(0)
     saldo_real_fecha: date | None = None
@@ -137,28 +156,118 @@ def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], 
     return ids_bancsis, firmas_real
 
 
+import re as _re
+
+# Patrones para extraer cliente/proveedor del concepto del banco.
+# Hay dos formas:
+#   A) Código corto interno (3-5 letras) tipo "ch.LTM", "tr JTX", "1 ch.BFV"
+#   B) Nombre completo del banco real tipo "TRANSFERENCIA DIRECTA DE
+#      AGUILAR RUIZ JACQUELINE DEL CARMEN" — el banco te da el nombre.
+
+_RE_CODIGO_INTERNO = _re.compile(
+    r"(?:^|\s)(?:\d+\s+)?(?:ch\.?|tr\.?|nc\.?|trf\.?|dep\.?\s*ch\.?)\s*([A-Za-z]{2,5})\b",
+    _re.IGNORECASE,
+)
+
+_RE_NOMBRE_LARGO = _re.compile(
+    r"(?:TRANSFERENCIA\s+(?:DIRECTA|INTERBANCARIA|INTERNA)?\s*"
+    r"(?:DE|A|RECIBIDA\s+DE|ENVIADA\s+A)\s+|"
+    r"DEP[OÓ]SITO\s+(?:DE|EFECTIVO\s+DE)\s+|"
+    r"PAGO\s+(?:A|DE)\s+|"
+    r"COBRO\s+(?:DE|A)\s+)"
+    r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ \.\-]{4,})",
+    _re.IGNORECASE,
+)
+
+
+def _extraer_cliente_concepto(concepto: str) -> tuple[str, str]:
+    """Devuelve (codigo_corto, nombre_largo) extraídos del concepto.
+
+    Cualquiera puede ser '' si no se detecta.
+
+    >>> _extraer_cliente_concepto("1 ch.LTM")
+    ('LTM', '')
+    >>> _extraer_cliente_concepto("TRANSFERENCIA DIRECTA DE AGUILAR RUIZ JACQUELINE")[1]
+    'AGUILAR RUIZ JACQUELINE'
+    """
+    if not concepto:
+        return "", ""
+    codigo = ""
+    nombre = ""
+    m = _RE_CODIGO_INTERNO.search(concepto)
+    if m:
+        codigo = m.group(1).upper().strip()
+    m2 = _RE_NOMBRE_LARGO.search(concepto)
+    if m2:
+        nombre = " ".join(m2.group(1).strip().split())  # normalizar espacios
+        # Sacar trailing tipo "DEL CARMEN ELIZABE" cortado por el banco — está OK
+        nombre = nombre.upper()
+    return codigo, nombre
+
+
+def _codigo_desde_concepto(concepto: str) -> str:
+    """Compat shim — solo el código corto. Llama a _extraer_cliente_concepto."""
+    return _extraer_cliente_concepto(concepto)[0]
+
+
+def _resolver_clientes(rows: list[dict]) -> dict[str, str]:
+    """Para cada `prov` (explícito o extraído del concepto), trae el nombre.
+
+    Una sola query batch en vez de N+1. Devuelve {codigo_upper: nombre}.
+    """
+    codigos: set[str] = set()
+    for r in rows:
+        prov = (r.get("prov") or "").strip()
+        if prov:
+            codigos.add(prov.upper())
+        cod_concepto = _codigo_desde_concepto(r.get("concepto") or "")
+        if cod_concepto:
+            codigos.add(cod_concepto)
+    if not codigos:
+        return {}
+    rows_cli = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli, nombre
+          FROM scintela.cliente
+         WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)
+        """,
+        (list(codigos),),
+    ) or []
+    return {r["codigo_cli"]: (r.get("nombre") or "").strip() for r in rows_cli}
+
+
 def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     """Trae todas las transacciones BANCSIS del banco en el rango.
 
-    Joinea contra `scintela.cliente` para traer el nombre legible cuando
-    `prov` matchea con un cliente conocido (el código suele apuntar al
-    cliente del cheque depositado o del proveedor pagado).
+    Resuelve el cliente con esta cascada:
+      1. `tb.prov` si está poblado (explícito, mayor confianza).
+      2. Regex sobre `tb.concepto` para extraer códigos embebidos (ej:
+         "1 ch.LTM" → LTM). Cubre el caso típico de Pichincha donde el
+         prov NO se carga pero el concepto trae el código.
+    Después de resolver el código, joinea contra `scintela.cliente` por
+    `codigo_cli` (en una sola query batch — no N+1).
     """
     rows = db.fetch_all(
         """
         SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
-               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov,
-               c.nombre AS prov_nombre
+               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov
           FROM scintela.transacciones_bancarias tb
-          LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(tb.prov))
          WHERE tb.no_banco = %s
            AND tb.fecha BETWEEN %s AND %s
          ORDER BY tb.fecha ASC, tb.id_transaccion ASC
         """,
         (no_banco, desde, hasta),
     ) or []
-    return [
-        MovBancsis(
+    nombre_por_codigo = _resolver_clientes(rows)
+    out: list[MovBancsis] = []
+    for r in rows:
+        prov_explicito = str(r.get("prov") or "").strip()
+        codigo_concepto, nombre_concepto = _extraer_cliente_concepto(r.get("concepto") or "")
+        # Cascada: explícito → código del concepto → nombre largo del concepto
+        prov_resuelto = (prov_explicito or codigo_concepto or "").upper()
+        # Nombre: 1) BD si hay match por código, 2) nombre largo extraído, 3) nada
+        prov_nombre = nombre_por_codigo.get(prov_resuelto, "") or nombre_concepto
+        out.append(MovBancsis(
             id_transaccion=int(r["id_transaccion"]),
             fecha=r["fecha"],
             documento=str(r.get("documento") or "").strip().upper(),
@@ -167,11 +276,10 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
             numreferencia=str(r.get("numreferencia") or "").strip(),
             no_banco=int(r.get("no_banco") or 0),
             saldo=float(r.get("saldo")) if r.get("saldo") is not None else None,
-            prov=str(r.get("prov") or "").strip(),
-            prov_nombre=str(r.get("prov_nombre") or "").strip(),
-        )
-        for r in rows
-    ]
+            prov=prov_resuelto,
+            prov_nombre=prov_nombre,
+        ))
+    return out
 
 
 def _firma_real(m: MovBanco) -> tuple:
@@ -191,10 +299,28 @@ def _es_tipo_compatible(tipo_real: str, doc_bancsis: str) -> bool:
     return False
 
 
+def _calcular_ventana_dias(fechas: list[date], default: int = 1) -> int:
+    """Calcula días de tolerancia según la regla de Tamara (2026-05-23):
+
+      - Default: ±1 día.
+      - Si la fecha más reciente del extracto es VIERNES, +3 días
+        (porque las tx del fin de semana se acreditan el lunes).
+
+    Cualquier sesión puede ampliar manualmente pasando otro `dias_tolerancia`.
+    """
+    if not fechas:
+        return default
+    ultima = max(fechas)
+    # weekday(): lunes=0, viernes=4, sábado=5, domingo=6
+    if ultima.weekday() == 4:
+        return 3
+    return default
+
+
 def matchear_extracto_banco(
     movs_real: Iterable[MovBanco],
     no_banco: int = _BANCO_PICHINCHA_NO,
-    dias_tolerancia: int = 5,
+    dias_tolerancia: int | None = None,
     monto_tolerancia: float = 1.0,
 ) -> ConciliacionBanco:
     """Cross-reference REAL vs BANCSIS bidireccional.
@@ -215,6 +341,10 @@ def matchear_extracto_banco(
     fechas_real = [m.fecha for m in movs_real]
     desde = min(fechas_real)
     hasta = max(fechas_real)
+
+    # Ventana flexible: ±1d default, ±3d si última fecha es viernes.
+    if dias_tolerancia is None:
+        dias_tolerancia = _calcular_ventana_dias(fechas_real, default=1)
 
     # Cargamos BANCSIS en una ventana más amplia para absorver drift.
     ventana = timedelta(days=dias_tolerancia)
@@ -301,7 +431,48 @@ def matchear_extracto_banco(
         sign = 1 if b.documento in _DOCS_CREDITO else -1
         res.total_bancsis_only_signed += sign * b.importe
 
+    # ── Categorización (regex + AI fallback con cache) ─────────────────
+    _adjuntar_categorias(res)
+
     return res
+
+
+def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
+    """Calcula y adjunta categorías a los 3 grupos del resultado.
+
+    Fail-graceful: si el módulo ai_categorizar revienta, usamos solo regex.
+    """
+    try:
+        from modules.conciliacion.ai_categorizar import categorizar_con_ai
+        usar_ai = True
+    except Exception:
+        from modules.conciliacion.categorizar import categorizar as categorizar_con_ai  # type: ignore
+        usar_ai = False
+
+    def _to_cat(concepto: str, tipo: str) -> "Categorizado":
+        try:
+            if usar_ai:
+                cat, extra = categorizar_con_ai(concepto, tipo)
+                return Categorizado(
+                    codigo=cat.codigo, grupo=cat.grupo, label=cat.label,
+                    cliente=extra.get("cliente") or "",
+                    descripcion=extra.get("descripcion") or "",
+                    fuente=cat.fuente,
+                )
+            cat = categorizar_con_ai(concepto, tipo)  # type: ignore
+            return Categorizado(
+                codigo=cat.codigo, grupo=cat.grupo, label=cat.label,
+                cliente="", descripcion="", fuente=cat.fuente,
+            )
+        except Exception:
+            return Categorizado(
+                codigo="OTRO", grupo="OTRO", label="Sin categorizar",
+                cliente="", descripcion="", fuente="error",
+            )
+
+    res.real_only_cats = [_to_cat(m.concepto, m.tipo) for m in res.real_only]
+    res.bancsis_only_cats = [_to_cat(b.concepto, b.tipo_real) for b in res.bancsis_only]
+    res.matches_cats = [_to_cat(m.real.concepto, m.real.tipo) for m in res.matches]
 
 
 def confirmar_match(

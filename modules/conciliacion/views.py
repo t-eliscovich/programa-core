@@ -394,8 +394,23 @@ def depositos_confirmar_verdes():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _cat_to_dict(cat) -> dict:
+    return {
+        "codigo": getattr(cat, "codigo", "OTRO"),
+        "grupo": getattr(cat, "grupo", "OTRO"),
+        "label": getattr(cat, "label", "Sin categorizar"),
+        "cliente": getattr(cat, "cliente", "") or "",
+        "descripcion": getattr(cat, "descripcion", "") or "",
+        "fuente": getattr(cat, "fuente", "regex"),
+    }
+
+
 def _serialize_resultado_banco(res, no_banco: int) -> dict:
     """ConciliacionBanco → dict serializable para session."""
+    # Las listas *_cats vienen del matcher con el mismo orden e índice.
+    _cats_real = getattr(res, "real_only_cats", []) or [None] * len(res.real_only)
+    _cats_bancsis = getattr(res, "bancsis_only_cats", []) or [None] * len(res.bancsis_only)
+    _cats_match = getattr(res, "matches_cats", []) or [None] * len(res.matches)
     return {
         "no_banco": no_banco,
         "matches": [
@@ -422,8 +437,9 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "score": m.score,
                 "razon": m.razon,
                 "es_exacto": m.score < 0.01,
+                "cat": _cat_to_dict(_cats_match[i]) if i < len(_cats_match) and _cats_match[i] else _cat_to_dict(None),
             }
-            for m in res.matches
+            for i, m in enumerate(res.matches)
         ],
         "real_only": [
             {
@@ -434,8 +450,9 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "tipo": r.tipo,
                 "codigo": r.codigo,
                 "oficina": r.oficina,
+                "cat": _cat_to_dict(_cats_real[i]) if i < len(_cats_real) and _cats_real[i] else _cat_to_dict(None),
             }
-            for r in res.real_only
+            for i, r in enumerate(res.real_only)
         ],
         "bancsis_only": [
             {
@@ -448,8 +465,9 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "tipo_real": b.tipo_real,
                 "prov": b.prov,
                 "prov_nombre": b.prov_nombre,
+                "cat": _cat_to_dict(_cats_bancsis[i]) if i < len(_cats_bancsis) and _cats_bancsis[i] else _cat_to_dict(None),
             }
-            for b in res.bancsis_only
+            for i, b in enumerate(res.bancsis_only)
         ],
         "saldo_real_final": float(res.saldo_real_final),
         "saldo_real_fecha": res.saldo_real_fecha.isoformat() if res.saldo_real_fecha else None,
