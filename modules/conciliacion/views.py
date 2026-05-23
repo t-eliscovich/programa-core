@@ -694,6 +694,95 @@ def hub_confirmar_matches():
     return redirect(url_for("conciliacion.hub"))
 
 
+@conciliacion_bp.route("/hub/selftest", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_selftest():
+    """Self-test del matcher con txs reales del programa.
+
+    Toma todas las txs Pichincha del día más reciente, genera un
+    'extracto' sintético equivalente (mismo monto/tipo/fecha), y corre
+    el matcher. Devuelve el desglose del cálculo.
+
+    Si el matcher funciona perfecto, deberían quedar 0 sin match y
+    Movimientos banco == Movimientos programa.
+    """
+    import db as _db
+    from datetime import date as _date
+    # Buscar la fecha máxima de tx del banco Pichincha
+    row = _db.fetch_one(
+        "SELECT MAX(fecha) AS fmax FROM scintela.transacciones_bancarias WHERE no_banco = 10"
+    )
+    if not row or not row.get("fmax"):
+        return {"error": "sin txs Pichincha"}, 500
+    fmax = row["fmax"]
+    dia_max = fmax if isinstance(fmax, _date) else _date.fromisoformat(str(fmax))
+
+    # Cargar el día completo
+    txs = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, concepto, importe, prov, numreferencia
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = 10
+           AND fecha = %s
+         ORDER BY id_transaccion
+         LIMIT 100
+        """,
+        (dia_max,),
+    ) or []
+    if not txs:
+        return {"error": f"sin txs en {dia_max}", "fecha": str(dia_max)}, 500
+
+    # Generar MovBanco equivalentes (uno por tx del programa)
+    from modules.conciliacion.parser_banco import MovBanco
+    from decimal import Decimal as _Dec
+    _CRED = ("DE", "TR", "XX", "NC", "IN", "AC")
+    movs_real = []
+    for t in txs:
+        doc = (t.get("documento") or "").upper().strip()
+        tipo = "C" if doc in _CRED else "D"
+        movs_real.append(MovBanco(
+            fecha=t["fecha"], concepto=t.get("concepto") or "",
+            documento=str(t.get("numreferencia") or t["id_transaccion"]),
+            monto=_Dec(str(t.get("importe") or 0)),
+            saldo=_Dec("0"), codigo="001045", tipo=tipo, oficina="AG. NORTE",
+        ))
+
+    resultado = matchear_extracto_banco(movs_real, no_banco=10)
+    data = _serialize_resultado_banco(resultado, 10)
+    kpis = _calc_kpis(data)
+
+    return {
+        "fecha_test": str(dia_max),
+        "n_txs_programa_simuladas": len(txs),
+        "n_movs_banco_generados": len(movs_real),
+        "matches_por_pasada": resultado.matches_por_pasada,
+        "matches_total": len(resultado.matches),
+        "real_only": len(resultado.real_only),
+        "bancsis_only": len(resultado.bancsis_only),
+        "bancsis_agrupados": len(resultado.bancsis_agrupados),
+        "kpis": {
+            "mov_banco": round(kpis["mov_banco"], 2),
+            "mov_banco_matches": round(kpis["mov_banco_matches"], 2),
+            "mov_programa": round(kpis["mov_programa"], 2),
+            "mov_programa_matches": round(kpis["mov_programa_matches"], 2),
+            "sum_real_only": round(kpis["sum_real_only"], 2),
+            "sum_bancsis_only_periodo": round(kpis["sum_bancsis_only_periodo"], 2),
+            "diff": round(kpis["diff"], 2),
+        },
+        "muestra_real_only": [
+            {"fecha": str(r.fecha), "tipo": r.tipo, "monto": float(r.monto),
+             "concepto": r.concepto[:50], "documento": r.documento}
+            for r in resultado.real_only[:5]
+        ],
+        "muestra_bancsis_only": [
+            {"fecha": str(b.fecha), "doc": b.documento, "importe": b.importe,
+             "concepto": b.concepto[:50], "prov": b.prov, "es_agrupado": b.es_agrupado}
+            for b in resultado.bancsis_only[:5]
+        ],
+    }
+
+
 @conciliacion_bp.route("/hub/kpi-debug", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
