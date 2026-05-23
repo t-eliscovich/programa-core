@@ -330,7 +330,7 @@ def matchear_extracto_banco(
     movs_real: Iterable[MovBanco],
     no_banco: int = _BANCO_PICHINCHA_NO,
     dias_tolerancia: int | None = None,
-    monto_tolerancia: float = 1.0,
+    monto_tolerancia: float = 5.0,
 ) -> ConciliacionBanco:
     """Cross-reference REAL vs BANCSIS bidireccional.
 
@@ -355,9 +355,15 @@ def matchear_extracto_banco(
     if dias_tolerancia is None:
         dias_tolerancia = _calcular_ventana_dias(fechas_real, default=1)
 
-    # Cargamos BANCSIS en una ventana más amplia para absorver drift.
-    ventana = timedelta(days=dias_tolerancia)
-    bancsis = cargar_bancsis(no_banco, desde - ventana, hasta + ventana)
+    # Cargamos BANCSIS con ventana ASIMÉTRICA: solo 1 día antes (para el caso
+    # raro de carga programa = día anterior a banco), y +ventana_dias después
+    # (para el caso típico de banco que se atrasa unos días). Tamara 2026-05-23:
+    # "no me sigas trayendo cosas viejas (13/14) si subí el extracto del 14-19".
+    bancsis = cargar_bancsis(
+        no_banco,
+        desde - timedelta(days=1),
+        hasta + timedelta(days=dias_tolerancia),
+    )
     bancsis_total = len(bancsis)
 
     # Excluimos los ya conciliados.
