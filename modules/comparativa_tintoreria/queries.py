@@ -127,18 +127,28 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
     """Replica "Gs. Producción Tintorería" = `_gs_tin` de informes/queries.py
     mes-por-mes — IDÉNTICO al cálculo de Gastos del mes (TINTORERÍA TOTAL
     CON AMORT) para que las dos pantallas muestren el mismo número:
-        = V4 + V5 + V6 de scintela.xgast        (gastos directos tintorería)
-        + amortización DCC                      (= deprmaq + depract * 0.5)
+        = V4 + V5 + V6 (= xgast num 4/5/6  +  compras C/Q/T mapeadas)
+        + amortización DCC (= deprmaq + depract * 0.5)
 
-    TMT 2026-05-24 — Pedido dueña: 'iterate until you have the same number
-    in gastos produccion tintoteria in flujo produccion'. Antes esta query
-    sumaba ADEMÁS compras tipo='T' (tintura tercerizada), lo que daba un
-    número distinto a Gastos del mes (que solo lee xgast). Ahora cuadra.
+    TMT 2026-05-24 v3 — Bug detectado por dueña: la tabla mensual mostraba
+    $241.238 en vez de $323.786 (que es lo que muestra Gastos del mes).
+    Causa: el cálculo de Gastos del mes (gastos_xgast_v1_a_v9_mes) suma
+    xgast + COMPRAS mapeadas a num 4/5/6 vía _SQL_COMPRA_NUM_CASE (tipo
+    C/Q/T con concepto = sueldos/servicios/otros). Acá solo sumaba xgast
+    y faltaban las compras → faltaban $82.548 (la diferencia).
+    Fix: importar el mismo CASE y agregarlo a la query mensual.
 
     Devuelve dict {(yy, mm): total_us}. Meses sin gastos devuelven el DCC
     (porque la amortización corre aunque no haya xgast).
     """
-    rows = db.fetch_all(
+    # Import local para evitar circular y porque solo necesitamos el
+    # snippet SQL (no la función completa).
+    from modules.informes.queries import _SQL_COMPRA_NUM_CASE
+
+    out: dict = {}
+
+    # 1) xgast num 4/5/6
+    rows_xg = db.fetch_all(
         """
         SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
                EXTRACT(MONTH FROM fecha)::int  AS mm,
@@ -148,14 +158,29 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
            AND COALESCE(num, 0) IN (4, 5, 6)
          GROUP BY yy, mm
-         ORDER BY yy, mm
         """,
         (desde, hasta),
     )
-    out = {(int(r["yy"]), int(r["mm"])): float(r["total"] or 0)
-           for r in rows}
+    for r in rows_xg:
+        out[(int(r["yy"]), int(r["mm"]))] = float(r["total"] or 0)
 
-    # Sumar amortización DCC por mes (= deprmaq + depract*0.5)
+    # 2) compras mapeadas a num 4/5/6 vía el mismo CASE que usa el live.
+    sql_cp = f"""
+        SELECT EXTRACT(YEAR  FROM c.fecha)::int  AS yy,
+               EXTRACT(MONTH FROM c.fecha)::int  AS mm,
+               COALESCE(SUM(c.importe), 0)::float AS total
+          FROM scintela.compra c
+         WHERE c.fecha BETWEEN %s AND %s
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND ({_SQL_COMPRA_NUM_CASE}) IN (4, 5, 6)
+         GROUP BY yy, mm
+    """
+    rows_cp = db.fetch_all(sql_cp, (desde, hasta)) or []
+    for r in rows_cp:
+        k = (int(r["yy"]), int(r["mm"]))
+        out[k] = out.get(k, 0.0) + float(r["total"] or 0)
+
+    # 3) amortización DCC por mes (= deprmaq + depract*0.5)
     try:
         dcc = _amortizacion_dcc_por_mes(desde, hasta)
         for k, v in dcc.items():

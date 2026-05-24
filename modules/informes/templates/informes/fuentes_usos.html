@@ -5,17 +5,21 @@
 
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 cierre.
-   TMT 2026-05-24 — dueña: "quitale el scroll". Wrapper .table-compact
-   aplica el override de tipografia (11px tbody) + padding chico, y
-   reducimos margenes mb-6/mb-4 entre header/form/tabla. #}
-<div class="max-w-7xl table-compact">
+   TMT 2026-05-24 v2 — dueña: "agrandalo un 20%". Subo tipografia 11→13.2px
+   tbody y 9.5→11.5px thead. Mantengo margenes apretados para que siga
+   entrando sin scroll. #}
+<div class="max-w-7xl table-compact fyu-page">
   <style>
     .max-w-7xl.table-compact > .mb-6 { margin-bottom: 4px !important; }
     .max-w-7xl.table-compact > .mb-4 { margin-bottom: 4px !important; }
     .max-w-7xl.table-compact > form.mb-4 { margin-bottom: 4px !important; }
-    .max-w-7xl.table-compact h1 { font-size: 16px !important; line-height: 1.15; margin: 0; }
+    .max-w-7xl.table-compact h1 { font-size: 18px !important; line-height: 1.15; margin: 0; }
     .max-w-7xl.table-compact p.text-xs,
-    .max-w-7xl.table-compact p.text-sm { font-size: 11px !important; line-height: 1.25 !important; margin-top: 2px !important; }
+    .max-w-7xl.table-compact p.text-sm { font-size: 12px !important; line-height: 1.25 !important; margin-top: 2px !important; }
+    /* Override del override global de tabla-compact (11px) — dueña pidio
+       fuentes-y-usos un 20% mas grande. */
+    main .fyu-page table tbody td { font-size: 13.2px !important; padding: 2.5px 10px !important; line-height: 1.25 !important; }
+    main .fyu-page table thead th { font-size: 11.5px !important; padding: 4px 10px !important; line-height: 1.15 !important; }
   </style>
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Cuadro de Fuentes y Usos', 'Δ patrimonio entre dos meses — cada uso de fondos se balancea con su fuente.') }}
