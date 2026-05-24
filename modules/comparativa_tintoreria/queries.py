@@ -125,47 +125,32 @@ def _amortizacion_dcc_por_mes(desde: date, hasta: date) -> dict:
 
 def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
     """Replica "Gs. Producción Tintorería" = `_gs_tin` de informes/queries.py
-    mes-por-mes:
+    mes-por-mes — IDÉNTICO al cálculo de Gastos del mes (TINTORERÍA TOTAL
+    CON AMORT) para que las dos pantallas muestren el mismo número:
         = V4 + V5 + V6 de scintela.xgast        (gastos directos tintorería)
-        + compras tipo 'T' de scintela.compra   (tintura tercerizada)
         + amortización DCC                      (= deprmaq + depract * 0.5)
+
+    TMT 2026-05-24 — Pedido dueña: 'iterate until you have the same number
+    in gastos produccion tintoteria in flujo produccion'. Antes esta query
+    sumaba ADEMÁS compras tipo='T' (tintura tercerizada), lo que daba un
+    número distinto a Gastos del mes (que solo lee xgast). Ahora cuadra.
 
     Devuelve dict {(yy, mm): total_us}. Meses sin gastos devuelven el DCC
     (porque la amortización corre aunque no haya xgast).
     """
     rows = db.fetch_all(
         """
-        WITH xg AS (
-            SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
-                   EXTRACT(MONTH FROM fecha)::int  AS mm,
-                   COALESCE(SUM(importe), 0)::float AS us
-              FROM scintela.xgast
-             WHERE fecha BETWEEN %s AND %s
-               AND COALESCE(stat, '') NOT IN ('X', 'Y')
-               AND COALESCE(num, 0) IN (4, 5, 6)
-             GROUP BY yy, mm
-        ),
-        cp AS (
-            SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
-                   EXTRACT(MONTH FROM fecha)::int  AS mm,
-                   COALESCE(SUM(importe), 0)::float AS us
-              FROM scintela.compra
-             WHERE fecha BETWEEN %s AND %s
-               AND COALESCE(stat, '') NOT IN ('X', 'Y')
-               AND UPPER(TRIM(COALESCE(tipo, ''))) = 'T'
-             GROUP BY yy, mm
-        ),
-        union_all AS (
-            SELECT yy, mm, us FROM xg
-            UNION ALL
-            SELECT yy, mm, us FROM cp
-        )
-        SELECT yy, mm, SUM(us) AS total
-          FROM union_all
+        SELECT EXTRACT(YEAR  FROM fecha)::int  AS yy,
+               EXTRACT(MONTH FROM fecha)::int  AS mm,
+               COALESCE(SUM(importe), 0)::float AS total
+          FROM scintela.xgast
+         WHERE fecha BETWEEN %s AND %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(num, 0) IN (4, 5, 6)
          GROUP BY yy, mm
          ORDER BY yy, mm
         """,
-        (desde, hasta, desde, hasta),
+        (desde, hasta),
     )
     out = {(int(r["yy"]), int(r["mm"])): float(r["total"] or 0)
            for r in rows}

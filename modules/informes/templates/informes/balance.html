@@ -27,28 +27,29 @@
   }
   .informe-balance table { width: 100%; }
   /* TMT 2026-05-22 dueña: "que el cuadro de resultados entre en una pantalla,
-     no quiero scrollear para abajo". Bajé tamaños/paddings sin perder data. */
+     no quiero scrollear para abajo". Bajé tamaños/paddings sin perder data.
+     TMT 2026-05-24 v2 — más compacto aún (todavía hacía falta scroll). */
   .informe-balance th, .informe-balance td {
-    font-size: 11.5px;
-    line-height: 1.15;
+    font-size: 11px;
+    line-height: 1.1;
     vertical-align: baseline;
   }
   .informe-balance th.col-header {
-    font-size: 10px;
+    font-size: 9.5px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-weight: 600;
     color: rgb(100 116 139);
-    padding: 6px 10px 4px;
+    padding: 3px 10px 2px;
   }
   .dark .informe-balance th.col-header { color: rgb(148 163 184); }
   .informe-balance .seccion-header {
-    font-size: 10px;
+    font-size: 9.5px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-weight: 600;
     color: rgb(71 85 105);
-    padding: 5px 12px 4px;
+    padding: 3px 12px 2px;
     background: rgb(248 250 252);
     border-top: 1px solid rgb(226 232 240);
     border-bottom: 1px solid rgb(226 232 240);
@@ -58,9 +59,9 @@
     background: rgb(30 41 59 / 0.4);
     border-color: rgb(51 65 85);
   }
-  .informe-balance td.label-cell { padding: 2px 12px; }
+  .informe-balance td.label-cell { padding: 1px 12px; }
   .informe-balance td.num-cell {
-    text-align: right; padding: 2px 10px;
+    text-align: right; padding: 1px 10px;
   }
   /* TMT 2026-05-20 v2 — sumandos (cheques+facturas, maquinaria+terrenos)
      corren MÁS a la izquierda (pedido dueña: "necesitamos correrlo más
@@ -76,13 +77,13 @@
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
   /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
   .informe-balance tr.fila-total td {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     background: rgb(241 245 249);
     color: rgb(15 23 42);
     border-top: 1px solid rgb(203 213 225);
-    padding-top: 4px;
-    padding-bottom: 4px;
+    padding-top: 2px;
+    padding-bottom: 2px;
   }
   .dark .informe-balance tr.fila-total td {
     background: rgb(30 41 59 / 0.55);
@@ -91,11 +92,11 @@
   }
   /* Filas KEY METRIC — UTILIDAD y PATRIMONIO NETO. Las más prominentes. */
   .informe-balance tr.fila-key td {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
     background: rgb(186 230 253);
     color: rgb(12 74 110);
-    padding-top: 6px; padding-bottom: 6px;
+    padding-top: 3px; padding-bottom: 3px;
   }
   .dark .informe-balance tr.fila-key td {
     background: rgb(248 250 252);
@@ -110,10 +111,10 @@
      no gris. Mantenemos font-size más chico para distinguirlos de los
      totales mayores. */
   .informe-balance tr.fila-aux td {
-    font-size: 11px;
+    font-size: 10.5px;
     color: rgb(15 23 42);  /* slate-900 */
     font-weight: 600;
-    padding: 2px 12px;
+    padding: 1px 12px;
   }
   .dark .informe-balance tr.fila-aux td { color: rgb(241 245 249); }
   /* El link interno (a Cartera, a Activos) hereda el color del padre.  */

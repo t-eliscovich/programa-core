@@ -79,6 +79,15 @@
         <option value="reversado" {% if estado == 'reversado' %}selected{% endif %}>Reversados</option>
       </select>
     </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Filas</label>
+      <select name="limite" class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+        {% for n in [25, 50, 100, 200] %}
+          <option value="{{ n }}" {% if limite == n %}selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+        <option value="todo" {% if limite >= 5000 %}selected{% endif %}>todas</option>
+      </select>
+    </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
     <a href="{{ url_for('historial.lista') }}"
        class="text-sm text-slate-500 hover:text-slate-700 ml-2">limpiar</a>
@@ -106,13 +115,13 @@
       </colgroup>
       <thead class="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-2 py-2 text-left font-medium">Fecha</th>
-          <th class="px-2 py-2 text-left font-medium">Tipo</th>
-          <th class="px-2 py-2 text-left font-medium">Origen</th>
-          <th class="px-2 py-2 text-left font-medium">Destino</th>
-          <th class="px-2 py-2 text-right font-medium">Importe</th>
-          <th class="px-2 py-2 text-left font-medium">Concepto</th>
-          <th class="px-2 py-2 text-right font-medium no-print">Acc.</th>
+          <th class="px-2 py-1 text-left font-medium">Fecha</th>
+          <th class="px-2 py-1 text-left font-medium">Tipo</th>
+          <th class="px-2 py-1 text-left font-medium">Origen</th>
+          <th class="px-2 py-1 text-left font-medium">Destino</th>
+          <th class="px-2 py-1 text-right font-medium">Importe</th>
+          <th class="px-2 py-1 text-left font-medium">Concepto</th>
+          <th class="px-2 py-1 text-right font-medium no-print">Acc.</th>
         </tr>
       </thead>
       {# TMT 2026-05-16: la tabla usa MÚLTIPLES <tbody>, uno por item.
@@ -189,29 +198,29 @@
                          {% if r.estado == 'reverso' %}italic opacity-70{% endif %}
                          {% if r.row_url %}cursor-pointer{% endif %}"
                   {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
-                <td class="px-2 py-1.5 whitespace-nowrap pl-4">
+                <td class="px-2 py-0.5 whitespace-nowrap pl-4">
                   <div class="text-xs text-violet-700">↳ #{{ r.id_mov_doble }}</div>
                   {% if r.usuario %}<div class="text-[10px] text-slate-400 truncate" title="{{ r.usuario }}">{{ r.usuario }}</div>{% endif %}
                 </td>
-                <td class="px-2 py-1.5 truncate" title="{{ r.label }}">
+                <td class="px-2 py-0.5 truncate" title="{{ r.label }}">
                   <div class="font-medium truncate">{{ r.label }}</div>
                   {% if r.estado != 'activo' %}<div class="mt-0.5">{{ render_estado(r) }}</div>{% endif %}
                 </td>
-                <td class="px-2 py-1.5 text-xs truncate" title="{{ r.origen_label }}">
+                <td class="px-2 py-0.5 text-xs truncate" title="{{ r.origen_label }}">
                   {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
                   {% else %}{{ r.origen_label }}{% endif %}
                 </td>
-                <td class="px-2 py-1.5 text-xs truncate" title="{{ r.destino_label }}">
+                <td class="px-2 py-0.5 text-xs truncate" title="{{ r.destino_label }}">
                   {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                   {% else %}{{ r.destino_label }}{% endif %}
                 </td>
-                <td class="px-2 py-1.5 text-right tabular-nums font-mono whitespace-nowrap">
+                <td class="px-2 py-0.5 text-right tabular-nums font-mono whitespace-nowrap">
                   {{ r.importe | money_es }}
                 </td>
-                <td class="px-2 py-1.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
+                <td class="px-2 py-0.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
                   {{ r.concepto or '' }}
                 </td>
-                <td class="px-2 py-1.5 text-right no-print">
+                <td class="px-2 py-0.5 text-right no-print">
                   <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
                 </td>
               </tr>
@@ -226,31 +235,31 @@
                        {% if r.estado == 'reverso' %}bg-slate-50/60 italic{% endif %}
                        {% if r.row_url %}cursor-pointer{% endif %}"
                 {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
-              <td class="px-2 py-1.5 whitespace-nowrap">
+              <td class="px-2 py-0.5 whitespace-nowrap">
                 {{ r.fecha_operacion | fecha_es }}
                 <div class="text-[10px] text-slate-400 truncate" title="#{{ r.id_mov_doble }}{% if r.usuario %} · {{ r.usuario }}{% endif %}">
                   #{{ r.id_mov_doble }}{% if r.usuario %} · {{ r.usuario }}{% endif %}
                 </div>
               </td>
-              <td class="px-2 py-1.5 truncate" title="{{ r.label }}">
+              <td class="px-2 py-0.5 truncate" title="{{ r.label }}">
                 <div class="font-medium truncate">{{ r.label }}</div>
                 {% if r.estado != 'activo' %}<div class="mt-0.5">{{ render_estado(r) }}</div>{% endif %}
               </td>
-              <td class="px-2 py-1.5 text-xs truncate" title="{{ r.origen_label }}">
+              <td class="px-2 py-0.5 text-xs truncate" title="{{ r.origen_label }}">
                 {% if r.origen_url %}<a href="{{ r.origen_url }}" class="text-sky-700 hover:underline">{{ r.origen_label }}</a>
                 {% else %}{{ r.origen_label }}{% endif %}
               </td>
-              <td class="px-2 py-1.5 text-xs truncate" title="{{ r.destino_label }}">
+              <td class="px-2 py-0.5 text-xs truncate" title="{{ r.destino_label }}">
                 {% if r.destino_url %}<a href="{{ r.destino_url }}" class="text-sky-700 hover:underline">{{ r.destino_label }}</a>
                 {% else %}{{ r.destino_label }}{% endif %}
               </td>
-              <td class="px-2 py-1.5 text-right tabular-nums font-mono whitespace-nowrap">
+              <td class="px-2 py-0.5 text-right tabular-nums font-mono whitespace-nowrap">
                 {{ r.importe | money_es }}
               </td>
-              <td class="px-2 py-1.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
+              <td class="px-2 py-0.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
                 {{ r.concepto or '' }}
               </td>
-              <td class="px-2 py-1.5 text-right no-print">
+              <td class="px-2 py-0.5 text-right no-print">
                 {% if r.estado == 'activo' %}
                   <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
                      class="text-xs text-rose-600 hover:text-rose-800 hover:underline"

@@ -66,6 +66,16 @@ def lista():
     tipo = request.args.get("tipo") or None
     estado = request.args.get("estado") or None
     q = (request.args.get("q") or "").strip() or None
+    # TMT 2026-05-24 — Pedido dueña: "no scroll vertical". Default 50 filas
+    # con paginación; el usuario expande con ?limite=200|500|todo si quiere.
+    try:
+        limite_raw = request.args.get("limite") or "50"
+        if limite_raw.lower() == "todo":
+            limite = 5000
+        else:
+            limite = max(10, min(int(limite_raw), 5000))
+    except (TypeError, ValueError):
+        limite = 50
 
     try:
         filas = queries.listar(
@@ -74,7 +84,7 @@ def lista():
             tipo=tipo,
             estado=estado,
             q=q,
-            limite=1000,
+            limite=limite,
         )
         kpis = queries.conteos(desde=desde, hasta=hasta)
         error = None
@@ -314,6 +324,7 @@ def lista():
         estado=estado,
         q=q or "",
         error=error,
+        limite=limite,
     )
 
 

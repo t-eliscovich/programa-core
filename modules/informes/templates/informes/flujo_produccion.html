@@ -17,21 +17,22 @@
   /* TMT 2026-05-19 v8 — réplica visual de TINT.BAT (dBase) compactada
      para que entre TODO en una pantalla sin scroll. */
   .fp { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
-  .fp table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  /* TMT 2026-05-24 — más compacto para entrar sin scroll vertical. */
+  .fp table { border-collapse: collapse; width: 100%; font-size: 10.5px; }
   .fp .blk { background: white; border: 1px solid rgb(203 213 225);
-             border-radius: 6px; padding: 8px 10px; }
+             border-radius: 6px; padding: 5px 8px; }
   .fp .blk-title { color: rgb(220 38 38); font-weight: 700;
-                   font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
-                   margin-bottom: 4px; }
+                   font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+                   margin-bottom: 2px; }
   .fp th { color: rgb(220 38 38); font-weight: 700; text-transform: uppercase;
-           text-align: right; padding: 2px 6px; font-size: 9px;
+           text-align: right; padding: 1px 6px; font-size: 9px;
            border-bottom: 1px solid rgb(148 163 184); }
   .fp th.lbl { text-align: left; }
-  .fp td { padding: 2px 6px; font-size: 11px; }
+  .fp td { padding: 1px 6px; font-size: 10.5px; line-height: 1.2; }
   .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
   .fp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
   .fp tr.total td { border-top: 1px solid rgb(148 163 184); font-weight: 700;
-                    color: rgb(30 64 175); padding-top: 4px; }
+                    color: rgb(30 64 175); padding-top: 2px; }
   /* TMT 2026-05-21 fix UI (dueña): el porcentaje ahora va DEBAJO del
      número principal, no al costado, para encolumnar correctamente. */
   .fp .pct { color: rgb(100 116 139); font-size: 10px; display: block;
@@ -218,6 +219,7 @@
     {% set csp = cs.get('produccion', {}) %}
     {# Federico 2026-05-22 — TINTORERÍA y COSTOS UNITARIOS unificados en
        un solo cuadro "Costos de tintorería". #}
+    {% set _show_historial = tintoreria_mensual and tintoreria_mensual.filas and (tintoreria_mensual.filas | length > 1) %}
     <div class="blk">
       <div class="blk-title">Costos de tintorería</div>
       <table>
@@ -277,9 +279,11 @@
   {# TMT 2026-05-22 — resumen últimos 12 meses Bajos/Fuertes inyectado por
      comparativa_tintoreria_bp.app_context_processor. Estructura imita la
      tabla "COSTOS DE TINTORERÍA" de arriba: por cada mes 3 filas (Bajos /
-     Fuertes / Total) con columnas % | KG | $/KG | $. #}
-  {% if tintoreria_mensual and tintoreria_mensual.filas %}
-    <div class="blk mt-3" style="margin-top: 12px;">
+     Fuertes / Total) con columnas % | KG | $/KG | $.
+     TMT 2026-05-24 — solo mostramos si hay >1 mes, porque con 1 sólo mes
+     es 100% redundante con la tabla "Costos de tintorería" de arriba. #}
+  {% if _show_historial %}
+    <div class="blk">
       <div class="blk-title">COSTOS DE TINTORERÍA · ÚLTIMOS {{ tintoreria_mensual.filas | length }} MESES</div>
       <table>
         <colgroup>
@@ -366,9 +370,10 @@
       </table>
       <p class="mt-2 text-[10px] text-slate-500">
         Bajos: $/kg ≤ 0.40 (línea por línea de <code>scintela.tinto</code>) · Fuertes: el resto.
-        Gs. Producción: V4+V5+V6 de <code>xgast</code> + compras tipo T + amortización DCC
-        (= cuota mensual de activos tipo M y 50% de tipo I). % sobre kg del mes.
-        $/kg ponderado. PROMEDIO = Σ meses / cantidad de meses.
+        Gs. Producción Tintorería: V4+V5+V6 de <code>xgast</code> + amortización DCC
+        (cuota mensual de activos tipo M y 50% de tipo I). Mismo número que
+        <strong>TINTORERÍA TOTAL CON AMORT</strong> de /informes/gastos.
+        % sobre kg del mes. $/kg ponderado. PROMEDIO = Σ meses / cantidad de meses.
       </p>
     </div>
   {% endif %}

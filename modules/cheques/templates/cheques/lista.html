@@ -475,27 +475,18 @@
               <span class="font-mono text-sm text-slate-500">{{ s or '—' }}</span>
             {% endif %}
           </td>
-          {# Columna de acciones: link directo según stat.
-             TMT 2026-05-24 — dueña: distinguir "sin fondos" (rebote real,
-             cliente sin plata) de "reversar" (me confundí, undo).
-             Color y label cambian según stat para que sea inequívoco. #}
+          {# Columna de acciones — TMT 2026-05-24 v2 (dueña: "un botonsito").
+             SOLO mostramos "↺ reversar" cuando el cheque no está depositado
+             (Z/D/P/V). Para B/A/1/2 (ya circuló banco), "sin fondos" vive
+             como opción de estado dentro del detalle del cheque. #}
           <td class="px-3 py-2 text-right">
-            {% if s not in ('X', 'R', '3', 'E') and tiene_permiso('cheques.anular') %}
-              {% if s in ('B', 'A', '1', '2') %}
-                <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
-                   data-stop="1"
-                   class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium"
-                   title="Cliente sin fondos — marca el cheque como rebotado">
-                  ⚠ <span class="hidden md:inline">sin fondos</span>
-                </a>
-              {% else %}
-                <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
-                   data-stop="1"
-                   class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                   title="Me confundí — undo administrativo sin tocar al cliente">
-                  ↺ <span class="hidden md:inline">reversar</span>
-                </a>
-              {% endif %}
+            {% if s in ('Z', 'D', 'P', 'V') and tiene_permiso('cheques.anular') %}
+              <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
+                 data-stop="1"
+                 class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                 title="Me confundí — undo administrativo sin afectar al cliente">
+                ↺ <span class="hidden md:inline">reversar</span>
+              </a>
             {% endif %}
           </td>
         </tr>
