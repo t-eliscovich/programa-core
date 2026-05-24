@@ -66,16 +66,17 @@ def lista():
     tipo = request.args.get("tipo") or None
     estado = request.args.get("estado") or None
     q = (request.args.get("q") or "").strip() or None
-    # TMT 2026-05-24 — Pedido dueña: "no scroll vertical". Default 50 filas
-    # con paginación; el usuario expande con ?limite=200|500|todo si quiere.
+    # TMT 2026-05-24 — Pedido dueña: "no scroll vertical". Default 25 filas
+    # (entran en viewport); el usuario expande con ?limite=50/100/200/todo
+    # desde el selector "Filas" en el form de filtros.
     try:
-        limite_raw = request.args.get("limite") or "50"
+        limite_raw = request.args.get("limite") or "25"
         if limite_raw.lower() == "todo":
             limite = 5000
         else:
             limite = max(10, min(int(limite_raw), 5000))
     except (TypeError, ValueError):
-        limite = 50
+        limite = 25
 
     try:
         filas = queries.listar(
