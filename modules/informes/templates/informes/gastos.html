@@ -101,6 +101,19 @@
 {% block content %}
 <div class="max-w-full info-page gastos-page">
   {{ nav_resultados('gastos') }}
+
+  {# TMT 2026-05-20 PASADA 2 — page_hero canónico.
+     TMT 2026-05-24 — dueña: que los titulos esten en el mismo lugar al
+     cambiar de tab. H1 va INMEDIATAMENTE despues de nav_resultados; los
+     subtabs (Reporte/Detalle) bajan debajo del h1. #}
+  <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
+    {{ page_hero('Gastos del mes', descripcion='Matriz por rubro × tipo (V1..V9 del PRG) + movimientos detallados de bancos') }}
+    <div class="no-print flex items-center gap-2">
+      <a href="?export=csv" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+  </div>
+
   {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
      Misma fila en ambas pantallas. TMT 2026-05-16. #}
   <div class="no-print flex items-end gap-1 mb-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
@@ -116,15 +129,6 @@
       Detalle
       <span class="ml-1 text-xs text-slate-400">lista filtrable</span>
     </a>
-  </div>
-
-  {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Gastos del mes en curso', descripcion='Matriz por rubro × tipo (V1..V9 del PRG) + movimientos detallados de bancos') }}
-    <div class="no-print flex items-center gap-2">
-      <a href="?export=csv" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
-    </div>
   </div>
 
   {% if error %}

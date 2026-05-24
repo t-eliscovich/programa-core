@@ -485,6 +485,13 @@
        los !important globales SOLO dentro de los contenedores marcados.
        Si una página nueva necesita layout denso similar, agregale la
        clase `table-compact` al div raíz. */
+    /* TMT 2026-05-24 v5 — dueña: "los titulos en el mismo lugar al cambiar
+       de pagina". Estandarizo h1 a 20px en las 4 pantallas principales
+       (Resultados/Historial/Gastos/Flujo) y elimino el margen extra. */
+    main .info-page > .flex h1 { font-size: 20px !important; line-height: 1.2 !important; margin: 0 !important; }
+    main .info-page > .flex p.text-sm { font-size: 12px !important; margin-top: 2px !important; }
+    main .info-page { padding-top: 0 !important; }
+
     /* TMT 2026-05-24 v4 — dueña: "Resultados quedo muy chiquito, agrandalo".
        Balance un poco mas grande que las otras vistas densas. */
     main .informe-balance table tbody td {

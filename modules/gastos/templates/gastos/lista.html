@@ -1,14 +1,21 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_header, nav_resultados %}
+{% from "_ui.html" import empty_row, page_hero, nav_resultados %}
 
 {% block title %}Gastos{% endblock %}
 
 {% block content %}
+<div class="max-w-full info-page">
   {# TMT 2026-05-24 — dueña: "cuando pongo detalle se me va todo lo de
      arriba". El detalle vive en otro blueprint (gastos.lista) y por eso
      no tenía la nav superior. Agrego nav_resultados('gastos') igual
-     que en /informes/gastos. #}
+     que en /informes/gastos. Ademas el h1 va INMEDIATAMENTE despues
+     del nav, los subtabs (Reporte/Detalle) bajan debajo del h1, para
+     que el titulo este SIEMPRE a la misma altura cambiando de tab. #}
   {{ nav_resultados('gastos') }}
+
+  <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
+    {{ page_hero('Gastos del mes', descripcion='Luz, agua, sueldos, contadora, mantenimiento, etc.') }}
+  </div>
 
   {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
      Misma fila en ambas pantallas. TMT 2026-05-16. #}
@@ -26,8 +33,6 @@
       <span class="ml-1 text-xs text-slate-400">lista filtrable</span>
     </a>
   </div>
-
-  {{ page_header("Gastos generales", "Luz, agua, sueldos, contadora, mantenimiento, etc.") }}
 
   {% if error %}
     <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
@@ -159,4 +164,5 @@
     </table>
   </div>
 
+</div>
 {% endblock %}
