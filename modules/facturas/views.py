@@ -713,17 +713,18 @@ def lista():
         # True si la factura es de ANTES de cuando arrancó Asinfo "limpio"
         # → sabemos que no va a tener match, no es un error.
         f["asinfo_pre_cutoff"] = bool(f.get("fecha") and f["fecha"] < _ASINFO_CUTOFF)
-    # Skipping Asinfo por default — solo se llama cuando es NECESARIO.
-    # Mejora 2026-05-23 (M2 v2): Tamara — "cartera no copia de facturas
-    # directo, no hace falta re-matchear con asinfo". La cartera vive en
-    # PC; Asinfo solo se usa para detectar huérfanas (facturas PC sin
-    # contraparte). Solo llamarlo si el usuario lo pide.
-    # Triggers para llamar Asinfo:
-    #   - ?solo_huerfanas=1  → necesario para filtrar
-    #   - ?asinfo=1          → forzado por el usuario
-    #   - export=csv         → exportar incluye columnas Asinfo
+    # Skipping Asinfo en vistas históricas (estado/canceladas/eliminadas)
+    # — no aporta info para legacy. Cartera SÍ llama Asinfo para mostrar
+    # las columnas KG AI / USD AI (la dueña las usa para detectar drift
+    # entre PC y Asinfo). La cache TTL 5min hace que la primera llamada
+    # del día sea lenta y las siguientes instantáneas.
+    # Triggers para SALTEAR Asinfo:
+    #   - vista != cartera (histórico, legacy)
+    # Triggers para FORZAR aunque vista sea histórica:
+    #   - ?asinfo=1, ?solo_huerfanas=1, export=csv
     _necesita_asinfo = (
-        solo_huerfanas
+        vista == 'cartera'
+        or solo_huerfanas
         or request.args.get("asinfo") == "1"
         or is_export
     )
