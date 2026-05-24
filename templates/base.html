@@ -479,8 +479,12 @@
     main h1 { font-size: 1.5rem !important; line-height: 1.2 !important; }  /* 24px estandar */
     /* KPI cards */
     main .kpi-card .text-2xl, main .kpi-card .text-xl { font-size: 1.75rem !important; }
-    /* Padding de celdas — un poco más aire */
-    main table tbody td { padding-top: 0.55rem !important; padding-bottom: 0.55rem !important; }
+    /* Padding de celdas — un poco más aire.
+       TMT 2026-05-24 — unifico padding horizontal a 12px en todas las
+       tablas (antes facturas/cheques usaban 8px y caja/compras 12px,
+       generaba inconsistencia visual entre listas). */
+    main table tbody td { padding: 0.55rem 0.75rem !important; }
+    main table thead th { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
 
     /* TMT 2026-05-24 — Pedido dueña: que Balance/Historial/Flujo entren
        en una pantalla sin scroll. Estas vistas son tablas densas (3 tablas
