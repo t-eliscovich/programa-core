@@ -43,10 +43,24 @@
   </div>
 
   {% if huerfanas %}
+  <form id="form-bulk" method="POST" action="{{ url_for('facturas.cargar_desde_asinfo_bulk') }}" class="mb-2 flex items-center gap-2 flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="rows_json" id="rows_json" value="[]">
+    <button type="submit" id="btn-bulk"
+            class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium shadow-sm"
+            disabled>
+      + Cargar seleccionadas (<span id="cnt-sel">0</span>)
+    </button>
+    <button type="button" id="btn-marcar-todas" class="text-xs text-sky-600 hover:underline">Seleccionar todas</button>
+    <button type="button" id="btn-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
+    <span class="text-xs text-slate-500 ml-2">Las cargadas no vuelven a aparecer al refrescar.</span>
+  </form>
+
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm" id="tbl-asinfo">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
+          <th class="px-3 py-2 w-8"><input type="checkbox" id="chk-all"></th>
           <th class="px-3 py-2 text-left">Fecha</th>
           <th class="px-3 py-2 text-left">Tipo</th>
           <th class="px-3 py-2 text-left">Número</th>
@@ -58,7 +72,9 @@
       </thead>
       <tbody>
         {% for h in huerfanas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+            data-row='{{ {"fecha": h.fecha|string, "numero": h.numero, "tipo": h.tipo, "codigo_cli": h.cliente_codigo, "kg": h.kg, "usd": h.usd}|tojson|forceescape }}'>
+          <td class="px-3 py-2"><input type="checkbox" class="chk-row"></td>
           <td class="px-3 py-2 tabular-nums whitespace-nowrap">{{ h.fecha }}</td>
           <td class="px-3 py-2">
             <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold
@@ -83,8 +99,7 @@
               <input type="hidden" name="codigo_cli" value="{{ h.cliente_codigo }}">
               <input type="hidden" name="kg" value="{{ h.kg }}">
               <input type="hidden" name="usd" value="{{ h.usd }}">
-              <button class="px-3 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
-                      title="Crear esta factura en PC con los datos de Asinfo">+ Cargar al programa</button>
+              <button class="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs">+ Cargar</button>
             </form>
           </td>
         </tr>
@@ -92,6 +107,50 @@
       </tbody>
     </table>
   </div>
+
+  <script>
+  (function() {
+    const chkAll = document.getElementById('chk-all');
+    const chks = () => document.querySelectorAll('#tbl-asinfo tbody .chk-row');
+    const cnt = document.getElementById('cnt-sel');
+    const btn = document.getElementById('btn-bulk');
+    const hidden = document.getElementById('rows_json');
+    function actualizar() {
+      let n = 0;
+      chks().forEach(c => { if (c.checked) n++; });
+      cnt.textContent = n;
+      btn.disabled = (n === 0);
+    }
+    function buildPayload() {
+      const rows = [];
+      document.querySelectorAll('#tbl-asinfo tbody tr').forEach(tr => {
+        const c = tr.querySelector('.chk-row');
+        if (c && c.checked) {
+          try { rows.push(JSON.parse(tr.dataset.row)); } catch (e) {}
+        }
+      });
+      return rows;
+    }
+    chkAll.addEventListener('change', () => {
+      chks().forEach(c => { c.checked = chkAll.checked; });
+      actualizar();
+    });
+    chks().forEach(c => c.addEventListener('change', actualizar));
+    document.getElementById('btn-marcar-todas').addEventListener('click', () => {
+      chks().forEach(c => { c.checked = true; });
+      chkAll.checked = true;
+      actualizar();
+    });
+    document.getElementById('btn-desmarcar').addEventListener('click', () => {
+      chks().forEach(c => { c.checked = false; });
+      chkAll.checked = false;
+      actualizar();
+    });
+    document.getElementById('form-bulk').addEventListener('submit', () => {
+      hidden.value = JSON.stringify(buildPayload());
+    });
+  })();
+  </script>
   {% else %}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-8 text-center text-sm text-slate-500">
     ✅ Todas las facturas de Asinfo del período están cargadas en PC.

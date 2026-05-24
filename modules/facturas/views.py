@@ -374,6 +374,43 @@ def detalle(id_factura: int):
     )
 
 
+@facturas_bp.route("/facturas/diag-cartera")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def diag_cartera():
+    """Diagnóstico: quién/cuándo cargó las facturas de cartera reciente."""
+    rows = db.fetch_all(
+        """
+        SELECT fecha, codigo_cli, numf, numf_completo, importe, stat,
+               usuario_crea
+          FROM scintela.factura
+         WHERE fecha >= CURRENT_DATE - INTERVAL '7 days'
+         ORDER BY fecha DESC, id_factura DESC
+         LIMIT 30
+        """
+    ) or []
+    # Conteos por usuario_crea
+    por_usuario = db.fetch_all(
+        """
+        SELECT COALESCE(usuario_crea, '<sin usuario>') AS u, COUNT(*) AS n
+          FROM scintela.factura
+         WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+         GROUP BY usuario_crea
+         ORDER BY n DESC
+        """
+    ) or []
+    return {
+        "ultimas_7d": [
+            {"fecha": str(r["fecha"]), "cli": r.get("codigo_cli"),
+             "numf": r.get("numf"), "numf_completo": r.get("numf_completo"),
+             "importe": float(r.get("importe") or 0), "stat": r.get("stat"),
+             "usuario_crea": r.get("usuario_crea")}
+            for r in rows
+        ],
+        "conteo_30d_por_usuario": [{"usuario": r["u"], "n": r["n"]} for r in por_usuario],
+    }
+
+
 @facturas_bp.route("/facturas/desde-asinfo")
 @requiere_login
 @requiere_permiso("facturas.ver")
@@ -443,6 +480,72 @@ def desde_asinfo():
         suma_kg=sum(h["kg"] for h in huerfanas),
         suma_usd=sum(h["usd"] for h in huerfanas),
     )
+
+
+@facturas_bp.route("/facturas/cargar-desde-asinfo-bulk", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def cargar_desde_asinfo_bulk():
+    """Carga N facturas de Asinfo en bloque (JSON en hidden field).
+
+    Espera form-encoded:
+        rows_json: JSON con [{fecha, numero, tipo, codigo_cli, kg, usd}, ...]
+    """
+    import json as _json
+    raw = request.form.get("rows_json") or "[]"
+    try:
+        rows = _json.loads(raw)
+    except Exception:
+        rows = []
+    if not rows:
+        flash("No seleccionaste ninguna factura.", "warn")
+        return redirect(url_for("facturas.desde_asinfo"))
+
+    ok, errs = 0, []
+    usuario = (
+        getattr(g, "user", {}).get("username") if hasattr(g, "user") and isinstance(g.user, dict)
+        else "asinfo"
+    )
+    for r in rows:
+        try:
+            fecha = _parse_date(r.get("fecha") or "")
+            codigo_cli = (r.get("codigo_cli") or "").strip().upper()
+            kg = Decimal(str(r.get("kg") or "0"))
+            importe = Decimal(str(r.get("usd") or "0"))
+            numf_completo = (r.get("numero") or "").strip()
+            tipo_asinfo = (r.get("tipo") or "FACTURA").upper()
+            if not fecha or not codigo_cli or importe == 0:
+                errs.append(f"{numf_completo}: faltan datos")
+                continue
+            # Cliente debe existir
+            row_cli = db.fetch_one(
+                "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s",
+                (codigo_cli,),
+            )
+            if not row_cli:
+                errs.append(f"{numf_completo}: cliente '{codigo_cli}' no existe")
+                continue
+            queries.crear(
+                fecha=fecha,
+                codigo_cli=codigo_cli,
+                kg=kg,
+                importe=importe,
+                numf_completo=numf_completo or None,
+                tipo=tipo_asinfo[:2],
+                usuario=usuario,
+            )
+            ok += 1
+        except Exception as e:
+            errs.append(f"{r.get('numero','?')}: {e}")
+
+    if ok:
+        flash(f"Cargadas {ok} facturas desde Asinfo.", "ok")
+    if errs:
+        msg = f"{len(errs)} con error: " + "; ".join(errs[:5])
+        if len(errs) > 5:
+            msg += f"; (+{len(errs)-5} más)"
+        flash(msg, "warn")
+    return redirect(url_for("facturas.desde_asinfo"))
 
 
 @facturas_bp.route("/facturas/cargar-desde-asinfo", methods=["POST"])
