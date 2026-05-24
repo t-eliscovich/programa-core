@@ -58,8 +58,10 @@
   .h12-tbl tr.sep td  { border-top: 2px solid rgb(203 213 225); padding-top: 8px; }
   .h12-tbl tr.gap td  { padding: 6px 0 0; border: none; }
   .h12-tbl .delta {
-    display: block; font-size: 10px; line-height: 1.1;
-    font-weight: 500; color: rgb(148 163 184); margin-top: 1px;
+    /* TMT 2026-05-24 — inline en vez de block para que el delta vaya al
+       lado del numero (saves ~12px per row * 18 rows = 216px). */
+    display: inline; font-size: 9px; line-height: 1;
+    font-weight: 500; color: rgb(148 163 184); margin-left: 4px;
   }
   .h12-tbl .delta.up   { color: rgb(22 163 74); }   /* green-600 */
   .h12-tbl .delta.down { color: rgb(220 38 38); }   /* red-600 */
@@ -82,7 +84,7 @@
   .h12-tbl td.delta-cell  { color: rgb(15 23 42); text-align: right;
                              font-family: ui-monospace, Menlo, Consolas, monospace; }
   .h12-tbl td.delta-cell .delta-pct {
-    display: block; font-size: 10px; color: rgb(100 116 139); font-weight: 500;
+    display: inline; font-size: 9px; color: rgb(100 116 139); font-weight: 500; margin-left: 4px;
   }
   .h12-tbl td.delta-cell.up   { color: rgb(22 163 74); }
   .h12-tbl td.delta-cell.down { color: rgb(220 38 38); }
