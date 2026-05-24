@@ -123,7 +123,7 @@ def movimientos(
     template usa esto para mostrar quién hizo la op y un badge claro de
     "reverso de #N" o "reversado por #N". TMT 2026-05-13.
     """
-    return db.fetch_all(
+    rows = db.fetch_all(
         """
         SELECT
             t.id_transaccion, t.fecha, t.documento, t.concepto, t.fechad,
@@ -134,22 +134,13 @@ def movimientos(
             md.usuario             AS mov_usuario,
             md.concepto            AS mov_concepto,
             md.id_original         AS mov_id_original,
-            md.id_reverso          AS mov_id_reverso,
-            bcm.id                 AS conciliacion_id,
-            bcm.creado_en          AS conciliado_en,
-            bcm.usuario            AS conciliado_por,
-            bcm.real_fecha         AS conciliado_real_fecha,
-            bcm.real_documento     AS conciliado_real_doc,
-            bcm.estado             AS conciliado_estado
+            md.id_reverso          AS mov_id_reverso
         FROM scintela.transacciones_bancarias t
         LEFT JOIN scintela.mov_doble md
                ON (md.origen_table  = 'transacciones_bancarias'
                    AND md.origen_id  = t.id_transaccion)
                OR (md.destino_table = 'transacciones_bancarias'
                    AND md.destino_id = t.id_transaccion)
-        LEFT JOIN scintela.banco_conciliacion_match bcm
-               ON bcm.id_transaccion = t.id_transaccion
-              AND bcm.deshecho_en IS NULL
         WHERE t.no_banco = %(no_banco)s
           AND (%(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
@@ -158,6 +149,34 @@ def movimientos(
         """,
         {"no_banco": no_banco, "desde": desde or None, "hasta": hasta or None, "limite": limite},
     )
+    # Enriquecer con info de conciliación bancaria (defensivo: si la tabla
+    # no existe o falla la query, seguimos con rows sin flag).
+    try:
+        ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+        if ids:
+            conc = db.fetch_all(
+                """
+                SELECT id_transaccion, id AS conciliacion_id, creado_en, usuario,
+                       real_fecha, real_documento, estado
+                  FROM scintela.banco_conciliacion_match
+                 WHERE id_transaccion = ANY(%s)
+                   AND (deshecho_en IS NULL OR deshecho_en IS NULL)
+                """,
+                (ids,),
+            ) or []
+            conc_by_id = {c["id_transaccion"]: c for c in conc}
+            for r in rows:
+                c = conc_by_id.get(r.get("id_transaccion"))
+                if c:
+                    r["conciliacion_id"] = c.get("conciliacion_id")
+                    r["conciliado_en"] = c.get("creado_en")
+                    r["conciliado_por"] = c.get("usuario")
+                    r["conciliado_real_fecha"] = c.get("real_fecha")
+                    r["conciliado_real_doc"] = c.get("real_documento")
+                    r["conciliado_estado"] = c.get("estado")
+    except Exception:
+        pass  # fail-graceful: la vista funciona sin el badge si la tabla no está
+    return rows
 
 
 def banco_info(no_banco: int) -> dict | None:
