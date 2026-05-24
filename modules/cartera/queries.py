@@ -38,9 +38,13 @@ def aging_buckets() -> list[dict]:
     (saldo_facturas − cheques_en_cartera). Los cheques se asignan a los
     buckets más jóvenes primero.
     """
-    # TMT 2026-05-20 — alineado el filtro de cheques con TOTC del balance
-    # (informes.queries.totc): stat ∈ {Z,1,2,3,P,D}. Antes incluía 'A'
-    # (legacy acreditados) → /cartera daba un total distinto a Resultados.
+    # TMT 2026-05-24 — Per-client `saldo_total` = TOTF_cli + TOTC_cli (BRUTO
+    # con sobrepagos neteados). Sum sobre todos clientes == Subtotal Cartera
+    # Balance. Antes era NETO (saldo_facturas - cheques) y la dueña pidio
+    # que matchee Resultados.
+    # Cheques: stat ∈ {Z,1,2,3,P,D} (igual a informes.totc).
+    # Facturas: stat ∈ {Z,A,'',null} sin filtro de signo (sobrepagos
+    # incluidos — igual a informes.totf).
     rows = db.fetch_all(
         """
         WITH cheques_cli AS (
@@ -50,66 +54,64 @@ def aging_buckets() -> list[dict]:
             WHERE stat IN ('Z','1','2','3','P','D')
               AND codigo_cli IS NOT NULL
             GROUP BY codigo_cli
+        ),
+        fact_cli AS (
+            SELECT f.codigo_cli,
+                   COUNT(*) FILTER (WHERE COALESCE(f.saldo,0) <> 0) AS n_facturas,
+                   COALESCE(SUM(f.saldo), 0) AS saldo_facturas,
+                   COALESCE(SUM(CASE
+                       WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) <= 30
+                       THEN f.saldo ELSE 0 END), 0) AS b0_30,
+                   COALESCE(SUM(CASE
+                       WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) BETWEEN 31 AND 60
+                       THEN f.saldo ELSE 0 END), 0) AS b31_60,
+                   COALESCE(SUM(CASE
+                       WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) BETWEEN 61 AND 90
+                       THEN f.saldo ELSE 0 END), 0) AS b61_90,
+                   COALESCE(SUM(CASE
+                       WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) > 90
+                       THEN f.saldo ELSE 0 END), 0) AS b90_plus,
+                   MIN(COALESCE(f.vencimiento, f.fecha)) AS vence_mas_viejo,
+                   MAX(CURRENT_DATE - COALESCE(f.vencimiento, f.fecha)) AS dias_mora_max
+            FROM scintela.factura f
+            WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+            GROUP BY f.codigo_cli
+        ),
+        -- Union de clientes que tienen facturas vivas Y/O cheques en cartera.
+        cli_universo AS (
+            SELECT codigo_cli FROM fact_cli
+            UNION
+            SELECT codigo_cli FROM cheques_cli
         )
-        SELECT f.codigo_cli,
-               COALESCE(c.nombre, '(sin nombre)')  AS nombre,
-               COALESCE(c.stop, 'N')               AS stop,
-               COALESCE(c.cupo, 0)                 AS cupo,
-               COALESCE(c.vend, '')                AS vend,
-               COALESCE(c.telefono, '')            AS telefono,
-               COALESCE(c.correo, '')              AS correo,
-               COUNT(*)                            AS n_facturas,
-               COALESCE(SUM(f.saldo), 0)           AS saldo_facturas,
-               COALESCE(MAX(cc.en_cartera), 0)     AS cheques_en_cartera,
-               -- TMT 2026-05-20 v3: saldo_total NETO = facturas − cheques.
-               -- (Lo que el cliente realmente me debe después de aplicar
-               -- los cheques recibidos.) Antes lo hice bruto para matchear
-               -- con Resultados.Subtotal Cartera, pero la dueña aclaró
-               -- que son conceptos distintos: Resultados ve activos
-               -- comerciales (bruto), /cartera ve cuánto me deben (neto).
-               COALESCE(SUM(f.saldo), 0)
-                  - COALESCE(MAX(cc.en_cartera), 0) AS saldo_total,
-               COALESCE(SUM(CASE
-                   WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) <= 30
-                   THEN f.saldo ELSE 0 END), 0)    AS b0_30,
-               COALESCE(SUM(CASE
-                   WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) BETWEEN 31 AND 60
-                   THEN f.saldo ELSE 0 END), 0)    AS b31_60,
-               COALESCE(SUM(CASE
-                   WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) BETWEEN 61 AND 90
-                   THEN f.saldo ELSE 0 END), 0)    AS b61_90,
-               COALESCE(SUM(CASE
-                   WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) > 90
-                   THEN f.saldo ELSE 0 END), 0)    AS b90_plus,
-               MIN(COALESCE(f.vencimiento, f.fecha)) AS vence_mas_viejo,
-               MAX(CURRENT_DATE - COALESCE(f.vencimiento, f.fecha)) AS dias_mora_max
-        FROM scintela.factura f
-        LEFT JOIN scintela.cliente c     ON c.codigo_cli = f.codigo_cli
-        LEFT JOIN cheques_cli cc         ON cc.codigo_cli = f.codigo_cli
-        -- TMT 2026-05-20 v3 — vuelve el filtro saldo>0 para excluir
-        -- sobrepagos individuales que ensucian el aging por cliente.
-        -- TOTF del balance los suma global; acá no los necesitamos
-        -- como filas separadas (el cliente con sobrepago puede aparecer
-        -- igual via cheques_en_cartera del LEFT JOIN).
-        WHERE COALESCE(f.saldo, 0) > 0
-          AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
-        GROUP BY f.codigo_cli, c.nombre, c.stop, c.cupo, c.vend, c.telefono, c.correo
+        SELECT u.codigo_cli,
+               COALESCE(c.nombre, '(sin nombre)')      AS nombre,
+               COALESCE(c.stop, 'N')                   AS stop,
+               COALESCE(c.cupo, 0)                     AS cupo,
+               COALESCE(c.vend, '')                    AS vend,
+               COALESCE(c.telefono, '')                AS telefono,
+               COALESCE(c.correo, '')                  AS correo,
+               COALESCE(fc.n_facturas, 0)              AS n_facturas,
+               COALESCE(fc.saldo_facturas, 0)          AS saldo_facturas,
+               COALESCE(cc.en_cartera, 0)              AS cheques_en_cartera,
+               -- saldo_total per client = TOTF_cli + TOTC_cli (= Subtotal
+               -- Cartera per cliente). Sum sobre todos == Balance.
+               COALESCE(fc.saldo_facturas, 0)
+                 + COALESCE(cc.en_cartera, 0)          AS saldo_total,
+               COALESCE(fc.b0_30, 0)                   AS b0_30,
+               COALESCE(fc.b31_60, 0)                  AS b31_60,
+               COALESCE(fc.b61_90, 0)                  AS b61_90,
+               COALESCE(fc.b90_plus, 0)                AS b90_plus,
+               fc.vence_mas_viejo,
+               fc.dias_mora_max
+        FROM cli_universo u
+        LEFT JOIN scintela.cliente c   ON c.codigo_cli = u.codigo_cli
+        LEFT JOIN fact_cli fc          ON fc.codigo_cli = u.codigo_cli
+        LEFT JOIN cheques_cli cc       ON cc.codigo_cli = u.codigo_cli
+        -- Excluyo clientes con saldo_total == 0 (no aportan a cartera).
+        WHERE COALESCE(fc.saldo_facturas, 0) + COALESCE(cc.en_cartera, 0) <> 0
         ORDER BY b90_plus DESC, saldo_total DESC
         """
     ) or []
-
-    # TMT 2026-05-20 v3 — buckets vuelven a netearse contra los cheques
-    # en cartera (jóvenes primero), igual que la versión original. Así
-    # sum(buckets) == saldo_total neto y la aging vuelve a tener sentido.
-    for r in rows:
-        pendiente = float(r.get("cheques_en_cartera") or 0)
-        for k in ("b0_30", "b31_60", "b61_90", "b90_plus"):
-            actual = float(r.get(k) or 0)
-            toma = min(actual, pendiente)
-            r[k] = actual - toma
-            pendiente -= toma
-            if pendiente <= 0:
-                break
 
     # TMT 2026-05-18 — Pedido dueña (docx "Para Claude"): la pantalla
     # principal /cartera/aging usa una tabla de 5 columnas (CLIENTE,
@@ -129,8 +131,15 @@ def aging_totales() -> dict:
     buckets de mora se mantienen sobre factura.saldo solamente — la
     distribución por días es de las facturas, no de los cheques.
     """
-    # TMT 2026-05-20 — mismos filtros que TOTC/TOTF (informes.queries) para
-    # que /cartera total == Resultados.Subtotal Cartera.
+    # TMT 2026-05-24 — Pedido dueña: /cartera total tiene que ser IGUAL al
+    # 'Subtotal Cartera' de Resultados/Balance. La formula canonica es:
+    #     SUBTOTAL CARTERA = TOTF + TOTC
+    #   TOTF = SUM(saldo) FOR stat IN ('Z','A','',' ') OR NULL   (sin filtro
+    #          de signo — sobrepagos saldo<0 ya netean, ver informes.totf)
+    #   TOTC = SUM(importe) cheques WHERE stat IN ('Z','1','2','3','P','D')
+    # Esa es la definicion del legacy INFORMES.PRG. Antes /cartera mostraba
+    # NETO (facturas - cheques) y eso confundia a la dueña porque no cuadraba
+    # con Resultados. Ahora SI cuadra.
     row = db.fetch_one(
         """
         WITH cheques_total AS (
@@ -139,9 +148,7 @@ def aging_totales() -> dict:
              WHERE stat IN ('Z','1','2','3','P','D')
                AND codigo_cli IS NOT NULL
         ),
-        -- TMT 2026-05-20 v4 — sobrepagos sumados aparte para que
-        -- /informes/check-totales pueda reconciliar contra TOTF
-        -- (Resultados los netea). Mismo filtro de stat pero saldo<0.
+        -- Sobrepagos = facturas con saldo<0. Para reporting separado.
         sobrepagos AS (
             SELECT COALESCE(SUM(saldo), 0) AS total
               FROM scintela.factura
@@ -149,6 +156,8 @@ def aging_totales() -> dict:
                AND (stat IS NULL OR stat IN ('Z','A','',' '))
         )
         SELECT
+            -- Buckets por aging de facturas (sin filtro de signo — los
+            -- sobrepagos restan al bucket que les corresponda por fecha).
             COALESCE(SUM(CASE
                 WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) <= 30
                 THEN f.saldo ELSE 0 END), 0) AS b0_30,
@@ -161,22 +170,19 @@ def aging_totales() -> dict:
             COALESCE(SUM(CASE
                 WHEN CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) > 90
                 THEN f.saldo ELSE 0 END), 0) AS b90_plus,
+            -- TOTF = SUM(saldo) sin filtro de signo (sobrepagos netean).
             COALESCE(SUM(f.saldo), 0) AS saldo_facturas,
             (SELECT en_cartera FROM cheques_total) AS cheques_en_cartera,
             (SELECT total FROM sobrepagos)         AS sobrepagos,
-            -- TMT 2026-05-20 v3: total NETO = facturas − cheques. Revert
-            -- del bruto. /cartera mide "cuánto me deben". Resultados.
-            -- Subtotal Cartera mide "activos comerciales" (= bruto) — son
-            -- conceptos distintos, no tienen que coincidir.
+            -- HERO = TOTF + TOTC = Subtotal Cartera de Resultados/Balance.
             COALESCE(SUM(f.saldo), 0)
-                - (SELECT en_cartera FROM cheques_total)  AS total,
-            COUNT(*)                        AS n_facturas,
-            COUNT(DISTINCT f.codigo_cli)    AS n_clientes
+                + (SELECT en_cartera FROM cheques_total)  AS total,
+            -- Solo contamos facturas con saldo<>0 — "vivas" en el sentido
+            -- de tener algo que cobrar (o un sobrepago pendiente).
+            COUNT(*) FILTER (WHERE COALESCE(f.saldo, 0) <> 0) AS n_facturas,
+            COUNT(DISTINCT f.codigo_cli) FILTER (WHERE COALESCE(f.saldo, 0) <> 0) AS n_clientes
         FROM scintela.factura f
-        -- TMT 2026-05-20 v3 — vuelve el filtro saldo>0. /cartera es vista
-        -- de "qué facturas vivas hay" — sobrepagos no entran al aging.
-        WHERE COALESCE(f.saldo, 0) > 0
-          AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+        WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         """
     )
     if not row:
@@ -186,38 +192,25 @@ def aging_totales() -> dict:
             "n_facturas": 0, "n_clientes": 0,
         }
 
-    # TMT 2026-05-20 v3 — buckets netos (= face value − cheques jóvenes
-    # primero). Igual que la versión original, asegura que sum(buckets)
-    # == saldo_total neto.
-    buckets = {
-        "b0_30":    float(row["b0_30"] or 0),
-        "b31_60":   float(row["b31_60"] or 0),
-        "b61_90":   float(row["b61_90"] or 0),
-        "b90_plus": float(row["b90_plus"] or 0),
-    }
-    pendiente = float(row.get("cheques_en_cartera") or 0)
-    for label in ("b0_30", "b31_60", "b61_90", "b90_plus"):
-        toma = min(buckets[label], pendiente)
-        buckets[label] -= toma
-        pendiente -= toma
-        if pendiente <= 0:
-            break
-
+    # TMT 2026-05-24 — Buckets son aging de facturas (con sobrepagos
+    # neteados por fecha — un saldo<0 resta del bucket donde caiga). YA NO
+    # neteamos cheques contra buckets porque los cheques son cobranza
+    # futura, no mora — viven en su propio KPI. Asi sum(buckets) == TOTF.
     sobrepagos = float(row.get("sobrepagos") or 0)
-    saldo_facturas_pos = float(row.get("saldo_facturas") or 0)
+    saldo_facturas = float(row.get("saldo_facturas") or 0)  # = TOTF
+    cheques = float(row.get("cheques_en_cartera") or 0)     # = TOTC
     return {
-        "b0_30":              buckets["b0_30"],
-        "b31_60":             buckets["b31_60"],
-        "b61_90":             buckets["b61_90"],
-        "b90_plus":           buckets["b90_plus"],
+        "b0_30":              float(row["b0_30"] or 0),
+        "b31_60":             float(row["b31_60"] or 0),
+        "b61_90":             float(row["b61_90"] or 0),
+        "b90_plus":           float(row["b90_plus"] or 0),
+        # HERO = TOTF + TOTC = Subtotal Cartera de Resultados/Balance.
         "total":              float(row["total"] or 0),
-        "saldo_facturas":     saldo_facturas_pos,
-        # TMT 2026-05-20 v4 — saldo neto (incluyendo sobrepagos<0) para
-        # /informes/check-totales. saldo_facturas == TOTF salvo por los
-        # sobrepagos que /cartera excluye del aging.
+        # saldo_facturas YA incluye sobrepagos (filtro sin signo) — == TOTF.
+        "saldo_facturas":     saldo_facturas,
+        "saldo_facturas_net": saldo_facturas,  # alias para compat con check-totales.
         "sobrepagos":         sobrepagos,
-        "saldo_facturas_net": saldo_facturas_pos + sobrepagos,
-        "cheques_en_cartera": float(row.get("cheques_en_cartera") or 0),
+        "cheques_en_cartera": cheques,
         "n_facturas":         int(row["n_facturas"] or 0),
         "n_clientes":         int(row["n_clientes"] or 0),
     }

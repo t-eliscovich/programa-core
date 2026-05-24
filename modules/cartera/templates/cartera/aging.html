@@ -66,51 +66,53 @@
     </div>
   {% endif %}
 
-  {# TMT 2026-05-21 — pedido dueña: mostrar también el BRUTO (saldo facturas
-     + cheques en cartera) además del NETO. Antes solo se veía el neto en el
-     hero y los 4 buckets, y el bruto vivía escondido en un <details>.
-     Ahora fila de 3 KPIs principales encima de los buckets de mora. #}
-  {% set _bruto = (totales.saldo_facturas or 0) + (totales.cheques_en_cartera or 0) %}
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+  {# TMT 2026-05-24 — Pedido dueña: el HERO ya muestra "Subtotal Cartera"
+     (TOTF + TOTC), igual al Balance. Estos 2 KPIs muestran el desglose.
+     No hay tercer card "Total bruto" porque YA está arriba en el hero. #}
+  <div class="grid grid-cols-2 gap-3 mb-3">
     {{ kpi_card('Facturas a cobrar', '$ ' ~ ((totales.saldo_facturas or 0) | num_es(0)),
-                'lo que falta cobrar en facturas',
+                'TOTF — saldo de facturas vivas (con sobrepagos neteados)',
                 tono='slate') }}
     {{ kpi_card('Cheques en cartera', '$ ' ~ ((totales.cheques_en_cartera or 0) | num_es(0)),
-                'recibidos, todavía no cobrados',
+                'TOTC — cheques recibidos, todavía no cobrados',
                 tono='slate') }}
-    {{ kpi_card('Total bruto', '$ ' ~ (_bruto | num_es(0)),
-                'facturas + cheques (activo comercial)',
-                tono='sky') }}
   </div>
 
-  {# KPIs por bucket de mora. Sólo 90+ tiene tono rojo (alerta real); los
-     otros 3 en slate uniforme para no parecer semáforo. #}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-    {{ kpi_card('0-30 días',  '$ ' ~ ((totales.b0_30 or 0) | num_es(0)),  '', tono='slate') }}
-    {{ kpi_card('31-60 días', '$ ' ~ ((totales.b31_60 or 0) | num_es(0)), '', tono='slate') }}
-    {{ kpi_card('61-90 días', '$ ' ~ ((totales.b61_90 or 0) | num_es(0)), '', tono='amber') }}
-    {{ kpi_card('90+ días',   '$ ' ~ ((totales.b90_plus or 0) | num_es(0)),
-                'cuentas críticas',
-                tono='rose') }}
+  {# KPIs por bucket de mora — versión COMPACTA (pedido dueña 2026-05-24:
+     "los recuadros de KPIs de 30 60 90 dias hacelos un poco mas pequenos").
+     Sin tarjetas grandes — tipografia más chica y padding reducido. #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+    <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500">0-30 días</div>
+      <div class="text-base font-semibold tabular-nums mt-0.5">$ {{ (totales.b0_30 or 0) | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500">31-60 días</div>
+      <div class="text-base font-semibold tabular-nums mt-0.5">$ {{ (totales.b31_60 or 0) | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      <div class="text-[10px] uppercase tracking-wider text-amber-700">61-90 días</div>
+      <div class="text-base font-semibold tabular-nums mt-0.5 text-amber-900">$ {{ (totales.b61_90 or 0) | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-[10px] uppercase tracking-wider text-rose-700">90+ días</span>
+        <span class="text-[10px] text-rose-600">cuentas críticas</span>
+      </div>
+      <div class="text-base font-semibold tabular-nums mt-0.5 text-rose-900">$ {{ (totales.b90_plus or 0) | num_es(0) }}</div>
+    </div>
   </div>
 
-  {# Explicación visible (no colapsada) del por qué el número del hero
-     (Neto) puede no coincidir con Balance/Resultados. Pedido dueña 2026-05-21:
-     "todo consistente". El drift se explica por sobrepagos (facturas con
-     saldo<0) que aging excluye y Balance no. #}
+  {# TMT 2026-05-24 — Footer de conciliacion: ahora el hero CALZA con
+     Balance, asi que el texto solo confirma la formula. #}
   <div class="mb-4 px-3 py-2 rounded text-xs bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 text-slate-700 dark:text-slate-300">
-    <strong>Cómo conciliar con Balance:</strong>
-    el <em>Neto</em> del hero (<span class="font-mono">$ {{ totales.total | num_es(0) }}</span>)
-    = facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(0) }}</span>
-    − cheques en cartera <span class="font-mono">{{ totales.cheques_en_cartera | num_es(0) }}</span>
-    (lo que el cliente todavía me debe).
-    El <em>Bruto</em> arriba (<span class="font-mono">$ {{ _bruto | num_es(0) }}</span>)
-    = facturas + cheques (activos comerciales).
-    El <em>Subtotal Cartera</em> de Balance/Resultados es <em>TOTF + TOTC</em> con
-    {% if totales.sobrepagos and totales.sobrepagos < 0 %}los sobrepagos
-       (<span class="font-mono text-rose-700">{{ totales.sobrepagos | num_es(0) }}</span>) ya descontados —
-       por eso suele ser menor que el Bruto de acá.{% else %}sobrepagos
-       neteados — por eso puede diferir del Bruto de acá.{% endif %}
+    <strong>{{ '$ ' ~ (totales.total | num_es(0)) }}</strong> ≡ <em>Subtotal Cartera</em> de Resultados/Balance =
+    facturas <span class="font-mono">{{ totales.saldo_facturas | num_es(0) }}</span>
+    + cheques <span class="font-mono">{{ totales.cheques_en_cartera | num_es(0) }}</span>.
+    {% if totales.sobrepagos and totales.sobrepagos < 0 %}
+      Sobrepagos (<span class="font-mono text-rose-700">{{ totales.sobrepagos | num_es(0) }}</span>) ya están dentro de "facturas".
+    {% endif %}
+    Buckets (0-30…90+) son aging de facturas solo — cheques son cobranza futura, no mora.
   </div>
 
   {# TMT 2026-05-18 — Chips "Con email", "Con teléfono", "Sin contacto"
