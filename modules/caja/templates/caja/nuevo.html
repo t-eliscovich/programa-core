@@ -1,8 +1,14 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Nuevo movimiento de caja{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto py-6 px-4">
-  <h1 class="text-xl font-semibold mb-4">Nuevo movimiento de caja</h1>
+{# TMT 2026-05-24 — unificado al patrón estándar de forms cortos
+   (max-w-3xl). Antes usaba max-w-2xl + py/px inline, único form que
+   era distinto al resto. Ahora matchea posdat/nueva, clientes/nuevo, etc. #}
+<div class="max-w-3xl">
+  <div class="flex items-start justify-between mb-4 gap-4 flex-wrap">
+    {{ page_hero('Nuevo movimiento de caja') }}
+  </div>
 
   <div class="bg-slate-50 border rounded p-3 mb-4 text-sm">
     Saldo actual en caja:

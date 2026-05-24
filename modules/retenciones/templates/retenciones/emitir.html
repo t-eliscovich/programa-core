@@ -1,8 +1,12 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Emitir retención{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto py-6 px-4">
-  <h1 class="text-xl font-semibold mb-4">Emitir retención en la fuente</h1>
+{# TMT 2026-05-24 — patrón estándar (max-w-3xl + page_hero). #}
+<div class="max-w-3xl">
+  <div class="flex items-start justify-between mb-4 gap-4 flex-wrap">
+    {{ page_hero('Emitir retención en la fuente') }}
+  </div>
 
   {% if errores %}
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
