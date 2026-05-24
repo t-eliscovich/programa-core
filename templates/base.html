@@ -509,7 +509,7 @@
 </head>
 <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
 {% if g.user %}
-<div class="flex min-h-screen">
+<div class="flex h-screen">
   <aside id="sidebar" class="no-print shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden">
     <div class="px-4 py-3.5 flex items-center justify-between gap-2">
       {# TMT 2026-05-19 v8 — brand = logo oficial. Pedido literal dueña:
@@ -933,7 +933,13 @@
     </div>
     {% endif %}
 
-    <main class="flex-1 p-6 overflow-x-auto">
+    {# TMT 2026-05-24 — main scrollea internamente (overflow-y-auto). El
+       outer es `h-screen` (no min-h-screen), asi el sidebar queda fijo a
+       la altura del viewport y el main scrollea solo cuando hace falta.
+       Antes: outer min-h-screen → el sidebar crecia para acomodar todo su
+       menu, empujando el body height → toda la pagina tenia scroll
+       vertical aunque el contenido entrara en pantalla. #}
+    <main class="flex-1 p-6 overflow-auto">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="mb-4 space-y-2">
