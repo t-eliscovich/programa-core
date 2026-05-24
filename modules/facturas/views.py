@@ -374,6 +374,116 @@ def detalle(id_factura: int):
     )
 
 
+@facturas_bp.route("/facturas/desde-asinfo")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def desde_asinfo():
+    """Lista facturas que están en Asinfo pero NO en PC.
+
+    Pedido Tamara 2026-05-23: match inverso PC ← Asinfo. Permite cargar
+    a PC con un click las que falten.
+
+    Filtros: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (default: últimos 30 días).
+    """
+    from datetime import date as _date, timedelta as _td
+    hoy = _date.today()
+    desde_s = request.args.get("desde") or (hoy - _td(days=30)).isoformat()
+    hasta_s = request.args.get("hasta") or hoy.isoformat()
+    desde = _parse_date(desde_s) or (hoy - _td(days=30))
+    hasta = _parse_date(hasta_s) or hoy
+
+    # Asinfo: traer facturas del rango
+    try:
+        from modules.asinfo import service as asinfo_service
+        asinfo_rows = asinfo_service.facturas_periodo(desde, hasta) or []
+    except Exception as e:
+        flash_exc("No se pudo conectar con Asinfo", e)
+        asinfo_rows = []
+
+    # PC: traer numf_completo del rango
+    pc_rows = db.fetch_all(
+        """
+        SELECT numf_completo, codigo_cli, importe
+          FROM scintela.factura
+         WHERE fecha BETWEEN %s AND %s
+           AND numf_completo IS NOT NULL
+           AND stat <> 'X'
+        """,
+        (desde, hasta),
+    ) or []
+    pc_numfs = {(r.get("numf_completo") or "").strip() for r in pc_rows if r.get("numf_completo")}
+
+    # Filtrar Asinfo que NO está en PC (huérfanas-asinfo)
+    # Solo FACTURA y NTEN — las DEVOLUCION/NC son negativas y rara vez se cargan
+    huerfanas = []
+    for r in asinfo_rows:
+        tipo = (r.get("tipo") or "").upper()
+        if tipo not in ("FACTURA", "NTEN"):
+            continue
+        numero = (r.get("numero") or "").strip()
+        if numero and numero in pc_numfs:
+            continue
+        huerfanas.append({
+            "numero": numero,
+            "fecha": r.get("fecha"),
+            "tipo": tipo,
+            "cliente_codigo": (r.get("cliente_codigo") or "").strip(),
+            "vendedor": r.get("vendedor") or "",
+            "kg": float(r.get("kg") or 0),
+            "usd": float(r.get("usd") or 0),
+        })
+    huerfanas.sort(key=lambda r: (r["fecha"] or _date.min, r["numero"]), reverse=True)
+
+    return render_template(
+        "facturas/desde_asinfo.html",
+        desde=desde_s, hasta=hasta_s,
+        n_total_asinfo=len(asinfo_rows),
+        n_pc=len(pc_rows),
+        huerfanas=huerfanas,
+        suma_kg=sum(h["kg"] for h in huerfanas),
+        suma_usd=sum(h["usd"] for h in huerfanas),
+    )
+
+
+@facturas_bp.route("/facturas/cargar-desde-asinfo", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def cargar_desde_asinfo():
+    """Crea una factura en PC con los datos provenientes de Asinfo."""
+    try:
+        from datetime import date as _date
+        fecha = _parse_date(request.form.get("fecha") or "")
+        codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()
+        kg = Decimal(str(request.form.get("kg") or "0"))
+        importe = Decimal(str(request.form.get("usd") or "0"))
+        numf_completo = (request.form.get("numero") or "").strip()
+        tipo_asinfo = (request.form.get("tipo") or "FACTURA").upper()
+        if not fecha or not codigo_cli or importe == 0:
+            flash("Faltan datos (fecha/cliente/importe).", "warn")
+            return redirect(url_for("facturas.desde_asinfo"))
+        # Verificar que el cliente existe
+        row_cli = db.fetch_one(
+            "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s",
+            (codigo_cli,),
+        )
+        if not row_cli:
+            flash(f"Cliente '{codigo_cli}' no existe en PC. Creá el cliente primero.", "warn")
+            return redirect(url_for("facturas.desde_asinfo"))
+        res = queries.crear(
+            fecha=fecha,
+            codigo_cli=codigo_cli,
+            kg=kg,
+            importe=importe,
+            numf_completo=numf_completo or None,
+            tipo=tipo_asinfo[:2],  # 'FA', 'NT'
+            usuario=getattr(g, "user", {}).get("username") if hasattr(g, "user") else "asinfo",
+        )
+        flash(f"Factura {numf_completo or '#'+str(res.get('numf'))} cargada desde Asinfo.", "ok")
+    except Exception as e:
+        flash_exc("No se pudo cargar la factura", e)
+    return redirect(url_for("facturas.desde_asinfo"))
+
+
 @facturas_bp.route("/facturas")
 @requiere_login
 @requiere_permiso("facturas.ver")
