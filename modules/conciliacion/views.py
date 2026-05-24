@@ -864,6 +864,67 @@ def hub_kpi_debug():
     }
 
 
+@conciliacion_bp.route("/hub/diag-prov", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_diag_prov():
+    """Diagnóstico de prov vs codigo_cli."""
+    import db as _db
+    # 1) Top 30 prov más usados en transacciones_bancarias (no vacíos)
+    top = _db.fetch_all(
+        """
+        SELECT UPPER(TRIM(tb.prov)) AS prov, COUNT(*) AS n,
+               MAX(tb.concepto) AS sample_concepto
+          FROM scintela.transacciones_bancarias tb
+         WHERE tb.no_banco = 10
+           AND COALESCE(NULLIF(TRIM(tb.prov), ''), '') <> ''
+           AND tb.fecha >= CURRENT_DATE - INTERVAL '60 days'
+         GROUP BY UPPER(TRIM(tb.prov))
+         ORDER BY n DESC
+         LIMIT 30
+        """
+    ) or []
+    # 2) De esos, cuáles matchean con scintela.cliente
+    if top:
+        codigos = [r["prov"] for r in top]
+        matches = _db.fetch_all(
+            "SELECT UPPER(TRIM(codigo_cli)) AS k, nombre FROM scintela.cliente WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)",
+            (codigos,),
+        ) or []
+        by_k = {m["k"]: m["nombre"] for m in matches}
+    else:
+        by_k = {}
+    # 3) Conceptos de los que NO matchean — ver si tienen "ch.XXX" extraíble
+    sample_no_match = []
+    for r in top:
+        if r["prov"] not in by_k:
+            sample_no_match.append({
+                "prov": r["prov"], "n": r["n"],
+                "sample_concepto": (r.get("sample_concepto") or "")[:50],
+                "nombre_cliente_match": None,
+            })
+    # 4) Cuántos clientes hay con codigo_cli que empieza con el prov no matcheado
+    sugerencias = []
+    for r in sample_no_match[:10]:
+        like = r["prov"] + "%"
+        cands = _db.fetch_all(
+            "SELECT codigo_cli, nombre FROM scintela.cliente WHERE UPPER(TRIM(codigo_cli)) LIKE %s LIMIT 5",
+            (like,),
+        ) or []
+        sugerencias.append({"prov": r["prov"], "candidatos": [{"codigo_cli": c["codigo_cli"], "nombre": c["nombre"]} for c in cands]})
+
+    return {
+        "top_30_prov_pichincha_60d": [
+            {"prov": r["prov"], "n": r["n"], "sample": r.get("sample_concepto", "")[:50],
+             "matchea_cliente": by_k.get(r["prov"])}
+            for r in top
+        ],
+        "n_total_prov_unicos": len(top),
+        "n_matchean_cliente": len(by_k),
+        "fuzzy_sugerencias_top_10_no_match": sugerencias,
+    }
+
+
 @conciliacion_bp.route("/hub/diag", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
