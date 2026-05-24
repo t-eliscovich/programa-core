@@ -1,9 +1,15 @@
 {% extends "base.html" %}
-{% from "_ui.html" import empty_row, page_header %}
+{% from "_ui.html" import empty_row, page_header, nav_resultados %}
 
 {% block title %}Gastos{% endblock %}
 
 {% block content %}
+  {# TMT 2026-05-24 — dueña: "cuando pongo detalle se me va todo lo de
+     arriba". El detalle vive en otro blueprint (gastos.lista) y por eso
+     no tenía la nav superior. Agrego nav_resultados('gastos') igual
+     que en /informes/gastos. #}
+  {{ nav_resultados('gastos') }}
+
   {# Tabs Gastos — Reporte (vista mensual matricial) | Detalle (lista filtrable).
      Misma fila en ambas pantallas. TMT 2026-05-16. #}
   <div class="no-print flex items-end gap-1 mb-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">

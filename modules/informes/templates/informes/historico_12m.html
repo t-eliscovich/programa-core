@@ -109,9 +109,14 @@
   .h12-page > .mb-4 { margin-bottom: 4px !important; }
   .h12-page > .mb-3 { margin-bottom: 4px !important; }
   .h12-page p.text-sm { display: none; }  /* descripcion del subtitulo */
-  .h12-tbl thead th { padding: 4px 8px !important; font-size: 9px !important; line-height: 1.1 !important; }
-  .h12-tbl tbody td { padding: 1px 8px !important; line-height: 1.15 !important; }
+  /* TMT 2026-05-24 v3 — dueña: "agrandalo un 10% quedo muy chiquito".
+     Subo body 11→12.5px y thead 9→11px. La tabla sigue entrando porque
+     unifico el header de cada columna a una sola linea ("May 26"). */
+  main .h12-page table tbody td { font-size: 12.5px !important; padding: 1.5px 8px !important; line-height: 1.2 !important; }
+  main .h12-page table thead th  { font-size: 11px !important; padding: 4px 8px !important; line-height: 1.15 !important; }
   .h12-tbl tbody tr { height: auto; }
+  .h12-tbl thead th .yr { display: inline !important; font-size: 11px !important;
+                          color: rgb(100 116 139); font-weight: 500; margin-left: 2px; }
 </style>
 {% endblock %}
 
@@ -282,18 +287,13 @@
           <tr>
             <th class="first">Indicador</th>
             {% for c in data.columnas %}
-              <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50{% endif %}">
-                {% if c.es_delta %}Δ{% else %}
-                {{ MES_ABRV[c.mes-1] }}
-                <span class="yr">{{ c.anio }}</span>
-                {% if c.es_mes_actual %}
-                  <div class="text-[9px] text-sky-600 mt-0.5">
-                    {% if c.fecha_crea %}{{ c.fecha_crea.strftime('%d/%m %H:%M') }}{% endif %}
-                    {% if c.es_canonico_default %}
-                      <span class="ml-1 px-1 rounded bg-sky-200 text-sky-900 font-semibold">DEFAULT</span>
-                    {% endif %}
-                  </div>
-                {% endif %}
+              {# TMT 2026-05-24 — unifico mes+año en una sola línea ("May
+                 26") para liberar altura. El timestamp y badge DEFAULT
+                 viajan al tooltip. #}
+              <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50{% endif %}"
+                  {% if c.es_mes_actual and c.fecha_crea %}title="Snapshot {{ c.fecha_crea.strftime('%d/%m %H:%M') }}{% if c.es_canonico_default %} · DEFAULT{% endif %}"{% endif %}>
+                {% if c.es_delta %}Δ
+                {% else %}{{ MES_ABRV[c.mes-1] }} <span class="yr">{{ '%02d' % (c.anio % 100) }}</span>
                 {% endif %}
               </th>
             {% endfor %}
