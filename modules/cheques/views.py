@@ -761,7 +761,15 @@ def aplicar(id_cheque: int):
 @requiere_login
 @requiere_permiso("cheques.anular")
 def confirmar_reverso(id_cheque: int):
-    """Paso 1 del 2-step: resumen + motivo antes de rebotar/reversar."""
+    """Paso 1 del 2-step: confirmar 'Sin fondos' o 'Reversar (me confundí)'.
+
+    TMT 2026-05-24 — Dueña: 'no es lo mismo reversar que rebote'. La
+    distinción es por stat actual:
+      - B/A/1/2 → SIN FONDOS (el cheque ya estuvo en circulación bancaria
+                  y rebotó). Evento malo, queda anotado en cliente.
+      - Z/D/P/V → REVERSAR (te confundiste al cargar). Admin undo, sin
+                  afectar al cliente.
+    """
     ch = queries.por_id(id_cheque)
     if not ch:
         abort(404)
@@ -769,25 +777,43 @@ def confirmar_reverso(id_cheque: int):
         flash("El cheque ya está reversado.", "warn")
         return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
     stat_prev = ch.get("stat") or ""
-    # Vocabulario canónico 2026-04-29: rebote real = stat origen
-    # depositado/cobrado por banco (B/1/2/A). 'D' es Daniela (gestión de
-    # cobranza), no rebote. Antes esta lista hardcodeada decía ("D","A").
-    # TMT 2026-05-14: usar la constante canónica.
     es_rebote = stat_prev in queries.STATS_REBOTE_REAL
-    titulo = f"{'Rebotar' if es_rebote else 'Reversar'} cheque {ch.get('no_cheque')}"
+    no_ch = ch.get("no_cheque") or f"#{id_cheque}"
+    importe = ch.get("importe") or 0
+    cliente = ch.get("codigo_cli", "")
     detalle = {
-        "N° cheque": ch.get("no_cheque"),
+        "N° cheque": no_ch,
         "Fecha": (ch.get("fecha").strftime("%d/%m/%Y") if ch.get("fecha") else "—"),
-        "Cliente": f"{ch.get('codigo_cli', '')}",
-        "Importe": f"$ {ch.get('importe') or 0}",
+        "Cliente": cliente,
+        "Importe": f"$ {importe}",
         "Estado actual": stat_prev,
     }
-    mensaje = (
-        f"Vas a rebotar el cheque N° {ch.get('no_cheque')} por $ {ch.get('importe') or 0}. "
-        "Se anota un rebote en la observación del cliente — el STOP lo decidís vos manualmente."
-        if es_rebote
-        else f"Vas a reversar el cheque N° {ch.get('no_cheque')} (anulación sin afectar al cliente)."
-    )
+    if es_rebote:
+        stat_destino = "3" if stat_prev in ("1", "2") else "1"
+        titulo = f"Marcar SIN FONDOS — cheque {no_ch}"
+        mensaje = (
+            f"El cheque N° {no_ch} por $ {importe} REBOTÓ — el cliente no "
+            "tenía fondos. Esto es un EVENTO MALO."
+        )
+        detalle["Qué va a pasar"] = (
+            f"(1) Cheque pasa stat '{stat_prev}' → '{stat_destino}' (rebotado). "
+            "(2) Se restauran las facturas que cubría — vuelven a cartera. "
+            f"(3) Se anota [REBOTE] en la observación del cliente {cliente} "
+            "(el STOP lo decidís vos)."
+        )
+        confirm_label = "Confirmar SIN FONDOS"
+    else:
+        titulo = f"Reversar (me confundí) — cheque {no_ch}"
+        mensaje = (
+            f"Te equivocaste cargando este cheque N° {no_ch} por $ {importe}. "
+            "Esto es un UNDO administrativo — no afecta al cliente."
+        )
+        detalle["Qué va a pasar"] = (
+            f"(1) Cheque pasa stat '{stat_prev}' → 'X' (eliminado por error). "
+            "(2) Se restauran las facturas que cubría — vuelven a cartera. "
+            f"(3) NO se toca al cliente {cliente} — no es un rebote."
+        )
+        confirm_label = "Confirmar REVERSAR"
     return render_template(
         "_confirmar_accion.html",
         titulo=titulo,
@@ -796,7 +822,7 @@ def confirmar_reverso(id_cheque: int):
         accion_url=url_for("cheques.reversar", id_cheque=id_cheque),
         volver_url=url_for("cheques.detalle", id_cheque=id_cheque),
         motivo_requerido=True,
-        confirm_label=f"Confirmar {'rebote' if es_rebote else 'reverso'}",
+        confirm_label=confirm_label,
     )
 
 
@@ -809,16 +835,22 @@ def reversar(id_cheque: int):
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.reversar(id_cheque=id_cheque, motivo=motivo, usuario=usuario)
-        # Flash message refleja si fue rebote (stat previo D/A) o anulación (Z/P),
-        # y si el side-effect de STOP cliente efectivamente corrió.
-        base = f"Cheque reversado. Se revirtieron {r['reversadas']} aplicaciones."
-        if r.get("stop_aplicado"):
-            flash(f"{base} Cliente {r['codigo_cli']} pasado a STOP automáticamente.", "ok")
-        elif r.get("es_rebote_real") and r.get("codigo_cli"):
-            # Rebote pero cliente ya estaba en STOP — informativo.
-            flash(f"{base} Cliente {r['codigo_cli']} ya estaba en STOP.", "ok")
+        # TMT 2026-05-24 — vocabulario claro: "sin fondos" si fue rebote
+        # real (banco rechazó), "reversado" si fue undo administrativo.
+        n_aplic = r["reversadas"]
+        if r.get("es_rebote_real"):
+            base = (
+                f"Cheque marcado como SIN FONDOS. Se anotó el rebote en "
+                f"la observación del cliente {r['codigo_cli']}. "
+                f"Se restauraron {n_aplic} factura(s) a cartera."
+            )
         else:
-            flash(base, "ok")
+            base = (
+                f"Cheque REVERSADO (undo administrativo). "
+                f"Se restauraron {n_aplic} factura(s) a cartera. "
+                "No se tocó al cliente."
+            )
+        flash(base, "ok")
     except ValueError as e:
         flash(str(e), "error")
     except Exception as e:
