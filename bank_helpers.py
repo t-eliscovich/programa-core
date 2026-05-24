@@ -199,6 +199,20 @@ def insert_movimiento_bancario(
     )
     saldo_nuevo = round(saldo_anterior + _signed_delta(documento, importe_f), 2)
 
+    # Auto-extraer prov del concepto si el caller no lo pasó.
+    # Cubre el caso típico "1 ch.LTM" → prov="LTM". Mejora cobertura
+    # del JOIN con scintela.cliente en la conciliación. Fix Tamara
+    # 2026-05-23. Solo cuando prov venga vacío — el caller explícito gana.
+    if not prov:
+        try:
+            import re as _re
+            m = _re.search(r"(?:^|\s)(?:\d+\s+)?(?:ch\.?|tr\.?|nc\.?|trf\.?|dep\.?\s*ch\.?)\s*([A-Za-z]{3,5})\b",
+                           (concepto or ""), _re.IGNORECASE)
+            if m:
+                prov = m.group(1).upper().strip()
+        except Exception:
+            pass  # fail-graceful
+
     row = db.execute_returning(
         """
         INSERT INTO scintela.transacciones_bancarias

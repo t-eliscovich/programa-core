@@ -500,7 +500,12 @@ def lista():
         # True si la factura es de ANTES de cuando arrancó Asinfo "limpio"
         # → sabemos que no va a tener match, no es un error.
         f["asinfo_pre_cutoff"] = bool(f.get("fecha") and f["fecha"] < _ASINFO_CUTOFF)
-    if 0 < len(filas) <= 6000:
+    # Skipping Asinfo cuando NO es vista=cartera ni se pidió explícitamente.
+    # Mejora 2026-05-23 (M2): Asinfo agrega 2-15s a la página; para vistas
+    # históricas (estado/canceladas/eliminadas) no aporta — la dueña ya sabe
+    # que son legacy. ?asinfo=1 fuerza el enriquecimiento si se quiere.
+    _skip_asinfo = vista != 'cartera' and request.args.get("asinfo") != "1"
+    if 0 < len(filas) <= 6000 and not _skip_asinfo:
         from datetime import date as _date
 
         # Asinfo solo tiene data limpia desde 2025-01-01. Recortamos el rango

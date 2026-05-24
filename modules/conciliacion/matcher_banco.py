@@ -313,8 +313,16 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     for r in rows:
         prov_explicito = str(r.get("prov") or "").strip()
         codigo_concepto, nombre_concepto = _extraer_cliente_concepto(r.get("concepto") or "")
-        # Cascada: explícito → código del concepto → nombre largo del concepto
-        prov_resuelto = (prov_explicito or codigo_concepto or "").upper()
+        # Cascada: explícito si len>=3 → código del concepto → fallback al prov chico
+        # Razón: el prov histórico en muchas filas tiene 2 chars (legacy) que NO
+        # matchean con los codigo_cli reales (3 chars). El código del concepto
+        # ("ch.CCH") es más confiable. Fix Tamara 2026-05-23.
+        if len(prov_explicito) >= 3:
+            prov_resuelto = prov_explicito.upper()
+        elif codigo_concepto:
+            prov_resuelto = codigo_concepto.upper()
+        else:
+            prov_resuelto = prov_explicito.upper()
         # Nombre: 1) BD si hay match por código, 2) nombre largo extraído, 3) nada
         prov_nombre = nombre_por_codigo.get(prov_resuelto, "") or nombre_concepto
         concepto_str = str(r.get("concepto") or "").strip()
