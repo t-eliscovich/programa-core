@@ -869,6 +869,12 @@ def reemplazar(
 
 
 def por_id(id_cheque: int) -> dict | None:
+    """Cheque por id_cheque interno O por no_cheque visible.
+
+    Tamara 2026-05-23: los links del historial/cheques usan el no_cheque
+    real en la URL (ej. 1234) en lugar del id_cheque interno. Esta función
+    acepta ambos — prioriza no_cheque si hay match y fallback a id_cheque.
+    """
     return db.fetch_one(
         """
         SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing, c.fechaout,
@@ -879,12 +885,14 @@ def por_id(id_cheque: int) -> dict | None:
                COALESCE(cli.nombre, '') AS cliente,
                cli.ruc, cli.telefono,
                COALESCE(bco.nombre, c.banco) AS banco
-        FROM scintela.cheque c
-        LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
-        LEFT JOIN scintela.banco   bco ON bco.no_banco   = c.no_banco
-        WHERE c.id_cheque = %s
+          FROM scintela.cheque c
+          LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
+          LEFT JOIN scintela.banco   bco ON bco.no_banco   = c.no_banco
+         WHERE c.no_cheque::text = %s OR c.id_cheque = %s
+         ORDER BY (c.no_cheque::text = %s) DESC, c.id_cheque ASC
+         LIMIT 1
         """,
-        (id_cheque,),
+        (str(id_cheque), id_cheque, str(id_cheque)),
     )
 
 

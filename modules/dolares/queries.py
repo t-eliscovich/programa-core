@@ -14,12 +14,11 @@ def lista(
     cta: str | None = None,
     solo_vivos: bool = True,
     limite: int = 1000,
-    pedido: str | None = None,
 ) -> list[dict]:
     """Movimientos en scintela.dolares (anticipos USD).
 
     Cada fila tiene: fecha, cta (3-char), concepto, importe, st, clave,
-    saldo_acumulado (suma acumulada fila por fila).
+    saldo_acumulado (running por cuenta).
 
     Convención del campo `st`:
         NULL / '' / ' ' → anticipo VIVO (suma a ANTICIPOS del balance).
@@ -27,13 +26,10 @@ def lista(
 
     `solo_vivos=True` filtra a los anticipos abiertos.
 
-    Acumulado (Federico 2026-05-22): suma acumulada simple de los importes,
-    fila por fila, en el mismo orden en que se muestra la tabla (fecha
-    DESC). La última fila lleva el total del filtro. Antes era un running
-    balance POR CUENTA — la dueña pidió un único acumulado corrido.
+    Saldo acumulado (TMT 2026-05-12): running balance POR CUENTA, calculado
+    sobre el universo filtrado. Si filtrás por cuenta, ves su corrida; si
+    no, cada fila muestra el saldo de SU cuenta hasta ese movimiento.
     """
-    # Federico 2026-05-22 — filtro "Pedido Num.": texto incluido en concepto.
-    pedido_param = f"%{pedido.strip()}%" if pedido and pedido.strip() else None
     rows = db.fetch_all(
         """
         SELECT d.id_dolares, d.fecha, d.cta, d.concepto, d.importe,
@@ -42,7 +38,6 @@ def lista(
         WHERE (%(desde)s::date IS NULL OR d.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR d.fecha <= %(hasta)s::date)
           AND (%(cta)s IS NULL OR UPPER(d.cta) = UPPER(%(cta)s))
-          AND (%(pedido)s IS NULL OR d.concepto ILIKE %(pedido)s)
           AND (NOT %(solo_vivos)s
                OR d.st IS NULL OR d.st IN ('', ' '))
         ORDER BY d.fecha DESC, d.id_dolares DESC
@@ -51,21 +46,24 @@ def lista(
         {
             "desde": desde or None, "hasta": hasta or None,
             "cta": cta or None,
-            "pedido": pedido_param,
             "solo_vivos": bool(solo_vivos),
             "limite": int(limite),
         },
     ) or []
 
-    # Federico 2026-05-22 — columna "Acum.": suma acumulada simple de los
-    # importes, fila por fila, en el orden en que se muestra la tabla
-    # (fecha DESC, tal como vienen de la query). La última fila lleva el
-    # total del filtro. Antes era un saldo corrido POR CUENTA.
-    acum = 0.0
-    for r in rows:
-        acum += float(r.get("importe") or 0)
-        r["saldo_acumulado"] = acum
-    return rows
+    # Running balance por cuenta: ordenar ASC, acumular, marcar cada fila,
+    # devolver DESC (que es el orden original). Bug TMT 2026-05-12: el
+    # fallback `or ""` mezclaba date con string y rompía el sort —
+    # `_date.min` mantiene el tipo consistente.
+    rows_asc = sorted(rows, key=lambda r: (r.get("fecha") or _date.min,
+                                            r.get("id_dolares") or 0))
+    acum_por_cta: dict[str, float] = {}
+    for r in rows_asc:
+        cta_key = (r.get("cta") or "").strip().upper()
+        acum_por_cta[cta_key] = acum_por_cta.get(cta_key, 0.0) + float(r.get("importe") or 0)
+        r["saldo_acumulado"] = acum_por_cta[cta_key]
+    # Volver al orden DESC.
+    return list(reversed(rows_asc))
 
 
 def por_cuenta(solo_vivos: bool = True) -> list[dict]:

@@ -350,10 +350,12 @@ def conteos(
     }
 
 
-def link_origen(row: dict) -> tuple[str | None, str]:
+def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None) -> tuple[str | None, str]:
     """Devuelve (url, etiqueta) para el lado origen del mov.
 
-    Devuelve (None, etiqueta_sólo_texto) si no hay link directo.
+    Tamara 2026-05-23: los links de factura/cheque deben usar el numero
+    REAL (numf/no_cheque) en la URL, no el id interno. Cuando el caller
+    pasa los mappings, los usamos. Sino caemos al id interno (legacy).
     """
     t = row.get("origen_table")
     rid = row.get("origen_id")
@@ -364,10 +366,18 @@ def link_origen(row: dict) -> tuple[str | None, str]:
     if t == "transacciones_bancarias":
         return None, f"Banco mov #{rid}"
     if t == "cheque":
+        # Si conocemos el no_cheque, lo usamos como path (más human-readable).
+        nch = (cheque_nos or {}).get(int(rid)) if rid else None
+        if nch and str(nch).strip():
+            return f"/cheques/{nch}", f"Cheque {nch}"
         return f"/cheques/{rid}", f"Cheque #{rid}"
     if t == "compra":
         return f"/compras/{rid}", f"Compra #{rid}"
     if t == "factura":
+        # Si conocemos el numf, lo usamos en la URL.
+        nfact = (factura_numfs or {}).get(int(rid)) if rid else None
+        if nfact and str(nfact).strip() and str(nfact).strip() != "0":
+            return f"/facturas/{nfact}", f"Factura {nfact}"
         return f"/facturas/{rid}", f"Factura #{rid}"
     if t == "capital":
         return "/capital", f"Capital #{rid}"
@@ -382,7 +392,9 @@ def link_origen(row: dict) -> tuple[str | None, str]:
     return None, f"{t} #{rid}"
 
 
-def link_destino(row: dict) -> tuple[str | None, str]:
+def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict | None = None) -> tuple[str | None, str]:
     """Mismo concepto para el lado destino."""
-    return link_origen({"origen_table": row.get("destino_table"),
-                        "origen_id": row.get("destino_id")})
+    return link_origen(
+        {"origen_table": row.get("destino_table"), "origen_id": row.get("destino_id")},
+        factura_numfs=factura_numfs, cheque_nos=cheque_nos,
+    )

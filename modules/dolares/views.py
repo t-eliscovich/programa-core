@@ -55,14 +55,10 @@ def lista():
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     cta   = (request.args.get("cta") or "").strip() or None
-    # Federico 2026-05-22 — filtro "Pedido Num.": texto/número incluido en
-    # el concepto. Una cuenta puede tener varios pedidos/anticipos en curso.
-    pedido = (request.args.get("pedido") or "").strip() or None
     solo_vivos = request.args.get("solo_vivos", "1") != "0"
     filas, error = _safe(
         lambda: queries.lista(
             desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos,
-            pedido=pedido,
         ),
         [],
     )
@@ -87,7 +83,7 @@ def lista():
     return render_template(
         "dolares/lista.html",
         filas=filas, cuentas=cuentas, resumen=res,
-        desde=desde, hasta=hasta, cta=cta, pedido=pedido,
+        desde=desde, hasta=hasta, cta=cta,
         solo_vivos=solo_vivos, error=error,
     )
 

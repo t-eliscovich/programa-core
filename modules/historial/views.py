@@ -179,12 +179,25 @@ def lista():
             return banco_labels[int(rid)]
         return default_label
 
+    # Mapeo id_factura → numf (solo si tiene numf válido) y id_cheque → no_cheque.
+    # Estos diccionarios se pasan a link_origen/link_destino para que las URLs
+    # usen el número real (visible al usuario) en lugar del id interno.
+    factura_numfs = {
+        k: v.lstrip("#")
+        for k, v in factura_labels.items()
+        if v and not v.startswith("#")  # solo cuando es numf real, no fallback "#id"
+    }
+    cheque_nos = {
+        k: v
+        for k, v in cheque_labels.items()
+        if v and not v.startswith("#")
+    }
     for r in filas:
         r["label"] = queries.label(r.get("tipo") or "")
-        u, t = queries.link_origen(r)
+        u, t = queries.link_origen(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos)
         r["origen_url"] = u
         r["origen_label"] = _override_label(r.get("origen_table"), r.get("origen_id"), t)
-        u, t = queries.link_destino(r)
+        u, t = queries.link_destino(r, factura_numfs=factura_numfs, cheque_nos=cheque_nos)
         r["destino_url"] = u
         r["destino_label"] = _override_label(r.get("destino_table"), r.get("destino_id"), t)
         # row_url = a dónde va el click de la fila entera. Preferimos

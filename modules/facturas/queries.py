@@ -310,7 +310,13 @@ def editar(
 
 
 def por_id(id_factura: int) -> dict | None:
-    """Cabecera de factura con datos del cliente."""
+    """Cabecera de factura por id_factura interno O por numf.
+
+    Tamara 2026-05-23: los links del historial/facturas usan el numf real
+    (175763) en la URL en lugar del id_factura interno (5074). Esta
+    función acepta ambos — prioriza numf si hay match (más probable que
+    el caller use el visible) y fallback a id_factura.
+    """
     return db.fetch_one(
         """
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
@@ -318,11 +324,13 @@ def por_id(id_factura: int) -> dict | None:
                f.stat, f.condic, f.tipo, f.pase, f.clave,
                COALESCE(c.nombre, '')    AS cliente,
                c.ruc, c.telefono, c.pago
-        FROM scintela.factura f
-        LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
-        WHERE f.id_factura = %s
+          FROM scintela.factura f
+          LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+         WHERE f.numf = %s OR f.id_factura = %s
+         ORDER BY (f.numf = %s) DESC, f.id_factura ASC
+         LIMIT 1
         """,
-        (id_factura,),
+        (id_factura, id_factura, id_factura),
     )
 
 

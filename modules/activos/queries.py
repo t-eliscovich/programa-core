@@ -189,18 +189,6 @@ def buscar(
                             + (SELECT c FROM coef) * COALESCE(a.cuota, 0)
                           ) / a.inicial, 1)
                     ELSE 0 END                                       AS pct_depreciado,
-               -- RESTO VIDA: meses que le quedan al activo hasta valor
-               -- cero = valor en libros / cuota mensual. Puede no ser
-               -- entero (ej. 8.6 meses). Federico 2026-05-22.
-               CASE WHEN COALESCE(a.cuota, 0) > 0
-                    THEN ROUND(
-                          (GREATEST(
-                             COALESCE(a.inicial, 0)
-                               - COALESCE(a.amortizac, 0)
-                               - (SELECT c FROM coef) * COALESCE(a.cuota, 0),
-                             0
-                           ) / a.cuota)::numeric, 1)
-                    ELSE NULL END                                     AS resto_vida,
                {_CATEGORIA_CASE_SQL}                                 AS categoria_orden
         FROM scintela.activos a
         LEFT JOIN scintela.proveedor p ON p.id_proveedor = a.id_proveedor

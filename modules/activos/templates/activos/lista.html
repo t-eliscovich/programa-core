@@ -147,9 +147,7 @@
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Amort. acum.</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Valor libros</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">% depr.</th>
-          <th class="px-2 py-1 text-right" style="white-space: nowrap;" title="Cuota mensual de amortización — fija durante toda la vida del activo.">Cuota</th>
-          <th class="px-2 py-1 text-right" style="white-space: nowrap;" title="Parte de la cuota ya amortizada este mes, prorrateada por día.">Porción mes</th>
-          <th class="px-2 py-1 text-right" style="white-space: nowrap;" title="Meses de vida que le quedan al activo = valor en libros / cuota.">Resto vida</th>
+          <th class="px-2 py-1 text-right" style="white-space: nowrap;">Cuota/mes</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Vida (m)</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Últ. mes</th>
         </tr>
@@ -160,7 +158,7 @@
            estricto: tipo → fecha DESC. Los subtotales aparecen cuando
            cambia la categoría (al inicio de la próxima) Y al cerrar el
            loop. #}
-        {% set _colspan = (13 if tiene_permiso('activos.crear') else 12) %}
+        {% set _colspan = (11 if tiene_permiso('activos.crear') else 10) %}
 
         {% macro subtotal_row(cat_orden) %}
           {% set s = subtotales.get(cat_orden) %}
@@ -174,9 +172,7 @@
             <td class="px-2 py-1 text-right tabular-nums text-amber-700">{{ s.amortizac | num_es }}</td>
             <td class="px-2 py-1 text-right tabular-nums text-sky-700">{{ s.valor_libros | num_es }}</td>
             <td></td>
-            <td class="px-2 py-1 text-right tabular-nums text-slate-700">{{ s.cuota | num_es }}</td>
             <td class="px-2 py-1 text-right tabular-nums text-emerald-700">{{ s.amortimes | num_es }}</td>
-            <td></td>
             <td></td><td></td>
           </tr>
           {% endif %}
@@ -239,9 +235,7 @@
               </span>
             {% endif %}
           </td>
-          <td class="px-2 py-1 text-right tabular-nums">{{ a.cuota | num_es if a.cuota else '' }}</td>
-          <td class="px-2 py-1 text-right tabular-nums text-emerald-700">{{ a.amortimes | num_es if a.amortimes else '' }}</td>
-          <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.resto_vida | num_es(1) if a.resto_vida is not none else '' }}</td>
+          <td class="px-2 py-1 text-right tabular-nums">{{ a.amortimes | num_es if a.amortimes else '' }}</td>
           <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.vida_util or '' }}</td>
           <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.ult_mes_amortizado or '' }}</td>
         </tr>
