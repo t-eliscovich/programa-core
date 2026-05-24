@@ -500,12 +500,21 @@ def lista():
         # True si la factura es de ANTES de cuando arrancó Asinfo "limpio"
         # → sabemos que no va a tener match, no es un error.
         f["asinfo_pre_cutoff"] = bool(f.get("fecha") and f["fecha"] < _ASINFO_CUTOFF)
-    # Skipping Asinfo cuando NO es vista=cartera ni se pidió explícitamente.
-    # Mejora 2026-05-23 (M2): Asinfo agrega 2-15s a la página; para vistas
-    # históricas (estado/canceladas/eliminadas) no aporta — la dueña ya sabe
-    # que son legacy. ?asinfo=1 fuerza el enriquecimiento si se quiere.
-    _skip_asinfo = vista != 'cartera' and request.args.get("asinfo") != "1"
-    if 0 < len(filas) <= 6000 and not _skip_asinfo:
+    # Skipping Asinfo por default — solo se llama cuando es NECESARIO.
+    # Mejora 2026-05-23 (M2 v2): Tamara — "cartera no copia de facturas
+    # directo, no hace falta re-matchear con asinfo". La cartera vive en
+    # PC; Asinfo solo se usa para detectar huérfanas (facturas PC sin
+    # contraparte). Solo llamarlo si el usuario lo pide.
+    # Triggers para llamar Asinfo:
+    #   - ?solo_huerfanas=1  → necesario para filtrar
+    #   - ?asinfo=1          → forzado por el usuario
+    #   - export=csv         → exportar incluye columnas Asinfo
+    _necesita_asinfo = (
+        solo_huerfanas
+        or request.args.get("asinfo") == "1"
+        or is_export
+    )
+    if 0 < len(filas) <= 6000 and _necesita_asinfo:
         from datetime import date as _date
 
         # Asinfo solo tiene data limpia desde 2025-01-01. Recortamos el rango
