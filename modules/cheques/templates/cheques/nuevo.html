@@ -27,9 +27,10 @@
        Códigos especiales del legacy: 90/91=depósitos, 95=cancela
        anticipo, 97=anticipo, 98=UKN, 99=efectivo. Sin toggle extra. #}
 
-    {# Layout 2 columnas: form a la izquierda, anticipo al costado.
-       Pensado para no tener que scrollear en la pantalla típica. #}
-    <div class="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-4">
+    {# Layout 1 columna — el toggle "Es anticipo" se sacó (Tamara 2026-05-23)
+       porque era redundante con el banco emisor 97 ANTICIPO. Si querés
+       cargar un anticipo, elegís banco 97 directamente. #}
+    <div class="grid grid-cols-1 gap-4">
 
       {# ─── Columna izquierda: campos del cheque ───────────────────
          TMT 2026-05-15: simplificado — única fecha de cabecera ("Recibido")
@@ -172,18 +173,11 @@
            detalle del cheque. #}
       </div>
 
-      {# ─── Columna derecha: toggle "Es anticipo" (warning al costado) ─── #}
-      <label class="flex flex-col gap-1 p-3 rounded border border-amber-200 bg-amber-50 self-start">
-        <span class="flex items-center gap-2">
-          <input type="checkbox" name="es_anticipo" value="1" id="es-anticipo-chk"
-                 {% if form.es_anticipo %}checked{% endif %}
-                 class="rounded border-slate-300">
-          <strong class="text-sm">Es anticipo del cliente</strong>
-        </span>
-        <span class="text-xs text-amber-800 leading-snug">
-          Pago adelantado, sin factura emitida. Se aplica a la próxima.
-        </span>
-      </label>
+      {# Checkbox oculto: el JS sigue tildándolo cuando se elige banco 97
+         (anticipo). Mantenemos la lógica intacta sin contaminar la UI. #}
+      <input type="checkbox" name="es_anticipo" value="1" id="es-anticipo-chk"
+             {% if form.es_anticipo %}checked{% endif %}
+             style="display: none">
     </div>
 
     {# ─── APLICACIÓN INLINE A FACTURAS ────────────────────────────────
