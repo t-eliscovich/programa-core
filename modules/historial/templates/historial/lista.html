@@ -90,7 +90,11 @@
      Usuario se fusionaron dentro de Tipo y Fecha respectivamente
      (como subtítulo pequeño), liberando 15% de ancho para Concepto. #}
   <div class="bg-white border border-slate-200 rounded">
-    <table class="w-full text-xs table-fixed">
+    {# TMT 2026-05-24: style="table-layout:fixed" inline — la clase
+       table-fixed de Tailwind no estaba siendo compilada (CSS production
+       no incluye esa utility), asi que el navegador caia en auto layout
+       y la tabla expandia con el contenido del batch header. #}
+    <table class="w-full text-xs" style="table-layout: fixed; max-width: 100%;">
       <colgroup>
         <col style="width: 9%">   <!-- Fecha (+ usuario) -->
         <col style="width: 18%">  <!-- Tipo (+ estado chip) -->
