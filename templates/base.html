@@ -939,7 +939,7 @@
        Antes: outer min-h-screen → el sidebar crecia para acomodar todo su
        menu, empujando el body height → toda la pagina tenia scroll
        vertical aunque el contenido entrara en pantalla. #}
-    <main class="flex-1 p-6 overflow-auto">
+    <main class="flex-1 p-6" style="overflow: auto;">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="mb-4 space-y-2">
