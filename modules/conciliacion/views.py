@@ -864,6 +864,78 @@ def hub_kpi_debug():
     }
 
 
+@conciliacion_bp.route("/hub/diag-extract", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_diag_extract():
+    """Saca códigos del concepto y verifica si matchean con clientes."""
+    import db as _db
+    # Top códigos extraídos del concepto (regex "ch.XXX")
+    rows = _db.fetch_all(
+        """
+        WITH extr AS (
+            SELECT tb.id_transaccion,
+                   tb.concepto,
+                   tb.prov AS prov_actual,
+                   UPPER(TRIM((regexp_match(
+                       tb.concepto,
+                       '(?:^|\s)(?:\d+\s+)?(?:ch\.?|tr\.?|nc\.?|trf\.?|dep\.?\s*ch\.?)\s*([A-Za-z]{3,5})\b',
+                       'i'
+                   ))[1])) AS cod_extraido
+              FROM scintela.transacciones_bancarias tb
+             WHERE tb.no_banco = 10
+               AND tb.fecha >= CURRENT_DATE - INTERVAL '30 days'
+               AND tb.concepto IS NOT NULL
+        )
+        SELECT cod_extraido,
+               COUNT(*) AS n,
+               COUNT(*) FILTER (WHERE prov_actual IS NULL OR LENGTH(TRIM(prov_actual)) < 3) AS sin_prov,
+               MAX(concepto) AS sample
+          FROM extr
+         WHERE cod_extraido IS NOT NULL
+         GROUP BY cod_extraido
+         ORDER BY n DESC
+         LIMIT 30
+        """
+    ) or []
+    codigos = [r["cod_extraido"] for r in rows if r["cod_extraido"]]
+    clientes_map = {}
+    if codigos:
+        cli = _db.fetch_all(
+            "SELECT UPPER(TRIM(codigo_cli)) AS k, nombre FROM scintela.cliente WHERE UPPER(TRIM(codigo_cli)) = ANY(%s)",
+            (codigos,),
+        ) or []
+        clientes_map = {c["k"]: c["nombre"] for c in cli}
+
+    # Total filas con prov NULL/chico y concepto matcheable
+    stats = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (
+                   WHERE COALESCE(LENGTH(TRIM(prov)), 0) < 3
+                     AND concepto ~* '\\m(?:ch\\.?|tr\\.?|nc\\.?)\\s*[A-Za-z]{3,5}\\M'
+               ) AS sin_prov_pero_extraible
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = 10
+           AND fecha >= CURRENT_DATE - INTERVAL '30 days'
+        """
+    ) or {}
+
+    return {
+        "stats": dict(stats),
+        "top_codigos_extraidos_30d": [
+            {
+                "cod": r["cod_extraido"],
+                "n_total": r["n"],
+                "n_sin_prov": r["sin_prov"],
+                "matchea_cliente": clientes_map.get(r["cod_extraido"]),
+                "sample_concepto": (r.get("sample") or "")[:50],
+            }
+            for r in rows
+        ],
+    }
+
+
 @conciliacion_bp.route("/hub/diag-prov", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
