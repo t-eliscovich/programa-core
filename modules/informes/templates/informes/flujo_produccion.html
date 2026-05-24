@@ -218,8 +218,10 @@
     {% set csc = cs.get('colorantes', {}) %}
     {% set csp = cs.get('produccion', {}) %}
     {# Federico 2026-05-22 — TINTORERÍA y COSTOS UNITARIOS unificados en
-       un solo cuadro "Costos de tintorería". #}
-    {% set _show_historial = tintoreria_mensual and tintoreria_mensual.filas and (tintoreria_mensual.filas | length > 1) %}
+       un solo cuadro "Costos de tintorería".
+       TMT 2026-05-24 v3 — dueña volvió a pedir la tabla mensual. Ya no la
+       ocultamos cuando hay 1 mes; mostramos siempre que haya data. #}
+    {% set _show_historial = tintoreria_mensual and tintoreria_mensual.filas %}
     <div class="blk">
       <div class="blk-title">Costos de tintorería</div>
       <table>
@@ -369,9 +371,12 @@
         </tbody>
       </table>
       <p class="mt-2 text-[10px] text-slate-500">
-        Bajos: $/kg ≤ 0.40 (línea por línea de <code>scintela.tinto</code>) · Fuertes: el resto.
-        Gs. Producción Tintorería: V4+V5+V6 de <code>xgast</code> + amortización DCC
-        (cuota mensual de activos tipo M y 50% de tipo I). Mismo número que
+        <strong>Origen de los datos:</strong> los Kg y $ de Bajos/Fuertes
+        salen directo del programa de tintorería (cada batch que registra
+        la planta queda en <code>scintela.tinto</code>). Bajos: $/kg ≤ 0.40
+        · Fuertes: el resto. Gs. Producción Tintorería: V4+V5+V6 de
+        <code>xgast</code> + amortización DCC (cuota mensual de activos
+        tipo M y 50% de tipo I) — mismo número que
         <strong>TINTORERÍA TOTAL CON AMORT</strong> de /informes/gastos.
         % sobre kg del mes. $/kg ponderado. PROMEDIO = Σ meses / cantidad de meses.
       </p>
