@@ -98,7 +98,10 @@
      entrar sin scrollear horizontal". Cambio: las columnas Estado y
      Usuario se fusionaron dentro de Tipo y Fecha respectivamente
      (como subtítulo pequeño), liberando 15% de ancho para Concepto. #}
-  <div class="bg-white border border-slate-200 rounded">
+  {# TMT 2026-05-24 — wrapper .table-compact desactiva el padding/font
+     "global" de tablas (definido en base.html) que infla cada fila a 14px
+     + 8.8px de padding. Acá necesitamos filas densas (~16-18px). #}
+  <div class="bg-white border border-slate-200 rounded table-compact">
     {# TMT 2026-05-24: style="table-layout:fixed" inline — la clase
        table-fixed de Tailwind no estaba siendo compilada (CSS production
        no incluye esa utility), asi que el navegador caia en auto layout

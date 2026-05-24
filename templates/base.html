@@ -478,6 +478,31 @@
     main .kpi-card .text-2xl, main .kpi-card .text-xl { font-size: 1.75rem !important; }
     /* Padding de celdas — un poco más aire */
     main table tbody td { padding-top: 0.55rem !important; padding-bottom: 0.55rem !important; }
+
+    /* TMT 2026-05-24 — Pedido dueña: que Balance/Historial/Flujo entren
+       en una pantalla sin scroll. Estas vistas son tablas densas (3 tablas
+       contables apiladas) donde el 14px global no es razonable. Anulamos
+       los !important globales SOLO dentro de los contenedores marcados.
+       Si una página nueva necesita layout denso similar, agregale la
+       clase `table-compact` al div raíz. */
+    main .informe-balance table tbody td,
+    main .fp table tbody td,
+    main .table-compact table tbody td {
+      font-size: 11px !important;
+      padding-top: 1px !important;
+      padding-bottom: 1px !important;
+    }
+    main .informe-balance table thead th,
+    main .fp table thead th,
+    main .table-compact table thead th {
+      font-size: 9.5px !important;
+      padding-top: 2px !important;
+      padding-bottom: 2px !important;
+    }
+    main .informe-balance tr.fila-total td { font-size: 12px !important; }
+    main .informe-balance tr.fila-key td   { font-size: 13px !important;
+                                             padding-top: 3px !important;
+                                             padding-bottom: 3px !important; }
   </style>
   {# Child templates can add extra <link>/<script>/<style> tags here. #}
   {% block head_extra %}{% endblock %}
