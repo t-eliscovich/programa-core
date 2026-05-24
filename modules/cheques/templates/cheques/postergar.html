@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
 {% block title %}Postergar cheque{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('cheques.lista') }}" class="hover:underline">Cheques</a> /
@@ -7,12 +8,11 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto py-6 px-4">
-  <h1 class="text-xl font-semibold mb-1">Postergar cheque</h1>
-  <p class="text-sm text-slate-500 mb-6">
-    Sólo cheques en cartera (Z) o ya postergados (P) se pueden postergar.
-    El cliente nos pidió que esperemos.
-  </p>
+{# TMT 2026-05-24 — patrón estándar max-w-3xl + page_hero. #}
+<div class="max-w-3xl">
+  <div class="flex items-start justify-between mb-4 gap-4 flex-wrap">
+    {{ page_hero('Postergar cheque', descripcion='Sólo cheques en cartera (Z) o ya postergados (P) se pueden postergar. El cliente nos pidió que esperemos.') }}
+  </div>
 
   {% if errores %}
     <div class="bg-red-100 border border-red-300 text-red-800 rounded p-3 mb-4">
