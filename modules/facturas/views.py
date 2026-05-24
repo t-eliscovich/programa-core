@@ -326,6 +326,28 @@ def confirmar_anulacion(id_factura: int):
     )
 
 
+@facturas_bp.route("/facturas/<int:id_factura>/reversar-carga", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.anular")
+def reversar_carga(id_factura: int):
+    """Deshace una carga errónea (DELETE) — solo si no tiene movimientos.
+
+    Distinto de anular (que setea stat='X' y deja histórico). Esto
+    elimina la fila por completo. Útil cuando cargaste una factura
+    por error y querés deshacer la carga.
+    """
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        res = queries.borrar_carga_erronea(id_factura, usuario=usuario)
+        flash(f"Factura {res['numf_completo'] or '#'+str(res['numf'])} borrada (la carga quedó deshecha).", "ok")
+        return redirect(url_for("facturas.lista"))
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude reversar la carga", e)
+    return redirect(url_for("facturas.detalle", id_factura=id_factura))
+
+
 @facturas_bp.route("/facturas/<int:id_factura>/anular", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.anular")

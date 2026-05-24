@@ -53,9 +53,24 @@
         </a>
       {% endif %}
       {% if tiene_permiso('facturas.anular') and fact.stat and fact.stat != 'X' %}
+        {# Botón "Reversar carga": deshacer un alta erronea — solo si la
+           factura no tiene movimientos. Distinto de Anular (deja stat=X). #}
+        {% set _abono = (fact.abono or 0)|float %}
+        {% set _saldo = (fact.saldo or 0)|float %}
+        {% set _importe = (fact.importe or 0)|float %}
+        {% if _abono == 0 and (_saldo - _importe)|abs < 0.01 and total_aplicado == 0 and total_retenido == 0 %}
+          <form method="POST" action="{{ url_for('facturas.reversar_carga', id_factura=fact.id_factura) }}"
+                class="inline"
+                onsubmit="return confirm('Borrar esta factura completamente? Solo si la cargaste por error.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30">
+              ↺ Reversar carga
+            </button>
+          </form>
+        {% endif %}
         <a href="{{ url_for('facturas.confirmar_anulacion', id_factura=fact.id_factura) }}"
            class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
-          Eliminar...
+          Anular...
         </a>
       {% endif %}
     </div>

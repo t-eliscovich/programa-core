@@ -360,6 +360,62 @@ def retenciones_aplicadas(codigo_cli: str, numf: int) -> list[dict]:
     )
 
 
+def borrar_carga_erronea(id_factura: int, *, usuario: str = "web") -> dict:
+    """Borra una factura COMPLETAMENTE (DELETE) — para revertir cargas erróneas.
+
+    A diferencia de anular() que setea stat='X' (queda histórica), esto
+    elimina la fila de la DB. Solo permitido si NUNCA tuvo movimientos:
+    sin abonos, sin aplicaciones de cheques, sin retenciones.
+
+    Caso de uso: Tamara carga por error una factura desde Asinfo y
+    quiere deshacer la carga (no que quede como anulada).
+    """
+    fact = db.fetch_one(
+        "SELECT id_factura, numf, numf_completo, codigo_cli, importe, abono, saldo, stat "
+        "FROM scintela.factura WHERE id_factura = %s",
+        (id_factura,),
+    )
+    if not fact:
+        raise ValueError("Factura inexistente.")
+    if float(fact.get("abono") or 0) != 0:
+        raise ValueError("La factura ya tiene abonos cargados. Usá Anular en su lugar.")
+    if float(fact.get("saldo") or 0) != float(fact.get("importe") or 0):
+        raise ValueError("La factura tiene movimientos. Usá Anular en su lugar.")
+    aplic = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.chequesxfact WHERE id_fact = %s",
+        (id_factura,),
+    )
+    if aplic and int(aplic["n"]) > 0:
+        raise ValueError("La factura tiene aplicaciones de cheques. Reversalas primero o usá Anular.")
+    ret = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.retencion WHERE codigo_cli = %s AND numf = %s",
+        (fact["codigo_cli"], fact["numf"]),
+    )
+    if ret and int(ret["n"]) > 0:
+        raise ValueError("La factura tiene retenciones. No se puede borrar.")
+
+    with db.tx() as conn:
+        # Borrar mov_doble linkeado (auto-referencia que crea() guarda).
+        db.execute(
+            "DELETE FROM scintela.mov_doble "
+            " WHERE (origen_table  = 'factura' AND origen_id  = %s) "
+            "    OR (destino_table = 'factura' AND destino_id = %s)",
+            (id_factura, id_factura),
+            conn=conn,
+        )
+        db.execute(
+            "DELETE FROM scintela.factura WHERE id_factura = %s",
+            (id_factura,),
+            conn=conn,
+        )
+    return {
+        "id_factura": id_factura,
+        "numf": fact["numf"],
+        "numf_completo": fact.get("numf_completo"),
+        "borrado": True,
+    }
+
+
 def anular(id_factura: int, *, motivo: str, usuario: str = "web") -> int:
     """Marca una factura como eliminada por error (stat='X').
 
