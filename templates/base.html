@@ -361,7 +361,10 @@
     .page-shell {
       margin-left: auto;
       margin-right: auto;
-      padding: 1.5rem 1rem 2rem;
+      /* TMT 2026-05-24 — main ya tiene p-6 (24px). Saco el padding horizontal
+         interno para que los titulos esten al mismo left que las paginas que
+         usan max-w-full (dueña: 'titulos en el mismo lugar'). */
+      padding: 0;
     }
     .page-shell--sm { max-width: 42rem; }   /* 2xl */
     .page-shell--md { max-width: 48rem; }   /* 3xl */
@@ -473,7 +476,7 @@
     main table tbody td.text-xs { font-size: 0.8125rem !important; } /* 13px en cellulas pequeñas */
     main form label { font-size: 0.8125rem !important; }
     main form input, main form select { font-size: 0.95rem !important; }
-    main h1 { font-size: 1.75rem !important; }                    /* títulos página */
+    main h1 { font-size: 1.5rem !important; line-height: 1.2 !important; }  /* 24px estandar */
     /* KPI cards */
     main .kpi-card .text-2xl, main .kpi-card .text-xl { font-size: 1.75rem !important; }
     /* Padding de celdas — un poco más aire */
@@ -486,9 +489,9 @@
        Si una página nueva necesita layout denso similar, agregale la
        clase `table-compact` al div raíz. */
     /* TMT 2026-05-24 v5 — dueña: "los titulos en el mismo lugar al cambiar
-       de pagina". Estandarizo h1 a 20px en las 4 pantallas principales
-       (Resultados/Historial/Gastos/Flujo) y elimino el margen extra. */
-    main .info-page > .flex h1 { font-size: 20px !important; line-height: 1.2 !important; margin: 0 !important; }
+       de pagina". Las 4 pantallas (Resultados/Historial/Gastos/Flujo) usan
+       wrapper .info-page; aseguramos h1 sin margen extra. */
+    main .info-page > .flex h1 { margin: 0 !important; }
     main .info-page > .flex p.text-sm { font-size: 12px !important; margin-top: 2px !important; }
     main .info-page { padding-top: 0 !important; }
 
