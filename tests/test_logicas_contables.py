@@ -377,26 +377,30 @@ def test_periodo_cerrado_bloquea_activar_maquinaria(monkeypatch):
 # DOBLE-APLICACIÓN DE CHEQUE A FACTURA (regression)
 # ═══════════════════════════════════════════════════════════════════
 def test_cartera_cheques_se_descuentan_solo_una_vez(stub):
-    """Verifica que aging_totales NO descuenta los mismos cheques 2 veces.
+    """Verifica el invariante actual de aging_totales (TMT 2026-05-24):
+    `total` = TOTF + TOTC (= Balance Subtotal Cartera).
+    Los buckets son aging de FACTURAS solo — su suma == TOTF (saldo_facturas),
+    no `total` (que incluye cheques aparte).
 
-    La estructura: cheques_en_cartera se subtrae de saldo_facturas para
-    `total`, y por separado se restan de los buckets jóvenes-primero. La
-    SUM de buckets debe ser igual al `total` (no menor).
+    Pedido dueña: /cartera total == Resultados.Subtotal Cartera. Antes esta
+    test verificaba que sum(buckets) == total NETO (facturas - cheques);
+    ahora total es BRUTO+sobrepagos, buckets siguen siendo TOTF.
     """
     from modules.cartera import queries as q
-    # Mock: 1000 en buckets, 300 en cheques. Total esperado = 700.
-    # Buckets después de descuento: 700 + 0 + 0 + 0 = 700. ✓
+    # Mock: TOTF = 1000 (buckets 0-30), TOTC = 300, total = TOTF+TOTC = 1300.
     stub.fetch_one_responses = [{
         "b0_30": 1000.0, "b31_60": 0.0, "b61_90": 0.0, "b90_plus": 0.0,
         "saldo_facturas": 1000.0,
         "cheques_en_cartera": 300.0,
-        "total": 700.0,
+        "sobrepagos": 0.0,
+        "total": 1300.0,  # = TOTF + TOTC
         "n_facturas": 1, "n_clientes": 1,
     }]
     r = q.aging_totales()
-    assert r["total"] == 700.0
+    assert r["total"] == 1300.0  # TOTF + TOTC
     suma_buckets = sum(r[k] for k in ("b0_30", "b31_60", "b61_90", "b90_plus"))
-    assert abs(suma_buckets - r["total"]) < 0.005
+    # Sum de buckets == TOTF (no incluye cheques — son cobranza futura).
+    assert abs(suma_buckets - r["saldo_facturas"]) < 0.005
 
 
 # ═══════════════════════════════════════════════════════════════════

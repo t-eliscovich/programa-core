@@ -171,59 +171,66 @@ def test_dolares_anticipos_normaliza_a_1_char(stub):
     assert params["tipos_norm"] == ["U", "H", "Q"]
 
 
-# ── cartera aging totales (net) ───────────────────────────────────────
-def test_cartera_aging_totales_net(stub):
-    """total = saldo_facturas − cheques_en_cartera (= net)."""
+# ── cartera aging totales (BRUTO + sobrepagos) ────────────────────────
+# TMT 2026-05-24 — Dueña: /cartera total == Balance Subtotal Cartera.
+# Formula nueva: total = TOTF + TOTC (sum de saldos facturas con sobrepagos
+# + cheques en cartera). Buckets son aging de facturas SOLO; sum(buckets)
+# == saldo_facturas (TOTF), no `total`.
+def test_cartera_aging_totales_balance_cartera(stub):
+    """total = TOTF + TOTC (= Balance Subtotal Cartera)."""
     from modules.cartera import queries as q
-    # Mock single row con los campos básicos del SUM agregado.
     stub.fetch_one_responses = [{
         "b0_30": 1000.0, "b31_60": 500.0, "b61_90": 200.0, "b90_plus": 100.0,
-        "saldo_facturas": 1800.0,
-        "cheques_en_cartera": 300.0,
-        "total": 1500.0,  # 1800 - 300
+        "saldo_facturas": 1800.0,           # TOTF
+        "cheques_en_cartera": 300.0,        # TOTC
+        "sobrepagos": 0.0,
+        "total": 2100.0,                    # = TOTF + TOTC
         "n_facturas": 50, "n_clientes": 10,
     }]
     r = q.aging_totales()
-    assert r["total"] == 1500.0
+    assert r["total"] == 2100.0
     assert r["saldo_facturas"] == 1800.0
     assert r["cheques_en_cartera"] == 300.0
-    # Sum de buckets debe coincidir con total después del netting.
+    # Sum buckets == TOTF (aging de facturas, no incluye cheques).
     s_buckets = sum(r[k] for k in ("b0_30", "b31_60", "b61_90", "b90_plus"))
-    assert abs(s_buckets - r["total"]) < 0.005
+    assert abs(s_buckets - r["saldo_facturas"]) < 0.005
 
 
-def test_cartera_aging_totales_buckets_descuentan_cheques_jovenes_primero(stub):
-    """Cheques 600: descuentan 0-30 (1000→400) + 31-60 (500→500)."""
+def test_cartera_aging_totales_buckets_son_aging_facturas(stub):
+    """Buckets son aging de facturas — NO se netean cheques (TMT 2026-05-24).
+    Antes los cheques se descontaban del bucket más joven; ahora cheques
+    viven en su KPI propio (TOTC) y los buckets son intactos."""
     from modules.cartera import queries as q
     stub.fetch_one_responses = [{
         "b0_30": 1000.0, "b31_60": 500.0, "b61_90": 0.0, "b90_plus": 0.0,
         "saldo_facturas": 1500.0,
         "cheques_en_cartera": 600.0,
-        "total": 900.0,
+        "sobrepagos": 0.0,
+        "total": 2100.0,
         "n_facturas": 1, "n_clientes": 1,
     }]
     r = q.aging_totales()
-    # Después del descuento: 0-30 = 1000-600 = 400. 31-60 sin cambio = 500.
-    assert r["b0_30"] == 400.0
+    # Buckets sin tocar — cheques NO se restan.
+    assert r["b0_30"] == 1000.0
     assert r["b31_60"] == 500.0
-    assert r["b61_90"] == 0.0
-    assert r["b90_plus"] == 0.0
+    assert r["cheques_en_cartera"] == 600.0
 
 
-def test_cartera_aging_totales_cheques_exceden_buckets(stub):
-    """Cheques 2000, facturas 1500 → todos los buckets quedan en 0."""
+def test_cartera_aging_totales_sobrepagos(stub):
+    """Sobrepagos (saldo<0) ya vienen netados en saldo_facturas porque la
+    query no filtra por signo (igual que TOTF)."""
     from modules.cartera import queries as q
     stub.fetch_one_responses = [{
         "b0_30": 1000.0, "b31_60": 500.0, "b61_90": 0.0, "b90_plus": 0.0,
-        "saldo_facturas": 1500.0,
-        "cheques_en_cartera": 2000.0,
-        "total": -500.0,  # cliente nos debe -500 (a favor)
+        "saldo_facturas": 1300.0,  # 1500 brutos + sobrepagos -200
+        "cheques_en_cartera": 200.0,
+        "sobrepagos": -200.0,
+        "total": 1500.0,  # 1300 + 200
         "n_facturas": 1, "n_clientes": 1,
     }]
     r = q.aging_totales()
-    assert r["b0_30"] == 0.0
-    assert r["b31_60"] == 0.0
-    assert r["total"] == -500.0
+    assert r["sobrepagos"] == -200.0
+    assert r["total"] == 1500.0
 
 
 # ── activos.editar_tipo ───────────────────────────────────────────────

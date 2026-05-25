@@ -43,11 +43,15 @@ def test_aging_buckets_query_incluye_cheques_en_cartera(monkeypatch):
     sql = fake.queries_seen[0].lower()
     # CTE de cheques en cartera presente
     assert "with cheques_cli" in sql
-    # Filtra los stats correctos
-    for s in ("'z'", "'1'", "'2'", "'3'", "'p'", "'d'", "'a'"):
+    # Filtra los stats correctos (la 'A' legacy fue removida en TOTC)
+    for s in ("'z'", "'1'", "'2'", "'3'", "'p'", "'d'"):
         assert s in sql
-    # La cartera por cliente RESTA cheques
-    assert "f.saldo), 0) - coalesce(max(cc.en_cartera)" in " ".join(sql.split())
+    # TMT 2026-05-24 — dueña: cartera por cliente = TOTF + TOTC (BRUTO con
+    # sobrepagos), NO neto. Antes era saldo_facturas − cheques (NETO).
+    # La query nueva usa CTE 'fact_cli' y 'cli_universo' y SUMA cheques.
+    sql_joined = " ".join(sql.split())
+    assert "cli_universo" in sql_joined
+    assert "fc.saldo_facturas, 0) + coalesce(cc.en_cartera" in sql_joined
 
 
 def test_aging_totales_query_incluye_cheques_en_cartera(monkeypatch):

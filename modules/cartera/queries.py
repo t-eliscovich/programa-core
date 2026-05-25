@@ -268,8 +268,8 @@ def aging_por_grupo() -> list[dict]:
         SELECT b.codigo_grupo,
                COALESCE(c.nombre, b.codigo_grupo)        AS nombre_padre,
                COUNT(DISTINCT b.codigo_cli)              AS n_hijos,
-               STRING_AGG(b.codigo_cli, ', '
-                          ORDER BY b.codigo_cli)         AS hijos,
+               STRING_AGG(b.codigo_cli::text, ', '
+                          ORDER BY b.codigo_cli::text)   AS hijos,
                SUM(b.saldo)                              AS saldo_total
         FROM base b
         LEFT JOIN scintela.cliente c ON c.codigo_cli = b.codigo_grupo
