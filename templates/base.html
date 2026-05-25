@@ -207,12 +207,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 11.5px !important;
+      font-size: 10.5px !important;            /* TMT 2026-05-24 — más compacto */
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
       color: rgb(100 116 139);                 /* slate-500 */
-      padding: 0.85rem 0.75rem 0.5rem;
+      padding: 0.45rem 0.75rem 0.25rem;        /* antes 0.85 0.75 0.5 */
       user-select: none;
     }
     aside#sidebar details.sidebar-section > summary::-webkit-details-marker { display: none; }
@@ -550,13 +550,13 @@
         <div class="sidebar-brand-initial hidden w-9 h-9 rounded-lg bg-white border border-slate-200 items-center justify-center shrink-0">
           <span class="text-2xl italic font-bold text-red-600 leading-none">i</span>
         </div>
-        {# Versión expandida: logo PNG completo. #}
+        {# Versión expandida: logo PNG completo.
+           TMT 2026-05-24 — sacado el subtítulo "Programa Core" (pedido dueña). #}
         <div class="sidebar-brand-full min-w-0 flex-1">
           <img src="{{ url_for('static', filename='intela-logo.png') }}"
                alt="intela — Industria Textil Latinoamericana C. Ltda."
                class="sidebar-brand-img block max-w-full h-auto"
                style="max-height: 2.5rem; width: 100%; object-fit: contain;">
-          <div class="text-[10px] text-slate-400 dark:text-slate-500 sidebar-brand-sub mt-1 tracking-wide uppercase">Programa Core</div>
         </div>
       </div>
       <button id="sidebar-toggle" type="button" aria-label="Colapsar sidebar"
@@ -587,7 +587,10 @@
             and request.endpoint != endpoint
             and (request.endpoint | string).endswith(_CRUD_SUFFIXES)
           ) %}
-      <a href="{{ url_for(endpoint) }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
+      {# TMT 2026-05-24 — dueña: "achicar nombres barra lateral asi
+         verticalmente veo mas". py-1.5 → py-1, text-sm → text-[13px],
+         gap-2.5 → gap-2. ~20% más items visibles. #}
+      <a href="{{ url_for(endpoint) }}" class="flex items-center gap-2 px-3 py-1 rounded-md text-[13px] transition-colors
          {% if active %}bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 font-medium
          {% else %}hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300{% endif %}">
         <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
