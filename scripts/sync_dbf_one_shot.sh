@@ -48,7 +48,7 @@ echo "✓ Upload OK"
 echo ""
 echo "→ Disparando sync en EC2 ($INSTANCE_ID)..."
 
-export PS_CMD="\$ErrorActionPreference='Stop'; Invoke-WebRequest -Uri '$URL' -OutFile C:\\tmp\\dbf-fresh.tar.gz; if (Test-Path C:\\tmp\\dbf-fresh) { Remove-Item -Recurse -Force C:\\tmp\\dbf-fresh }; New-Item -ItemType Directory -Path C:\\tmp\\dbf-fresh | Out-Null; tar -xzf C:\\tmp\\dbf-fresh.tar.gz -C C:\\tmp\\dbf-fresh; cd C:\\programa-core; \$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL','Machine'); \$env:I_KNOW_THIS_IS_PROD = '1'; & 'C:\\Python312\\python.exe' scripts\\sync_dbase_actual.py --source C:\\tmp\\dbf-fresh"
+export PS_CMD="\$ErrorActionPreference='Stop'; Invoke-WebRequest -Uri '$URL' -OutFile C:\\tmp\\dbf-fresh.tar.gz; if (Test-Path C:\\tmp\\dbf-fresh) { Remove-Item -Recurse -Force C:\\tmp\\dbf-fresh }; New-Item -ItemType Directory -Path C:\\tmp\\dbf-fresh | Out-Null; tar -xzf C:\\tmp\\dbf-fresh.tar.gz -C C:\\tmp\\dbf-fresh; cd C:\\programa-core; \$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL','Machine'); \$env:I_KNOW_THIS_IS_PROD = '1'; & 'C:\\Python312\\python.exe' scripts\\sync_dbase_actual.py --source C:\\tmp\\dbf-fresh; Write-Host '== Backfill numf_completo desde Asinfo =='; & 'C:\\Python312\\python.exe' scripts\\backfill_numf_completo_from_asinfo.py"
 
 python3 -c 'import json,os; print(json.dumps({"commands":[os.environ["PS_CMD"]]}))' > /tmp/ssm_params.json
 
