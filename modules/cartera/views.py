@@ -97,31 +97,46 @@ def grupos():
     """Cartera consolidada por grupo de cliente (scintela.grupo_cliente).
 
     Reemplaza la opción `INFORMES > GRUPOS` del menú dBase legacy.
+    TMT 2026-05-25 — try/except global. Si la tabla grupo_cliente no
+    existe en este entorno, mostramos página vacía con banner en vez de
+    500. Antes el 500 venía probablemente de un import/setup que tronaba
+    fuera del try/except interno (page_header etc.).
     """
+    import logging
+    _log = logging.getLogger("cartera.grupos")
     try:
-        filas = queries.aging_por_grupo()
-        error = None
-    except Exception as e:
-        filas, error = [], str(e)
+        try:
+            filas = queries.aging_por_grupo()
+            error = None
+        except Exception as e:
+            filas, error = [], f"No se pudo cargar grupos: {e}"
+            _log.warning("aging_por_grupo falló: %s", e)
 
-    if request.args.get("export") == "csv":
-        return csv_response(
-            filas,
-            columnas=[
-                ("codigo_grupo", "Cód. grupo"),
-                ("nombre_padre", "Cliente padre"),
-                ("n_hijos", "N° de hijos"),
-                ("hijos", "Códigos hijos"),
-                ("saldo_total", "Saldo total"),
-            ],
-            filename="cartera_por_grupo.csv",
+        if request.args.get("export") == "csv":
+            return csv_response(
+                filas,
+                columnas=[
+                    ("codigo_grupo", "Cód. grupo"),
+                    ("nombre_padre", "Cliente padre"),
+                    ("n_hijos", "N° de hijos"),
+                    ("hijos", "Códigos hijos"),
+                    ("saldo_total", "Saldo total"),
+                ],
+                filename="cartera_por_grupo.csv",
+            )
+
+        total = sum(float(f.get("saldo_total") or 0) for f in filas)
+        return render_template(
+            "cartera/grupos.html",
+            filas=filas, total=total, error=error,
         )
-
-    total = sum(float(f.get("saldo_total") or 0) for f in filas)
-    return render_template(
-        "cartera/grupos.html",
-        filas=filas, total=total, error=error,
-    )
+    except Exception as e:
+        _log.exception("Error inesperado en grupos: %s", e)
+        return render_template(
+            "cartera/grupos.html",
+            filas=[], total=0,
+            error=f"Error inesperado: {e}",
+        )
 
 
 @cartera_bp.route("/cartera/controlc")
