@@ -501,22 +501,23 @@
     main .info-page > .flex p.text-sm { font-size: 12px !important; margin-top: 2px !important; }
     main .info-page { padding-top: 0 !important; }
 
-    /* TMT 2026-05-24 v4 — dueña: "Resultados quedo muy chiquito, agrandalo".
-       Balance un poco mas grande que las otras vistas densas. */
+    /* TMT 2026-05-25 — dueña: "haces el balance un 10% mas grande?"
+       Subo todo +10%: tbody 13.5→15, thead 11.5→13, fila-total 14.5→16,
+       fila-key 16→18. Padding también un poco más generoso. */
     main .informe-balance table tbody td {
-      font-size: 13.5px !important;
-      padding-top: 3px !important;
-      padding-bottom: 3px !important;
-    }
-    main .informe-balance table thead th {
-      font-size: 11.5px !important;
+      font-size: 15px !important;
       padding-top: 4px !important;
       padding-bottom: 4px !important;
     }
-    main .informe-balance tr.fila-total td { font-size: 14.5px !important; }
-    main .informe-balance tr.fila-key td   { font-size: 16px !important;
-                                             padding-top: 5px !important;
-                                             padding-bottom: 5px !important; }
+    main .informe-balance table thead th {
+      font-size: 13px !important;
+      padding-top: 5px !important;
+      padding-bottom: 5px !important;
+    }
+    main .informe-balance tr.fila-total td { font-size: 16px !important; }
+    main .informe-balance tr.fila-key td   { font-size: 18px !important;
+                                             padding-top: 6px !important;
+                                             padding-bottom: 6px !important; }
     /* Flujo producción + Historico-12m + tablas .table-compact siguen densas. */
     main .fp table tbody td,
     main .h12-page table tbody td,
