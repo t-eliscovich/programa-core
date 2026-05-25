@@ -52,7 +52,7 @@
       </thead>
       <tbody>
         {% for f in filas %}
-        {% set pct = ((f.saldo_total / total * 100) if total else 0) %}
+        {% set pct = ((f.saldo_total | float / (total | float) * 100) if total else 0) %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
           <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
             <a href="{{ url_for('informes.estado_cuenta_landing', codigo=f.codigo_grupo) }}"
