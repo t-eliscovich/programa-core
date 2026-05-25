@@ -69,10 +69,10 @@ def main():
             print(
                 f"  id={r['id_factura']:5d} "
                 f"fecha={r['fecha']} "
-                f"cli={r['codigo_cli']:5s} "
-                f"kg={r['kg']:8s} "
+                f"cli={str(r['codigo_cli']):5s} "
+                f"kg={str(r['kg']):>8s} "
                 f"imp={str(r['importe']):>10s} "
-                f"stat={r['stat']!r:5s} "
+                f"stat={str(r['stat']):>4s} "
                 f"numfc={r['numf_completo']!r} "
                 f"usuario={r['usuario_crea']!r}"
             )
@@ -111,16 +111,16 @@ def main():
             f"id={pc['id_factura']:5d} "
             f"numf={pc['numf']:7d} "
             f"fecha={pc['fecha']} "
-            f"cli={pc['codigo_cli']:5s} "
-            f"kg={pc['kg']:8s} "
+            f"cli={str(pc['codigo_cli']):5s} "
+            f"kg={str(pc['kg']):>8s} "
             f"imp={str(pc['importe']):>10s} "
             f"mejor_score={score_s}"
         )
         for c in a["candidatos"][:3]:
             print(
-                f"   -> AI {c['ai_tipo']:15s} {c['ai_numero']:20s} "
+                f"   -> AI {str(c['ai_tipo']):15s} {str(c['ai_numero']):20s} "
                 f"fecha={c['ai_fecha']} "
-                f"cli={c['ai_cliente_codigo']:5s} "
+                f"cli={str(c['ai_cliente_codigo']):5s} "
                 f"kg={c['ai_kg']} "
                 f"usd={c['ai_usd']} "
                 f"score={c['score']:.2f}"
