@@ -67,10 +67,10 @@ def _extract_numf(asinfo_numero: str) -> int | None:
     """Extrae el sufijo numérico de un numero de Asinfo.
 
     Ejemplos:
-        '001-099-000175763' → 175763
-        'NTEN-10462'        → 10462
-        'NCNT-00123'        → 123
-        ''                  → None
+        '001-099-000175763' -> 175763
+        'NTEN-10462'        -> 10462
+        'NCNT-00123'        -> 123
+        ''                  -> None
     """
     if not asinfo_numero:
         return None
@@ -120,7 +120,7 @@ def backfill(dry_run: bool = False, limite: int = 5000,
     try:
         asinfo_facts = asinfo_service.facturas_periodo(mn, mx)
     except Exception as e:
-        print(f"✗ Asinfo falló: {e}", file=sys.stderr)
+        print(f"ERR: Asinfo falló: {e}", file=sys.stderr)
         return {"huerfanas_pc": n_huerf, "matched": 0, "updated": 0,
                 "ambig": 0, "no_match": n_huerf, "error": str(e)}
 
@@ -158,7 +158,7 @@ def backfill(dry_run: bool = False, limite: int = 5000,
             # Múltiples Asinfo con mismo numf+cli — no actualizamos, requiere review humano
             ambig += 1
             continue
-        # Match único → encolar UPDATE
+        # Match único -> encolar UPDATE
         ai = candidatos[0]
         updates.append((ai["numero"], int(h["id_factura"])))
         matched += 1
@@ -175,7 +175,7 @@ def backfill(dry_run: bool = False, limite: int = 5000,
                 )
                 updated += 1
             except Exception as e:
-                print(f"✗ UPDATE {id_factura} falló: {e}", file=sys.stderr)
+                print(f"ERR: UPDATE {id_factura} falló: {e}", file=sys.stderr)
 
     return {
         "huerfanas_pc": n_huerf,
@@ -200,7 +200,7 @@ def main():
         from datetime import datetime
         desde = datetime.fromisoformat(args.desde).date()
 
-    print(f"→ Backfill numf_completo (dry-run={args.dry_run}, limit={args.limit})")
+    print(f"-> Backfill numf_completo (dry-run={args.dry_run}, limit={args.limit})")
     stats = backfill(dry_run=args.dry_run, limite=args.limit, desde=desde)
 
     print()
@@ -209,11 +209,11 @@ def main():
         print(f"  {k}: {v}")
     print()
     if stats["matched"] and not args.dry_run:
-        print(f"✓ {stats['updated']} facturas actualizadas con numf_completo.")
+        print(f"OK {stats['updated']} facturas actualizadas con numf_completo.")
     if stats.get("no_match"):
-        print(f"⚠ {stats['no_match']} siguen huérfanas (no encontradas en Asinfo).")
+        print(f"! {stats['no_match']} siguen huérfanas (no encontradas en Asinfo).")
     if stats.get("ambig"):
-        print(f"⚠ {stats['ambig']} ambiguas (múltiples Asinfo con mismo numf+cli) — review manual.")
+        print(f"! {stats['ambig']} ambiguas (múltiples Asinfo con mismo numf+cli) — review manual.")
 
 
 if __name__ == "__main__":
