@@ -64,20 +64,18 @@
     text-align: right; padding: 1px 10px;
   }
   /* TMT 2026-05-20 v2 — sumandos (cheques+facturas, maquinaria+terrenos)
-     corren MÁS a la izquierda (pedido dueña: "necesitamos correrlo más
-     a la izquierda"). 80px de padding-right para visualizar que son
-     items que SUMAN hacia un subtotal abajo.
-     TMT 2026-05-25 — !important porque el override global de tablas
-     (`main table tbody td { padding: 0.55rem 0.75rem !important; }`)
-     pisaba este padding-right. La dueña notó que cheques/facturas y
-     maq/terr quedaron alineados a la derecha como items normales en
-     lugar de corridos a la izquierda. */
+     corren MÁS a la izquierda. 100px de padding-right para visualizar
+     que SUMAN hacia un subtotal abajo.
+     TMT 2026-05-25 v2 — dueña: "los sub items como cheques, la letra
+     del mismo tamaño que los otros, un gris más oscuro y un poco más
+     a la izquierda". Igualo font al tbody (15px), gris a slate-500
+     (más oscuro que el slate-400 anterior), y padding-right 80→100px. */
   .informe-balance td.num-cell--sumando {
-    padding-right: 80px !important;
-    font-size: 12px !important;
-    color: rgb(148 163 184) !important;
+    padding-right: 100px !important;
+    font-size: 15px !important;
+    color: rgb(100 116 139) !important;  /* slate-500 — más oscuro */
   }
-  .dark .informe-balance td.num-cell--sumando { color: rgb(100 116 139); }
+  .dark .informe-balance td.num-cell--sumando { color: rgb(148 163 184); }
   .informe-balance tr.fila-dato:hover { background-color: rgb(248 250 252); }
   .dark .informe-balance tr.fila-dato:hover { background-color: rgb(30 41 59 / 0.3); }
   /* Filas SUBTOTAL / TOTAL — un poco más grandes y peso medio. */
