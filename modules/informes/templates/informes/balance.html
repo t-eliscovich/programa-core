@@ -112,13 +112,13 @@
   .dark .informe-balance tr.fila-key td.num-cell.pos { color: rgb(22 163 74); }
   .dark .informe-balance tr.fila-key td.num-cell.neg { color: rgb(220 38 38); }
   /* Filas auxiliares (subtotales tipo 'Subtotal Cartera', 'Subtotal Terr+Maq').
-     TMT 2026-05-20 v3 — pedido dueña: subtotales y sus valores en NEGRO,
-     no gris. Mantenemos font-size más chico para distinguirlos de los
-     totales mayores. */
+     TMT 2026-05-20 v3 — pedido dueña: subtotales y sus valores en NEGRO, no gris.
+     TMT 2026-05-25 — dueña: 'subtotal cartera y subtotal maquinas + terrenos no
+     negrita'. font-weight 600 → 400 (normal). */
   .informe-balance tr.fila-aux td {
-    font-size: 10.5px;
+    font-size: 13px !important;
     color: rgb(15 23 42);  /* slate-900 */
-    font-weight: 600;
+    font-weight: 400 !important;
     padding: 1px 12px;
   }
   .dark .informe-balance tr.fila-aux td { color: rgb(241 245 249); }
