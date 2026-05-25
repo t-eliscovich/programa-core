@@ -173,17 +173,19 @@
     aside#sidebar[data-collapsed="1"] {
       width: 3.5rem;                          /* algo más para el icon */
     }
-    /* Links del sidebar — TMT 2026-05-17 bump #2: 16px → 17px (~1.05rem). */
+    /* Links del sidebar — TMT 2026-05-24: dueña pidió 'achicar nombres
+       sidebar verticalmente ver más'. Bajado 1.05rem (16.8px) → 0.85rem
+       (13.6px) y padding ~0.6rem → 0.3rem. ~30% más items visibles. */
     aside#sidebar #nav-list a,
     aside#sidebar #nav-list summary {
-      font-size: 1.05rem !important;          /* 16.8px */
-      padding-top: 0.6rem;
-      padding-bottom: 0.6rem;
+      font-size: 0.85rem !important;          /* 13.6px */
+      padding-top: 0.3rem;
+      padding-bottom: 0.3rem;
     }
     aside#sidebar #nav-list a svg,
     aside#sidebar #nav-list summary svg {
-      width: 1.2rem !important;
-      height: 1.2rem !important;
+      width: 1rem !important;
+      height: 1rem !important;
     }
     /* Brand "intela" — TMT 2026-05-19 v8 pedido dueña: cursiva como
        el logo (en lugar de I N T E L A spread). */
