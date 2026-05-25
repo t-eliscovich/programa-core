@@ -245,7 +245,9 @@
      Pedido dueña: "Que ninguna pantalla se scrollee para los costados".
      TMT 2026-05-21 — +2 columnas Δ (Kg / USD) que comparan PC vs Asinfo.
      Si coincide → tilde sky. Si difiere → delta numérico en rojo. #}
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+  {# TMT 2026-05-25 — overflow-x-auto para que la tabla scrollee internamente
+     en viewports tablet (1024px). Sin esto, main entero overflowea. #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-xs sortable table-fixed">
       <colgroup>
         <col style="width: 8%">    <!-- N° -->
