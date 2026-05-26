@@ -442,12 +442,60 @@ def matchear_extracto_banco(
     res.ventana_dias = dias_tolerancia
     res.bancsis_cargados = bancsis_total
 
-    # ─── PASS 1: estricto (tipo + monto±tol + fecha±tol) ────────────────
     bancsis_usado: set[int] = set()
-    real_sin_match: list[MovBanco] = []
-    cont_p1 = cont_p2 = cont_p3 = cont_p4 = 0
+    cont_p0 = cont_p1 = cont_p2 = cont_p3 = cont_p4 = 0
 
+    # ─── PASS 0: match EXACTO por documento del banco (numreferencia) ───
+    # TMT 2026-05-26 dueña: "el número de documento del cheque es la regla
+    # número 1 para match". Si extracto.documento == BANCSIS.numreferencia
+    # (ambos no vacíos y != "0") → match directo, sin importar fecha/monto.
+    # El humano cargó la misma referencia de comprobante → es match seguro.
+    def _norm_doc(s: str) -> str:
+        s = (s or "").strip().upper()
+        if s in ("", "0", "00", "000", "0000"):
+            return ""
+        # Quitar ceros a la izquierda para que "00012345" == "12345".
+        try:
+            return str(int(s))
+        except ValueError:
+            return s
+
+    movs_post_p0: list[MovBanco] = []
     for real in movs_real_filtrados:
+        ref_real = _norm_doc(real.documento)
+        if not ref_real:
+            movs_post_p0.append(real)
+            continue
+        match_bk = None
+        for bk in bancsis:
+            if bk.id_transaccion in bancsis_usado:
+                continue
+            ref_bk = _norm_doc(bk.numreferencia)
+            if not ref_bk or ref_bk != ref_real:
+                continue
+            # Tipo compatible (no matchear un débito con un crédito por
+            # coincidencia de referencia).
+            if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            match_bk = bk
+            break
+        if match_bk is not None:
+            diff_dias = abs((real.fecha - match_bk.fecha).days)
+            diff_monto = abs(float(real.monto) - match_bk.importe)
+            razon = (
+                f"P0·doc-banco {ref_real} · BANCSIS #{match_bk.id_transaccion}"
+                + (f" · Δ{diff_dias}d ${diff_monto:.2f}" if (diff_dias or diff_monto > 0.01) else "")
+            )
+            res.matches.append(Match(real=real, bancsis=match_bk, score=0.0, razon=razon))
+            bancsis_usado.add(match_bk.id_transaccion)
+            cont_p0 += 1
+        else:
+            movs_post_p0.append(real)
+
+    # ─── PASS 1: estricto (tipo + monto±tol + fecha±tol) ────────────────
+    real_sin_match: list[MovBanco] = []
+
+    for real in movs_post_p0:
         candidatos: list[tuple[float, MovBancsis]] = []
         for bk in bancsis:
             if bk.id_transaccion in bancsis_usado:

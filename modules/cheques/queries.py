@@ -241,6 +241,10 @@ def transicionar_stat(
             import bank_helpers
 
             banco_destino = no_banco or (1 if stat_destino == "B" else 2)
+            # TMT 2026-05-26 dueña: numreferencia = doc_banco si la dueña
+            # cargó N° de comprobante; fallback id_cheque. Es la rule #1
+            # del matcher de conciliación bancaria.
+            num_ref = (doc_banco or "").strip() or str(id_cheque)
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=banco_destino,
@@ -250,7 +254,7 @@ def transicionar_stat(
                 importe=importe,
                 concepto=f"Dep cheque {ch.get('no_cheque') or ''} {ch.get('codigo_cli') or ''}".strip(),
                 prov=ch.get("codigo_cli"),
-                numreferencia=id_cheque,
+                numreferencia=num_ref,
                 usuario=usuario,
             )
             side_effect_id = res["id_transaccion"]
@@ -956,12 +960,14 @@ def depositar_lote(
         raise ValueError(f"Banco no_banco={no_banco} no existe.")
     banco_nombre = banco_row.get("nombre") or f"Banco {no_banco}"
 
-    # Validar todos los cheques antes de tocar nada
+    # Validar todos los cheques antes de tocar nada.
+    # TMT 2026-05-26 — incluir doc_banco para propagarlo a numreferencia
+    # del movimiento bancario (rule #1 del matcher de conciliación).
     placeholder = ",".join(["%s"] * len(ids_cheques))
     rows = (
         db.fetch_all(
             f"""
-        SELECT id_cheque, no_cheque, codigo_cli, importe, stat, fechad
+        SELECT id_cheque, no_cheque, codigo_cli, importe, stat, fechad, doc_banco
         FROM scintela.cheque
         WHERE id_cheque IN ({placeholder})
         ORDER BY id_cheque
@@ -1024,6 +1030,10 @@ def depositar_lote(
                 # Cheque con importe 0 o negativo — no genera movimiento
                 # bancario (en cartera puede ser un cheque rebotado mal cargado).
                 continue
+            # TMT 2026-05-26 dueña: numreferencia = doc_banco (N° comprobante
+            # del banco que la dueña carga al ingresar el cheque) si existe.
+            # Es la rule #1 del matcher de conciliación. Fallback: id_cheque.
+            num_ref = (r.get("doc_banco") or "").strip() or str(r.get("id_cheque") or "")
             mov = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=no_banco,
@@ -1035,7 +1045,7 @@ def depositar_lote(
                     concepto or f"Dep. cheque {r.get('no_cheque') or ''} {r.get('codigo_cli') or ''}"
                 ).strip()[:50],
                 prov=(r.get("codigo_cli") or "")[:5],
-                numreferencia=r.get("id_cheque"),
+                numreferencia=num_ref,
                 stat="A",
                 usuario=usuario,
             )
