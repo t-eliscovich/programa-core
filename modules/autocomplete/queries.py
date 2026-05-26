@@ -11,20 +11,25 @@ import db
 
 
 def clientes_para_datalist() -> list[dict]:
-    """Todos los clientes (activos + inactivos), ordenados por código. Max 2000.
+    """Todos los clientes (activos + inactivos), ordenados alfabético por código. Max 5000.
 
-    TMT 2026-05-26 dueña: BED (HECTOR BEDON) está marcado INACTIVO pero
+    TMT 2026-05-26 dueña #1: BED (HECTOR BEDON) está marcado INACTIVO pero
     tiene $361K de cartera viva — necesitamos poder cobrarle. Antes el
     filtro `activo <> '0'` lo escondía del autocomplete de /cheques/nuevo.
-    Ahora traemos TODOS (los inactivos quedan al final por sort).
+
+    TMT 2026-05-26 dueña #2: el sort "activos primero" hundía BED al final
+    de la lista al tipear "BED" — debajo de EVB/FBE/LCB/LOC/SAB/SYB/TOB/VPB
+    (otros clientes con "BED" en el nombre). El browser filtra el datalist
+    por el texto tipeado pero muestra los matches en orden HTML, así que
+    BED quedaba abajo de todo. Fix: solo `ORDER BY codigo_cli` — alfabético
+    puro. BED es lo primero al tipear "BED" porque alfabéticamente es lo
+    primero.
     """
     return db.fetch_all(
         """
         SELECT codigo_cli, COALESCE(nombre, '') AS nombre
           FROM scintela.cliente
-         ORDER BY
-           CASE WHEN COALESCE(activo, '1') <> '0' THEN 0 ELSE 1 END,
-           codigo_cli
+         ORDER BY codigo_cli
          LIMIT 5000
         """
     ) or []
