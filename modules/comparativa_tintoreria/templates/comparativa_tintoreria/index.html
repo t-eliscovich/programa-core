@@ -115,14 +115,13 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-          <tr>
+          {% set _fecha_iso = fila.fecha.isoformat() %}
+          {# TMT 2026-05-26 dueña: detail rows colapsadas por default,
+             click en la fila padre las muestra (chevron ▶/▼). #}
+          <tr class="row-fecha" data-fecha="{{ _fecha_iso }}" style="cursor: pointer">
             <td>
-              <details>
-                <summary>
-                  <span class="caret">▶</span>
-                  <strong>{{ fila.fecha.strftime('%d/%m/%Y') }}</strong>
-                </summary>
-              </details>
+              <span class="caret" data-caret-fecha="{{ _fecha_iso }}">▶</span>
+              <strong>{{ fila.fecha.strftime('%d/%m/%Y') }}</strong>
             </td>
             <td class="num">{{ fila.pc_kg | num_es(1) }}</td>
             <td class="num">{{ fila.form_kg | num_es(1) }}</td>
@@ -146,10 +145,10 @@
               {% endif %}
             </td>
           </tr>
-          {# Filas hijas: PC por color + OTs de form #}
+          {# Filas hijas: PC por color + OTs de form — hidden por default #}
           {% if fila.detalle_color or fila.detalle_ots %}
             {% for c in fila.detalle_color %}
-              <tr class="det">
+              <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
                 <td>· PC {{ c.cod }}</td>
                 <td class="num">{{ c.kg | num_es(1) }}</td>
                 <td></td>
@@ -161,8 +160,8 @@
               </tr>
             {% endfor %}
             {% for o in fila.detalle_ots %}
-              <tr class="det">
-                <td>· Form OT {{ o.numero }} ({{ o.color or '—' }})</td>
+              <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
+                <td>· OT #{{ o.numero }} <span class="text-slate-400">({{ o.color or '—' }})</span></td>
                 <td></td>
                 <td class="num">{{ (o.tela_terminada_kg or 0) | num_es(1) }}</td>
                 <td></td>
@@ -207,4 +206,27 @@
     valen investigarse.
   </p>
 </div>
+
+<script>
+(function() {
+  // TMT 2026-05-26 dueña: detail rows colapsadas — click en la fila de
+  // fecha alterna visibilidad de los hijos.
+  document.querySelectorAll('tr.row-fecha').forEach(tr => {
+    tr.addEventListener('click', (e) => {
+      const fecha = tr.dataset.fecha;
+      if (!fecha) return;
+      const caret = tr.querySelector('.caret');
+      const detalles = document.querySelectorAll(
+        `tr.det[data-fecha-parent="${fecha}"]`
+      );
+      let abrir = false;
+      detalles.forEach(d => {
+        if (d.hidden) abrir = true;
+      });
+      detalles.forEach(d => { d.hidden = !abrir; });
+      if (caret) caret.textContent = abrir ? '▼' : '▶';
+    });
+  });
+})();
+</script>
 {% endblock %}
