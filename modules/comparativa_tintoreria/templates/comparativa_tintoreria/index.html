@@ -98,8 +98,77 @@
     </div>
   </div>
 
-  {# Tabla principal #}
+  {# TMT 2026-05-26 dueña: toggle vista — Por código (default, fila por
+     fecha+cod) vs Por día (resumen sumando códigos del día). Mismas
+     7 columnas en ambas. #}
+  <div class="mb-3 flex items-center gap-2 text-sm">
+    <span class="text-xs text-slate-500">Vista:</span>
+    <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=codigo"
+       class="px-3 py-1 rounded-md border {% if vista == 'codigo' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
+      Por código + día
+    </a>
+    <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=dia"
+       class="px-3 py-1 rounded-md border {% if vista == 'dia' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
+      Solo por día
+    </a>
+  </div>
+
+  {# Tabla final — 7 columnas exactas, encolumnadas. #}
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="w-full text-sm tabular-nums">
+      <colgroup>
+        <col style="width: 13%">
+        <col style="width: 14%">
+        <col style="width: 15%">
+        <col style="width: 15%">
+        <col style="width: 13%">
+        <col style="width: 15%">
+        <col style="width: 15%">
+      </colgroup>
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">Fecha terminado</th>
+          <th class="px-3 py-2 text-left">Código color</th>
+          <th class="px-3 py-2 text-right">Kg terminado dbase</th>
+          <th class="px-3 py-2 text-right">Kg terminado formulas</th>
+          <th class="px-3 py-2 text-right">Cambio</th>
+          <th class="px-3 py-2 text-right">Kg crudo formulas</th>
+          <th class="px-3 py-2 text-right">Desperdicio</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set _rows = filas_dia if vista == 'dia' else filas_codigo %}
+        {% for r in _rows %}
+        <tr class="border-t border-slate-100 hover:bg-slate-50">
+          <td class="px-3 py-1.5">{{ r.fecha.strftime('%d/%m/%Y') }}</td>
+          <td class="px-3 py-1.5 font-mono">{{ r.cod }}</td>
+          <td class="px-3 py-1.5 text-right">{{ r.kg_dbase | num_es(1) }}</td>
+          <td class="px-3 py-1.5 text-right">
+            {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right {% if r.cambio and r.cambio|abs > 0.5 %}{% if r.cambio > 0 %}text-emerald-700{% else %}text-rose-700{% endif %} font-medium{% else %}text-slate-500{% endif %}">
+            {% if r.cambio is not none %}{{ r.cambio | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right">
+            {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right">
+            {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">Sin datos en el rango seleccionado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# === Tabla vieja preservada abajo como histórico colapsable === #}
+  <details class="mt-6">
+    <summary class="cursor-pointer text-xs text-slate-500 uppercase tracking-wide select-none hover:text-slate-700">
+      ▶ Ver tabla histórica (resumen por día con totales)
+    </summary>
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden mt-2">
     <table>
       <thead>
         <tr>
@@ -228,14 +297,14 @@
       </tbody>
     </table>
   </div>
+  </details>
 
   <p class="text-xs text-slate-500 mt-3">
-    <strong>Nota:</strong> el cruce es por fecha (PC <code>tinto.fecha</code> vs
-    Form <code>ordenes.fecha_terminado</code>). <code>scintela.tinto</code> no
-    guarda OT, por lo que el detalle por orden viene solo del lado Form.
-    Diferencias chicas son esperables (orden cargada en un día y terminada en otro;
-    reprocesos; reordenamientos manuales del operario). Discrepancias >2% o >15 kg
-    valen investigarse.
+    <strong>Nota:</strong> el cruce es por <code>(fecha, código de 3 letras)</code>:
+    PC <code>tinto.cod</code> vs Form <code>ordenes.formula_cod</code> y mismo
+    día de terminado. Si una línea PC no matchea (— en columnas form), no hay
+    OTs con ese código + fecha. Reprocesos / drift de fecha pueden explicar
+    diferencias en columna Cambio.
   </p>
 </div>
 

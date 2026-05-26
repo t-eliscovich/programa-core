@@ -428,9 +428,59 @@ def comparativa_tintoreria():
             filename=f"comparativa_tintoreria_{desde}_{hasta}.csv",
         )
 
+    # TMT 2026-05-26 dueña: tabla final con 7 columnas — una fila por
+    # (fecha terminado, código color). Match enriquecido con formulas_app.
+    # Después la dueña pidió toggle para ver "solo día por día" (resumen).
+    filas_codigo: list[dict] = []
+    for f in sorted(fechas, reverse=True):
+        for c in pc_color_por_fecha.get(f, []):
+            kg_pc = float(c.get("kg") or 0)
+            kg_form_term = c.get("form_terminada_kg")
+            kg_form_cruda = c.get("form_cruda_kg")
+            cambio = (kg_pc - kg_form_term) if kg_form_term is not None else None
+            desperd_pct = c.get("form_desperdicio_pct")
+            filas_codigo.append({
+                "fecha": f,
+                "cod": c.get("cod") or "—",
+                "kg_dbase": kg_pc,
+                "kg_form_term": kg_form_term,
+                "cambio": cambio,
+                "kg_form_cruda": kg_form_cruda,
+                "desperdicio_pct": desperd_pct,
+                "form_n_ots": c.get("form_n_ots") or 0,
+            })
+
+    # Resumen por día: sumar todas las filas del mismo día.
+    filas_dia: list[dict] = []
+    for f in sorted(fechas, reverse=True):
+        cods = pc_color_por_fecha.get(f, [])
+        kg_dbase = sum(float(c.get("kg") or 0) for c in cods)
+        kg_form_term = sum(float(c.get("form_terminada_kg") or 0) for c in cods if c.get("form_terminada_kg") is not None)
+        kg_form_cruda = sum(float(c.get("form_cruda_kg") or 0) for c in cods if c.get("form_cruda_kg") is not None)
+        n_ots = sum(int(c.get("form_n_ots") or 0) for c in cods)
+        cambio = kg_dbase - kg_form_term if kg_form_term > 0 else None
+        desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
+        filas_dia.append({
+            "fecha": f,
+            "cod": f"{len(cods)} código(s)",
+            "kg_dbase": kg_dbase,
+            "kg_form_term": kg_form_term if kg_form_term > 0 else None,
+            "cambio": cambio,
+            "kg_form_cruda": kg_form_cruda if kg_form_cruda > 0 else None,
+            "desperdicio_pct": round(desperd_pct, 1) if desperd_pct is not None else None,
+            "form_n_ots": n_ots,
+        })
+
+    vista = (request.args.get("vista") or "codigo").lower()
+    if vista not in ("codigo", "dia"):
+        vista = "codigo"
+
     return render_template(
         "comparativa_tintoreria/index.html",
         filas=filas,
+        filas_codigo=filas_codigo,
+        filas_dia=filas_dia,
+        vista=vista,
         desde=desde,
         hasta=hasta,
         tot_pc_kg=tot_pc_kg,
