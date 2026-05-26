@@ -595,6 +595,17 @@ def matchear_extracto_banco(
             score = diff_dias + diff_monto * 10
             candidatos.append((score, bk))
         if candidatos:
+            # TMT 2026-05-26 dueña: "si hay mismo monto priorizar monto".
+            # Si hay ≥1 candidato con monto EXACTO (diff < 1ct), descartar
+            # los demás. Entre los de monto exacto, ganan los de fecha más
+            # cercana. Sin esto, un candidato con monto cercano (no exacto)
+            # + misma fecha podía ganarle a uno con monto exacto en otro día.
+            exactos = [
+                (s, bk) for (s, bk) in candidatos
+                if abs(float(real.monto) - bk.importe) < 0.01
+            ]
+            if exactos:
+                candidatos = exactos
             candidatos.sort(key=lambda t: t[0])
             score, bk = candidatos[0]
             diff_dias = abs((real.fecha - bk.fecha).days)

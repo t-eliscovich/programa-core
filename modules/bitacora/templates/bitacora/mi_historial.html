@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block titulo %}Mi historial — {{ username }}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-5">
+
+  <div class="flex items-baseline justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Mi historial de movimientos</h1>
+      <p class="text-sm text-slate-500 mt-0.5">Acciones que hiciste como <span class="font-mono">{{ username or '(sin sesión)' }}</span>.</p>
+    </div>
+  </div>
+
+  {# Filtros — solo fecha y módulo. No mostramos usuario (es siempre el actual). #}
+  <form method="GET" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 mb-3 flex flex-wrap items-end gap-3 text-sm">
+    <label>
+      <span class="block text-xs text-slate-500">Desde</span>
+      <input type="date" name="desde" value="{{ desde or '' }}"
+             class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+    </label>
+    <label>
+      <span class="block text-xs text-slate-500">Hasta</span>
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+    </label>
+    <label>
+      <span class="block text-xs text-slate-500">Módulo</span>
+      <select name="modulo"
+              class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+        <option value="">— todos —</option>
+        {% for m in modulos %}<option value="{{ m }}" {% if modulo == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="px-3 py-1 rounded bg-slate-900 hover:bg-slate-700 text-white text-xs">Filtrar</button>
+    {% if desde or hasta or modulo %}
+      <a href="{{ url_for('bitacora.mi_historial') }}" class="text-xs text-slate-500 hover:underline">Limpiar</a>
+    {% endif %}
+    <span class="ml-auto text-xs text-slate-500">{{ filas|length }} acciones</span>
+  </form>
+
+  {% if error %}
+  <div class="bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded p-3 mb-3 text-sm text-rose-700 dark:text-rose-300">
+    <strong>Error:</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-left text-[10px] uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Cuándo</th>
+          <th class="px-3 py-2">Módulo</th>
+          <th class="px-3 py-2">Acción</th>
+          <th class="px-3 py-2">Ruta</th>
+          <th class="px-3 py-2">Status</th>
+          <th class="px-3 py-2">Resumen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-1.5 font-mono whitespace-nowrap text-slate-700 dark:text-slate-300">
+            {{ r.ts.strftime('%d/%m %H:%M') if r.ts else '' }}
+          </td>
+          <td class="px-3 py-1.5">{{ r.modulo or '' }}</td>
+          <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300">{{ r.accion or '' }}</td>
+          <td class="px-3 py-1.5 font-mono text-slate-500 text-[11px] truncate max-w-xs" title="{{ r.metodo }} {{ r.ruta }}">{{ r.metodo }} {{ r.ruta }}</td>
+          <td class="px-3 py-1.5 font-mono">
+            {% if r.status_http == 200 %}<span class="text-emerald-600">200</span>
+            {% elif r.status_http == 302 %}<span class="text-sky-600">302</span>
+            {% elif r.status_http and r.status_http >= 400 %}<span class="text-rose-600">{{ r.status_http }}</span>
+            {% else %}{{ r.status_http or '' }}{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-slate-500 text-[11px]">{{ r.resumen or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin actividad para los filtros elegidos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">
+    Solo ves tu propia actividad. El historial completo está en
+    <a href="{{ url_for('bitacora.lista') }}" class="text-sky-600 hover:underline">Bitácora</a>
+    (visible solo para administradores).
+  </p>
+
+</div>
+{% endblock %}

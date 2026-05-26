@@ -785,6 +785,12 @@
         {{ nav_link('historial.lista', 'Historial movimientos', 'history') }}
       </div>
       {% endif %}
+      {# TMT 2026-05-26 dueña: 'Mi historial' visible para TODOS los users
+         logueados — muestra solo sus propias acciones (Alex ve lo que Alex
+         hizo, no lo del resto). No requiere permiso. #}
+      <div class="mt-1">
+        {{ nav_link('bitacora.mi_historial', 'Mi historial', 'user') }}
+      </div>
     </nav>
 
     <script>
