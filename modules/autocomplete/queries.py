@@ -11,19 +11,14 @@ import db
 
 
 def clientes_para_datalist() -> list[dict]:
-    """Todos los clientes (activos + inactivos), ordenados alfabético por código. Max 5000.
+    """Todos los clientes, ordenados alfabético por código. Max 5000.
 
-    TMT 2026-05-26 dueña #1: BED (HECTOR BEDON) está marcado INACTIVO pero
-    tiene $361K de cartera viva — necesitamos poder cobrarle. Antes el
-    filtro `activo <> '0'` lo escondía del autocomplete de /cheques/nuevo.
-
-    TMT 2026-05-26 dueña #2: el sort "activos primero" hundía BED al final
-    de la lista al tipear "BED" — debajo de EVB/FBE/LCB/LOC/SAB/SYB/TOB/VPB
-    (otros clientes con "BED" en el nombre). El browser filtra el datalist
-    por el texto tipeado pero muestra los matches en orden HTML, así que
-    BED quedaba abajo de todo. Fix: solo `ORDER BY codigo_cli` — alfabético
-    puro. BED es lo primero al tipear "BED" porque alfabéticamente es lo
-    primero.
+    TMT 2026-05-26 dueña: el campo `activo` NO se usa como filtro en
+    Intela (todos los clientes son tratables como activos). Versiones
+    anteriores tenían `WHERE activo<>'0'` y un sort "activos primero" que
+    escondía/hundía clientes — quedó eliminado. Sort puro alfabético por
+    codigo_cli para que al tipear "BED" el match exacto aparezca primero
+    (antes que EVB/FBE/LCB/LOC/SAB/SYB/TOB/VPB).
     """
     return db.fetch_all(
         """
