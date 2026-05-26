@@ -36,24 +36,79 @@
     </label>
   </form>
 
-  {# Últimos extractos procesados — solo si hay #}
-  {% if ultimos %}
+  {# Files subidos — TMT 2026-05-26 dueña: "necesito ver los files ya subidos".
+     Tracking real de uploads (incluso los que no se confirmaron matches). #}
+  {% if uploads %}
   <div class="mt-6">
-    <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Últimos extractos procesados</h2>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm">
-      {% for u in ultimos %}
-      <div class="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
-        <div class="text-slate-700 dark:text-slate-300">
-          <span class="font-mono text-xs text-slate-500">{{ u.dia_proceso }}</span>
-          &nbsp;·&nbsp; Banco {{ u.no_banco }}
-          {% if u.desde_fecha %}
-            &nbsp;·&nbsp; <span class="text-slate-500">extracto {{ u.desde_fecha }} → {{ u.hasta_fecha }}</span>
-          {% endif %}
-        </div>
-        <div class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ u.n_movs }} conciliados</div>
-      </div>
-      {% endfor %}
+    <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-2">
+      Files subidos
+      <span class="text-slate-400 normal-case">({{ uploads|length }} últimos)</span>
+    </h2>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden text-sm">
+      <table class="w-full">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-3 py-1.5 text-left">Fecha subido</th>
+            <th class="px-3 py-1.5 text-left">Archivo</th>
+            <th class="px-3 py-1.5 text-left">Rango extracto</th>
+            <th class="px-3 py-1.5 text-right">Movs</th>
+            <th class="px-3 py-1.5 text-right">Conciliados</th>
+            <th class="px-3 py-1.5 text-left">Usuario</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in uploads %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-3 py-1.5 tabular-nums text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
+              {{ u.creado_en.strftime('%Y-%m-%d %H:%M') if u.creado_en else '—' }}
+            </td>
+            <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300">
+              <div class="truncate max-w-xs font-mono text-xs" title="{{ u.filename }} (hash {{ u.file_hash }})">{{ u.filename or '—' }}</div>
+            </td>
+            <td class="px-3 py-1.5 tabular-nums text-xs text-slate-500 whitespace-nowrap">
+              {% if u.fecha_min and u.fecha_max %}
+                {{ u.fecha_min }} → {{ u.fecha_max }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ u.n_filas }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">
+              {% if u.n_matches > 0 %}
+                <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 text-[10px]">{{ u.n_matches }}</span>
+              {% else %}
+                <span class="text-slate-400 text-[10px]">sin confirmar</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-xs text-slate-500">{{ u.usuario }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </div>
+  {% endif %}
+
+  {# Últimos extractos procesados — vista agregada por día (matches confirmados) #}
+  {% if ultimos %}
+  <div class="mt-4">
+    <details class="text-sm">
+      <summary class="cursor-pointer text-xs uppercase tracking-wider text-slate-500 hover:text-slate-700 select-none">
+        Resumen por día (matches confirmados)
+      </summary>
+      <div class="mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+        {% for u in ultimos %}
+        <div class="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+          <div class="text-slate-700 dark:text-slate-300">
+            <span class="font-mono text-xs text-slate-500">{{ u.dia_proceso }}</span>
+            &nbsp;·&nbsp; Banco {{ u.no_banco }}
+            {% if u.desde_fecha %}
+              &nbsp;·&nbsp; <span class="text-slate-500">extracto {{ u.desde_fecha }} → {{ u.hasta_fecha }}</span>
+            {% endif %}
+          </div>
+          <div class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ u.n_movs }} conciliados</div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
   </div>
   {% endif %}
 

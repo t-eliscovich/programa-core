@@ -459,11 +459,23 @@ def desde_asinfo():
     # (DBF aún no se sincronizó). Excluimos por default los últimos 3
     # días del análisis para no marcarlas como missing.
     cutoff_reciente = hoy - _td(days=3)
+    cutoff_reciente_str = cutoff_reciente.isoformat()
     desde_s = request.args.get("desde") or (hoy - _td(days=30)).isoformat()
     hasta_s = request.args.get("hasta") or hoy.isoformat()
     incluir_recientes = request.args.get("incluir_recientes") == "1"
     desde = _parse_date(desde_s) or (hoy - _td(days=30))
     hasta = _parse_date(hasta_s) or hoy
+
+    def _fecha_a_date(x):
+        """Asinfo a veces devuelve la fecha como ISO string. Normalizar."""
+        if x is None or x == "":
+            return None
+        if hasattr(x, "isoformat"):
+            return x  # ya es date/datetime
+        try:
+            return _date.fromisoformat(str(x)[:10])
+        except Exception:
+            return None
 
     # Asinfo: traer facturas del rango
     try:
@@ -521,7 +533,7 @@ def desde_asinfo():
         if tipo not in ("FACTURA", "NTEN"):
             continue
         numero = (r.get("numero") or "").strip()
-        fecha = r.get("fecha")
+        fecha = _fecha_a_date(r.get("fecha"))
         # Exclusión por fecha reciente (gap normal del sync DBF).
         if not incluir_recientes and fecha and fecha >= cutoff_reciente:
             continue

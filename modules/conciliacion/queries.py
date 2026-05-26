@@ -137,6 +137,132 @@ def nombre_banco(no_banco: int) -> str | None:
 # ─── Últimos extractos procesados (Fase E — 2026-05-23) ───────────────────
 
 
+# ─── Tracking de uploads (TMT 2026-05-26 dueña) ───────────────────────────
+# La dueña quiere "ver los files ya subidos" — incluyendo los que se subieron
+# pero NO se confirmaron matches. ultimos_extractos() abajo solo ve los que
+# tienen al menos 1 match confirmado en banco_conciliacion_match, así que es
+# ciego a "subí pero no confirmé nada".
+#
+# Bootstrap defensivo de la tabla — el deploy no corre migrate.py auto y la
+# migración 0053 puede quedar pending.
+
+_BOOTSTRAP_UPLOAD_SQL = """
+CREATE TABLE IF NOT EXISTS scintela.conciliacion_upload (
+    id            BIGSERIAL PRIMARY KEY,
+    no_banco      INTEGER NOT NULL,
+    filename      TEXT,
+    file_hash     TEXT,
+    n_filas       INTEGER,
+    fecha_min     DATE,
+    fecha_max     DATE,
+    usuario       TEXT,
+    creado_en     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_concil_upload_banco_fecha
+    ON scintela.conciliacion_upload (no_banco, creado_en DESC);
+"""
+_upload_tabla_bootstrapped = False
+
+
+def _bootstrap_upload_tabla() -> None:
+    global _upload_tabla_bootstrapped
+    if _upload_tabla_bootstrapped:
+        return
+    try:
+        db.execute(_BOOTSTRAP_UPLOAD_SQL)
+    except Exception:
+        pass
+    _upload_tabla_bootstrapped = True
+
+
+def registrar_upload(
+    *,
+    no_banco: int,
+    filename: str,
+    file_hash: str | None,
+    n_filas: int,
+    fecha_min,
+    fecha_max,
+    usuario: str = "web",
+) -> int | None:
+    """Inserta un registro de upload. Devuelve id o None si falló (fail-soft)."""
+    _bootstrap_upload_tabla()
+    try:
+        row = db.fetch_one(
+            """
+            INSERT INTO scintela.conciliacion_upload
+                (no_banco, filename, file_hash, n_filas, fecha_min, fecha_max, usuario)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (int(no_banco), (filename or "")[:200],
+             (file_hash or "")[:64] or None,
+             int(n_filas or 0),
+             fecha_min, fecha_max,
+             (usuario or "web")[:50]),
+        )
+        return int(row["id"]) if row else None
+    except Exception:
+        return None
+
+
+def uploads_recientes(no_banco: int | None = None, limit: int = 20) -> list[dict]:
+    """Lista los últimos uploads de extractos, con info de si tienen matches confirmados.
+
+    El JOIN con banco_conciliacion_match (matches del MISMO día/banco) es
+    aproximado — banco_conciliacion_match no tiene FK a conciliacion_upload.
+    Como proxy: cuenta los matches confirmados (no_banco, mismo día calendario).
+    """
+    _bootstrap_upload_tabla()
+    try:
+        if no_banco is not None:
+            rows = db.fetch_all(
+                """
+                SELECT u.id, u.no_banco, u.filename, u.file_hash, u.n_filas,
+                       u.fecha_min, u.fecha_max, u.usuario, u.creado_en,
+                       (SELECT COUNT(*) FROM scintela.banco_conciliacion_match m
+                          WHERE m.no_banco = u.no_banco
+                            AND DATE(m.creado_en) = DATE(u.creado_en)) AS n_matches
+                  FROM scintela.conciliacion_upload u
+                 WHERE u.no_banco = %s
+                 ORDER BY u.creado_en DESC
+                 LIMIT %s
+                """,
+                (int(no_banco), int(limit)),
+            ) or []
+        else:
+            rows = db.fetch_all(
+                """
+                SELECT u.id, u.no_banco, u.filename, u.file_hash, u.n_filas,
+                       u.fecha_min, u.fecha_max, u.usuario, u.creado_en,
+                       (SELECT COUNT(*) FROM scintela.banco_conciliacion_match m
+                          WHERE m.no_banco = u.no_banco
+                            AND DATE(m.creado_en) = DATE(u.creado_en)) AS n_matches
+                  FROM scintela.conciliacion_upload u
+                 ORDER BY u.creado_en DESC
+                 LIMIT %s
+                """,
+                (int(limit),),
+            ) or []
+    except Exception:
+        rows = []
+    return [
+        {
+            "id": int(r["id"]),
+            "no_banco": int(r["no_banco"]),
+            "filename": r.get("filename") or "",
+            "file_hash": (r.get("file_hash") or "")[:12],
+            "n_filas": int(r.get("n_filas") or 0),
+            "n_matches": int(r.get("n_matches") or 0),
+            "fecha_min": r.get("fecha_min"),
+            "fecha_max": r.get("fecha_max"),
+            "usuario": r.get("usuario") or "",
+            "creado_en": r.get("creado_en"),
+        }
+        for r in rows
+    ]
+
+
 def ultimos_extractos(no_banco: int | None = None, limit: int = 5) -> list[dict]:
     """Resumen de las últimas conciliaciones realizadas.
 

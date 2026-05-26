@@ -579,11 +579,13 @@ def hub():
     if request.method == "GET":
         bancos = queries.bancos_disponibles()
         ultimos = queries.ultimos_extractos(limit=5)
+        uploads = queries.uploads_recientes(limit=15)
         return render_template(
             "conciliacion/banco_upload.html",
             bancos=bancos,
             no_banco_default=_BANCO_PICHINCHA,
             ultimos=ultimos,
+            uploads=uploads,
         )
 
     # ── POST ────────────────────────────────────────────────────────────
@@ -612,6 +614,23 @@ def hub():
     if not movs_real:
         flash("El archivo no tiene movimientos parseables.", "warn")
         return redirect(url_for("conciliacion.hub"))
+
+    # TMT 2026-05-26 dueña: registrar upload — fail-soft, no rompe el flow.
+    try:
+        import hashlib as _hashlib
+        file_hash = _hashlib.sha256(raw).hexdigest()
+        fechas = [m.fecha for m in movs_real if m.fecha]
+        queries.registrar_upload(
+            no_banco=no_banco,
+            filename=f.filename,
+            file_hash=file_hash,
+            n_filas=len(movs_real),
+            fecha_min=min(fechas) if fechas else None,
+            fecha_max=max(fechas) if fechas else None,
+            usuario=(request.remote_user or "conciliacion"),
+        )
+    except Exception:
+        pass  # tracking opcional, no bloquea
 
     try:
         resultado = matchear_extracto_banco(movs_real, no_banco=no_banco)
