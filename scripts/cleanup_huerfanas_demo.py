@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """Cleanup huerfanas para llegar a 0 visible en /facturas?solo_huerfanas=1.
 
-ESTRATEGIA:
-    1. Marca con sentinel '#DUP-<id_ganador>' las 5 dups obvias del DBF
-       (filas duplicadas o ajustes pegados al mismo numf).
-    2. Corre auditar_huerfanas() y auto-asocia (vía asociar()) las que tienen
-       mejor candidato Asinfo con score < AUTO_MATCH_THRESHOLD (default 2.0).
-       Esto resuelve los casos VP1↔VPM (cliente con código distinto pero kg+usd
-       exacto) y matches por kg+fecha+cliente cuando el numf está corrido.
-    3. Las huerfanas restantes (sin candidato bueno) las marca con sentinel
-       '#SIN_ASINFO-<id_factura>' para sacarlas del audit. Razón típica: NC
-       interna creada en PC que nunca fue al ERP.
-
-LOS 3 DUPS QUE NO SE TOCAN AUTOMATICAMENTE:
-    NUMF 174191, 173966, 171987 — dos facturas vivas con clientes distintos.
-    Requieren decisión humana sobre cuál es la real.
+ESTRATEGIA (orden importante):
+    1. AUTO-MATCH primero — corre auditar_huerfanas() y para mejor_score < 2.0
+       hace asociar() con el candidato Asinfo. Esto resuelve los casos donde
+       el match real existe en Asinfo, incluso si en PC la factura está
+       "duplicada" (diferente fila con mismo numf legacy DBF).
+       Skip DUPS_HUMAN_REVIEW para no causar conflict UNIQUE.
+       Wrap en try/except — los conflictos UNIQUE se loguean pero el script
+       sigue.
+    2. MARCAR DUPS_OBVIAS — para los 5 ids conocidos, marca con '#DUP-<ganador>'
+       SI todavía están sin numfc (no fueron auto-matched en STEP 1).
+    3. MARCAR RESTO — toda huerfana viva sin numfc → '#SIN_ASINFO-<id>'.
+       Skip DUPS_HUMAN_REVIEW (3 ids que requieren decisión humana).
 
 USO:
     & "C:\\Python312\\python.exe" scripts\\cleanup_huerfanas_demo.py --dry-run
@@ -56,7 +54,8 @@ DUPS_OBVIAS = [
     (3796, 3795, "10724-AJ2-true-dup"),
 ]
 
-# Estos NO los tocamos automaticamente — ambos stat=Z con clientes distintos.
+# Estos NO los tocamos automaticamente — ambos stat=Z con clientes distintos,
+# requieren decision humana cual es la real.
 DUPS_HUMAN_REVIEW = {3247, 2718, 2545, 1356}
 
 AUTO_MATCH_THRESHOLD = 2.0
@@ -69,8 +68,55 @@ def main():
     print(f"CLEANUP HUERFANAS DEMO -- dry-run={dry}")
     print("=" * 70)
 
-    # ------- STEP 1: marcar 5 dups obvias ----------------------------------
-    print("\nSTEP 1: Marcar 5 dups obvias con #DUP-<ganador>")
+    # ------- STEP 1: AUTO-MATCH primero -------------------------------------
+    print(f"\nSTEP 1: Auto-match huerfanas con mejor_score < {AUTO_MATCH_THRESHOLD}")
+    auditadas = audit_asinfo.auditar_huerfanas(top_k=1, limite=2000)
+    # Filtrar solo las que el pantalla muestra (kg!=0)
+    auditadas = [a for a in auditadas
+                 if (a["pc_factura"].get("kg") or 0) != 0]
+    print(f"  Total candidatos para auditar: {len(auditadas)}")
+
+    matched = 0
+    skipped_review = 0
+    conflicts = 0
+    for a in auditadas:
+        pc = a["pc_factura"]
+        score = a.get("mejor_score")
+        cands = a.get("candidatos", [])
+        if score is None or not cands:
+            continue
+        if score >= AUTO_MATCH_THRESHOLD:
+            continue
+        if pc["id_factura"] in DUPS_HUMAN_REVIEW:
+            print(f"  SKIP review id={pc['id_factura']} cli={pc['codigo_cli']} "
+                  f"score={score:.2f} (dup humano)")
+            skipped_review += 1
+            continue
+        numero = cands[0]["ai_numero"]
+        if dry:
+            print(f"  [DRY] id={pc['id_factura']} cli={pc['codigo_cli']} "
+                  f"score={score:.2f} -> {numero}")
+            matched += 1
+        else:
+            try:
+                n = audit_asinfo.asociar(
+                    pc["id_factura"], numero, usuario="cleanup-demo"
+                )
+                print(f"  OK id={pc['id_factura']} -> {numero} "
+                      f"(score={score:.2f}, rows={n})")
+                matched += 1
+            except Exception as e:
+                msg = str(e)[:120].replace("\n", " ")
+                print(f"  CONFLICT id={pc['id_factura']} -> {numero}: {msg}")
+                conflicts += 1
+                # Reset connection: psycopg2 deja la conexion en aborted state
+                # despues del unique violation. db.execute usa pool, asi que
+                # la siguiente call recupera una conexion limpia.
+    print(f"  Auto-matched: {matched}  Skipped review: {skipped_review}  "
+          f"Conflicts: {conflicts}")
+
+    # ------- STEP 2: marcar DUPS_OBVIAS si todavia sin numfc ---------------
+    print("\nSTEP 2: Marcar dups obvias con #DUP-<ganador> (si sin numfc)")
     for id_marcar, id_ganador, motivo in DUPS_OBVIAS:
         sentinel = f"#DUP-{id_ganador}"
         if dry:
@@ -82,36 +128,8 @@ def main():
                 "  AND (numf_completo IS NULL OR numf_completo = '')",
                 (sentinel, id_marcar),
             )
-            print(f"  OK id={id_marcar} -> '{sentinel}' ({motivo}) rows={n}")
-
-    # ------- STEP 2: auto-match score<threshold ----------------------------
-    print(f"\nSTEP 2: Auto-match huerfanas con mejor_score < {AUTO_MATCH_THRESHOLD}")
-    auditadas = audit_asinfo.auditar_huerfanas(top_k=1, limite=2000)
-    # Filtrar solo las que el pantalla muestra (kg!=0)
-    auditadas = [a for a in auditadas
-                 if (a["pc_factura"].get("kg") or 0) != 0]
-    print(f"  Total candidatos para auditar: {len(auditadas)}")
-
-    matched = 0
-    for a in auditadas:
-        pc = a["pc_factura"]
-        score = a.get("mejor_score")
-        cands = a.get("candidatos", [])
-        if score is None or not cands:
-            continue
-        if score < AUTO_MATCH_THRESHOLD:
-            numero = cands[0]["ai_numero"]
-            if dry:
-                print(f"  [DRY] id={pc['id_factura']} cli={pc['codigo_cli']} "
-                      f"score={score:.2f} -> {numero}")
-            else:
-                n = audit_asinfo.asociar(
-                    pc["id_factura"], numero, usuario="cleanup-demo"
-                )
-                print(f"  OK id={pc['id_factura']} -> {numero} "
-                      f"(score={score:.2f}, rows={n})")
-            matched += 1
-    print(f"  Auto-matched: {matched}")
+            estado = "MARCADA" if n else "YA MATCHED"
+            print(f"  {estado} id={id_marcar} ({motivo}) rows={n}")
 
     # ------- STEP 3: marcar restantes con #SIN_ASINFO-<id> -----------------
     print("\nSTEP 3: Marcar huerfanas restantes con #SIN_ASINFO-<id>")
