@@ -58,6 +58,7 @@ for _env in (".env.prod", ".env"):
 
 import db
 from modules.asinfo import service as asinfo_service
+from modules.asinfo import aliases as cli_aliases
 
 
 ASINFO_CUTOFF = date(2025, 1, 1)
@@ -124,15 +125,19 @@ def backfill(dry_run: bool = False, limite: int = 5000,
         return {"huerfanas_pc": n_huerf, "matched": 0, "updated": 0,
                 "ambig": 0, "no_match": n_huerf, "error": str(e)}
 
-    # Indexar Asinfo por (numf_extraído, codigo_cli)
-    # Si hay múltiples Asinfo con mismo numf+cli, marcamos ambiguo (raro).
+    # Indexar Asinfo por (numf_extraído, codigo_cli_pc)
+    # TMT 2026-05-26: aplicamos alias map ANTES de indexar — el código de
+    # Asinfo se traduce a PC para que (numf, cli) matchee directo. Ej:
+    # Asinfo cliente="CL2" se indexa como "CLR" (su alias en PC). Así CLR/CL2
+    # comparten bucket y el match es automático.
     asinfo_by_key: dict[tuple[int, str], list[dict]] = {}
     for ai in asinfo_facts:
         numf = _extract_numf(ai.get("numero"))
         if numf is None:
             continue
-        cli = (ai.get("cliente_codigo") or "").strip().upper()
-        asinfo_by_key.setdefault((numf, cli), []).append(ai)
+        cli_asinfo = (ai.get("cliente_codigo") or "").strip().upper()
+        cli_pc = cli_aliases.to_pc(cli_asinfo)  # identidad si no hay alias
+        asinfo_by_key.setdefault((numf, cli_pc), []).append(ai)
 
     matched = 0
     ambig = 0

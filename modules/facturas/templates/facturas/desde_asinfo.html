@@ -28,8 +28,134 @@
       <input type="date" name="hasta" value="{{ hasta }}"
              class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
     </label>
+    <label class="flex items-center gap-1 text-xs text-slate-500">
+      <input type="checkbox" name="incluir_recientes" value="1" {% if incluir_recientes %}checked{% endif %}>
+      Incluir últimos 3 días
+      <span class="text-slate-400" title="Por default se excluyen porque el sync DBF tarda y aparecen falsos missing.">(?)</span>
+    </label>
     <button class="px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm">Buscar</button>
+    {% if not incluir_recientes %}
+    <span class="text-[11px] text-slate-400 self-center">excluyendo &gt; {{ cutoff_reciente }}</span>
+    {% endif %}
   </form>
+
+  {# ───── Bloque diagnóstico: aliases cliente Asinfo↔PC ─────
+     TMT 2026-05-26 dueña: muchas facturas missing son por subclientes
+     (CL2 en Asinfo == CLR en PC). El alias map evita falsos missing. #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">
+          Aliases cliente Asinfo ↔ PC
+          <span class="text-xs text-slate-400 font-normal">({{ aliases_existentes|length }})</span>
+        </h3>
+      </div>
+      <p class="text-xs text-slate-500 mb-2">Asinfo y PC usan códigos distintos para el mismo cliente real. Esos pares se registran acá y el matcher los considera la misma entidad.</p>
+      {% if aliases_existentes %}
+      <div class="max-h-32 overflow-auto mb-2">
+        <table class="w-full text-xs">
+          <tbody>
+            {% for a in aliases_existentes %}
+            <tr class="border-t border-slate-100 dark:border-slate-800">
+              <td class="px-1 py-1 font-mono text-slate-700 dark:text-slate-300">{{ a.codigo_asinfo }}</td>
+              <td class="px-1 py-1 text-slate-400">↔</td>
+              <td class="px-1 py-1 font-mono text-slate-700 dark:text-slate-300">{{ a.codigo_pc }}</td>
+              <td class="px-1 py-1 text-right">
+                <form method="POST" action="{{ url_for('facturas.alias_borrar') }}" class="inline" onsubmit="return confirm('Borrar alias {{ a.codigo_asinfo }} ↔ {{ a.codigo_pc }}?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="codigo_asinfo" value="{{ a.codigo_asinfo }}">
+                  <input type="hidden" name="codigo_pc" value="{{ a.codigo_pc }}">
+                  <button class="text-rose-500 hover:text-rose-700 text-[10px]" title="Borrar">×</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-xs text-slate-400 italic mb-2">No hay aliases cargados.</p>
+      {% endif %}
+      <form method="POST" action="{{ url_for('facturas.alias_agregar') }}" class="flex items-center gap-1 text-xs">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input name="codigo_asinfo" placeholder="Asinfo" maxlength="10" required
+               class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-24 font-mono uppercase">
+        <span class="text-slate-400">↔</span>
+        <input name="codigo_pc" placeholder="PC" maxlength="10" required
+               class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 w-24 font-mono uppercase">
+        <input name="nota" placeholder="nota (opcional)"
+               class="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex-1">
+        <button class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white">+</button>
+      </form>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+        💡 Aliases sugeridos
+        <span class="text-xs text-slate-400 font-normal">({{ sugerencias_alias|length }})</span>
+      </h3>
+      <p class="text-xs text-slate-500 mb-2">Detectados auto: cuando ≥50% de las missing de un cliente Asinfo tienen su numf en PC bajo otro código.</p>
+      {% if sugerencias_alias %}
+      <div class="space-y-1 max-h-48 overflow-auto">
+        {% for s in sugerencias_alias %}
+        <form method="POST" action="{{ url_for('facturas.alias_agregar') }}"
+              class="flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 rounded px-2 py-1.5 border border-amber-200 dark:border-amber-800">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="codigo_asinfo" value="{{ s.codigo_asinfo }}">
+          <input type="hidden" name="codigo_pc" value="{{ s.codigo_pc }}">
+          <input type="hidden" name="nota" value="auto-detectado ({{ s.votos }}/{{ s.total_huerf_cli }} match)">
+          <span class="font-mono">{{ s.codigo_asinfo }}</span>
+          <span class="text-slate-400">↔</span>
+          <span class="font-mono">{{ s.codigo_pc }}</span>
+          <span class="text-amber-700 dark:text-amber-300 text-[10px]">{{ s.votos }}/{{ s.total_huerf_cli }} ({{ s.porcentaje }}%)</span>
+          <button class="ml-auto px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-[10px]">Agregar</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-xs text-slate-400 italic">Sin sugerencias en este período.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ───── Resumen agrupado por cliente Asinfo ───── #}
+  {% if grupos_cli %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-4">
+    <details>
+      <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 select-none hover:bg-slate-50 dark:hover:bg-slate-800/50">
+        Resumen por cliente Asinfo ({{ grupos_cli|length }} clientes con missing)
+      </summary>
+      <div class="border-t border-slate-100 dark:border-slate-800 max-h-72 overflow-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wide text-slate-500 sticky top-0">
+            <tr>
+              <th class="px-2 py-1.5 text-left">Cli Asinfo</th>
+              <th class="px-2 py-1.5 text-right">N missing</th>
+              <th class="px-2 py-1.5 text-right">$ USD</th>
+              <th class="px-2 py-1.5 text-right">kg</th>
+              <th class="px-2 py-1.5 text-left">PC bajo otro cli (top)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for g in grupos_cli %}
+            <tr class="border-t border-slate-100 dark:border-slate-800">
+              <td class="px-2 py-1.5 font-mono">{{ g.cliente_codigo }}</td>
+              <td class="px-2 py-1.5 text-right tabular-nums">{{ g.n }}</td>
+              <td class="px-2 py-1.5 text-right tabular-nums">{{ '{:,.2f}'.format(g.sum_usd) }}</td>
+              <td class="px-2 py-1.5 text-right tabular-nums">{{ '{:,.2f}'.format(g.sum_kg) }}</td>
+              <td class="px-2 py-1.5 text-slate-500">
+                {% if g.votos_alias %}
+                {% for c_pc, v in g.votos_alias|dictsort(by='value', reverse=True) %}<span class="font-mono mr-2">{{ c_pc }} ({{ v }})</span>{% endfor %}
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+  {% endif %}
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
     {{ kpi_card('Facturas Asinfo (período)', n_total_asinfo|string, tono='slate') }}

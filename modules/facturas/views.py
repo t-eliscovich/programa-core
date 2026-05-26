@@ -442,12 +442,26 @@ def desde_asinfo():
     Pedido Tamara 2026-05-23: match inverso PC ← Asinfo. Permite cargar
     a PC con un click las que falten.
 
+    TMT 2026-05-26 dueña: ahora aplica `scintela.cliente_alias` (CL2↔CLR,
+    AJ2↔AJO, J3C↔VGA) — si Asinfo viene como CL2 y PC tiene la misma
+    factura bajo CLR, NO se reporta como missing. Además detecta y
+    sugiere nuevos aliases: si todas las missing de un cliente_asinfo X
+    tienen sus `numf` en PC pero bajo otro cliente Y, propone X↔Y.
+
     Filtros: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (default: últimos 30 días).
     """
+    import re as _re
     from datetime import date as _date, timedelta as _td
+    from modules.asinfo import aliases as _aliases
+
     hoy = _date.today()
+    # TMT 2026-05-26 dueña: las últimas 3 facturas siempre se ven raras
+    # (DBF aún no se sincronizó). Excluimos por default los últimos 3
+    # días del análisis para no marcarlas como missing.
+    cutoff_reciente = hoy - _td(days=3)
     desde_s = request.args.get("desde") or (hoy - _td(days=30)).isoformat()
     hasta_s = request.args.get("hasta") or hoy.isoformat()
+    incluir_recientes = request.args.get("incluir_recientes") == "1"
     desde = _parse_date(desde_s) or (hoy - _td(days=30))
     hasta = _parse_date(hasta_s) or hoy
 
@@ -459,20 +473,47 @@ def desde_asinfo():
         flash_exc("No se pudo conectar con Asinfo", e)
         asinfo_rows = []
 
-    # PC: traer numf_completo del rango
+    # PC: traer numf_completo + (numf, codigo_cli) del rango.
+    # numf=sufijo numérico, codigo_cli=código en PC. La conjunción es la PK
+    # lógica de la factura — match más fuerte que solo numf_completo string.
     pc_rows = db.fetch_all(
         """
-        SELECT numf_completo, codigo_cli, importe
+        SELECT numf_completo, numf, codigo_cli, importe
           FROM scintela.factura
          WHERE fecha BETWEEN %s AND %s
-           AND numf_completo IS NOT NULL
            AND stat <> 'X'
         """,
         (desde, hasta),
     ) or []
-    pc_numfs = {(r.get("numf_completo") or "").strip() for r in pc_rows if r.get("numf_completo")}
+    pc_numfs_str = {(r.get("numf_completo") or "").strip()
+                    for r in pc_rows if r.get("numf_completo")}
+    # Map (numf, codigo_cli_PC) → True, para alias-aware matching.
+    pc_by_numf_cli: set[tuple[int, str]] = set()
+    pc_by_numf: dict[int, set[str]] = {}
+    for r in pc_rows:
+        numf = r.get("numf")
+        if not numf:
+            continue
+        try:
+            n = int(numf)
+        except (TypeError, ValueError):
+            continue
+        cli_pc = (r.get("codigo_cli") or "").strip().upper()
+        pc_by_numf_cli.add((n, cli_pc))
+        pc_by_numf.setdefault(n, set()).add(cli_pc)
 
-    # Filtrar Asinfo que NO está en PC (huérfanas-asinfo)
+    def _extract_numf(numero: str) -> int | None:
+        if not numero:
+            return None
+        m = _re.findall(r"\d+", str(numero))
+        if not m:
+            return None
+        try:
+            return int(m[-1])
+        except (ValueError, TypeError):
+            return None
+
+    # Filtrar Asinfo que NO está en PC (huérfanas-asinfo) — alias-aware.
     # Solo FACTURA y NTEN — las DEVOLUCION/NC son negativas y rara vez se cargan
     huerfanas = []
     for r in asinfo_rows:
@@ -480,18 +521,88 @@ def desde_asinfo():
         if tipo not in ("FACTURA", "NTEN"):
             continue
         numero = (r.get("numero") or "").strip()
-        if numero and numero in pc_numfs:
+        fecha = r.get("fecha")
+        # Exclusión por fecha reciente (gap normal del sync DBF).
+        if not incluir_recientes and fecha and fecha >= cutoff_reciente:
             continue
+        # Match 1 (más fuerte): numero == numf_completo en PC.
+        if numero and numero in pc_numfs_str:
+            continue
+        # Match 2 (alias-aware): (numf, cli_pc) — donde cli_pc = alias(cli_asinfo).
+        numf = _extract_numf(numero)
+        cli_asinfo = (r.get("cliente_codigo") or "").strip().upper()
+        cli_pc_esperado = _aliases.to_pc(cli_asinfo)
+        if numf and (numf, cli_pc_esperado) in pc_by_numf_cli:
+            continue
+        # Calcular hint de "está en PC bajo OTRO cli" — sugerencia de alias.
+        otros_clis_pc = []
+        if numf:
+            otros_clis_pc = sorted(c for c in pc_by_numf.get(numf, set())
+                                   if c and c != cli_pc_esperado)
         huerfanas.append({
             "numero": numero,
-            "fecha": r.get("fecha"),
+            "numf": numf,
+            "fecha": fecha,
             "tipo": tipo,
-            "cliente_codigo": (r.get("cliente_codigo") or "").strip(),
+            "cliente_codigo": cli_asinfo,
             "vendedor": r.get("vendedor") or "",
             "kg": float(r.get("kg") or 0),
             "usd": float(r.get("usd") or 0),
+            "pc_existe_bajo_cli": otros_clis_pc,  # sugerencia alias
         })
     huerfanas.sort(key=lambda r: (r["fecha"] or _date.min, r["numero"]), reverse=True)
+
+    # ─── Agregado por cliente Asinfo + detección de alias candidatos ──
+    # Para cada cliente_codigo de Asinfo con huerfanas, contar cuántas
+    # tienen su numf en PC bajo OTRO cli. Si la mayoría apunta al mismo,
+    # ese es candidato a alias.
+    grupos_cli: dict[str, dict] = {}
+    for h in huerfanas:
+        cli = h["cliente_codigo"] or "?"
+        g = grupos_cli.setdefault(cli, {
+            "cliente_codigo": cli,
+            "n": 0,
+            "sum_usd": 0.0,
+            "sum_kg": 0.0,
+            "votos_alias": {},  # codigo_pc → count
+            "muestra": [],
+        })
+        g["n"] += 1
+        g["sum_usd"] += h["usd"]
+        g["sum_kg"] += h["kg"]
+        for c_pc in h["pc_existe_bajo_cli"]:
+            g["votos_alias"][c_pc] = g["votos_alias"].get(c_pc, 0) + 1
+        if len(g["muestra"]) < 3:
+            g["muestra"].append(h)
+
+    # Sugerencia de alias por grupo.
+    aliases_existentes = _aliases.todos()
+    alias_existe_para = {
+        a["codigo_asinfo"]: a["codigo_pc"] for a in aliases_existentes
+    }
+    sugerencias_alias = []
+    for cli, g in grupos_cli.items():
+        if not g["votos_alias"]:
+            continue
+        # El alias-candidato con más votos. Si la mayoría (>=50%) apunta al
+        # mismo cli_pc, lo sugerimos.
+        ganador = max(g["votos_alias"].items(), key=lambda kv: kv[1])
+        c_pc, votos = ganador
+        if votos * 2 < g["n"]:  # menos del 50%
+            continue
+        if alias_existe_para.get(cli) == c_pc:
+            continue  # ya existe el alias
+        sugerencias_alias.append({
+            "codigo_asinfo": cli,
+            "codigo_pc": c_pc,
+            "votos": votos,
+            "total_huerf_cli": g["n"],
+            "porcentaje": round(100 * votos / g["n"], 1),
+        })
+    sugerencias_alias.sort(key=lambda s: s["votos"], reverse=True)
+    grupos_ordenados = sorted(
+        grupos_cli.values(), key=lambda g: g["n"], reverse=True
+    )
 
     return render_template(
         "facturas/desde_asinfo.html",
@@ -501,7 +612,62 @@ def desde_asinfo():
         huerfanas=huerfanas,
         suma_kg=sum(h["kg"] for h in huerfanas),
         suma_usd=sum(h["usd"] for h in huerfanas),
+        # Nuevo TMT 2026-05-26
+        cutoff_reciente=cutoff_reciente.isoformat(),
+        incluir_recientes=incluir_recientes,
+        aliases_existentes=aliases_existentes,
+        sugerencias_alias=sugerencias_alias,
+        grupos_cli=grupos_ordenados,
     )
+
+
+@facturas_bp.route("/facturas/aliases/agregar", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def alias_agregar():
+    """Agrega un alias cliente Asinfo↔PC. Form: codigo_asinfo, codigo_pc, nota."""
+    from modules.asinfo import aliases as _aliases
+    codigo_asinfo = (request.form.get("codigo_asinfo") or "").strip().upper()
+    codigo_pc = (request.form.get("codigo_pc") or "").strip().upper()
+    nota = (request.form.get("nota") or "").strip()
+    if not codigo_asinfo or not codigo_pc:
+        flash("Faltan codigo_asinfo y codigo_pc.", "warn")
+        return redirect(url_for("facturas.desde_asinfo", **request.args))
+    try:
+        creado = _aliases.agregar(
+            codigo_asinfo, codigo_pc,
+            nota=nota,
+            usuario=(g.user or {}).get("username", "web"),
+        )
+    except Exception as e:
+        flash_exc("No se pudo agregar el alias", e)
+        return redirect(url_for("facturas.desde_asinfo"))
+    if creado:
+        flash(f"Alias agregado: {codigo_asinfo} ↔ {codigo_pc}.", "ok")
+    else:
+        flash(f"Alias {codigo_asinfo} ↔ {codigo_pc} ya existía.", "info")
+    # Mantener filtros de la URL anterior.
+    return redirect(request.referrer or url_for("facturas.desde_asinfo"))
+
+
+@facturas_bp.route("/facturas/aliases/borrar", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def alias_borrar():
+    """Borra un alias. Form: codigo_asinfo, codigo_pc."""
+    from modules.asinfo import aliases as _aliases
+    codigo_asinfo = (request.form.get("codigo_asinfo") or "").strip().upper()
+    codigo_pc = (request.form.get("codigo_pc") or "").strip().upper()
+    try:
+        n = _aliases.borrar(codigo_asinfo, codigo_pc)
+    except Exception as e:
+        flash_exc("No se pudo borrar el alias", e)
+        return redirect(url_for("facturas.desde_asinfo"))
+    if n:
+        flash(f"Alias borrado: {codigo_asinfo} ↔ {codigo_pc}.", "ok")
+    else:
+        flash("El alias no existía.", "info")
+    return redirect(request.referrer or url_for("facturas.desde_asinfo"))
 
 
 @facturas_bp.route("/facturas/cargar-desde-asinfo-bulk", methods=["POST"])
