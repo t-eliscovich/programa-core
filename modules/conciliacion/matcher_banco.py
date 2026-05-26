@@ -932,6 +932,8 @@ def crear_transaccion_desde_real(
     usuario: str = "web",
     documento: str | None = None,
     no_cta: str | None = None,
+    prov: str | None = None,
+    concepto_override: str | None = None,
 ) -> dict:
     """Crea una tx en BANCSIS a partir de un mov real_only y la deja conciliada.
 
@@ -945,6 +947,12 @@ def crear_transaccion_desde_real(
         usuario: para auditoría.
         documento: si querés forzar 'TR' o 'NC' en vez del default ('DE'/'CH').
         no_cta: cuenta opcional dentro del banco.
+        prov: TMT 2026-05-26 dueña: código cliente/proveedor (≤5 chars) —
+            se pasa a `transacciones_bancarias.prov`. Si viene vacío,
+            `insert_movimiento_bancario` lo auto-extrae del concepto.
+        concepto_override: TMT 2026-05-26 dueña: texto de concepto editado
+            por la dueña en el modal (≤50 chars). Si viene vacío, hereda
+            del extracto.
 
     Returns:
         {id_transaccion, saldo_nuevo, match_insertado}
@@ -952,7 +960,7 @@ def crear_transaccion_desde_real(
     import bank_helpers
 
     doc = (documento or _documento_bancsis_desde_tipo(real.tipo)).upper()
-    concepto = (real.concepto or "")[:50] or f"Extracto {real.tipo} #{real.documento}"
+    concepto = (concepto_override or real.concepto or "")[:50] or f"Extracto {real.tipo} #{real.documento}"
     numref = None
     if real.documento:
         try:
@@ -969,6 +977,7 @@ def crear_transaccion_desde_real(
             documento=doc,
             importe=float(real.monto),
             concepto=concepto,
+            prov=(prov or "").strip().upper()[:5] or None,
             numreferencia=numref,
             usuario=usuario,
         )
@@ -999,6 +1008,128 @@ def crear_transaccion_desde_real(
         "saldo_anterior": ins.get("saldo_anterior"),
         "documento": doc,
         "match_insertado": bool(n),
+    }
+
+
+def crear_transaccion_agrupada_desde_reals(
+    no_banco: int,
+    reals: list[MovBanco],
+    *,
+    fecha: date | None = None,
+    concepto: str | None = None,
+    prov: str | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Crea UNA tx BANCSIS con la suma de N reals y los concilia N:1.
+
+    TMT 2026-05-26 dueña: cuando el extracto trae 10-30 comisiones/impuestos
+    chicos, en lugar de crear 30 txs individuales creamos UNA sola con la
+    suma y conciliamos todas las filas del extracto contra ese mismo
+    `id_transaccion`. El historial conserva el desglose porque cada match
+    apunta al `id_transaccion` compartido pero guarda el `real_*` original.
+
+    Lógica:
+        - Suma signada: créditos (+) − débitos (−). Si neto > 0 → documento
+          'NC' (nota crédito, entra); si neto < 0 → 'ND' (nota débito, sale).
+        - Importe en BANCSIS siempre positivo; el signo lo aplica el doc.
+        - Fecha: la pasada por la dueña (default = última del lote).
+        - Concepto: el pasado por la dueña (default = "Comisiones e
+          impuestos DD/MM-DD/MM"); 50 chars máx.
+        - prov: free text de la dueña ("PICH", "SRI", etc); 5 chars máx.
+
+    Atómico en una sola db.tx(): insert + walk-forward + N matches.
+
+    Args:
+        no_banco: banco destino.
+        reals: lista de MovBanco (mín 2). Mezclan C y D (los netea).
+        fecha: fecha del mov BANCSIS. Default = max(reals[i].fecha).
+        concepto: concepto del mov BANCSIS. Default auto.
+        prov: cliente/proveedor a poner. Default vacío.
+        usuario: para auditoría.
+
+    Returns:
+        {id_transaccion, saldo_nuevo, documento, n_matches, monto_neto}
+    """
+    if not reals:
+        raise ValueError("reals vacío — necesito al menos 1 mov para agrupar.")
+    import bank_helpers
+
+    # Sumas signadas.
+    suma_c = sum(float(r.monto) for r in reals if (r.tipo or "").upper() == "C")
+    suma_d = sum(float(r.monto) for r in reals if (r.tipo or "").upper() == "D")
+    neto = round(suma_c - suma_d, 2)
+    if neto == 0:
+        raise ValueError(
+            "Los movs se compensan (créditos == débitos) — no genero tx "
+            "BANCSIS de monto cero. Revisar el subset."
+        )
+
+    documento = "NC" if neto > 0 else "ND"
+    importe_abs = abs(neto)
+    fechas = [r.fecha for r in reals if r.fecha]
+    fecha_tx = fecha or (max(fechas) if fechas else date.today())
+
+    if not concepto:
+        if fechas:
+            fmin, fmax = min(fechas), max(fechas)
+            if fmin == fmax:
+                concepto = f"Comisiones e impuestos {fmin:%d/%m}"
+            else:
+                concepto = f"Comisiones e impuestos {fmin:%d/%m}-{fmax:%d/%m}"
+        else:
+            concepto = "Comisiones e impuestos agrupadas"
+    concepto = concepto[:50]
+
+    with db.tx() as conn:
+        ins = bank_helpers.insert_movimiento_bancario(
+            conn,
+            no_banco=no_banco,
+            no_cta=None,
+            fecha=fecha_tx,
+            documento=documento,
+            importe=importe_abs,
+            concepto=concepto,
+            prov=(prov or "").strip().upper()[:5] or None,
+            numreferencia=None,
+            usuario=usuario,
+        )
+        new_id = ins.get("id_transaccion")
+
+        # Walk-forward — el mov puede caer al medio.
+        bank_helpers.recompute_saldos_desde(
+            conn,
+            no_banco=no_banco,
+            no_cta=None,
+            ancla_id=int(new_id),
+        )
+
+        # Conciliar las N filas N:1 contra esta misma tx.
+        n_matches = 0
+        for real in reals:
+            try:
+                n = confirmar_match(
+                    no_banco=no_banco,
+                    real=real,
+                    id_transaccion=int(new_id) if new_id else None,
+                    estado="matched",
+                    usuario=usuario,
+                    metodo="created_from_real_grouped",
+                    conn=conn,
+                )
+                if n:
+                    n_matches += 1
+            except Exception:
+                # Si una falla, el resto sigue — el historial es informativo.
+                # El insert de la tx ya está en la misma db.tx() commit-after.
+                pass
+
+    return {
+        "id_transaccion": new_id,
+        "saldo_nuevo": ins.get("saldo_nuevo"),
+        "saldo_anterior": ins.get("saldo_anterior"),
+        "documento": documento,
+        "n_matches": n_matches,
+        "monto_neto": neto,
     }
 
 

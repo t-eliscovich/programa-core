@@ -290,6 +290,88 @@
      TAB 2B — SOLO EN BANCO REAL (sin sugerencias)
      ═════════════════════════════════════════════════════════════════════ #}
   <div data-tabpane="real" class="tabpane hidden">
+
+    {# ── Card sticky: agrupado de comisiones/impuestos pre-armado.
+       TMT 2026-05-26 dueña: que venga ya creado, un click para confirmar. #}
+    {% if agrupado_comisiones %}
+    <div id="card-agrupado-comisiones"
+         class="mb-4 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-4 shadow-sm">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <div class="text-sm font-bold text-amber-900 dark:text-amber-100">
+            ⚙ Agrupar {{ agrupado_comisiones.n }} comisiones/impuestos en 1 movimiento
+          </div>
+          <div class="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+            En lugar de crear {{ agrupado_comisiones.n }} txs individuales, una sola tx BANCSIS con la suma — y concilia las {{ agrupado_comisiones.n }} filas N:1 contra ella.
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-xs text-amber-700 dark:text-amber-300">Monto neto ({{ agrupado_comisiones.documento }})</div>
+          <div class="text-xl font-bold tabular-nums text-amber-900 dark:text-amber-100">
+            $ {{ '{:,.2f}'.format(agrupado_comisiones.neto|abs) }}
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+        <div>
+          <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Concepto (editable)</label>
+          <input type="text" id="agrup-concepto" maxlength="50"
+                 value="{{ agrupado_comisiones.concepto_default }}"
+                 class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+        </div>
+        <div>
+          <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Fecha</label>
+          <input type="date" id="agrup-fecha"
+                 value="{{ agrupado_comisiones.fecha_default or '' }}"
+                 class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 tabular-nums">
+        </div>
+        <div>
+          <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Origen (cli/prov, opcional, 5 chars)</label>
+          <input type="text" id="agrup-prov" maxlength="5" placeholder="PICH / SRI"
+                 class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 uppercase">
+        </div>
+      </div>
+
+      <details class="mb-3 text-xs">
+        <summary class="cursor-pointer text-amber-800 dark:text-amber-300 hover:underline select-none">
+          Ver desglose ({{ agrupado_comisiones.n }} filas)
+        </summary>
+        <div class="mt-2 max-h-48 overflow-auto bg-white dark:bg-slate-900 rounded border border-amber-200 dark:border-amber-800">
+          <table class="w-full text-xs tabular-nums">
+            <tbody>
+              {% for it in agrupado_comisiones.items %}
+              <tr class="border-t border-slate-100 dark:border-slate-800">
+                <td class="px-2 py-1 text-slate-500 w-16 whitespace-nowrap">{{ it.fecha }}</td>
+                <td class="px-2 py-1 text-slate-700 dark:text-slate-300">
+                  <span class="text-[10px] mr-1 text-amber-700 dark:text-amber-400">{{ (it.cat or {}).abrev or '?' }}</span>
+                  {{ it.concepto }}
+                </td>
+                <td class="px-2 py-1 text-right w-24 whitespace-nowrap {% if it.tipo == 'D' %}text-rose-700{% else %}text-emerald-700{% endif %}">
+                  {% if it.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(it.monto) }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn-confirmar-agrupado"
+                class="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium shadow-sm">
+          ✓ Crear 1 mov + conciliar las {{ agrupado_comisiones.n }} filas
+        </button>
+        <button type="button" id="btn-descartar-agrupado"
+                class="px-3 py-1.5 rounded border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40">
+          Mejor crearlas una por una
+        </button>
+        <span id="agrup-status" class="text-xs text-amber-800 dark:text-amber-300 ml-2"></span>
+      </div>
+    </div>
+    <script type="application/json" id="agrupado-comisiones-data">{{ agrupado_json|safe }}</script>
+    {% endif %}
+
     {% if n_real_sin_sug > 0 %}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
       <table class="w-full text-sm table-fixed" id="tbl-real">
@@ -356,21 +438,22 @@
                       data-oficina="{{ r.oficina|e }}"
                       title="{{ r.sugerencias|length }} mov del programa coinciden por monto">💡 {{ r.sugerencias|length }}</button>
               {% endif %}
-              {# TMT 2026-05-26 dueña: + Crear ahora AJAX (no navega). Al
-                 success quita la fila inline para no perder el diff. #}
-              <form method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="inline form-crear-bancsis">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="no_banco" value="{{ no_banco }}">
-                <input type="hidden" name="real_fecha" value="{{ r.fecha }}">
-                <input type="hidden" name="real_concepto" value="{{ r.concepto }}">
-                <input type="hidden" name="real_documento" value="{{ r.documento }}">
-                <input type="hidden" name="real_monto" value="{{ r.monto }}">
-                <input type="hidden" name="real_tipo" value="{{ r.tipo }}">
-                <input type="hidden" name="real_codigo" value="{{ r.codigo }}">
-                <input type="hidden" name="real_oficina" value="{{ r.oficina }}">
-                <button class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
-                        title="Crear el movimiento en programa (no recarga la pantalla)">+ Crear</button>
-              </form>
+              {# TMT 2026-05-26 dueña: + Crear ahora abre form rico inline
+                 con prov + concepto editables (pre-llenados por el matcher).
+                 AJAX al confirmar — quita la fila al success. #}
+              <button type="button"
+                      class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium btn-abrir-crear-rico"
+                      data-fila-idx="{{ loop.index0 }}"
+                      data-fecha="{{ r.fecha }}"
+                      data-concepto="{{ r.concepto|e }}"
+                      data-documento="{{ r.documento|e }}"
+                      data-monto="{{ r.monto }}"
+                      data-tipo="{{ r.tipo }}"
+                      data-codigo="{{ r.codigo|e }}"
+                      data-oficina="{{ r.oficina|e }}"
+                      data-prov-sug="{{ (r.cat.cliente or '')|e }}"
+                      data-grupo="{{ r.cat.grupo or 'OTRO' }}"
+                      title="Crear el movimiento en programa con cliente/concepto editables">+ Crear</button>
               <button type="button"
                       class="px-1.5 py-1 rounded text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 btn-match-manual"
                       data-fecha="{{ r.fecha }}"
@@ -514,6 +597,80 @@
   <input type="hidden" name="real_codigo" id="mm-real_codigo">
   <input type="hidden" name="real_oficina" id="mm-real_oficina">
 </form>
+
+{# ───── Modal "Crear rico" — cliente/prov + concepto editables ─────
+   TMT 2026-05-26 dueña: "+ Crear" abre este modal en vez de submit directo. #}
+<div id="crear-rico-modal"
+     class="hidden bg-black/50 z-50 flex items-center justify-center p-4"
+     style="position: fixed; top: 0; right: 0; bottom: 0; left: 0;">
+  <div class="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-lg w-full overflow-hidden flex flex-col">
+    <div class="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-start">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">Crear movimiento en BANCSIS</h3>
+        <p class="text-xs text-slate-500 mt-1" id="cr-resumen-extracto"></p>
+      </div>
+      <button type="button" id="cr-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+    <form id="cr-form" method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="p-4 space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco }}">
+      <input type="hidden" name="real_fecha" id="cr-real_fecha">
+      <input type="hidden" name="real_concepto" id="cr-real_concepto">
+      <input type="hidden" name="real_documento" id="cr-real_documento">
+      <input type="hidden" name="real_monto" id="cr-real_monto">
+      <input type="hidden" name="real_tipo" id="cr-real_tipo">
+      <input type="hidden" name="real_codigo" id="cr-real_codigo">
+      <input type="hidden" name="real_oficina" id="cr-real_oficina">
+
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <div class="text-slate-500 uppercase tracking-wide text-[10px]">Fecha</div>
+          <div class="text-sm tabular-nums text-slate-900 dark:text-slate-100" id="cr-disp-fecha"></div>
+        </div>
+        <div>
+          <div class="text-slate-500 uppercase tracking-wide text-[10px]">Monto / Tipo</div>
+          <div class="text-sm tabular-nums text-slate-900 dark:text-slate-100" id="cr-disp-monto"></div>
+        </div>
+      </div>
+
+      <div>
+        <label for="cr-prov" class="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">
+          Cliente / Proveedor <span class="text-slate-400 normal-case">(pre-llenado por la heurística)</span>
+        </label>
+        <input list="dl-clientes-y-prov" id="cr-prov" name="prov" type="text" maxlength="5"
+               class="w-full text-sm px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 uppercase font-mono">
+        <div class="text-[10px] text-slate-400 mt-0.5" id="cr-prov-nombre"></div>
+      </div>
+
+      <div>
+        <label for="cr-concepto" class="block text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">
+          Concepto <span class="text-slate-400 normal-case">(50 chars máx, editable)</span>
+        </label>
+        <input id="cr-concepto" name="concepto_override" type="text" maxlength="50"
+               class="w-full text-sm px-2 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      </div>
+
+      <div class="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/50 rounded p-2 border border-slate-200 dark:border-slate-800">
+        <span class="text-[10px] uppercase tracking-wide">Del extracto:</span>
+        <div class="font-mono mt-0.5 text-slate-600 dark:text-slate-400" id="cr-disp-concepto-orig"></div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button type="button" id="cr-cancel" class="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:underline">Cancelar</button>
+        <button type="submit" class="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium">
+          + Crear y conciliar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Datalist compartido — TMT 2026-05-26 dueña: clientes + proveedores en uno solo
+   (la dueña no separa cli/prov al crear desde extracto). #}
+<datalist id="dl-clientes-y-prov">
+  {% for c in clientes_dl or [] %}<option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>{% endfor %}
+  {% for p in proveedores_dl or [] %}<option value="{{ p.codigo_prov }}">{{ p.nombre }} (prov)</option>{% endfor %}
+</datalist>
 
 <script>
 (function() {
@@ -827,44 +984,166 @@
   mmClose.addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 
-  // TMT 2026-05-26 dueña: + Crear sin perder pantalla.
-  // Intercepta el submit, hace fetch, y al success quita la fila + actualiza KPIs.
-  document.querySelectorAll('form.form-crear-bancsis').forEach(form => {
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = form.querySelector('button[type=submit], button');
-      const original = btn ? btn.innerHTML : '';
-      if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
-      try {
-        const r = await fetch(form.action, {
-          method: 'POST',
-          body: new FormData(form),
-          headers: { 'X-Requested-With': 'fetch' },
-          credentials: 'include',
-        });
-        if (r.ok || r.redirected) {
-          // Quitar la fila padre del diff
-          const tr = form.closest('tr.fila');
-          if (tr) {
-            tr.style.transition = 'opacity 250ms ease';
-            tr.style.opacity = '0';
-            setTimeout(() => tr.remove(), 260);
-          }
-          // Flash inline arriba (tabpane actual)
-          const flash = document.createElement('div');
-          flash.className = 'fixed top-4 right-4 z-50 px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-lg text-sm';
-          flash.textContent = '✓ Movimiento creado en programa';
-          document.body.appendChild(flash);
-          setTimeout(() => flash.remove(), 3500);
-        } else {
-          throw new Error('HTTP ' + r.status);
-        }
-      } catch (err) {
-        alert('Error creando movimiento: ' + err.message);
-        if (btn) { btn.disabled = false; btn.innerHTML = original; }
-      }
+  // ═══ TMT 2026-05-26 dueña: + Crear modal rico (cliente/prov + concepto) ═══
+  // Reemplaza el viejo submit directo de form.form-crear-bancsis.
+  const crModal = document.getElementById('crear-rico-modal');
+  const crForm  = document.getElementById('cr-form');
+  const crProv  = document.getElementById('cr-prov');
+  const crConc  = document.getElementById('cr-concepto');
+  const crProvNombre = document.getElementById('cr-prov-nombre');
+  let _crFilaActual = null; // <tr> que dispará el modal — la quitamos al success
+
+  if (crModal && crModal.parentElement !== document.body) {
+    document.body.appendChild(crModal);
+  }
+
+  // Helper: lookup del nombre del cliente/prov a partir del datalist.
+  const _dlClientesProv = document.getElementById('dl-clientes-y-prov');
+  function lookupNombreProv(codigo) {
+    if (!codigo || !_dlClientesProv) return '';
+    const c = (codigo || '').trim().toUpperCase();
+    const opt = Array.from(_dlClientesProv.options).find(o => (o.value || '').toUpperCase() === c);
+    return opt ? (opt.textContent || '').trim() : '';
+  }
+  crProv.addEventListener('input', () => {
+    const nombre = lookupNombreProv(crProv.value);
+    crProvNombre.textContent = nombre ? '→ ' + nombre : '';
+  });
+
+  document.querySelectorAll('.btn-abrir-crear-rico').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _crFilaActual = btn.closest('tr.fila') || null;
+      const d = btn.dataset;
+      const tipoStr = d.tipo === 'C' ? 'Crédito (entra)' : 'Débito (sale)';
+      document.getElementById('cr-real_fecha').value = d.fecha || '';
+      document.getElementById('cr-real_concepto').value = d.concepto || '';
+      document.getElementById('cr-real_documento').value = d.documento || '';
+      document.getElementById('cr-real_monto').value = d.monto || '';
+      document.getElementById('cr-real_tipo').value = d.tipo || '';
+      document.getElementById('cr-real_codigo').value = d.codigo || '';
+      document.getElementById('cr-real_oficina').value = d.oficina || '';
+      document.getElementById('cr-disp-fecha').textContent = d.fecha || '';
+      document.getElementById('cr-disp-monto').textContent =
+        '$ ' + Number(d.monto || 0).toLocaleString('es', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' · ' + tipoStr;
+      document.getElementById('cr-disp-concepto-orig').textContent = d.concepto || '(sin concepto)';
+      // Pre-fill: prov del matcher heurístico; concepto = primeros 50 del extracto.
+      crProv.value = (d.provSug || '').toUpperCase();
+      crConc.value = (d.concepto || '').slice(0, 50);
+      crProvNombre.textContent = '';
+      crProv.dispatchEvent(new Event('input'));
+      document.getElementById('cr-resumen-extracto').textContent =
+        'Movimiento del extracto · ' + tipoStr;
+      crModal.classList.remove('hidden');
+      // Foco en prov para que se pueda corregir rápido.
+      setTimeout(() => crProv.focus(), 50);
     });
   });
+
+  document.getElementById('cr-close').addEventListener('click', () => crModal.classList.add('hidden'));
+  document.getElementById('cr-cancel').addEventListener('click', () => crModal.classList.add('hidden'));
+  crModal.addEventListener('click', (e) => { if (e.target === crModal) crModal.classList.add('hidden'); });
+
+  crForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = crForm.querySelector('button[type=submit]');
+    const orig = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = 'Creando…'; }
+    try {
+      const r = await fetch(crForm.action, {
+        method: 'POST',
+        body: new FormData(crForm),
+        headers: { 'X-Requested-With': 'fetch' },
+        credentials: 'include',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.ok === false) {
+        throw new Error(data.error || ('HTTP ' + r.status));
+      }
+      // Success: cerrar modal + quitar fila + flash.
+      crModal.classList.add('hidden');
+      if (_crFilaActual) {
+        _crFilaActual.style.transition = 'opacity 250ms ease';
+        _crFilaActual.style.opacity = '0';
+        setTimeout(() => _crFilaActual && _crFilaActual.remove(), 260);
+      }
+      const banco = data.banco_nombre || 'banco';
+      const saldo = (data.saldo_nuevo != null)
+        ? Number(data.saldo_nuevo).toLocaleString('es', {minimumFractionDigits:2, maximumFractionDigits:2})
+        : '?';
+      const flash = document.createElement('div');
+      flash.className = 'fixed top-4 right-4 z-50 px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-lg text-sm';
+      flash.textContent = '✓ Creado #' + (data.id_transaccion || '?') + ' en ' + banco + ' (saldo $ ' + saldo + ')';
+      document.body.appendChild(flash);
+      setTimeout(() => flash.remove(), 4000);
+    } catch (err) {
+      alert('Error creando movimiento: ' + err.message);
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = orig; }
+    }
+  });
+
+  // ═══ Agrupado de comisiones/impuestos: 1 click confirma todo ═══
+  const cardAgrup = document.getElementById('card-agrupado-comisiones');
+  if (cardAgrup) {
+    const btnDescartar = document.getElementById('btn-descartar-agrupado');
+    const btnConfirmar = document.getElementById('btn-confirmar-agrupado');
+    const dataEl = document.getElementById('agrupado-comisiones-data');
+    let agrupado = null;
+    try { agrupado = JSON.parse(dataEl.textContent || 'null'); } catch (_) { agrupado = null; }
+
+    btnDescartar && btnDescartar.addEventListener('click', () => {
+      cardAgrup.style.transition = 'opacity 200ms ease';
+      cardAgrup.style.opacity = '0';
+      setTimeout(() => cardAgrup.remove(), 220);
+    });
+
+    btnConfirmar && btnConfirmar.addEventListener('click', async () => {
+      if (!agrupado || !Array.isArray(agrupado.items) || agrupado.items.length < 2) {
+        alert('No hay datos para agrupar.');
+        return;
+      }
+      const status = document.getElementById('agrup-status');
+      btnConfirmar.disabled = true;
+      btnConfirmar.innerHTML = 'Creando…';
+      status && (status.textContent = '');
+      try {
+        const fd = new FormData();
+        fd.append('csrf_token', '{{ csrf_token() }}');
+        fd.append('no_banco', '{{ no_banco }}');
+        fd.append('fecha', document.getElementById('agrup-fecha').value || '');
+        fd.append('concepto', document.getElementById('agrup-concepto').value || '');
+        fd.append('prov', document.getElementById('agrup-prov').value || '');
+        fd.append('reals_json', JSON.stringify(agrupado.items));
+        const r = await fetch('{{ url_for("conciliacion.hub_crear_bancsis_agrupado") }}', {
+          method: 'POST', body: fd, credentials: 'include',
+          headers: { 'X-Requested-With': 'fetch' },
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+
+        // Quitar todas las filas del extracto que son COMISION (grupo) del DOM.
+        document.querySelectorAll('tr.fila[data-grupo="COMISION"]').forEach(tr => {
+          tr.style.transition = 'opacity 220ms ease';
+          tr.style.opacity = '0';
+          setTimeout(() => tr.remove(), 240);
+        });
+        cardAgrup.style.transition = 'opacity 300ms ease';
+        cardAgrup.style.opacity = '0';
+        setTimeout(() => cardAgrup.remove(), 310);
+
+        const banco = data.banco_nombre || 'banco';
+        const flash = document.createElement('div');
+        flash.className = 'fixed top-4 right-4 z-50 px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-lg text-sm';
+        flash.textContent = '✓ Creado #' + (data.id_transaccion || '?') + ' en ' + banco + ' · ' + (data.n_matches || 0) + ' filas conciliadas';
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 4500);
+      } catch (err) {
+        status && (status.textContent = 'Error: ' + err.message);
+        btnConfirmar.disabled = false;
+        btnConfirmar.innerHTML = '✓ Crear 1 mov + conciliar';
+      }
+    });
+  }
 })();
 </script>
 {% endblock %}

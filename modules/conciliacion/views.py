@@ -23,6 +23,7 @@ from modules.conciliacion.matcher_banco import (
     confirmar_bancsis_only,
     confirmar_real_only,
     crear_transaccion_desde_real,
+    crear_transaccion_agrupada_desde_reals,
     match_manual,
     romper_match,
     historial as historial_matches,
@@ -628,11 +629,49 @@ def hub():
     kpis = _calc_kpis(data)
     banco_nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
 
+    # TMT 2026-05-26 dueña: pre-render del agrupado de comisiones/impuestos.
+    # Filtra real_only del grupo COMISION (regla heurística de categorizar.py)
+    # y calcula la suma + concepto sugerido. El template muestra esto como
+    # card sticky con un click para confirmar (no requiere botón "Agrupar").
+    comisiones = [
+        r for r in (data.get("real_only") or [])
+        if (r.get("cat") or {}).get("grupo") == "COMISION"
+    ]
+    sum_comisiones_c = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "C")
+    sum_comisiones_d = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "D")
+    neto_comisiones = round(sum_comisiones_c - sum_comisiones_d, 2)
+    fechas_com = [r.get("fecha") for r in comisiones if r.get("fecha")]
+    agrupado_comisiones = None
+    if len(comisiones) >= 2 and neto_comisiones != 0:
+        if fechas_com:
+            fmin, fmax = min(fechas_com), max(fechas_com)
+            concepto_default = (
+                f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}-{fmax[8:10]}/{fmax[5:7]}"
+                if fmin != fmax else
+                f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}"
+            )
+        else:
+            concepto_default = "Comisiones e impuestos agrupadas"
+        agrupado_comisiones = {
+            "n": len(comisiones),
+            "neto": neto_comisiones,
+            "documento": "NC" if neto_comisiones > 0 else "ND",
+            "concepto_default": concepto_default[:50],
+            "fecha_default": (max(fechas_com) if fechas_com else None),
+            "items": comisiones,
+        }
+
+    # Datalists para el modal de crear individual.
+    from modules.autocomplete.queries import clientes_para_datalist, proveedores_para_datalist
+    clientes_dl = clientes_para_datalist()
+    proveedores_dl = proveedores_para_datalist()
+
     # JSON inline (para botón "Confirmar matches" sin guardar en session).
     import json as _json
     matches_json = _json.dumps(data.get("matches") or [], separators=(",", ":"))
     real_only_json = _json.dumps(data.get("real_only") or [], separators=(",", ":"))
     bancsis_only_json = _json.dumps(data.get("bancsis_only") or [], separators=(",", ":"))
+    agrupado_json = _json.dumps(agrupado_comisiones, separators=(",", ":")) if agrupado_comisiones else "null"
 
     return render_template(
         "conciliacion/banco_resultado.html",
@@ -640,6 +679,10 @@ def hub():
         matches_json=matches_json,
         real_only_json=real_only_json,
         bancsis_only_json=bancsis_only_json,
+        agrupado_comisiones=agrupado_comisiones,
+        agrupado_json=agrupado_json,
+        clientes_dl=clientes_dl,
+        proveedores_dl=proveedores_dl,
         no_banco=no_banco,
         banco_nombre=banco_nombre,
         **kpis,
@@ -1151,6 +1194,11 @@ def hub_crear_bancsis():
         flash("Faltan datos del movimiento (fecha/monto/tipo).", "warn")
         return redirect(url_for("conciliacion.hub"))
     doc_override = (request.form.get("documento_override") or "").strip().upper() or None
+    # TMT 2026-05-26 dueña: campos extra del modal — prov (cliente/proveedor)
+    # + concepto_override (texto editable). Pre-llenados por la heurística
+    # del matcher (categorizar.cliente), la dueña puede sobreescribir.
+    prov_input = (request.form.get("prov") or "").strip().upper() or None
+    concepto_override = (request.form.get("concepto_override") or "").strip() or None
     # TMT 2026-05-26 dueña: si vino vía fetch (AJAX), devolver JSON en
     # lugar de redirect — así el frontend quita la fila sin recargar.
     is_ajax = request.headers.get("X-Requested-With") == "fetch"
@@ -1160,6 +1208,8 @@ def hub_crear_bancsis():
             real=real,
             usuario=(request.remote_user or "conciliacion"),
             documento=doc_override,
+            prov=prov_input,
+            concepto_override=concepto_override,
         )
     except Exception as e:
         nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
@@ -1182,6 +1232,86 @@ def hub_crear_bancsis():
         "ok",
     )
     return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco/crear-bancsis-agrupado", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_crear_bancsis_agrupado():
+    """Crea UNA tx BANCSIS con la suma de N reals y concilia N:1.
+
+    TMT 2026-05-26 dueña: en lugar de clickear 30 veces para crear 30
+    comisiones/impuestos chicos, viene pre-renderizado un card en el tab
+    'Solo en banco' con la suma + un click de confirmación.
+
+    Form:
+        no_banco (int), fecha (ISO opcional, default = max(reals.fecha)),
+        concepto (str opcional, default auto), prov (str ≤5 opcional),
+        reals_json (JSON: lista de dicts con fields del MovBanco).
+
+    Devuelve siempre JSON (este endpoint sólo se llama vía AJAX desde el
+    card sticky).
+    """
+    import json as _json
+    from datetime import date as _date
+    from decimal import Decimal as _Dec
+    from modules.conciliacion.parser_banco import MovBanco as _MB
+
+    no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
+    raw = request.form.get("reals_json") or "[]"
+    try:
+        items = _json.loads(raw)
+    except _json.JSONDecodeError:
+        return {"ok": False, "error": "reals_json inválido"}, 400
+    if not isinstance(items, list) or len(items) < 2:
+        return {"ok": False, "error": "se necesitan al menos 2 movs para agrupar"}, 400
+
+    reals: list[_MB] = []
+    for it in items:
+        try:
+            fecha_s = (it.get("fecha") or "").strip()
+            reals.append(_MB(
+                fecha=_date.fromisoformat(fecha_s) if fecha_s else None,
+                concepto=(it.get("concepto") or "").strip(),
+                documento=(it.get("documento") or "").strip(),
+                monto=_Dec(str(it.get("monto") or "0")),
+                saldo=_Dec("0"),
+                codigo=(it.get("codigo") or "").strip(),
+                tipo=(it.get("tipo") or "").strip().upper(),
+                oficina=(it.get("oficina") or "").strip(),
+            ))
+        except Exception as e:
+            return {"ok": False, "error": f"item inválido: {e}"}, 400
+
+    fecha_str = (request.form.get("fecha") or "").strip()
+    fecha = _date.fromisoformat(fecha_str) if fecha_str else None
+    concepto = (request.form.get("concepto") or "").strip() or None
+    prov = (request.form.get("prov") or "").strip().upper() or None
+
+    try:
+        res = crear_transaccion_agrupada_desde_reals(
+            no_banco=no_banco,
+            reals=reals,
+            fecha=fecha,
+            concepto=concepto,
+            prov=prov,
+            usuario=(request.remote_user or "conciliacion"),
+        )
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}, 400
+    except Exception as e:
+        return {"ok": False, "error": f"Error al crear: {e}"}, 500
+
+    nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+    return {
+        "ok": True,
+        "id_transaccion": res["id_transaccion"],
+        "documento": res["documento"],
+        "monto_neto": float(res["monto_neto"]),
+        "n_matches": res["n_matches"],
+        "saldo_nuevo": res["saldo_nuevo"],
+        "banco_nombre": nombre,
+    }
 
 
 @conciliacion_bp.route("/banco/aceptar-real-only", methods=["POST"])
