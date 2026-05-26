@@ -222,9 +222,12 @@ def transicionar_stat(
         )
 
     with db.tx() as conn:
+        # TMT 2026-05-26: incluimos doc_banco — al depositar individual lo
+        # propagamos a transaccion_bancaria.numreferencia para que el matcher
+        # de conciliación lo use como Rule #1.
         ch = db.fetch_one(
             "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, "
-            "no_banco, banco, fechad "
+            "no_banco, banco, fechad, doc_banco "
             "FROM scintela.cheque WHERE id_cheque = %s",
             (id_cheque,),
             conn=conn,
@@ -251,8 +254,9 @@ def transicionar_stat(
             banco_destino = no_banco or (1 if stat_destino == "B" else 2)
             # TMT 2026-05-26 dueña: numreferencia = doc_banco si la dueña
             # cargó N° de comprobante; fallback id_cheque. Es la rule #1
-            # del matcher de conciliación bancaria.
-            num_ref = (doc_banco or "").strip() or str(id_cheque)
+            # del matcher de conciliación bancaria. Se lee del cheque row
+            # (la dueña lo carga al ingresar el cheque o al depositar).
+            num_ref = (ch.get("doc_banco") or "").strip() or str(id_cheque)
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=banco_destino,

@@ -578,8 +578,18 @@ def hub():
     """
     if request.method == "GET":
         bancos = queries.bancos_disponibles()
-        ultimos = queries.ultimos_extractos(limit=5)
-        uploads = queries.uploads_recientes(limit=15)
+        try:
+            ultimos = queries.ultimos_extractos(limit=5)
+        except Exception:
+            ultimos = []
+        try:
+            uploads = queries.uploads_recientes(limit=15)
+        except Exception as _e:
+            import logging
+            logging.getLogger("programa_core.conciliacion").exception(
+                "uploads_recientes falló: %s", _e
+            )
+            uploads = []
         return render_template(
             "conciliacion/banco_upload.html",
             bancos=bancos,
@@ -652,38 +662,60 @@ def hub():
     # Filtra real_only del grupo COMISION (regla heurística de categorizar.py)
     # y calcula la suma + concepto sugerido. El template muestra esto como
     # card sticky con un click para confirmar (no requiere botón "Agrupar").
-    comisiones = [
-        r for r in (data.get("real_only") or [])
-        if (r.get("cat") or {}).get("grupo") == "COMISION"
-    ]
-    sum_comisiones_c = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "C")
-    sum_comisiones_d = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "D")
-    neto_comisiones = round(sum_comisiones_c - sum_comisiones_d, 2)
-    fechas_com = [r.get("fecha") for r in comisiones if r.get("fecha")]
+    # Fail-soft: si por algún edge case esto rompe, sigue sin agrupado.
     agrupado_comisiones = None
-    if len(comisiones) >= 2 and neto_comisiones != 0:
-        if fechas_com:
-            fmin, fmax = min(fechas_com), max(fechas_com)
-            concepto_default = (
-                f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}-{fmax[8:10]}/{fmax[5:7]}"
-                if fmin != fmax else
-                f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}"
-            )
-        else:
-            concepto_default = "Comisiones e impuestos agrupadas"
-        agrupado_comisiones = {
-            "n": len(comisiones),
-            "neto": neto_comisiones,
-            "documento": "NC" if neto_comisiones > 0 else "ND",
-            "concepto_default": concepto_default[:50],
-            "fecha_default": (max(fechas_com) if fechas_com else None),
-            "items": comisiones,
-        }
+    try:
+        comisiones = [
+            r for r in (data.get("real_only") or [])
+            if (r.get("cat") or {}).get("grupo") == "COMISION"
+        ]
+        sum_comisiones_c = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "C")
+        sum_comisiones_d = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "D")
+        neto_comisiones = round(sum_comisiones_c - sum_comisiones_d, 2)
+        # fecha viene como ISO string del serializer.
+        fechas_com = [str(r.get("fecha")) for r in comisiones if r.get("fecha")]
+        if len(comisiones) >= 2 and neto_comisiones != 0:
+            if fechas_com:
+                fmin, fmax = min(fechas_com), max(fechas_com)
+                concepto_default = (
+                    f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}-{fmax[8:10]}/{fmax[5:7]}"
+                    if fmin != fmax else
+                    f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}"
+                )
+            else:
+                concepto_default = "Comisiones e impuestos agrupadas"
+            agrupado_comisiones = {
+                "n": len(comisiones),
+                "neto": neto_comisiones,
+                "documento": "NC" if neto_comisiones > 0 else "ND",
+                "concepto_default": concepto_default[:50],
+                "fecha_default": (max(fechas_com) if fechas_com else None),
+                "items": comisiones,
+            }
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "agrupado_comisiones prep falló: %s", _e
+        )
+        agrupado_comisiones = None
 
-    # Datalists para el modal de crear individual.
-    from modules.autocomplete.queries import clientes_para_datalist, proveedores_para_datalist
-    clientes_dl = clientes_para_datalist()
-    proveedores_dl = proveedores_para_datalist()
+    # Datalists para el modal de crear individual. Fail-soft también.
+    try:
+        from modules.autocomplete.queries import clientes_para_datalist, proveedores_para_datalist
+        clientes_dl = clientes_para_datalist()
+        proveedores_dl = proveedores_para_datalist()
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "datalist fetch falló: %s", _e
+        )
+        clientes_dl = []
+        proveedores_dl = []
+
+    # TMT 2026-05-26 dueña: tracking del upload (fail-soft, no bloquea).
+    # Esto es el INSERT que va a scintela.conciliacion_upload, separado del
+    # render. Si la tabla todavía no existe, _bootstrap intenta crearla.
+    # NO debe romper el flow de conciliación.
 
     # JSON inline (para botón "Confirmar matches" sin guardar en session).
     import json as _json

@@ -119,8 +119,11 @@ def test_editar_concepto_y_observacion(monkeypatch):
     assert res["fechad_shifted_lunes"] is False
     sqls = _executes_str(fake.executes)
     assert "update scintela.cheque" in sqls
-    assert "concepto=%s" in sqls
-    assert "[e] ajuste" in str(fake.executes).lower()
+    # TMT 2026-05-26: scintela.cheque no tiene columna `concepto`. Si el
+    # form manda concepto, se stashea en observacion con prefix [C].
+    body = str(fake.executes).lower()
+    assert "[c] nuevo concepto" in body
+    assert "[e] ajuste" in body
 
 
 def test_editar_fechad_domingo_shifta_a_lunes(monkeypatch):
