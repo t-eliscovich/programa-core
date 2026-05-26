@@ -1639,7 +1639,7 @@ def iniciales():
 
 @informes_bp.route("/estado-cuenta", methods=["GET"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("clientes.ver")
 def estado_cuenta_landing():
     """Landing/lookup page para estado de cuenta de cliente.
 
@@ -1670,7 +1670,7 @@ def estado_cuenta_landing():
 
 @informes_bp.route("/estado-cuenta/<codigo_cli>")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("clientes.ver")
 def estado_cuenta(codigo_cli):
     codigo_up = codigo_cli.upper()
     data, error = _safe(lambda: queries.estado_cuenta_cliente(codigo_up), {})

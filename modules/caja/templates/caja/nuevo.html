@@ -130,17 +130,19 @@
         </div>
       </div>
 
-      {# TMT 2026-05-21 — Sección 2: atajos contextuales por tipo. Antes los
-         5 atajos (PICH/INTER/PR/IN/RR) se mostraban siempre. Ahora:
-            tipo=E (entrada) → solo PICH + INTER (depósito de plata que ENTRA a caja)
-            tipo=S (salida)  → solo PR + IN + RR (pagos que SALEN de caja)
-         Resultado: 5 botones permanentes → 2-3 visibles según contexto. #}
+      {# TMT 2026-05-26 dueña: depósito a Pichincha/Internacional es SALIDA
+         de caja (la plata sale de caja para ir al banco). Antes estaba
+         como ENTRADA (data-tipo="E") — corregido a "S".
+         Resumen actual:
+            tipo=E (entrada) → ingresos a caja (sin atajos prefijados).
+            tipo=S (salida)  → PICH + INTER (depósitos a banco) +
+                               PR + IN + RR (pagos que SALEN de caja). #}
       <div class="md:col-span-2 -mb-2">
         <div class="text-xs text-slate-500 mb-2" id="atajos-titulo">
           <strong>2.</strong> O elegí un atajo de operación frecuente (opcional):
         </div>
         <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="caja-atajos">
-          <button type="button" data-prefix="PICH " data-needs="ref" data-tipo="E"
+          <button type="button" data-prefix="PICH " data-needs="ref" data-tipo="S"
                   class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
             <span class="text-lg">🏦</span>
             <span class="flex-1">
@@ -148,7 +150,7 @@
               <div class="text-[10px] text-slate-400">PICH + nº depósito / referencia</div>
             </span>
           </button>
-          <button type="button" data-prefix="INTER " data-needs="ref" data-tipo="E"
+          <button type="button" data-prefix="INTER " data-needs="ref" data-tipo="S"
                   class="atajo group flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-left text-xs transition">
             <span class="text-lg">🏦</span>
             <span class="flex-1">
@@ -245,8 +247,9 @@
           const selectedText = document.getElementById('vchip-selected-text');
 
           // TMT 2026-05-21 — filtrado contextual:
-          //   tipo=E → V-chips OFF, atajos PICH/INTER visibles
-          //   tipo=S → V-chips ON,  atajos PR/IN/RR visibles
+          //   tipo=E → V-chips OFF, sin atajos prefijados (ingreso libre)
+          //   tipo=S → V-chips ON,  atajos PICH/INTER/PR/IN/RR visibles
+          //   (TMT 2026-05-26: depósitos a banco son salida de caja).
           function toggleByTipo() {
             const t = (tipoSelect.value || '').toUpperCase();
             // V-chips (sólo en salida)
