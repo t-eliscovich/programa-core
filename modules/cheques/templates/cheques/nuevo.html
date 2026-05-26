@@ -1012,6 +1012,11 @@
   }
   codigoInput.addEventListener('blur', extraerCodigoCli);
   codigoInput.addEventListener('change', extraerCodigoCli);
+
+  // TMT 2026-05-26 — FIX TDZ: `form` se referenciaba ANTES de su `const`
+  // declaration (estaba más abajo en línea 1032), lo que tiraba
+  // ReferenceError y rompía TODO el IIFE de cobranza. Movido acá arriba.
+  const form = document.getElementById('cheque-form');
   // Antes de submit, garantizar que el value sea sólo código.
   if (form) {
     form.addEventListener('submit', extraerCodigoCli, true);
@@ -1029,7 +1034,6 @@
   // dBase legacy: "Faltan X centavos, OK?"). Si la diferencia es grande
   // (> $50), el backend rechaza.
   const TOLERANCIA_USD = 50.00;
-  const form = document.getElementById('cheque-form');
   if (form) {
     form.addEventListener('submit', (e) => {
       if (anticipoChk && anticipoChk.checked) return;  // anticipos no aplican
