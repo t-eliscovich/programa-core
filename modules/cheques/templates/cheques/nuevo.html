@@ -98,7 +98,7 @@
                  Z/P/D/B/X/1/2. La fecha "A depositar" sólo se habilita
                  cuando estado=P (postdatado). En los otros estados la
                  fecha queda lockeada a la fecha de recibido. #}
-              <div class="grid grid-cols-4 gap-2 items-end">
+              <div class="grid grid-cols-5 gap-2 items-end">
                 <label class="flex flex-col">
                   <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
                   <input type="text" name="importe[]" value="{{ form.importe or '' }}"
@@ -129,6 +129,14 @@
                   <input type="date" name="fechad[]" value="{{ form.fechad_iso or form.fechad or '' }}"
                          class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad disabled:bg-slate-100 disabled:text-slate-400"
                          disabled>
+                </label>
+                {# TMT 2026-05-26 dueña: "agregar en cobranza documento del banco".
+                   Campo libre — N° de comprobante / depósito / transferencia. #}
+                <label class="flex flex-col">
+                  <span class="text-xs text-slate-600">Doc. banco</span>
+                  <input type="text" name="doc_banco[]" value="{{ form.doc_banco or '' }}"
+                         class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-docbanco"
+                         maxlength="40" placeholder="N° depósito/transf.">
                 </label>
               </div>
             </div>

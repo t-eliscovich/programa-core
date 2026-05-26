@@ -180,13 +180,22 @@
     {# Grupo 3: Fecha (desde — hasta) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha desde</label>
-      <input type="date" name="desde" value="{{ desde or '' }}"
+      <input type="date" name="desde" id="fecha-desde-input" value="{{ desde or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha hasta</label>
-      <input type="date" name="hasta" value="{{ hasta or '' }}"
+      <input type="date" name="hasta" id="fecha-hasta-input" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    {# TMT 2026-05-26 dueña: shortcut "Hoy" para filtrar el día actual sin
+       tipear fechas. Setea ambos campos = hoy y dispara filtrar. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">&nbsp;</label>
+      <button type="button" onclick="(function(){var d=new Date().toISOString().slice(0,10);document.getElementById('fecha-desde-input').value=d;document.getElementById('fecha-hasta-input').value=d;document.querySelector('form button[class*=bg-slate-900]').click();})()"
+              class="text-sm px-3 py-1.5 rounded border border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/50">
+        Hoy
+      </button>
     </div>
     {# Búsqueda libre (nombre, número de factura) — opcional, separada #}
     <div>

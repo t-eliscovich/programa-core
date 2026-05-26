@@ -122,6 +122,12 @@ def nuevo():
     if not stats_raw:
         v = request.form.get("stat")
         stats_raw = [v] if v else []
+    # TMT 2026-05-26 dueña: nuevo campo "Doc. banco" por cheque (N° de
+    # comprobante / depósito / transferencia). Campo libre opcional.
+    docs_banco_raw = request.form.getlist("doc_banco[]")
+    if not docs_banco_raw:
+        v = request.form.get("doc_banco")
+        docs_banco_raw = [v] if v else []
     # Limpiar y alinear las listas — cada cheque puede tener su propia
     # fecha de depósito.
     cheques_in: list[dict] = []
@@ -131,6 +137,8 @@ def nuevo():
         fd_clean = fechads_raw[i] if i < len(fechads_raw) else None
         st_clean = (stats_raw[i] if i < len(stats_raw) else "") or "Z"
         st_clean = st_clean.strip().upper()[:1] or "Z"
+        db_clean = (docs_banco_raw[i] if i < len(docs_banco_raw) else "") or ""
+        db_clean = db_clean.strip()[:40] or None
         if not n_clean and not (i_clean and str(i_clean).strip()):
             continue  # bloque totalmente vacío → skip
         # fechad por defecto: si el cheque NO es postdatado, colapsa a la
@@ -147,6 +155,7 @@ def nuevo():
                 "importe": parse_monto(i_clean),
                 "fechad": cheque_fechad,
                 "stat": st_clean,
+                "doc_banco": db_clean,
                 "raw_importe": i_clean,
             }
         )
@@ -439,6 +448,8 @@ def nuevo():
                     stat=ch_in.get("stat") or "Z",
                     clave=clave,
                     es_anticipo=es_anticipo,
+                    # TMT 2026-05-26 — doc_banco por cheque (N° comprobante/depósito).
+                    doc_banco=ch_in.get("doc_banco"),
                     usuario=usuario,
                     batch_id=batch_id,
                     conn=conn,

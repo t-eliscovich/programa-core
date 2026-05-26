@@ -1414,6 +1414,7 @@ def crear(
     prov: str | None = None,
     clave: str | None = None,
     es_anticipo: bool = False,
+    doc_banco: str | None = None,
     usuario: str = "web",
     batch_id: str | None = None,
     conn=None,
@@ -1499,16 +1500,18 @@ def crear(
         # snapshotea con COALESCE(fechad_original, fechad). Re-postergar no
         # lo toca (queda la 1ra fechad). Los displays usan NULL = "no
         # postergado".
+        # TMT 2026-05-26: agregada col `doc_banco` (migration 0051) — N° de
+        # comprobante/depósito/transferencia. Si no se pasa queda NULL.
         row = (
             db.execute_returning(
                 """
             INSERT INTO scintela.cheque
                 (no_cheque, fecha, fechad, fecha_recibido,
                  codigo_cli, importe, no_banco,
-                 banco, stat, fechaing, prov, clave, usuario_crea)
+                 banco, stat, fechaing, prov, clave, doc_banco, usuario_crea)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, NULL, %s, %s, %s)
+                    %s, %s, NULL, %s, %s, %s, %s)
             RETURNING id_cheque, no_cheque
             """,
                 (
@@ -1523,6 +1526,7 @@ def crear(
                     stat,
                     (prov or None),
                     (clave or None) and clave[:5],
+                    (doc_banco or None),
                     usuario,
                 ),
                 conn=conn,
