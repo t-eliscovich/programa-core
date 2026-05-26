@@ -679,46 +679,75 @@ def hub():
     kpis = _calc_kpis(data)
     banco_nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
 
-    # TMT 2026-05-26 dueña: pre-render del agrupado de comisiones/impuestos.
-    # Filtra real_only del grupo COMISION (regla heurística de categorizar.py)
-    # y calcula la suma + concepto sugerido. El template muestra esto como
-    # card sticky con un click para confirmar (no requiere botón "Agrupar").
-    # Fail-soft: si por algún edge case esto rompe, sigue sin agrupado.
-    agrupado_comisiones = None
+    # TMT 2026-05-26 dueña: pre-render del agrupado de comisiones/impuestos
+    # POR DÍA (no un solo bloque). Cada día con ≥2 movs COMISION genera su
+    # propio card. Si BANCSIS ya tiene un NC/ND del mismo día y monto =
+    # neto, se marca como `ya_cargado=True` para que la dueña no duplique.
+    # Fail-soft: si algo rompe, queda lista vacía.
+    agrupados_comisiones_por_dia: list[dict] = []
     try:
         comisiones = [
             r for r in (data.get("real_only") or [])
             if (r.get("cat") or {}).get("grupo") == "COMISION"
         ]
-        sum_comisiones_c = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "C")
-        sum_comisiones_d = sum(float(r.get("monto") or 0) for r in comisiones if (r.get("tipo") or "") == "D")
-        neto_comisiones = round(sum_comisiones_c - sum_comisiones_d, 2)
-        # fecha viene como ISO string del serializer.
-        fechas_com = [str(r.get("fecha")) for r in comisiones if r.get("fecha")]
-        if len(comisiones) >= 2 and neto_comisiones != 0:
-            if fechas_com:
-                fmin, fmax = min(fechas_com), max(fechas_com)
-                concepto_default = (
-                    f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}-{fmax[8:10]}/{fmax[5:7]}"
-                    if fmin != fmax else
-                    f"Comisiones e impuestos {fmin[8:10]}/{fmin[5:7]}"
-                )
-            else:
-                concepto_default = "Comisiones e impuestos agrupadas"
-            agrupado_comisiones = {
-                "n": len(comisiones),
-                "neto": neto_comisiones,
-                "documento": "NC" if neto_comisiones > 0 else "ND",
-                "concepto_default": concepto_default[:50],
-                "fecha_default": (max(fechas_com) if fechas_com else None),
-                "items": comisiones,
-            }
+        # Group by fecha (ISO string del serializer).
+        por_dia: dict[str, list[dict]] = {}
+        for r in comisiones:
+            f = str(r.get("fecha") or "")
+            if not f:
+                continue
+            por_dia.setdefault(f, []).append(r)
+
+        # Para detectar "ya cargado": mirar bancsis_only del mismo día que
+        # sea NC/ND con monto ≈ neto_dia.
+        bancsis_periodo = (data.get("bancsis_only") or []) + [
+            m.get("bancsis", {}) for m in (data.get("matches") or [])
+        ]
+
+        for fecha_dia, items in sorted(por_dia.items()):
+            if len(items) < 2:
+                continue  # 1 sola comisión no se agrupa
+            sum_c = sum(float(it.get("monto") or 0) for it in items if (it.get("tipo") or "") == "C")
+            sum_d = sum(float(it.get("monto") or 0) for it in items if (it.get("tipo") or "") == "D")
+            neto = round(sum_c - sum_d, 2)
+            if neto == 0:
+                continue
+            documento = "NC" if neto > 0 else "ND"
+            abs_neto = abs(neto)
+            # Detectar si BANCSIS del mismo día ya tiene un NC/ND con ese monto.
+            ya_cargado_id = None
+            for bk in bancsis_periodo:
+                bk_fecha = str(bk.get("fecha") or "")
+                bk_doc = (bk.get("documento") or "").upper()
+                bk_imp = abs(float(bk.get("importe") or 0))
+                if bk_fecha == fecha_dia and bk_doc in ("NC", "ND") and abs(bk_imp - abs_neto) < 0.01:
+                    ya_cargado_id = bk.get("id_transaccion")
+                    break
+            try:
+                dia_mostrar = f"{fecha_dia[8:10]}/{fecha_dia[5:7]}"
+            except Exception:
+                dia_mostrar = fecha_dia
+            agrupados_comisiones_por_dia.append({
+                "fecha": fecha_dia,
+                "fecha_mostrar": dia_mostrar,
+                "n": len(items),
+                "neto": neto,
+                "documento": documento,
+                "concepto_default": f"Comisiones e impuestos {dia_mostrar}"[:50],
+                "items": items,
+                "ya_cargado": ya_cargado_id is not None,
+                "ya_cargado_id": ya_cargado_id,
+            })
     except Exception as _e:
         import logging
         logging.getLogger("programa_core.conciliacion").exception(
-            "agrupado_comisiones prep falló: %s", _e
+            "agrupados_comisiones_por_dia prep falló: %s", _e
         )
-        agrupado_comisiones = None
+        agrupados_comisiones_por_dia = []
+
+    # Compat: dejo el viejo `agrupado_comisiones` apuntando al primer día
+    # para no romper el template existente mientras lo migro.
+    agrupado_comisiones = agrupados_comisiones_por_dia[0] if agrupados_comisiones_por_dia else None
 
     # Datalists para el modal de crear individual. Fail-soft también.
     try:

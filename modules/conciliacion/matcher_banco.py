@@ -492,7 +492,7 @@ def matchear_extracto_banco(
     movs_real: Iterable[MovBanco],
     no_banco: int = _BANCO_PICHINCHA_NO,
     dias_tolerancia: int | None = None,
-    monto_tolerancia: float = 5.0,
+    monto_tolerancia: float = 0.01,  # TMT 2026-05-26 dueña: era 5.0 — matcheaba $0.49 con $2.00. Bajado a centavo para que P1 solo de exactos.
 ) -> ConciliacionBanco:
     """Cross-reference REAL vs BANCSIS bidireccional.
 
@@ -561,6 +561,28 @@ def matchear_extracto_banco(
         except ValueError:
             return s
 
+    # TMT 2026-05-26 dueña: helper para clasificar movs reales antes del match.
+    # `_es_comision_real` mira el concepto contra la regex de COMISION_BANCARIA/
+    # IMPUESTO. Si matchea → el mov NO va a Coinciden, sí va al card de
+    # agrupado por día. Esto evita matches falsos como '-0.49 vs 2.00'.
+    from modules.conciliacion.categorizar import categorizar as _categorizar_min
+
+    def _es_comision_real(m: MovBanco) -> bool:
+        try:
+            cat = _categorizar_min(m.concepto or "", m.tipo or "")
+            return (cat.grupo or "").upper() == "COMISION"
+        except Exception:
+            return False
+
+    def _es_cheque_entrante(real: MovBanco, bk: MovBancsis) -> bool:
+        """True si el match candidato es un cheque depositado (real C ↔ bk DE).
+
+        La dueña pidió que los cheques se matcheen SOLO por suma del día
+        (P1.5), nunca por cliente individual. Esto descarta P2/P3.5 para
+        cheques pero los permite para TR (transferencias).
+        """
+        return (real.tipo or "").upper() == "C" and (bk.documento or "").upper() == "DE"
+
     movs_post_p0: list[MovBanco] = []
     for real in movs_real_filtrados:
         ref_real = _norm_doc(real.documento)
@@ -610,6 +632,11 @@ def matchear_extracto_banco(
     real_sin_match: list[MovBanco] = []
 
     for real in movs_post_p0:
+        # TMT 2026-05-26 dueña: comisiones NUNCA van a Coinciden; salen
+        # por el flow de agrupado por día. Las saltamos en P1/2/3/3.5/4.
+        if _es_comision_real(real):
+            real_sin_match.append(real)
+            continue
         candidatos: list[tuple[float, MovBancsis]] = []
         for bk in bancsis:
             if bk.id_transaccion in bancsis_usado:
@@ -719,6 +746,10 @@ def matchear_extracto_banco(
     # Cubre el caso de drift de fecha grande con cliente conocido.
     aun_sin_match: list[MovBanco] = []
     for real in real_sin_match:
+        # Skip comisiones (van al card agrupado por día).
+        if _es_comision_real(real):
+            aun_sin_match.append(real)
+            continue
         codigo_concepto, _nombre = _extraer_cliente_concepto(real.concepto)
         if not codigo_concepto:
             aun_sin_match.append(real)
@@ -728,6 +759,10 @@ def matchear_extracto_banco(
             if bk.id_transaccion in bancsis_usado:
                 continue
             if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            # TMT 2026-05-26 dueña: NO matchear cheques cheque-por-cliente
+            # individual. Los cheques solo van por P0 (doc) o P1.5 (suma día).
+            if _es_cheque_entrante(real, bk):
                 continue
             if abs(float(real.monto) - bk.importe) > monto_tolerancia:
                 continue
@@ -751,11 +786,17 @@ def matchear_extracto_banco(
     # monto + tipo, lo enlazamos. Si hay varios, sigue a P4 (match grupal).
     sin_match_pass3: list[MovBanco] = []
     for real in aun_sin_match:
+        if _es_comision_real(real):
+            sin_match_pass3.append(real)
+            continue
         candidatos = []
         for bk in bancsis:
             if bk.id_transaccion in bancsis_usado:
                 continue
             if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            # Skip cheques entrantes (van por P0/P1.5).
+            if _es_cheque_entrante(real, bk):
                 continue
             if abs(float(real.monto) - bk.importe) > 0.01:
                 continue
@@ -776,6 +817,12 @@ def matchear_extracto_banco(
     # cercana, los matcheamos. Cubre redondeos y cambios chicos de monto.
     aun_sin_match_p35: list[MovBanco] = []
     for real in aun_sin_match:
+        # P3.5 ELIMINADO para cheques + comisiones (dueña 2026-05-26):
+        # generaba ruido falsamente positivo. Solo se ejecuta para
+        # TRANSFERENCIAS entrantes/salientes (TR/ND/NC).
+        if _es_comision_real(real):
+            aun_sin_match_p35.append(real)
+            continue
         codigo_concepto, _ = _extraer_cliente_concepto(real.concepto)
         if not codigo_concepto:
             aun_sin_match_p35.append(real)
@@ -785,6 +832,9 @@ def matchear_extracto_banco(
             if bk.id_transaccion in bancsis_usado:
                 continue
             if not _es_tipo_compatible(real.tipo, bk.documento):
+                continue
+            # Skip cheques entrantes (van por P0/P1.5).
+            if _es_cheque_entrante(real, bk):
                 continue
             if (bk.prov or "").upper().strip() != codigo_concepto.upper():
                 continue
@@ -830,7 +880,10 @@ def matchear_extracto_banco(
     aun_sin_match_p4: list[MovBanco] = []
     for key, reals_grupo in pendientes_real.items():
         bks_grupo = pendientes_bancsis.get(key, [])
-        if len(reals_grupo) == len(bks_grupo) and len(reals_grupo) > 0:
+        # TMT 2026-05-26 dueña: P4 grupal arbitrario solo si N ≤ 3 pares.
+        # Para N grandes (ej. 10+ cheques) el match arbitrario genera ruido —
+        # mejor que vayan a sugerencias para que la dueña los matchee a mano.
+        if len(reals_grupo) == len(bks_grupo) and 0 < len(reals_grupo) <= 3:
             # Match grupal arbitrario (FIFO por fecha cercana)
             reals_sorted = sorted(reals_grupo, key=lambda m: m.fecha or date.min)
             bks_sorted = sorted(bks_grupo, key=lambda b: b.fecha or date.min)
