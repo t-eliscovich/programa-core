@@ -577,7 +577,10 @@ def hub():
           "Aceptar bancsis-only" viajan inline en hidden form fields.
     """
     if request.method == "GET":
-        bancos = queries.bancos_disponibles()
+        try:
+            bancos = queries.bancos_disponibles()
+        except Exception:
+            bancos = []
         try:
             ultimos = queries.ultimos_extractos(limit=5)
         except Exception:
