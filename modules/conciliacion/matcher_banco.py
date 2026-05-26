@@ -67,12 +67,16 @@ class MovBancsis:
 
 @dataclass
 class Match:
-    """Un movimiento REAL del banco emparejado con un MovBancsis."""
+    """Un movimiento REAL del banco emparejado con un MovBancsis (o N en match grupal N-a-1)."""
 
     real: MovBanco
     bancsis: MovBancsis
     score: float       # 0 = perfecto. Mayor = más drift.
     razon: str         # explicación legible
+    # TMT 2026-05-26 dueña: para match N-a-1 (1 depósito banco ↔ N cheques
+    # programa del mismo día). bancsis es uno solo (el "representativo");
+    # componentes son TODOS los bancsis que componen la suma. Si N=1, vacío.
+    componentes: list = field(default_factory=list)
 
 
 @dataclass
@@ -646,6 +650,68 @@ def matchear_extracto_banco(
             cont_p1 += 1
         else:
             real_sin_match.append(real)
+
+    # ─── PASS 1.5: match GRUPAL N-a-1 por suma del día ──────────────────
+    # TMT 2026-05-26 dueña: 'no matchees cada cheque con su cliente, tenemos
+    # que matchear cuanto cheques total ese dia deposite cuanto dice el
+    # deposito del banco'.
+    # Para cada real (tipo C) sin match: buscar bancsis tipo C (DE/NC) del
+    # mismo día que sumados EXACTO igualen el monto del depósito banco.
+    # Si encuentra → match N-a-1 (1 fila banco ↔ N filas programa).
+    # Usa ventana ±2d para tolerar viernes-lunes.
+    real_sin_match_p15: list[MovBanco] = []
+    for real in real_sin_match:
+        if (real.tipo or "").upper() != "C":
+            real_sin_match_p15.append(real)
+            continue
+        # Bancsis candidatos: tipo C (entrada), mismo día ±2d, no usados.
+        candidatos = [
+            bk for bk in bancsis
+            if bk.id_transaccion not in bancsis_usado
+            and bk.documento in _DOCS_CREDITO
+            and real.fecha and bk.fecha
+            and abs((real.fecha - bk.fecha).days) <= 2
+        ]
+        if len(candidatos) < 2:
+            real_sin_match_p15.append(real)
+            continue
+        # Buscar SUBSET cuya suma sea EXACTA (±1ct) al monto del banco.
+        # Greedy: ordenar por importe desc, sumar mientras no exceda.
+        target = round(float(real.monto), 2)
+        candidatos.sort(key=lambda b: -b.importe)
+        subset: list[MovBancsis] = []
+        suma = 0.0
+        for bk in candidatos:
+            if round(suma + bk.importe, 2) <= target + 0.01:
+                subset.append(bk)
+                suma = round(suma + bk.importe, 2)
+                if abs(suma - target) < 0.01:
+                    break
+        if abs(suma - target) >= 0.01 or len(subset) < 2:
+            # Greedy no llegó al exacto — intentamos TODOS los del día como ultimo recurso.
+            mismo_dia = [bk for bk in candidatos if bk.fecha == real.fecha]
+            if mismo_dia and abs(sum(bk.importe for bk in mismo_dia) - target) < 0.01:
+                subset = mismo_dia
+                suma = target
+            else:
+                real_sin_match_p15.append(real)
+                continue
+        # Match grupal: usar el primero como "representativo" (con razón),
+        # componentes son todos los demás.
+        if len(subset) >= 2 and abs(suma - target) < 0.01:
+            principal = subset[0]
+            componentes = [bk.id_transaccion for bk in subset]
+            razon = f"P1.5·grupo N=1 ↔ {len(subset)} cheques del {real.fecha:%d/%m} ${target:.2f}"
+            res.matches.append(Match(
+                real=real, bancsis=principal, score=0.0,
+                razon=razon, componentes=componentes,
+            ))
+            for bk in subset:
+                bancsis_usado.add(bk.id_transaccion)
+            cont_p1 += 1
+        else:
+            real_sin_match_p15.append(real)
+    real_sin_match = real_sin_match_p15
 
     # ─── PASS 2: cliente extraído + monto exacto (fecha cualquiera) ─────
     # Para los REAL sin match en P1, buscar BANCSIS con mismo CLIENTE

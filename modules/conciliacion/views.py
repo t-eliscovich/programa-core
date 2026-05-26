@@ -455,6 +455,9 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "razon": m.razon,
                 "es_exacto": m.score < 0.01,
                 "cat": _cat_to_dict(_cats_match[i]) if i < len(_cats_match) and _cats_match[i] else _cat_to_dict(None),
+                # TMT 2026-05-26 dueña: componentes para match N-a-1
+                # (1 depósito banco ↔ N cheques programa del mismo día).
+                "componentes": list(getattr(m, "componentes", []) or []),
             }
             for i, m in enumerate(res.matches)
         ],
