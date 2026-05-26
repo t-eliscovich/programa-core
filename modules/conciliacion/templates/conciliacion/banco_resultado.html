@@ -356,7 +356,9 @@
                       data-oficina="{{ r.oficina|e }}"
                       title="{{ r.sugerencias|length }} mov del programa coinciden por monto">💡 {{ r.sugerencias|length }}</button>
               {% endif %}
-              <form method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="inline">
+              {# TMT 2026-05-26 dueña: + Crear ahora AJAX (no navega). Al
+                 success quita la fila inline para no perder el diff. #}
+              <form method="POST" action="{{ url_for('conciliacion.hub_crear_bancsis') }}" class="inline form-crear-bancsis">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="no_banco" value="{{ no_banco }}">
                 <input type="hidden" name="real_fecha" value="{{ r.fecha }}">
@@ -367,7 +369,7 @@
                 <input type="hidden" name="real_codigo" value="{{ r.codigo }}">
                 <input type="hidden" name="real_oficina" value="{{ r.oficina }}">
                 <button class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
-                        title="Crear el movimiento en programa Pichincha">+ Crear</button>
+                        title="Crear el movimiento en programa (no recarga la pantalla)">+ Crear</button>
               </form>
               <button type="button"
                       class="px-1.5 py-1 rounded text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 btn-match-manual"
@@ -824,6 +826,45 @@
   });
   mmClose.addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  // TMT 2026-05-26 dueña: + Crear sin perder pantalla.
+  // Intercepta el submit, hace fetch, y al success quita la fila + actualiza KPIs.
+  document.querySelectorAll('form.form-crear-bancsis').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('button[type=submit], button');
+      const original = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+      try {
+        const r = await fetch(form.action, {
+          method: 'POST',
+          body: new FormData(form),
+          headers: { 'X-Requested-With': 'fetch' },
+          credentials: 'include',
+        });
+        if (r.ok || r.redirected) {
+          // Quitar la fila padre del diff
+          const tr = form.closest('tr.fila');
+          if (tr) {
+            tr.style.transition = 'opacity 250ms ease';
+            tr.style.opacity = '0';
+            setTimeout(() => tr.remove(), 260);
+          }
+          // Flash inline arriba (tabpane actual)
+          const flash = document.createElement('div');
+          flash.className = 'fixed top-4 right-4 z-50 px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-lg text-sm';
+          flash.textContent = '✓ Movimiento creado en programa';
+          document.body.appendChild(flash);
+          setTimeout(() => flash.remove(), 3500);
+        } else {
+          throw new Error('HTTP ' + r.status);
+        }
+      } catch (err) {
+        alert('Error creando movimiento: ' + err.message);
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+      }
+    });
+  });
 })();
 </script>
 {% endblock %}

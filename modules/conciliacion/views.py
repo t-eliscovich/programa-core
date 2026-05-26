@@ -1151,6 +1151,9 @@ def hub_crear_bancsis():
         flash("Faltan datos del movimiento (fecha/monto/tipo).", "warn")
         return redirect(url_for("conciliacion.hub"))
     doc_override = (request.form.get("documento_override") or "").strip().upper() or None
+    # TMT 2026-05-26 dueña: si vino vía fetch (AJAX), devolver JSON en
+    # lugar de redirect — así el frontend quita la fila sin recargar.
+    is_ajax = request.headers.get("X-Requested-With") == "fetch"
     try:
         res = crear_transaccion_desde_real(
             no_banco=no_banco,
@@ -1160,9 +1163,19 @@ def hub_crear_bancsis():
         )
     except Exception as e:
         nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+        if is_ajax:
+            return {"ok": False, "error": f"No se pudo crear en {nombre}: {e}"}, 400
         flash_exc(f"No se pudo crear el movimiento en {nombre}", e)
         return redirect(url_for("conciliacion.hub"))
     nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
+    if is_ajax:
+        return {
+            "ok": True,
+            "id_transaccion": res["id_transaccion"],
+            "documento": res["documento"],
+            "saldo_nuevo": res["saldo_nuevo"],
+            "banco_nombre": nombre,
+        }
     flash(
         f"Creado en {nombre} Programa: #{res['id_transaccion']} ({res['documento']}, "
         f"saldo nuevo $ {res['saldo_nuevo']:,.2f}).",
