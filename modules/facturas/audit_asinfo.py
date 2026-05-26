@@ -59,6 +59,8 @@ def _huerfanas_pc(limite: int = 500) -> list[dict]:
           AND (f.stat IS NULL OR f.stat IN ('Z','A','T','X','N','',' '))
           AND (f.numf_completo IS NULL OR f.numf_completo = ''
                OR f.numf IS NULL OR f.numf = 0)
+          -- TMT 2026-05-26: excluir explícitamente marcadas (#DUP, #SIN_ASINFO).
+          AND (f.numf_completo IS NULL OR NOT (f.numf_completo LIKE '#%%'))
         ORDER BY f.fecha DESC, f.numf DESC
         LIMIT %s
         """,

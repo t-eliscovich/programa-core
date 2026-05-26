@@ -842,6 +842,15 @@ def lista():
                 #   kg == 0 → no matchear (NC financiera, ajustes)
                 for f in filas:
                     pc_kg = float(f.get("kg") or 0)
+                    # TMT 2026-05-26 — facturas MARCADAS (#DUP, #SIN_ASINFO, etc.)
+                    # se excluyen de match Asinfo: representan filas explícitamente
+                    # marcadas por humano/script como "no requiere match" o "dup
+                    # conocido". El prefijo '#' nunca aparece en numeros Asinfo
+                    # reales (que son '001-099-...' / 'NTEN-...' / 'NCNT-...').
+                    if (f.get("numf_completo") or "").startswith("#"):
+                        f["asinfo_marcada"] = f["numf_completo"]
+                        f["asinfo_tipo"] = "MARCADA"
+                        continue
                     # TMT 2026-05-22 — antes kg=0 se saltaba. Ahora también
                     # intentamos matchear NC financieras (kg=0, importe negativo)
                     # por el universo "positivo" (que ya incluye NC_FINANCIERA).
@@ -935,6 +944,7 @@ def lista():
             if f.get("asinfo_tipo") is None
             and not f.get("asinfo_pre_cutoff")
             and float(f.get("kg") or 0) != 0
+            and not (f.get("numf_completo") or "").startswith("#")
         ]
 
     # TMT 2026-05-22 — filtro por tipo Asinfo (post-enriquecimiento).
