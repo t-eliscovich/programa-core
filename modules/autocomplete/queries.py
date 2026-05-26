@@ -11,13 +11,20 @@ import db
 
 
 def clientes_para_datalist() -> list[dict]:
-    """Todos los clientes activos, ordenados por código. Max 2000."""
+    """Todos los clientes (activos + inactivos), ordenados por código. Max 2000.
+
+    TMT 2026-05-26 dueña: BED (HECTOR BEDON) está marcado INACTIVO pero
+    tiene $361K de cartera viva — necesitamos poder cobrarle. Antes el
+    filtro `activo <> '0'` lo escondía del autocomplete de /cheques/nuevo.
+    Ahora traemos TODOS (los inactivos quedan al final por sort).
+    """
     return db.fetch_all(
         """
         SELECT codigo_cli, COALESCE(nombre, '') AS nombre
           FROM scintela.cliente
-         WHERE COALESCE(activo, '1') <> '0'
-         ORDER BY codigo_cli
+         ORDER BY
+           CASE WHEN COALESCE(activo, '1') <> '0' THEN 0 ELSE 1 END,
+           codigo_cli
          LIMIT 2000
         """
     ) or []
