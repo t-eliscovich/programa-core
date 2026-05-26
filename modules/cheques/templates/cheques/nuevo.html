@@ -126,9 +126,10 @@
                   <span class="text-xs text-slate-600">A depositar
                     <span class="cheque-fechad-req text-red-500 hidden">*</span>
                   </span>
+                  {# TMT 2026-05-26 dueña: fecha A depositar SIEMPRE editable.
+                     Antes estaba `disabled` salvo stat=P (postdatado). #}
                   <input type="date" name="fechad[]" value="{{ form.fechad_iso or form.fechad or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad disabled:bg-slate-100 disabled:text-slate-400"
-                         disabled>
+                         class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad">
                 </label>
                 {# TMT 2026-05-26 dueña: "agregar en cobranza documento del banco".
                    Campo libre — N° de comprobante / depósito / transferencia. #}
@@ -872,19 +873,19 @@
     }
   });
 
-  // TMT 2026-05-20 — Estado del cheque toggle: la fecha "A depositar"
-  // sólo se habilita cuando estado=P (postdatado). Para el resto, queda
-  // disabled y vuelve al valor de fecha_recibido (today si está vacío).
-  // Pedido literal dueña: "solo dejar cambiar fecha posdatado cuando
-  // selecciono opcion P del dropdown".
+  // TMT 2026-05-26 dueña: la fecha "A depositar" SIEMPRE es editable.
+  // (Antes estaba disabled salvo stat=P). Solo seteamos `required` cuando
+  // stat=P para forzar que se complete. Para otros stats es opcional y si
+  // queda vacía, el backend usa fecha_recibido (queries.crear lo hace
+  // con `fechad or fecha`).
   function aplicarToggleFechad(bloque) {
     const statSel  = bloque.querySelector('.cheque-stat');
     const fechad   = bloque.querySelector('.cheque-fechad');
     const reqMark  = bloque.querySelector('.cheque-fechad-req');
     if (!statSel || !fechad) return;
     const esPostdatado = (statSel.value || '').toUpperCase() === 'P';
+    fechad.disabled = false;  // SIEMPRE editable
     if (esPostdatado) {
-      fechad.disabled = false;
       fechad.required = true;
       if (reqMark) reqMark.classList.remove('hidden');
       // Si no tenía valor, sugerimos hoy + 1 mes como punto de partida.
@@ -894,12 +895,10 @@
         fechad.value = d.toISOString().slice(0, 10);
       }
     } else {
-      fechad.disabled = true;
       fechad.required = false;
       if (reqMark) reqMark.classList.add('hidden');
-      // No-postdatado: la fechad colapsa a la fecha de recibido. Se la
-      // dejamos vacía → el backend la setea = fecha en queries.crear().
-      fechad.value = '';
+      // No-postdatado: NO limpiamos el valor (antes la borrábamos al
+      // cambiar el dropdown — ahora respetamos lo que el usuario tipeó).
     }
   }
   chequesList.addEventListener('change', (e) => {
