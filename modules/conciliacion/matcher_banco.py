@@ -724,11 +724,26 @@ def matchear_extracto_banco(
                 real_sin_match_p15.append(real)
                 continue
         # Match grupal: usar el primero como "representativo" (con razón),
-        # componentes son todos los demás.
+        # componentes son todos los cheques ordenados de mayor a menor monto.
         if len(subset) >= 2 and abs(suma - target) < 0.01:
             principal = subset[0]
-            componentes = [bk.id_transaccion for bk in subset]
-            razon = f"P1.5·grupo N=1 ↔ {len(subset)} cheques del {real.fecha:%d/%m} ${target:.2f}"
+            # TMT 2026-05-26 dueña: 'monto de cada cheque ordenar de mayor a
+            # menor'. Componentes son dicts completos con info para el UI.
+            ordenado = sorted(subset, key=lambda b: -b.importe)
+            componentes = [
+                {
+                    "id_transaccion": bk.id_transaccion,
+                    "fecha": bk.fecha.isoformat() if bk.fecha else None,
+                    "importe": float(bk.importe),
+                    "concepto": bk.concepto,
+                    "documento": bk.documento,
+                    "prov": bk.prov,
+                    "prov_nombre": bk.prov_nombre,
+                    "no_cheque_rel": bk.no_cheque_rel,
+                }
+                for bk in ordenado
+            ]
+            razon = f"P1.5·grupo {len(subset)} cheques del {real.fecha:%d/%m} ${target:.2f}"
             res.matches.append(Match(
                 real=real, bancsis=principal, score=0.0,
                 razon=razon, componentes=componentes,

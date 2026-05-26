@@ -166,10 +166,58 @@
               <div class="truncate" title="{{ m.real.concepto }}">
                 {% if _cli_banco %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ _cli_banco }}</span>
                 {% else %}<span class="text-slate-500 text-xs">{{ m.real.concepto[:50] }}</span>{% endif %}
+                {# TMT 2026-05-26 dueña: match grupal N-a-1 — botón + para ver
+                   los N cheques del programa ordenados de mayor a menor. #}
+                {% if m.componentes and m.componentes|length > 1 %}
+                <button type="button"
+                        class="ml-2 text-xs px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 btn-toggle-detalle"
+                        data-match-idx="{{ loop.index0 }}"
+                        title="Ver los {{ m.componentes|length }} cheques agrupados">
+                  <span class="icon-open">+ {{ m.componentes|length }} cheques</span>
+                  <span class="icon-close hidden">− ocultar</span>
+                </button>
+                {% endif %}
               </div>
               {% if _cli_banco %}<div class="truncate text-slate-400 text-[10px]">{{ m.real.concepto[:60] }}</div>{% endif %}
             </td>
           </tr>
+          {# Fila detalle (oculta por default) — solo si hay componentes. #}
+          {% if m.componentes and m.componentes|length > 1 %}
+          <tr class="detalle-componentes hidden" data-match-idx="{{ loop.index0 }}">
+            <td colspan="8" class="px-2 py-1 bg-emerald-50/30 dark:bg-emerald-900/10">
+              <div class="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400 mb-1 mt-1">
+                {{ m.componentes|length }} cheques del programa que suman ${{ '{:,.2f}'.format(m.real.monto) }} ↔ depósito banco
+              </div>
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-[10px] text-slate-500 uppercase tracking-wide">
+                    <th class="text-left pl-4 pr-2 py-1">N° cheque</th>
+                    <th class="text-left px-2 py-1">Fecha</th>
+                    <th class="text-left px-2 py-1">Cliente</th>
+                    <th class="text-right px-2 py-1">Monto</th>
+                    <th class="text-left px-2 py-1">Concepto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for c in m.componentes %}
+                  <tr class="border-t border-emerald-100 dark:border-emerald-900/30">
+                    <td class="pl-4 pr-2 py-1 font-mono">{{ c.no_cheque_rel or ('#' ~ c.id_transaccion) }}</td>
+                    <td class="px-2 py-1 tabular-nums">{{ c.fecha or '' }}</td>
+                    <td class="px-2 py-1 font-mono">{{ c.prov or '—' }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-300">{{ '{:,.2f}'.format(c.importe) }}</td>
+                    <td class="px-2 py-1 truncate text-slate-500 text-[11px]" title="{{ c.concepto }}">{{ (c.concepto or '')[:50] }}</td>
+                  </tr>
+                  {% endfor %}
+                  <tr class="border-t-2 border-emerald-300 dark:border-emerald-700 bg-emerald-100/50 dark:bg-emerald-900/20">
+                    <td colspan="3" class="pl-4 pr-2 py-1 font-medium text-emerald-800 dark:text-emerald-200">Total ({{ m.componentes|length }} cheques)</td>
+                    <td class="px-2 py-1 text-right tabular-nums font-bold text-emerald-800 dark:text-emerald-200">${{ '{:,.2f}'.format(m.real.monto) }}</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+          {% endif %}
           {% endfor %}
         </tbody>
       </table>
@@ -1154,6 +1202,22 @@
       }
     });
   }
+
+  // ═══ TMT 2026-05-26 dueña: expand de detalle componentes (match N-a-1).
+  // Click en "+ N cheques" muestra/oculta la fila detalle con los N cheques
+  // ordenados de mayor a menor monto, debajo del match principal.
+  document.querySelectorAll('.btn-toggle-detalle').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = btn.dataset.matchIdx;
+      const detalle = document.querySelector(`tr.detalle-componentes[data-match-idx="${idx}"]`);
+      if (!detalle) return;
+      const oculto = detalle.classList.contains('hidden');
+      detalle.classList.toggle('hidden', !oculto);
+      btn.querySelector('.icon-open').classList.toggle('hidden', oculto);
+      btn.querySelector('.icon-close').classList.toggle('hidden', !oculto);
+    });
+  });
 
   // ═══ TMT 2026-05-26 dueña: agrupar depósitos del MISMO DÍA en el extracto.
   // "cuando es deposito sumar todos vs todos por dia un + para expandir
