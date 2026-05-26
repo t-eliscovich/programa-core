@@ -25,7 +25,7 @@ def clientes_para_datalist() -> list[dict]:
          ORDER BY
            CASE WHEN COALESCE(activo, '1') <> '0' THEN 0 ELSE 1 END,
            codigo_cli
-         LIMIT 2000
+         LIMIT 5000
         """
     ) or []
 
@@ -37,6 +37,6 @@ def proveedores_para_datalist() -> list[dict]:
           FROM scintela.proveedor
          WHERE COALESCE(activo, '1') <> '0'
          ORDER BY codigo_prov
-         LIMIT 2000
+         LIMIT 5000
         """
     ) or []
