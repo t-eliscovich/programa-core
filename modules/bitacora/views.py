@@ -12,35 +12,23 @@ bitacora_bp = Blueprint("bitacora", __name__, template_folder="templates")
 @bitacora_bp.route("/mi-historial")
 @requiere_login
 def mi_historial():
-    """Historial de actividad del USER LOGUEADO. TMT 2026-05-26 dueña:
-    'agregar historial de movimientos para Alex sobre las cosas que el
-    puede ver'.
+    """Historial de movimientos visible para el USER LOGUEADO.
 
-    No requiere `bitacora.ver` — cualquier user puede ver lo SUYO. La
-    query filtra por usuario=g.user.username, así Alex solo ve sus
-    propias acciones (no las de tamara/andres/etc).
+    TMT 2026-05-26 dueña update: 'que muestren solo los movimientos de
+    las secciones que el puede ver'. O sea: NO filtrar por quién lo
+    hizo, sino por las secciones (módulos) donde el user tiene .ver.
+
+    Ej. Alex ve cheques+facturas+caja+bancos (tiene esos *.ver) pero
+    NO ve retiros (no tiene retiros.ver).
+
+    Es un redirect a /historial?mis_origenes=1 para que /historial
+    resuelva los origen_tables según permisos del user logueado.
     """
+    from flask import redirect, url_for
     username = (g.user or {}).get("username") if g.user else None
-    desde = request.args.get("desde") or None
-    hasta = request.args.get("hasta") or None
-    modulo = (request.args.get("modulo") or "").strip() or None
-
-    try:
-        filas = queries.listar(
-            usuario=username, modulo=modulo,
-            desde=desde, hasta=hasta,
-        ) if username else []
-        modulos = queries.modulos_distintos()
-        error = None
-    except Exception as e:
-        filas, modulos, error = [], [], str(e)
-
-    return render_template(
-        "bitacora/mi_historial.html",
-        filas=filas, modulos=modulos,
-        username=username, desde=desde, hasta=hasta, modulo=modulo,
-        error=error,
-    )
+    if not username:
+        return redirect(url_for("auth.login"))
+    return redirect(url_for("historial.lista", mis_origenes="1"))
 
 
 @bitacora_bp.route("/bitacora")

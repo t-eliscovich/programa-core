@@ -112,6 +112,8 @@ def listar(
     tipo: str | None = None,
     estado: str | None = None,
     q: str | None = None,
+    usuario: str | None = None,
+    origenes_permitidos: list[str] | None = None,
     limite: int = 500,
 ) -> list[dict]:
     """Lista unificada de movimientos para el historial.
@@ -233,6 +235,13 @@ def listar(
                 OR UPPER(COALESCE(u.concepto, '')) LIKE UPPER(%(qlike)s)
                 OR UPPER(u.tipo) LIKE UPPER(%(qlike)s)
                 OR UPPER(COALESCE(u.usuario, '')) LIKE UPPER(%(qlike)s))
+           -- TMT 2026-05-26 dueña: filtro por usuario exacto, para /mi-historial.
+           AND (%(usuario)s IS NULL OR UPPER(COALESCE(u.usuario, '')) = UPPER(%(usuario)s))
+           -- TMT 2026-05-26 dueña: filtro por origen_tables permitidos.
+           -- Alex no debe ver retiros (no tiene retiros.ver). Pasamos la
+           -- lista derivada de sus permisos. Si None → sin filtro.
+           AND (%(origenes_permitidos)s::text[] IS NULL
+                OR u.origen_table = ANY(%(origenes_permitidos)s::text[]))
            -- TMT 2026-05-20 v3 — dedup pedido dueña: cuando una caja S
            -- se clasifica como gasto V1..V9, se generan 2 mov_doble:
            --   (a) caja_s_simple   (caja → caja self-ref)
@@ -260,6 +269,8 @@ def listar(
             "tipo": tipo or None, "tipo_like": (tipo or "") + "%" if tipo else None,
             "estado": estado or None,
             "q": q or None, "qlike": f"%{q}%" if q else None,
+            "usuario": usuario or None,
+            "origenes_permitidos": list(origenes_permitidos) if origenes_permitidos else None,
             "limite": int(limite),
         },
     ) or []

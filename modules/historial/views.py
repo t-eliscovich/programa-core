@@ -54,18 +54,55 @@ def operaciones():
 
 @historial_bp.route("/historial")
 @requiere_login
-@requiere_permiso("informes.ver")
 def lista():
     """Timeline unificado de movimientos dobles.
 
     Filtros: ?tipo=... ?estado=activo|reverso|reversado ?desde=YYYY-MM-DD
-    ?hasta=YYYY-MM-DD ?q=texto.
+    ?hasta=YYYY-MM-DD ?q=texto ?mis_origenes=1.
+
+    TMT 2026-05-26 dueña: cuando vino con `mis_origenes=1` (vía
+    /mi-historial), permitir acceso SIN `informes.ver` y filtrar la
+    query a las secciones donde el user tiene .ver. Alex ve cheques+
+    facturas+caja+bancos pero NO retiros. Sino exigir informes.ver
+    como antes.
     """
+    from flask import abort, g as _g
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     tipo = request.args.get("tipo") or None
     estado = request.args.get("estado") or None
     q = (request.args.get("q") or "").strip() or None
+    mis_origenes = request.args.get("mis_origenes") == "1"
+
+    # Mapeo origen_table → permiso requerido. Si el user tiene el permiso,
+    # ese origen entra en su lista de visibles.
+    _ORIGEN_PERMISO = {
+        "caja": "caja.ver",
+        "cheque": "cheques.ver",
+        "factura": "facturas.ver",
+        "transacciones_bancarias": "bancos.ver",
+        "compra": "compras.ver",
+        "posdat": "posdat.ver",
+        "gasto": "gastos.ver",
+        "xgast": "gastos.ver",
+        "retiro": "retiros.ver",
+        "capital": "capital.ver",
+        "provision": "provisiones.ver",
+        "activo": "activos.ver",
+    }
+
+    origenes_permitidos = None
+    if mis_origenes:
+        from auth import tiene_permiso
+        origenes_permitidos = [
+            origen for origen, perm in _ORIGEN_PERMISO.items()
+            if tiene_permiso(perm)
+        ]
+    else:
+        # Gating clásico: exige informes.ver para ver todo.
+        from auth import tiene_permiso
+        if not tiene_permiso("informes.ver"):
+            abort(404)  # estilo del proyecto
     # TMT 2026-05-24 — Pedido dueña: "no scroll vertical". Default 25 filas
     # (entran en viewport); el usuario expande con ?limite=50/100/200/todo
     # desde el selector "Filas" en el form de filtros.
@@ -85,6 +122,7 @@ def lista():
             tipo=tipo,
             estado=estado,
             q=q,
+            origenes_permitidos=origenes_permitidos,
             limite=limite,
         )
         kpis = queries.conteos(desde=desde, hasta=hasta)
