@@ -40,10 +40,27 @@
          en cada bloque, porque cada cheque puede tener fecha de depósito
          distinta. #}
       <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {# TMT 2026-05-26 dueña: Banco emisor PRIMERO (antes estaba al final).
+           Cuando banco=99 (EFECTIVO) la lógica de N° cheque y A depositar
+           se relajan — porque no hay cheque físico, es cash. #}
+        <label class="flex flex-col col-span-2 md:col-span-3">
+          <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
+          <select name="no_banco" id="no-banco-select" required autofocus class="border rounded px-2 py-1 mt-0.5 text-sm">
+            <option value="">— Elegí un banco —</option>
+            {% for b in bancos %}
+              <option value="{{ b.no_banco }}"
+                      {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
+                {{ b.no_banco }} · {{ b.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+          <span id="banco-hint" class="hidden mt-1 text-xs px-2 py-1 rounded border border-sky-300 bg-sky-50 text-sky-900 leading-snug"></span>
+        </label>
+
         <label class="flex flex-col">
           <span class="text-xs text-slate-600">Fecha <span class="text-red-500">*</span></span>
           <input type="text" name="fecha_recibido" value="{{ form.fecha_recibido or form.fecha or '' }}"
-                 placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off" autofocus
+                 placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10" autocomplete="off"
                  oninput="fechaAutoFormat(this)" onblur="fechaValidar(this)"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm" required>
         </label>
@@ -154,27 +171,8 @@
           </div>
         </div>
 
-        {# Banco emisor ahora obligatorio (pedido TMT 2026-05-14).
-           Antes era opcional dentro de un <details> colapsable; ahora
-           sale a la luz y bloquea el guardado si no se elige. #}
-        <label class="flex flex-col col-span-2 md:col-span-1">
-          <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
-          <select name="no_banco" id="no-banco-select" required class="border rounded px-2 py-1 mt-0.5 text-sm">
-            <option value="">— Elegí un banco —</option>
-            {% for b in bancos %}
-              <option value="{{ b.no_banco }}"
-                      {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
-                {{ b.no_banco }} · {{ b.nombre }}
-              </option>
-            {% endfor %}
-          </select>
-          {# TMT 2026-05-19 v8 — hint contextual cuando se elige banco>=90.
-             Aparece dinámicamente abajo del select con la explicación de
-             qué side-effect dispara cada código. Pedido dueña:
-             "Asegurate que en cobranza funcionen las logicas de
-             seleccionar opciones de banco >90". #}
-          <span id="banco-hint" class="hidden mt-1 text-xs px-2 py-1 rounded border border-sky-300 bg-sky-50 text-sky-900 leading-snug"></span>
-        </label>
+        {# TMT 2026-05-26 dueña: Banco emisor se movió al inicio del grid.
+           Acá quedaba el bloque original — eliminado para no duplicar. #}
 
         {# TMT 2026-05-19 — bloque "Más datos" removido (pedido dueña item 7).
            El campo banco_texto era redundante con el select de banco emisor
@@ -997,6 +995,35 @@
       anticipoChk.checked = true;
       anticipoChk.dispatchEvent(new Event('change'));
     }
+    // TMT 2026-05-26 dueña: si banco=99 (EFECTIVO), no hay cheque físico:
+    //   - N° cheque deja de ser required, label cambia a "N° referencia"
+    //   - "A depositar" se oculta (cobro inmediato, no se deposita)
+    //   - Estado se setea a B (cobrado/depositado) automáticamente
+    const esEfectivo = (v === '99');
+    document.querySelectorAll('.cheque-bloque').forEach(b => {
+      const numInp = b.querySelector('.cheque-num');
+      const numLbl = numInp && numInp.previousElementSibling;
+      const fechadWrap = b.querySelector('.cheque-fechad-wrap');
+      const statSel = b.querySelector('.cheque-stat');
+      if (numInp) {
+        numInp.required = !esEfectivo;
+        if (numLbl) {
+          if (esEfectivo) {
+            numLbl.innerHTML = 'N° referencia <span class="text-slate-400 text-[10px]">(opcional)</span>';
+          } else {
+            numLbl.innerHTML = 'N° cheque <span class="text-red-500">*</span>';
+          }
+        }
+      }
+      if (fechadWrap) {
+        if (esEfectivo) fechadWrap.classList.add('hidden');
+        else fechadWrap.classList.remove('hidden');
+      }
+      if (statSel && esEfectivo && (statSel.value || 'Z').toUpperCase() === 'Z') {
+        statSel.value = 'B';
+        statSel.dispatchEvent(new Event('change'));
+      }
+    });
   }
   if (bancoSelEl) {
     bancoSelEl.addEventListener('change', actualizarHintBanco);
