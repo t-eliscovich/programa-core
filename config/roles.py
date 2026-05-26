@@ -65,6 +65,7 @@ ROLES: list[tuple[str, list[str]]] = [
         [
             "informes.ver",
             "flujo.ver",
+            "tintura.ver",
             "bitacora.ver",
             "usuarios.admin",
             "periodo.cerrar",
@@ -102,6 +103,7 @@ ROLES: list[tuple[str, list[str]]] = [
         [
             "informes.ver",
             "flujo.ver",
+            "tintura.ver",
             "bitacora.ver",
             "clientes.ver",
             "proveedores.ver",
@@ -131,6 +133,7 @@ ROLES: list[tuple[str, list[str]]] = [
         "Contabilidad",
         [
             "informes.ver",
+            "tintura.ver",
             "clientes.ver",
             "proveedores.ver",
             "facturas.ver",
@@ -318,6 +321,9 @@ ROLES: list[tuple[str, list[str]]] = [
             "comisiones.ver",
             "ventas.ver",
             "gastos.ver",
+            # TMT 2026-05-26 dueña: agregar Tintorería para Alex (comparativa
+            # PC vs formulas_app + stock químicos).
+            "tintura.ver",
             # NO incluidos a propósito (todo "Informes" general y todo lo que
             # solo se accede desde ahí sin permiso granular): informes.ver,
             # flujo.ver, retiros.ver, historia.ver, iniciales.ver, capital.ver,

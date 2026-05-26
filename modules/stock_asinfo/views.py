@@ -27,7 +27,7 @@ stock_asinfo_bp = Blueprint(
 
 @stock_asinfo_bp.route("/quimicos")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("tintura.ver")
 def quimicos():
     """Stock de químicos desde formulas_app (modules/tintura/service).
 

@@ -691,6 +691,18 @@
         {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.hub', 'Conciliar con banco', 'check') }}{% endif %}
       </details>
 
+      {# TMT 2026-05-26 dueña: nueva sección Tintorería visible para todos los
+         roles con `tintura.ver` (Accionista, Administrador, Gerente,
+         Contabilidad, Alex, QC). Trae data de formulas_app + DBF tinto. #}
+      {% if tiene_permiso('tintura.ver') %}
+      <details class="sidebar-section" data-key="tintoreria">
+        <summary>Tintorería</summary>
+        {{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Comparativa PC vs Form', 'trend') }}
+        {{ nav_link('comparativa_tintoreria.tintoreria_detalle', 'Resumen mensual', 'report') }}
+        {{ nav_link('stock_asinfo.quimicos', 'Stock químicos', 'shopping') }}
+      </details>
+      {% endif %}
+
       {# TMT 2026-05-22 dueña: si el rol no tiene `informes.ver`, ocultar
          la sección entera del menú (antes mostraba "Informes" vacío
          para Alex). #}

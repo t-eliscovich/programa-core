@@ -136,7 +136,7 @@ def _parse_date(s: str | None, default: date) -> date:
 
 @comparativa_tintoreria_bp.route("/tintoreria")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("tintura.ver")
 def tintoreria_detalle():
     """Resumen mensual de tintorería: Bajos vs Fuertes vs Total.
 
@@ -246,7 +246,7 @@ def tintoreria_detalle():
 
 @comparativa_tintoreria_bp.route("/comparativa-tintoreria")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("tintura.ver")
 def comparativa_tintoreria():
     """Vista comparativa: kg tinturados por día — PC (scintela.tinto) vs
     formulas_app (ordenes.tela_terminada_kg).
