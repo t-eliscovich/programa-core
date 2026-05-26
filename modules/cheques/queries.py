@@ -92,8 +92,13 @@ def editar(
     """
     asegurar_fecha_abierta(date.today())
 
+    # TMT 2026-05-26: la tabla scintela.cheque NO tiene columna `concepto`
+    # (se confirmó contra prod). Antes el SELECT incluía `concepto` y rompía
+    # con UndefinedColumn → 500 al editar. Si el usuario manda algo en el
+    # campo concepto del form, lo guardamos como parte de la observación
+    # con prefix [C], preservando la intención sin agregar una columna.
     ch = db.fetch_one(
-        "SELECT id_cheque, no_cheque, stat, fechad, concepto FROM scintela.cheque WHERE id_cheque = %s",
+        "SELECT id_cheque, no_cheque, stat, fechad FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
@@ -117,13 +122,16 @@ def editar(
         fechad_shifted = fechad_lunes != fechad
         fechad_nueva = fechad_lunes
 
-    obs_marca = f"[E] {observacion[:120]}" if observacion else None
+    # Combinar concepto (si vino) + observación en un solo append a `observacion`.
+    obs_partes: list[str] = []
+    if concepto:
+        obs_partes.append(f"[C] {concepto.strip()[:120]}")
+    if observacion:
+        obs_partes.append(f"[E] {observacion.strip()[:120]}")
+    obs_marca = " · ".join(obs_partes) if obs_partes else None
 
     sql_set = ["fechad=%s", "usuario_modifica=%s", "fecha_modifica=CURRENT_TIMESTAMP"]
     params: list = [fechad_nueva, usuario]
-    if concepto is not None:
-        sql_set.append("concepto=%s")
-        params.append((concepto or "").strip()[:50] or None)
     if obs_marca:
         sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
         params.append(obs_marca)
