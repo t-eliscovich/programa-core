@@ -53,6 +53,7 @@ class MovBancsis:
     prov_nombre: str = ""    # nombre legible (vía LEFT JOIN clientes)
     es_agrupado: bool = False  # mov del programa que suma N cheques (dep.N ch)
     n_cheques: int = 0         # cuántos cheques agrupa
+    no_cheque_rel: str = ""    # TMT 2026-05-26: no_cheque del cheque ligado (vía chequextransaccion). Usado por PASS 0 para matchear contra extracto.documento.
 
     @property
     def tipo_real(self) -> str:
@@ -381,10 +382,18 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     Después de resolver el código, joinea contra `scintela.cliente` por
     `codigo_cli` (en una sola query batch — no N+1).
     """
+    # TMT 2026-05-26 dueña: traer también no_cheque del cheque ligado vía
+    # chequextransaccion. Lo usa PASS 0 para matchear extracto.documento contra
+    # tanto numreferencia COMO no_cheque (el banco a veces trae uno, a veces
+    # otro). string_agg cubre el caso N:1 (un mov banco que agrupa N cheques).
     rows = db.fetch_all(
         """
         SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
-               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov
+               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov,
+               (SELECT STRING_AGG(DISTINCT ch.no_cheque::text, ',')
+                  FROM scintela.chequextransaccion cxt
+                  JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
+                 WHERE cxt.id_transaccion = tb.id_transaccion) AS no_cheques_rel
           FROM scintela.transacciones_bancarias tb
          WHERE tb.no_banco = %s
            AND tb.fecha BETWEEN %s AND %s
@@ -424,6 +433,7 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
             prov_nombre=prov_nombre,
             es_agrupado=(n_ch > 0),
             n_cheques=n_ch,
+            no_cheque_rel=str(r.get("no_cheques_rel") or "").strip(),
         ))
     return out
 
@@ -499,9 +509,12 @@ def matchear_extracto_banco(
     desde = min(fechas_real)
     hasta = max(fechas_real)
 
-    # Ventana flexible: ±1d default, ±3d si última fecha es viernes.
+    # Ventana flexible: ±3d default, ±5d si última fecha es viernes/lunes.
+    # TMT 2026-05-26 dueña: la ventana ±1d era demasiado estricta — extractos
+    # como el del 13-14 mayo tenían 64 sugerencias por monto pero 0 matches
+    # porque el drift de fecha excedía 1 día. Subido a ±3 default.
     if dias_tolerancia is None:
-        dias_tolerancia = _calcular_ventana_dias(fechas_real, default=1)
+        dias_tolerancia = _calcular_ventana_dias(fechas_real, default=3)
 
     # Cargamos BANCSIS con ventana AMPLIA hacia adelante (banco se atrasa) y
     # un poco hacia atrás (programa cargado antes que banco). Las pasadas
@@ -554,8 +567,21 @@ def matchear_extracto_banco(
         for bk in bancsis:
             if bk.id_transaccion in bancsis_usado:
                 continue
-            ref_bk = _norm_doc(bk.numreferencia)
-            if not ref_bk or ref_bk != ref_real:
+            # TMT 2026-05-26 dueña: 'en conciliacion buscar doc id de banco
+            # y doc is programa'. Comparamos extracto.documento contra
+            # TODOS los doc-ids del programa: numreferencia + N° de cheques
+            # ligados (vía chequextransaccion). Cubre el caso donde el banco
+            # trae el N° de cheque pero el numreferencia interno tiene otra cosa.
+            refs_bk = set()
+            r1 = _norm_doc(bk.numreferencia)
+            if r1:
+                refs_bk.add(r1)
+            # no_cheque_rel puede ser "1234" o "1234,1235,..." (string_agg).
+            for raw in (bk.no_cheque_rel or "").split(","):
+                rn = _norm_doc(raw)
+                if rn:
+                    refs_bk.add(rn)
+            if ref_real not in refs_bk:
                 continue
             # Tipo compatible (no matchear un débito con un crédito por
             # coincidencia de referencia).
