@@ -98,7 +98,8 @@ class Categorizado:
     grupo: str             # ENTRADA | SALIDA | COMISION | OTRO
     label: str             # "Pago a proveedor"
     abrev: str = "?"       # "P" | "TR" | "CH" | etc — chip compacto
-    cliente: str = ""      # extraído del concepto o por AI
+    cliente: str = ""      # extraído del concepto o por AI (codigo corto)
+    cliente_nombre: str = ""  # TMT 2026-05-26: nombre largo extraído ej "LAAZ RODRIGUEZ ANGELICA"
     descripcion: str = ""  # frase legible (solo cuando hay AI)
     fuente: str = "regex"  # regex | ai | ai-cache | tipo-fallback
 
@@ -199,6 +200,16 @@ _RE_CODIGO_INTERNO = _re.compile(
     _re.IGNORECASE,
 )
 
+# TMT 2026-05-26 dueña: patrón de SALIDAS Pichincha. Conceptos tipo:
+#   "2605150C3EHP-INTELA C-PAG-ANTICIPO"   → cliente EHP
+#   "2605180C70HQ-INTELA C-PAG-ANT CARVAJAL" → cliente 0HQ o HQ (ambiguo)
+# Tomamos los 2-5 chars (letras+dígitos) inmediatamente antes de -INTELA.
+# La validación contra catálogo se hace en _extraer_cliente_concepto.
+_RE_PICHINCHA_SALIDA = _re.compile(
+    r"([A-Z0-9]{2,5})-INTELA[\s\-]*C[\s\-]*PAG",
+    _re.IGNORECASE,
+)
+
 _RE_NOMBRE_LARGO = _re.compile(
     r"(?:TRANSFERENCIA\s+(?:DIRECTA|INTERBANCARIA|INTERNA)?\s*"
     r"(?:DE|A|RECIBIDA\s+DE|ENVIADA\s+A)\s+|"
@@ -210,29 +221,102 @@ _RE_NOMBRE_LARGO = _re.compile(
 )
 
 
-def _extraer_cliente_concepto(concepto: str) -> tuple[str, str]:
+def _extraer_cliente_concepto(concepto: str, codigos_validos: set[str] | None = None) -> tuple[str, str]:
     """Devuelve (codigo_corto, nombre_largo) extraídos del concepto.
 
-    Cualquiera puede ser '' si no se detecta.
+    Cualquiera puede ser '' si no se detecta. Si `codigos_validos` se pasa,
+    el código devuelto SOLO se devuelve si está en el set (válida contra
+    catálogo real de clientes + proveedores + aliases).
 
     >>> _extraer_cliente_concepto("1 ch.LTM")
     ('LTM', '')
     >>> _extraer_cliente_concepto("TRANSFERENCIA DIRECTA DE AGUILAR RUIZ JACQUELINE")[1]
     'AGUILAR RUIZ JACQUELINE'
+    >>> _extraer_cliente_concepto("2605150C3EHP-INTELA C-PAG-ANTICIPO")[0]
+    'EHP'
     """
     if not concepto:
         return "", ""
-    codigo = ""
-    nombre = ""
+    # Candidatos en orden de prioridad. El primero válido gana.
+    candidatos: list[str] = []
     m = _RE_CODIGO_INTERNO.search(concepto)
     if m:
-        codigo = m.group(1).upper().strip()
+        candidatos.append(m.group(1).upper().strip())
+    # TMT 2026-05-26 dueña: patrón Pichincha salida (...XXX-INTELA C-PAG-...).
+    # Generamos VARIOS sub-candidatos del prefix porque el código puede ser
+    # los 2, 3 o 4 chars antes de -INTELA. Probamos del más largo al más
+    # corto. Si codigos_validos está pasado, validamos contra él.
+    m_pich = _RE_PICHINCHA_SALIDA.search(concepto)
+    if m_pich:
+        cand_full = m_pich.group(1).upper().strip()
+        # Generar slices del más largo al más corto: cand_full, cand_full[1:], cand_full[2:]
+        for i in range(len(cand_full)):
+            sub = cand_full[i:]
+            if sub and not sub.isdigit() and sub not in candidatos:
+                candidatos.append(sub)
+    # Buscar el primer candidato válido. Si no hay codigos_validos pasados,
+    # devolver el primer candidato no-numérico (best-effort).
+    codigo = ""
+    for cand in candidatos:
+        if codigos_validos:
+            if cand in codigos_validos:
+                codigo = cand
+                break
+        else:
+            # Sin validación, fallback al viejo behavior — primer no-numérico.
+            if cand and not cand.isdigit():
+                codigo = cand
+                break
+
+    nombre = ""
     m2 = _RE_NOMBRE_LARGO.search(concepto)
     if m2:
-        nombre = " ".join(m2.group(1).strip().split())  # normalizar espacios
-        # Sacar trailing tipo "DEL CARMEN ELIZABE" cortado por el banco — está OK
+        nombre = " ".join(m2.group(1).strip().split())
         nombre = nombre.upper()
     return codigo, nombre
+
+
+# Cache del set de códigos válidos (cliente + proveedor + aliases).
+# TTL 5 min — refresca con el cambio de catálogo o de aliases.
+import time as _time
+_CODIGOS_CACHE: dict = {"ts": 0.0, "set": set()}
+_CODIGOS_TTL = 300
+
+
+def codigos_validos_set() -> set[str]:
+    """Devuelve set en memoria de todos los códigos cliente + proveedor + aliases.
+
+    Para validar códigos extraídos del concepto. Cache TTL 5 min — fail-soft
+    devuelve set vacío si DB falla, lo cual hace fall back al best-effort.
+    """
+    now = _time.time()
+    if now - _CODIGOS_CACHE["ts"] < _CODIGOS_TTL and _CODIGOS_CACHE["set"]:
+        return _CODIGOS_CACHE["set"]
+    out: set[str] = set()
+    try:
+        for r in (db.fetch_all("SELECT codigo_cli FROM scintela.cliente") or []):
+            c = (r.get("codigo_cli") or "").strip().upper()
+            if c:
+                out.add(c)
+        for r in (db.fetch_all("SELECT codigo_prov FROM scintela.proveedor") or []):
+            c = (r.get("codigo_prov") or "").strip().upper()
+            if c:
+                out.add(c)
+        # Aliases Asinfo (CL2, AJ2, J3C) también son válidos.
+        try:
+            from modules.asinfo.aliases import todos as _aliases_todos
+            for a in _aliases_todos():
+                c = (a.get("codigo_asinfo") or "").strip().upper()
+                if c:
+                    out.add(c)
+        except Exception:
+            pass
+    except Exception:
+        out = set()
+    if out:
+        _CODIGOS_CACHE["set"] = out
+        _CODIGOS_CACHE["ts"] = now
+    return out
 
 
 def _codigo_desde_concepto(concepto: str) -> str:
@@ -771,14 +855,25 @@ def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
         from modules.conciliacion.categorizar import categorizar as categorizar_con_ai  # type: ignore
         usar_ai = False
 
+    # TMT 2026-05-26 dueña: precarga del set de códigos válidos para validar
+    # el cliente extraído del concepto. Si el código no existe en cliente/
+    # proveedor/aliases, _extraer_cliente_concepto devuelve "" → no mostramos
+    # ruido como "0HQ" que no corresponde a nadie.
+    _codigos_validos = codigos_validos_set()
+
     def _to_cat(concepto: str, tipo: str) -> "Categorizado":
+        # TMT 2026-05-26 dueña: SIEMPRE intentar extraer codigo + nombre
+        # largo del concepto vía _extraer_cliente_concepto. Si AI también
+        # devuelve "cliente" (vía extra), gana el de AI por ser más confiable.
+        cod_reg, nombre_reg = _extraer_cliente_concepto(concepto, _codigos_validos)
         try:
             if usar_ai:
                 cat, extra = categorizar_con_ai(concepto, tipo)
                 return Categorizado(
                     codigo=cat.codigo, grupo=cat.grupo, label=cat.label,
                     abrev=getattr(cat, "abrev", "?"),
-                    cliente=extra.get("cliente") or "",
+                    cliente=(extra.get("cliente") or cod_reg or ""),
+                    cliente_nombre=(extra.get("descripcion") or nombre_reg or ""),
                     descripcion=extra.get("descripcion") or "",
                     fuente=cat.fuente,
                 )
@@ -786,12 +881,14 @@ def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
             return Categorizado(
                 codigo=cat.codigo, grupo=cat.grupo, label=cat.label,
                 abrev=getattr(cat, "abrev", "?"),
-                cliente="", descripcion="", fuente=cat.fuente,
+                cliente=cod_reg, cliente_nombre=nombre_reg,
+                descripcion="", fuente=cat.fuente,
             )
         except Exception:
             return Categorizado(
                 codigo="OTRO", grupo="OTRO", label="Sin categorizar",
-                abrev="?", cliente="", descripcion="", fuente="error",
+                abrev="?", cliente=cod_reg, cliente_nombre=nombre_reg,
+                descripcion="", fuente="error",
             )
 
     res.real_only_cats = [_to_cat(m.concepto, m.tipo) for m in res.real_only]
@@ -1231,7 +1328,8 @@ def historial(
                tb.documento  AS bancsis_documento,
                tb.importe    AS bancsis_importe,
                tb.fecha      AS bancsis_fecha,
-               tb.concepto   AS bancsis_concepto
+               tb.concepto   AS bancsis_concepto,
+               tb.prov       AS codigo_cliente
           FROM scintela.banco_conciliacion_match bcm
           LEFT JOIN scintela.transacciones_bancarias tb
             ON tb.id_transaccion = bcm.id_transaccion

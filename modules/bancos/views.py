@@ -654,11 +654,20 @@ def reversar_transferencia(id_mov_doble: int):
 def movimientos(no_banco):
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
+    # TMT 2026-05-26 dueña: filtro por estado de conciliación bancaria.
+    # Valores: '' (todos) | 'si' (solo conciliados) | 'no' (solo sin conciliar).
+    conciliado_filtro = (request.args.get("conciliado") or "").strip().lower()
     try:
         banco = queries.banco_info(no_banco)
         if not banco:
             abort(404)
         filas = queries.movimientos(no_banco, desde, hasta)
+        # Aplicar filtro post-fetch (las filas vienen con r["conciliacion_id"]
+        # gracias al enrichment en queries.movimientos).
+        if conciliado_filtro == "si":
+            filas = [r for r in filas if r.get("conciliacion_id")]
+        elif conciliado_filtro == "no":
+            filas = [r for r in filas if not r.get("conciliacion_id")]
         error = None
     except Exception as e:
         filas, banco, error = [], None, str(e)

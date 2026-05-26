@@ -38,20 +38,20 @@
     <a href="{{ url_for('conciliacion.banco_historial') }}" class="text-xs text-slate-500 hover:underline">limpiar</a>
   </form>
 
+  {# TMT 2026-05-26 dueña: solo las columnas que pidió — Fecha, Fecha mov,
+     Documento, Monto, Tipo, Concepto, Programa ID, Usuario (real), Cliente. #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-xs">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
         <tr>
-          <th class="px-2 py-1.5">Conciliado el</th>
-          <th class="px-2 py-1.5">Banco</th>
-          <th class="px-2 py-1.5">Método</th>
-          <th class="px-2 py-1.5">Estado</th>
+          <th class="px-2 py-1.5">Fecha conciliación</th>
           <th class="px-2 py-1.5">Fecha mov.</th>
-          <th class="px-2 py-1.5">Doc.</th>
+          <th class="px-2 py-1.5">Documento</th>
           <th class="px-2 py-1.5 text-right">Monto</th>
           <th class="px-2 py-1.5">Tipo</th>
           <th class="px-2 py-1.5">Concepto</th>
-          <th class="px-2 py-1.5 text-right">id Programa</th>
+          <th class="px-2 py-1.5 text-right">Programa ID</th>
+          <th class="px-2 py-1.5">Cliente</th>
           <th class="px-2 py-1.5">Usuario</th>
           <th class="px-2 py-1.5"></th>
         </tr>
@@ -59,20 +59,10 @@
       <tbody>
         {% for r in rows %}
         <tr class="border-t border-slate-100 dark:border-slate-800 {% if r.deshecho_en %}opacity-50 line-through{% endif %}">
-          <td class="px-2 py-1.5 font-mono">{{ r.creado_en.strftime('%Y-%m-%d %H:%M') if r.creado_en else '' }}</td>
-          <td class="px-2 py-1.5 font-mono">{{ r.no_banco }}</td>
-          <td class="px-2 py-1.5">
-            {% if r.metodo == 'matched_auto' %}<span class="text-emerald-700 dark:text-emerald-400">auto</span>
-            {% elif r.metodo == 'matched_manual' %}<span class="text-sky-700 dark:text-sky-400">manual</span>
-            {% elif r.metodo == 'created_from_real' %}<span class="text-violet-700 dark:text-violet-400">creado</span>
-            {% elif r.metodo == 'real_only_ok' %}<span class="text-amber-700 dark:text-amber-400">acepta-real</span>
-            {% elif r.metodo == 'bancsis_only_ok' %}<span class="text-amber-700 dark:text-amber-400">acepta-prog</span>
-            {% else %}{{ r.metodo or '?' }}{% endif %}
-          </td>
-          <td class="px-2 py-1.5">{{ r.estado }}</td>
-          <td class="px-2 py-1.5 font-mono">{{ r.real_fecha or r.bancsis_fecha or '' }}</td>
+          <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.creado_en.strftime('%Y-%m-%d %H:%M') if r.creado_en else '' }}</td>
+          <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.real_fecha or r.bancsis_fecha or '' }}</td>
           <td class="px-2 py-1.5 font-mono">{{ r.real_documento or r.bancsis_documento or '' }}</td>
-          <td class="px-2 py-1.5 text-right font-mono">
+          <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">
             {% if r.real_monto is not none %}{{ '{:,.2f}'.format(r.real_monto|float) }}
             {% elif r.bancsis_importe is not none %}{{ '{:,.2f}'.format(r.bancsis_importe|float) }}{% endif %}
           </td>
@@ -80,8 +70,13 @@
           <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.real_concepto or r.bancsis_concepto or '' }}">
             {{ (r.real_concepto or r.bancsis_concepto or '')[:60] }}
           </td>
-          <td class="px-2 py-1.5 text-right font-mono">{{ r.id_transaccion or '' }}</td>
-          <td class="px-2 py-1.5 text-slate-500">{{ r.usuario }}</td>
+          <td class="px-2 py-1.5 text-right font-mono">
+            {% if r.id_transaccion %}
+              <a href="{{ url_for('bancos.movimientos', no_banco=r.no_banco) }}#tx-{{ r.id_transaccion }}" class="text-sky-600 hover:underline">{{ r.id_transaccion }}</a>
+            {% endif %}
+          </td>
+          <td class="px-2 py-1.5 font-mono">{{ r.codigo_cliente or '' }}</td>
+          <td class="px-2 py-1.5 text-slate-700 dark:text-slate-300">{{ r.usuario }}</td>
           <td class="px-2 py-1.5 text-right">
             {% if not r.deshecho_en %}
             <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline">
@@ -95,7 +90,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="12" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
+        <tr><td colspan="10" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
         {% endfor %}
       </tbody>
     </table>

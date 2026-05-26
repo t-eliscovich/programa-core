@@ -41,8 +41,18 @@
       <input type="date" name="hasta" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
+    {# TMT 2026-05-26 dueña: filtro por estado de conciliación. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Conciliado</label>
+      <select name="conciliado"
+              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <option value="" {% if not request.args.get('conciliado') %}selected{% endif %}>Todos</option>
+        <option value="si" {% if request.args.get('conciliado') == 'si' %}selected{% endif %}>Sí (conciliados)</option>
+        <option value="no" {% if request.args.get('conciliado') == 'no' %}selected{% endif %}>No (sin conciliar)</option>
+      </select>
+    </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
-    {% if desde or hasta %}
+    {% if desde or hasta or request.args.get('conciliado') %}
       <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco) }}" class="text-sm text-slate-500 hover:underline">Limpiar</a>
     {% endif %}
   </form>

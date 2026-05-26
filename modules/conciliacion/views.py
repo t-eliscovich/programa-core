@@ -4,7 +4,21 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
+
+
+def _usuario_actual() -> str:
+    """Username del user logueado, fallback 'conciliacion' si no hay g.user.
+
+    TMT 2026-05-26 dueña: el historial decía 'conciliacion' como usuario
+    en lugar de quien realmente confirmó (ej. 'alex'). Centralizamos
+    para que TODAS las rutas del módulo usen g.user.username.
+    """
+    try:
+        u = (g.user or {}).get("username") if g.user else None
+        return u or (request.remote_user or "conciliacion")
+    except Exception:
+        return request.remote_user or "conciliacion"
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
@@ -119,7 +133,7 @@ def confirmar_rebote():
         res = chq.reversar(
             id_cheque=id_cheque,
             motivo=motivo,
-            usuario=request.remote_user or "conciliacion",
+            usuario=_usuario_actual(),
         )
     except ValueError as e:
         flash_exc("No se pudo reversar el cheque", e)
@@ -323,7 +337,7 @@ def depositos_marcar():
             accion=accion,
             id_transaccion=fila.get("match_id"),
             nota=nota,
-            usuario=(request.remote_user or "conciliacion"),
+            usuario=_usuario_actual(),
         )
     except Exception as e:
         flash_exc("No se pudo marcar la fila", e)
@@ -376,7 +390,7 @@ def depositos_confirmar_verdes():
                 accion="confirmado",
                 id_transaccion=fila.get("match_id"),
                 nota="bulk: confirmar todos los verdes",
-                usuario=(request.remote_user or "conciliacion"),
+                usuario=_usuario_actual(),
             )
             confirmados += 1
         except Exception:
@@ -402,6 +416,7 @@ def _cat_to_dict(cat) -> dict:
         "label": getattr(cat, "label", "Sin categorizar"),
         "abrev": getattr(cat, "abrev", "?"),
         "cliente": getattr(cat, "cliente", "") or "",
+        "cliente_nombre": getattr(cat, "cliente_nombre", "") or "",
         "descripcion": getattr(cat, "descripcion", "") or "",
         "fuente": getattr(cat, "fuente", "regex"),
     }
@@ -640,7 +655,7 @@ def hub():
             n_filas=len(movs_real),
             fecha_min=min(fechas) if fechas else None,
             fecha_max=max(fechas) if fechas else None,
-            usuario=(request.remote_user or "conciliacion"),
+            usuario=_usuario_actual(),
         )
     except Exception:
         pass  # tracking opcional, no bloquea
@@ -761,7 +776,7 @@ def hub_confirmar_matches():
         matches = []
 
     confirmados, errores = 0, 0
-    usuario = request.remote_user or "conciliacion"
+    usuario = _usuario_actual()
     for m in matches:
         try:
             r = m["real"]
@@ -1191,7 +1206,7 @@ def hub_aceptar_bancsis_only():
         flash("id_transaccion inválido.", "error")
         return redirect(url_for("conciliacion.hub"))
     no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
-    confirmar_bancsis_only(no_banco, idtx, usuario=(request.remote_user or "conciliacion"))
+    confirmar_bancsis_only(no_banco, idtx, usuario=_usuario_actual())
     nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
     flash(f"Movimiento #{idtx} de {nombre} Programa aceptado como diferencia legítima.", "ok")
     return redirect(url_for("conciliacion.hub"))
@@ -1260,7 +1275,7 @@ def hub_crear_bancsis():
         res = crear_transaccion_desde_real(
             no_banco=no_banco,
             real=real,
-            usuario=(request.remote_user or "conciliacion"),
+            usuario=_usuario_actual(),
             documento=doc_override,
             prov=prov_input,
             concepto_override=concepto_override,
@@ -1349,7 +1364,7 @@ def hub_crear_bancsis_agrupado():
             fecha=fecha,
             concepto=concepto,
             prov=prov,
-            usuario=(request.remote_user or "conciliacion"),
+            usuario=_usuario_actual(),
         )
     except ValueError as e:
         return {"ok": False, "error": str(e)}, 400
@@ -1385,7 +1400,7 @@ def hub_aceptar_real_only():
     confirmar_real_only(
         no_banco=no_banco,
         real=real,
-        usuario=(request.remote_user or "conciliacion"),
+        usuario=_usuario_actual(),
     )
     nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
     flash(f"Movimiento del extracto de {nombre} aceptado como diferencia legítima.", "ok")
@@ -1414,7 +1429,7 @@ def hub_match_manual():
         no_banco=no_banco,
         real=real,
         id_transaccion=idtx,
-        usuario=(request.remote_user or "conciliacion"),
+        usuario=_usuario_actual(),
     )
     nombre = queries.nombre_banco(no_banco) or f"Banco {no_banco}"
     if n:
@@ -1509,7 +1524,7 @@ def banco_deshacer():
         return redirect(url_for("conciliacion.banco_historial"))
     n = romper_match(
         match_id=match_id,
-        usuario=(request.remote_user or "conciliacion"),
+        usuario=_usuario_actual(),
     )
     if n:
         flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")

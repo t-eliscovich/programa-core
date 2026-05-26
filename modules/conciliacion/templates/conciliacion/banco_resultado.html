@@ -421,14 +421,12 @@
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate">
-                {# TMT 2026-05-26 dueña: si no hay cliente real (cliente extraído
-                   es ruido del concepto, ej. comisiones/impuestos), mostrar la
-                   categoría legible ("Comisión bancaria", "Impuesto / retención",
-                   etc) en lugar del texto extraído. Solo para grupo COMISION/OTRO
-                   donde el cliente extraído NO es real. #}
+                {# TMT 2026-05-26 dueña: cascada — solo código (no nombre completo).
+                   El código se valida contra catálogo en backend; si no es un
+                   cliente real, _cli viene vacío y caemos a cat.label. #}
                 {% if _gc == 'COMISION' %}
                   <span class="text-amber-700 dark:text-amber-300 font-medium" title="{{ r.cat.label }}">{{ r.cat.label or '⚙ Comisión' }}</span>
-                {% elif _cli %}<span class="text-slate-900 dark:text-slate-100 font-medium" title="{{ _cli }}">{{ _cli }}</span>
+                {% elif _cli %}<span class="text-slate-900 dark:text-slate-100 font-mono font-medium" title="{{ _cli }}{% if r.cat.cliente_nombre %} · {{ r.cat.cliente_nombre }}{% endif %}">{{ _cli }}</span>
                 {% elif r.oficina %}<span class="text-slate-400">{{ r.oficina }}</span>
                 {% else %}<span class="text-slate-500 italic" title="{{ r.cat.label }}">{{ r.cat.label or '—' }}</span>{% endif %}
                 {% if r.documento and r.documento != '0' %}<span class="text-slate-400 font-mono text-[10px] ml-1">{{ r.documento }}</span>{% endif %}
