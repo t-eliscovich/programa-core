@@ -145,29 +145,61 @@
               {% endif %}
             </td>
           </tr>
-          {# Filas hijas: PC por color + OTs de form — hidden por default #}
+          {# Filas hijas: PC por color enriquecido con datos formulas_app
+             (suma kg crudo/terminado, % desperdicio, fecha terminado) +
+             OTs de form — hidden por default.
+             TMT 2026-05-26 dueña: 'matchea en codigo de tres letras el
+             programa'. Las líneas PC ahora traen las columnas form_*
+             llenas si hay match por (fecha, cod). #}
           {% if fila.detalle_color or fila.detalle_ots %}
             {% for c in fila.detalle_color %}
               <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
-                <td>· PC {{ c.cod }}</td>
+                <td>
+                  · PC <strong>{{ c.cod }}</strong>
+                  {% if c.form_n_ots and c.form_n_ots > 0 %}
+                    <span class="text-xs text-emerald-600" title="Matcheado con {{ c.form_n_ots }} OT(s) de formulas_app">✓ form ({{ c.form_n_ots }} OT)</span>
+                  {% else %}
+                    <span class="text-xs text-slate-400" title="Sin match en formulas_app por (fecha, código)">— sin form</span>
+                  {% endif %}
+                </td>
                 <td class="num">{{ c.kg | num_es(1) }}</td>
-                <td></td>
-                <td></td>
-                <td></td>
+                <td class="num">
+                  {% if c.form_terminada_kg is not none %}{{ c.form_terminada_kg | num_es(1) }}{% else %}—{% endif %}
+                </td>
+                <td class="num">
+                  {# Δ kg PC vs formulas_app terminada #}
+                  {% if c.form_terminada_kg is not none %}{{ (c.kg - c.form_terminada_kg) | num_es(1) }}{% endif %}
+                </td>
+                <td class="num">
+                  {# % Desperdicio formulas (cruda - terminada) / cruda * 100 #}
+                  {% if c.form_desperdicio_pct is not none %}{{ '%.1f' % c.form_desperdicio_pct }}%{% endif %}
+                </td>
                 <td class="num">{{ '$ ' ~ (c.importe | num_es(0)) if c.importe else '' }}</td>
-                <td class="num">{{ c.n_lineas }} línea{{ 's' if c.n_lineas != 1 else '' }}</td>
-                <td></td>
+                <td class="num text-xs">
+                  {% if c.form_cruda_kg is not none %}
+                    cruda <strong>{{ c.form_cruda_kg | num_es(1) }}</strong> kg
+                  {% else %}
+                    {{ c.n_lineas }} línea{{ 's' if c.n_lineas != 1 else '' }}
+                  {% endif %}
+                </td>
+                <td class="text-center text-xs">
+                  {% if c.form_fecha_terminado %}
+                    <span class="text-emerald-700">{{ c.form_fecha_terminado.strftime('%d/%m') }}</span>
+                  {% endif %}
+                </td>
               </tr>
             {% endfor %}
             {% for o in fila.detalle_ots %}
               <tr class="det" data-fecha-parent="{{ _fecha_iso }}" hidden>
-                <td>· OT #{{ o.numero }} <span class="text-slate-400">({{ o.color or '—' }})</span></td>
+                <td>· OT #{{ o.numero }} <span class="text-slate-400">({{ o.color or '—' }}) — cod <strong>{{ o.formula_cod or '?' }}</strong></span></td>
                 <td></td>
                 <td class="num">{{ (o.tela_terminada_kg or 0) | num_es(1) }}</td>
                 <td></td>
                 <td></td>
                 <td></td>
-                <td></td>
+                <td class="text-xs">
+                  {% if o.tela_cruda_kg %}cruda {{ o.tela_cruda_kg | num_es(1) }} kg{% endif %}
+                </td>
                 <td>
                   {% if o.es_reproceso %}<span class="pill pill-warn">Reproceso</span>{% endif %}
                 </td>

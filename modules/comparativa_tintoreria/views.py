@@ -291,10 +291,52 @@ def comparativa_tintoreria():
         if o.fecha_terminado:
             form_por_fecha[o.fecha_terminado].append(o)
 
-    # Indexar PC color por fecha
+    # TMT 2026-05-26 dueña: 'lo de formulas tiene que ir aca ... matchea
+    # en codigo de tres letras el programa'.
+    # Indexar form por (fecha_terminado, formula_cod) para enriquecer el
+    # detalle_color del lado PC con cruda/terminada/desperdicio/fecha_term.
+    form_por_fecha_cod: dict[tuple, dict] = defaultdict(
+        lambda: {"cruda": 0.0, "terminada": 0.0, "n_ots": 0, "ots": []}
+    )
+    for o in rows_form:
+        if o.fecha_terminado and o.formula_cod:
+            cod_norm = (o.formula_cod or "").upper().strip()
+            if cod_norm:
+                key = (o.fecha_terminado, cod_norm)
+                slot = form_por_fecha_cod[key]
+                slot["cruda"] += float(o.tela_cruda_kg or 0)
+                slot["terminada"] += float(o.tela_terminada_kg or 0)
+                slot["n_ots"] += 1
+                slot["ots"].append(o.to_dict())
+
+    # Indexar PC color por fecha. Enriquece cada línea con los datos
+    # de formulas_app del mismo código (suma kg crudo + terminado).
     pc_color_por_fecha: dict[date, list[dict]] = defaultdict(list)
     for r in rows_pc_color:
-        pc_color_por_fecha[r["fecha"]].append(r)
+        cod_norm = (r.get("cod") or "").upper().strip()
+        key = (r["fecha"], cod_norm)
+        form_match = form_por_fecha_cod.get(key)
+        enriched = dict(r)
+        if form_match:
+            cruda = form_match["cruda"]
+            terminada = form_match["terminada"]
+            enriched["form_cruda_kg"] = cruda
+            enriched["form_terminada_kg"] = terminada
+            enriched["form_n_ots"] = form_match["n_ots"]
+            enriched["form_fecha_terminado"] = r["fecha"]  # mismo día
+            # Desperdicio % = (cruda - terminada) / cruda * 100. None si no aplica.
+            if cruda > 0 and terminada >= 0:
+                desperd_pct = (cruda - terminada) / cruda * 100.0
+                enriched["form_desperdicio_pct"] = round(desperd_pct, 1)
+            else:
+                enriched["form_desperdicio_pct"] = None
+        else:
+            enriched["form_cruda_kg"] = None
+            enriched["form_terminada_kg"] = None
+            enriched["form_n_ots"] = 0
+            enriched["form_fecha_terminado"] = None
+            enriched["form_desperdicio_pct"] = None
+        pc_color_por_fecha[r["fecha"]].append(enriched)
 
     # Construir filas comparativas — usa la unión de fechas de ambas fuentes.
     fechas = sorted(
