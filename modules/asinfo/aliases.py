@@ -29,22 +29,78 @@ _CACHE_TTL_SECS = 300  # 5 min
 _cache_ts: float = 0.0
 _cache_asinfo_to_pc: dict[str, str] = {}
 _cache_pc_to_asinfo: dict[str, list[str]] = {}
+_tabla_bootstrapped = False
+
+# TMT 2026-05-26: bootstrap defensivo. El deploy no corre migrate.py
+# automáticamente, así que si la migración 0052 no se aplicó aún la
+# tabla no existe. Acá nos aseguramos: la primera vez que se llama al
+# helper, intentamos `CREATE TABLE IF NOT EXISTS` + seed con los 3
+# aliases conocidos. Idempotente — re-correr no rompe.
+_BOOTSTRAP_SQL = """
+CREATE TABLE IF NOT EXISTS scintela.cliente_alias (
+    codigo_asinfo TEXT NOT NULL,
+    codigo_pc     TEXT NOT NULL,
+    nota          TEXT,
+    fecha_alta    DATE NOT NULL DEFAULT CURRENT_DATE,
+    usuario_crea  TEXT,
+    PRIMARY KEY (codigo_asinfo, codigo_pc)
+);
+"""
+
+_BOOTSTRAP_SEED = [
+    ("CL2", "CLR", "CL2 es subcliente de CLR — dueña 2026-05-26"),
+    ("AJ2", "AJO", "AJ2 es subcliente de AJO — dueña 2026-05-26"),
+    ("J3C", "VGA", "J3C corresponde a VGA — dueña 2026-05-26"),
+]
+
+
+def _bootstrap_si_falta() -> None:
+    """Crea la tabla scintela.cliente_alias + seed si todavía no existe.
+
+    Idempotente y fail-soft: si falla el CREATE/INSERT (permisos, etc),
+    no rompe — solo loguea. El helper sigue funcionando con cache vacío.
+    """
+    global _tabla_bootstrapped
+    if _tabla_bootstrapped:
+        return
+    try:
+        db.execute(_BOOTSTRAP_SQL)
+        for a, p, nota in _BOOTSTRAP_SEED:
+            db.execute(
+                """
+                INSERT INTO scintela.cliente_alias (codigo_asinfo, codigo_pc, nota, usuario_crea)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (codigo_asinfo, codigo_pc) DO NOTHING
+                """,
+                (a, p, nota, "bootstrap_auto"),
+            )
+        _LOG.info("alias_cache: bootstrap OK")
+    except Exception as e:
+        _LOG.warning("alias_cache: bootstrap falló (%s) — uso fallback inline", e)
+    _tabla_bootstrapped = True
 
 
 def _norm(s: str | None) -> str:
     return (s or "").strip().upper()
 
 
+# Fallback inline si DB falla y bootstrap también — al menos los 3 conocidos.
+_FALLBACK_A2P = {a: p for a, p, _ in _BOOTSTRAP_SEED}
+
+
 def _refrescar() -> None:
     """Recarga el cache desde DB. Fail-soft si falla (no rompe call sites)."""
     global _cache_ts, _cache_asinfo_to_pc, _cache_pc_to_asinfo
+    _bootstrap_si_falta()
     try:
         rows = db.fetch_all(
             "SELECT codigo_asinfo, codigo_pc FROM scintela.cliente_alias"
         ) or []
     except Exception as e:
-        _LOG.warning("alias_cache: fetch falló (%s) — uso vacío", e)
-        rows = []
+        _LOG.warning("alias_cache: fetch falló (%s) — uso fallback inline", e)
+        # Fallback inline con los 3 conocidos.
+        rows = [{"codigo_asinfo": a, "codigo_pc": p}
+                for a, p in _FALLBACK_A2P.items()]
     a2p: dict[str, str] = {}
     p2a: dict[str, list[str]] = {}
     for r in rows:
