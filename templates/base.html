@@ -672,7 +672,7 @@
         {% if tiene_permiso('compras.crear') %}{{ nav_link('compras.nueva', 'Nueva Compra', 'shopping') }}{% endif %}
       </details>
 
-      <details class="sidebar-section" data-key="modificar">
+      <details class="sidebar-section" data-key="modificar" open>
         <summary>Modificar</summary>
         {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques de clientes', 'check') }}{% endif %}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
@@ -684,7 +684,7 @@
         {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
       </details>
 
-      <details class="sidebar-section" data-key="bancos">
+      <details class="sidebar-section" data-key="bancos" open>
         <summary>Bancos</summary>
         {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
         {% if tiene_permiso('caja.ver') %}{{ nav_link('caja.lista', 'Caja', 'cash') }}{% endif %}
@@ -695,7 +695,7 @@
          roles con `tintura.ver` (Accionista, Administrador, Gerente,
          Contabilidad, Alex, QC). Trae data de formulas_app + DBF tinto. #}
       {% if tiene_permiso('tintura.ver') %}
-      <details class="sidebar-section" data-key="tintoreria">
+      <details class="sidebar-section" data-key="tintoreria" open>
         <summary>Tintorería</summary>
         {{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Comparativa PC vs Form', 'trend') }}
         {{ nav_link('comparativa_tintoreria.tintoreria_detalle', 'Resumen mensual', 'report') }}
@@ -707,7 +707,7 @@
          la sección entera del menú (antes mostraba "Informes" vacío
          para Alex). #}
       {% if tiene_permiso('informes.ver') %}
-      <details class="sidebar-section" data-key="informes">
+      <details class="sidebar-section" data-key="informes" open>
         <summary>Informes</summary>
         {{ nav_link('informes.balance', 'Resultados', 'report') }}
         {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
