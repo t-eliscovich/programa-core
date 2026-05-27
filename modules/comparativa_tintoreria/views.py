@@ -672,6 +672,24 @@ def debug_tintoreria_diff():
     b_rows = tintura_service.tinturado_resumen(
         limite=20000, terminado_desde=desde, terminado_hasta=hasta,
     )
+    # C) tinturado_resumen con creacion_* — para confirmar si matchea A (Excel)
+    c_rows = tintura_service.tinturado_resumen(
+        limite=20000, creacion_desde=desde, creacion_hasta=hasta,
+    )
+    c_by_ft = defaultdict(lambda: {"n": 0, "cruda": 0.0, "term": 0.0})
+    c_sin_ft = 0
+    for o in c_rows:
+        ft = o.fecha_terminado.isoformat() if o.fecha_terminado else None
+        if not ft:
+            c_sin_ft += 1
+            continue
+        s = c_by_ft[ft]
+        s["n"] += 1
+        s["cruda"] += float(o.tela_cruda_kg or 0)
+        s["term"] += float(o.tela_terminada_kg or 0)
+    tot_c_c = sum(s["cruda"] for s in c_by_ft.values())
+    tot_c_t = sum(s["term"] for s in c_by_ft.values())
+    tot_c_n = sum(s["n"] for s in c_by_ft.values())
     b_by_ft = defaultdict(lambda: {"n": 0, "cruda": 0.0, "term": 0.0, "ordenes": []})
     b_by_numero = {}
     for o in b_rows:
@@ -738,6 +756,19 @@ def debug_tintoreria_diff():
             "es_reproceso": o.es_reproceso,
         })
 
+    # Diff por dia para C vs A
+    c_diff = []
+    for d in sorted(set(a_by_ft) | set(c_by_ft)):
+        a = a_by_ft.get(d, {"n": 0, "cruda": 0.0, "term": 0.0})
+        c = c_by_ft.get(d, {"n": 0, "cruda": 0.0, "term": 0.0})
+        c_diff.append({
+            "fecha": d,
+            "a_n": a["n"], "a_cruda": round(a["cruda"], 1),
+            "c_n": c["n"], "c_cruda": round(c["cruda"], 1),
+            "delta_n": c["n"] - a["n"],
+            "delta_cruda": round(c["cruda"] - a["cruda"], 1),
+        })
+
     return jsonify({
         "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
         "a": {
@@ -755,6 +786,16 @@ def debug_tintoreria_diff():
             "total_cruda": round(tot_b_c, 1),
             "total_term": round(tot_b_t, 1),
         },
+        "c": {
+            "fuente": "tinturado_resumen con creacion_* (candidato a fix)",
+            "filtro": "fecha (creacion) BETWEEN desde y hasta",
+            "total_ordenes": len(c_rows),
+            "sin_fecha_terminado": c_sin_ft,
+            "total_cruda": round(tot_c_c, 1),
+            "total_term": round(tot_c_t, 1),
+            "matchea_A": (abs(tot_c_c - tot_a_c) < 1 and abs(tot_c_t - tot_a_t) < 1),
+        },
+        "c_vs_a_diff_por_dia": c_diff,
         "diff_por_dia": diff,
         "ordenes_solo_en_A_excel": {
             "count": len(solo_en_a),
