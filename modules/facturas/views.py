@@ -1548,8 +1548,14 @@ def backfill_asinfo_endpoint():
             numf = siguiente_numf
             siguiente_numf += 1
 
+        # TMT 2026-05-26: codigo_cli es VARCHAR(5) en scintela.factura. Asinfo
+        # a veces trae codigo_cliente con 6+ chars (RUC truncado raro, etc) y
+        # rompe el chunk entero con "value too long for type character varying(5)".
+        # Truncamos a 5 chars defensivamente. Si en el futuro se cambia la columna
+        # a VARCHAR(10), sacar este [:5].
+        cli_pc_trunc = cli_pc[:5]
         candidatas.append({
-            "numf": numf, "fecha": fecha_obj, "codigo_cli": cli_pc,
+            "numf": numf, "fecha": fecha_obj, "codigo_cli": cli_pc_trunc,
             "kg": kg, "importe": importe, "abono": importe, "saldo": 0,
             "stat": "T", "condic": "CC", "tipo": tipo_pc,
             "vencimiento": fecha_obj + timedelta(days=30),
