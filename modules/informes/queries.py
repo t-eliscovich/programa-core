@@ -4331,11 +4331,18 @@ def kg_facturas_pc_no_sincronizadas() -> float:
     en el DBF y este número va a volver a 0 (porque ahora tienen
     `usuario_crea='dbf-import'`).
     """
+    # TMT 2026-05-27 dueña: "stock terminado se fue a 0". Las facturas
+    # backfilleadas de Asinfo (usuario_crea='asinfo-backfill') son
+    # HISTORICAS — ya fueron contabilizadas como vendidas en su mes.
+    # Si las contamos como "no sincronizadas" inflamos el descuento al
+    # stock terminado (28k kg extra restados) -> stock=0.
+    # Excluirlas explícitamente. dbf-import + asinfo-backfill = "ya
+    # contabilizadas en algún snapshot".
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(kg), 0) AS total
         FROM scintela.factura
-        WHERE COALESCE(usuario_crea, '') <> 'dbf-import'
+        WHERE COALESCE(usuario_crea, '') NOT IN ('dbf-import', 'asinfo-backfill')
           AND (stat IS NULL OR stat <> 'X')
         """
     )
