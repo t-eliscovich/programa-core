@@ -2945,6 +2945,7 @@ def buscar(
     monto_min: float | None = None,
     monto_max: float | None = None,
     ver_eliminados: bool = False,
+    offset: int = 0,
 ) -> list[dict]:
     """Filtros (mismas reglas que /facturas):
     cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
@@ -3051,7 +3052,7 @@ def buscar(
           -- Excluir eliminados (stat='X') cuando el filtro es "todos".
           AND (NOT %(excluir_eliminados)s OR COALESCE(c.stat, '') <> 'X')
         ORDER BY c.fecha ASC, c.id_cheque ASC
-        LIMIT %(limite)s
+        LIMIT %(limite)s OFFSET %(offset)s
         """
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
     rows = (
@@ -3070,6 +3071,7 @@ def buscar(
                 "stats": list(stats) if stats else None,
                 "excluir_eliminados": excluir_eliminados,
                 "limite": limite,
+                "offset": max(0, int(offset or 0)),
             },
         )
         or []

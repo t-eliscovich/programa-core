@@ -446,10 +446,26 @@ def buscar(
             r["cuota_diaria"]      = round(cm / 30.0, 2)
             r["provision_periodo"] = match.get("periodo_aplica")
         else:
+            # TMT 2026-05-27 dueña: posdats sin match en provisiones — caso
+            # principal prov='RT' (retenciones). Calculamos la cuota
+            # distribuyendo el importe entre fecha y fechad (vencimiento).
+            # cuota_diaria = importe / días_total. cuota_mensual = ×30.
             r["id_provisiones"]    = None
             r["cuota_mensual"]     = None
             r["cuota_diaria"]      = None
             r["provision_periodo"] = None
+            f_ini = r.get("fecha")
+            f_ven = r.get("fechad")
+            imp = float(r.get("importe") or 0)
+            if f_ini and f_ven and imp > 0:
+                try:
+                    dias = (f_ven - f_ini).days
+                    if dias > 0:
+                        cd = round(imp / dias, 2)
+                        r["cuota_diaria"]  = cd
+                        r["cuota_mensual"] = round(cd * 30.0, 2)
+                except Exception:
+                    pass
 
     # Saldo acumulado = deuda corrida hasta la fecha de vencimiento. Útil
     # para planificar flujo: "al 15 de junio ya vencieron $ X de posdatados".

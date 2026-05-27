@@ -2044,6 +2044,23 @@ def lista():
         limite = int(request.args.get("limite") or 100000)
     except (TypeError, ValueError):
         limite = 100000
+    # TMT 2026-05-27 dueña: 'necesito que despues en cheques pongas
+    # flechitas para ver los siguientes 500 cheques'. Pagination de 500
+    # por página. ?page=N (1-indexed). Si la URL trae ?limite= explícito
+    # > 500, se respeta (export CSV / scripts).
+    POR_PAGINA = 500
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    es_export = request.args.get("export") in ("csv", "xlsx")
+    if not es_export and limite >= 100000:
+        # Default → paginar 500/pag. Si pidió explícito otro limite, respetar.
+        page_limite = POR_PAGINA
+        page_offset = (page - 1) * POR_PAGINA
+    else:
+        page_limite = limite
+        page_offset = 0
     # ?ver_eliminados=1 → incluye cheques stat='X' (reversados) en tab "Todos".
     # Default: ocultos para no saturar. Pedido TMT 2026-05-14 (#40 audit).
     ver_eliminados = request.args.get("ver_eliminados") in ("1", "true", "yes")
@@ -2053,11 +2070,12 @@ def lista():
             estado,
             desde,
             hasta,
-            limite=limite,
+            limite=page_limite,
             cliente=cliente,
             monto_min=monto_min,
             monto_max=monto_max,
             ver_eliminados=ver_eliminados,
+            offset=page_offset,
         )
         error = None
     except Exception as e:
@@ -2181,6 +2199,10 @@ def lista():
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
         hoy_iso=date.today().isoformat(),
+        # TMT 2026-05-27 dueña: paginación 500/pag.
+        page=page,
+        por_pagina=POR_PAGINA,
+        tiene_mas_pag=(len(filas) == POR_PAGINA),
     )
 
 

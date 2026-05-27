@@ -498,6 +498,35 @@
     </table>
   </div>
 
+  {# TMT 2026-05-27 dueña: 'pongas flechitas para ver los siguientes 500
+     cheques'. Paginacion: ← prev | "página N · X-Y de muchos" | next →.
+     Solo aparece si hay filas y page>1 o tiene_mas_pag. #}
+  {% if page is defined and (page > 1 or tiene_mas_pag) %}
+    {% set _q_args = request.args.to_dict() %}
+    {% set _ = _q_args.pop('page', None) %}
+    <div class="flex items-center justify-center gap-3 mt-4 mb-2 no-print">
+      {% if page > 1 %}
+        <a href="?{{ _q_args|urlencode }}&page={{ page - 1 }}"
+           class="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+          ← Anteriores 500
+        </a>
+      {% else %}
+        <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 dark:border-slate-800 text-sm text-slate-300 dark:text-slate-600 cursor-not-allowed">← Anteriores 500</span>
+      {% endif %}
+      <span class="text-xs text-slate-500 tabular-nums">
+        Página {{ page }} · mostrando {{ ((page - 1) * por_pagina + 1) }}–{{ ((page - 1) * por_pagina + (filas|length)) }}
+      </span>
+      {% if tiene_mas_pag %}
+        <a href="?{{ _q_args|urlencode }}&page={{ page + 1 }}"
+           class="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-sky-600 text-white text-sm hover:bg-sky-700">
+          Siguientes 500 →
+        </a>
+      {% else %}
+        <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-slate-200 dark:border-slate-800 text-sm text-slate-300 dark:text-slate-600 cursor-not-allowed">Siguientes 500 →</span>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {# ─── TMT 2026-05-20 — Barra flotante "Depositar selección" + banner de
        confirmación. Pedido dueña: "Necesitamos agilizar el proceso de los
        depósitos. Si estoy parado en cheques de clientes. Tener un filtro
