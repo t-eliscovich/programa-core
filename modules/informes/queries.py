@@ -3068,20 +3068,21 @@ def resultados_costos_tabla(
     ct_ukg = sub_ukg + adm_ukg
     ct_us = venta_kg * ct_ukg
 
+    # Utilidad NO ESTANDARIZADA = Venta − Costo Total (operativa pura).
     ue_ukg = precio - ct_ukg
     ue_us = venta_kg * ue_ukg
 
-    # TMT 2026-05-27 dueña: 'la utilidad en resultados calculala sobre
-    # mismo resultados, no la hagas depender del historial'. La Utilidad
-    # ahora viene de Venta − Costo Total (ue_us), todo desde la misma
-    # pantalla. La utilidad histórica patr-patant+uret se preserva en el
-    # debug pero no se muestra en la tabla principal.
-    ur_us = (float(patr or 0) - float(patant or 0)) + float(uret or 0)  # legacy
+    # Utilidad REAL — fórmula original: ur = (patr - patant) + uret
+    # = delta patrimonio + dividendos del mes (la cuenta económica completa
+    # que incluye revalúo de stock, cambios de cartera, etc.).
+    # TMT 2026-05-27 dueña: 'restauralo pero agarra variables de resultados
+    # para calcularlo, no de historia'. La función ya recibe patr/patant/uret
+    # como params — el caller (`informe_balance`) decide de dónde sacarlos
+    # (idealmente NO de scintela.historia).
+    ur_us = (float(patr or 0) - float(patant or 0)) + float(uret or 0)
     ur_ukg = _div(ur_us, venta_kg)
 
-    # TMT 2026-05-27 dueña: 'puedes volver a agregar la utilidad
-    # proyectada debajo de esta?'. Utilidad proyectada = proyección de
-    # ventas × margen unitario (= precio − costo unitario), self-contained.
+    # Utilidad PROYECTADA — mismo margen unitario × kg proyectados al día 30.
     up_ukg = ue_ukg
     up_us = proy_kg * up_ukg
 
@@ -3122,15 +3123,20 @@ def resultados_costos_tabla(
          "clase": "total",
          "ayuda": ("Subtotal +4.5% + Administracion. "
                    "U$ = kg vendidos * Costo Total.")},
-        {"label": "Utilidad Real", "kg": venta_kg, "ukg": ue_ukg,
-         "us": ue_us, "clase": "key",
-         "ayuda": ("Venta − Costo Total — calculada sobre los mismos "
-                   "componentes de esta tabla, sin depender del historial. "
-                   "U$ = kg vendidos × (precio − costo total).")},
+        {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
+         "clase": "key",
+         "ayuda": ("(PATR − PATANT) + URET — delta del patrimonio + dividendos "
+                   "del mes. Cuenta económica completa (incluye revalúo de "
+                   "stock, cambios de cartera, etc.).")},
         {"label": "Utilidad Proyectada", "kg": proy_kg, "ukg": up_ukg,
          "us": up_us, "clase": "dato",
-         "ayuda": ("Mismo margen unitario aplicado a la proyección de kg "
-                   "(regla de 3 al día 30). U$ = kg proyectados × margen.")},
+         "ayuda": ("Mismo margen unitario × kg proyectados (regla de 3 al "
+                   "día 30). U$ = kg proyectados × (precio − costo total).")},
+        {"label": "Utilidad no estandarizada", "kg": venta_kg, "ukg": ue_ukg,
+         "us": ue_us, "clase": "dato",
+         "ayuda": ("Venta − Costo Total — utilidad operativa pura. Sólo usa "
+                   "los componentes visibles en esta tabla, sin patrimonio "
+                   "ni dividendos.")},
     ]
 
 
