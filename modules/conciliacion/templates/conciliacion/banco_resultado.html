@@ -2526,8 +2526,15 @@
   .pareo-row.pareo-dragging { opacity: 0.4; cursor: grabbing; }
   .pareo-row.pareo-drop-target { background-color: rgb(187 247 208) !important; box-shadow: inset 0 0 0 3px rgb(34 197 94); transform: scale(1.005); }
   .dark .pareo-row.pareo-drop-target { background-color: rgb(20 83 45) !important; box-shadow: inset 0 0 0 3px rgb(74 222 128); }
-  .pareo-row.pareo-en-cola { opacity: 0.4; pointer-events: none; }
-  .pareo-row.pareo-en-cola td { text-decoration: line-through; text-decoration-color: rgb(148 163 184); }
+  /* en-cola: chip a la izquierda + ligero fade, pero siguen visibles
+     y NO bloqueamos pointer-events (mantenemos draggable para mover de cola) */
+  .pareo-row.pareo-en-cola { opacity: 0.75; }
+  .pareo-row.pareo-en-cola > td:first-child::before {
+    content: "📋 ";
+    margin-right: 4px;
+    color: rgb(2 132 199);
+    font-weight: bold;
+  }
   /* Drop-zone — dashed por default, sólido azul cuando algo se está arrastrando */
   #pareo-queue.pareo-dragging-active { border-style: solid !important; border-color: rgb(2 132 199) !important; background: rgb(224 242 254); box-shadow: 0 0 0 4px rgb(186 230 253); }
   .dark #pareo-queue.pareo-dragging-active { background: rgb(7 89 133 / 0.4); box-shadow: 0 0 0 4px rgb(7 89 133); }
@@ -2727,8 +2734,14 @@
   const includeMatchedCb = document.getElementById('pareo-incluir-matched');
   const visBanco = document.getElementById('pareo-visible-banco');
   const visPc = document.getElementById('pareo-visible-pc');
+  function normalizar(s) {
+    // Quita comas, espacios, $ y baja a minúsculas — para que "3000" matchee
+    // "$ 3,000.00" y "11756609" matchee "1175 6609" si hay separadores.
+    return (s || '').toLowerCase().replace(/[,\s$]/g, '');
+  }
   function aplicarFiltro() {
-    const q = (filtroEl.value || '').toLowerCase().trim();
+    const qRaw = (filtroEl.value || '').toLowerCase().trim();
+    const qNorm = normalizar(filtroEl.value);
     const includeMatched = includeMatchedCb && includeMatchedCb.checked;
     let nb = 0, np = 0;
     document.querySelectorAll('.pareo-row').forEach(row => {
@@ -2743,9 +2756,11 @@
         row.style.display = 'none';
         return;
       }
-      // 3) Resto: aplica filtro de texto. Si está vacío, todas visibles.
-      const t = row.textContent.toLowerCase();
-      const match = !q || t.includes(q);
+      // 3) Resto: aplica filtro. Comparamos texto raw Y texto normalizado.
+      // Si q está vacío, todas visibles.
+      const tRaw = row.textContent.toLowerCase();
+      const tNorm = normalizar(row.textContent);
+      const match = !qRaw || tRaw.includes(qRaw) || tNorm.includes(qNorm);
       row.style.display = match ? '' : 'none';
       if (match) { if (row.classList.contains('pareo-banco')) nb++; else np++; }
     });
