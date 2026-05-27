@@ -962,13 +962,20 @@ function buildChart(q) {
           titleFont: { weight: '600', size: 12 },
           bodyFont: { size: 12 },
           callbacks: {
-            // TMT 2026-05-19 v8 — dueña: "solo mostra el saldo, (ni fecha,
-            // ni cheques ni nada)". Tooltip simplificado.
-            // TMT 2026-05-20 — el callback `label` se llama UNA vez por
-            // dataset, así que con 2 datasets (saldo + egresos dots) el
-            // tooltip mostraba "Saldo: $X" duplicado. Devolvemos null para
-            // el dataset de egresos así sale una sola línea.
-            title: () => '',
+            // TMT 2026-05-27 dueña: 'agregar la fecha cuando me paro sobre
+            // un puntito en el gráfico'. Title = fecha; body = saldo.
+            title: items => {
+              if (!items || !items.length) return '';
+              const row = rows[items[0].dataIndex];
+              if (!row || !row.fecha) return '';
+              try {
+                return row.fecha.toLocaleDateString('es-EC', {
+                  weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+                });
+              } catch {
+                return row.fecha.toISOString().slice(0, 10);
+              }
+            },
             label: ctx => {
               if (ctx.datasetIndex !== 0) return null;
               const row = rows[ctx.dataIndex];
