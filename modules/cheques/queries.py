@@ -143,10 +143,16 @@ def editar(
     # ajustan automáticamente — esto solo modifica el importe del cheque.
     # Para corregir las relacionadas anular+reemitir sigue siendo el flow.
     if importe is not None:
-        if float(importe) <= 0:
+        from decimal import Decimal as _Dec
+        imp_dec = _Dec(str(importe))
+        if imp_dec <= 0:
             raise ValueError("Importe debe ser > 0.")
+        # numeric(9,2) en DB — max 9_999_999.99. Validar para no tirar
+        # NumericValueOutOfRange como 500.
+        if imp_dec >= _Dec("10000000"):
+            raise ValueError("Importe excede el máximo permitido (9.999.999,99).")
         sql_set.append("importe=%s")
-        params.append(float(importe))
+        params.append(imp_dec)
     params.append(id_cheque)
 
     db.execute(

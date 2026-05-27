@@ -1536,6 +1536,8 @@ def editar(id_cheque: int):
             errores.append("Fecha de depósito inválida.")
         # TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'. Parseo
         # importe; si distinto al actual, se pasa al query para UPDATE.
+        # Todo en Decimal para evitar TypeError (Decimal - float bombea 500).
+        from decimal import Decimal as _Dec
         importe_str = (request.form.get("importe") or "").strip()
         importe_nuevo = parse_monto(importe_str) if importe_str else None
         if importe_str and importe_nuevo is None:
@@ -1543,8 +1545,8 @@ def editar(id_cheque: int):
         elif importe_nuevo is not None and importe_nuevo <= 0:
             errores.append("Importe debe ser mayor a 0.")
         # Si el importe no cambió, no se manda al query (evita escritura inútil).
-        importe_actual = float(ch.get("importe") or 0)
-        if importe_nuevo is not None and abs(importe_nuevo - importe_actual) < 0.01:
+        importe_actual = _Dec(str(ch.get("importe") or 0))
+        if importe_nuevo is not None and abs(importe_nuevo - importe_actual) < _Dec("0.01"):
             importe_nuevo = None
         # TMT 2026-05-27 dueña: 'dejame editar deposito de cheque'. Antes
         # bloqueábamos edit cuando is_depositado — ahora permitido para
