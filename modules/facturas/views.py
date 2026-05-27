@@ -1798,6 +1798,12 @@ def consolidar_duplicados_asinfo():
     from modules.asinfo import aliases as _aliases
 
     dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
+    # min_votos: solo registrar aliases con >= N votos. Default 2 para evitar
+    # falsos positivos (coincidencias de numero entre clientes distintos).
+    try:
+        min_votos = int(request.values.get("min_votos") or 2)
+    except (TypeError, ValueError):
+        min_votos = 2
 
     # 1) Detectar pares de duplicados
     pares = db.fetch_all(
@@ -1829,12 +1835,15 @@ def consolidar_duplicados_asinfo():
     alias_existe = {a["codigo_asinfo"]: a["codigo_pc"] for a in aliases_existentes}
 
     aliases_a_agregar = []
+    aliases_descartados_pocos_votos = []
     for (a_cli, b_cli), n in votos_alias.most_common():
         if alias_existe.get(a_cli) == b_cli:
             continue
-        aliases_a_agregar.append({
-            "asinfo": a_cli, "pc": b_cli, "votos": n,
-        })
+        item = {"asinfo": a_cli, "pc": b_cli, "votos": n}
+        if n < min_votos:
+            aliases_descartados_pocos_votos.append(item)
+            continue
+        aliases_a_agregar.append(item)
 
     aliases_agregados = []
     if not dry_run:
@@ -1882,9 +1891,11 @@ def consolidar_duplicados_asinfo():
     return jsonify({
         "ok": True,
         "dry_run": dry_run,
+        "min_votos": min_votos,
         "pares_detectados": len(pares),
         "aliases_implicitos_detectados": len(aliases_a_agregar),
-        "aliases_a_agregar": aliases_a_agregar[:30],  # top
+        "aliases_a_agregar": aliases_a_agregar[:30],
+        "aliases_descartados_pocos_votos": aliases_descartados_pocos_votos[:30],
         "aliases_agregados_efectivamente": aliases_agregados,
         "numf_completo_copiados_al_original_dbf": numf_completo_copiados,
         "duplicados_borrados": duplicados_borrados,
