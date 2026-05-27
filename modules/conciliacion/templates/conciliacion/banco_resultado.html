@@ -500,7 +500,7 @@
                         {# TMT 2026-05-27 click-to-pair + drag-and-drop: data-attrs para el JS de match manual.
                            draggable="true" → soporta arrastrar la fila banco al lado PC.
                            amount_match → fondo amarillo + ✓ chico (= mismo monto en el otro lado) #}
-                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}"
                             draggable="true"
                             data-fecha="{{ it.fecha }}" data-concepto="{{ it.concepto|e }}"
                             data-documento="{{ it.documento|e }}" data-monto="{{ '%.2f'|format(it.monto) }}"
@@ -538,7 +538,7 @@
                            ser el cruce mas importante". Doc banco
                            (numreferencia) SIEMPRE visible — '·' si vacío.
                            Prov pasa a segunda columna como info auxiliar. #}
-                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}"
                             draggable="true"
                             data-id-transaccion="{{ it.id_transaccion or '' }}" data-importe="{{ '%.2f'|format(it.importe) }}"
                             {% if it.matched %}data-already-matched="1"{% endif %}>
