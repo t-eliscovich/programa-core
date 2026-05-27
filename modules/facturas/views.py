@@ -1806,21 +1806,59 @@ def consolidar_duplicados_asinfo():
         min_votos = 2
 
     # 1) Detectar pares de duplicados
+    # Caso A: mismo numf (DBF y backfill matchean por numero idéntico)
+    # Caso B: mismo (kg, importe, fecha) — DBF tiene el numf MAL cargado
+    #         (ej. perdió un dígito, "76025" vs Asinfo real "176025").
+    #         Ambos casos: cli distinto (alias-relevant).
     pares = db.fetch_all(
         """
-        SELECT a.id_factura AS a_id, a.codigo_cli AS a_cli,
-               a.numf_completo AS a_nfc, a.numf AS numf, a.fecha AS fecha,
-               b.id_factura AS b_id, b.codigo_cli AS b_cli,
-               b.numf_completo AS b_nfc
-          FROM scintela.factura a
-          JOIN scintela.factura b
-            ON a.numf = b.numf
-           AND a.fecha = b.fecha
-           AND a.codigo_cli <> b.codigo_cli
-           AND a.id_factura <> b.id_factura
-         WHERE a.usuario_crea = 'asinfo-backfill'
-           AND COALESCE(b.usuario_crea, '') <> 'asinfo-backfill'
-           AND a.numf IS NOT NULL AND a.numf > 0
+        WITH backfill AS (
+            SELECT id_factura, codigo_cli, numf_completo, numf, fecha,
+                   kg, importe
+              FROM scintela.factura
+             WHERE usuario_crea = 'asinfo-backfill'
+        ),
+        candidatos AS (
+            -- Caso A: mismo numf
+            SELECT a.id_factura AS a_id, a.codigo_cli AS a_cli,
+                   a.numf_completo AS a_nfc, a.numf AS numf, a.fecha AS fecha,
+                   b.id_factura AS b_id, b.codigo_cli AS b_cli,
+                   b.numf_completo AS b_nfc,
+                   'A_numf' AS match_via
+              FROM backfill a
+              JOIN scintela.factura b
+                ON a.numf = b.numf
+               AND a.fecha = b.fecha
+               AND a.codigo_cli <> b.codigo_cli
+               AND a.id_factura <> b.id_factura
+             WHERE COALESCE(b.usuario_crea, '') <> 'asinfo-backfill'
+               AND a.numf IS NOT NULL AND a.numf > 0
+            UNION ALL
+            -- Caso B: mismo (kg, importe, fecha) pero NUMF DISTINTO
+            -- (DBF cargó la factura con numf equivocado; Asinfo trae el correcto)
+            SELECT a.id_factura AS a_id, a.codigo_cli AS a_cli,
+                   a.numf_completo AS a_nfc, a.numf AS numf, a.fecha AS fecha,
+                   b.id_factura AS b_id, b.codigo_cli AS b_cli,
+                   b.numf_completo AS b_nfc,
+                   'B_kg_imp_fecha' AS match_via
+              FROM backfill a
+              JOIN scintela.factura b
+                ON a.fecha = b.fecha
+               AND ABS(a.kg - b.kg) < 0.001
+               AND ABS(a.importe - b.importe) < 0.01
+               AND a.codigo_cli <> b.codigo_cli
+               AND a.numf <> b.numf
+               AND a.id_factura <> b.id_factura
+             WHERE COALESCE(b.usuario_crea, '') <> 'asinfo-backfill'
+               AND a.kg IS NOT NULL AND a.kg <> 0
+               AND a.importe IS NOT NULL AND a.importe <> 0
+        )
+        -- DEDUP: si un par sale tanto por caso A como B, quedarse con A.
+        SELECT DISTINCT ON (a_id, b_id)
+               a_id, a_cli, a_nfc, numf, fecha, b_id, b_cli, b_nfc, match_via
+          FROM candidatos
+         ORDER BY a_id, b_id,
+                  CASE match_via WHEN 'A_numf' THEN 0 ELSE 1 END
         """
     ) or []
 
@@ -1903,10 +1941,12 @@ def consolidar_duplicados_asinfo():
         "numf_completo_copiados_al_original_dbf": numf_completo_copiados,
         "duplicados_borrados": duplicados_borrados,
         "errores": err_log[:20],
+        "pares_por_match_via": dict(Counter(p.get("match_via") for p in pares)),
         "sample_pares": [
             {"numf": p["numf"], "fecha": str(p["fecha"]),
              "a_cli_asinfo_backfill": p["a_cli"], "b_cli_dbf_original": p["b_cli"],
-             "a_nfc": p["a_nfc"], "b_nfc": p["b_nfc"]}
+             "a_nfc": p["a_nfc"], "b_nfc": p["b_nfc"],
+             "match_via": p.get("match_via")}
             for p in pares[:10]
         ],
     })
