@@ -63,106 +63,143 @@
        pendientes. Drag banco → soltá sobre PC → par a la cola. Confirmar
        todos los pares de un saque. Cross-día natural. #}
   <div id="vista-pareo" class="hidden">
-    <div id="pareo-queue" class="mb-3 rounded-lg border-2 border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/20 p-3 min-h-[80px]">
-      <div class="flex items-baseline justify-between mb-2">
+    {# Drop-zone arriba — dashed border que se vuelve sólida al draggear.
+       Cards horizontales con los pares en cola. #}
+    <div id="pareo-queue" class="mb-4 rounded-xl border-2 border-dashed border-sky-300 dark:border-sky-700 bg-gradient-to-br from-sky-50 to-white dark:from-sky-900/20 dark:to-slate-900 p-4 transition-all">
+      <div class="flex items-baseline justify-between mb-3 gap-3">
         <div>
-          <div class="text-sm font-semibold text-sky-900 dark:text-sky-100">📋 Conciliación pendiente — <span id="pareo-counter">0</span> pares</div>
-          <div class="text-[11px] text-sky-700 dark:text-sky-300">Arrastrá una fila banco a una fila programa para agregar un par. Tachados = filas usadas.</div>
+          <div class="text-base font-bold text-sky-900 dark:text-sky-100 flex items-center gap-2">
+            <span class="text-xl">📋</span>
+            <span>Conciliación pendiente</span>
+            <span class="ml-1 px-2 py-0.5 rounded-full bg-sky-600 text-white text-xs font-bold tabular-nums" id="pareo-counter-badge"><span id="pareo-counter">0</span> pares</span>
+          </div>
+          <div class="text-xs text-sky-700 dark:text-sky-300 mt-1">
+            Arrastrá una fila <strong>Banco</strong> a una fila <strong>Programa</strong> (o al revés). Los pares se acumulan acá hasta que confirmes.
+          </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <button type="button" id="pareo-limpiar"
-                  class="px-3 py-1 rounded bg-white dark:bg-slate-800 border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-200 text-xs hover:bg-sky-100 dark:hover:bg-sky-900/40 hidden">
+                  class="px-3 py-1.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-700 hidden">
             Limpiar
           </button>
           <button type="button" id="pareo-confirmar"
-                  class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow disabled:opacity-50"
+                  class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition"
                   disabled>
             ✓ Confirmar pares
           </button>
         </div>
       </div>
-      <div id="pareo-pairs" class="text-xs space-y-1">
-        <div class="text-slate-400 italic">Sin pares aún. Arrastrá filas de abajo.</div>
+      <div id="pareo-pairs" class="flex flex-wrap gap-2 min-h-[40px]">
+        <div class="text-sm text-slate-400 italic flex items-center" id="pareo-empty">↓ Empezá arrastrando una fila de las tablas de abajo</div>
       </div>
     </div>
 
-    {# Filtros simples (monto, texto) #}
-    <div class="mb-2 flex items-center gap-2 text-xs">
-      <input type="text" id="pareo-filtro" placeholder="Filtrar por concepto / cliente / doc / monto..."
-             class="flex-1 px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
-      <span class="text-slate-500"><span id="pareo-visible-banco">0</span> banco / <span id="pareo-visible-pc">0</span> PC visibles</span>
+    {# Buscador + contadores #}
+    <div class="mb-3 flex items-center gap-3">
+      <div class="relative flex-1 max-w-md">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+        <input type="text" id="pareo-filtro"
+               placeholder="Filtrar por concepto, cliente, doc o monto..."
+               class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-300 dark:focus:ring-sky-700">
+      </div>
+      <div class="text-xs text-slate-500 tabular-nums">
+        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-500"></span><span id="pareo-visible-banco">0</span> banco</span>
+        <span class="mx-2 text-slate-300">·</span>
+        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-violet-500"></span><span id="pareo-visible-pc">0</span> programa</span>
+      </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       {# COLUMNA BANCO #}
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-        <div class="px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300">
-          🏦 MOVIMIENTOS BANCO (todos sin conciliar)
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="px-4 py-2.5 bg-gradient-to-r from-sky-50 to-white dark:from-sky-900/30 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight">Banco</span>
+            <span class="text-[11px] text-slate-500">según extracto</span>
+          </div>
+          <span class="text-[11px] text-slate-400 tabular-nums">{{ (data.real_only or [])|length }} movs</span>
         </div>
-        <div class="max-h-[600px] overflow-y-auto">
-          <table class="w-full text-xs">
-            <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/60 text-[10px] uppercase tracking-wide text-slate-500">
+        <div class="max-h-[640px] overflow-y-auto">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
               <tr>
-                <th class="px-2 py-1 text-left">Fecha</th>
-                <th class="px-2 py-1 text-left">Doc</th>
-                <th class="px-2 py-1 text-right">Monto</th>
-                <th class="px-2 py-1 text-center">Tipo</th>
-                <th class="px-2 py-1 text-left">Concepto</th>
+                <th class="px-3 py-2 text-left w-20">Fecha</th>
+                <th class="px-2 py-2 text-center w-10">±</th>
+                <th class="px-3 py-2 text-right w-28">Monto</th>
+                <th class="px-3 py-2 text-left w-24">Doc banco</th>
+                <th class="px-3 py-2 text-left">Concepto</th>
               </tr>
             </thead>
             <tbody>
               {% for r in (data.real_only or []) %}
-              <tr class="pareo-row pareo-banco border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20"
+              <tr class="pareo-row pareo-banco border-b border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/15 transition-colors even:bg-slate-50/40 dark:even:bg-slate-800/20"
                   draggable="true"
                   data-fecha="{{ r.fecha or '' }}" data-concepto="{{ r.concepto|e }}"
                   data-documento="{{ r.documento|e }}" data-monto="{{ '%.2f'|format(r.monto|float) }}"
                   data-tipo="{{ r.tipo or '' }}" data-codigo="{{ r.codigo|e }}" data-oficina="{{ r.oficina|e }}">
-                <td class="px-2 py-1 font-mono whitespace-nowrap text-slate-600">{{ r.fecha }}</td>
-                <td class="px-2 py-1 font-mono whitespace-nowrap text-slate-700 dark:text-slate-300">{{ r.documento or '·' }}</td>
-                <td class="px-2 py-1 text-right tabular-nums whitespace-nowrap font-medium">$ {{ '{:,.2f}'.format(r.monto|float) }}</td>
-                <td class="px-2 py-1 text-center font-mono text-[10px] {% if r.tipo == 'C' %}text-emerald-600{% else %}text-rose-600{% endif %}">{{ r.tipo }}</td>
-                <td class="px-2 py-1 truncate max-w-xs text-slate-600 dark:text-slate-400" title="{{ r.concepto }}">{{ (r.concepto or '')[:50] }}</td>
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-500">{{ r.fecha[5:10] if r.fecha else '·' }}<span class="text-slate-300 text-[10px] ml-1">{{ r.fecha[2:4] if r.fecha else '' }}</span></td>
+                <td class="px-2 py-2 text-center">
+                  {% if r.tipo == 'C' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">+</span>{% else %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[10px] font-bold">−</span>{% endif %}
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold {% if r.tipo == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-700 dark:text-slate-300">{{ r.documento or '·' }}</td>
+                <td class="px-3 py-2 text-slate-600 dark:text-slate-400 text-xs truncate max-w-[260px]" title="{{ r.concepto }}">{{ (r.concepto or '')[:60] }}</td>
               </tr>
               {% endfor %}
+              {% if not data.real_only %}
+              <tr><td colspan="5" class="px-3 py-8 text-center text-sm text-slate-400 italic">Sin movs banco sin conciliar — todo cuadra ✓</td></tr>
+              {% endif %}
             </tbody>
           </table>
         </div>
       </div>
 
       {# COLUMNA PROGRAMA #}
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-        <div class="px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300">
-          💻 MOVIMIENTOS PROGRAMA (todos sin conciliar)
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="px-4 py-2.5 bg-gradient-to-r from-violet-50 to-white dark:from-violet-900/30 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight">Programa</span>
+            <span class="text-[11px] text-slate-500">según PC</span>
+          </div>
+          <span class="text-[11px] text-slate-400 tabular-nums">{% set _pc_n = 0 %}{% for b in (data.bancsis_only or []) %}{% if not b.es_agrupado %}{% set _pc_n = _pc_n + 1 %}{% endif %}{% endfor %}{{ _pc_n }} movs</span>
         </div>
-        <div class="max-h-[600px] overflow-y-auto">
-          <table class="w-full text-xs">
-            <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/60 text-[10px] uppercase tracking-wide text-slate-500">
+        <div class="max-h-[640px] overflow-y-auto">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
               <tr>
-                <th class="px-2 py-1 text-left">Fecha</th>
-                <th class="px-2 py-1 text-left">Doc PC</th>
-                <th class="px-2 py-1 text-left">Doc banco</th>
-                <th class="px-2 py-1 text-right">Monto</th>
-                <th class="px-2 py-1 text-left">Cliente / Concepto</th>
+                <th class="px-3 py-2 text-left w-20">Fecha</th>
+                <th class="px-2 py-2 text-center w-10">±</th>
+                <th class="px-3 py-2 text-right w-28">Monto</th>
+                <th class="px-3 py-2 text-left w-24">Doc banco</th>
+                <th class="px-3 py-2 text-left">Cliente / Concepto</th>
               </tr>
             </thead>
             <tbody>
               {% for b in (data.bancsis_only or []) %}{% if not b.es_agrupado %}
-              <tr class="pareo-row pareo-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20"
+              {% set _es_credito = b.documento in ('DE','TR','XX','NC','IN','AC') %}
+              <tr class="pareo-row pareo-pc border-b border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-violet-50 dark:hover:bg-violet-900/15 transition-colors even:bg-slate-50/40 dark:even:bg-slate-800/20"
                   draggable="true"
                   data-id-transaccion="{{ b.id_transaccion or '' }}"
                   data-fecha="{{ b.fecha or '' }}" data-documento="{{ b.documento|e }}"
                   data-importe="{{ '%.2f'|format(b.importe|float) }}"
                   data-numref="{{ b.numreferencia|e }}" data-prov="{{ b.prov|e }}">
-                <td class="px-2 py-1 font-mono whitespace-nowrap text-slate-600">{{ b.fecha }}</td>
-                <td class="px-2 py-1 font-mono whitespace-nowrap text-slate-500 text-[10px]">{{ b.documento or '·' }}</td>
-                <td class="px-2 py-1 font-mono whitespace-nowrap text-slate-700 dark:text-slate-300">{{ b.numreferencia or '·' }}</td>
-                <td class="px-2 py-1 text-right tabular-nums whitespace-nowrap font-medium">$ {{ '{:,.2f}'.format(b.importe|float) }}</td>
-                <td class="px-2 py-1 truncate max-w-xs text-slate-700 dark:text-slate-300" title="{{ b.concepto }}">
-                  {% if b.prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">{{ b.prov }}</span>{% endif %}
-                  {{ (b.prov_nombre or b.concepto or '')[:40] }}
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-500">{{ b.fecha[5:10] if b.fecha else '·' }}<span class="text-slate-300 text-[10px] ml-1">{{ b.fecha[2:4] if b.fecha else '' }}</span></td>
+                <td class="px-2 py-2 text-center">
+                  {% if _es_credito %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">+</span>{% else %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[10px] font-bold">−</span>{% endif %}
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold {% if _es_credito %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap {% if b.numreferencia %}text-slate-700 dark:text-slate-300 font-medium{% else %}text-slate-300{% endif %}">{{ b.numreferencia or '·' }}</td>
+                <td class="px-3 py-2 text-xs truncate max-w-[260px]" title="{{ b.prov_nombre or b.concepto }}">
+                  {% if b.prov %}<span class="inline-block px-1.5 py-0.5 mr-1.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-300 font-medium">{{ b.prov }}</span>{% endif %}
+                  <span class="text-slate-700 dark:text-slate-300">{{ (b.prov_nombre or b.concepto or '')[:42] }}</span>
                 </td>
               </tr>
               {% endif %}{% endfor %}
+              {% if not data.bancsis_only %}
+              <tr><td colspan="5" class="px-3 py-8 text-center text-sm text-slate-400 italic">Sin movs programa sin conciliar — todo cuadra ✓</td></tr>
+              {% endif %}
             </tbody>
           </table>
         </div>
@@ -2358,12 +2395,25 @@
 {# ───── MODO PAREO LIBRE — TMT 2026-05-27 ─────
    Toggle vista, drag-and-drop banco→PC para encolar pares, confirmar bulk. #}
 <style>
+  .pareo-row { user-select: none; }
   .pareo-row.pareo-dragging { opacity: 0.4; cursor: grabbing; }
-  .pareo-row.pareo-drop-target { background-color: rgb(187 247 208) !important; box-shadow: inset 0 0 0 3px rgb(34 197 94); }
+  .pareo-row.pareo-drop-target { background-color: rgb(187 247 208) !important; box-shadow: inset 0 0 0 3px rgb(34 197 94); transform: scale(1.005); }
   .dark .pareo-row.pareo-drop-target { background-color: rgb(20 83 45) !important; box-shadow: inset 0 0 0 3px rgb(74 222 128); }
-  .pareo-row.pareo-en-cola { opacity: 0.35; text-decoration: line-through; pointer-events: none; }
-  .pareo-pair-card { display: flex; align-items: center; gap: 8px; background: white; padding: 4px 8px; border-radius: 6px; border: 1px solid rgb(186 230 253); }
+  .pareo-row.pareo-en-cola { opacity: 0.4; pointer-events: none; }
+  .pareo-row.pareo-en-cola td { text-decoration: line-through; text-decoration-color: rgb(148 163 184); }
+  /* Drop-zone — dashed por default, sólido azul cuando algo se está arrastrando */
+  #pareo-queue.pareo-dragging-active { border-style: solid !important; border-color: rgb(2 132 199) !important; background: rgb(224 242 254); box-shadow: 0 0 0 4px rgb(186 230 253); }
+  .dark #pareo-queue.pareo-dragging-active { background: rgb(7 89 133 / 0.4); box-shadow: 0 0 0 4px rgb(7 89 133); }
+  .pareo-pair-card {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: white; padding: 6px 10px; border-radius: 8px;
+    border: 1px solid rgb(186 230 253); box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    font-size: 12px;
+  }
   .dark .pareo-pair-card { background: rgb(15 23 42); border-color: rgb(7 89 133); }
+  .pareo-pair-card .ppc-x { color: rgb(244 63 94); cursor: pointer; font-weight: 700; padding: 0 4px; border-radius: 4px; }
+  .pareo-pair-card .ppc-x:hover { background: rgb(254 226 226); }
+  .dark .pareo-pair-card .ppc-x:hover { background: rgb(127 29 29 / 0.4); }
 </style>
 <script>
 (function(){
@@ -2400,35 +2450,51 @@
   const confirmBtn = document.getElementById('pareo-confirmar');
   const limpiarBtn = document.getElementById('pareo-limpiar');
 
+  function fmt(n) { return Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  function shortDate(s) { return s ? s.slice(8,10)+'/'+s.slice(5,7) : '·'; }
+
   function renderQueue() {
     counterEl.textContent = pairs.length;
     confirmBtn.disabled = pairs.length === 0;
+    confirmBtn.textContent = pairs.length === 0 ? '✓ Confirmar pares' : `✓ Confirmar ${pairs.length} ${pairs.length === 1 ? 'par' : 'pares'}`;
     limpiarBtn.classList.toggle('hidden', pairs.length === 0);
+    const emptyMsg = document.getElementById('pareo-empty');
     if (pairs.length === 0) {
-      queueEl.innerHTML = '<div class="text-slate-400 italic">Sin pares aún. Arrastrá filas de abajo.</div>';
+      queueEl.innerHTML = '<div class="text-sm text-slate-400 italic flex items-center" id="pareo-empty">↓ Empezá arrastrando una fila de las tablas de abajo</div>';
       return;
     }
     queueEl.innerHTML = '';
     pairs.forEach((p, idx) => {
       const card = document.createElement('div');
       card.className = 'pareo-pair-card';
-      const bm = parseFloat(p.banco.dataset.monto).toFixed(2);
-      const pi = parseFloat(p.pc.dataset.importe).toFixed(2);
-      const diff = (parseFloat(bm) - parseFloat(pi)).toFixed(2);
+      const bm = parseFloat(p.banco.dataset.monto);
+      const pi = parseFloat(p.pc.dataset.importe);
+      const diff = bm - pi;
+      const cuadra = Math.abs(diff) <= 0.01;
+      const cliente = p.pc.dataset.prov || '';
+      const docPc = p.pc.dataset.numref || '';
+      const docBco = p.banco.dataset.documento || '';
       card.innerHTML = `
-        <span class="font-mono text-[11px] text-slate-500">${p.banco.dataset.fecha}</span>
-        <span class="font-mono text-emerald-700">$${bm}</span>
-        <span class="text-slate-400">↔</span>
-        <span class="font-mono text-[11px] text-slate-500">${p.pc.dataset.fecha}</span>
-        <span class="font-mono text-emerald-700">$${pi}</span>
-        ${Math.abs(parseFloat(diff)) > 0.01 ? `<span class="text-amber-600 text-[10px]">Δ$${diff}</span>` : '<span class="text-emerald-600 text-[10px]">✓</span>'}
-        <span class="text-slate-400 ml-2">${p.pc.dataset.prov || ''}</span>
-        <button class="ml-auto text-rose-500 text-[10px] hover:text-rose-700" data-rm="${idx}">✕</button>
+        <span class="inline-flex w-2 h-2 rounded-full bg-sky-500" title="banco"></span>
+        <span class="font-mono text-[11px] text-slate-500">${shortDate(p.banco.dataset.fecha)}</span>
+        ${docBco ? `<span class="font-mono text-[10px] text-slate-400">${docBco}</span>` : ''}
+        <span class="font-mono font-semibold text-slate-800 dark:text-slate-100">$${fmt(bm)}</span>
+        <span class="text-slate-300">→</span>
+        <span class="inline-flex w-2 h-2 rounded-full bg-violet-500" title="programa"></span>
+        <span class="font-mono text-[11px] text-slate-500">${shortDate(p.pc.dataset.fecha)}</span>
+        ${docPc ? `<span class="font-mono text-[10px] text-slate-400">${docPc}</span>` : ''}
+        <span class="font-mono font-semibold text-slate-800 dark:text-slate-100">$${fmt(pi)}</span>
+        ${cliente ? `<span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-300">${cliente}</span>` : ''}
+        ${cuadra
+          ? '<span class="text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">✓</span>'
+          : `<span class="text-amber-600 dark:text-amber-400 text-[10px] font-mono">Δ${diff > 0 ? '+' : ''}${fmt(diff)}</span>`
+        }
+        <span class="ppc-x" data-rm="${idx}" title="Quitar par">✕</span>
       `;
       queueEl.appendChild(card);
     });
-    queueEl.querySelectorAll('button[data-rm]').forEach(b => {
-      b.addEventListener('click', (e) => {
+    queueEl.querySelectorAll('[data-rm]').forEach(b => {
+      b.addEventListener('click', () => {
         const idx = parseInt(b.dataset.rm);
         const removed = pairs.splice(idx, 1)[0];
         if (removed) {
@@ -2489,16 +2555,19 @@
 
   // ─── Drag-and-drop pareo ───────────────────────────────────────────
   let dragSrc = null;
+  const dropZone = document.getElementById('pareo-queue');
   document.querySelectorAll('.pareo-row').forEach(row => {
     row.addEventListener('dragstart', (ev) => {
       if (row.classList.contains('pareo-en-cola')) { ev.preventDefault(); return; }
       row.classList.add('pareo-dragging');
       dragSrc = row;
       ev.dataTransfer.effectAllowed = 'move';
+      dropZone.classList.add('pareo-dragging-active');
     });
     row.addEventListener('dragend', () => {
       row.classList.remove('pareo-dragging');
       document.querySelectorAll('.pareo-drop-target').forEach(r => r.classList.remove('pareo-drop-target'));
+      dropZone.classList.remove('pareo-dragging-active');
       dragSrc = null;
     });
     row.addEventListener('dragover', (ev) => {
