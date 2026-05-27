@@ -276,18 +276,20 @@ def comparativa_tintoreria():
         error = (error + " | " if error else "") + f"PC color: {e}"
 
     try:
-        # TMT 2026-05-26 v2: REVERTIDO al estado original (terminado_*).
-        # Mi intento de fix con creacion_* hizo las cosas peor — perdió días
-        # enteros (14-18/05 sin data) y no matcheó tampoco con el Excel.
-        # Pendiente: debug real contra la DB con
-        # scripts/debug_tintoreria_vs_excel.sh para entender exactamente qué
-        # criterio usa get_telas_report() en formulas_app antes de volver
-        # a tocar este filtro. Por ahora dejamos como estaba el estado pre-fix.
+        # TMT 2026-05-26 v3: usar creacion_desde/hasta para matchear EXACTO
+        # el Excel oficial /telas/export. Confirmado contra la DB real via
+        # /informes/debug-tintoreria-diff: query C (con creacion_*) matchea
+        # query A (get_telas_report) byte-por-byte en todos los días del
+        # rango. La diferencia con terminado_* es que el Excel agrupa por
+        # fecha_terminado pero filtra por fecha CREACIÓN — esto excluye las
+        # 211 órdenes creadas en abril pero terminadas en mayo (que estaban
+        # inflando el lado formulas en B), e incluye las 50 creadas en mayo
+        # pero terminadas el 27/05 (fuera del rango display).
         from modules.tintura import service as tintura_service
         rows_form = tintura_service.tinturado_resumen(
-            limite=5000,
-            terminado_desde=desde,
-            terminado_hasta=hasta,
+            limite=20000,
+            creacion_desde=desde,
+            creacion_hasta=hasta,
         )
     except Exception as e:  # noqa: BLE001
         error = (error + " | " if error else "") + f"formulas_app: {e}"
