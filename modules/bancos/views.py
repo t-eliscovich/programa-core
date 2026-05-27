@@ -783,24 +783,41 @@ def movimientos(no_banco):
     # quiero ver un renglon que diga 1000 USD depositados, 25 cheques. y
     # luego si abro un + (...) vea el detalle, cheque x por x monto etc.".
     #
-    # Las filas vienen ORDER BY fecha DESC, id_transaccion DESC.
-    # Agrupamos DE consecutivos de la MISMA fecha en un "lote". Si el
-    # grupo tiene 2+, lo presentamos como 1 fila resumen + N filas
-    # detalle ocultas; si tiene 1, va como movimiento normal.
+    # TMT 2026-05-27 dueña v2: "cuanto deposito muchos cheques juntos si
+    # quiero que se agrupe el lote. pero si lo deposito mas tarde no se
+    # tiene que agrupar, tiene que aparecer por separado".
+    # Antes agrupábamos por `fecha` (día) → si depositaba 25 cheques al
+    # mediodía y luego 1 más a la tarde, los 26 se agrupaban juntos.
+    # Ahora agrupamos por VENTANA DE TIEMPO de `fecha_crea` (timestamp
+    # del INSERT). Un `depositar_lote()` mete N cheques en la misma tx →
+    # fecha_crea cae en el mismo segundo o muy cerca. Un depósito
+    # posterior está separado por minutos o más. Threshold: 2 minutos
+    # entre cheques consecutivos del mismo lote.
     items: list[dict] = []
     i = 0
+    _VENTANA_LOTE_SEG = 120  # 2 min entre cheques consecutivos del mismo lote
     while i < len(filas):
         f = filas[i]
         doc = (f.get("documento") or "").strip().upper()
         if doc == "DE":
             j = i
             grupo = []
+            prev_fc = None
             while (
                 j < len(filas)
                 and (filas[j].get("documento") or "").strip().upper() == "DE"
                 and filas[j].get("fecha") == f.get("fecha")
             ):
+                fc = filas[j].get("fecha_crea")
+                if prev_fc is not None and fc is not None:
+                    try:
+                        delta = abs((prev_fc - fc).total_seconds())
+                    except Exception:
+                        delta = _VENTANA_LOTE_SEG + 1
+                    if delta > _VENTANA_LOTE_SEG:
+                        break  # gap > ventana → cheque pertenece a otro depósito
                 grupo.append(filas[j])
+                prev_fc = fc
                 j += 1
             if len(grupo) >= 2:
                 total_lote = sum(float(g.get("importe") or 0) for g in grupo)

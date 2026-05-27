@@ -128,7 +128,7 @@ def movimientos(
         SELECT
             t.id_transaccion, t.fecha, t.documento, t.concepto, t.fechad,
             t.importe, t.saldo, t.stat, t.no_banco, t.no_cta, t.prov,
-            t.numreferencia, t.usuario_crea,
+            t.numreferencia, t.usuario_crea, t.fecha_crea,
             md.id_mov_doble        AS mov_doble_id,
             md.estado              AS mov_estado,
             md.usuario             AS mov_usuario,
