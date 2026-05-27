@@ -654,28 +654,40 @@ def hub():
         #   DBF + los creados en PC vía UI/conciliacion)
         # Si dBase == PC → PC no creó movs extra → sync limpio. Si PC > dBase
         # → hay movs en PC que el dBase no conoce.
+        # Saldo a conciliar — coherente con Card 1 (saldo_pre):
+        #   dBase pendiente = stat<>'*' (lo que el DBF no marcó conciliado)
+        #   PC pendiente    = stat<>'*' AND sin match PC
+        #     (= lo que TODAVÍA hay que conciliar, igual que Card 1)
         try:
             saldo_conc_split = _db.fetch_one(
                 """
+                WITH conciliados_pc AS (
+                    SELECT DISTINCT id_transaccion
+                      FROM scintela.banco_conciliacion_match
+                     WHERE no_banco = %(no_banco)s
+                       AND (deshecho_en IS NULL)
+                       AND id_transaccion IS NOT NULL
+                )
                 SELECT
-                  -- dBase: solo movs con usuario_crea='dbf-import' y stat <> '*'
-                  COUNT(*) FILTER (WHERE COALESCE(usuario_crea,'') = 'dbf-import'
-                                     AND TRIM(COALESCE(stat,'')) <> '*')
+                  -- dBase: stat<>'*' (independientemente de PC matches)
+                  COUNT(*) FILTER (WHERE TRIM(COALESCE(t.stat,'')) <> '*')
                                                                        AS n_dbase,
-                  COALESCE(SUM(CASE WHEN COALESCE(usuario_crea,'') = 'dbf-import'
-                                     AND TRIM(COALESCE(stat,'')) <> '*'
-                                    THEN CASE WHEN documento IN ('CH','ND','DB','GS','PA')
-                                              THEN -importe ELSE importe END
+                  COALESCE(SUM(CASE WHEN TRIM(COALESCE(t.stat,'')) <> '*'
+                                    THEN CASE WHEN t.documento IN ('CH','ND','DB','GS','PA')
+                                              THEN -t.importe ELSE t.importe END
                                     ELSE 0 END), 0)                    AS saldo_dbase,
-                  -- PC: todos los movs sin stat='*' (sin filtrar por usuario_crea)
-                  COUNT(*) FILTER (WHERE TRIM(COALESCE(stat,'')) <> '*')
+                  -- PC: stat<>'*' AND sin match PC (= Card 1 saldo_pre)
+                  COUNT(*) FILTER (WHERE TRIM(COALESCE(t.stat,'')) <> '*'
+                                     AND cp.id_transaccion IS NULL)
                                                                        AS n_pc,
-                  COALESCE(SUM(CASE WHEN TRIM(COALESCE(stat,'')) <> '*'
-                                    THEN CASE WHEN documento IN ('CH','ND','DB','GS','PA')
-                                              THEN -importe ELSE importe END
+                  COALESCE(SUM(CASE WHEN TRIM(COALESCE(t.stat,'')) <> '*'
+                                     AND cp.id_transaccion IS NULL
+                                    THEN CASE WHEN t.documento IN ('CH','ND','DB','GS','PA')
+                                              THEN -t.importe ELSE t.importe END
                                     ELSE 0 END), 0)                    AS saldo_pc
-                  FROM scintela.transacciones_bancarias
-                 WHERE no_banco = %(no_banco)s
+                  FROM scintela.transacciones_bancarias t
+                  LEFT JOIN conciliados_pc cp ON cp.id_transaccion = t.id_transaccion
+                 WHERE t.no_banco = %(no_banco)s
                 """,
                 {"no_banco": _BANCO_PICHINCHA},
             ) or {}

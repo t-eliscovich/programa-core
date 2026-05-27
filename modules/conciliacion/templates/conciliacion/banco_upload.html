@@ -10,48 +10,11 @@
   </p>
 
   {# TMT 2026-05-27 dueña: 'Antes de empezar una conciliacion nueva, me tiene
-     que decir el saldo a conciliar'. Resumen previo del estado actual de
-     Pichincha — qué quedó sin conciliar (excluyendo stat='*' del dBase y
-     los matches confirmados en PC). #}
-  {% if saldo_pre and (saldo_pre.n_pendientes or 0) > 0 %}
-  <div class="mb-5 rounded-lg border-2 border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/20 p-5">
-    <div class="flex items-baseline justify-between gap-3 mb-2">
-      <span class="text-xs uppercase tracking-wider text-sky-800 dark:text-sky-300 font-semibold">Saldo a conciliar — Pichincha</span>
-      <span class="text-[11px] text-sky-700 dark:text-sky-400">excluye dBase ya conciliado (stat=*)</span>
-    </div>
-    <div class="grid grid-cols-3 gap-4">
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Movs pendientes</div>
-        <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">{{ saldo_pre.n_pendientes }}</div>
-      </div>
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Saldo neto pendiente</div>
-        <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pre.saldo_pendiente|float) }}</div>
-      </div>
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Rango fechas</div>
-        <div class="text-sm font-medium text-sky-900 dark:text-sky-100 tabular-nums mt-1">
-          {% if saldo_pre.fecha_min and saldo_pre.fecha_max %}{{ saldo_pre.fecha_min }} → {{ saldo_pre.fecha_max }}{% else %}—{% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
-  {% elif saldo_pre is defined %}
-  <div class="mb-5 rounded-lg border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 p-4 flex items-center gap-3">
-    <span class="text-emerald-700 dark:text-emerald-300 text-lg">✓</span>
-    <span class="text-sm text-emerald-800 dark:text-emerald-200">Todo conciliado — Pichincha al día.</span>
-  </div>
-  {% endif %}
-
-  {# TMT 2026-05-27 dueña: 'necesito que encuentre si tenes el saldo del
-     banco para conciliar en la base de dbase y entonces entendamos si
-     estamos al dia'. Comparativa: último saldo CONCILIADO del dBase
-     (PICHINCH.DBF stat='*') vs saldo PC al mismo corte. Si coinciden,
-     PC y dBase están sincronizados al día del último conciliado. #}
-  {# TMT 2026-05-27 dueña: 'quiero saber si el saldo a conciliar es igual
-     del dbase y del programa'. Side-by-side: dBase (movs importados con
-     usuario_crea='dbf-import' sin stat='*') vs PC (todos los movs sin
-     stat='*'). Si difieren → PC tiene movs que el dBase no conoce. #}
+     que decir el saldo a conciliar' + 'quiero saber si el saldo a conciliar
+     es igual del dbase y del programa'. Una sola card que muestra dBase vs
+     PC (movs pendientes a conciliar) — si difieren, PC tiene movs que el
+     dBase no conoce. Card consolidada (antes había 2 separadas que mostraban
+     lo mismo con definiciones distintas). #}
   {% if saldo_conc_split and saldo_conc_split.n_pc is not none %}
   <div class="mb-5 rounded-lg border-2 {% if saldo_conc_split.diff|abs < 1 %}border-emerald-300 bg-emerald-50/50 dark:bg-emerald-900/10{% else %}border-amber-300 bg-amber-50/50 dark:bg-amber-900/10{% endif %} p-4">
     <div class="flex items-baseline justify-between gap-3 mb-2">
