@@ -189,6 +189,29 @@ def _ya_conciliadas(no_banco: int, desde: date, hasta: date) -> tuple[set[int], 
                 f"{Decimal(str(r.get('real_monto') or 0)):.2f}",
                 (r.get("real_tipo") or "").strip().upper(),
             ))
+
+    # TMT 2026-05-27 dueña: 'en dbase, pichincha, ya existe que movimientos
+    # fueron conciliados y cuales no'. PICHINCH.DBF tiene un campo STAT:
+    # '*' = conciliado, '' = no conciliado. El sync DBF lo trae a
+    # scintela.transacciones_bancarias.stat. Tratamos stat='*' como
+    # conciliado pre-existente — el matcher los excluye automáticamente.
+    try:
+        rows_dbf = db.fetch_all(
+            """
+            SELECT id_transaccion
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+               AND fecha BETWEEN %s AND %s
+               AND TRIM(COALESCE(stat, '')) = '*'
+            """,
+            (no_banco, desde - timedelta(days=30), hasta + timedelta(days=30)),
+        ) or []
+        for r in rows_dbf:
+            if r.get("id_transaccion"):
+                ids_bancsis.add(int(r["id_transaccion"]))
+    except Exception:
+        pass  # fail-soft: si la columna no existe, seguimos con lo registrado en PC
+
     return ids_bancsis, firmas_real
 
 

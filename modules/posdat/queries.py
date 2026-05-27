@@ -380,9 +380,12 @@ def buscar(
           AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
           -- TMT 2026-05-20: filtro de tab (YY vs resto).
+          -- TMT 2026-05-27 dueña: prov='RT' (retenciones) también cuenta
+          -- como provisión YY. 'hace que con las migraciones esto ya no
+          -- se toque' → filtro a nivel código, no migrar data.
           AND (
-                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) = 'YY')
-             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) <> 'YY')
+                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
+             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
           )
           -- Filtro de soft-delete (migración 0027): siempre excluye anuladas.
           AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
