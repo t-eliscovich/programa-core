@@ -54,6 +54,7 @@ class MovBancsis:
     es_agrupado: bool = False  # mov del programa que suma N cheques (dep.N ch)
     n_cheques: int = 0         # cuántos cheques agrupa
     no_cheque_rel: str = ""    # TMT 2026-05-26: no_cheque del cheque ligado (vía chequextransaccion). Usado por PASS 0 para matchear contra extracto.documento.
+    fecha_crea: object = None  # TMT 2026-05-27: timestamp del INSERT (para agrupar lotes ≤120s en panel conciliación, igual que /bancos y /cheques)
 
     @property
     def tipo_real(self) -> str:
@@ -416,7 +417,7 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     rows = db.fetch_all(
         """
         SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
-               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov,
+               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov, tb.fecha_crea,
                (SELECT STRING_AGG(DISTINCT ch.no_cheque::text, ',')
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
@@ -461,6 +462,7 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
             es_agrupado=(n_ch > 0),
             n_cheques=n_ch,
             no_cheque_rel=str(r.get("no_cheques_rel") or "").strip(),
+            fecha_crea=r.get("fecha_crea"),
         ))
     return out
 

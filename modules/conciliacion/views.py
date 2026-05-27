@@ -450,6 +450,7 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                     "numreferencia": m.bancsis.numreferencia,
                     "prov": m.bancsis.prov,
                     "prov_nombre": m.bancsis.prov_nombre,
+                    "fecha_crea": m.bancsis.fecha_crea.isoformat() if m.bancsis.fecha_crea else None,
                 },
                 "score": m.score,
                 "razon": m.razon,
@@ -488,6 +489,7 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "prov_nombre": b.prov_nombre,
                 "es_agrupado": b.es_agrupado,
                 "n_cheques": b.n_cheques,
+                "fecha_crea": b.fecha_crea.isoformat() if b.fecha_crea else None,
                 "cat": _cat_to_dict(_cats_bancsis[i]) if i < len(_cats_bancsis) and _cats_bancsis[i] else _cat_to_dict(None),
             }
             for i, b in enumerate(res.bancsis_only)
@@ -977,6 +979,7 @@ def hub():
                 "es_agrupado": bool(b.get("es_agrupado")),
                 "n_cheques": int(b.get("n_cheques") or 0),
                 "id_transaccion": b.get("id_transaccion"),  # para click-to-pair
+                "fecha_crea": b.get("fecha_crea"),
                 "matched": False,
             })
         for m in (data.get("matches") or []):
@@ -1000,8 +1003,81 @@ def hub():
                 "es_agrupado": False,
                 "n_cheques": 0,
                 "id_transaccion": b.get("id_transaccion"),  # para click-to-pair
+                "fecha_crea": b.get("fecha_crea"),
                 "matched": True,
             })
+
+        # TMT 2026-05-27 dueña: 'aca si hicimos un deposito de grupo como
+        # en cheques, agruparlo'. Agrupamos prog_items_dia por fecha_crea
+        # con ventana de 120s — igual lógica que /bancos y /cheques.
+        # Items dentro de la misma ventana se colapsan a un único 'lote'.
+        from datetime import datetime as _dt
+        _VENTANA_LOTE_SEG = 120
+        def _parse_ts(s):
+            if not s:
+                return None
+            try:
+                return _dt.fromisoformat(str(s).replace("Z", "+00:00"))
+            except Exception:
+                return None
+        for f, items in list(prog_items_dia.items()):
+            # Ordenar por fecha_crea para que filas consecutivas se agrupen
+            items_con_ts = [(it, _parse_ts(it.get("fecha_crea"))) for it in items]
+            items_con_ts.sort(key=lambda x: (x[1] is None, x[1] or _dt.min))
+            agrupados_finales = []
+            grupo_actual = []
+            for it, ts in items_con_ts:
+                if ts is None:
+                    # sin fecha_crea: no agrupable, va solo
+                    if grupo_actual:
+                        agrupados_finales.append(grupo_actual)
+                        grupo_actual = []
+                    agrupados_finales.append([it])
+                    continue
+                if not grupo_actual:
+                    grupo_actual = [(it, ts)]
+                else:
+                    _, ts_prev = grupo_actual[-1]
+                    if ts_prev and abs((ts - ts_prev).total_seconds()) <= _VENTANA_LOTE_SEG:
+                        grupo_actual.append((it, ts))
+                    else:
+                        agrupados_finales.append([g[0] for g in grupo_actual])
+                        grupo_actual = [(it, ts)]
+            if grupo_actual:
+                agrupados_finales.append([g[0] if isinstance(g, tuple) else g for g in grupo_actual])
+            # Construir items finales — colapsar lotes de >1
+            final_items = []
+            for grupo in agrupados_finales:
+                if len(grupo) <= 1:
+                    final_items.append(grupo[0])
+                    continue
+                total = sum(float(g.get("importe") or 0) for g in grupo)
+                # doc ids concatenados (los que tengan numref), o sino vacío
+                docs = [str(g.get("numreferencia") or "").strip() for g in grupo if (g.get("numreferencia") or "").strip()]
+                docs_str = ",".join(docs[:5]) + (f"…+{len(docs)-5}" if len(docs) > 5 else "")
+                # Concepto agregado
+                concepto_lote = f"📦 Lote {len(grupo)} cheques · {grupo[0].get('concepto', '')[:30]}"
+                # Si todos están matched o no
+                all_matched = all(g.get("matched") for g in grupo)
+                # ids para click-to-pair: tomamos el primer id (lote real es 1 tx)
+                # — y como fallback, una lista de ids
+                ids = [g.get("id_transaccion") for g in grupo if g.get("id_transaccion")]
+                final_items.append({
+                    "fecha": grupo[0].get("fecha"),
+                    "concepto": concepto_lote,
+                    "documento": grupo[0].get("documento") or "",
+                    "numreferencia": docs_str,
+                    "importe": round(total, 2),
+                    "prov": grupo[0].get("prov") or "",
+                    "prov_nombre": grupo[0].get("prov_nombre") or "",
+                    "es_agrupado": True,
+                    "n_cheques": len(grupo),
+                    "id_transaccion": ids[0] if ids else None,
+                    "lote_ids": ids,  # todos los ids del lote
+                    "fecha_crea": grupo[0].get("fecha_crea"),
+                    "matched": all_matched,
+                })
+            prog_items_dia[f] = final_items
         # Unión de fechas, orden ascendente
         for f in sorted(set(banco_items_dia) | set(prog_items_dia)):
             b_items = banco_items_dia.get(f, [])

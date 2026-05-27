@@ -275,8 +275,10 @@
                       <tbody>
                         {% for it in d.banco_items %}
                         {% set _doc = (it.documento or '')|string|trim %}
-                        {# TMT 2026-05-27 click-to-pair: data-attrs para el JS de match manual #}
-                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-pointer hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                        {# TMT 2026-05-27 click-to-pair + drag-and-drop: data-attrs para el JS de match manual.
+                           draggable="true" → soporta arrastrar la fila banco al lado PC #}
+                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                            draggable="true"
                             data-fecha="{{ it.fecha }}" data-concepto="{{ it.concepto|e }}"
                             data-documento="{{ it.documento|e }}" data-monto="{{ '%.2f'|format(it.monto) }}"
                             data-tipo="{{ it.tipo or 'C' }}" data-codigo="{{ it.codigo|e }}" data-oficina="{{ it.oficina|e }}"
@@ -313,7 +315,8 @@
                            ser el cruce mas importante". Doc banco
                            (numreferencia) SIEMPRE visible — '·' si vacío.
                            Prov pasa a segunda columna como info auxiliar. #}
-                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-pointer hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                            draggable="true"
                             data-id-transaccion="{{ it.id_transaccion or '' }}" data-importe="{{ '%.2f'|format(it.importe) }}"
                             {% if it.matched %}data-already-matched="1"{% endif %}>
                           <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _numref %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width: 1%;">
@@ -2045,6 +2048,9 @@
   .ctp-row.ctp-selected { background-color: rgb(186 230 253) !important; box-shadow: inset 0 0 0 2px rgb(2 132 199); }
   .dark .ctp-row.ctp-selected { background-color: rgb(7 89 133) !important; box-shadow: inset 0 0 0 2px rgb(125 211 252); }
   .ctp-row.ctp-done { opacity: 0.3; pointer-events: none; text-decoration: line-through; }
+  .ctp-row.ctp-dragging { opacity: 0.4; cursor: grabbing; }
+  .ctp-row.ctp-drop-target { background-color: rgb(187 247 208) !important; box-shadow: inset 0 0 0 3px rgb(34 197 94); }
+  .dark .ctp-row.ctp-drop-target { background-color: rgb(20 83 45) !important; box-shadow: inset 0 0 0 3px rgb(74 222 128); }
   #ctp-floating {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: rgb(2 132 199); color: white; padding: 10px 18px; border-radius: 10px;
@@ -2091,6 +2097,80 @@
   cancelBtn.addEventListener('click', () => {
     document.querySelectorAll('.ctp-row.ctp-selected').forEach(r => r.classList.remove('ctp-selected'));
     refresh();
+  });
+
+  // ── Drag-and-Drop (encima de click-to-pair) ─────────────────────────
+  // Arrastrá una fila banco al lado PC (o viceversa) → matchea las 2.
+  async function matchPair(bancoRow, pcRow) {
+    if (!bancoRow || !pcRow) return;
+    if (bancoRow.dataset.alreadyMatched === '1' || pcRow.dataset.alreadyMatched === '1') return;
+    const fd = new FormData();
+    fd.set('csrf_token', CSRF);
+    fd.set('real_fecha', bancoRow.dataset.fecha || '');
+    fd.set('real_concepto', bancoRow.dataset.concepto || '');
+    fd.set('real_documento', bancoRow.dataset.documento || '');
+    fd.set('real_monto', bancoRow.dataset.monto || '0');
+    fd.set('real_tipo', bancoRow.dataset.tipo || 'C');
+    fd.set('real_codigo', bancoRow.dataset.codigo || '');
+    fd.set('real_oficina', bancoRow.dataset.oficina || '');
+    fd.set('id_transaccion', pcRow.dataset.idTransaccion || '0');
+    try {
+      const resp = await fetch('{{ url_for("conciliacion.hub_match_click") }}', { method: 'POST', body: fd });
+      const data = await resp.json();
+      if (data.ok) {
+        bancoRow.classList.add('ctp-done');
+        pcRow.classList.add('ctp-done');
+        bancoRow.classList.remove('ctp-selected');
+        pcRow.classList.remove('ctp-selected');
+      } else {
+        alert('Match falló: ' + (data.msg || 'desconocido'));
+      }
+    } catch (e) {
+      alert('Match falló: ' + e.message);
+    }
+  }
+  document.querySelectorAll('.ctp-row').forEach(row => {
+    row.addEventListener('dragstart', (ev) => {
+      if (row.dataset.alreadyMatched === '1' || row.classList.contains('ctp-done')) {
+        ev.preventDefault(); return;
+      }
+      row.classList.add('ctp-dragging');
+      const side = row.classList.contains('ctp-banco') ? 'banco' : 'pc';
+      ev.dataTransfer.setData('text/plain', side);
+      // Guardar referencia al row arrastrado de manera estable
+      window.__ctpDragSrc = row;
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('ctp-dragging');
+      document.querySelectorAll('.ctp-drop-target').forEach(r => r.classList.remove('ctp-drop-target'));
+      window.__ctpDragSrc = null;
+    });
+    row.addEventListener('dragover', (ev) => {
+      const src = window.__ctpDragSrc;
+      if (!src) return;
+      // Solo aceptar drop si el target es del OTRO lado
+      const srcSide = src.classList.contains('ctp-banco') ? 'banco' : 'pc';
+      const tgtSide = row.classList.contains('ctp-banco') ? 'banco' : 'pc';
+      if (srcSide === tgtSide) return;
+      if (row.dataset.alreadyMatched === '1' || row.classList.contains('ctp-done')) return;
+      ev.preventDefault();  // permite drop
+      ev.dataTransfer.dropEffect = 'move';
+      row.classList.add('ctp-drop-target');
+    });
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('ctp-drop-target');
+    });
+    row.addEventListener('drop', async (ev) => {
+      ev.preventDefault();
+      row.classList.remove('ctp-drop-target');
+      const src = window.__ctpDragSrc;
+      if (!src) return;
+      // Identificar quién es banco y quién PC
+      const banco = src.classList.contains('ctp-banco') ? src : row;
+      const pc = src.classList.contains('ctp-pc') ? src : row;
+      await matchPair(banco, pc);
+    });
   });
   matchBtn.addEventListener('click', async () => {
     const bancos = Array.from(selected('banco'));
