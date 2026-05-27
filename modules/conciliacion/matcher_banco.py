@@ -1211,6 +1211,51 @@ def confirmar_match(
             )
         except Exception:
             pass  # no romper el match si falla el stat update
+
+    # TMT 2026-05-27 dueña: 'historicos pendientes deberian aparecer siempre
+    # que hago la conciliacion, salvo que sean conciliados'. Si el `real`
+    # que se confirmó proviene de un histórico pendiente (matched por firma
+    # banco+fecha+documento+monto+tipo), marcarlo como conciliado y linkear
+    # al match recién creado. Así no vuelve a inyectarse en próximos uploads.
+    try:
+        # Buscar el match recién insertado para obtener su id (no devolvimos lo).
+        row_match = db.fetch_one(
+            """
+            SELECT id FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s
+               AND real_fecha = %s
+               AND COALESCE(real_documento, '') = COALESCE(%s, '')
+               AND real_monto = %s
+               AND real_tipo = %s
+               AND (deshecho_en IS NULL)
+             ORDER BY id DESC
+             LIMIT 1
+            """,
+            (no_banco, real.fecha, real.documento, real.monto, (real.tipo or '').upper()),
+            conn=conn,
+        )
+        if row_match and row_match.get("id"):
+            db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_match_id = %s,
+                       conciliado_en = CURRENT_TIMESTAMP,
+                       conciliado_por = %s
+                 WHERE no_banco = %s
+                   AND fecha = %s
+                   AND COALESCE(documento, '') = COALESCE(%s, '')
+                   AND monto = %s
+                   AND tipo = %s
+                   AND conciliado_match_id IS NULL
+                """,
+                (
+                    row_match["id"], usuario[:50] if usuario else 'web',
+                    no_banco, real.fecha, real.documento, real.monto, (real.tipo or '').upper(),
+                ),
+                conn=conn,
+            )
+    except Exception:
+        pass  # no romper el match si falla la marca de histórico
     return n
 
 

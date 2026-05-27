@@ -804,6 +804,51 @@ def hub():
     except Exception:
         pass  # tracking opcional, no bloquea
 
+    # TMT 2026-05-27 dueña: 'necesito cargar unos movimientos que son los
+    # historicos no conciliados de parte del banco, y deberian aparecer
+    # siempre que hago la conciliacion, salvo que sean conciliados.'
+    # Inyectamos pendientes historicos como movs_real adicionales antes
+    # del matcher. El matcher los cruza con PC; los que matchean se
+    # marcan conciliados en confirmar_match (dual-write a la tabla
+    # historicos).
+    try:
+        import db as _db_h
+        from decimal import Decimal as _Dec_h
+        from modules.conciliacion.parser_banco import MovBanco as _MB_h
+        _hist_rows = _db_h.fetch_all(
+            """
+            SELECT id, fecha, concepto, documento, monto, tipo, oficina, detalle, fuente
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s
+               AND conciliado_match_id IS NULL
+             ORDER BY fecha DESC, id DESC
+            """,
+            (no_banco,),
+        ) or []
+        n_hist_inyectados = 0
+        for _h in _hist_rows:
+            movs_real.append(_MB_h(
+                fecha=_h.get("fecha"),
+                concepto=str(_h.get("concepto") or ""),
+                documento=str(_h.get("documento") or ""),
+                monto=_Dec_h(str(_h.get("monto") or 0)),
+                saldo=_Dec_h("0"),
+                codigo=str(_h.get("oficina") or "")[:10],
+                tipo=str(_h.get("tipo") or "C").upper(),
+                oficina=str(_h.get("oficina") or ""),
+            ))
+            n_hist_inyectados += 1
+        if n_hist_inyectados:
+            import logging
+            logging.getLogger("programa_core.conciliacion").info(
+                "historicos pendientes inyectados: %s", n_hist_inyectados
+            )
+    except Exception as _e_hist:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "load historicos pendientes falló: %s", _e_hist
+        )
+
     try:
         resultado = matchear_extracto_banco(movs_real, no_banco=no_banco)
     except Exception as e:
@@ -1313,6 +1358,34 @@ def hub():
         separators=(",", ":"),
     )
 
+    # TMT 2026-05-27 dueña: 'necesito cargar unos movimientos que son los
+    # historicos no conciliados de parte del banco'. Cargamos el listado
+    # actual de pendientes históricos para mostrarlos en panel propio.
+    historicos_pendientes = []
+    try:
+        import db as _db_hp
+        historicos_pendientes = _db_hp.fetch_all(
+            """
+            SELECT id, fecha, concepto, documento, monto, tipo, oficina, detalle, fuente, creado_en
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s
+               AND conciliado_match_id IS NULL
+             ORDER BY fecha DESC, id DESC
+            """,
+            (no_banco,),
+        ) or []
+    except Exception as _e_hp:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "load historicos_pendientes (panel) falló: %s", _e_hp
+        )
+        historicos_pendientes = []
+
+    # Stats para el header del panel
+    hist_n = len(historicos_pendientes)
+    hist_total_c = sum(float(h["monto"]) for h in historicos_pendientes if (h.get("tipo") or "C").upper() == "C")
+    hist_total_d = sum(float(h["monto"]) for h in historicos_pendientes if (h.get("tipo") or "C").upper() == "D")
+
     # TMT 2026-05-27 dueña: 'despues de hacer la conciliacion, deberiamos
     # tener un resumen. banco inicial + mov conciliados +/- debitos
     # pendientes + depositos pendientes = final banco hoy'.
@@ -1401,6 +1474,10 @@ def hub():
         matches_p0=matches_p0,
         matches_p0_json=matches_p0_json,
         resumen=resumen,
+        historicos_pendientes=historicos_pendientes,
+        hist_n=hist_n,
+        hist_total_c=hist_total_c,
+        hist_total_d=hist_total_d,
         no_banco=no_banco,
         banco_nombre=banco_nombre,
         **kpis,
