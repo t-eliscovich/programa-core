@@ -124,10 +124,14 @@
           <th class="px-5 py-3" data-no-sort></th>
         </tr>
       </thead>
+      {# TMT 2026-05-27 dueña: 'hace que toda la linea de pichincha se
+         clickeable, no solo ver movimientos'. Toda la fila navega a
+         movimientos del banco. Cursor pointer + click handler. #}
       <tbody>
         {% for b in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40
-                   {% if banco_actual and b.no_banco|int == banco_actual.no_banco|int %}bg-sky-50/40 dark:bg-sky-900/10{% endif %}">
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer fila-banco
+                   {% if banco_actual and b.no_banco|int == banco_actual.no_banco|int %}bg-sky-50/40 dark:bg-sky-900/10{% endif %}"
+            data-href="{{ url_for('bancos.movimientos', no_banco=b.no_banco) }}">
           <td class="px-5 py-2">
             {{ b.nombre or ('Banco ' ~ b.no_banco) }}
             {% if banco_actual and b.no_banco|int == banco_actual.no_banco|int %}
@@ -140,10 +144,10 @@
           <td class="px-5 py-2 text-right">
             {% if not banco_actual or b.no_banco|int != banco_actual.no_banco|int %}
               <a href="{{ url_for('bancos.lista', banco=b.no_banco) }}"
-                 class="text-sm text-blue-600 hover:underline">Usar este →</a>
+                 class="text-sm text-blue-600 hover:underline"
+                 onclick="event.stopPropagation()">Usar este →</a>
             {% else %}
-              <a href="{{ url_for('bancos.movimientos', no_banco=b.no_banco) }}"
-                 class="text-sm text-slate-500 hover:underline">Movimientos →</a>
+              <span class="text-sm text-slate-400">Movimientos →</span>
             {% endif %}
           </td>
         </tr>
@@ -154,4 +158,16 @@
     </table>
   </div>
 </div>
+
+<script>
+  // TMT 2026-05-27 dueña: toda la fila clickeable -> movimientos del banco.
+  document.querySelectorAll('.fila-banco').forEach(fila => {
+    fila.addEventListener('click', (ev) => {
+      // No interceptar clicks en links o botones internos.
+      if (ev.target.closest('a, button')) return;
+      const url = fila.dataset.href;
+      if (url) window.location.href = url;
+    });
+  });
+</script>
 {% endblock %}
