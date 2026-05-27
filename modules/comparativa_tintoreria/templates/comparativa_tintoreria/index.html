@@ -101,15 +101,16 @@
   {# TMT 2026-05-26 dueña: toggle vista — Por código (default, fila por
      fecha+cod) vs Por día (resumen sumando códigos del día). Mismas
      7 columnas en ambas. #}
+  {# TMT 2026-05-26 dueña: 'primera tab solo por dia'. Default = dia. #}
   <div class="mb-3 flex items-center gap-2 text-sm">
     <span class="text-xs text-slate-500">Vista:</span>
-    <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=codigo"
-       class="px-3 py-1 rounded-md border {% if vista == 'codigo' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
-      Por código + día
-    </a>
     <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=dia"
        class="px-3 py-1 rounded-md border {% if vista == 'dia' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
       Solo por día
+    </a>
+    <a href="?desde={{ desde }}&hasta={{ hasta }}&vista=codigo"
+       class="px-3 py-1 rounded-md border {% if vista == 'codigo' %}bg-slate-900 text-white border-slate-900{% else %}bg-white text-slate-700 border-slate-300 hover:bg-slate-50{% endif %}">
+      Por código + día
     </a>
   </div>
 
@@ -117,42 +118,44 @@
      TMT 2026-05-26 dueña: orden — fecha, código, kg dbase, kg crudo
      formulas (AL LADO de dbase), kg terminado formulas, cambio, desperdicio.
      Widths fijos en px para alineación pixel-perfect (no en %). #}
+  {# TMT 2026-05-26 dueña: agregada columna costo $/kg (por color en
+     vista código; promedio del día en vista día). #}
   <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto">
-    <table class="text-sm tabular-nums" style="table-layout: fixed; width: 100%; min-width: 980px;">
+    <table class="text-sm tabular-nums" style="table-layout: fixed; width: 100%; min-width: {% if vista == 'codigo' %}1080{% else %}920{% endif %}px;">
       <colgroup>
         <col style="width: 130px">
+        {% if vista == 'codigo' %}<col style="width: 120px">{% endif %}
+        <col style="width: 140px">
+        <col style="width: 140px">
         <col style="width: 130px">
         <col style="width: 140px">
-        <col style="width: 140px">
-        <col style="width: 140px">
         <col style="width: 120px">
-        <col style="width: 120px">
+        <col style="width: 110px">
       </colgroup>
       <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th class="px-3 py-2 text-left">Fecha terminado</th>
-          <th class="px-3 py-2 text-left">Código color</th>
-          <th class="px-3 py-2 text-right">Kg terminado dbase</th>
+          {% if vista == 'codigo' %}<th class="px-3 py-2 text-left">Código color</th>{% endif %}
+          <th class="px-3 py-2 text-right">Kg dbase</th>
           <th class="px-3 py-2 text-right">Kg crudo formulas</th>
+          <th class="px-3 py-2 text-right" title="dbase - crudo formulas — deberían ser iguales (ambos INPUT)">Cambio</th>
           <th class="px-3 py-2 text-right">Kg terminado formulas</th>
-          <th class="px-3 py-2 text-right">Cambio</th>
           <th class="px-3 py-2 text-right">Desperdicio</th>
+          <th class="px-3 py-2 text-right" title="{% if vista == 'codigo' %}Costo por color (importe/kg){% else %}Costo promedio del día (suma importes / suma kg){% endif %}">$/kg</th>
         </tr>
       </thead>
       <tbody>
         {% set _rows = filas_dia if vista == 'dia' else filas_codigo %}
+        {% set _ncols = 7 if vista == 'codigo' else 6 %}
         {% for r in _rows %}
         <tr class="border-t border-slate-100 hover:bg-slate-50">
           <td class="px-3 py-1.5 whitespace-nowrap">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
-          <td class="px-3 py-1.5 font-mono whitespace-nowrap">{{ r.cod or '—' }}</td>
+          {% if vista == 'codigo' %}<td class="px-3 py-1.5 font-mono whitespace-nowrap">{{ r.cod or '—' }}</td>{% endif %}
           <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.kg_dbase is not none %}{{ r.kg_dbase | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
           <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
-            {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
           <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.cambio is not none %}
@@ -161,11 +164,17 @@
             {% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
           <td class="px-3 py-1.5 text-right whitespace-nowrap">
+            {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+            {% if r.costo_kg is not none and r.costo_kg > 0 %}<span class="text-slate-700">$ {{ '%.3f' % r.costo_kg }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">Sin datos en el rango seleccionado.</td></tr>
+        <tr><td colspan="{{ _ncols + 1 }}" class="px-3 py-8 text-center text-slate-500">Sin datos en el rango seleccionado.</td></tr>
         {% endfor %}
       </tbody>
     </table>

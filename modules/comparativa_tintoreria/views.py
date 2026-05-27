@@ -455,13 +455,17 @@ def comparativa_tintoreria():
                     cod_pc = str(c.get("cod") or "—").upper().strip()
                     pc_cods_dia.add(cod_pc)
                     kg_pc = float(c.get("kg") or 0)
+                    importe_pc = float(c.get("importe") or 0)
                     raw_term = c.get("form_terminada_kg")
                     raw_cruda = c.get("form_cruda_kg")
                     kg_form_term = float(raw_term) if raw_term is not None else None
                     kg_form_cruda = float(raw_cruda) if raw_cruda is not None else None
-                    cambio = (kg_pc - kg_form_term) if kg_form_term is not None else None
+                    cambio = (kg_pc - kg_form_cruda) if kg_form_cruda is not None else None
                     raw_desp = c.get("form_desperdicio_pct")
                     desperd_pct = float(raw_desp) if raw_desp is not None else None
+                    # TMT 2026-05-26 dueña: 'agrega una columna que sea el
+                    # costo por color en color'. = importe / kg dbase.
+                    costo_kg = (importe_pc / kg_pc) if kg_pc > 0 else None
                     filas_codigo.append({
                         "fecha": f,
                         "cod": cod_pc,
@@ -471,6 +475,7 @@ def comparativa_tintoreria():
                         "kg_form_cruda": kg_form_cruda,
                         "desperdicio_pct": desperd_pct,
                         "form_n_ots": int(c.get("form_n_ots") or 0),
+                        "costo_kg": costo_kg,
                     })
                 except Exception:
                     continue
@@ -513,17 +518,22 @@ def comparativa_tintoreria():
                 kg_form_term = sum(float(o.tela_terminada_kg or 0) for o in ots_dia)
                 kg_form_cruda = sum(float(o.tela_cruda_kg or 0) for o in ots_dia)
                 n_ots = len(ots_dia)
-                cambio = (kg_dbase - kg_form_term) if kg_form_term > 0 else None
+                cambio = (kg_dbase - kg_form_cruda) if kg_form_cruda > 0 else None
                 desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
+                # TMT 2026-05-26 dueña: 'en dia costo promedio'.
+                # = sum(importes PC del día) / sum(kg dbase del día).
+                importe_dia = sum(float(c.get("importe") or 0) for c in cods)
+                costo_promedio = (importe_dia / kg_dbase) if kg_dbase > 0 else None
                 filas_dia.append({
                     "fecha": f,
-                    "cod": f"{n_ots} OT · {len(cods)} cód PC",
+                    "cod": "",
                     "kg_dbase": float(kg_dbase),
                     "kg_form_term": float(kg_form_term) if kg_form_term > 0 else None,
                     "cambio": float(cambio) if cambio is not None else None,
                     "kg_form_cruda": float(kg_form_cruda) if kg_form_cruda > 0 else None,
                     "desperdicio_pct": round(desperd_pct, 1) if desperd_pct is not None else None,
                     "form_n_ots": n_ots,
+                    "costo_kg": costo_promedio,
                 })
             except Exception:
                 continue
@@ -532,9 +542,10 @@ def comparativa_tintoreria():
         filas_codigo = []
         filas_dia = []
 
-    vista = (request.args.get("vista") or "codigo").lower()
+    # TMT 2026-05-26 dueña: default 'dia' (más limpio). Toggle a 'codigo' opcional.
+    vista = (request.args.get("vista") or "dia").lower()
     if vista not in ("codigo", "dia"):
-        vista = "codigo"
+        vista = "dia"
 
     try:
         return render_template(
