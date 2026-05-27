@@ -54,6 +54,7 @@ class MovBancsis:
     es_agrupado: bool = False  # mov del programa que suma N cheques (dep.N ch)
     n_cheques: int = 0         # cuántos cheques agrupa
     no_cheque_rel: str = ""    # TMT 2026-05-26: no_cheque del cheque ligado (vía chequextransaccion). Usado por PASS 0 para matchear contra extracto.documento.
+    doc_banco_rel: str = ""    # TMT 2026-05-27: cheque.doc_banco (N° comprobante banco) del cheque ligado. Usado por PASS 0 para matchear contra extracto.documento — es lo que la dueña edita inline.
     fecha_crea: object = None  # TMT 2026-05-27: timestamp del INSERT (para agrupar lotes ≤120s en panel conciliación, igual que /bancos y /cheques)
 
     @property
@@ -421,7 +422,11 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
                (SELECT STRING_AGG(DISTINCT ch.no_cheque::text, ',')
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
-                 WHERE cxt.id_transaccion = tb.id_transaccion) AS no_cheques_rel
+                 WHERE cxt.id_transaccion = tb.id_transaccion) AS no_cheques_rel,
+               (SELECT STRING_AGG(DISTINCT NULLIF(TRIM(ch.doc_banco), ''), ',')
+                  FROM scintela.chequextransaccion cxt
+                  JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
+                 WHERE cxt.id_transaccion = tb.id_transaccion) AS doc_banco_rel
           FROM scintela.transacciones_bancarias tb
          WHERE tb.no_banco = %s
            AND tb.fecha BETWEEN %s AND %s
@@ -462,6 +467,7 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
             es_agrupado=(n_ch > 0),
             n_cheques=n_ch,
             no_cheque_rel=str(r.get("no_cheques_rel") or "").strip(),
+            doc_banco_rel=str(r.get("doc_banco_rel") or "").strip(),
             fecha_crea=r.get("fecha_crea"),
         ))
     return out
@@ -621,14 +627,23 @@ def matchear_extracto_banco(
             # TMT 2026-05-26 dueña: 'en conciliacion buscar doc id de banco
             # y doc is programa'. Comparamos extracto.documento contra
             # TODOS los doc-ids del programa: numreferencia + N° de cheques
-            # ligados (vía chequextransaccion). Cubre el caso donde el banco
-            # trae el N° de cheque pero el numreferencia interno tiene otra cosa.
+            # ligados (vía chequextransaccion) + doc_banco editado inline
+            # en /cheques. Cubre los 3 lugares donde un humano puede haber
+            # guardado el comprobante banco.
             refs_bk = set()
             r1 = _norm_doc(bk.numreferencia)
             if r1:
                 refs_bk.add(r1)
             # no_cheque_rel puede ser "1234" o "1234,1235,..." (string_agg).
             for raw in (bk.no_cheque_rel or "").split(","):
+                rn = _norm_doc(raw)
+                if rn:
+                    refs_bk.add(rn)
+            # TMT 2026-05-27 dueña: 'ACABO DE METERLE EL NUMERO DE DOCUMENTO
+            # A ESTA TRANSFERENCIA, VEAMOS QUE EL MATCH DE PERFECTO ACA'.
+            # cheque.doc_banco (editable inline en /cheques) es lo que la
+            # dueña carga cuando el banco le da un N° de comprobante.
+            for raw in (bk.doc_banco_rel or "").split(","):
                 rn = _norm_doc(raw)
                 if rn:
                     refs_bk.add(rn)
