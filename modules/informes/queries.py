@@ -2325,6 +2325,11 @@ def stock_kg_live(hoy: date | None = None) -> dict:
     # Ventas en el mismo rango. Las facturas anuladas (stat='Y') no salen
     # de stock — quedan fuera. Una factura activa siempre mueve kg aunque
     # tenga saldo 0 (cobrada).
+    # TMT 2026-05-27 dueña: "terminado se fue todo a 0". Las facturas
+    # backfilleadas (usuario_crea='asinfo-backfill') son HISTORICAS que
+    # ya fueron contabilizadas como kg vendidos en su mes original. Si
+    # las sumamos al kg_ven del rango, inflamos el live_kg negativamente
+    # y stock terminado va a 0. Excluirlas de este cálculo.
     row_v = db.fetch_one(
         """
         SELECT COALESCE(SUM(kg), 0) AS kg
@@ -2332,6 +2337,7 @@ def stock_kg_live(hoy: date | None = None) -> dict:
         WHERE fecha > %s AND fecha <= %s
           AND COALESCE(kg, 0) > 0
           AND (stat IS NULL OR stat <> 'Y')
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (snap_fecha, hoy),
     )
