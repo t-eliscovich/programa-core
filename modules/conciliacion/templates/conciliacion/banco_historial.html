@@ -57,7 +57,9 @@
   </form>
 
   {# TMT 2026-05-26 dueña: solo las columnas que pidió — Fecha, Fecha mov,
-     Documento, Monto, Tipo, Concepto, Programa ID, Usuario (real), Cliente. #}
+     Documento, Monto, Tipo, Concepto, Programa ID, Usuario (real), Cliente.
+     TMT 2026-05-27 dueña: agregar monto programa también — para detectar
+     matches donde banco y programa difieren (Δ mostrado en ámbar). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
     <table class="w-full text-xs">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-left">
@@ -65,7 +67,9 @@
           <th class="px-2 py-1.5">Fecha conciliación</th>
           <th class="px-2 py-1.5">Fecha mov.</th>
           <th class="px-2 py-1.5">Documento</th>
-          <th class="px-2 py-1.5 text-right">Monto</th>
+          <th class="px-2 py-1.5 text-right">Monto banco</th>
+          <th class="px-2 py-1.5 text-right">Monto programa</th>
+          <th class="px-2 py-1.5 text-right">Δ</th>
           <th class="px-2 py-1.5">Tipo</th>
           <th class="px-2 py-1.5">Concepto</th>
           <th class="px-2 py-1.5 text-right">Programa ID</th>
@@ -76,13 +80,23 @@
       </thead>
       <tbody>
         {% for r in rows %}
+        {% set _real_m = r.real_monto|float if r.real_monto is not none else None %}
+        {% set _prog_m = r.bancsis_importe|float if r.bancsis_importe is not none else None %}
+        {% set _diff = (_real_m - _prog_m) if (_real_m is not none and _prog_m is not none) else None %}
         <tr class="border-t border-slate-100 dark:border-slate-800 {% if r.deshecho_en %}opacity-50 line-through{% endif %}">
           <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.creado_en.strftime('%Y-%m-%d %H:%M') if r.creado_en else '' }}</td>
           <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.real_fecha or r.bancsis_fecha or '' }}</td>
           <td class="px-2 py-1.5 font-mono">{{ r.real_documento or r.bancsis_documento or '' }}</td>
           <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">
-            {% if r.real_monto is not none %}{{ '{:,.2f}'.format(r.real_monto|float) }}
-            {% elif r.bancsis_importe is not none %}{{ '{:,.2f}'.format(r.bancsis_importe|float) }}{% endif %}
+            {% if _real_m is not none %}{{ '{:,.2f}'.format(_real_m) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">
+            {% if _prog_m is not none %}{{ '{:,.2f}'.format(_prog_m) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">
+            {% if _diff is not none and _diff|abs >= 0.01 %}<span class="text-amber-700 dark:text-amber-400">{{ '{:+,.2f}'.format(_diff) }}</span>
+            {% elif _diff is not none %}<span class="text-emerald-600 dark:text-emerald-400">✓</span>
+            {% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
           <td class="px-2 py-1.5 font-mono">{{ r.real_tipo or '' }}</td>
           <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.real_concepto or r.bancsis_concepto or '' }}">
@@ -108,7 +122,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
+        <tr><td colspan="12" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
         {% endfor %}
       </tbody>
     </table>
