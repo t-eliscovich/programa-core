@@ -256,7 +256,13 @@ def comparativa_tintoreria():
     como filas hijas de cada día.
     """
     hoy = date.today()
-    default_desde = hoy - timedelta(days=14)
+    # TMT 2026-05-27 dueña: "esta pagina es un desastre" — con default
+    # ultimos 14 dias + filtro creacion_*, los primeros dias del rango
+    # perdian las ordenes creadas ANTES (terminadas dentro pero creadas
+    # afuera). Resultado: 18/05 mostraba 448 kg en vez de 11,617.
+    # Fix: default desde = primer dia del mes (rango amplio que captura
+    # ordenes creadas y terminadas dentro del periodo, como hace el Excel).
+    default_desde = hoy.replace(day=1)
     desde = _parse_date(request.args.get("desde"), default_desde)
     hasta = _parse_date(request.args.get("hasta"), hoy)
 

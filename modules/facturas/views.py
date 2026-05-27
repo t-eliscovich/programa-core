@@ -1899,11 +1899,28 @@ def consolidar_duplicados_asinfo():
         _aliases._refrescar()
 
     # 3) Para cada par: copiar numf_completo y borrar el backfill duplicado
+    #    PROTECCIÓN caso B (match por kg+imp+fecha sin numf): solo procesar
+    #    si el alias (a_cli, b_cli) está REGISTRADO en cliente_alias. Sin
+    #    esto, pares con kg+importe coincidente pero clientes random (BAR↔RIP)
+    #    corromperían data poniendo nfc equivocado al DBF.
+    #    Recargamos aliases (puede incluir los recien agregados en esta corrida).
+    _aliases._refrescar()
+    alias_registrado = {a["codigo_asinfo"]: a["codigo_pc"] for a in _aliases.todos()}
+
     numf_completo_copiados = 0
     duplicados_borrados = 0
+    pares_caso_b_saltados_sin_alias = []
     err_log = []
     if not dry_run:
         for p in pares:
+            # Caso B (kg+imp+fecha, sin numf) requiere alias registrado.
+            if p.get("match_via") == "B_kg_imp_fecha":
+                if alias_registrado.get(p["a_cli"]) != p["b_cli"]:
+                    pares_caso_b_saltados_sin_alias.append({
+                        "a_cli": p["a_cli"], "b_cli": p["b_cli"],
+                        "numf": p["numf"], "fecha": str(p["fecha"]),
+                    })
+                    continue
             try:
                 with db.tx() as conn, conn.cursor() as cur:
                     # ORDEN CRITICO: borrar X primero (libera el numf_completo
