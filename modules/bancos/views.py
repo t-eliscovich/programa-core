@@ -847,23 +847,70 @@ def movimientos(no_banco):
         items.append({"_kind": "row", **f})
         i += 1
 
-    # TMT 2026-05-27 dueña: 'a lado de pichincha no me muestra el total,
-    # porque filtre solo para ver lo que falta conciliar que vaya mostrando
-    # el total y el total de cuando voy filtrando'. Suma signada de las
-    # filas visibles tras filtrar (credito + / debito -).
-    _DOCS_CR = {"DE", "AC", "NC", "TR"}
-    _DOCS_DB = {"CH", "ND", "DB", "GS", "PA"}
+    # TMT 2026-05-27 dueña: el total tiene que ser EL MISMO en /bancos y
+    # /conciliacion/banco. Antes sumaba solo filas visibles (LIMIT 500) y
+    # daba un numero distinto que el saldo pendiente de conciliacion.
+    # Ahora hacemos una query AGGREGATE separada sobre TODAS las txs que
+    # matchean los filtros + 'saldo antes/despues' como en dBase.
+    _DOCS_CR = ('DE','AC','NC','TR')
+    _DOCS_DB = ('CH','ND','DB','GS','PA')
     total_filtrado = 0.0
-    for f in filas:
-        doc = (f.get("documento") or "").strip().upper()
-        imp = float(f.get("importe") or 0)
-        if doc in _DOCS_CR:
-            total_filtrado += imp
-        elif doc in _DOCS_DB:
-            total_filtrado -= imp
-    # Suma absoluta: total de plata movida (sin restar)
-    total_abs_filtrado = round(sum(float(f.get("importe") or 0) for f in filas), 2)
-    total_filtrado = round(total_filtrado, 2)
+    total_abs_filtrado = 0.0
+    n_filtrado = 0
+    saldo_pre_concil = 0.0  # suma signada de los movs que faltan conciliar
+    saldo_banco = 0.0       # running balance actual del banco
+    try:
+        # Saldo actual del banco (último running)
+        row_saldo = queries.banco_info(no_banco) or {}
+        saldo_banco = float(row_saldo.get("saldo_stored") or 0)
+        # Suma signada sobre todas las txs del filtro (sin LIMIT)
+        import db as _db
+        where_filt = []
+        params: dict = {"no_banco": no_banco}
+        if desde:
+            where_filt.append("t.fecha >= %(desde)s::date")
+            params["desde"] = desde
+        if hasta:
+            where_filt.append("t.fecha <= %(hasta)s::date")
+            params["hasta"] = hasta
+        if conciliado_filtro == "no":
+            # Excluir conciliados PC + conciliados dBase (stat='*')
+            where_filt.append("TRIM(COALESCE(t.stat,'')) <> '*'")
+            where_filt.append("""NOT EXISTS (
+                SELECT 1 FROM scintela.banco_conciliacion_match m
+                 WHERE m.id_transaccion = t.id_transaccion
+                   AND m.deshecho_en IS NULL)""")
+        elif conciliado_filtro == "si":
+            where_filt.append("""(TRIM(COALESCE(t.stat,'')) = '*' OR EXISTS (
+                SELECT 1 FROM scintela.banco_conciliacion_match m
+                 WHERE m.id_transaccion = t.id_transaccion
+                   AND m.deshecho_en IS NULL))""")
+        sql_agg = (
+            "SELECT COUNT(*) AS n, "
+            "COALESCE(SUM(CASE WHEN t.documento IN ('CH','ND','DB','GS','PA') "
+            "                  THEN -t.importe ELSE t.importe END), 0) AS signed, "
+            "COALESCE(SUM(t.importe), 0) AS absoluta "
+            "FROM scintela.transacciones_bancarias t "
+            "WHERE t.no_banco = %(no_banco)s "
+        )
+        if where_filt:
+            sql_agg += "AND " + " AND ".join(where_filt)
+        row_agg = _db.fetch_one(sql_agg, params) or {}
+        n_filtrado = int(row_agg.get("n") or 0)
+        total_filtrado = round(float(row_agg.get("signed") or 0), 2)
+        total_abs_filtrado = round(float(row_agg.get("absoluta") or 0), 2)
+        if conciliado_filtro == "no":
+            saldo_pre_concil = total_filtrado
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.bancos").exception(
+            "total_filtrado AGG falló: %s", _e
+        )
+    # Saldo despues de conciliar todo lo pendiente = saldo actual − total_pendiente
+    # (las tx pendientes ya impactaron el saldo_stored porque existen; al
+    # marcarlas conciliadas el saldo no cambia. Es solo display).
+    saldo_post_concil = round(saldo_banco - saldo_pre_concil, 2) if conciliado_filtro == "no" else saldo_banco
+
     hay_filtro = bool(desde or hasta or conciliado_filtro)
 
     return render_template(
@@ -876,8 +923,12 @@ def movimientos(no_banco):
         error=error,
         total_filtrado=total_filtrado,
         total_abs_filtrado=total_abs_filtrado,
+        n_filtrado=n_filtrado,
         hay_filtro=hay_filtro,
         conciliado_filtro=conciliado_filtro,
+        saldo_banco=saldo_banco,
+        saldo_pre_concil=saldo_pre_concil,
+        saldo_post_concil=saldo_post_concil,
     )
 
 

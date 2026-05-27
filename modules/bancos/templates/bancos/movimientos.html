@@ -77,16 +77,17 @@
   {% set _items = items if items is defined else (filas | map(attribute='*') | list) %}
   <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
     <p class="text-sm text-slate-500">
-      Mostrando <strong>{{ filas | length }}</strong> movimiento{{ '' if filas|length == 1 else 's' }}
+      Mostrando <strong>{{ filas | length }}</strong> de <strong>{{ n_filtrado }}</strong> movimiento{{ '' if n_filtrado == 1 else 's' }}
       {% set _lotes = _items | selectattr('_kind', 'equalto', 'lote') | list %}
       {% if _lotes %}
         <span class="text-slate-400">· agrupados en {{ _items | length }} renglones ({{ _lotes | length }} lote{{ '' if _lotes|length == 1 else 's' }})</span>
       {% endif %}
-      {% if filas|length == 500 %}<span class="text-amber-600">(tope de 500 — afina el rango de fechas)</span>{% endif %}
+      {% if filas|length == 500 and n_filtrado > 500 %}<span class="text-amber-600">(mostrando primeros 500 — afina el rango de fechas)</span>{% endif %}
     </p>
     {# TMT 2026-05-27 dueña: total filtrado al lado de "Mostrando N movs".
-       Suma signada (créditos +, débitos -) de los movs visibles. #}
-    {% if hay_filtro and filas|length > 0 %}
+       Suma signada (créditos +, débitos -) de TODAS las txs del filtro,
+       no solo las visibles (LIMIT 500). #}
+    {% if hay_filtro and n_filtrado > 0 %}
     <div class="text-sm flex items-center gap-3 tabular-nums">
       <span class="text-slate-500">Total filtrado:</span>
       <span class="font-bold {% if total_filtrado > 0 %}text-emerald-700 dark:text-emerald-400{% elif total_filtrado < 0 %}text-rose-700 dark:text-rose-400{% else %}text-slate-700{% endif %}">
@@ -100,6 +101,29 @@
     </div>
     {% endif %}
   </div>
+
+  {# TMT 2026-05-27 dueña: 'Tambien nos falta el saldo del banco antes de
+     conciliar y despues, esto lo tenia dbase'. Solo cuando filtro = sin
+     conciliar: 3 cards lado a lado mostrando como cambia el saldo si se
+     concilian todas las pendientes. #}
+  {% if conciliado_filtro == 'no' and n_filtrado > 0 %}
+  <div class="grid grid-cols-3 gap-3 mb-4">
+    <div class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2.5">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500">Saldo actual del banco</div>
+      <div class="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_banco) }}</div>
+    </div>
+    <div class="rounded-lg border border-amber-300 dark:border-amber-700 px-4 py-2.5 bg-amber-50/50 dark:bg-amber-900/10">
+      <div class="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400">Pendiente de conciliar</div>
+      <div class="text-lg font-semibold tabular-nums {% if saldo_pre_concil >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+        {% if saldo_pre_concil >= 0 %}+{% endif %}$ {{ '{:,.2f}'.format(saldo_pre_concil) }}
+      </div>
+    </div>
+    <div class="rounded-lg border border-sky-300 dark:border-sky-700 px-4 py-2.5 bg-sky-50/50 dark:bg-sky-900/10">
+      <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Saldo si concilio todo (real)</div>
+      <div class="text-lg font-semibold tabular-nums text-sky-900 dark:text-sky-100">$ {{ '{:,.2f}'.format(saldo_post_concil) }}</div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
