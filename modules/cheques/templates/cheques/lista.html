@@ -323,6 +323,10 @@
           <th class="px-2 py-1 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
           <th class="px-2 py-1 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
           <th class="px-2 py-1 text-left font-medium">Banco</th>
+          {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que
+             numero de cheque!!'. Columna nueva para N° de comprobante /
+             depósito que da el banco (doc_banco). Editable inline. #}
+          <th class="px-2 py-1 text-left font-medium" title="N° comprobante/depósito/transferencia (lo que da el banco)">Doc. banco</th>
           <th class="px-2 py-1 text-right font-medium" data-sort-type="number">Importe</th>
           <th class="px-1 py-1 text-center font-medium" data-no-sort style="width:50px;">Estado</th>
           <th class="px-2 py-1 text-right font-medium no-print" data-no-sort>Acc.</th>
@@ -437,6 +441,30 @@
           {# TMT 2026-05-19 — celda "Plazo" removida (pedido dueña item 13). #}
           {# TMT 2026-05-18 — Cliente movido a col 2 (arriba) #}
           <td class="px-3 py-2 text-slate-500">{{ c.banco or '' }}</td>
+          {# TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'.
+             Inline edit del doc_banco (N° comprobante/depósito). Vacío
+             es válido (NULL en DB). #}
+          {% set _db_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
+          <td class="px-2 py-2 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
+            {% if _db_editable %}
+              {% set _db_val = c.doc_banco or '' %}
+              <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
+                    class="inline-flex items-center gap-1 ch-inline-form" style="margin:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="text" name="doc_banco" maxlength="40"
+                       value="{{ _db_val }}" data-orig="{{ _db_val }}"
+                       placeholder="—"
+                       oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
+                       class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
+                       style="width: 110px;"
+                       title="Editar Doc. banco (N° depósito/transf.) — Enter para guardar">
+                <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
+              </form>
+            {% else %}
+              {% if c.doc_banco %}{{ c.doc_banco }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+            {% endif %}
+          </td>
           {# TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'.
              Inline edit del importe. Submit on Enter + botón ✓ on dirty. #}
           {% set _imp_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
@@ -531,7 +559,7 @@
         </tr>
         {% else %}
         {# TMT 2026-05-20 — colspan +1 cuando hay permiso de aplicar (col checkbox extra). #}
-        {{ empty_row((11 if tiene_permiso('cheques.aplicar') else 10), 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
+        {{ empty_row((12 if tiene_permiso('cheques.aplicar') else 11), 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
         {% endfor %}
       </tbody>
     </table>

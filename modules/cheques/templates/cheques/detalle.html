@@ -255,7 +255,7 @@
   {% set stat_u = (ch.stat or '').upper() %}
   {% set fechaing_real = ch.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
   {% set fecha_cargado = ch.fecha_recibido or (ch.fecha_crea.date() if ch.fecha_crea and ch.fecha_crea.__class__.__name__ == 'datetime' else ch.fecha_crea) or ch.fecha %}
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6 text-sm">
+  <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6 text-sm">
     {# Importe — editable inline (queries.editar acepta importe desde 2026-05-27). #}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
       <div class="text-xs text-slate-500">Importe</div>
@@ -297,6 +297,20 @@
       <div class="font-medium text-slate-900 dark:text-slate-100">
         {{ ch.banco or ch.nombre_banco or '—' }}
       </div>
+    </div>
+    {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que numero
+       de cheque!! doc banco no es igual a cheque'. Card separado para
+       editar el N° de comprobante/depósito que da el banco (scintela.cheque.
+       doc_banco varchar(40)). Se propaga a numreferencia al depositar. #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
+      <div class="text-xs text-slate-500" title="N° comprobante / depósito / transferencia que da el banco">Doc. banco</div>
+      <div class="font-mono ch-readonly">
+        {% if ch.doc_banco %}{{ ch.doc_banco }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+      </div>
+      <input type="text" name="doc_banco" form="ch-edit-form" maxlength="40"
+             value="{{ ch.doc_banco or '' }}"
+             placeholder="N° depósito/transf."
+             class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-sm font-mono">
     </div>
   </div>
 

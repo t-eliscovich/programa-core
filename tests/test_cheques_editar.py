@@ -248,6 +248,85 @@ def test_editar_no_cheque_demasiado_largo_falla(monkeypatch):
         queries.editar(1, no_cheque="12345678901", usuario="tmt")
 
 
+def test_editar_doc_banco_valido(monkeypatch):
+    """TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'.
+    Doc. banco es N° de comprobante/depósito que da el banco, separado
+    del no_cheque. varchar(40) en DB."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1, "no_cheque": "001", "stat": "Z",
+            "fechad": date(2026, 5, 1), "doc_banco": None,
+        }
+    )
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.editar(1, doc_banco="DEP-2026-00042", usuario="tmt")
+    body_sqls = " ".join(s for s, _ in fake.executes).lower()
+    assert "doc_banco=%s" in body_sqls
+    all_params = [p for _, params in fake.executes for p in params]
+    assert "DEP-2026-00042" in all_params
+
+
+def test_editar_doc_banco_vacio_borra_a_null(monkeypatch):
+    """Si el form manda doc_banco vacío y antes había valor, se debe
+    persistir como NULL (paridad con el alta original que permite vacío)."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1, "no_cheque": "001", "stat": "Z",
+            "fechad": date(2026, 5, 1), "doc_banco": "viejo-doc",
+        }
+    )
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.editar(1, doc_banco="", usuario="tmt")
+    body_sqls = " ".join(s for s, _ in fake.executes).lower()
+    assert "doc_banco=%s" in body_sqls
+    all_params = [p for _, params in fake.executes for p in params]
+    assert None in all_params
+
+
+def test_editar_doc_banco_demasiado_largo_falla(monkeypatch):
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1, "no_cheque": "001", "stat": "Z",
+            "fechad": None, "doc_banco": None,
+        }
+    )
+    fake.apply_to(monkeypatch, db_mod)
+
+    with pytest.raises(ValueError, match="40 caracteres"):
+        queries.editar(1, doc_banco="x" * 41, usuario="tmt")
+
+
+def test_editar_doc_banco_igual_no_genera_update(monkeypatch):
+    """Si el doc_banco mandado coincide con el actual, no se incluye en el
+    UPDATE (evita escritura inútil)."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1, "no_cheque": "001", "stat": "Z",
+            "fechad": None, "doc_banco": "ABC123",
+        }
+    )
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.editar(1, doc_banco="ABC123", usuario="tmt")
+    body_sqls = " ".join(s for s, _ in fake.executes).lower()
+    assert "doc_banco=%s" not in body_sqls
+    assert "usuario_modifica=%s" in body_sqls
+
+
 def test_editar_no_cheque_igual_no_genera_update(monkeypatch):
     """Si el no_cheque mandado es == al actual, no se incluye en el UPDATE
     de no_cheque (evita escritura inútil) pero sí actualiza usuario_modifica."""

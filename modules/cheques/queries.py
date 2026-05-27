@@ -69,6 +69,7 @@ def editar(
     fechad: date | None = None,
     importe: float | None = None,
     no_cheque: str | None = None,
+    doc_banco: str | None = None,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de un cheque.
@@ -84,6 +85,10 @@ def editar(
       - `no_cheque` (TMT 2026-05-27 dueña): se cargó mal el número visible
         del cheque. Es solo texto identificatorio (no se usa para joins),
         max 10 chars. NO hay UNIQUE en DB — paridad con el alta original.
+      - `doc_banco` (TMT 2026-05-27 dueña: 'no es lo mismo numero de documento
+        que numero de cheque!! doc banco no es igual a cheque'). N° de
+        comprobante/depósito/transferencia que da el banco; se propaga a
+        numreferencia al depositar. varchar(40). Permitido vacío.
 
     Bloqueado siempre: codigo_cli, no_banco, cuenta. Para corregir esos
     sigue siendo `anular_por_error_de_carga()` y crear uno nuevo (rompen
@@ -103,7 +108,7 @@ def editar(
     # campo concepto del form, lo guardamos como parte de la observación
     # con prefix [C], preservando la intención sin agregar una columna.
     ch = db.fetch_one(
-        "SELECT id_cheque, no_cheque, stat, fechad FROM scintela.cheque WHERE id_cheque = %s",
+        "SELECT id_cheque, no_cheque, stat, fechad, doc_banco FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
@@ -173,6 +178,19 @@ def editar(
         if nc != actual_no:
             sql_set.append("no_cheque=%s")
             params.append(nc)
+    # TMT 2026-05-27 dueña: 'doc banco no es igual a cheque' — campo
+    # separado para el N° de comprobante/depósito que da el banco.
+    # varchar(40). Vacío = NULL en DB (la dueña puede dejarlo en blanco
+    # si todavía no tiene el comprobante). El alta original ya lo permite
+    # vacío así que el edit replica esa semántica.
+    if doc_banco is not None:
+        db_v = (doc_banco or "").strip()
+        if len(db_v) > 40:
+            raise ValueError(f"Doc. banco excede 40 caracteres ({len(db_v)}).")
+        actual_db = (ch.get("doc_banco") or "").strip()
+        if db_v != actual_db:
+            sql_set.append("doc_banco=%s")
+            params.append(db_v or None)  # vacío → NULL
     params.append(id_cheque)
 
     db.execute(
@@ -936,6 +954,9 @@ def por_id(id_cheque: int) -> dict | None:
                c.codigo_cli, c.importe, c.stat, c.no_banco,
                c.banco AS banco_texto, c.prov, c.clave,
                c.numero_transaccion, c.id_cheque_padre, c.pasaconta,
+               -- TMT 2026-05-27 dueña: doc_banco editable inline (separado
+               -- del no_cheque). Card propio en detalle.
+               c.doc_banco,
                COALESCE(cli.nombre, '') AS cliente,
                cli.ruc, cli.telefono,
                COALESCE(bco.nombre, c.banco) AS banco
@@ -3019,6 +3040,10 @@ def buscar(
                  ''
                ) AS cliente,
                c.importe, c.stat,
+               -- TMT 2026-05-27 dueña: doc_banco editable inline en lista.
+               -- Es el N° de comprobante/depósito (varchar(40)) — separado
+               -- del no_cheque, alimentado al alta y al inline edit.
+               c.doc_banco,
                c.no_banco, c.banco AS banco_nombre,
                COALESCE(
                  (SELECT bco.nombre FROM scintela.banco bco

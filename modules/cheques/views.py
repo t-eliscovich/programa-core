@@ -1573,6 +1573,18 @@ def actualizar(id_cheque: int):
             if nc != actual:
                 no_cheque_nuevo = nc
 
+    # Doc. banco — TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'.
+    # Campo separado (varchar(40) N° comprobante/depósito). Vacío es válido
+    # (NULL en DB). Solo se procesa si el form lo manda explícito.
+    doc_banco_nuevo = None
+    doc_banco_changed = False
+    if "doc_banco" in request.form:
+        db_v = (request.form.get("doc_banco") or "").strip()
+        actual_db = (ch.get("doc_banco") or "").strip()
+        if db_v != actual_db:
+            doc_banco_nuevo = db_v  # puede ser "" → en query se mapea a NULL
+            doc_banco_changed = True
+
     if errores:
         for e in errores:
             flash(e, "error")
@@ -1587,6 +1599,7 @@ def actualizar(id_cheque: int):
             fechad=fechad,
             importe=importe_nuevo,
             no_cheque=no_cheque_nuevo,
+            doc_banco=doc_banco_nuevo if doc_banco_changed else None,
             usuario=usuario,
         )
         msg = "Cheque editado."
