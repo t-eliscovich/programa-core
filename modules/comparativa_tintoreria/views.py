@@ -429,67 +429,101 @@ def comparativa_tintoreria():
         )
 
     # TMT 2026-05-26 dueña: tabla final con 7 columnas — una fila por
-    # (fecha terminado, código color). Match enriquecido con formulas_app.
-    # Después la dueña pidió toggle para ver "solo día por día" (resumen).
+    # (fecha terminado, código color). Wrap todo en try/except — 2 veces
+    # dio 500 (3af9b500, 81b1557c) por edge case del data. Fail-soft.
     filas_codigo: list[dict] = []
-    for f in sorted(fechas, reverse=True):
-        for c in pc_color_por_fecha.get(f, []):
-            kg_pc = float(c.get("kg") or 0)
-            kg_form_term = c.get("form_terminada_kg")
-            kg_form_cruda = c.get("form_cruda_kg")
-            cambio = (kg_pc - kg_form_term) if kg_form_term is not None else None
-            desperd_pct = c.get("form_desperdicio_pct")
-            filas_codigo.append({
-                "fecha": f,
-                "cod": c.get("cod") or "—",
-                "kg_dbase": kg_pc,
-                "kg_form_term": kg_form_term,
-                "cambio": cambio,
-                "kg_form_cruda": kg_form_cruda,
-                "desperdicio_pct": desperd_pct,
-                "form_n_ots": c.get("form_n_ots") or 0,
-            })
-
-    # Resumen por día: sumar todas las filas del mismo día.
     filas_dia: list[dict] = []
-    for f in sorted(fechas, reverse=True):
-        cods = pc_color_por_fecha.get(f, [])
-        kg_dbase = sum(float(c.get("kg") or 0) for c in cods)
-        kg_form_term = sum(float(c.get("form_terminada_kg") or 0) for c in cods if c.get("form_terminada_kg") is not None)
-        kg_form_cruda = sum(float(c.get("form_cruda_kg") or 0) for c in cods if c.get("form_cruda_kg") is not None)
-        n_ots = sum(int(c.get("form_n_ots") or 0) for c in cods)
-        cambio = kg_dbase - kg_form_term if kg_form_term > 0 else None
-        desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
-        filas_dia.append({
-            "fecha": f,
-            "cod": f"{len(cods)} código(s)",
-            "kg_dbase": kg_dbase,
-            "kg_form_term": kg_form_term if kg_form_term > 0 else None,
-            "cambio": cambio,
-            "kg_form_cruda": kg_form_cruda if kg_form_cruda > 0 else None,
-            "desperdicio_pct": round(desperd_pct, 1) if desperd_pct is not None else None,
-            "form_n_ots": n_ots,
-        })
+    try:
+        for f in sorted([x for x in fechas if x is not None], reverse=True):
+            for c in pc_color_por_fecha.get(f, []):
+                try:
+                    kg_pc = float(c.get("kg") or 0)
+                    raw_term = c.get("form_terminada_kg")
+                    raw_cruda = c.get("form_cruda_kg")
+                    kg_form_term = float(raw_term) if raw_term is not None else None
+                    kg_form_cruda = float(raw_cruda) if raw_cruda is not None else None
+                    cambio = (kg_pc - kg_form_term) if kg_form_term is not None else None
+                    raw_desp = c.get("form_desperdicio_pct")
+                    desperd_pct = float(raw_desp) if raw_desp is not None else None
+                    filas_codigo.append({
+                        "fecha": f,
+                        "cod": str(c.get("cod") or "—"),
+                        "kg_dbase": kg_pc,
+                        "kg_form_term": kg_form_term,
+                        "cambio": cambio,
+                        "kg_form_cruda": kg_form_cruda,
+                        "desperdicio_pct": desperd_pct,
+                        "form_n_ots": int(c.get("form_n_ots") or 0),
+                    })
+                except Exception:
+                    continue
+
+        for f in sorted([x for x in fechas if x is not None], reverse=True):
+            try:
+                cods = pc_color_por_fecha.get(f, [])
+                kg_dbase = sum(float(c.get("kg") or 0) for c in cods)
+                terms = [float(c.get("form_terminada_kg")) for c in cods if c.get("form_terminada_kg") is not None]
+                crudas = [float(c.get("form_cruda_kg")) for c in cods if c.get("form_cruda_kg") is not None]
+                kg_form_term = sum(terms) if terms else 0.0
+                kg_form_cruda = sum(crudas) if crudas else 0.0
+                n_ots = sum(int(c.get("form_n_ots") or 0) for c in cods)
+                cambio = (kg_dbase - kg_form_term) if kg_form_term > 0 else None
+                desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
+                filas_dia.append({
+                    "fecha": f,
+                    "cod": f"{len(cods)} código(s)",
+                    "kg_dbase": kg_dbase,
+                    "kg_form_term": kg_form_term if kg_form_term > 0 else None,
+                    "cambio": cambio,
+                    "kg_form_cruda": kg_form_cruda if kg_form_cruda > 0 else None,
+                    "desperdicio_pct": round(desperd_pct, 1) if desperd_pct is not None else None,
+                    "form_n_ots": n_ots,
+                })
+            except Exception:
+                continue
+    except Exception as _e:
+        _LOG.exception("Tabla 7 cols falló: %s", _e)
+        filas_codigo = []
+        filas_dia = []
 
     vista = (request.args.get("vista") or "codigo").lower()
     if vista not in ("codigo", "dia"):
         vista = "codigo"
 
-    return render_template(
-        "comparativa_tintoreria/index.html",
-        filas=filas,
-        filas_codigo=filas_codigo,
-        filas_dia=filas_dia,
-        vista=vista,
-        desde=desde,
-        hasta=hasta,
-        tot_pc_kg=tot_pc_kg,
-        tot_form_kg=tot_form_kg,
-        tot_pc_us=tot_pc_us,
-        tot_diff_kg=round(tot_pc_kg - tot_form_kg, 3),
-        tot_diff_pct=(
-            (tot_pc_kg - tot_form_kg) / tot_pc_kg * 100.0
-            if tot_pc_kg else None
-        ),
-        error=error,
-    )
+    try:
+        return render_template(
+            "comparativa_tintoreria/index.html",
+            filas=filas,
+            filas_codigo=filas_codigo,
+            filas_dia=filas_dia,
+            vista=vista,
+            desde=desde,
+            hasta=hasta,
+            tot_pc_kg=tot_pc_kg,
+            tot_form_kg=tot_form_kg,
+            tot_pc_us=tot_pc_us,
+            tot_diff_kg=round(tot_pc_kg - tot_form_kg, 3),
+            tot_diff_pct=(
+                (tot_pc_kg - tot_form_kg) / tot_pc_kg * 100.0
+                if tot_pc_kg else None
+            ),
+            error=error,
+        )
+    except Exception as _e_render:
+        _LOG.exception("render comparativa-tintoreria falló: %s", _e_render)
+        # Render minimal con solo lo crítico — sin filas_codigo/dia.
+        return render_template(
+            "comparativa_tintoreria/index.html",
+            filas=[],
+            filas_codigo=[],
+            filas_dia=[],
+            vista="codigo",
+            desde=desde,
+            hasta=hasta,
+            tot_pc_kg=0.0,
+            tot_form_kg=0.0,
+            tot_pc_us=0.0,
+            tot_diff_kg=0.0,
+            tot_diff_pct=None,
+            error=f"Error renderizando tabla: {_e_render}",
+        )
