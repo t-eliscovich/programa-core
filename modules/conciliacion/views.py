@@ -611,12 +611,47 @@ def hub():
                 "uploads_recientes falló: %s", _e
             )
             uploads = []
+        # TMT 2026-05-27 dueña: 'Antes de empezar una conciliacion nueva,
+        # me tiene que decir el saldo a conciliar'. Resumen previo:
+        # cuántos movs Pichincha quedan SIN conciliar (stat != '*' AND
+        # no match en banco_conciliacion_match) y su monto neto signado.
+        try:
+            import db as _db
+            saldo_pre = _db.fetch_one(
+                """
+                WITH conciliados_pc AS (
+                    SELECT DISTINCT id_transaccion
+                      FROM scintela.banco_conciliacion_match
+                     WHERE no_banco = %(no_banco)s
+                       AND (deshecho_en IS NULL)
+                       AND id_transaccion IS NOT NULL
+                )
+                SELECT COUNT(*)                                                  AS n_pendientes,
+                       COALESCE(SUM(CASE WHEN t.documento IN ('CH','ND','DB','GS','PA')
+                                         THEN -t.importe ELSE t.importe END), 0) AS saldo_pendiente,
+                       MIN(t.fecha)                                              AS fecha_min,
+                       MAX(t.fecha)                                              AS fecha_max
+                  FROM scintela.transacciones_bancarias t
+                  LEFT JOIN conciliados_pc cp ON cp.id_transaccion = t.id_transaccion
+                 WHERE t.no_banco = %(no_banco)s
+                   AND TRIM(COALESCE(t.stat, '')) <> '*'
+                   AND cp.id_transaccion IS NULL
+                """,
+                {"no_banco": _BANCO_PICHINCHA},
+            ) or {}
+        except Exception as _e:
+            import logging
+            logging.getLogger("programa_core.conciliacion").exception(
+                "saldo_pre conciliar falló: %s", _e
+            )
+            saldo_pre = {}
         return render_template(
             "conciliacion/banco_upload.html",
             bancos=bancos,
             no_banco_default=_BANCO_PICHINCHA,
             ultimos=ultimos,
             uploads=uploads,
+            saldo_pre=saldo_pre,
         )
 
     # ── POST ────────────────────────────────────────────────────────────

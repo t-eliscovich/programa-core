@@ -176,6 +176,18 @@ def movimientos(
                     r["conciliado_estado"] = c.get("estado")
     except Exception:
         pass  # fail-graceful: la vista funciona sin el badge si la tabla no está
+
+    # TMT 2026-05-27 dueña: 'les pusiste el flag de conciliados en banco'.
+    # Si el row tiene stat='*' del dBase (PICHINCH.DBF), es conciliado
+    # historico. Mostrar el badge igual aunque no haya entry en
+    # banco_conciliacion_match.
+    for r in rows:
+        if r.get("conciliacion_id"):
+            continue
+        if (r.get("stat") or "").strip() == "*":
+            r["conciliacion_id"] = "dbase"
+            r["conciliado_por"] = "dBase"
+            r["conciliado_estado"] = "dbase"
     return rows
 
 
