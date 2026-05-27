@@ -311,12 +311,25 @@ def comparativa_tintoreria():
 
     # Indexar PC color por fecha. Enriquece cada línea con los datos
     # de formulas_app del mismo código (suma kg crudo + terminado).
+    # IMPORTANTE: forzar TODOS los numéricos a float — el SQL devuelve Decimal
+    # y mezclarlos con float (de formulas_app) da TypeError en el template
+    # (reportado: 'unsupported operand type(s) for -: Decimal and float').
     pc_color_por_fecha: dict[date, list[dict]] = defaultdict(list)
     for r in rows_pc_color:
         cod_norm = (r.get("cod") or "").upper().strip()
         key = (r["fecha"], cod_norm)
         form_match = form_por_fecha_cod.get(key)
         enriched = dict(r)
+        # Force-cast los campos numéricos del SQL (Decimal) a float.
+        if enriched.get("kg") is not None:
+            enriched["kg"] = float(enriched["kg"])
+        if enriched.get("importe") is not None:
+            enriched["importe"] = float(enriched["importe"])
+        if enriched.get("n_lineas") is not None:
+            try:
+                enriched["n_lineas"] = int(enriched["n_lineas"])
+            except (TypeError, ValueError):
+                pass
         if form_match:
             cruda = form_match["cruda"]
             terminada = form_match["terminada"]
