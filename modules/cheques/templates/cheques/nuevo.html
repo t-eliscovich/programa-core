@@ -40,22 +40,10 @@
          en cada bloque, porque cada cheque puede tener fecha de depósito
          distinta. #}
       <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {# TMT 2026-05-26 dueña: Banco emisor PRIMERO (antes estaba al final).
-           Cuando banco=99 (EFECTIVO) la lógica de N° cheque y A depositar
-           se relajan — porque no hay cheque físico, es cash. #}
-        <label class="flex flex-col col-span-2 md:col-span-3">
-          <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
-          <select name="no_banco" id="no-banco-select" required autofocus class="border rounded px-2 py-1 mt-0.5 text-sm">
-            <option value="">— Elegí un banco —</option>
-            {% for b in bancos %}
-              <option value="{{ b.no_banco }}"
-                      {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
-                {{ b.no_banco }} · {{ b.nombre }}
-              </option>
-            {% endfor %}
-          </select>
-          <span id="banco-hint" class="hidden mt-1 text-xs px-2 py-1 rounded border border-sky-300 bg-sky-50 text-sky-900 leading-snug"></span>
-        </label>
+        {# TMT 2026-05-27 dueña: 'banco emisor está después de importe y entonces
+           si elijo otro cheque, me deja elegir otro banco emisor'. Banco emisor
+           ahora es POR-CHEQUE — dentro de cada bloque, después del importe.
+           El select cabecera lo sacamos completo. #}
 
         <label class="flex flex-col">
           <span class="text-xs text-slate-600">Fecha <span class="text-red-500">*</span></span>
@@ -115,15 +103,32 @@
                  Z/P/D/B/X/1/2. La fecha "A depositar" sólo se habilita
                  cuando estado=P (postdatado). En los otros estados la
                  fecha queda lockeada a la fecha de recibido. #}
-              <div class="grid grid-cols-5 gap-2 items-end">
+              <div class="grid grid-cols-7 gap-2 items-end">
                 <label class="flex flex-col">
                   <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
                   <input type="text" name="importe[]" value="{{ form.importe or '' }}"
                          class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm cheque-imp" required
                          placeholder="0,00">
                 </label>
+                {# TMT 2026-05-27 dueña: 'banco emisor está después de importe y
+                   entonces si elijo otro cheque, me deja elegir otro banco emisor'.
+                   Banco por cheque (no_banco[] array). 90/91/95/97/99 = depósitos
+                   directos al banco (no hay cheque físico): JS los detecta y
+                   relaja N° cheque + fuerza fecha hoy. #}
+                <label class="flex flex-col col-span-2">
+                  <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
+                  <select name="no_banco[]" class="cheque-banco border rounded px-2 py-1 mt-0.5 text-sm" required>
+                    <option value="">— banco —</option>
+                    {% for b in bancos %}
+                      <option value="{{ b.no_banco }}"
+                              {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
+                        {{ b.no_banco }} · {{ b.nombre }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
                 <label class="flex flex-col">
-                  <span class="text-xs text-slate-600">N° cheque <span class="text-red-500">*</span></span>
+                  <span class="text-xs text-slate-600 cheque-num-label">N° cheque <span class="text-red-500 cheque-num-req">*</span></span>
                   <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
                          class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
                 </label>
@@ -851,6 +856,11 @@
           inp.value = '';
         }
       });
+      // TMT 2026-05-27 dueña: 'si elijo otro cheque, me deja elegir otro
+      // banco emisor'. Resetear banco del nuevo bloque (no heredar). Y
+      // limpiar select.
+      const bancoSelNuevo = nuevo.querySelector('.cheque-banco');
+      if (bancoSelNuevo) bancoSelNuevo.value = '';
       chequesList.appendChild(nuevo);
       renumerarBloques();
       // focus en el N° del nuevo bloque
@@ -860,6 +870,8 @@
       actualizarMultiHint();
       // TMT 2026-05-20 — re-aplicar el toggle de fechad al bloque nuevo.
       aplicarToggleFechad(nuevo);
+      // TMT 2026-05-27 — wire-up del listener de banco emisor para el nuevo bloque.
+      if (window.__wireBloqueListener) window.__wireBloqueListener(nuevo);
     });
   }
 
@@ -964,68 +976,77 @@
   }
   if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
 
-  // TMT 2026-05-19 v8 — banco>=90: side-effects y hint contextual.
-  // Pedido literal dueña: "Asegurate que en cobranza funcionen las
-  // logicas de seleccionar opciones de banco >90 ejemplo anticipos,
-  // efectivo etc". El backend ya aplica los side-effects en
-  // queries.crear(); acá solo guiamos visualmente y tickeamos
-  // es_anticipo cuando corresponda.
-  const bancoSelEl = document.getElementById('no-banco-select');
-  const bancoHint  = document.getElementById('banco-hint');
-  const HINTS_BANCO = {
-    '90': 'DEP. PICH — el cheque se marca como cobrado (B). La plata ya está en Pichincha.',
-    '91': 'DEP. INTER — el cheque se marca como cobrado (B). La plata ya está en Internacional.',
-    '95': 'CANCELA ANTICIPO — registro contable, queda en cartera para aplicar manual.',
-    '97': 'ANTICIPO — se va a marcar como anticipo automáticamente (genera espejo negativo).',
-    '98': 'UKN (legacy) — sin side-effect, queda en cartera.',
-    '99': 'EFECTIVO — cobro inmediato: el cheque queda como cobrado (B) y entra a CAJA.',
-  };
-  function actualizarHintBanco() {
-    if (!bancoSelEl || !bancoHint) return;
-    const v = bancoSelEl.value;
-    const hint = HINTS_BANCO[v];
-    if (hint) {
-      bancoHint.textContent = hint;
-      bancoHint.classList.remove('hidden');
-    } else {
-      bancoHint.classList.add('hidden');
+  // TMT 2026-05-27 dueña: banco emisor ahora es POR-CHEQUE. Cada bloque
+  // tiene su propio select. Logic per-bloque para detectar 90/91/95/97/99
+  // (depósitos directos / efectivo / anticipo) y ajustar N° cheque / fechad.
+  //
+  // Reglas:
+  //   90, 91 = DEP. PICH / DEP. INTER: depósito directo, ya cobrado → B,
+  //            N° cheque opcional, fechad = HOY.
+  //   95     = CANCELA ANTICIPO: queda en cartera para aplicar manual.
+  //   97     = ANTICIPO: se marca anticipo (genera espejo negativo).
+  //   99     = EFECTIVO: cash, ya cobrado → B, sin N° cheque, sin fechad.
+  // Para 90/91/95/97/99 → la dueña pidió: 'obligatoriamente fecha de hoy
+  // y no necesita numero de cheque'.
+  const HOY_ISO = new Date().toISOString().slice(0, 10);
+  const DEPOSITO_BANCOS = ['90', '91', '95', '97', '99'];
+
+  function configurarBloque(bloque) {
+    const bancoSel = bloque.querySelector('.cheque-banco');
+    const numInp = bloque.querySelector('.cheque-num');
+    const numReqStar = bloque.querySelector('.cheque-num-req');
+    const fechadInp = bloque.querySelector('.cheque-fechad');
+    const fechadWrap = bloque.querySelector('.cheque-fechad-wrap');
+    const statSel = bloque.querySelector('.cheque-stat');
+    if (!bancoSel) return;
+    const v = bancoSel.value;
+    const esDeposito = DEPOSITO_BANCOS.includes(v);
+    const esEfectivo = v === '99';
+    // N° cheque: not required para depósitos (90/91/95/97/99)
+    if (numInp) {
+      numInp.required = !esDeposito;
+      if (numReqStar) numReqStar.classList.toggle('hidden', esDeposito);
+    }
+    // Fecha A depositar: forzar HOY para depósitos
+    if (fechadInp && esDeposito) {
+      fechadInp.value = HOY_ISO;
+      fechadInp.readOnly = true;
+    } else if (fechadInp) {
+      fechadInp.readOnly = false;
+    }
+    // Efectivo: ocultar fechad (cobro inmediato)
+    if (fechadWrap) {
+      fechadWrap.classList.toggle('hidden', esEfectivo);
+    }
+    // Estado: para 90/91/99 → B (cobrado); para 97 → Z (anticipo); resto deja
+    if (statSel && (v === '90' || v === '91' || v === '99')) {
+      if ((statSel.value || 'Z').toUpperCase() === 'Z') {
+        statSel.value = 'B';
+        statSel.dispatchEvent(new Event('change'));
+      }
     }
     // Auto-tick es_anticipo cuando se elige 97 (paridad con el view).
     if (v === '97' && anticipoChk && !anticipoChk.checked) {
       anticipoChk.checked = true;
       anticipoChk.dispatchEvent(new Event('change'));
     }
-    // TMT 2026-05-26 dueña: si banco=99 (EFECTIVO), no hay cheque físico:
-    //   - N° cheque deja de ser required, label cambia a "N° referencia"
-    //   - "A depositar" se oculta (cobro inmediato, no se deposita)
-    //   - Estado se setea a B (cobrado/depositado) automáticamente
-    const esEfectivo = (v === '99');
-    document.querySelectorAll('.cheque-bloque').forEach(b => {
-      const numInp = b.querySelector('.cheque-num');
-      const numLbl = numInp && numInp.previousElementSibling;
-      const fechadWrap = b.querySelector('.cheque-fechad-wrap');
-      const statSel = b.querySelector('.cheque-stat');
-      if (numInp) {
-        numInp.required = !esEfectivo;
-        if (numLbl) {
-          if (esEfectivo) {
-            numLbl.innerHTML = 'N° referencia <span class="text-slate-400 text-[10px]">(opcional)</span>';
-          } else {
-            numLbl.innerHTML = 'N° cheque <span class="text-red-500">*</span>';
-          }
-        }
-      }
-      if (fechadWrap) {
-        if (esEfectivo) fechadWrap.classList.add('hidden');
-        else fechadWrap.classList.remove('hidden');
-      }
-      if (statSel && esEfectivo && (statSel.value || 'Z').toUpperCase() === 'Z') {
-        statSel.value = 'B';
-        statSel.dispatchEvent(new Event('change'));
-      }
-    });
   }
-  if (bancoSelEl) {
+
+  // Wire-up: cada select banco re-configura su bloque al cambiar.
+  function wireBloqueListener(bloque) {
+    const sel = bloque.querySelector('.cheque-banco');
+    if (sel) {
+      sel.addEventListener('change', () => configurarBloque(bloque));
+      configurarBloque(bloque); // init
+    }
+  }
+  document.querySelectorAll('.cheque-bloque').forEach(wireBloqueListener);
+  // Expose para que el clonado de bloque (en JS de "+ Otro cheque") wire-uppee también
+  window.__wireBloqueListener = wireBloqueListener;
+  // Stub para compat con código viejo
+  const bancoSelEl = null;
+  function actualizarHintBanco() { /* deprecated — per-bloque ahora */ }
+  if (false) {
     bancoSelEl.addEventListener('change', actualizarHintBanco);
     actualizarHintBanco();  // estado inicial (re-render por error)
   }

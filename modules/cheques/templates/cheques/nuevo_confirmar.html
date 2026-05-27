@@ -149,10 +149,29 @@
       </div>
 
       <div class="flex items-center justify-between mt-6 pt-4 border-t">
-        <a href="{{ url_for('cheques.nuevo') }}"
-           class="text-slate-500 hover:text-slate-700">
-          ← Volver al form (perder cambios)
-        </a>
+        {# TMT 2026-05-27 dueña: 'Cuando pongo volver para atrás no me borres
+           lo pre cargado si avance en cobranza, asi puedo editar'.
+           Form que POSTea los datos al GET de nuevo para preservar precarga. #}
+        <form method="POST" action="{{ url_for('cheques.nuevo') }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="paso" value="editar">
+          <input type="hidden" name="codigo_cli" value="{{ codigo_cli }}">
+          <input type="hidden" name="fecha_recibido" value="{{ fecha_recibido.isoformat() if fecha_recibido else '' }}">
+          <input type="hidden" name="banco_texto" value="{{ banco_texto }}">
+          <input type="hidden" name="prov" value="{{ prov }}">
+          {% if es_anticipo %}<input type="hidden" name="es_anticipo" value="1">{% endif %}
+          {% for c in cheques_in %}
+            <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
+            <input type="hidden" name="importe[]" value="{{ c.importe }}">
+            <input type="hidden" name="fechad[]" value="{{ c.fechad.isoformat() if c.fechad else '' }}">
+            <input type="hidden" name="stat[]" value="{{ c.stat or 'Z' }}">
+            <input type="hidden" name="doc_banco[]" value="{{ c.doc_banco or '' }}">
+            <input type="hidden" name="no_banco[]" value="{{ c.no_banco or no_banco or '' }}">
+          {% endfor %}
+          <button type="submit" class="text-slate-500 hover:text-slate-700">
+            ← Volver al form (conserva los datos)
+          </button>
+        </form>
         <button type="submit"
                 class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow-sm">
           ✓ Confirmar y guardar

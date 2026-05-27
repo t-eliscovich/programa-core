@@ -92,6 +92,57 @@ def nuevo():
             clientes_datalist=clientes_datalist,
         )
 
+    # TMT 2026-05-27 dueña: 'Cuando pongo volver para atrás no me borres
+    # lo pre cargado si avance en cobranza'. Si llega paso=editar, no
+    # creamos nada — re-renderizamos el form con TODOS los valores ya
+    # cargados, listos para editar.
+    if request.form.get("paso") == "editar":
+        form_back: dict = {}
+        form_back["fecha_recibido"] = (request.form.get("fecha_recibido") or "")
+        form_back["fechad_iso"] = (request.form.get("fecha_recibido") or "")
+        form_back["codigo_cli"] = (request.form.get("codigo_cli") or "").upper()
+        form_back["banco_texto"] = (request.form.get("banco_texto") or "")
+        form_back["prov"] = (request.form.get("prov") or "")
+        if request.form.get("es_anticipo"):
+            form_back["es_anticipo"] = True
+        # Arrays — los pasamos como listas para que el template los pueda
+        # iterar y rellenar cada bloque.
+        form_back["cheques"] = []
+        nos = request.form.getlist("no_cheque[]")
+        imps = request.form.getlist("importe[]")
+        fchs = request.form.getlist("fechad[]")
+        sts = request.form.getlist("stat[]")
+        dbs = request.form.getlist("doc_banco[]")
+        nbs = request.form.getlist("no_banco[]")
+        n = max(len(nos), len(imps), len(fchs), len(sts), len(dbs), len(nbs))
+        for i in range(n):
+            form_back["cheques"].append({
+                "no_cheque": nos[i] if i < len(nos) else "",
+                "importe": imps[i] if i < len(imps) else "",
+                "fechad": fchs[i] if i < len(fchs) else "",
+                "stat": sts[i] if i < len(sts) else "Z",
+                "doc_banco": dbs[i] if i < len(dbs) else "",
+                "no_banco": nbs[i] if i < len(nbs) else "",
+            })
+        # Compat: el template usa form.importe/no_cheque/fechad/no_banco
+        # (scalars del primer bloque) para precarga. Llenamos del primero.
+        if form_back["cheques"]:
+            _p = form_back["cheques"][0]
+            form_back["no_cheque"] = _p["no_cheque"]
+            form_back["importe"] = _p["importe"]
+            form_back["fechad"] = _p["fechad"]
+            form_back["fechad_iso"] = _p["fechad"]
+            form_back["stat"] = _p["stat"]
+            form_back["doc_banco"] = _p["doc_banco"]
+            form_back["no_banco"] = _p["no_banco"]
+        return render_template(
+            "cheques/nuevo.html",
+            form=form_back,
+            errores=[],
+            bancos=_bancos(),
+            clientes_datalist=clientes_datalist,
+        )
+
     # TMT 2026-05-15: simplificado — una sola fecha de cabecera. La
     # "fecha de emisión" del cheque NO interesa a la dueña; usamos
     # `fecha_recibido` (cuándo entró al sistema) tanto para `fecha` como
@@ -128,8 +179,19 @@ def nuevo():
     if not docs_banco_raw:
         v = request.form.get("doc_banco")
         docs_banco_raw = [v] if v else []
+    # TMT 2026-05-27 dueña: 'banco emisor está después de importe y entonces
+    # si elijo otro cheque, me deja elegir otro banco emisor'. Banco por
+    # cheque (no_banco[] array). Si no viene array, fallback a scalar legacy.
+    nos_banco_raw = request.form.getlist("no_banco[]")
+    if not nos_banco_raw:
+        v = request.form.get("no_banco")
+        nos_banco_raw = [v] if v else []
+    # Bancos depósito directo: 90 DEP.PICH, 91 DEP.INTER, 95 CANCELA ANT,
+    # 97 ANTICIPO, 99 EFECTIVO. La dueña pidió que para estos: fecha hoy
+    # obligatoria, no_cheque no requerido.
+    _BANCOS_DEPOSITO = {90, 91, 95, 97, 99}
     # Limpiar y alinear las listas — cada cheque puede tener su propia
-    # fecha de depósito.
+    # fecha de depósito Y su propio banco emisor.
     cheques_in: list[dict] = []
     for i, n in enumerate(nos_cheque_raw):
         n_clean = (n or "").strip()
@@ -139,13 +201,21 @@ def nuevo():
         st_clean = st_clean.strip().upper()[:1] or "Z"
         db_clean = (docs_banco_raw[i] if i < len(docs_banco_raw) else "") or ""
         db_clean = db_clean.strip()[:40] or None
+        # banco por cheque — fallback al primero/legacy si index out of range.
+        nb_raw = nos_banco_raw[i] if i < len(nos_banco_raw) else (nos_banco_raw[0] if nos_banco_raw else None)
+        nb_clean = parse_int(nb_raw)
+        # Para bancos depósito: si N° cheque vacío, lo dejamos vacío (no req).
+        # Pero si NO es depósito, el N° cheque queda como vino.
+        es_deposito = (nb_clean in _BANCOS_DEPOSITO)
         if not n_clean and not (i_clean and str(i_clean).strip()):
             continue  # bloque totalmente vacío → skip
-        # fechad por defecto: si el cheque NO es postdatado, colapsa a la
-        # fecha de recibido. Si es postdatado (stat='P') y vino vacía, es
-        # un error que se valida abajo.
+        # fechad por defecto: si banco es depósito → fecha hoy obligatoria.
+        # Si stat='P' (postdatado), fechad obligatoria explicita.
+        # Para el resto, colapsa a fecha_recibido.
         fd_parsed = parse_date(fd_clean) if fd_clean else None
-        if st_clean == "P":
+        if es_deposito:
+            cheque_fechad = date.today()  # dueña: 'obligatoriamente fecha de hoy'
+        elif st_clean == "P":
             cheque_fechad = fd_parsed  # puede ser None → error abajo
         else:
             cheque_fechad = fd_parsed or fecha
@@ -157,6 +227,8 @@ def nuevo():
                 "stat": st_clean,
                 "doc_banco": db_clean,
                 "raw_importe": i_clean,
+                "no_banco": nb_clean,
+                "es_deposito": es_deposito,
             }
         )
     # `fechad` general (compat con resto del view + restore-on-error).
@@ -166,7 +238,9 @@ def nuevo():
     primero = cheques_in[0] if cheques_in else {}
     no_cheque = primero.get("no_cheque", "")
     primero.get("importe")
-    no_banco = parse_int(request.form.get("no_banco"))
+    # TMT 2026-05-27 dueña: banco por cheque. `no_banco` (cabecera) ahora
+    # es derivado del primer cheque para compat con resto del view.
+    no_banco = cheques_in[0].get("no_banco") if cheques_in else parse_int(request.form.get("no_banco"))
     banco_texto = (request.form.get("banco_texto") or "").strip()[:30] or None
     prov = (request.form.get("prov") or "").strip()[:5] or None
     es_anticipo = bool(request.form.get("es_anticipo"))
@@ -433,6 +507,9 @@ def nuevo():
 
         with db.tx() as conn:
             for ch_in in cheques_in:
+                # TMT 2026-05-27 — banco por cheque (no_banco from ch_in)
+                _ch_no_banco = ch_in.get("no_banco") if ch_in.get("no_banco") is not None else no_banco
+                _ch_es_anticipo = es_anticipo or (_ch_no_banco == 97)
                 ch = queries.crear(
                     fecha=fecha,
                     fechad=ch_in.get("fechad") or fechad,  # por cheque
@@ -440,7 +517,7 @@ def nuevo():
                     codigo_cli=codigo_cli,
                     no_cheque=ch_in["no_cheque"],
                     importe=ch_in["importe"],
-                    no_banco=no_banco,
+                    no_banco=_ch_no_banco,
                     banco_texto=banco_texto,
                     prov=prov,
                     # TMT 2026-05-20 — stat seleccionado en el dropdown
