@@ -1046,7 +1046,7 @@ UPDATE scintela.transacciones_bancarias tb
  WHERE tb.no_banco = 10
    AND s.num IS NOT NULL
    AND TRIM(s.num) <> ''
-   AND TRIM(COALESCE(tb.numreferencia,'')) = TRIM(s.num)
+   AND tb.numreferencia IS NOT NULL AND tb.numreferencia::text = TRIM(s.num)
    AND ABS(ABS(tb.importe) - s.importe) < 0.01
    AND COALESCE(tb.stat, '') <> '*';
 
