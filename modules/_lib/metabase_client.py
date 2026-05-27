@@ -90,7 +90,7 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
             url,
             json=body,
             headers={"X-Metabase-Session": token},
-            timeout=15,
+            timeout=90,
         )
         if r.status_code == 401:
             # Token vencido: re-login una vez y reintento.
@@ -102,7 +102,7 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
                 url,
                 json=body,
                 headers={"X-Metabase-Session": token},
-                timeout=15,
+                timeout=90,
             )
         r.raise_for_status()
         data = r.json()

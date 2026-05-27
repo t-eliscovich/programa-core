@@ -142,10 +142,38 @@ def cargar_pc_existentes(desde: date, hasta: date) -> tuple[set, set, int]:
     return by_nfc, by_tripla, max_numf
 
 
+def _iter_month_chunks(desde: date, hasta: date):
+    """Itera mes por mes inclusivo. Cada yield es (chunk_desde, chunk_hasta).
+
+    La card 199 de Metabase contra Asinfo (SQL Server) puede tardar 30-60s
+    para rangos largos — pasamos el rango entero y nos comimos timeouts de
+    15s devolviendo []. Mejor: 17 calls chicas (~3-8s c/u) que 1 call grande.
+    """
+    from calendar import monthrange
+    cur_y, cur_m = desde.year, desde.month
+    end_y, end_m = hasta.year, hasta.month
+    while (cur_y, cur_m) <= (end_y, end_m):
+        first = date(cur_y, cur_m, 1)
+        last_day = monthrange(cur_y, cur_m)[1]
+        last = date(cur_y, cur_m, last_day)
+        chunk_desde = max(first, desde)
+        chunk_hasta = min(last, hasta)
+        yield chunk_desde, chunk_hasta
+        cur_m += 1
+        if cur_m > 12:
+            cur_m = 1
+            cur_y += 1
+
+
 def backfill(*, dry_run: bool, desde: date, hasta: date, limit: int) -> dict:
-    print(f"-> Cargando facturas Asinfo {desde}..{hasta}", flush=True)
-    asinfo_rows = asinfo_service.facturas_periodo(desde, hasta)
-    print(f"   Asinfo trajo {len(asinfo_rows)} filas", flush=True)
+    print(f"-> Cargando facturas Asinfo {desde}..{hasta} (chunked mes a mes)", flush=True)
+    asinfo_rows: list[dict] = []
+    chunks = list(_iter_month_chunks(desde, hasta))
+    for i, (cd, ch) in enumerate(chunks, 1):
+        chunk_rows = asinfo_service.facturas_periodo(cd, ch)
+        print(f"   [{i}/{len(chunks)}] {cd}..{ch} → {len(chunk_rows)} filas", flush=True)
+        asinfo_rows.extend(chunk_rows)
+    print(f"   Asinfo trajo {len(asinfo_rows)} filas (suma de chunks)", flush=True)
     if not asinfo_rows:
         return {"asinfo": 0, "ya_estaban": 0, "insertadas": 0, "saltadas_sin_cli": 0,
                 "saltadas_sin_importe": 0, "errores": 0}
