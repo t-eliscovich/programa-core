@@ -753,10 +753,12 @@ def hub():
     # PROGRAMA. CUANDO ES DEPOSITO NO QUIERO ASIGNARSELOS A CLIENTES."
     # Resumen por día — entradas (Tipo C / tipo_real C) en ambos lados
     # sumadas, comparadas. Sin desglose por cliente.
-    # TMT 2026-05-27 dueña v2: "dejame expandir día por día. no me sirve
-    # más que me dejes los cheques debajo, lo estamos haciendo arriba".
-    # Guardamos los items individuales por día para que cada fila sea
-    # expandible (banco_items + programa_items).
+    # TMT 2026-05-27 dueña v2: "dejame expandir día por día".
+    # TMT 2026-05-27 dueña v3: "Las transferencias si iban en sugeridos!!!".
+    # Sólo CHEQUES y EFECTIVO al panel — el resto (TR, NC) sigue por el
+    # flujo normal de sugeridos/matches/solo banco/solo programa.
+    _CATS_DAILY = {"ENTRADA_COBRO_CHEQUE", "ENTRADA_DEPOSITO_EFECTIVO"}
+    _DOCS_DAILY = {"DE"}  # programa: documento de depósito banco
     depositos_por_dia: list[dict] = []
     try:
         banco_items_dia: dict[str, list[dict]] = {}
@@ -764,6 +766,8 @@ def hub():
         # Banco real — real_only (entradas) + matches (banco side entradas)
         for r in (data.get("real_only") or []):
             if (r.get("tipo") or "").upper() != "C":
+                continue
+            if ((r.get("cat") or {}).get("codigo") or "") not in _CATS_DAILY:
                 continue
             f = str(r.get("fecha") or "")
             if not f:
@@ -779,6 +783,8 @@ def hub():
             real = m.get("real") or {}
             if (real.get("tipo") or "").upper() != "C":
                 continue
+            if ((m.get("cat") or {}).get("codigo") or "") not in _CATS_DAILY:
+                continue
             f = str(real.get("fecha") or "")
             if not f:
                 continue
@@ -792,6 +798,8 @@ def hub():
         # Programa — bancsis_only entradas + matches bancsis entradas
         for b in (data.get("bancsis_only") or []):
             if (b.get("tipo_real") or "").upper() != "C":
+                continue
+            if (b.get("documento") or "").upper() not in _DOCS_DAILY:
                 continue
             f = str(b.get("fecha") or "")
             if not f:
@@ -812,6 +820,8 @@ def hub():
             b = m.get("bancsis") or {}
             real = m.get("real") or {}
             if (real.get("tipo") or "").upper() != "C":
+                continue
+            if (b.get("documento") or "").upper() not in _DOCS_DAILY:
                 continue
             f = str(b.get("fecha") or "")
             if not f:
@@ -978,36 +988,37 @@ def marcar_depositos_dia_conciliados():
         except Exception:
             errores += 1
 
-    # Lado BANCO REAL: recuperamos los movs del extracto desde session/JSON
-    # y marcamos los Tipo C de las fechas seleccionadas. Si la session no
-    # tiene el extracto, salteamos esta parte (se va a re-cargar el extracto).
+    # Lado BANCO REAL: el form trae el detalle de cada día (dias_json) con
+    # banco_items y programa_items — porque la session NO persiste el
+    # resultado (extracto >4KB rompe cookie Flask). Persistimos cada mov
+    # banco real como real_only_ok para que el próximo extracto NO lo
+    # vuelva a mostrar (firma fecha+documento+monto+tipo en
+    # banco_conciliacion_match).
+    raw_dias = request.form.get("dias_json") or "[]"
     try:
-        from flask import session as _ses
-        data_ses = _ses.get("conciliacion_banco_data") or {}
-        real_only_ses = data_ses.get("real_only") or []
-        fechas_iso = {f.isoformat() for f in fechas}
-        for r in real_only_ses:
-            if (r.get("tipo") or "").upper() != "C":
-                continue
-            if str(r.get("fecha") or "") not in fechas_iso:
-                continue
+        dias_data = _json.loads(raw_dias)
+    except _json.JSONDecodeError:
+        dias_data = []
+    fechas_iso = {f.isoformat() for f in fechas}
+    for d in dias_data:
+        if str(d.get("fecha") or "") not in fechas_iso:
+            continue
+        for it in (d.get("banco_items") or []):
             try:
                 real = _MB(
-                    fecha=_date.fromisoformat(r["fecha"]),
-                    concepto=r.get("concepto") or "",
-                    documento=r.get("documento") or "",
-                    monto=_Dec(str(r.get("monto") or 0)),
+                    fecha=_date.fromisoformat(d["fecha"]),
+                    concepto=it.get("concepto") or "",
+                    documento=it.get("documento") or "",
+                    monto=_Dec(str(it.get("monto") or 0)),
                     saldo=_Dec("0"),
-                    codigo=r.get("codigo") or "",
-                    tipo=r.get("tipo") or "C",
-                    oficina=r.get("oficina") or "",
+                    codigo="",
+                    tipo="C",
+                    oficina="",
                 )
                 confirmar_real_only(no_banco, real, usuario=usuario)
                 n_real += 1
             except Exception:
                 errores += 1
-    except Exception:
-        pass
 
     flash(
         f"Marcados {len(fechas)} días — {n_prog} del programa + {n_real} del banco pasaron a Historial.",

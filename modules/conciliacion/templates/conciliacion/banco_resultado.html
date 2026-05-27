@@ -73,6 +73,10 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="no_banco" value="{{ no_banco }}">
       <input type="hidden" name="fechas_json" id="dep-fechas-json" value="[]">
+      {# TMT 2026-05-27 dueña: la session de Flask no persiste el resultado
+         (extracto >4KB rompe la cookie). Mandamos el detalle inline para
+         que el endpoint pueda persistir el lado banco real también. #}
+      <input type="hidden" name="dias_json" value='{{ depositos_por_dia|tojson|forceescape }}'>
       <div class="px-4 py-2 flex items-center gap-3 border-t border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-900">
         <button type="submit" id="btn-dep-conciliar"
                 class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium shadow-sm"
@@ -203,15 +207,112 @@
   </details>
   {% endif %}
 
+  {# ───── Card sticky: agrupado de comisiones/impuestos pre-armado.
+       TMT 2026-05-26 dueña: que venga ya creado, un click para confirmar.
+       TMT 2026-05-27 dueña: "y sacaste lo de armar comisiones e impuestos
+       en un movimiento" — movido FUERA de tabs para que esté siempre visible. #}
+  {% if agrupado_comisiones %}
+  <div id="card-agrupado-comisiones"
+       class="mb-4 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-4 shadow-sm">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <div>
+        <div class="text-sm font-bold text-amber-900 dark:text-amber-100">
+          ⚙ Agrupar {{ agrupado_comisiones.n }} comisiones/impuestos en 1 movimiento
+        </div>
+        <div class="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+          En lugar de crear {{ agrupado_comisiones.n }} txs individuales, una sola tx BANCSIS con la suma — y concilia las {{ agrupado_comisiones.n }} filas N:1 contra ella.
+        </div>
+      </div>
+      <div class="text-right shrink-0">
+        <div class="text-xs text-amber-700 dark:text-amber-300">Monto neto ({{ agrupado_comisiones.documento }})</div>
+        <div class="text-xl font-bold tabular-nums text-amber-900 dark:text-amber-100">
+          $ {{ '{:,.2f}'.format(agrupado_comisiones.neto|abs) }}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Concepto (editable)</label>
+        <input type="text" id="agrup-concepto" maxlength="50"
+               value="{{ agrupado_comisiones.concepto_default }}"
+               class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Fecha</label>
+        <input type="date" id="agrup-fecha"
+               value="{{ agrupado_comisiones.fecha_default or '' }}"
+               class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 tabular-nums">
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Origen (cli/prov, opcional, 5 chars)</label>
+        <input type="text" id="agrup-prov" maxlength="5" placeholder="PICH / SRI"
+               class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 uppercase">
+      </div>
+    </div>
+
+    <details class="mb-3 text-xs">
+      <summary class="cursor-pointer text-amber-800 dark:text-amber-300 hover:underline select-none">
+        Ver desglose ({{ agrupado_comisiones.n }} filas)
+      </summary>
+      <div class="mt-2 max-h-48 overflow-auto bg-white dark:bg-slate-900 rounded border border-amber-200 dark:border-amber-800">
+        <table class="w-full text-xs tabular-nums">
+          <tbody>
+            {% for it in agrupado_comisiones["items"] %}
+            <tr class="border-t border-slate-100 dark:border-slate-800">
+              <td class="px-2 py-1 text-slate-500 w-16 whitespace-nowrap">{{ it.fecha }}</td>
+              <td class="px-2 py-1 text-slate-700 dark:text-slate-300">
+                <span class="text-[10px] mr-1 text-amber-700 dark:text-amber-400">{{ (it.cat or {}).abrev or '?' }}</span>
+                {{ it.concepto }}
+              </td>
+              <td class="px-2 py-1 text-right w-24 whitespace-nowrap {% if it.tipo == 'D' %}text-rose-700{% else %}text-emerald-700{% endif %}">
+                {% if it.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(it.monto) }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <div class="flex items-center gap-2">
+      <button type="button" id="btn-confirmar-agrupado"
+              class="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium shadow-sm">
+        ✓ Crear 1 mov + conciliar las {{ agrupado_comisiones.n }} filas
+      </button>
+      <button type="button" id="btn-descartar-agrupado"
+              class="px-3 py-1.5 rounded border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40">
+        Mejor crearlas una por una
+      </button>
+      <span id="agrup-status" class="text-xs text-amber-800 dark:text-amber-300 ml-2"></span>
+    </div>
+  </div>
+  <script type="application/json" id="agrupado-comisiones-data">{{ agrupado_json|safe }}</script>
+  {% endif %}
+
   {# ───── Tabs ───── #}
-  {# TMT 2026-05-27 dueña: las ENTRADAS (Tipo C) están arriba en el panel
-     Depósitos por día. Acá solo contamos las salidas (Tipo D) para que el
-     contador no quede "inflado" respecto a lo que se ve. #}
-  {% set n_real_con_sug = data.real_only|selectattr('sugerencias')|rejectattr('tipo','equalto','C')|list|length %}
-  {% set n_real_salidas_sin_sug = data.real_only|rejectattr('sugerencias')|selectattr('tipo','equalto','D')|list|length %}
-  {% set n_real_sin_sug = n_real_salidas_sin_sug %}
-  {% set n_bancsis_salidas = data.bancsis_only|rejectattr('tipo_real','equalto','C')|list|length %}
-  {% set n_match_salidas = data.matches|selectattr('real.tipo','equalto','D')|list|length %}
+  {# TMT 2026-05-27 dueña: SOLO los depósitos (cheque/efectivo) van arriba
+     en el panel "Depósitos por día". Las TRANSFERENCIAS, NC, otros siguen
+     bajando a los tabs normales — son 1:1 y se conciliarán normal.
+     "Las transferencias si iban en sugeridos!!!!" #}
+  {% set _CATS_DAILY = ['ENTRADA_COBRO_CHEQUE','ENTRADA_DEPOSITO_EFECTIVO'] %}
+  {% set _DOCS_DAILY = ['DE'] %}
+  {% set ns = namespace(n_sug=0, n_sin_sug=0, n_bancsis=0, n_match=0) %}
+  {% for r in data.real_only %}
+    {% if (r.cat.codigo or '') not in _CATS_DAILY %}
+      {% if r.sugerencias and r.sugerencias|length > 0 %}
+        {% set ns.n_sug = ns.n_sug + 1 %}
+      {% else %}
+        {% set ns.n_sin_sug = ns.n_sin_sug + 1 %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  {% for b in data.bancsis_only %}{% if (b.documento or '')|upper not in _DOCS_DAILY %}{% set ns.n_bancsis = ns.n_bancsis + 1 %}{% endif %}{% endfor %}
+  {% for m in data.matches %}{% if (m.cat.codigo or '') not in _CATS_DAILY %}{% set ns.n_match = ns.n_match + 1 %}{% endif %}{% endfor %}
+  {% set n_real_con_sug = ns.n_sug %}
+  {% set n_real_sin_sug = ns.n_sin_sug %}
+  {% set n_bancsis_salidas = ns.n_bancsis %}
+  {% set n_match_salidas = ns.n_match %}
   <div class="flex items-end gap-1 mb-3 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     <button type="button" data-tab="matches"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-sky-600 text-sky-700 dark:text-sky-400 font-medium whitespace-nowrap">
@@ -288,11 +389,9 @@
           </tr>
         </thead>
         <tbody>
-          {# TMT 2026-05-27 dueña: "estos cheques no deberian aparecer aca,
-             ya deberian estar arriba". Sacamos los matches de entradas
-             (tipo C) — están contados en el panel "Depósitos por día" con
-             matched=True. Solo SALIDAS quedan en Coinciden. #}
-          {% for m in data.matches %}{% if (m.real.tipo or '')|upper != 'C' %}
+          {# TMT 2026-05-27 dueña: solo CHEQUES/EFECTIVO al panel arriba.
+             Transferencias, NC, otros entradas siguen acá normal. #}
+          {% for m in data.matches %}{% if (m.cat.codigo or '') not in _CATS_DAILY %}
           {% set fecha_diff = (m.real.fecha != m.bancsis.fecha) %}
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
           {% set _doc_real = (m.real.documento or '')|string %}
@@ -432,10 +531,10 @@
           </tr>
         </thead>
         <tbody>
-          {# TMT 2026-05-27 dueña: "y si depositos y cheques esta arriba, tampoco
-             van en sugeridos!! se van de todos los otros lugars". Sacamos las
-             entradas (Tipo C) — están en el panel "Depósitos por día" arriba. #}
-          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 and (r.tipo or '')|upper != 'C' %}
+          {# TMT 2026-05-27 dueña: solo cheques/efectivo arriba; transferencias
+             y demás entradas siguen acá. "Las transferencias si iban en
+             sugeridos!!!!" #}
+          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 and (r.cat.codigo or '') not in _CATS_DAILY %}
           {% set _idx = 'sug-' ~ loop.index0 %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
               data-tipo="{{ r.tipo }}" data-grupo="{{ r.cat.grupo or 'OTRO' }}">
@@ -518,89 +617,6 @@
      ═════════════════════════════════════════════════════════════════════ #}
   <div data-tabpane="real" class="tabpane hidden">
 
-    {# ── Card sticky: agrupado de comisiones/impuestos pre-armado.
-       TMT 2026-05-26 dueña: que venga ya creado, un click para confirmar. #}
-    {% if agrupado_comisiones %}
-    <div id="card-agrupado-comisiones"
-         class="mb-4 rounded-lg border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-4 shadow-sm">
-      <div class="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <div class="text-sm font-bold text-amber-900 dark:text-amber-100">
-            ⚙ Agrupar {{ agrupado_comisiones.n }} comisiones/impuestos en 1 movimiento
-          </div>
-          <div class="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-            En lugar de crear {{ agrupado_comisiones.n }} txs individuales, una sola tx BANCSIS con la suma — y concilia las {{ agrupado_comisiones.n }} filas N:1 contra ella.
-          </div>
-        </div>
-        <div class="text-right shrink-0">
-          <div class="text-xs text-amber-700 dark:text-amber-300">Monto neto ({{ agrupado_comisiones.documento }})</div>
-          <div class="text-xl font-bold tabular-nums text-amber-900 dark:text-amber-100">
-            $ {{ '{:,.2f}'.format(agrupado_comisiones.neto|abs) }}
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
-        <div>
-          <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Concepto (editable)</label>
-          <input type="text" id="agrup-concepto" maxlength="50"
-                 value="{{ agrupado_comisiones.concepto_default }}"
-                 class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-        </div>
-        <div>
-          <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Fecha</label>
-          <input type="date" id="agrup-fecha"
-                 value="{{ agrupado_comisiones.fecha_default or '' }}"
-                 class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 tabular-nums">
-        </div>
-        <div>
-          <label class="block text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-0.5">Origen (cli/prov, opcional, 5 chars)</label>
-          <input type="text" id="agrup-prov" maxlength="5" placeholder="PICH / SRI"
-                 class="w-full text-sm px-2 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 uppercase">
-        </div>
-      </div>
-
-      <details class="mb-3 text-xs">
-        <summary class="cursor-pointer text-amber-800 dark:text-amber-300 hover:underline select-none">
-          Ver desglose ({{ agrupado_comisiones.n }} filas)
-        </summary>
-        <div class="mt-2 max-h-48 overflow-auto bg-white dark:bg-slate-900 rounded border border-amber-200 dark:border-amber-800">
-          <table class="w-full text-xs tabular-nums">
-            <tbody>
-              {# Jinja `agrupado_comisiones.items` resolvía al método dict.items
-                 de Python en lugar de la key "items". Subscript explícito. #}
-              {% for it in agrupado_comisiones["items"] %}
-              <tr class="border-t border-slate-100 dark:border-slate-800">
-                <td class="px-2 py-1 text-slate-500 w-16 whitespace-nowrap">{{ it.fecha }}</td>
-                <td class="px-2 py-1 text-slate-700 dark:text-slate-300">
-                  <span class="text-[10px] mr-1 text-amber-700 dark:text-amber-400">{{ (it.cat or {}).abrev or '?' }}</span>
-                  {{ it.concepto }}
-                </td>
-                <td class="px-2 py-1 text-right w-24 whitespace-nowrap {% if it.tipo == 'D' %}text-rose-700{% else %}text-emerald-700{% endif %}">
-                  {% if it.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(it.monto) }}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </details>
-
-      <div class="flex items-center gap-2">
-        <button type="button" id="btn-confirmar-agrupado"
-                class="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium shadow-sm">
-          ✓ Crear 1 mov + conciliar las {{ agrupado_comisiones.n }} filas
-        </button>
-        <button type="button" id="btn-descartar-agrupado"
-                class="px-3 py-1.5 rounded border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40">
-          Mejor crearlas una por una
-        </button>
-        <span id="agrup-status" class="text-xs text-amber-800 dark:text-amber-300 ml-2"></span>
-      </div>
-    </div>
-    <script type="application/json" id="agrupado-comisiones-data">{{ agrupado_json|safe }}</script>
-    {% endif %}
-
     {% if n_real_sin_sug > 0 %}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
       <table class="w-full text-sm table-fixed" id="tbl-real">
@@ -624,10 +640,9 @@
           {# TMT 2026-05-26 dueña: si el card de agrupado arriba ya tiene las
              comisiones/impuestos, OCULTAR esas filas de la lista de abajo —
              están duplicadas. La dueña confirma o descarta desde el card. #}
-          {# TMT 2026-05-27 dueña: "no me sirve más que me dejes los cheques
-             debajo, lo estamos haciendo arriba". Sacamos las ENTRADAS (Tipo
-             C) — están en el panel "Depósitos por día" arriba. #}
-          {% for r in data.real_only %}{% if (not r.sugerencias or r.sugerencias|length == 0) and not (agrupado_comisiones and (r.cat.grupo or '') == 'COMISION') and (r.tipo or '')|upper != 'C' %}
+          {# TMT 2026-05-27 dueña: solo cheques/efectivo arriba. Transferencias
+             y demás se conciliarán acá normal. #}
+          {% for r in data.real_only %}{% if (not r.sugerencias or r.sugerencias|length == 0) and not (agrupado_comisiones and (r.cat.grupo or '') == 'COMISION') and (r.cat.codigo or '') not in _CATS_DAILY %}
           {% set _cli = r.cat.cliente %}
           {% set _gc = r.cat.grupo or 'OTRO' %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
@@ -735,9 +750,9 @@
           </tr>
         </thead>
         <tbody>
-          {# TMT 2026-05-27 dueña: sacamos las ENTRADAS (tipo_real C) — están
-             en el panel "Depósitos por día" arriba. #}
-          {% for b in data.bancsis_only %}{% if (b.tipo_real or '')|upper != 'C' %}
+          {# TMT 2026-05-27 dueña: solo los DEPÓSITOS (documento=DE) están
+             arriba. TR/NC se conciliarán acá normal. #}
+          {% for b in data.bancsis_only %}{% if (b.documento or '')|upper not in _DOCS_DAILY %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ b.tipo_real }}"
               data-grupo="{{ b.cat.grupo or 'OTRO' }}"
