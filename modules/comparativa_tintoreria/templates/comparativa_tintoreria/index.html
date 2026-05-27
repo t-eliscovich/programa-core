@@ -143,7 +143,9 @@
         <tr class="border-t border-slate-100 hover:bg-slate-50">
           <td class="px-3 py-1.5">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
           <td class="px-3 py-1.5 font-mono">{{ r.cod or '—' }}</td>
-          <td class="px-3 py-1.5 text-right">{{ (r.kg_dbase or 0) | num_es(1) }}</td>
+          <td class="px-3 py-1.5 text-right">
+            {% if r.kg_dbase is not none %}{{ r.kg_dbase | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
           <td class="px-3 py-1.5 text-right">
             {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>

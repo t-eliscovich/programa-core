@@ -448,8 +448,12 @@ def comparativa_tintoreria():
     filas_dia: list[dict] = []
     try:
         for f in sorted([x for x in fechas if x is not None], reverse=True):
+            # 1) Códigos PC (con o sin match formulas).
+            pc_cods_dia = set()
             for c in pc_color_por_fecha.get(f, []):
                 try:
+                    cod_pc = str(c.get("cod") or "—").upper().strip()
+                    pc_cods_dia.add(cod_pc)
                     kg_pc = float(c.get("kg") or 0)
                     raw_term = c.get("form_terminada_kg")
                     raw_cruda = c.get("form_cruda_kg")
@@ -460,13 +464,39 @@ def comparativa_tintoreria():
                     desperd_pct = float(raw_desp) if raw_desp is not None else None
                     filas_codigo.append({
                         "fecha": f,
-                        "cod": str(c.get("cod") or "—"),
+                        "cod": cod_pc,
                         "kg_dbase": kg_pc,
                         "kg_form_term": kg_form_term,
                         "cambio": cambio,
                         "kg_form_cruda": kg_form_cruda,
                         "desperdicio_pct": desperd_pct,
                         "form_n_ots": int(c.get("form_n_ots") or 0),
+                    })
+                except Exception:
+                    continue
+            # 2) TMT 2026-05-26 dueña: 'como no matchean codigo y deberian son
+            # los mismos'. Agregamos también las OTs de formulas_app cuyo
+            # formula_cod NO está en los códigos PC del día — así la dueña ve
+            # qué códigos formulas existen sin contraparte y puede investigar
+            # el desfase (case, espacios, código distinto, etc).
+            for (form_fecha, form_cod), form_data in form_por_fecha_cod.items():
+                if form_fecha != f:
+                    continue
+                if form_cod in pc_cods_dia:
+                    continue  # ya está en la lista PC
+                try:
+                    cruda = float(form_data.get("cruda") or 0)
+                    term = float(form_data.get("terminada") or 0)
+                    desperd = ((cruda - term) / cruda * 100.0) if cruda > 0 else None
+                    filas_codigo.append({
+                        "fecha": f,
+                        "cod": f"⚠ {form_cod} (solo form)",
+                        "kg_dbase": None,
+                        "kg_form_term": term if term > 0 else None,
+                        "cambio": None,
+                        "kg_form_cruda": cruda if cruda > 0 else None,
+                        "desperdicio_pct": round(desperd, 1) if desperd is not None else None,
+                        "form_n_ots": int(form_data.get("n_ots") or 0),
                     })
                 except Exception:
                     continue
