@@ -749,6 +749,87 @@ def hub():
     # para no romper el template existente mientras lo migro.
     agrupado_comisiones = agrupados_comisiones_por_dia[0] if agrupados_comisiones_por_dia else None
 
+    # TMT 2026-05-27 dueña: "QUIERO HACER SUMA DEPOSITOS POR DIA BANCO VS
+    # PROGRAMA. CUANDO ES DEPOSITO NO QUIERO ASIGNARSELOS A CLIENTES."
+    # Resumen por día — entradas (Tipo C / tipo_real C) en ambos lados
+    # sumadas, comparadas. Sin desglose por cliente. Sólo días donde haya
+    # algo de un lado o del otro. Match check: tolerancia $1.
+    depositos_por_dia: list[dict] = []
+    try:
+        sum_banco_dia: dict[str, float] = {}
+        n_banco_dia: dict[str, int] = {}
+        sum_prog_dia: dict[str, float] = {}
+        n_prog_dia: dict[str, int] = {}
+        # Banco real — real_only (entradas) + matches (banco side entradas)
+        for r in (data.get("real_only") or []):
+            if (r.get("tipo") or "").upper() != "C":
+                continue
+            f = str(r.get("fecha") or "")
+            if not f:
+                continue
+            sum_banco_dia[f] = sum_banco_dia.get(f, 0.0) + float(r.get("monto") or 0)
+            n_banco_dia[f] = n_banco_dia.get(f, 0) + 1
+        for m in (data.get("matches") or []):
+            real = m.get("real") or {}
+            if (real.get("tipo") or "").upper() != "C":
+                continue
+            f = str(real.get("fecha") or "")
+            if not f:
+                continue
+            sum_banco_dia[f] = sum_banco_dia.get(f, 0.0) + float(real.get("monto") or 0)
+            n_banco_dia[f] = n_banco_dia.get(f, 0) + 1
+        # Programa — bancsis_only entradas + matches bancsis entradas
+        for b in (data.get("bancsis_only") or []):
+            if (b.get("tipo_real") or "").upper() != "C":
+                continue
+            f = str(b.get("fecha") or "")
+            if not f:
+                continue
+            sum_prog_dia[f] = sum_prog_dia.get(f, 0.0) + float(b.get("importe") or 0)
+            n_prog_dia[f] = n_prog_dia.get(f, 0) + 1
+        for m in (data.get("matches") or []):
+            b = m.get("bancsis") or {}
+            real = m.get("real") or {}
+            # Lado programa es entrada si el lado real lo fue (match es 1-a-1)
+            if (real.get("tipo") or "").upper() != "C":
+                continue
+            f = str(b.get("fecha") or "")
+            if not f:
+                continue
+            sum_prog_dia[f] = sum_prog_dia.get(f, 0.0) + float(b.get("importe") or 0)
+            n_prog_dia[f] = n_prog_dia.get(f, 0) + 1
+        # Unión de fechas, orden ascendente
+        for f in sorted(set(sum_banco_dia) | set(sum_prog_dia)):
+            sb = round(sum_banco_dia.get(f, 0.0), 2)
+            sp = round(sum_prog_dia.get(f, 0.0), 2)
+            diff = round(sb - sp, 2)
+            try:
+                fm = f"{f[8:10]}/{f[5:7]}"
+            except Exception:
+                fm = f
+            depositos_por_dia.append({
+                "fecha": f,
+                "fecha_mostrar": fm,
+                "banco": sb,
+                "programa": sp,
+                "diff": diff,
+                "n_banco": n_banco_dia.get(f, 0),
+                "n_programa": n_prog_dia.get(f, 0),
+                "cuadra": abs(diff) < 1.0,
+            })
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "depositos_por_dia prep falló: %s", _e
+        )
+        depositos_por_dia = []
+
+    # Totales del panel — útiles para el header
+    dep_total_banco = round(sum(d["banco"] for d in depositos_por_dia), 2)
+    dep_total_prog = round(sum(d["programa"] for d in depositos_por_dia), 2)
+    dep_total_diff = round(dep_total_banco - dep_total_prog, 2)
+    dep_n_dias_cuadran = sum(1 for d in depositos_por_dia if d["cuadra"])
+
     # Datalists para el modal de crear individual. Fail-soft también.
     try:
         from modules.autocomplete.queries import clientes_para_datalist, proveedores_para_datalist
@@ -782,6 +863,11 @@ def hub():
         bancsis_only_json=bancsis_only_json,
         agrupado_comisiones=agrupado_comisiones,
         agrupado_json=agrupado_json,
+        depositos_por_dia=depositos_por_dia,
+        dep_total_banco=dep_total_banco,
+        dep_total_prog=dep_total_prog,
+        dep_total_diff=dep_total_diff,
+        dep_n_dias_cuadran=dep_n_dias_cuadran,
         clientes_dl=clientes_dl,
         proveedores_dl=proveedores_dl,
         no_banco=no_banco,

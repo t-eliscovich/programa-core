@@ -2,6 +2,28 @@
 {% from "_ui.html" import page_hero, kpi_card %}
 {% block titulo %}Conciliación {{ banco_nombre or 'banco' }}{% endblock %}
 
+{#  TMT 2026-05-27 dueña: macro única para mostrar el cliente en TODOS
+    los tabs de la conciliación. Cascada:
+      1. COMISION → label amber (no se busca cliente para comisiones)
+      2. cli_codigo (validado contra catálogo PC en backend) → código mono + nombre
+      3. cli_nombre solo (parseado del concepto, no está en catálogo) → nombre legible
+      4. oficina → oficina chiquita
+      5. cat_label → fallback italic ("Pago a proveedor", "Salida (otro)", ...)
+    NUNCA queda en "—" cuando hay info latente.                              #}
+{% macro cliente_cell(cli_codigo, cli_nombre, oficina, cat_grupo, cat_label) %}
+  {% if cat_grupo == 'COMISION' %}
+    <span class="text-amber-700 dark:text-amber-300 font-medium" title="{{ cat_label or 'Comisión bancaria' }}">{{ cat_label or '⚙ Comisión' }}</span>
+  {% elif cli_codigo %}
+    <span class="text-slate-900 dark:text-slate-100 font-mono font-medium" title="{{ cli_codigo }}{% if cli_nombre %} · {{ cli_nombre }}{% endif %}">{{ cli_codigo }}</span>{% if cli_nombre %}<span class="text-slate-500 text-[11px] ml-1">{{ cli_nombre[:28] }}</span>{% endif %}
+  {% elif cli_nombre %}
+    <span class="text-slate-700 dark:text-slate-300">{{ cli_nombre[:40] }}</span>
+  {% elif oficina %}
+    <span class="text-slate-400 text-xs">{{ oficina }}</span>
+  {% else %}
+    <span class="text-slate-500 italic text-xs" title="{{ cat_label or '' }}">{{ cat_label or '—' }}</span>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="page-shell page-shell--full max-w-7xl mx-auto px-4 py-5" id="conciliacion-banco-app">
 
@@ -44,6 +66,65 @@
         tono=('emerald' if cuadra else 'rose')
     ) }}
   </div>
+
+  {# ───── Depósitos por día — TMT 2026-05-27 dueña ─────
+       "QUIERO HACER SUMA DEPOSITOS POR DIA BANCO VS PROGRAMA. CUANDO ES
+       DEPOSITO NO QUIERO ASIGNARSELOS A CLIENTES."
+       Tabla simple: una fila por día, sin cliente.
+       Verde si banco y programa cuadran (diff < $1). Rosa si no.   #}
+  {% if depositos_por_dia and depositos_por_dia|length > 0 %}
+  <details class="mb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden" {% if dep_total_diff and dep_total_diff|abs > 1 %}open{% endif %}>
+    <summary class="cursor-pointer px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 select-none">
+      <div class="flex items-center gap-3">
+        <span class="text-base font-semibold text-slate-900 dark:text-slate-100">📥 Depósitos por día</span>
+        <span class="text-xs text-slate-500">{{ depositos_por_dia|length }} días · {{ dep_n_dias_cuadran }} cuadran</span>
+      </div>
+      <div class="flex items-center gap-4 text-sm tabular-nums">
+        <span class="text-slate-500">Banco</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(dep_total_banco) }}</span>
+        <span class="text-slate-500">Programa</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(dep_total_prog) }}</span>
+        <span class="text-slate-500">Diff</span>
+        <span class="font-bold px-2 py-0.5 rounded {% if dep_total_diff|abs < 1 %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200{% else %}bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200{% endif %}">
+          $ {{ '{:,.2f}'.format(dep_total_diff) }}
+        </span>
+      </div>
+    </summary>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/30 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left w-32">Día</th>
+            <th class="px-4 py-2 text-right">Banco</th>
+            <th class="px-4 py-2 text-right">Programa</th>
+            <th class="px-4 py-2 text-right">Diferencia</th>
+            <th class="px-4 py-2 text-center w-20">Movs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in depositos_por_dia %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %}">
+            <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">{{ d.fecha_mostrar }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.banco) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.programa) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums font-semibold {% if d.cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              {% if d.cuadra %}✓{% else %}$ {{ '{:,.2f}'.format(d.diff) }}{% endif %}
+            </td>
+            <td class="px-4 py-2 text-center text-xs text-slate-500 tabular-nums">{{ d.n_banco }} / {{ d.n_programa }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 font-semibold">
+            <td class="px-4 py-2 text-slate-900 dark:text-slate-100">TOTAL</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(dep_total_banco) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(dep_total_prog) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums {% if dep_total_diff|abs < 1 %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              $ {{ '{:,.2f}'.format(dep_total_diff) }}
+            </td>
+            <td class="px-4 py-2"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
 
   {# ───── Tabs ───── #}
   {% set n_real_con_sug = data.real_only|selectattr('sugerencias')|list|length %}
@@ -159,13 +240,12 @@
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-xs {% if monto_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
               {{ '{:,.2f}'.format(m.bancsis.importe) }}
             </td>
-            <td class="px-2 py-2 font-mono text-xs text-slate-700 dark:text-slate-300 truncate" title="{{ m.bancsis.prov_nombre or '' }} (id {{ m.bancsis.id_transaccion }})">
-              {{ m.bancsis.prov or '—' }}
+            <td class="px-2 py-2 text-xs truncate" title="{{ m.bancsis.prov_nombre or '' }} (id {{ m.bancsis.id_transaccion }})">
+              {{ cliente_cell(m.bancsis.prov, m.bancsis.prov_nombre, '', m.cat.grupo, m.cat.label) }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate" title="{{ m.real.concepto }}">
-                {% if _cli_banco %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ _cli_banco }}</span>
-                {% else %}<span class="text-slate-500 text-xs">{{ m.real.concepto[:50] }}</span>{% endif %}
+                {{ cliente_cell(m.cat.cliente, m.cat.cliente_nombre or m.bancsis.prov_nombre, '', m.cat.grupo, m.cat.label) }}
                 {# TMT 2026-05-26 dueña: match grupal N-a-1 — botón + para ver
                    los N cheques del programa ordenados de mayor a menor. #}
                 {% if m.componentes and m.componentes|length > 1 %}
@@ -273,9 +353,7 @@
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate">
-                {% if r.cat.cliente %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ r.cat.cliente }}</span>
-                {% elif r.oficina %}<span class="text-slate-400">{{ r.oficina }}</span>
-                {% else %}<span class="text-slate-300">—</span>{% endif %}
+                {{ cliente_cell(r.cat.cliente, r.cat.cliente_nombre, r.oficina, r.cat.grupo, r.cat.label) }}
               </div>
               <div class="truncate text-slate-500 text-[11px]" title="{{ r.concepto }}">{{ r.concepto }}</div>
             </td>
@@ -469,14 +547,8 @@
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate">
-                {# TMT 2026-05-26 dueña: cascada — solo código (no nombre completo).
-                   El código se valida contra catálogo en backend; si no es un
-                   cliente real, _cli viene vacío y caemos a cat.label. #}
-                {% if _gc == 'COMISION' %}
-                  <span class="text-amber-700 dark:text-amber-300 font-medium" title="{{ r.cat.label }}">{{ r.cat.label or '⚙ Comisión' }}</span>
-                {% elif _cli %}<span class="text-slate-900 dark:text-slate-100 font-mono font-medium" title="{{ _cli }}{% if r.cat.cliente_nombre %} · {{ r.cat.cliente_nombre }}{% endif %}">{{ _cli }}</span>
-                {% elif r.oficina %}<span class="text-slate-400">{{ r.oficina }}</span>
-                {% else %}<span class="text-slate-500 italic" title="{{ r.cat.label }}">{{ r.cat.label or '—' }}</span>{% endif %}
+                {# TMT 2026-05-27 dueña: macro cliente_cell — misma cascada en los 4 tabs. #}
+                {{ cliente_cell(_cli, r.cat.cliente_nombre, r.oficina, _gc, r.cat.label) }}
                 {% if r.documento and r.documento != '0' %}<span class="text-slate-400 font-mono text-[10px] ml-1">{{ r.documento }}</span>{% endif %}
               </div>
               <div class="truncate text-slate-500 text-[11px]" title="{{ r.concepto }}">{{ r.concepto }}</div>
@@ -580,18 +652,17 @@
             <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap {% if b.tipo_real == 'C' %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if b.tipo_real == 'D' %}-{% endif %}{{ '{:,.2f}'.format(b.importe) }}
             </td>
-            <td class="px-2 py-2 font-mono text-xs text-slate-700 dark:text-slate-300 truncate" title="{{ b.prov_nombre or '' }} (id {{ b.id_transaccion }})">
-              {{ b.prov or '—' }}
+            <td class="px-2 py-2 text-xs truncate" title="{{ b.prov_nombre or '' }} (id {{ b.id_transaccion }})">
+              {{ cliente_cell(b.prov, b.prov_nombre, '', b.cat.grupo, b.cat.label) }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
               <div class="truncate" title="{{ b.concepto }} (id {{ b.id_transaccion }})">
                 {% if b.es_agrupado %}
                   <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 mr-1">📦 {{ b.n_cheques }} ch</span>
                 {% endif %}
-                {% if b.prov_nombre %}<span class="text-slate-900 dark:text-slate-100 font-medium">{{ b.prov_nombre }}</span>
-                {% else %}<span class="text-slate-500 text-xs">{{ b.concepto[:60] }}</span>{% endif %}
+                {{ cliente_cell(b.cat.cliente, b.prov_nombre or b.cat.cliente_nombre, '', b.cat.grupo, b.cat.label) }}
               </div>
-              {% if b.prov_nombre %}<div class="truncate text-slate-400 text-[10px]">{{ b.concepto[:60] }}</div>{% endif %}
+              <div class="truncate text-slate-400 text-[10px]">{{ b.concepto[:80] }}</div>
             </td>
           </tr>
           {% endfor %}

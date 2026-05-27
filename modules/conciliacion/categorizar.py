@@ -61,6 +61,19 @@ GRUPO_LABEL: dict[str, tuple[str, str, str]] = {
     "SALIDA_CHEQUE_EMITIDO":       ("SALIDA",  "Cheque emitido",            "CH"),
     "SALIDA_TRANSFERENCIA":        ("SALIDA",  "Transferencia enviada",     "TR"),
     "SALIDA_OTRO":                 ("SALIDA",  "Salida (otro)",             "?↑"),
+    # TMT 2026-05-27 dueña: Gastos V1-V9 — misma matriz que GASTOS_NUM_LABELS
+    # del PRG (modules/informes/queries.py). Detectamos por concepto del banco
+    # (K SU / C SU / S SU / EEQ / CMB / AGUA / EMAAP) y mapeamos al V correcto
+    # para que la conciliación use la misma división que el resto del programa.
+    "GASTO_V1_TEJ_SUELDO":         ("SALIDA",  "V1 · Sueldos tejeduría",    "V1"),
+    "GASTO_V2_TEJ_SERVICIO":       ("SALIDA",  "V2 · Servicios tejeduría",  "V2"),
+    "GASTO_V3_TEJ_OTRO":           ("SALIDA",  "V3 · Otros tejeduría",      "V3"),
+    "GASTO_V4_TIN_SUELDO":         ("SALIDA",  "V4 · Sueldos tintorería",   "V4"),
+    "GASTO_V5_TIN_SERVICIO":       ("SALIDA",  "V5 · Servicios tintorería", "V5"),
+    "GASTO_V6_TIN_OTRO":           ("SALIDA",  "V6 · Otros tintorería",     "V6"),
+    "GASTO_V7_ADM_SUELDO":         ("SALIDA",  "V7 · Sueldos admin",        "V7"),
+    "GASTO_V8_ADM_SERVICIO":       ("SALIDA",  "V8 · Servicios admin",      "V8"),
+    "GASTO_V9_ADM_OTRO":           ("SALIDA",  "V9 · Otros admin",          "V9"),
     # Comisiones / impuestos (van aparte)
     "COMISION_BANCARIA":           ("COMISION", "Comisión bancaria",        "COM"),
     "IMPUESTO":                    ("COMISION", "Impuesto / retención",     "IMP"),
@@ -100,6 +113,20 @@ _REGLAS: list[tuple[re.Pattern, str | None, str]] = [
     (re.compile(r"\b\d*\s*ch\.?\s*[A-Z]{2,5}", re.I), "C", "ENTRADA_COBRO_CHEQUE"),
     (re.compile(r"dep[oó]sito|\bdep\b", re.I), "C", "ENTRADA_COBRO_CHEQUE"),
     (re.compile(r"nota\s+(de\s+)?cr[eé]dito|\bnc\b", re.I), "C", "ENTRADA_NOTA_CREDITO"),
+
+    # GASTOS V1-V9 (PRG INFORMES.PRG L211-217) — orden: SUELDOS > SERVICIOS > OTROS,
+    # y dentro de cada bucket Tej (K) > Tin (C/Q/T) > Adm (S). Misma cascada que
+    # _SQL_COMPRA_NUM_CASE en modules/informes/queries.py.
+    # Sueldos (SU al lado del rubro K/C/S — patrones del banco Pichincha)
+    (re.compile(r"\b(k[\s_\-]*su|su[\s_\-]*tej|sueldo\s*tej|nomina\s*tej)\b", re.I), "D", "GASTO_V1_TEJ_SUELDO"),
+    (re.compile(r"\b(ccsu|c[\s_\-]*su|su[\s_\-]*tin|sueldo\s*tin|nomina\s*tin)\b|^su\s+tin|c[\.\-]pag[\-\s]*ccsu", re.I), "D", "GASTO_V4_TIN_SUELDO"),
+    (re.compile(r"\b(s[\s_\-]*su|su[\s_\-]*adm|sueldo\s*adm|nomina\s*adm)\b", re.I), "D", "GASTO_V7_ADM_SUELDO"),
+    # Servicios (EEQ luz / CMB combustible / AGUA / EMAAP / GAS) — rubro
+    # decide V2/V5/V8. Match permisivo de "TEJ/TIN/ADM" para que cubra
+    # "TEJEDURIA", "TINTORERIA", "ADMIN" etc (no exigimos \b al final).
+    (re.compile(r"\b(k[\s_\-]+(?:eeq|cmb|agua|emaap|gas)|(?:eeq|cmb|agua|emaap|gas)[\s_\-]+tej)", re.I), "D", "GASTO_V2_TEJ_SERVICIO"),
+    (re.compile(r"\b(c[\s_\-]+(?:eeq|cmb|agua|emaap|gas)|(?:eeq|cmb|agua|emaap|gas)[\s_\-]+tin)", re.I), "D", "GASTO_V5_TIN_SERVICIO"),
+    (re.compile(r"\b(s[\s_\-]+(?:eeq|cmb|agua|emaap|gas)|(?:eeq|cmb|agua|emaap|gas)[\s_\-]+adm)", re.I), "D", "GASTO_V8_ADM_SERVICIO"),
 
     # SALIDAS específicas (orden importa)
     (re.compile(r"pag[\.\-]?\s*anticipo|p[\.\-]ant|\banticipo\b|^ac\s|^ac-", re.I), "D", "SALIDA_PAGO_ANTICIPO"),
