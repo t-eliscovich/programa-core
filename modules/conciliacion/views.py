@@ -913,6 +913,111 @@ def hub():
     )
 
 
+@conciliacion_bp.route("/banco/marcar-depositos-dia-conciliados", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def marcar_depositos_dia_conciliados():
+    """TMT 2026-05-27 dueña: 'dejame ir seleccionando en la tabla y poner
+    conciliado, asi podemos a esos depositos hacerle match y decir estos
+    ya fueron conciliados'.
+
+    Recibe fechas_json (lista de fechas ISO). Para cada fecha marca como
+    conciliados (unilateral) TODOS los movimientos del banco Pichincha
+    tipo C (entradas/depósitos) — tanto del lado programa (BANCSIS) como
+    del lado banco real (cargado en session).
+
+    Próximo render del extracto: esas fechas dejan de aparecer en el panel
+    Depósitos por día y los movs pasan a Historial.
+    """
+    import json as _json
+    from datetime import date as _date
+    from decimal import Decimal as _Dec
+    from modules.conciliacion.parser_banco import MovBanco as _MB
+    from modules.conciliacion.matcher_banco import confirmar_bancsis_only, confirmar_real_only
+    import db as _db
+
+    raw = request.form.get("fechas_json") or "[]"
+    try:
+        fechas_raw = _json.loads(raw)
+    except _json.JSONDecodeError:
+        fechas_raw = []
+    fechas: list[_date] = []
+    for f in fechas_raw:
+        try:
+            fechas.append(_date.fromisoformat(str(f)))
+        except (ValueError, TypeError):
+            pass
+    if not fechas:
+        flash("No seleccionaste ningún día.", "warn")
+        return redirect(url_for("conciliacion.hub"))
+
+    no_banco = _BANCO_PICHINCHA
+    usuario = _usuario_actual()
+    n_prog, n_real, errores = 0, 0, 0
+
+    # Lado PROGRAMA: marcar como bancsis_only_ok todas las entradas (Tipo C)
+    # de las fechas seleccionadas, banco Pichincha.
+    for fecha in fechas:
+        try:
+            rows = _db.fetch_all(
+                """
+                SELECT id_transaccion
+                  FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s
+                   AND fecha = %s
+                   AND documento IN ('DE','TR','AC','NC')
+                """,
+                (no_banco, fecha),
+            ) or []
+            for r in rows:
+                try:
+                    confirmar_bancsis_only(no_banco, int(r["id_transaccion"]), usuario=usuario)
+                    n_prog += 1
+                except Exception:
+                    errores += 1
+        except Exception:
+            errores += 1
+
+    # Lado BANCO REAL: recuperamos los movs del extracto desde session/JSON
+    # y marcamos los Tipo C de las fechas seleccionadas. Si la session no
+    # tiene el extracto, salteamos esta parte (se va a re-cargar el extracto).
+    try:
+        from flask import session as _ses
+        data_ses = _ses.get("conciliacion_banco_data") or {}
+        real_only_ses = data_ses.get("real_only") or []
+        fechas_iso = {f.isoformat() for f in fechas}
+        for r in real_only_ses:
+            if (r.get("tipo") or "").upper() != "C":
+                continue
+            if str(r.get("fecha") or "") not in fechas_iso:
+                continue
+            try:
+                real = _MB(
+                    fecha=_date.fromisoformat(r["fecha"]),
+                    concepto=r.get("concepto") or "",
+                    documento=r.get("documento") or "",
+                    monto=_Dec(str(r.get("monto") or 0)),
+                    saldo=_Dec("0"),
+                    codigo=r.get("codigo") or "",
+                    tipo=r.get("tipo") or "C",
+                    oficina=r.get("oficina") or "",
+                )
+                confirmar_real_only(no_banco, real, usuario=usuario)
+                n_real += 1
+            except Exception:
+                errores += 1
+    except Exception:
+        pass
+
+    flash(
+        f"Marcados {len(fechas)} días — {n_prog} del programa + {n_real} del banco pasaron a Historial.",
+        "ok",
+    )
+    if errores:
+        flash(f"{errores} no se pudieron persistir.", "warn")
+    return redirect(url_for("conciliacion.hub"))
+
+
 @conciliacion_bp.route("/hub/confirmar-matches", methods=["POST"])
 @conciliacion_bp.route("/banco/confirmar-matches", methods=["POST"])  # alias compat
 @requiere_login

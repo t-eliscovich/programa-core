@@ -69,10 +69,26 @@
         </span>
       </div>
     </summary>
+    <form method="POST" action="{{ url_for('conciliacion.marcar_depositos_dia_conciliados') }}" id="form-dep-conciliar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco }}">
+      <input type="hidden" name="fechas_json" id="dep-fechas-json" value="[]">
+      <div class="px-4 py-2 flex items-center gap-3 border-t border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-900">
+        <button type="submit" id="btn-dep-conciliar"
+                class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium shadow-sm"
+                disabled>
+          Marcar conciliados (<span id="cnt-dep-sel">0</span>)
+        </button>
+        <button type="button" id="btn-dep-todos" class="text-xs text-sky-600 hover:underline">Seleccionar días que cuadran</button>
+        <button type="button" id="btn-dep-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
+        <span class="text-xs text-slate-400 ml-auto">Los días marcados pasan a Historial.</span>
+      </div>
+    </form>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-slate-50 dark:bg-slate-800/30 text-xs uppercase tracking-wider text-slate-500">
           <tr>
+            <th class="px-4 py-2 w-10 text-center"><input type="checkbox" id="chk-dep-all" title="Marcar todos los visibles"></th>
             <th class="px-4 py-2 text-left w-32">Día</th>
             <th class="px-4 py-2 text-right">Banco</th>
             <th class="px-4 py-2 text-right">Programa</th>
@@ -83,8 +99,11 @@
         <tbody>
           {% for d in depositos_por_dia %}
           {% set _dep_id = 'dep-dia-' ~ loop.index0 %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/40 btn-toggle-dep" data-target="{{ _dep_id }}">
-            <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} hover:bg-slate-100 dark:hover:bg-slate-800/40 fila-dep" data-fecha="{{ d.fecha }}" data-cuadra="{{ '1' if d.cuadra else '0' }}">
+            <td class="px-4 py-2 text-center">
+              <input type="checkbox" class="chk-dep" data-fecha="{{ d.fecha }}" title="Marcar para conciliar">
+            </td>
+            <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100 cursor-pointer btn-toggle-dep" data-target="{{ _dep_id }}">
               <span class="dep-chevron inline-block text-slate-400 text-xs mr-1 transition-transform">▸</span>{{ d.fecha_mostrar }}
             </td>
             <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.banco) }}</td>
@@ -103,7 +122,7 @@
           {% set _docs_prog_set = d.programa_items|map(attribute='numreferencia')|select|map('string')|map('trim')|reject('eq','')|list %}
           {% set _docs_real_set = d.banco_items|map(attribute='documento')|select|map('string')|map('trim')|reject('eq','')|list %}
           <tr id="{{ _dep_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
-            <td colspan="5" class="px-0 py-0">
+            <td colspan="6" class="px-0 py-0">
               <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
                 {# ── BANCO ─────────────────────────────────────── #}
                 <div class="px-4 py-3 min-w-0">
@@ -169,6 +188,7 @@
           </tr>
           {% endfor %}
           <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 font-semibold">
+            <td></td>
             <td class="px-4 py-2 text-slate-900 dark:text-slate-100">TOTAL</td>
             <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(dep_total_banco) }}</td>
             <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(dep_total_prog) }}</td>
@@ -187,7 +207,7 @@
   {# TMT 2026-05-27 dueña: las ENTRADAS (Tipo C) están arriba en el panel
      Depósitos por día. Acá solo contamos las salidas (Tipo D) para que el
      contador no quede "inflado" respecto a lo que se ve. #}
-  {% set n_real_con_sug = data.real_only|selectattr('sugerencias')|list|length %}
+  {% set n_real_con_sug = data.real_only|selectattr('sugerencias')|rejectattr('tipo','equalto','C')|list|length %}
   {% set n_real_salidas_sin_sug = data.real_only|rejectattr('sugerencias')|selectattr('tipo','equalto','D')|list|length %}
   {% set n_real_sin_sug = n_real_salidas_sin_sug %}
   {% set n_bancsis_salidas = data.bancsis_only|rejectattr('tipo_real','equalto','C')|list|length %}
@@ -246,15 +266,24 @@
     </form>
 
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-      <table class="w-full text-sm" id="tbl-matches">
+      <table class="w-full text-sm table-fixed" id="tbl-matches">
+        <colgroup>
+          <col class="w-8">
+          <col class="w-10">
+          <col class="w-20">
+          <col class="w-24">
+          <col class="w-40">
+          <col class="w-24">
+          <col>
+        </colgroup>
         <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
           <tr>
-            <th class="px-2 py-2 w-8"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="px-2 py-2 w-10 text-left">Cat</th>
-            <th class="px-2 py-2 w-24 text-left">Fecha</th>
-            <th class="px-2 py-2 w-28 text-right">Monto</th>
-            <th class="px-2 py-2 w-44 text-left">Doc banco (real ↔ prog)</th>
-            <th class="px-2 py-2 w-40 text-left">Cliente</th>
+            <th class="px-2 py-2"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th class="px-2 py-2 text-left">Cat</th>
+            <th class="px-2 py-2 text-left">Fecha</th>
+            <th class="px-2 py-2 text-right">Monto</th>
+            <th class="px-2 py-2 text-left">Doc banco</th>
+            <th class="px-2 py-2 text-left">Cliente</th>
             <th class="px-2 py-2 text-left">Concepto</th>
           </tr>
         </thead>
@@ -306,14 +335,22 @@
                 <span class="{% if _doc_real and _doc_prog %}text-rose-600 dark:text-rose-400{% else %}text-slate-400{% endif %}">{{ _doc_prog or '—' }}</span>
               {% endif %}
             </td>
-            <td class="px-2 py-2 truncate" title="{{ m.bancsis.prov_nombre or m.cat.cliente_nombre or '' }}">
-              {{ cliente_cell(m.bancsis.prov or m.cat.cliente, m.bancsis.prov_nombre or m.cat.cliente_nombre, '', m.cat.grupo, m.cat.label) }}
+            <td class="px-2 py-2 text-xs truncate whitespace-nowrap" title="{{ m.bancsis.prov_nombre or m.cat.cliente_nombre or '' }}">
+              {# Cliente compacto: solo código, nombre en tooltip. No romper. #}
+              {% set _cli = m.bancsis.prov or m.cat.cliente %}
+              {% if (m.cat.grupo or '') == 'COMISION' %}
+                <span class="text-amber-700 dark:text-amber-300 font-medium">{{ m.cat.label or '⚙' }}</span>
+              {% elif _cli %}
+                <span class="text-slate-900 dark:text-slate-100 font-mono font-medium">{{ _cli }}</span>
+              {% else %}
+                <span class="text-slate-500 italic">{{ m.cat.label or '—' }}</span>
+              {% endif %}
             </td>
             <td class="px-2 py-2 overflow-hidden">
-              <div class="truncate text-slate-600 dark:text-slate-400 text-xs" title="{{ m.real.concepto }}">{{ m.real.concepto[:80] }}</div>
+              <div class="truncate text-slate-500 dark:text-slate-400 text-[11px]" style="max-width: 0; min-width: 100%;" title="{{ m.real.concepto }}">{{ m.real.concepto }}</div>
               {% if m.componentes and m.componentes|length > 1 %}
               <button type="button"
-                      class="mt-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 btn-toggle-detalle"
+                      class="mt-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 btn-toggle-detalle"
                       data-match-idx="{{ loop.index0 }}"
                       title="Ver los {{ m.componentes|length }} cheques agrupados">
                 <span class="icon-open">+ {{ m.componentes|length }} cheques</span>
@@ -395,7 +432,10 @@
           </tr>
         </thead>
         <tbody>
-          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 %}
+          {# TMT 2026-05-27 dueña: "y si depositos y cheques esta arriba, tampoco
+             van en sugeridos!! se van de todos los otros lugars". Sacamos las
+             entradas (Tipo C) — están en el panel "Depósitos por día" arriba. #}
+          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 and (r.tipo or '')|upper != 'C' %}
           {% set _idx = 'sug-' ~ loop.index0 %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
               data-tipo="{{ r.tipo }}" data-grupo="{{ r.cat.grupo or 'OTRO' }}">
@@ -1166,15 +1206,54 @@
   });
 
   // TMT 2026-05-27 dueña: toggle expandir día del panel depósitos por día.
-  document.querySelectorAll('.btn-toggle-dep').forEach(row => {
-    row.addEventListener('click', () => {
-      const tr = document.getElementById(row.dataset.target);
+  document.querySelectorAll('.btn-toggle-dep').forEach(cell => {
+    cell.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const tr = document.getElementById(cell.dataset.target);
       if (!tr) return;
       tr.classList.toggle('hidden');
-      const chev = row.querySelector('.dep-chevron');
+      const chev = cell.querySelector('.dep-chevron');
       if (chev) chev.style.transform = tr.classList.contains('hidden') ? '' : 'rotate(90deg)';
     });
   });
+
+  // TMT 2026-05-27 dueña: checkboxes + botón "Marcar conciliados" en panel
+  // Depósitos por día. Selección por fecha — el submit POSTea la lista de
+  // fechas al endpoint marcar_depositos_dia_conciliados.
+  (function() {
+    const chks = document.querySelectorAll('.chk-dep');
+    const chkAll = document.getElementById('chk-dep-all');
+    const btnSubmit = document.getElementById('btn-dep-conciliar');
+    const btnTodosCuadran = document.getElementById('btn-dep-todos');
+    const btnDesmarcar = document.getElementById('btn-dep-desmarcar');
+    const cnt = document.getElementById('cnt-dep-sel');
+    const inputJson = document.getElementById('dep-fechas-json');
+    if (!chks.length || !btnSubmit) return;
+
+    function actualizar() {
+      const seleccionadas = Array.from(chks).filter(c => c.checked).map(c => c.dataset.fecha);
+      cnt.textContent = seleccionadas.length;
+      btnSubmit.disabled = seleccionadas.length === 0;
+      inputJson.value = JSON.stringify(seleccionadas);
+    }
+    chks.forEach(c => c.addEventListener('change', actualizar));
+    if (chkAll) chkAll.addEventListener('change', () => {
+      chks.forEach(c => c.checked = chkAll.checked);
+      actualizar();
+    });
+    if (btnTodosCuadran) btnTodosCuadran.addEventListener('click', () => {
+      chks.forEach(c => {
+        const row = c.closest('.fila-dep');
+        c.checked = row && row.dataset.cuadra === '1';
+      });
+      actualizar();
+    });
+    if (btnDesmarcar) btnDesmarcar.addEventListener('click', () => {
+      chks.forEach(c => c.checked = false);
+      if (chkAll) chkAll.checked = false;
+      actualizar();
+    });
+  })();
 
   // Toggle inline sugerencias (dropdown debajo de la fila — NO modal)
   document.querySelectorAll('.btn-toggle-sug').forEach(b => {
