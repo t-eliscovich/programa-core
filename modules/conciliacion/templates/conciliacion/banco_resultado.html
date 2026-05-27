@@ -498,8 +498,9 @@
                         {% for it in d.banco_items %}
                         {% set _doc = (it.documento or '')|string|trim %}
                         {# TMT 2026-05-27 click-to-pair + drag-and-drop: data-attrs para el JS de match manual.
-                           draggable="true" → soporta arrastrar la fila banco al lado PC #}
-                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                           draggable="true" → soporta arrastrar la fila banco al lado PC.
+                           amount_match → fondo amarillo + ✓ chico (= mismo monto en el otro lado) #}
+                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
                             draggable="true"
                             data-fecha="{{ it.fecha }}" data-concepto="{{ it.concepto|e }}"
                             data-documento="{{ it.documento|e }}" data-monto="{{ '%.2f'|format(it.monto) }}"
@@ -537,7 +538,7 @@
                            ser el cruce mas importante". Doc banco
                            (numreferencia) SIEMPRE visible — '·' si vacío.
                            Prov pasa a segunda columna como info auxiliar. #}
-                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
                             draggable="true"
                             data-id-transaccion="{{ it.id_transaccion or '' }}" data-importe="{{ '%.2f'|format(it.importe) }}"
                             {% if it.matched %}data-already-matched="1"{% endif %}>
@@ -660,7 +661,7 @@
                   <table class="w-full text-xs">
                     <tbody>
                       {% for it in d.banco_items %}
-                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}">
                         <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-500{% endif %}" style="width:1%;">
                           {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ it.documento or '·' }}
                           {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en programa el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
@@ -686,7 +687,7 @@
                       {% for it in d.programa_items %}
                       {% set _numref_t = (it.numreferencia or '')|string|trim %}
                       {# TMT 2026-05-27 dueña: doc banco SIEMPRE visible — '·' si vacío. #}
-                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}">
                         <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _numref_t %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width:1%;">
                           {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _numref_t or '·' }}
                           {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}

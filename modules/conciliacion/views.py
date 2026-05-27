@@ -1025,9 +1025,20 @@ def hub():
                 fm = f"{f[8:10]}/{f[5:7]}"
             except Exception:
                 fm = f
-            # Ordenar cada lado por monto desc para que sea fácil parear visualmente
-            b_items.sort(key=lambda x: x["monto"], reverse=True)
-            p_items.sort(key=lambda x: x["importe"], reverse=True)
+            # TMT 2026-05-27 dueña: 'si hay match de montos, ponelo arriba
+            # de todo asi lo veo rapido'. Marcamos amount_match cuando un
+            # monto banco coincide con un monto PC (al centavo, ±$0.01).
+            # Esos items van ARRIBA en cada columna.
+            def _round2(x): return round(float(x or 0), 2)
+            p_montos = set(_round2(p.get("importe")) for p in p_items)
+            b_montos = set(_round2(b.get("monto")) for b in b_items)
+            for it in b_items:
+                it["amount_match"] = _round2(it.get("monto")) in p_montos
+            for it in p_items:
+                it["amount_match"] = _round2(it.get("importe")) in b_montos
+            # Sort: amount_match primero (True > False), después por monto desc
+            b_items.sort(key=lambda x: (not x.get("amount_match"), -float(x.get("monto") or 0)))
+            p_items.sort(key=lambda x: (not x.get("amount_match"), -float(x.get("importe") or 0)))
             depositos_por_dia.append({
                 "fecha": f,
                 "fecha_mostrar": fm,
@@ -1151,8 +1162,16 @@ def hub():
                 fm = f"{f[8:10]}/{f[5:7]}"
             except Exception:
                 fm = f
-            bi.sort(key=lambda x: x["monto"], reverse=True)
-            pi.sort(key=lambda x: x["importe"], reverse=True)
+            # Amount match: subir arriba items con monto idéntico al otro lado
+            def _r2(x): return round(float(x or 0), 2)
+            pi_montos = set(_r2(p.get("importe")) for p in pi)
+            bi_montos = set(_r2(b.get("monto")) for b in bi)
+            for it in bi:
+                it["amount_match"] = _r2(it.get("monto")) in pi_montos
+            for it in pi:
+                it["amount_match"] = _r2(it.get("importe")) in bi_montos
+            bi.sort(key=lambda x: (not x.get("amount_match"), -float(x.get("monto") or 0)))
+            pi.sort(key=lambda x: (not x.get("amount_match"), -float(x.get("importe") or 0)))
             transferencias_por_dia.append({
                 "fecha": f, "fecha_mostrar": fm,
                 "banco": sb, "programa": sp, "diff": diff,
