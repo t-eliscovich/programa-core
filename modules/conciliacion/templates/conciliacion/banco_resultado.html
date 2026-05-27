@@ -83,9 +83,9 @@
                 disabled>
           Marcar conciliados (<span id="cnt-dep-sel">0</span>)
         </button>
-        <button type="button" id="btn-dep-todos" class="text-xs text-sky-600 hover:underline">Seleccionar días que cuadran</button>
+        <button type="button" id="btn-dep-todos" class="text-xs text-sky-600 hover:underline">Días que cuadran</button>
         <button type="button" id="btn-dep-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
-        <span class="text-xs text-slate-400 ml-auto">Los días marcados pasan a Historial.</span>
+        <span id="dep-subtotal" class="text-xs text-slate-500 ml-auto"></span>
       </div>
     </form>
     <div class="overflow-x-auto">
@@ -103,7 +103,9 @@
         <tbody>
           {% for d in depositos_por_dia %}
           {% set _dep_id = 'dep-dia-' ~ loop.index0 %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} hover:bg-slate-100 dark:hover:bg-slate-800/40 fila-dep" data-fecha="{{ d.fecha }}" data-cuadra="{{ '1' if d.cuadra else '0' }}">
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} hover:bg-slate-100 dark:hover:bg-slate-800/40 fila-dep"
+              data-fecha="{{ d.fecha }}" data-cuadra="{{ '1' if d.cuadra else '0' }}"
+              data-banco="{{ d.banco }}" data-programa="{{ d.programa }}">
             <td class="px-4 py-2 text-center">
               <input type="checkbox" class="chk-dep" data-fecha="{{ d.fecha }}" title="Marcar para conciliar">
             </td>
@@ -200,6 +202,138 @@
               $ {{ '{:,.2f}'.format(dep_total_diff) }}
             </td>
             <td class="px-4 py-2"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  {# ───── Transferencias por día — TMT 2026-05-27 dueña ─────
+       "Las transferencias tienen que estar debajo de los depositos, son
+       distintas". Mismo formato que Depósitos pero con TR del extracto
+       y documento='TR' del programa. #}
+  {% if transferencias_por_dia and transferencias_por_dia|length > 0 %}
+  <details class="mb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden" {% if transf_total_diff and transf_total_diff|abs > 1 %}open{% endif %}>
+    <summary class="cursor-pointer px-4 py-3 flex items-center justify-between bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 select-none">
+      <div class="flex items-center gap-3">
+        <span class="text-base font-semibold text-slate-900 dark:text-slate-100">🔁 Transferencias por día</span>
+        <span class="text-xs text-slate-500">{{ transferencias_por_dia|length }} días · {{ transf_n_dias_cuadran }} cuadran</span>
+      </div>
+      <div class="flex items-center gap-4 text-sm tabular-nums">
+        <span class="text-slate-500">Banco</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(transf_total_banco) }}</span>
+        <span class="text-slate-500">Programa</span><span class="font-semibold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(transf_total_prog) }}</span>
+        <span class="text-slate-500">Diff</span>
+        <span class="font-bold px-2 py-0.5 rounded {% if transf_total_diff|abs < 1 %}bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200{% else %}bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200{% endif %}">
+          $ {{ '{:,.2f}'.format(transf_total_diff) }}
+        </span>
+      </div>
+    </summary>
+    <form method="POST" action="{{ url_for('conciliacion.marcar_depositos_dia_conciliados') }}" id="form-transf-conciliar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="no_banco" value="{{ no_banco }}">
+      <input type="hidden" name="fechas_json" id="transf-fechas-json" value="[]">
+      <input type="hidden" name="dias_json" value='{{ transferencias_por_dia|tojson|forceescape }}'>
+      <div class="px-4 py-2 flex items-center gap-3 border-t border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-900">
+        <button type="submit" id="btn-transf-conciliar"
+                class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium shadow-sm"
+                disabled>
+          Marcar conciliados (<span id="cnt-transf-sel">0</span>)
+        </button>
+        <button type="button" id="btn-transf-todos" class="text-xs text-sky-600 hover:underline">Días que cuadran</button>
+        <button type="button" id="btn-transf-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
+        <span id="transf-subtotal" class="text-xs text-slate-500 ml-auto"></span>
+      </div>
+    </form>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/30 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-2 w-10 text-center"><input type="checkbox" id="chk-transf-all" title="Marcar todos"></th>
+            <th class="px-4 py-2 text-left w-32">Día</th>
+            <th class="px-4 py-2 text-right">Banco</th>
+            <th class="px-4 py-2 text-right">Programa</th>
+            <th class="px-4 py-2 text-right">Diferencia</th>
+            <th class="px-4 py-2 text-center w-20">Movs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in transferencias_por_dia %}
+          {% set _t_id = 'transf-dia-' ~ loop.index0 %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} hover:bg-slate-100 dark:hover:bg-slate-800/40 fila-transf"
+              data-fecha="{{ d.fecha }}" data-cuadra="{{ '1' if d.cuadra else '0' }}"
+              data-banco="{{ d.banco }}" data-programa="{{ d.programa }}">
+            <td class="px-4 py-2 text-center">
+              <input type="checkbox" class="chk-transf" data-fecha="{{ d.fecha }}">
+            </td>
+            <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100 cursor-pointer btn-toggle-transf" data-target="{{ _t_id }}">
+              <span class="transf-chevron inline-block text-slate-400 text-xs mr-1 transition-transform">▸</span>{{ d.fecha_mostrar }}
+            </td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.banco) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.programa) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums font-semibold {% if d.cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              {% if d.cuadra %}✓{% else %}$ {{ '{:,.2f}'.format(d.diff) }}{% endif %}
+            </td>
+            <td class="px-4 py-2 text-center text-xs text-slate-500 tabular-nums">{{ d.n_banco }} / {{ d.n_programa }}</td>
+          </tr>
+          <tr id="{{ _t_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
+            <td colspan="6" class="px-0 py-0">
+              <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
+                <div class="px-4 py-3 min-w-0">
+                  <div class="flex items-baseline justify-between mb-2">
+                    <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
+                  </div>
+                  {% if d.banco_items %}
+                  <div class="max-h-72 overflow-y-auto">
+                  <table class="w-full text-xs">
+                    <tbody>
+                      {% for it in d.banco_items %}
+                      <tr class="border-t border-slate-100 dark:border-slate-800/60">
+                        <td class="py-1 pr-2 font-mono text-slate-500 whitespace-nowrap" style="width:1%;">{{ it.documento or '·' }}</td>
+                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ '{:,.2f}'.format(it.monto) }}</td>
+                        <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.cliente_nombre or (it.concepto[:55]) }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  </div>
+                  {% else %}<div class="text-xs text-slate-400 italic py-2">Sin transferencias en banco.</div>{% endif %}
+                </div>
+                <div class="px-4 py-3 min-w-0">
+                  <div class="flex items-baseline justify-between mb-2">
+                    <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Programa</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_programa }} movs · $ {{ '{:,.2f}'.format(d.programa) }}</span>
+                  </div>
+                  {% if d.programa_items %}
+                  <div class="max-h-72 overflow-y-auto">
+                  <table class="w-full text-xs">
+                    <tbody>
+                      {% for it in d.programa_items %}
+                      <tr class="border-t border-slate-100 dark:border-slate-800/60">
+                        <td class="py-1 pr-2 font-mono text-slate-500 whitespace-nowrap" style="width:1%;">{{ it.prov or '·' }}</td>
+                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ '{:,.2f}'.format(it.importe) }}</td>
+                        <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.prov_nombre or (it.concepto[:55]) }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  </div>
+                  {% else %}<div class="text-xs text-slate-400 italic py-2">Sin transferencias en programa.</div>{% endif %}
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 font-semibold">
+            <td></td>
+            <td class="px-4 py-2 text-slate-900 dark:text-slate-100">TOTAL</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(transf_total_banco) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(transf_total_prog) }}</td>
+            <td class="px-4 py-2 text-right tabular-nums {% if transf_total_diff|abs < 1 %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
+              $ {{ '{:,.2f}'.format(transf_total_diff) }}
+            </td>
+            <td></td>
           </tr>
         </tbody>
       </table>
@@ -305,9 +439,10 @@
   {% set ns = namespace(n_sug=0, n_sin_sug=0, n_bancsis=0, n_match=0, n_match_probables=0) %}
   {% for r in data.real_only %}
     {% if (r.cat.codigo or '') not in _CATS_DAILY %}
-      {% if r.sugerencias and r.sugerencias|length > 0 %}
+      {# Comisiones NO van a sugeridos — están en el card amber + Solo en banco #}
+      {% if r.sugerencias and r.sugerencias|length > 0 and (r.cat.grupo or '') != 'COMISION' %}
         {% set ns.n_sug = ns.n_sug + 1 %}
-      {% else %}
+      {% elif (not r.sugerencias or r.sugerencias|length == 0) %}
         {% set ns.n_sin_sug = ns.n_sin_sug + 1 %}
       {% endif %}
     {% endif %}
@@ -647,9 +782,9 @@
         </thead>
         <tbody>
           {# TMT 2026-05-27 dueña: solo cheques/efectivo arriba; transferencias
-             y demás entradas siguen acá. "Las transferencias si iban en
-             sugeridos!!!!" #}
-          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 and (r.cat.codigo or '') not in _CATS_DAILY %}
+             quedan acá. "Comisiones e impuestos no tienen que estar en
+             cruces sugeridos, solo en banco ya agrupados" — filtrar COMISION. #}
+          {% for r in data.real_only %}{% if r.sugerencias and r.sugerencias|length > 0 and (r.cat.codigo or '') not in _CATS_DAILY and (r.cat.grupo or '') != 'COMISION' %}
           {% set _idx = 'sug-' ~ loop.index0 %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
               data-tipo="{{ r.tipo }}" data-grupo="{{ r.cat.grupo or 'OTRO' }}">
@@ -1394,33 +1529,64 @@
     });
   })();
 
-  // TMT 2026-05-27 dueña: checkboxes + botón "Marcar conciliados" en panel
-  // Depósitos por día. Selección por fecha — el submit POSTea la lista de
-  // fechas al endpoint marcar_depositos_dia_conciliados.
-  (function() {
-    const chks = document.querySelectorAll('.chk-dep');
-    const chkAll = document.getElementById('chk-dep-all');
-    const btnSubmit = document.getElementById('btn-dep-conciliar');
-    const btnTodosCuadran = document.getElementById('btn-dep-todos');
-    const btnDesmarcar = document.getElementById('btn-dep-desmarcar');
-    const cnt = document.getElementById('cnt-dep-sel');
-    const inputJson = document.getElementById('dep-fechas-json');
+  // TMT 2026-05-27 dueña: factory para el JS de panel (Depósitos o
+  // Transferencias). Mismo flujo en los dos: checkbox, marcar, calcular
+  // subtotal del cruce (banco vs programa del grupo seleccionado) y submit.
+  // "dejame hace como un cruce entre los dias con los depositos, ejemplo
+  // uno dice 14 y otro 15, tengo que poder seleccionarlos juntos".
+  function inicializarPanelConciliar(opts) {
+    const chks = document.querySelectorAll(opts.chkSel);
+    const chkAll = document.getElementById(opts.chkAllId);
+    const btnSubmit = document.getElementById(opts.btnSubmitId);
+    const btnCuadran = document.getElementById(opts.btnCuadranId);
+    const btnDesmarcar = document.getElementById(opts.btnDesmarcarId);
+    const cnt = document.getElementById(opts.cntId);
+    const inputJson = document.getElementById(opts.inputJsonId);
+    const subtotalEl = document.getElementById(opts.subtotalId);
+    const filaSel = opts.filaSel;
     if (!chks.length || !btnSubmit) return;
 
     function actualizar() {
-      const seleccionadas = Array.from(chks).filter(c => c.checked).map(c => c.dataset.fecha);
+      const seleccionadas = [];
+      let sumB = 0, sumP = 0;
+      chks.forEach(c => {
+        if (!c.checked) return;
+        seleccionadas.push(c.dataset.fecha);
+        const row = c.closest(filaSel);
+        if (row) {
+          sumB += parseFloat(row.dataset.banco || '0');
+          sumP += parseFloat(row.dataset.programa || '0');
+        }
+      });
       cnt.textContent = seleccionadas.length;
       btnSubmit.disabled = seleccionadas.length === 0;
       inputJson.value = JSON.stringify(seleccionadas);
+      // Subtotal cruzado: si selecciona 2+ días, mostrar la suma combinada
+      // y si cuadra (diff < $1) lo pinta verde — útil cuando un depósito
+      // del 14 cayó al 15 en banco.
+      if (subtotalEl) {
+        if (seleccionadas.length === 0) {
+          subtotalEl.textContent = '';
+          subtotalEl.className = 'text-xs text-slate-500 ml-auto';
+        } else {
+          const diff = sumB - sumP;
+          const cuadra = Math.abs(diff) < 1;
+          const fmt = n => '$ ' + n.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          subtotalEl.innerHTML =
+            'Banco <b>' + fmt(sumB) + '</b> · Programa <b>' + fmt(sumP) + '</b> · Diff ' +
+            '<b class="' + (cuadra ? 'text-emerald-700' : 'text-rose-700') + '">' + fmt(diff) + (cuadra ? ' ✓' : '') + '</b>';
+          subtotalEl.className = 'text-xs ml-auto tabular-nums';
+        }
+      }
     }
     chks.forEach(c => c.addEventListener('change', actualizar));
     if (chkAll) chkAll.addEventListener('change', () => {
       chks.forEach(c => c.checked = chkAll.checked);
       actualizar();
     });
-    if (btnTodosCuadran) btnTodosCuadran.addEventListener('click', () => {
+    if (btnCuadran) btnCuadran.addEventListener('click', () => {
       chks.forEach(c => {
-        const row = c.closest('.fila-dep');
+        const row = c.closest(filaSel);
         c.checked = row && row.dataset.cuadra === '1';
       });
       actualizar();
@@ -1430,7 +1596,36 @@
       if (chkAll) chkAll.checked = false;
       actualizar();
     });
-  })();
+  }
+
+  // Panel Depósitos por día
+  inicializarPanelConciliar({
+    chkSel: '.chk-dep', chkAllId: 'chk-dep-all',
+    btnSubmitId: 'btn-dep-conciliar', btnCuadranId: 'btn-dep-todos',
+    btnDesmarcarId: 'btn-dep-desmarcar', cntId: 'cnt-dep-sel',
+    inputJsonId: 'dep-fechas-json', subtotalId: 'dep-subtotal',
+    filaSel: '.fila-dep',
+  });
+  // Panel Transferencias por día
+  inicializarPanelConciliar({
+    chkSel: '.chk-transf', chkAllId: 'chk-transf-all',
+    btnSubmitId: 'btn-transf-conciliar', btnCuadranId: 'btn-transf-todos',
+    btnDesmarcarId: 'btn-transf-desmarcar', cntId: 'cnt-transf-sel',
+    inputJsonId: 'transf-fechas-json', subtotalId: 'transf-subtotal',
+    filaSel: '.fila-transf',
+  });
+
+  // Toggle expandir día en panel Transferencias
+  document.querySelectorAll('.btn-toggle-transf').forEach(cell => {
+    cell.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const tr = document.getElementById(cell.dataset.target);
+      if (!tr) return;
+      tr.classList.toggle('hidden');
+      const chev = cell.querySelector('.transf-chevron');
+      if (chev) chev.style.transform = tr.classList.contains('hidden') ? '' : 'rotate(90deg)';
+    });
+  });
 
   // Toggle inline sugerencias (dropdown debajo de la fila — NO modal)
   document.querySelectorAll('.btn-toggle-sug').forEach(b => {

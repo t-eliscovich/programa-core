@@ -877,6 +877,122 @@ def hub():
     dep_total_diff = round(dep_total_banco - dep_total_prog, 2)
     dep_n_dias_cuadran = sum(1 for d in depositos_por_dia if d["cuadra"])
 
+    # TMT 2026-05-27 dueña: "Las transferencias tienen que estar debajo
+    # de los depositos, son distintas". Panel paralelo SOLO para
+    # transferencias entrantes (cat=ENTRADA_COBRO_TRANSFERENCIA en banco
+    # real; documento='TR' en bancsis programa).
+    _CATS_TRANSF = {"ENTRADA_COBRO_TRANSFERENCIA"}
+    _DOCS_TRANSF = {"TR"}
+    transferencias_por_dia: list[dict] = []
+    try:
+        banco_t: dict[str, list[dict]] = {}
+        prog_t: dict[str, list[dict]] = {}
+        for r in (data.get("real_only") or []):
+            if (r.get("tipo") or "").upper() != "C":
+                continue
+            if ((r.get("cat") or {}).get("codigo") or "") not in _CATS_TRANSF:
+                continue
+            f = str(r.get("fecha") or "")
+            if not f:
+                continue
+            banco_t.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": r.get("concepto") or "",
+                "documento": r.get("documento") or "",
+                "monto": float(r.get("monto") or 0),
+                "cliente_nombre": ((r.get("cat") or {}).get("cliente_nombre") or ""),
+                "matched": False,
+            })
+        for m in (data.get("matches") or []):
+            real = m.get("real") or {}
+            if (real.get("tipo") or "").upper() != "C":
+                continue
+            if ((m.get("cat") or {}).get("codigo") or "") not in _CATS_TRANSF:
+                continue
+            f = str(real.get("fecha") or "")
+            if not f:
+                continue
+            banco_t.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": real.get("concepto") or "",
+                "documento": real.get("documento") or "",
+                "monto": float(real.get("monto") or 0),
+                "cliente_nombre": ((m.get("cat") or {}).get("cliente_nombre") or ""),
+                "matched": True,
+            })
+        for b in (data.get("bancsis_only") or []):
+            if (b.get("tipo_real") or "").upper() != "C":
+                continue
+            if (b.get("documento") or "").upper() not in _DOCS_TRANSF:
+                continue
+            f = str(b.get("fecha") or "")
+            if not f:
+                continue
+            prog_t.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": b.get("concepto") or "",
+                "documento": b.get("documento") or "",
+                "numreferencia": b.get("numreferencia") or "",
+                "importe": float(b.get("importe") or 0),
+                "prov": b.get("prov") or "",
+                "prov_nombre": b.get("prov_nombre") or "",
+                "es_agrupado": False,
+                "n_cheques": 0,
+                "matched": False,
+            })
+        for m in (data.get("matches") or []):
+            b = m.get("bancsis") or {}
+            real = m.get("real") or {}
+            if (real.get("tipo") or "").upper() != "C":
+                continue
+            if (b.get("documento") or "").upper() not in _DOCS_TRANSF:
+                continue
+            f = str(b.get("fecha") or "")
+            if not f:
+                continue
+            prog_t.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": b.get("concepto") or "",
+                "documento": b.get("documento") or "",
+                "numreferencia": b.get("numreferencia") or "",
+                "importe": float(b.get("importe") or 0),
+                "prov": b.get("prov") or "",
+                "prov_nombre": b.get("prov_nombre") or "",
+                "es_agrupado": False,
+                "n_cheques": 0,
+                "matched": True,
+            })
+        for f in sorted(set(banco_t) | set(prog_t)):
+            bi = banco_t.get(f, [])
+            pi = prog_t.get(f, [])
+            sb = round(sum(it["monto"] for it in bi), 2)
+            sp = round(sum(it["importe"] for it in pi), 2)
+            diff = round(sb - sp, 2)
+            try:
+                fm = f"{f[8:10]}/{f[5:7]}"
+            except Exception:
+                fm = f
+            bi.sort(key=lambda x: x["monto"], reverse=True)
+            pi.sort(key=lambda x: x["importe"], reverse=True)
+            transferencias_por_dia.append({
+                "fecha": f, "fecha_mostrar": fm,
+                "banco": sb, "programa": sp, "diff": diff,
+                "n_banco": len(bi), "n_programa": len(pi),
+                "cuadra": abs(diff) < 1.0,
+                "banco_items": bi, "programa_items": pi,
+            })
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "transferencias_por_dia prep falló: %s", _e
+        )
+        transferencias_por_dia = []
+
+    transf_total_banco = round(sum(d["banco"] for d in transferencias_por_dia), 2)
+    transf_total_prog = round(sum(d["programa"] for d in transferencias_por_dia), 2)
+    transf_total_diff = round(transf_total_banco - transf_total_prog, 2)
+    transf_n_dias_cuadran = sum(1 for d in transferencias_por_dia if d["cuadra"])
+
     # Datalists para el modal de crear individual. Fail-soft también.
     try:
         from modules.autocomplete.queries import clientes_para_datalist, proveedores_para_datalist
@@ -915,6 +1031,11 @@ def hub():
         dep_total_prog=dep_total_prog,
         dep_total_diff=dep_total_diff,
         dep_n_dias_cuadran=dep_n_dias_cuadran,
+        transferencias_por_dia=transferencias_por_dia,
+        transf_total_banco=transf_total_banco,
+        transf_total_prog=transf_total_prog,
+        transf_total_diff=transf_total_diff,
+        transf_n_dias_cuadran=transf_n_dias_cuadran,
         clientes_dl=clientes_dl,
         proveedores_dl=proveedores_dl,
         no_banco=no_banco,
