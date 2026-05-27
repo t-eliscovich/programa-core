@@ -91,17 +91,23 @@ EOF
 )
 B64=$(printf '%s' "$PY" | base64 | tr -d '\n')
 
-# Construir el comando PowerShell + envolverlo en JSON para --cli-input-json
-# (más seguro que --parameters con quoting por shell).
-CMD="cd C:\\programa-core; \$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL', 'Machine'); [System.IO.File]::WriteAllBytes('C:\\programa-core\\_tmp_diag.py', [Convert]::FromBase64String('$B64')); & 'C:\\Python312\\python.exe' 'C:\\programa-core\\_tmp_diag.py'; Remove-Item 'C:\\programa-core\\_tmp_diag.py'"
-
-# Escribir el payload JSON a un tmp file usando Python (escape robusto).
-python3 - <<PYEOF > /tmp/ssm_payload.json
-import json
+# Escribir el comando PowerShell a un tmp y armar payload JSON robusto via Python.
+echo "$B64" > /tmp/ssm_b64.txt
+INSTANCE_ID="$INSTANCE_ID" python3 <<'PYEOF' > /tmp/ssm_payload.json
+import json, os
+with open('/tmp/ssm_b64.txt') as f:
+    b64 = f.read().strip()
+cmd = (
+    "cd C:\\programa-core; "
+    "$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL', 'Machine'); "
+    f"[System.IO.File]::WriteAllBytes('C:\\programa-core\\_tmp_diag.py', [Convert]::FromBase64String('{b64}')); "
+    "& 'C:\\Python312\\python.exe' 'C:\\programa-core\\_tmp_diag.py'; "
+    "Remove-Item 'C:\\programa-core\\_tmp_diag.py'"
+)
 payload = {
-    "InstanceIds": ["$INSTANCE_ID"],
+    "InstanceIds": [os.environ['INSTANCE_ID']],
     "DocumentName": "AWS-RunPowerShellScript",
-    "Parameters": {"commands": [r"""$CMD"""]},
+    "Parameters": {"commands": [cmd]},
 }
 print(json.dumps(payload))
 PYEOF
