@@ -2658,8 +2658,12 @@
         const d = await r.json();
         if (d.ok) {
           ok++;
-          p.banco.style.display = 'none';
-          p.pc.style.display = 'none';
+          // class .pareo-confirmed → la maneja el filtro como "siempre oculta".
+          // No usamos style.display directo para no confundir con filter-hide.
+          p.banco.classList.add('pareo-confirmed');
+          p.pc.classList.add('pareo-confirmed');
+          p.banco.classList.remove('pareo-en-cola');
+          p.pc.classList.remove('pareo-en-cola');
         } else { fail++; console.warn(d.msg); }
       } catch (e) { fail++; console.error(e); }
     }
@@ -2718,11 +2722,18 @@
     const includeMatched = includeMatchedCb && includeMatchedCb.checked;
     let nb = 0, np = 0;
     document.querySelectorAll('.pareo-row').forEach(row => {
+      // 1) Filas confirmadas (por drag-and-drop): siempre ocultas, no se cuentan.
+      if (row.classList.contains('pareo-confirmed')) {
+        row.style.display = 'none';
+        return;
+      }
+      // 2) Filas auto-matched: visibles solo con toggle ON.
       const isMatched = row.classList.contains('pareo-matched');
-      // pareo-matched: visible solo si toggle ON
-      if (isMatched && !includeMatched) { row.style.display = 'none'; return; }
-      // filas paradas en cola (display:none por confirmación previa) — saltar
-      if (row.style.display === 'none' && !isMatched) return;
+      if (isMatched && !includeMatched) {
+        row.style.display = 'none';
+        return;
+      }
+      // 3) Resto: aplica filtro de texto. Si está vacío, todas visibles.
       const t = row.textContent.toLowerCase();
       const match = !q || t.includes(q);
       row.style.display = match ? '' : 'none';
