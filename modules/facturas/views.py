@@ -1390,38 +1390,46 @@ def borrar_snapshots_historia_hoy():
 
     dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
 
+    # Buscar TODAS las filas de hoy (fecha::date) — cubre timestamps con hora.
+    # Las "rotas" son las que tienen usuti NEGATIVA grande Y ustock <
+    # 7M (que pasó al meterse stock_terminado=0). La buena (post-fix)
+    # tiene usuti positivo. NO borramos la buena.
     rows_hoy = db.fetch_all(
         """
         SELECT id_historia, fecha, usuario_crea, usuti, ustock, patrimonio
           FROM scintela.historia
-         WHERE fecha = CURRENT_DATE
+         WHERE fecha::date = CURRENT_DATE
          ORDER BY id_historia
         """
     )
+    ids_a_borrar = [int(r["id_historia"]) for r in rows_hoy
+                    if float(r.get("usuti") or 0) < 0]
+
     if dry_run:
         return jsonify({
             "ok": True,
             "dry_run": True,
-            "filas_a_borrar": len(rows_hoy),
+            "filas_hoy_total": len(rows_hoy),
+            "filas_a_borrar": len(ids_a_borrar),
+            "ids_a_borrar": ids_a_borrar,
             "rows": [
                 {"id": r["id_historia"], "fecha": str(r["fecha"]),
                  "usuario_crea": r.get("usuario_crea"),
                  "usuti": float(r.get("usuti") or 0),
                  "ustock": float(r.get("ustock") or 0),
-                 "patrimonio": float(r.get("patrimonio") or 0)}
+                 "patrimonio": float(r.get("patrimonio") or 0),
+                 "BORRAR": (int(r["id_historia"]) in ids_a_borrar)}
                 for r in rows_hoy
             ],
         })
 
+    if not ids_a_borrar:
+        return jsonify({"ok": True, "filas_borradas": 0, "msg": "Ninguna fila con usuti<0 hoy"})
+
     n = db.execute(
-        "DELETE FROM scintela.historia WHERE fecha = CURRENT_DATE"
+        f"DELETE FROM scintela.historia WHERE id_historia IN ({','.join(str(i) for i in ids_a_borrar)})"
     )
-    return jsonify({"ok": True, "filas_borradas": n,
-                    "rows_pre_delete": [
-                        {"id": r["id_historia"], "fecha": str(r["fecha"]),
-                         "usuti": float(r.get("usuti") or 0)}
-                        for r in rows_hoy
-                    ]})
+    return jsonify({"ok": True, "filas_borradas": n, "ids_borrados": ids_a_borrar})
 
 
 # ---------------------------------------------------------------------------
