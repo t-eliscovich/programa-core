@@ -1766,6 +1766,137 @@ def fix_huerfanas_con_aliases():
         "huerfanas_pc_restantes": int(row_huerf.get("n") or 0) if row_huerf else None,
     })
 
+
+# ---------------------------------------------------------------------------
+# Consolidar duplicados: backfill Asinfo creó pares (asinfo-backfill, dbf)
+# para el mismo numf+fecha con cli distinto (faltaba el alias). Este endpoint
+# detecta esos pares, copia numf_completo al original DBF, registra el alias
+# implícito y borra el duplicado backfilleado.
+# ---------------------------------------------------------------------------
+@facturas_bp.route("/facturas/admin/consolidar-duplicados-asinfo", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def consolidar_duplicados_asinfo():
+    """Detecta y consolida facturas duplicadas por backfill Asinfo con alias faltante.
+
+    Cuando un cliente Asinfo (ej AJO) corresponde a un cliente PC distinto (ej AJ2)
+    y el alias NO estaba registrado al momento del backfill, mi endpoint insertó
+    una factura nueva con cli=AJO en vez de matchear con la DBF existente cli=AJ2.
+
+    Este endpoint:
+        1. Detecta pares (asinfo-backfill X, dbf-original Y) con
+           X.numf == Y.numf AND X.fecha == Y.fecha AND X.codigo_cli != Y.codigo_cli
+        2. Para cada par: copia X.numf_completo -> Y.numf_completo (si Y no lo tenía)
+        3. Borra X (la asinfo-backfill duplicada)
+        4. Registra alias (X.cli -> Y.cli) por consenso
+
+    Params:
+        dry_run=1   default 0 — si 1, solo reporta sin tocar nada
+    """
+    from collections import Counter
+    from flask import jsonify
+    from modules.asinfo import aliases as _aliases
+
+    dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
+
+    # 1) Detectar pares de duplicados
+    pares = db.fetch_all(
+        """
+        SELECT a.id_factura AS a_id, a.codigo_cli AS a_cli,
+               a.numf_completo AS a_nfc, a.numf AS numf, a.fecha AS fecha,
+               b.id_factura AS b_id, b.codigo_cli AS b_cli,
+               b.numf_completo AS b_nfc
+          FROM scintela.factura a
+          JOIN scintela.factura b
+            ON a.numf = b.numf
+           AND a.fecha = b.fecha
+           AND a.codigo_cli <> b.codigo_cli
+           AND a.id_factura <> b.id_factura
+         WHERE a.usuario_crea = 'asinfo-backfill'
+           AND COALESCE(b.usuario_crea, '') <> 'asinfo-backfill'
+           AND a.numf IS NOT NULL AND a.numf > 0
+        """
+    ) or []
+
+    print(f"consolidar: {len(pares)} pares duplicados detectados", flush=True)
+
+    # 2) Votar aliases por (a_cli, b_cli)
+    votos_alias = Counter()
+    for p in pares:
+        votos_alias[(p["a_cli"], p["b_cli"])] += 1
+
+    aliases_existentes = _aliases.todos()
+    alias_existe = {a["codigo_asinfo"]: a["codigo_pc"] for a in aliases_existentes}
+
+    aliases_a_agregar = []
+    for (a_cli, b_cli), n in votos_alias.most_common():
+        if alias_existe.get(a_cli) == b_cli:
+            continue
+        aliases_a_agregar.append({
+            "asinfo": a_cli, "pc": b_cli, "votos": n,
+        })
+
+    aliases_agregados = []
+    if not dry_run:
+        for ali in aliases_a_agregar:
+            try:
+                creado = _aliases.agregar(
+                    ali["asinfo"], ali["pc"],
+                    nota=f"consolidacion: {ali['votos']} duplicados detectados",
+                    usuario="consolidar",
+                )
+                if creado:
+                    aliases_agregados.append(ali)
+            except Exception as e:
+                ali["error"] = str(e)
+        _aliases._refrescar()
+
+    # 3) Para cada par: copiar numf_completo y borrar el backfill duplicado
+    numf_completo_copiados = 0
+    duplicados_borrados = 0
+    err_log = []
+    if not dry_run:
+        for p in pares:
+            try:
+                with db.tx() as conn, conn.cursor() as cur:
+                    # Copiar numf_completo si el original DBF NO lo tenía
+                    if (not (p.get("b_nfc") or "").strip()) and (p.get("a_nfc") or "").strip():
+                        cur.execute(
+                            "UPDATE scintela.factura SET numf_completo = %s WHERE id_factura = %s",
+                            (p["a_nfc"], p["b_id"]),
+                        )
+                        if cur.rowcount > 0:
+                            numf_completo_copiados += 1
+                    # Borrar la backfill duplicada
+                    cur.execute(
+                        "DELETE FROM scintela.factura WHERE id_factura = %s "
+                        "AND usuario_crea = 'asinfo-backfill'",
+                        (p["a_id"],),
+                    )
+                    if cur.rowcount > 0:
+                        duplicados_borrados += 1
+            except Exception as e:
+                err_log.append({"pair": {"a_id": p["a_id"], "b_id": p["b_id"]},
+                                "error": str(e)[:200]})
+
+    return jsonify({
+        "ok": True,
+        "dry_run": dry_run,
+        "pares_detectados": len(pares),
+        "aliases_implicitos_detectados": len(aliases_a_agregar),
+        "aliases_a_agregar": aliases_a_agregar[:30],  # top
+        "aliases_agregados_efectivamente": aliases_agregados,
+        "numf_completo_copiados_al_original_dbf": numf_completo_copiados,
+        "duplicados_borrados": duplicados_borrados,
+        "errores": err_log[:20],
+        "sample_pares": [
+            {"numf": p["numf"], "fecha": str(p["fecha"]),
+             "a_cli_asinfo_backfill": p["a_cli"], "b_cli_dbf_original": p["b_cli"],
+             "a_nfc": p["a_nfc"], "b_nfc": p["b_nfc"]}
+            for p in pares[:10]
+        ],
+    })
+
     resumen = {
         "ok": True,
         "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
