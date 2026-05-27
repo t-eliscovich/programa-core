@@ -423,10 +423,29 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
                  WHERE cxt.id_transaccion = tb.id_transaccion) AS no_cheques_rel,
+               -- TMT 2026-05-27 dueña: 'si tiene el 4 del final. debuggia bien'
+               -- cheque #1805 doc_banco=155032144 pero NO tiene chequextransaccion
+               -- linkeada al bancsis #8811. Agregamos un fallback: si el cheque
+               -- está huérfano (sin chequextransaccion) pero su fechad+importe
+               -- coincide con tb.fecha+tb.importe, lo consideramos linkeado.
+               -- Esto permite que el doc_banco editado inline funcione aunque
+               -- el lote de depósito no se haya creado vía depositar_lote().
                (SELECT STRING_AGG(DISTINCT NULLIF(TRIM(ch.doc_banco), ''), ',')
-                  FROM scintela.chequextransaccion cxt
-                  JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
-                 WHERE cxt.id_transaccion = tb.id_transaccion) AS doc_banco_rel
+                  FROM scintela.cheque ch
+                 WHERE NULLIF(TRIM(ch.doc_banco), '') IS NOT NULL
+                   AND (
+                     EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt
+                              WHERE cxt.id_cheque = ch.id_cheque
+                                AND cxt.id_transaccion = tb.id_transaccion)
+                     OR
+                     (
+                       ch.fechad = tb.fecha
+                       AND ABS(ch.importe - tb.importe) < 0.01
+                       AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2
+                                        WHERE cxt2.id_cheque = ch.id_cheque)
+                     )
+                   )
+               ) AS doc_banco_rel
           FROM scintela.transacciones_bancarias tb
          WHERE tb.no_banco = %s
            AND tb.fecha BETWEEN %s AND %s
