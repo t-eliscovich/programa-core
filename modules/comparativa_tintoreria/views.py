@@ -256,13 +256,9 @@ def comparativa_tintoreria():
     como filas hijas de cada día.
     """
     hoy = date.today()
-    # TMT 2026-05-27 dueña: "esta pagina es un desastre" — con default
-    # ultimos 14 dias + filtro creacion_*, los primeros dias del rango
-    # perdian las ordenes creadas ANTES (terminadas dentro pero creadas
-    # afuera). Resultado: 18/05 mostraba 448 kg en vez de 11,617.
-    # Fix: default desde = primer dia del mes (rango amplio que captura
-    # ordenes creadas y terminadas dentro del periodo, como hace el Excel).
-    default_desde = hoy.replace(day=1)
+    # TMT 2026-05-27 dueña: "DEJA DE FILTRAR POR FECHA DE CREACION!
+    # ME SALE TODO MAL" — volver al default ultimos 14 dias.
+    default_desde = hoy - timedelta(days=14)
     desde = _parse_date(request.args.get("desde"), default_desde)
     hasta = _parse_date(request.args.get("hasta"), hoy)
 
@@ -282,20 +278,16 @@ def comparativa_tintoreria():
         error = (error + " | " if error else "") + f"PC color: {e}"
 
     try:
-        # TMT 2026-05-26 v3: usar creacion_desde/hasta para matchear EXACTO
-        # el Excel oficial /telas/export. Confirmado contra la DB real via
-        # /informes/debug-tintoreria-diff: query C (con creacion_*) matchea
-        # query A (get_telas_report) byte-por-byte en todos los días del
-        # rango. La diferencia con terminado_* es que el Excel agrupa por
-        # fecha_terminado pero filtra por fecha CREACIÓN — esto excluye las
-        # 211 órdenes creadas en abril pero terminadas en mayo (que estaban
-        # inflando el lado formulas en B), e incluye las 50 creadas en mayo
-        # pero terminadas el 27/05 (fuera del rango display).
+        # TMT 2026-05-27 dueña: REVERTIDO a terminado_desde/hasta.
+        # El filtro por creacion (intentado para matchear Excel) hizo que
+        # ordenes terminadas pero creadas antes del rango quedaran fuera,
+        # mostrando kg vacios en muchos dias. La dueña prefiere ver TODO
+        # lo que termino en el rango, aunque haya sido creado antes.
         from modules.tintura import service as tintura_service
         rows_form = tintura_service.tinturado_resumen(
             limite=20000,
-            creacion_desde=desde,
-            creacion_hasta=hasta,
+            terminado_desde=desde,
+            terminado_hasta=hasta,
         )
     except Exception as e:  # noqa: BLE001
         error = (error + " | " if error else "") + f"formulas_app: {e}"
