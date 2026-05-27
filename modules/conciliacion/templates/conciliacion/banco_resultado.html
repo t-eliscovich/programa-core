@@ -297,7 +297,12 @@
      "Las transferencias si iban en sugeridos!!!!" #}
   {% set _CATS_DAILY = ['ENTRADA_COBRO_CHEQUE','ENTRADA_DEPOSITO_EFECTIVO'] %}
   {% set _DOCS_DAILY = ['DE'] %}
-  {% set ns = namespace(n_sug=0, n_sin_sug=0, n_bancsis=0, n_match=0) %}
+  {# TMT 2026-05-27 dueña: un match es CERTERO si:
+       - es salida (Tipo D), o
+       - el doc banco real == numreferencia programa (normalizado sin ceros).
+     Entradas Tipo C sin doc match son matches "probables" — van a
+     Cruces sugeridos para que la dueña confirme manualmente. #}
+  {% set ns = namespace(n_sug=0, n_sin_sug=0, n_bancsis=0, n_match=0, n_match_probables=0) %}
   {% for r in data.real_only %}
     {% if (r.cat.codigo or '') not in _CATS_DAILY %}
       {% if r.sugerencias and r.sugerencias|length > 0 %}
@@ -308,8 +313,19 @@
     {% endif %}
   {% endfor %}
   {% for b in data.bancsis_only %}{% if (b.documento or '')|upper not in _DOCS_DAILY %}{% set ns.n_bancsis = ns.n_bancsis + 1 %}{% endif %}{% endfor %}
-  {% for m in data.matches %}{% if (m.cat.codigo or '') not in _CATS_DAILY %}{% set ns.n_match = ns.n_match + 1 %}{% endif %}{% endfor %}
-  {% set n_real_con_sug = ns.n_sug %}
+  {% for m in data.matches %}
+    {% if (m.cat.codigo or '') not in _CATS_DAILY %}
+      {% set _dr = (m.real.documento or '')|string|trim %}
+      {% set _dp = (m.bancsis.numreferencia or '')|string|trim %}
+      {% set _dm = _dr and _dp and (_dr.lstrip('0') == _dp.lstrip('0')) %}
+      {% if (m.real.tipo or '')|upper == 'D' or _dm %}
+        {% set ns.n_match = ns.n_match + 1 %}
+      {% else %}
+        {% set ns.n_match_probables = ns.n_match_probables + 1 %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  {% set n_real_con_sug = ns.n_sug + ns.n_match_probables %}
   {% set n_real_sin_sug = ns.n_sin_sug %}
   {% set n_bancsis_salidas = ns.n_bancsis %}
   {% set n_match_salidas = ns.n_match %}
@@ -389,9 +405,17 @@
           </tr>
         </thead>
         <tbody>
-          {# TMT 2026-05-27 dueña: solo CHEQUES/EFECTIVO al panel arriba.
-             Transferencias, NC, otros entradas siguen acá normal. #}
-          {% for m in data.matches %}{% if (m.cat.codigo or '') not in _CATS_DAILY %}
+          {# TMT 2026-05-27 dueña: Coinciden = matches 100% certeros.
+             - Salidas (Tipo D): siempre certeros (cheque emitido + tx tienen ID).
+             - Entradas (Tipo C) con doc banco real == numreferencia programa.
+             Las entradas Tipo C sin doc match van a Cruces sugeridos
+             ("Las transferencias si iban en sugeridos!!!!"). #}
+          {% for m in data.matches %}
+          {% set _dr_m = (m.real.documento or '')|string|trim %}
+          {% set _dp_m = (m.bancsis.numreferencia or '')|string|trim %}
+          {% set _docm_m = _dr_m and _dp_m and (_dr_m.lstrip('0') == _dp_m.lstrip('0')) %}
+          {% set _es_certero = (m.real.tipo or '')|upper == 'D' or _docm_m %}
+          {% if (m.cat.codigo or '') not in _CATS_DAILY and _es_certero %}
           {% set fecha_diff = (m.real.fecha != m.bancsis.fecha) %}
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
           {% set _doc_real = (m.real.documento or '')|string %}
@@ -516,6 +540,58 @@
       Hacé click en <span class="bg-amber-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">💡 N</span>
       y elegí cuál corresponde.
     </p>
+
+    {# TMT 2026-05-27 dueña: "Las transferencias si iban en sugeridos!!!!".
+       Las entradas Tipo C que el matcher emparejó por monto+fecha pero
+       SIN doc banco coincidente — son "matches probables" no certeros.
+       Las mostramos ARRIBA de los real_only para que la dueña las
+       confirme manualmente o las rechace. #}
+    {% if ns.n_match_probables > 0 %}
+    <div class="mb-4 bg-amber-50/40 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded">
+      <div class="px-3 py-2 text-xs font-semibold text-amber-800 dark:text-amber-300 border-b border-amber-200 dark:border-amber-800">
+        ↓ Entradas con match probable ({{ ns.n_match_probables }}) — banco y programa coinciden por monto+fecha pero el doc banco no matchea
+      </div>
+      <table class="w-full text-xs">
+        <thead class="bg-amber-50/60 dark:bg-amber-900/20 text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400">
+          <tr>
+            <th class="px-2 py-1.5 text-left">Cat</th>
+            <th class="px-2 py-1.5 text-left">Fecha</th>
+            <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5 text-left">Doc banco real</th>
+            <th class="px-2 py-1.5 text-left">Cliente</th>
+            <th class="px-2 py-1.5 text-left">Programa propuesto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in data.matches %}
+          {% set _dr = (m.real.documento or '')|string|trim %}
+          {% set _dp = (m.bancsis.numreferencia or '')|string|trim %}
+          {% set _docm = _dr and _dp and (_dr.lstrip('0') == _dp.lstrip('0')) %}
+          {% if (m.cat.codigo or '') not in _CATS_DAILY and (m.real.tipo or '')|upper == 'C' and not _docm %}
+          <tr class="border-t border-amber-100 dark:border-amber-900/40 hover:bg-amber-100/30 dark:hover:bg-amber-900/20">
+            <td class="px-2 py-1.5">
+              <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" title="{{ m.cat.label }}">{{ m.cat.abrev or '?' }}</span>
+            </td>
+            <td class="px-2 py-1.5 tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">{{ m.real.fecha }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(m.real.monto) }}</td>
+            <td class="px-2 py-1.5 font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">{{ _dr or '—' }}</td>
+            <td class="px-2 py-1.5 truncate" title="{{ m.bancsis.prov_nombre or m.cat.cliente_nombre or '' }}">
+              {% set _cli = m.bancsis.prov or m.cat.cliente %}
+              {% if _cli %}<span class="font-mono">{{ _cli }}</span>{% else %}<span class="text-slate-500 italic">{{ m.cat.label }}</span>{% endif %}
+              <span class="text-slate-400 text-[10px] ml-1">{{ (m.real.concepto or '')[:40] }}</span>
+            </td>
+            <td class="px-2 py-1.5 text-slate-600 dark:text-slate-400 truncate" title="{{ m.bancsis.concepto }}">
+              <span class="font-mono text-slate-700 dark:text-slate-300">{{ m.bancsis.prov or '—' }}</span>
+              <span class="text-slate-400 text-[10px] ml-1">{{ (m.bancsis.concepto or '')[:50] }}</span>
+              <span class="text-amber-700 dark:text-amber-400 text-[10px] ml-2">(id #{{ m.bancsis.id_transaccion }})</span>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
       <table class="w-full text-sm table-fixed">
         <colgroup>
