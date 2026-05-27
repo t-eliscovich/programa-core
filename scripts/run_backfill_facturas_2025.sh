@@ -39,9 +39,12 @@ EOF
 )
 
 # Armamos payload JSON robusto con Python (evita quoting hell de awscli).
+# CRÍTICO: usar r""" (raw string) para que Python NO interprete los \b, \p, etc
+# del path Windows como escape sequences. Sin la r, '\backfill_...' se vuelve
+# '\x08ackfill_...' y PowerShell no encuentra el archivo.
 python3 <<PYEOF > /tmp/ssm_backfill_payload.json
 import json, os
-cmd = """$PS"""
+cmd = r"""$PS"""
 payload = {
     "InstanceIds": ["$INSTANCE_ID"],
     "DocumentName": "AWS-RunPowerShellScript",
