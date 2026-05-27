@@ -3071,8 +3071,19 @@ def resultados_costos_tabla(
     ue_ukg = precio - ct_ukg
     ue_us = venta_kg * ue_ukg
 
-    ur_us = (float(patr or 0) - float(patant or 0)) + float(uret or 0)
+    # TMT 2026-05-27 dueña: 'la utilidad en resultados calculala sobre
+    # mismo resultados, no la hagas depender del historial'. La Utilidad
+    # ahora viene de Venta − Costo Total (ue_us), todo desde la misma
+    # pantalla. La utilidad histórica patr-patant+uret se preserva en el
+    # debug pero no se muestra en la tabla principal.
+    ur_us = (float(patr or 0) - float(patant or 0)) + float(uret or 0)  # legacy
     ur_ukg = _div(ur_us, venta_kg)
+
+    # TMT 2026-05-27 dueña: 'puedes volver a agregar la utilidad
+    # proyectada debajo de esta?'. Utilidad proyectada = proyección de
+    # ventas × margen unitario (= precio − costo unitario), self-contained.
+    up_ukg = ue_ukg
+    up_us = proy_kg * up_ukg
 
     return [
         {"label": "Venta", "kg": venta_kg, "ukg": precio, "us": venta_us,
@@ -3111,14 +3122,15 @@ def resultados_costos_tabla(
          "clase": "total",
          "ayuda": ("Subtotal +4.5% + Administracion. "
                    "U$ = kg vendidos * Costo Total.")},
-        {"label": "Utilidad no estandarizada", "kg": None, "ukg": ue_ukg,
-         "us": ue_us, "clase": "dato",
-         "ayuda": ("Precio de venta - Costo Total. "
-                   "U$ = kg vendidos * Utilidad no estandarizada.")},
-        {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
-         "clase": "key",
-         "ayuda": ("Utilidad del mes ya calculada en scintela.historia "
-                   "(la fila UTILIDADES del Historial).")},
+        {"label": "Utilidad", "kg": venta_kg, "ukg": ue_ukg,
+         "us": ue_us, "clase": "key",
+         "ayuda": ("Venta − Costo Total — calculada sobre los mismos "
+                   "componentes de esta tabla, sin depender del historial. "
+                   "U$ = kg vendidos × (precio − costo total).")},
+        {"label": "Utilidad Proyectada", "kg": proy_kg, "ukg": up_ukg,
+         "us": up_us, "clase": "dato",
+         "ayuda": ("Mismo margen unitario aplicado a la proyección de kg "
+                   "(regla de 3 al día 30). U$ = kg proyectados × margen.")},
     ]
 
 
