@@ -558,12 +558,25 @@ TABLE_MAP: dict[str, dict] = {
         "mapper": _map_factura,
         "criticidad": "CRITICO",
         "descripcion": "Facturas — TOTF en balance, cartera, estado de cuenta",
+        # TMT 2026-05-26: NO truncamos las facturas backfilleadas de Asinfo
+        # (usuario_crea='asinfo-backfill'). Esas son históricas T/X que el
+        # DBF purgó pero que recuperamos de Asinfo. El DBF NO debe pisarlas
+        # en cada sync — son intocables. Sólo borramos las filas que vinieron
+        # del DBF mismo (usuario_crea IS NULL o 'dbf-import' o cualquier
+        # otro valor distinto al marcador 'asinfo-backfill').
+        "delete_where": ("COALESCE(usuario_crea, '') <> %s", "_lookup_asinfo_backfill_marker"),
     },
     "CHEQUES.DBF": {
         "pg_table": "scintela.cheque",
         "mapper": _map_cheque,
         "criticidad": "CRITICO",
         "descripcion": "Cheques — TOTC en balance",
+        # Misma política: si en el futuro hacemos backfill de cheques de
+        # Asinfo, los marcamos con usuario_crea='asinfo-backfill' y el sync
+        # DBF los preserva. Por ahora no hay backfill de cheques, pero la
+        # cláusula es no-op (no hay filas con ese marker) y deja la puerta
+        # abierta sin tener que tocar el code path en el futuro.
+        "delete_where": ("COALESCE(usuario_crea, '') <> %s", "_lookup_asinfo_backfill_marker"),
     },
     "POSDAT.DBF": {
         "pg_table": "scintela.posdat",
@@ -769,9 +782,22 @@ _POST_LOAD_FNS = {
 }
 
 
+def _lookup_asinfo_backfill_marker() -> str:
+    """Marker constante para `usuario_crea` de las filas backfilleadas
+    desde Asinfo. Se usa con `delete_where` para que el sync DBF NO
+    pise estas filas: el DELETE excluye `usuario_crea = 'asinfo-backfill'`.
+
+    Si en el futuro hace falta otro marker (ej. 'asinfo-manual'), se
+    puede expandir a una lista o cambiar la cláusula `delete_where` a
+    `usuario_crea NOT IN (...)`. Por ahora un solo marker alcanza.
+    """
+    return "asinfo-backfill"
+
+
 _DELETE_WHERE_FNS = {
     "_lookup_no_banco_pichincha": _lookup_no_banco_pichincha,
     "_lookup_no_banco_internacional": _lookup_no_banco_internacional,
+    "_lookup_asinfo_backfill_marker": _lookup_asinfo_backfill_marker,
 }
 
 
