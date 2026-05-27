@@ -1503,13 +1503,19 @@ def detalle(id_cheque: int):
     )
 
 
-@cheques_bp.route("/cheques/<int:id_cheque>/editar", methods=["GET", "POST"])
+# TMT 2026-05-27 dueña: 'Cuando ponga editar un cheque me deje desde las
+# lineas. No hace falta ir a una nueva pantalla. demasiado tramite.'
+# La pantalla /cheques/<id>/editar fue ELIMINADA. Reemplazada por inline
+# edit en detalle + lista, que postean a /cheques/<id>/actualizar.
+@cheques_bp.route("/cheques/<int:id_cheque>/actualizar", methods=["POST"])
 @requiere_login
 @requiere_permiso("cheques.editar")
-def editar(id_cheque: int):
-    """Edición *blanda* de un cheque: concepto, observacion, fechad (sólo Z/P/D).
+def actualizar(id_cheque: int):
+    """Endpoint POST único para inline edit (detalle + lista).
 
-    Para corregir importe/cliente/banco usar "Anular por error de carga".
+    Campos blandos editables: concepto, observacion, fechad, importe,
+    no_cheque. Cualquier campo que el form NO mande NO se toca.
+    Errores van como flash y redirect al `next` o al detalle.
     """
     ch = queries.por_id(id_cheque)
     if not ch:
@@ -1519,86 +1525,77 @@ def editar(id_cheque: int):
         flash(f"Cheque en stat='{stat}' es terminal — no se puede editar.", "warn")
         return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
-    is_depositado = stat in queries.STATS_DEPOSITADO
-    errores: list[str] = []
-    form = {
-        "concepto": ch.get("concepto") or "",
-        "fechad": ch.get("fechad").strftime("%d/%m/%Y") if ch.get("fechad") else "",
-        "observacion": "",
-        "importe": f"{float(ch.get('importe') or 0):.2f}",
-    }
-    if request.method == "POST":
-        concepto = (request.form.get("concepto") or "").strip()[:50] or None
-        observacion = (request.form.get("observacion") or "").strip() or None
-        fechad_str = (request.form.get("fechad") or "").strip()
-        fechad = parse_date(fechad_str) if fechad_str else None
-        if fechad_str and fechad is None:
-            errores.append("Fecha de depósito inválida.")
-        # TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'. Parseo
-        # importe; si distinto al actual, se pasa al query para UPDATE.
-        # Todo en Decimal para evitar TypeError (Decimal - float bombea 500).
-        from decimal import Decimal as _Dec
-        importe_str = (request.form.get("importe") or "").strip()
-        importe_nuevo = parse_monto(importe_str) if importe_str else None
-        if importe_str and importe_nuevo is None:
-            errores.append("Importe inválido.")
-        elif importe_nuevo is not None and importe_nuevo <= 0:
-            errores.append("Importe debe ser mayor a 0.")
-        # Si el importe no cambió, no se manda al query (evita escritura inútil).
-        importe_actual = _Dec(str(ch.get("importe") or 0))
-        if importe_nuevo is not None and abs(importe_nuevo - importe_actual) < _Dec("0.01"):
-            importe_nuevo = None
-        # TMT 2026-05-27 dueña: 'dejame editar deposito de cheque'. Antes
-        # bloqueábamos edit cuando is_depositado — ahora permitido para
-        # corregir la fecha y cuadrar con extracto banco.
-        form.update(
-            {
-                "concepto": concepto or "",
-                "fechad": fechad_str,
-                "observacion": observacion or "",
-                "importe": importe_str or form.get("importe", ""),
-            }
-        )
-        if errores:
-            return render_template(
-                "cheques/editar.html",
-                ch=ch,
-                form=form,
-                errores=errores,
-                is_depositado=is_depositado,
-            ), 400
-        try:
-            usuario = (g.user or {}).get("username", "web")
-            res = queries.editar(
-                id_cheque,
-                concepto=concepto,
-                observacion=observacion,
-                fechad=fechad,
-                importe=importe_nuevo,
-                usuario=usuario,
-            )
-            msg = "Cheque editado."
-            if res.get("fechad_shifted_lunes"):
-                msg += f" Fecha movida al lunes ({res['fechad_nueva']:%d/%m/%Y})."
-            flash(msg, "ok")
-            return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
-        except ValueError as e:
-            errores.append(str(e))
-            return render_template(
-                "cheques/editar.html",
-                ch=ch,
-                form=form,
-                errores=errores,
-                is_depositado=is_depositado,
-            ), 400
-
-    return render_template(
-        "cheques/editar.html",
-        ch=ch,
-        form=form,
-        errores=errores,
-        is_depositado=is_depositado,
+    next_url = (request.form.get("next") or "").strip() or url_for(
+        "cheques.detalle", id_cheque=id_cheque
     )
+    errores: list[str] = []
+
+    # Concepto / observación — sólo si el form los manda explícitos.
+    concepto = None
+    if "concepto" in request.form:
+        concepto = (request.form.get("concepto") or "").strip()[:50] or None
+    observacion = None
+    if "observacion" in request.form:
+        observacion = (request.form.get("observacion") or "").strip() or None
+
+    # Fechad — parseo y validación; si vino vacío, no se cambia.
+    fechad = None
+    if "fechad" in request.form:
+        fechad_str = (request.form.get("fechad") or "").strip()
+        if fechad_str:
+            fechad = parse_date(fechad_str)
+            if fechad is None:
+                errores.append("Fecha de depósito inválida.")
+
+    # Importe — Decimal para evitar TypeError (Decimal - float = 500).
+    # Si el nuevo == actual, no se manda al query.
+    from decimal import Decimal as _Dec
+    importe_nuevo = None
+    if "importe" in request.form:
+        importe_str = (request.form.get("importe") or "").strip()
+        if importe_str:
+            importe_nuevo = parse_monto(importe_str)
+            if importe_nuevo is None:
+                errores.append("Importe inválido.")
+            elif importe_nuevo <= 0:
+                errores.append("Importe debe ser mayor a 0.")
+            else:
+                importe_actual = _Dec(str(ch.get("importe") or 0))
+                if abs(importe_nuevo - importe_actual) < _Dec("0.01"):
+                    importe_nuevo = None  # sin cambio → no UPDATE
+
+    # N° cheque — sólo si vino explícito en el form. Validación en query.
+    no_cheque_nuevo = None
+    if "no_cheque" in request.form:
+        nc = (request.form.get("no_cheque") or "").strip()
+        if nc:
+            actual = (ch.get("no_cheque") or "").strip()
+            if nc != actual:
+                no_cheque_nuevo = nc
+
+    if errores:
+        for e in errores:
+            flash(e, "error")
+        return redirect(next_url)
+
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        res = queries.editar(
+            id_cheque,
+            concepto=concepto,
+            observacion=observacion,
+            fechad=fechad,
+            importe=importe_nuevo,
+            no_cheque=no_cheque_nuevo,
+            usuario=usuario,
+        )
+        msg = "Cheque editado."
+        if res.get("fechad_shifted_lunes"):
+            msg += f" Fecha movida al lunes ({res['fechad_nueva']:%d/%m/%Y})."
+        flash(msg, "ok")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(next_url)
 
 
 @cheques_bp.route("/cheques/<int:id_cheque>/confirmar-rebote", methods=["GET"])

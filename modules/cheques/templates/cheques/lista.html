@@ -370,14 +370,32 @@
               </div>
             {% endif %}
           </td>
-          <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">
-            {# TMT 2026-05-19 v8 — dueña: sacar el "#" del fallback. Antes
-               cuando no había no_cheque se mostraba "#{id_cheque}", la
-               dueña lo ve como ruido visual. Ahora muestra solo el número
-               (sin prefijo) o "—" si no hay nada. #}
+          {# TMT 2026-05-27 dueña: 'tambien se tiene que ver el numero de
+             documento y poder editar este'. Inline edit del no_cheque.
+             Solo para estados editables (no X/T/R/3/E). Submit on Enter +
+             botón ✓ que aparece on dirty. #}
+          {% set _stat_ne = (c.stat or '').upper() %}
+          {% set _no_ch_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
+          <td class="px-2 py-2 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
             {% set no_ch = c.no_cheque %}
             {% if no_ch in (None, '', 'None', 'NONE', 'none') %}{% set no_ch = None %}{% endif %}
-            {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">{{ c.id_cheque }}</span>{% endif %}
+            {% if _no_ch_editable %}
+              <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
+                    class="inline-flex items-center gap-1 ch-inline-form" style="margin:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="text" name="no_cheque" maxlength="10"
+                       value="{{ no_ch or '' }}" data-orig="{{ no_ch or '' }}"
+                       placeholder="{{ c.id_cheque }}"
+                       oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
+                       class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
+                       style="width: 72px;"
+                       title="Editar N° cheque (Enter para guardar)">
+                <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
+              </form>
+            {% else %}
+              {% if no_ch %}{{ no_ch }}{% else %}<span class="text-slate-400">{{ c.id_cheque }}</span>{% endif %}
+            {% endif %}
           </td>
           {# TMT 2026-05-17: fechad_original NULL = no fue postergado → la
              fechad actual ES la original. NOT NULL = fue postergado y
@@ -419,7 +437,28 @@
           {# TMT 2026-05-19 — celda "Plazo" removida (pedido dueña item 13). #}
           {# TMT 2026-05-18 — Cliente movido a col 2 (arriba) #}
           <td class="px-3 py-2 text-slate-500">{{ c.banco or '' }}</td>
-          <td class="px-3 py-2 text-right text-mono">{{ c.importe | money_es }}</td>
+          {# TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'.
+             Inline edit del importe. Submit on Enter + botón ✓ on dirty. #}
+          {% set _imp_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
+          <td class="px-2 py-2 text-right text-mono" data-stop="1" style="white-space: nowrap;">
+            {% if _imp_editable %}
+              {% set _imp_val = '%.2f' | format(c.importe|float) if c.importe is not none else '' %}
+              <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
+                    class="inline-flex items-center gap-1 ch-inline-form" style="margin:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="text" name="importe" inputmode="decimal"
+                       value="{{ _imp_val }}" data-orig="{{ _imp_val }}"
+                       oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
+                       class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white text-right"
+                       style="width: 92px;"
+                       title="Editar importe (Enter para guardar)">
+                <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
+              </form>
+            {% else %}
+              {{ c.importe | money_es }}
+            {% endif %}
+          </td>
           {# TMT 2026-05-19 — celda Acum. removida (pedido dueña). #}
           {# TMT 2026-05-19 v8 — pedido dueña: "hace en cheques un dropdown
              para el cambio de estado. no otro cuadro y un inline edit a la

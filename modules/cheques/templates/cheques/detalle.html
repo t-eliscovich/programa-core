@@ -7,11 +7,37 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-5xl">
+{# TMT 2026-05-27 dueña: 'Cuando ponga editar un cheque me deje desde las
+   lineas. No hace falta ir a una nueva pantalla. demasiado tramite.'
+   La pantalla /cheques/<id>/editar fue eliminada. El botón Editar toggle-a
+   el modo edición INLINE (CSS .is-editing en #cheque-page). El form vive
+   afuera del bloque de acciones para no anidar con los forms internos
+   (Postergar / Cambiar estado / etc.), y los inputs lo referencian por el
+   atributo HTML5 `form="ch-edit-form"`. #}
+<style>
+  #cheque-page.is-editing .ch-readonly { display: none !important; }
+  #cheque-page:not(.is-editing) .ch-edit { display: none !important; }
+  #cheque-page.is-editing .ch-actions-readonly { display: none !important; }
+  #cheque-page:not(.is-editing) .ch-actions-editing { display: none !important; }
+  #cheque-page.is-editing .ch-card-edit { background: #fefce8; border-color: #fde047; }
+</style>
+<form id="ch-edit-form" method="POST"
+      action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
+      class="hidden">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque) }}">
+</form>
+<div class="max-w-5xl" id="cheque-page">
   <div class="flex items-center justify-between mb-6">
     <div>
       <h1 class="text-2xl font-semibold">
-        Cheque {{ ch.no_cheque or ('#' ~ ch.id_cheque) }}
+        Cheque
+        <span class="ch-readonly">{{ ch.no_cheque or ('#' ~ ch.id_cheque) }}</span>
+        <input type="text" name="no_cheque" form="ch-edit-form" maxlength="10"
+               value="{{ ch.no_cheque or '' }}"
+               placeholder="#{{ ch.id_cheque }}"
+               class="ch-edit border border-amber-300 rounded px-2 py-0.5 font-mono text-xl"
+               style="width: 120px;">
         {# Vocabulario canónico (2026-04-29) — ver docs/SKILL_ADDENDUM_BATCH_18.md #}
         {% if ch.stat == 'Z' %}
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">En cartera</span>
@@ -58,7 +84,7 @@
        UN sólo dropdown "Cambiar estado…" para reducir la carga cognitiva
        (antes eran 5-7 botones inline). Las acciones que NO son
        transiciones (Editar, Imprimir) quedan como botones planos. #}
-    <div class="no-print flex items-center gap-2 justify-end">
+    <div class="no-print flex items-center gap-2 justify-end ch-actions-readonly">
       {# TMT 2026-05-18 — botón Volver canónico (Regla R2 pero también aplica
          a pantallas de detalle: la dueña quiere volver siempre con 1 click). #}
       <a href="{{ url_for('cheques.lista') }}"
@@ -195,16 +221,29 @@
       </details>
       {% endif %}
 
-      {# Editar campos blandos (concepto, observación, fechad). NO es
-         transición de estado — botón separado. #}
+      {# Editar campos blandos INLINE — toggle JS, sin redirect. TMT 2026-05-27 #}
       {% if ch.stat not in ('X', 'T', 'R', '3') and tiene_permiso('cheques.editar') %}
-        <a href="{{ url_for('cheques.editar', id_cheque=ch.id_cheque) }}"
-           class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        <button type="button"
+                onclick="document.getElementById('cheque-page').classList.add('is-editing')"
+                class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
           Editar
-        </a>
+        </button>
       {% endif %}
 
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+    </div>
+    {# Acciones en modo edición: solo Cancelar / Guardar. Submit cruza al
+       form externo via el atributo form="ch-edit-form" (HTML5). #}
+    <div class="no-print ch-actions-editing items-center gap-2 justify-end">
+      <button type="button"
+              onclick="document.getElementById('cheque-page').classList.remove('is-editing'); document.getElementById('ch-edit-form').reset();"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Cancelar
+      </button>
+      <button type="submit" form="ch-edit-form"
+              class="text-sm px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white font-medium">
+        Guardar cambios
+      </button>
     </div>
   </div>
 
@@ -217,19 +256,28 @@
   {% set fechaing_real = ch.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
   {% set fecha_cargado = ch.fecha_recibido or (ch.fecha_crea.date() if ch.fecha_crea and ch.fecha_crea.__class__.__name__ == 'datetime' else ch.fecha_crea) or ch.fecha %}
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6 text-sm">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+    {# Importe — editable inline (queries.editar acepta importe desde 2026-05-27). #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
       <div class="text-xs text-slate-500">Importe</div>
-      <div class="text-lg font-semibold">{{ ch.importe | money_es }}</div>
+      <div class="text-lg font-semibold ch-readonly">{{ ch.importe | money_es }}</div>
+      <input type="text" name="importe" form="ch-edit-form"
+             value="{{ '%.2f' | format(ch.importe|float) }}"
+             inputmode="decimal" placeholder="0.00"
+             class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-base font-mono font-semibold">
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-xs text-slate-500" title="Día en que cargué el cheque al sistema">Cargado</div>
       <div class="font-mono">{{ fecha_cargado | fecha_es if fecha_cargado else '—' }}</div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+    {# A depositar (fechad) — editable inline. Domingo se mueve al lunes en backend. #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
       <div class="text-xs text-slate-500" title="Fecha planificada de depósito (postdate)">A depositar</div>
-      <div class="font-mono">{{ ch.fechad | fecha_es if ch.fechad else '—' }}</div>
+      <div class="font-mono ch-readonly">{{ ch.fechad | fecha_es if ch.fechad else '—' }}</div>
+      <input type="date" name="fechad" form="ch-edit-form"
+             value="{{ ch.fechad.strftime('%Y-%m-%d') if ch.fechad else '' }}"
+             class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-sm font-mono">
       {% if ch.fechad_original and ch.fechad_original != ch.fechad %}
-        <div class="text-[10px] text-amber-600 dark:text-amber-400 mt-1" title="Era la fecha original antes de postergar">
+        <div class="text-[10px] text-amber-600 dark:text-amber-400 mt-1 ch-readonly" title="Era la fecha original antes de postergar">
           original: {{ ch.fechad_original | fecha_es }}
         </div>
       {% endif %}
@@ -250,6 +298,20 @@
         {{ ch.banco or ch.nombre_banco or '—' }}
       </div>
     </div>
+  </div>
+
+  {# Observación del cambio (solo en modo edición) — append-only [E] en DB. #}
+  <div class="ch-edit mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+    <label class="block text-xs text-amber-800 dark:text-amber-300 mb-1 font-medium">
+      Nota del cambio (opcional, queda en observaciones)
+    </label>
+    <input type="text" name="observacion" form="ch-edit-form" maxlength="120"
+           placeholder="ej: la dueña dijo que el cliente le mostró el cheque correcto"
+           class="w-full rounded border border-amber-300 px-2 py-1 text-sm bg-white">
+    <p class="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+      Cliente, banco emisor y cuenta NO se editan acá — para eso usá "Anular por error de carga"
+      en el menú "Cambiar estado".
+    </p>
   </div>
 
   {# Banner de postergación — sólo si está postergado o tiene historia de postergación #}

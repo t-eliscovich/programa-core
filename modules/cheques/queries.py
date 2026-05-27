@@ -68,6 +68,7 @@ def editar(
     observacion: str | None = None,
     fechad: date | None = None,
     importe: float | None = None,
+    no_cheque: str | None = None,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de un cheque.
@@ -80,10 +81,13 @@ def editar(
       - `observacion`: append-only con tag `[E]`.
       - `fechad`: SOLO si stat ∈ {Z, P, D} (todavía en cartera). Si la nueva
         fechad cae domingo, se shifta a lunes (paridad ALTAS.PRG L119).
+      - `no_cheque` (TMT 2026-05-27 dueña): se cargó mal el número visible
+        del cheque. Es solo texto identificatorio (no se usa para joins),
+        max 10 chars. NO hay UNIQUE en DB — paridad con el alta original.
 
-    Bloqueado siempre: importe, codigo_cli, no_banco, cuenta, no_cheque.
-    Para corregir cualquiera de eso → `anular_por_error_de_carga()` y
-    crear un cheque nuevo.
+    Bloqueado siempre: codigo_cli, no_banco, cuenta. Para corregir esos
+    sigue siendo `anular_por_error_de_carga()` y crear uno nuevo (rompen
+    integridad con chequesxfact y tx_bancarias).
 
     Bloqueado por stat:
       - stat ∈ {X, T, R, 3} → ValueError (terminales, no se editan).
@@ -153,6 +157,22 @@ def editar(
             raise ValueError("Importe excede el máximo permitido (9.999.999,99).")
         sql_set.append("importe=%s")
         params.append(imp_dec)
+    # TMT 2026-05-27 dueña: 'tambien se tiene que ver el numero de documento
+    # y poder editar este'. Antes el no_cheque solo se podía cambiar via
+    # anular+reemitir (era un overkill para "se cargó mal el número").
+    # Permitido edit directo. Solo texto identificatorio, no usado en joins.
+    # Validamos: max 10 chars (varchar(10)), no vacío si vino, distinto al
+    # actual (evita escrituras inútiles).
+    if no_cheque is not None:
+        nc = (no_cheque or "").strip()
+        if not nc:
+            raise ValueError("N° de cheque no puede estar vacío.")
+        if len(nc) > 10:
+            raise ValueError(f"N° de cheque excede 10 caracteres ({len(nc)}).")
+        actual_no = (ch.get("no_cheque") or "").strip()
+        if nc != actual_no:
+            sql_set.append("no_cheque=%s")
+            params.append(nc)
     params.append(id_cheque)
 
     db.execute(

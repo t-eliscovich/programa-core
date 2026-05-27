@@ -148,7 +148,11 @@ def test_editar_fechad_domingo_shifta_a_lunes(monkeypatch):
     assert res["fechad_nueva"] == domingo + timedelta(days=1)
 
 
-def test_editar_depositado_no_permite_fechad(monkeypatch):
+def test_editar_depositado_permite_fechad(monkeypatch):
+    """TMT 2026-05-27 dueña: 'dejame editar deposito de cheque'.
+    Antes esto levantaba ValueError; ahora se permite (la transición de
+    stat sigue requiriendo flujo formal — esto solo edita la FECHA del
+    depósito ya hecho, para cuadrar con extracto banco)."""
     import db as db_mod
     from modules.cheques import queries
 
@@ -163,8 +167,100 @@ def test_editar_depositado_no_permite_fechad(monkeypatch):
     )
     fake.apply_to(monkeypatch, db_mod)
 
-    with pytest.raises(ValueError, match="depositado"):
-        queries.editar(1, fechad=date(2026, 6, 1), usuario="tmt")
+    res = queries.editar(1, fechad=date(2026, 6, 1), usuario="tmt")
+    assert res["fechad_nueva"] == date(2026, 6, 1)
+    body = str(fake.executes).lower()
+    assert "fechad=%s" in body
+    assert "usuario_modifica=%s" in body
+
+
+def test_editar_importe_valido(monkeypatch):
+    """TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1, "no_cheque": "001", "stat": "Z",
+            "fechad": date(2026, 5, 1), "importe": 100.00,
+        }
+    )
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.editar(1, importe=250.50, usuario="tmt")
+    body = str(fake.executes).lower()
+    assert "importe=%s" in body
+
+
+def test_editar_importe_invalido(monkeypatch):
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(cheque={"id_cheque": 1, "no_cheque": "001", "stat": "Z", "fechad": None})
+    fake.apply_to(monkeypatch, db_mod)
+
+    with pytest.raises(ValueError, match=">"):
+        queries.editar(1, importe=0, usuario="tmt")
+    with pytest.raises(ValueError, match="máximo|maximo"):
+        queries.editar(1, importe=10_000_000, usuario="tmt")
+
+
+def test_editar_no_cheque_valido(monkeypatch):
+    """TMT 2026-05-27 dueña: 'tambien se tiene que ver el numero de
+    documento y poder editar este' — antes requería anular+reemitir."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(
+        cheque={
+            "id_cheque": 1, "no_cheque": "001", "stat": "Z",
+            "fechad": date(2026, 5, 1),
+        }
+    )
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.editar(1, no_cheque="00999", usuario="tmt")
+    body_sqls = " ".join(s for s, _ in fake.executes).lower()
+    assert "no_cheque=%s" in body_sqls
+    all_params = [p for _, params in fake.executes for p in params]
+    assert "00999" in all_params
+
+
+def test_editar_no_cheque_vacio_falla(monkeypatch):
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(cheque={"id_cheque": 1, "no_cheque": "001", "stat": "Z", "fechad": None})
+    fake.apply_to(monkeypatch, db_mod)
+
+    with pytest.raises(ValueError, match="vacío|vacio"):
+        queries.editar(1, no_cheque="   ", usuario="tmt")
+
+
+def test_editar_no_cheque_demasiado_largo_falla(monkeypatch):
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(cheque={"id_cheque": 1, "no_cheque": "001", "stat": "Z", "fechad": None})
+    fake.apply_to(monkeypatch, db_mod)
+
+    with pytest.raises(ValueError, match="10 caracteres"):
+        queries.editar(1, no_cheque="12345678901", usuario="tmt")
+
+
+def test_editar_no_cheque_igual_no_genera_update(monkeypatch):
+    """Si el no_cheque mandado es == al actual, no se incluye en el UPDATE
+    de no_cheque (evita escritura inútil) pero sí actualiza usuario_modifica."""
+    import db as db_mod
+    from modules.cheques import queries
+
+    fake = _RecorderDB(cheque={"id_cheque": 1, "no_cheque": "001", "stat": "Z", "fechad": None})
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.editar(1, no_cheque="001", usuario="tmt")
+    body_sqls = " ".join(s for s, _ in fake.executes).lower()
+    assert "no_cheque=%s" not in body_sqls
+    assert "usuario_modifica=%s" in body_sqls
 
 
 def test_editar_stat_terminal_falla(monkeypatch):
