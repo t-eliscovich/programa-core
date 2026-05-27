@@ -1525,6 +1525,7 @@ def editar(id_cheque: int):
         "concepto": ch.get("concepto") or "",
         "fechad": ch.get("fechad").strftime("%d/%m/%Y") if ch.get("fechad") else "",
         "observacion": "",
+        "importe": f"{float(ch.get('importe') or 0):.2f}",
     }
     if request.method == "POST":
         concepto = (request.form.get("concepto") or "").strip()[:50] or None
@@ -1533,6 +1534,18 @@ def editar(id_cheque: int):
         fechad = parse_date(fechad_str) if fechad_str else None
         if fechad_str and fechad is None:
             errores.append("Fecha de depósito inválida.")
+        # TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'. Parseo
+        # importe; si distinto al actual, se pasa al query para UPDATE.
+        importe_str = (request.form.get("importe") or "").strip()
+        importe_nuevo = parse_monto(importe_str) if importe_str else None
+        if importe_str and importe_nuevo is None:
+            errores.append("Importe inválido.")
+        elif importe_nuevo is not None and importe_nuevo <= 0:
+            errores.append("Importe debe ser mayor a 0.")
+        # Si el importe no cambió, no se manda al query (evita escritura inútil).
+        importe_actual = float(ch.get("importe") or 0)
+        if importe_nuevo is not None and abs(importe_nuevo - importe_actual) < 0.01:
+            importe_nuevo = None
         # TMT 2026-05-27 dueña: 'dejame editar deposito de cheque'. Antes
         # bloqueábamos edit cuando is_depositado — ahora permitido para
         # corregir la fecha y cuadrar con extracto banco.
@@ -1541,6 +1554,7 @@ def editar(id_cheque: int):
                 "concepto": concepto or "",
                 "fechad": fechad_str,
                 "observacion": observacion or "",
+                "importe": importe_str or form.get("importe", ""),
             }
         )
         if errores:
@@ -1558,6 +1572,7 @@ def editar(id_cheque: int):
                 concepto=concepto,
                 observacion=observacion,
                 fechad=fechad,
+                importe=importe_nuevo,
                 usuario=usuario,
             )
             msg = "Cheque editado."

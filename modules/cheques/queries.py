@@ -67,6 +67,7 @@ def editar(
     concepto: str | None = None,
     observacion: str | None = None,
     fechad: date | None = None,
+    importe: float | None = None,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de un cheque.
@@ -136,6 +137,16 @@ def editar(
     if obs_marca:
         sql_set.append("observacion = COALESCE(observacion||' | ','')||%s")
         params.append(obs_marca)
+    # TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'. Antes el
+    # importe estaba lockeado y requería anular+reemitir. Permitido edit
+    # directo. Heads up: chequesxfact y otras tablas relacionadas NO se
+    # ajustan automáticamente — esto solo modifica el importe del cheque.
+    # Para corregir las relacionadas anular+reemitir sigue siendo el flow.
+    if importe is not None:
+        if float(importe) <= 0:
+            raise ValueError("Importe debe ser > 0.")
+        sql_set.append("importe=%s")
+        params.append(float(importe))
     params.append(id_cheque)
 
     db.execute(

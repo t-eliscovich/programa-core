@@ -55,6 +55,18 @@
              class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm">
     </div>
 
+    {# TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'. Importe
+       editable. Heads up: tablas relacionadas (chequesxfact, etc.) NO
+       se ajustan automáticamente — usar con cuidado. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">
+        Importe <span class="text-amber-600">(editar con cuidado — no actualiza factura ligadas)</span>
+      </label>
+      <input name="importe" type="text" value="{{ form.importe or '' }}"
+             placeholder="0.00" inputmode="decimal"
+             class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
+    </div>
+
     <div>
       <label class="block text-xs text-slate-500 mb-1">
         Fecha de depósito {% if is_depositado %}<span class="text-amber-600">(cheque depositado — editar sólo para corregir fecha)</span>{% endif %}

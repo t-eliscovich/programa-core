@@ -9,6 +9,13 @@ las cosas' — abril mostraba cobranzas=0 porque la query antes filtraba
 solo IN ('B','A'), faltaban V/W/I/J/K (cheques en distinto estado de
 depósito que también son cobrados).
 
+TMT 2026-05-27 dueña v2: 'me importa la plata que entró al banco. usar
+fechad puro'. La cobranza del mes para comisión = cuándo el cheque se
+depositó en banco (no cuándo el cliente lo entregó). Si un cheque
+entró en abril pero se depositó el 2/5, la comisión es de MAYO. Para
+corregir fechas mal cargadas, /cheques/<id>/editar ahora permite editar
+fechad incluso si el cheque está depositado.
+
 Comisión = cobranzas_mes * (pct_comision / 100). El dBase no calculaba
 esto (la dueña lo hacía a mano); acá lo automatizamos.
 """
@@ -43,8 +50,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    ch.codigo_cli              AS codigo_cli
               FROM scintela.cheque ch
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM COALESCE(ch.fechaing, ch.fechad))  = %(yy)s
-               AND EXTRACT(MONTH FROM COALESCE(ch.fechaing, ch.fechad)) = %(mm)s
+             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
                AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
@@ -78,8 +85,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    COALESCE(SUM(ch.importe), 0)   AS total
               FROM scintela.cheque ch
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM COALESCE(ch.fechaing, ch.fechad))  = %(yy)s
-               AND EXTRACT(MONTH FROM COALESCE(ch.fechaing, ch.fechad)) = %(mm)s
+             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
                AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
@@ -191,7 +198,7 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
         SELECT 'CHE'                          AS origen,
                ch.id_cheque                   AS id_origen,
                ch.no_cheque                   AS doc,
-               COALESCE(ch.fechaing, ch.fechad) AS fecha,
+               ch.fechad                      AS fecha,
                ch.importe                     AS importe,
                ch.codigo_cli                  AS codigo_cli,
                COALESCE(c.nombre, '')         AS cliente,
@@ -200,8 +207,8 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
           FROM scintela.cheque ch
           JOIN scintela.cliente c  ON c.codigo_cli = ch.codigo_cli
           LEFT JOIN scintela.banco b ON b.no_banco = ch.no_banco
-         WHERE EXTRACT(YEAR FROM COALESCE(ch.fechaing, ch.fechad))  = %(yy)s
-           AND EXTRACT(MONTH FROM COALESCE(ch.fechaing, ch.fechad)) = %(mm)s
+         WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+           AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
            AND ch.stat IN ('B','V','W','I','J','K','A')
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         UNION ALL
