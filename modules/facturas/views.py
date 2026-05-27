@@ -1374,6 +1374,56 @@ def _plain_csv_response(csv_str: str, filename: str):
     return resp
 
 
+# TMT 2026-05-27: snapshots daily de scintela.historia se crearon HOY
+# con stock_terminado=0 (cuando el bug estaba activo). Esos snapshots
+# tienen USUTI=-1.3M y rompen Utilidad Real porque historia_ultimo_snapshot
+# lee la fila m\u00e1s reciente. Endpoint para borrarlos.
+@facturas_bp.route("/facturas/admin/borrar-snapshots-historia-hoy", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def borrar_snapshots_historia_hoy():
+    """Borra filas de scintela.historia con fecha=HOY (snapshots daily auto).
+    Eso fuerza historia_ultimo_snapshot a leer el snapshot mensual previo
+    (cierre 30/04/2026) que tiene los valores correctos pre-bug."""
+    from datetime import date as _date
+    from flask import jsonify
+
+    dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
+
+    rows_hoy = db.fetch_all(
+        """
+        SELECT id_historia, fecha, usuario_crea, usuti, ustock, patrimonio
+          FROM scintela.historia
+         WHERE fecha = CURRENT_DATE
+         ORDER BY id_historia
+        """
+    )
+    if dry_run:
+        return jsonify({
+            "ok": True,
+            "dry_run": True,
+            "filas_a_borrar": len(rows_hoy),
+            "rows": [
+                {"id": r["id_historia"], "fecha": str(r["fecha"]),
+                 "usuario_crea": r.get("usuario_crea"),
+                 "usuti": float(r.get("usuti") or 0),
+                 "ustock": float(r.get("ustock") or 0),
+                 "patrimonio": float(r.get("patrimonio") or 0)}
+                for r in rows_hoy
+            ],
+        })
+
+    n = db.execute(
+        "DELETE FROM scintela.historia WHERE fecha = CURRENT_DATE"
+    )
+    return jsonify({"ok": True, "filas_borradas": n,
+                    "rows_pre_delete": [
+                        {"id": r["id_historia"], "fecha": str(r["fecha"]),
+                         "usuti": float(r.get("usuti") or 0)}
+                        for r in rows_hoy
+                    ]})
+
+
 # ---------------------------------------------------------------------------
 # Backfill bulk Asinfo \u2192 scintela.factura (corre dentro del web server)
 # ---------------------------------------------------------------------------
@@ -1959,6 +2009,7 @@ def consolidar_duplicados_asinfo():
         "duplicados_borrados": duplicados_borrados,
         "errores": err_log[:20],
         "pares_por_match_via": dict(Counter(p.get("match_via") for p in pares)),
+        "pares_caso_b_saltados_sin_alias": pares_caso_b_saltados_sin_alias[:30] if not dry_run else [],
         "sample_pares": [
             {"numf": p["numf"], "fecha": str(p["fecha"]),
              "a_cli_asinfo_backfill": p["a_cli"], "b_cli_dbf_original": p["b_cli"],
