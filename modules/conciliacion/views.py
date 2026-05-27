@@ -752,14 +752,15 @@ def hub():
     # TMT 2026-05-27 dueña: "QUIERO HACER SUMA DEPOSITOS POR DIA BANCO VS
     # PROGRAMA. CUANDO ES DEPOSITO NO QUIERO ASIGNARSELOS A CLIENTES."
     # Resumen por día — entradas (Tipo C / tipo_real C) en ambos lados
-    # sumadas, comparadas. Sin desglose por cliente. Sólo días donde haya
-    # algo de un lado o del otro. Match check: tolerancia $1.
+    # sumadas, comparadas. Sin desglose por cliente.
+    # TMT 2026-05-27 dueña v2: "dejame expandir día por día. no me sirve
+    # más que me dejes los cheques debajo, lo estamos haciendo arriba".
+    # Guardamos los items individuales por día para que cada fila sea
+    # expandible (banco_items + programa_items).
     depositos_por_dia: list[dict] = []
     try:
-        sum_banco_dia: dict[str, float] = {}
-        n_banco_dia: dict[str, int] = {}
-        sum_prog_dia: dict[str, float] = {}
-        n_prog_dia: dict[str, int] = {}
+        banco_items_dia: dict[str, list[dict]] = {}
+        prog_items_dia: dict[str, list[dict]] = {}
         # Banco real — real_only (entradas) + matches (banco side entradas)
         for r in (data.get("real_only") or []):
             if (r.get("tipo") or "").upper() != "C":
@@ -767,8 +768,13 @@ def hub():
             f = str(r.get("fecha") or "")
             if not f:
                 continue
-            sum_banco_dia[f] = sum_banco_dia.get(f, 0.0) + float(r.get("monto") or 0)
-            n_banco_dia[f] = n_banco_dia.get(f, 0) + 1
+            banco_items_dia.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": r.get("concepto") or "",
+                "documento": r.get("documento") or "",  # doc id del banco real
+                "monto": float(r.get("monto") or 0),
+                "matched": False,
+            })
         for m in (data.get("matches") or []):
             real = m.get("real") or {}
             if (real.get("tipo") or "").upper() != "C":
@@ -776,8 +782,13 @@ def hub():
             f = str(real.get("fecha") or "")
             if not f:
                 continue
-            sum_banco_dia[f] = sum_banco_dia.get(f, 0.0) + float(real.get("monto") or 0)
-            n_banco_dia[f] = n_banco_dia.get(f, 0) + 1
+            banco_items_dia.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": real.get("concepto") or "",
+                "documento": real.get("documento") or "",  # doc id del banco real
+                "monto": float(real.get("monto") or 0),
+                "matched": True,
+            })
         # Programa — bancsis_only entradas + matches bancsis entradas
         for b in (data.get("bancsis_only") or []):
             if (b.get("tipo_real") or "").upper() != "C":
@@ -785,37 +796,63 @@ def hub():
             f = str(b.get("fecha") or "")
             if not f:
                 continue
-            sum_prog_dia[f] = sum_prog_dia.get(f, 0.0) + float(b.get("importe") or 0)
-            n_prog_dia[f] = n_prog_dia.get(f, 0) + 1
+            prog_items_dia.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": b.get("concepto") or "",
+                "documento": b.get("documento") or "",          # tipo DE/CH
+                "numreferencia": b.get("numreferencia") or "",  # doc id banco
+                "importe": float(b.get("importe") or 0),
+                "prov": b.get("prov") or "",
+                "prov_nombre": b.get("prov_nombre") or "",
+                "es_agrupado": bool(b.get("es_agrupado")),
+                "n_cheques": int(b.get("n_cheques") or 0),
+                "matched": False,
+            })
         for m in (data.get("matches") or []):
             b = m.get("bancsis") or {}
             real = m.get("real") or {}
-            # Lado programa es entrada si el lado real lo fue (match es 1-a-1)
             if (real.get("tipo") or "").upper() != "C":
                 continue
             f = str(b.get("fecha") or "")
             if not f:
                 continue
-            sum_prog_dia[f] = sum_prog_dia.get(f, 0.0) + float(b.get("importe") or 0)
-            n_prog_dia[f] = n_prog_dia.get(f, 0) + 1
+            prog_items_dia.setdefault(f, []).append({
+                "fecha": f,
+                "concepto": b.get("concepto") or "",
+                "documento": b.get("documento") or "",
+                "numreferencia": b.get("numreferencia") or "",
+                "importe": float(b.get("importe") or 0),
+                "prov": b.get("prov") or "",
+                "prov_nombre": b.get("prov_nombre") or "",
+                "es_agrupado": False,
+                "n_cheques": 0,
+                "matched": True,
+            })
         # Unión de fechas, orden ascendente
-        for f in sorted(set(sum_banco_dia) | set(sum_prog_dia)):
-            sb = round(sum_banco_dia.get(f, 0.0), 2)
-            sp = round(sum_prog_dia.get(f, 0.0), 2)
+        for f in sorted(set(banco_items_dia) | set(prog_items_dia)):
+            b_items = banco_items_dia.get(f, [])
+            p_items = prog_items_dia.get(f, [])
+            sb = round(sum(it["monto"] for it in b_items), 2)
+            sp = round(sum(it["importe"] for it in p_items), 2)
             diff = round(sb - sp, 2)
             try:
                 fm = f"{f[8:10]}/{f[5:7]}"
             except Exception:
                 fm = f
+            # Ordenar cada lado por monto desc para que sea fácil parear visualmente
+            b_items.sort(key=lambda x: x["monto"], reverse=True)
+            p_items.sort(key=lambda x: x["importe"], reverse=True)
             depositos_por_dia.append({
                 "fecha": f,
                 "fecha_mostrar": fm,
                 "banco": sb,
                 "programa": sp,
                 "diff": diff,
-                "n_banco": n_banco_dia.get(f, 0),
-                "n_programa": n_prog_dia.get(f, 0),
+                "n_banco": len(b_items),
+                "n_programa": len(p_items),
                 "cuadra": abs(diff) < 1.0,
+                "banco_items": b_items,
+                "programa_items": p_items,
             })
     except Exception as _e:
         import logging

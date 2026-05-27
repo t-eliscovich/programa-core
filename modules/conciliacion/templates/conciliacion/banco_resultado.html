@@ -45,27 +45,8 @@
     </div>
   </div>
 
-  {# ───── KPI cards: movimientos del periodo (no saldo total) ───── #}
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-    {{ kpi_card(
-        'Movimientos banco',
-        '$ ' ~ '{:,.2f}'.format(mov_banco),
-        extra='matches $ ' ~ '{:,.2f}'.format(mov_banco_matches) ~ ' · solo banco $ ' ~ '{:,.2f}'.format(sum_real_only),
-        tono='slate'
-    ) }}
-    {{ kpi_card(
-        'Movimientos programa',
-        '$ ' ~ '{:,.2f}'.format(mov_programa),
-        extra='matches $ ' ~ '{:,.2f}'.format(mov_programa_matches) ~ ' · solo programa $ ' ~ '{:,.2f}'.format(sum_bancsis_only_periodo),
-        tono='slate'
-    ) }}
-    {{ kpi_card(
-        'Diferencia',
-        '$ ' ~ '{:,.2f}'.format(diff),
-        extra=('Cuadra' if cuadra else 'No cuadra — falta resolver ' ~ (n_real_only + n_bancsis_only)|string ~ ' movs'),
-        tono=('emerald' if cuadra else 'rose')
-    ) }}
-  </div>
+  {# KPI cards eliminados 2026-05-27 dueña: "borra los kpis". Los totales
+     del panel Depósitos por día ya dicen todo. #}
 
   {# ───── Depósitos por día — TMT 2026-05-27 dueña ─────
        "QUIERO HACER SUMA DEPOSITOS POR DIA BANCO VS PROGRAMA. CUANDO ES
@@ -101,14 +82,84 @@
         </thead>
         <tbody>
           {% for d in depositos_por_dia %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %}">
-            <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">{{ d.fecha_mostrar }}</td>
+          {% set _dep_id = 'dep-dia-' ~ loop.index0 %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {% if d.cuadra %}bg-emerald-50/30 dark:bg-emerald-900/10{% else %}bg-rose-50/30 dark:bg-rose-900/10{% endif %} cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/40 btn-toggle-dep" data-target="{{ _dep_id }}">
+            <td class="px-4 py-2 font-medium text-slate-900 dark:text-slate-100">
+              <span class="dep-chevron inline-block text-slate-400 text-xs mr-1 transition-transform">▸</span>{{ d.fecha_mostrar }}
+            </td>
             <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.banco) }}</td>
             <td class="px-4 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(d.programa) }}</td>
             <td class="px-4 py-2 text-right tabular-nums font-semibold {% if d.cuadra %}text-emerald-700 dark:text-emerald-400{% else %}text-rose-700 dark:text-rose-400{% endif %}">
               {% if d.cuadra %}✓{% else %}$ {{ '{:,.2f}'.format(d.diff) }}{% endif %}
             </td>
             <td class="px-4 py-2 text-center text-xs text-slate-500 tabular-nums">{{ d.n_banco }} / {{ d.n_programa }}</td>
+          </tr>
+          {# Fila detalle — oculta por default. Banco izq, Programa der.
+             TMT 2026-05-27 dueña: "Trae doc id banco, del banco real y del
+             cargado en el nuestros porque esos deberian ser los numeros
+             que matcheamos 100%". Doc banco = real.documento ↔ prog.numreferencia. #}
+          {% set _docs_prog_set = d.programa_items|map(attribute='numreferencia')|select|map('string')|map('trim')|list %}
+          <tr id="{{ _dep_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
+            <td colspan="5" class="px-4 py-3">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {# ── BANCO ─────────────────────────────────────── #}
+                <div>
+                  <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Banco · {{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</div>
+                  {% if d.banco_items and d.banco_items|length > 0 %}
+                  <table class="w-full text-xs">
+                    <thead class="text-[9px] uppercase tracking-wider text-slate-400">
+                      <tr><th class="text-left py-0.5">Doc</th><th class="text-right py-0.5 px-2">Monto</th><th class="text-left py-0.5">Concepto</th></tr>
+                    </thead>
+                    <tbody>
+                      {% for it in d.banco_items %}
+                      {% set _doc = (it.documento or '')|string|trim %}
+                      {% set _match = _doc and (_doc.lstrip('0') in (_docs_prog_set|map('lstrip', '0')|list)) %}
+                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if _match %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}">
+                        <td class="py-1 pr-2 font-mono w-24 {% if _match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-700 dark:text-slate-300{% endif %}">
+                          {{ _doc or '—' }}{% if _match %} <span title="match doc">✓</span>{% endif %}
+                        </td>
+                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 w-24 whitespace-nowrap">$ {{ '{:,.2f}'.format(it.monto) }}</td>
+                        <td class="py-1 pl-1 text-slate-500 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.concepto[:60] }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% else %}
+                  <div class="text-xs text-slate-400 italic py-2">Sin depósitos en el banco este día.</div>
+                  {% endif %}
+                </div>
+                {# ── PROGRAMA ──────────────────────────────────── #}
+                {% set _docs_real_set = d.banco_items|map(attribute='documento')|select|map('string')|map('trim')|list %}
+                <div>
+                  <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Programa · {{ d.n_programa }} movs · $ {{ '{:,.2f}'.format(d.programa) }}</div>
+                  {% if d.programa_items and d.programa_items|length > 0 %}
+                  <table class="w-full text-xs">
+                    <thead class="text-[9px] uppercase tracking-wider text-slate-400">
+                      <tr><th class="text-left py-0.5">Doc banco</th><th class="text-right py-0.5 px-2">Monto</th><th class="text-left py-0.5">Concepto</th></tr>
+                    </thead>
+                    <tbody>
+                      {% for it in d.programa_items %}
+                      {% set _numref = (it.numreferencia or '')|string|trim %}
+                      {% set _match = _numref and (_numref.lstrip('0') in (_docs_real_set|map('lstrip', '0')|list)) %}
+                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if _match %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}">
+                        <td class="py-1 pr-2 font-mono w-24 {% if _match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-700 dark:text-slate-300{% endif %}">
+                          {{ _numref or '—' }}{% if _match %} <span title="match doc">✓</span>{% endif %}
+                        </td>
+                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 w-24 whitespace-nowrap">$ {{ '{:,.2f}'.format(it.importe) }}</td>
+                        <td class="py-1 pl-1 text-slate-500 dark:text-slate-400 truncate" title="{{ it.concepto }}">
+                          {% if it.es_agrupado %}<span class="inline-block px-1 py-0 mr-1 rounded bg-sky-100 text-sky-800 text-[10px]">📦 {{ it.n_cheques }}ch</span>{% endif %}
+                          {{ it.concepto[:55] }}
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% else %}
+                  <div class="text-xs text-slate-400 italic py-2">Sin depósitos en el programa este día.</div>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
           </tr>
           {% endfor %}
           <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 font-semibold">
@@ -127,8 +178,13 @@
   {% endif %}
 
   {# ───── Tabs ───── #}
+  {# TMT 2026-05-27 dueña: las ENTRADAS (Tipo C) están arriba en el panel
+     Depósitos por día. Acá solo contamos las salidas (Tipo D) para que el
+     contador no quede "inflado" respecto a lo que se ve. #}
   {% set n_real_con_sug = data.real_only|selectattr('sugerencias')|list|length %}
-  {% set n_real_sin_sug = n_real_only - n_real_con_sug %}
+  {% set n_real_salidas_sin_sug = data.real_only|rejectattr('sugerencias')|selectattr('tipo','equalto','D')|list|length %}
+  {% set n_real_sin_sug = n_real_salidas_sin_sug %}
+  {% set n_bancsis_salidas = data.bancsis_only|rejectattr('tipo_real','equalto','C')|list|length %}
   <div class="flex items-end gap-1 mb-3 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     <button type="button" data-tab="matches"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-sky-600 text-sky-700 dark:text-sky-400 font-medium whitespace-nowrap">
@@ -146,7 +202,7 @@
     </button>
     <button type="button" data-tab="bancsis"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 whitespace-nowrap">
-      Solo en programa <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_bancsis_only }}</span>
+      Solo en programa <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_bancsis_salidas }}</span>
     </button>
   </div>
 
@@ -182,36 +238,27 @@
       <button type="button" id="btn-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
     </form>
 
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-      <table class="w-full text-sm table-fixed" id="tbl-matches">
-        <colgroup>
-          <col class="w-8">
-          <col class="w-10">
-          <col class="w-20">
-          <col class="w-20">
-          <col class="w-24">
-          <col class="w-24">
-          <col class="w-14">
-          <col>
-        </colgroup>
-        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+      <table class="w-full text-sm" id="tbl-matches">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
           <tr>
-            <th class="px-2 py-2"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="px-2 py-2 text-left">Cat</th>
-            <th class="px-2 py-2 text-left">Fecha R</th>
-            <th class="px-2 py-2 text-left">Fecha P</th>
-            <th class="px-2 py-2 text-right">Monto R</th>
-            <th class="px-2 py-2 text-right">Monto P</th>
-            <th class="px-2 py-2 text-left">Cli P</th>
-            <th class="px-2 py-2 text-left">Cliente banco</th>
+            <th class="px-2 py-2 w-8"><input type="checkbox" id="chk-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th class="px-2 py-2 w-10 text-left">Cat</th>
+            <th class="px-2 py-2 w-24 text-left">Fecha</th>
+            <th class="px-2 py-2 w-28 text-right">Monto</th>
+            <th class="px-2 py-2 w-44 text-left">Doc banco (real ↔ prog)</th>
+            <th class="px-2 py-2 w-40 text-left">Cliente</th>
+            <th class="px-2 py-2 text-left">Concepto</th>
           </tr>
         </thead>
         <tbody>
           {% for m in data.matches %}
           {% set fecha_diff = (m.real.fecha != m.bancsis.fecha) %}
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
-          {% set _cli_banco = m.cat.cliente or m.bancsis.prov_nombre %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
+          {% set _doc_real = (m.real.documento or '')|string %}
+          {% set _doc_prog = (m.bancsis.numreferencia or '')|string %}
+          {% set _doc_match = _doc_real and _doc_prog and (_doc_real.strip().lstrip('0') == _doc_prog.strip().lstrip('0')) %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila {% if _doc_match %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}"
               data-tipo="{{ m.real.tipo }}"
               data-grupo="{{ m.cat.grupo or 'OTRO' }}"
               data-cat="{{ m.cat.codigo or 'OTRO' }}"
@@ -230,41 +277,44 @@
                 {% else %}bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300{% endif %}"
                 title="{{ m.cat.label or 'Sin categorizar' }}">{{ m.cat.abrev or '?' }}</span>
             </td>
-            <td class="px-2 py-2 tabular-nums text-slate-700 dark:text-slate-300 text-xs whitespace-nowrap">{{ m.real.fecha }}</td>
-            <td class="px-2 py-2 tabular-nums text-xs whitespace-nowrap {% if fecha_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
-              {{ m.bancsis.fecha }}
+            <td class="px-2 py-2 text-xs whitespace-nowrap">
+              <div class="text-slate-900 dark:text-slate-100 tabular-nums">{{ m.real.fecha }}</div>
+              {% if fecha_diff %}<div class="text-amber-600 dark:text-amber-400 tabular-nums text-[10px]">→ {{ m.bancsis.fecha }}</div>{% endif %}
             </td>
-            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
-              {% if m.real.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(m.real.monto) }}
+            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap">
+              <div class="text-slate-900 dark:text-slate-100 font-medium">{% if m.real.tipo == 'D' %}-{% endif %}{{ '{:,.2f}'.format(m.real.monto) }}</div>
+              {% if monto_diff %}<div class="text-amber-600 dark:text-amber-400 text-[10px]">prog {{ '{:,.2f}'.format(m.bancsis.importe) }}</div>{% endif %}
             </td>
-            <td class="px-2 py-2 text-right tabular-nums whitespace-nowrap text-xs {% if monto_diff %}text-amber-600 dark:text-amber-400 font-semibold{% else %}text-slate-400{% endif %}">
-              {{ '{:,.2f}'.format(m.bancsis.importe) }}
+            <td class="px-2 py-2 text-xs font-mono whitespace-nowrap">
+              {% if _doc_match %}
+                <span class="text-emerald-700 dark:text-emerald-400 font-semibold">{{ _doc_real }}</span>
+                <span class="text-emerald-600 ml-1" title="Doc banco coincide en ambos">✓</span>
+              {% else %}
+                <span class="text-slate-900 dark:text-slate-100">{{ _doc_real or '—' }}</span>
+                <span class="text-slate-400 mx-0.5">↔</span>
+                <span class="{% if _doc_real and _doc_prog %}text-rose-600 dark:text-rose-400{% else %}text-slate-400{% endif %}">{{ _doc_prog or '—' }}</span>
+              {% endif %}
             </td>
-            <td class="px-2 py-2 text-xs truncate" title="{{ m.bancsis.prov_nombre or '' }} (id {{ m.bancsis.id_transaccion }})">
-              {{ cliente_cell(m.bancsis.prov, m.bancsis.prov_nombre, '', m.cat.grupo, m.cat.label) }}
+            <td class="px-2 py-2 truncate" title="{{ m.bancsis.prov_nombre or m.cat.cliente_nombre or '' }}">
+              {{ cliente_cell(m.bancsis.prov or m.cat.cliente, m.bancsis.prov_nombre or m.cat.cliente_nombre, '', m.cat.grupo, m.cat.label) }}
             </td>
             <td class="px-2 py-2 overflow-hidden">
-              <div class="truncate" title="{{ m.real.concepto }}">
-                {{ cliente_cell(m.cat.cliente, m.cat.cliente_nombre or m.bancsis.prov_nombre, '', m.cat.grupo, m.cat.label) }}
-                {# TMT 2026-05-26 dueña: match grupal N-a-1 — botón + para ver
-                   los N cheques del programa ordenados de mayor a menor. #}
-                {% if m.componentes and m.componentes|length > 1 %}
-                <button type="button"
-                        class="ml-2 text-xs px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 btn-toggle-detalle"
-                        data-match-idx="{{ loop.index0 }}"
-                        title="Ver los {{ m.componentes|length }} cheques agrupados">
-                  <span class="icon-open">+ {{ m.componentes|length }} cheques</span>
-                  <span class="icon-close hidden">− ocultar</span>
-                </button>
-                {% endif %}
-              </div>
-              {% if _cli_banco %}<div class="truncate text-slate-400 text-[10px]">{{ m.real.concepto[:60] }}</div>{% endif %}
+              <div class="truncate text-slate-600 dark:text-slate-400 text-xs" title="{{ m.real.concepto }}">{{ m.real.concepto[:80] }}</div>
+              {% if m.componentes and m.componentes|length > 1 %}
+              <button type="button"
+                      class="mt-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 btn-toggle-detalle"
+                      data-match-idx="{{ loop.index0 }}"
+                      title="Ver los {{ m.componentes|length }} cheques agrupados">
+                <span class="icon-open">+ {{ m.componentes|length }} cheques</span>
+                <span class="icon-close hidden">− ocultar</span>
+              </button>
+              {% endif %}
             </td>
           </tr>
           {# Fila detalle (oculta por default) — solo si hay componentes. #}
           {% if m.componentes and m.componentes|length > 1 %}
           <tr class="detalle-componentes hidden" data-match-idx="{{ loop.index0 }}">
-            <td colspan="8" class="px-2 py-1 bg-emerald-50/30 dark:bg-emerald-900/10">
+            <td colspan="7" class="px-2 py-1 bg-emerald-50/30 dark:bg-emerald-900/10">
               <div class="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400 mb-1 mt-1">
                 {{ m.componentes|length }} cheques del programa que suman ${{ '{:,.2f}'.format(m.real.monto) }} ↔ depósito banco
               </div>
@@ -523,7 +573,10 @@
           {# TMT 2026-05-26 dueña: si el card de agrupado arriba ya tiene las
              comisiones/impuestos, OCULTAR esas filas de la lista de abajo —
              están duplicadas. La dueña confirma o descarta desde el card. #}
-          {% for r in data.real_only %}{% if (not r.sugerencias or r.sugerencias|length == 0) and not (agrupado_comisiones and (r.cat.grupo or '') == 'COMISION') %}
+          {# TMT 2026-05-27 dueña: "no me sirve más que me dejes los cheques
+             debajo, lo estamos haciendo arriba". Sacamos las ENTRADAS (Tipo
+             C) — están en el panel "Depósitos por día" arriba. #}
+          {% for r in data.real_only %}{% if (not r.sugerencias or r.sugerencias|length == 0) and not (agrupado_comisiones and (r.cat.grupo or '') == 'COMISION') and (r.tipo or '')|upper != 'C' %}
           {% set _cli = r.cat.cliente %}
           {% set _gc = r.cat.grupo or 'OTRO' %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
@@ -631,7 +684,9 @@
           </tr>
         </thead>
         <tbody>
-          {% for b in data.bancsis_only %}
+          {# TMT 2026-05-27 dueña: sacamos las ENTRADAS (tipo_real C) — están
+             en el panel "Depósitos por día" arriba. #}
+          {% for b in data.bancsis_only %}{% if (b.tipo_real or '')|upper != 'C' %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 fila"
               data-tipo="{{ b.tipo_real }}"
               data-grupo="{{ b.cat.grupo or 'OTRO' }}"
@@ -665,7 +720,7 @@
               <div class="truncate text-slate-400 text-[10px]">{{ b.concepto[:80] }}</div>
             </td>
           </tr>
-          {% endfor %}
+          {% endif %}{% endfor %}
         </tbody>
       </table>
     </div>
@@ -1096,6 +1151,17 @@
       const d = {...b.dataset};
       delete d.sugId;
       abrirModalConSugerencias(d, sugerencias);
+    });
+  });
+
+  // TMT 2026-05-27 dueña: toggle expandir día del panel depósitos por día.
+  document.querySelectorAll('.btn-toggle-dep').forEach(row => {
+    row.addEventListener('click', () => {
+      const tr = document.getElementById(row.dataset.target);
+      if (!tr) return;
+      tr.classList.toggle('hidden');
+      const chev = row.querySelector('.dep-chevron');
+      if (chev) chev.style.transform = tr.classList.contains('hidden') ? '' : 'rotate(90deg)';
     });
   });
 
