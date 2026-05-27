@@ -94,16 +94,35 @@
       </div>
     </div>
 
-    {# Buscador + contadores #}
-    <div class="mb-3 flex items-center gap-3">
-      <div class="relative flex-1 max-w-md">
+    {# Banner: explica el estado actual del pareo libre #}
+    {% set _bo_n = (data.bancsis_only or [])|length %}
+    {% set _ro_n = (data.real_only or [])|length %}
+    {% set _matches_n = (data.matches or [])|length %}
+    {% if _ro_n > 0 and _bo_n == 0 %}
+    <div class="mb-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-200">
+      <strong>⚠ No hay movs PC sin parear.</strong> El matcher ya auto-pareó {{ _matches_n }} movs en este extracto. Los {{ _ro_n }} movs banco que quedan no tienen contraparte en PC — son legítimas diferencias (el banco las cobró/acreditó y PC no las conoce). Opciones: ir a 'Días' y aceptarlos como 'solo banco' (real_only_ok), o crear las tx PC.
+    </div>
+    {% elif _ro_n == 0 and _bo_n == 0 %}
+    <div class="mb-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-xs text-emerald-800 dark:text-emerald-200">
+      <strong>✓ Todo pareado.</strong> El matcher auto-pareó {{ _matches_n }} movs. Si la conciliación cuadra (ver card de Resumen arriba), está todo OK.
+    </div>
+    {% endif %}
+
+    {# Buscador + contadores + toggle incluir matched #}
+    <div class="mb-3 flex items-center gap-3 flex-wrap">
+      <div class="relative flex-1 min-w-[200px] max-w-md">
         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
         <input type="text" id="pareo-filtro"
                placeholder="Filtrar por concepto, cliente, doc o monto..."
                class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-300 dark:focus:ring-sky-700">
       </div>
+      <label class="text-xs text-slate-600 dark:text-slate-300 inline-flex items-center gap-1.5 cursor-pointer">
+        <input type="checkbox" id="pareo-incluir-matched" class="cursor-pointer">
+        Incluir auto-matched
+      </label>
       <div class="text-xs text-slate-500 tabular-nums">
-        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-500"></span><span id="pareo-visible-banco">0</span> banco</span>
+        Visibles ahora:
+        <span class="inline-flex items-center gap-1 ml-1"><span class="w-2 h-2 rounded-full bg-sky-500"></span><span id="pareo-visible-banco">0</span> banco</span>
         <span class="mx-2 text-slate-300">·</span>
         <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-violet-500"></span><span id="pareo-visible-pc">0</span> programa</span>
       </div>
@@ -116,9 +135,9 @@
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
             <span class="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight">Banco</span>
-            <span class="text-[11px] text-slate-500">según extracto</span>
+            <span class="text-[11px] text-slate-500">sin parear · según extracto</span>
           </div>
-          <span class="text-[11px] text-slate-400 tabular-nums">{{ (data.real_only or [])|length }} movs</span>
+          <span class="text-[11px] text-slate-400 tabular-nums">{{ (data.real_only or [])|length }} movs · {{ (data.matches or [])|length }} ya auto-pareados</span>
         </div>
         <div class="max-h-[640px] overflow-y-auto">
           <table class="w-full text-sm">
@@ -147,8 +166,24 @@
                 <td class="px-3 py-2 text-slate-600 dark:text-slate-400 text-xs truncate max-w-[260px]" title="{{ r.concepto }}">{{ (r.concepto or '')[:60] }}</td>
               </tr>
               {% endfor %}
+              {# Filas ya auto-matcheadas — escondidas hasta tildar 'Incluir auto-matched' #}
+              {% for m in (data.matches or []) %}
+              {% set r = m.real %}
+              <tr class="pareo-row pareo-banco pareo-matched hidden border-b border-slate-100 dark:border-slate-800/60 bg-emerald-50/30 dark:bg-emerald-900/10 cursor-default"
+                  data-fecha="{{ r.fecha or '' }}" data-concepto="{{ r.concepto|e }}"
+                  data-documento="{{ r.documento|e }}" data-monto="{{ '%.2f'|format(r.monto|float) }}"
+                  data-tipo="{{ r.tipo or '' }}" data-codigo="{{ r.codigo|e }}" data-oficina="{{ r.oficina|e }}">
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-400">{{ r.fecha[5:10] if r.fecha else '·' }}<span class="text-slate-300 text-[10px] ml-1">{{ r.fecha[2:4] if r.fecha else '' }}</span></td>
+                <td class="px-2 py-2 text-center">
+                  <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold" title="Ya pareado">✓</span>
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium text-slate-500">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-400">{{ r.documento or '·' }}</td>
+                <td class="px-3 py-2 text-slate-400 dark:text-slate-500 text-xs truncate max-w-[260px]" title="{{ r.concepto }}">{{ (r.concepto or '')[:60] }}</td>
+              </tr>
+              {% endfor %}
               {% if not data.real_only %}
-              <tr><td colspan="5" class="px-3 py-8 text-center text-sm text-slate-400 italic">Sin movs banco sin conciliar — todo cuadra ✓</td></tr>
+              <tr class="pareo-empty-msg"><td colspan="5" class="px-3 py-8 text-center text-sm text-slate-400 italic">Sin movs banco sin parear — tildá 'Incluir auto-matched' para ver los {{ (data.matches or [])|length }} ya pareados.</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -161,9 +196,12 @@
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
             <span class="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight">Programa</span>
-            <span class="text-[11px] text-slate-500">según PC</span>
+            <span class="text-[11px] text-slate-500">sin parear · según PC</span>
           </div>
-          <span class="text-[11px] text-slate-400 tabular-nums">{% set _pc_n = 0 %}{% for b in (data.bancsis_only or []) %}{% if not b.es_agrupado %}{% set _pc_n = _pc_n + 1 %}{% endif %}{% endfor %}{{ _pc_n }} movs</span>
+          {# Counter con namespace porque {% set %} dentro de {% for %} no propaga afuera en Jinja2 #}
+          {% set ns = namespace(n=0, n_agr=0) %}
+          {% for b in (data.bancsis_only or []) %}{% if b.es_agrupado %}{% set ns.n_agr = ns.n_agr + 1 %}{% else %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+          <span class="text-[11px] text-slate-400 tabular-nums">{{ ns.n }} movs{% if ns.n_agr %} · {{ ns.n_agr }} lotes ocultos{% endif %} · {{ (data.matches or [])|length }} ya auto-pareados</span>
         </div>
         <div class="max-h-[640px] overflow-y-auto">
           <table class="w-full text-sm">
@@ -197,8 +235,29 @@
                 </td>
               </tr>
               {% endif %}{% endfor %}
+              {# Filas ya auto-matcheadas — escondidas hasta tildar 'Incluir auto-matched' #}
+              {% for m in (data.matches or []) %}
+              {% set b = m.bancsis %}
+              {% set _es_credito = b.documento in ('DE','TR','XX','NC','IN','AC') %}
+              <tr class="pareo-row pareo-pc pareo-matched hidden border-b border-slate-100 dark:border-slate-800/60 bg-emerald-50/30 dark:bg-emerald-900/10 cursor-default"
+                  data-id-transaccion="{{ b.id_transaccion or '' }}"
+                  data-fecha="{{ b.fecha or '' }}" data-documento="{{ b.documento|e }}"
+                  data-importe="{{ '%.2f'|format(b.importe|float) }}"
+                  data-numref="{{ b.numreferencia|e }}" data-prov="{{ b.prov|e }}">
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-400">{{ b.fecha[5:10] if b.fecha else '·' }}<span class="text-slate-300 text-[10px] ml-1">{{ b.fecha[2:4] if b.fecha else '' }}</span></td>
+                <td class="px-2 py-2 text-center">
+                  <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold" title="Ya pareado">✓</span>
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium text-slate-500">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+                <td class="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-400">{{ b.numreferencia or '·' }}</td>
+                <td class="px-3 py-2 text-xs truncate max-w-[260px]" title="{{ b.prov_nombre or b.concepto }}">
+                  {% if b.prov %}<span class="inline-block px-1.5 py-0.5 mr-1.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-500 font-medium">{{ b.prov }}</span>{% endif %}
+                  <span class="text-slate-400 dark:text-slate-500">{{ (b.prov_nombre or b.concepto or '')[:42] }}</span>
+                </td>
+              </tr>
+              {% endfor %}
               {% if not data.bancsis_only %}
-              <tr><td colspan="5" class="px-3 py-8 text-center text-sm text-slate-400 italic">Sin movs programa sin conciliar — todo cuadra ✓</td></tr>
+              <tr class="pareo-empty-msg"><td colspan="5" class="px-3 py-8 text-center text-sm text-slate-400 italic">Sin movs programa sin parear — tildá 'Incluir auto-matched' para ver los {{ (data.matches or [])|length }} ya pareados.</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -2649,15 +2708,21 @@
     });
   });
 
-  // ─── Filtro (texto libre, busca en data attrs + visible text) ──────
+  // ─── Filtro (texto libre, busca en data attrs + visible text) + toggle matched ──────
   const filtroEl = document.getElementById('pareo-filtro');
+  const includeMatchedCb = document.getElementById('pareo-incluir-matched');
   const visBanco = document.getElementById('pareo-visible-banco');
   const visPc = document.getElementById('pareo-visible-pc');
   function aplicarFiltro() {
     const q = (filtroEl.value || '').toLowerCase().trim();
+    const includeMatched = includeMatchedCb && includeMatchedCb.checked;
     let nb = 0, np = 0;
     document.querySelectorAll('.pareo-row').forEach(row => {
-      if (row.style.display === 'none') return; // ya conciliada
+      const isMatched = row.classList.contains('pareo-matched');
+      // pareo-matched: visible solo si toggle ON
+      if (isMatched && !includeMatched) { row.style.display = 'none'; return; }
+      // filas paradas en cola (display:none por confirmación previa) — saltar
+      if (row.style.display === 'none' && !isMatched) return;
       const t = row.textContent.toLowerCase();
       const match = !q || t.includes(q);
       row.style.display = match ? '' : 'none';
@@ -2667,6 +2732,7 @@
     visPc.textContent = np;
   }
   filtroEl.addEventListener('input', aplicarFiltro);
+  if (includeMatchedCb) includeMatchedCb.addEventListener('change', aplicarFiltro);
   // Init counts
   aplicarFiltro();
 })();
