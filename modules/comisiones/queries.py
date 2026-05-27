@@ -2,9 +2,12 @@
 
 Replica MODIFICA.PRG PROCEDURE COMISION (línea 1770) — lista cobranzas
 del mes filtradas por cliente.vend. En dBase los stats considerados
-"cobrado/depositado" eran 'BWVCIK' — en Programa Core la equivalencia es
-`cheque.stat IN ('B', 'A')` (B = depositado Pichincha moderno, A =
-acreditado legacy). Ambos representan cheques ya cobrados en banco.
+"cobrado/depositado" eran 'BWVCIK'. En PC la lista canónica es
+`STATS_DEPOSITADO = ('B','V','W','I','J','K','A')` definida en
+`modules/cheques/queries.py`. TMT 2026-05-27 dueña: 'porque no calcula
+las cosas' — abril mostraba cobranzas=0 porque la query antes filtraba
+solo IN ('B','A'), faltaban V/W/I/J/K (cheques en distinto estado de
+depósito que también son cobrados).
 
 Comisión = cobranzas_mes * (pct_comision / 100). El dBase no calculaba
 esto (la dueña lo hacía a mano); acá lo automatizamos.
@@ -42,7 +45,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
              WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
                AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-               AND ch.stat IN ('B', 'A')
+               AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
             SELECT UPPER(TRIM(c.vend))        AS codigo,
@@ -77,7 +80,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
              WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
                AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-               AND ch.stat IN ('B', 'A')
+               AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
             UNION ALL
