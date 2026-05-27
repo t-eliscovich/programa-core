@@ -475,20 +475,23 @@ def comparativa_tintoreria():
             try:
                 cods = pc_color_por_fecha.get(f, [])
                 kg_dbase = sum(float(c.get("kg") or 0) for c in cods)
-                terms = [float(c.get("form_terminada_kg")) for c in cods if c.get("form_terminada_kg") is not None]
-                crudas = [float(c.get("form_cruda_kg")) for c in cods if c.get("form_cruda_kg") is not None]
-                kg_form_term = sum(terms) if terms else 0.0
-                kg_form_cruda = sum(crudas) if crudas else 0.0
-                n_ots = sum(int(c.get("form_n_ots") or 0) for c in cods)
+                # TMT 2026-05-26 dueña: 'lo de formulas esta mal'. Antes
+                # sumaba solo las OTs que matcheaban con código PC → daba
+                # ~3x menos. Ahora suma TODAS las OTs terminadas del día,
+                # sin importar si matcheó con código PC.
+                ots_dia = form_por_fecha.get(f, [])
+                kg_form_term = sum(float(o.tela_terminada_kg or 0) for o in ots_dia)
+                kg_form_cruda = sum(float(o.tela_cruda_kg or 0) for o in ots_dia)
+                n_ots = len(ots_dia)
                 cambio = (kg_dbase - kg_form_term) if kg_form_term > 0 else None
                 desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
                 filas_dia.append({
                     "fecha": f,
-                    "cod": f"{len(cods)} código(s)",
-                    "kg_dbase": kg_dbase,
-                    "kg_form_term": kg_form_term if kg_form_term > 0 else None,
-                    "cambio": cambio,
-                    "kg_form_cruda": kg_form_cruda if kg_form_cruda > 0 else None,
+                    "cod": f"{n_ots} OT · {len(cods)} cód PC",
+                    "kg_dbase": float(kg_dbase),
+                    "kg_form_term": float(kg_form_term) if kg_form_term > 0 else None,
+                    "cambio": float(cambio) if cambio is not None else None,
+                    "kg_form_cruda": float(kg_form_cruda) if kg_form_cruda > 0 else None,
                     "desperdicio_pct": round(desperd_pct, 1) if desperd_pct is not None else None,
                     "form_n_ots": n_ots,
                 })
