@@ -759,6 +759,25 @@ def hub():
     # flujo normal de sugeridos/matches/solo banco/solo programa.
     _CATS_DAILY = {"ENTRADA_COBRO_CHEQUE", "ENTRADA_DEPOSITO_EFECTIVO"}
     _DOCS_DAILY = {"DE"}  # programa: documento de depósito banco
+
+    # TMT 2026-05-27 dueña: "este porque no tiene nombre?" — "1 ch.CM1"
+    # tiene código alfanumérico (CM1) que el regex de cliente_concepto
+    # no extrae (sólo letras). Fallback genérico: si b.prov vacío,
+    # extraemos del concepto cualquier token 2-5 alfanumérico que arranque
+    # con letra después de "ch."/"dep ch."/"tr."/"nc.".
+    import re as _re_local
+    # Prefijo debe estar precedido por inicio o no-letra Y seguido de `.` o
+    # espacio (no por letra). Evita matchear "nc" dentro de "transfereNCIA".
+    _RE_CH_PROV_FALLBACK = _re_local.compile(
+        r"(?:^|\W)(?:ch|tr|trf|nc|dep\s*ch)[\.\s]+([A-Za-z][A-Za-z0-9]{1,4})\b",
+        _re_local.IGNORECASE,
+    )
+
+    def _prov_fallback(prov_db: str, concepto: str) -> str:
+        if (prov_db or "").strip():
+            return prov_db
+        m = _RE_CH_PROV_FALLBACK.search(concepto or "")
+        return m.group(1).upper() if m else ""
     depositos_por_dia: list[dict] = []
     try:
         banco_items_dia: dict[str, list[dict]] = {}
@@ -810,7 +829,7 @@ def hub():
                 "documento": b.get("documento") or "",          # tipo DE/CH
                 "numreferencia": b.get("numreferencia") or "",  # doc id banco
                 "importe": float(b.get("importe") or 0),
-                "prov": b.get("prov") or "",
+                "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": bool(b.get("es_agrupado")),
                 "n_cheques": int(b.get("n_cheques") or 0),
@@ -832,7 +851,7 @@ def hub():
                 "documento": b.get("documento") or "",
                 "numreferencia": b.get("numreferencia") or "",
                 "importe": float(b.get("importe") or 0),
-                "prov": b.get("prov") or "",
+                "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": False,
                 "n_cheques": 0,
@@ -934,7 +953,7 @@ def hub():
                 "documento": b.get("documento") or "",
                 "numreferencia": b.get("numreferencia") or "",
                 "importe": float(b.get("importe") or 0),
-                "prov": b.get("prov") or "",
+                "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": False,
                 "n_cheques": 0,
@@ -956,7 +975,7 @@ def hub():
                 "documento": b.get("documento") or "",
                 "numreferencia": b.get("numreferencia") or "",
                 "importe": float(b.get("importe") or 0),
-                "prov": b.get("prov") or "",
+                "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": False,
                 "n_cheques": 0,
@@ -992,6 +1011,47 @@ def hub():
     transf_total_prog = round(sum(d["programa"] for d in transferencias_por_dia), 2)
     transf_total_diff = round(transf_total_banco - transf_total_prog, 2)
     transf_n_dias_cuadran = sum(1 for d in transferencias_por_dia if d["cuadra"])
+
+    # TMT 2026-05-27 dueña: "Pone el id del documento porque asi cruzamos
+    # de esa manera si hay. eso importa mas que fecha y que todo".
+    # Cross-day match por doc id: si doc banco 14/05 aparece en programa
+    # 15/05, lo marcamos como cruce. Sirve para "selección de días
+    # alternativos".
+    def _norm(s):
+        return (str(s or "")).strip().lstrip("0")
+
+    def _build_doc_fecha_map(items_lista: list[dict], doc_key: str, fecha_key: str = "fecha") -> dict:
+        out: dict[str, str] = {}
+        for it in items_lista:
+            doc_n = _norm(it.get(doc_key) or "")
+            if doc_n and doc_n not in out:
+                out[doc_n] = it.get(fecha_key) or ""
+        return out
+
+    # Mapas globales doc -> fecha (depósitos + transferencias en una sola
+    # bolsa porque los docs son únicos por banco)
+    _all_banco_items = []
+    _all_prog_items = []
+    for d in depositos_por_dia + transferencias_por_dia:
+        _all_banco_items.extend(d.get("banco_items", []) or [])
+        _all_prog_items.extend(d.get("programa_items", []) or [])
+    docs_prog_map = _build_doc_fecha_map(_all_prog_items, "numreferencia")
+    docs_banco_map = _build_doc_fecha_map(_all_banco_items, "documento")
+
+    # Anotar cada item con `cross_match_fecha` (la fecha donde el doc aparece
+    # del OTRO lado, si existe). El template usa esto para pintar verde y
+    # mostrar "↔ 15/05" cuando es cruce cross-day.
+    for d in depositos_por_dia + transferencias_por_dia:
+        for it in d.get("banco_items", []) or []:
+            doc_n = _norm(it.get("documento") or "")
+            f_otro = docs_prog_map.get(doc_n) if doc_n else None
+            it["cross_match_fecha"] = f_otro if f_otro and f_otro != d.get("fecha") else None
+            it["doc_match"] = bool(doc_n and doc_n in docs_prog_map)
+        for it in d.get("programa_items", []) or []:
+            doc_n = _norm(it.get("numreferencia") or "")
+            f_otro = docs_banco_map.get(doc_n) if doc_n else None
+            it["cross_match_fecha"] = f_otro if f_otro and f_otro != d.get("fecha") else None
+            it["doc_match"] = bool(doc_n and doc_n in docs_banco_map)
 
     # Datalists para el modal de crear individual. Fail-soft también.
     try:
