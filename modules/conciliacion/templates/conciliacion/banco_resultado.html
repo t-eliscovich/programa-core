@@ -558,7 +558,8 @@
         </span>
         <span class="text-[11px] text-amber-700 dark:text-amber-400">banco y programa coinciden por monto+fecha + cliente, pero el doc banco no matchea</span>
         <div class="ml-auto flex items-center gap-2">
-          <button type="button" id="btn-prob-todos" class="text-xs text-sky-600 hover:underline">Marcar todos donde cliente coincide</button>
+          <button type="button" id="btn-prob-cli-match" class="text-xs text-sky-600 hover:underline">Marcar cliente coincide</button>
+          <button type="button" id="btn-prob-todos-all" class="text-xs text-sky-600 hover:underline">Marcar todos</button>
           <button type="button" id="btn-prob-desmarcar" class="text-xs text-slate-500 hover:underline">Desmarcar</button>
           <button type="submit" id="btn-prob-confirmar"
                   class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs font-medium" disabled>
@@ -586,7 +587,12 @@
           {% if (m.cat.codigo or '') not in _CATS_DAILY and (m.real.tipo or '')|upper == 'C' and not _docm %}
           {% set _cli_extr = (m.cat.cliente or '')|string|trim %}
           {% set _cli_prog = (m.bancsis.prov or '')|string|trim %}
-          {% set _cli_match = _cli_extr and _cli_prog and (_cli_extr.upper() == _cli_prog.upper()) %}
+          {% set _cli_nombre_banco = (m.cat.cliente_nombre or '')|string|trim|upper %}
+          {% set _cli_nombre_prog = (m.bancsis.prov_nombre or '')|string|trim|upper %}
+          {# Match cliente: a) códigos iguales O b) primeras 3 letras del nombre coinciden
+             (ej. "MUECES ESCOBAR" del banco vs prov_nombre "MUECES ESCOBAR ADRIANA" del prog). #}
+          {% set _cli_match = (_cli_extr and _cli_prog and _cli_extr.upper() == _cli_prog.upper())
+              or (_cli_nombre_banco and _cli_nombre_prog and _cli_nombre_banco[:8] == _cli_nombre_prog[:8]) %}
           <tr class="border-t border-amber-100 dark:border-amber-900/40 hover:bg-amber-100/30 dark:hover:bg-amber-900/20 fila-prob {% if _cli_match %}cli-match{% endif %}">
             <td class="px-2 py-1.5 text-center">
               <input type="checkbox" class="chk-prob" data-match='{{ m|tojson|forceescape }}'>
@@ -1337,7 +1343,8 @@
     const chks = document.querySelectorAll('.chk-prob');
     const chkAll = document.getElementById('chk-prob-all');
     const btnSubmit = document.getElementById('btn-prob-confirmar');
-    const btnTodos = document.getElementById('btn-prob-todos');
+    const btnCliMatch = document.getElementById('btn-prob-cli-match');
+    const btnTodosAll = document.getElementById('btn-prob-todos-all');
     const btnDesmarcar = document.getElementById('btn-prob-desmarcar');
     const cnt = document.getElementById('cnt-prob-sel');
     const inputJson = document.getElementById('probables-matches-json');
@@ -1357,11 +1364,16 @@
       chks.forEach(c => c.checked = chkAll.checked);
       actualizar();
     });
-    if (btnTodos) btnTodos.addEventListener('click', () => {
+    if (btnCliMatch) btnCliMatch.addEventListener('click', () => {
       chks.forEach(c => {
         const row = c.closest('.fila-prob');
         c.checked = row && row.classList.contains('cli-match');
       });
+      actualizar();
+    });
+    if (btnTodosAll) btnTodosAll.addEventListener('click', () => {
+      chks.forEach(c => c.checked = true);
+      if (chkAll) chkAll.checked = true;
       actualizar();
     });
     if (btnDesmarcar) btnDesmarcar.addEventListener('click', () => {
