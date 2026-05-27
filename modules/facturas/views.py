@@ -1372,3 +1372,237 @@ def _plain_csv_response(csv_str: str, filename: str):
     resp = Response("\ufeff" + csv_str, mimetype="text/csv; charset=utf-8")
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Backfill bulk Asinfo \u2192 scintela.factura (corre dentro del web server)
+# ---------------------------------------------------------------------------
+# TMT 2026-05-26: el script standalone scripts/backfill_facturas_2025_asinfo.py
+# no pod\u00eda pegarle a Metabase desde SSM porque el subprocess no hereda las env
+# vars del web server (METABASE_URL, ASINFO_CARD_FACTURAS, etc viven en alg\u00fan
+# .env de prod no replicable). El web server S\u00cd las tiene cargadas, as\u00ed que
+# el backfill corre ac\u00e1. Importa la l\u00f3gica del script (TIPO_MAP, _extract_numf,
+# _iter_month_chunks, MARKER) pero la ejecuci\u00f3n es dentro del request.
+#
+# Idempotente: matchea contra PC existentes por numf_completo y por
+# (numf, codigo_cli, fecha). Si la factura ya est\u00e1, NO la inserta.
+# Las nuevas las marca usuario_crea='asinfo-backfill' \u2014 el sync DBF las
+# preserva (ver import_dbf.py delete_where).
+
+@facturas_bp.route("/facturas/admin/backfill-asinfo", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def backfill_asinfo_endpoint():
+    """Backfill bulk de facturas Asinfo \u2192 scintela.factura.
+
+    Params (query string o form):
+        desde=YYYY-MM-DD    default 2025-01-01
+        hasta=YYYY-MM-DD    default hoy
+        dry_run=1           default 0 (insertar de verdad)
+
+    Devuelve JSON con resumen. dry_run=1 NO inserta nada \u2014 solo reporta.
+    """
+    import os, re, sys
+    from collections import Counter
+    from datetime import date, timedelta
+    from calendar import monthrange
+    from flask import jsonify
+
+    from modules.asinfo import service as asinfo_service
+    from modules.asinfo import aliases as cli_aliases
+
+    MARKER = "asinfo-backfill"
+    TIPO_MAP = {
+        "FACTURA":       "F",
+        "DEVOLUCION":    "D",
+        "NC_FINANCIERA": "C",
+        "NTEN":          "N",
+        "NCNT":          "X",
+    }
+
+    def _extract_numf(s):
+        if not s:
+            return None
+        m = re.findall(r"\d+", str(s))
+        if not m:
+            return None
+        try:
+            return int(m[-1])
+        except (ValueError, TypeError):
+            return None
+
+    def _iter_month_chunks(d_from, d_to):
+        cy, cm = d_from.year, d_from.month
+        ey, em = d_to.year, d_to.month
+        while (cy, cm) <= (ey, em):
+            first = date(cy, cm, 1)
+            last = date(cy, cm, monthrange(cy, cm)[1])
+            yield max(first, d_from), min(last, d_to)
+            cm += 1
+            if cm > 12:
+                cm = 1
+                cy += 1
+
+    # Parsing params
+    desde_s = (request.values.get("desde") or "2025-01-01").strip()
+    hasta_s = (request.values.get("hasta") or date.today().isoformat()).strip()
+    dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
+    try:
+        desde = date.fromisoformat(desde_s)
+        hasta = date.fromisoformat(hasta_s)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": f"Fecha inv\u00e1lida: {e}"}), 400
+
+    # 1) Trae todo Asinfo en chunks de 1 mes
+    chunks = list(_iter_month_chunks(desde, hasta))
+    asinfo_rows = []
+    chunk_log = []
+    for i, (cd, ch) in enumerate(chunks, 1):
+        try:
+            cr = asinfo_service.facturas_periodo(cd, ch)
+        except Exception as e:
+            chunk_log.append({"chunk": f"{cd}..{ch}", "error": str(e)})
+            continue
+        chunk_log.append({"chunk": f"{cd}..{ch}", "rows": len(cr)})
+        asinfo_rows.extend(cr)
+
+    if not asinfo_rows:
+        return jsonify({
+            "ok": False, "error": "Asinfo no devolvi\u00f3 filas",
+            "asinfo_disponible": asinfo_service.disponible(),
+            "chunks": chunk_log,
+        })
+
+    # 2) Carga PC existentes (numf_completo + tripla numf/cli/fecha + max numf)
+    pc_rows = db.fetch_all(
+        """
+        SELECT numf, codigo_cli, fecha,
+               COALESCE(NULLIF(TRIM(numf_completo), ''), '') AS nfc
+          FROM scintela.factura
+         WHERE fecha BETWEEN %s AND %s
+        """,
+        (desde, hasta),
+    )
+    by_nfc, by_tripla = set(), set()
+    max_numf = 0
+    for r in pc_rows:
+        nfc = (r.get("nfc") or "").strip().upper()
+        if nfc:
+            by_nfc.add(nfc)
+        n = int(r.get("numf") or 0)
+        cli = (r.get("codigo_cli") or "").strip().upper()
+        f = r.get("fecha")
+        if hasattr(f, "isoformat"):
+            f = f.isoformat()
+        if n and cli:
+            by_tripla.add((n, cli, str(f)))
+        if n > max_numf:
+            max_numf = n
+    row_max = db.fetch_one("SELECT COALESCE(MAX(numf), 0) AS m FROM scintela.factura")
+    if row_max and int(row_max.get("m") or 0) > max_numf:
+        max_numf = int(row_max["m"])
+    siguiente_numf = max_numf + 1
+
+    # 3) Decidir candidatas
+    ya_estaban = saltadas_sin_cli = saltadas_sin_importe = 0
+    candidatas = []
+    por_tipo = Counter()
+    for ai in asinfo_rows:
+        numero = str(ai.get("numero") or "").strip()
+        nfc_key = numero.upper()
+        numf = _extract_numf(numero)
+        cli_asinfo = (ai.get("cliente_codigo") or "").strip().upper()
+        cli_pc = cli_aliases.to_pc(cli_asinfo) if cli_asinfo else ""
+        f = ai.get("fecha")
+        if hasattr(f, "isoformat"):
+            f_iso = f.isoformat()
+            fecha_obj = f
+        else:
+            f_iso = str(f)[:10]
+            try:
+                fecha_obj = date.fromisoformat(f_iso)
+            except ValueError:
+                continue
+
+        if nfc_key and nfc_key in by_nfc:
+            ya_estaban += 1
+            continue
+        if numf and cli_pc and (numf, cli_pc, f_iso) in by_tripla:
+            ya_estaban += 1
+            continue
+        if not cli_pc:
+            saltadas_sin_cli += 1
+            continue
+
+        importe = float(ai.get("usd") or 0)
+        kg = float(ai.get("kg") or 0)
+        if importe == 0 and kg == 0 and not numf:
+            saltadas_sin_importe += 1
+            continue
+
+        tipo_asinfo = str(ai.get("tipo") or "FACTURA").upper()
+        tipo_pc = TIPO_MAP.get(tipo_asinfo, "F")
+        por_tipo[tipo_asinfo] += 1
+
+        if not numf:
+            numf = siguiente_numf
+            siguiente_numf += 1
+
+        candidatas.append({
+            "numf": numf, "fecha": fecha_obj, "codigo_cli": cli_pc,
+            "kg": kg, "importe": importe, "abono": importe, "saldo": 0,
+            "stat": "T", "condic": "CC", "tipo": tipo_pc,
+            "vencimiento": fecha_obj + timedelta(days=30),
+            "numf_completo": numero or None, "clave": None,
+            "usuario_crea": MARKER,
+        })
+
+    resumen = {
+        "ok": True,
+        "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
+        "asinfo_trajo": len(asinfo_rows),
+        "chunks": chunk_log,
+        "ya_estaban_en_pc": ya_estaban,
+        "saltadas_sin_cli_mapeable": saltadas_sin_cli,
+        "saltadas_sin_importe_ni_numf": saltadas_sin_importe,
+        "candidatas_a_insertar": len(candidatas),
+        "por_tipo_asinfo": dict(por_tipo),
+        "dry_run": dry_run,
+    }
+
+    if dry_run:
+        resumen["sample_candidatas"] = [
+            {"fecha": str(c["fecha"]), "codigo_cli": c["codigo_cli"],
+             "numf": c["numf"], "numf_completo": c["numf_completo"],
+             "tipo": c["tipo"], "importe": c["importe"], "kg": c["kg"]}
+            for c in candidatas[:10]
+        ]
+        return jsonify(resumen)
+
+    # 4) INSERT bulk en chunks de 500
+    insertadas = errores = 0
+    sql = """
+        INSERT INTO scintela.factura
+            (numf, fecha, codigo_cli, kg, importe, abono, saldo,
+             stat, condic, tipo, vencimiento, numf_completo, clave, usuario_crea)
+        VALUES (%(numf)s, %(fecha)s, %(codigo_cli)s, %(kg)s, %(importe)s, %(abono)s, %(saldo)s,
+                %(stat)s, %(condic)s, %(tipo)s, %(vencimiento)s, %(numf_completo)s, %(clave)s, %(usuario_crea)s)
+    """
+    CHUNK = 500
+    err_log = []
+    for i in range(0, len(candidatas), CHUNK):
+        ch = candidatas[i:i+CHUNK]
+        try:
+            with db.tx() as conn, conn.cursor() as cur:
+                for c in ch:
+                    cur.execute(sql, c)
+                    insertadas += 1
+        except Exception as e:
+            errores += len(ch)
+            err_log.append({"chunk_start": i, "size": len(ch), "error": str(e)[:200]})
+
+    resumen["insertadas"] = insertadas
+    resumen["errores"] = errores
+    if err_log:
+        resumen["errores_detalle"] = err_log
+    return jsonify(resumen)
