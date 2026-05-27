@@ -210,7 +210,12 @@
                       <tbody>
                         {% for it in d.banco_items %}
                         {% set _doc = (it.documento or '')|string|trim %}
-                        <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+                        {# TMT 2026-05-27 click-to-pair: data-attrs para el JS de match manual #}
+                        <tr class="ctp-row ctp-banco border-t border-slate-100 dark:border-slate-800/60 cursor-pointer hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                            data-fecha="{{ it.fecha }}" data-concepto="{{ it.concepto|e }}"
+                            data-documento="{{ it.documento|e }}" data-monto="{{ '%.2f'|format(it.monto) }}"
+                            data-tipo="{{ it.tipo or 'C' }}" data-codigo="{{ it.codigo|e }}" data-oficina="{{ it.oficina|e }}"
+                            {% if it.matched %}data-already-matched="1"{% endif %}>
                           <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-500{% endif %}" style="width: 1%;">
                             {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en programa el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
@@ -243,7 +248,9 @@
                            ser el cruce mas importante". Doc banco
                            (numreferencia) SIEMPRE visible — '·' si vacío.
                            Prov pasa a segunda columna como info auxiliar. #}
-                        <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+                        <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-pointer hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %} {% if it.matched %}opacity-50{% endif %}"
+                            data-id-transaccion="{{ it.id_transaccion or '' }}" data-importe="{{ '%.2f'|format(it.importe) }}"
+                            {% if it.matched %}data-already-matched="1"{% endif %}>
                           <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _numref %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width: 1%;">
                             {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _numref or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
@@ -1962,6 +1969,114 @@
       });
     });
   })();
+})();
+</script>
+
+{# ───── Click-to-Pair: TMT 2026-05-27 dueña ─────
+   "necesito hacer como un drag and drop para ver cuales matchean"
+   Click una fila banco (izq) + click una fila PC (der) → botón "Match"
+   flotante → AJAX a /banco/match-click → fila desaparece. Como Xero. #}
+<style>
+  .ctp-row.ctp-selected { background-color: rgb(186 230 253) !important; box-shadow: inset 0 0 0 2px rgb(2 132 199); }
+  .dark .ctp-row.ctp-selected { background-color: rgb(7 89 133) !important; box-shadow: inset 0 0 0 2px rgb(125 211 252); }
+  .ctp-row.ctp-done { opacity: 0.3; pointer-events: none; text-decoration: line-through; }
+  #ctp-floating {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgb(2 132 199); color: white; padding: 10px 18px; border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.25); z-index: 100; font-size: 13px;
+    display: none; align-items: center; gap: 12px;
+  }
+  #ctp-floating.active { display: flex; }
+  #ctp-floating button { background: white; color: rgb(2 132 199); padding: 4px 12px; border-radius: 6px; font-weight: 600; }
+  #ctp-floating button.ctp-cancel { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.5); }
+</style>
+
+<div id="ctp-floating">
+  <span id="ctp-status">0 banco / 0 PC</span>
+  <button id="ctp-match-btn" type="button">Match seleccionados</button>
+  <button class="ctp-cancel" id="ctp-cancel-btn" type="button">Cancelar</button>
+</div>
+
+<script>
+(function(){
+  const CSRF = '{{ csrf_token() }}';
+  const floating = document.getElementById('ctp-floating');
+  const statusEl = document.getElementById('ctp-status');
+  const matchBtn = document.getElementById('ctp-match-btn');
+  const cancelBtn = document.getElementById('ctp-cancel-btn');
+  function selected(side) { return document.querySelectorAll('.ctp-' + side + '.ctp-selected:not(.ctp-done)'); }
+  function refresh() {
+    const nb = selected('banco').length, np = selected('pc').length;
+    statusEl.textContent = nb + ' banco / ' + np + ' PC';
+    floating.classList.toggle('active', nb > 0 || np > 0);
+    matchBtn.disabled = !(nb >= 1 && np >= 1);
+    matchBtn.style.opacity = matchBtn.disabled ? '0.5' : '1';
+  }
+  // Click handlers: cualquier fila .ctp-row se puede toggle, salvo las ya matched
+  document.querySelectorAll('.ctp-row').forEach(row => {
+    row.addEventListener('click', (ev) => {
+      // No interferir con clicks sobre links/inputs/botones dentro
+      if (ev.target.closest('a,button,input,label')) return;
+      if (row.dataset.alreadyMatched === '1') return;
+      if (row.classList.contains('ctp-done')) return;
+      row.classList.toggle('ctp-selected');
+      refresh();
+    });
+  });
+  cancelBtn.addEventListener('click', () => {
+    document.querySelectorAll('.ctp-row.ctp-selected').forEach(r => r.classList.remove('ctp-selected'));
+    refresh();
+  });
+  matchBtn.addEventListener('click', async () => {
+    const bancos = Array.from(selected('banco'));
+    const pcs = Array.from(selected('pc'));
+    if (bancos.length === 0 || pcs.length === 0) return;
+    // Si ambos lados >1, no sabemos cómo parear → exigir 1 de un lado
+    if (bancos.length > 1 && pcs.length > 1) {
+      alert('Seleccioná 1 de un lado y N del otro (ej: 1 depósito banco vs N cheques PC).');
+      return;
+    }
+    matchBtn.disabled = true;
+    let ok = 0, fail = 0;
+    // Caso 1 banco × N PC: matchear el banco contra cada PC (N:1 lote)
+    // Caso N banco × 1 PC: cada banco contra el mismo PC (raro pero soportado)
+    // Caso 1 banco × 1 PC: par simple
+    const pairs = [];
+    if (bancos.length === 1) {
+      for (const pc of pcs) pairs.push([bancos[0], pc]);
+    } else {
+      for (const b of bancos) pairs.push([b, pcs[0]]);
+    }
+    for (const [b, pc] of pairs) {
+      const fd = new FormData();
+      fd.set('csrf_token', CSRF);
+      fd.set('real_fecha', b.dataset.fecha || '');
+      fd.set('real_concepto', b.dataset.concepto || '');
+      fd.set('real_documento', b.dataset.documento || '');
+      fd.set('real_monto', b.dataset.monto || '0');
+      fd.set('real_tipo', b.dataset.tipo || 'C');
+      fd.set('real_codigo', b.dataset.codigo || '');
+      fd.set('real_oficina', b.dataset.oficina || '');
+      fd.set('id_transaccion', pc.dataset.idTransaccion || '0');
+      try {
+        const resp = await fetch('{{ url_for("conciliacion.hub_match_click") }}', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (data.ok) {
+          ok++;
+          b.classList.add('ctp-done');
+          pc.classList.add('ctp-done');
+          b.classList.remove('ctp-selected');
+          pc.classList.remove('ctp-selected');
+        } else { fail++; console.warn('match-click fail:', data.msg); }
+      } catch (e) { fail++; console.error(e); }
+    }
+    matchBtn.disabled = false;
+    refresh();
+    if (fail > 0) alert(`Confirmados ${ok}, fallaron ${fail}. Revisá la consola para detalle.`);
+    // No auto-reload: la página es resultado de un POST. Las filas
+    // quedan greyed-out (ctp-done) para feedback visual. Para ver
+    // saldos actualizados, navegar a /conciliacion/banco (link arriba).
+  });
 })();
 </script>
 {% endblock %}

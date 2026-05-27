@@ -933,6 +933,9 @@ def hub():
                 "concepto": r.get("concepto") or "",
                 "documento": r.get("documento") or "",  # doc id del banco real
                 "monto": float(r.get("monto") or 0),
+                "tipo": r.get("tipo") or "",
+                "codigo": r.get("codigo") or "",
+                "oficina": r.get("oficina") or "",
                 "matched": False,
             })
         for m in (data.get("matches") or []):
@@ -949,6 +952,9 @@ def hub():
                 "concepto": real.get("concepto") or "",
                 "documento": real.get("documento") or "",  # doc id del banco real
                 "monto": float(real.get("monto") or 0),
+                "tipo": real.get("tipo") or "",
+                "codigo": real.get("codigo") or "",
+                "oficina": real.get("oficina") or "",
                 "matched": True,
             })
         # Programa — bancsis_only entradas + matches bancsis entradas
@@ -970,6 +976,7 @@ def hub():
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": bool(b.get("es_agrupado")),
                 "n_cheques": int(b.get("n_cheques") or 0),
+                "id_transaccion": b.get("id_transaccion"),  # para click-to-pair
                 "matched": False,
             })
         for m in (data.get("matches") or []):
@@ -992,6 +999,7 @@ def hub():
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": False,
                 "n_cheques": 0,
+                "id_transaccion": b.get("id_transaccion"),  # para click-to-pair
                 "matched": True,
             })
         # Unión de fechas, orden ascendente
@@ -2075,6 +2083,42 @@ def hub_match_manual():
     else:
         flash(f"No pude vincular contra {nombre} Programa #{idtx} (¿ya estaba conciliado?).", "warn")
     return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco/match-click", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_match_click():
+    """Click-to-pair AJAX: 1 fila banco (form fields) + 1 id_transaccion PC.
+
+    Recibe JSON o form-encoded:
+      real_fecha, real_concepto, real_documento, real_monto, real_tipo,
+      real_codigo, real_oficina, id_transaccion
+    Devuelve JSON {ok, msg} para que el JS remueva las filas sin reload.
+
+    TMT 2026-05-27 dueña: 'necesito hacer como un drag and drop para ver
+    cuales matchean'. Click + click + Match.
+    """
+    no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
+    try:
+        idtx = int(request.form.get("id_transaccion") or 0)
+    except (TypeError, ValueError):
+        idtx = 0
+    if idtx <= 0:
+        return {"ok": False, "msg": "id_transaccion inválido"}, 400
+    try:
+        real = _reconstruir_real(request.form)
+    except Exception as e:
+        return {"ok": False, "msg": f"datos real inválidos: {e}"}, 400
+    n = match_manual(
+        no_banco=no_banco,
+        real=real,
+        id_transaccion=idtx,
+        usuario=_usuario_actual(),
+    )
+    if n:
+        return {"ok": True, "msg": f"Match contra PC #{idtx} OK", "id_transaccion": idtx}
+    return {"ok": False, "msg": f"No pude vincular PC #{idtx} (¿ya estaba conciliado?)"}
 
 
 @conciliacion_bp.route("/banco/candidatos-match", methods=["GET"])

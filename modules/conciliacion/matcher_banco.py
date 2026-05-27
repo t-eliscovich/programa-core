@@ -1111,8 +1111,14 @@ def confirmar_match(
 
     Si la migration 0047 no corrió todavía, omitimos la columna `metodo`.
     """
+    # TMT 2026-05-27 dueña: 'que los que importen sean las de dbase'.
+    # Dual-write: además del INSERT en match, marcamos stat='*' en la fila
+    # PC para que el flag conciliado sea visible en /bancos y en los saldos
+    # — el mismo flag que usa dBase. Así PC y dBase quedan visualmente
+    # alineados. Si dBase vuelve a sincronizar con stat distinto, gana
+    # dBase (la sync es one-way DBF → PC). Es el comportamiento querido.
     if _tiene_migration_47():
-        return db.execute(
+        n = db.execute(
             """
             INSERT INTO scintela.banco_conciliacion_match (
                 no_banco, estado, metodo,
@@ -1132,27 +1138,44 @@ def confirmar_match(
             ),
             conn=conn,
         )
-    # Fallback pre-migration: schema sin columna `metodo`.
-    return db.execute(
-        """
-        INSERT INTO scintela.banco_conciliacion_match (
-            no_banco, estado,
-            real_fecha, real_concepto, real_documento, real_monto, real_tipo,
-            real_codigo, real_oficina,
-            id_transaccion, usuario
+    else:
+        # Fallback pre-migration: schema sin columna `metodo`.
+        n = db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match (
+                no_banco, estado,
+                real_fecha, real_concepto, real_documento, real_monto, real_tipo,
+                real_codigo, real_oficina,
+                id_transaccion, usuario
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (
+                no_banco, estado,
+                real.fecha, real.concepto, real.documento,
+                real.monto, real.tipo,
+                real.codigo, real.oficina,
+                id_transaccion, usuario,
+            ),
+            conn=conn,
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT DO NOTHING
-        """,
-        (
-            no_banco, estado,
-            real.fecha, real.concepto, real.documento,
-            real.monto, real.tipo,
-            real.codigo, real.oficina,
-            id_transaccion, usuario,
-        ),
-        conn=conn,
-    )
+    # Dual-write: marca stat='*' en la fila PC (solo si es 'matched' y hay id).
+    if estado == "matched" and id_transaccion:
+        try:
+            db.execute(
+                """
+                UPDATE scintela.transacciones_bancarias
+                   SET stat = '*'
+                 WHERE id_transaccion = %s
+                   AND no_banco = %s
+                """,
+                (int(id_transaccion), no_banco),
+                conn=conn,
+            )
+        except Exception:
+            pass  # no romper el match si falla el stat update
+    return n
 
 
 def confirmar_bancsis_only(
