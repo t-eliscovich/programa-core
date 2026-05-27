@@ -231,6 +231,9 @@
             {% endif %}
           </td>
           {% if _show_mensual %}
+          {# TMT 2026-05-27 dueña: 'RT sigue teniendo --- en cuota mensual!!'.
+             Mostrar cuota_mensual aunque NO matchee provisión (caso RT: se
+             calcula por días en queries). Solo editable si id_provisiones. #}
           <td class="px-2 py-1 text-right font-mono tabular-nums">
             {% if f.id_provisiones and tiene_permiso('provisiones.editar') %}
               <input type="number" step="0.01" min="0"
@@ -238,8 +241,8 @@
                      value="{{ f.cuota_mensual }}"
                      data-orig="{{ f.cuota_mensual }}"
                      title="Cuota mensual de la provisión — editable inline">
-            {% elif f.id_provisiones %}
-              <span class="text-slate-600">{{ f.cuota_mensual | num_es }}</span>
+            {% elif f.cuota_mensual is not none %}
+              <span class="text-slate-600" title="Calculada por días entre fecha y vencimiento">{{ f.cuota_mensual | num_es }}</span>
             {% else %}
               <span class="text-slate-300">—</span>
             {% endif %}
@@ -253,8 +256,8 @@
                      value="{{ '%.2f' | format((f.cuota_mensual or 0) / 30.0) }}"
                      data-orig="{{ '%.2f' | format((f.cuota_mensual or 0) / 30.0) }}"
                      title="Diaria = mensual ÷ 30. Cambiarla actualiza la mensual.">
-            {% elif f.id_provisiones %}
-              <span class="text-slate-600">{{ ((f.cuota_mensual or 0) / 30.0) | num_es(2) }}</span>
+            {% elif f.cuota_diaria is not none %}
+              <span class="text-slate-600">{{ f.cuota_diaria | num_es(2) }}</span>
             {% else %}
               <span class="text-slate-300">—</span>
             {% endif %}

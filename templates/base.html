@@ -74,46 +74,82 @@
       appearance: textfield;
     }
 
-    /* ---- Print stylesheet ---- */
+    /* ---- Print stylesheet ----
+       TMT 2026-05-27 dueña: 'cuando pongo imprimir, en cualquier pagina
+       tiene que ser lo mas simple posible, no un pdf lindo, una lista
+       con valores y ya'. Print = lista plana, sin decoración. */
     @media print {
-      /* Hide chrome (sidebar, topbar, breadcrumbs, action buttons). */
-      .no-print, aside, header, nav, form button, form input[type="submit"],
-      a.no-print, [role="navigation"] { display: none !important; }
-
-      /* Remove chrome body backgrounds and force white for ink saving. */
-      html, body { background: #fff !important; color: #000 !important; }
-      .bg-slate-50, .bg-slate-100, .bg-slate-800, .bg-slate-900, .bg-slate-950,
-      .bg-white, .dark\:bg-slate-900, .dark\:bg-slate-950 {
-        background: #fff !important;
+      /* Hide chrome — sidebar, topbar, breadcrumbs, forms, botones, links de paginación. */
+      .no-print, aside, header, nav,
+      form, form button, form input,
+      a.no-print, [role="navigation"],
+      button, details > summary > div, summary {
+        display: none !important;
       }
-      .text-slate-500, .text-slate-400, .text-slate-300, .text-slate-100,
-      .dark\:text-slate-100 { color: #444 !important; }
+
+      /* Background + color: TODO blanco y negro plano. */
+      html, body, *, *::before, *::after {
+        background: #fff !important;
+        background-image: none !important;
+        background-color: #fff !important;
+        color: #000 !important;
+        box-shadow: none !important;
+      }
+
+      /* Reset cards / rounded boxes: lista plana. */
+      .rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-full,
+      [class*="rounded"],
+      .border, .border-2, .border-t, .border-b, .border-l, .border-r,
+      [class*="border-"] {
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
 
       /* Open up the main content area. */
-      main, .max-w-6xl, .max-w-7xl { max-width: 100% !important; padding: 0 !important; }
+      main, .max-w-3xl, .max-w-4xl, .max-w-5xl, .max-w-6xl, .max-w-7xl, .max-w-full {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
 
-      /* Tables: tighter rows, visible borders, no wrap on numbers. */
-      table { width: 100%; border-collapse: collapse; font-size: 10pt; }
-      th, td { padding: 4px 6px !important; border-bottom: 1px solid #ddd; }
-      thead { background: #f5f5f5 !important; }
-      tr { page-break-inside: avoid; }
+      /* Hide KPI cards / heros / decorativo. */
+      .grid, .grid-cols-1, .grid-cols-2, .grid-cols-3, .grid-cols-4,
+      [class*="md:grid-cols"] {
+        display: block !important;
+        gap: 0 !important;
+      }
+
+      /* Open details/summary expanded para imprimir contenido. */
+      details { display: block !important; }
+      details[open] > * { display: revert !important; }
+      details > summary { display: none !important; }
+
+      /* Tables: tighter rows, visible bordes finos. */
+      table { width: 100% !important; border-collapse: collapse !important; font-size: 9pt !important; }
+      th, td { padding: 2px 4px !important; border-bottom: 0.5pt solid #999 !important; }
+      thead th { border-bottom: 1pt solid #000 !important; font-weight: bold !important; }
+      tr { page-break-inside: avoid !important; }
       .text-right, td[align="right"] { text-align: right !important; }
 
-      /* Page setup. */
-      @page { margin: 14mm 12mm; }
+      /* Lotes: expandir cheques al imprimir. Las filas hijas (.lote-child)
+         tienen `hidden` por default — en print las mostramos. Y ocultamos
+         la fila resumen para no duplicar (queda solo la lista de cheques). */
+      .lote-child { display: table-row !important; }
+      .lote-child td { font-size: 9pt !important; }
+      .lote-summary { display: none !important; }
+      .lote-toggle, .dep-chevron, .lote-icon-open, .lote-icon-close { display: none !important; }
 
-      /* Don't break headings away from their content. */
+      h1 { font-size: 12pt !important; font-weight: bold !important; margin-bottom: 4pt !important; }
+      h2, h3 { font-size: 10pt !important; font-weight: bold !important; margin: 6pt 0 2pt 0 !important; }
+      p { margin: 0 0 2pt 0 !important; font-size: 9pt !important; }
       h1, h2, h3 { page-break-after: avoid; }
 
-      /* Links: show URL after the anchor text (for archival printouts). */
-      a[href]:not(.no-url)::after { content: " (" attr(href) ")"; font-size: 8pt; color: #888; }
-      a[href^="#"]:after, a[href^="/"]:after { content: ""; }
+      @page { margin: 8mm 8mm; }
 
-      /* Saldo pills revert to plain text when printed. */
-      .saldo-pill, span[class*="rounded-full"] {
-        background: transparent !important; color: #000 !important;
-        padding: 0 !important; border: none !important;
-      }
+      /* No URLs en links — la dueña pidió simple. */
+      a[href]::after { content: "" !important; }
     }
 
     /* Sidebar mobile — oculto por default en pantallas <md, slide-in al abrir. */
