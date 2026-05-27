@@ -292,58 +292,115 @@
           🎯 {{ matches_p0|length }} cruces exactos por Doc ID
         </div>
         <div class="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
-          Mismo número de documento entre banco y programa — la regla #1. Fecha no importa.
+          Mismo número de documento entre banco y programa — la regla #1. Fecha no importa. Marcá los que querés confirmar.
         </div>
       </div>
-      <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="shrink-0"
-            onsubmit="return confirm('¿Confirmar los {{ matches_p0|length }} cruces por doc id? Estos movs no vuelven a aparecer en próximos extractos.');">
+      <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="shrink-0" id="form-p0"
+            onsubmit="return confirmarP0(event);">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="matches_json" value='{{ matches_p0_json }}'>
-        <button class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold whitespace-nowrap shadow">
-          ✓ Confirmar los {{ matches_p0|length }}
+        <input type="hidden" name="matches_json" id="p0-matches-json" value='[]'>
+        <button class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold whitespace-nowrap shadow disabled:opacity-50" id="p0-submit-btn">
+          ✓ Confirmar <span id="p0-selected-count">{{ matches_p0|length }}</span> seleccionados
         </button>
       </form>
     </div>
-    <details>
-      <summary class="cursor-pointer px-4 py-2 text-xs text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100/60 select-none">
-        Ver el detalle de los {{ matches_p0|length }} cruces ▾
-      </summary>
-      <div class="overflow-x-auto bg-white dark:bg-slate-900">
-        <table class="w-full text-xs">
-          <thead class="bg-slate-50 dark:bg-slate-800/60 text-left text-[10px] uppercase tracking-wide text-slate-500">
-            <tr>
-              <th class="px-3 py-1.5">Doc</th>
-              <th class="px-3 py-1.5">Banco fecha</th>
-              <th class="px-3 py-1.5 text-right">Banco monto</th>
-              <th class="px-3 py-1.5">Concepto banco</th>
-              <th class="px-3 py-1.5"></th>
-              <th class="px-3 py-1.5">PC fecha</th>
-              <th class="px-3 py-1.5 text-right">PC importe</th>
-              <th class="px-3 py-1.5">Cliente / Concepto PC</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for m in matches_p0 %}
-            <tr class="border-t border-slate-100 dark:border-slate-800/60">
-              <td class="px-3 py-1 font-mono text-emerald-700 dark:text-emerald-400 font-semibold whitespace-nowrap">{{ m.real_documento }}</td>
-              <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.real_fecha }}</td>
-              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.real_monto) }}</td>
-              <td class="px-3 py-1 text-slate-600 dark:text-slate-400 truncate max-w-xs" title="{{ m.real_concepto }}">{{ m.real_concepto[:40] }}</td>
-              <td class="px-3 py-1 text-center text-emerald-600 font-bold">
-                {% if m.date_diff %}<span class="text-amber-600" title="Fechas distintas">↔</span>{% else %}↔{% endif %}
-              </td>
-              <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.bk_fecha }}</td>
-              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.bk_importe) }}</td>
-              <td class="px-3 py-1 text-slate-700 dark:text-slate-300 truncate max-w-xs" title="{{ m.bk_concepto }}">
-                {% if m.bk_prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">{{ m.bk_prov }}</span>{% endif %}{{ (m.bk_prov_nombre or m.bk_concepto)[:38] }}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </details>
+    <div class="overflow-x-auto bg-white dark:bg-slate-900">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 dark:bg-slate-800/60 text-left text-[10px] uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-3 py-1.5 w-8 text-center">
+              <input type="checkbox" id="p0-master-check" class="cursor-pointer" checked title="Marcar/desmarcar todos">
+            </th>
+            <th class="px-3 py-1.5">Doc</th>
+            <th class="px-3 py-1.5">Banco fecha</th>
+            <th class="px-3 py-1.5 text-right">Banco monto</th>
+            <th class="px-3 py-1.5">Concepto banco</th>
+            <th class="px-3 py-1.5"></th>
+            <th class="px-3 py-1.5">PC fecha</th>
+            <th class="px-3 py-1.5 text-right">PC importe</th>
+            <th class="px-3 py-1.5">Cliente / Concepto PC</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in matches_p0 %}
+          <tr class="p0-row border-t border-slate-100 dark:border-slate-800/60 hover:bg-emerald-50/40 dark:hover:bg-emerald-900/10"
+              data-real-fecha="{{ m.real_fecha }}"
+              data-real-concepto="{{ m.real_concepto|e }}"
+              data-real-documento="{{ m.real_documento|e }}"
+              data-real-monto="{{ '%.2f'|format(m.real_monto) }}"
+              data-real-tipo="{{ m.real_tipo }}"
+              data-real-codigo="{{ m.real_codigo|e }}"
+              data-real-oficina="{{ m.real_oficina|e }}"
+              data-bk-idtx="{{ m.bk_id_transaccion or '' }}">
+            <td class="px-3 py-1 text-center">
+              <input type="checkbox" class="p0-check cursor-pointer" checked>
+            </td>
+            <td class="px-3 py-1 font-mono text-emerald-700 dark:text-emerald-400 font-semibold whitespace-nowrap">{{ m.real_documento }}</td>
+            <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.real_fecha }}</td>
+            <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.real_monto) }}</td>
+            <td class="px-3 py-1 text-slate-600 dark:text-slate-400 truncate max-w-xs" title="{{ m.real_concepto }}">{{ m.real_concepto[:40] }}</td>
+            <td class="px-3 py-1 text-center text-emerald-600 font-bold">
+              {% if m.date_diff %}<span class="text-amber-600" title="Fechas distintas">↔</span>{% else %}↔{% endif %}
+            </td>
+            <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.bk_fecha }}</td>
+            <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.bk_importe) }}</td>
+            <td class="px-3 py-1 text-slate-700 dark:text-slate-300 truncate max-w-xs" title="{{ m.bk_concepto }}">
+              {% if m.bk_prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">{{ m.bk_prov }}</span>{% endif %}{{ (m.bk_prov_nombre or m.bk_concepto)[:38] }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
+  <script>
+  (function(){
+    const masterCb = document.getElementById('p0-master-check');
+    const rowCbs = document.querySelectorAll('.p0-check');
+    const countEl = document.getElementById('p0-selected-count');
+    const jsonInput = document.getElementById('p0-matches-json');
+    const submitBtn = document.getElementById('p0-submit-btn');
+    function refresh() {
+      const checked = Array.from(rowCbs).filter(cb => cb.checked);
+      countEl.textContent = checked.length;
+      submitBtn.disabled = checked.length === 0;
+      // Construir el matches_json desde las filas chequeadas
+      const payload = checked.map(cb => {
+        const tr = cb.closest('tr');
+        return {
+          real: {
+            fecha: tr.dataset.realFecha,
+            concepto: tr.dataset.realConcepto,
+            documento: tr.dataset.realDocumento,
+            monto: parseFloat(tr.dataset.realMonto),
+            tipo: tr.dataset.realTipo,
+            codigo: tr.dataset.realCodigo,
+            oficina: tr.dataset.realOficina,
+          },
+          bancsis: { id_transaccion: parseInt(tr.dataset.bkIdtx) || null }
+        };
+      });
+      jsonInput.value = JSON.stringify(payload);
+      // Master checkbox refleja estado mixto
+      if (checked.length === 0) masterCb.checked = false;
+      else if (checked.length === rowCbs.length) masterCb.checked = true;
+      else { masterCb.indeterminate = true; masterCb.checked = false; }
+      if (checked.length === 0 || checked.length === rowCbs.length) masterCb.indeterminate = false;
+    }
+    masterCb.addEventListener('change', () => {
+      rowCbs.forEach(cb => cb.checked = masterCb.checked);
+      refresh();
+    });
+    rowCbs.forEach(cb => cb.addEventListener('change', refresh));
+    refresh(); // init
+    // Confirm
+    window.confirmarP0 = function(ev) {
+      const n = document.querySelectorAll('.p0-check:checked').length;
+      if (n === 0) { ev.preventDefault(); return false; }
+      return confirm(`¿Confirmar ${n} ${n === 1 ? 'cruce' : 'cruces'} por doc id? No vuelven a aparecer en próximos extractos.`);
+    };
+  })();
+  </script>
   {% endif %}
 
   {# ───── Depósitos por día — TMT 2026-05-27 dueña ─────
