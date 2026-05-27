@@ -589,10 +589,15 @@
           {% set _cli_prog = (m.bancsis.prov or '')|string|trim %}
           {% set _cli_nombre_banco = (m.cat.cliente_nombre or '')|string|trim|upper %}
           {% set _cli_nombre_prog = (m.bancsis.prov_nombre or '')|string|trim|upper %}
-          {# Match cliente: a) códigos iguales O b) primeras 3 letras del nombre coinciden
-             (ej. "MUECES ESCOBAR" del banco vs prov_nombre "MUECES ESCOBAR ADRIANA" del prog). #}
+          {# Match cliente — reglas en orden de confianza:
+             a) Códigos exactos (cli_extr == prov_prog).
+             b) Nombres comparten 8 primeras letras.
+             c) El código del programa (3-4 letras) es prefix del nombre del
+                banco — ej. prov_prog="MUE" y cli_nombre_banco="MUECES ESCOBAR".
+                Cubre el caso típico Pichincha donde el banco solo trae nombre. #}
           {% set _cli_match = (_cli_extr and _cli_prog and _cli_extr.upper() == _cli_prog.upper())
-              or (_cli_nombre_banco and _cli_nombre_prog and _cli_nombre_banco[:8] == _cli_nombre_prog[:8]) %}
+              or (_cli_nombre_banco and _cli_nombre_prog and _cli_nombre_banco[:8] == _cli_nombre_prog[:8])
+              or (_cli_prog and _cli_nombre_banco and _cli_nombre_banco.startswith(_cli_prog.upper())) %}
           <tr class="border-t border-amber-100 dark:border-amber-900/40 hover:bg-amber-100/30 dark:hover:bg-amber-900/20 fila-prob {% if _cli_match %}cli-match{% endif %}">
             <td class="px-2 py-1.5 text-center">
               <input type="checkbox" class="chk-prob" data-match='{{ m|tojson|forceescape }}'>
