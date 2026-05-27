@@ -95,65 +95,71 @@
             <td class="px-4 py-2 text-center text-xs text-slate-500 tabular-nums">{{ d.n_banco }} / {{ d.n_programa }}</td>
           </tr>
           {# Fila detalle — oculta por default. Banco izq, Programa der.
-             TMT 2026-05-27 dueña: "Trae doc id banco, del banco real y del
-             cargado en el nuestros porque esos deberian ser los numeros
-             que matcheamos 100%". Doc banco = real.documento ↔ prog.numreferencia. #}
-          {% set _docs_prog_set = d.programa_items|map(attribute='numreferencia')|select|map('string')|map('trim')|list %}
-          <tr id="{{ _dep_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40">
-            <td colspan="5" class="px-4 py-3">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+             TMT 2026-05-27 dueña v3: rediseñado limpio. Dos paneles del
+             mismo ancho con scroll independiente. Filas compactas. Match
+             por doc banco resaltado verde. Sin "—" feos: si programa no
+             tiene numreferencia, muestra el cliente (prov) que es lo más
+             informativo en su lugar. #}
+          {% set _docs_prog_set = d.programa_items|map(attribute='numreferencia')|select|map('string')|map('trim')|reject('eq','')|list %}
+          {% set _docs_real_set = d.banco_items|map(attribute='documento')|select|map('string')|map('trim')|reject('eq','')|list %}
+          <tr id="{{ _dep_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
+            <td colspan="5" class="px-0 py-0">
+              <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
                 {# ── BANCO ─────────────────────────────────────── #}
-                <div>
-                  <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Banco · {{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</div>
+                <div class="px-4 py-3 min-w-0">
+                  <div class="flex items-baseline justify-between mb-2">
+                    <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
+                  </div>
                   {% if d.banco_items and d.banco_items|length > 0 %}
-                  <table class="w-full text-xs">
-                    <thead class="text-[9px] uppercase tracking-wider text-slate-400">
-                      <tr><th class="text-left py-0.5">Doc</th><th class="text-right py-0.5 px-2">Monto</th><th class="text-left py-0.5">Concepto</th></tr>
-                    </thead>
-                    <tbody>
-                      {% for it in d.banco_items %}
-                      {% set _doc = (it.documento or '')|string|trim %}
-                      {% set _match = _doc and (_doc.lstrip('0') in (_docs_prog_set|map('lstrip', '0')|list)) %}
-                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if _match %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}">
-                        <td class="py-1 pr-2 font-mono w-24 {% if _match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-700 dark:text-slate-300{% endif %}">
-                          {{ _doc or '—' }}{% if _match %} <span title="match doc">✓</span>{% endif %}
-                        </td>
-                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 w-24 whitespace-nowrap">$ {{ '{:,.2f}'.format(it.monto) }}</td>
-                        <td class="py-1 pl-1 text-slate-500 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.concepto[:60] }}</td>
-                      </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
+                  <div class="max-h-72 overflow-y-auto">
+                    <table class="w-full text-xs">
+                      <tbody>
+                        {% for it in d.banco_items %}
+                        {% set _doc = (it.documento or '')|string|trim %}
+                        {% set _match = _doc and (_doc.lstrip('0') in (_docs_prog_set|map('lstrip', '0')|list)) %}
+                        <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if _match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+                          <td class="py-1 pr-2 font-mono whitespace-nowrap {% if _match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-500{% endif %}" style="width: 1%;">
+                            {% if _match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc or '·' }}
+                          </td>
+                          <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ '{:,.2f}'.format(it.monto) }}</td>
+                          <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">{{ it.concepto[:55] }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
                   {% else %}
                   <div class="text-xs text-slate-400 italic py-2">Sin depósitos en el banco este día.</div>
                   {% endif %}
                 </div>
                 {# ── PROGRAMA ──────────────────────────────────── #}
-                {% set _docs_real_set = d.banco_items|map(attribute='documento')|select|map('string')|map('trim')|list %}
-                <div>
-                  <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Programa · {{ d.n_programa }} movs · $ {{ '{:,.2f}'.format(d.programa) }}</div>
+                <div class="px-4 py-3 min-w-0">
+                  <div class="flex items-baseline justify-between mb-2">
+                    <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Programa</span>
+                    <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_programa }} movs · $ {{ '{:,.2f}'.format(d.programa) }}</span>
+                  </div>
                   {% if d.programa_items and d.programa_items|length > 0 %}
-                  <table class="w-full text-xs">
-                    <thead class="text-[9px] uppercase tracking-wider text-slate-400">
-                      <tr><th class="text-left py-0.5">Doc banco</th><th class="text-right py-0.5 px-2">Monto</th><th class="text-left py-0.5">Concepto</th></tr>
-                    </thead>
-                    <tbody>
-                      {% for it in d.programa_items %}
-                      {% set _numref = (it.numreferencia or '')|string|trim %}
-                      {% set _match = _numref and (_numref.lstrip('0') in (_docs_real_set|map('lstrip', '0')|list)) %}
-                      <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if _match %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}">
-                        <td class="py-1 pr-2 font-mono w-24 {% if _match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-700 dark:text-slate-300{% endif %}">
-                          {{ _numref or '—' }}{% if _match %} <span title="match doc">✓</span>{% endif %}
-                        </td>
-                        <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 w-24 whitespace-nowrap">$ {{ '{:,.2f}'.format(it.importe) }}</td>
-                        <td class="py-1 pl-1 text-slate-500 dark:text-slate-400 truncate" title="{{ it.concepto }}">
-                          {% if it.es_agrupado %}<span class="inline-block px-1 py-0 mr-1 rounded bg-sky-100 text-sky-800 text-[10px]">📦 {{ it.n_cheques }}ch</span>{% endif %}
-                          {{ it.concepto[:55] }}
-                        </td>
-                      </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
+                  <div class="max-h-72 overflow-y-auto">
+                    <table class="w-full text-xs">
+                      <tbody>
+                        {% for it in d.programa_items %}
+                        {% set _numref = (it.numreferencia or '')|string|trim %}
+                        {% set _match = _numref and (_numref.lstrip('0') in (_docs_real_set|map('lstrip', '0')|list)) %}
+                        <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if _match %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+                          <td class="py-1 pr-2 font-mono whitespace-nowrap {% if _match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-500{% endif %}" style="width: 1%;">
+                            {% if _match %}<span class="text-emerald-600">✓</span>{{ _numref }}{% elif _numref %}{{ _numref }}{% elif it.prov %}<span class="text-slate-700 dark:text-slate-300">{{ it.prov }}</span>{% else %}·{% endif %}
+                          </td>
+                          <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ '{:,.2f}'.format(it.importe) }}</td>
+                          <td class="py-1 pl-2 text-slate-600 dark:text-slate-400 truncate" title="{{ it.concepto }}">
+                            {% if it.es_agrupado %}<span class="inline-block px-1 py-0 mr-1 rounded bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200 text-[10px]">📦{{ it.n_cheques }}</span>{% endif %}
+                            {{ it.concepto[:50] }}
+                          </td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
                   {% else %}
                   <div class="text-xs text-slate-400 italic py-2">Sin depósitos en el programa este día.</div>
                   {% endif %}
@@ -185,10 +191,11 @@
   {% set n_real_salidas_sin_sug = data.real_only|rejectattr('sugerencias')|selectattr('tipo','equalto','D')|list|length %}
   {% set n_real_sin_sug = n_real_salidas_sin_sug %}
   {% set n_bancsis_salidas = data.bancsis_only|rejectattr('tipo_real','equalto','C')|list|length %}
+  {% set n_match_salidas = data.matches|selectattr('real.tipo','equalto','D')|list|length %}
   <div class="flex items-end gap-1 mb-3 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
     <button type="button" data-tab="matches"
             class="tab-btn px-4 py-2 text-sm rounded-t border-b-2 border-sky-600 text-sky-700 dark:text-sky-400 font-medium whitespace-nowrap">
-      Coinciden <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_match }}</span>
+      Coinciden <span class="ml-1 text-xs text-slate-400 tabular-nums">{{ n_match_salidas }}</span>
     </button>
     {% if n_real_con_sug > 0 %}
     <button type="button" data-tab="sugerencias"
@@ -252,7 +259,11 @@
           </tr>
         </thead>
         <tbody>
-          {% for m in data.matches %}
+          {# TMT 2026-05-27 dueña: "estos cheques no deberian aparecer aca,
+             ya deberian estar arriba". Sacamos los matches de entradas
+             (tipo C) — están contados en el panel "Depósitos por día" con
+             matched=True. Solo SALIDAS quedan en Coinciden. #}
+          {% for m in data.matches %}{% if (m.real.tipo or '')|upper != 'C' %}
           {% set fecha_diff = (m.real.fecha != m.bancsis.fecha) %}
           {% set monto_diff = ((m.real.monto|float) - (m.bancsis.importe|float))|abs > 0.01 %}
           {% set _doc_real = (m.real.documento or '')|string %}
@@ -348,7 +359,7 @@
             </td>
           </tr>
           {% endif %}
-          {% endfor %}
+          {% endif %}{% endfor %}
         </tbody>
       </table>
     </div>
