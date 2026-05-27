@@ -17,12 +17,29 @@ echo "=== Diag facturas por stat — corriendo en EC2 vía SSM ==="
 
 PY=$(cat <<'EOF'
 import os, sys
-url = os.environ.get('DATABASE_URL', '')
-if (not url) or url.startswith('postgresql://localhost'):
-    print('REFUSING — DATABASE_URL no apunta a RDS')
-    sys.exit(1)
+# Usar el módulo db del proyecto — sabe leer el config correcto.
+sys.path.insert(0, r'C:\programa-core')
+os.chdir(r'C:\programa-core')
+# Cargar .env del proyecto si existe (psycopg2 directo no lee Machine env).
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+import db as _db
 import psycopg2
-conn = psycopg2.connect(url)
+# Construir DSN desde env vars que usa el proyecto (DB_HOST/DB_PORT/etc).
+host = os.environ.get('DB_HOST', '')
+port = os.environ.get('DB_PORT', '5432')
+name = os.environ.get('DB_NAME', '')
+user = os.environ.get('DB_USER', '')
+pwd  = os.environ.get('DB_PASSWORD', '')
+if not host or not name:
+    print(f'REFUSING — falta DB_HOST({host!r})/DB_NAME({name!r})')
+    sys.exit(1)
+print(f'Connecting to {user}@{host}:{port}/{name}')
+conn = psycopg2.connect(host=host, port=port, dbname=name, user=user, password=pwd)
+conn.autocommit = True
 cur = conn.cursor()
 
 print('=== Distribución global stats en scintela.factura ===')
