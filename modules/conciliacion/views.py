@@ -451,6 +451,7 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                     "prov": m.bancsis.prov,
                     "prov_nombre": m.bancsis.prov_nombre,
                     "fecha_crea": m.bancsis.fecha_crea.isoformat() if m.bancsis.fecha_crea else None,
+                    "doc_banco_rel": m.bancsis.doc_banco_rel,  # cheque.doc_banco editable inline
                 },
                 "score": m.score,
                 "razon": m.razon,
@@ -490,6 +491,7 @@ def _serialize_resultado_banco(res, no_banco: int) -> dict:
                 "es_agrupado": b.es_agrupado,
                 "n_cheques": b.n_cheques,
                 "fecha_crea": b.fecha_crea.isoformat() if b.fecha_crea else None,
+                "doc_banco_rel": b.doc_banco_rel,  # cheque.doc_banco editable inline
                 "cat": _cat_to_dict(_cats_bancsis[i]) if i < len(_cats_bancsis) and _cats_bancsis[i] else _cat_to_dict(None),
             }
             for i, b in enumerate(res.bancsis_only)
@@ -973,6 +975,7 @@ def hub():
                 "concepto": b.get("concepto") or "",
                 "documento": b.get("documento") or "",          # tipo DE/CH
                 "numreferencia": b.get("numreferencia") or "",  # doc id banco
+                "doc_banco_rel": b.get("doc_banco_rel") or "",  # cheque.doc_banco fallback
                 "importe": float(b.get("importe") or 0),
                 "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
@@ -997,6 +1000,7 @@ def hub():
                 "concepto": b.get("concepto") or "",
                 "documento": b.get("documento") or "",
                 "numreferencia": b.get("numreferencia") or "",
+                "doc_banco_rel": b.get("doc_banco_rel") or "",
                 "importe": float(b.get("importe") or 0),
                 "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
@@ -1128,6 +1132,7 @@ def hub():
                 "concepto": b.get("concepto") or "",
                 "documento": b.get("documento") or "",
                 "numreferencia": b.get("numreferencia") or "",
+                "doc_banco_rel": b.get("doc_banco_rel") or "",
                 "importe": float(b.get("importe") or 0),
                 "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",
@@ -1150,6 +1155,7 @@ def hub():
                 "concepto": b.get("concepto") or "",
                 "documento": b.get("documento") or "",
                 "numreferencia": b.get("numreferencia") or "",
+                "doc_banco_rel": b.get("doc_banco_rel") or "",
                 "importe": float(b.get("importe") or 0),
                 "prov": _prov_fallback(b.get("prov") or "", b.get("concepto") or ""),
                 "prov_nombre": b.get("prov_nombre") or "",

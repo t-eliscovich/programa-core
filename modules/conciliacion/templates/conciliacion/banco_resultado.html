@@ -546,8 +546,9 @@
               <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
                 {# ── BANCO ─────────────────────────────────────── #}
                 <div class="px-4 py-3 min-w-0">
-                  <div class="flex items-baseline justify-between mb-2">
+                  <div class="flex items-baseline justify-between mb-2 gap-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
+                    <button type="button" class="btn-auto-amount-match text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60" data-day="{{ _dep_id }}" title="Tildar todas las filas amount-matched (ámbar) de este día">⚡ Tildar amount-matches</button>
                     <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
                   </div>
                   {% if d.banco_items and d.banco_items|length > 0 %}
@@ -564,7 +565,11 @@
                             data-fecha="{{ it.fecha }}" data-concepto="{{ it.concepto|e }}"
                             data-documento="{{ it.documento|e }}" data-monto="{{ '%.2f'|format(it.monto) }}"
                             data-tipo="{{ it.tipo or 'C' }}" data-codigo="{{ it.codigo|e }}" data-oficina="{{ it.oficina|e }}"
-                            {% if it.matched %}data-already-matched="1"{% endif %}>
+                            {% if it.matched %}data-already-matched="1"{% endif %}
+                            {% if it.amount_match %}data-amount-match="1"{% endif %}>
+                          <td class="py-1 pl-2 pr-1 text-center" style="width: 1%;" onclick="event.stopPropagation()">
+                            <input type="checkbox" class="ctp-check-banco cursor-pointer" title="Marcar para parear">
+                          </td>
                           <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}text-slate-500{% endif %}" style="width: 1%;">
                             {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en programa el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
@@ -592,17 +597,20 @@
                       <tbody>
                         {% for it in d.programa_items %}
                         {% set _numref = (it.numreferencia or '')|string|trim %}
+                        {% set _doc_banco_ch = (it.doc_banco_rel or '')|string|trim %}
                         {# TMT 2026-05-27 dueña: "poner siempre doc banco
                            porque lo vamos a empezar a agregar y ese va a
                            ser el cruce mas importante". Doc banco
-                           (numreferencia) SIEMPRE visible — '·' si vacío.
+                           (numreferencia o, si vacío, cheque.doc_banco
+                           editable inline) SIEMPRE visible — '·' si vacío.
                            Prov pasa a segunda columna como info auxiliar. #}
+                        {% set _doc_a_mostrar = _numref or _doc_banco_ch %}
                         <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}"
                             draggable="true"
                             data-id-transaccion="{{ it.id_transaccion or '' }}" data-importe="{{ '%.2f'|format(it.importe) }}"
                             {% if it.matched %}data-already-matched="1"{% endif %}>
-                          <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _numref %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width: 1%;">
-                            {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _numref or '·' }}
+                          <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _doc_a_mostrar %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width: 1%;" title="{% if _numref %}numref: {{ _numref }}{% elif _doc_banco_ch %}cheque.doc_banco: {{ _doc_banco_ch }}{% endif %}">
+                            {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc_a_mostrar or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
                           </td>
                           <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width: 1%;">$ {{ '{:,.2f}'.format(it.importe) }}</td>
@@ -745,10 +753,12 @@
                     <tbody>
                       {% for it in d.programa_items %}
                       {% set _numref_t = (it.numreferencia or '')|string|trim %}
-                      {# TMT 2026-05-27 dueña: doc banco SIEMPRE visible — '·' si vacío. #}
+                      {% set _doc_banco_ch_t = (it.doc_banco_rel or '')|string|trim %}
+                      {% set _doc_t = _numref_t or _doc_banco_ch_t %}
+                      {# TMT 2026-05-27 dueña: doc banco SIEMPRE visible — fallback a cheque.doc_banco. #}
                       <tr class="border-t border-slate-100 dark:border-slate-800/60 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}">
-                        <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _numref_t %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width:1%;">
-                          {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _numref_t or '·' }}
+                        <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _doc_t %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width:1%;">
+                          {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc_t or '·' }}
                           {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
                         </td>
                         <td class="py-1 px-2 text-right tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap" style="width:1%;">$ {{ '{:,.2f}'.format(it.importe) }}</td>
