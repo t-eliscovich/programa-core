@@ -48,6 +48,71 @@
   {# KPI cards eliminados 2026-05-27 dueña: "borra los kpis". Los totales
      del panel Depósitos por día ya dicen todo. #}
 
+  {# ───── Resumen post-conciliación — TMT 2026-05-27 dueña ─────
+       'despues de hacer la conciliacion, deberiamos tener un resumen.
+       banco inicial + mov conciliados +/- debitos pendientes + depositos
+       pendientes = final banco hoy'. Es el balance clásico de
+       conciliación: Saldo PC + ajustes = Saldo banco físico. #}
+  {% if resumen and resumen.saldo_pc is defined %}
+  <div class="mb-5 rounded-lg border-2 {% if resumen.cuadra %}border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20{% else %}border-amber-400 bg-amber-50 dark:bg-amber-900/20{% endif %} overflow-hidden">
+    <div class="px-4 py-3 flex items-center justify-between {% if resumen.cuadra %}bg-emerald-100 dark:bg-emerald-900/40{% else %}bg-amber-100 dark:bg-amber-900/40{% endif %}">
+      <div>
+        <div class="text-base font-bold {% if resumen.cuadra %}text-emerald-900 dark:text-emerald-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
+          {% if resumen.cuadra %}✓ Conciliación cuadra{% else %}⚠ Conciliación con diferencia{% endif %}
+        </div>
+        <div class="text-xs {% if resumen.cuadra %}text-emerald-700 dark:text-emerald-300{% else %}text-amber-700 dark:text-amber-300{% endif %} mt-0.5">
+          Saldo PC + ajustes pendientes = Saldo físico del banco
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] uppercase tracking-wider {% if resumen.cuadra %}text-emerald-700 dark:text-emerald-300{% else %}text-amber-700 dark:text-amber-300{% endif %}">Diferencia</div>
+        <div class="text-2xl font-bold tabular-nums {% if resumen.cuadra %}text-emerald-900 dark:text-emerald-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
+          {% if resumen.cuadra %}$ 0.00{% else %}$ {{ '{:,.2f}'.format(resumen.diff) }}{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="px-4 py-4 bg-white dark:bg-slate-900">
+      <table class="w-full text-sm tabular-nums">
+        <tbody>
+          <tr class="border-b border-slate-200 dark:border-slate-700">
+            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo PC (libros) al {{ resumen.fecha_pc or '—' }}</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_pc) }}</td>
+          </tr>
+          <tr class="text-xs text-slate-600 dark:text-slate-400">
+            <td class="py-1 pl-4">− Depósitos en PC, todavía no en banco (en tránsito)</td>
+            <td class="py-1 text-right">− $ {{ '{:,.2f}'.format(resumen.pc_pend_cred) }}</td>
+          </tr>
+          <tr class="text-xs text-slate-600 dark:text-slate-400">
+            <td class="py-1 pl-4">+ Cheques/débitos PC, todavía no cobrados por banco</td>
+            <td class="py-1 text-right">+ $ {{ '{:,.2f}'.format(resumen.pc_pend_deb) }}</td>
+          </tr>
+          <tr class="text-xs text-slate-600 dark:text-slate-400">
+            <td class="py-1 pl-4">+ Depósitos en banco no identificados en PC</td>
+            <td class="py-1 text-right">+ $ {{ '{:,.2f}'.format(resumen.bco_pend_cred) }}</td>
+          </tr>
+          <tr class="text-xs text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+            <td class="py-1 pl-4">− Cargos del banco no identificados en PC</td>
+            <td class="py-1 text-right">− $ {{ '{:,.2f}'.format(resumen.bco_pend_deb) }}</td>
+          </tr>
+          <tr class="border-b-2 border-slate-300 dark:border-slate-700">
+            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">= Saldo banco esperado</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_bco_esperado) }}</td>
+          </tr>
+          <tr>
+            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo banco según extracto al {{ resumen.fecha_bco or '—' }}</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_bco_extracto) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      {% if not resumen.cuadra %}
+      <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">
+        La diferencia significa que hay movimientos que no están reflejados ni en PC ni como pendientes. Conciliar los movs sueltos hasta que la diferencia llegue a $0.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {# ───── Cruces por Doc ID — TMT 2026-05-27 dueña ─────
        "necesito primero el cruce, cruce exacto de doc id, despues
        depositos. porque quizas hay una fecha en el banco y otra en el

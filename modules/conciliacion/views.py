@@ -1270,6 +1270,71 @@ def hub():
         separators=(",", ":"),
     )
 
+    # TMT 2026-05-27 dueña: 'despues de hacer la conciliacion, deberiamos
+    # tener un resumen. banco inicial + mov conciliados +/- debitos
+    # pendientes + depositos pendientes = final banco hoy'.
+    # Resumen post-conciliación clásico: parto del saldo PC libros, le
+    # quito los pendientes PC y le sumo los pendientes banco → tiene que
+    # cuadrar con el saldo banco físico del extracto.
+    resumen = {}
+    try:
+        _CRED_DOCS = ("DE", "TR", "XX", "NC", "IN", "AC")
+        # Pendientes PC (bancsis_only en período)
+        pc_pend_cred = 0.0
+        pc_pend_deb = 0.0
+        _ext_d = data.get("extracto_desde")
+        _ext_h = data.get("extracto_hasta")
+        for b in (data.get("bancsis_only") or []):
+            f = b.get("fecha")
+            if _ext_d and _ext_h and f and not (_ext_d <= f <= _ext_h):
+                continue
+            if b.get("es_agrupado"):
+                continue  # agrupados son N cheques sumados — no double-count
+            imp = float(b.get("importe") or 0)
+            if (b.get("documento") or "").upper() in _CRED_DOCS:
+                pc_pend_cred += imp
+            else:
+                pc_pend_deb += imp
+        # Pendientes Banco (real_only)
+        bco_pend_cred = 0.0
+        bco_pend_deb = 0.0
+        for r in (data.get("real_only") or []):
+            mt = float(r.get("monto") or 0)
+            if (r.get("tipo") or "").upper() == "C":
+                bco_pend_cred += mt
+            else:
+                bco_pend_deb += mt
+        saldo_pc = float(data.get("saldo_bancsis_final") or 0)
+        saldo_bco = float(data.get("saldo_real_final") or 0)
+        net_pend_pc = pc_pend_cred - pc_pend_deb       # signed
+        net_pend_bco = bco_pend_cred - bco_pend_deb    # signed
+        # Saldo banco esperado = Saldo PC - net_pend_PC + net_pend_BCO
+        # (le quito al PC los movs que el banco no tiene; le sumo los
+        # movs banco que PC no tiene)
+        saldo_bco_esperado = saldo_pc - net_pend_pc + net_pend_bco
+        diff = round(saldo_bco - saldo_bco_esperado, 2)
+        resumen = {
+            "saldo_pc": round(saldo_pc, 2),
+            "saldo_bco_extracto": round(saldo_bco, 2),
+            "saldo_bco_esperado": round(saldo_bco_esperado, 2),
+            "pc_pend_cred": round(pc_pend_cred, 2),
+            "pc_pend_deb": round(pc_pend_deb, 2),
+            "bco_pend_cred": round(bco_pend_cred, 2),
+            "bco_pend_deb": round(bco_pend_deb, 2),
+            "net_pend_pc": round(net_pend_pc, 2),
+            "net_pend_bco": round(net_pend_bco, 2),
+            "diff": diff,
+            "cuadra": abs(diff) < 1.0,
+            "fecha_pc": data.get("saldo_bancsis_fecha"),
+            "fecha_bco": data.get("saldo_real_fecha"),
+        }
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.conciliacion").exception(
+            "resumen post-conciliación falló: %s", _e
+        )
+        resumen = {}
+
     return render_template(
         "conciliacion/banco_resultado.html",
         data=data,
@@ -1292,6 +1357,7 @@ def hub():
         proveedores_dl=proveedores_dl,
         matches_p0=matches_p0,
         matches_p0_json=matches_p0_json,
+        resumen=resumen,
         no_banco=no_banco,
         banco_nombre=banco_nombre,
         **kpis,
