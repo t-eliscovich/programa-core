@@ -1563,6 +1563,209 @@ def backfill_asinfo_endpoint():
             "usuario_crea": MARKER,
         })
 
+
+# ---------------------------------------------------------------------------
+# Auto-fix huérfanas: registrar aliases sugeridos + backfill numf_completo
+# ---------------------------------------------------------------------------
+# TMT 2026-05-26: las facturas DBF entran sin numf_completo. Un script
+# (backfill_numf_completo_from_asinfo) las matchea contra Asinfo por (numf,
+# codigo_cli) y popula numf_completo. PERO si Asinfo usa otro código de
+# cliente (AJO vs AJ2), el match falla y la factura queda como "huérfana"
+# en /facturas?solo_huerfanas=1.
+#
+# Este endpoint hace el ciclo completo automáticamente:
+# 1) Detecta aliases sugeridos al 100% (mismo cli Asinfo + mismo numf → otro
+#    cli PC) — misma lógica que /facturas/desde-asinfo.
+# 2) Registra esos aliases.
+# 3) Corre backfill_numf_completo para popular numf_completo en las facturas
+#    PC que ahora matcheen con sus Asinfo equivalentes.
+# 4) Devuelve JSON con resumen.
+
+@facturas_bp.route("/facturas/admin/fix-huerfanas-con-aliases", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def fix_huerfanas_con_aliases():
+    """Auto-aplica aliases sugeridos al 100% y re-corre backfill numf_completo.
+
+    Params:
+        desde=YYYY-MM-DD   default 2025-01-01
+        hasta=YYYY-MM-DD   default hoy
+        min_pct=100        umbral % de matching para auto-aplicar alias
+        dry_run=1          NO inserta aliases ni actualiza numf_completo
+    """
+    import re
+    from datetime import date as _date
+    from flask import jsonify
+    from modules.asinfo import service as asinfo_service
+    from modules.asinfo import aliases as _aliases
+
+    desde_s = (request.values.get("desde") or "2025-01-01").strip()
+    hasta_s = (request.values.get("hasta") or _date.today().isoformat()).strip()
+    min_pct = float(request.values.get("min_pct") or 100.0)
+    dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
+    try:
+        desde = _date.fromisoformat(desde_s)
+        hasta = _date.fromisoformat(hasta_s)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": f"Fecha invalida: {e}"}), 400
+
+    # 1) Asinfo del rango
+    from calendar import monthrange
+    cy, cm = desde.year, desde.month
+    ey, em = hasta.year, hasta.month
+    asinfo_rows = []
+    while (cy, cm) <= (ey, em):
+        first = _date(cy, cm, 1)
+        last = _date(cy, cm, monthrange(cy, cm)[1])
+        cd = max(first, desde)
+        ch = min(last, hasta)
+        try:
+            asinfo_rows.extend(asinfo_service.facturas_periodo(cd, ch) or [])
+        except Exception:
+            pass
+        cm += 1
+        if cm > 12:
+            cm = 1
+            cy += 1
+
+    # 2) PC: numf → set(codigo_cli)
+    pc_rows = db.fetch_all(
+        """
+        SELECT numf, codigo_cli
+          FROM scintela.factura
+         WHERE fecha BETWEEN %s AND %s
+           AND stat <> 'X' AND numf IS NOT NULL AND numf > 0
+        """,
+        (desde, hasta),
+    ) or []
+    pc_by_numf: dict[int, set[str]] = {}
+    pc_by_numf_cli: set[tuple[int, str]] = set()
+    for r in pc_rows:
+        try:
+            n = int(r.get("numf") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not n:
+            continue
+        cli_pc = (r.get("codigo_cli") or "").strip().upper()
+        pc_by_numf.setdefault(n, set()).add(cli_pc)
+        pc_by_numf_cli.add((n, cli_pc))
+
+    def _extract_numf(s):
+        if not s:
+            return None
+        m = re.findall(r"\d+", str(s))
+        if not m:
+            return None
+        try:
+            return int(m[-1])
+        except (ValueError, TypeError):
+            return None
+
+    # 3) Agrupar huérfanas por cliente Asinfo y votar aliases
+    aliases_existentes = _aliases.todos()
+    alias_existe_para = {a["codigo_asinfo"]: a["codigo_pc"] for a in aliases_existentes}
+    grupos: dict[str, dict] = {}
+    for r in asinfo_rows:
+        tipo = (r.get("tipo") or "").upper()
+        if tipo not in ("FACTURA", "NTEN"):
+            continue
+        numero = (r.get("numero") or "").strip()
+        numf = _extract_numf(numero)
+        if not numf:
+            continue
+        cli_asinfo = (r.get("cliente_codigo") or "").strip().upper()
+        if not cli_asinfo:
+            continue
+        # Si esta tripla ya matchea, NO es huérfana
+        cli_pc_esperado = _aliases.to_pc(cli_asinfo)
+        if (numf, cli_pc_esperado) in pc_by_numf_cli:
+            continue
+        otros_clis = sorted(c for c in pc_by_numf.get(numf, set())
+                            if c and c != cli_pc_esperado)
+        grupo = grupos.setdefault(cli_asinfo, {"n": 0, "votos_alias": {}})
+        grupo["n"] += 1
+        for c_pc in otros_clis:
+            grupo["votos_alias"][c_pc] = grupo["votos_alias"].get(c_pc, 0) + 1
+
+    # 4) Aliases candidatos al >= min_pct
+    aliases_a_agregar = []
+    for cli, grupo in grupos.items():
+        if not grupo["votos_alias"]:
+            continue
+        ganador, votos = max(grupo["votos_alias"].items(), key=lambda kv: kv[1])
+        pct = 100.0 * votos / grupo["n"]
+        if pct < min_pct:
+            continue
+        if alias_existe_para.get(cli) == ganador:
+            continue
+        aliases_a_agregar.append({
+            "asinfo": cli, "pc": ganador, "votos": votos,
+            "total": grupo["n"], "porcentaje": round(pct, 1),
+        })
+
+    # 5) Insertar aliases (a menos que dry_run)
+    aliases_agregados = []
+    if not dry_run:
+        usuario = (
+            getattr(g, "user", {}).get("username")
+            if hasattr(g, "user") and isinstance(getattr(g, "user", None), dict)
+            else "auto-fix"
+        )
+        for ali in aliases_a_agregar:
+            try:
+                creado = _aliases.agregar(
+                    ali["asinfo"], ali["pc"],
+                    nota=f"auto-fix: {ali['votos']}/{ali['total']} ({ali['porcentaje']}%)",
+                    usuario=usuario,
+                )
+                if creado:
+                    aliases_agregados.append(ali)
+            except Exception as e:
+                ali["error"] = str(e)
+
+    # 6) Refrescar cache y correr backfill numf_completo
+    _aliases._refrescar()
+    bf_stats = {}
+    if not dry_run:
+        try:
+            import sys, os
+            _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from scripts.backfill_numf_completo_from_asinfo import backfill as bf
+            bf_stats = bf(dry_run=False, limite=5000, desde=desde)
+        except Exception as e:
+            bf_stats = {"error": str(e)}
+
+    # 7) Contar huérfanas restantes (facturas PC sin numf_completo)
+    row_huerf = db.fetch_one(
+        """
+        SELECT COUNT(*) AS n
+          FROM scintela.factura
+         WHERE fecha >= %s
+           AND (kg IS NOT NULL AND kg <> 0)
+           AND (stat IS NULL OR stat IN ('Z','A','T','X','N','',' '))
+           AND (numf_completo IS NULL OR numf_completo = ''
+                OR numf IS NULL OR numf = 0)
+           AND (numf_completo IS NULL OR NOT (numf_completo LIKE '#%%'))
+        """,
+        (desde,),
+    )
+
+    return jsonify({
+        "ok": True,
+        "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
+        "min_pct": min_pct,
+        "dry_run": dry_run,
+        "asinfo_rows": len(asinfo_rows),
+        "aliases_existentes": len(aliases_existentes),
+        "aliases_a_agregar_segun_umbral": aliases_a_agregar,
+        "aliases_agregados_efectivamente": aliases_agregados,
+        "backfill_numf_completo": bf_stats,
+        "huerfanas_pc_restantes": int(row_huerf.get("n") or 0) if row_huerf else None,
+    })
+
     resumen = {
         "ok": True,
         "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
