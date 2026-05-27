@@ -120,8 +120,11 @@ def nueva():
             )
         # Sin permiso proveedores.crear, mantener el error clásico.
         errores.append(f"El proveedor {codigo_prov!r} no existe.")
-    if importe is None or importe <= 0:
-        errores.append("Importe requerido (mayor que cero).")
+    # TMT 2026-05-26 dueña: 'borra esta alerta, puede ser 0'. Compras
+    # con importe 0 son válidas (muestras, regalos, compras pendientes
+    # de facturar). Solo rechazamos None / inválido.
+    if importe is None:
+        errores.append("Importe inválido.")
 
     form.update({
         "fecha": request.form.get("fecha"),

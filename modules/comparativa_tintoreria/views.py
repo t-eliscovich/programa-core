@@ -463,9 +463,17 @@ def comparativa_tintoreria():
                     cambio = (kg_pc - kg_form_cruda) if kg_form_cruda is not None else None
                     raw_desp = c.get("form_desperdicio_pct")
                     desperd_pct = float(raw_desp) if raw_desp is not None else None
-                    # TMT 2026-05-26 dueña: 'agrega una columna que sea el
-                    # costo por color en color'. = importe / kg dbase.
-                    costo_kg = (importe_pc / kg_pc) if kg_pc > 0 else None
+                    # TMT 2026-05-26 dueña: 'el costo calculalo con formulas!'
+                    # Costo $/kg usando kg de formulas (terminado preferido,
+                    # fallback a crudo, fallback a dbase si formulas vacío).
+                    if kg_form_term and kg_form_term > 0:
+                        costo_kg = importe_pc / kg_form_term
+                    elif kg_form_cruda and kg_form_cruda > 0:
+                        costo_kg = importe_pc / kg_form_cruda
+                    elif kg_pc > 0:
+                        costo_kg = importe_pc / kg_pc
+                    else:
+                        costo_kg = None
                     filas_codigo.append({
                         "fecha": f,
                         "cod": cod_pc,
@@ -520,10 +528,16 @@ def comparativa_tintoreria():
                 n_ots = len(ots_dia)
                 cambio = (kg_dbase - kg_form_cruda) if kg_form_cruda > 0 else None
                 desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
-                # TMT 2026-05-26 dueña: 'en dia costo promedio'.
-                # = sum(importes PC del día) / sum(kg dbase del día).
+                # TMT 2026-05-26 dueña: costo con formulas (kg terminado o crudo).
                 importe_dia = sum(float(c.get("importe") or 0) for c in cods)
-                costo_promedio = (importe_dia / kg_dbase) if kg_dbase > 0 else None
+                if kg_form_term and kg_form_term > 0:
+                    costo_promedio = importe_dia / kg_form_term
+                elif kg_form_cruda and kg_form_cruda > 0:
+                    costo_promedio = importe_dia / kg_form_cruda
+                elif kg_dbase > 0:
+                    costo_promedio = importe_dia / kg_dbase
+                else:
+                    costo_promedio = None
                 filas_dia.append({
                     "fecha": f,
                     "cod": "",
