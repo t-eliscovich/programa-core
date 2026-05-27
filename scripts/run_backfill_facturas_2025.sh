@@ -30,8 +30,18 @@ fi
 
 # 1) Pull último main + correr el script Python. Todo dentro de PowerShell
 #    porque la EC2 es Windows.
+#
+# CRÍTICO: SSM subprocess no hereda los Machine env vars del Scheduled Task.
+# Hay que copiar explícitamente DB_*, FORMULAS_DATABASE_URL, METABASE_*,
+# y ASINFO_CARD_FACTURAS al \$env: del proceso PowerShell antes de invocar
+# Python. Sin esto, formulas_db.disponible()=False y Asinfo devuelve 0 filas
+# silenciosamente.
 PS=$(cat <<EOF
 cd C:\\programa-core;
+foreach (\$v in @('DATABASE_URL','DB_HOST','DB_PORT','DB_NAME','DB_USER','DB_PASSWORD','FORMULAS_DATABASE_URL','FORMULAS_POOL_MIN','FORMULAS_POOL_MAX','METABASE_URL','METABASE_USERNAME','METABASE_PASSWORD','ASINFO_CARD_FACTURAS','ASINFO_CARD_VENDEDOR_USD','ASINFO_CARD_VENDEDOR_KG','ASINFO_CARD_CLIENTE_KG')) {
+  \$val = [System.Environment]::GetEnvironmentVariable(\$v, 'Machine');
+  if (\$val) { Set-Item -Path "env:\$v" -Value \$val }
+}
 git fetch origin main;
 git reset --hard origin/main;
 & 'C:\\Python312\\python.exe' 'C:\\programa-core\\scripts\\backfill_facturas_2025_asinfo.py' $ARGS

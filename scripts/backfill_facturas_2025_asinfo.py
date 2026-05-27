@@ -174,7 +174,53 @@ def _iter_month_chunks(desde: date, hasta: date):
             cur_y += 1
 
 
+def _diag_bridge_asinfo() -> None:
+    """Diagnostic: imprime estado del bridge Asinfo antes de pedirle filas.
+
+    Cuando el backfill devolvio 0 filas para 17 chunks seguidos, no era
+    timeout — era config. Este diag te dice por que: env vars vacias, login
+    fallando, o la card vacia. Asi no adivinamos mas."""
+    from modules._lib import metabase_client
+    card = os.environ.get("ASINFO_CARD_FACTURAS", "").strip()
+    url = os.environ.get("METABASE_URL", "").strip()
+    user = os.environ.get("METABASE_USERNAME", "").strip()
+    pwd  = os.environ.get("METABASE_PASSWORD", "").strip()
+    print(f"   ASINFO_CARD_FACTURAS = '{card}'", flush=True)
+    print(f"   METABASE_URL         = '{url}'", flush=True)
+    print(f"   METABASE_USERNAME    = '{user}'", flush=True)
+    print(f"   METABASE_PASSWORD    = {'(seteada, len=' + str(len(pwd)) + ')' if pwd else '(VACIA)'}", flush=True)
+    print(f"   metabase_client.disponible() = {metabase_client.disponible()}", flush=True)
+    print(f"   asinfo_service.disponible()  = {asinfo_service.disponible()}", flush=True)
+
+    if not metabase_client.disponible():
+        print("   !! Metabase NO disponible — falta METABASE_URL o credenciales en env", flush=True)
+        return
+    if not card:
+        print("   !! ASINFO_CARD_FACTURAS esta VACIA en el env — agregar en Machine env del EC2", flush=True)
+        return
+
+    # Probar pegandole a Metabase con un rango chiquito (1 dia reciente).
+    # Si la card funciona desde otra pantalla pero acá da 0, el problema esta
+    # en como pasamos los params o el login.
+    print("   -> Probando facturas_periodo(2026-05-26, 2026-05-26)...", flush=True)
+    try:
+        rows = asinfo_service.facturas_periodo("2026-05-26", "2026-05-26")
+        print(f"   -> trajo {len(rows)} filas", flush=True)
+        if rows:
+            sample = rows[0]
+            print(f"   -> columnas: {sorted(sample.keys())}", flush=True)
+            print(f"   -> primera fila: {dict(list(sample.items())[:6])}", flush=True)
+        else:
+            print("   !! Card 199 respondio pero VACIA para 26/05/2026 — raro.", flush=True)
+            print("   !! Probar mismo rango desde /facturas?vista=asinfo en el browser.", flush=True)
+    except Exception as e:
+        print(f"   !! Exception llamando facturas_periodo: {e!r}", flush=True)
+
+
 def backfill(*, dry_run: bool, desde: date, hasta: date, limit: int) -> dict:
+    print("-> Diagnostic bridge Asinfo:", flush=True)
+    _diag_bridge_asinfo()
+    print(flush=True)
     print(f"-> Cargando facturas Asinfo {desde}..{hasta} (chunked mes a mes)", flush=True)
     asinfo_rows: list[dict] = []
     chunks = list(_iter_month_chunks(desde, hasta))

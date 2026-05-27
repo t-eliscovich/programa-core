@@ -176,8 +176,19 @@ INSTANCE_ID="$INSTANCE_ID" python3 <<'PYEOF' > /tmp/ssm_debug_tin_payload.json
 import json, os
 with open('/tmp/ssm_debug_tin_b64.txt') as f:
     b64 = f.read().strip()
+# CRITICAL: cargar Machine env vars (FORMULAS_DATABASE_URL, METABASE_*, etc.)
+# al env del PowerShell subprocess. Sin esto formulas_db.disponible() = False.
+load_env = (
+    "foreach ($v in @('DATABASE_URL','DB_HOST','DB_PORT','DB_NAME','DB_USER','DB_PASSWORD',"
+    "'FORMULAS_DATABASE_URL','FORMULAS_POOL_MIN','FORMULAS_POOL_MAX',"
+    "'METABASE_URL','METABASE_USERNAME','METABASE_PASSWORD',"
+    "'ASINFO_CARD_FACTURAS','ASINFO_CARD_VENDEDOR_USD','ASINFO_CARD_VENDEDOR_KG','ASINFO_CARD_CLIENTE_KG')) {"
+    " $val = [System.Environment]::GetEnvironmentVariable($v, 'Machine');"
+    " if ($val) { Set-Item -Path \"env:$v\" -Value $val } }; "
+)
 cmd = (
     "cd C:\\programa-core; "
+    + load_env +
     "[System.IO.File]::WriteAllBytes('C:\\programa-core\\_tmp_dbg_tin.py', "
     f"[Convert]::FromBase64String('{b64}')); "
     "& 'C:\\Python312\\python.exe' 'C:\\programa-core\\_tmp_dbg_tin.py'; "
