@@ -517,6 +517,11 @@ def comparativa_tintoreria():
                         "kg_form_cruda": cruda if cruda > 0 else None,
                         "desperdicio_pct": round(desperd, 1) if desperd is not None else None,
                         "form_n_ots": int(form_data.get("n_ots") or 0),
+                        # TMT 2026-05-27 dueña: 'dict object has no attribute
+                        # costo_kg'. Sin importe PC (es OT solo-formulas) no
+                        # podemos calcular costo $/kg. Explicit None evita el
+                        # error de Jinja al hacer r.costo_kg.
+                        "costo_kg": None,
                     })
                 except Exception:
                     continue

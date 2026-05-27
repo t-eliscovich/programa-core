@@ -72,7 +72,9 @@
     </div>
   {% endif %}
 
-  {# KPI fila — totales del rango #}
+  {# KPI fila — totales del rango. TMT 2026-05-27 dueña: 'podes hacer que
+     los numeros esten debajo del titulo y no corrido a la izquierda?'
+     → text-center en cada card. #}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
       <div class="text-xs text-slate-500 uppercase tracking-wide">PC kg</div>
@@ -132,16 +134,19 @@
         <col style="width: 120px">
         <col style="width: 110px">
       </colgroup>
+      {# TMT 2026-05-27 dueña: 'los numeros esten debajo del titulo y no
+         corrido a la izquierda' — headers de columnas numéricas centrados
+         + valores centrados así titulo y número visualmente alineados. #}
       <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th class="px-3 py-2 text-left">Fecha terminado</th>
           {% if vista == 'codigo' %}<th class="px-3 py-2 text-left">Código color</th>{% endif %}
-          <th class="px-3 py-2 text-right">Kg dbase</th>
-          <th class="px-3 py-2 text-right">Kg crudo formulas</th>
-          <th class="px-3 py-2 text-right" title="dbase - crudo formulas — deberían ser iguales (ambos INPUT)">Cambio</th>
-          <th class="px-3 py-2 text-right">Kg terminado formulas</th>
-          <th class="px-3 py-2 text-right">Desperdicio</th>
-          <th class="px-3 py-2 text-right" title="{% if vista == 'codigo' %}Costo por color (importe/kg){% else %}Costo promedio del día (suma importes / suma kg){% endif %}">$/kg</th>
+          <th class="px-3 py-2 text-center">Kg dbase</th>
+          <th class="px-3 py-2 text-center">Kg crudo formulas</th>
+          <th class="px-3 py-2 text-center" title="dbase - crudo formulas — deberían ser iguales (ambos INPUT)">Cambio</th>
+          <th class="px-3 py-2 text-center">Kg terminado formulas</th>
+          <th class="px-3 py-2 text-center">Desperdicio</th>
+          <th class="px-3 py-2 text-center" title="{% if vista == 'codigo' %}Costo por color (importe/kg){% else %}Costo promedio del día (suma importes / suma kg){% endif %}">$/kg</th>
         </tr>
       </thead>
       <tbody>
@@ -151,25 +156,25 @@
         <tr class="border-t border-slate-100 hover:bg-slate-50">
           <td class="px-3 py-1.5 whitespace-nowrap">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
           {% if vista == 'codigo' %}<td class="px-3 py-1.5 font-mono whitespace-nowrap">{{ r.cod or '—' }}</td>{% endif %}
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+          <td class="px-3 py-1.5 text-center whitespace-nowrap">
             {% if r.kg_dbase is not none %}{{ r.kg_dbase | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+          <td class="px-3 py-1.5 text-center whitespace-nowrap">
             {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+          <td class="px-3 py-1.5 text-center whitespace-nowrap">
             {% if r.cambio is not none %}
               {% set _abs = r.cambio if r.cambio >= 0 else -r.cambio %}
               <span class="{% if _abs > 0.5 %}{% if r.cambio > 0 %}text-emerald-700{% else %}text-rose-700{% endif %} font-medium{% else %}text-slate-500{% endif %}">{{ r.cambio | num_es(1) }}</span>
             {% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+          <td class="px-3 py-1.5 text-center whitespace-nowrap">
             {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+          <td class="px-3 py-1.5 text-center whitespace-nowrap">
             {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+          <td class="px-3 py-1.5 text-center whitespace-nowrap">
             {% if r.costo_kg is not none and r.costo_kg > 0 %}<span class="text-slate-700">$ {{ '%.3f' % r.costo_kg }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
         </tr>
