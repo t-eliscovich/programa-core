@@ -77,6 +77,37 @@
   </div>
   {% endif %}
 
+  {# TMT 2026-05-27 dueña: 'no me muestra esos numeros'. Card adicional
+     con saldo PC AL DÍA DE HOY (último mov) — distinto al "saldo al
+     último conciliado dBase" que muestra arriba. Útil para comparar
+     contra el saldo banco físico del xlsx. #}
+  {% if saldo_pc_actual and saldo_pc_actual.saldo is not none %}
+  <div class="mb-5 rounded-lg border-2 border-sky-300 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/10 p-4">
+    <div class="flex items-baseline justify-between gap-3 mb-2">
+      <span class="text-xs uppercase tracking-wider text-sky-800 dark:text-sky-300 font-semibold">Saldo PC al día de hoy</span>
+      <span class="text-[11px] text-sky-700 dark:text-sky-400">último mov registrado{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}</span>
+    </div>
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Saldo PC</div>
+        <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">+ Pendientes históricos</div>
+        <div class="text-base font-medium text-sky-800 dark:text-sky-200 tabular-nums">{% if saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}</div>
+        <div class="text-[10px] text-sky-600 dark:text-sky-400">{{ saldo_pc_actual.n_pendientes or 0 }} movs sin conciliar</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">= Saldo banco esperado</div>
+        <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo) }}</div>
+      </div>
+    </div>
+    <p class="text-[11px] text-sky-700 dark:text-sky-300 mt-2">
+      Saldo PC actual + lo que PC tiene cargado pero el banco aún no acreditó/cobró = lo que el banco físico debería tener.
+    </p>
+  </div>
+  {% endif %}
+
   <form method="POST" enctype="multipart/form-data"
         class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

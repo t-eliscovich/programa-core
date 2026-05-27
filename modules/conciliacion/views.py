@@ -749,6 +749,56 @@ def hub():
                 "saldo_dbase comparativo falló: %s", _e
             )
             saldo_dbase = {}
+
+        # TMT 2026-05-27 dueña: 'no me muestra esos numeros'. Card extra
+        # con saldo PC al ÚLTIMO mov registrado (no al último conciliado
+        # dBase). Eso es lo que ella espera ver — el saldo PC actualizado
+        # hoy, no atrasado al último conciliado dBase.
+        saldo_pc_actual = {}
+        try:
+            row_actual = _db.fetch_one(
+                """
+                SELECT t.fecha, t.saldo, t.id_transaccion
+                  FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = %(no_banco)s
+                   AND t.saldo IS NOT NULL
+                 ORDER BY t.fecha DESC, t.id_transaccion DESC
+                 LIMIT 1
+                """,
+                {"no_banco": _BANCO_PICHINCHA},
+            ) or {}
+            saldo_pc_actual = {
+                "saldo": float(row_actual.get("saldo") or 0),
+                "fecha": row_actual.get("fecha"),
+                "id_transaccion": row_actual.get("id_transaccion"),
+            }
+            # Pendientes históricos no conciliados (suma signada — credit suma,
+            # débito resta). Estos NO están en transacciones_bancarias.
+            row_pend = _db.fetch_one(
+                """
+                SELECT
+                  COALESCE(SUM(CASE WHEN tipo = 'C' THEN monto ELSE -monto END), 0) AS neto_pend,
+                  COUNT(*) AS n_pend
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %(no_banco)s
+                   AND conciliado_en IS NULL
+                """,
+                {"no_banco": _BANCO_PICHINCHA},
+            ) or {}
+            saldo_pc_actual["neto_pendientes"] = float(row_pend.get("neto_pend") or 0)
+            saldo_pc_actual["n_pendientes"] = int(row_pend.get("n_pend") or 0)
+            # Saldo banco esperado = saldo PC + pendientes históricos (cosas
+            # que PC tiene pero el banco aún no acreditó/cobró).
+            saldo_pc_actual["saldo_banco_esperado"] = round(
+                saldo_pc_actual["saldo"] + saldo_pc_actual["neto_pendientes"], 2
+            )
+        except Exception as _e:
+            import logging
+            logging.getLogger("programa_core.conciliacion").exception(
+                "saldo_pc_actual falló: %s", _e
+            )
+            saldo_pc_actual = {}
+
         return render_template(
             "conciliacion/banco_upload.html",
             bancos=bancos,
@@ -758,6 +808,7 @@ def hub():
             saldo_pre=saldo_pre,
             saldo_dbase=saldo_dbase,
             saldo_conc_split=saldo_conc_split,
+            saldo_pc_actual=saldo_pc_actual,
         )
 
     # ── POST ────────────────────────────────────────────────────────────
