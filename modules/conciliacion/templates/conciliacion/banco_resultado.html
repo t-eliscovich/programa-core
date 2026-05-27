@@ -48,6 +48,74 @@
   {# KPI cards eliminados 2026-05-27 dueña: "borra los kpis". Los totales
      del panel Depósitos por día ya dicen todo. #}
 
+  {# ───── Cruces por Doc ID — TMT 2026-05-27 dueña ─────
+       "necesito primero el cruce, cruce exacto de doc id, despues
+       depositos. porque quizas hay una fecha en el banco y otra en el
+       programa". PASS 0 del matcher ya cruza por doc id sin importar
+       fecha. Este card lo hace VISIBLE y permite confirmar todos de
+       un saque (la regla número 1 de Tamara). #}
+  {% if matches_p0 and matches_p0|length > 0 %}
+  <div class="mb-5 rounded-lg border-2 border-emerald-400 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 overflow-hidden">
+    <div class="px-4 py-3 flex items-center justify-between bg-emerald-100 dark:bg-emerald-900/40">
+      <div>
+        <div class="text-base font-bold text-emerald-900 dark:text-emerald-100">
+          🎯 {{ matches_p0|length }} cruces exactos por Doc ID
+        </div>
+        <div class="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+          Mismo número de documento entre banco y programa — la regla #1. Fecha no importa.
+        </div>
+      </div>
+      <form method="POST" action="{{ url_for('conciliacion.hub_confirmar_matches') }}" class="shrink-0"
+            onsubmit="return confirm('¿Confirmar los {{ matches_p0|length }} cruces por doc id? Estos movs no vuelven a aparecer en próximos extractos.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="matches_json" value='{{ matches_p0_json }}'>
+        <button class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold whitespace-nowrap shadow">
+          ✓ Confirmar los {{ matches_p0|length }}
+        </button>
+      </form>
+    </div>
+    <details>
+      <summary class="cursor-pointer px-4 py-2 text-xs text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100/60 select-none">
+        Ver el detalle de los {{ matches_p0|length }} cruces ▾
+      </summary>
+      <div class="overflow-x-auto bg-white dark:bg-slate-900">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 dark:bg-slate-800/60 text-left text-[10px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-1.5">Doc</th>
+              <th class="px-3 py-1.5">Banco fecha</th>
+              <th class="px-3 py-1.5 text-right">Banco monto</th>
+              <th class="px-3 py-1.5">Concepto banco</th>
+              <th class="px-3 py-1.5"></th>
+              <th class="px-3 py-1.5">PC fecha</th>
+              <th class="px-3 py-1.5 text-right">PC importe</th>
+              <th class="px-3 py-1.5">Cliente / Concepto PC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in matches_p0 %}
+            <tr class="border-t border-slate-100 dark:border-slate-800/60">
+              <td class="px-3 py-1 font-mono text-emerald-700 dark:text-emerald-400 font-semibold whitespace-nowrap">{{ m.real_documento }}</td>
+              <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.real_fecha }}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.real_monto) }}</td>
+              <td class="px-3 py-1 text-slate-600 dark:text-slate-400 truncate max-w-xs" title="{{ m.real_concepto }}">{{ m.real_concepto[:40] }}</td>
+              <td class="px-3 py-1 text-center text-emerald-600 font-bold">
+                {% if m.date_diff %}<span class="text-amber-600" title="Fechas distintas">↔</span>{% else %}↔{% endif %}
+              </td>
+              <td class="px-3 py-1 font-mono whitespace-nowrap {% if m.date_diff %}text-amber-700 dark:text-amber-400{% else %}text-slate-600 dark:text-slate-400{% endif %}">{{ m.bk_fecha }}</td>
+              <td class="px-3 py-1 text-right tabular-nums whitespace-nowrap">$ {{ '{:,.2f}'.format(m.bk_importe) }}</td>
+              <td class="px-3 py-1 text-slate-700 dark:text-slate-300 truncate max-w-xs" title="{{ m.bk_concepto }}">
+                {% if m.bk_prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">{{ m.bk_prov }}</span>{% endif %}{{ (m.bk_prov_nombre or m.bk_concepto)[:38] }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+
   {# ───── Depósitos por día — TMT 2026-05-27 dueña ─────
        "QUIERO HACER SUMA DEPOSITOS POR DIA BANCO VS PROGRAMA. CUANDO ES
        DEPOSITO NO QUIERO ASIGNARSELOS A CLIENTES."

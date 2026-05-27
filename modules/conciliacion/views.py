@@ -1218,6 +1218,50 @@ def hub():
     bancsis_only_json = _json.dumps(data.get("bancsis_only") or [], separators=(",", ":"))
     agrupado_json = _json.dumps(agrupado_comisiones, separators=(",", ":")) if agrupado_comisiones else "null"
 
+    # TMT 2026-05-27 dueña: "necesito primero el cruce, cruce exacto de
+    # doc id... porque quizas hay una fecha en el banco y otra en el
+    # programa". El matcher PASS 0 ya cruza por doc id sin importar
+    # fecha — `razon` arranca con "P0·doc-banco". Extraigo esos matches
+    # para el card prominente arriba: confirmación bulk de un saque.
+    matches_p0 = []
+    for m in (data.get("matches") or []):
+        raz = (m.get("razon") or "")
+        if not raz.startswith("P0·doc-banco"):
+            continue
+        real = m.get("real") or {}
+        bk = m.get("bancsis") or {}
+        f_real = str(real.get("fecha") or "")
+        f_bk = str(bk.get("fecha") or "")
+        date_diff = (f_real != f_bk) and bool(f_real) and bool(f_bk)
+        matches_p0.append({
+            "real_fecha": f_real,
+            "real_documento": real.get("documento") or "",
+            "real_concepto": real.get("concepto") or "",
+            "real_monto": float(real.get("monto") or 0),
+            "real_tipo": real.get("tipo") or "",
+            "real_codigo": real.get("codigo") or "",
+            "real_oficina": real.get("oficina") or "",
+            "bk_fecha": f_bk,
+            "bk_documento": bk.get("documento") or "",
+            "bk_concepto": bk.get("concepto") or "",
+            "bk_importe": float(bk.get("importe") or 0),
+            "bk_numreferencia": bk.get("numreferencia") or "",
+            "bk_prov": bk.get("prov") or "",
+            "bk_prov_nombre": bk.get("prov_nombre") or "",
+            "bk_id_transaccion": bk.get("id_transaccion"),
+            "date_diff": date_diff,
+            "razon": raz,
+        })
+    matches_p0_json = _json.dumps(
+        [{"real": {"fecha": m["real_fecha"], "concepto": m["real_concepto"],
+                   "documento": m["real_documento"], "monto": m["real_monto"],
+                   "tipo": m["real_tipo"], "codigo": m["real_codigo"],
+                   "oficina": m["real_oficina"]},
+          "bancsis": {"id_transaccion": m["bk_id_transaccion"]}}
+         for m in matches_p0],
+        separators=(",", ":"),
+    )
+
     return render_template(
         "conciliacion/banco_resultado.html",
         data=data,
@@ -1238,6 +1282,8 @@ def hub():
         transf_n_dias_cuadran=transf_n_dias_cuadran,
         clientes_dl=clientes_dl,
         proveedores_dl=proveedores_dl,
+        matches_p0=matches_p0,
+        matches_p0_json=matches_p0_json,
         no_banco=no_banco,
         banco_nombre=banco_nombre,
         **kpis,
