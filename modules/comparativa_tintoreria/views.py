@@ -605,3 +605,163 @@ def comparativa_tintoreria():
             tot_diff_pct=None,
             error=f"Error renderizando tabla: {_e_render}",
         )
+
+
+# ---------------------------------------------------------------------------
+# DEBUG endpoint — comparar tinturado_resumen vs get_telas_report
+# ---------------------------------------------------------------------------
+# TMT 2026-05-26: la dueña reportó "TINTORERIA ESTA MAL MATCHEADO" vs el
+# Excel oficial /telas/export. Adivinar el bug no funcionó (rompí más cosas).
+# Este endpoint corre AMBAS queries en el web server (que ya tiene las env
+# vars cargadas) y devuelve diff por día + órdenes específicas que difieren.
+# JSON → fácil de leer desde Chrome / curl, sin más SSM.
+@comparativa_tintoreria_bp.route("/debug-tintoreria-diff")
+@requiere_login
+@requiere_permiso("tintura.ver")
+def debug_tintoreria_diff():
+    """JSON: compara get_telas_report (fuente del Excel) vs tinturado_resumen
+    (lo que usa la pantalla). Identifica órdenes específicas que difieren.
+
+    Params: desde, hasta (YYYY-MM-DD). Default últimos 26 días.
+    """
+    from collections import defaultdict
+    from flask import jsonify
+
+    from modules._lib import formulas_db
+    from modules.tintura import service as tintura_service
+
+    hoy = date.today()
+    desde = _parse_date(request.args.get("desde"), hoy - timedelta(days=26))
+    hasta = _parse_date(request.args.get("hasta"), hoy)
+
+    # A) get_telas_report (lo que usa el Excel oficial)
+    a_rows = formulas_db.fetch_all(
+        """
+        SELECT o.id, o.numero, o.fecha, o.codigo, o.jet,
+               o.tela_cruda_kg, o.tela_terminada_kg, o.fecha_terminado,
+               o.es_reproceso,
+               SUBSTRING(o.fecha, 7, 4)||'-'||SUBSTRING(o.fecha, 4, 2)||'-'||SUBSTRING(o.fecha, 1, 2) AS fecha_iso
+          FROM ordenes o
+         WHERE SUBSTRING(o.fecha, 7, 4)||'-'||SUBSTRING(o.fecha, 4, 2)||'-'||SUBSTRING(o.fecha, 1, 2)
+               BETWEEN %s AND %s
+         ORDER BY fecha_iso ASC, o.id ASC
+        """,
+        (desde.isoformat(), hasta.isoformat()),
+    )
+    a_by_ft = defaultdict(lambda: {"n": 0, "cruda": 0.0, "term": 0.0, "ordenes": []})
+    a_by_id = {}
+    sin_ft_a = 0
+    for r in a_rows:
+        a_by_id[r['id']] = r
+        ft = str(r.get("fecha_terminado") or "")[:10]
+        if not ft:
+            sin_ft_a += 1
+            continue
+        s = a_by_ft[ft]
+        s["n"] += 1
+        s["cruda"] += float(r.get("tela_cruda_kg") or 0)
+        s["term"] += float(r.get("tela_terminada_kg") or 0)
+        s["ordenes"].append({
+            "id": r['id'], "numero": r['numero'], "fecha_creacion": r['fecha'],
+            "cruda": float(r.get("tela_cruda_kg") or 0),
+            "term": float(r.get("tela_terminada_kg") or 0),
+            "es_reproceso": bool(r.get("es_reproceso")),
+        })
+
+    # B) tinturado_resumen (lo que usa la pantalla actual — terminado_*)
+    b_rows = tintura_service.tinturado_resumen(
+        limite=20000, terminado_desde=desde, terminado_hasta=hasta,
+    )
+    b_by_ft = defaultdict(lambda: {"n": 0, "cruda": 0.0, "term": 0.0, "ordenes": []})
+    b_by_numero = {}
+    for o in b_rows:
+        b_by_numero[o.numero] = o
+        ft = o.fecha_terminado.isoformat() if o.fecha_terminado else None
+        if not ft:
+            continue
+        s = b_by_ft[ft]
+        s["n"] += 1
+        s["cruda"] += float(o.tela_cruda_kg or 0)
+        s["term"] += float(o.tela_terminada_kg or 0)
+        s["ordenes"].append({
+            "numero": o.numero,
+            "fecha_creacion": o.fecha.isoformat() if o.fecha else None,
+            "cruda": float(o.tela_cruda_kg or 0),
+            "term": float(o.tela_terminada_kg or 0),
+            "es_reproceso": o.es_reproceso,
+        })
+
+    # Diff por día
+    all_dias = sorted(set(a_by_ft) | set(b_by_ft))
+    diff = []
+    tot_a_c = tot_a_t = tot_b_c = tot_b_t = 0.0
+    tot_a_n = tot_b_n = 0
+    for d in all_dias:
+        a = a_by_ft.get(d, {"n": 0, "cruda": 0.0, "term": 0.0})
+        b = b_by_ft.get(d, {"n": 0, "cruda": 0.0, "term": 0.0})
+        tot_a_c += a["cruda"]; tot_a_t += a["term"]; tot_a_n += a["n"]
+        tot_b_c += b["cruda"]; tot_b_t += b["term"]; tot_b_n += b["n"]
+        diff.append({
+            "fecha": d,
+            "a_n": a["n"], "a_cruda": round(a["cruda"], 1), "a_term": round(a["term"], 1),
+            "b_n": b["n"], "b_cruda": round(b["cruda"], 1), "b_term": round(b["term"], 1),
+            "delta_n": b["n"] - a["n"],
+            "delta_cruda": round(b["cruda"] - a["cruda"], 1),
+        })
+
+    # Órdenes específicas que difieren — solo en uno o solo en otro
+    a_numeros_terminados = {r['numero'] for r in a_rows if r.get('fecha_terminado')}
+    b_numeros = set(b_by_numero.keys())
+    solo_en_a = sorted(a_numeros_terminados - b_numeros)
+    solo_en_b = sorted(b_numeros - a_numeros_terminados)
+
+    detalle_solo_a = []
+    for n in solo_en_a[:50]:
+        rr = next((x for x in a_rows if x['numero'] == n), None)
+        if rr:
+            detalle_solo_a.append({
+                "numero": n, "id": rr['id'], "fecha_creacion": rr['fecha'],
+                "fecha_terminado": str(rr.get('fecha_terminado') or ''),
+                "cruda": float(rr.get('tela_cruda_kg') or 0),
+                "term": float(rr.get('tela_terminada_kg') or 0),
+            })
+
+    detalle_solo_b = []
+    for n in solo_en_b[:50]:
+        o = b_by_numero[n]
+        detalle_solo_b.append({
+            "numero": n,
+            "fecha_creacion": o.fecha.isoformat() if o.fecha else None,
+            "fecha_terminado": o.fecha_terminado.isoformat() if o.fecha_terminado else None,
+            "cruda": float(o.tela_cruda_kg or 0),
+            "term": float(o.tela_terminada_kg or 0),
+            "es_reproceso": o.es_reproceso,
+        })
+
+    return jsonify({
+        "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
+        "a": {
+            "fuente": "get_telas_report (Excel oficial)",
+            "filtro": "fecha (creacion) BETWEEN desde y hasta",
+            "total_ordenes": len(a_rows),
+            "sin_fecha_terminado": sin_ft_a,
+            "total_cruda": round(tot_a_c, 1),
+            "total_term": round(tot_a_t, 1),
+        },
+        "b": {
+            "fuente": "tinturado_resumen (pantalla actual)",
+            "filtro": "fecha_terminado BETWEEN desde y hasta",
+            "total_ordenes": len(b_rows),
+            "total_cruda": round(tot_b_c, 1),
+            "total_term": round(tot_b_t, 1),
+        },
+        "diff_por_dia": diff,
+        "ordenes_solo_en_A_excel": {
+            "count": len(solo_en_a),
+            "sample": detalle_solo_a,
+        },
+        "ordenes_solo_en_B_pantalla": {
+            "count": len(solo_en_b),
+            "sample": detalle_solo_b,
+        },
+    })
