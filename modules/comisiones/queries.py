@@ -43,8 +43,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    ch.codigo_cli              AS codigo_cli
               FROM scintela.cheque ch
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+             WHERE EXTRACT(YEAR FROM COALESCE(ch.fechaing, ch.fechad))  = %(yy)s
+               AND EXTRACT(MONTH FROM COALESCE(ch.fechaing, ch.fechad)) = %(mm)s
                AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
@@ -78,8 +78,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    COALESCE(SUM(ch.importe), 0)   AS total
               FROM scintela.cheque ch
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+             WHERE EXTRACT(YEAR FROM COALESCE(ch.fechaing, ch.fechad))  = %(yy)s
+               AND EXTRACT(MONTH FROM COALESCE(ch.fechaing, ch.fechad)) = %(mm)s
                AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
@@ -191,7 +191,7 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
         SELECT 'CHE'                          AS origen,
                ch.id_cheque                   AS id_origen,
                ch.no_cheque                   AS doc,
-               ch.fechad                      AS fecha,
+               COALESCE(ch.fechaing, ch.fechad) AS fecha,
                ch.importe                     AS importe,
                ch.codigo_cli                  AS codigo_cli,
                COALESCE(c.nombre, '')         AS cliente,
@@ -200,9 +200,9 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
           FROM scintela.cheque ch
           JOIN scintela.cliente c  ON c.codigo_cli = ch.codigo_cli
           LEFT JOIN scintela.banco b ON b.no_banco = ch.no_banco
-         WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-           AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-           AND ch.stat IN ('B', 'A')
+         WHERE EXTRACT(YEAR FROM COALESCE(ch.fechaing, ch.fechad))  = %(yy)s
+           AND EXTRACT(MONTH FROM COALESCE(ch.fechaing, ch.fechad)) = %(mm)s
+           AND ch.stat IN ('B','V','W','I','J','K','A')
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         UNION ALL
         -- Cobros no-cheque (efectivo / transferencia / depósito directo).
