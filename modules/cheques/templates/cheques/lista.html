@@ -359,8 +359,8 @@
               {% endif %}
             </td>
           {% endif %}
-          <td class="px-3 py-2" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
-          <td class="px-3 py-2">
+          <td class="px-1.5 py-1.5" style="white-space: nowrap;">{{ fecha_cargado | fecha_es }}</td>
+          <td class="px-1.5 py-1.5">
             {# TMT 2026-05-19 — solo código (pedido dueña, sin nombre). #}
             {% if c.codigo_cli %}
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
@@ -380,7 +380,7 @@
              botón ✓ que aparece on dirty. #}
           {% set _stat_ne = (c.stat or '').upper() %}
           {% set _no_ch_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
-          <td class="px-2 py-2 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
             {% set no_ch = c.no_cheque %}
             {% if no_ch in (None, '', 'None', 'NONE', 'none') %}{% set no_ch = None %}{% endif %}
             {% if _no_ch_editable %}
@@ -393,7 +393,7 @@
                        placeholder="{{ c.id_cheque }}"
                        oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
                        class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
-                       style="width: 72px;"
+                       style="width: 52px;"
                        title="Editar N° cheque (Enter para guardar)">
                 <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
               </form>
@@ -405,12 +405,12 @@
              fechad actual ES la original. NOT NULL = fue postergado y
              fechad_original guarda la 1ra. #}
           {% set fechad_original = c.fechad_original or c.fechad %}
-          <td class="px-3 py-2" style="white-space: nowrap;">{{ fechad_original | fecha_es if fechad_original else '—' }}</td>
+          <td class="px-1.5 py-1.5" style="white-space: nowrap;">{{ fechad_original | fecha_es if fechad_original else '—' }}</td>
           {# TMT 2026-05-19 v8 — dueña: "inline edit a la fecha postergado".
              Si el cheque está en stat que permite postergar (Z, P, 1, 2, D),
              la columna Postergada es un date input editable. Onchange →
              POST cheques.postergar con nueva_fechad. Si no, muestra "—". #}
-          <td class="px-3 py-2" data-stop="1" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5" data-stop="1" style="white-space: nowrap;">
             {% set _stat_post = (c.stat or '').upper() %}
             {% if _stat_post in ('Z', 'P', '1', '2', 'D') %}
               {% set _fechad_iso = (c.fechad or c.fecha).strftime('%Y-%m-%d') if (c.fechad or c.fecha) else '' %}
@@ -421,7 +421,7 @@
                 <input type="date" name="nueva_fechad" value="{{ _fechad_iso }}"
                        onchange="this.form.submit()"
                        class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
-                       style="width: 130px;"
+                       style="width: 108px;"
                        title="Editar para postergar fecha">
               </form>
               {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
@@ -431,7 +431,7 @@
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5" style="white-space: nowrap;">
             {% if fechaing_real %}
               <span class="font-medium text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>
             {% else %}
@@ -440,12 +440,12 @@
           </td>
           {# TMT 2026-05-19 — celda "Plazo" removida (pedido dueña item 13). #}
           {# TMT 2026-05-18 — Cliente movido a col 2 (arriba) #}
-          <td class="px-3 py-2 text-slate-500">{{ c.banco or '' }}</td>
+          <td class="px-1.5 py-1.5 text-slate-500">{{ c.banco or '' }}</td>
           {# TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'.
              Inline edit del doc_banco (N° comprobante/depósito). Vacío
              es válido (NULL en DB). #}
           {% set _db_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
-          <td class="px-2 py-2 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
             {% if _db_editable %}
               {% set _db_val = c.doc_banco or '' %}
               <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
@@ -457,7 +457,7 @@
                        placeholder="—"
                        oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
                        class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
-                       style="width: 110px;"
+                       style="width: 82px;"
                        title="Editar Doc. banco (N° depósito/transf.) — Enter para guardar">
                 <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
               </form>
@@ -468,7 +468,7 @@
           {# TMT 2026-05-27 dueña: 'dejame editar valor de cheque!!'.
              Inline edit del importe. Submit on Enter + botón ✓ on dirty. #}
           {% set _imp_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
-          <td class="px-2 py-2 text-right text-mono" data-stop="1" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5 text-right text-mono" data-stop="1" style="white-space: nowrap;">
             {% if _imp_editable %}
               {% set _imp_val = '%.2f' | format(c.importe|float) if c.importe is not none else '' %}
               <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
@@ -479,7 +479,7 @@
                        value="{{ _imp_val }}" data-orig="{{ _imp_val }}"
                        oninput="this.nextElementSibling.classList.toggle('hidden', this.value.trim()===this.dataset.orig)"
                        class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white text-right"
-                       style="width: 92px;"
+                       style="width: 78px;"
                        title="Editar importe (Enter para guardar)">
                 <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
               </form>
@@ -498,7 +498,7 @@
                             (de arriba), no hace falta acá.
              El form de postergar se elimina del dropdown porque ya está
              editable inline. #}
-          <td class="px-3 py-2 text-center" data-stop="1">
+          <td class="px-1 py-1.5 text-center" data-stop="1">
             {% set s = c.stat or '' %}
             {% set transs = transiciones_legales.get(s, []) if transiciones_legales else [] %}
             {# Filtramos POSTERGAR — ya se edita inline en columna Postergada. #}
@@ -546,7 +546,7 @@
              SOLO mostramos "↺ reversar" cuando el cheque no está depositado
              (Z/D/P/V). Para B/A/1/2 (ya circuló banco), "sin fondos" vive
              como opción de estado dentro del detalle del cheque. #}
-          <td class="px-3 py-2 text-right">
+          <td class="px-1 py-1.5 text-right">
             {% if s in ('Z', 'D', 'P', 'V') and tiene_permiso('cheques.anular') %}
               <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
                  data-stop="1"
