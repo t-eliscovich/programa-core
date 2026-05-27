@@ -1036,9 +1036,12 @@ def hub():
     # TMT 2026-05-27 dueña: "Las transferencias tienen que estar debajo
     # de los depositos, son distintas". Panel paralelo SOLO para
     # transferencias entrantes (cat=ENTRADA_COBRO_TRANSFERENCIA en banco
-    # real; documento='TR' en bancsis programa).
+    # real; cualquier doc-crédito que NO sea DE en bancsis programa).
+    # TMT 2026-05-27 v2: la dueña vio "0 movs programa" cuando el banco
+    # tenía 108 TR — porque PC graba transferencias también como IN/AC/XX/NC.
+    # Ampliamos el filtro: cualquier doc en _DOCS_CREDITO menos DE.
     _CATS_TRANSF = {"ENTRADA_COBRO_TRANSFERENCIA"}
-    _DOCS_TRANSF = {"TR"}
+    _DOCS_TRANSF = {"TR", "IN", "AC", "XX", "NC"}
     transferencias_por_dia: list[dict] = []
     try:
         banco_t: dict[str, list[dict]] = {}
