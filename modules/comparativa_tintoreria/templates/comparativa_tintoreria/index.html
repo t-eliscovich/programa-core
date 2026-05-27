@@ -113,52 +113,54 @@
     </a>
   </div>
 
-  {# Tabla final — 7 columnas exactas, encolumnadas. #}
-  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
-    <table class="w-full text-sm tabular-nums">
+  {# Tabla final — 7 columnas exactas, encolumnadas.
+     TMT 2026-05-26 dueña: orden — fecha, código, kg dbase, kg crudo
+     formulas (AL LADO de dbase), kg terminado formulas, cambio, desperdicio.
+     Widths fijos en px para alineación pixel-perfect (no en %). #}
+  <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+    <table class="text-sm tabular-nums" style="table-layout: fixed; width: 100%; min-width: 980px;">
       <colgroup>
-        <col style="width: 13%">
-        <col style="width: 14%">
-        <col style="width: 15%">
-        <col style="width: 15%">
-        <col style="width: 13%">
-        <col style="width: 15%">
-        <col style="width: 15%">
+        <col style="width: 130px">
+        <col style="width: 130px">
+        <col style="width: 140px">
+        <col style="width: 140px">
+        <col style="width: 140px">
+        <col style="width: 120px">
+        <col style="width: 120px">
       </colgroup>
       <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
         <tr>
           <th class="px-3 py-2 text-left">Fecha terminado</th>
           <th class="px-3 py-2 text-left">Código color</th>
           <th class="px-3 py-2 text-right">Kg terminado dbase</th>
+          <th class="px-3 py-2 text-right">Kg crudo formulas</th>
           <th class="px-3 py-2 text-right">Kg terminado formulas</th>
           <th class="px-3 py-2 text-right">Cambio</th>
-          <th class="px-3 py-2 text-right">Kg crudo formulas</th>
           <th class="px-3 py-2 text-right">Desperdicio</th>
         </tr>
       </thead>
       <tbody>
         {% set _rows = filas_dia if vista == 'dia' else filas_codigo %}
         {% for r in _rows %}
-        {# TMT 2026-05-26: defensivo — fecha puede ser None en edge case. #}
         <tr class="border-t border-slate-100 hover:bg-slate-50">
-          <td class="px-3 py-1.5">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
-          <td class="px-3 py-1.5 font-mono">{{ r.cod or '—' }}</td>
-          <td class="px-3 py-1.5 text-right">
+          <td class="px-3 py-1.5 whitespace-nowrap">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
+          <td class="px-3 py-1.5 font-mono whitespace-nowrap">{{ r.cod or '—' }}</td>
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.kg_dbase is not none %}{{ r.kg_dbase | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right">
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
+            {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right">
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.cambio is not none %}
               {% set _abs = r.cambio if r.cambio >= 0 else -r.cambio %}
               <span class="{% if _abs > 0.5 %}{% if r.cambio > 0 %}text-emerald-700{% else %}text-rose-700{% endif %} font-medium{% else %}text-slate-500{% endif %}">{{ r.cambio | num_es(1) }}</span>
             {% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right">
-            {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-right">
+          <td class="px-3 py-1.5 text-right whitespace-nowrap">
             {% if r.desperdicio_pct is not none %}{{ '%.1f' % r.desperdicio_pct }}%{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
         </tr>
