@@ -90,6 +90,104 @@ def lista():
     )
 
 
+@comisiones_bp.route("/comisiones/debug")
+@requiere_login
+@requiere_permiso("comisiones.ver")
+def debug():
+    """TMT 2026-05-27 dueña: '/comisiones?mes=4 sigue sin funcionar'.
+    Endpoint para diagnosticar paso a paso qué encuentra la query.
+    Devuelve JSON con counts por stat / vend / orphan / cobros / fecha.
+    """
+    from flask import jsonify
+    import db as _db
+
+    yy, mm = _yy_mm()
+
+    # 1) Cheques en el mes (fechad), distribuidos por stat
+    by_stat = _db.fetch_all(
+        """
+        SELECT COALESCE(ch.stat, '(null)') AS stat,
+               COUNT(*) AS n,
+               COALESCE(SUM(ch.importe), 0) AS importe_total
+          FROM scintela.cheque ch
+         WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+           AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+         GROUP BY COALESCE(ch.stat, '(null)')
+         ORDER BY n DESC
+        """,
+        {"yy": yy, "mm": mm},
+    ) or []
+
+    # 2) Cheques depositados del mes, agrupados por vend del cliente
+    by_vend = _db.fetch_all(
+        """
+        SELECT COALESCE(UPPER(TRIM(c.vend)), '(null)') AS vend,
+               COUNT(*) AS n,
+               COALESCE(SUM(ch.importe), 0) AS importe_total
+          FROM scintela.cheque ch
+          LEFT JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
+         WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+           AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+           AND ch.stat IN ('B','V','W','I','J','K','A')
+         GROUP BY COALESCE(UPPER(TRIM(c.vend)), '(null)')
+         ORDER BY n DESC
+        """,
+        {"yy": yy, "mm": mm},
+    ) or []
+
+    # 3) Cheques con codigo_cli huérfano
+    huerfanos = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(ch.importe), 0) AS importe_total
+          FROM scintela.cheque ch
+          LEFT JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
+         WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+           AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+           AND ch.stat IN ('B','V','W','I','J','K','A')
+           AND c.codigo_cli IS NULL
+        """,
+        {"yy": yy, "mm": mm},
+    ) or {"n": 0, "importe_total": 0}
+
+    # 4) Cobros no-cheque del mes
+    cobros_no_cheque = _db.fetch_all(
+        """
+        SELECT COALESCE(UPPER(co.tipo_doc), '(null)') AS tipo,
+               COUNT(*) AS n,
+               COALESCE(SUM(co.valor), 0) AS valor_total
+          FROM scintela.cobro co
+         WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
+           AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
+         GROUP BY COALESCE(UPPER(co.tipo_doc), '(null)')
+         ORDER BY n DESC
+        """,
+        {"yy": yy, "mm": mm},
+    ) or []
+
+    # 5) Comparativa: cuántos cheques caen en mes por fechad vs fecha vs fechaing
+    by_fecha = _db.fetch_one(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechad)=%(yy)s AND EXTRACT(MONTH FROM ch.fechad)=%(mm)s) AS n_fechad,
+            COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fecha)=%(yy)s AND EXTRACT(MONTH FROM ch.fecha)=%(mm)s) AS n_fecha,
+            COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM ch.fechaing)=%(yy)s AND EXTRACT(MONTH FROM ch.fechaing)=%(mm)s) AS n_fechaing
+          FROM scintela.cheque ch
+         WHERE ch.stat IN ('B','V','W','I','J','K','A')
+        """,
+        {"yy": yy, "mm": mm},
+    ) or {}
+
+    return jsonify({
+        "anio": yy, "mes": mm,
+        "by_stat_fechad_en_mes": [dict(r) for r in by_stat],
+        "by_vend_depositados_fechad_en_mes": [dict(r) for r in by_vend],
+        "huerfanos_sin_cliente": dict(huerfanos),
+        "cobros_no_cheque_fecha_en_mes": [dict(r) for r in cobros_no_cheque],
+        "comparativa_fechas": dict(by_fecha),
+    })
+
+
 @comisiones_bp.route("/comisiones/<codigo>")
 @requiere_login
 @requiere_permiso("comisiones.ver")

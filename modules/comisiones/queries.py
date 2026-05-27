@@ -43,8 +43,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    ch.codigo_cli              AS codigo_cli
               FROM scintela.cheque ch
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM COALESCE(ch.fechad, ch.fechac))  = %(yy)s
-               AND EXTRACT(MONTH FROM COALESCE(ch.fechad, ch.fechac)) = %(mm)s
+             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
                AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
@@ -78,8 +78,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    COALESCE(SUM(ch.importe), 0)   AS total
               FROM scintela.cheque ch
               JOIN scintela.cliente c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM COALESCE(ch.fechad, ch.fechac))  = %(yy)s
-               AND EXTRACT(MONTH FROM COALESCE(ch.fechad, ch.fechac)) = %(mm)s
+             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
                AND ch.stat IN ('B','V','W','I','J','K','A')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
