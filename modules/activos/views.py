@@ -71,12 +71,16 @@ def lista():
         s = subtotales.setdefault(cat, {
             "n": 0, "inicial": 0.0, "amortizac": 0.0,
             "valor_libros": 0.0, "amortimes": 0.0,
+            "deprec_dia": 0.0, "deprec_mes": 0.0,
         })
         s["n"]            += 1
         s["inicial"]      += float(f.get("inicial")      or 0)
         s["amortizac"]    += float(f.get("amortizac")    or 0)
         s["valor_libros"] += float(f.get("valor_libros") or 0)
         s["amortimes"]    += float(f.get("amortimes")    or 0)
+        # TMT 2026-05-27 dueña: total diario (1/30 cuota) + total mensual (cuota completa).
+        s["deprec_dia"]   += float(f.get("deprec_dia")   or 0)
+        s["deprec_mes"]   += float(f.get("cuota")        or 0)
 
     return render_template(
         "activos/lista.html",

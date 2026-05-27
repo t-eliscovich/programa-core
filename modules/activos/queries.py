@@ -164,6 +164,9 @@ def buscar(
                -- AMORTIMES calculado (no el stored): COEF × cuota
                ROUND(((SELECT c FROM coef) * COALESCE(a.cuota, 0))::numeric, 2)
                                                                      AS amortimes,
+               -- TMT 2026-05-27 dueña: depreciación diaria = cuota/30.
+               -- Cada día corrido del mes este monto se "consume" de la utilidad.
+               ROUND((COALESCE(a.cuota, 0) / 30.0)::numeric, 2)        AS deprec_dia,
                -- VALOR en libros = inicial - amortizac - amortimes_calc
                GREATEST(
                  COALESCE(a.inicial, 0)
@@ -258,6 +261,10 @@ def resumen() -> dict:
                -- cuota_mes prorrateada (no la stored): COEF × cuota
                COALESCE(SUM((SELECT c FROM coef) * COALESCE(cuota, 0)), 0)
                                                                    AS cuota_mes,
+               -- TMT 2026-05-27 dueña: total depreciación diaria
+               -- (suma de cuota/30 por activo). Total mensual = SUM(cuota).
+               COALESCE(SUM(COALESCE(cuota, 0)) / 30.0, 0)         AS deprec_dia_total,
+               COALESCE(SUM(COALESCE(cuota, 0)), 0)                AS deprec_mes_total,
                -- valor en libros con prorrateo diario
                COALESCE(SUM(GREATEST(
                  COALESCE(inicial, 0)
@@ -279,14 +286,17 @@ def resumen() -> dict:
             "n": 0, "n_vivos": 0,
             "inicial": 0.0, "amortizado": 0.0,
             "cuota_mes": 0.0, "valor_libros": 0.0,
+            "deprec_dia_total": 0.0, "deprec_mes_total": 0.0,
         }
     return {
-        "n":            int(row.get("n") or 0),
-        "n_vivos":      int(row.get("n_vivos") or 0),
-        "inicial":      float(row.get("inicial") or 0),
-        "amortizado":   float(row.get("amortizado") or 0),
-        "cuota_mes":    float(row.get("cuota_mes") or 0),
-        "valor_libros": float(row.get("valor_libros") or 0),
+        "n":                int(row.get("n") or 0),
+        "n_vivos":          int(row.get("n_vivos") or 0),
+        "inicial":          float(row.get("inicial") or 0),
+        "amortizado":       float(row.get("amortizado") or 0),
+        "cuota_mes":        float(row.get("cuota_mes") or 0),
+        "valor_libros":     float(row.get("valor_libros") or 0),
+        "deprec_dia_total": float(row.get("deprec_dia_total") or 0),
+        "deprec_mes_total": float(row.get("deprec_mes_total") or 0),
     }
 
 

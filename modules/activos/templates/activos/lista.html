@@ -48,6 +48,28 @@
     </div>
   </div>
 
+  {# TMT 2026-05-27 dueña: 'Cuanto varia utilidad dia a dia por depreciacion
+     y amortizacion, necesito que me des un total diario, total mensual,
+     y en cada fila. te acordas que habiamos dicho cada dia 1/30?'.
+     KPI cards: depreciación diaria total + mensual total. Cada día corrido
+     del mes baja 1/30 de la cuota del activo (proración dBase MENU.PRG L275). #}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+    <div class="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
+      <div class="text-xs text-rose-700 uppercase tracking-wide">Depreciación diaria</div>
+      <div class="text-xl font-semibold text-rose-900 text-right tabular-nums">
+        {{ (resumen.deprec_dia_total or 0) | num_es }}
+      </div>
+      <div class="text-xs text-rose-700 text-right">cuánto baja la utilidad cada día (1/30 de cuota)</div>
+    </div>
+    <div class="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3">
+      <div class="text-xs text-rose-700 uppercase tracking-wide">Depreciación mensual</div>
+      <div class="text-xl font-semibold text-rose-900 text-right tabular-nums">
+        {{ (resumen.deprec_mes_total or 0) | num_es }}
+      </div>
+      <div class="text-xs text-rose-700 text-right">total del mes (suma cuotas de todos los activos)</div>
+    </div>
+  </div>
+
   {# --- Acciones --------------------------------------------------------- #}
   <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
     {% if tiene_permiso('activos.crear') %}
@@ -148,6 +170,7 @@
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Valor libros</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">% depr.</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Cuota/mes</th>
+          <th class="px-2 py-1 text-right text-rose-700" style="white-space: nowrap;" title="Cuota mensual / 30">Dep/día</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Vida (m)</th>
           <th class="px-2 py-1 text-right" style="white-space: nowrap;">Últ. mes</th>
         </tr>
@@ -158,7 +181,7 @@
            estricto: tipo → fecha DESC. Los subtotales aparecen cuando
            cambia la categoría (al inicio de la próxima) Y al cerrar el
            loop. #}
-        {% set _colspan = (11 if tiene_permiso('activos.crear') else 10) %}
+        {% set _colspan = (12 if tiene_permiso('activos.crear') else 11) %}
 
         {% macro subtotal_row(cat_orden) %}
           {% set s = subtotales.get(cat_orden) %}
@@ -172,7 +195,8 @@
             <td class="px-2 py-1 text-right tabular-nums text-amber-700">{{ s.amortizac | num_es }}</td>
             <td class="px-2 py-1 text-right tabular-nums text-sky-700">{{ s.valor_libros | num_es }}</td>
             <td></td>
-            <td class="px-2 py-1 text-right tabular-nums text-emerald-700">{{ s.amortimes | num_es }}</td>
+            <td class="px-2 py-1 text-right tabular-nums text-emerald-700">{{ s.deprec_mes | num_es }}</td>
+            <td class="px-2 py-1 text-right tabular-nums text-rose-700">{{ s.deprec_dia | num_es }}</td>
             <td></td><td></td>
           </tr>
           {% endif %}
@@ -235,7 +259,10 @@
               </span>
             {% endif %}
           </td>
-          <td class="px-2 py-1 text-right tabular-nums">{{ a.amortimes | num_es if a.amortimes else '' }}</td>
+          <td class="px-2 py-1 text-right tabular-nums">{{ a.cuota | num_es if a.cuota else '' }}</td>
+          <td class="px-2 py-1 text-right tabular-nums text-rose-700" title="Cuota / 30 — cuánto baja la utilidad cada día por este activo">
+            {{ a.deprec_dia | num_es if a.deprec_dia else '' }}
+          </td>
           <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.vida_util or '' }}</td>
           <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.ult_mes_amortizado or '' }}</td>
         </tr>
@@ -244,6 +271,22 @@
         {% endfor %}
         {# Subtotal de la última categoría (no se cierra solo). #}
         {% if ns.prev_cat %}{{ subtotal_row(ns.prev_cat) }}{% endif %}
+        {# TMT 2026-05-27 dueña: TOTAL final — Dep/día y Cuota/mes de todos. #}
+        {% if filas %}
+        <tr class="bg-slate-200 dark:bg-slate-700 border-t-2 border-slate-400 dark:border-slate-500 font-bold text-xs">
+          {% if tiene_permiso('activos.crear') %}<td class="no-print"></td>{% endif %}
+          <td colspan="3" class="px-2 py-1.5 text-right text-slate-900 dark:text-slate-100">
+            TOTAL · {{ resumen.n or 0 }} activos
+          </td>
+          <td class="px-2 py-1.5 text-right tabular-nums text-slate-900 dark:text-slate-100">{{ resumen.inicial | num_es }}</td>
+          <td class="px-2 py-1.5 text-right tabular-nums text-amber-800 dark:text-amber-300">{{ resumen.amortizado | num_es }}</td>
+          <td class="px-2 py-1.5 text-right tabular-nums text-sky-800 dark:text-sky-300">{{ resumen.valor_libros | num_es }}</td>
+          <td></td>
+          <td class="px-2 py-1.5 text-right tabular-nums text-emerald-800 dark:text-emerald-300" title="Cuota mensual total (todos los activos)">{{ resumen.deprec_mes_total | num_es }}</td>
+          <td class="px-2 py-1.5 text-right tabular-nums text-rose-800 dark:text-rose-300" title="Depreciación diaria total = cuota mensual / 30">{{ resumen.deprec_dia_total | num_es }}</td>
+          <td></td><td></td>
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
