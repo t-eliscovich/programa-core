@@ -645,6 +645,51 @@ def hub():
                 "saldo_pre conciliar falló: %s", _e
             )
             saldo_pre = {}
+
+        # TMT 2026-05-27 dueña: 'necesito que encuentre si tenes el saldo
+        # del banco para conciliar en la base de dbase y entonces entendamos
+        # si estamos al dia'. El dBase tiene running balance (campo SALDO)
+        # y la última tx CON stat='*' = último conciliado oficial del dBase.
+        # Saldo PC al mismo corte = saldo_stored del último mov con la misma
+        # fecha. Comparamos: si coinciden → PC y dBase sincronizados al día
+        # del último conciliado dBase.
+        try:
+            saldo_dbase = _db.fetch_one(
+                """
+                SELECT t.fecha, t.saldo, t.id_transaccion
+                  FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = %(no_banco)s
+                   AND TRIM(COALESCE(t.stat, '')) = '*'
+                 ORDER BY t.fecha DESC, t.id_transaccion DESC
+                 LIMIT 1
+                """,
+                {"no_banco": _BANCO_PICHINCHA},
+            ) or {}
+            # Saldo PC al cierre de la misma fecha del último conciliado dBase
+            saldo_pc_al_corte = 0.0
+            if saldo_dbase.get("fecha"):
+                row_pc = _db.fetch_one(
+                    """
+                    SELECT t.saldo
+                      FROM scintela.transacciones_bancarias t
+                     WHERE t.no_banco = %(no_banco)s
+                       AND t.fecha <= %(fecha)s::date
+                     ORDER BY t.fecha DESC, t.id_transaccion DESC
+                     LIMIT 1
+                    """,
+                    {"no_banco": _BANCO_PICHINCHA, "fecha": saldo_dbase["fecha"]},
+                ) or {}
+                saldo_pc_al_corte = float(row_pc.get("saldo") or 0)
+            saldo_dbase["saldo_pc_al_corte"] = saldo_pc_al_corte
+            saldo_dbase["diferencia"] = round(
+                saldo_pc_al_corte - float(saldo_dbase.get("saldo") or 0), 2
+            )
+        except Exception as _e:
+            import logging
+            logging.getLogger("programa_core.conciliacion").exception(
+                "saldo_dbase comparativo falló: %s", _e
+            )
+            saldo_dbase = {}
         return render_template(
             "conciliacion/banco_upload.html",
             bancos=bancos,
@@ -652,6 +697,7 @@ def hub():
             ultimos=ultimos,
             uploads=uploads,
             saldo_pre=saldo_pre,
+            saldo_dbase=saldo_dbase,
         )
 
     # ── POST ────────────────────────────────────────────────────────────

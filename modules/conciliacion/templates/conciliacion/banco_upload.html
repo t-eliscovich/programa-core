@@ -43,6 +43,43 @@
   </div>
   {% endif %}
 
+  {# TMT 2026-05-27 dueña: 'necesito que encuentre si tenes el saldo del
+     banco para conciliar en la base de dbase y entonces entendamos si
+     estamos al dia'. Comparativa: último saldo CONCILIADO del dBase
+     (PICHINCH.DBF stat='*') vs saldo PC al mismo corte. Si coinciden,
+     PC y dBase están sincronizados al día del último conciliado. #}
+  {% if saldo_dbase and saldo_dbase.fecha %}
+  <div class="mb-5 rounded-lg border-2 {% if saldo_dbase.diferencia|abs < 1 %}border-emerald-300 bg-emerald-50/50 dark:bg-emerald-900/10{% else %}border-amber-300 bg-amber-50/50 dark:bg-amber-900/10{% endif %} p-4">
+    <div class="flex items-baseline justify-between gap-3 mb-2">
+      <span class="text-xs uppercase tracking-wider font-semibold {% if saldo_dbase.diferencia|abs < 1 %}text-emerald-800 dark:text-emerald-300{% else %}text-amber-800 dark:text-amber-300{% endif %}">
+        ¿PC y dBase están sincronizados?
+      </span>
+      <span class="text-[11px] text-slate-500">último conciliado del dBase: {{ saldo_dbase.fecha }}</span>
+    </div>
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">Saldo dBase</div>
+        <div class="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_dbase.saldo|float) }}</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">Saldo PC al mismo corte</div>
+        <div class="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_dbase.saldo_pc_al_corte|float) }}</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider {% if saldo_dbase.diferencia|abs < 1 %}text-emerald-700{% else %}text-amber-700{% endif %}">Diferencia</div>
+        <div class="text-xl font-bold tabular-nums {% if saldo_dbase.diferencia|abs < 1 %}text-emerald-700 dark:text-emerald-400{% else %}text-amber-700 dark:text-amber-400{% endif %}">
+          {% if saldo_dbase.diferencia|abs < 1 %}✓ Coinciden{% else %}$ {{ '{:,.2f}'.format(saldo_dbase.diferencia) }}{% endif %}
+        </div>
+      </div>
+    </div>
+    {% if saldo_dbase.diferencia|abs >= 1 %}
+    <p class="text-xs text-amber-700 dark:text-amber-300 mt-2">
+      Hay desfase entre PC y dBase al {{ saldo_dbase.fecha }}. Significa que algún mov posterior a la última conciliación dBase está en PC pero no llegó al dBase, o viceversa. Revisar el sync de DBF para alinear.
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <form method="POST" enctype="multipart/form-data"
         class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
