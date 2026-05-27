@@ -1868,15 +1868,10 @@ def consolidar_duplicados_asinfo():
         for p in pares:
             try:
                 with db.tx() as conn, conn.cursor() as cur:
-                    # Copiar numf_completo si el original DBF NO lo tenía
-                    if (not (p.get("b_nfc") or "").strip()) and (p.get("a_nfc") or "").strip():
-                        cur.execute(
-                            "UPDATE scintela.factura SET numf_completo = %s WHERE id_factura = %s",
-                            (p["a_nfc"], p["b_id"]),
-                        )
-                        if cur.rowcount > 0:
-                            numf_completo_copiados += 1
-                    # Borrar la backfill duplicada
+                    # ORDEN CRITICO: borrar X primero (libera el numf_completo
+                    # del unique constraint), DESPUÉS UPDATE Y. Hacerlo al revés
+                    # viola uq_factura_numf_completo porque temporalmente ambos
+                    # tendrían el mismo nfc.
                     cur.execute(
                         "DELETE FROM scintela.factura WHERE id_factura = %s "
                         "AND usuario_crea = 'asinfo-backfill'",
@@ -1884,6 +1879,14 @@ def consolidar_duplicados_asinfo():
                     )
                     if cur.rowcount > 0:
                         duplicados_borrados += 1
+                    # Ahora SÍ podemos copiar el nfc a Y sin colisionar
+                    if (not (p.get("b_nfc") or "").strip()) and (p.get("a_nfc") or "").strip():
+                        cur.execute(
+                            "UPDATE scintela.factura SET numf_completo = %s WHERE id_factura = %s",
+                            (p["a_nfc"], p["b_id"]),
+                        )
+                        if cur.rowcount > 0:
+                            numf_completo_copiados += 1
             except Exception as e:
                 err_log.append({"pair": {"a_id": p["a_id"], "b_id": p["b_id"]},
                                 "error": str(e)[:200]})
