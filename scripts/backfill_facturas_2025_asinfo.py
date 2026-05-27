@@ -15,13 +15,13 @@ QUÉ HACE:
     2. Carga el universo de facturas PC ya existentes en ese rango,
        indexado por (a) numf_completo y (b) (numf, codigo_cli, fecha).
     3. Para cada factura de Asinfo, decide:
-         - SI ya está en PC (match por numf_completo o por tripleta) → SKIP
-         - SI NO → INSERT con usuario_crea='asinfo-backfill'.
+         - SI ya está en PC (match por numf_completo o por tripleta) -> SKIP
+         - SI NO -> INSERT con usuario_crea='asinfo-backfill'.
     4. Las insertadas como 'asinfo-backfill' son intocables para el sync
        DBF (ver `import_dbf.py` delete_where para FACTURAS.DBF).
 
 ASUNCIONES:
-    - Son facturas históricas → stat='T' (cobradas/canceladas total).
+    - Son facturas históricas -> stat='T' (cobradas/canceladas total).
       Por eso saldo=0, abono=importe.
     - tipo PC: 'F' (factura), 'D' (devolución), 'C' (NC financiera),
       'N' (NTEN), 'X' (NCNT). Convención derivada del DBF.
@@ -45,6 +45,15 @@ import re
 import sys
 from collections import Counter
 from datetime import date, timedelta
+
+# Windows EC2 default stdout es cp1252 — cualquier unicode (->, Δ, $, acentos
+# en path, etc.) lo crashea con UnicodeEncodeError. Reconfigurar a UTF-8 para
+# que los prints no rompan. Sin esto el script tiraba error a la primera flecha.
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -77,7 +86,7 @@ ASINFO_CUTOFF = date(2025, 1, 1)
 MARKER = "asinfo-backfill"
 
 
-# Mapping Asinfo tipo → PC tipo (1 char convención DBF)
+# Mapping Asinfo tipo -> PC tipo (1 char convención DBF)
 TIPO_MAP = {
     "FACTURA":       "F",
     "DEVOLUCION":    "D",
@@ -171,7 +180,7 @@ def backfill(*, dry_run: bool, desde: date, hasta: date, limit: int) -> dict:
     chunks = list(_iter_month_chunks(desde, hasta))
     for i, (cd, ch) in enumerate(chunks, 1):
         chunk_rows = asinfo_service.facturas_periodo(cd, ch)
-        print(f"   [{i}/{len(chunks)}] {cd}..{ch} → {len(chunk_rows)} filas", flush=True)
+        print(f"   [{i}/{len(chunks)}] {cd}..{ch} -> {len(chunk_rows)} filas", flush=True)
         asinfo_rows.extend(chunk_rows)
     print(f"   Asinfo trajo {len(asinfo_rows)} filas (suma de chunks)", flush=True)
     if not asinfo_rows:
