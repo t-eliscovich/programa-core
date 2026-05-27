@@ -48,6 +48,40 @@
      estamos al dia'. Comparativa: último saldo CONCILIADO del dBase
      (PICHINCH.DBF stat='*') vs saldo PC al mismo corte. Si coinciden,
      PC y dBase están sincronizados al día del último conciliado. #}
+  {# TMT 2026-05-27 dueña: 'quiero saber si el saldo a conciliar es igual
+     del dbase y del programa'. Side-by-side: dBase (movs importados con
+     usuario_crea='dbf-import' sin stat='*') vs PC (todos los movs sin
+     stat='*'). Si difieren → PC tiene movs que el dBase no conoce. #}
+  {% if saldo_conc_split and saldo_conc_split.n_pc is not none %}
+  <div class="mb-5 rounded-lg border-2 {% if saldo_conc_split.diff|abs < 1 %}border-emerald-300 bg-emerald-50/50 dark:bg-emerald-900/10{% else %}border-amber-300 bg-amber-50/50 dark:bg-amber-900/10{% endif %} p-4">
+    <div class="flex items-baseline justify-between gap-3 mb-2">
+      <span class="text-xs uppercase tracking-wider font-semibold {% if saldo_conc_split.diff|abs < 1 %}text-emerald-800 dark:text-emerald-300{% else %}text-amber-800 dark:text-amber-300{% endif %}">
+        Saldo a conciliar — dBase vs PC
+      </span>
+      <span class="text-[11px] text-slate-500">si difieren, PC tiene movs que el dBase no conoce</span>
+    </div>
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">dBase</div>
+        <div class="text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_conc_split.saldo_dbase|float) }}</div>
+        <div class="text-[11px] text-slate-500">{{ saldo_conc_split.n_dbase }} movs sin conciliar</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">Programa</div>
+        <div class="text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(saldo_conc_split.saldo_pc|float) }}</div>
+        <div class="text-[11px] text-slate-500">{{ saldo_conc_split.n_pc }} movs sin conciliar</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider {% if saldo_conc_split.diff|abs < 1 %}text-emerald-700{% else %}text-amber-700{% endif %}">Diferencia</div>
+        <div class="text-base font-bold tabular-nums {% if saldo_conc_split.diff|abs < 1 %}text-emerald-700 dark:text-emerald-400{% else %}text-amber-700 dark:text-amber-400{% endif %}">
+          {% if saldo_conc_split.diff|abs < 1 %}✓ Iguales{% else %}$ {{ '{:,.2f}'.format(saldo_conc_split.diff) }}{% endif %}
+        </div>
+        <div class="text-[11px] text-slate-500">{{ (saldo_conc_split.n_pc - saldo_conc_split.n_dbase) }} movs de diff</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if saldo_dbase and saldo_dbase.fecha %}
   <div class="mb-5 rounded-lg border-2 {% if saldo_dbase.diferencia|abs < 1 %}border-emerald-300 bg-emerald-50/50 dark:bg-emerald-900/10{% else %}border-amber-300 bg-amber-50/50 dark:bg-amber-900/10{% endif %} p-4">
     <div class="flex items-baseline justify-between gap-3 mb-2">

@@ -646,6 +646,49 @@ def hub():
             )
             saldo_pre = {}
 
+        # TMT 2026-05-27 dueña: 'quiero saber si el saldo a conciliar es
+        # igual del dbase y del programa'. Comparamos:
+        # - dBase pendientes = movs importados del DBF (usuario_crea=
+        #   'dbf-import') con stat <> '*'
+        # - PC pendientes = TODOS los movs sin stat='*' (incluye los del
+        #   DBF + los creados en PC vía UI/conciliacion)
+        # Si dBase == PC → PC no creó movs extra → sync limpio. Si PC > dBase
+        # → hay movs en PC que el dBase no conoce.
+        try:
+            saldo_conc_split = _db.fetch_one(
+                """
+                SELECT
+                  -- dBase: solo movs con usuario_crea='dbf-import' y stat <> '*'
+                  COUNT(*) FILTER (WHERE COALESCE(usuario_crea,'') = 'dbf-import'
+                                     AND TRIM(COALESCE(stat,'')) <> '*')
+                                                                       AS n_dbase,
+                  COALESCE(SUM(CASE WHEN COALESCE(usuario_crea,'') = 'dbf-import'
+                                     AND TRIM(COALESCE(stat,'')) <> '*'
+                                    THEN CASE WHEN documento IN ('CH','ND','DB','GS','PA')
+                                              THEN -importe ELSE importe END
+                                    ELSE 0 END), 0)                    AS saldo_dbase,
+                  -- PC: todos los movs sin stat='*' (sin filtrar por usuario_crea)
+                  COUNT(*) FILTER (WHERE TRIM(COALESCE(stat,'')) <> '*')
+                                                                       AS n_pc,
+                  COALESCE(SUM(CASE WHEN TRIM(COALESCE(stat,'')) <> '*'
+                                    THEN CASE WHEN documento IN ('CH','ND','DB','GS','PA')
+                                              THEN -importe ELSE importe END
+                                    ELSE 0 END), 0)                    AS saldo_pc
+                  FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %(no_banco)s
+                """,
+                {"no_banco": _BANCO_PICHINCHA},
+            ) or {}
+            sdb = float(saldo_conc_split.get("saldo_dbase") or 0)
+            spc = float(saldo_conc_split.get("saldo_pc") or 0)
+            saldo_conc_split["diff"] = round(spc - sdb, 2)
+        except Exception as _e:
+            import logging
+            logging.getLogger("programa_core.conciliacion").exception(
+                "saldo_conc_split falló: %s", _e
+            )
+            saldo_conc_split = {}
+
         # TMT 2026-05-27 dueña: 'necesito que encuentre si tenes el saldo
         # del banco para conciliar en la base de dbase y entonces entendamos
         # si estamos al dia'. El dBase tiene running balance (campo SALDO)
@@ -698,6 +741,7 @@ def hub():
             uploads=uploads,
             saldo_pre=saldo_pre,
             saldo_dbase=saldo_dbase,
+            saldo_conc_split=saldo_conc_split,
         )
 
     # ── POST ────────────────────────────────────────────────────────────
