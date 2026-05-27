@@ -7,9 +7,16 @@
 <div class="max-w-full">
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-2xl font-semibold">
-        {{ banco.nombre if banco else ('Banco ' ~ banco.no_banco) }}
-        <span class="ml-2 text-sm font-mono text-slate-500">#{{ banco.no_banco if banco else '' }}</span>
+      <h1 class="text-2xl font-semibold flex items-baseline gap-4 flex-wrap">
+        <span>
+          {{ banco.nombre if banco else ('Banco ' ~ banco.no_banco) }}
+          <span class="ml-2 text-sm font-mono text-slate-500">#{{ banco.no_banco if banco else '' }}</span>
+        </span>
+        {# TMT 2026-05-27 dueña: saldo del banco al lado del nombre. #}
+        {% if banco and banco.saldo_stored is defined %}
+        <span class="text-base font-normal text-slate-500">Saldo:</span>
+        <span class="text-xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">$ {{ '{:,.2f}'.format(banco.saldo_stored|float) }}</span>
+        {% endif %}
       </h1>
       <p class="text-sm text-slate-500 mt-1">Movimientos del banco (transacciones_bancarias)</p>
     </div>
@@ -68,14 +75,31 @@
      Cuando un lote tiene 2+ cheques, se ve como 1 línea "$X depositados,
      N cheques" + un + que expande las filas chicas con cheque por cheque. #}
   {% set _items = items if items is defined else (filas | map(attribute='*') | list) %}
-  <p class="text-sm text-slate-500 mb-2">
-    Mostrando <strong>{{ filas | length }}</strong> movimiento{{ '' if filas|length == 1 else 's' }}
-    {% set _lotes = _items | selectattr('_kind', 'equalto', 'lote') | list %}
-    {% if _lotes %}
-      <span class="text-slate-400">· agrupados en {{ _items | length }} renglones ({{ _lotes | length }} lote{{ '' if _lotes|length == 1 else 's' }})</span>
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+    <p class="text-sm text-slate-500">
+      Mostrando <strong>{{ filas | length }}</strong> movimiento{{ '' if filas|length == 1 else 's' }}
+      {% set _lotes = _items | selectattr('_kind', 'equalto', 'lote') | list %}
+      {% if _lotes %}
+        <span class="text-slate-400">· agrupados en {{ _items | length }} renglones ({{ _lotes | length }} lote{{ '' if _lotes|length == 1 else 's' }})</span>
+      {% endif %}
+      {% if filas|length == 500 %}<span class="text-amber-600">(tope de 500 — afina el rango de fechas)</span>{% endif %}
+    </p>
+    {# TMT 2026-05-27 dueña: total filtrado al lado de "Mostrando N movs".
+       Suma signada (créditos +, débitos -) de los movs visibles. #}
+    {% if hay_filtro and filas|length > 0 %}
+    <div class="text-sm flex items-center gap-3 tabular-nums">
+      <span class="text-slate-500">Total filtrado:</span>
+      <span class="font-bold {% if total_filtrado > 0 %}text-emerald-700 dark:text-emerald-400{% elif total_filtrado < 0 %}text-rose-700 dark:text-rose-400{% else %}text-slate-700{% endif %}">
+        {% if total_filtrado >= 0 %}+{% endif %}$ {{ '{:,.2f}'.format(total_filtrado) }}
+      </span>
+      {% if conciliado_filtro == 'no' %}
+        <span class="text-[11px] text-slate-400">(falta conciliar)</span>
+      {% elif conciliado_filtro == 'si' %}
+        <span class="text-[11px] text-slate-400">(ya conciliado)</span>
+      {% endif %}
+    </div>
     {% endif %}
-    {% if filas|length == 500 %}<span class="text-amber-600">(tope de 500 — afina el rango de fechas)</span>{% endif %}
-  </p>
+  </div>
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">

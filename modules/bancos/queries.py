@@ -192,8 +192,21 @@ def movimientos(
 
 
 def banco_info(no_banco: int) -> dict | None:
+    # TMT 2026-05-27 dueña: 'a lado de pichincha no me muestra el total'.
+    # Agregamos saldo_stored (running balance último) al banco_info para
+    # que /bancos/<id>/movimientos lo muestre en el header.
     return db.fetch_one(
-        "SELECT no_banco, nombre FROM scintela.banco WHERE no_banco = %s",
+        """
+        SELECT b.no_banco, b.nombre,
+               COALESCE((
+                 SELECT t.saldo FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = b.no_banco
+                 ORDER BY t.fecha DESC, t.id_transaccion DESC
+                 LIMIT 1
+               ), 0) AS saldo_stored
+          FROM scintela.banco b
+         WHERE b.no_banco = %s
+        """,
         (no_banco,),
     )
 

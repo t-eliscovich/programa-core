@@ -841,6 +841,25 @@ def movimientos(no_banco):
         items.append({"_kind": "row", **f})
         i += 1
 
+    # TMT 2026-05-27 dueña: 'a lado de pichincha no me muestra el total,
+    # porque filtre solo para ver lo que falta conciliar que vaya mostrando
+    # el total y el total de cuando voy filtrando'. Suma signada de las
+    # filas visibles tras filtrar (credito + / debito -).
+    _DOCS_CR = {"DE", "AC", "NC", "TR"}
+    _DOCS_DB = {"CH", "ND", "DB", "GS", "PA"}
+    total_filtrado = 0.0
+    for f in filas:
+        doc = (f.get("documento") or "").strip().upper()
+        imp = float(f.get("importe") or 0)
+        if doc in _DOCS_CR:
+            total_filtrado += imp
+        elif doc in _DOCS_DB:
+            total_filtrado -= imp
+    # Suma absoluta: total de plata movida (sin restar)
+    total_abs_filtrado = round(sum(float(f.get("importe") or 0) for f in filas), 2)
+    total_filtrado = round(total_filtrado, 2)
+    hay_filtro = bool(desde or hasta or conciliado_filtro)
+
     return render_template(
         "bancos/movimientos.html",
         banco=banco,
@@ -849,6 +868,10 @@ def movimientos(no_banco):
         desde=desde,
         hasta=hasta,
         error=error,
+        total_filtrado=total_filtrado,
+        total_abs_filtrado=total_abs_filtrado,
+        hay_filtro=hay_filtro,
+        conciliado_filtro=conciliado_filtro,
     )
 
 
