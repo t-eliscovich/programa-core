@@ -1110,11 +1110,16 @@ def hub():
                 "cliente_nombre": ((m.get("cat") or {}).get("cliente_nombre") or ""),
                 "matched": True,
             })
+        # TMT 2026-05-27 dueña: 'SI EN TRANSFERENCIAS DEL PROGRAMA NO
+        # TENEMOS LITERAL TRANSFERENCIAS MOSTREMOS MOVIMIENTOS QUE NO
+        # MATCHEAMOS EN DEPOSITOS, SI NO COMO PUEDE SER QUE ESTE EN BANCO
+        # Y NO EN EL RESTO'. Relajamos filtro: programa side acepta
+        # CUALQUIER credit (no solo TR/IN/AC/XX/NC). Un TR del banco
+        # puede pairearse contra un DE del PC.
         for b in (data.get("bancsis_only") or []):
             if (b.get("tipo_real") or "").upper() != "C":
                 continue
-            if (b.get("documento") or "").upper() not in _DOCS_TRANSF:
-                continue
+            # SIN filtro de documento — cualquier credit unmatched
             f = str(b.get("fecha") or "")
             if not f:
                 continue
@@ -1128,6 +1133,7 @@ def hub():
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": False,
                 "n_cheques": 0,
+                "id_transaccion": b.get("id_transaccion"),
                 "matched": False,
             })
         for m in (data.get("matches") or []):
@@ -1135,8 +1141,7 @@ def hub():
             real = m.get("real") or {}
             if (real.get("tipo") or "").upper() != "C":
                 continue
-            if (b.get("documento") or "").upper() not in _DOCS_TRANSF:
-                continue
+            # SIN filtro de documento — cualquier credit match
             f = str(b.get("fecha") or "")
             if not f:
                 continue
@@ -1150,6 +1155,7 @@ def hub():
                 "prov_nombre": b.get("prov_nombre") or "",
                 "es_agrupado": False,
                 "n_cheques": 0,
+                "id_transaccion": b.get("id_transaccion"),
                 "matched": True,
             })
         for f in sorted(set(banco_t) | set(prog_t)):
