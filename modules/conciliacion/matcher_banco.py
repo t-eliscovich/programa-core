@@ -1246,7 +1246,7 @@ def confirmar_match(
                    AND COALESCE(documento, '') = COALESCE(%s, '')
                    AND monto = %s
                    AND tipo = %s
-                   AND conciliado_match_id IS NULL
+                   AND conciliado_en IS NULL
                 """,
                 (
                     row_match["id"], usuario[:50] if usuario else 'web',

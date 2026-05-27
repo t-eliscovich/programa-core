@@ -370,11 +370,12 @@
             <th class="px-3 py-1.5 text-left">Doc banco</th>
             <th class="px-3 py-1.5 text-left">Concepto</th>
             <th class="px-3 py-1.5 text-left text-slate-400">Fuente</th>
+            <th class="px-3 py-1.5 text-right w-32">Acción</th>
           </tr>
         </thead>
         <tbody>
           {% for h in historicos_pendientes[:200] %}
-          <tr class="border-t border-slate-100 dark:border-slate-800/60 hover:bg-amber-50/40 dark:hover:bg-amber-900/10">
+          <tr class="hist-row border-t border-slate-100 dark:border-slate-800/60 hover:bg-amber-50/40 dark:hover:bg-amber-900/10" data-hist-id="{{ h.id }}">
             <td class="px-3 py-1 font-mono text-xs whitespace-nowrap text-slate-600">{{ h.fecha }}</td>
             <td class="px-3 py-1 text-center">
               {% if (h.tipo or 'C')|upper == 'C' %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">+</span>{% else %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-rose-100 text-rose-700 text-[9px] font-bold">−</span>{% endif %}
@@ -383,6 +384,11 @@
             <td class="px-3 py-1 font-mono text-xs whitespace-nowrap {% if h.documento %}text-slate-700 dark:text-slate-300{% else %}text-slate-300{% endif %}">{{ h.documento or '·' }}</td>
             <td class="px-3 py-1 text-slate-600 dark:text-slate-400 text-xs truncate max-w-md" title="{{ h.concepto }}">{{ (h.concepto or '')[:80] }}</td>
             <td class="px-3 py-1 text-slate-400 text-[10px] truncate max-w-[180px]" title="{{ h.fuente }}">{{ h.fuente or '—' }}</td>
+            <td class="px-3 py-1 text-right">
+              <button type="button" class="btn-hist-conciliar text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200 hover:bg-emerald-200" data-hist-id="{{ h.id }}">
+                ✓ Conciliado
+              </button>
+            </td>
           </tr>
           {% endfor %}
           {% if historicos_pendientes|length > 200 %}
@@ -2504,6 +2510,39 @@
       refresh();
     });
   });
+  // TMT 2026-05-27 dueña: 'el historico no me esta apareciendo como
+  // opcion de conciliar'. Botón ✓ Conciliado por fila histórico:
+  // POST AJAX a /banco/historico/marcar-conciliado → fila se tacha.
+  document.querySelectorAll('.btn-hist-conciliar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.histId;
+      if (!id) return;
+      btn.disabled = true;
+      btn.textContent = '…';
+      const fd = new FormData();
+      fd.set('csrf_token', '{{ csrf_token() }}');
+      fd.set('id_historico', id);
+      try {
+        const r = await fetch('{{ url_for("conciliacion.hub_historico_marcar_conciliado") }}', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (d.ok && d.n > 0) {
+          const tr = btn.closest('tr.hist-row');
+          if (tr) { tr.style.opacity = '0.35'; tr.style.textDecoration = 'line-through'; }
+          btn.textContent = '✓ OK';
+          btn.classList.add('bg-emerald-600', 'text-white');
+        } else {
+          alert(d.msg || 'No se pudo marcar.');
+          btn.disabled = false;
+          btn.textContent = '✓ Conciliado';
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '✓ Conciliado';
+      }
+    });
+  });
+
   // Botón "Tildar amount-matches" por día — tilda automáticamente
   // todas las filas con data-amount-match=1 del expand de ese día.
   document.querySelectorAll('.btn-auto-amount-match').forEach(btn => {

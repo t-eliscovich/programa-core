@@ -820,7 +820,7 @@ def hub():
             SELECT id, fecha, concepto, documento, monto, tipo, oficina, detalle, fuente
               FROM scintela.banco_historicos_pendientes
              WHERE no_banco = %s
-               AND conciliado_match_id IS NULL
+               AND conciliado_en IS NULL
              ORDER BY fecha DESC, id DESC
             """,
             (no_banco,),
@@ -1369,7 +1369,7 @@ def hub():
             SELECT id, fecha, concepto, documento, monto, tipo, oficina, detalle, fuente, creado_en
               FROM scintela.banco_historicos_pendientes
              WHERE no_banco = %s
-               AND conciliado_match_id IS NULL
+               AND conciliado_en IS NULL
              ORDER BY fecha DESC, id DESC
             """,
             (no_banco,),
@@ -2269,6 +2269,37 @@ def hub_match_manual():
     else:
         flash(f"No pude vincular contra {nombre} Programa #{idtx} (¿ya estaba conciliado?).", "warn")
     return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco/historico/marcar-conciliado", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def hub_historico_marcar_conciliado():
+    """TMT 2026-05-27 dueña: 'el historico no me esta apareciendo como
+    opcion de conciliar'. Botón por fila en el panel históricos para
+    marcar como conciliado sin pasar por el matcher. Setea conciliado_en
+    + conciliado_por; no crea fila en banco_conciliacion_match.
+    """
+    try:
+        ids_raw = request.form.getlist("id_historico[]") or [request.form.get("id_historico")]
+        ids = [int(x) for x in ids_raw if x]
+    except (TypeError, ValueError):
+        ids = []
+    if not ids:
+        return {"ok": False, "msg": "id_historico vacío"}, 400
+    import db as _db
+    usuario = _usuario_actual()
+    n = _db.execute(
+        """
+        UPDATE scintela.banco_historicos_pendientes
+           SET conciliado_en = CURRENT_TIMESTAMP,
+               conciliado_por = %s
+         WHERE id = ANY(%s)
+           AND conciliado_en IS NULL
+        """,
+        (usuario[:50], ids),
+    )
+    return {"ok": True, "n": n or 0, "msg": f"{n or 0} marcados conciliados"}
 
 
 @conciliacion_bp.route("/banco/match-click", methods=["POST"])
