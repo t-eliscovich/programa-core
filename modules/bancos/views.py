@@ -824,11 +824,17 @@ def movimientos(no_banco):
                 # El saldo del lote es el del PRIMER row (más nuevo en el
                 # orden DESC) — refleja el saldo después de TODO el lote.
                 saldo_lote = grupo[0].get("saldo")
+                # TMT 2026-05-27 dueña: 'en el lote, si todos estan
+                # conciliados, poner si. Si por ejemplo son algunos, poner
+                # 25/26'. Calculamos n_conc del lote para el badge.
+                n_conc_lote = sum(1 for g in grupo if g.get("conciliacion_id"))
                 items.append(
                     {
                         "_kind": "lote",
                         "fecha": f.get("fecha"),
                         "n_cheques": len(grupo),
+                        "n_conciliados": n_conc_lote,
+                        "todos_conciliados": (n_conc_lote == len(grupo)),
                         "importe_total": total_lote,
                         "saldo": saldo_lote,
                         "lote_key": f"lote-{grupo[0].get('id_transaccion')}",

@@ -144,7 +144,21 @@
             <td class="px-3 py-2 text-right text-mono text-slate-500">
               {{ it.saldo | money_es if it.saldo is not none else '' }}
             </td>
-            <td class="px-3 py-2 text-center text-xs text-slate-400">—</td>
+            {# TMT 2026-05-27 dueña: 'en el lote, si todos estan
+               conciliados, poner si. Si por ejemplo son algunos, poner 25/26'. #}
+            <td class="px-3 py-2 text-center text-xs">
+              {% if it.todos_conciliados %}
+                <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-semibold" title="Los {{ it.n_cheques }} cheques del lote están conciliados">
+                  ✓ Sí
+                </span>
+              {% elif it.n_conciliados > 0 %}
+                <span class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 text-[11px] font-semibold tabular-nums" title="{{ it.n_conciliados }} de {{ it.n_cheques }} cheques conciliados">
+                  {{ it.n_conciliados }}/{{ it.n_cheques }}
+                </span>
+              {% else %}
+                <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[11px]" title="Ninguno conciliado">—</span>
+              {% endif %}
+            </td>
             <td class="px-3 py-2 no-print"></td>
           </tr>
           {# Filas detalle — ocultas por default, una por cheque del lote. #}

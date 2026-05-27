@@ -231,9 +231,12 @@
             {% endif %}
           </td>
           {% if _show_mensual %}
-          {# TMT 2026-05-27 dueña: 'RT sigue teniendo --- en cuota mensual!!'.
-             Mostrar cuota_mensual aunque NO matchee provisión (caso RT: se
-             calcula por días en queries). Solo editable si id_provisiones. #}
+          {# TMT 2026-05-27 dueña: 'RT sigue teniendo --- en cuota mensual'
+             + 'y editable tambien la cuota, como el resto'. 3 casos:
+             a) id_provisiones + permiso → editor inline (provision).
+             b) no provision + cuota_mensual calculada (RT) → editor inline
+                que recalcula posdat.importe = cuota × dias / 30.
+             c) sin nada → —. #}
           <td class="px-2 py-1 text-right font-mono tabular-nums">
             {% if f.id_provisiones and tiene_permiso('provisiones.editar') %}
               <input type="number" step="0.01" min="0"
@@ -241,6 +244,13 @@
                      value="{{ f.cuota_mensual }}"
                      data-orig="{{ f.cuota_mensual }}"
                      title="Cuota mensual de la provisión — editable inline">
+            {% elif f.cuota_mensual is not none and tiene_permiso('posdat.editar') %}
+              <input type="number" step="0.01" min="0"
+                     class="posdat-cuota-derivada-mensual w-28 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
+                     value="{{ '%.2f' | format(f.cuota_mensual|float) }}"
+                     data-orig="{{ '%.2f' | format(f.cuota_mensual|float) }}"
+                     data-importe-orig="{{ f.importe }}"
+                     title="Cuota mensual calculada — editarla recalcula el importe total del posdat (cuota × días / 30)">
             {% elif f.cuota_mensual is not none %}
               <span class="text-slate-600" title="Calculada por días entre fecha y vencimiento">{{ f.cuota_mensual | num_es }}</span>
             {% else %}
@@ -256,6 +266,13 @@
                      value="{{ '%.2f' | format((f.cuota_mensual or 0) / 30.0) }}"
                      data-orig="{{ '%.2f' | format((f.cuota_mensual or 0) / 30.0) }}"
                      title="Diaria = mensual ÷ 30. Cambiarla actualiza la mensual.">
+            {% elif f.cuota_diaria is not none and tiene_permiso('posdat.editar') %}
+              <input type="number" step="0.01" min="0"
+                     class="posdat-cuota-derivada-diaria w-24 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums"
+                     value="{{ '%.2f' | format(f.cuota_diaria|float) }}"
+                     data-orig="{{ '%.2f' | format(f.cuota_diaria|float) }}"
+                     data-importe-orig="{{ f.importe }}"
+                     title="Diaria calculada — editarla recalcula el importe total del posdat (cuota × días)">
             {% elif f.cuota_diaria is not none %}
               <span class="text-slate-600">{{ f.cuota_diaria | num_es(2) }}</span>
             {% else %}
@@ -371,6 +388,67 @@
 
       document.querySelectorAll('#posdat-tabla tbody tr[data-id-posdat]').forEach(tr => {
         const idPosdat = tr.dataset.idPosdat;
+
+        // TMT 2026-05-27 dueña: 'y editable tambien la cuota, como el
+        // resto'. Para posdats SIN provision (caso RT), editar la cuota
+        // recalcula el importe del posdat = cuota_mensual × dias / 30.
+        // Necesitamos saber días entre fecha y fechad — los leemos de
+        // los inputs `data-fecha` que NO existen. Mejor: leemos
+        // importe original + cuota_mensual original para inferir dias:
+        //   importe_orig / cuota_orig = dias / 30  →  dias = (importe_orig / cuota_orig) * 30
+        // Después: importe_nuevo = cuota_nueva × dias / 30
+        const inpCuoMD = tr.querySelector('.posdat-cuota-derivada-mensual');
+        const inpCuoDD = tr.querySelector('.posdat-cuota-derivada-diaria');
+        function _diasInferidos() {
+          const inp = inpCuoMD || inpCuoDD;
+          if (!inp) return null;
+          const impOrig = parseFloat(inp.dataset.importeOrig);
+          const cuoOrig = parseFloat(inp.dataset.orig);
+          if (!isFinite(impOrig) || !isFinite(cuoOrig) || cuoOrig <= 0) return null;
+          // Si es mensual: dias = (importe / cuota_mensual) × 30
+          // Si es diaria:  dias = importe / cuota_diaria
+          if (inp === inpCuoMD) return (impOrig / cuoOrig) * 30;
+          return impOrig / cuoOrig;
+        }
+        function _editarCuotaDerivada(cuotaMensualNueva, inp) {
+          const dias = _diasInferidos();
+          if (!dias || dias <= 0) {
+            alert('No puedo recalcular: faltan días entre fecha y vencimiento.');
+            inp.value = inp.dataset.orig;
+            return;
+          }
+          const importeNuevo = Math.round((cuotaMensualNueva * dias / 30) * 100) / 100;
+          if (!isFinite(importeNuevo) || importeNuevo <= 0) {
+            alert('Importe resultante inválido.');
+            inp.value = inp.dataset.orig;
+            return;
+          }
+          postEditar(idPosdat, { importe: importeNuevo }, inp,
+                     'posdat-importe-saved', 'posdat-importe-error');
+        }
+        if (inpCuoMD) {
+          inpCuoMD.addEventListener('change', () => {
+            const cm = parseFloat(inpCuoMD.value);
+            if (!isFinite(cm) || cm <= 0) {
+              alert('Cuota inválida.');
+              inpCuoMD.value = inpCuoMD.dataset.orig;
+              return;
+            }
+            _editarCuotaDerivada(cm, inpCuoMD);
+          });
+        }
+        if (inpCuoDD) {
+          inpCuoDD.addEventListener('change', () => {
+            const cd = parseFloat(inpCuoDD.value);
+            if (!isFinite(cd) || cd <= 0) {
+              alert('Cuota diaria inválida.');
+              inpCuoDD.value = inpCuoDD.dataset.orig;
+              return;
+            }
+            _editarCuotaDerivada(cd * 30, inpCuoDD);
+          });
+        }
+
         // Editor de IMPORTE
         const inpImp = tr.querySelector('.posdat-importe-edit');
         if (inpImp) {
