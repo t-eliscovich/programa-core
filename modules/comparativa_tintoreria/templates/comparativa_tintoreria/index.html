@@ -139,15 +139,19 @@
       <tbody>
         {% set _rows = filas_dia if vista == 'dia' else filas_codigo %}
         {% for r in _rows %}
+        {# TMT 2026-05-26: defensivo — fecha puede ser None en edge case. #}
         <tr class="border-t border-slate-100 hover:bg-slate-50">
-          <td class="px-3 py-1.5">{{ r.fecha.strftime('%d/%m/%Y') }}</td>
-          <td class="px-3 py-1.5 font-mono">{{ r.cod }}</td>
-          <td class="px-3 py-1.5 text-right">{{ r.kg_dbase | num_es(1) }}</td>
+          <td class="px-3 py-1.5">{% if r.fecha %}{{ r.fecha.strftime('%d/%m/%Y') }}{% else %}—{% endif %}</td>
+          <td class="px-3 py-1.5 font-mono">{{ r.cod or '—' }}</td>
+          <td class="px-3 py-1.5 text-right">{{ (r.kg_dbase or 0) | num_es(1) }}</td>
           <td class="px-3 py-1.5 text-right">
             {% if r.kg_form_term is not none %}{{ r.kg_form_term | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right {% if r.cambio and r.cambio|abs > 0.5 %}{% if r.cambio > 0 %}text-emerald-700{% else %}text-rose-700{% endif %} font-medium{% else %}text-slate-500{% endif %}">
-            {% if r.cambio is not none %}{{ r.cambio | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          <td class="px-3 py-1.5 text-right">
+            {% if r.cambio is not none %}
+              {% set _abs = r.cambio if r.cambio >= 0 else -r.cambio %}
+              <span class="{% if _abs > 0.5 %}{% if r.cambio > 0 %}text-emerald-700{% else %}text-rose-700{% endif %} font-medium{% else %}text-slate-500{% endif %}">{{ r.cambio | num_es(1) }}</span>
+            {% else %}<span class="text-slate-300">—</span>{% endif %}
           </td>
           <td class="px-3 py-1.5 text-right">
             {% if r.kg_form_cruda is not none %}{{ r.kg_form_cruda | num_es(1) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
