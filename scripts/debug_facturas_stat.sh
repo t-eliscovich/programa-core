@@ -91,11 +91,22 @@ EOF
 )
 B64=$(printf '%s' "$PY" | base64 | tr -d '\n')
 
-CMD='cd C:\programa-core; $env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable("DATABASE_URL", "Machine"); [System.IO.File]::WriteAllBytes("C:\programa-core\_tmp_diag.py", [Convert]::FromBase64String("'$B64'")); & "C:\Python312\python.exe" "C:\programa-core\_tmp_diag.py"; Remove-Item "C:\programa-core\_tmp_diag.py"'
+# Construir el comando PowerShell + envolverlo en JSON para --cli-input-json
+# (más seguro que --parameters con quoting por shell).
+CMD="cd C:\\programa-core; \$env:DATABASE_URL = [System.Environment]::GetEnvironmentVariable('DATABASE_URL', 'Machine'); [System.IO.File]::WriteAllBytes('C:\\programa-core\\_tmp_diag.py', [Convert]::FromBase64String('$B64')); & 'C:\\Python312\\python.exe' 'C:\\programa-core\\_tmp_diag.py'; Remove-Item 'C:\\programa-core\\_tmp_diag.py'"
 
-ID=$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE_ID" \
-  --document-name AWS-RunPowerShellScript \
-  --parameters "commands=[\"$CMD\"]" \
+# Escribir el payload JSON a un tmp file usando Python (escape robusto).
+python3 - <<PYEOF > /tmp/ssm_payload.json
+import json
+payload = {
+    "InstanceIds": ["$INSTANCE_ID"],
+    "DocumentName": "AWS-RunPowerShellScript",
+    "Parameters": {"commands": [r"""$CMD"""]},
+}
+print(json.dumps(payload))
+PYEOF
+
+ID=$(aws ssm send-command --region "$REGION" --cli-input-json file:///tmp/ssm_payload.json \
   --query 'Command.CommandId' --output text)
 
 echo "Command ID: $ID"
