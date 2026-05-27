@@ -3122,7 +3122,7 @@ def resultados_costos_tabla(
          "clase": "total",
          "ayuda": ("Subtotal +4.5% + Administracion. "
                    "U$ = kg vendidos * Costo Total.")},
-        {"label": "Utilidad", "kg": venta_kg, "ukg": ue_ukg,
+        {"label": "Utilidad Real", "kg": venta_kg, "ukg": ue_ukg,
          "us": ue_us, "clase": "key",
          "ayuda": ("Venta − Costo Total — calculada sobre los mismos "
                    "componentes de esta tabla, sin depender del historial. "
