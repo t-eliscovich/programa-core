@@ -9,7 +9,7 @@
   <div class="mb-6">
     <h1 class="text-2xl font-semibold">Editar cheque</h1>
     <p class="text-sm text-slate-500 mt-1">
-      Sólo edición blanda: concepto, observación{% if not is_depositado %}, fecha de depósito{% endif %}.
+      Sólo edición blanda: concepto, observación, fecha de depósito.
       Para corregir importe, cliente o banco →
       <a href="{{ url_for('cheques.anular_error_carga', id_cheque=ch.id_cheque) }}"
          class="text-amber-600 dark:text-amber-400 hover:underline">anular por error de carga</a>.
@@ -57,11 +57,10 @@
 
     <div>
       <label class="block text-xs text-slate-500 mb-1">
-        Fecha de depósito {% if is_depositado %}<span class="text-amber-600">(lockeada — cheque depositado)</span>{% endif %}
+        Fecha de depósito {% if is_depositado %}<span class="text-amber-600">(cheque depositado — editar sólo para corregir fecha)</span>{% endif %}
       </label>
       <input name="fechad" type="text" placeholder="DD/MM/AAAA"
              value="{{ form.fechad or '' }}"
-             {% if is_depositado %}disabled{% endif %}
              class="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-mono">
       <p class="text-xs text-slate-500 mt-1">Domingos se mueven al lunes.</p>
     </div>

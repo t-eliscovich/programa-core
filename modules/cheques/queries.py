@@ -113,11 +113,12 @@ def editar(
     fechad_nueva = ch["fechad"]
     fechad_shifted = False
     if fechad is not None:
-        if stat in STATS_DEPOSITADO:
-            raise ValueError(
-                f"Cheque depositado (stat='{stat}') — la fechad no se puede editar. "
-                "Para corregir, anular por error de carga y crear uno nuevo."
-            )
+        # TMT 2026-05-27 dueña: 'dejame editar deposito de cheque'. Antes
+        # cheques depositados (stat B/V/W/I/J/K/A) tenían fechad lockeada.
+        # Permitido editar también cuando está depositado — necesario para
+        # corregir la fecha de depósito y cuadrar con extracto banco.
+        # (Las transiciones de stat siguen requiriendo flujo formal — esto
+        # solo edita la FECHA del depósito ya hecho).
         fechad_lunes = _domingo_a_lunes(fechad)
         fechad_shifted = fechad_lunes != fechad
         fechad_nueva = fechad_lunes

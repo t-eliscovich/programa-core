@@ -1533,9 +1533,9 @@ def editar(id_cheque: int):
         fechad = parse_date(fechad_str) if fechad_str else None
         if fechad_str and fechad is None:
             errores.append("Fecha de depósito inválida.")
-        if is_depositado and fechad is not None and fechad != ch.get("fechad"):
-            errores.append("Cheque depositado: la fecha no se puede editar.")
-            fechad = None
+        # TMT 2026-05-27 dueña: 'dejame editar deposito de cheque'. Antes
+        # bloqueábamos edit cuando is_depositado — ahora permitido para
+        # corregir la fecha y cuadrar con extracto banco.
         form.update(
             {
                 "concepto": concepto or "",
@@ -1557,7 +1557,7 @@ def editar(id_cheque: int):
                 id_cheque,
                 concepto=concepto,
                 observacion=observacion,
-                fechad=fechad if not is_depositado else None,
+                fechad=fechad,
                 usuario=usuario,
             )
             msg = "Cheque editado."
