@@ -399,10 +399,21 @@ def lista():
     # con lo que se ve en la tabla.
     total_importe = 0.0
     total_cuota_mensual = 0.0
+    total_cuota_diaria = 0.0
     if tab == "yy":
         for f in filas:
             total_importe += float(f.get("importe") or 0)
             total_cuota_mensual += float(f.get("cuota_mensual") or 0)
+            total_cuota_diaria += float(f.get("cuota_diaria") or 0)
+    # TMT 2026-05-27 dueña: 'mostrame cuanto subiste de ayer a hoy o algo
+    # para poder llevar la cuenta'. El delta diario = total de cuotas
+    # diarias (1/30 de la cuota mensual de cada provisión). Cada día que
+    # pasa, eso es lo que se suma al pasivo total. Y acumulado del mes
+    # hasta hoy = día del mes × delta diario.
+    from datetime import date as _date
+    _dia_hoy = _date.today().day
+    delta_dia_hoy = round(total_cuota_diaria, 2)
+    acum_mes_hasta_hoy = round(total_cuota_diaria * min(_dia_hoy, 30), 2)
 
     return render_template(
         "posdat/lista.html",
@@ -419,6 +430,10 @@ def lista():
         conteos_tab=conteos_tab,
         total_importe=total_importe,
         total_cuota_mensual=total_cuota_mensual,
+        total_cuota_diaria=total_cuota_diaria,
+        delta_dia_hoy=delta_dia_hoy,
+        acum_mes_hasta_hoy=acum_mes_hasta_hoy,
+        dia_del_mes=_dia_hoy,
     )
 
 
