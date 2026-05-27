@@ -16,7 +16,9 @@ REGION="${REGION:-us-east-2}"
 echo "=== Diag facturas por stat — corriendo en EC2 vía SSM ==="
 
 PY=$(cat <<'EOF'
-import os, sys
+import os, sys, io
+# Forzar UTF-8 stdout — Windows default cp1252 rompe con unicode arrows etc.
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 # Usar el módulo db del proyecto — sabe leer el config correcto.
 sys.path.insert(0, r'C:\programa-core')
 os.chdir(r'C:\programa-core')
@@ -52,7 +54,7 @@ cur.execute("""
      GROUP BY 1 ORDER BY 2 DESC
 """)
 for r in cur.fetchall():
-    print(f'  stat={r[0]:10s} n={r[1]:>6d}  $ {r[2]:>14,.2f}  fechas: {r[3]} → {r[4]}')
+    print(f'  stat={r[0]:10s} n={r[1]:>6d}  $ {r[2]:>14,.2f}  fechas: {r[3]} to {r[4]}')
 
 print()
 print('=== BED por stat ===')
@@ -66,7 +68,7 @@ cur.execute("""
      GROUP BY 1 ORDER BY 2 DESC
 """)
 for r in cur.fetchall():
-    print(f'  stat={r[0]:10s} n={r[1]:>6d}  $ {r[2]:>14,.2f}  fechas: {r[3]} → {r[4]}')
+    print(f'  stat={r[0]:10s} n={r[1]:>6d}  $ {r[2]:>14,.2f}  fechas: {r[3]} to {r[4]}')
 
 print()
 print('=== BED ÚLTIMAS 10 facturas (cualquier stat) ===')
