@@ -2120,3 +2120,63 @@ def banco_deshacer():
     else:
         flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
     return redirect(url_for("conciliacion.banco_historial"))
+
+
+# TMT 2026-05-27 dueña: 'borremos estos conciliados. que los que importen
+# sean las de dbase'. Bulk soft-delete de todos los matches manuales PC
+# (banco_conciliacion_match) para que la fuente de verdad pase a ser dBase
+# stat='*'. Soft-delete = reversible (la fila queda con deshecho_en, se ve
+# tildando "Mostrar deshechos").
+@conciliacion_bp.route("/banco/deshacer-todos", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_deshacer_todos():
+    """Soft-deshace TODOS los matches PC activos (opcional: filtrado por banco).
+
+    Lo pidió la dueña explícitamente: la fuente de verdad de qué está
+    conciliado debe ser el dBase (stat='*'), no los matches manuales PC.
+    """
+    # Banco opcional via form. Si no viene → todos los bancos.
+    no_banco_arg = request.form.get("no_banco")
+    no_banco = None
+    if no_banco_arg:
+        try:
+            no_banco = int(no_banco_arg)
+        except (TypeError, ValueError):
+            no_banco = None
+    usuario = _usuario_actual()
+    import db as _db
+    if no_banco is not None:
+        n = _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET deshecho_en  = CURRENT_TIMESTAMP,
+                   deshecho_por = %(usuario)s
+             WHERE no_banco = %(no_banco)s
+               AND deshecho_en IS NULL
+            """,
+            {"no_banco": no_banco, "usuario": usuario[:50]},
+        )
+    else:
+        n = _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET deshecho_en  = CURRENT_TIMESTAMP,
+                   deshecho_por = %(usuario)s
+             WHERE deshecho_en IS NULL
+            """,
+            {"usuario": usuario[:50]},
+        )
+    if n:
+        flash(
+            f"Deshechos {n} matches PC. dBase (stat='*') queda como única "
+            f"fuente de conciliados. Se ven con 'Mostrar deshechos'.",
+            "ok",
+        )
+    else:
+        flash("No había matches activos para deshacer.", "warn")
+    # Mantener filtros si vinieron en el form
+    return redirect(url_for(
+        "conciliacion.banco_historial",
+        no_banco=no_banco_arg or "",
+    ))
