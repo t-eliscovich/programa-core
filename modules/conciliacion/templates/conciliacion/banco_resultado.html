@@ -613,7 +613,11 @@
                         <tr class="ctp-row ctp-pc border-t border-slate-100 dark:border-slate-800/60 cursor-grab hover:bg-sky-50 dark:hover:bg-sky-900/20 {% if it.doc_match %}bg-emerald-50 dark:bg-emerald-900/20{% elif it.amount_match %}bg-amber-50 dark:bg-amber-900/20{% endif %}"
                             draggable="true"
                             data-id-transaccion="{{ it.id_transaccion or '' }}" data-importe="{{ '%.2f'|format(it.importe) }}"
-                            {% if it.matched %}data-already-matched="1"{% endif %}>
+                            {% if it.matched %}data-already-matched="1"{% endif %}
+                            {% if it.amount_match %}data-amount-match="1"{% endif %}>
+                          <td class="py-1 pl-2 pr-1 text-center" style="width: 1%;" onclick="event.stopPropagation()">
+                            <input type="checkbox" class="ctp-check-pc cursor-pointer" title="Marcar para parear">
+                          </td>
                           <td class="py-1 pr-2 font-mono whitespace-nowrap {% if it.doc_match %}text-emerald-700 dark:text-emerald-400 font-semibold{% else %}{% if _doc_a_mostrar %}text-slate-700 dark:text-slate-300{% else %}text-slate-400{% endif %}{% endif %}" style="width: 1%;" title="{% if _numref %}numref: {{ _numref }}{% elif _doc_banco_ch %}cheque.doc_banco: {{ _doc_banco_ch }}{% endif %}">
                             {% if it.doc_match %}<span class="text-emerald-600">✓</span>{% endif %}{{ _doc_a_mostrar or '·' }}
                             {% if it.cross_match_fecha %}<span class="ml-1 text-[10px] text-amber-700 dark:text-amber-400" title="Doc también en banco el {{ it.cross_match_fecha }}">↔ {{ it.cross_match_fecha[8:10] }}/{{ it.cross_match_fecha[5:7] }}</span>{% endif %}
@@ -2390,6 +2394,36 @@
       if (row.dataset.alreadyMatched === '1') return;
       if (row.classList.contains('ctp-done')) return;
       row.classList.toggle('ctp-selected');
+      // Mantener checkbox sincronizado con ctp-selected
+      const cb = row.querySelector('input.ctp-check-banco, input.ctp-check-pc');
+      if (cb) cb.checked = row.classList.contains('ctp-selected');
+      refresh();
+    });
+  });
+  // Checkbox handlers (banco + PC) — tildar = ctp-selected
+  document.querySelectorAll('input.ctp-check-banco, input.ctp-check-pc').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const row = cb.closest('tr.ctp-row');
+      if (!row) return;
+      if (cb.checked) row.classList.add('ctp-selected');
+      else row.classList.remove('ctp-selected');
+      refresh();
+    });
+  });
+  // Botón "Tildar amount-matches" por día — tilda automáticamente
+  // todas las filas con data-amount-match=1 del expand de ese día.
+  document.querySelectorAll('.btn-auto-amount-match').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dayId = btn.dataset.day;
+      const expand = document.getElementById(dayId);
+      if (!expand) return;
+      expand.querySelectorAll('.ctp-row[data-amount-match="1"]').forEach(row => {
+        if (row.dataset.alreadyMatched === '1') return;
+        if (row.classList.contains('ctp-done')) return;
+        row.classList.add('ctp-selected');
+        const cb = row.querySelector('input.ctp-check-banco, input.ctp-check-pc');
+        if (cb) cb.checked = true;
+      });
       refresh();
     });
   });
