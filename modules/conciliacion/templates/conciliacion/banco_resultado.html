@@ -548,12 +548,18 @@
              y it.cross_match_fecha (la fecha del cruce si es ≠ del día actual). #}
           <tr id="{{ _dep_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
             <td colspan="6" class="px-0 py-0">
+              {# ── Barra de acciones de selección del expand (full width) ─── #}
+              <div class="px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 flex items-center gap-2 flex-wrap text-[11px]">
+                <button type="button" class="btn-tildar-todos px-2 py-1 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 hover:bg-sky-200 font-medium" data-day="{{ _dep_id }}">✓ Tildar todos los del día</button>
+                <button type="button" class="btn-auto-amount-match px-2 py-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 font-medium" data-day="{{ _dep_id }}" title="Tildar todas las filas amount-matched (ámbar)">⚡ Tildar amount-matches</button>
+                <button type="button" class="btn-desmarcar-todos px-2 py-1 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300" data-day="{{ _dep_id }}">✗ Desmarcar</button>
+                <span class="ml-auto text-slate-500 italic hidden md:inline">Tildá filas banco + PC → '✓ Match seleccionados' abajo confirma.</span>
+              </div>
               <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
                 {# ── BANCO ─────────────────────────────────────── #}
                 <div class="px-4 py-3 min-w-0">
                   <div class="flex items-baseline justify-between mb-2 gap-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
-                    <button type="button" class="btn-auto-amount-match text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60" data-day="{{ _dep_id }}" title="Tildar todas las filas amount-matched (ámbar) de este día">⚡ Tildar amount-matches</button>
                     <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
                   </div>
                   {% if d.banco_items and d.banco_items|length > 0 %}
@@ -726,11 +732,16 @@
           </tr>
           <tr id="{{ _t_id }}" class="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
             <td colspan="6" class="px-0 py-0">
+              {# ── Barra acciones expand transferencias ───── #}
+              <div class="px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 flex items-center gap-2 flex-wrap text-[11px]">
+                <button type="button" class="btn-tildar-todos px-2 py-1 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 hover:bg-sky-200 font-medium" data-day="{{ _t_id }}">✓ Tildar todos los del día</button>
+                <button type="button" class="btn-auto-amount-match px-2 py-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 font-medium" data-day="{{ _t_id }}" title="Tildar amount-matches">⚡ Tildar amount-matches</button>
+                <button type="button" class="btn-desmarcar-todos px-2 py-1 rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300" data-day="{{ _t_id }}">✗ Desmarcar</button>
+              </div>
               <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
                 <div class="px-4 py-3 min-w-0">
                   <div class="flex items-baseline justify-between mb-2 gap-2">
                     <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-700 dark:text-slate-300">Banco</span>
-                    <button type="button" class="btn-auto-amount-match text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60" data-day="{{ _t_id }}" title="Tildar todas las amount-matches">⚡ Tildar amount-matches</button>
                     <span class="text-[11px] text-slate-500 tabular-nums">{{ d.n_banco }} movs · $ {{ '{:,.2f}'.format(d.banco) }}</span>
                   </div>
                   {% if d.banco_items %}
@@ -2398,9 +2409,21 @@
   const matchBtn = document.getElementById('ctp-match-btn');
   const cancelBtn = document.getElementById('ctp-cancel-btn');
   function selected(side) { return document.querySelectorAll('.ctp-' + side + '.ctp-selected:not(.ctp-done)'); }
+  function fmtMoney(n) {
+    return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
   function refresh() {
-    const nb = selected('banco').length, np = selected('pc').length;
-    statusEl.textContent = nb + ' banco / ' + np + ' PC';
+    const bancos = selected('banco');
+    const pcs = selected('pc');
+    const nb = bancos.length, np = pcs.length;
+    let sumB = 0, sumP = 0;
+    bancos.forEach(r => { sumB += parseFloat(r.dataset.monto) || 0; });
+    pcs.forEach(r => { sumP += parseFloat(r.dataset.importe) || 0; });
+    const diff = sumB - sumP;
+    const diffStr = Math.abs(diff) < 0.005
+      ? '<span style="color:#86efac">✓ cuadra</span>'
+      : '<span style="color:#fbbf24">Δ ' + fmtMoney(diff) + '</span>';
+    statusEl.innerHTML = `${nb} banco <b>${fmtMoney(sumB)}</b> / ${np} PC <b>${fmtMoney(sumP)}</b> · ${diffStr}`;
     floating.classList.toggle('active', nb > 0 || np > 0);
     matchBtn.disabled = !(nb >= 1 && np >= 1);
     matchBtn.style.opacity = matchBtn.disabled ? '0.5' : '1';
@@ -2442,6 +2465,35 @@
         row.classList.add('ctp-selected');
         const cb = row.querySelector('input.ctp-check-banco, input.ctp-check-pc');
         if (cb) cb.checked = true;
+      });
+      refresh();
+    });
+  });
+  // Botón "Tildar todos los del día" — tilda TODAS las filas del expand
+  // (banco + PC) que no estén ya matched/done.
+  document.querySelectorAll('.btn-tildar-todos').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const expand = document.getElementById(btn.dataset.day);
+      if (!expand) return;
+      expand.querySelectorAll('.ctp-row').forEach(row => {
+        if (row.dataset.alreadyMatched === '1') return;
+        if (row.classList.contains('ctp-done')) return;
+        row.classList.add('ctp-selected');
+        const cb = row.querySelector('input.ctp-check-banco, input.ctp-check-pc');
+        if (cb) cb.checked = true;
+      });
+      refresh();
+    });
+  });
+  // Botón "Desmarcar" — destilda todas las filas del expand.
+  document.querySelectorAll('.btn-desmarcar-todos').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const expand = document.getElementById(btn.dataset.day);
+      if (!expand) return;
+      expand.querySelectorAll('.ctp-row.ctp-selected').forEach(row => {
+        row.classList.remove('ctp-selected');
+        const cb = row.querySelector('input.ctp-check-banco, input.ctp-check-pc');
+        if (cb) cb.checked = false;
       });
       refresh();
     });
