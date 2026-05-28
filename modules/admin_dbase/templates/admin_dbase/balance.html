@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block titulo %}Balance PC vs Banco{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <h1 class="text-2xl font-semibold mb-1">Balance PC vs Banco</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    Subí el .xlsx del extracto Pichincha. Te muestro el saldo del banco (top del xlsx),
+    el saldo PC esperado, la diferencia exacta, y el desglose por categoría
+    (IVA / COMISION / SENAE / cheques devueltos / transferencias…).
+  </p>
+
+  <form method="POST" enctype="multipart/form-data"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-4 space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="no_banco" value="10">
+    <label class="block">
+      <span class="text-xs text-slate-500">Archivo del extracto (.xlsx)</span>
+      <div class="mt-1 flex items-center gap-3">
+        <input type="file" name="xlsx" accept=".xlsx" required
+               class="text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0
+                      file:bg-slate-900 file:text-white file:text-sm file:cursor-pointer">
+        <button class="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm">
+          Calcular balance →
+        </button>
+      </div>
+    </label>
+  </form>
+
+  {% if resultado and resultado.error %}
+  <p class="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded text-sm">{{ resultado.error }}</p>
+  {% endif %}
+
+  {% if resultado and not resultado.error %}
+  <div class="mt-6 rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div class="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+      <div>
+        <div class="text-base font-bold">
+          {% if resultado.cuadra %}Balance cuadra{% else %}Balance con drift{% endif %}
+        </div>
+        <div class="text-xs text-slate-500">Banco {{ resultado.no_banco }} · extracto {{ resultado.n_movs_xlsx }} movs</div>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] uppercase text-slate-500">Drift</div>
+        <div class="text-2xl font-bold tabular-nums">$ {{ '{:,.2f}'.format(resultado.drift) }}</div>
+      </div>
+    </div>
+    <div class="px-4 py-4 bg-white dark:bg-slate-900">
+      <table class="w-full text-sm tabular-nums">
+        <tbody>
+          <tr class="border-b border-slate-200">
+            <td class="py-1.5 text-slate-700 font-medium">Saldo PC libros al {{ resultado.fecha_pc or '—' }}</td>
+            <td class="py-1.5 text-right font-bold">$ {{ '{:,.2f}'.format(resultado.saldo_pc) }}</td>
+          </tr>
+          <tr class="text-xs text-slate-600">
+            <td class="py-1 pl-4">+ Pendientes históricos (banco confirmó, PC no tiene)</td>
+            <td class="py-1 text-right">+ $ {{ '{:,.2f}'.format(resultado.hist_neto) }}</td>
+          </tr>
+          <tr class="border-b-2 border-slate-300">
+            <td class="py-1.5 text-slate-700 font-medium">= Saldo banco esperado</td>
+            <td class="py-1.5 text-right font-bold">$ {{ '{:,.2f}'.format(resultado.saldo_esperado) }}</td>
+          </tr>
+          <tr>
+            <td class="py-1.5 text-slate-700 font-medium">Saldo banco real (xlsx top {{ resultado.fecha_banco_top or '—' }})</td>
+            <td class="py-1.5 text-right font-bold">$ {{ '{:,.2f}'.format(resultado.saldo_banco_top) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Desglose por categoría #}
+  <h2 class="mt-6 text-base font-bold">Desglose del extracto por categoría</h2>
+  <p class="text-xs text-slate-500 mt-1 mb-2">
+    "Falta en PC" = filas del xlsx que NO tienen contraparte PC con monto exacto + fecha exacta + tipo compatible.
+    Son las candidatas a generar drift.
+  </p>
+  <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-1.5 text-left">Categoría</th>
+          <th class="px-3 py-1.5 text-right">N movs xlsx</th>
+          <th class="px-3 py-1.5 text-right">+ Créditos</th>
+          <th class="px-3 py-1.5 text-right">− Débitos</th>
+          <th class="px-3 py-1.5 text-right">N en PC</th>
+          <th class="px-3 py-1.5 text-right">N falta</th>
+          <th class="px-3 py-1.5 text-right">$ falta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in resultado.categorias %}
+        <tr class="border-t border-slate-100 hover:bg-slate-50 tabular-nums">
+          <td class="px-3 py-1.5 font-medium">{{ c.categoria }}</td>
+          <td class="px-3 py-1.5 text-right">{{ c.n_total }}</td>
+          <td class="px-3 py-1.5 text-right text-emerald-700">{{ '{:,.2f}'.format(c.sum_cred_banco) }}</td>
+          <td class="px-3 py-1.5 text-right text-rose-700">{{ '{:,.2f}'.format(c.sum_deb_banco) }}</td>
+          <td class="px-3 py-1.5 text-right text-emerald-700">{{ c.n_en_pc }}</td>
+          <td class="px-3 py-1.5 text-right {% if c.n_falta > 0 %}text-rose-700 font-semibold{% endif %}">{{ c.n_falta }}</td>
+          <td class="px-3 py-1.5 text-right {% if c.monto_falta_pc != 0 %}text-rose-700 font-bold{% endif %}">{{ '{:,.2f}'.format(c.monto_falta_pc) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
