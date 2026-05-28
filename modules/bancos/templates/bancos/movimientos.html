@@ -284,6 +284,7 @@
               <form method="post" class="inline-block m-0 p-0"
                     action="{{ url_for('bancos.toggle_conciliado', no_banco=banco.no_banco, id_transaccion=m.id_transaccion, desde=desde, hasta=hasta, conciliado=conciliado_filtro or none, cliente=cliente_filtro or none, monto=monto_filtro_raw or none, doc_num=doc_num_filtro or none) }}"
                     onsubmit="return confirm({% if m.conciliacion_id %}'¿Marcar mov #{{ m.id_transaccion }} como NO conciliado? Esto borra el flag manualmente y deshace el match con extracto si lo había.'{% else %}'¿Marcar mov #{{ m.id_transaccion }} como conciliado MANUAL (sin extracto)?'{% endif %});">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 {% if m.conciliacion_id %}
                   <button type="submit"
                           class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-semibold hover:bg-emerald-200"

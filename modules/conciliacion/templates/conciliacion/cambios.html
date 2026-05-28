@@ -16,6 +16,7 @@
        conciliadas en /bancos. Botón de backfill one-shot. #}
     <form method="POST" action="{{ url_for('conciliacion.limpiar_stat_fantasma') }}"
           onsubmit="return confirm('¿Revertir todas las marcas de conciliado que quedaron colgadas tras un undo? Saca el ✓SÍ de los movs en /bancos cuyo match fue deshacho. Idempotente, se puede correr varias veces.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="text-xs px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap"
               title="Re-aplica los undos que no sacaron la marca de conciliado">
         ↶ Reaplicar undos colgados
