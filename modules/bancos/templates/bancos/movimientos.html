@@ -277,13 +277,31 @@
             </td>
             <td class="px-3 py-2 text-right text-mono text-slate-500">{{ m.saldo | money_es if m.saldo is not none else '' }}</td>
             <td class="px-3 py-2 text-center" style="white-space: nowrap;">
-              {% if m.conciliacion_id %}
-                <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-semibold"
-                      title="Conciliado con extracto {{ m.conciliado_real_fecha or '' }} · #{{ m.conciliado_real_doc or '' }} · por {{ m.conciliado_por or '?' }} el {{ m.conciliado_en.strftime('%Y-%m-%d %H:%M') if m.conciliado_en else '?' }} · estado {{ m.conciliado_estado or '?' }}">
-                  ✓ SÍ
-                </span>
+              {# TMT 2026-05-28 dueña: 'dejame editar el conciliado si no con
+                 una advertencia'. Form inline con confirm() JS para
+                 alternar el estado a mano. Mismo URL preserva filtros. #}
+              {% if tiene_permiso('bancos.conciliar') %}
+              <form method="post" class="inline-block m-0 p-0"
+                    action="{{ url_for('bancos.toggle_conciliado', no_banco=banco.no_banco, id_transaccion=m.id_transaccion, desde=desde, hasta=hasta, conciliado=conciliado_filtro or none, cliente=cliente_filtro or none, monto=monto_filtro_raw or none, doc_num=doc_num_filtro or none) }}"
+                    onsubmit="return confirm({% if m.conciliacion_id %}'¿Marcar mov #{{ m.id_transaccion }} como NO conciliado? Esto borra el flag manualmente y deshace el match con extracto si lo había.'{% else %}'¿Marcar mov #{{ m.id_transaccion }} como conciliado MANUAL (sin extracto)?'{% endif %});">
+                {% if m.conciliacion_id %}
+                  <button type="submit"
+                          class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-semibold hover:bg-emerald-200"
+                          title="Conciliado · click para DESMARCAR (advertencia previa)">
+                    ✓ SÍ
+                  </button>
+                {% else %}
+                  <button type="submit"
+                          class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[11px] hover:bg-emerald-50 hover:text-emerald-700"
+                          title="Sin conciliar · click para MARCAR manualmente (sin extracto)">—</button>
+                {% endif %}
+              </form>
               {% else %}
-                <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[11px]" title="Sin conciliar contra extracto">—</span>
+                {% if m.conciliacion_id %}
+                  <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-[11px] font-semibold">✓ SÍ</span>
+                {% else %}
+                  <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[11px]">—</span>
+                {% endif %}
               {% endif %}
             </td>
             <td class="px-3 py-2 no-print text-right">

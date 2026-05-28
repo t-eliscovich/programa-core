@@ -1198,3 +1198,86 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
         motivo_obligatorio=True,
         confirm_label="Reversar",
     )
+
+
+# ---------------------------------------------------------------------------
+# Toggle conciliado manual — TMT 2026-05-28 (dueña).
+# Pedido literal: "o dejame editar el conciliado si no con una advertencia".
+# Click en la celda Conc. → JS pregunta confirmación → POST acá.
+# Marca/desmarca scintela.transacciones_bancarias.stat ('*' ↔ NULL) y, si la
+# fila tiene un match PC activo, lo deshace en la misma operación. Esto
+# cubre los casos "fantasma-conciliado" que sobreviven al deshacer (bug del
+# dual-write previo al fix de matcher_banco.romper_match).
+# ---------------------------------------------------------------------------
+@bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/toggle-conciliado",
+                 methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def toggle_conciliado(no_banco: int, id_transaccion: int):
+    import db as _db
+
+    row = _db.fetch_one(
+        """
+        SELECT t.id_transaccion, t.no_banco, t.stat,
+               (SELECT m.id FROM scintela.banco_conciliacion_match m
+                 WHERE m.id_transaccion = t.id_transaccion
+                   AND m.deshecho_en IS NULL
+                 LIMIT 1) AS match_activo_id
+          FROM scintela.transacciones_bancarias t
+         WHERE t.id_transaccion = %s AND t.no_banco = %s
+        """,
+        (id_transaccion, no_banco),
+    )
+    if not row:
+        abort(404)
+    estaba_conciliado = (
+        (row.get("stat") or "").strip() == "*"
+        or row.get("match_activo_id") is not None
+    )
+    usuario = (g.user or {}).get("username", "web")
+    try:
+        if estaba_conciliado:
+            # Desconciliar: limpiar stat y deshacer el match activo si existe.
+            _db.execute(
+                "UPDATE scintela.transacciones_bancarias SET stat = NULL "
+                "WHERE id_transaccion = %s",
+                (id_transaccion,),
+            )
+            if row.get("match_activo_id"):
+                from modules.conciliacion.matcher_banco import romper_match
+                romper_match(
+                    match_id=int(row["match_activo_id"]),
+                    usuario=usuario,
+                )
+            flash(
+                f"Mov #{id_transaccion}: marcado como NO conciliado. "
+                f"Si era un error, volvé a clickear para conciliar.",
+                "ok",
+            )
+        else:
+            # Marcar conciliado manualmente (sin extracto). Solo stat='*'.
+            _db.execute(
+                "UPDATE scintela.transacciones_bancarias SET stat = '*' "
+                "WHERE id_transaccion = %s",
+                (id_transaccion,),
+            )
+            flash(
+                f"Mov #{id_transaccion}: marcado como conciliado (manual, "
+                f"sin extracto).",
+                "ok",
+            )
+    except Exception as e:
+        flash_exc("No pude cambiar el estado de conciliación", e)
+    # Vuelve a la lista de movimientos del banco preservando filtros.
+    return redirect(
+        url_for(
+            "bancos.movimientos",
+            no_banco=no_banco,
+            desde=request.args.get("desde") or request.form.get("desde") or None,
+            hasta=request.args.get("hasta") or request.form.get("hasta") or None,
+            conciliado=request.args.get("conciliado") or request.form.get("conciliado") or None,
+            cliente=request.args.get("cliente") or request.form.get("cliente") or None,
+            monto=request.args.get("monto") or request.form.get("monto") or None,
+            doc_num=request.args.get("doc_num") or request.form.get("doc_num") or None,
+        )
+    )
