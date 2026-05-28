@@ -772,6 +772,31 @@ def hub():
                 "fecha": row_actual.get("fecha"),
                 "id_transaccion": row_actual.get("id_transaccion"),
             }
+            # TMT 2026-05-28 dueña: 'si synqueamos, PC deberia guardar saldo
+            # antes de conciliacion'. Snapshot estable = saldo PC al cierre
+            # del último día calendario PREVIO a hoy. No se mueve con nuevos
+            # movs creados hoy, ni con conciliaciones/desconciliaciones —
+            # solo el cierre del próximo día lo va a actualizar.
+            try:
+                row_cierre_ayer = _db.fetch_one(
+                    """
+                    SELECT t.fecha, t.saldo, t.id_transaccion
+                      FROM scintela.transacciones_bancarias t
+                     WHERE t.no_banco = %(no_banco)s
+                       AND t.saldo IS NOT NULL
+                       AND t.fecha < CURRENT_DATE
+                     ORDER BY t.fecha DESC, t.id_transaccion DESC
+                     LIMIT 1
+                    """,
+                    {"no_banco": _BANCO_PICHINCHA},
+                ) or {}
+                saldo_pc_actual["saldo_cierre_ayer"] = float(
+                    row_cierre_ayer.get("saldo") or 0
+                )
+                saldo_pc_actual["fecha_cierre_ayer"] = row_cierre_ayer.get("fecha")
+            except Exception:
+                saldo_pc_actual["saldo_cierre_ayer"] = None
+                saldo_pc_actual["fecha_cierre_ayer"] = None
             # Pendientes históricos no conciliados (suma signada — credit suma,
             # débito resta). Estos NO están en transacciones_bancarias.
             row_pend = _db.fetch_one(

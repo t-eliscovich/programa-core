@@ -33,12 +33,28 @@
     </header>
 
     <div class="px-5 py-4 flex items-stretch gap-2">
-      {# Saldo PC libros #}
+      {# Saldo PC al cierre del día anterior — snapshot estable, no se mueve
+         con movs nuevos del día ni con conciliar/desconciliar (sólo cambia
+         al cerrar el próximo día). TMT 2026-05-28 #}
+      {% if saldo_pc_actual.saldo_cierre_ayer is defined and saldo_pc_actual.saldo_cierre_ayer is not none %}
+      <div class="flex-1 px-3 py-1.5 rounded-lg bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
+        <div class="text-[10px] uppercase tracking-wider text-slate-500">Saldo a conciliar (cierre {{ saldo_pc_actual.fecha_cierre_ayer or 'ayer' }})</div>
+        <div class="text-2xl font-bold text-slate-700 dark:text-slate-200 tabular-nums leading-tight mt-0.5">
+          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_cierre_ayer) }}
+        </div>
+        <div class="text-[10px] text-slate-500 mt-0.5">snapshot · no se mueve con movs del día</div>
+      </div>
+
+      <div class="flex items-center px-1 text-slate-300 text-xl font-light select-none">→</div>
+      {% endif %}
+
+      {# Saldo PC libros (live, dinámico) #}
       <div class="flex-1">
-        <div class="text-[10px] uppercase tracking-wider text-slate-400">Saldo PC libros</div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-400">Saldo PC libros (live)</div>
         <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-tight mt-0.5">
           ${{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}
         </div>
+        <div class="text-[10px] text-slate-400 mt-0.5">+ movs nuevos de hoy</div>
       </div>
 
       <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">=</div>
