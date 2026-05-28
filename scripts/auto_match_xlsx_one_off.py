@@ -48,7 +48,8 @@ DOCS_DEB = ("CH", "ND", "DB", "GS", "PA")
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
-    ap.add_argument("xlsx", help="Path al .xlsx del extracto Pichincha")
+    ap.add_argument("xlsx", nargs="?", help="Path al .xlsx (omitir si usás --b64-env)")
+    ap.add_argument("--b64-env", help="Nombre de var de env con xlsx en base64 (alternativa a path)")
     ap.add_argument("--no-banco", type=int, default=10)
     ap.add_argument("--dias-tol", type=int, default=3)
     ap.add_argument("--dry-run", action="store_true")
@@ -89,8 +90,24 @@ def parse_fecha(s) -> "datetime.date|None":
 
 def main() -> int:
     args = parse_args()
-    movs = parse_xlsx(args.xlsx)
-    print(f"Extracto: {len(movs)} movs ({args.xlsx})")
+    if args.b64_env:
+        import base64
+        b64 = os.environ.get(args.b64_env, "")
+        if not b64:
+            print(f"ERROR: env var {args.b64_env} vacía/no existe")
+            return 1
+        tmp = Path("C:/tmp" if os.name == "nt" else "/tmp") / "_extr_b64.xlsx"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(base64.b64decode(b64))
+        xlsx_path = str(tmp)
+        print(f"xlsx decodificado desde env {args.b64_env} → {xlsx_path}")
+    elif args.xlsx:
+        xlsx_path = args.xlsx
+    else:
+        print("ERROR: dame xlsx o --b64-env")
+        return 1
+    movs = parse_xlsx(xlsx_path)
+    print(f"Extracto: {len(movs)} movs ({xlsx_path})")
     if args.dry_run:
         print("[DRY-RUN] no se inserta en banco_conciliacion_match.")
 
