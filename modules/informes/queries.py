@@ -1370,9 +1370,11 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
 
         # Calcular días hábiles pendientes (entre ult_fecha+1 y hoy inclusive).
         # Si forzar=True, agregamos un día extra al final como catch-up manual.
+        # TMT 2026-05-28 dueña: 'que se calcule de lunes a viernes'. Antes
+        # excluía solo domingo (weekday != 6). Ahora L-V solo (weekday < 5).
         cursor_d = ult_fecha + _td(days=1)
         while cursor_d <= hoy:
-            if cursor_d.weekday() != 6:  # 6 = domingo en Python
+            if cursor_d.weekday() < 5:  # 0=L .. 4=V (sin S/D)
                 dias_a_aplicar.append(cursor_d)
             cursor_d += _td(days=1)
 
@@ -1395,7 +1397,11 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
                         f"≥ hoy {hoy_iso}. No permitimos doble-aplicar."
                     ),
                 }
-            dias_a_aplicar = [hoy if hoy.weekday() != 6 else hoy - _td(days=1)]
+            # Forzar: agregar último día hábil (L-V); si hoy es S/D, retroceder.
+            _f = hoy
+            while _f.weekday() >= 5:
+                _f -= _td(days=1)
+            dias_a_aplicar = [_f]
 
         if not dias_a_aplicar:
             # Lock liberado al salir del with. Sin cambios — devolver sin
@@ -1415,9 +1421,15 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
         # PROVISIONES_DIARIAS). Para cada provisión:
         #   1. Buscar la posdat YY que matchea por concepto (starts-with
         #      bidireccional case-insensitive, longitud ≥ 3).
-        #   2. Si existe → importe += cuota_mensual / 30.
+        #   2. Si existe → importe += pr.importe (cuota diaria, tal cual).
         #   3. Si no existe → se saltea (no toca ese día — la dueña puede
         #      crear el posdat YY manualmente o dejar la provisión sola).
+        #
+        # TMT 2026-05-28 dueña: 'en vez de mensual hagamos cuota diaria'.
+        # ANTES: importe += cuota_mensual / 30. AHORA: importe += pr.importe
+        # tal cual. La tabla provisiones ahora guarda la cuota DIARIA
+        # directamente. La dueña va a actualizar los valores manualmente
+        # desde la pantalla de provisiones (label cambiado a 'Cuota diaria').
         #
         # La lista hardcoded queda como FALLBACK SOLO para provisiones
         # legacy que todavía no están en `scintela.provisiones`. Una vez
@@ -1433,12 +1445,13 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
         )
         for _dia in dias_a_aplicar:
             cats_dia = 0
-            # 1. Driver nuevo: cada provisión aplica su cuota/30.
+            # 1. Driver nuevo: cada provisión aplica su CUOTA DIARIA
+            # (valor de scintela.provisiones tal cual, sin dividir).
             for pr in provisiones_rows:
                 concepto = (pr.get("concepto") or "").strip()
                 if len(concepto) < 3:
                     continue
-                diario = float(pr.get("importe") or 0) / 30.0
+                diario = float(pr.get("importe") or 0)
                 if diario <= 0:
                     continue
                 # Match aproximado contra el concepto del posdat YY.
