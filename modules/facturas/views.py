@@ -7,6 +7,7 @@ from flask import (
     abort,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -291,6 +292,46 @@ def editar(id_factura: int):
             ), 500
 
     return render_template("facturas/editar.html", fact=fact, form=form, errores=errores)
+
+
+@facturas_bp.route("/facturas/<int:id_factura>/numf", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def editar_numf(id_factura: int):
+    """Corrige el N° de factura (typo al cargar). JSON endpoint para edit
+    inline desde /facturas. Dueña 2026-05-28: 'dejame editar numero de
+    facturas'.
+
+    Body: ``numf=<int>`` (required), ``numf_completo=<str>`` (opcional).
+    Devuelve JSON: ``{ok: bool, numf, numf_completo, error?: str}``.
+    """
+    numf_raw = (request.form.get("numf") or "").strip()
+    if not numf_raw.isdigit():
+        return jsonify(ok=False, error="El N° debe ser un entero positivo."), 400
+
+    numf_completo_raw = (request.form.get("numf_completo") or "").strip() or None
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        res = queries.editar_numf(
+            id_factura,
+            int(numf_raw),
+            nuevo_numf_completo=numf_completo_raw,
+            usuario=usuario,
+        )
+        return jsonify(
+            ok=True,
+            numf=res["numf_nuevo"],
+            numf_previo=res["numf_previo"],
+            numf_completo=res["numf_completo_nuevo"],
+        )
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger("programa_core.facturas").exception(
+            "facturas.editar_numf falló id=%s", id_factura
+        )
+        return jsonify(ok=False, error=humanize(e)), 500
 
 
 @facturas_bp.route("/facturas/<int:id_factura>/confirmar-anulacion", methods=["GET"])

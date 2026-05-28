@@ -309,6 +309,91 @@ def editar(
     }
 
 
+def editar_numf(
+    id_factura: int,
+    nuevo_numf: int,
+    *,
+    nuevo_numf_completo: str | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Corrige el N° de factura cuando se cargó mal (typo o orden).
+
+    Tamara 2026-05-28 — dueña: 'dejame editar numero de facturas'. La regla
+    Ecuador (anular y reemitir) aplica para corregir importe/cliente/fecha,
+    pero acá la dueña pide habilitar la corrección puntual del N° impreso
+    cuando se tipeó mal al cargar (la factura física tiene un N° y PC tiene
+    otro). NO genera espejo en cuentas — sólo cambia la columna `numf` (y
+    `numf_completo` si se pasa).
+
+    Validaciones:
+      - factura no anulada (stat != X)
+      - nuevo numf > 0
+      - nuevo numf no usado por otra factura del mismo tipo (excepción si
+        es la misma fila)
+
+    Devuelve: {id_factura, numf_previo, numf_nuevo, numf_completo_nuevo}.
+    """
+    if not nuevo_numf or int(nuevo_numf) <= 0:
+        raise ValueError("El N° debe ser un entero positivo.")
+
+    fact = db.fetch_one(
+        "SELECT id_factura, fecha, numf, numf_completo, stat "
+        "FROM scintela.factura WHERE id_factura = %s",
+        (id_factura,),
+    )
+    if not fact:
+        raise ValueError("Factura inexistente.")
+    if (fact.get("stat") or "").upper() in STATS_ANULADAS:
+        raise ValueError("Factura anulada/eliminada — no se puede editar.")
+
+    asegurar_fecha_abierta(fact["fecha"])
+
+    nuevo_numf = int(nuevo_numf)
+    numf_previo = fact.get("numf")
+    if numf_previo == nuevo_numf and (
+        nuevo_numf_completo is None
+        or nuevo_numf_completo == fact.get("numf_completo")
+    ):
+        # No-op — devuelvo OK silencioso.
+        return {
+            "id_factura": id_factura,
+            "numf_previo": numf_previo,
+            "numf_nuevo": nuevo_numf,
+            "numf_completo_nuevo": fact.get("numf_completo"),
+        }
+
+    # Chequeo de duplicados: si ya existe otra factura con ese numf, no
+    # dejamos pisarlo (sería una incoherencia de inventario).
+    dup = db.fetch_one(
+        "SELECT id_factura FROM scintela.factura "
+        "WHERE numf = %s AND id_factura <> %s LIMIT 1",
+        (nuevo_numf, id_factura),
+    )
+    if dup:
+        raise ValueError(
+            f"El N° {nuevo_numf} ya está usado por la factura id={dup['id_factura']}."
+        )
+
+    sql_set = ["numf=%s", "usuario_modifica=%s"]
+    params: list = [nuevo_numf, usuario]
+    if nuevo_numf_completo is not None:
+        sql_set.append("numf_completo=%s")
+        params.append(nuevo_numf_completo or None)
+    params.append(id_factura)
+
+    db.execute(
+        f"UPDATE scintela.factura SET {', '.join(sql_set)} WHERE id_factura=%s",
+        tuple(params),
+    )
+    return {
+        "id_factura": id_factura,
+        "numf_previo": numf_previo,
+        "numf_nuevo": nuevo_numf,
+        "numf_completo_nuevo": nuevo_numf_completo if nuevo_numf_completo is not None
+                                else fact.get("numf_completo"),
+    }
+
+
 def por_id(id_factura: int) -> dict | None:
     """Cabecera de factura por id_factura interno O por numf.
 
