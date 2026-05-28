@@ -20,46 +20,76 @@
      con saldo PC AL DÍA DE HOY (último mov) — distinto al "saldo al
      último conciliado dBase" que muestra arriba. Útil para comparar
      contra el saldo banco físico del xlsx. #}
+  {# TMT 2026-05-28 dueña: 'ponelo lindo'. Card limpio, neutro slate, con
+     flujo visual saldo_pc = conciliado + histo = banco esperado.
+     Operadores grandes entre tarjetas para leerlo como ecuación. #}
   {% if saldo_pc_actual and saldo_pc_actual.saldo is not none %}
-  <div class="mb-5 rounded-lg border-2 border-sky-300 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/10 p-4">
-    <div class="flex items-baseline justify-between gap-3 mb-2">
-      <span class="text-xs uppercase tracking-wider text-sky-800 dark:text-sky-300 font-semibold">Saldo PC al día de hoy</span>
-      <span class="text-[11px] text-sky-700 dark:text-sky-400">último mov registrado{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}</span>
-    </div>
-    <div class="grid grid-cols-4 gap-4">
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Saldo PC</div>
-        <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}</div>
-      </div>
-      {# TMT 2026-05-28 dueña: agregar columna 'Saldo conciliado' (= saldo
-         si concilio los movs pendientes de hoy). Para Pichincha debería
-         dar ~$2.557K — cuadra con el "SALDO SISTEMA" del archivo Excel. #}
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">= Saldo conciliado</div>
-        <div class="text-2xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}</div>
-        {# TMT 2026-05-28 dueña: 'cuales son estos? si concilio los 8 movs
-           pendientes' → link al detalle filtrado. #}
-        <div class="text-[10px] text-sky-600 dark:text-sky-400">
-          si concilio los
-          <a href="{{ url_for('bancos.movimientos', no_banco=10, conciliado='no') }}"
-             class="underline decoration-dotted hover:text-emerald-700">{{ saldo_pc_actual.n_pendientes_conciliar or 0 }} movs pendientes</a>
+  <section class="mb-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Saldo PC al día de hoy</h2>
+      <span class="text-[11px] text-slate-400">
+        último mov registrado{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}
+      </span>
+    </header>
+
+    <div class="px-5 py-4 flex items-stretch gap-2">
+      {# Saldo PC libros #}
+      <div class="flex-1">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400">Saldo PC libros</div>
+        <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-tight mt-0.5">
+          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}
         </div>
       </div>
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">+ Pendientes históricos</div>
-        <div class="text-base font-medium text-sky-800 dark:text-sky-200 tabular-nums">{% if saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}</div>
-        <div class="text-[10px] text-sky-600 dark:text-sky-400">{{ saldo_pc_actual.n_pendientes or 0 }} movs sin conciliar</div>
+
+      <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">=</div>
+
+      {# Saldo conciliado — highlight verde sutil #}
+      <div class="flex-1 px-3 py-1.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-900/15 border border-emerald-200/60 dark:border-emerald-800/40">
+        <div class="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Saldo conciliado</div>
+        <div class="text-2xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight mt-0.5">
+          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}
+        </div>
+        <div class="text-[10px] text-emerald-700/70 dark:text-emerald-400/80 mt-0.5">
+          si concilio los
+          <a href="{{ url_for('bancos.movimientos', no_banco=10, conciliado='no') }}"
+             class="underline decoration-dotted hover:text-emerald-800">{{ saldo_pc_actual.n_pendientes_conciliar or 0 }} movs pendientes</a>
+        </div>
       </div>
-      <div>
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">= Saldo banco esperado</div>
-        <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo) }}</div>
+
+      <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">+</div>
+
+      {# Pendientes históricos #}
+      <div class="flex-1">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400">Pendientes históricos</div>
+        <div class="text-2xl font-semibold text-slate-700 dark:text-slate-300 tabular-nums leading-tight mt-0.5">
+          {% if saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}
+        </div>
+        <div class="text-[10px] text-slate-400 mt-0.5">{{ saldo_pc_actual.n_pendientes or 0 }} movs sin conciliar</div>
+      </div>
+
+      <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">=</div>
+
+      {# Saldo banco esperado #}
+      <div class="flex-1">
+        <div class="text-[10px] uppercase tracking-wider text-slate-400">Saldo banco esperado</div>
+        <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-tight mt-0.5">
+          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo) }}
+        </div>
+        <div class="text-[10px] text-slate-400 mt-0.5">lo que el banco debería tener</div>
       </div>
     </div>
-    <p class="text-[11px] text-sky-700 dark:text-sky-300 mt-2">
-      "Saldo conciliado" = lo que PC tendría si conciliara hoy los movs pendientes.
-      "Saldo banco esperado" = saldo PC + pendientes históricos (lo que el banco físico debería tener).
-    </p>
-  </div>
+
+    <footer class="px-5 py-2 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between gap-3">
+      <span>
+        <strong>Saldo conciliado</strong> = PC si conciliara los pendientes ·
+        <strong>Saldo banco esperado</strong> = PC + pendientes históricos del banco
+      </span>
+      <a href="{{ url_for('conciliacion.cambios_timeline') }}"
+         class="text-sky-600 hover:underline whitespace-nowrap font-medium">
+        Ver cambios →
+      </a>
+    </footer>
+  </section>
   {% endif %}
 
   <form method="POST" enctype="multipart/form-data"
