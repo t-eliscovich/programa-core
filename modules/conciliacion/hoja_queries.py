@@ -66,6 +66,37 @@ def saldo_pc_anterior(no_banco: int, antes_de: date) -> float:
     return _fmt(row.get("saldo") if row else 0)
 
 
+def saldo_a_conciliar_anterior(no_banco: int, antes_de: date) -> tuple[float, str | None]:
+    """Saldo a conciliar (snapshot estable) al cierre del día anterior a `antes_de`.
+
+    TMT 2026-05-28 dueña: 'el inicial es saldo a conciliar, no saldo en
+    libros'. Lee el último snapshot de banco_saldo_conc_snapshot anterior
+    a `antes_de`. Si no hay snapshot, devuelve (saldo_pc_anterior, None)
+    para no romper.
+
+    Returns:
+        (saldo, fuente) — fuente='snapshot' si vino de la tabla, 'pc_libros'
+        si caímos al fallback.
+    """
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT saldo_conc, creado_en
+              FROM scintela.banco_saldo_conc_snapshot
+             WHERE no_banco = %(no_banco)s
+               AND creado_en < %(antes_de)s::timestamp
+             ORDER BY creado_en DESC, id DESC
+             LIMIT 1
+            """,
+            {"no_banco": no_banco, "antes_de": antes_de},
+        )
+        if row and row.get("saldo_conc") is not None:
+            return _fmt(row["saldo_conc"]), "snapshot"
+    except Exception:
+        pass
+    return saldo_pc_anterior(no_banco, antes_de), "pc_libros"
+
+
 def saldo_pc_al(no_banco: int, hasta: date) -> float:
     """Saldo PC libros al cierre de la fecha `hasta` (running balance)."""
     row = _db.fetch_one(
@@ -164,15 +195,39 @@ def _detectar_agrupado_simple(concepto: str) -> int:
 def _movs(
     no_banco: int, desde: date, hasta: date, *, conciliados: bool, docs: tuple[str, ...]
 ) -> list[dict[str, Any]]:
+    # TMT 2026-05-28 dueña: 'como puede ser que no hay debitos no conciliados??'.
+    # Los pendientes son STATE ACTUAL — un cheque emitido en abril sin cobrar
+    # sigue pendiente hoy. Filtrar por fecha BETWEEN mes_ini..hoy los oculta.
+    # Para CONCILIADOS sí filtramos (solo lo que se concilió en este período).
+    # Para PENDIENTES quitamos el filtro de fecha y traemos todo lo que está
+    # sin conciliar a este momento, igual que el card "Pendientes PC".
     doc_list = ", ".join(f"'{d}'" for d in docs)
     cond = _COND_CONCILIADO if conciliados else _COND_PENDIENTE
+    if conciliados:
+        sql_base = _SELECT_TXBANCO_BASE
+        params = {"no_banco": no_banco, "desde": desde, "hasta": hasta}
+    else:
+        # Saca el "AND t.fecha BETWEEN..." pero deja el resto del SELECT.
+        sql_base = (
+            "SELECT "
+            "    t.id_transaccion, t.fecha, t.documento, t.concepto, "
+            "    t.numreferencia, t.importe, t.prov, t.stat, "
+            "    COALESCE(c.nombre, p.nombre, '') AS contraparte "
+            "  FROM scintela.transacciones_bancarias t "
+            "  LEFT JOIN scintela.cliente c "
+            "         ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(t.prov)) "
+            "  LEFT JOIN scintela.proveedor p "
+            "         ON UPPER(TRIM(p.codigo_prov)) = UPPER(TRIM(t.prov)) "
+            " WHERE t.no_banco = %(no_banco)s "
+        )
+        params = {"no_banco": no_banco}
     sql = (
-        _SELECT_TXBANCO_BASE
+        sql_base
         + cond
         + f" AND UPPER(TRIM(t.documento)) IN ({doc_list})"
         + " ORDER BY t.fecha, t.id_transaccion"
     )
-    rows = _db.fetch_all(sql, {"no_banco": no_banco, "desde": desde, "hasta": hasta}) or []
+    rows = _db.fetch_all(sql, params) or []
 
     # TMT 2026-05-28 dueña: 'imprimir hoja sigue asi: 500'. Varias columnas
     # del schema vienen como int (numreferencia, no_cheque, documento a
@@ -284,7 +339,10 @@ def _nombre_banco(no_banco: int) -> str:
 
 def hoja_conciliacion(no_banco: int, desde: date, hasta: date) -> dict[str, Any]:
     """Arma toda la hoja de conciliación lista para renderizar."""
-    saldo_inicial = saldo_pc_anterior(no_banco, desde)
+    # TMT 2026-05-28 dueña: 'el inicial es saldo a conciliar, no saldo en
+    # libros'. Usamos el snapshot estable (banco_saldo_conc_snapshot) anterior
+    # a `desde`. Fallback a saldo PC libros si no hay snapshot todavía.
+    saldo_inicial, saldo_inicial_fuente = saldo_a_conciliar_anterior(no_banco, desde)
 
     creditos_conc = _movs(no_banco, desde, hasta, conciliados=True, docs=DOCS_CREDITO)
     debitos_conc = _movs(no_banco, desde, hasta, conciliados=True, docs=DOCS_DEBITO)
@@ -310,6 +368,7 @@ def hoja_conciliacion(no_banco: int, desde: date, hasta: date) -> dict[str, Any]
         "hasta": hasta,
         # Saldos
         "saldo_inicial": round(saldo_inicial, 2),
+        "saldo_inicial_fuente": saldo_inicial_fuente,  # 'snapshot' o 'pc_libros'
         "saldo_conciliado": saldo_conciliado,
         "saldo_final_esperado": saldo_final_esperado,
         # Listas

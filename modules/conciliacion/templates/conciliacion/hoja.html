@@ -50,8 +50,11 @@
       Impreso: {{ g.now.strftime('%Y-%m-%d %H:%M') if g.now else '' }}
     </div>
     <div class="text-[11px] text-slate-500 mt-0.5">
-      Saldo PC al cierre del día anterior:
+      Saldo a conciliar al cierre del día anterior:
       <span class="font-mono">$ {{ '{:,.2f}'.format(hoja.saldo_inicial) }}</span>
+      {% if hoja.saldo_inicial_fuente == 'pc_libros' %}
+        <span class="text-amber-600 ml-1" title="No hay snapshot previo. Mostramos saldo PC libros como fallback.">⚠ sin snapshot — uso saldo PC libros</span>
+      {% endif %}
     </div>
   </header>
 
