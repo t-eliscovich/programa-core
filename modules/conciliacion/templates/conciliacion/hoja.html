@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block titulo %}Hoja de conciliación{% endblock %}
+
+{% block content %}
+<style>
+  @media print {
+    /* Esconder todo lo no-imprimible (sidebar, header app, etc.) */
+    body > :not(#hoja-print) { display: none !important; }
+    #hoja-print { padding: 0; margin: 0; }
+    .no-print { display: none !important; }
+    table { page-break-inside: avoid; }
+    tr     { page-break-inside: avoid; }
+    h1, h2 { page-break-after: avoid; }
+  }
+  #hoja-print table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  #hoja-print th, #hoja-print td { padding: 3px 6px; }
+  #hoja-print thead th { border-bottom: 1px solid #94a3b8; text-align: left; font-weight: 600; }
+  #hoja-print tbody tr { border-bottom: 1px dotted #e2e8f0; }
+  #hoja-print .num { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+
+<div id="hoja-print" class="max-w-4xl mx-auto p-6 bg-white text-slate-900">
+
+  {# ───── Header + filtros (no se imprime) ───── #}
+  <div class="no-print mb-4 flex items-end gap-3 border-b pb-3">
+    <form method="GET" class="flex items-end gap-2 text-sm">
+      <label class="block">
+        <span class="text-xs text-slate-500">Banco</span>
+        <input type="number" name="no_banco" value="{{ no_banco }}" class="border rounded px-2 py-1 w-20">
+      </label>
+      <label class="block">
+        <span class="text-xs text-slate-500">Desde</span>
+        <input type="date" name="desde" value="{{ desde.isoformat() }}" class="border rounded px-2 py-1">
+      </label>
+      <label class="block">
+        <span class="text-xs text-slate-500">Hasta</span>
+        <input type="date" name="hasta" value="{{ hasta.isoformat() }}" class="border rounded px-2 py-1">
+      </label>
+      <button class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded text-sm">Actualizar</button>
+    </form>
+    <button onclick="window.print()" class="ml-auto px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded text-sm">
+      Imprimir / PDF
+    </button>
+  </div>
+
+  {# ───── Cabecera del documento ───── #}
+  <header class="mb-4">
+    <h1 class="text-xl font-bold">Hoja de conciliación bancaria</h1>
+    <div class="text-xs text-slate-600 mt-1">
+      Banco: <strong>{{ no_banco }}</strong> ·
+      Período: <strong>{{ desde.isoformat() }}</strong> → <strong>{{ hasta.isoformat() }}</strong> ·
+      Impreso: {{ g.now.strftime('%Y-%m-%d %H:%M') if g.now else '' }}
+    </div>
+  </header>
+
+  {# ───── Saldo inicial ───── #}
+  <div class="mb-4 flex justify-between items-baseline border-y-2 border-slate-800 py-2">
+    <span class="text-sm font-semibold">Saldo PC libros al cierre del día anterior (saldo inicial)</span>
+    <span class="text-lg font-bold tabular-nums">$ {{ '{:,.2f}'.format(hoja.saldo_inicial) }}</span>
+  </div>
+
+  {# ───── I. Movs conciliados del período ───── #}
+  <section class="mb-4">
+    <h2 class="text-base font-bold mb-1">I. Movimientos conciliados del período</h2>
+
+    {# Depósitos conciliados #}
+    <div class="mt-2">
+      <div class="flex justify-between items-baseline">
+        <span class="text-sm font-semibold text-emerald-700">+ Depósitos conciliados ({{ hoja.creditos_conc|length }})</span>
+        <span class="text-sm font-bold tabular-nums text-emerald-700">+ $ {{ '{:,.2f}'.format(hoja.sum_cred_conc) }}</span>
+      </div>
+      {% if hoja.creditos_conc %}
+      <table class="mt-1">
+        <thead>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+        </thead>
+        <tbody>
+          {% for m in hoja.creditos_conc %}
+          <tr>
+            <td>{{ m.fecha.isoformat() if m.fecha else '' }}</td>
+            <td>{{ m.documento }}</td>
+            <td>{{ m.numero }}</td>
+            <td>{{ m.concepto[:60] }}</td>
+            <td>{{ m.contraparte[:30] }}{% if m.prov and not m.contraparte %}<span class="text-slate-400">{{ m.prov }}</span>{% endif %}</td>
+            <td class="num">{{ '{:,.2f}'.format(m.importe) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-xs text-slate-500 italic">— sin depósitos conciliados —</p>
+      {% endif %}
+    </div>
+
+    {# Débitos conciliados #}
+    <div class="mt-3">
+      <div class="flex justify-between items-baseline">
+        <span class="text-sm font-semibold text-rose-700">− Débitos conciliados ({{ hoja.debitos_conc|length }})</span>
+        <span class="text-sm font-bold tabular-nums text-rose-700">− $ {{ '{:,.2f}'.format(hoja.sum_deb_conc) }}</span>
+      </div>
+      {% if hoja.debitos_conc %}
+      <table class="mt-1">
+        <thead>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+        </thead>
+        <tbody>
+          {% for m in hoja.debitos_conc %}
+          <tr>
+            <td>{{ m.fecha.isoformat() if m.fecha else '' }}</td>
+            <td>{{ m.documento }}</td>
+            <td>{{ m.numero }}</td>
+            <td>{{ m.concepto[:60] }}</td>
+            <td>{{ m.contraparte[:30] }}{% if m.prov and not m.contraparte %}<span class="text-slate-400">{{ m.prov }}</span>{% endif %}</td>
+            <td class="num">{{ '{:,.2f}'.format(m.importe) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-xs text-slate-500 italic">— sin débitos conciliados —</p>
+      {% endif %}
+    </div>
+
+    {# Subtotal I #}
+    <div class="mt-3 flex justify-between items-baseline border-t border-slate-400 pt-1.5">
+      <span class="text-sm font-semibold">= Saldo conciliado al {{ hasta.isoformat() }}</span>
+      <span class="text-lg font-bold tabular-nums">$ {{ '{:,.2f}'.format(hoja.saldo_conciliado) }}</span>
+    </div>
+  </section>
+
+  {# ───── II. Pendientes al cierre ───── #}
+  <section class="mb-4">
+    <h2 class="text-base font-bold mb-1">II. Pendientes al cierre</h2>
+
+    {# Depósitos pendientes (del período + históricos) #}
+    <div class="mt-2">
+      <div class="flex justify-between items-baseline">
+        <span class="text-sm font-semibold text-emerald-700">+ Depósitos no conciliados ({{ (hoja.creditos_pend|length) + (hoja.historicos|length) }})</span>
+        <span class="text-sm font-bold tabular-nums text-emerald-700">+ $ {{ '{:,.2f}'.format(hoja.sum_cred_pend_total) }}</span>
+      </div>
+      {% if hoja.creditos_pend or hoja.historicos %}
+      <table class="mt-1">
+        <thead>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+        </thead>
+        <tbody>
+          {% for m in hoja.creditos_pend %}
+          <tr>
+            <td>{{ m.fecha.isoformat() if m.fecha else '' }}</td>
+            <td>{{ m.documento }}</td>
+            <td>{{ m.numero }}</td>
+            <td>{{ m.concepto[:60] }}</td>
+            <td>{{ m.contraparte[:30] }}{% if m.prov and not m.contraparte %}<span class="text-slate-400">{{ m.prov }}</span>{% endif %}</td>
+            <td class="num">{{ '{:,.2f}'.format(m.importe) }}</td>
+          </tr>
+          {% endfor %}
+          {% for h in hoja.historicos %}
+          <tr class="text-slate-600 italic">
+            <td>{{ h.fecha.isoformat() if h.fecha else '' }}</td>
+            <td>—</td>
+            <td>{{ h.numero }}</td>
+            <td>{{ h.concepto[:60] }} <span class="text-[10px] text-slate-400">[histórico]</span></td>
+            <td></td>
+            <td class="num">{{ '{:,.2f}'.format(h.importe) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-xs text-slate-500 italic">— sin depósitos pendientes —</p>
+      {% endif %}
+    </div>
+
+    {# Débitos pendientes #}
+    <div class="mt-3">
+      <div class="flex justify-between items-baseline">
+        <span class="text-sm font-semibold text-rose-700">− Débitos no conciliados ({{ hoja.debitos_pend|length }})</span>
+        <span class="text-sm font-bold tabular-nums text-rose-700">− $ {{ '{:,.2f}'.format(hoja.sum_deb_pend) }}</span>
+      </div>
+      {% if hoja.debitos_pend %}
+      <table class="mt-1">
+        <thead>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+        </thead>
+        <tbody>
+          {% for m in hoja.debitos_pend %}
+          <tr>
+            <td>{{ m.fecha.isoformat() if m.fecha else '' }}</td>
+            <td>{{ m.documento }}</td>
+            <td>{{ m.numero }}</td>
+            <td>{{ m.concepto[:60] }}</td>
+            <td>{{ m.contraparte[:30] }}{% if m.prov and not m.contraparte %}<span class="text-slate-400">{{ m.prov }}</span>{% endif %}</td>
+            <td class="num">{{ '{:,.2f}'.format(m.importe) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-xs text-slate-500 italic">— sin débitos pendientes —</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ───── Saldo final ───── #}
+  <div class="mt-4 flex justify-between items-baseline border-y-4 border-double border-slate-900 py-2">
+    <span class="text-base font-bold">SALDO FINAL ≈ Saldo registro banco</span>
+    <span class="text-xl font-extrabold tabular-nums">$ {{ '{:,.2f}'.format(hoja.saldo_final_esperado) }}</span>
+  </div>
+
+  <p class="mt-2 text-[11px] text-slate-500">
+    Fórmula: <code>saldo_inicial + depósitos_conciliados − débitos_conciliados + depósitos_no_conciliados − débitos_no_conciliados</code>
+  </p>
+
+</div>
+{% endblock %}

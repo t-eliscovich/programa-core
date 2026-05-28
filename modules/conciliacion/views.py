@@ -2607,3 +2607,47 @@ def banco_deshacer_todos():
         "conciliacion.banco_historial",
         no_banco=no_banco_arg or "",
     ))
+
+
+# ============================================================
+# Hoja de conciliación imprimible — TMT 2026-05-28 (formato T-account).
+# Dueña pidió el reporte clásico: saldo inicial + conciliados − conciliados
+# = saldo conciliado + pendientes − pendientes = saldo final ≈ banco.
+# ============================================================
+@conciliacion_bp.route("/imprimir-banco", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def imprimir_banco():
+    from modules.conciliacion.hoja_queries import hoja_conciliacion
+
+    # Defaults: banco Pichincha; rango = mes en curso.
+    hoy = date.today()
+    try:
+        no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
+    except (TypeError, ValueError):
+        no_banco = _BANCO_PICHINCHA
+
+    def _parse(arg: str, default: date) -> date:
+        v = (request.args.get(arg) or "").strip()
+        if not v:
+            return default
+        try:
+            return date.fromisoformat(v[:10])
+        except ValueError:
+            return default
+
+    mes_ini = hoy.replace(day=1)
+    desde = _parse("desde", mes_ini)
+    hasta = _parse("hasta", hoy)
+    if hasta < desde:
+        desde, hasta = hasta, desde
+
+    hoja = hoja_conciliacion(no_banco, desde, hasta)
+
+    return render_template(
+        "conciliacion/hoja.html",
+        hoja=hoja,
+        no_banco=no_banco,
+        desde=desde,
+        hasta=hasta,
+    )
