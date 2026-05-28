@@ -21,12 +21,13 @@
       <p class="text-sm text-slate-500 mt-1">Movimientos del banco (transacciones_bancarias)</p>
       {# TMT 2026-05-28 dueña: 'pongamos debajo del saldo del banco Saldo
          conciliado que tiene que sumar todo lo que tiene conciliado'.
-         Suma signada de movs con stat='*' (todos, sin filtro de fecha). #}
+         v2: saldo_banco − pendientes_signed = saldo si concilio todo.
+         Cuadra con el "SALDO SISTEMA" del archivo de conciliación. #}
       {% if saldo_conciliado is defined and saldo_conciliado is not none %}
       <p class="text-sm text-slate-600 dark:text-slate-300 mt-1">
         <span class="text-slate-500">Saldo conciliado:</span>
         <span class="font-semibold tabular-nums text-sky-700 dark:text-sky-400">$ {{ '{:,.2f}'.format(saldo_conciliado|float) }}</span>
-        <span class="text-xs text-slate-400 ml-1" title="Suma signada de todos los movs con stat='*'">({{ n_conciliado }} movs)</span>
+        <span class="text-xs text-slate-400 ml-1" title="Saldo si concilio los movs pendientes. = saldo banco − sum(pendientes signed).">({{ n_conciliado }} pendientes)</span>
       </p>
       {% endif %}
     </div>
