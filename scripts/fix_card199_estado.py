@@ -106,9 +106,9 @@ def main():
     else:
         print("ABORTO: no sé dónde re-inyectar el SQL.")
         return
-    print("SQL — cambio:")
+    print("SQL - cambio:")
     print("  ANTES: fc.estado IN (0, 1, 4)")
-    print("  AHORA: fc.estado IN (0, 1, 4, 16)  ← +16 (Rechazado SRI), sigue excluyendo 15 (anulada)")
+    print("  AHORA: " + nueva_str + "  <- +16 (Rechazado SRI), sigue excluyendo 15 (anulada)")
 
     # PUT
     body = {
