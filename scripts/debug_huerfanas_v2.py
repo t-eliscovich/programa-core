@@ -139,8 +139,14 @@ def main():
         print(f"\nPC id={f['id']} cli={_norm(f['codigo_cli'])} fecha={_f(f['fecha'])} "
               f"kg={float(f['kg'])} imp={pc_imp}  numf={f.get('numf')}")
         for c, d, r in diffs[:3]:
-            print(f"  → Asinfo tipo={c.get('tipo')} num={c.get('numero')} "
+            print(f"  -> Asinfo tipo={c.get('tipo')} num={c.get('numero')} "
                   f"kg={c.get('kg')} usd={c.get('usd')} | diff_usd_vs_pc={d:.2f} ratio={r:.4f}")
+    print("\n" + "="*100)
+    print("MUESTRA: primeras 30 de las 112 que NO TIENEN candidato Asinfo (cli,fecha,kg)")
+    print("="*100)
+    for f, cands in no_match[:30]:
+        print(f"PC id={f['id']} cli={_norm(f['codigo_cli'])} fecha={_f(f['fecha'])} "
+              f"kg={float(f['kg'])} imp={float(f['importe'] or 0)} numf={f.get('numf')}")
 
     # Resumen del IVA si todas las rechazadas tienen mismo patron
     if rechazadas_por_importe:
