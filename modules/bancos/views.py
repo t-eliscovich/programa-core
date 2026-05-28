@@ -325,6 +325,16 @@ def emitir_cheque():
         beneficiario = (request.form.get("beneficiario") or "").strip().upper()
         concepto = (request.form.get("concepto") or "").strip()
         id_posdat = parse_int(request.form.get("id_posdat"))
+        # TMT 2026-05-27 dueña: 'cuando emito cheques, puedes dejarme
+        # seleccionar multiples proveedores'. Multi-select via getlist;
+        # parsea ints, ignora vacíos / inválidos. Si vienen los dos
+        # (single legacy + multi), gana multi en queries.emitir_cheque.
+        id_posdats_raw = request.form.getlist("id_posdats[]")
+        id_posdats: list[int] = []
+        for _x in id_posdats_raw:
+            _v = parse_int(_x)
+            if _v:
+                id_posdats.append(_v)
         de_socio = (request.form.get("de_socio") or "").strip().upper()
         es_postdatado = bool(request.form.get("es_postdatado"))
         fechad = parse_date(request.form.get("fechad"))
@@ -352,6 +362,7 @@ def emitir_cheque():
                 beneficiario=beneficiario,
                 concepto=concepto,
                 id_posdat=id_posdat,
+                id_posdats=id_posdats or None,
                 de_socio=de_socio,
                 es_postdatado=es_postdatado,
                 fechad=fechad,

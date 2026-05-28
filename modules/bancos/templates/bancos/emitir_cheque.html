@@ -211,6 +211,12 @@
                    class="px-3 py-1.5 text-sm rounded border border-slate-300 w-64 uppercase"
                    oninput="this.value=this.value.toUpperCase()">
           </div>
+          {# TMT 2026-05-27 dueña: 'cuando emito cheques, puedes dejarme
+             seleccionar multiples proveedores'. Radios → checkboxes,
+             multi-proveedor permitido, auto-suma neta (NCs negativas
+             restan) escribe el campo Importe. Diferencia con el cheque
+             queda como anticipo (cheque > suma) o saldo pendiente
+             (cheque < suma) — sin bloqueo, con badge informativo. #}
           <div class="bg-slate-50 border border-slate-200 rounded max-h-64 overflow-y-auto">
             <table class="w-full text-sm">
               <thead class="bg-slate-100 text-xs text-slate-500 uppercase tracking-wide sticky top-0">
@@ -227,14 +233,17 @@
                   <tr class="border-t border-slate-100 hover:bg-slate-50 fila-posdat"
                       data-prov="{{ p.prov }}">
                     <td class="px-2 py-1">
-                      <input type="radio" name="id_posdat" value="{{ p.id_posdat }}" class="rounded">
+                      <input type="checkbox" name="id_posdats[]" value="{{ p.id_posdat }}"
+                             data-importe="{{ p.importe or 0 }}"
+                             data-prov="{{ p.prov or '' }}"
+                             class="posdat-pick rounded">
                     </td>
                     <td class="px-2 py-1">
                       <span class="font-mono text-xs text-slate-500">{{ p.prov }}</span>
                       <span class="ml-1">{{ p.proveedor or '' }}</span>
                     </td>
                     <td class="px-2 py-1 text-xs">{{ p.fechad | fecha_es if p.fechad else '' }}</td>
-                    <td class="px-2 py-1 text-right tabular-nums font-medium">{{ p.importe | num_es }}</td>
+                    <td class="px-2 py-1 text-right tabular-nums font-medium {% if (p.importe or 0)|float < 0 %}text-red-700{% endif %}">{{ p.importe | num_es }}</td>
                     <td class="px-2 py-1 text-xs text-slate-500">{{ p.concepto or '' }}</td>
                   </tr>
                 {% else %}
@@ -245,6 +254,13 @@
                 {% endfor %}
               </tbody>
             </table>
+          </div>
+          {# Resumen de selección — actualizado por JS al pickear checkboxes. #}
+          <div id="posdat-selection-summary" class="hidden mt-2 px-3 py-2 rounded bg-amber-50 border border-amber-200 text-xs flex items-center justify-between gap-3">
+            <span><strong id="psum-count">0</strong> obligación(es) seleccionada(s) · suma neta <strong id="psum-neto" class="font-mono tabular-nums">0,00</strong>
+              <span id="psum-provs" class="ml-2 text-slate-500"></span>
+            </span>
+            <span id="psum-diff" class="text-slate-600"></span>
           </div>
           <div>
             <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Código de proveedor (si NO hay posdat)</label>
@@ -409,6 +425,77 @@
           tr.style.display = (!v || (tr.dataset.prov || '').includes(v)) ? '' : 'none';
         });
       });
+    }
+
+    // TMT 2026-05-27 dueña: multi-selección de posdats. Cada checkbox
+    // suma su importe (NCs negativas restan) al campo Importe del
+    // cheque + muestra resumen con proveedores y diferencia.
+    const psumBox = document.getElementById('posdat-selection-summary');
+    const psumCount = document.getElementById('psum-count');
+    const psumNeto = document.getElementById('psum-neto');
+    const psumProvs = document.getElementById('psum-provs');
+    const psumDiff = document.getElementById('psum-diff');
+    const importeInput = document.querySelector('input[name="importe"]');
+    let importeManualOverride = false;
+    if (importeInput) {
+      importeInput.addEventListener('input', () => { importeManualOverride = true; });
+    }
+    function fmtMonto(n) {
+      // ES locale: 1.234,56
+      const s = (Math.round(n * 100) / 100).toFixed(2);
+      const [a, b] = s.split('.');
+      return a.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + b;
+    }
+    function recalcPosdatSum() {
+      const picks = document.querySelectorAll('.posdat-pick:checked');
+      if (!picks.length) {
+        if (psumBox) psumBox.classList.add('hidden');
+        return;
+      }
+      let neto = 0;
+      const provs = new Set();
+      picks.forEach(cb => {
+        neto += parseFloat(cb.dataset.importe || '0') || 0;
+        if (cb.dataset.prov) provs.add(cb.dataset.prov);
+      });
+      if (psumBox) psumBox.classList.remove('hidden');
+      if (psumCount) psumCount.textContent = picks.length;
+      if (psumNeto) {
+        psumNeto.textContent = fmtMonto(neto);
+        psumNeto.classList.toggle('text-red-700', neto < 0);
+      }
+      if (psumProvs) {
+        const provArr = Array.from(provs);
+        psumProvs.textContent = provArr.length === 1
+          ? `· proveedor ${provArr[0]}`
+          : `· ${provArr.length} proveedores (${provArr.slice(0, 4).join(', ')}${provArr.length > 4 ? '…' : ''})`;
+      }
+      // Auto-pisar el importe del cheque mientras la dueña no haya tipeado
+      // manualmente. Si tocó el campo, respetar su valor.
+      if (importeInput && !importeManualOverride && neto > 0) {
+        importeInput.value = neto.toFixed(2);
+      }
+      // Mostrar diferencia entre suma y campo Importe (informativo).
+      const chequeImporte = parseFloat((importeInput && importeInput.value) || '0') || 0;
+      const diff = chequeImporte - neto;
+      if (psumDiff) {
+        if (Math.abs(diff) < 0.01) {
+          psumDiff.textContent = '✓ cuadra con cheque';
+          psumDiff.className = 'text-emerald-700 font-medium';
+        } else if (diff > 0) {
+          psumDiff.textContent = `+ ${fmtMonto(diff)} → queda como anticipo`;
+          psumDiff.className = 'text-amber-700 font-medium';
+        } else {
+          psumDiff.textContent = `falta ${fmtMonto(-diff)} → última obligación queda con saldo`;
+          psumDiff.className = 'text-amber-700 font-medium';
+        }
+      }
+    }
+    document.querySelectorAll('.posdat-pick').forEach(cb => {
+      cb.addEventListener('change', recalcPosdatSum);
+    });
+    if (importeInput) {
+      importeInput.addEventListener('input', recalcPosdatSum);
     }
 
     // Auto-detect tipo desde el concepto (Fase A — concept-driven).

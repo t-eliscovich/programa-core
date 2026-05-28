@@ -245,7 +245,10 @@ def emitir_cheque(
     beneficiario: str = "",
     concepto: str = "",
     # Específico por tipo:
-    id_posdat: int | None = None,        # tipo='proveedor': cierra esta posdat
+    id_posdat: int | None = None,        # tipo='proveedor': cierra esta posdat (1 sola — legacy)
+    id_posdats: list[int] | None = None, # tipo='proveedor': N posdats (multi-select 2026-05-27).
+                                          # Si vienen ambos, gana id_posdats. Multi-proveedor
+                                          # permitido; diferencia con importe → anticipo/saldo.
     de_socio: str | None = None,         # tipo='retiro': código de socio (ej "TM")
     es_postdatado: bool = False,         # tipo='proveedor' o 'gasto': dejarlo en posdat futuro
     fechad=None,                         # fecha de cobro si postdatado
@@ -303,20 +306,86 @@ def emitir_cheque(
 
         # 2) Side effect específico por tipo
         if tipo == "proveedor":
-            if id_posdat:
-                # Cerrar la posdat: banc = no_banco (la pagamos con este banco)
+            # TMT 2026-05-27 dueña: 'cuando emito cheques, puedes dejarme
+            # seleccionar multiples proveedores'. Normalizamos a una lista
+            # única — multi gana sobre single, single arma lista de uno,
+            # ninguno = lista vacía. Multi-proveedor está permitido (1
+            # cheque puede cerrar obligaciones de varios proveedores).
+            posdats_a_cerrar: list[int] = []
+            if id_posdats:
+                posdats_a_cerrar = [int(x) for x in id_posdats if x]
+            elif id_posdat:
+                posdats_a_cerrar = [int(id_posdat)]
+
+            if posdats_a_cerrar:
+                # Cerrar todas las posdats seleccionadas — el cheque puede
+                # cubrir N obligaciones. La diferencia entre suma neta y
+                # importe del cheque queda anotada en `extras` para que la
+                # view la registre como anticipo (positivo) o saldo
+                # pendiente (negativo) — decisión dueña 2026-05-27.
+                cur.execute(
+                    """
+                    SELECT id_posdat, prov, importe
+                      FROM scintela.posdat
+                     WHERE id_posdat = ANY(%s)
+                    """,
+                    (posdats_a_cerrar,),
+                )
+                rows = cur.fetchall() or []
+                rows_dicts = [
+                    {"id_posdat": r[0], "prov": r[1], "importe": float(r[2] or 0)}
+                    if isinstance(r, list | tuple)
+                    else {"id_posdat": r["id_posdat"], "prov": r["prov"], "importe": float(r.get("importe") or 0)}
+                    for r in rows
+                ]
+                suma_posdats = sum(p["importe"] for p in rows_dicts)
+                provs_unicos = sorted({p["prov"] for p in rows_dicts if p.get("prov")})
+
                 cur.execute(
                     """
                     UPDATE scintela.posdat
                        SET banc = %s,
                            fecha_modifica = CURRENT_TIMESTAMP,
                            usuario_modifica = %s
-                     WHERE id_posdat = %s
+                     WHERE id_posdat = ANY(%s)
                     """,
-                    (no_banco, usuario[:50], id_posdat),
+                    (no_banco, usuario[:50], posdats_a_cerrar),
                 )
-                side_effect = f"Posdat #{id_posdat} cerrada (banc={no_banco})"
-                extras["id_posdat"] = id_posdat
+
+                # Diferencia entre lo que firma el cheque (importe_f) y lo
+                # que netea la suma de obligaciones (suma_posdats). NCs
+                # negativas ya restaron en suma_posdats. Si la dueña
+                # selecciona NCs sin facturas, suma_posdats puede ser < 0.
+                diff = round(importe_f - suma_posdats, 2)
+
+                multi_provs_msg = (
+                    f" ({len(provs_unicos)} provs: {', '.join(provs_unicos[:5])}"
+                    + ("…" if len(provs_unicos) > 5 else "")
+                    + ")"
+                ) if len(provs_unicos) > 1 else ""
+
+                if len(posdats_a_cerrar) == 1 and abs(diff) < 0.01:
+                    side_effect = f"Posdat #{posdats_a_cerrar[0]} cerrada (banc={no_banco})"
+                elif abs(diff) < 0.01:
+                    side_effect = (
+                        f"{len(posdats_a_cerrar)} posdats cerradas (banc={no_banco}){multi_provs_msg}"
+                    )
+                elif diff > 0:
+                    side_effect = (
+                        f"{len(posdats_a_cerrar)} posdat(s) cerrada(s){multi_provs_msg}; "
+                        f"sobra $ {diff:.2f} → anticipo a {provs_unicos[0] if provs_unicos else beneficiario or '—'}"
+                    )
+                else:
+                    side_effect = (
+                        f"{len(posdats_a_cerrar)} posdat(s) cerrada(s){multi_provs_msg}; "
+                        f"falta $ {(-diff):.2f} → última con saldo pendiente"
+                    )
+                extras["id_posdats"] = posdats_a_cerrar
+                extras["suma_posdats"] = suma_posdats
+                extras["diff_cheque_vs_posdats"] = diff
+                extras["provs"] = provs_unicos
+                # Backward compat — primer id para callers que esperan singular.
+                extras["id_posdat"] = posdats_a_cerrar[0]
             else:
                 side_effect = "Sin posdat asociada — sólo movimiento bancario"
 
