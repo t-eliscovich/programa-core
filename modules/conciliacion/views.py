@@ -2743,6 +2743,51 @@ def banco_deshacer_todos():
     ))
 
 
+_STAT_FANTASMA_SQL = """
+    UPDATE scintela.transacciones_bancarias t
+       SET stat = NULL
+     WHERE TRIM(COALESCE(t.stat, '')) = '*'
+       AND EXISTS (
+           SELECT 1 FROM scintela.banco_conciliacion_match m
+            WHERE m.id_transaccion = t.id_transaccion
+              AND m.deshecho_en IS NOT NULL
+       )
+       AND NOT EXISTS (
+           SELECT 1 FROM scintela.banco_conciliacion_match m2
+            WHERE m2.id_transaccion = t.id_transaccion
+              AND m2.deshecho_en IS NULL
+       )
+"""
+
+
+@conciliacion_bp.route("/limpiar-stat-fantasma", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def limpiar_stat_fantasma():
+    """Backfill one-shot: revierte stat='*' colgados de undos previos al fix.
+
+    TMT 2026-05-28 dueña: 'el undo, lo tiene que sacar de conciliados'. Los
+    undos hechos ANTES de que `romper_match` limpiara stat='*' dejaron filas
+    fantasma-conciliadas en /bancos. Este endpoint barre todos los casos:
+    stat='*' AND existe match deshacho AND no hay match activo → stat=NULL.
+    Idempotente. Seguro de correr cualquier cantidad de veces.
+    """
+    import db as _db
+    try:
+        n = _db.execute(_STAT_FANTASMA_SQL)
+        if n:
+            flash(
+                f"Limpiados {n} mov(s) que quedaron con flag conciliado tras "
+                f"un undo. Refrescá /bancos para verlos sin la marca.",
+                "ok",
+            )
+        else:
+            flash("No había fantasmas para limpiar.", "info")
+    except Exception as e:
+        flash_exc("No pude correr el limpiador de stat fantasma", e)
+    return redirect(url_for("conciliacion.cambios_timeline"))
+
+
 # ============================================================
 # Hoja de conciliación imprimible — TMT 2026-05-28 (formato T-account).
 # Dueña pidió el reporte clásico: saldo inicial + conciliados − conciliados

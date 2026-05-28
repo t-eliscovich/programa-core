@@ -3,11 +3,25 @@
 
 {% block content %}
 <div class="max-w-5xl">
-  <h1 class="text-2xl font-semibold mb-1">Cambios en la conciliación</h1>
-  <p class="text-sm text-slate-500 mb-4">
-    Timeline persistente de cada acción: matches creados, matches deshechos, históricos
-    marcados como conciliados. Para que cuando vuelvas mañana sepas qué se hizo.
-  </p>
+  <div class="flex items-start justify-between mb-4 gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold mb-1">Cambios en la conciliación</h1>
+      <p class="text-sm text-slate-500">
+        Timeline persistente de cada acción: matches creados, matches deshechos, históricos
+        marcados como conciliados. Para que cuando vuelvas mañana sepas qué se hizo.
+      </p>
+    </div>
+    {# TMT 2026-05-28 dueña: 'el undo, lo tiene que sacar de conciliados'.
+       Los undos previos al fix de romper_match dejaron filas marcadas
+       conciliadas en /bancos. Botón de backfill one-shot. #}
+    <form method="POST" action="{{ url_for('conciliacion.limpiar_stat_fantasma') }}"
+          onsubmit="return confirm('¿Revertir todas las marcas de conciliado que quedaron colgadas tras un undo? Saca el ✓SÍ de los movs en /bancos cuyo match fue deshacho. Idempotente, se puede correr varias veces.');">
+      <button class="text-xs px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap"
+              title="Re-aplica los undos que no sacaron la marca de conciliado">
+        ↶ Reaplicar undos colgados
+      </button>
+    </form>
+  </div>
 
   {# ───── Filtros ───── #}
   <form method="GET" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-3 flex items-end gap-3 text-sm mb-4">
