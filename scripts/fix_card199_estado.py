@@ -59,13 +59,27 @@ def main():
     dq = card.get("dataset_query") or {}
     nat = (dq.get("native") or {})
     sql_old = nat.get("query") or ""
-    # Buscar "fc.estado IN (0, 1, 4)" o variaciones
-    patt = re.compile(r"fc\.estado\s+IN\s*\(\s*0\s*,\s*1\s*,\s*4\s*\)", re.IGNORECASE)
-    if not patt.search(sql_old):
-        print("ABORTO: no encontré 'fc.estado IN (0, 1, 4)' en el SQL. Mostrando primeras 500 chars:")
-        print(sql_old[:500])
+    # Buscar "fc.estado IN (...)" tolerando cualquier whitespace (incluido \n, \t, nbsp).
+    # Capturamos la lista existente para confirmar que sea (0,1,4) o subset.
+    patt = re.compile(
+        r"(fc\.estado\s+IN\s*\(\s*)([0-9,\s]+)(\s*\))",
+        re.IGNORECASE,
+    )
+    m = patt.search(sql_old)
+    if not m:
+        # Imprimir el fragmento alrededor de 'estado' para diagnosticar
+        idx = sql_old.lower().find("fc.estado")
+        ctx = sql_old[max(0, idx-50):idx+150] if idx >= 0 else "(no estado found)"
+        print(f"ABORTO: regex no matcheó. Contexto: {ctx!r}")
         return
-    sql_new = patt.sub("fc.estado IN (0, 1, 4, 16)", sql_old)
+    lista_actual = re.findall(r"\d+", m.group(2))
+    print(f"  Lista actual fc.estado IN: {lista_actual}")
+    if "16" in lista_actual:
+        print("  Ya incluye 16. No hago cambios.")
+        return
+    nueva = sorted(set(lista_actual + ["16"]), key=lambda x: int(x))
+    nueva_str = "fc.estado IN (" + ", ".join(nueva) + ")"
+    sql_new = patt.sub(lambda mm: nueva_str, sql_old, count=1)
     print("SQL — cambio:")
     print("  ANTES: fc.estado IN (0, 1, 4)")
     print("  AHORA: fc.estado IN (0, 1, 4, 16)  ← +16 (Rechazado SRI), sigue excluyendo 15 (anulada)")
