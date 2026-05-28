@@ -174,10 +174,19 @@ def _movs(
     )
     rows = _db.fetch_all(sql, {"no_banco": no_banco, "desde": desde, "hasta": hasta}) or []
 
+    # TMT 2026-05-28 dueña: 'imprimir hoja sigue asi: 500'. Varias columnas
+    # del schema vienen como int (numreferencia, no_cheque, documento a
+    # veces) — llamar .strip() sobre int rompe con AttributeError y mata
+    # el endpoint. Cast a str ANTES de strip en todos los campos sospechosos.
+    def _s(v) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
+
     out: list[dict[str, Any]] = []
     for r in rows:
-        concepto = (r.get("concepto") or "").strip()
-        documento = (r.get("documento") or "").strip()
+        concepto = _s(r.get("concepto"))
+        documento = _s(r.get("documento"))
         id_t = r.get("id_transaccion")
         # Solo intentamos explotar agrupados en DEPÓSITOS (documento='DE')
         # — para DOCS_DEBITO cada cheque emitido ya es su propia fila.
@@ -212,11 +221,11 @@ def _movs(
             "fecha": r.get("fecha"),
             "documento": documento,
             "concepto": concepto,
-            "numero": (r.get("numreferencia") or "").strip(),
+            "numero": _s(r.get("numreferencia")),
             "importe": _fmt(r.get("importe")),
-            "prov": (r.get("prov") or "").strip(),
-            "contraparte": (r.get("contraparte") or "").strip(),
-            "stat": (r.get("stat") or "").strip(),
+            "prov": _s(r.get("prov")),
+            "contraparte": _s(r.get("contraparte")),
+            "stat": _s(r.get("stat")),
             "es_cheque_de_deposito": False,
         })
     return out
@@ -238,14 +247,19 @@ def historicos_pendientes_creditos(no_banco: int) -> list[dict[str, Any]]:
         """,
         {"no_banco": no_banco},
     ) or []
+    # TMT 2026-05-28 dueña: idem cast str() defensivo, mismas razones.
+    def _s2(v) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
     out = []
     for r in rows:
         out.append({
             "id_historico": r.get("id"),
             "fecha": r.get("fecha"),
-            "documento": (r.get("documento") or "").strip(),
-            "concepto": (r.get("concepto") or "").strip(),
-            "numero": (r.get("documento") or "").strip(),  # documento = nro comprobante banco
+            "documento": _s2(r.get("documento")),
+            "concepto": _s2(r.get("concepto")),
+            "numero": _s2(r.get("documento")),  # documento = nro comprobante banco
             "importe": _fmt(r.get("importe")),
             "prov": "",
             "contraparte": "",

@@ -32,21 +32,8 @@
    (las dos listas de movs sin identificar). El usuario no necesita
    navegar a otra ruta — printea desde este card. #}
 <style>
-  @media print {
-    body * { visibility: hidden; }
-    #conc-card, #conc-card *,
-    #print-lista, #print-lista * { visibility: visible; }
-    #conc-card { position: relative; box-shadow: none !important; border: 1px solid #cbd5e1 !important; }
-    #print-lista { display: block !important; padding: 8px 0; }
-    #print-lista table { width: 100%; border-collapse: collapse; font-size: 10px; }
-    #print-lista th, #print-lista td { padding: 2px 4px; border-bottom: 1px dotted #cbd5e1; text-align: left; }
-    #print-lista th { border-bottom: 1px solid #475569; font-weight: 600; }
-    #print-lista .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    #print-lista h3 { font-size: 12px; font-weight: 700; margin-top: 10px; margin-bottom: 4px; border-bottom: 2px solid #0f172a; padding-bottom: 2px; }
-    #print-lista .seccion-summary { font-size: 11px; font-weight: 600; margin: 6px 0 2px 0; display: flex; justify-content: space-between; }
-    .no-print, button { display: none !important; }
-    @page { margin: 12mm 10mm; }
-  }
+  /* #print-lista lleva los datos en HTML pero NO se muestra en pantalla.
+     El botón "Descargar Excel" lee las tablas con JS y genera el CSV. */
   #print-lista { display: none; }
 </style>
 <div class="page-shell page-shell--full max-w-7xl mx-auto px-4 py-5" id="conciliacion-banco-app">
@@ -326,23 +313,16 @@
           <div class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Diferencia</div>
           <div id="conc-diff" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.diff) }}</div>
         </div>
-        {# TMT 2026-05-28 dueña: 'no puedo imprimir!! necesito la lista
-           de todos los movimientos que me dan esto'. La hoja oficial
-           (T-account) no muestra el detalle de los movs banco que PC no
-           tiene — y eso es justo lo que produce el diff. Botón nuevo
-           que imprime el card + el desglose de real_only y bancsis_only
-           directamente desde esta vista. #}
-        <button type="button" onclick="window.print()"
-                class="self-center px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs whitespace-nowrap"
-                title="Imprime este card + la lista de movs no identificados de los dos lados">
-          🖨 Imprimir lista
+        {# TMT 2026-05-28 dueña: 'imprimir hoja y lista son horribles.
+           tienen que ser como un xls y chiquito y funcione'. Ya no
+           usamos window.print(). El botón descarga directo un .csv
+           que Excel abre nativo, con el desglose de los movs detrás
+           del diff (no_identificados banco / pc). #}
+        <button type="button" id="btn-descargar-excel"
+                class="self-center px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs whitespace-nowrap"
+                title="Descarga CSV con la lista de movs banco no identificados en PC y PC no identificados en banco">
+          ⬇ Descargar Excel
         </button>
-        <a href="{{ url_for('conciliacion.imprimir_banco', no_banco=data.no_banco, desde=data.extracto_desde, hasta=data.extracto_hasta) }}"
-           target="_blank"
-           class="self-center px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs whitespace-nowrap"
-           title="Hoja oficial T-account">
-          Imprimir hoja →
-        </a>
       </div>
     </div>
     <div class="px-4 py-4">
@@ -3133,6 +3113,105 @@
   if (includeMatchedCb) includeMatchedCb.addEventListener('change', aplicarFiltro);
   // Init counts
   aplicarFiltro();
+})();
+</script>
+
+{# TMT 2026-05-28 dueña: 'tienen que ser como un xls y chiquito y funcione'.
+   Botón verde 'Descargar Excel': lee las tablas de #print-lista (renderizadas
+   en HTML pero ocultas con display:none) y arma un CSV plano con UTF-8 BOM,
+   que Excel abre nativo con columnas separadas. No print, no /imprimir-banco. #}
+<script>
+(function() {
+  const btn = document.getElementById('btn-descargar-excel');
+  if (!btn) return;
+
+  function csvEscape(v) {
+    const s = (v == null ? '' : String(v));
+    if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function tableToRows(tbl, sectionLabel) {
+    if (!tbl) return [];
+    const headers = Array.from(tbl.querySelectorAll('thead th')).map(th => th.textContent.trim());
+    const rows = [];
+    // Encabezado de sección + headers
+    rows.push([sectionLabel]);
+    rows.push(headers);
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim());
+      rows.push(cells);
+    });
+    rows.push([]);  // línea en blanco entre secciones
+    return rows;
+  }
+
+  function fetchSummary() {
+    // Lee el card de resumen (#conc-card) y devuelve filas para el CSV.
+    const card = document.getElementById('conc-card');
+    if (!card) return [];
+    const rows = [['RESUMEN DE CONCILIACIÓN']];
+    card.querySelectorAll('table tr').forEach(tr => {
+      const tds = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim().replace(/\s+/g, ' '));
+      if (tds.length >= 2) rows.push([tds[0], tds[tds.length - 1]]);
+      else if (tds.length === 1) rows.push([tds[0]]);
+    });
+    rows.push([]);
+    return rows;
+  }
+
+  btn.addEventListener('click', function() {
+    const lista = document.getElementById('print-lista');
+    if (!lista) { alert('No hay datos para exportar.'); return; }
+
+    let allRows = [];
+    // Header del archivo
+    const banco = (document.querySelector('h1')?.textContent || 'Conciliación').trim();
+    allRows.push([banco]);
+    allRows.push(['Exportado', new Date().toLocaleString('es-EC')]);
+    allRows.push([]);
+
+    // Resumen
+    allRows = allRows.concat(fetchSummary());
+
+    // Encabezados h3 + tablas de print-lista
+    const blocks = lista.querySelectorAll('h3, .seccion-summary, table');
+    let currentSection = '';
+    let currentSubtitle = '';
+    blocks.forEach(el => {
+      if (el.tagName === 'H3') {
+        currentSection = el.textContent.trim();
+        allRows.push([]);
+        allRows.push([currentSection]);
+      } else if (el.classList && el.classList.contains('seccion-summary')) {
+        const spans = el.querySelectorAll('span');
+        currentSubtitle = (spans[0]?.textContent || '').trim();
+        const total = (spans[1]?.textContent || '').trim();
+        allRows.push([currentSubtitle, total]);
+      } else if (el.tagName === 'TABLE') {
+        const headers = Array.from(el.querySelectorAll('thead th')).map(th => th.textContent.trim());
+        allRows.push(headers);
+        el.querySelectorAll('tbody tr').forEach(tr => {
+          const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim());
+          allRows.push(cells);
+        });
+      }
+    });
+
+    // CSV con BOM (Excel-friendly UTF-8) y separador ';' para LatAm.
+    const sep = ';';
+    const csv = '﻿' + allRows.map(r => r.map(csvEscape).join(sep)).join('\r\n');
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `conciliacion_pichincha_${fecha}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
 })();
 </script>
 {% endblock %}
