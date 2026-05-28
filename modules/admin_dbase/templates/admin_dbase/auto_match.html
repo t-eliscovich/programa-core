@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block titulo %}Auto-match xlsx{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">
+    Conciliar extracto en 1 click
+  </h1>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+    Subí el .xlsx de Pichincha. Para cada fila busca un mov PC con
+    <code>importe EXACTO + fecha ±3d + tipo compatible + no conciliado</code>.
+    Si hay un único candidato lo concilia.
+  </p>
+
+  <form id="amForm"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-3"
+        enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block">
+      <span class="text-xs text-slate-500 dark:text-slate-400">Archivo del extracto (.xlsx)</span>
+      <div class="mt-1 flex items-center gap-3">
+        <input type="file" name="xlsx" accept=".xlsx" required
+               class="text-sm text-slate-700 dark:text-slate-300
+                      file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0
+                      file:bg-slate-900 file:text-white dark:file:bg-slate-100 dark:file:text-slate-900
+                      file:text-sm file:cursor-pointer">
+      </div>
+    </label>
+
+    <input type="hidden" name="no_banco" value="10">
+
+    <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+      <input type="checkbox" name="dry_run" value="1" checked>
+      <span>Dry-run (no inserta, solo cuenta cuántos matchean)</span>
+    </label>
+
+    <button type="submit" id="amBtn"
+            class="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm">
+      Procesar →
+    </button>
+  </form>
+
+  <pre id="amOut"
+       class="mt-4 p-4 rounded bg-slate-950 text-emerald-300 text-xs font-mono whitespace-pre-wrap overflow-x-auto"
+       style="min-height: 6rem; display: none;"></pre>
+
+  <script>
+  (function () {
+    const form = document.getElementById("amForm");
+    const btn  = document.getElementById("amBtn");
+    const out  = document.getElementById("amOut");
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      out.style.display = "block";
+      out.textContent = "Subiendo y procesando...\n";
+      btn.disabled = true;
+      btn.textContent = "Procesando...";
+      try {
+        const resp = await fetch("{{ url_for('admin_match.run') }}", {
+          method: "POST",
+          body: fd,
+        });
+        if (!resp.ok && !resp.body) {
+          out.textContent += `\n[HTTP ${resp.status}] ${await resp.text()}`;
+          return;
+        }
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        out.textContent = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          out.textContent += dec.decode(value, { stream: true });
+          out.scrollTop = out.scrollHeight;
+        }
+      } catch (err) {
+        out.textContent += `\n[error] ${err}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Procesar de nuevo →";
+      }
+    });
+  })();
+  </script>
+</div>
+{% endblock %}

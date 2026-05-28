@@ -344,6 +344,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_dbase_bp)
 
+    # Auto-match xlsx → scintela.transacciones_bancarias — TMT 2026-05-28.
+    # Dueña: "conecta uno con uno me da igual" — endpoint que parsea xlsx y
+    # crea matches por (fecha,monto,tipo) con tolerancia de centavo.
+    from modules.admin_dbase.auto_match_view import bp as admin_automatch_bp
+
+    app.register_blueprint(admin_automatch_bp)
+
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
     # middleware so we don't steal its elapsed-time header, and AFTER all
