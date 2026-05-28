@@ -338,6 +338,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(diag_bp)
 
+    # Sync dBase en 1-click — TMT 2026-05-28. Reemplaza el dance manual
+    # CloudShell+S3+SSM por POST a /admin/dbase-sync (admin-only).
+    from modules.admin_dbase.views import bp as admin_dbase_bp
+
+    app.register_blueprint(admin_dbase_bp)
+
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
     # middleware so we don't steal its elapsed-time header, and AFTER all

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block titulo %}Sync dBase{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">Sync dBase (en 1 click)</h1>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+    Subí <code class="px-1 rounded bg-slate-100 dark:bg-slate-800">dbf-fresh.tar.gz</code>
+    (el que arma el sandbox desde la carpeta <code>Files</code>) y se extrae +
+    corre <code>scripts/sync_dbase_actual.py</code> contra
+    <code>{{ target_dir }}</code>. POSDAT.DBF nunca se extrae.
+  </p>
+
+  <form id="syncForm"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4"
+        enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block">
+      <span class="text-xs text-slate-500 dark:text-slate-400">Tarball (.tar.gz)</span>
+      <div class="mt-1 flex items-center gap-3">
+        <input type="file" name="tarball"
+               accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar"
+               required
+               class="text-sm text-slate-700 dark:text-slate-300
+                      file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0
+                      file:bg-slate-900 file:text-white dark:file:bg-slate-100 dark:file:text-slate-900
+                      file:text-sm file:cursor-pointer">
+        <button type="submit"
+                id="syncBtn"
+                class="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm whitespace-nowrap">
+          Sync ahora →
+        </button>
+      </div>
+    </label>
+
+    <p class="text-[11px] text-slate-500">
+      Excluidos siempre del extract:
+      {% for n in never_extract %}<code class="px-1 rounded bg-slate-100 dark:bg-slate-800">{{ n }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+  </form>
+
+  <pre id="out"
+       class="mt-4 p-4 rounded bg-slate-950 text-emerald-300 text-xs font-mono whitespace-pre-wrap overflow-x-auto"
+       style="min-height: 6rem; display: none;"></pre>
+
+  <script>
+  (function () {
+    const form = document.getElementById("syncForm");
+    const btn = document.getElementById("syncBtn");
+    const out = document.getElementById("out");
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      out.style.display = "block";
+      out.textContent = "Subiendo...\n";
+      btn.disabled = true;
+      btn.textContent = "Corriendo...";
+
+      try {
+        const resp = await fetch("{{ url_for('admin_dbase.run') }}", {
+          method: "POST",
+          body: fd,
+        });
+        if (!resp.ok && !resp.body) {
+          out.textContent += `\n[HTTP ${resp.status}] ${await resp.text()}`;
+          return;
+        }
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        out.textContent = "";
+        // Streaming read.
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          out.textContent += dec.decode(value, { stream: true });
+          out.scrollTop = out.scrollHeight;
+        }
+      } catch (err) {
+        out.textContent += `\n[error de red] ${err}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Sync de nuevo →";
+      }
+    });
+  })();
+  </script>
+</div>
+{% endblock %}
