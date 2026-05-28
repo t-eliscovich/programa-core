@@ -29,9 +29,9 @@
              class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
     </label>
     <label class="flex items-center gap-1 text-xs text-slate-500">
-      <input type="checkbox" name="incluir_recientes" value="1" {% if incluir_recientes %}checked{% endif %}>
-      Incluir las de hoy
-      <span class="text-slate-400" title="Por default se excluyen las facturas con fecha de HOY porque el sync DBF todavía no las trajo y aparecen como falsos missing. Las de ayer y anteriores SÍ aparecen.">(?)</span>
+      <input type="checkbox" name="excluir_hoy" value="1" {% if not incluir_recientes %}checked{% endif %}>
+      Excluir las de hoy
+      <span class="text-slate-400" title="Por default se muestran TODAS las facturas Asinfo del rango. Marcá esto si el sync DBF está atrasado y las del día aparecen como falsos missing.">(?)</span>
     </label>
     <button class="px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm">Buscar</button>
     {% if not incluir_recientes %}

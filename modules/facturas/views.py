@@ -534,17 +534,25 @@ def desde_asinfo():
     from modules.asinfo import aliases as _aliases
 
     hoy = _date.today()
-    # TMT 2026-05-26 dueña: las facturas del día aún no se sincronizaron
-    # via DBF, así que se ven como missing falsos. Excluimos por default.
-    # TMT 2026-05-28 dueña: ANTES eran 3 días — demasiado agresivo,
-    # ocultaba misses legítimos del 27/05 que SÍ deben aparecer. Bajamos
-    # a 1 día (solo excluye HOY mismo). Si el sync DBF tardó más por
-    # alguna razón, marcar el checkbox "Incluir las de hoy".
+    # TMT 2026-05-26 dueña: cutoff para no marcar como missing facturas
+    # del día que aún no llegaron por sync DBF (gap de carga).
+    # TMT 2026-05-28 v1: bajamos de 3d a 1d (ocultaba misses legítimos
+    #                    del 27/05).
+    # TMT 2026-05-28 v2: pasamos a OPT-IN (por default NO ocultamos
+    # nada). Si el sync DBF está al día las del 28 deben aparecer; si
+    # la dueña detecta falsos missing del día puede activar el toggle
+    # "Excluir las de hoy" en la UI. URL: ?excluir_hoy=1.
+    # Back-compat: el toggle viejo "?incluir_recientes=1" sigue
+    # haciendo lo MISMO (mostrar todo) — el cambio de default es lo
+    # único que se invierte.
     cutoff_reciente = hoy
     cutoff_reciente_str = cutoff_reciente.isoformat()
     desde_s = request.args.get("desde") or (hoy - _td(days=30)).isoformat()
     hasta_s = request.args.get("hasta") or hoy.isoformat()
-    incluir_recientes = request.args.get("incluir_recientes") == "1"
+    # Default: mostrar todo (incluir_recientes=True). El toggle nuevo
+    # ?excluir_hoy=1 oculta las de hoy cuando el sync no llegó todavía.
+    excluir_hoy = request.args.get("excluir_hoy") == "1"
+    incluir_recientes = not excluir_hoy
     desde = _parse_date(desde_s) or (hoy - _td(days=30))
     hasta = _parse_date(hasta_s) or hoy
 
