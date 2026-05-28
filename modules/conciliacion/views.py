@@ -2574,6 +2574,21 @@ def banco_deshacer_todos():
     usuario = _usuario_actual()
     import db as _db
     if no_banco is not None:
+        # TMT 2026-05-28: bug coherencia — los histo apuntados por estos
+        # matches quedaban marcados como conciliados. Limpiar primero.
+        _db.execute(
+            """
+            UPDATE scintela.banco_historicos_pendientes h
+               SET conciliado_en = NULL,
+                   conciliado_por = NULL,
+                   conciliado_match_id = NULL
+              FROM scintela.banco_conciliacion_match m
+             WHERE h.conciliado_match_id = m.id
+               AND m.no_banco = %(no_banco)s
+               AND m.deshecho_en IS NULL
+            """,
+            {"no_banco": no_banco},
+        )
         n = _db.execute(
             """
             UPDATE scintela.banco_conciliacion_match
@@ -2585,6 +2600,17 @@ def banco_deshacer_todos():
             {"no_banco": no_banco, "usuario": usuario[:50]},
         )
     else:
+        _db.execute(
+            """
+            UPDATE scintela.banco_historicos_pendientes h
+               SET conciliado_en = NULL,
+                   conciliado_por = NULL,
+                   conciliado_match_id = NULL
+              FROM scintela.banco_conciliacion_match m
+             WHERE h.conciliado_match_id = m.id
+               AND m.deshecho_en IS NULL
+            """,
+        )
         n = _db.execute(
             """
             UPDATE scintela.banco_conciliacion_match

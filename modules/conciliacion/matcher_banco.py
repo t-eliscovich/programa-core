@@ -1570,7 +1570,30 @@ def romper_match(
     Si la migration 0047 corrió: soft-undo (UPDATE deshecho_en).
     Si NO corrió: hard-delete (la fila desaparece — sin audit trail pero
     el mov vuelve a aparecer en el próximo upload).
+
+    TMT 2026-05-28 dueña: 'PERO YO DESCONCILIE DESDE LA PAGINA, DEBERIAN
+    VOLVER PARA ATRAS'. Bug fixeado: cuando se crea el match, dual-write
+    setea `banco_historicos_pendientes.conciliado_en` (línea ~1251). Al
+    deshacer el match había que revertir esa marca también — sino la
+    histórica queda "fantasma-conciliada" y no vuelve a la lista de
+    pendientes, generando drift sistemático.
     """
+    # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
+    try:
+        db.execute(
+            """
+            UPDATE scintela.banco_historicos_pendientes
+               SET conciliado_en = NULL,
+                   conciliado_por = NULL,
+                   conciliado_match_id = NULL
+             WHERE conciliado_match_id = %s
+            """,
+            (int(match_id),),
+        )
+    except Exception:
+        pass  # fail-soft: si la columna no existe (pre-migration), seguimos
+
+    # 2) Soft-undo o hard-delete del match propio.
     if _tiene_migration_47():
         return db.execute(
             """
