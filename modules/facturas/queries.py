@@ -362,16 +362,24 @@ def editar_numf(
             "numf_completo_nuevo": fact.get("numf_completo"),
         }
 
-    # Chequeo de duplicados: si ya existe otra factura con ese numf, no
-    # dejamos pisarlo (sería una incoherencia de inventario).
+    # Chequeo de duplicados: si ya existe otra factura ACTIVA con ese numf,
+    # no dejamos pisarlo (sería incoherencia de inventario). Las anuladas
+    # (stat='X') NO bloquean — pudieron quedar con ese numf de una versión
+    # anterior que la dueña re-emitió.
     dup = db.fetch_one(
-        "SELECT id_factura FROM scintela.factura "
-        "WHERE numf = %s AND id_factura <> %s LIMIT 1",
+        "SELECT id_factura, COALESCE(stat,'') AS stat, codigo_cli, fecha, saldo "
+        "FROM scintela.factura "
+        "WHERE numf = %s AND id_factura <> %s "
+        "  AND COALESCE(stat,'') NOT IN ('X','x') "
+        "LIMIT 1",
         (nuevo_numf, id_factura),
     )
     if dup:
         raise ValueError(
-            f"El N° {nuevo_numf} ya está usado por la factura id={dup['id_factura']}."
+            f"El N° {nuevo_numf} ya está usado por la factura id={dup['id_factura']} "
+            f"(cliente={dup.get('codigo_cli','?')}, fecha={dup.get('fecha','?')}, "
+            f"stat={dup.get('stat','?')}, saldo=${dup.get('saldo','?')}). "
+            f"Si es duplicado, anulala primero."
         )
 
     sql_set = ["numf=%s", "usuario_modifica=%s"]
