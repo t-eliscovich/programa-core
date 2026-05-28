@@ -86,15 +86,25 @@ def _extract_numf(asinfo_numero: str) -> int | None:
 
 
 def cargar_huerfanas_pc(desde: date, limite: int) -> list[dict]:
-    """Facturas PC con numf>0 pero numf_completo NULL/vacío."""
+    """Facturas PC sin numf_completo asignado, candidatas a match con Asinfo.
+
+    TMT 2026-05-28: ANTES filtrábamos `numf > 0`, lo que dejaba afuera las
+    facturas que la dueña cargó a mano sin tipear el número (numf=0/NULL).
+    Esas iban directo a /facturas?solo_huerfanas=1 y nunca se intentaban
+    matchear automáticamente — había que hacerlo a mano. Ahora las
+    incluimos: pase 1 las matchea por (numf, cli) si numf>0, pase 2 las
+    matchea por (cli, fecha, importe) si numf=0/NULL.
+
+    Excluye marcas '#DUP_*', '#SIN_ASINFO_*' (resoluciones humanas previas).
+    """
     return db.fetch_all(
         """
         SELECT id_factura, numf, fecha, codigo_cli, kg, importe
           FROM scintela.factura
          WHERE fecha >= %s
-           AND numf IS NOT NULL AND numf > 0
            AND (numf_completo IS NULL OR numf_completo = '')
            AND (stat IS NULL OR stat IN ('Z','A','T','X','N','',' '))
+           AND kg IS NOT NULL AND kg <> 0
          ORDER BY fecha DESC
          LIMIT %s
         """,
@@ -102,74 +112,272 @@ def cargar_huerfanas_pc(desde: date, limite: int) -> list[dict]:
     )
 
 
+def _ai_ya_asignados() -> set[str]:
+    """Set de numero_asinfo ya usados como numf_completo en otra factura PC.
+
+    No deben re-asignarse — el UNIQUE constraint `uq_factura_numf_completo`
+    levantaría error igual, pero filtrar acá nos deja contar ambiguos
+    correctamente y darle el match al primer claim sin trabarse.
+    """
+    rows = db.fetch_all(
+        "SELECT DISTINCT numf_completo "
+        "  FROM scintela.factura "
+        " WHERE numf_completo IS NOT NULL AND numf_completo <> '' "
+        "   AND NOT (numf_completo LIKE '#%%')"
+    ) or []
+    return {(r.get("numf_completo") or "").strip() for r in rows}
+
+
+def _match_pase_2_por_fecha_importe(
+    huerfanas: list[dict],
+    asinfo_facts: list[dict],
+    ai_ya_usados: set[str],
+    *,
+    tolerancia_dias: int = 1,
+    tolerancia_importe: float = 0.01,
+) -> tuple[list[tuple[str, int]], int, int]:
+    """Pase 2: match para facturas con numf=0/NULL.
+
+    Estrategia: indexar Asinfo por (cli_pc, fecha_iso), buscar candidato
+    con mismo cliente + fecha ±N días + |usd - importe_pc| < tolerancia +
+    mismo signo de kg. Solo asigna si el match es ÚNICO (un único AI libre
+    dentro de la ventana, no claim'd por otra factura PC en este mismo
+    pase). Returns (updates, ambig, no_match).
+
+    TMT 2026-05-28: nuevo pase para resolver las "huérfanas con numf=0"
+    que el matcher original (solo numf+cli) saltaba completo.
+    """
+    # Indexar AI por (cli_pc, fecha_iso) — solo los que NO están ya usados.
+    ai_idx: dict[tuple[str, str], list[dict]] = {}
+    for ai in asinfo_facts:
+        numero = (ai.get("numero") or "").strip()
+        if not numero or numero in ai_ya_usados:
+            continue
+        cli_pc = cli_aliases.to_pc((ai.get("cliente_codigo") or "").upper())
+        f = ai.get("fecha")
+        if hasattr(f, "isoformat"):
+            f_iso = f.isoformat()[:10]
+        elif f:
+            f_iso = str(f)[:10]
+        else:
+            continue
+        ai_idx.setdefault((cli_pc, f_iso), []).append(ai)
+
+    updates: list[tuple[str, int]] = []
+    ai_claimed: set[str] = set()  # primer claim gana — evita doble-asignar
+    ambig = 0
+    no_match = 0
+    from datetime import timedelta as _td
+
+    for h in huerfanas:
+        # Solo pase 2 si numf vacío.
+        numf_pc = h.get("numf")
+        if numf_pc and int(numf_pc) > 0:
+            continue
+        cli_pc = (h.get("codigo_cli") or "").strip().upper()
+        imp_pc = float(h.get("importe") or 0)
+        kg_pc = float(h.get("kg") or 0)
+        f_pc = h.get("fecha")
+        if not (cli_pc and f_pc):
+            no_match += 1
+            continue
+
+        # Buscar candidatos en ventana fecha ±N
+        cands: list[dict] = []
+        for d in range(-tolerancia_dias, tolerancia_dias + 1):
+            f_check = (f_pc + _td(days=d)).isoformat()
+            for ai in ai_idx.get((cli_pc, f_check), []):
+                numero = (ai.get("numero") or "").strip()
+                if numero in ai_claimed:
+                    continue
+                usd_ai = float(ai.get("usd") or 0)
+                kg_ai = float(ai.get("kg") or 0)
+                # Filtros: importe ±tolerancia, signo kg.
+                if abs(imp_pc - usd_ai) > max(
+                    abs(imp_pc) * 0.005, tolerancia_importe
+                ):
+                    continue
+                if (kg_pc > 0) != (kg_ai > 0):
+                    continue
+                # kg ±5% (drift de redondeo).
+                if abs(kg_pc - kg_ai) > max(abs(kg_pc) * 0.05, 1.0):
+                    continue
+                cands.append(ai)
+
+        if not cands:
+            no_match += 1
+            continue
+        # Único match (preferir fecha exacta).
+        cands.sort(
+            key=lambda ai: abs(
+                (
+                    f_pc - (
+                        ai["fecha"]
+                        if hasattr(ai.get("fecha"), "isoformat")
+                        else date.fromisoformat(str(ai.get("fecha"))[:10])
+                    )
+                ).days
+            )
+        )
+        if len(cands) > 1:
+            # Si hay varios pero el primero es claramente mejor en fecha
+            # exacta, lo tomamos; sino ambiguo.
+            mejor = cands[0]
+            segundo = cands[1]
+            f_mejor = (
+                mejor["fecha"]
+                if hasattr(mejor.get("fecha"), "isoformat")
+                else date.fromisoformat(str(mejor.get("fecha"))[:10])
+            )
+            f_seg = (
+                segundo["fecha"]
+                if hasattr(segundo.get("fecha"), "isoformat")
+                else date.fromisoformat(str(segundo.get("fecha"))[:10])
+            )
+            if abs((f_pc - f_mejor).days) >= abs((f_pc - f_seg).days):
+                ambig += 1
+                continue
+        ai = cands[0]
+        numero = (ai.get("numero") or "").strip()
+        ai_claimed.add(numero)
+        updates.append((numero, int(h["id_factura"])))
+    return updates, ambig, no_match
+
+
 def backfill(dry_run: bool = False, limite: int = 5000,
              desde: date | None = None) -> dict:
-    """Run the backfill. Returns stats dict."""
+    """Run the backfill. Returns stats dict.
+
+    TMT 2026-05-28: dos pases secuenciales —
+      PASE 1: facturas con numf>0 → match por (numf, cli_alias).
+      PASE 2: facturas con numf=0 → match por (cli_alias, fecha ±1d, importe).
+    El segundo pase se agregó porque PC venía dejando ~465 facturas
+    huérfanas (cargadas a mano sin tipear el número Asinfo), que el filtro
+    `WHERE numf > 0` excluía del backfill principal. Ver task #25.
+    """
+    from datetime import timedelta as _td
+
     desde = desde or ASINFO_CUTOFF
     huerfanas = cargar_huerfanas_pc(desde, limite)
     n_huerf = len(huerfanas)
     if n_huerf == 0:
-        return {"huerfanas_pc": 0, "matched": 0, "updated": 0, "ambig": 0, "no_match": 0}
+        return {
+            "huerfanas_pc": 0,
+            "pase1_matched": 0,
+            "pase2_matched": 0,
+            "updated": 0,
+            "ambig": 0,
+            "no_match": 0,
+        }
 
     fechas = [h["fecha"] for h in huerfanas if h.get("fecha")]
     if not fechas:
-        return {"huerfanas_pc": n_huerf, "matched": 0, "updated": 0, "ambig": 0, "no_match": n_huerf}
+        return {
+            "huerfanas_pc": n_huerf,
+            "pase1_matched": 0,
+            "pase2_matched": 0,
+            "updated": 0,
+            "ambig": 0,
+            "no_match": n_huerf,
+        }
 
-    mn = min(fechas).isoformat()
-    mx = max(fechas).isoformat()
+    # Ampliar 1 día el rango Asinfo — pase 2 mira ±1 día.
+    mn = (min(fechas) - _td(days=1)).isoformat()
+    mx = (max(fechas) + _td(days=1)).isoformat()
 
     try:
         asinfo_facts = asinfo_service.facturas_periodo(mn, mx)
     except Exception as e:
         print(f"ERR: Asinfo falló: {e}", file=sys.stderr)
-        return {"huerfanas_pc": n_huerf, "matched": 0, "updated": 0,
-                "ambig": 0, "no_match": n_huerf, "error": str(e)}
+        return {
+            "huerfanas_pc": n_huerf,
+            "pase1_matched": 0,
+            "pase2_matched": 0,
+            "updated": 0,
+            "ambig": 0,
+            "no_match": n_huerf,
+            "error": str(e),
+        }
 
-    # Indexar Asinfo por (numf_extraído, codigo_cli_pc)
+    # Pre-cargar set de AI ya asignados — evita re-claim por UNIQUE constraint.
+    ai_ya_usados = _ai_ya_asignados()
+
+    # ===== PASE 1: numf > 0 → match por (numf, cli_alias) =====
     # TMT 2026-05-26: aplicamos alias map ANTES de indexar — el código de
     # Asinfo se traduce a PC para que (numf, cli) matchee directo. Ej:
-    # Asinfo cliente="CL2" se indexa como "CLR" (su alias en PC). Así CLR/CL2
-    # comparten bucket y el match es automático.
+    # Asinfo cliente="CL2" se indexa como "CLR" (su alias en PC).
     asinfo_by_key: dict[tuple[int, str], list[dict]] = {}
     for ai in asinfo_facts:
-        numf = _extract_numf(ai.get("numero"))
-        if numf is None:
+        numero = (ai.get("numero") or "").strip()
+        if numero in ai_ya_usados:
+            continue
+        numf_ai = _extract_numf(numero)
+        if numf_ai is None:
             continue
         cli_asinfo = (ai.get("cliente_codigo") or "").strip().upper()
-        cli_pc = cli_aliases.to_pc(cli_asinfo)  # identidad si no hay alias
-        asinfo_by_key.setdefault((numf, cli_pc), []).append(ai)
+        cli_pc = cli_aliases.to_pc(cli_asinfo)
+        asinfo_by_key.setdefault((numf_ai, cli_pc), []).append(ai)
 
-    matched = 0
+    pase1_matched = 0
     ambig = 0
     no_match = 0
     updates: list[tuple[str, int]] = []
+    ai_claimed_pase1: set[str] = set()
 
-    for h in huerfanas:
+    huerf_con_numf = [
+        h for h in huerfanas if h.get("numf") and int(h["numf"]) > 0
+    ]
+    huerf_sin_numf = [
+        h for h in huerfanas if not h.get("numf") or int(h["numf"]) == 0
+    ]
+
+    for h in huerf_con_numf:
         numf = int(h["numf"])
         cli = (h.get("codigo_cli") or "").strip().upper()
-        candidatos = asinfo_by_key.get((numf, cli), [])
+        candidatos = [
+            ai for ai in asinfo_by_key.get((numf, cli), [])
+            if (ai.get("numero") or "").strip() not in ai_claimed_pase1
+        ]
         if not candidatos:
-            # Fallback: probar sólo por numf, sin filtrar cliente
+            # Fallback: sólo por numf, sin filtrar cliente.
             candidatos_loose = [
-                ai for key, lst in asinfo_by_key.items()
-                if key[0] == numf for ai in lst
+                ai
+                for key, lst in asinfo_by_key.items()
+                if key[0] == numf
+                for ai in lst
+                if (ai.get("numero") or "").strip() not in ai_claimed_pase1
             ]
             if len(candidatos_loose) == 1:
                 candidatos = candidatos_loose
         if not candidatos:
-            no_match += 1
+            # Va al pase 2 — quizás encuentra por fecha/importe.
+            huerf_sin_numf.append(h)
             continue
         if len(candidatos) > 1:
-            # Múltiples Asinfo con mismo numf+cli — no actualizamos, requiere review humano
             ambig += 1
             continue
-        # Match único -> encolar UPDATE
         ai = candidatos[0]
-        updates.append((ai["numero"], int(h["id_factura"])))
-        matched += 1
+        numero = (ai.get("numero") or "").strip()
+        ai_claimed_pase1.add(numero)
+        updates.append((numero, int(h["id_factura"])))
+        pase1_matched += 1
 
-    # Aplicar UPDATEs
+    # ===== PASE 2: numf=0 (o no matcheado en pase 1) → (cli, fecha, importe) =====
+    # Excluir los AI ya claim'd en pase 1 para no doblar.
+    ai_usados_total = ai_ya_usados | ai_claimed_pase1
+    updates_pase2, ambig_p2, no_match_p2 = _match_pase_2_por_fecha_importe(
+        huerf_sin_numf, asinfo_facts, ai_usados_total
+    )
+    pase2_matched = len(updates_pase2)
+    updates.extend(updates_pase2)
+    ambig += ambig_p2
+    no_match += no_match_p2
+
+    # ===== Aplicar UPDATEs =====
+    import psycopg2
+
     updated = 0
+    uniq_conflict = 0
     if updates and not dry_run:
         for numero, id_factura in updates:
             try:
@@ -179,14 +387,23 @@ def backfill(dry_run: bool = False, limite: int = 5000,
                     (numero, id_factura),
                 )
                 updated += 1
+            except psycopg2.errors.UniqueViolation:
+                # Otra factura PC ya tiene este numero asignado — race condition
+                # entre el snapshot ya_usados y el UPDATE. Ignorar.
+                uniq_conflict += 1
             except Exception as e:
                 print(f"ERR: UPDATE {id_factura} falló: {e}", file=sys.stderr)
 
     return {
         "huerfanas_pc": n_huerf,
+        "huerf_con_numf": len(huerf_con_numf),
+        "huerf_sin_numf_inicial": n_huerf - len(huerf_con_numf),
         "asinfo_facts": len(asinfo_facts),
-        "matched": matched,
+        "pase1_matched": pase1_matched,
+        "pase2_matched": pase2_matched,
+        "matched": pase1_matched + pase2_matched,
         "updated": updated,
+        "uniq_conflict": uniq_conflict,
         "ambig": ambig,
         "no_match": no_match,
         "dry_run": dry_run,
