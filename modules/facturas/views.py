@@ -1103,13 +1103,27 @@ def lista():
                         if cli_pc and fecha_pc:
                             key = (cli_pc, str(fecha_pc)[:10], round(pc_kg, 2))
                             candidatos = idx_compuesto.get(key, [])
-                            # Solo match si hay UN candidato (evitar ambigüedad).
                             # Validar usd con tolerancia ±0.5 USD.
                             pc_imp = float(f.get("importe") or 0)
                             ok = [c for c in candidatos
                                   if abs(float(c.get("usd") or 0) - pc_imp) < 0.5]
                             if len(ok) == 1:
                                 r_ai = ok[0]
+                            elif len(ok) > 1:
+                                # TMT 2026-05-28 — dueña: muchas operaciones tienen
+                                # FACTURA + NTEN simultáneas con mismo cli/kg/usd
+                                # (la NTEN es nota de entrega, la FACTURA es el
+                                # comprobante fiscal). Antes len(ok)==1 rechazaba
+                                # todo. Ahora preferimos FACTURA > NTEN > otros
+                                # cuando hay candidatos múltiples del mismo cli+fecha+kg+usd.
+                                facts = [c for c in ok if c.get("tipo") == "FACTURA"]
+                                ntens = [c for c in ok if c.get("tipo") == "NTEN"]
+                                if len(facts) == 1:
+                                    r_ai = facts[0]
+                                elif len(ntens) == 1:
+                                    r_ai = ntens[0]
+                                # Si hay >1 FACTURA o >1 NTEN, sigue siendo ambiguo
+                                # (dejar huérfana — requiere análisis manual).
                     # TMT 2026-05-22 — Detección de signo invertido. Cuando PC
                     # tiene kg<0 (cargada como devolución) y Asinfo tiene una
                     # FACTURA/NTEN positiva con mismo |kg| y mismo |usd|,
