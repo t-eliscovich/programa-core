@@ -281,10 +281,11 @@ def balance():
         else:
             sum_por_cat[cat]["deb"] += monto
 
-    # Sumar por cat: cuáles PC NO tiene (chequeo simple: cuántas filas del xlsx tienen
-    # candidato PC con monto exacto, fecha ±3d, mismo tipo, no conciliado).
+    # Para cada fila del xlsx: chequeo si PC tiene el mismo (monto, fecha exacta, tipo).
+    # Las que NO tienen contraparte van a la lista "faltan en PC" → drift.
     en_pc_por_cat: dict[str, int] = defaultdict(int)
     falta_en_pc_por_cat_monto: dict[str, float] = defaultdict(float)
+    faltantes_banco_en_pc: list[dict] = []  # filas xlsx sin contraparte PC
     for m in movs:
         try:
             monto = float(m.get("Monto") or 0)
@@ -292,7 +293,10 @@ def balance():
             continue
         tipo = str(m.get("Tipo") or "C").upper()[:1]
         f_b = _parse_fecha(m.get("Fecha"))
-        cat = _categorizar(str(m.get("Concepto") or ""))
+        concepto = str(m.get("Concepto") or "")
+        doc_b = str(m.get("Documento") or "").strip()
+        oficina = str(m.get("Oficina") or "")
+        cat = _categorizar(concepto)
         if not f_b:
             continue
         docs_compat = ("DE", "TR", "XX", "NC", "IN", "AC") if tipo == "C" else ("CH", "ND", "DB", "GS", "PA")
@@ -310,6 +314,57 @@ def balance():
             en_pc_por_cat[cat] += 1
         else:
             falta_en_pc_por_cat_monto[cat] += monto
+            faltantes_banco_en_pc.append({
+                "fecha": f_b,
+                "tipo": tipo,
+                "documento": doc_b,
+                "concepto": concepto[:80],
+                "monto": monto,
+                "oficina": oficina[:30],
+                "categoria": cat,
+            })
+
+    # Faltantes_pc_en_banco: movs PC sin conciliar que NO tienen contraparte
+    # con monto exacto en el xlsx — son los que PC tiene "de más".
+    xlsx_keys = set()
+    for m in movs:
+        try:
+            monto = float(m.get("Monto") or 0)
+        except (TypeError, ValueError):
+            continue
+        f_b = _parse_fecha(m.get("Fecha"))
+        if f_b:
+            xlsx_keys.add((f_b, round(monto, 2), str(m.get("Tipo") or "C").upper()[:1]))
+
+    pc_sin_conc = _db.fetch_all(
+        """
+        SELECT t.id_transaccion, t.fecha, t.documento, t.concepto, t.importe, t.prov, t.stat
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s
+           AND TRIM(COALESCE(t.stat,'')) <> '*'
+           AND NOT EXISTS (
+               SELECT 1 FROM scintela.banco_conciliacion_match m
+                WHERE m.id_transaccion = t.id_transaccion AND m.deshecho_en IS NULL
+           )
+         ORDER BY t.fecha DESC, t.id_transaccion DESC LIMIT 500
+        """,
+        (no_banco,),
+    ) or []
+    faltantes_pc_en_banco: list[dict] = []
+    for r in pc_sin_conc:
+        doc = (r.get("documento") or "").strip().upper()
+        tipo_pc = "C" if doc in DOCS_CRED_PC else "D" if doc in DOCS_DEB_PC else "?"
+        key = (r.get("fecha"), round(float(r.get("importe") or 0), 2), tipo_pc)
+        if key not in xlsx_keys:
+            faltantes_pc_en_banco.append({
+                "id_transaccion": r.get("id_transaccion"),
+                "fecha": r.get("fecha"),
+                "documento": doc,
+                "concepto": (r.get("concepto") or "")[:80],
+                "monto": float(r.get("importe") or 0),
+                "tipo": tipo_pc,
+                "prov": (r.get("prov") or "").strip(),
+            })
 
     cats_resumen = []
     for cat, vals in sorted(sum_por_cat.items(), key=lambda kv: -abs(kv[1]["cred"] - kv[1]["deb"])):
@@ -342,5 +397,15 @@ def balance():
         "categorias": cats_resumen,
         "no_banco": no_banco,
         "bucket": bucket_resumen,
+        "faltantes_banco_en_pc": faltantes_banco_en_pc,
+        "faltantes_pc_en_banco": faltantes_pc_en_banco,
+        "n_falt_b_en_pc": len(faltantes_banco_en_pc),
+        "n_falt_pc_en_b": len(faltantes_pc_en_banco),
+        "sum_falt_b_en_pc_signed": round(sum(
+            (m["monto"] if m["tipo"] == "C" else -m["monto"]) for m in faltantes_banco_en_pc
+        ), 2),
+        "sum_falt_pc_en_b_signed": round(sum(
+            (m["monto"] if m["tipo"] == "C" else -m["monto"]) for m in faltantes_pc_en_banco
+        ), 2),
     }
     return render_template("admin_dbase/balance.html", resultado=resultado)

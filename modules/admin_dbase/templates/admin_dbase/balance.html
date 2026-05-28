@@ -178,6 +178,98 @@
   </div>
   {% endif %}
 
+  {# ───── Lista: movs del banco que faltan en PC ───── #}
+  {% if resultado.faltantes_banco_en_pc %}
+  <h2 class="mt-6 text-base font-bold">
+    Movs del extracto que faltan en PC
+    <span class="text-sm font-normal text-slate-500">
+      ({{ resultado.n_falt_b_en_pc }} movs · neto {{ '{:+,.2f}'.format(resultado.sum_falt_b_en_pc_signed) }})
+    </span>
+  </h2>
+  <p class="text-xs text-slate-500 mt-1 mb-2">
+    El banco confirmó estos movs pero PC no tiene contraparte con monto/fecha exactos.
+    Son lo que <strong>hay que cargar en PC</strong> para que el drift cierre a $0.
+  </p>
+  <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <table class="w-full text-xs tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-1.5 text-left">Fecha</th>
+          <th class="px-3 py-1.5 text-left">T</th>
+          <th class="px-3 py-1.5 text-left">Doc</th>
+          <th class="px-3 py-1.5 text-left">Categoría</th>
+          <th class="px-3 py-1.5 text-left">Concepto</th>
+          <th class="px-3 py-1.5 text-right">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in resultado.faltantes_banco_en_pc[:200] %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-1">{{ m.fecha.isoformat() }}</td>
+          <td class="px-3 py-1 {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ m.tipo }}</td>
+          <td class="px-3 py-1 font-mono text-slate-500">{{ m.documento }}</td>
+          <td class="px-3 py-1 text-slate-600">{{ m.categoria }}</td>
+          <td class="px-3 py-1 text-slate-700 dark:text-slate-300">{{ m.concepto }}</td>
+          <td class="px-3 py-1 text-right {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">
+            {% if m.tipo == 'C' %}+{% else %}−{% endif %} $ {{ '{:,.2f}'.format(m.monto) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if resultado.n_falt_b_en_pc > 200 %}
+    <div class="px-3 py-2 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/30">
+      mostrando 200 de {{ resultado.n_falt_b_en_pc }} ·
+      <a href="{{ url_for('admin_balance.balance') }}" class="underline">ver más</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ───── Lista: movs PC sin contraparte banco ───── #}
+  {% if resultado.faltantes_pc_en_banco %}
+  <h2 class="mt-6 text-base font-bold">
+    Movs PC que no están en el extracto
+    <span class="text-sm font-normal text-slate-500">
+      (top 200 · {{ resultado.n_falt_pc_en_b }} totales · neto {{ '{:+,.2f}'.format(resultado.sum_falt_pc_en_b_signed) }})
+    </span>
+  </h2>
+  <p class="text-xs text-slate-500 mt-1 mb-2">
+    PC registró estos movs pero el banco no los muestra. Suelen ser cheques emitidos
+    que el banco no cobró todavía, o deposits PC en tránsito que el banco no acreditó.
+  </p>
+  <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <table class="w-full text-xs tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-1.5 text-left">Fecha</th>
+          <th class="px-3 py-1.5 text-left">Doc PC</th>
+          <th class="px-3 py-1.5 text-left">T</th>
+          <th class="px-3 py-1.5 text-left">Concepto</th>
+          <th class="px-3 py-1.5 text-left">Prov/Cli</th>
+          <th class="px-3 py-1.5 text-right">Importe</th>
+          <th class="px-3 py-1.5 text-left">id_tx</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in resultado.faltantes_pc_en_banco[:200] %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-1">{{ m.fecha.isoformat() if m.fecha else '' }}</td>
+          <td class="px-3 py-1 font-mono">{{ m.documento }}</td>
+          <td class="px-3 py-1 {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ m.tipo }}</td>
+          <td class="px-3 py-1 text-slate-700 dark:text-slate-300">{{ m.concepto }}</td>
+          <td class="px-3 py-1 text-slate-500">{{ m.prov }}</td>
+          <td class="px-3 py-1 text-right {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">
+            {% if m.tipo == 'C' %}+{% else %}−{% endif %} $ {{ '{:,.2f}'.format(m.monto) }}
+          </td>
+          <td class="px-3 py-1 text-slate-400">{{ m.id_transaccion }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {# Desglose por categoría #}
   <h2 class="mt-6 text-base font-bold">Desglose del extracto por categoría</h2>
   <p class="text-xs text-slate-500 mt-1 mb-2">
