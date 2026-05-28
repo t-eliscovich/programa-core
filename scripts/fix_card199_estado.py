@@ -57,8 +57,24 @@ def main():
     r.raise_for_status()
     card = r.json()
     dq = card.get("dataset_query") or {}
+    # Soportar dos formatos:
+    #   v0 (legacy): dataset_query.native.query (string)
+    #   v51+ MBQL:   dataset_query.stages[0].native (string directo)
+    sql_old = ""
+    sql_path = None
     nat = (dq.get("native") or {})
-    sql_old = nat.get("query") or ""
+    if isinstance(nat, dict) and nat.get("query"):
+        sql_old = nat["query"]
+        sql_path = "native.query"
+    else:
+        stages = dq.get("stages") or []
+        if stages:
+            st0 = stages[0] or {}
+            nat_str = st0.get("native")
+            if isinstance(nat_str, str):
+                sql_old = nat_str
+                sql_path = "stages[0].native"
+    print(f"  SQL encontrado en: {sql_path}, len={len(sql_old)}")
     # Buscar "fc.estado IN (...)" tolerando cualquier whitespace (incluido \n, \t, nbsp).
     # Capturamos la lista existente para confirmar que sea (0,1,4) o subset.
     patt = re.compile(
@@ -80,13 +96,21 @@ def main():
     nueva = sorted(set(lista_actual + ["16"]), key=lambda x: int(x))
     nueva_str = "fc.estado IN (" + ", ".join(nueva) + ")"
     sql_new = patt.sub(lambda mm: nueva_str, sql_old, count=1)
+
+    # Reinyectar en la misma ubicación del JSON
+    if sql_path == "native.query":
+        nat["query"] = sql_new
+        dq["native"] = nat
+    elif sql_path == "stages[0].native":
+        dq["stages"][0]["native"] = sql_new
+    else:
+        print("ABORTO: no sé dónde re-inyectar el SQL.")
+        return
     print("SQL — cambio:")
     print("  ANTES: fc.estado IN (0, 1, 4)")
     print("  AHORA: fc.estado IN (0, 1, 4, 16)  ← +16 (Rechazado SRI), sigue excluyendo 15 (anulada)")
 
     # PUT
-    nat["query"] = sql_new
-    dq["native"] = nat
     body = {
         "name": card.get("name"),
         "dataset_query": dq,
