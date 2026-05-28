@@ -44,9 +44,8 @@
 
   {# ───── Cabecera del documento ───── #}
   <header class="mb-4">
-    <h1 class="text-xl font-bold">Hoja de conciliación bancaria</h1>
+    <h1 class="text-xl font-bold">HOJA DE CONCILIACIÓN — {{ hoja.nombre_banco }}</h1>
     <div class="text-xs text-slate-600 mt-1">
-      Banco: <strong>{{ no_banco }}</strong> ·
       Período: <strong>{{ desde.isoformat() }}</strong> → <strong>{{ hasta.isoformat() }}</strong> ·
       Impreso: {{ g.now.strftime('%Y-%m-%d %H:%M') if g.now else '' }}
     </div>
@@ -57,23 +56,23 @@
   </header>
 
   {# ═════════════════════════════════════════════════════════
-       I. CONCILIACIÓN  — movs del período que SÍ se conciliaron
+       I. CONCILIACIÓN
      ═════════════════════════════════════════════════════════ #}
   <section class="mb-2">
     <h2 class="text-lg font-extrabold border-b-2 border-slate-900 pb-0.5 mb-2">
       I. Conciliación
     </h2>
 
-    {# + Depósitos conciliados #}
+    {# + Dep conciliados #}
     <div class="mt-1 ml-2">
       <div class="flex justify-between items-baseline">
-        <span class="text-sm font-semibold">+ Dep. conciliados ({{ hoja.creditos_conc|length }})</span>
+        <span class="text-sm font-semibold">+ Dep conciliados</span>
         <span class="text-sm font-bold tabular-nums">+ $ {{ '{:,.2f}'.format(hoja.sum_cred_conc) }}</span>
       </div>
       {% if hoja.creditos_conc %}
       <table class="mt-1">
         <thead>
-          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Cliente / Prov</th><th class="num">Importe</th></tr>
         </thead>
         <tbody>
           {% for m in hoja.creditos_conc %}
@@ -94,13 +93,13 @@
     {# − Débitos conciliados #}
     <div class="mt-3 ml-2">
       <div class="flex justify-between items-baseline">
-        <span class="text-sm font-semibold">− Débitos conciliados ({{ hoja.debitos_conc|length }})</span>
+        <span class="text-sm font-semibold">− Débitos conciliados</span>
         <span class="text-sm font-bold tabular-nums">− $ {{ '{:,.2f}'.format(hoja.sum_deb_conc) }}</span>
       </div>
       {% if hoja.debitos_conc %}
       <table class="mt-1">
         <thead>
-          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Cliente / Prov</th><th class="num">Importe</th></tr>
         </thead>
         <tbody>
           {% for m in hoja.debitos_conc %}
@@ -120,7 +119,7 @@
   </section>
 
   {# ═════════════════════════════════════════════════════════
-       II. SALDO FINAL CONCILIADO  — encabezado con el valor
+       II. SALDO FINAL CONCILIADO (resultado de la sección I)
      ═════════════════════════════════════════════════════════ #}
   <section class="mb-2 mt-4">
     <h2 class="text-lg font-extrabold border-y-2 border-slate-900 py-1 mb-2 flex justify-between items-baseline">
@@ -128,16 +127,16 @@
       <span class="tabular-nums">$ {{ '{:,.2f}'.format(hoja.saldo_conciliado) }}</span>
     </h2>
 
-    {# + Depósitos no conciliados #}
+    {# + Dep no conciliados #}
     <div class="mt-1 ml-2">
       <div class="flex justify-between items-baseline">
-        <span class="text-sm font-semibold">+ Dep. no conciliados ({{ (hoja.creditos_pend|length) + (hoja.historicos|length) }})</span>
+        <span class="text-sm font-semibold">+ Dep no conciliados</span>
         <span class="text-sm font-bold tabular-nums">+ $ {{ '{:,.2f}'.format(hoja.sum_cred_pend_total) }}</span>
       </div>
       {% if hoja.creditos_pend or hoja.historicos %}
       <table class="mt-1">
         <thead>
-          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Cliente / Prov</th><th class="num">Importe</th></tr>
         </thead>
         <tbody>
           {% for m in hoja.creditos_pend %}
@@ -165,16 +164,16 @@
       {% endif %}
     </div>
 
-    {# − Débitos no conciliados #}
+    {# − Débito no conciliados #}
     <div class="mt-3 ml-2">
       <div class="flex justify-between items-baseline">
-        <span class="text-sm font-semibold">− Débito no conciliados ({{ hoja.debitos_pend|length }})</span>
+        <span class="text-sm font-semibold">− Débito no conciliados</span>
         <span class="text-sm font-bold tabular-nums">− $ {{ '{:,.2f}'.format(hoja.sum_deb_pend) }}</span>
       </div>
       {% if hoja.debitos_pend %}
       <table class="mt-1">
         <thead>
-          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Contraparte</th><th class="num">Importe</th></tr>
+          <tr><th>Fecha</th><th>Doc</th><th>Nº</th><th>Concepto</th><th>Cliente / Prov</th><th class="num">Importe</th></tr>
         </thead>
         <tbody>
           {% for m in hoja.debitos_pend %}
@@ -194,10 +193,10 @@
   </section>
 
   {# ═════════════════════════════════════════════════════════
-       SALDO FINAL ≈ SALDO REGISTRO BANCO
+       SALDO FINAL ≈ SALDO REGISTRO
      ═════════════════════════════════════════════════════════ #}
   <div class="mt-4 flex justify-between items-baseline border-y-4 border-double border-slate-900 py-2 px-2">
-    <span class="text-base font-extrabold uppercase tracking-wider">Saldo Final ≈ Saldo Registro</span>
+    <span class="text-base font-extrabold uppercase tracking-wider">SALDO FINAL ≈ SALDO REGISTRO</span>
     <span class="text-xl font-extrabold tabular-nums">$ {{ '{:,.2f}'.format(hoja.saldo_final_esperado) }}</span>
   </div>
 

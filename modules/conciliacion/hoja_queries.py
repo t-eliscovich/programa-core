@@ -255,6 +255,19 @@ def historicos_pendientes_creditos(no_banco: int) -> list[dict[str, Any]]:
     return out
 
 
+def _nombre_banco(no_banco: int) -> str:
+    """Devuelve el nombre comercial del banco (ej 10 → 'Pichincha')."""
+    try:
+        row = _db.fetch_one(
+            "SELECT COALESCE(NULLIF(TRIM(nombre), ''), '') AS nombre "
+            "FROM scintela.banco WHERE no_banco = %(n)s",
+            {"n": no_banco},
+        )
+        return (row or {}).get("nombre") or f"Banco {no_banco}"
+    except Exception:
+        return f"Banco {no_banco}"
+
+
 def hoja_conciliacion(no_banco: int, desde: date, hasta: date) -> dict[str, Any]:
     """Arma toda la hoja de conciliación lista para renderizar."""
     saldo_inicial = saldo_pc_anterior(no_banco, desde)
@@ -278,6 +291,7 @@ def hoja_conciliacion(no_banco: int, desde: date, hasta: date) -> dict[str, Any]
 
     return {
         "no_banco": no_banco,
+        "nombre_banco": _nombre_banco(no_banco),
         "desde": desde,
         "hasta": hasta,
         # Saldos
