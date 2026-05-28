@@ -30,8 +30,8 @@
     </label>
     <label class="flex items-center gap-1 text-xs text-slate-500">
       <input type="checkbox" name="incluir_recientes" value="1" {% if incluir_recientes %}checked{% endif %}>
-      Incluir últimos 3 días
-      <span class="text-slate-400" title="Por default se excluyen porque el sync DBF tarda y aparecen falsos missing.">(?)</span>
+      Incluir las de hoy
+      <span class="text-slate-400" title="Por default se excluyen las facturas con fecha de HOY porque el sync DBF todavía no las trajo y aparecen como falsos missing. Las de ayer y anteriores SÍ aparecen.">(?)</span>
     </label>
     <button class="px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm">Buscar</button>
     {% if not incluir_recientes %}

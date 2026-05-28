@@ -534,10 +534,13 @@ def desde_asinfo():
     from modules.asinfo import aliases as _aliases
 
     hoy = _date.today()
-    # TMT 2026-05-26 dueña: las últimas 3 facturas siempre se ven raras
-    # (DBF aún no se sincronizó). Excluimos por default los últimos 3
-    # días del análisis para no marcarlas como missing.
-    cutoff_reciente = hoy - _td(days=3)
+    # TMT 2026-05-26 dueña: las facturas del día aún no se sincronizaron
+    # via DBF, así que se ven como missing falsos. Excluimos por default.
+    # TMT 2026-05-28 dueña: ANTES eran 3 días — demasiado agresivo,
+    # ocultaba misses legítimos del 27/05 que SÍ deben aparecer. Bajamos
+    # a 1 día (solo excluye HOY mismo). Si el sync DBF tardó más por
+    # alguna razón, marcar el checkbox "Incluir las de hoy".
+    cutoff_reciente = hoy
     cutoff_reciente_str = cutoff_reciente.isoformat()
     desde_s = request.args.get("desde") or (hoy - _td(days=30)).isoformat()
     hasta_s = request.args.get("hasta") or hoy.isoformat()
