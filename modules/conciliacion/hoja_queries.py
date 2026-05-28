@@ -123,6 +123,44 @@ _COND_PENDIENTE = (
 )
 
 
+def _cheques_de_transaccion(id_transaccion: int) -> list[dict[str, Any]]:
+    """Cheques individuales que componen un depósito agrupado.
+
+    TMT 2026-05-28 dueña: 'dejar de agrupar los cheques, cada cheque una linea'.
+    En PC un 'dep.N ch' es UNA fila en transacciones_bancarias pero los N
+    cheques individuales viven en scintela.cheque (vinculados por
+    chequextransaccion). Devolvemos cada uno como su propia fila.
+    """
+    rows = _db.fetch_all(
+        """
+        SELECT c.id_cheque, c.no_cheque, c.importe, c.codigo_cli, c.banco,
+               COALESCE(cli.nombre, '') AS cliente_nombre
+          FROM scintela.chequextransaccion cxt
+          JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque
+          LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
+         WHERE cxt.id_transaccion = %(id_t)s
+         ORDER BY c.importe DESC, c.id_cheque
+        """,
+        {"id_t": id_transaccion},
+    ) or []
+    return rows
+
+
+def _detectar_agrupado_simple(concepto: str) -> int:
+    """N >= 2 si 'dep.25 ch' / '25 ch.', 0 si no. Heurística mínima.
+
+    No queremos depender de matcher_banco aquí (evitamos import circular).
+    """
+    if not concepto:
+        return 0
+    import re
+    m = re.search(r"(\d{1,4})\s*ch\.?", concepto.lower())
+    if not m:
+        return 0
+    n = int(m.group(1))
+    return n if n >= 2 else 0
+
+
 def _movs(
     no_banco: int, desde: date, hasta: date, *, conciliados: bool, docs: tuple[str, ...]
 ) -> list[dict[str, Any]]:
@@ -135,18 +173,48 @@ def _movs(
         + " ORDER BY t.fecha, t.id_transaccion"
     )
     rows = _db.fetch_all(sql, {"no_banco": no_banco, "desde": desde, "hasta": hasta}) or []
-    out = []
+
+    out: list[dict[str, Any]] = []
     for r in rows:
+        concepto = (r.get("concepto") or "").strip()
+        documento = (r.get("documento") or "").strip()
+        id_t = r.get("id_transaccion")
+        # Solo intentamos explotar agrupados en DEPÓSITOS (documento='DE')
+        # — para DOCS_DEBITO cada cheque emitido ya es su propia fila.
+        n_ch = _detectar_agrupado_simple(concepto) if documento.upper() == "DE" else 0
+        if n_ch >= 2 and id_t is not None:
+            cheques = _cheques_de_transaccion(int(id_t))
+            if cheques:
+                # Expandimos: cada cheque como su propia línea.
+                for c in cheques:
+                    out.append({
+                        "id_transaccion": id_t,
+                        "id_cheque": c.get("id_cheque"),
+                        "fecha": r.get("fecha"),
+                        "documento": "CH",  # mostramos como cheque individual
+                        "concepto": f"Cheque {c.get('no_cheque') or '—'}"
+                                     + (f" · {c.get('banco') or ''}" if c.get("banco") else ""),
+                        "numero": (c.get("no_cheque") or "").strip() if c.get("no_cheque") else "",
+                        "importe": _fmt(c.get("importe")),
+                        "prov": (c.get("codigo_cli") or "").strip(),
+                        "contraparte": (c.get("cliente_nombre") or "").strip(),
+                        "stat": (r.get("stat") or "").strip(),
+                        "es_cheque_de_deposito": True,
+                        "deposito_concepto": concepto,
+                    })
+                continue
+            # Si no encontramos los cheques individuales, dejamos el agrupado.
         out.append({
-            "id_transaccion": r.get("id_transaccion"),
+            "id_transaccion": id_t,
             "fecha": r.get("fecha"),
-            "documento": (r.get("documento") or "").strip(),
-            "concepto": (r.get("concepto") or "").strip(),
+            "documento": documento,
+            "concepto": concepto,
             "numero": (r.get("numreferencia") or "").strip(),
             "importe": _fmt(r.get("importe")),
             "prov": (r.get("prov") or "").strip(),
             "contraparte": (r.get("contraparte") or "").strip(),
             "stat": (r.get("stat") or "").strip(),
+            "es_cheque_de_deposito": False,
         })
     return out
 
