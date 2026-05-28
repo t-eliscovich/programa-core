@@ -35,6 +35,10 @@ bp = Blueprint(
 )
 
 
+DOCS_CRED_PC = ("DE", "NC", "TR", "XX", "IN", "AC")
+DOCS_DEB_PC = ("CH", "ND", "DB", "GS", "PA")
+
+
 CATS = [
     ("IVA", re.compile(r"\bIVA\b", re.I)),
     ("COMISION", re.compile(r"COMISION", re.I)),
@@ -157,6 +161,111 @@ def balance():
     saldo_esperado = saldo_pc + hist_neto
     drift = round(saldo_banco_top - saldo_esperado, 2)
 
+    # ───────────────────────────────────────────────────────
+    # Desglose del drift por "bucket" (pedido dueña 2026-05-28).
+    #   Layout:
+    #     Sin conciliar (desde última conciliación):
+    #       + Ingresos    (DE/NC/TR/XX/IN/AC)
+    #       − Egresos     (CH/ND/DB/GS/PA)
+    #       = sub-total
+    #     + Pendientes históricos PC (mismos campos, fecha vieja)
+    #     + Pendientes históricos banco (banco_historicos_pendientes)
+    #     = TOTAL drift
+    #   Y comparamos con drift_real = saldo_banco − saldo_pc.
+    # ───────────────────────────────────────────────────────
+
+    # Última conciliación: max(real_fecha) en banco_conciliacion_match activo.
+    ult = _db.fetch_one(
+        """
+        SELECT MAX(real_fecha) AS f
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco=%s AND deshecho_en IS NULL
+        """,
+        (no_banco,),
+    ) or {}
+    fecha_ult_conc = ult.get("f")
+
+    # Movs PC sin conciliar, separados en "recientes" (> última conc) vs "viejos" (≤).
+    cond_pendiente = (
+        " AND TRIM(COALESCE(t.stat,'')) <> '*'"
+        " AND NOT EXISTS ("
+        "   SELECT 1 FROM scintela.banco_conciliacion_match m"
+        "    WHERE m.id_transaccion = t.id_transaccion AND m.deshecho_en IS NULL"
+        " )"
+    )
+
+    def _sum_pendientes_pc(fecha_op: str, fecha_ref) -> dict:
+        """fecha_op = '>' o '<='. fecha_ref puede ser None (=> tomamos todos)."""
+        params: list = [no_banco]
+        sql = (
+            "SELECT "
+            "  COUNT(*) AS n, "
+            "  COALESCE(SUM(CASE WHEN UPPER(TRIM(t.documento)) IN %s THEN t.importe ELSE 0 END), 0) AS sum_cred, "
+            "  COALESCE(SUM(CASE WHEN UPPER(TRIM(t.documento)) IN %s THEN t.importe ELSE 0 END), 0) AS sum_deb "
+            "FROM scintela.transacciones_bancarias t "
+            "WHERE t.no_banco = %s "
+        )
+        params = [DOCS_CRED_PC, DOCS_DEB_PC, no_banco]
+        if fecha_ref:
+            sql += f" AND t.fecha {fecha_op} %s"
+            params.append(fecha_ref)
+        sql += cond_pendiente
+        r = _db.fetch_one(sql, tuple(params)) or {}
+        return {
+            "n": int(r.get("n") or 0),
+            "cred": float(r.get("sum_cred") or 0),
+            "deb": float(r.get("sum_deb") or 0),
+        }
+
+    if fecha_ult_conc:
+        bk_recientes = _sum_pendientes_pc(">", fecha_ult_conc)
+        bk_viejos = _sum_pendientes_pc("<=", fecha_ult_conc)
+    else:
+        # Si NO hay conciliación previa, todo cae como "recientes".
+        bk_recientes = _sum_pendientes_pc(">", None)  # cualquier fecha
+        bk_viejos = {"n": 0, "cred": 0.0, "deb": 0.0}
+
+    sub_recientes_neto = bk_recientes["cred"] - bk_recientes["deb"]
+    sub_viejos_neto = bk_viejos["cred"] - bk_viejos["deb"]
+
+    # Pendientes históricos banco (banco_historicos_pendientes): banco confirmó,
+    # PC no tiene. Aportan + al saldo banco (si cred) o − (si deb).
+    hist_banco_neto = hist_cred - hist_deb
+
+    # TOTAL drift desde la perspectiva PC:
+    # saldo_banco - saldo_pc = + hist_banco_neto - PC_pendientes_neto
+    # (PC tiene movs que banco no muestra → bank looks LOWER por PC_neto)
+    pc_pend_total_neto = sub_recientes_neto + sub_viejos_neto
+    total_drift_desglosado = round(hist_banco_neto - pc_pend_total_neto, 2)
+
+    drift_real = round(saldo_banco_top - saldo_pc, 2)
+    no_clasificado = round(drift_real - total_drift_desglosado, 2)
+
+    bucket_resumen = {
+        "fecha_ult_conc": fecha_ult_conc,
+        "recientes": {
+            "n": bk_recientes["n"],
+            "ingresos": round(bk_recientes["cred"], 2),
+            "egresos": round(bk_recientes["deb"], 2),
+            "neto": round(sub_recientes_neto, 2),
+        },
+        "viejos": {
+            "n": bk_viejos["n"],
+            "ingresos": round(bk_viejos["cred"], 2),
+            "egresos": round(bk_viejos["deb"], 2),
+            "neto": round(sub_viejos_neto, 2),
+        },
+        "hist_banco": {
+            "n": int(h.get("n") or 0),
+            "cred": round(hist_cred, 2),
+            "deb": round(hist_deb, 2),
+            "neto": round(hist_banco_neto, 2),
+        },
+        "drift_desglosado": total_drift_desglosado,
+        "drift_real": drift_real,
+        "no_clasificado": no_clasificado,
+    }
+
     # Categorización del extracto
     sum_por_cat: dict[str, dict[str, float]] = defaultdict(lambda: {"cred": 0.0, "deb": 0.0, "n": 0})
     for m in movs:
@@ -232,5 +341,6 @@ def balance():
         "n_movs_xlsx": len(movs),
         "categorias": cats_resumen,
         "no_banco": no_banco,
+        "bucket": bucket_resumen,
     }
     return render_template("admin_dbase/balance.html", resultado=resultado)

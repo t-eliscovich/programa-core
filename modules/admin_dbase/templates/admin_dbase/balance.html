@@ -69,6 +69,115 @@
     </div>
   </div>
 
+  {# ───── Desglose del drift por bucket — TMT 2026-05-28 dueña ───── #}
+  {% if resultado.bucket %}
+  <h2 class="mt-6 text-base font-bold">Composición del drift PC vs banco</h2>
+  <p class="text-xs text-slate-500 mt-1 mb-2">
+    Última conciliación: <strong>{{ resultado.bucket.fecha_ult_conc or '—' }}</strong>.
+    El TOTAL desglosado debería ser igual al drift real (saldo banco − saldo PC).
+    Si no, lo que falta se muestra como "no clasificado".
+  </p>
+  <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <table class="w-full text-sm tabular-nums">
+      <tbody>
+        {# Sin conciliar (recientes) #}
+        <tr class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <td class="px-3 py-1.5 font-semibold" colspan="2">
+            Sin conciliar desde la conciliación anterior
+            <span class="text-[11px] text-slate-500 ml-1">({{ resultado.bucket.recientes.n }} movs)</span>
+          </td>
+        </tr>
+        <tr class="text-xs text-slate-700 dark:text-slate-300">
+          <td class="px-3 py-1 pl-6">+ Ingresos PC (DE / NC / TR / XX / IN / AC) — no acreditados aún por banco</td>
+          <td class="px-3 py-1 text-right text-emerald-700">+ $ {{ '{:,.2f}'.format(resultado.bucket.recientes.ingresos) }}</td>
+        </tr>
+        <tr class="text-xs text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+          <td class="px-3 py-1 pl-6">− Egresos PC (CH / ND / DB / GS / PA) — no cobrados aún por banco</td>
+          <td class="px-3 py-1 text-right text-rose-700">− $ {{ '{:,.2f}'.format(resultado.bucket.recientes.egresos) }}</td>
+        </tr>
+        <tr class="bg-slate-50 dark:bg-slate-800/30 border-b-2 border-slate-300 dark:border-slate-700">
+          <td class="px-3 py-1.5 pl-6 font-medium">= Sub-total movs sin conciliar (signed)</td>
+          <td class="px-3 py-1.5 text-right font-bold">$ {{ '{:+,.2f}'.format(resultado.bucket.recientes.neto) }}</td>
+        </tr>
+
+        {# Pendientes históricos PC (antes de última concilación) #}
+        {% if resultado.bucket.viejos.n > 0 %}
+        <tr class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <td class="px-3 py-1.5 font-semibold" colspan="2">
+            Pendientes PC históricos (anteriores a la última conciliación)
+            <span class="text-[11px] text-slate-500 ml-1">({{ resultado.bucket.viejos.n }} movs)</span>
+          </td>
+        </tr>
+        <tr class="text-xs text-slate-700 dark:text-slate-300">
+          <td class="px-3 py-1 pl-6">+ Ingresos PC arrastrando</td>
+          <td class="px-3 py-1 text-right text-emerald-700">+ $ {{ '{:,.2f}'.format(resultado.bucket.viejos.ingresos) }}</td>
+        </tr>
+        <tr class="text-xs text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+          <td class="px-3 py-1 pl-6">− Egresos PC arrastrando</td>
+          <td class="px-3 py-1 text-right text-rose-700">− $ {{ '{:,.2f}'.format(resultado.bucket.viejos.egresos) }}</td>
+        </tr>
+        <tr class="bg-slate-50 dark:bg-slate-800/30 border-b-2 border-slate-300 dark:border-slate-700">
+          <td class="px-3 py-1.5 pl-6 font-medium">= Sub-total históricos PC (signed)</td>
+          <td class="px-3 py-1.5 text-right font-bold">$ {{ '{:+,.2f}'.format(resultado.bucket.viejos.neto) }}</td>
+        </tr>
+        {% endif %}
+
+        {# Pendientes históricos banco (banco confirmó, PC no tiene) #}
+        <tr class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+          <td class="px-3 py-1.5 font-semibold" colspan="2">
+            + Pendientes históricos del banco (banco confirmó, PC no tiene)
+            <span class="text-[11px] text-slate-500 ml-1">({{ resultado.bucket.hist_banco.n }} movs)</span>
+          </td>
+        </tr>
+        <tr class="text-xs text-slate-700 dark:text-slate-300">
+          <td class="px-3 py-1 pl-6">+ Créditos</td>
+          <td class="px-3 py-1 text-right text-emerald-700">+ $ {{ '{:,.2f}'.format(resultado.bucket.hist_banco.cred) }}</td>
+        </tr>
+        <tr class="text-xs text-slate-700 dark:text-slate-300 border-b-2 border-slate-300 dark:border-slate-700">
+          <td class="px-3 py-1 pl-6">− Débitos</td>
+          <td class="px-3 py-1 text-right text-rose-700">− $ {{ '{:,.2f}'.format(resultado.bucket.hist_banco.deb) }}</td>
+        </tr>
+
+        {# TOTAL desglosado #}
+        <tr class="border-b border-slate-300 dark:border-slate-700">
+          <td class="px-3 py-2 font-bold">
+            = TOTAL drift desglosado
+            <div class="text-[11px] font-normal text-slate-500">= hist banco − (PC sin conciliar + PC histo)</div>
+          </td>
+          <td class="px-3 py-2 text-right font-bold tabular-nums text-base">
+            $ {{ '{:+,.2f}'.format(resultado.bucket.drift_desglosado) }}
+          </td>
+        </tr>
+
+        {# Drift real (sanity check) #}
+        <tr class="bg-slate-100 dark:bg-slate-800/70">
+          <td class="px-3 py-2 font-bold">
+            Drift real (saldo banco − saldo PC libros)
+            <div class="text-[11px] font-normal text-slate-500">saldo banco $ {{ '{:,.2f}'.format(resultado.saldo_banco_top) }} − saldo PC $ {{ '{:,.2f}'.format(resultado.saldo_pc) }}</div>
+          </td>
+          <td class="px-3 py-2 text-right font-bold tabular-nums text-base">
+            $ {{ '{:+,.2f}'.format(resultado.bucket.drift_real) }}
+          </td>
+        </tr>
+
+        {% if resultado.bucket.no_clasificado|abs > 1.0 %}
+        <tr class="bg-amber-50 dark:bg-amber-900/20 border-t-2 border-amber-300">
+          <td class="px-3 py-2 font-semibold text-amber-800 dark:text-amber-300">
+            ⚠ No clasificado (drift real − desglosado)
+            <div class="text-[11px] font-normal text-amber-700 dark:text-amber-400">
+              Fuente de drift no capturada por el bucket. Candidatos: comisiones/IVA del banco no cargados en PC, cheques en tránsito mal marcados, movs banco no inyectados como histórico.
+            </div>
+          </td>
+          <td class="px-3 py-2 text-right font-bold tabular-nums text-amber-900 dark:text-amber-200">
+            $ {{ '{:+,.2f}'.format(resultado.bucket.no_clasificado) }}
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {# Desglose por categoría #}
   <h2 class="mt-6 text-base font-bold">Desglose del extracto por categoría</h2>
   <p class="text-xs text-slate-500 mt-1 mb-2">
