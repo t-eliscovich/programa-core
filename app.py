@@ -326,6 +326,9 @@ def create_app() -> Flask:
     app.register_blueprint(costos_ot_bp)
 
     from modules.conciliacion.views import conciliacion_bp
+    # cambios_view se importa para que registre la ruta /conciliacion/cambios
+    # contra el mismo blueprint.
+    from modules.conciliacion import cambios_view  # noqa: F401
 
     app.register_blueprint(conciliacion_bp)
 

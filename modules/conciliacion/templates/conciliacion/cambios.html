@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block titulo %}Cambios — Conciliación{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <h1 class="text-2xl font-semibold mb-1">Cambios en la conciliación</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    Timeline persistente de cada acción: matches creados, matches deshechos, históricos
+    marcados como conciliados. Para que cuando vuelvas mañana sepas qué se hizo.
+  </p>
+
+  {# ───── Filtros ───── #}
+  <form method="GET" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-3 flex items-end gap-3 text-sm mb-4">
+    <label class="block">
+      <span class="text-xs text-slate-500">Desde</span>
+      <input type="date" name="desde" value="{{ desde.isoformat() }}" class="border rounded px-2 py-1">
+    </label>
+    <label class="block">
+      <span class="text-xs text-slate-500">Hasta</span>
+      <input type="date" name="hasta" value="{{ hasta.isoformat() }}" class="border rounded px-2 py-1">
+    </label>
+    <label class="block">
+      <span class="text-xs text-slate-500">Banco</span>
+      <input type="number" name="no_banco" value="{{ no_banco or '' }}" placeholder="todos" class="border rounded px-2 py-1 w-20">
+    </label>
+    <label class="block">
+      <span class="text-xs text-slate-500">Usuario</span>
+      <select name="usuario" class="border rounded px-2 py-1">
+        <option value="">(todos)</option>
+        {% for u in usuarios %}
+        <option value="{{ u }}" {% if u == usuario_filter %}selected{% endif %}>{{ u }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded text-sm">Filtrar</button>
+  </form>
+
+  {# ───── Stats ───── #}
+  <div class="grid grid-cols-4 gap-3 mb-4">
+    <div class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+      <div class="text-[10px] uppercase text-slate-500">Total eventos</div>
+      <div class="text-xl font-bold tabular-nums">{{ stats.n_total }}</div>
+    </div>
+    <div class="rounded border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 p-3">
+      <div class="text-[10px] uppercase text-emerald-700 dark:text-emerald-300">Matches creados</div>
+      <div class="text-xl font-bold tabular-nums text-emerald-900 dark:text-emerald-100">{{ stats.n_match_creado }}</div>
+    </div>
+    <div class="rounded border border-rose-200 bg-rose-50 dark:bg-rose-900/20 p-3">
+      <div class="text-[10px] uppercase text-rose-700 dark:text-rose-300">Matches deshechos</div>
+      <div class="text-xl font-bold tabular-nums text-rose-900 dark:text-rose-100">{{ stats.n_match_deshecho }}</div>
+    </div>
+    <div class="rounded border border-sky-200 bg-sky-50 dark:bg-sky-900/20 p-3">
+      <div class="text-[10px] uppercase text-sky-700 dark:text-sky-300">Históricos conciliados</div>
+      <div class="text-xl font-bold tabular-nums text-sky-900 dark:text-sky-100">{{ stats.n_hist_conciliado }}</div>
+    </div>
+  </div>
+
+  {# ───── Timeline por día ───── #}
+  {% if por_dia %}
+    {% for dia, eventos_dia in por_dia %}
+    <section class="mb-6">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2 sticky top-0 bg-slate-50 dark:bg-slate-900 py-1">
+        {{ dia.isoformat() }}
+        <span class="text-xs font-normal text-slate-500 ml-2">({{ eventos_dia|length }} eventos)</span>
+      </h2>
+      <div class="rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <table class="w-full text-xs tabular-nums">
+          <thead class="bg-slate-100 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+            <tr>
+              <th class="px-2 py-1 text-left w-20">Hora</th>
+              <th class="px-2 py-1 text-left w-12">Acc</th>
+              <th class="px-2 py-1 text-left w-24">Usuario</th>
+              <th class="px-2 py-1 text-left w-10">Banco</th>
+              <th class="px-2 py-1 text-left w-24">Fecha mov</th>
+              <th class="px-2 py-1 text-left w-12">T</th>
+              <th class="px-2 py-1 text-left w-32">Doc</th>
+              <th class="px-2 py-1 text-left">Concepto</th>
+              <th class="px-2 py-1 text-right w-24">Importe</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in eventos_dia %}
+            <tr class="border-t border-slate-100 dark:border-slate-800
+                       {% if e.accion == 'match_creado' %}bg-emerald-50/40 dark:bg-emerald-900/10
+                       {% elif e.accion == 'match_deshecho' %}bg-rose-50/40 dark:bg-rose-900/10
+                       {% else %}bg-sky-50/40 dark:bg-sky-900/10
+                       {% endif %}">
+              <td class="px-2 py-1 text-slate-500">{{ e.ts.strftime('%H:%M') if e.ts else '' }}</td>
+              <td class="px-2 py-1">
+                {% if e.accion == 'match_creado' %}<span class="text-emerald-700">✓ match</span>
+                {% elif e.accion == 'match_deshecho' %}<span class="text-rose-700">↶ undo</span>
+                {% else %}<span class="text-sky-700">★ histo</span>
+                {% endif %}
+              </td>
+              <td class="px-2 py-1 text-slate-700 dark:text-slate-300">{{ e.usuario or '—' }}</td>
+              <td class="px-2 py-1 text-slate-500">{{ e.no_banco }}</td>
+              <td class="px-2 py-1">{{ e.fecha.isoformat() if e.fecha else '—' }}</td>
+              <td class="px-2 py-1 {% if e.tipo == 'C' %}text-emerald-700{% elif e.tipo == 'D' %}text-rose-700{% else %}text-slate-500{% endif %}">{{ e.tipo or '—' }}</td>
+              <td class="px-2 py-1 font-mono text-slate-500">{{ (e.doc or '—')[:20] }}</td>
+              <td class="px-2 py-1 text-slate-700 dark:text-slate-300">{{ (e.concepto or '')[:60] }}</td>
+              <td class="px-2 py-1 text-right font-bold {% if e.tipo == 'C' %}text-emerald-700{% elif e.tipo == 'D' %}text-rose-700{% endif %}">
+                {% if e.monto is not none %}$ {{ '{:,.2f}'.format(e.monto|float) }}{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+  {% else %}
+    <p class="text-sm text-slate-500 italic">— sin eventos en el rango seleccionado —</p>
+  {% endif %}
+</div>
+{% endblock %}
