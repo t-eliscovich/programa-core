@@ -304,17 +304,15 @@
       <table class="w-full text-sm tabular-nums">
         <tbody>
           {# TMT 2026-05-28 dueña: 'conciliacion con diferencia tiene que
-             empezar con el saldo conciliado'. Empezamos del saldo PC
-             post-match (= saldo libros − movs PC que el banco no tiene). #}
+             empezar con el saldo conciliado'. Mismo número que /bancos/10
+             y /conciliacion/banco: saldo PC menos pendientes históricos. #}
           <tr class="border-b border-slate-200 dark:border-slate-700">
             <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo conciliado al {{ resumen.fecha_pc or '—' }}</td>
             <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_conciliado) }}</td>
           </tr>
           <tr class="text-[11px] text-slate-500 dark:text-slate-400">
             <td class="pb-1.5 pl-4" colspan="2">
-              <span class="text-slate-400">= Saldo PC libros ${{ '{:,.2f}'.format(resumen.saldo_pc) }}</span>
-              {% if resumen.pc_pend_cred %} − dep. en tránsito ${{ '{:,.2f}'.format(resumen.pc_pend_cred) }}{% endif %}
-              {% if resumen.pc_pend_deb %} + ch./déb. no cobrados ${{ '{:,.2f}'.format(resumen.pc_pend_deb) }}{% endif %}
+              Saldo PC libros ${{ '{:,.2f}'.format(resumen.saldo_pc) }} − pendientes históricos
             </td>
           </tr>
           <tr class="text-xs text-slate-600 dark:text-slate-400">

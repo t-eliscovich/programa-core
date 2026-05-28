@@ -1508,11 +1508,39 @@ def hub():
         saldo_bco = float(data.get("saldo_real_final") or 0)
         net_pend_pc = pc_pend_cred - pc_pend_deb       # signed
         net_pend_bco = bco_pend_cred - bco_pend_deb    # signed
-        # TMT 2026-05-28 dueña: 'conciliacion con diferencia tiene que
-        # empezar con el saldo conciliado'. Restamos del saldo PC los
-        # movs que PC tiene pero el banco no — eso es el "post-match"
-        # balance, lo que PC reflejaría si conciliaramos todo lo de hoy.
-        saldo_conciliado = saldo_pc - net_pend_pc
+        # TMT 2026-05-28 dueña: 'deberia ser 2557969' — el saldo
+        # conciliado tiene que dar el MISMO número que /bancos/<no> y
+        # /conciliacion/banco. Usamos la query canónica (toda la tabla,
+        # restando los pendientes históricos) en vez de derivarlo del
+        # bancsis_only del extracto, que solo ve los movs del rango.
+        no_banco_for_calc = (
+            data.get("no_banco")
+            or (data.get("filtros") or {}).get("no_banco")
+            or _BANCO_PICHINCHA
+        )
+        saldo_conciliado = saldo_pc - net_pend_pc  # fallback si la query falla
+        try:
+            import db as _db_canon
+            row_p = _db_canon.fetch_one(
+                "SELECT COALESCE(SUM(CASE WHEN t.documento IN ('CH','ND','DB','GS','PA') "
+                "                  THEN -t.importe ELSE t.importe END), 0) AS signed "
+                "FROM scintela.transacciones_bancarias t "
+                "WHERE t.no_banco = %(no_banco)s "
+                "  AND TRIM(COALESCE(t.stat, '')) <> '*' "
+                "  AND NOT EXISTS ("
+                "      SELECT 1 FROM scintela.banco_conciliacion_match m "
+                "       WHERE m.id_transaccion = t.id_transaccion "
+                "         AND m.deshecho_en IS NULL"
+                "  )",
+                {"no_banco": no_banco_for_calc},
+            ) or {}
+            pend_signed_canon = round(float(row_p.get("signed") or 0), 2)
+            saldo_conciliado = round(saldo_pc - pend_signed_canon, 2)
+        except Exception as _e_canon:
+            import logging
+            logging.getLogger("programa_core.conciliacion").exception(
+                "saldo_conciliado canonical falló, fallback a delta: %s", _e_canon
+            )
         # Saldo banco esperado = Saldo conciliado + net_pend_BCO
         # (al saldo conciliado le sumamos los movs banco que PC no tiene)
         saldo_bco_esperado = saldo_conciliado + net_pend_bco
