@@ -92,7 +92,7 @@ _SELECT_TXBANCO_BASE = """
         t.importe,
         t.prov,
         t.stat,
-        COALESCE(c.nombre, p.nombre_prov, '') AS contraparte
+        COALESCE(c.nombre, p.nombre, '') AS contraparte
       FROM scintela.transacciones_bancarias t
       LEFT JOIN scintela.cliente c
              ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(t.prov))
