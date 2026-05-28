@@ -922,6 +922,32 @@ def movimientos(no_banco):
     # marcarlas conciliadas el saldo no cambia. Es solo display).
     saldo_post_concil = round(saldo_banco - saldo_pre_concil, 2) if conciliado_filtro == "no" else saldo_banco
 
+    # TMT 2026-05-28 dueña: 'pongamos debajo del saldo del banco Saldo
+    # conciliado que tiene que sumar todo lo que tiene conciliado'. Suma
+    # signada (DE/AC/NC/TR +, CH/ND/DB/GS/PA −) sobre TODAS las tx con
+    # stat='*' del banco, sin filtros de fecha. Para Pichincha debería
+    # cuadrar con el "SALDO SISTEMA" del archivo de conciliación.
+    saldo_conciliado = 0.0
+    n_conciliado = 0
+    try:
+        import db as _db
+        row_concil = _db.fetch_one(
+            "SELECT COUNT(*) AS n, "
+            "COALESCE(SUM(CASE WHEN t.documento IN ('CH','ND','DB','GS','PA') "
+            "                  THEN -t.importe ELSE t.importe END), 0) AS signed "
+            "FROM scintela.transacciones_bancarias t "
+            "WHERE t.no_banco = %(no_banco)s "
+            "  AND TRIM(COALESCE(t.stat, '')) = '*'",
+            {"no_banco": no_banco},
+        ) or {}
+        n_conciliado = int(row_concil.get("n") or 0)
+        saldo_conciliado = round(float(row_concil.get("signed") or 0), 2)
+    except Exception as _e:
+        import logging
+        logging.getLogger("programa_core.bancos").exception(
+            "saldo_conciliado AGG falló: %s", _e
+        )
+
     hay_filtro = bool(desde or hasta or conciliado_filtro)
 
     return render_template(
@@ -940,6 +966,8 @@ def movimientos(no_banco):
         saldo_banco=saldo_banco,
         saldo_pre_concil=saldo_pre_concil,
         saldo_post_concil=saldo_post_concil,
+        saldo_conciliado=saldo_conciliado,
+        n_conciliado=n_conciliado,
     )
 
 
