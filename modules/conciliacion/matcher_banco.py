@@ -1035,11 +1035,20 @@ def matchear_extracto_banco(
 
     # Saldos.
     if movs_real:
-        # El "saldo final" del REAL es el saldo de la ÚLTIMA fila del xlsx
-        # (ordenadas por fecha desc cronológicamente en el extracto). Tomamos
-        # el saldo del registro de mayor fecha (y dentro de la misma fecha, el
-        # último según orden en el archivo).
-        ultimo = movs_real[-1]
+        # TMT 2026-05-28 dueña: el "Saldo banco según extracto" daba $0 con
+        # fecha 2026-03-18. Causa: movs_real[-1] caía sobre un histórico
+        # pendiente inyectado (saldo=0, fecha vieja). Los xlsx parseados
+        # SIEMPRE traen saldo > 0; filtramos por saldo != 0 y tomamos el
+        # de fecha máxima — saldo running real más reciente del banco.
+        try:
+            from decimal import Decimal as _Dec
+            reales_con_saldo = [m for m in movs_real if (m.saldo or 0) != _Dec("0")]
+        except Exception:
+            reales_con_saldo = [m for m in movs_real if (m.saldo or 0) != 0]
+        if reales_con_saldo:
+            ultimo = max(reales_con_saldo, key=lambda m: (m.fecha, id(m)))
+        else:
+            ultimo = movs_real[-1]  # fallback (no debería ocurrir en prod)
         res.saldo_real_final = ultimo.saldo
         res.saldo_real_fecha = ultimo.fecha
         # Buscar saldo BANCSIS al final del rango.
