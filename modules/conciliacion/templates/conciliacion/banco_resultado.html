@@ -25,6 +25,30 @@
 {% endmacro %}
 
 {% block content %}
+{# TMT 2026-05-28 dueña: 'no puedo imprimir!! necesito la lista de
+   todos los movimientos que me dan esto'. Print CSS: cuando se imprime
+   esta vista, ocultamos toda la UI interactiva (pareo, sugerencias,
+   tabs, etc.) y mostramos solo #print-card (el resumen) + #print-lista
+   (las dos listas de movs sin identificar). El usuario no necesita
+   navegar a otra ruta — printea desde este card. #}
+<style>
+  @media print {
+    body * { visibility: hidden; }
+    #conc-card, #conc-card *,
+    #print-lista, #print-lista * { visibility: visible; }
+    #conc-card { position: relative; box-shadow: none !important; border: 1px solid #cbd5e1 !important; }
+    #print-lista { display: block !important; padding: 8px 0; }
+    #print-lista table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    #print-lista th, #print-lista td { padding: 2px 4px; border-bottom: 1px dotted #cbd5e1; text-align: left; }
+    #print-lista th { border-bottom: 1px solid #475569; font-weight: 600; }
+    #print-lista .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #print-lista h3 { font-size: 12px; font-weight: 700; margin-top: 10px; margin-bottom: 4px; border-bottom: 2px solid #0f172a; padding-bottom: 2px; }
+    #print-lista .seccion-summary { font-size: 11px; font-weight: 600; margin: 6px 0 2px 0; display: flex; justify-content: space-between; }
+    .no-print, button { display: none !important; }
+    @page { margin: 12mm 10mm; }
+  }
+  #print-lista { display: none; }
+</style>
 <div class="page-shell page-shell--full max-w-7xl mx-auto px-4 py-5" id="conciliacion-banco-app">
 
   {# ───── Header + acciones ───── #}
@@ -302,9 +326,21 @@
           <div class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Diferencia</div>
           <div id="conc-diff" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.diff) }}</div>
         </div>
+        {# TMT 2026-05-28 dueña: 'no puedo imprimir!! necesito la lista
+           de todos los movimientos que me dan esto'. La hoja oficial
+           (T-account) no muestra el detalle de los movs banco que PC no
+           tiene — y eso es justo lo que produce el diff. Botón nuevo
+           que imprime el card + el desglose de real_only y bancsis_only
+           directamente desde esta vista. #}
+        <button type="button" onclick="window.print()"
+                class="self-center px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white text-xs whitespace-nowrap"
+                title="Imprime este card + la lista de movs no identificados de los dos lados">
+          🖨 Imprimir lista
+        </button>
         <a href="{{ url_for('conciliacion.imprimir_banco', no_banco=data.no_banco, desde=data.extracto_desde, hasta=data.extracto_hasta) }}"
            target="_blank"
-           class="self-center px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs whitespace-nowrap">
+           class="self-center px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs whitespace-nowrap"
+           title="Hoja oficial T-account">
           Imprimir hoja →
         </a>
       </div>
@@ -342,6 +378,128 @@
     </div>
   </div>
     </div>
+  </div>
+
+  {# TMT 2026-05-28 dueña: 'no puedo imprimir!! necesito la lista de todos
+     los movimientos que me dan esto'. Sección oculta en pantalla, visible
+     SOLO al imprimir. Lista completa de movs sin identificar de cada lado,
+     desglosada por crédito/débito — es lo que explica el diff. #}
+  <div id="print-lista">
+    <h3>Movimientos del banco no identificados en PC ({{ (data.real_only or [])|length }})</h3>
+
+    {% set ns_ro = namespace(tot_c=0.0, tot_d=0.0, n_c=0, n_d=0) %}
+    {% for r in (data.real_only or []) %}
+      {% if (r.tipo or '')|upper == 'C' %}
+        {% set ns_ro.tot_c = ns_ro.tot_c + (r.monto|float) %}
+        {% set ns_ro.n_c = ns_ro.n_c + 1 %}
+      {% else %}
+        {% set ns_ro.tot_d = ns_ro.tot_d + (r.monto|float) %}
+        {% set ns_ro.n_d = ns_ro.n_d + 1 %}
+      {% endif %}
+    {% endfor %}
+
+    <div class="seccion-summary">
+      <span>+ Depósitos / créditos banco no identificados ({{ ns_ro.n_c }})</span>
+      <span class="num">+ $ {{ '{:,.2f}'.format(ns_ro.tot_c) }}</span>
+    </div>
+    {% if ns_ro.n_c > 0 %}
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Doc</th><th>Concepto</th><th class="num">Importe</th></tr>
+      </thead>
+      <tbody>
+        {% for r in (data.real_only or []) %}{% if (r.tipo or '')|upper == 'C' %}
+        <tr>
+          <td>{{ r.fecha or '' }}</td>
+          <td>{{ r.documento or '' }}</td>
+          <td>{{ (r.concepto or '')[:80] }}</td>
+          <td class="num">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="seccion-summary">
+      <span>− Cargos / débitos banco no identificados ({{ ns_ro.n_d }})</span>
+      <span class="num">− $ {{ '{:,.2f}'.format(ns_ro.tot_d) }}</span>
+    </div>
+    {% if ns_ro.n_d > 0 %}
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Doc</th><th>Concepto</th><th class="num">Importe</th></tr>
+      </thead>
+      <tbody>
+        {% for r in (data.real_only or []) %}{% if (r.tipo or '')|upper != 'C' %}
+        <tr>
+          <td>{{ r.fecha or '' }}</td>
+          <td>{{ r.documento or '' }}</td>
+          <td>{{ (r.concepto or '')[:80] }}</td>
+          <td class="num">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <h3>Movimientos del programa sin contrapartida en banco ({{ (data.bancsis_only or [])|length }})</h3>
+    {% set ns_bo = namespace(tot_c=0.0, tot_d=0.0, n_c=0, n_d=0) %}
+    {% for b in (data.bancsis_only or []) %}
+      {% set _doc = (b.documento or '')|upper %}
+      {% if _doc in ('DE','TR','XX','NC','IN','AC') %}
+        {% set ns_bo.tot_c = ns_bo.tot_c + (b.importe|float) %}
+        {% set ns_bo.n_c = ns_bo.n_c + 1 %}
+      {% else %}
+        {% set ns_bo.tot_d = ns_bo.tot_d + (b.importe|float) %}
+        {% set ns_bo.n_d = ns_bo.n_d + 1 %}
+      {% endif %}
+    {% endfor %}
+
+    <div class="seccion-summary">
+      <span>+ Créditos PC sin contrapartida banco ({{ ns_bo.n_c }})</span>
+      <span class="num">+ $ {{ '{:,.2f}'.format(ns_bo.tot_c) }}</span>
+    </div>
+    {% if ns_bo.n_c > 0 %}
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Doc</th><th>N°</th><th>Concepto</th><th class="num">Importe</th></tr>
+      </thead>
+      <tbody>
+        {% for b in (data.bancsis_only or []) %}{% set _doc = (b.documento or '')|upper %}{% if _doc in ('DE','TR','XX','NC','IN','AC') %}
+        <tr>
+          <td>{{ b.fecha or '' }}</td>
+          <td>{{ b.documento or '' }}</td>
+          <td>{{ b.numreferencia or '' }}</td>
+          <td>{{ (b.concepto or '')[:80] }}</td>
+          <td class="num">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="seccion-summary">
+      <span>− Débitos PC sin contrapartida banco ({{ ns_bo.n_d }})</span>
+      <span class="num">− $ {{ '{:,.2f}'.format(ns_bo.tot_d) }}</span>
+    </div>
+    {% if ns_bo.n_d > 0 %}
+    <table>
+      <thead>
+        <tr><th>Fecha</th><th>Doc</th><th>N°</th><th>Concepto</th><th class="num">Importe</th></tr>
+      </thead>
+      <tbody>
+        {% for b in (data.bancsis_only or []) %}{% set _doc = (b.documento or '')|upper %}{% if _doc not in ('DE','TR','XX','NC','IN','AC') %}
+        <tr>
+          <td>{{ b.fecha or '' }}</td>
+          <td>{{ b.documento or '' }}</td>
+          <td>{{ b.numreferencia or '' }}</td>
+          <td>{{ (b.concepto or '')[:80] }}</td>
+          <td class="num">{{ '{:,.2f}'.format(b.importe|float) }}</td>
+        </tr>
+        {% endif %}{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </div>
   {% endif %}
 
