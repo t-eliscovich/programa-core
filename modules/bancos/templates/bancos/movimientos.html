@@ -34,13 +34,13 @@
     <div class="no-print flex items-center gap-2">
       {# TMT 2026-05-20 — botón Excel (pedido dueña). Reusa los mismos
          filtros (desde/hasta) que el listado. #}
-      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco, desde=desde, hasta=hasta, export='xlsx') }}"
+      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco, desde=desde, hasta=hasta, conciliado=conciliado_filtro or none, cliente=cliente_filtro or none, monto=monto_filtro_raw or none, doc_num=doc_num_filtro or none, export='xlsx') }}"
          class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5"
          title="Descargar Excel con los movimientos del período">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
         Excel
       </a>
-      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco, desde=desde, hasta=hasta, export='csv') }}"
+      <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco, desde=desde, hasta=hasta, conciliado=conciliado_filtro or none, cliente=cliente_filtro or none, monto=monto_filtro_raw or none, doc_num=doc_num_filtro or none, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
         CSV
       </a>
@@ -69,8 +69,28 @@
         <option value="no" {% if request.args.get('conciliado') == 'no' %}selected{% endif %}>No (sin conciliar)</option>
       </select>
     </div>
+    {# TMT 2026-05-28 dueña: filtros para encontrar cheques de cliente
+       específicos por nombre/código, monto exacto, o número de doc. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cliente (cheque)</label>
+      <input type="text" name="cliente" value="{{ cliente_filtro or '' }}"
+             placeholder="nombre o código"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm w-44">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Monto</label>
+      <input type="text" name="monto" inputmode="decimal" value="{{ monto_filtro_raw or '' }}"
+             placeholder="exacto"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm w-28 text-right tabular-nums">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Nº doc.</label>
+      <input type="text" name="doc_num" value="{{ doc_num_filtro or '' }}"
+             placeholder="numreferencia"
+             class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm w-32">
+    </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
-    {% if desde or hasta or request.args.get('conciliado') %}
+    {% if hay_filtro %}
       <a href="{{ url_for('bancos.movimientos', no_banco=banco.no_banco) }}" class="text-sm text-slate-500 hover:underline">Limpiar</a>
     {% endif %}
   </form>

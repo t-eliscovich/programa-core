@@ -2690,6 +2690,37 @@ def banco_deshacer_todos():
             """,
             {"usuario": usuario[:50]},
         )
+
+    # TMT 2026-05-28 dueña: 'los desconciliamos despues y siguen apareciendo
+    # como conciliados'. El dual-write seteaba stat='*' en
+    # transacciones_bancarias al conciliar; este bulk también lo limpia para
+    # los movs que tienen un match PC deshacho (= PC fue quien seteó el '*').
+    # Idempotente: corre sobre activos + históricos. Sin tocar los que NUNCA
+    # pasaron por un match PC (esos vienen marcados desde dBase y mandan).
+    _stat_params: dict = {}
+    _stat_where = ""
+    if no_banco is not None:
+        _stat_where = " AND t.no_banco = %(no_banco)s "
+        _stat_params["no_banco"] = no_banco
+    _db.execute(
+        f"""
+        UPDATE scintela.transacciones_bancarias t
+           SET stat = NULL
+         WHERE TRIM(COALESCE(t.stat, '')) = '*'
+           {_stat_where}
+           AND EXISTS (
+               SELECT 1 FROM scintela.banco_conciliacion_match m
+                WHERE m.id_transaccion = t.id_transaccion
+                  AND m.deshecho_en IS NOT NULL
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM scintela.banco_conciliacion_match m2
+                WHERE m2.id_transaccion = t.id_transaccion
+                  AND m2.deshecho_en IS NULL
+           )
+        """,
+        _stat_params,
+    )
     if n:
         flash(
             f"Deshechos {n} matches PC. dBase (stat='*') queda como única "

@@ -231,35 +231,11 @@
   </div>
   {% endif %}
 
-  {# Últimos extractos procesados — vista agregada por día (matches confirmados) #}
-  {% if ultimos %}
-  <div class="mt-4">
-    <details class="text-sm">
-      <summary class="cursor-pointer text-xs uppercase tracking-wider text-slate-500 hover:text-slate-700 select-none">
-        Resumen por día (matches confirmados)
-      </summary>
-      <div class="mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-        {% for u in ultimos %}
-        <div class="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
-          <div class="text-slate-700 dark:text-slate-300">
-            <span class="font-mono text-xs text-slate-500">{{ u.dia_proceso }}</span>
-            &nbsp;·&nbsp; Banco {{ u.no_banco }}
-            {% if u.desde_fecha %}
-              &nbsp;·&nbsp; <span class="text-slate-500">extracto {{ u.desde_fecha }} → {{ u.hasta_fecha }}</span>
-            {% endif %}
-          </div>
-          <div class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ u.n_movs }} conciliados</div>
-        </div>
-        {% endfor %}
-      </div>
-    </details>
-  </div>
-  {% endif %}
-
-  {# Link a historial #}
-  <div class="mt-6 text-xs text-slate-500">
-    <a href="{{ url_for('conciliacion.banco_historial') }}" class="hover:underline">Ver historial de conciliaciones (deshacer matches) →</a>
-  </div>
+  {# TMT 2026-05-28 dueña: 'Esto tambien no me esta siendo util. borremos
+     todo el historial, solo va a importar lo que hayamos traido de dbase'.
+     Sacamos el panel "Resumen por día (matches confirmados)" y el link a
+     /banco/historial. El deshacer queda accesible desde la vista de
+     conciliación si hace falta. #}
 
 </div>
 {% endblock %}

@@ -668,11 +668,23 @@ def movimientos(no_banco):
     # TMT 2026-05-26 dueña: filtro por estado de conciliación bancaria.
     # Valores: '' (todos) | 'si' (solo conciliados) | 'no' (solo sin conciliar).
     conciliado_filtro = (request.args.get("conciliado") or "").strip().lower()
+    # TMT 2026-05-28 dueña: filtros adicionales para cheques de cliente.
+    cliente_filtro = (request.args.get("cliente") or "").strip()
+    doc_num_filtro = (request.args.get("doc_num") or "").strip()
+    monto_raw = (request.args.get("monto") or "").strip()
+    monto_filtro = parse_monto(monto_raw) if monto_raw else None
     try:
         banco = queries.banco_info(no_banco)
         if not banco:
             abort(404)
-        filas = queries.movimientos(no_banco, desde, hasta)
+        filas = queries.movimientos(
+            no_banco,
+            desde,
+            hasta,
+            cliente=cliente_filtro or None,
+            monto=float(monto_filtro) if monto_filtro is not None else None,
+            doc_num=doc_num_filtro or None,
+        )
         # Aplicar filtro post-fetch (las filas vienen con r["conciliacion_id"]
         # gracias al enrichment en queries.movimientos).
         if conciliado_filtro == "si":
@@ -789,74 +801,11 @@ def movimientos(no_banco):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # TMT 2026-05-20 — Agrupar depósitos en lotes. Pedido dueña: "un dia
-    # deposito 25 cheques, como mi ultimo movimiento. En el banco yo
-    # quiero ver un renglon que diga 1000 USD depositados, 25 cheques. y
-    # luego si abro un + (...) vea el detalle, cheque x por x monto etc.".
-    #
-    # TMT 2026-05-27 dueña v2: "cuanto deposito muchos cheques juntos si
-    # quiero que se agrupe el lote. pero si lo deposito mas tarde no se
-    # tiene que agrupar, tiene que aparecer por separado".
-    # Antes agrupábamos por `fecha` (día) → si depositaba 25 cheques al
-    # mediodía y luego 1 más a la tarde, los 26 se agrupaban juntos.
-    # Ahora agrupamos por VENTANA DE TIEMPO de `fecha_crea` (timestamp
-    # del INSERT). Un `depositar_lote()` mete N cheques en la misma tx →
-    # fecha_crea cae en el mismo segundo o muy cerca. Un depósito
-    # posterior está separado por minutos o más. Threshold: 2 minutos
-    # entre cheques consecutivos del mismo lote.
-    items: list[dict] = []
-    i = 0
-    _VENTANA_LOTE_SEG = 120  # 2 min entre cheques consecutivos del mismo lote
-    while i < len(filas):
-        f = filas[i]
-        doc = (f.get("documento") or "").strip().upper()
-        if doc == "DE":
-            j = i
-            grupo = []
-            prev_fc = None
-            while (
-                j < len(filas)
-                and (filas[j].get("documento") or "").strip().upper() == "DE"
-                and filas[j].get("fecha") == f.get("fecha")
-            ):
-                fc = filas[j].get("fecha_crea")
-                if prev_fc is not None and fc is not None:
-                    try:
-                        delta = abs((prev_fc - fc).total_seconds())
-                    except Exception:
-                        delta = _VENTANA_LOTE_SEG + 1
-                    if delta > _VENTANA_LOTE_SEG:
-                        break  # gap > ventana → cheque pertenece a otro depósito
-                grupo.append(filas[j])
-                prev_fc = fc
-                j += 1
-            if len(grupo) >= 2:
-                total_lote = sum(float(g.get("importe") or 0) for g in grupo)
-                # El saldo del lote es el del PRIMER row (más nuevo en el
-                # orden DESC) — refleja el saldo después de TODO el lote.
-                saldo_lote = grupo[0].get("saldo")
-                # TMT 2026-05-27 dueña: 'en el lote, si todos estan
-                # conciliados, poner si. Si por ejemplo son algunos, poner
-                # 25/26'. Calculamos n_conc del lote para el badge.
-                n_conc_lote = sum(1 for g in grupo if g.get("conciliacion_id"))
-                items.append(
-                    {
-                        "_kind": "lote",
-                        "fecha": f.get("fecha"),
-                        "n_cheques": len(grupo),
-                        "n_conciliados": n_conc_lote,
-                        "todos_conciliados": (n_conc_lote == len(grupo)),
-                        "importe_total": total_lote,
-                        "saldo": saldo_lote,
-                        "lote_key": f"lote-{grupo[0].get('id_transaccion')}",
-                        "children": grupo,
-                    }
-                )
-                i = j
-                continue
-        # Default: fila individual
-        items.append({"_kind": "row", **f})
-        i += 1
+    # TMT 2026-05-28 dueña v3: 'los cheques en el banco haz que aparezcan
+    # linea por linea, no agrupados'. Revertimos el agrupamiento por lote
+    # (v1 2026-05-20, v2 2026-05-27 ventana fecha_crea). Cada DE va como
+    # row individual. Si más adelante quisiera volver al lote, está en git.
+    items: list[dict] = [{"_kind": "row", **f} for f in filas]
 
     # TMT 2026-05-27 dueña: el total tiene que ser EL MISMO en /bancos y
     # /conciliacion/banco. Antes sumaba solo filas visibles (LIMIT 500) y
@@ -884,6 +833,24 @@ def movimientos(no_banco):
         if hasta:
             where_filt.append("t.fecha <= %(hasta)s::date")
             params["hasta"] = hasta
+        if monto_filtro is not None:
+            where_filt.append("t.importe = %(monto)s::numeric")
+            params["monto"] = float(monto_filtro)
+        if doc_num_filtro:
+            where_filt.append(
+                "UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s"
+            )
+            params["doc_like"] = f"%{doc_num_filtro.upper()}%"
+        if cliente_filtro:
+            where_filt.append(
+                "EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt "
+                "JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque "
+                "LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli "
+                "WHERE cxt.id_transaccion = t.id_transaccion "
+                "AND (UPPER(COALESCE(cli.nombre,'')) LIKE %(cli_like)s "
+                "OR UPPER(COALESCE(c.codigo_cli,'')) LIKE %(cli_like)s))"
+            )
+            params["cli_like"] = f"%{cliente_filtro.upper()}%"
         if conciliado_filtro == "no":
             # Excluir conciliados PC + conciliados dBase (stat='*')
             where_filt.append("TRIM(COALESCE(t.stat,'')) <> '*'")
@@ -958,7 +925,10 @@ def movimientos(no_banco):
             "saldo_conciliado AGG falló: %s", _e
         )
 
-    hay_filtro = bool(desde or hasta or conciliado_filtro)
+    hay_filtro = bool(
+        desde or hasta or conciliado_filtro
+        or cliente_filtro or doc_num_filtro or monto_filtro is not None
+    )
 
     return render_template(
         "bancos/movimientos.html",
@@ -973,6 +943,9 @@ def movimientos(no_banco):
         n_filtrado=n_filtrado,
         hay_filtro=hay_filtro,
         conciliado_filtro=conciliado_filtro,
+        cliente_filtro=cliente_filtro,
+        doc_num_filtro=doc_num_filtro,
+        monto_filtro_raw=monto_raw,
         saldo_banco=saldo_banco,
         saldo_pre_concil=saldo_pre_concil,
         saldo_post_concil=saldo_post_concil,

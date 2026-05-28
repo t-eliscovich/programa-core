@@ -114,6 +114,9 @@ def movimientos(
     desde: str | None = None,
     hasta: str | None = None,
     limite: int = 500,
+    cliente: str | None = None,
+    monto: float | None = None,
+    doc_num: str | None = None,
 ) -> list[dict]:
     """Lista movimientos del banco. Incluye linkage de reversos via
     mov_doble: si la fila tiene un mov_doble asociado (sea como origen o
@@ -122,7 +125,17 @@ def movimientos(
     (si esta fila es un reverso) / id_reverso (si fue reversada). El
     template usa esto para mostrar quién hizo la op y un badge claro de
     "reverso de #N" o "reversado por #N". TMT 2026-05-13.
+
+    TMT 2026-05-28 dueña: filtros opcionales adicionales —
+      - cliente: busca substring en el cliente emisor del cheque
+        (vía chequextransaccion → cheque.codigo_cli → cliente.nombre).
+        Naturalmente acota a filas DE (depósitos de cheques de cliente).
+      - monto: importe exacto (match contra t.importe).
+      - doc_num: substring en t.numreferencia (número del cheque emitido
+        o del documento que el banco asignó).
     """
+    cliente_like = f"%{(cliente or '').strip().upper()}%" if cliente else None
+    doc_like = f"%{(doc_num or '').strip().upper()}%" if doc_num else None
     rows = db.fetch_all(
         """
         SELECT
@@ -144,10 +157,29 @@ def movimientos(
         WHERE t.no_banco = %(no_banco)s
           AND (%(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
+          AND (%(monto)s::numeric IS NULL OR t.importe = %(monto)s::numeric)
+          AND (%(doc_like)s IS NULL OR UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s)
+          AND (%(cliente_like)s IS NULL OR EXISTS (
+                SELECT 1
+                  FROM scintela.chequextransaccion cxt
+                  JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque
+                  LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
+                 WHERE cxt.id_transaccion = t.id_transaccion
+                   AND (UPPER(COALESCE(cli.nombre,'')) LIKE %(cliente_like)s
+                        OR UPPER(COALESCE(c.codigo_cli,'')) LIKE %(cliente_like)s)
+          ))
         ORDER BY t.fecha DESC, t.id_transaccion DESC
         LIMIT %(limite)s
         """,
-        {"no_banco": no_banco, "desde": desde or None, "hasta": hasta or None, "limite": limite},
+        {
+            "no_banco": no_banco,
+            "desde": desde or None,
+            "hasta": hasta or None,
+            "limite": limite,
+            "monto": monto,
+            "doc_like": doc_like,
+            "cliente_like": cliente_like,
+        },
     )
     # Enriquecer con info de conciliación bancaria (defensivo: si la tabla
     # no existe o falla la query, seguimos con rows sin flag).

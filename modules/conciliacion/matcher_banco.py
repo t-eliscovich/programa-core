@@ -1591,7 +1591,27 @@ def romper_match(
     deshacer el match había que revertir esa marca también — sino la
     histórica queda "fantasma-conciliada" y no vuelve a la lista de
     pendientes, generando drift sistemático.
+
+    TMT 2026-05-28 dueña v2: 'estos dos depositos hicimos una conciliacion,
+    los desconciliamos despues y siguen apareciendo como conciliados'. Bug
+    extra: el dual-write también setea `transacciones_bancarias.stat='*'`
+    (línea ~1228). Deshacer NO lo revertía → la fila quedaba con stat='*'
+    y /bancos la mostraba conciliada vía el fallback dBase (queries.py
+    línea ~187). Fix: limpiar stat='*' al deshacer, sólo si no queda otro
+    match activo apuntando a la misma id_transaccion (defensa por si un mov
+    tiene 2 matches PC apuntándolo — improbable pero no imposible).
     """
+    # 0) Antes de marcar deshecho, agarrar la id_transaccion del match
+    # para poder revertir stat='*' después.
+    row_match = None
+    try:
+        row_match = db.fetch_one(
+            "SELECT id_transaccion FROM scintela.banco_conciliacion_match WHERE id = %s",
+            (int(match_id),),
+        )
+    except Exception:
+        pass
+
     # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
     try:
         db.execute(
@@ -1609,7 +1629,7 @@ def romper_match(
 
     # 2) Soft-undo o hard-delete del match propio.
     if _tiene_migration_47():
-        return db.execute(
+        n = db.execute(
             """
             UPDATE scintela.banco_conciliacion_match
                SET deshecho_en = CURRENT_TIMESTAMP,
@@ -1619,11 +1639,35 @@ def romper_match(
             """,
             (usuario[:50], int(match_id)),
         )
-    # Fallback pre-migration: hard delete
-    return db.execute(
-        "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
-        (int(match_id),),
-    )
+    else:
+        n = db.execute(
+            "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
+            (int(match_id),),
+        )
+
+    # 3) Revertir stat='*' en la fila PC si no queda otro match activo
+    # apuntándola. El matcher excluye stat='*' del pool de conciliables, así
+    # que al PC-conciliar la fila NO tenía '*' antes → limpiarlo es seguro.
+    id_tx = row_match.get("id_transaccion") if row_match else None
+    if id_tx:
+        try:
+            db.execute(
+                """
+                UPDATE scintela.transacciones_bancarias t
+                   SET stat = NULL
+                 WHERE t.id_transaccion = %s
+                   AND TRIM(COALESCE(t.stat, '')) = '*'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM scintela.banco_conciliacion_match m
+                        WHERE m.id_transaccion = t.id_transaccion
+                          AND m.deshecho_en IS NULL
+                   )
+                """,
+                (int(id_tx),),
+            )
+        except Exception:
+            pass  # fail-soft: no romper el deshacer si falla el revert de stat
+    return n
 
 
 def historial(
