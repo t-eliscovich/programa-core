@@ -186,19 +186,22 @@ def _movs(
             cheques = _cheques_de_transaccion(int(id_t))
             if cheques:
                 # Expandimos: cada cheque como su propia línea.
+                # NB: no_cheque y codigo_cli pueden ser int/None — siempre cast a str.
                 for c in cheques:
+                    no_ch = c.get("no_cheque")
+                    banco_txt = str(c.get("banco") or "").strip()
                     out.append({
                         "id_transaccion": id_t,
                         "id_cheque": c.get("id_cheque"),
                         "fecha": r.get("fecha"),
                         "documento": "CH",  # mostramos como cheque individual
-                        "concepto": f"Cheque {c.get('no_cheque') or '—'}"
-                                     + (f" · {c.get('banco') or ''}" if c.get("banco") else ""),
-                        "numero": (c.get("no_cheque") or "").strip() if c.get("no_cheque") else "",
+                        "concepto": "Cheque " + (str(no_ch) if no_ch else "—")
+                                     + (f" · {banco_txt}" if banco_txt else ""),
+                        "numero": str(no_ch).strip() if no_ch else "",
                         "importe": _fmt(c.get("importe")),
-                        "prov": (c.get("codigo_cli") or "").strip(),
-                        "contraparte": (c.get("cliente_nombre") or "").strip(),
-                        "stat": (r.get("stat") or "").strip(),
+                        "prov": str(c.get("codigo_cli") or "").strip(),
+                        "contraparte": str(c.get("cliente_nombre") or "").strip(),
+                        "stat": str(r.get("stat") or "").strip(),
                         "es_cheque_de_deposito": True,
                         "deposito_concepto": concepto,
                     })
