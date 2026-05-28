@@ -127,7 +127,7 @@
                     {% endfor %}
                   </select>
                 </label>
-                <label class="flex flex-col">
+                <label class="flex flex-col cheque-num-wrap">
                   <span class="text-xs text-slate-600 cheque-num-label">N° cheque <span class="text-red-500 cheque-num-req">*</span></span>
                   <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
                          class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
@@ -995,28 +995,37 @@
     const bancoSel = bloque.querySelector('.cheque-banco');
     const numInp = bloque.querySelector('.cheque-num');
     const numReqStar = bloque.querySelector('.cheque-num-req');
+    const numWrap = bloque.querySelector('.cheque-num-wrap');
     const fechadInp = bloque.querySelector('.cheque-fechad');
     const fechadWrap = bloque.querySelector('.cheque-fechad-wrap');
     const statSel = bloque.querySelector('.cheque-stat');
     if (!bancoSel) return;
     const v = bancoSel.value;
     const esDeposito = DEPOSITO_BANCOS.includes(v);
-    const esEfectivo = v === '99';
-    // N° cheque: not required para depósitos (90/91/95/97/99)
+    // TMT 2026-05-28 dueña: 'Si es un deposito (90/91/95/97/99) obligatoriamente
+    // fecha de hoy y no necesita numero de cheque. Solo abrir N° cheque y fecha
+    // en las otras opciones'. Antes era opcional + readonly — ahora ocultamos
+    // los dos inputs por completo para depósitos.
+    // N° cheque: oculto + opcional para depósitos.
     if (numInp) {
       numInp.required = !esDeposito;
+      // Limpiamos el valor cuando ocultamos para que no quede colgado un valor
+      // de un cambio de banco previo (si vinía un N° y la dueña cambia a 90).
+      if (esDeposito) numInp.value = '';
       if (numReqStar) numReqStar.classList.toggle('hidden', esDeposito);
     }
-    // Fecha A depositar: forzar HOY para depósitos
-    if (fechadInp && esDeposito) {
-      fechadInp.value = HOY_ISO;
-      fechadInp.readOnly = true;
-    } else if (fechadInp) {
-      fechadInp.readOnly = false;
+    if (numWrap) numWrap.classList.toggle('hidden', esDeposito);
+    // Fecha A depositar: forzar HOY y ocultar para depósitos.
+    if (fechadInp) {
+      if (esDeposito) {
+        fechadInp.value = HOY_ISO;
+        fechadInp.readOnly = true;
+      } else {
+        fechadInp.readOnly = false;
+      }
     }
-    // Efectivo: ocultar fechad (cobro inmediato)
     if (fechadWrap) {
-      fechadWrap.classList.toggle('hidden', esEfectivo);
+      fechadWrap.classList.toggle('hidden', esDeposito);
     }
     // Estado: para 90/91/99 → B (cobrado); para 97 → Z (anticipo); resto deja
     if (statSel && (v === '90' || v === '91' || v === '99')) {
