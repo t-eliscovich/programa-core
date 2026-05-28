@@ -63,13 +63,62 @@
           <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}</td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">se mueve con movs nuevos</td>
         </tr>
+        {# TMT 2026-05-28 dueña: 'ver detalle que se abra en la misma pantalla'.
+           El link a /bancos/10 nos sacaba del flow de conciliación. Ahora
+           es un <details>/<summary> inline que expande las filas dentro
+           del mismo card, sin perder el contexto del saldo a conciliar. #}
         <tr class="border-b border-slate-100 dark:border-slate-800">
           <td class="px-5 py-1.5 text-slate-500">− Pendientes PC ({{ saldo_pc_actual.n_pendientes_conciliar or 0 }})</td>
           <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">{% if saldo_pc_actual.pendientes_conciliar_neto is defined %}{{ '{:+,.2f}'.format(saldo_pc_actual.pendientes_conciliar_neto) }}{% else %}—{% endif %}</td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">
-            <a href="{{ url_for('bancos.movimientos', no_banco=10, conciliado='no') }}" class="text-sky-600 hover:underline">ver detalle</a>
+            {% if saldo_pc_actual.pendientes_conciliar_rows %}
+              <a href="#" onclick="event.preventDefault(); var d=document.getElementById('pend-pc-detalle'); d.open=!d.open; return false;" class="text-sky-600 hover:underline">ver detalle</a>
+            {% else %}
+              <span class="text-slate-300">sin pendientes</span>
+            {% endif %}
           </td>
         </tr>
+        {% if saldo_pc_actual.pendientes_conciliar_rows %}
+        <tr class="border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20">
+          <td colspan="3" class="px-5 py-0">
+            <details id="pend-pc-detalle" class="text-xs">
+              <summary class="sr-only">Detalle pendientes PC</summary>
+              <div class="py-2">
+                <table class="w-full">
+                  <thead class="text-[10px] uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th class="px-2 py-1 text-left font-normal">Fecha</th>
+                      <th class="px-2 py-1 text-left font-normal">Doc</th>
+                      <th class="px-2 py-1 text-left font-normal">N°</th>
+                      <th class="px-2 py-1 text-left font-normal">Concepto</th>
+                      <th class="px-2 py-1 text-right font-normal">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for p in saldo_pc_actual.pendientes_conciliar_rows %}
+                    <tr class="border-t border-slate-100/70 dark:border-slate-800/70">
+                      <td class="px-2 py-1 text-slate-500 whitespace-nowrap">{{ p.fecha }}</td>
+                      <td class="px-2 py-1 text-slate-500">{{ p.documento or '' }}</td>
+                      <td class="px-2 py-1 text-slate-500 font-mono">{{ p.no_cheque or '' }}</td>
+                      <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ p.concepto or '' }}">{{ (p.concepto or '')[:50] }}</td>
+                      <td class="px-2 py-1 text-right font-mono {% if (p.importe_signed or 0) < 0 %}text-rose-600{% else %}text-emerald-700{% endif %}">
+                        {{ '{:+,.2f}'.format(p.importe_signed or 0) }}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                {% if saldo_pc_actual.n_pendientes_conciliar and saldo_pc_actual.n_pendientes_conciliar > saldo_pc_actual.pendientes_conciliar_rows|length %}
+                <div class="px-2 py-1 text-[10px] text-slate-400">
+                  Mostrando {{ saldo_pc_actual.pendientes_conciliar_rows|length }} de {{ saldo_pc_actual.n_pendientes_conciliar }} ·
+                  <a href="{{ url_for('bancos.movimientos', no_banco=10, conciliado='no') }}" class="hover:underline">ver todos en bancos →</a>
+                </div>
+                {% endif %}
+              </div>
+            </details>
+          </td>
+        </tr>
+        {% endif %}
         <tr class="border-b border-slate-100 dark:border-slate-800">
           <td class="px-5 py-1.5 text-slate-500">= Saldo conciliado live</td>
           <td class="px-5 py-1.5 text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}</td>

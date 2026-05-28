@@ -1040,13 +1040,27 @@ def matchear_extracto_banco(
         # pendiente inyectado (saldo=0, fecha vieja). Los xlsx parseados
         # SIEMPRE traen saldo > 0; filtramos por saldo != 0 y tomamos el
         # de fecha máxima — saldo running real más reciente del banco.
+        # TMT 2026-05-28 dueña: 'el ultimo balance del banco 2,797,649.59
+        # porque entonces este Saldo banco según extracto al 2026-05-28
+        # 2,796,057.90'. Cuando hay varias filas con la MISMA fecha máxima
+        # (típico: muchos movs el día actual), el tiebreak por `id(m)` era
+        # memory address — random — y caía sobre una fila intermedia. Fix:
+        # usar el ÍNDICE de aparición en movs_real (el parser preserva el
+        # orden del xlsx, que es running-balance), así max() devuelve la
+        # ÚLTIMA fila del archivo dentro de la fecha máxima.
         try:
             from decimal import Decimal as _Dec
-            reales_con_saldo = [m for m in movs_real if (m.saldo or 0) != _Dec("0")]
+            reales_con_saldo = [
+                (idx, m) for idx, m in enumerate(movs_real)
+                if (m.saldo or 0) != _Dec("0")
+            ]
         except Exception:
-            reales_con_saldo = [m for m in movs_real if (m.saldo or 0) != 0]
+            reales_con_saldo = [
+                (idx, m) for idx, m in enumerate(movs_real)
+                if (m.saldo or 0) != 0
+            ]
         if reales_con_saldo:
-            ultimo = max(reales_con_saldo, key=lambda m: (m.fecha, id(m)))
+            _, ultimo = max(reales_con_saldo, key=lambda p: (p[1].fecha, p[0]))
         else:
             ultimo = movs_real[-1]  # fallback (no debería ocurrir en prod)
         res.saldo_real_final = ultimo.saldo

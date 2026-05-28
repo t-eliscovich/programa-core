@@ -862,6 +862,32 @@ def hub():
                 - saldo_pc_actual["pendientes_conciliar_neto"],
                 2,
             )
+            # TMT 2026-05-28 dueña: 'ver detalle que se abra en la misma pantalla'.
+            # Listamos los movs PC sin conciliar para mostrarlos inline dentro del
+            # card. Esto evita navegar a /bancos/10 y perder el contexto. Trae
+            # los más recientes primero, limitamos a 30 para no inflar la página.
+            try:
+                saldo_pc_actual["pendientes_conciliar_rows"] = _db.fetch_all(
+                    """
+                    SELECT t.id_transaccion, t.fecha, t.documento, t.no_cheque,
+                           t.concepto, t.importe,
+                           CASE WHEN t.documento IN ('CH','ND','DB','GS','PA')
+                                THEN -t.importe ELSE t.importe END AS importe_signed
+                      FROM scintela.transacciones_bancarias t
+                     WHERE t.no_banco = %(no_banco)s
+                       AND TRIM(COALESCE(t.stat, '')) <> '*'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = t.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                     ORDER BY t.fecha DESC, t.id_transaccion DESC
+                     LIMIT 30
+                    """,
+                    {"no_banco": _BANCO_PICHINCHA},
+                ) or []
+            except Exception:
+                saldo_pc_actual["pendientes_conciliar_rows"] = []
         except Exception as _e:
             import logging
             logging.getLogger("programa_core.conciliacion").exception(
