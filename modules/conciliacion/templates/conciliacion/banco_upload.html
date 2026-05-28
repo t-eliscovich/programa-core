@@ -20,91 +20,73 @@
      con saldo PC AL DÍA DE HOY (último mov) — distinto al "saldo al
      último conciliado dBase" que muestra arriba. Útil para comparar
      contra el saldo banco físico del xlsx. #}
-  {# TMT 2026-05-28 dueña: 'ponelo lindo'. Card limpio, neutro slate, con
-     flujo visual saldo_pc = conciliado + histo = banco esperado.
-     Operadores grandes entre tarjetas para leerlo como ecuación. #}
+  {# TMT 2026-05-28 dueña: 'HORRIBLE!! ARREGLALO Y LOS NUMEROS SIGUEN MAL'.
+     Rediseño con jerarquía clara:
+     - HERO: Saldo a conciliar (snapshot estable, NO se mueve con movs)
+     - Tabla referencial debajo: saldo libros live, pendientes, saldo banco
+     - "Ver historial" → snapshots de cómo evolucionó por conciliaciones. #}
   {% if saldo_pc_actual and saldo_pc_actual.saldo is not none %}
   <section class="mb-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
     <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Saldo PC al día de hoy</h2>
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria · Pichincha</h2>
       <span class="text-[11px] text-slate-400">
-        último mov registrado{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}
+        último mov{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}
       </span>
     </header>
 
-    <div class="px-5 py-4 flex items-stretch gap-2">
-      {# Saldo PC al cierre del día anterior — snapshot estable, no se mueve
-         con movs nuevos del día ni con conciliar/desconciliar (sólo cambia
-         al cerrar el próximo día). TMT 2026-05-28 #}
-      {% if saldo_pc_actual.saldo_cierre_ayer is defined and saldo_pc_actual.saldo_cierre_ayer is not none %}
-      <div class="flex-1 px-3 py-1.5 rounded-lg bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
-        <div class="text-[10px] uppercase tracking-wider text-slate-500">Saldo a conciliar (cierre {{ saldo_pc_actual.fecha_cierre_ayer or 'ayer' }})</div>
-        <div class="text-2xl font-bold text-slate-700 dark:text-slate-200 tabular-nums leading-tight mt-0.5">
-          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_cierre_ayer) }}
-        </div>
-        <div class="text-[10px] text-slate-500 mt-0.5">snapshot · no se mueve con movs del día</div>
+    {# HERO — Saldo a conciliar (snapshot estable) #}
+    <div class="px-6 py-5 bg-gradient-to-br from-emerald-50/50 to-emerald-50/0 dark:from-emerald-900/10">
+      <div class="flex items-baseline justify-between mb-1">
+        <span class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Saldo a conciliar</span>
+        <span class="text-[11px] text-slate-500">
+          {% if saldo_pc_actual.snapshot_evento %}
+            último cambio: {{ saldo_pc_actual.snapshot_evento }} · {{ saldo_pc_actual.snapshot_fecha }}
+          {% else %}
+            cierre {{ saldo_pc_actual.fecha_cierre_ayer or '—' }} · snapshot
+          {% endif %}
+        </span>
       </div>
-
-      <div class="flex items-center px-1 text-slate-300 text-xl font-light select-none">→</div>
-      {% endif %}
-
-      {# Saldo PC libros (live, dinámico) #}
-      <div class="flex-1">
-        <div class="text-[10px] uppercase tracking-wider text-slate-400">Saldo PC libros (live)</div>
-        <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-tight mt-0.5">
-          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}
-        </div>
-        <div class="text-[10px] text-slate-400 mt-0.5">+ movs nuevos de hoy</div>
+      <div class="text-4xl font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums leading-none">
+        ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_a_conciliar_estable or saldo_pc_actual.saldo_cierre_ayer or saldo_pc_actual.saldo) }}
       </div>
-
-      <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">=</div>
-
-      {# Saldo conciliado — highlight verde sutil #}
-      <div class="flex-1 px-3 py-1.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-900/15 border border-emerald-200/60 dark:border-emerald-800/40">
-        <div class="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Saldo conciliado</div>
-        <div class="text-2xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight mt-0.5">
-          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}
-        </div>
-        <div class="text-[10px] text-emerald-700/70 dark:text-emerald-400/80 mt-0.5">
-          si concilio los
-          <a href="{{ url_for('bancos.movimientos', no_banco=10, conciliado='no') }}"
-             class="underline decoration-dotted hover:text-emerald-800">{{ saldo_pc_actual.n_pendientes_conciliar or 0 }} movs pendientes</a>
-        </div>
-      </div>
-
-      <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">+</div>
-
-      {# Pendientes históricos #}
-      <div class="flex-1">
-        <div class="text-[10px] uppercase tracking-wider text-slate-400">Pendientes históricos</div>
-        <div class="text-2xl font-semibold text-slate-700 dark:text-slate-300 tabular-nums leading-tight mt-0.5">
-          {% if saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}
-        </div>
-        <div class="text-[10px] text-slate-400 mt-0.5">{{ saldo_pc_actual.n_pendientes or 0 }} movs sin conciliar</div>
-      </div>
-
-      <div class="flex items-center px-1 text-slate-300 text-2xl font-light select-none">=</div>
-
-      {# Saldo banco esperado #}
-      <div class="flex-1">
-        <div class="text-[10px] uppercase tracking-wider text-slate-400">Saldo banco esperado</div>
-        <div class="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-tight mt-0.5">
-          ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo) }}
-        </div>
-        <div class="text-[10px] text-slate-400 mt-0.5">lo que el banco debería tener</div>
+      <div class="text-[11px] text-slate-500 mt-1.5">
+        Solo cambia cuando hacés una conciliación · movs nuevos no lo mueven ·
+        <a href="{{ url_for('conciliacion.cambios_timeline') }}" class="text-sky-600 hover:underline">ver historial →</a>
       </div>
     </div>
 
-    <footer class="px-5 py-2 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between gap-3">
-      <span>
-        <strong>Saldo conciliado</strong> = PC si conciliara los pendientes ·
-        <strong>Saldo banco esperado</strong> = PC + pendientes históricos del banco
-      </span>
-      <a href="{{ url_for('conciliacion.cambios_timeline') }}"
-         class="text-sky-600 hover:underline whitespace-nowrap font-medium">
-        Ver cambios →
-      </a>
-    </footer>
+    {# Tabla referencial — números live #}
+    <table class="w-full text-sm tabular-nums border-t border-slate-100 dark:border-slate-800">
+      <tbody>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <td class="px-5 py-1.5 text-slate-500">Saldo PC libros (live)</td>
+          <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}</td>
+          <td class="px-5 py-1.5 text-[11px] text-slate-400">se mueve con movs nuevos</td>
+        </tr>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <td class="px-5 py-1.5 text-slate-500">− Pendientes PC ({{ saldo_pc_actual.n_pendientes_conciliar or 0 }})</td>
+          <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">{% if saldo_pc_actual.pendientes_conciliar_neto is defined %}{{ '{:+,.2f}'.format(saldo_pc_actual.pendientes_conciliar_neto) }}{% else %}—{% endif %}</td>
+          <td class="px-5 py-1.5 text-[11px] text-slate-400">
+            <a href="{{ url_for('bancos.movimientos', no_banco=10, conciliado='no') }}" class="text-sky-600 hover:underline">ver detalle</a>
+          </td>
+        </tr>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <td class="px-5 py-1.5 text-slate-500">= Saldo conciliado live</td>
+          <td class="px-5 py-1.5 text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}</td>
+          <td class="px-5 py-1.5 text-[11px] text-slate-400">si conciliara todo ahora</td>
+        </tr>
+        <tr class="border-b border-slate-100 dark:border-slate-800">
+          <td class="px-5 py-1.5 text-slate-500">+ Pendientes históricos banco ({{ saldo_pc_actual.n_pendientes or 0 }})</td>
+          <td class="px-5 py-1.5 text-right font-mono text-slate-700 dark:text-slate-300">{% if saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}</td>
+          <td class="px-5 py-1.5 text-[11px] text-slate-400">banco confirmó, PC no tiene</td>
+        </tr>
+        <tr>
+          <td class="px-5 py-2 text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</td>
+          <td class="px-5 py-2 text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(saldo_pc_actual.saldo_banco_esperado or saldo_pc_actual.saldo) }}</td>
+          <td class="px-5 py-2 text-[11px] text-slate-400">lo que el banco debería tener</td>
+        </tr>
+      </tbody>
+    </table>
   </section>
   {% endif %}
 

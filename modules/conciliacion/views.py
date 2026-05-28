@@ -772,11 +772,23 @@ def hub():
                 "fecha": row_actual.get("fecha"),
                 "id_transaccion": row_actual.get("id_transaccion"),
             }
-            # TMT 2026-05-28 dueña: 'si synqueamos, PC deberia guardar saldo
-            # antes de conciliacion'. Snapshot estable = saldo PC al cierre
-            # del último día calendario PREVIO a hoy. No se mueve con nuevos
-            # movs creados hoy, ni con conciliaciones/desconciliaciones —
-            # solo el cierre del próximo día lo va a actualizar.
+            # TMT 2026-05-28 dueña: 'cuando yo hago una conciliacion que se
+            # actualicce, si no no'. El "Saldo a conciliar" estable lo
+            # tomamos del último snapshot guardado por evento de conciliación
+            # (banco_saldo_conc_snapshot). Si no hay ningún snapshot todavía,
+            # fallback al saldo de cierre del día anterior.
+            try:
+                from modules.conciliacion import saldo_snapshot as _ss
+                ult_snap = _ss.ultimo(_BANCO_PICHINCHA)
+                if ult_snap and ult_snap.get("saldo_conc") is not None:
+                    saldo_pc_actual["saldo_a_conciliar_estable"] = float(ult_snap["saldo_conc"])
+                    saldo_pc_actual["snapshot_evento"] = ult_snap.get("evento_tipo")
+                    saldo_pc_actual["snapshot_fecha"] = ult_snap.get("creado_en")
+                else:
+                    saldo_pc_actual["saldo_a_conciliar_estable"] = None
+            except Exception:
+                saldo_pc_actual["saldo_a_conciliar_estable"] = None
+            # Snapshot de cierre ayer como fallback.
             try:
                 row_cierre_ayer = _db.fetch_one(
                     """
@@ -2569,6 +2581,13 @@ def banco_deshacer():
     )
     if n:
         flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")
+        try:
+            from modules.conciliacion import saldo_snapshot as _ss
+            _ss.snapshot(_BANCO_PICHINCHA, "match_deshecho",
+                         evento_ref=match_id, usuario=_usuario_actual(),
+                         descripcion=f"deshacer match #{match_id}")
+        except Exception:
+            pass
     else:
         flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
     return redirect(url_for("conciliacion.banco_historial"))
@@ -2651,6 +2670,13 @@ def banco_deshacer_todos():
             f"fuente de conciliados. Se ven con 'Mostrar deshechos'.",
             "ok",
         )
+        try:
+            from modules.conciliacion import saldo_snapshot as _ss
+            _ss.snapshot(no_banco or _BANCO_PICHINCHA, "deshacer_todos",
+                         evento_ref=f"n={n}", usuario=usuario,
+                         descripcion=f"bulk deshacer {n} matches")
+        except Exception:
+            pass
     else:
         flash("No había matches activos para deshacer.", "warn")
     # Mantener filtros si vinieron en el form
