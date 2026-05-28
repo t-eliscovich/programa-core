@@ -318,12 +318,38 @@
                       title="Cancelar (Esc)">&#10005;</button>
             </span>
           </td>
-          <td class="px-2 py-1.5" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+          <td class="px-2 py-1.5 editable-cell" style="white-space: nowrap;"
+              data-id="{{ f.id_factura }}" data-campo="fecha"
+              data-valor="{{ f.fecha.isoformat() if f.fecha else '' }}">
+            <span class="ec-view inline-flex items-center gap-1.5">
+              <span class="ec-display">{{ f.fecha | fecha_es }}</span>
+              <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
+                      title="Editar fecha">&#9998;</button>
+            </span>
+            <span class="ec-edit hidden inline-flex items-center gap-1">
+              <input type="date" class="ec-input w-32 border rounded px-1 py-0.5 text-xs font-mono"
+                     value="{{ f.fecha.isoformat() if f.fecha else '' }}">
+              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
+              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
+            </span>
+          </td>
           <td class="px-2 py-1.5 truncate" title="{{ f.codigo_cli }}">
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}"
                class="font-mono hover:text-blue-600">{{ f.codigo_cli }}</a>
           </td>
-          <td class="px-2 py-1.5 text-right text-mono">{{ f.kg | kg_es }}</td>
+          <td class="px-2 py-1.5 text-right text-mono editable-cell"
+              data-id="{{ f.id_factura }}" data-campo="kg" data-valor="{{ f.kg or 0 }}">
+            <span class="ec-view inline-flex items-center gap-1.5">
+              <span class="ec-display">{{ f.kg | kg_es }}</span>
+              <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
+                      title="Editar Kg">&#9998;</button>
+            </span>
+            <span class="ec-edit hidden inline-flex items-center gap-1 justify-end">
+              <input type="text" inputmode="decimal" class="ec-input w-20 border rounded px-1 py-0.5 text-xs text-right font-mono" value="{{ f.kg or '' }}">
+              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
+              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
+            </span>
+          </td>
           {# Kg AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_kg = f.asinfo_kg if f.asinfo_kg is defined else none %}
           {% set _ai_dkg = f.asinfo_diff_kg if f.asinfo_diff_kg is defined else none %}
@@ -339,7 +365,19 @@
               <span class="text-rose-600 dark:text-rose-400 font-semibold">{{ _ai_kg | kg_es }}</span>
             {% endif %}
           </td>
-          <td class="px-2 py-1.5 text-right text-mono">{{ f.importe | money_es }}</td>
+          <td class="px-2 py-1.5 text-right text-mono editable-cell"
+              data-id="{{ f.id_factura }}" data-campo="importe" data-valor="{{ f.importe or 0 }}">
+            <span class="ec-view inline-flex items-center gap-1.5">
+              <span class="ec-display">{{ f.importe | money_es }}</span>
+              <button type="button" class="ec-edit-btn text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded px-1 py-0.5 leading-none"
+                      title="Editar Importe (recalcula saldo)">&#9998;</button>
+            </span>
+            <span class="ec-edit hidden inline-flex items-center gap-1 justify-end">
+              <input type="text" inputmode="decimal" class="ec-input w-24 border rounded px-1 py-0.5 text-xs text-right font-mono" value="{{ f.importe or '' }}">
+              <button type="button" class="ec-save text-sm text-emerald-600 hover:text-emerald-800 font-bold px-1" title="Guardar (Enter)">&#10003;</button>
+              <button type="button" class="ec-cancel text-sm text-slate-500 hover:text-rose-600 font-bold px-1" title="Cancelar (Esc)">&#10005;</button>
+            </span>
+          </td>
           {# USD AI = valor absoluto de Asinfo. Rojo si difiere de PC. Gris si match. #}
           {% set _ai_usd = f.asinfo_usd if f.asinfo_usd is defined else none %}
           {% set _ai_dusd = f.asinfo_diff_usd if f.asinfo_diff_usd is defined else none %}
@@ -546,6 +584,84 @@
       e.preventDefault();
       toView(cell);
     }
+  });
+
+  // ─── Editable cells genéricas (importe / kg / fecha) ──────────────────
+  // Patrón idéntico al numf-cell pero genérico via data-campo.
+  // POST /facturas/<id>/campo {campo, valor} → JSON {ok, valor_nuevo}.
+  function fmtMoney(n) {
+    return (n || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  function fmtFechaES(iso) {
+    if (!iso) return '';
+    const p = iso.split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+  }
+  function ecToView(cell, valorNuevo) {
+    if (valorNuevo != null) {
+      cell.dataset.valor = String(valorNuevo);
+      const disp = cell.querySelector('.ec-display');
+      if (disp) {
+        const campo = cell.dataset.campo;
+        if (campo === 'fecha') disp.textContent = fmtFechaES(String(valorNuevo));
+        else if (campo === 'importe') disp.textContent = fmtMoney(parseFloat(valorNuevo));
+        else if (campo === 'kg') disp.textContent = fmtMoney(parseFloat(valorNuevo));
+        else disp.textContent = String(valorNuevo);
+      }
+    }
+    cell.querySelector('.ec-view').classList.remove('hidden');
+    cell.querySelector('.ec-edit').classList.add('hidden');
+  }
+  function ecToEdit(cell) {
+    cell.querySelector('.ec-view').classList.add('hidden');
+    cell.querySelector('.ec-edit').classList.remove('hidden');
+    const inp = cell.querySelector('.ec-input');
+    inp.value = cell.dataset.valor || '';
+    inp.focus();
+    if (inp.type !== 'date') inp.select();
+  }
+  async function ecGuardar(cell) {
+    const id = cell.dataset.id;
+    const campo = cell.dataset.campo;
+    const inp = cell.querySelector('.ec-input');
+    const valor = (inp.value || '').trim();
+    if (!valor) { inp.classList.add('border-rose-500'); return; }
+    inp.classList.remove('border-rose-500');
+    inp.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('campo', campo);
+      fd.append('valor', valor);
+      fd.append('csrf_token', CSRF);
+      const resp = await fetch(`/facturas/${id}/campo`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      });
+      const data = await resp.json().catch(() => ({ok: false, error: 'Respuesta inválida.'}));
+      if (!resp.ok || !data.ok) {
+        alert(data.error || 'No se pudo guardar.');
+        inp.disabled = false; inp.focus(); return;
+      }
+      ecToView(cell, data.valor_nuevo);
+      // Si fue importe, recargar la página para que se actualice el saldo
+      // (más simple que actualizar la celda saldo inline).
+      if (campo === 'importe') setTimeout(() => location.reload(), 400);
+    } catch (e) {
+      alert('Error de red: ' + e.message); inp.disabled = false;
+    }
+  }
+  document.addEventListener('click', (e) => {
+    const cell = e.target.closest('.editable-cell');
+    if (!cell) return;
+    if (e.target.classList.contains('ec-edit-btn')) { e.preventDefault(); ecToEdit(cell); }
+    else if (e.target.classList.contains('ec-save')) { e.preventDefault(); ecGuardar(cell); }
+    else if (e.target.classList.contains('ec-cancel')) { e.preventDefault(); ecToView(cell); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!e.target.classList || !e.target.classList.contains('ec-input')) return;
+    const cell = e.target.closest('.editable-cell');
+    if (!cell) return;
+    if (e.key === 'Enter') { e.preventDefault(); ecGuardar(cell); }
+    else if (e.key === 'Escape') { e.preventDefault(); ecToView(cell); }
   });
 })();
 </script>

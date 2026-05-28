@@ -402,6 +402,125 @@ def editar_numf(
     }
 
 
+def editar_campo(
+    id_factura: int,
+    campo: str,
+    valor,
+    *,
+    usuario: str = "web",
+) -> dict:
+    """Edición inline de un campo puntual desde el listado /facturas.
+
+    Tamara 2026-05-28: 'dejame editar los montos en facturas'. La regla
+    Ecuador (anular y reemitir para tocar importe/fecha/cliente/kg) sigue
+    aplicando para reemisiones formales, pero acá habilitamos correcciones
+    de typo desde el listado sin pasar por anulación.
+
+    Campos soportados:
+      - 'numf'    -> usa editar_numf() (compatibilidad)
+      - 'importe' -> actualiza importe + recomputa saldo/stat
+      - 'kg'      -> actualiza kg (sin tocar nada más)
+      - 'fecha'   -> actualiza fecha (asegura período abierto del nuevo Y del viejo)
+
+    No editamos: cliente, condic (eso va por editar()).
+    Anuladas: ValueError.
+
+    Devuelve dict con los valores actualizados.
+    """
+    if campo not in ("numf", "importe", "kg", "fecha"):
+        raise ValueError(f"Campo no soportado: {campo}")
+
+    if campo == "numf":
+        # Delegar a editar_numf (mismo contrato)
+        return editar_numf(id_factura, int(valor), usuario=usuario)
+
+    fact = db.fetch_one(
+        "SELECT id_factura, fecha, importe, abono, kg, stat "
+        "FROM scintela.factura WHERE id_factura = %s",
+        (id_factura,),
+    )
+    if not fact:
+        raise ValueError("Factura inexistente.")
+    if (fact.get("stat") or "").upper() in STATS_ANULADAS:
+        raise ValueError("Factura anulada/eliminada — no se puede editar.")
+
+    asegurar_fecha_abierta(fact["fecha"])
+
+    if campo == "importe":
+        try:
+            nuevo = float(valor)
+        except (TypeError, ValueError):
+            raise ValueError("Importe inválido.")
+        if nuevo <= 0:
+            raise ValueError("El importe debe ser > 0.")
+        abono = float(fact.get("abono") or 0)
+        if abono > nuevo + 0.01:
+            raise ValueError(
+                f"El nuevo importe ({nuevo:.2f}) es menor al abono ya cobrado "
+                f"({abono:.2f}). Anulá la factura para corregir."
+            )
+        saldo_nuevo = round(nuevo - abono, 2)
+        stat_nuevo = _stat_desde_saldo(nuevo, abono)
+        db.execute(
+            "UPDATE scintela.factura "
+            "SET importe = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+            "WHERE id_factura = %s",
+            (round(nuevo, 2), saldo_nuevo, stat_nuevo, usuario, id_factura),
+        )
+        return {
+            "id_factura": id_factura,
+            "campo": "importe",
+            "valor_nuevo": round(nuevo, 2),
+            "saldo_nuevo": saldo_nuevo,
+            "stat_nuevo": stat_nuevo,
+        }
+
+    if campo == "kg":
+        try:
+            nuevo = float(valor)
+        except (TypeError, ValueError):
+            raise ValueError("Kg inválido.")
+        # kg puede ser negativo (devolución) — no validamos signo.
+        db.execute(
+            "UPDATE scintela.factura "
+            "SET kg = %s, usuario_modifica = %s "
+            "WHERE id_factura = %s",
+            (round(nuevo, 2), usuario, id_factura),
+        )
+        return {
+            "id_factura": id_factura,
+            "campo": "kg",
+            "valor_nuevo": round(nuevo, 2),
+        }
+
+    if campo == "fecha":
+        # Aceptar 'YYYY-MM-DD' o 'DD/MM/YYYY'
+        from datetime import datetime as _dt
+        s = str(valor or "").strip()
+        nueva_fecha = None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                nueva_fecha = _dt.strptime(s, fmt).date()
+                break
+            except ValueError:
+                continue
+        if nueva_fecha is None:
+            raise ValueError(f"Fecha inválida: {s} (use YYYY-MM-DD o DD/MM/YYYY).")
+        # Validar período abierto del nuevo período también.
+        asegurar_fecha_abierta(nueva_fecha)
+        db.execute(
+            "UPDATE scintela.factura "
+            "SET fecha = %s, usuario_modifica = %s "
+            "WHERE id_factura = %s",
+            (nueva_fecha, usuario, id_factura),
+        )
+        return {
+            "id_factura": id_factura,
+            "campo": "fecha",
+            "valor_nuevo": nueva_fecha.isoformat(),
+        }
+
+
 def por_id(id_factura: int) -> dict | None:
     """Cabecera de factura por id_factura interno O por numf.
 

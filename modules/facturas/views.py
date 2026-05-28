@@ -294,6 +294,44 @@ def editar(id_factura: int):
     return render_template("facturas/editar.html", fact=fact, form=form, errores=errores)
 
 
+@facturas_bp.route("/facturas/<int:id_factura>/campo", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def editar_campo(id_factura: int):
+    """Edición inline genérica de un campo (importe/kg/fecha) desde /facturas.
+    Dueña 2026-05-28: 'dejame editar los montos en facturas'.
+
+    Body: ``campo=<importe|kg|fecha|numf>``, ``valor=<str>``.
+    Devuelve JSON con el campo actualizado.
+    """
+    campo = (request.form.get("campo") or "").strip().lower()
+    valor = (request.form.get("valor") or "").strip()
+    if campo not in ("importe", "kg", "fecha", "numf"):
+        return jsonify(ok=False, error=f"Campo no soportado: {campo}"), 400
+    if not valor:
+        return jsonify(ok=False, error="Valor vacío."), 400
+
+    # Para campos numéricos, normalizar coma decimal ES → punto.
+    if campo in ("importe", "kg"):
+        valor_norm = valor.replace(".", "").replace(",", ".") if "," in valor and valor.count(",") == 1 else valor
+    else:
+        valor_norm = valor
+
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        res = queries.editar_campo(id_factura, campo, valor_norm, usuario=usuario)
+        return jsonify(ok=True, **{k: v for k, v in res.items()
+                                    if k != "id_factura"})
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger("programa_core.facturas").exception(
+            "facturas.editar_campo falló id=%s campo=%s", id_factura, campo
+        )
+        return jsonify(ok=False, error=humanize(e)), 500
+
+
 @facturas_bp.route("/facturas/<int:id_factura>/numf", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.editar")
