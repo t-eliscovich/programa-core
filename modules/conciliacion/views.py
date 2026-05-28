@@ -1508,13 +1508,18 @@ def hub():
         saldo_bco = float(data.get("saldo_real_final") or 0)
         net_pend_pc = pc_pend_cred - pc_pend_deb       # signed
         net_pend_bco = bco_pend_cred - bco_pend_deb    # signed
-        # Saldo banco esperado = Saldo PC - net_pend_PC + net_pend_BCO
-        # (le quito al PC los movs que el banco no tiene; le sumo los
-        # movs banco que PC no tiene)
-        saldo_bco_esperado = saldo_pc - net_pend_pc + net_pend_bco
+        # TMT 2026-05-28 dueña: 'conciliacion con diferencia tiene que
+        # empezar con el saldo conciliado'. Restamos del saldo PC los
+        # movs que PC tiene pero el banco no — eso es el "post-match"
+        # balance, lo que PC reflejaría si conciliaramos todo lo de hoy.
+        saldo_conciliado = saldo_pc - net_pend_pc
+        # Saldo banco esperado = Saldo conciliado + net_pend_BCO
+        # (al saldo conciliado le sumamos los movs banco que PC no tiene)
+        saldo_bco_esperado = saldo_conciliado + net_pend_bco
         diff = round(saldo_bco - saldo_bco_esperado, 2)
         resumen = {
             "saldo_pc": round(saldo_pc, 2),
+            "saldo_conciliado": round(saldo_conciliado, 2),
             "saldo_bco_extracto": round(saldo_bco, 2),
             "saldo_bco_esperado": round(saldo_bco_esperado, 2),
             "pc_pend_cred": round(pc_pend_cred, 2),
