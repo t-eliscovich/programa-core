@@ -283,25 +283,25 @@
        pendientes = final banco hoy'. Es el balance clásico de
        conciliación: Saldo PC + ajustes = Saldo banco físico. #}
   {% if resumen and resumen.saldo_pc is defined %}
-  <div class="mb-5 rounded-lg border-2 {% if resumen.cuadra %}border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20{% else %}border-amber-400 bg-amber-50 dark:bg-amber-900/20{% endif %} overflow-hidden">
-    <div class="px-4 py-3 flex items-center justify-between {% if resumen.cuadra %}bg-emerald-100 dark:bg-emerald-900/40{% else %}bg-amber-100 dark:bg-amber-900/40{% endif %}">
+  {# TMT 2026-05-28 dueña: 'deja de ponerme todo en amarillo. horrible'.
+     Paleta neutra slate; el saldo banco lo edita en vivo con un input
+     y se recalcula la diferencia desde el front, persistiendo en
+     localStorage por banco. #}
+  <div id="conc-card" class="mb-5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <div class="px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
       <div>
-        <div class="text-base font-bold {% if resumen.cuadra %}text-emerald-900 dark:text-emerald-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
-          {% if resumen.cuadra %}✓ Conciliación cuadra{% else %}⚠ Conciliación con diferencia{% endif %}
+        <div class="text-base font-bold text-slate-900 dark:text-slate-100">
+          <span id="conc-titulo">{% if resumen.cuadra %}Conciliación cuadra{% else %}Conciliación con diferencia{% endif %}</span>
         </div>
-        <div class="text-xs {% if resumen.cuadra %}text-emerald-700 dark:text-emerald-300{% else %}text-amber-700 dark:text-amber-300{% endif %} mt-0.5">
-          Saldo PC + ajustes pendientes = Saldo físico del banco
+        <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          Saldo conciliado + ajustes pendientes = Saldo físico del banco
         </div>
       </div>
       <div class="text-right flex items-start gap-3">
         <div>
-          <div class="text-[10px] uppercase tracking-wider {% if resumen.cuadra %}text-emerald-700 dark:text-emerald-300{% else %}text-amber-700 dark:text-amber-300{% endif %}">Diferencia</div>
-          <div class="text-2xl font-bold tabular-nums {% if resumen.cuadra %}text-emerald-900 dark:text-emerald-100{% else %}text-amber-900 dark:text-amber-100{% endif %}">
-            {% if resumen.cuadra %}$ 0.00{% else %}$ {{ '{:,.2f}'.format(resumen.diff) }}{% endif %}
-          </div>
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Diferencia</div>
+          <div id="conc-diff" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.diff) }}</div>
         </div>
-        {# TMT 2026-05-28 dueña pidió hoja imprimible con el formato
-           T-account (saldo inicial + conciliados +/- pendientes = final). #}
         <a href="{{ url_for('conciliacion.imprimir_banco', no_banco=data.no_banco, desde=data.extracto_desde, hasta=data.extracto_hasta) }}"
            target="_blank"
            class="self-center px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs whitespace-nowrap">
@@ -309,15 +309,12 @@
         </a>
       </div>
     </div>
-    <div class="px-4 py-4 bg-white dark:bg-slate-900">
+    <div class="px-4 py-4">
       <table class="w-full text-sm tabular-nums">
         <tbody>
-          {# TMT 2026-05-28 dueña: 'conciliacion con diferencia tiene que
-             empezar con el saldo conciliado'. Mismo número que /bancos/10
-             y /conciliacion/banco: saldo PC menos pendientes históricos. #}
           <tr class="border-b border-slate-200 dark:border-slate-700">
             <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo conciliado al {{ resumen.fecha_pc or '—' }}</td>
-            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_conciliado) }}</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" data-conc-saldo>$ {{ '{:,.2f}'.format(resumen.saldo_conciliado) }}</td>
           </tr>
           <tr class="text-[11px] text-slate-500 dark:text-slate-400">
             <td class="pb-1.5 pl-4" colspan="2">
@@ -326,27 +323,81 @@
           </tr>
           <tr class="text-xs text-slate-600 dark:text-slate-400">
             <td class="py-1 pl-4">+ Depósitos en banco no identificados en PC</td>
-            <td class="py-1 text-right">+ $ {{ '{:,.2f}'.format(resumen.bco_pend_cred) }}</td>
+            <td class="py-1 text-right">+ $ <span data-conc-bco-cred>{{ '{:,.2f}'.format(resumen.bco_pend_cred) }}</span></td>
           </tr>
           <tr class="text-xs text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
             <td class="py-1 pl-4">− Cargos del banco no identificados en PC</td>
-            <td class="py-1 text-right">− $ {{ '{:,.2f}'.format(resumen.bco_pend_deb) }}</td>
+            <td class="py-1 text-right">− $ <span data-conc-bco-deb>{{ '{:,.2f}'.format(resumen.bco_pend_deb) }}</span></td>
           </tr>
           <tr class="border-b-2 border-slate-300 dark:border-slate-700">
             <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">= Saldo banco esperado</td>
-            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_bco_esperado) }}</td>
+            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" id="conc-esperado">$ {{ '{:,.2f}'.format(resumen.saldo_bco_esperado) }}</td>
           </tr>
           <tr>
-            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo banco según extracto al {{ resumen.fecha_bco or '—' }}</td>
-            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_bco_extracto) }}</td>
+            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">
+              Saldo banco real (según extracto / pantalla del banco)
+              <span class="text-[11px] text-slate-400 ml-1">— editable</span>
+            </td>
+            <td class="py-1.5 text-right">
+              <span class="text-slate-400 mr-1">$</span>
+              <input id="conc-saldo-banco-input"
+                     type="text"
+                     inputmode="decimal"
+                     value="{{ '{:,.2f}'.format(resumen.saldo_bco_extracto) }}"
+                     class="w-36 px-2 py-1 text-right tabular-nums font-bold rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400">
+            </td>
           </tr>
         </tbody>
       </table>
-      {% if not resumen.cuadra %}
-      <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">
-        La diferencia significa que hay movimientos que no están reflejados ni en PC ni como pendientes. Conciliar los movs sueltos hasta que la diferencia llegue a $0.
+      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Si el extracto está vacío o desactualizado, escribí el saldo que ves en la pantalla del banco. La diferencia se recalcula en vivo.
       </p>
-      {% endif %}
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    const NO_BANCO = "{{ data.no_banco }}";
+    const STORAGE_KEY = `conc:banco:${NO_BANCO}:saldo_real`;
+    const inputEl = document.getElementById("conc-saldo-banco-input");
+    const diffEl  = document.getElementById("conc-diff");
+    const tituloEl = document.getElementById("conc-titulo");
+    const esperado = parseFloat("{{ resumen.saldo_bco_esperado }}");
+
+    // Persistencia local: si ya guardó un saldo manual, lo precarga.
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved && !isNaN(parseFloat(saved))) {
+        inputEl.value = parseFloat(saved).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      }
+    } catch (e) {}
+
+    function fmt(n) {
+      return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function recalc() {
+      // Acepta "$ 2,757,104.43" o "2757104.43"
+      const raw = inputEl.value.replace(/[^\d.\-]/g, "");
+      const saldoBanco = parseFloat(raw) || 0;
+      const diff = saldoBanco - esperado;
+      diffEl.textContent = "$ " + fmt(diff);
+      const cuadra = Math.abs(diff) < 1.0;
+      tituloEl.textContent = cuadra ? "Conciliación cuadra" : "Conciliación con diferencia";
+      try { localStorage.setItem(STORAGE_KEY, String(saldoBanco)); } catch (e) {}
+    }
+
+    inputEl.addEventListener("input", recalc);
+    inputEl.addEventListener("blur", () => {
+      const raw = inputEl.value.replace(/[^\d.\-]/g, "");
+      const v = parseFloat(raw);
+      if (!isNaN(v)) inputEl.value = fmt(v);
+    });
+    // Recalc inicial — por si el localStorage difería del server.
+    recalc();
+  })();
+  </script>
+  {% if false %}{# bloque viejo de "diferencia significa..." removido por pedido (yellow) #}{% endif %}
     </div>
   </div>
   {% endif %}
