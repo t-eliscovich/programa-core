@@ -792,6 +792,39 @@ def hub():
             saldo_pc_actual["saldo_banco_esperado"] = round(
                 saldo_pc_actual["saldo"] + saldo_pc_actual["neto_pendientes"], 2
             )
+            # TMT 2026-05-28 dueña: agregar "Saldo si concilio todo" =
+            # saldo PC − sum_signed(movs PC sin conciliar). Para Pichincha
+            # debería dar ~$2.557K (=  "SALDO SISTEMA" del archivo Excel).
+            # Distinto a "saldo_banco_esperado" que suma históricos AÚN no
+            # en transacciones_bancarias.
+            row_pend_hoy = _db.fetch_one(
+                """
+                SELECT
+                  COUNT(*) AS n,
+                  COALESCE(SUM(CASE WHEN t.documento IN ('CH','ND','DB','GS','PA')
+                                    THEN -t.importe ELSE t.importe END), 0) AS signed
+                  FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = %(no_banco)s
+                   AND TRIM(COALESCE(t.stat, '')) <> '*'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM scintela.banco_conciliacion_match m
+                        WHERE m.id_transaccion = t.id_transaccion
+                          AND m.deshecho_en IS NULL
+                   )
+                """,
+                {"no_banco": _BANCO_PICHINCHA},
+            ) or {}
+            saldo_pc_actual["n_pendientes_conciliar"] = int(
+                row_pend_hoy.get("n") or 0
+            )
+            saldo_pc_actual["pendientes_conciliar_neto"] = round(
+                float(row_pend_hoy.get("signed") or 0), 2
+            )
+            saldo_pc_actual["saldo_si_concilio_todo"] = round(
+                saldo_pc_actual["saldo"]
+                - saldo_pc_actual["pendientes_conciliar_neto"],
+                2,
+            )
         except Exception as _e:
             import logging
             logging.getLogger("programa_core.conciliacion").exception(

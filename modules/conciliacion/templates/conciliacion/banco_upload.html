@@ -87,10 +87,18 @@
       <span class="text-xs uppercase tracking-wider text-sky-800 dark:text-sky-300 font-semibold">Saldo PC al día de hoy</span>
       <span class="text-[11px] text-sky-700 dark:text-sky-400">último mov registrado{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}</span>
     </div>
-    <div class="grid grid-cols-3 gap-4">
+    <div class="grid grid-cols-4 gap-4">
       <div>
         <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">Saldo PC</div>
         <div class="text-2xl font-bold text-sky-900 dark:text-sky-100 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo) }}</div>
+      </div>
+      {# TMT 2026-05-28 dueña: agregar columna 'Saldo conciliado' (= saldo
+         si concilio los movs pendientes de hoy). Para Pichincha debería
+         dar ~$2.557K — cuadra con el "SALDO SISTEMA" del archivo Excel. #}
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">= Saldo conciliado</div>
+        <div class="text-2xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">$ {{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}</div>
+        <div class="text-[10px] text-sky-600 dark:text-sky-400">si concilio los {{ saldo_pc_actual.n_pendientes_conciliar or 0 }} movs pendientes</div>
       </div>
       <div>
         <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-400">+ Pendientes históricos</div>
@@ -103,7 +111,8 @@
       </div>
     </div>
     <p class="text-[11px] text-sky-700 dark:text-sky-300 mt-2">
-      Saldo PC actual + lo que PC tiene cargado pero el banco aún no acreditó/cobró = lo que el banco físico debería tener.
+      "Saldo conciliado" = lo que PC tendría si conciliara hoy los movs pendientes.
+      "Saldo banco esperado" = saldo PC + pendientes históricos (lo que el banco físico debería tener).
     </p>
   </div>
   {% endif %}
