@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block titulo %}Sync STAT desde xlsx{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">
+    Alinear conciliados con dBase (xlsx)
+  </h1>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+    Subí el <code class="px-1 rounded bg-slate-100 dark:bg-slate-800">PICHINCH.xlsx</code>
+    exportado desde el DBF. El backend matchea por (fecha, doc, importe, saldo)
+    y deja <code>scintela.transacciones_bancarias.stat</code> EXACTAMENTE como
+    el xlsx: '*' para los conciliados de dBase, NULL para el resto. Idempotente.
+  </p>
+
+  <form id="statForm"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4"
+        enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block">
+      <span class="text-xs text-slate-500">Archivo .xlsx exportado del DBF</span>
+      <input type="file" name="xlsx" accept=".xlsx" required
+             class="mt-1 block text-sm text-slate-700 dark:text-slate-300">
+    </label>
+
+    <label class="block">
+      <span class="text-xs text-slate-500">no_banco</span>
+      <input type="number" name="no_banco" value="10" min="1" required
+             class="mt-1 block w-24 rounded border px-2 py-1 text-sm">
+      <span class="block text-[11px] text-slate-400 mt-1">10 = Pichincha · 32 = Internacional</span>
+    </label>
+
+    <button type="submit"
+            class="text-sm px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white">
+      Alinear stat con xlsx
+    </button>
+  </form>
+
+  <pre id="output"
+       class="mt-4 hidden whitespace-pre-wrap text-xs bg-slate-900 text-emerald-200 p-4 rounded h-96 overflow-auto"></pre>
+
+  <script>
+    document.getElementById('statForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const pre = document.getElementById('output');
+      pre.classList.remove('hidden');
+      pre.textContent = 'Subiendo y procesando…\n';
+      const fd = new FormData(form);
+      const resp = await fetch("{{ url_for('admin_dbase.stat_xlsx_run') }}", {
+        method: 'POST',
+        body: fd,
+        headers: {'X-CSRFToken': fd.get('csrf_token')},
+      });
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        pre.textContent += dec.decode(value);
+        pre.scrollTop = pre.scrollHeight;
+      }
+    });
+  </script>
+</div>
+{% endblock %}

@@ -203,3 +203,166 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         yield line("OK ✓")
     else:
         yield line("FALLO ✗ — revisar el log de arriba.")
+
+
+# ---------------------------------------------------------------------------
+# Sync STAT desde xlsx exportado del DBF — TMT 2026-05-28 (dueña).
+# Pedido: 'make sure these are the only conciliated movements — the *'.
+# Cuando entre syncs DBF→PC, alguien marcó conciliados en PC (vía
+# matcher_banco dual-write antes del fix), hay filas con stat='*' colgado.
+# Este endpoint alinea SCINTELA.TRANSACCIONES_BANCARIAS.stat con el archivo
+# de dBase (PICHINCH.xlsx) usando (no_banco, fecha, doc, importe, saldo)
+# como clave natural — saldo running balance es único por fila.
+# ---------------------------------------------------------------------------
+@bp.route("/stat-xlsx", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def stat_xlsx_form():
+    return render_template("admin_dbase/stat_xlsx.html")
+
+
+@bp.route("/stat-xlsx/run", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def stat_xlsx_run():
+    from decimal import Decimal
+
+    import db as _db
+
+    f = request.files.get("xlsx")
+    if not f or not f.filename:
+        return Response("ERROR: falta el archivo 'xlsx'.\n",
+                        mimetype="text/plain", status=400)
+    if not f.filename.lower().endswith(".xlsx"):
+        return Response("ERROR: esperaba un .xlsx.\n",
+                        mimetype="text/plain", status=400)
+
+    try:
+        no_banco = int(request.form.get("no_banco") or "10")
+    except (TypeError, ValueError):
+        no_banco = 10
+
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return Response("ERROR: openpyxl no instalado en el server.\n",
+                        mimetype="text/plain", status=500)
+
+    def _line(msg: str) -> str:
+        return msg.rstrip("\n") + "\n"
+
+    def _stream():
+        yield _line(f"[1/4] archivo recibido: {f.filename} · no_banco={no_banco}")
+        try:
+            wb = load_workbook(f, read_only=True, data_only=True)
+        except Exception as exc:
+            yield _line(f"[ERROR] no pude abrir el xlsx: {exc}")
+            return
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            yield _line("[ERROR] xlsx vacío.")
+            return
+        # Esperamos header: FECHA DOC PROV CONCEPTO NUM FECHAD IMPORTE SALDO STAT CLAVE
+        header = [(c or "").strip().upper() if isinstance(c, str) else c
+                  for c in rows[0]]
+        needed = {"FECHA": 0, "DOC": 1, "IMPORTE": 6, "SALDO": 7, "STAT": 8}
+        try:
+            ix = {k: header.index(k) for k in needed}
+        except ValueError as exc:
+            yield _line(f"[ERROR] header no esperado: {exc} · header={header}")
+            return
+
+        # Clave natural: (fecha, doc, importe, saldo). Valor: stat ('*' o '').
+        def _key(fecha, doc, importe, saldo):
+            f_iso = fecha.date().isoformat() if hasattr(fecha, "date") else str(fecha)
+            d = (doc or "").strip().upper()
+            try:
+                imp = round(float(importe or 0), 2)
+            except (TypeError, ValueError):
+                imp = 0.0
+            try:
+                sal = round(float(saldo or 0), 2)
+            except (TypeError, ValueError):
+                sal = 0.0
+            return (f_iso, d, imp, sal)
+
+        xlsx_stat: dict = {}
+        for r in rows[1:]:
+            try:
+                k = _key(r[ix["FECHA"]], r[ix["DOC"]],
+                          r[ix["IMPORTE"]], r[ix["SALDO"]])
+                s = (r[ix["STAT"]] or "").strip() if isinstance(r[ix["STAT"]], str) \
+                    else ("" if r[ix["STAT"]] is None else str(r[ix["STAT"]]).strip())
+                xlsx_stat[k] = "*" if s == "*" else ""
+            except Exception:
+                continue
+        n_estrella = sum(1 for v in xlsx_stat.values() if v == "*")
+        yield _line(f"[2/4] xlsx parseado: {len(xlsx_stat)} filas únicas, "
+                    f"{n_estrella} con stat='*'.")
+
+        # Traer todas las filas PC del banco.
+        pg_rows = _db.fetch_all(
+            "SELECT id_transaccion, fecha, documento, importe, saldo, "
+            "       TRIM(COALESCE(stat,'')) AS stat "
+            "  FROM scintela.transacciones_bancarias WHERE no_banco = %s",
+            (no_banco,),
+        ) or []
+        yield _line(f"       PG tiene {len(pg_rows)} filas para no_banco={no_banco}.")
+
+        to_set_estrella: list[int] = []   # PG NULL → '*'
+        to_set_null: list[int] = []       # PG '*' → NULL
+        no_match: list[int] = []          # no aparece en xlsx
+        ok_match: int = 0
+
+        for r in pg_rows:
+            k = _key(r["fecha"], r["documento"], r["importe"], r["saldo"])
+            pg_stat = (r["stat"] or "").strip()
+            if k not in xlsx_stat:
+                no_match.append(r["id_transaccion"])
+                continue
+            xl_stat = xlsx_stat[k]
+            if xl_stat == "*" and pg_stat != "*":
+                to_set_estrella.append(r["id_transaccion"])
+            elif xl_stat != "*" and pg_stat == "*":
+                to_set_null.append(r["id_transaccion"])
+            else:
+                ok_match += 1
+
+        yield _line(
+            f"[3/4] plan: marcar '*' en {len(to_set_estrella)} fila(s), "
+            f"limpiar '*' en {len(to_set_null)} fila(s). "
+            f"OK sin cambios: {ok_match}. Sin match en xlsx: {len(no_match)}."
+        )
+
+        # Ejecutar UPDATEs en bloque (chunks para evitar query gigante).
+        def _chunks(seq, n=500):
+            for i in range(0, len(seq), n):
+                yield seq[i:i + n]
+
+        n_up_estrella = 0
+        for chunk in _chunks(to_set_estrella):
+            n_up_estrella += _db.execute(
+                "UPDATE scintela.transacciones_bancarias SET stat = '*' "
+                "WHERE id_transaccion = ANY(%s)",
+                (chunk,),
+            ) or 0
+        n_up_null = 0
+        for chunk in _chunks(to_set_null):
+            n_up_null += _db.execute(
+                "UPDATE scintela.transacciones_bancarias SET stat = NULL "
+                "WHERE id_transaccion = ANY(%s)",
+                (chunk,),
+            ) or 0
+
+        yield _line(f"       UPDATEd a '*':  {n_up_estrella}")
+        yield _line(f"       UPDATEd a NULL: {n_up_null}")
+
+        if no_match:
+            yield _line(f"       OJO: {len(no_match)} fila(s) PC sin "
+                        f"contraparte en xlsx (creadas en PC y/o no en DBF).")
+
+        yield _line("")
+        yield _line("[4/4] OK. Refrescá /bancos para ver los cambios.")
+
+    return Response(stream_with_context(_stream()), mimetype="text/plain")
