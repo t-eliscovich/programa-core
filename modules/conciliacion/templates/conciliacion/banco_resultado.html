@@ -349,9 +349,26 @@
             <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">= Saldo banco esperado</td>
             <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100" id="conc-esperado">$ {{ '{:,.2f}'.format(resumen.saldo_bco_esperado) }}</td>
           </tr>
+          {# TMT 2026-05-28 dueña: 'ok el del banco final que sea editable'.
+             El saldo banco según extracto ahora es un input. Cuando lo
+             cambiás, recalcula el diff (esperado − banco) en vivo y lo
+             persiste en localStorage por banco para que sobreviva refresh. #}
           <tr>
-            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">Saldo banco según extracto al {{ resumen.fecha_bco or '—' }}</td>
-            <td class="py-1.5 text-right font-bold text-slate-900 dark:text-slate-100">$ {{ '{:,.2f}'.format(resumen.saldo_bco_extracto) }}</td>
+            <td class="py-1.5 text-slate-700 dark:text-slate-300 font-medium">
+              Saldo banco según extracto al {{ resumen.fecha_bco or '—' }}
+              <span class="text-[10px] text-slate-400 ml-1">editable</span>
+            </td>
+            <td class="py-1.5 text-right">
+              <div class="inline-flex items-baseline gap-1 justify-end">
+                <span class="text-slate-700 dark:text-slate-300">$</span>
+                <input type="text" id="conc-bco-extracto-input"
+                       data-original="{{ '{:.2f}'.format(resumen.saldo_bco_extracto) }}"
+                       data-no-banco="{{ data.no_banco }}"
+                       value="{{ '{:,.2f}'.format(resumen.saldo_bco_extracto) }}"
+                       inputmode="decimal"
+                       class="w-36 text-right font-bold tabular-nums text-slate-900 dark:text-slate-100 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -3116,102 +3133,235 @@
 })();
 </script>
 
-{# TMT 2026-05-28 dueña: 'tienen que ser como un xls y chiquito y funcione'.
-   Botón verde 'Descargar Excel': lee las tablas de #print-lista (renderizadas
-   en HTML pero ocultas con display:none) y arma un CSV plano con UTF-8 BOM,
-   que Excel abre nativo con columnas separadas. No print, no /imprimir-banco. #}
+{# TMT 2026-05-28 dueña: 'imprimime en estilo tabla el excel'. Antes era
+   CSV plano. Ahora genero un .xls que es realmente HTML con table —
+   Excel lo abre como spreadsheet estilada: headers bold con fondo,
+   importes alineados a la derecha, secciones con título. Sin libs JS. #}
 <script>
 (function() {
   const btn = document.getElementById('btn-descargar-excel');
   if (!btn) return;
 
-  function csvEscape(v) {
-    const s = (v == null ? '' : String(v));
-    if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
+  function htmlEscape(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
-  function tableToRows(tbl, sectionLabel) {
-    if (!tbl) return [];
-    const headers = Array.from(tbl.querySelectorAll('thead th')).map(th => th.textContent.trim());
-    const rows = [];
-    // Encabezado de sección + headers
-    rows.push([sectionLabel]);
-    rows.push(headers);
-    tbl.querySelectorAll('tbody tr').forEach(tr => {
-      const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim());
-      rows.push(cells);
-    });
-    rows.push([]);  // línea en blanco entre secciones
-    return rows;
-  }
-
-  function fetchSummary() {
-    // Lee el card de resumen (#conc-card) y devuelve filas para el CSV.
+  function readCardSummary() {
     const card = document.getElementById('conc-card');
     if (!card) return [];
-    const rows = [['RESUMEN DE CONCILIACIÓN']];
+    const out = [];
     card.querySelectorAll('table tr').forEach(tr => {
-      const tds = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim().replace(/\s+/g, ' '));
-      if (tds.length >= 2) rows.push([tds[0], tds[tds.length - 1]]);
-      else if (tds.length === 1) rows.push([tds[0]]);
+      const tds = Array.from(tr.querySelectorAll('td')).map(td => {
+        // Si la celda tiene un input (saldo editable), tomar el valor actual.
+        const inp = td.querySelector('input');
+        if (inp) return inp.value.trim();
+        return td.textContent.trim().replace(/\s+/g, ' ');
+      });
+      if (tds.length >= 2) out.push([tds[0], tds[tds.length - 1]]);
+      else if (tds.length === 1) out.push([tds[0]]);
     });
-    rows.push([]);
-    return rows;
+    return out;
+  }
+
+  function readListaSections() {
+    const lista = document.getElementById('print-lista');
+    if (!lista) return [];
+    const sections = [];
+    let current = null;
+    Array.from(lista.children).forEach(el => {
+      if (el.tagName === 'H3') {
+        if (current) sections.push(current);
+        current = { title: el.textContent.trim(), subsections: [] };
+      } else if (el.classList && el.classList.contains('seccion-summary')) {
+        const spans = el.querySelectorAll('span');
+        current && current.subsections.push({
+          label: (spans[0]?.textContent || '').trim(),
+          total: (spans[1]?.textContent || '').trim(),
+          headers: null,
+          rows: []
+        });
+      } else if (el.tagName === 'TABLE') {
+        if (!current) return;
+        const last = current.subsections[current.subsections.length - 1];
+        if (!last) return;
+        last.headers = Array.from(el.querySelectorAll('thead th')).map(th => th.textContent.trim());
+        el.querySelectorAll('tbody tr').forEach(tr => {
+          last.rows.push(Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim()));
+        });
+      }
+    });
+    if (current) sections.push(current);
+    return sections;
+  }
+
+  function buildXls() {
+    const banco = (document.querySelector('h1')?.textContent || 'Conciliación').trim();
+    const fechaExport = new Date().toLocaleString('es-EC');
+    const summary = readCardSummary();
+    const sections = readListaSections();
+
+    // Estilos inline — Excel respeta los más básicos vía mso-styles.
+    const styles = `
+      table { border-collapse: collapse; font-family: Calibri, Arial, sans-serif; font-size: 11pt; }
+      th, td { border: 0.5pt solid #cbd5e1; padding: 4pt 6pt; }
+      th { background: #1e293b; color: #ffffff; font-weight: bold; text-align: left; }
+      td.num { text-align: right; mso-number-format: '#,##0.00'; }
+      tr.h1 td { background: #0f172a; color: #ffffff; font-size: 14pt; font-weight: bold; padding: 6pt; }
+      tr.h2 td { background: #334155; color: #ffffff; font-weight: bold; padding: 5pt; }
+      tr.h3 td { background: #e2e8f0; font-weight: bold; padding: 4pt; }
+      tr.summary td { background: #f1f5f9; font-weight: bold; }
+      tr.subtotal td { background: #fef3c7; font-weight: bold; }
+    `;
+
+    let body = '<table>';
+    // Encabezado
+    body += `<tr class="h1"><td colspan="5">${htmlEscape(banco)}</td></tr>`;
+    body += `<tr><td colspan="5">Exportado: ${htmlEscape(fechaExport)}</td></tr>`;
+
+    // Resumen
+    body += `<tr class="h2"><td colspan="5">Resumen de conciliación</td></tr>`;
+    summary.forEach(r => {
+      body += '<tr class="summary">';
+      body += `<td colspan="4">${htmlEscape(r[0])}</td>`;
+      body += `<td class="num">${htmlEscape(r[1] || '')}</td>`;
+      body += '</tr>';
+    });
+
+    // Secciones (banco no en PC, PC no en banco)
+    sections.forEach(sec => {
+      body += `<tr class="h2"><td colspan="5">${htmlEscape(sec.title)}</td></tr>`;
+      sec.subsections.forEach(sub => {
+        body += `<tr class="h3"><td colspan="4">${htmlEscape(sub.label)}</td><td class="num">${htmlEscape(sub.total)}</td></tr>`;
+        if (sub.headers && sub.rows.length) {
+          // Padding columnas: queremos 5 cols totales (fecha, doc, n°, concepto, importe).
+          const ncol = sub.headers.length;
+          body += '<tr>';
+          sub.headers.forEach((h, i) => {
+            const cls = (i === ncol - 1) ? 'num' : '';
+            body += `<th class="${cls}">${htmlEscape(h)}</th>`;
+          });
+          // Pad headers a 5 cols si hace falta.
+          for (let i = ncol; i < 5; i++) body += '<th></th>';
+          body += '</tr>';
+          sub.rows.forEach(row => {
+            body += '<tr>';
+            row.forEach((c, i) => {
+              const cls = (i === ncol - 1) ? 'num' : '';
+              // Limpiar el "+ $" / "− $" del importe para que Excel lo trate como número.
+              let val = c;
+              if (i === ncol - 1) {
+                val = val.replace(/[+\s−$,]/g, '').replace(/^-+/, '-');
+              }
+              body += `<td class="${cls}">${htmlEscape(val)}</td>`;
+            });
+            for (let i = row.length; i < 5; i++) body += '<td></td>';
+            body += '</tr>';
+          });
+          body += '<tr><td colspan="5"></td></tr>';
+        }
+      });
+    });
+    body += '</table>';
+
+    return `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:x="urn:schemas-microsoft-com:office:excel"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>${styles}</style></head>
+<body>${body}</body></html>`;
   }
 
   btn.addEventListener('click', function() {
     const lista = document.getElementById('print-lista');
     if (!lista) { alert('No hay datos para exportar.'); return; }
-
-    let allRows = [];
-    // Header del archivo
-    const banco = (document.querySelector('h1')?.textContent || 'Conciliación').trim();
-    allRows.push([banco]);
-    allRows.push(['Exportado', new Date().toLocaleString('es-EC')]);
-    allRows.push([]);
-
-    // Resumen
-    allRows = allRows.concat(fetchSummary());
-
-    // Encabezados h3 + tablas de print-lista
-    const blocks = lista.querySelectorAll('h3, .seccion-summary, table');
-    let currentSection = '';
-    let currentSubtitle = '';
-    blocks.forEach(el => {
-      if (el.tagName === 'H3') {
-        currentSection = el.textContent.trim();
-        allRows.push([]);
-        allRows.push([currentSection]);
-      } else if (el.classList && el.classList.contains('seccion-summary')) {
-        const spans = el.querySelectorAll('span');
-        currentSubtitle = (spans[0]?.textContent || '').trim();
-        const total = (spans[1]?.textContent || '').trim();
-        allRows.push([currentSubtitle, total]);
-      } else if (el.tagName === 'TABLE') {
-        const headers = Array.from(el.querySelectorAll('thead th')).map(th => th.textContent.trim());
-        allRows.push(headers);
-        el.querySelectorAll('tbody tr').forEach(tr => {
-          const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim());
-          allRows.push(cells);
-        });
-      }
-    });
-
-    // CSV con BOM (Excel-friendly UTF-8) y separador ';' para LatAm.
-    const sep = ';';
-    const csv = '﻿' + allRows.map(r => r.map(csvEscape).join(sep)).join('\r\n');
-    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const html = buildXls();
+    const blob = new Blob(['﻿', html], {type: 'application/vnd.ms-excel;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const fecha = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `conciliacion_pichincha_${fecha}.csv`;
+    a.download = `conciliacion_pichincha_${fecha}.xls`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
+})();
+</script>
+
+{# TMT 2026-05-28 dueña: 'ok el del banco final que sea editable'.
+   Input editable para Saldo banco según extracto. Recalcula diff
+   en vivo y persiste el override en localStorage por banco. #}
+<script>
+(function() {
+  const inp = document.getElementById('conc-bco-extracto-input');
+  if (!inp) return;
+  const noBanco = inp.dataset.noBanco || '10';
+  const storageKey = 'conc_bco_extracto_override_' + noBanco;
+
+  function parseNum(v) {
+    if (v == null) return NaN;
+    const cleaned = String(v).replace(/[\s$]/g, '').replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(cleaned);
+    return isNaN(n) ? NaN : n;
+  }
+
+  function fmt(n) {
+    return new Intl.NumberFormat('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  }
+
+  function recalc() {
+    const v = parseNum(inp.value);
+    if (isNaN(v)) return;
+    // Saldo banco esperado vive en #conc-esperado.
+    const esperadoEl = document.getElementById('conc-esperado');
+    if (!esperadoEl) return;
+    const esperado = parseNum(esperadoEl.textContent);
+    if (isNaN(esperado)) return;
+    const diff = +(v - esperado).toFixed(2);
+    // Update diff y titulo (cuadra / con diferencia).
+    const diffEl = document.getElementById('conc-diff');
+    const tituloEl = document.getElementById('conc-titulo');
+    if (diffEl) diffEl.textContent = '$ ' + fmt(diff);
+    if (tituloEl) {
+      tituloEl.textContent = (Math.abs(diff) < 1) ? 'Conciliación cuadra' : 'Conciliación con diferencia';
+    }
+  }
+
+  // Cargar override persistente si existe.
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved != null && saved !== '') {
+      const n = parseNum(saved);
+      if (!isNaN(n)) {
+        inp.value = fmt(n);
+        recalc();
+      }
+    }
+  } catch (e) { /* localStorage puede estar bloqueado */ }
+
+  // Eventos.
+  inp.addEventListener('input', recalc);
+  inp.addEventListener('blur', function() {
+    const n = parseNum(inp.value);
+    if (!isNaN(n)) {
+      inp.value = fmt(n);
+      try { localStorage.setItem(storageKey, String(n)); } catch (e) {}
+    }
+    recalc();
+  });
+  // Doble-click para resetear al valor original del extracto.
+  inp.addEventListener('dblclick', function() {
+    const orig = parseNum(inp.dataset.original);
+    if (!isNaN(orig)) {
+      inp.value = fmt(orig);
+      try { localStorage.removeItem(storageKey); } catch (e) {}
+      recalc();
+    }
+  });
+  inp.title = 'Doble-click para restaurar el valor original del extracto';
 })();
 </script>
 {% endblock %}

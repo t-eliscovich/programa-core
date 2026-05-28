@@ -34,24 +34,38 @@
       </span>
     </header>
 
-    {# HERO — Saldo a conciliar (snapshot estable) #}
+    {# TMT 2026-05-28 dueña: 'sigue mal'. El snapshot $2,557K era de la
+       mañana, el sync dBase del mediodía trajo movs ya conciliados que el
+       snapshot no captó → drift de $5K. La cuenta viva (saldo_si_concilio_todo)
+       SÍ refleja esos movs y es invariante a movs nuevos pendientes (la
+       matemática se cancela: saldo_pc±M y pendientes±M netean). Hero pasa
+       a ser live; el snapshot baja a línea de audit. #}
     <div class="px-6 py-5 bg-gradient-to-br from-emerald-50/50 to-emerald-50/0 dark:from-emerald-900/10">
       <div class="flex items-baseline justify-between mb-1">
         <span class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold">Saldo a conciliar</span>
         <span class="text-[11px] text-slate-500">
-          {% if saldo_pc_actual.snapshot_evento %}
-            último cambio: {{ saldo_pc_actual.snapshot_evento }} · {{ saldo_pc_actual.snapshot_fecha }}
-          {% else %}
-            cierre {{ saldo_pc_actual.fecha_cierre_ayer or '—' }} · snapshot
-          {% endif %}
+          último mov{% if saldo_pc_actual.fecha %} · {{ saldo_pc_actual.fecha }}{% endif %}
         </span>
       </div>
       <div class="text-4xl font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums leading-none">
-        ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_a_conciliar_estable or saldo_pc_actual.saldo_cierre_ayer or saldo_pc_actual.saldo) }}
+        ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) }}
       </div>
       <div class="text-[11px] text-slate-500 mt-1.5">
-        Solo cambia cuando hacés una conciliación · movs nuevos no lo mueven ·
-        <a href="{{ url_for('conciliacion.cambios_timeline') }}" class="text-sky-600 hover:underline">ver historial →</a>
+        Saldo PC libros − pendientes PC · invariante a movs pendientes nuevos
+        {% if saldo_pc_actual.saldo_a_conciliar_estable is not none and saldo_pc_actual.snapshot_evento %}
+          <br>
+          <span class="text-slate-400">
+            Última conciliación manual: ${{ '{:,.2f}'.format(saldo_pc_actual.saldo_a_conciliar_estable) }}
+            · {{ saldo_pc_actual.snapshot_evento }}{% if saldo_pc_actual.snapshot_fecha %} · {{ saldo_pc_actual.snapshot_fecha }}{% endif %}
+            {% set _drift = ((saldo_pc_actual.saldo_si_concilio_todo or saldo_pc_actual.saldo) - saldo_pc_actual.saldo_a_conciliar_estable) | round(2) %}
+            {% if _drift|abs > 0.5 %}
+              · drift desde snapshot:
+              <span class="{% if _drift > 0 %}text-emerald-600{% else %}text-rose-600{% endif %} font-mono">{{ '{:+,.2f}'.format(_drift) }}</span>
+              (movs auto-conciliados del sync)
+            {% endif %}
+          </span>
+        {% endif %}
+        · <a href="{{ url_for('conciliacion.cambios_timeline') }}" class="text-sky-600 hover:underline">ver historial →</a>
       </div>
     </div>
 
