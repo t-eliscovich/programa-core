@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from datetime import date, datetime
+from decimal import Decimal as _D
 from pathlib import Path
 
 from flask import (
@@ -475,17 +476,63 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ws.cell(row=r, column=5, value=(row.get("detalle") or row.get("oficina") or "")[:30])
         r += 1
 
-    # Fila total
-    ws.cell(row=r + 1, column=3, value="Total:").font = bold
-    cell = ws.cell(row=r + 1, column=4, value=total)
-    cell.font = bold
-    cell.number_format = "#,##0.00"
-    cell.fill = header_fill
+    # ── Resumen contable al pie ───────────────────────────────────────
+    # TMT 2026-05-29 dueña: bloque con 5 líneas que la dueña usa cuando
+    # cierra. Formato (con paréntesis para negativos = convención contable):
+    #   TOTAL         (16,832.20)   ← ajuste = -pendientes_conciliar_neto
+    #   SALDO SISTEMA  2,359,683.11
+    #   TOTAL          2,342,850.91 ← saldo_conciliado = SISTEMA + ajuste
+    #   SALDO BANCO    2,342,707.24 ← último saldo del extracto subido
+    #   DIFERENCIA       (143.67)   ← SALDO BANCO − TOTAL conciliado
+    saldo_sistema = float(balance.get("saldo") or 0)
+    total_ajuste = -float(balance.get("pendientes_conciliar_neto") or 0)
+    total_conciliado = float(balance.get("saldo_si_concilio_todo") or 0)
+
+    # Saldo banco "real" = último saldo del extracto subido (en el último
+    # mov por fecha; si hay empate de fecha tomamos el último del archivo).
+    saldo_banco_real = None
+    try:
+        movs_sesion = _sesion.cargar_movs(sesion)
+        if movs_sesion:
+            # Filtramos los que tienen fecha + saldo; tomamos el de fecha
+            # más alta. Si no, dejamos el último por orden de aparición.
+            con_fecha = [m for m in movs_sesion if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None]
+            if con_fecha:
+                ult = max(con_fecha, key=lambda m: m.fecha)
+                saldo_banco_real = float(ult.saldo)
+            else:
+                ult = movs_sesion[-1]
+                saldo_banco_real = float(getattr(ult, "saldo", None) or 0) or None
+    except Exception as e:
+        _LOG.warning("no pude leer último saldo banco del extracto: %s", e)
+
+    diferencia = (saldo_banco_real - total_conciliado) if saldo_banco_real is not None else None
+
+    contable_fmt = '#,##0.00;(#,##0.00)'  # paréntesis para negativos
+    label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
+    val_col = 4   # columna D, igual al header "VALOR"
+
+    r += 1  # fila vacía de separación
+    for label, val in [
+        ("TOTAL", total_ajuste),
+        ("SALDO SISTEMA", saldo_sistema),
+        ("TOTAL", total_conciliado),
+        ("SALDO BANCO", saldo_banco_real),
+        ("DIFERENCIA", diferencia),
+    ]:
+        ws.cell(row=r, column=label_col, value=label).font = bold
+        if val is not None:
+            cell = ws.cell(row=r, column=val_col, value=val)
+            cell.font = bold
+            cell.number_format = contable_fmt
+        else:
+            ws.cell(row=r, column=val_col, value="—").font = bold
+        r += 1
 
     ws.column_dimensions["A"].width = 12
     ws.column_dimensions["B"].width = 60
     ws.column_dimensions["C"].width = 15
-    ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["D"].width = 16
     ws.column_dimensions["E"].width = 12
 
     wb.save(str(xlsx_path))
