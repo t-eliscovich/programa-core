@@ -1194,61 +1194,32 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
-    # TMT 2026-05-29 dueña: 'CUANDO DESCARGO EL EXCEL ES OTRO EL TOTAL'.
-    # El bloque tiene que ser internamente consistente: SISTEMA + AJUSTE
-    # = TOTAL = SALDO BANCO. Si TOTAL está forzado al saldo banco real
-    # (para honrar el pedido anterior 'sumar la diferencia al total'),
-    # entonces AJUSTE tiene que ser SALDO BANCO − SALDO SISTEMA — no
-    # solo los pendientes_pc. Así la suma cierra a la vista.
+    # TMT 2026-05-29 dueña: 'PC lleva 2 saldos, el total del banco y el
+    # ya conciliado'. Sin comparar contra el saldo del extracto, sin
+    # diferencia no clasificada. La fórmula simple cierra a la vista:
     #
-    # Fallback (sin saldo banco real): cálculo clásico AJUSTE=-pendientes_pc,
-    # TOTAL=SISTEMA+AJUSTE.
+    #   SALDO SISTEMA + POSITIVOS − NEGATIVOS = TOTAL
+    #
+    # donde:
+    #   POSITIVOS = pendientes_banco_creditos + pendientes_pc_debitos
+    #     (cosas que SUMAN al pasar de libros PC al esperado banco)
+    #   NEGATIVOS = pendientes_banco_debitos + pendientes_pc_creditos
+    #     (cosas que RESTAN al pasar de libros PC al esperado banco)
+    #   TOTAL = saldo banco esperado (mismo número que la página).
     saldo_sistema = float(balance.get("saldo") or 0)
-
-    # Saldo banco "real" = último saldo del extracto subido (en el último
-    # mov por fecha; si hay empate de fecha tomamos el último del archivo).
-    saldo_banco_real = None
-    try:
-        movs_sesion = _sesion.cargar_movs(sesion)
-        if movs_sesion:
-            con_fecha = [m for m in movs_sesion if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None]
-            if con_fecha:
-                ult = max(con_fecha, key=lambda m: m.fecha)
-                saldo_banco_real = float(ult.saldo)
-            else:
-                ult = movs_sesion[-1]
-                saldo_banco_real = float(getattr(ult, "saldo", None) or 0) or None
-    except Exception as e:
-        _LOG.warning("no pude leer último saldo banco del extracto: %s", e)
-
-    if saldo_banco_real is not None:
-        # AJUSTE absorbe TODA la brecha entre PC libros y banco real.
-        # TOTAL = SISTEMA + AJUSTE = SALDO BANCO (cuadra por construcción).
-        total_ajuste = saldo_banco_real - saldo_sistema
-        total_conciliado = saldo_banco_real
-    else:
-        # Sin saldo banco → cálculo clásico (compatibilidad con extractos
-        # legacy sin columna de saldo).
-        total_ajuste = -float(balance.get("pendientes_conciliar_neto") or 0)
-        total_conciliado = float(balance.get("saldo_si_concilio_todo") or 0)
+    positivos = (
+        float(balance.get("pendientes_banco_creditos") or 0)
+        + float(balance.get("pendientes_pc_debitos") or 0)
+    )
+    negativos = (
+        float(balance.get("pendientes_banco_debitos") or 0)
+        + float(balance.get("pendientes_pc_creditos") or 0)
+    )
+    total_conciliado = round(saldo_sistema + positivos - negativos, 2)
 
     contable_fmt = '#,##0.00;(#,##0.00)'  # paréntesis para negativos
     label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
     val_col = 4   # columna D, igual al header "VALOR"
-
-    # TMT 2026-05-29 dueña: 'ME PUEDES PASAR POSITIVOS Y NEGATIVOS EN VEZ
-    # DE TOTAL'. Reemplazo el AJUSTE único por dos líneas: + POSITIVOS
-    # (sum de pendientes credit en ambos lados) y − NEGATIVOS (sum de
-    # pendientes debit en ambos lados). El TOTAL conciliado sigue =
-    # SALDO BANCO (absorbe la diferencia, según pedido anterior).
-    positivos = (
-        float(balance.get("pendientes_pc_creditos") or 0)
-        + float(balance.get("pendientes_banco_creditos") or 0)
-    )
-    negativos = (
-        float(balance.get("pendientes_pc_debitos") or 0)
-        + float(balance.get("pendientes_banco_debitos") or 0)
-    )
 
     r += 1  # fila vacía de separación
     for label, val in [
@@ -1256,7 +1227,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ("− NEGATIVOS", -negativos),
         ("SALDO SISTEMA", saldo_sistema),
         ("TOTAL", total_conciliado),
-        ("SALDO BANCO", saldo_banco_real),
     ]:
         ws.cell(row=r, column=label_col, value=label).font = bold
         if val is not None:
@@ -1923,28 +1893,56 @@ def banco_historial_v2():
                     saldo_fin[sid] = float(row["saldo_conc"])
             except Exception:
                 pass
-        # TMT 2026-05-29 dueña: 'EN EL HISTORIAL NO ME PONES INICIAL Y FINAL,
-        # AUNQUE SEAN EL MISMO PONELOS'. Causa: sesiones abiertas tenían
-        # cerrada_en=NULL, el fallback de saldo_fin no corría → "—".
-        # Sesiones legacy sin sesion_abierta snapshot también daban "—".
-        # Fix: si saldo_inicial sigue None, fallback al saldo live actual.
-        # Si saldo_final sigue None (sesión abierta o sin snapshot), también
-        # al saldo live actual. Mejor mostrar un valor coherente que un guión.
-        if sid not in saldo_ini or sid not in saldo_fin:
+        # TMT 2026-05-29 dueña: 'el inicial tenia que decir 2,557,969.47'.
+        # Bug: snapshot at sesion_abierta a veces se tomaba DESPUÉS de un
+        # match instantáneo (race), entonces inicial == final y Δ=0 aunque
+        # hubo trabajo. Solución determinista: saldo_inicial = saldo_final −
+        # IMPACTO de los matches activos en esta sesión. Así Δ siempre
+        # refleja exactamente lo que la sesión hizo.
+        # IMPACTO de un match = _signed_delta(doc, importe) del BANCSIS
+        # pareado — mismo cómputo que el balance.
+        try:
+            row_impact = _db.fetch_one(
+                """
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN tb.importe < 0 THEN tb.importe
+                        WHEN tb.documento IN ('DE','TR','XX','NC','IN','AC') THEN tb.importe
+                        ELSE -tb.importe
+                    END
+                ), 0) AS impacto
+                  FROM scintela.banco_conciliacion_match m
+                  JOIN scintela.transacciones_bancarias tb
+                    ON tb.id_transaccion = m.id_transaccion
+                 WHERE m.no_banco = %s
+                   AND m.creado_en >= %s
+                   AND m.creado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
+                """,
+                (_BANCO_PICHINCHA, s.get("abierta_en"), s.get("cerrada_en")),
+            )
+            impacto = float(row_impact["impacto"]) if row_impact else 0.0
+        except Exception:
+            impacto = 0.0
+        s["impacto_sesion"] = round(impacto, 2)
+
+        # Determinar saldo_final: snapshot al cierre si existe; si no, live.
+        saldo_final_val = saldo_fin.get(sid)
+        if saldo_final_val is None:
             try:
                 _live_balance = _bp.calcular(_BANCO_PICHINCHA)
                 _live_val = _live_balance.get("saldo_si_concilio_todo") \
                             or _live_balance.get("saldo")
                 if _live_val is not None:
-                    _live_val = float(_live_val)
-                    if sid not in saldo_ini:
-                        saldo_ini[sid] = _live_val
-                    if sid not in saldo_fin:
-                        saldo_fin[sid] = _live_val
+                    saldo_final_val = float(_live_val)
             except Exception:
-                pass
-        s["saldo_inicial"] = saldo_ini.get(sid)
-        s["saldo_final"] = saldo_fin.get(sid)
+                saldo_final_val = None
+        # saldo_inicial = final − impacto (cierra Δ = impacto siempre).
+        if saldo_final_val is not None:
+            saldo_inicial_val = round(saldo_final_val - impacto, 2)
+        else:
+            saldo_inicial_val = saldo_ini.get(sid)
+        s["saldo_inicial"] = saldo_inicial_val
+        s["saldo_final"] = saldo_final_val
         # TMT 2026-05-29 dueña: 'columnas extra' — saldo banco real (último
         # saldo del extracto subido) + diferencia (saldo_final − saldo_banco_real).
         s["saldo_banco_real"] = None

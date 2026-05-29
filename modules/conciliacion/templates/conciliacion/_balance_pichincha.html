@@ -66,25 +66,14 @@
           {% elif balance.neto_pendientes is not none %}{{ '{:+,.2f}'.format(balance.neto_pendientes) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
         </div>
       </div>
-      {# TMT 2026-05-29 dueña: 'dijiste que tenia que ser 2,797,649 porque
-         en esta pantalla dice 2,788,626.66'. Cuando hay sesión activa,
-         agregamos la diferencia no clasificada y la fila final pasa a
-         ser el SALDO BANCO REAL (del extracto), igual al Excel. #}
-      {% if balance.saldo_banco_real is defined and balance.saldo_banco_real is not none %}
-      <div class="{{ _cc }}" style="{{ _cols_c }}">
-        <div class="text-slate-500">+ Diferencia no clasificada</div>
-        <div class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:+,.2f}'.format(balance.diferencia_no_clasificada or 0) }}</div>
-      </div>
-      <div class="{{ _cc_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols_c }}">
-        <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco real</div>
-        <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_real) }}</div>
-      </div>
-      {% else %}
+      {# TMT 2026-05-29 dueña: 'PC lleva dos saldos: el total bruto y el
+         conciliado'. Quitada la fila 'Diferencia no clasificada' + 'Saldo
+         banco real' que confundía — el bloque cierra limpio en
+         'Saldo banco esperado' (cálculo: conciliado + pendientes banco). #}
       <div class="{{ _cc_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols_c }}">
         <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
         <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
       </div>
-      {% endif %}
     </div>
   </div>
 </section>
@@ -147,21 +136,10 @@
       </div>
     </div>
 
-    {% if balance.saldo_banco_real is defined and balance.saldo_banco_real is not none %}
-    <div class="{{ _row }}" style="{{ _cols }}">
-      <div class="text-slate-500">+ Diferencia no clasificada</div>
-      <div class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:+,.2f}'.format(balance.diferencia_no_clasificada or 0) }}</div>
-    </div>
-    <div class="{{ _row_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
-      <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco real</div>
-      <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_real) }}</div>
-    </div>
-    {% else %}
     <div class="{{ _row_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
       <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
       <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
     </div>
-    {% endif %}
   </div>
 </section>
 {% endif %}
