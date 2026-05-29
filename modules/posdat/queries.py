@@ -702,10 +702,14 @@ def buscar(
     for r in rows:
         match = _match_provision(r.get("concepto") or "")
         if match:
-            cm = float(match.get("importe") or 0)
+            # TMT 2026-05-28 dueña: 'en vez de mensual hagamos cuota diaria'
+            # La tabla scintela.provisiones.importe ahora guarda la cuota
+            # DIARIA directamente (antes era mensual). NO dividir por 30.
+            # cuota_mensual queda como estimación visual (× 30).
+            diaria = float(match.get("importe") or 0)
             r["id_provisiones"]    = match.get("id_provisiones")
-            r["cuota_mensual"]     = cm
-            r["cuota_diaria"]      = round(cm / 30.0, 2)
+            r["cuota_diaria"]      = diaria
+            r["cuota_mensual"]     = diaria  # legacy: el template/JS leen cuota_mensual; mantenemos el valor diario que la dueña ve y edita
             r["provision_periodo"] = match.get("periodo_aplica")
         else:
             # TMT 2026-05-27 dueña: posdats sin match en provisiones — caso
