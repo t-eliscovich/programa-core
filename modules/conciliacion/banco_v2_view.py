@@ -733,34 +733,40 @@ def banco_anular_grupo():
         flash("Esta tx NO fue creada por conciliación — no la puedo anular desde acá.", "warn")
         return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
-    # 2) Soft-undo de TODOS los matches contra esta tx.
+    # 2+3) Hard-delete de matches + DELETE de tx + recompute, todo en una
+    # sola transacción atómica. TMT 2026-05-29 dueña: 'sigo viendo los dos
+    # de 67k' tras anular. Causa probable: la FK de banco_conciliacion_match
+    # bloqueaba el DELETE de la fila tx. Soft-undo no es suficiente — al
+    # quedar matches deshechos con id_transaccion FK válido, el DELETE de
+    # la tx aborta por integrity. Hard-deleteamos los matches relacionados
+    # antes del DELETE de la tx, en la misma db.tx().
+    import bank_helpers
     try:
-        n_matches = _db.execute(
-            """
-            UPDATE scintela.banco_conciliacion_match
-               SET deshecho_en = CURRENT_TIMESTAMP,
-                   deshecho_por = %s
-             WHERE id_transaccion = %s
-               AND deshecho_en IS NULL
-            """,
-            (usuario[:50], id_tx),
-        ) or 0
-    except Exception as e:
-        _LOG.exception("undo matches falló: %s", e)
-        n_matches = 0
-
-    # 3) Borrar la tx BANCSIS + recompute saldos posteriores.
-    try:
-        import bank_helpers
-        from modules.conciliacion.matcher_banco import db as _matcher_db  # mismo db
-        with _matcher_db.tx() as conn:
-            _matcher_db.execute(
+        with _db.tx() as conn:
+            n_matches = _db.execute(
+                """
+                DELETE FROM scintela.banco_conciliacion_match
+                 WHERE id_transaccion = %s
+                """,
+                (id_tx,),
+                conn=conn,
+            ) or 0
+            n_del = _db.execute(
                 "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = %s AND no_banco = %s",
                 (id_tx, _BANCO_PICHINCHA),
                 conn=conn,
+            ) or 0
+            # Verificación post-delete dentro de la misma tx.
+            still = _db.fetch_one(
+                "SELECT 1 FROM scintela.transacciones_bancarias WHERE id_transaccion = %s",
+                (id_tx,),
+                conn=conn,
             )
-            # Walk-forward desde la siguiente fila para corregir saldos.
-            siguiente = _matcher_db.fetch_one(
+            if still:
+                raise RuntimeError(f"DELETE no efectivo — tx {id_tx} aún existe")
+
+            # Walk-forward desde la siguiente fila.
+            siguiente = _db.fetch_one(
                 """
                 SELECT id_transaccion FROM scintela.transacciones_bancarias
                  WHERE no_banco = %s
@@ -780,9 +786,11 @@ def banco_anular_grupo():
                     )
                 except Exception as e:
                     _LOG.warning("recompute_saldos falló (sigue): %s", e)
+            _LOG.info("anular_grupo tx=%s OK: %s matches borrados, %s tx borrada",
+                      id_tx, n_matches, n_del)
     except Exception as e:
-        _LOG.exception("borrar tx %s falló: %s", id_tx, e)
-        flash(f"Error al borrar la transacción: {e}", "error")
+        _LOG.exception("anular tx %s falló: %s", id_tx, e)
+        flash(f"Error al anular: {e}", "error")
         return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
     # 4) Snapshot del nuevo saldo a conciliar.
