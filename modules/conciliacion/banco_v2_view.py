@@ -396,24 +396,41 @@ def banco_transferencias_confirmar():
 def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     """Genera un XLSX formato hoja FEB con los DEPÓSITOS PENDIENTES.
 
-    TMT 2026-05-29 dueña: 'no pude descargar excel'. Pasamos de PDF
-    (reportlab puede no estar en el server) a XLSX nativo openpyxl
-    (que ya se usa en el resto de Programa Core). Más natural para
-    el flujo de "imprimir/exportar" de cuentas.
+    TMT 2026-05-29 dueña pasó el formato esperado: lista completa de
+    banco_historicos_pendientes (todos los movs del banco que NO se
+    pudieron conciliar contra el programa), ordenados por fecha asc,
+    con columnas FECHA / DETALLE / CODIGO / VALOR / DETALLE-extra.
 
-    Pendientes = movs del banco que quedaron sin conciliar al cerrar.
-    Solo tipo C (entradas), como la hoja FEB del xlsx de muestra.
+    Antes el XLSX traía solo los movs del extracto de la sesión actual
+    (real_only del bucket Manual) — eso era el subconjunto chico de
+    los pendientes del DÍA, no el listado completo del backlog histórico.
     """
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.styles import Font, PatternFill
     except ImportError:
         _LOG.warning("openpyxl no instalado — saltando export")
         return None
 
     no_banco = sesion.get("no_banco") or _BANCO_PICHINCHA
-    buckets = _sesion.estado_sesion(sesion, no_banco)
-    items = buckets.get("manual_banco") or []
+
+    # Listado completo de pendientes del banco. ORDER BY fecha ASC para
+    # que arranquen los más viejos primero (igual al formato Tamara
+    # subió: marzo → abril → mayo).
+    rows = []
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT fecha, concepto, documento, monto, oficina, detalle, tipo
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s
+               AND conciliado_en IS NULL
+             ORDER BY fecha ASC, id ASC
+            """,
+            (no_banco,),
+        ) or []
+    except Exception as e:
+        _LOG.warning("xlsx historicos query falló: %s", e)
 
     _PDF_DIR.mkdir(parents=True, exist_ok=True)
     xlsx_path = _PDF_DIR / f"sesion_{sesion['id']}.xlsx"
@@ -430,7 +447,8 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     ws.merge_cells("A1:E1")
     ws["A2"] = (
         f"Pichincha · Sesión #{sesion['id']} · "
-        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M')} · "
+        f"{len(rows)} movs"
     )
     ws.merge_cells("A2:E2")
 
@@ -440,29 +458,30 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         c.font = bold
         c.fill = header_fill
 
-    row = 5
+    r = 5
     total = 0.0
-    for it in items:
-        m = it["mov"]
-        if (m.tipo or "").upper() != "C":
+    for row in rows:
+        # Solo tipo C (entradas/depósitos pendientes). Si en el futuro
+        # la dueña quiere las salidas también, sacar este filtro.
+        if (row.get("tipo") or "C").upper() != "C":
             continue
-        valor = float(m.monto or 0)
+        valor = float(row.get("monto") or 0)
         total += valor
-        ws.cell(row=row, column=1, value=m.fecha.strftime("%d/%m/%Y") if m.fecha else "")
-        ws.cell(row=row, column=2, value=(m.concepto or "")[:100])
-        ws.cell(row=row, column=3, value=(m.documento or "")[:30])
-        ws.cell(row=row, column=4, value=valor).number_format = "#,##0.00"
-        ws.cell(row=row, column=5, value="")
-        row += 1
+        fecha = row.get("fecha")
+        ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
+        ws.cell(row=r, column=2, value=(row.get("concepto") or "")[:100])
+        ws.cell(row=r, column=3, value=(row.get("documento") or "")[:30])
+        ws.cell(row=r, column=4, value=valor).number_format = "#,##0.00"
+        ws.cell(row=r, column=5, value=(row.get("detalle") or row.get("oficina") or "")[:30])
+        r += 1
 
     # Fila total
-    ws.cell(row=row + 1, column=3, value="Total:").font = bold
-    cell = ws.cell(row=row + 1, column=4, value=total)
+    ws.cell(row=r + 1, column=3, value="Total:").font = bold
+    cell = ws.cell(row=r + 1, column=4, value=total)
     cell.font = bold
     cell.number_format = "#,##0.00"
     cell.fill = header_fill
 
-    # Column widths
     ws.column_dimensions["A"].width = 12
     ws.column_dimensions["B"].width = 60
     ws.column_dimensions["C"].width = 15
