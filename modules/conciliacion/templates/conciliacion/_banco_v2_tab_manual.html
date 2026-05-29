@@ -1,8 +1,38 @@
 {# Tab Manual: dos paneles lado a lado con checkboxes + totalizador.
-   Variables esperadas: buckets.manual_banco, buckets.manual_programa, sesion. #}
+   Variables esperadas: buckets.manual_banco, buckets.manual_programa, sesion.
+
+   TMT 2026-05-29 dueña: 'boton de scrollear mandalo arriba. volveme a
+   poner pantalla para buscar'. Agregado:
+   - Barra superior con búsqueda + selección + diff + botón Conciliar.
+   - Eliminada barra inferior duplicada (era el botón al final).
+#}
 
 {% set _banco = buckets.manual_banco %}
 {% set _programa = buckets.manual_programa %}
+
+{# ── Barra superior: búsqueda + selección + botón Conciliar ────── #}
+<div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
+  <div class="flex items-center gap-2 flex-1 min-w-[280px]">
+    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 17a6 6 0 100-12 6 6 0 000 12z"/></svg>
+    <input type="text" id="manual-filtro" placeholder="Filtrar por concepto, cliente, doc o monto..."
+           class="flex-1 text-sm border-0 focus:ring-0 focus:outline-none bg-transparent placeholder-slate-400">
+  </div>
+  <div class="flex items-center gap-4 text-xs tabular-nums">
+    <div>Banco: <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono">$ 0.00</span> <span class="text-slate-400">(<span data-count="banco">0</span>)</span></div>
+    <div>Programa: <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono">$ 0.00</span> <span class="text-slate-400">(<span data-count="programa">0</span>)</span></div>
+    <div>Δ <span id="manual-diff" class="font-bold font-mono">$ 0.00</span></div>
+  </div>
+  <form method="POST" action="{{ url_for('conciliacion.banco_manual_confirmar') }}" id="manual-form" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+    <input type="hidden" name="real_ids" id="manual-real-ids" value="">
+    <input type="hidden" name="bancsis_ids" id="manual-bancsis-ids" value="">
+    <button type="button" id="manual-btn" disabled
+            class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-sm rounded-md px-4 py-2 font-medium whitespace-nowrap">
+      Conciliar →
+    </button>
+  </form>
+</div>
 
 <div class="grid grid-cols-2 gap-3 mb-2">
 
@@ -18,17 +48,7 @@
       </div>
     </header>
 
-    {# Totalizador #}
-    <div class="px-3 py-1.5 bg-emerald-50/40 dark:bg-emerald-900/10 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between text-xs">
-      <div>
-        Seleccionado: <span data-count="banco" class="font-bold tabular-nums">0</span> items
-      </div>
-      <div>
-        Total: <span data-total="banco" class="font-bold font-mono tabular-nums text-emerald-700 dark:text-emerald-300">$ 0.00</span>
-      </div>
-    </div>
-
-    <div class="max-h-[60vh] overflow-y-auto">
+    <div class="max-h-[65vh] overflow-y-auto">
       <table class="w-full text-xs tabular-nums">
         <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
           <tr>
@@ -80,16 +100,7 @@
       <div class="text-xs text-slate-500">{{ _programa|length }} movs</div>
     </header>
 
-    <div class="px-3 py-1.5 bg-sky-50/40 dark:bg-sky-900/10 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between text-xs">
-      <div>
-        Seleccionado: <span data-count="programa" class="font-bold tabular-nums">0</span> items
-      </div>
-      <div>
-        Total: <span data-total="programa" class="font-bold font-mono tabular-nums text-sky-700 dark:text-sky-300">$ 0.00</span>
-      </div>
-    </div>
-
-    <div class="max-h-[60vh] overflow-y-auto">
+    <div class="max-h-[65vh] overflow-y-auto">
       <table class="w-full text-xs tabular-nums">
         <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
           <tr>
@@ -134,30 +145,6 @@
       </table>
     </div>
   </section>
-</div>
-
-{# ── Barra de acción inferior con el diff y el botón Conciliar ──── #}
-<div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3 flex items-center justify-between gap-4 mb-2">
-  <div class="text-sm flex items-baseline gap-6 tabular-nums">
-    <div>Banco seleccionado: <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300">$ 0.00</span></div>
-    <div>Programa seleccionado: <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300">$ 0.00</span></div>
-    <div>
-      Diferencia:
-      <span id="manual-diff" class="font-bold font-mono">$ 0.00</span>
-    </div>
-  </div>
-  <form method="POST" action="{{ url_for('conciliacion.banco_manual_confirmar') }}" id="manual-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
-    {# Los hidden con los IDs se llenan via JS al hacer click en Conciliar #}
-    <input type="hidden" name="real_ids" id="manual-real-ids" value="">
-    <input type="hidden" name="bancsis_ids" id="manual-bancsis-ids" value="">
-    <button type="button" id="manual-btn"
-            class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-sm rounded-md px-4 py-2 font-medium"
-            disabled>
-      Conciliar seleccionados
-    </button>
-  </form>
 </div>
 
 <script>
@@ -210,6 +197,19 @@
   if (typeof window.recalcPanel === 'function'){
     window.recalcPanel('banco');
     window.recalcPanel('programa');
+  }
+
+  // Filtro: busca por concepto, doc, cliente, monto en ambos paneles.
+  var filtroEl = document.getElementById('manual-filtro');
+  if (filtroEl){
+    filtroEl.addEventListener('input', function(){
+      var q = filtroEl.value.toLowerCase().trim();
+      document.querySelectorAll('[data-panel="banco"] tbody tr, [data-panel="programa"] tbody tr').forEach(function(tr){
+        if (!q){ tr.style.display = ''; return; }
+        var txt = tr.textContent.toLowerCase();
+        tr.style.display = txt.indexOf(q) >= 0 ? '' : 'none';
+      });
+    });
   }
 })();
 </script>
