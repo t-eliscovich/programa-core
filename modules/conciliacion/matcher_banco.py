@@ -20,6 +20,7 @@ y NO vuelven a aparecer en sesiones siguientes (el matcher los excluye).
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -27,6 +28,8 @@ from decimal import Decimal
 
 import db
 from modules.conciliacion.parser_banco import MovBanco
+
+_LOG = logging.getLogger("programa_core.conciliacion.matcher_banco")
 
 
 # Mapping tipo banco ↔ documento BANCSIS.
@@ -1522,24 +1525,45 @@ def crear_transaccion_agrupada_desde_reals(
         )
 
         # Conciliar las N filas N:1 contra esta misma tx.
+        # TMT 2026-05-29 E2E test descubrió que con conn compartida, si UNA
+        # llamada a confirmar_match lanza excepción, las siguientes fallan
+        # con "current transaction is aborted" pero el `except: pass` viejo
+        # las silenciaba → solo 1 match grababa de N. Ahora usamos
+        # SAVEPOINT por cada llamada: si una falla, rollback al savepoint
+        # y seguimos con las siguientes sin contaminar la outer tx.
         n_matches = 0
-        for real in reals:
+        for i, real in enumerate(reals):
+            sp_name = f"sp_match_{i}"
             try:
-                n = confirmar_match(
-                    no_banco=no_banco,
-                    real=real,
-                    id_transaccion=int(new_id) if new_id else None,
-                    estado="matched",
-                    usuario=usuario,
-                    metodo="created_from_real_grouped",
-                    conn=conn,
-                )
-                if n:
-                    n_matches += 1
-            except Exception:
-                # Si una falla, el resto sigue — el historial es informativo.
-                # El insert de la tx ya está en la misma db.tx() commit-after.
-                pass
+                # Savepoint dentro de la outer tx.
+                db.execute(f"SAVEPOINT {sp_name}", conn=conn)
+                try:
+                    n = confirmar_match(
+                        no_banco=no_banco,
+                        real=real,
+                        id_transaccion=int(new_id) if new_id else None,
+                        estado="matched",
+                        usuario=usuario,
+                        metodo="created_from_real_grouped",
+                        conn=conn,
+                    )
+                    if n:
+                        n_matches += 1
+                    db.execute(f"RELEASE SAVEPOINT {sp_name}", conn=conn)
+                except Exception as e:
+                    # Rollback al savepoint para no abortar la outer tx,
+                    # loggear y continuar con el siguiente real.
+                    db.execute(f"ROLLBACK TO SAVEPOINT {sp_name}", conn=conn)
+                    _LOG.warning(
+                        "confirmar_match para real (fecha=%s, monto=%s, doc=%s) "
+                        "falló dentro de grupo tx=%s: %s",
+                        real.fecha, real.monto, real.documento, new_id, e,
+                    )
+            except Exception as e:
+                # Si ni el savepoint funciona, conn está completamente rota.
+                # Abortamos el resto del loop — la outer tx hará rollback.
+                _LOG.exception("SAVEPOINT/ROLLBACK falló — abortando: %s", e)
+                raise
 
     return {
         "id_transaccion": new_id,
