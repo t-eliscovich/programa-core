@@ -301,28 +301,25 @@ def banco_manual_confirmar():
         flash("Marcá al menos un mov de cada lado.", "warn")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
-    # CRITICAL FIX 2026-05-29: el `idx` del bucket indexa en res.real_only
-    # del matcher (movs filtrados, sin matches activos), NO en la lista
-    # cruda del extracto. Re-correr el matcher y usar real_only[i] para
-    # evitar agarrar un mov equivocado (= bug del 67K).
-    from modules.conciliacion.matcher_banco import matchear_extracto_banco
+    # TMT 2026-05-29 dueña: 'manual me aparece el mensaje vas a conciliar y
+    # cuando pongo ok dice sin cambios. ARREGLALO YA'.
+    # Lecciones: el matcher re-corrido a veces NO contiene los movs reales
+    # que la dueña seleccionó (PASS 0 los reclasifica a matches[], o el
+    # orden cambia y el idx queda stale). Necesitamos un mecanismo DURABLE.
+    #
+    # Nueva estrategia (sigs como PRIMARIO, idx como fallback solo si el
+    # front es viejo):
+    #   1. Si hay real_sigs → resolver contra el payload CRUDO de la sesión.
+    #      No depende del matcher; las firmas siempre encuentran su mov si
+    #      existe en el extracto subido.
+    #   2. Si NO hay real_sigs (cliente viejo, antes del deploy de hoy) →
+    #      caer al matcher y al idx, como antes.
     movs = _sesion.cargar_movs(sesion)
-    try:
-        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
-        real_only = res.real_only or []
-    except Exception as e:
-        _LOG.exception("re-match para confirmar manual falló: %s", e)
-        real_only = []
-    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+    real_subset = []
+    metodo_resolucion = "n/a"
 
-    # TMT 2026-05-29 dueña: 'recien concilie de un lado y del otro y me
-    # hizo confirmar y arriba me salio sin cambios'. Fallback durable:
-    # si los idxs apuntan a posiciones que ya no existen en real_only
-    # (matcher movió el orden, conciliaciones desde otra tab, etc.),
-    # usamos las firmas (fecha|doc|monto|tipo) que el front mandó para
-    # ubicar los movs directo en la lista CRUDA del extracto.
-    if real_idxs and not real_subset and real_sigs:
-        sig_a_mov: dict[str, "MovBanco"] = {}
+    if real_sigs:
+        sig_a_mov: dict[str, object] = {}
         for m in movs:
             key = "|".join([
                 m.fecha.isoformat() if m.fecha else "",
@@ -332,11 +329,25 @@ def banco_manual_confirmar():
             ])
             sig_a_mov[key] = m
         real_subset = [sig_a_mov[s] for s in real_sigs if s in sig_a_mov]
-        if real_subset:
-            _LOG.info(
-                "manual confirm: fallback por firma activado (%d reales recuperados de %d sigs)",
-                len(real_subset), len(real_sigs),
-            )
+        metodo_resolucion = f"firma ({len(real_subset)}/{len(real_sigs)})"
+
+    if real_idxs and not real_subset:
+        # Fallback: matcher + idx. Solo si las firmas no resolvieron nada.
+        from modules.conciliacion.matcher_banco import matchear_extracto_banco
+        try:
+            res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
+            real_only = res.real_only or []
+        except Exception as e:
+            _LOG.exception("re-match para confirmar manual falló: %s", e)
+            real_only = []
+        real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+        metodo_resolucion = f"idx ({len(real_subset)}/{len(real_idxs)} en real_only[{len(real_only)}])"
+
+    _LOG.info(
+        "manual confirm: real_idxs=%d real_sigs=%d hist=%d bancsis=%d resolución=%s subset=%d",
+        len(real_idxs), len(real_sigs), len(hist_ids), len(bancsis_ids),
+        metodo_resolucion, len(real_subset),
+    )
 
     n_matches = 0
     err_msg: str | None = None
@@ -407,21 +418,46 @@ def banco_manual_confirmar():
     if parts:
         flash(" + ".join(parts) + " conciliado(s).", "ok")
     else:
-        # Mensaje específico cuando lo seleccionado no se pudo procesar.
-        # Antes simplemente decía 'Sin cambios' sin pista del por qué.
-        if real_idxs and not real_subset:
+        # Diagnóstico verboso: si no hubo movs, decir EXACTO por qué para
+        # que la dueña pueda reaccionar (no más "Sin cambios" silencioso).
+        diag = (
+            f"banco enviado={len(real_idxs)}+{len(hist_ids)}hist, "
+            f"programa enviado={len(bancsis_ids)}, "
+            f"resolución={metodo_resolucion}"
+        )
+        if real_subset and bancsis_ids and not n_matches:
+            # Llegó al confirm_match pero todos fallaron (raro).
             flash(
-                f"No se pudo conciliar: los {len(real_idxs)} movimiento(s) "
-                f"seleccionado(s) del banco ya no figuran en el bucket "
-                f"(probablemente se conciliaron desde otra pestaña, o el "
-                f"matcher los re-clasificó). Refrescá la página y volvé a "
-                f"intentar.",
+                f"Se intentaron {len(real_subset)} match(es) pero todos "
+                f"fallaron. {('Error: ' + err_msg) if err_msg else 'Sin error claro.'} "
+                f"[{diag}]",
                 "error",
             )
+        elif real_idxs and not real_subset and not real_sigs:
+            # Cliente viejo: idxs mandados sin firmas. Hard-refresh requerido.
+            flash(
+                f"Tu pantalla está vieja — recargá con Ctrl+Shift+R (o Cmd+Shift+R) "
+                f"para que el form mande las firmas que el backend necesita. "
+                f"[{diag}]",
+                "error",
+            )
+        elif (real_idxs or real_sigs) and not real_subset:
+            flash(
+                f"No pude ubicar los {max(len(real_idxs), len(real_sigs))} mov(s) "
+                f"del banco que seleccionaste — quizá ya estaban conciliados o el "
+                f"matcher los re-clasificó. Recargá la página. [{diag}]",
+                "error",
+            )
+        elif hist_ids and not n_hist:
+            flash(
+                f"Los {len(hist_ids)} histórico(s) seleccionado(s) ya estaban "
+                f"conciliados — no hubo cambios. [{diag}]",
+                "warn",
+            )
         elif err_msg:
-            flash(f"No pude conciliar: {err_msg}", "error")
+            flash(f"No pude conciliar: {err_msg}. [{diag}]", "error")
         else:
-            flash("Sin cambios.", "warn")
+            flash(f"Sin cambios. [{diag}]", "warn")
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
 
 
