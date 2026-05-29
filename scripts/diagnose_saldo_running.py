@@ -15,6 +15,11 @@ import os
 import sys
 
 sys.path.insert(0, r"C:\programa-core")
+try:
+    from dotenv import load_dotenv
+    load_dotenv(r"C:\programa-core\.env")
+except ImportError:
+    pass
 import db
 
 _BANCO_PICHINCHA = 10
