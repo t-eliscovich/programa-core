@@ -1605,15 +1605,59 @@ def banco_borrar_sesion():
             ) or 0
 
             # 3. Borrar matches creados durante esta sesión.
+            # TMT 2026-05-29 dueña: 'si borro la conciliacion no se borraron
+            # los matches'. Bug: el BETWEEN era estricto y a veces los
+            # microsegundos de cerrada_en no atrapaban los últimos matches.
+            # Fix: ventana ampliada con margen + capturar los id_transaccion
+            # antes de borrar para resetear stat='*' del BANCSIS explícito
+            # (incluso si vino de dbf-import).
+            ids_bancsis_match = _db.fetch_all(
+                """
+                SELECT DISTINCT id_transaccion
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s
+                   AND creado_en >= %s - interval '5 seconds'
+                   AND creado_en <= %s + interval '60 seconds'
+                   AND id_transaccion IS NOT NULL
+                """,
+                (_BANCO_PICHINCHA, abierta, cerrada),
+                conn=conn,
+            ) or []
+            ids_bancsis_sesion = [
+                int(r["id_transaccion"]) for r in ids_bancsis_match
+                if r.get("id_transaccion") is not None
+            ]
             counts["matches"] = _db.execute(
                 """
                 DELETE FROM scintela.banco_conciliacion_match
                  WHERE no_banco = %s
-                   AND creado_en BETWEEN %s AND %s
+                   AND creado_en >= %s - interval '5 seconds'
+                   AND creado_en <= %s + interval '60 seconds'
                 """,
                 (_BANCO_PICHINCHA, abierta, cerrada),
                 conn=conn,
             ) or 0
+            # Reset stat='*' explícito para los BANCSIS que matcheaban con
+            # esta sesión, sin importar el usuario_crea. La conciliación
+            # fue borrada explícitamente — la marca tiene que irse también.
+            counts["bancsis_stat_reset"] = 0
+            if ids_bancsis_sesion:
+                counts["bancsis_stat_reset"] = _db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias
+                       SET stat = NULL
+                     WHERE no_banco = %s
+                       AND id_transaccion = ANY(%s)
+                       AND TRIM(COALESCE(stat, '')) = '*'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                    """,
+                    (_BANCO_PICHINCHA, ids_bancsis_sesion),
+                    conn=conn,
+                ) or 0
 
             # 4. Borrar txs BANCSIS grupales + recompute.
             if ids_grupales:
@@ -1690,8 +1734,11 @@ def banco_borrar_sesion():
 
         _LOG.warning("BORRAR SESIÓN #%s por %s: %s", sesion_id, usuario, counts)
         flash(
-            f"✓ Sesión #{sesion_id} borrada. {counts['matches']} matches, "
-            f"{counts['snapshots']} snapshots, {counts['txs_grupales']} txs, "
+            f"✓ Sesión #{sesion_id} borrada. "
+            f"{counts['matches']} matches, "
+            f"{counts.get('bancsis_stat_reset', 0)} BANCSIS desmarcados, "
+            f"{counts['snapshots']} snapshots, "
+            f"{counts['txs_grupales']} txs, "
             f"{counts['historicos_reset']} histo reseteados.",
             "ok",
         )
