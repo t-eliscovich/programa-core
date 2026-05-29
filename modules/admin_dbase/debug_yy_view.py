@@ -1,10 +1,9 @@
-"""Endpoint /admin/debug-yy — diagnostica el display-time YY (TMT 2026-05-28).
+"""Endpoint /admin/debug-yy + /admin/debug-posdat (TMT 2026-05-28).
 
-Corre buscar(tab='yy') + _aplicar_display_time_yy fila por fila aislada,
-y devuelve un JSON con qué fila (si alguna) tira excepción y su traceback.
-
-Sin esto, los 500 de /posdat?tab=yy quedan opacos — el log queda en el
-EC2 pero la dueña no tiene shell para verlo.
+debug-yy: corre _aplicar_display_time_yy fila por fila aislada.
+debug-posdat: replica el view completo de /posdat (buscar + resumen +
+render template) y devuelve el traceback exacto si algo tira. Vital
+cuando los logs del EC2 no son accesibles.
 """
 from __future__ import annotations
 
@@ -109,5 +108,74 @@ def diagnose():
                 "tb": traceback.format_exc(),
             })
         out["rows"].append(cell)
+
+    return Response(json.dumps(out, indent=2, default=str), mimetype="application/json")
+
+
+@bp.route("/posdat", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def debug_posdat_view():
+    """Reproduce el view /posdat paso a paso y devuelve el traceback exacto
+    si alguno tira. Cubre buscar+resumen+render.
+    """
+    from flask import request as _req
+    out: dict = {"ok": True, "steps": []}
+
+    def step(name: str, fn):
+        s = {"step": name}
+        try:
+            v = fn()
+            s["ok"] = True
+            s["result_repr"] = repr(v)[:500]
+            return v
+        except Exception:
+            s["ok"] = False
+            s["traceback"] = traceback.format_exc()
+            out["ok"] = False
+            return None
+        finally:
+            out["steps"].append(s)
+
+    from modules.posdat import queries as pq
+
+    tab = (_req.args.get("tab") or "posdatados").strip().lower()
+    if tab not in ("posdatados", "yy"):
+        tab = "posdatados"
+
+    # Paso 1: buscar()
+    filas = step("buscar(tab=%s)" % tab,
+                 lambda: pq.buscar(tab=tab, solo_abiertas=True))
+    out["n_filas"] = len(filas) if filas else 0
+
+    # Paso 2: resumen() del tab
+    resumen = step("resumen(tab=%s)" % tab,
+                   lambda: pq.resumen(tab=tab, solo_abiertas=True))
+
+    # Paso 3: conteos_tab
+    step("resumen(tab=posdatados)",
+         lambda: pq.resumen(tab="posdatados", solo_abiertas=True))
+    step("resumen(tab=yy)",
+         lambda: pq.resumen(tab="yy", solo_abiertas=True))
+
+    # Paso 4: render del template
+    from flask import render_template
+    def _render():
+        return render_template(
+            "posdat/lista.html",
+            filas=filas or [],
+            resumen=resumen or {},
+            q="", prov=None, desde=None, hasta=None,
+            solo_abiertas=True, error=None,
+            tab=tab,
+            conteos_tab={"posdatados": resumen or {}, "yy": resumen or {}},
+            total_importe=0.0, total_cuota_mensual=0.0,
+            total_cuota_diaria=0.0,
+            delta_dia_hoy=0.0, acum_mes_hasta_hoy=0.0,
+            dia_del_mes=28,
+        )
+    rendered = step("render_template", _render)
+    if rendered:
+        out["render_len"] = len(rendered)
 
     return Response(json.dumps(out, indent=2, default=str), mimetype="application/json")
