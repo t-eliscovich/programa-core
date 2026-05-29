@@ -120,13 +120,22 @@ def restart():
     def _generate():
         yield "=== Reiniciando ProgramaCoreApp ===\n"
         if sys.platform != "win32":
-            yield "WARN: no estoy en Windows. Skipping Restart-ScheduledTask.\n"
+            yield "WARN: no estoy en Windows. Skipping restart.\n"
             yield "✓ (dev) — reiniciá el server a mano.\n"
             return
-        cmd = (
-            f"Restart-ScheduledTask -TaskName '{SCHEDULED_TASK_NAME}'"
+        # TMT 2026-05-29: Restart-ScheduledTask requiere el PSModule
+        # ScheduledTasks, que en esta versión de Windows Server NO está
+        # cargado por default ('Restart-ScheduledTask is not recognized').
+        # Usamos schtasks.exe — el comando clásico que existe en TODAS las
+        # versiones de Windows desde XP. Dos pasos: End (kill instancia)
+        # + Run (arranca nueva). Equivalente funcional a Restart-* sin la
+        # dependencia del module.
+        cmd_script = (
+            f"schtasks /End /TN '{SCHEDULED_TASK_NAME}'; "
+            f"Start-Sleep -Seconds 2; "
+            f"schtasks /Run /TN '{SCHEDULED_TASK_NAME}'"
         )
-        yield f"PowerShell: {cmd}\n\n"
+        yield f"PowerShell: {cmd_script}\n\n"
         try:
             # No await — disparamos y soltamos. Si esperamos, el restart
             # nos mata mientras leemos stdout y la respuesta queda colgada.
@@ -134,7 +143,7 @@ def restart():
             # El cliente verá la conexión cerrarse — eso es la señal de
             # que el restart efectivamente ocurrió.
             subprocess.Popen(
-                [POWERSHELL, "-NoProfile", "-Command", cmd],
+                [POWERSHELL, "-NoProfile", "-Command", cmd_script],
                 cwd=str(PC_ROOT),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
