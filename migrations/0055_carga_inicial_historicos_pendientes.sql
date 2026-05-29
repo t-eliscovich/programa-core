@@ -1,6 +1,15 @@
 -- TMT 2026-05-27 — Carga de pendientes históricos del banco Pichincha
 -- Total: 852 filas
 -- Fechas: 2019-10-31 → 2026-05-27
+--
+-- ⚠⚠⚠ NUNCA CORRER CON --force ⚠⚠⚠
+-- Esta migración cargó las 852 filas iniciales con TODAS las hojas
+-- (Hoja1/Hoja2/Hoja5/FEB2023). La migración 0059 reemplazó esto por las
+-- 173 correctas (solo FEB2023). Si re-corrés 0055 con --force se vuelven
+-- a insertar las 679 filas de hojas viejas que NO son pendientes reales.
+-- 2026-05-29: Tamara reportó pasar de 173 → 1094 por esto exactamente.
+-- Si necesitás restaurar los 173 canónicos, usá
+-- scripts/restaurar_173_historicos.py.
 
 BEGIN;
 

@@ -1,5 +1,11 @@
 -- TMT 2026-05-27 dueña: 'subilos vos y concilialos los que ya tengan asterisco'
 -- Carga 995 filas stat='*' del PICHINCH.xlsx como ya conciliadas.
+--
+-- ⚠⚠⚠ NUNCA CORRER CON --force ⚠⚠⚠
+-- Inserta 995 filas en banco_historicos_pendientes. Re-correrla con
+-- --force vuelve a inflar la tabla y desincronizar pendientes.
+-- Si necesitás restaurar los 173 canónicos, usá
+-- scripts/restaurar_173_historicos.py.
 -- FIX 2026-05-27 v2: cambiar ON CONFLICT DO UPDATE → DO NOTHING
 -- (xlsx tiene filas duplicadas por firma → CardinalityViolation).
 -- Después UPDATE separado marca conciliadas todas las que matchean.
