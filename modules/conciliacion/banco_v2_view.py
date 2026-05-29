@@ -1146,12 +1146,12 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "DEPÓSITOS PENDIENTES"
+    ws.title = "MOVIMIENTOS PENDIENTES"
 
     bold = Font(bold=True)
     header_fill = PatternFill("solid", fgColor="DDDDDD")
 
-    ws["A1"] = "DEPÓSITOS PENDIENTES"
+    ws["A1"] = "MOVIMIENTOS PENDIENTES"
     ws["A1"].font = Font(bold=True, size=14)
     ws.merge_cells("A1:E1")
     ws["A2"] = (
@@ -1176,20 +1176,23 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
             return "'" + s
         return s
 
+    # TMT 2026-05-29 dueña: 'i am not seeing some of the expenses' (PAGO
+    # SENAE, INTELA C-PAG-*, CHEQUE DEVUELTO). El filtro hard-coded
+    # `tipo='C'` saltaba TODOS los débitos. Sacado: ahora se listan
+    # créditos Y débitos juntos. Débitos se renderean con paréntesis
+    # (convención contable) usando el number_format '#,##0.00;(#,##0.00)'.
     r = 5
     total = 0.0
     for row in rows:
-        # Solo tipo C (entradas/depósitos pendientes). Si en el futuro
-        # la dueña quiere las salidas también, sacar este filtro.
-        if (row.get("tipo") or "C").upper() != "C":
-            continue
-        valor = float(row.get("monto") or 0)
+        tipo = (row.get("tipo") or "C").upper()
+        monto = float(row.get("monto") or 0)
+        valor = monto if tipo == "C" else -monto  # negativos para débitos
         total += valor
         fecha = row.get("fecha")
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
         ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
         ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
-        ws.cell(row=r, column=4, value=valor).number_format = "#,##0.00"
+        ws.cell(row=r, column=4, value=valor).number_format = "#,##0.00;(#,##0.00)"
         ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
         r += 1
 
