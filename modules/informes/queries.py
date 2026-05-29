@@ -822,9 +822,21 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         or {}
     )
     cs_col_us = float(quimicos_mes.get("importe") or 0)
-    cs_col_ukg = _safe_div(cs_col_us, ktin)
+    # TMT 2026-05-29 dueña: la fila Colorantes/Quím. en el balance usa
+    # kg tinturados LIVE del mes en curso (de scintela.tinto), NO el
+    # ktin de historia (que es el cierre del mes anterior). El dBase
+    # mostraba 312.903 kg vs PC 300.012 — diferencia por usar histórico.
+    try:
+        _tint_live = tinto_mes_corriente_resultado()
+        _ktin_live = float(_tint_live.get("ktint") or 0)
+    except Exception:  # noqa: BLE001
+        _ktin_live = 0.0
+    # Si no hay datos live del mes actual, fallback a ktin de historia.
+    cs_col_kg = _ktin_live if _ktin_live > 0 else ktin
+    cs_col_ukg = _safe_div(cs_col_us, cs_col_kg)
     # Aplicar al header de colorantes el ingreso $ del mes.
     header["colorantes"]["ingresos_us"] = cs_col_us
+    header["colorantes"]["kg_live"] = cs_col_kg  # exposed para la tabla
     # TMT 2026-05-19 v8 — egresos $ de colorantes derivado por balance:
     # inic + ingresos - act = consumo. Necesitamos stock act final, que
     # viene del último snapshot live (uqui de historia_ultimo_snapshot).
@@ -3073,6 +3085,7 @@ def resultados_costos_tabla(
     itin: float,
     ktint: float,
     v7: float,
+    ktint_colorantes: float | None = None,  # TMT 2026-05-29: kg live para fila Colorantes; default = ktint (compat)
     v8: float,
     v9: float,
     deprcar: float,
@@ -3124,7 +3137,11 @@ def resultados_costos_tabla(
     tin_ukg = _div(tin_us, ktint)
 
     col_us = float(itin or 0)
-    col_ukg = _div(col_us, ktint)
+    # TMT 2026-05-29 dueña: la fila Colorantes/Quím. usa kg tinturados
+    # LIVE del mes (param opcional ktint_colorantes), no el ktint de
+    # historia. Caída a ktint si no se pasa (compat con callers viejos).
+    col_kg = float(ktint_colorantes) if ktint_colorantes else ktint
+    col_ukg = _div(col_us, col_kg)
 
     sub_ukg = 1.045 * (mp_ukg + tej_ukg + tin_ukg + col_ukg)
 
@@ -3174,10 +3191,10 @@ def resultados_costos_tabla(
          "clase": "dato",
          "ayuda": ("Proceso de tintoreria = V4+V5+V6 + depreciacion de "
                    "tintoreria. U$/kg = costo total / KTINT.")},
-        {"label": "Colorantes/Quím.", "kg": ktint, "ukg": col_ukg,
+        {"label": "Colorantes/Quím.", "kg": col_kg, "ukg": col_ukg,
          "us": col_us, "clase": "dato",
          "ayuda": ("Suma de importes de todas las ordenes de tintura del "
-                   "mes (TINT). U$/kg = importe / KTINT.")},
+                   "mes (TINT). U$/kg = importe / kg tinturados live.")},
         {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": None,
          "clase": "subtotal",
          "ayuda": ("1.045 * (Materia Prima + Tejeduria + Tintoreria + "
@@ -3726,6 +3743,10 @@ def informe_balance() -> dict:
         dcc=amort["dcc"],
         itin=float(tin.get("itin") or 0),
         ktint=float(tin.get("kr") or 0),
+        # TMT 2026-05-29: para la fila Colorantes pasamos ktint LIVE
+        # del mes (= scintela.tinto.ktint), no kr ni historia. dBase
+        # mostraba 312.903 kg vs PC 300.012 — diferencia ahora resuelta.
+        ktint_colorantes=float(tin.get("ktint") or 0),
         v7=gxg["v7"],
         v8=gxg["v8"],
         v9=gxg["v9"],
