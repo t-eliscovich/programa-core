@@ -1256,7 +1256,12 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     val_col = 4
 
     r += 1  # fila vacía de separación
+    # TMT 2026-05-29 dueña: 'puedes separar en ajuste los positivos y los
+    # negativos?'. Ajuste = banco_cred − banco_deb; mostramos las dos
+    # componentes y el neto antes del SISTEMA.
     rows_resumen = [
+        ("+ Pendientes banco créditos", pendientes_banco_cred),
+        ("− Pendientes banco débitos", -pendientes_banco_deb),
         ("AJUSTE", ajuste),
         ("SALDO SISTEMA (conciliado)", saldo_sistema),
         ("TOTAL", total_calc),
