@@ -51,9 +51,8 @@ def cambios_timeline():
         no_banco = None
 
     # ─── 1) Matches creados ───
-    # Incluimos deshecho_en para que el template sepa si todavía está activo
-    # (botón "↶ desmatch" solo si está vivo).
-    # saldo_despues = snapshot capturado en el momento del evento.
+    # TMT 2026-05-29: la subquery scalar al snapshot rompía /cambios con 500.
+    # Movido a lookup post-query (más simple + tolerante a fallas en el snapshot).
     sql_creados = """
         SELECT
           m.creado_en       AS ts,
@@ -68,13 +67,7 @@ def cambios_timeline():
           m.real_monto      AS monto,
           m.real_tipo       AS tipo,
           m.estado          AS estado,
-          m.deshecho_en     AS deshecho_en,
-          (SELECT s.saldo_conc
-             FROM scintela.banco_saldo_conc_snapshot s
-            WHERE s.no_banco = m.no_banco
-              AND s.evento_tipo = 'match_creado'
-              AND s.evento_ref = m.id::text
-            ORDER BY s.creado_en DESC LIMIT 1) AS saldo_despues
+          m.deshecho_en     AS deshecho_en
         FROM scintela.banco_conciliacion_match m
         WHERE m.creado_en::date BETWEEN %(desde)s AND %(hasta)s
     """
@@ -100,13 +93,7 @@ def cambios_timeline():
           m.real_concepto   AS concepto,
           m.real_monto      AS monto,
           m.real_tipo       AS tipo,
-          m.estado          AS estado,
-          (SELECT s.saldo_conc
-             FROM scintela.banco_saldo_conc_snapshot s
-            WHERE s.no_banco = m.no_banco
-              AND s.evento_tipo = 'match_deshecho'
-              AND s.evento_ref = m.id::text
-            ORDER BY s.creado_en DESC LIMIT 1) AS saldo_despues
+          m.estado          AS estado
         FROM scintela.banco_conciliacion_match m
         WHERE m.deshecho_en IS NOT NULL
           AND m.deshecho_en::date BETWEEN %(desde)s AND %(hasta)s
@@ -159,6 +146,31 @@ def cambios_timeline():
     except Exception as exc:
         _LOG.exception("cambios_timeline query failed: %s", exc)
         eventos = []
+
+    # Lookup de saldos por (evento_tipo, evento_ref) — query separada,
+    # tolerante a fallas. La tabla puede no existir o estar vacía.
+    saldo_map: dict = {}
+    try:
+        snap_rows = _db.fetch_all(
+            """
+            SELECT evento_tipo, evento_ref, saldo_conc, creado_en
+              FROM scintela.banco_saldo_conc_snapshot
+             WHERE no_banco = %(no_banco)s
+               AND creado_en::date BETWEEN %(desde)s AND %(hasta)s
+             ORDER BY creado_en DESC
+            """,
+            {"no_banco": no_banco or 10, "desde": desde, "hasta": hasta},
+        ) or []
+        for sr in snap_rows:
+            key = (sr.get("evento_tipo") or "", str(sr.get("evento_ref") or ""))
+            if key not in saldo_map:
+                saldo_map[key] = float(sr.get("saldo_conc") or 0)
+    except Exception:
+        saldo_map = {}
+
+    for e in eventos:
+        key = (e.get("accion") or "", str(e.get("match_id") or ""))
+        e["saldo_despues"] = saldo_map.get(key)
 
     # Ordenar por timestamp desc, agrupar por día
     eventos.sort(key=lambda e: e.get("ts") or 0, reverse=True)

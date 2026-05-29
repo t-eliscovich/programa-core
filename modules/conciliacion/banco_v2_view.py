@@ -191,8 +191,19 @@ def banco_manual_confirmar():
         flash("Marcá al menos un mov de cada lado.", "warn")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
+    # CRITICAL FIX 2026-05-29: el `idx` del bucket indexa en res.real_only
+    # del matcher (movs filtrados, sin matches activos), NO en la lista
+    # cruda del extracto. Re-correr el matcher y usar real_only[i] para
+    # evitar agarrar un mov equivocado (= bug del 67K).
+    from modules.conciliacion.matcher_banco import matchear_extracto_banco
     movs = _sesion.cargar_movs(sesion)
-    real_subset = [movs[i] for i in real_idxs if 0 <= i < len(movs)]
+    try:
+        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
+        real_only = res.real_only or []
+    except Exception as e:
+        _LOG.exception("re-match para confirmar manual falló: %s", e)
+        real_only = []
+    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
 
     n_matches = 0
     usuario = _usuario_actual()
@@ -268,11 +279,30 @@ def banco_impuestos_confirmar():
         flash("No marcaste ningún movimiento.", "warn")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
 
+    # CRITICAL FIX 2026-05-29: re-correr el matcher para que los idxs
+    # apunten a res.real_only (filtrado), NO a la lista cruda del extracto.
+    # Antes movs[i] devolvía un mov COMPLETAMENTE DISTINTO (depósitos por
+    # $15K) en lugar del impuesto de \$0.05 → suma 67K en lugar de 14.
+    from modules.conciliacion.matcher_banco import matchear_extracto_banco
     movs = _sesion.cargar_movs(sesion)
-    real_subset = [movs[i] for i in real_idxs if 0 <= i < len(movs)]
+    try:
+        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
+        real_only = res.real_only or []
+    except Exception as e:
+        _LOG.exception("re-match para confirmar impuestos falló: %s", e)
+        real_only = []
+    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
     if not real_subset:
         flash("Los movimientos seleccionados ya no existen en la sesión.", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
+
+    # Sanity check: si la suma supera $1000 lo más probable es que la
+    # dueña seleccionó cosas grandes por error (default checked roto).
+    # Pedimos confirmación adicional en backend levantando warning.
+    total_signed = sum(float(r.monto) for r in real_subset if (r.tipo or '').upper()=='C') \
+                 - sum(float(r.monto) for r in real_subset if (r.tipo or '').upper()=='D')
+    if abs(total_signed) > 1000:
+        _LOG.warning("Impuestos confirmar con neto inusual: %.2f n=%d", total_signed, len(real_subset))
 
     fecha_str = (request.form.get("fecha") or "").strip()
     concepto = (request.form.get("concepto") or "").strip() or None

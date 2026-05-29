@@ -4,22 +4,29 @@
 {% block content %}
 <div class="max-w-6xl">
 
-  {# ── Header: título + estado de la sesión ────────────────────── #}
-  <div class="flex items-baseline justify-between mb-3">
-    <div>
+  {# ── Header: título + estado de la sesión + Terminar arriba ──── #}
+  <div class="flex items-baseline justify-between mb-3 gap-3">
+    <div class="flex-1">
       <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
       <p class="text-xs text-slate-500">
         Sesión <span class="font-mono">#{{ sesion.id }}</span>
         · abierta {{ sesion.abierta_en.strftime('%Y-%m-%d %H:%M') if sesion.abierta_en else '' }}
         · {{ sesion.matches_hechos }} match{% if sesion.matches_hechos != 1 %}es{% endif %} hechos
         {% if sesion.extracto_nombre %}<span class="text-slate-400">· archivo: {{ sesion.extracto_nombre }}</span>{% endif %}
+        {% if buckets.matcher_extracto_desde %}
+          · <span class="text-slate-400">ventana: {{ buckets.matcher_extracto_desde }} → {{ buckets.matcher_extracto_hasta }}</span>
+        {% endif %}
       </p>
     </div>
-    <div class="text-right text-xs text-slate-500">
-      {% if buckets.matcher_extracto_desde %}
-      ventana extracto: {{ buckets.matcher_extracto_desde }} → {{ buckets.matcher_extracto_hasta }}
-      {% endif %}
-    </div>
+    {# TMT 2026-05-29 dueña: 'Terminar y guardar arriba de todo' — botón también arriba. #}
+    <form method="POST" action="{{ url_for('conciliacion.banco_terminar') }}" class="m-0"
+          onsubmit="return confirm('¿Cerrar esta conciliación? Se genera el PDF de pendientes y la sesión queda archivada.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+      <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-4 py-2 whitespace-nowrap">
+        ✓ Terminar y guardar
+      </button>
+    </form>
   </div>
 
   {# ── Balance Pichincha compact (sticky) ──────────────────────── #}
