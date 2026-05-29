@@ -495,6 +495,62 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     return out
 
 
+def _mapa_doc_banco_a_bancsis(no_banco: int, refs: set[str]) -> dict[str, list[int]]:
+    """Para cada doc_banco normalizado en `refs`, devuelve la lista de
+    id_transaccion BANCSIS (de `no_banco`) a los que el cheque está ligado
+    vía chequextransaccion.
+
+    TMT 2026-05-29 dueña: 'en conciliar por documento no funciona, este
+    cheque con este documento no funciono'. El JOIN STRING_AGG de
+    cargar_bancsis a veces no surfacea doc_banco si el cheque/BANCSIS
+    quedó fuera del rango temporal o de algún caso borde. Esta función
+    es una red de seguridad: consulta directamente cheque.doc_banco y
+    sigue el link explícito, sin depender de fechas o agregados.
+    """
+    if not refs:
+        return {}
+    # Normalizamos en SQL también, para que comparemos peras con peras:
+    # extracto.documento ya viene normalizado por _norm_doc (sin ceros a
+    # izquierda); replicamos lo mismo sobre cheque.doc_banco.
+    refs_clean = [r for r in refs if r]
+    if not refs_clean:
+        return {}
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT
+              CASE
+                WHEN NULLIF(REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', ''), '') IS NULL
+                  THEN TRIM(ch.doc_banco)
+                ELSE REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', '')
+              END                                       AS ref_norm,
+              cxt.id_transaccion                        AS id_transaccion
+              FROM scintela.cheque ch
+              JOIN scintela.chequextransaccion cxt
+                ON cxt.id_cheque = ch.id_cheque
+              JOIN scintela.transacciones_bancarias tb
+                ON tb.id_transaccion = cxt.id_transaccion
+             WHERE tb.no_banco = %s
+               AND NULLIF(TRIM(ch.doc_banco), '') IS NOT NULL
+               AND (
+                 TRIM(ch.doc_banco) = ANY(%s::text[])
+                 OR REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', '') = ANY(%s::text[])
+               )
+            """,
+            (int(no_banco), refs_clean, refs_clean),
+        ) or []
+    except Exception as e:
+        _LOG.warning("_mapa_doc_banco_a_bancsis falló: %s", e)
+        return {}
+    out: dict[str, list[int]] = {}
+    for r in rows:
+        ref = (r.get("ref_norm") or "").strip()
+        if not ref:
+            continue
+        out.setdefault(ref, []).append(int(r["id_transaccion"]))
+    return out
+
+
 def _firma_real(m: MovBanco) -> tuple:
     return (
         m.fecha,
@@ -636,6 +692,21 @@ def matchear_extracto_banco(
         """
         return (real.tipo or "").upper() == "C" and (bk.documento or "").upper() == "DE"
 
+    # TMT 2026-05-29 dueña: 'en conciliar por documento no funciona, este
+    # cheque con este documento no funciono'. Red de seguridad: lookup
+    # DIRECTO de cheque.doc_banco → BANCSIS (vía chequextransaccion).
+    # Independiente del STRING_AGG de cargar_bancsis (que tenía algunos
+    # casos borde donde no surfaceaba el doc_banco). Cubre el caso:
+    # cheque depositado, doc_banco cargado inline, extracto trae ese
+    # mismo número → tiene que pegar sí o sí.
+    refs_extracto: set[str] = set()
+    for _m in movs_real_filtrados:
+        _r = _norm_doc(_m.documento)
+        if _r:
+            refs_extracto.add(_r)
+    doc_banco_a_bk: dict[str, list[int]] = _mapa_doc_banco_a_bancsis(no_banco, refs_extracto)
+    bancsis_por_id: dict[int, MovBancsis] = {bk.id_transaccion: bk for bk in bancsis}
+
     movs_post_p0: list[MovBanco] = []
     for real in movs_real_filtrados:
         ref_real = _norm_doc(real.documento)
@@ -643,40 +714,56 @@ def matchear_extracto_banco(
             movs_post_p0.append(real)
             continue
         match_bk = None
-        for bk in bancsis:
-            if bk.id_transaccion in bancsis_usado:
+
+        # ── 0a) Red de seguridad: lookup directo cheque.doc_banco ──
+        # Si hay cheques con doc_banco=ref_real linkeados a BANCSIS, elegir
+        # el primero disponible (mismo banco, no usado, tipo compatible).
+        for tx_id in doc_banco_a_bk.get(ref_real, []):
+            if tx_id in bancsis_usado:
                 continue
-            # TMT 2026-05-26 dueña: 'en conciliacion buscar doc id de banco
-            # y doc is programa'. Comparamos extracto.documento contra
-            # TODOS los doc-ids del programa: numreferencia + N° de cheques
-            # ligados (vía chequextransaccion) + doc_banco editado inline
-            # en /cheques. Cubre los 3 lugares donde un humano puede haber
-            # guardado el comprobante banco.
-            refs_bk = set()
-            r1 = _norm_doc(bk.numreferencia)
-            if r1:
-                refs_bk.add(r1)
-            # no_cheque_rel puede ser "1234" o "1234,1235,..." (string_agg).
-            for raw in (bk.no_cheque_rel or "").split(","):
-                rn = _norm_doc(raw)
-                if rn:
-                    refs_bk.add(rn)
-            # TMT 2026-05-27 dueña: 'ACABO DE METERLE EL NUMERO DE DOCUMENTO
-            # A ESTA TRANSFERENCIA, VEAMOS QUE EL MATCH DE PERFECTO ACA'.
-            # cheque.doc_banco (editable inline en /cheques) es lo que la
-            # dueña carga cuando el banco le da un N° de comprobante.
-            for raw in (bk.doc_banco_rel or "").split(","):
-                rn = _norm_doc(raw)
-                if rn:
-                    refs_bk.add(rn)
-            if ref_real not in refs_bk:
+            bk_candidato = bancsis_por_id.get(tx_id)
+            if bk_candidato is None:
+                continue  # estaba fuera del rango cargado o ya conciliado
+            if not _es_tipo_compatible(real.tipo, bk_candidato.documento):
                 continue
-            # Tipo compatible (no matchear un débito con un crédito por
-            # coincidencia de referencia).
-            if not _es_tipo_compatible(real.tipo, bk.documento):
-                continue
-            match_bk = bk
+            match_bk = bk_candidato
             break
+
+        if match_bk is None:
+            for bk in bancsis:
+                if bk.id_transaccion in bancsis_usado:
+                    continue
+                # TMT 2026-05-26 dueña: 'en conciliacion buscar doc id de banco
+                # y doc is programa'. Comparamos extracto.documento contra
+                # TODOS los doc-ids del programa: numreferencia + N° de cheques
+                # ligados (vía chequextransaccion) + doc_banco editado inline
+                # en /cheques. Cubre los 3 lugares donde un humano puede haber
+                # guardado el comprobante banco.
+                refs_bk = set()
+                r1 = _norm_doc(bk.numreferencia)
+                if r1:
+                    refs_bk.add(r1)
+                # no_cheque_rel puede ser "1234" o "1234,1235,..." (string_agg).
+                for raw in (bk.no_cheque_rel or "").split(","):
+                    rn = _norm_doc(raw)
+                    if rn:
+                        refs_bk.add(rn)
+                # TMT 2026-05-27 dueña: 'ACABO DE METERLE EL NUMERO DE DOCUMENTO
+                # A ESTA TRANSFERENCIA, VEAMOS QUE EL MATCH DE PERFECTO ACA'.
+                # cheque.doc_banco (editable inline en /cheques) es lo que la
+                # dueña carga cuando el banco le da un N° de comprobante.
+                for raw in (bk.doc_banco_rel or "").split(","):
+                    rn = _norm_doc(raw)
+                    if rn:
+                        refs_bk.add(rn)
+                if ref_real not in refs_bk:
+                    continue
+                # Tipo compatible (no matchear un débito con un crédito por
+                # coincidencia de referencia).
+                if not _es_tipo_compatible(real.tipo, bk.documento):
+                    continue
+                match_bk = bk
+                break
         if match_bk is not None:
             diff_dias = abs((real.fecha - match_bk.fecha).days)
             diff_monto = abs(float(real.monto) - match_bk.importe)

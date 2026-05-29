@@ -121,6 +121,33 @@ def sesion_por_id(sesion_id: int) -> dict | None:
     )
 
 
+def sesion_por_hash(no_banco: int, extracto_hash: str) -> dict | None:
+    """Busca cualquier sesión (abierta o cerrada) con el MISMO hash del
+    extracto para el mismo banco. Usado para detectar re-uploads del mismo
+    archivo y evitar duplicar el trabajo. TMT 2026-05-29 pedido dueña:
+    'si vuelvo a subir el mismo archivo no se tiene que duplicar'.
+
+    Devuelve la sesión más reciente que coincide, o None.
+    """
+    if not extracto_hash:
+        return None
+    try:
+        return db.fetch_one(
+            """
+            SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
+                   extracto_hash, extracto_nombre, matches_hechos
+              FROM scintela.banco_conciliacion_sesion
+             WHERE no_banco = %s
+               AND extracto_hash = %s
+             ORDER BY abierta_en DESC
+             LIMIT 1
+            """,
+            (int(no_banco), extracto_hash),
+        )
+    except Exception:
+        return None
+
+
 def crear_sesion(
     no_banco: int,
     usuario: str,

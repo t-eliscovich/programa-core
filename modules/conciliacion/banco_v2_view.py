@@ -216,6 +216,29 @@ def banco_crear_sesion():
         flash("El archivo vino vacío.", "error")
         return redirect(url_for("conciliacion.hub"))
 
+    # TMT 2026-05-29 pedido dueña: 'si vuelvo a subir el mismo archivo no
+    # se tiene que duplicar, tiene que cross check'. Calculamos el hash
+    # ANTES de parsear y, si ya hay una sesión (abierta o cerrada) con
+    # ese mismo hash para este banco, bloqueamos el alta — salvo que la
+    # usuaria fuerce con `forzar=1` (ej. correcciones puntuales).
+    extracto_hash = _sesion.sha256_bytes(raw)
+    forzar = (request.form.get("forzar") or "").strip() in ("1", "true", "yes")
+    if not forzar:
+        prev = _sesion.sesion_por_hash(no_banco, extracto_hash)
+        if prev:
+            cuando = prev.get("abierta_en")
+            cuando_str = cuando.strftime("%d/%m/%Y %H:%M") if cuando else "fecha desconocida"
+            cerrada = bool(prev.get("cerrada_en"))
+            estado = "cerrada" if cerrada else "abierta"
+            n_matches = int(prev.get("matches_hechos") or 0)
+            flash(
+                f"Este archivo ya se subió el {cuando_str} (sesión #{prev['id']}, "
+                f"{estado}, {n_matches} matches). Si querés re-procesarlo igual, "
+                f"tildá 'Subir igual aunque sea duplicado' en el formulario.",
+                "warn",
+            )
+            return redirect(url_for("conciliacion.hub"))
+
     try:
         movs = parse_banco_xlsx(raw)
     except Exception as e:
@@ -230,7 +253,7 @@ def banco_crear_sesion():
         no_banco=no_banco,
         usuario=usuario,
         movs=movs,
-        extracto_hash=_sesion.sha256_bytes(raw),
+        extracto_hash=extracto_hash,
         extracto_nombre=f.filename,
     )
     flash(
