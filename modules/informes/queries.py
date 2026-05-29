@@ -324,10 +324,30 @@ def posdat_totales() -> dict:
     )
     if not row:
         return {"pos1": 0.0, "pos2": 0.0, "totp": 0.0}
+
+    totp_raw = float(row["totp"] or 0)
+
+    # TMT 2026-05-29: agregar el delta del display-time YY al TOTP.
+    # SUM(importe) del SQL devuelve los importes persistidos (baseline),
+    # pero los YY se muestran como `importe + cuota_diaria × offset`. Sin
+    # este ajuste, el KPI "Pasivos" del balance queda 23.600 más bajo que
+    # el total que la dueña ve en /posdat?tab=yy. Defensivo: si falla por
+    # cualquier razón (módulo no cargado, etc.), seguimos con totp_raw.
+    delta_yy = 0.0
+    try:
+        from modules.posdat import queries as _pq
+        yy_filas = _pq.buscar(tab="yy", solo_abiertas=True)
+        for r in yy_filas:
+            cd = float(r.get("cuota_diaria") or 0)
+            off = int(r.get("dias_offset") or 0)
+            delta_yy += cd * off
+    except Exception:  # noqa: BLE001
+        delta_yy = 0.0
+
     return {
         "pos1": float(row["pos1"] or 0),
         "pos2": float(row["pos2"] or 0),
-        "totp": float(row["totp"] or 0),
+        "totp": round(totp_raw + delta_yy, 2),
     }
 
 
