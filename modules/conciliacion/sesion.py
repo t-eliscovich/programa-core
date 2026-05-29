@@ -325,7 +325,7 @@ def _cargar_historicos_pendientes(no_banco: int) -> list[dict]:
     try:
         rows = db.fetch_all(
             """
-            SELECT id, fecha, documento, no_cheque, concepto, monto, tipo
+            SELECT id, fecha, documento, concepto, monto, tipo, oficina, detalle
               FROM scintela.banco_historicos_pendientes
              WHERE no_banco = %s
                AND conciliado_en IS NULL
@@ -388,13 +388,13 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
 def _hist_to_mov_like(h: dict):
     """Wrap un row de banco_historicos_pendientes en algo que el template
     puede tratar como mov banco. Atributos esperados por el template:
-    fecha, concepto, documento (= no_cheque or documento), monto, tipo.
+    fecha, concepto, documento, monto, tipo.
     """
     import types
     m = types.SimpleNamespace()
     m.fecha = h.get("fecha")
     m.concepto = h.get("concepto") or ""
-    m.documento = (h.get("no_cheque") or h.get("documento") or "")
+    m.documento = h.get("documento") or ""
     try:
         m.monto = float(h.get("monto") or 0)
     except (TypeError, ValueError):
