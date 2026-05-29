@@ -783,7 +783,13 @@ def resumen(
     # los importes ya recalculados. El SQL original del resumen sólo
     # contaba prov='YY' (no RT), preservamos esa convención para que el
     # KPI "N provisiones" no cambie.
+    #
+    # Devolvemos Decimal (no float) para matchear el tipo que devuelve
+    # SUM(numeric) de psycopg2 en el otro tab. Si se mezclan
+    # (template: _pos_total + _yy_total) con un float, Python tira
+    # TypeError: unsupported operand 'Decimal' + 'float' → 500.
     if tab_norm == "yy":
+        from decimal import Decimal as _Dec
         filas = buscar(
             prov=prov, q=q_s, solo_abiertas=solo_abiertas,
             desde=desde, hasta=hasta, tab="yy",
@@ -792,8 +798,14 @@ def resumen(
             f for f in filas
             if (f.get("prov") or "").strip().upper() == "YY"
         ]
+        total = _Dec("0")
+        for f in yy_solo:
+            try:
+                total += _Dec(str(f.get("importe") or 0))
+            except Exception:  # noqa: BLE001
+                pass
         return {
-            "total_abierto": sum(float(f.get("importe") or 0) for f in yy_solo),
+            "total_abierto": total,
             "partidas_abiertas": len(yy_solo),
         }
 
