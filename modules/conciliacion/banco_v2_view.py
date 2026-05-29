@@ -602,19 +602,25 @@ def banco_historial_v2():
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_deshacer_v2():
-    """Lista de matches activos con un botón Deshacer por fila.
+    """Lista de matches activos + movs BANCSIS creados por conciliación.
 
-    TMT 2026-05-29 dueña: 'deshacer conciliados tiene demasiada data y
-    kpis, solo quiero los movimientos y deshacer con una alerta que
-    confirmar'. Reemplazo de /banco/historial.
+    TMT 2026-05-29 dueña: 'no veo las dos entradas en 67k que quiero
+    deshacer'. Las txs creadas por crear_transaccion_agrupada_desde_reals
+    (impuestos/comisiones) son su propio objeto en transacciones_bancarias
+    — anular el match no las borra. Pantalla muestra ambos:
+
+      - Matches individuales (real_only conciliados contra un id_tx)
+      - Grupos BANCSIS creados por la propia conciliación (las ND/NC
+        del flujo de Impuestos): para borrarlos completamente.
     """
     matches = []
+    grupos = []
     try:
         matches = _db.fetch_all(
             """
             SELECT m.id, m.creado_en, m.real_fecha, m.real_documento,
                    m.real_concepto, m.real_monto, m.real_tipo,
-                   m.usuario, m.id_transaccion
+                   m.usuario, m.id_transaccion, m.metodo
               FROM scintela.banco_conciliacion_match m
              WHERE m.no_banco = %s
                AND m.deshecho_en IS NULL
@@ -625,7 +631,140 @@ def banco_deshacer_v2():
         ) or []
     except Exception as e:
         _LOG.warning("listar matches activos falló: %s", e)
+
+    try:
+        grupos = _db.fetch_all(
+            """
+            SELECT t.id_transaccion, t.fecha, t.documento, t.importe,
+                   t.concepto, t.saldo, t.usuario_crea,
+                   COUNT(m.id) AS n_matches_total,
+                   COUNT(m.id) FILTER (WHERE m.deshecho_en IS NULL) AS n_matches_activos
+              FROM scintela.transacciones_bancarias t
+              JOIN scintela.banco_conciliacion_match m ON m.id_transaccion = t.id_transaccion
+             WHERE t.no_banco = %s
+               AND m.metodo IN ('created_from_real_grouped','created_from_real')
+             GROUP BY t.id_transaccion, t.fecha, t.documento, t.importe,
+                      t.concepto, t.saldo, t.usuario_crea
+            HAVING COUNT(m.id) FILTER (WHERE m.deshecho_en IS NULL) > 0
+             ORDER BY t.fecha DESC, t.id_transaccion DESC
+             LIMIT 200
+            """,
+            (_BANCO_PICHINCHA,),
+        ) or []
+    except Exception as e:
+        _LOG.warning("listar grupos BANCSIS falló: %s", e)
+
     return render_template(
         "conciliacion/banco_v2_deshacer.html",
         matches=matches,
+        grupos=grupos,
     )
+
+
+@conciliacion_bp.route("/banco-v2/anular-grupo", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_anular_grupo():
+    """Anula UNA tx BANCSIS creada por conciliación (impuestos / agrupado)
+    + todos sus matches activos + revierte stat + recompute saldos.
+
+    TMT 2026-05-29 dueña: 'si creamos por impuestos, si deshaces el
+    movimiento también tiene que anular esa carga'.
+    """
+    try:
+        id_tx = int(request.form.get("id_transaccion") or 0)
+    except (TypeError, ValueError):
+        id_tx = 0
+    if id_tx <= 0:
+        flash("ID de transacción inválido.", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+
+    usuario = _usuario_actual()
+    # 1) Validar que es realmente una tx de conciliación (no PC normal).
+    tx_row = _db.fetch_one(
+        """
+        SELECT t.id_transaccion, t.fecha, t.documento, t.importe, t.concepto,
+               (SELECT MIN(m.metodo)
+                  FROM scintela.banco_conciliacion_match m
+                 WHERE m.id_transaccion = t.id_transaccion) AS metodo
+          FROM scintela.transacciones_bancarias t
+         WHERE t.id_transaccion = %s AND t.no_banco = %s
+        """,
+        (id_tx, _BANCO_PICHINCHA),
+    )
+    if not tx_row:
+        flash("No se encontró la transacción.", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    if (tx_row.get("metodo") or "") not in ("created_from_real", "created_from_real_grouped"):
+        flash("Esta tx NO fue creada por conciliación — no la puedo anular desde acá.", "warn")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+
+    # 2) Soft-undo de TODOS los matches contra esta tx.
+    try:
+        n_matches = _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET deshecho_en = CURRENT_TIMESTAMP,
+                   deshecho_por = %s
+             WHERE id_transaccion = %s
+               AND deshecho_en IS NULL
+            """,
+            (usuario[:50], id_tx),
+        ) or 0
+    except Exception as e:
+        _LOG.exception("undo matches falló: %s", e)
+        n_matches = 0
+
+    # 3) Borrar la tx BANCSIS + recompute saldos posteriores.
+    try:
+        import bank_helpers
+        from modules.conciliacion.matcher_banco import db as _matcher_db  # mismo db
+        with _matcher_db.tx() as conn:
+            _matcher_db.execute(
+                "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = %s AND no_banco = %s",
+                (id_tx, _BANCO_PICHINCHA),
+                conn=conn,
+            )
+            # Walk-forward desde la siguiente fila para corregir saldos.
+            siguiente = _matcher_db.fetch_one(
+                """
+                SELECT id_transaccion FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s
+                   AND (fecha > %s OR (fecha = %s AND id_transaccion > %s))
+                 ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
+                """,
+                (_BANCO_PICHINCHA, tx_row["fecha"], tx_row["fecha"], id_tx),
+                conn=conn,
+            )
+            if siguiente and siguiente.get("id_transaccion"):
+                try:
+                    bank_helpers.recompute_saldos_desde(
+                        conn,
+                        no_banco=_BANCO_PICHINCHA,
+                        no_cta=None,
+                        ancla_id=int(siguiente["id_transaccion"]),
+                    )
+                except Exception as e:
+                    _LOG.warning("recompute_saldos falló (sigue): %s", e)
+    except Exception as e:
+        _LOG.exception("borrar tx %s falló: %s", id_tx, e)
+        flash(f"Error al borrar la transacción: {e}", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+
+    # 4) Snapshot del nuevo saldo a conciliar.
+    try:
+        from modules.conciliacion import saldo_snapshot as _ss
+        _ss.snapshot(
+            _BANCO_PICHINCHA, "grupo_anulado",
+            evento_ref=str(id_tx), usuario=usuario,
+            descripcion=f"anulada tx agrupada #{id_tx} ({n_matches} matches deshechos)",
+        )
+    except Exception:
+        pass
+
+    flash(
+        f"Movimiento agrupado #{id_tx} anulado: tx borrada, "
+        f"{n_matches} match(es) deshechos, saldos recalculados.",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.banco_deshacer_v2"))

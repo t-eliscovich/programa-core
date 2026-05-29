@@ -2,59 +2,118 @@
 {% block titulo %}Deshacer conciliados{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl">
+<div class="max-w-6xl">
   <div class="flex items-baseline justify-between mb-3">
     <h1 class="text-2xl font-semibold">Deshacer conciliados</h1>
     <a href="{{ url_for('conciliacion.hub') }}"
        class="text-sm text-sky-600 hover:underline">← Volver a conciliación</a>
   </div>
 
-  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
-    <table class="w-full text-sm tabular-nums">
-      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
-        <tr>
-          <th class="px-3 py-2 text-left w-28">Conciliado</th>
-          <th class="px-3 py-2 text-left w-24">Fecha mov</th>
-          <th class="px-3 py-2 text-left w-12">T</th>
-          <th class="px-3 py-2 text-left w-28">Doc</th>
-          <th class="px-3 py-2 text-left">Concepto</th>
-          <th class="px-3 py-2 text-right w-28">Monto</th>
-          <th class="px-3 py-2 text-left w-20">Usuario</th>
-          <th class="px-3 py-2 text-right w-32">Acción</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in matches %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.creado_en.strftime('%Y-%m-%d %H:%M') if m.creado_en else '—' }}</td>
-          <td class="px-3 py-1.5 text-slate-600">{{ m.real_fecha.strftime('%Y-%m-%d') if m.real_fecha else '—' }}</td>
-          <td class="px-3 py-1.5">
-            {% if m.real_tipo == 'C' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">+</span>
-            {% elif m.real_tipo == 'D' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold">−</span>
-            {% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-slate-500 font-mono text-xs">{{ (m.real_documento or '—')|string|truncate(15,True,'') }}</td>
-          <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300 truncate max-w-md" title="{{ m.real_concepto }}">{{ (m.real_concepto or '—')[:60] }}</td>
-          <td class="px-3 py-1.5 text-right font-mono font-semibold {% if m.real_tipo == 'C' %}text-emerald-700{% elif m.real_tipo == 'D' %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.real_monto|float) if m.real_monto is not none else '—' }}</td>
-          <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.usuario or '—' }}</td>
-          <td class="px-3 py-1.5 text-right">
-            <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline m-0"
-                  onsubmit="return confirm('¿Deshacer este match?\n\n  {{ (m.real_concepto or '')[:50]|e }}\n  Monto: {{ '{:,.2f}'.format(m.real_monto|float) if m.real_monto is not none else '—' }}\n\nEl movimiento vuelve a aparecer como no conciliado.');">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="match_id" value="{{ m.id }}">
-              <input type="hidden" name="next" value="deshacer">
-              <button class="bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 text-xs rounded-md px-3 py-1 font-medium">
-                ↶ Deshacer
-              </button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-        {% if not matches %}
-        <tr><td colspan="8" class="px-3 py-6 text-center text-slate-400 italic">— sin matches activos —</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
+  {# ── Movimientos AGRUPADOS creados por conciliación ──────────── #}
+  {% if grupos %}
+  <section class="mb-6">
+    <h2 class="text-base font-semibold mb-2 text-rose-700 dark:text-rose-300">
+      Movimientos creados por conciliación
+      <span class="text-xs text-slate-500 font-normal">— anular borra la tx + deshace todos sus matches + recalcula saldos</span>
+    </h2>
+    <div class="rounded-lg border border-rose-200 dark:border-rose-900/30 bg-white dark:bg-slate-900 overflow-hidden">
+      <table class="w-full text-sm tabular-nums">
+        <thead class="bg-rose-50 dark:bg-rose-900/10 text-[10px] uppercase text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left w-16">ID Tx</th>
+            <th class="px-3 py-2 text-left w-24">Fecha</th>
+            <th class="px-3 py-2 text-left w-16">Doc</th>
+            <th class="px-3 py-2 text-left">Concepto</th>
+            <th class="px-3 py-2 text-right w-32">Importe</th>
+            <th class="px-3 py-2 text-right w-20">Matches</th>
+            <th class="px-3 py-2 text-right w-36">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set _docs_debito = ['ND','CH','DB','GS','PA'] %}
+          {% for g in grupos %}
+          {% set _es_debito = g.documento in _docs_debito %}
+          {% set _signo_str = '−' if _es_debito else '+' %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-rose-50/30 dark:hover:bg-rose-900/10">
+            <td class="px-3 py-1.5 font-mono text-slate-500">#{{ g.id_transaccion }}</td>
+            <td class="px-3 py-1.5 text-slate-600">{{ g.fecha.strftime('%Y-%m-%d') if g.fecha else '—' }}</td>
+            <td class="px-3 py-1.5 text-slate-500 font-mono text-xs">{{ g.documento }}</td>
+            <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300 truncate max-w-md" title="{{ g.concepto }}">{{ g.concepto }}</td>
+            <td class="px-3 py-1.5 text-right font-mono font-semibold {% if _es_debito %}text-rose-700{% else %}text-emerald-700{% endif %}">
+              {{ _signo_str }}{{ '{:,.2f}'.format(g.importe|float) }}
+            </td>
+            <td class="px-3 py-1.5 text-right text-slate-600">{{ g.n_matches_activos }} / {{ g.n_matches_total }}</td>
+            <td class="px-3 py-1.5 text-right">
+              <form method="POST" action="{{ url_for('conciliacion.banco_anular_grupo') }}" class="inline m-0"
+                    onsubmit="return confirm('¿Anular este movimiento agrupado?\n\n  {{ g.concepto|e }}\n  Importe: {{ _signo_str }}{{ '{:,.2f}'.format(g.importe|float) }}\n  Matches a deshacer: {{ g.n_matches_activos }}\n\nSe borra la tx, se deshacen todos los matches y se recalculan saldos.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="id_transaccion" value="{{ g.id_transaccion }}">
+                <button class="bg-rose-600 hover:bg-rose-700 text-white text-xs rounded-md px-3 py-1 font-medium">
+                  ✕ Anular completo
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Matches individuales ───────────────────────────────────── #}
+  <section>
+    <h2 class="text-base font-semibold mb-2 text-slate-700 dark:text-slate-200">
+      Matches individuales
+      <span class="text-xs text-slate-500 font-normal">— deshacer solo libera el match, sin borrar movimientos</span>
+    </h2>
+    <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+      <table class="w-full text-sm tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left w-28">Conciliado</th>
+            <th class="px-3 py-2 text-left w-24">Fecha mov</th>
+            <th class="px-3 py-2 text-left w-12">T</th>
+            <th class="px-3 py-2 text-left w-28">Doc</th>
+            <th class="px-3 py-2 text-left">Concepto</th>
+            <th class="px-3 py-2 text-right w-28">Monto</th>
+            <th class="px-3 py-2 text-left w-20">Usuario</th>
+            <th class="px-3 py-2 text-right w-32">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in matches %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.creado_en.strftime('%Y-%m-%d %H:%M') if m.creado_en else '—' }}</td>
+            <td class="px-3 py-1.5 text-slate-600">{{ m.real_fecha.strftime('%Y-%m-%d') if m.real_fecha else '—' }}</td>
+            <td class="px-3 py-1.5">
+              {% if m.real_tipo == 'C' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">+</span>
+              {% elif m.real_tipo == 'D' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold">−</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-slate-500 font-mono text-xs">{{ (m.real_documento or '—')|string|truncate(15,True,'') }}</td>
+            <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300 truncate max-w-md" title="{{ m.real_concepto }}">{{ (m.real_concepto or '—')[:60] }}</td>
+            <td class="px-3 py-1.5 text-right font-mono font-semibold {% if m.real_tipo == 'C' %}text-emerald-700{% elif m.real_tipo == 'D' %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.real_monto|float) if m.real_monto is not none else '—' }}</td>
+            <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.usuario or '—' }}</td>
+            <td class="px-3 py-1.5 text-right">
+              <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline m-0"
+                    onsubmit="return confirm('¿Deshacer este match?\n\n  {{ (m.real_concepto or '')[:50]|e }}\n  Monto: {{ '{:,.2f}'.format(m.real_monto|float) if m.real_monto is not none else '—' }}\n\nEl movimiento vuelve a aparecer como no conciliado.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="match_id" value="{{ m.id }}">
+                <input type="hidden" name="next" value="deshacer">
+                <button class="bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 text-xs rounded-md px-3 py-1 font-medium">
+                  ↶ Deshacer
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not matches %}
+          <tr><td colspan="8" class="px-3 py-6 text-center text-slate-400 italic">— sin matches activos —</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 {% endblock %}
