@@ -391,44 +391,68 @@ def banco_manual_confirmar():
             )
             return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
-    # 2) Históricos seleccionados → marcar conciliados (apuntan al primer bancsis).
-    # TMT 2026-05-29 dueña: 'NO ESTABAN CONCILIADOS'. El side-effect de
-    # confirmar_match (en matcher_banco.py:1333+) auto-marca cualquier
-    # histórico con misma firma cuando se confirma un match. Entonces si
-    # PASS 0 del matcher pegó un real con un histórico, el histórico ya
-    # quedó marcado SIN que la dueña haya hecho nada. La pantalla seguía
-    # mostrándolo (snapshot del page load) → click → "ya conciliado".
-    # Fix: el click manual GANA. Removemos el filtro `conciliado_en IS NULL`
-    # y siempre re-marcamos (timestamp + match_id). No es destructivo: si
-    # ya estaba con un match, lo re-apuntamos al que la dueña eligió ahora.
+    # 2) Históricos seleccionados → conciliarlos vía confirmar_match.
+    # TMT 2026-05-29 dueña: 'HAY UN BUG' + 'NO ESTABAN CONCILIADOS'.
+    # Bug real: el UPDATE viejo seteaba conciliado_match_id = bancsis_id
+    # (id_transaccion), pero la columna tiene un FK a
+    # banco_conciliacion_match.id — otro id totalmente distinto. Postgres
+    # tiraba FK violation, la excepción se tragaba silenciosa, n_hist=0
+    # siempre. La dueña veía "no hubo cambios" sin razón visible.
+    #
+    # Fix: tratar cada histórico como un mov real (mismo shape MovBanco)
+    # y pasarlo por confirmar_match. Esto:
+    #   - Inserta una fila en banco_conciliacion_match (ON CONFLICT NOTHING).
+    #   - Marca stat='*' en transacciones_bancarias del BANCSIS pareado.
+    #   - El side-effect del propio confirmar_match actualiza el histórico
+    #     con conciliado_match_id correcto (= el match.id recién creado).
+    # Resultado: la conciliación queda bien guardada, persiste cierre,
+    # y aparece en el tab Conciliados.
     n_hist = 0
-    n_hist_re = 0  # cuántos eran re-marcas (informativo)
     if hist_ids:
-        try:
-            bk_id_primary = bancsis_ids[0] if bancsis_ids else None
-            # Contamos cuántos ya estaban conciliados (informativo, no bloquea).
-            row_re = _db.fetch_one(
-                """
-                SELECT COUNT(*) AS n
-                  FROM scintela.banco_historicos_pendientes
-                 WHERE id = ANY(%s) AND conciliado_en IS NOT NULL
-                """,
-                (hist_ids,),
+        bk_id_primary = bancsis_ids[0] if bancsis_ids else None
+        if not bk_id_primary:
+            flash(
+                "Para conciliar históricos hay que seleccionar UN movimiento "
+                "del programa.",
+                "warn",
             )
-            n_hist_re = int(row_re["n"]) if row_re else 0
-            # Update sin filtro de estado: la acción de la dueña siempre gana.
-            n_hist = _db.execute(
-                """
-                UPDATE scintela.banco_historicos_pendientes
-                   SET conciliado_en = CURRENT_TIMESTAMP,
-                       conciliado_por = %s,
-                       conciliado_match_id = COALESCE(%s, conciliado_match_id)
-                 WHERE id = ANY(%s)
-                """,
-                (usuario[:50], bk_id_primary, hist_ids),
-            ) or 0
-        except Exception as e:
-            _LOG.warning("conciliar históricos falló: %s", e)
+        else:
+            try:
+                hist_rows = _db.fetch_all(
+                    """
+                    SELECT id, no_banco, fecha, concepto, documento, monto, tipo,
+                           oficina, detalle
+                      FROM scintela.banco_historicos_pendientes
+                     WHERE id = ANY(%s)
+                    """,
+                    (hist_ids,),
+                ) or []
+            except Exception as e:
+                _LOG.exception("fetch historicos falló: %s", e)
+                hist_rows = []
+            from decimal import Decimal as _D
+            from modules.conciliacion.parser_banco import MovBanco as _MB
+            for h in hist_rows:
+                try:
+                    mov_h = _MB(
+                        fecha=h.get("fecha"),
+                        concepto=str(h.get("concepto") or ""),
+                        documento=str(h.get("documento") or ""),
+                        monto=_D(str(h.get("monto") or 0)),
+                        saldo=_D("0"),
+                        codigo=str(h.get("oficina") or "")[:10],
+                        tipo=str(h.get("tipo") or "C").upper(),
+                        oficina=str(h.get("oficina") or ""),
+                    )
+                    confirmar_match(
+                        _BANCO_PICHINCHA, mov_h, bk_id_primary,
+                        usuario=usuario, metodo="matched_historico",
+                    )
+                    n_hist += 1
+                except Exception as e:
+                    _LOG.warning("conciliar histórico id=%s falló: %s", h.get("id"), e)
+                    if err_msg is None:
+                        err_msg = str(e)
 
     total = n_matches + n_hist
     _sesion.incrementar_matches(sesion_id, total)
