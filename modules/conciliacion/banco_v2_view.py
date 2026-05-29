@@ -1440,6 +1440,26 @@ def banco_historial_v2():
                     saldo_fin[sid] = float(row["saldo_conc"])
             except Exception:
                 pass
+        # TMT 2026-05-29 dueña: 'EN EL HISTORIAL NO ME PONES INICIAL Y FINAL,
+        # AUNQUE SEAN EL MISMO PONELOS'. Causa: sesiones abiertas tenían
+        # cerrada_en=NULL, el fallback de saldo_fin no corría → "—".
+        # Sesiones legacy sin sesion_abierta snapshot también daban "—".
+        # Fix: si saldo_inicial sigue None, fallback al saldo live actual.
+        # Si saldo_final sigue None (sesión abierta o sin snapshot), también
+        # al saldo live actual. Mejor mostrar un valor coherente que un guión.
+        if sid not in saldo_ini or sid not in saldo_fin:
+            try:
+                _live_balance = _bp.calcular(_BANCO_PICHINCHA)
+                _live_val = _live_balance.get("saldo_si_concilio_todo") \
+                            or _live_balance.get("saldo")
+                if _live_val is not None:
+                    _live_val = float(_live_val)
+                    if sid not in saldo_ini:
+                        saldo_ini[sid] = _live_val
+                    if sid not in saldo_fin:
+                        saldo_fin[sid] = _live_val
+            except Exception:
+                pass
         s["saldo_inicial"] = saldo_ini.get(sid)
         s["saldo_final"] = saldo_fin.get(sid)
     return render_template(

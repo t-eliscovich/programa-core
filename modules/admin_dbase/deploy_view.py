@@ -74,36 +74,50 @@ def pull():
     """
 
     def _generate():
-        yield "=== git pull origin main ===\n"
+        yield "=== Sync hard a origin/main ===\n"
         yield f"cwd: {PC_ROOT}\n\n"
         if not PC_ROOT.exists():
             yield f"ERROR: no encuentro {PC_ROOT}\n"
             return
-        try:
-            proc = subprocess.Popen(
-                [GIT_EXE, "pull", "origin", "main"],
-                cwd=str(PC_ROOT),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                yield line
-            proc.wait()
-            yield f"\n=== exit code: {proc.returncode} ===\n"
-            if proc.returncode == 0:
-                yield "✓ Pull OK. Ahora apretá 'Reiniciar app' para que tome.\n"
-            else:
-                yield "✗ Pull falló — revisá el output arriba.\n"
-        except FileNotFoundError:
-            yield (
-                "\nERROR: no encuentro el ejecutable git. "
-                "En el EC2 instalar Git for Windows o ajustar GIT_EXE en deploy_view.py.\n"
-            )
-        except Exception as exc:  # noqa: BLE001
-            yield f"\nERROR ejecutando git pull: {exc!r}\n"
+        # TMT 2026-05-29 dueña: el git pull simple se trababa con 'Your
+        # local changes would be overwritten' por drift acumulado en el
+        # server. Cambio a fetch + reset --hard origin/main — siempre
+        # sincroniza el server al remoto, descartando cualquier diff
+        # local (que no debería existir en un server de prod).
+        steps = [
+            (["fetch", "origin", "main"], "git fetch origin main"),
+            (["reset", "--hard", "origin/main"], "git reset --hard origin/main"),
+            (["log", "--oneline", "-1"], "git log -1"),
+        ]
+        for args, label in steps:
+            yield f"--- {label} ---\n"
+            try:
+                proc = subprocess.Popen(
+                    [GIT_EXE, *args],
+                    cwd=str(PC_ROOT),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    yield line
+                proc.wait()
+                if proc.returncode != 0:
+                    yield f"\n✗ {label} salió con exit={proc.returncode}\n"
+                    return
+            except FileNotFoundError:
+                yield (
+                    "\nERROR: no encuentro git. Instalar Git for Windows o "
+                    "ajustar GIT_EXE en deploy_view.py.\n"
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                yield f"\nERROR en {label}: {exc!r}\n"
+                return
+            yield "\n"
+        yield "✓ Sync OK. Apretá 'Reiniciar app' para que tome.\n"
 
     return Response(stream_with_context(_generate()), mimetype="text/plain")
 

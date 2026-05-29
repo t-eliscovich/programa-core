@@ -123,19 +123,21 @@ def sesion_por_id(sesion_id: int) -> dict | None:
 
 def matches_de_sesion(sesion: dict) -> list[dict]:
     """Lista todo lo que se conciliaron en esta sesión: matches del extracto
-    + históricos marcados como conciliados.
+    Y los que vinieron de un histórico (mismo concepto: una fila por match).
 
-    Aproximamos por ventana temporal:
-      - banco_conciliacion_match.creado_en entre abierta_en y cerrada_en
-      - banco_historicos_pendientes.conciliado_en entre abierta_en y cerrada_en
+    Aproximamos por ventana temporal: banco_conciliacion_match.creado_en
+    entre abierta_en y cerrada_en (o NOW si está abierta).
 
-    No hay FK directa sesion_id → match (la 0046 es anterior a 0060), por
-    eso usamos timestamps. Devuelve filas con `tipo='match'` o
-    `tipo='historico'` para que el template las distinga.
+    Cada fila lleva campo `tipo`:
+      - 'historico': el match tiene un banco_historicos_pendientes que lo
+                     referencia vía conciliado_match_id. Chip morado.
+      - 'match'   : todo lo demás. Chip verde.
 
-    TMT 2026-05-29 dueña: 'NECESITO QUE ESTO MUESTRES EN LA PANTALLA DE
-    CONCILIADOS'. Antes solo veía los matches del extracto; los históricos
-    re-conciliados manualmente quedaban fuera del listado.
+    TMT 2026-05-29 dueña: 'ESTOS FUERON UN SOLO MOVIMIENTO PORQUE APARECE
+    EN DOS ROWS?'. Antes hacíamos dos queries y sumábamos — el match y el
+    histórico aparecían como filas separadas. Fix: un solo SELECT con LEFT
+    JOIN al histórico; si existe → tipo='historico', si no → tipo='match'.
+    Una conciliación = una fila.
     """
     if not sesion:
         return []
@@ -152,9 +154,8 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
     except Exception:
         pass
 
-    # 1) Matches del extracto (banco_conciliacion_match).
-    sql_match = f"""
-        SELECT 'match' AS tipo,
+    sql = f"""
+        SELECT CASE WHEN h.id IS NOT NULL THEN 'historico' ELSE 'match' END AS tipo,
                m.id, m.estado, m.creado_en, m.usuario,
                m.real_fecha, m.real_documento, m.real_monto, m.real_tipo, m.real_concepto,
                m.id_transaccion,
@@ -163,10 +164,13 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
                tb.importe     AS tb_importe,
                tb.numreferencia AS tb_numreferencia,
                tb.concepto    AS tb_concepto,
-               tb.prov        AS tb_prov
+               tb.prov        AS tb_prov,
+               h.id           AS historico_id
           FROM scintela.banco_conciliacion_match m
           LEFT JOIN scintela.transacciones_bancarias tb
             ON tb.id_transaccion = m.id_transaccion
+          LEFT JOIN scintela.banco_historicos_pendientes h
+            ON h.conciliado_match_id = m.id
          WHERE m.no_banco = %s
            AND m.creado_en >= %s
            AND m.creado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
@@ -174,49 +178,12 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
          ORDER BY m.creado_en DESC
          LIMIT 1000
     """
-    out: list[dict] = []
     try:
-        rows = db.fetch_all(sql_match, (no_banco, abierta, cerrada)) or []
-        out.extend(dict(r) for r in rows)
+        rows = db.fetch_all(sql, (no_banco, abierta, cerrada)) or []
+        return [dict(r) for r in rows]
     except Exception as e:
-        _LOG.warning("matches_de_sesion (matches) falló: %s", e)
-
-    # 2) Históricos marcados conciliados durante la sesión.
-    sql_hist = """
-        SELECT 'historico' AS tipo,
-               h.id, h.conciliado_en AS creado_en, h.conciliado_por AS usuario,
-               h.fecha     AS real_fecha,
-               h.documento AS real_documento,
-               h.monto     AS real_monto,
-               h.tipo      AS real_tipo,
-               h.concepto  AS real_concepto,
-               h.conciliado_match_id AS id_transaccion,
-               tb.fecha       AS tb_fecha,
-               tb.documento   AS tb_documento,
-               tb.importe     AS tb_importe,
-               tb.numreferencia AS tb_numreferencia,
-               tb.concepto    AS tb_concepto,
-               tb.prov        AS tb_prov,
-               'matched_historico' AS estado
-          FROM scintela.banco_historicos_pendientes h
-          LEFT JOIN scintela.transacciones_bancarias tb
-            ON tb.id_transaccion = h.conciliado_match_id
-         WHERE h.no_banco = %s
-           AND h.conciliado_en IS NOT NULL
-           AND h.conciliado_en >= %s
-           AND h.conciliado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
-         ORDER BY h.conciliado_en DESC
-         LIMIT 1000
-    """
-    try:
-        rows = db.fetch_all(sql_hist, (no_banco, abierta, cerrada)) or []
-        out.extend(dict(r) for r in rows)
-    except Exception as e:
-        _LOG.warning("matches_de_sesion (historicos) falló: %s", e)
-
-    # Ordenar todo por creado_en/conciliado_en DESC.
-    out.sort(key=lambda r: r.get("creado_en") or abierta, reverse=True)
-    return out
+        _LOG.warning("matches_de_sesion falló: %s", e)
+        return []
 
 
 def sesion_por_hash(no_banco: int, extracto_hash: str) -> dict | None:
@@ -315,6 +282,28 @@ def cerrar_sesion(sesion_id: int, usuario: str, pdf_path: str | None = None) -> 
         """,
         (usuario[:50], pdf_path, int(sesion_id)),
     )
+    # TMT 2026-05-29 dueña: 'EN EL HISTORIAL NO ME PONES INICIAL Y FINAL'.
+    # crear_sesion ya toma snapshot 'sesion_abierta'; faltaba el simétrico
+    # al cerrar. Sin esto el historial mostraba '—' en saldo final aunque
+    # la sesión estaba cerrada.
+    if n:
+        try:
+            row = db.fetch_one(
+                "SELECT no_banco FROM scintela.banco_conciliacion_sesion WHERE id = %s",
+                (int(sesion_id),),
+            )
+            no_banco_s = int(row["no_banco"]) if row else 0
+            if no_banco_s:
+                from modules.conciliacion import saldo_snapshot as _ss
+                _ss.snapshot(
+                    no_banco=no_banco_s,
+                    evento_tipo="sesion_cerrada",
+                    evento_ref=str(sesion_id),
+                    usuario=usuario,
+                    descripcion=f"cierre sesión #{sesion_id}",
+                )
+        except Exception as e:
+            _LOG.warning("snapshot cierre sesión #%s falló: %s", sesion_id, e)
     return bool(n)
 
 
