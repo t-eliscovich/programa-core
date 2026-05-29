@@ -623,6 +623,163 @@ def banco_pdf(sesion_id: int):
 # ─── Historial ────────────────────────────────────────────────────────
 
 
+@conciliacion_bp.route("/banco-v2/reset-all", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_reset_all():
+    """⚠️ NUCLEAR — borra TODAS las conciliaciones para arrancar de cero.
+
+    TMT 2026-05-29 dueña: 'podes borrar todas las conciliaciones, quizas
+    ponele un boton con 5 alertas por las dudas, asi hoy arrancamos de cero'.
+
+    Hace, en una sola transacción atómica:
+      1. DELETE de banco_conciliacion_match (matches + deshechos).
+      2. DELETE de banco_saldo_conc_snapshot (snapshots).
+      3. DELETE de banco_conciliacion_sesion (sesiones).
+      4. DELETE de transacciones_bancarias creadas por conciliación
+         (created_from_real / created_from_real_grouped).
+      5. UPDATE banco_historicos_pendientes SET conciliado_en=NULL
+         (vuelven a pendientes).
+      6. UPDATE transacciones_bancarias SET stat=NULL WHERE stat='*'
+         AND usuario_crea NOT IN ('dbf-import','asinfo-backfill')
+         (movs PC vuelven a pendientes; los del DBF original mantienen
+         su stat porque ya estaban conciliados antes del programa core).
+      7. Snapshot 'reset_total' del nuevo saldo a conciliar.
+
+    Frontend exige 5 confirmaciones (window.confirm) + 1 prompt textual
+    'BORRAR TODO' antes de llegar acá.
+
+    Requiere POST con `confirm_text=BORRAR TODO` para evitar accidentes
+    si alguien dispara el endpoint sin pasar por el modal.
+    """
+    confirm_text = (request.form.get("confirm_text") or "").strip().upper()
+    if confirm_text != "BORRAR TODO":
+        flash("Reset cancelado — texto de confirmación incorrecto.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    usuario = _usuario_actual()
+    counts = {"matches": 0, "snapshots": 0, "sesiones": 0,
+              "txs_grupales": 0, "historicos_reset": 0, "stat_reset": 0}
+    try:
+        with _db.tx() as conn:
+            # 1. Ids de txs creadas por conciliación (para borrar tx + matches).
+            ids_rows = _db.fetch_all(
+                """
+                SELECT DISTINCT t.id_transaccion
+                  FROM scintela.transacciones_bancarias t
+                  JOIN scintela.banco_conciliacion_match m
+                       ON m.id_transaccion = t.id_transaccion
+                 WHERE t.no_banco = %s
+                   AND m.metodo IN ('created_from_real','created_from_real_grouped')
+                """,
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or []
+            ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
+
+            # 2. Reset históricos pendientes (vuelven a no-conciliados).
+            counts["historicos_reset"] = _db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = NULL,
+                       conciliado_por = NULL,
+                       conciliado_match_id = NULL
+                 WHERE no_banco = %s
+                   AND conciliado_en IS NOT NULL
+                """,
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or 0
+
+            # 3. Borrar TODOS los matches (activos + deshechos).
+            counts["matches"] = _db.execute(
+                "DELETE FROM scintela.banco_conciliacion_match WHERE no_banco = %s",
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or 0
+
+            # 4. Borrar TODAS las sesiones.
+            counts["sesiones"] = _db.execute(
+                "DELETE FROM scintela.banco_conciliacion_sesion WHERE no_banco = %s",
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or 0
+
+            # 5. Borrar TODOS los snapshots (perderemos el histórico pero
+            # es esperable cuando se hace 'arrancar de cero').
+            counts["snapshots"] = _db.execute(
+                "DELETE FROM scintela.banco_saldo_conc_snapshot WHERE no_banco = %s",
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or 0
+
+            # 6. Borrar las txs BANCSIS que fueron creadas por conciliación.
+            if ids_grupales:
+                counts["txs_grupales"] = _db.execute(
+                    "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s) AND no_banco = %s",
+                    (ids_grupales, _BANCO_PICHINCHA),
+                    conn=conn,
+                ) or 0
+                # Recompute saldos desde el inicio de los borrados.
+                try:
+                    import bank_helpers
+                    siguiente = _db.fetch_one(
+                        """
+                        SELECT id_transaccion FROM scintela.transacciones_bancarias
+                         WHERE no_banco = %s
+                         ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
+                        """,
+                        (_BANCO_PICHINCHA,),
+                        conn=conn,
+                    )
+                    if siguiente and siguiente.get("id_transaccion"):
+                        bank_helpers.recompute_saldos_desde(
+                            conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
+                            ancla_id=int(siguiente["id_transaccion"]),
+                        )
+                except Exception as e:
+                    _LOG.warning("recompute_saldos en reset falló: %s", e)
+
+            # 7. Reset stat='*' en movs PC que fueron marcados conciliados
+            # por el flujo PC (NO los del dbf-import original).
+            counts["stat_reset"] = _db.execute(
+                """
+                UPDATE scintela.transacciones_bancarias
+                   SET stat = NULL
+                 WHERE no_banco = %s
+                   AND TRIM(COALESCE(stat,'')) = '*'
+                   AND COALESCE(usuario_crea,'') NOT IN ('dbf-import','asinfo-backfill')
+                """,
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or 0
+
+        # Snapshot del nuevo saldo a conciliar (fuera de la tx).
+        try:
+            from modules.conciliacion import saldo_snapshot as _ss
+            _ss.snapshot(
+                _BANCO_PICHINCHA, "reset_total",
+                evento_ref="reset", usuario=usuario,
+                descripcion=f"reset total: {counts}",
+            )
+        except Exception:
+            pass
+
+        _LOG.warning("RESET TOTAL por %s: %s", usuario, counts)
+        flash(
+            f"✓ Reset completo. {counts['matches']} matches, "
+            f"{counts['sesiones']} sesiones, {counts['snapshots']} snapshots, "
+            f"{counts['txs_grupales']} txs, {counts['historicos_reset']} histo, "
+            f"{counts['stat_reset']} stat reseteados.",
+            "ok",
+        )
+    except Exception as e:
+        _LOG.exception("RESET falló: %s", e)
+        flash(f"Reset falló: {e}", "error")
+
+    return redirect(url_for("conciliacion.hub"))
+
+
 @conciliacion_bp.route("/banco-v2/historial", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
