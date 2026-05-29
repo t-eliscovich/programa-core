@@ -345,11 +345,14 @@ def banco_auditar():
     balance = _bp.calcular(no_banco)
 
     # ── Check 1: walk-forward saldo running PC ─────────────────────
-    # TMT 2026-05-29 dueña: el check anterior sumaba movs vs último saldo
-    # — daba falso positivo porque NO contemplaba el opening histórico del
-    # banco (los $2.2M que PC arrancó antes del primer mov). Ahora hago
-    # walk-forward por fila: saldo[i] vs saldo[i-1] + delta_signed. Si
-    # alguna fila no respeta la cadena, esa es la torcida.
+    # TMT 2026-05-29 dueña: 'esto sigue mal'. Bug en el auditor anterior:
+    # asumía que TODAS las importes son positivas y aplicaba ±signo según
+    # documento. Pero en la DB hay convención MIXTA — filas legacy del
+    # dBase tienen importe ya signado (ej ND con importe=−40,775) y el
+    # código nuevo usa importe absoluto. La fórmula simple daba falsos
+    # positivos por miles. Fix: usar la misma función _signed_delta de
+    # bank_helpers — fuente de verdad usada por trigger e insert.
+    import bank_helpers as _bh
     filas_torcidas = []
     last_saldo = None
     try:
@@ -367,7 +370,7 @@ def banco_auditar():
             s = float(r["saldo"] or 0)
             imp = float(r["importe"] or 0)
             doc = (r.get("documento") or "").upper()
-            delta = -imp if doc in ("CH", "ND", "DB", "GS", "PA") else imp
+            delta = _bh._signed_delta(doc, imp)
             if saldo_prev is not None:
                 esperado = round(saldo_prev + delta, 2)
                 diff = round(s - esperado, 2)
@@ -377,6 +380,7 @@ def banco_auditar():
                         "fecha": r["fecha"],
                         "documento": doc,
                         "importe": imp,
+                        "delta_aplicado": round(delta, 2),
                         "saldo_grabado": s,
                         "saldo_esperado": esperado,
                         "diferencia": diff,
