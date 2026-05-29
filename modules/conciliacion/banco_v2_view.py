@@ -623,6 +623,167 @@ def banco_pdf(sesion_id: int):
 # ─── Historial ────────────────────────────────────────────────────────
 
 
+@conciliacion_bp.route("/banco-v2/borrar-sesion", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_borrar_sesion():
+    """Borra UNA sesión (la fila) + snapshots + matches + txs creadas
+    durante esa sesión.
+
+    Menos destructivo que reset-all: solo afecta UNA sesión a la vez.
+    El borrar va por rango temporal (abierta_en..cerrada_en) — todos
+    los matches y txs grupales creados dentro de ese rango se borran.
+    Los pendientes históricos que se hayan conciliado en esa sesión
+    vuelven a aparecer como pendientes.
+    """
+    try:
+        sesion_id = int(request.form.get("sesion_id") or 0)
+    except (TypeError, ValueError):
+        sesion_id = 0
+    if sesion_id <= 0:
+        flash("ID de sesión inválido.", "error")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+
+    sesion = _sesion.sesion_por_id(sesion_id)
+    if not sesion:
+        flash("Sesión no encontrada.", "warn")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+
+    usuario = _usuario_actual()
+    abierta = sesion.get("abierta_en")
+    cerrada = sesion.get("cerrada_en") or datetime.now()
+    counts = {"matches": 0, "snapshots": 0, "txs_grupales": 0, "historicos_reset": 0}
+
+    try:
+        with _db.tx() as conn:
+            # 1. Ids de txs creadas por conciliación dentro de esta sesión.
+            ids_rows = _db.fetch_all(
+                """
+                SELECT DISTINCT t.id_transaccion
+                  FROM scintela.transacciones_bancarias t
+                  JOIN scintela.banco_conciliacion_match m
+                       ON m.id_transaccion = t.id_transaccion
+                 WHERE t.no_banco = %s
+                   AND m.metodo IN ('created_from_real','created_from_real_grouped')
+                   AND m.creado_en BETWEEN %s AND %s
+                """,
+                (_BANCO_PICHINCHA, abierta, cerrada),
+                conn=conn,
+            ) or []
+            ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
+
+            # 2. Reset históricos conciliados en este rango.
+            counts["historicos_reset"] = _db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = NULL,
+                       conciliado_por = NULL,
+                       conciliado_match_id = NULL
+                 WHERE no_banco = %s
+                   AND conciliado_en BETWEEN %s AND %s
+                """,
+                (_BANCO_PICHINCHA, abierta, cerrada),
+                conn=conn,
+            ) or 0
+
+            # 3. Borrar matches creados durante esta sesión.
+            counts["matches"] = _db.execute(
+                """
+                DELETE FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s
+                   AND creado_en BETWEEN %s AND %s
+                """,
+                (_BANCO_PICHINCHA, abierta, cerrada),
+                conn=conn,
+            ) or 0
+
+            # 4. Borrar txs BANCSIS grupales + recompute.
+            if ids_grupales:
+                counts["txs_grupales"] = _db.execute(
+                    "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s) AND no_banco = %s",
+                    (ids_grupales, _BANCO_PICHINCHA),
+                    conn=conn,
+                ) or 0
+                try:
+                    import bank_helpers
+                    siguiente = _db.fetch_one(
+                        """
+                        SELECT id_transaccion FROM scintela.transacciones_bancarias
+                         WHERE no_banco = %s
+                         ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
+                        """,
+                        (_BANCO_PICHINCHA,),
+                        conn=conn,
+                    )
+                    if siguiente and siguiente.get("id_transaccion"):
+                        bank_helpers.recompute_saldos_desde(
+                            conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
+                            ancla_id=int(siguiente["id_transaccion"]),
+                        )
+                except Exception as e:
+                    _LOG.warning("recompute_saldos en borrar-sesion falló: %s", e)
+
+            # 5. Borrar snapshots de esta sesión.
+            counts["snapshots"] = _db.execute(
+                """
+                DELETE FROM scintela.banco_saldo_conc_snapshot
+                 WHERE no_banco = %s
+                   AND (evento_ref = %s OR creado_en BETWEEN %s AND %s)
+                """,
+                (_BANCO_PICHINCHA, str(sesion_id), abierta, cerrada),
+                conn=conn,
+            ) or 0
+
+            # 6. Borrar la fila de sesión.
+            _db.execute(
+                "DELETE FROM scintela.banco_conciliacion_sesion WHERE id = %s AND no_banco = %s",
+                (sesion_id, _BANCO_PICHINCHA),
+                conn=conn,
+            )
+
+            # 7. Reset stat='*' en movs PC fuera del dbf-import original.
+            _db.execute(
+                """
+                UPDATE scintela.transacciones_bancarias
+                   SET stat = NULL
+                 WHERE no_banco = %s
+                   AND TRIM(COALESCE(stat,'')) = '*'
+                   AND COALESCE(usuario_crea,'') NOT IN ('dbf-import','asinfo-backfill')
+                   AND NOT EXISTS (
+                       SELECT 1 FROM scintela.banco_conciliacion_match m
+                        WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
+                          AND m.deshecho_en IS NULL
+                   )
+                """,
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            )
+
+        # 8. Borrar el archivo XLSX si existe.
+        if sesion.get("pdf_path"):
+            try:
+                path = Path(sesion["pdf_path"])
+                if not path.is_absolute():
+                    path = Path.cwd() / path
+                if path.exists():
+                    path.unlink()
+            except Exception:
+                pass
+
+        _LOG.warning("BORRAR SESIÓN #%s por %s: %s", sesion_id, usuario, counts)
+        flash(
+            f"✓ Sesión #{sesion_id} borrada. {counts['matches']} matches, "
+            f"{counts['snapshots']} snapshots, {counts['txs_grupales']} txs, "
+            f"{counts['historicos_reset']} histo reseteados.",
+            "ok",
+        )
+    except Exception as e:
+        _LOG.exception("borrar sesión #%s falló: %s", sesion_id, e)
+        flash(f"Borrar falló: {e}", "error")
+
+    return redirect(url_for("conciliacion.banco_historial_v2"))
+
+
 @conciliacion_bp.route("/banco-v2/reset-all", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")

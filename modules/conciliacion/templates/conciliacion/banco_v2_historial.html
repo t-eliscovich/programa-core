@@ -47,13 +47,21 @@
           </td>
           <td class="px-3 py-1.5 text-right font-semibold">{{ s.matches_hechos }}</td>
           <td class="px-3 py-1.5">
-            {% if s.cerrada_en %}
-              {% if s.pdf_path %}
-              <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" class="text-emerald-600 hover:underline">📥 Excel</a>
-              {% else %}<span class="text-slate-300">—</span>{% endif %}
-            {% else %}
-              <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">retomar →</a>
-            {% endif %}
+            <div class="flex items-center gap-3">
+              {% if s.cerrada_en %}
+                {% if s.pdf_path %}
+                <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" class="text-emerald-600 hover:underline">📥 Excel</a>
+                {% endif %}
+              {% else %}
+                <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">retomar →</a>
+              {% endif %}
+              <form method="POST" action="{{ url_for('conciliacion.banco_borrar_sesion') }}" class="inline m-0"
+                    onsubmit="return confirm('¿Borrar sesión #{{ s.id }}?\n\nSe borran los matches, snapshots y txs grupales creados durante esta sesión. Los pendientes históricos conciliados vuelven a pendientes. NO se puede deshacer.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="sesion_id" value="{{ s.id }}">
+                <button class="text-rose-600 hover:text-rose-800 hover:underline text-xs">🗑 Borrar</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% endfor %}
