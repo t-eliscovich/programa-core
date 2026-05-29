@@ -29,7 +29,7 @@ def _split_queries(src: str) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
     lines = src.splitlines()
     for i, line in enumerate(lines, start=1):
-        if re.search(r"FROM\s+scintela\.(factura|compra)\b", line):
+        if re.search(r"FROM\s+scintela\.(factura|compra|xgast)\b", line):
             # captura hasta encontrar el cierre de la query (paréntesis o """)
             block_lines = []
             depth = 0

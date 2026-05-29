@@ -1947,6 +1947,7 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY 1
         """
         )
@@ -6349,6 +6350,7 @@ def balance_components_as_of(as_of) -> dict:
          WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
            AND fecha <= %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
             (as_of, as_of),
         )
