@@ -28,7 +28,12 @@
       <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
         <tr>
           <th class="px-2 py-1.5 text-left w-6">
-            <input type="checkbox" data-toggle-all="impuestos" class="accent-amber-600" checked>
+            {# TMT 2026-05-29 dueña: 'y me deja repetir el movimiento'.
+               Default UNCHECKED — la dueña tiene que marcar conscientemente
+               qué impuestos acoplar en cada movimiento agrupado, en lugar
+               de aceptar todos y arrastrar movs que ya estaban en otra
+               tanda. Hay un master 'marcar todos' por si quiere todo. #}
+            <input type="checkbox" data-toggle-all="impuestos" class="accent-amber-600">
           </th>
           <th class="px-2 py-1.5 text-left w-20">Fecha</th>
           <th class="px-2 py-1.5 text-left w-5">±</th>
@@ -47,7 +52,7 @@
                      data-fecha="{{ m.fecha.isoformat() if m.fecha else '' }}"
                      data-doc="{{ m.documento or '' }}"
                      data-concepto="{{ (m.concepto or '')|truncate(80,True,'') }}"
-                     class="accent-amber-600" checked>
+                     class="accent-amber-600">
             </td>
             <td class="px-2 py-1 text-slate-500">{{ m.fecha.strftime('%Y-%m-%d') if m.fecha else '—' }}</td>
             <td class="px-2 py-1">
@@ -157,6 +162,9 @@
       preview += '  Concepto:  ' + (concEl ? concEl.value : '') + '\n\n';
       preview += 'Y conciliar ' + s.count + ' movs del extracto contra ese movimiento.\n\n¿Confirmar?';
       if (!confirm(preview)) return;
+      // Anti-double-submit: deshabilitar el botón inmediatamente.
+      btn.disabled = true;
+      btn.textContent = 'Procesando…';
       document.getElementById('imp-real-idxs').value = s.idxs.join(',');
       document.getElementById('imp-form').submit();
     });

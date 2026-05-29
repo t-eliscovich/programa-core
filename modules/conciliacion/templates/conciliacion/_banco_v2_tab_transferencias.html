@@ -115,6 +115,8 @@
     if (!s.count) return;
     var preview = 'Vas a conciliar ' + s.count + ' pares por $'+s.total.toFixed(2)+' (matches por N° de documento).\n\n¿Confirmar?';
     if (!confirm(preview)) return;
+    btn.disabled = true;
+    btn.textContent = 'Procesando…';
     document.getElementById('tr-par-idxs').value = s.idxs.join(',');
     document.getElementById('tr-form').submit();
   });

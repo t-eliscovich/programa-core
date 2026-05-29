@@ -22,8 +22,12 @@
 {% if _modo == 'compact' %}
 {# ── MODO COMPACT ─────────────────────────────────────────────────── #}
 {# Mismas columnas que el modo full pero a 11px y padding mínimo. Saldo
-   a conciliar grande a la izquierda. Tabla con columnas alineadas. #}
-<section class="mb-3 rounded-lg border border-emerald-200 dark:border-emerald-900/30 bg-white dark:bg-slate-900 shadow-sm sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/90">
+   a conciliar grande a la izquierda. Tabla con columnas alineadas.
+   TMT 2026-05-29 dueña: 'se descompagino completamente'. El sticky+z-20
+   se rompía con los panel scrolls overflow internos del tab Manual.
+   Quitado el sticky — el balance vive arriba del tab y scrollea junto
+   con la página normal. Más limpio, sin overlap. #}
+<section class="mb-3 rounded-lg border border-emerald-200 dark:border-emerald-900/30 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
   <div class="flex items-stretch">
     <div class="px-4 py-2 border-r border-emerald-100 dark:border-emerald-900/30 bg-gradient-to-br from-emerald-50/40 to-transparent">
       <div class="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold leading-tight">Saldo a conciliar</div>

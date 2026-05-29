@@ -207,6 +207,9 @@
       if (Math.abs(diff) > 0.01) preview += '\n  Diferencia: $'+diff.toFixed(2)+'\n';
       preview += '\n¿Confirmar?';
       if (!confirm(preview)) return;
+      // Anti-double-submit
+      btn.disabled = true;
+      btn.textContent = 'Procesando…';
       document.getElementById('manual-real-ids').value = b.ids.join(',');
       document.getElementById('manual-hist-ids').value = b.histIds.join(',');
       document.getElementById('manual-bancsis-ids').value = p.ids.join(',');
