@@ -4,18 +4,13 @@
 {% block content %}
 <div class="max-w-3xl">
 
-  <div class="flex items-baseline justify-between mb-4">
-    <div>
-      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">Conciliación bancaria</h1>
-      <p class="text-sm text-slate-500 dark:text-slate-400">
-        Subí el extracto del banco. Te muestro qué coincide con el sistema y qué falta de cada lado, para resolverlo de a uno.
-      </p>
-    </div>
-    {# TMT 2026-05-29: href estático para no depender de url_for —
-       si el módulo banco_v2_view no se importó (deploy parcial), el
-       url_for hace BuildError → 500 en la pantalla de carga. #}
+  <div class="flex items-center justify-between mb-2">
+    <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
+    {# TMT 2026-05-29 dueña: 'historial hacelo un boton a la derecha'. #}
     <a href="/conciliacion/banco-v2/historial"
-       class="text-sm text-sky-600 hover:underline whitespace-nowrap">historial de conciliaciones →</a>
+       class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
+      Historial de conciliaciones →
+    </a>
   </div>
 
   {# TMT 2026-05-28 dueña: 'esto sacalo' — se removieron 2 cards (Saldo

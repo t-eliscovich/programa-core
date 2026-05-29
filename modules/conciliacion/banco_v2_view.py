@@ -42,6 +42,20 @@ _LOG = logging.getLogger("programa_core.conciliacion.banco_v2")
 _PDF_DIR = Path("data") / "conciliacion_pdfs"
 
 
+def _migracion_lista_o_redirect():
+    """Si la tabla banco_conciliacion_sesion no existe, mostrar flash claro
+    y redirect en lugar de un 500 críptico.
+    """
+    if _sesion.tabla_existe():
+        return None
+    flash(
+        "El flujo v2 necesita que se corra la migración 0060 en la DB. "
+        "Avisame y la corro en CloudShell.",
+        "warn",
+    )
+    return redirect(url_for("conciliacion.hub"))
+
+
 # ─── Pantalla principal post-procesar ─────────────────────────────────
 
 
@@ -54,6 +68,8 @@ def banco_post_procesar():
     Requiere una sesión abierta. Si no hay, redirect a /conciliacion/ para
     subir el extracto.
     """
+    r = _migracion_lista_o_redirect()
+    if r: return r
     usuario = _usuario_actual()
     no_banco = _BANCO_PICHINCHA
 
@@ -104,6 +120,8 @@ def banco_crear_sesion():
 
     Se usa en lugar de /conciliacion/hub POST para entrar al flujo v2.
     """
+    r = _migracion_lista_o_redirect()
+    if r: return r
     usuario = _usuario_actual()
     no_banco = _BANCO_PICHINCHA
 
@@ -485,6 +503,8 @@ def banco_pdf(sesion_id: int):
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_historial_v2():
+    r = _migracion_lista_o_redirect()
+    if r: return r
     sesiones = _sesion.listar_sesiones(no_banco=_BANCO_PICHINCHA, limit=200)
     return render_template(
         "conciliacion/banco_v2_historial.html",

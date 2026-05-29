@@ -67,6 +67,28 @@ def sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+# ─── Detección de migration 0060 ──────────────────────────────────────
+
+
+def tabla_existe() -> bool:
+    """¿Corrió la migration 0060? Cacheado por proceso."""
+    if hasattr(tabla_existe, "_cache"):
+        return tabla_existe._cache
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1
+              FROM information_schema.tables
+             WHERE table_schema='scintela'
+               AND table_name='banco_conciliacion_sesion'
+            """
+        )
+        tabla_existe._cache = bool(row)
+    except Exception:
+        tabla_existe._cache = False
+    return tabla_existe._cache
+
+
 # ─── CRUD básico de sesión ────────────────────────────────────────────
 
 
