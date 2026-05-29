@@ -1194,28 +1194,22 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
-    # TMT 2026-05-29 dueña: 'PC lleva 2 saldos, el total del banco y el
-    # ya conciliado'. Sin comparar contra el saldo del extracto, sin
-    # diferencia no clasificada. La fórmula simple cierra a la vista:
+    # TMT 2026-05-29 dueña: 'en excel por separado' — desglosado por
+    # fuente (banco vs programa) en lugar de un POSITIVOS / NEGATIVOS
+    # único. Mismo principio canónico:
     #
-    #   SALDO SISTEMA + POSITIVOS − NEGATIVOS = TOTAL
-    #
-    # donde:
-    #   POSITIVOS = pendientes_banco_creditos + pendientes_pc_debitos
-    #     (cosas que SUMAN al pasar de libros PC al esperado banco)
-    #   NEGATIVOS = pendientes_banco_debitos + pendientes_pc_creditos
-    #     (cosas que RESTAN al pasar de libros PC al esperado banco)
-    #   TOTAL = saldo banco esperado (mismo número que la página).
+    #   SALDO SISTEMA + (banco_cred + pc_deb) − (banco_deb + pc_cred) = TOTAL
+    #   TOTAL = saldo banco esperado (mismo número que la pantalla).
     saldo_sistema = float(balance.get("saldo") or 0)
-    positivos = (
-        float(balance.get("pendientes_banco_creditos") or 0)
-        + float(balance.get("pendientes_pc_debitos") or 0)
+    pendientes_banco_cred = float(balance.get("pendientes_banco_creditos") or 0)
+    pendientes_banco_deb = float(balance.get("pendientes_banco_debitos") or 0)
+    pendientes_pc_cred = float(balance.get("pendientes_pc_creditos") or 0)
+    pendientes_pc_deb = float(balance.get("pendientes_pc_debitos") or 0)
+    total_conciliado = round(
+        saldo_sistema
+        + pendientes_banco_cred + pendientes_pc_deb
+        - pendientes_banco_deb - pendientes_pc_cred, 2
     )
-    negativos = (
-        float(balance.get("pendientes_banco_debitos") or 0)
-        + float(balance.get("pendientes_pc_creditos") or 0)
-    )
-    total_conciliado = round(saldo_sistema + positivos - negativos, 2)
 
     contable_fmt = '#,##0.00;(#,##0.00)'  # paréntesis para negativos
     label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
@@ -1223,8 +1217,10 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
 
     r += 1  # fila vacía de separación
     for label, val in [
-        ("+ POSITIVOS", positivos),
-        ("− NEGATIVOS", -negativos),
+        ("+ Pendientes banco créditos", pendientes_banco_cred),
+        ("+ Pendientes programa débitos", pendientes_pc_deb),
+        ("− Pendientes banco débitos", -pendientes_banco_deb),
+        ("− Pendientes programa créditos", -pendientes_pc_cred),
         ("SALDO SISTEMA", saldo_sistema),
         ("TOTAL", total_conciliado),
     ]:
