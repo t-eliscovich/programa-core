@@ -381,6 +381,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_migraciones_bp)
 
+    # Deploy 1-click — TMT 2026-05-29. /admin/deploy hace `git pull origin
+    # main` y Restart-ScheduledTask en 2 botones, reemplazando el dance
+    # SSM/Run Command que la dueña hacía a mano cada push.
+    from modules.admin_dbase.deploy_view import bp as admin_deploy_bp
+
+    app.register_blueprint(admin_deploy_bp)
+
     # Debug YY display-time — TMT 2026-05-28. Endpoint diagnóstico que
     # corre el helper fila por fila y devuelve tracebacks para encontrar
     # qué provoca el 500 de /posdat?tab=yy sin acceso al log del EC2.

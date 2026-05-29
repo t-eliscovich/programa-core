@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Deploy{% endblock %}
+{% block breadcrumb %}<strong>Admin · Deploy</strong>{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  {{ page_hero('Deploy', 'Traer el último commit de GitHub y reiniciar la app — sin RDP ni SSM.') }}
+
+  <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-5 text-sm text-amber-900">
+    <strong>¿Por qué hay que reiniciar?</strong>
+    Flask carga el código Python en memoria una sola vez cuando arranca.
+    <code>git pull</code> sólo cambia los archivos en disco — el proceso
+    vivo sigue sirviendo el código viejo hasta que muere y vuelve a nacer.
+    Por eso son dos pasos: <strong>pull</strong> (1) trae el código nuevo;
+    <strong>reiniciar</strong> (2) hace que la app lo cargue.
+  </div>
+
+  <div class="bg-white border rounded-lg p-5 mb-5 shadow-sm">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="text-lg font-semibold">Paso 1 · git pull origin main</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Trae el último commit. Muestra qué archivos cambiaron. No reinicia nada.</p>
+      </div>
+      <button type="button" id="btn-pull"
+              class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium whitespace-nowrap">
+        Pull
+      </button>
+    </div>
+    <pre id="pull-out" class="bg-slate-900 text-slate-100 border rounded p-3 text-xs overflow-x-auto" style="min-height:140px; max-height:400px;">(click "Pull" para correr git pull origin main)</pre>
+  </div>
+
+  <div class="bg-white border rounded-lg p-5 shadow-sm">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="text-lg font-semibold">Paso 2 · Reiniciar app</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Reinicia la Scheduled Task <code>ProgramaCoreApp</code>. La conexión se va a cortar — esperá ~10s y refrescá.</p>
+      </div>
+      <button type="button" id="btn-restart"
+              class="text-sm px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 font-medium whitespace-nowrap">
+        Reiniciar app
+      </button>
+    </div>
+    <pre id="restart-out" class="bg-slate-900 text-slate-100 border rounded p-3 text-xs overflow-x-auto" style="min-height:100px; max-height:300px;">(click "Reiniciar app" después de que el pull termine OK)</pre>
+  </div>
+</div>
+
+<script>
+  (function() {
+    const csrf = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+
+    async function stream(url, outEl, btnEl, btnLabel) {
+      outEl.textContent = '';
+      btnEl.disabled = true; btnEl.textContent = 'Corriendo…';
+      try {
+        const resp = await fetch(url, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'X-CSRFToken': csrf},
+        });
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          outEl.textContent += dec.decode(value);
+          outEl.scrollTop = outEl.scrollHeight;
+        }
+      } catch (e) {
+        outEl.textContent += '\nERROR: ' + e.message;
+      } finally {
+        btnEl.disabled = false; btnEl.textContent = btnLabel;
+      }
+    }
+
+    document.getElementById('btn-pull').addEventListener('click', async () => {
+      if (!confirm('¿Pullear origin/main?')) return;
+      await stream('/admin/deploy/pull', document.getElementById('pull-out'),
+                   document.getElementById('btn-pull'), 'Pull');
+    });
+
+    document.getElementById('btn-restart').addEventListener('click', async () => {
+      if (!confirm('¿Reiniciar la app? La página se va a desconectar por ~10 segundos.')) return;
+      await stream('/admin/deploy/restart', document.getElementById('restart-out'),
+                   document.getElementById('btn-restart'), 'Reiniciar app');
+    });
+  })();
+</script>
+{% endblock %}
