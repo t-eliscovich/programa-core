@@ -1192,7 +1192,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
         ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
         ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
-        ws.cell(row=r, column=4, value=valor).number_format = "#,##0.00;(#,##0.00)"
+        ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
         ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
         r += 1
 
