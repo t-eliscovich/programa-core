@@ -471,8 +471,31 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
              "es_historico": True, "id_historico": int(h["id"])}
             for h in historicos
         ]
+        # TMT 2026-05-29 dueña: 'sin movimientos del programa' — bug.
+        # Cuando se abre sesión sin extracto, manual_programa quedaba
+        # vacío. Pero la dueña abrió la sesión PARA matchear pendientes
+        # programa contra históricos. Fix: cargar BANCSIS pendientes
+        # (los que excluye el balance porque stat<>'*' AND NOT EXISTS
+        # match) y usarlos como manual_programa.
+        manual_programa: list[dict] = []
+        try:
+            from datetime import date as _date, timedelta as _td
+            from modules.conciliacion.matcher_banco import cargar_bancsis as _cargar_bk
+            hasta = _date.today()
+            desde = hasta - _td(days=365 * 3)
+            bancsis_pend = _cargar_bk(no_banco, desde, hasta) or []
+            # cargar_bancsis ya excluye los conciliados activos (via
+            # _ya_conciliadas). Mismos shape items que bucketizar.
+            for i, bk in enumerate(bancsis_pend):
+                manual_programa.append({"mov": bk, "cat": None, "idx": i})
+            manual_programa.sort(
+                key=lambda x: abs(float(x["mov"].importe or 0)), reverse=True
+            )
+        except Exception as e:
+            _LOG.warning("cargar bancsis sin extracto falló: %s", e)
         return {
-            "manual_banco": manual_banco_hist, "manual_programa": [],
+            "manual_banco": manual_banco_hist,
+            "manual_programa": manual_programa,
             "impuestos": [], "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
