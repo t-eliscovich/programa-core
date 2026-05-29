@@ -194,46 +194,46 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
 POSDAT_NO_ANULADA_WHERE = "(anulada IS NOT TRUE OR anulada IS NULL)"
 
 
-# TMT 2026-05-28: chequeo lazy + cached de la columna `baseline_date`.
+# TMT 2026-05-28: chequeo de la columna `baseline_date` per-request.
 # Si todavía no corrió la migración 0061, los SELECT no la incluyen y
 # el código funciona como antes (sin display-time). Una vez que la
 # migración corre, el siguiente request la detecta y el display-time
-# se activa solo. Cache vive en process memory — al reiniciar Waitress
-# se re-chequea.
-_BASELINE_COL_EXISTS: bool | None = None
-
-
+# se activa solo.
+#
+# Por qué NO cacheamos: el primer intento fue cachear en module-level,
+# pero los workers que arrancaron antes de la migración quedaban con
+# cache=False permanente hasta restart de Waitress → /posdat?tab=yy
+# devolvía 500 hasta que se reiniciaba el server. Un SELECT a
+# information_schema por request es barato (índice nativo de PG).
 def _baseline_col_exists() -> bool:
-    """¿Existe scintela.posdat.baseline_date? Lazy + cached."""
-    global _BASELINE_COL_EXISTS
-    if _BASELINE_COL_EXISTS is None:
-        try:
-            row = db.fetch_one(
-                """
-                SELECT 1 AS x
-                  FROM information_schema.columns
-                 WHERE table_schema = 'scintela'
-                   AND table_name   = 'posdat'
-                   AND column_name  = 'baseline_date'
-                """
-            )
-            _BASELINE_COL_EXISTS = bool(row)
-        except Exception:  # noqa: BLE001
-            _BASELINE_COL_EXISTS = False
-    return _BASELINE_COL_EXISTS
+    """¿Existe scintela.posdat.baseline_date? Chequeo per-request."""
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1 AS x
+              FROM information_schema.columns
+             WHERE table_schema = 'scintela'
+               AND table_name   = 'posdat'
+               AND column_name  = 'baseline_date'
+            """
+        )
+        return bool(row)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def por_id(id_posdat: int) -> dict | None:
     # NOTA: NO filtramos `anulada` acá — `por_id` se usa también desde la
     # vista de confirmar_anulacion y desde scripts de auditoría que pueden
     # querer ver una fila anulada. Los listados/balances sí filtran.
+    # Coma pegada DENTRO del fragmento opcional para evitar coma huérfana
+    # cuando la columna no existe (bug del primer hotfix).
     baseline_col = ", pd.baseline_date" if _baseline_col_exists() else ""
     return db.fetch_one(
         f"""
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave,
-               pd.anulada, pd.motivo_anulacion, pd.fecha_anulacion
-               {baseline_col},
+               pd.anulada, pd.motivo_anulacion, pd.fecha_anulacion{baseline_col},
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
@@ -611,12 +611,13 @@ def buscar(
     #   tab='posdatados' → excluye prov='YY' (deudas a proveedor reales).
     #   tab='yy'         → solo prov='YY' (gastos forzados / provisiones).
     tab_norm = (tab or "posdatados").strip().lower()
+    # Coma pegada DENTRO del fragmento opcional para evitar coma huérfana
+    # cuando la columna no existe (bug del primer hotfix).
     baseline_col = ", pd.baseline_date" if _baseline_col_exists() else ""
     rows = db.fetch_all(
         f"""
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
-               pd.banc, pd.concepto, pd.clave
-               {baseline_col},
+               pd.banc, pd.concepto, pd.clave{baseline_col},
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
