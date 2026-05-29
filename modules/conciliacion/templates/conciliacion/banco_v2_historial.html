@@ -49,7 +49,7 @@
           <td class="px-3 py-1.5">
             {% if s.cerrada_en %}
               {% if s.pdf_path %}
-              <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" target="_blank" class="text-emerald-600 hover:underline">📥 Descargar</a>
+              <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" class="text-emerald-600 hover:underline">📥 Excel</a>
               {% else %}<span class="text-slate-300">—</span>{% endif %}
             {% else %}
               <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">retomar →</a>

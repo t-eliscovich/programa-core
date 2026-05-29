@@ -2658,6 +2658,21 @@ def banco_deshacer():
                          descripcion=f"deshacer match #{match_id}")
         except Exception:
             pass
+        # Decrementar matches_hechos de la sesión abierta (counter UX).
+        try:
+            import db as _db
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET matches_hechos = GREATEST(0, matches_hechos - 1)
+                 WHERE no_banco = %s
+                   AND usuario = %s
+                   AND cerrada_en IS NULL
+                """,
+                (_BANCO_PICHINCHA, _usuario_actual()[:50]),
+            )
+        except Exception:
+            pass
     else:
         flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
     return redirect(back)

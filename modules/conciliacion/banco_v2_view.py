@@ -859,7 +859,26 @@ def banco_anular_grupo():
         flash(f"Error al anular: {e}", "error")
         return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
-    # 4) Snapshot del nuevo saldo a conciliar.
+    # 4) Decrementar el contador matches_hechos de la sesión activa
+    # (si existe) — el counter es running total y se descontrolaba al
+    # anular. Lo bajamos por el número de matches que efectivamente
+    # se borraron en el grupo.
+    if n_matches > 0:
+        try:
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET matches_hechos = GREATEST(0, matches_hechos - %s)
+                 WHERE no_banco = %s
+                   AND usuario = %s
+                   AND cerrada_en IS NULL
+                """,
+                (int(n_matches), _BANCO_PICHINCHA, usuario[:50]),
+            )
+        except Exception:
+            pass
+
+    # 5) Snapshot del nuevo saldo a conciliar.
     try:
         from modules.conciliacion import saldo_snapshot as _ss
         _ss.snapshot(

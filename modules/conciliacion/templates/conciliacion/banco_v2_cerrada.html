@@ -28,12 +28,12 @@
 
   <div class="flex gap-3">
     {% if sesion.pdf_path %}
-    <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=sesion.id) }}" target="_blank"
+    <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=sesion.id) }}"
        class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-md px-4 py-2 font-medium">
-      📄 Ver PDF de pendientes
+      📥 Descargar pendientes (Excel)
     </a>
     {% else %}
-    <span class="text-xs text-slate-500 italic">— PDF no disponible para esta sesión —</span>
+    <span class="text-xs text-slate-500 italic">— Reporte no disponible para esta sesión —</span>
     {% endif %}
     <a href="{{ url_for('conciliacion.banco_historial_v2') }}"
        class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-md px-4 py-2">
