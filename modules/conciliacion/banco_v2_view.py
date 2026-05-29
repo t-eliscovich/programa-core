@@ -1197,17 +1197,20 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
-    # TMT 2026-05-29 dueña: 'Diferencia no clasificada no puede haber esto'.
-    # Sin línea de diferencia. Para que la math cierre exacto, incluimos
-    # los reales del extracto que están EN ESTA SESIÓN sin conciliar
-    # como pendientes — esos van a ser históricos al "Terminar y guardar",
-    # así que tiene sentido contarlos ya.
+    # TMT 2026-05-29 dueña — decisión final: layout viejo de 5 filas con
+    # DIFERENCIA explícita. Razones:
+    #   - Math cierra por construcción (AJUSTE + SISTEMA = TOTAL conciliado)
+    #   - SALDO BANCO se imprime aparte como referencia externa
+    #   - DIFERENCIA expone honestamente la brecha real-vs-cálculo
+    #   - Si DIFERENCIA es chica (centavos) es ruido aceptable
+    #   - Si DIFERENCIA es grande (>$1000) → auditar es el next step
     #
-    # Layout que cierra:
-    #   SALDO SISTEMA (conciliado)        X = libros − pendientes_pc_neto
-    #   + Pendientes banco créditos       A = historicos_cred + real_only_cred
-    #   − Pendientes banco débitos        B = historicos_deb + real_only_deb
-    #   TOTAL (SALDO BANCO)               Y = X + A − B (= saldo banco real)
+    # Layout final:
+    #   AJUSTE              = pendientes_banco_creditos − pendientes_banco_debitos
+    #   SALDO SISTEMA       = saldo conciliado (libros − pendientes_pc_neto)
+    #   TOTAL               = SISTEMA + AJUSTE (cierra)
+    #   SALDO BANCO         = último saldo del extracto subido
+    #   DIFERENCIA          = SALDO BANCO − TOTAL (cero si todo conciliado)
     saldo_sistema = float(
         balance.get("saldo_si_concilio_todo")
         or balance.get("saldo") or 0
@@ -1215,10 +1218,9 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     pendientes_banco_cred = float(balance.get("pendientes_banco_creditos") or 0)
     pendientes_banco_deb = float(balance.get("pendientes_banco_debitos") or 0)
 
-    # Sumar real_only de la sesión actual (movs del extracto sin matchear)
-    # a los pendientes. Cuando hay sesión con extracto, esto cubre los
-    # movs que aún no fueron promovidos a banco_historicos_pendientes
-    # (recién se promueven al Terminar y guardar).
+    # Incluir real_only de la sesión actual (movs del extracto sin matchear)
+    # para que el AJUSTE refleje TODO lo que cierra contra banco.
+    saldo_banco_real = None
     try:
         movs_sesion = _sesion.cargar_movs(sesion)
         if movs_sesion:
@@ -1233,26 +1235,35 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
                         pendientes_banco_deb += monto_m
             except Exception:
                 pass
+            con_fecha = [
+                m for m in movs_sesion
+                if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+            ]
+            if con_fecha:
+                ult = max(con_fecha, key=lambda m: m.fecha)
+                saldo_banco_real = float(ult.saldo)
+            else:
+                ult = movs_sesion[-1]
+                saldo_banco_real = float(getattr(ult, "saldo", None) or 0) or None
     except Exception as e:
         _LOG.warning("no pude leer movs sesion: %s", e)
 
-    # TOTAL = SISTEMA + cred − deb. Math cierra por construcción.
-    # Si vos comparás este TOTAL con el saldo del extracto bancario y
-    # no coincide, esa brecha es trabajo del auditor (movs faltantes).
-    total_final = round(
-        saldo_sistema + pendientes_banco_cred - pendientes_banco_deb, 2
-    )
+    ajuste = round(pendientes_banco_cred - pendientes_banco_deb, 2)
+    total_calc = round(saldo_sistema + ajuste, 2)
+    diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
 
-    label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
-    val_col = 4   # columna D, igual al header "VALOR"
+    label_col = 3
+    val_col = 4
 
     r += 1  # fila vacía de separación
     rows_resumen = [
+        ("AJUSTE", ajuste),
         ("SALDO SISTEMA (conciliado)", saldo_sistema),
-        ("+ Pendientes banco créditos", pendientes_banco_cred),
-        ("− Pendientes banco débitos", -pendientes_banco_deb),
-        ("TOTAL", total_final),
+        ("TOTAL", total_calc),
     ]
+    if saldo_banco_real is not None:
+        rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
+        rows_resumen.append(("DIFERENCIA", diferencia))
 
     for label, val in rows_resumen:
         ws.cell(row=r, column=label_col, value=label).font = bold
