@@ -194,16 +194,46 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
 POSDAT_NO_ANULADA_WHERE = "(anulada IS NOT TRUE OR anulada IS NULL)"
 
 
+# TMT 2026-05-28: chequeo lazy + cached de la columna `baseline_date`.
+# Si todavía no corrió la migración 0061, los SELECT no la incluyen y
+# el código funciona como antes (sin display-time). Una vez que la
+# migración corre, el siguiente request la detecta y el display-time
+# se activa solo. Cache vive en process memory — al reiniciar Waitress
+# se re-chequea.
+_BASELINE_COL_EXISTS: bool | None = None
+
+
+def _baseline_col_exists() -> bool:
+    """¿Existe scintela.posdat.baseline_date? Lazy + cached."""
+    global _BASELINE_COL_EXISTS
+    if _BASELINE_COL_EXISTS is None:
+        try:
+            row = db.fetch_one(
+                """
+                SELECT 1 AS x
+                  FROM information_schema.columns
+                 WHERE table_schema = 'scintela'
+                   AND table_name   = 'posdat'
+                   AND column_name  = 'baseline_date'
+                """
+            )
+            _BASELINE_COL_EXISTS = bool(row)
+        except Exception:  # noqa: BLE001
+            _BASELINE_COL_EXISTS = False
+    return _BASELINE_COL_EXISTS
+
+
 def por_id(id_posdat: int) -> dict | None:
     # NOTA: NO filtramos `anulada` acá — `por_id` se usa también desde la
     # vista de confirmar_anulacion y desde scripts de auditoría que pueden
     # querer ver una fila anulada. Los listados/balances sí filtran.
+    baseline_col = ", pd.baseline_date" if _baseline_col_exists() else ""
     return db.fetch_one(
-        """
+        f"""
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave,
-               pd.anulada, pd.motivo_anulacion, pd.fecha_anulacion,
-               pd.baseline_date,
+               pd.anulada, pd.motivo_anulacion, pd.fecha_anulacion
+               {baseline_col},
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
@@ -275,15 +305,31 @@ def crear(
     # TMT 2026-05-28 (migración 0061): YY nuevas nacen con baseline_date = fecha
     # de creación. Así la fórmula display-time las arranca en offset=0 desde
     # ya. Sin baseline, el cron viejo todavía las podría incrementar (filtra
-    # IS NULL) — preferimos snapshot HOY desde el alta.
-    baseline_init = fecha if es_yy else None
+    # IS NULL) — preferimos snapshot HOY desde el alta. Si la migración 0061
+    # aún no corrió, INSERT sin esa columna (el código sigue funcionando).
+    if es_yy and _baseline_col_exists():
+        return db.execute_returning(
+            """
+            INSERT INTO scintela.posdat
+                (num, fecha, fechad, prov, importe, banc, concepto, clave,
+                 usuario_crea, baseline_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id_posdat, num
+            """,
+            (
+                num, fecha, fechad, prov, importe, banc,
+                concepto_full,
+                (clave or None) and clave[:3],
+                usuario,
+                fecha,  # baseline_date inicial = fecha de creación
+            ),
+        ) or {}
 
     return db.execute_returning(
         """
         INSERT INTO scintela.posdat
-            (num, fecha, fechad, prov, importe, banc, concepto, clave,
-             usuario_crea, baseline_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (num, fecha, fechad, prov, importe, banc, concepto, clave, usuario_crea)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id_posdat, num
         """,
         (
@@ -291,7 +337,6 @@ def crear(
             concepto_full,
             (clave or None) and clave[:3],
             usuario,
-            baseline_init,
         ),
     ) or {}
 
@@ -377,8 +422,9 @@ def editar(
         # la fórmula display-time no acumule offsets viejos sobre el valor
         # nuevo. Sin esto, la dueña edita "86100 → 90000" y al renderizar
         # ve "90000 + cuota × días_desde_baseline_viejo" = sorpresa.
+        # Skip si la columna aún no existe (migración no aplicada).
         prov_actual = (actual.get("prov") or "").strip().upper()
-        if prov_actual == "YY":
+        if prov_actual == "YY" and _baseline_col_exists():
             campos.append("baseline_date = CURRENT_DATE")
     # TMT 2026-05-19 v8 — `prov` editable. Antes estaba bloqueado por
     # regla legacy (no cambiar matching con proveedor), pero la dueña
@@ -565,11 +611,12 @@ def buscar(
     #   tab='posdatados' → excluye prov='YY' (deudas a proveedor reales).
     #   tab='yy'         → solo prov='YY' (gastos forzados / provisiones).
     tab_norm = (tab or "posdatados").strip().lower()
+    baseline_col = ", pd.baseline_date" if _baseline_col_exists() else ""
     rows = db.fetch_all(
-        """
+        f"""
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
-               pd.banc, pd.concepto, pd.clave,
-               pd.baseline_date,
+               pd.banc, pd.concepto, pd.clave
+               {baseline_col},
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov

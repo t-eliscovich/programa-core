@@ -375,6 +375,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_balance_bp)
 
+    # Aplicar migraciones SQL/Python en 1-click — TMT 2026-05-28.
+    # Reemplaza RDP+migrate.py manual por POST a /admin/migraciones (admin).
+    from modules.admin_dbase.migraciones_view import bp as admin_migraciones_bp
+
+    app.register_blueprint(admin_migraciones_bp)
+
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
     # middleware so we don't steal its elapsed-time header, and AFTER all

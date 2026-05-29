@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Migraciones{% endblock %}
+{% block breadcrumb %}<strong>Admin · Migraciones</strong>{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  {{ page_hero('Migraciones', 'Aplicar migraciones SQL/Python pendientes en 1 click. scripts/migrate.py es idempotente — un click extra es seguro.') }}
+
+  <div class="bg-white border rounded-lg p-5 mb-5 shadow-sm">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-semibold">Estado</h2>
+      <button type="button" id="btn-status"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">
+        Recargar
+      </button>
+    </div>
+    <pre id="status-out" class="bg-slate-50 border rounded p-3 text-xs overflow-x-auto" style="min-height:90px;">Cargando…</pre>
+  </div>
+
+  <div class="bg-white border rounded-lg p-5 shadow-sm">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-semibold">Aplicar pendientes</h2>
+      <button type="button" id="btn-run"
+              class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium">
+        Aplicar pendientes
+      </button>
+    </div>
+    <pre id="run-out" class="bg-slate-900 text-slate-100 border rounded p-3 text-xs overflow-x-auto" style="min-height:200px; max-height:500px;">(click "Aplicar pendientes" para correr scripts/migrate.py)</pre>
+  </div>
+</div>
+
+<script>
+  (function() {
+    const csrf = (document.querySelector('input[name="csrf_token"]') || {}).value || '';
+    const out = document.getElementById('run-out');
+    const status = document.getElementById('status-out');
+    const btnStatus = document.getElementById('btn-status');
+    const btnRun = document.getElementById('btn-run');
+
+    async function loadStatus() {
+      status.textContent = 'Cargando…';
+      try {
+        const r = await fetch('/admin/migraciones/status', {credentials: 'same-origin'});
+        const t = await r.text();
+        status.textContent = t;
+      } catch (e) {
+        status.textContent = 'ERROR: ' + e.message;
+      }
+    }
+    btnStatus.addEventListener('click', loadStatus);
+    loadStatus();
+
+    btnRun.addEventListener('click', async () => {
+      if (!confirm('¿Aplicar todas las migraciones pendientes?')) return;
+      btnRun.disabled = true; btnRun.textContent = 'Corriendo…';
+      out.textContent = '';
+      try {
+        const resp = await fetch('/admin/migraciones/run', {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'X-CSRFToken': csrf},
+        });
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          out.textContent += dec.decode(value);
+          out.scrollTop = out.scrollHeight;
+        }
+        await loadStatus();
+      } catch (e) {
+        out.textContent += '\nERROR: ' + e.message;
+      } finally {
+        btnRun.disabled = false; btnRun.textContent = 'Aplicar pendientes';
+      }
+    });
+  })();
+</script>
+{% endblock %}
