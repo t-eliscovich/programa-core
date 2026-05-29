@@ -414,7 +414,11 @@ def lista():
     delta_dia_hoy = round(total_cuota_diaria, 2)
     acum_mes_hasta_hoy = round(total_cuota_diaria * 25, 2)
 
-    return render_template(
+    # TMT 2026-05-29: no-store para forzar a que el browser/Caddy NO cacheen
+    # la respuesta — el display-time depende de _hoy_ec() y cambia día a día.
+    # Sin esto, F5 muestra valores cacheados aunque el server calcule bien.
+    from flask import make_response as _mr
+    resp = _mr(render_template(
         "posdat/lista.html",
         filas=filas,
         resumen=resumen,
@@ -424,7 +428,6 @@ def lista():
         hasta=hasta,
         solo_abiertas=solo_abiertas,
         error=error,
-        # TMT 2026-05-20 — tab + conteos para el switcher de tabs.
         tab=tab,
         conteos_tab=conteos_tab,
         total_importe=total_importe,
@@ -433,7 +436,11 @@ def lista():
         delta_dia_hoy=delta_dia_hoy,
         acum_mes_hasta_hoy=acum_mes_hasta_hoy,
         dia_del_mes=_dia_hoy,
-    )
+    ))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 # ---------------------------------------------------------------------------

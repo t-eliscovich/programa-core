@@ -712,20 +712,18 @@ def buscar(
             r["cuota_mensual"]     = diaria  # legacy: el template/JS leen cuota_mensual; mantenemos el valor diario que la dueña ve y edita
             r["provision_periodo"] = match.get("periodo_aplica")
         else:
-            # TMT 2026-05-28 dueña (sesión replanear): los posdat sin match
-            # en scintela.provisiones (caso RT, etc.) también suman cuota
-            # diaria = importe / 25. Mismo divisor que los YY con match,
-            # consistente con el modelo del mes de 25 días hábiles.
+            # TMT 2026-05-29 dueña: RT (IVA) suma 8400/día hábil según
+            # dBase MENU.PRG L333 (REPLA IMPORTE+8400). Hardcoded acá
+            # porque RT no está en scintela.provisiones. Otros posdat
+            # sin match en provisiones quedan sin cuota.
             r["id_provisiones"]    = None
             r["provision_periodo"] = None
-            imp = float(r.get("importe") or 0)
-            if imp > 0:
-                cd = round(imp / 25.0, 2)
-                r["cuota_diaria"] = cd
-                r["cuota_mensual"] = cd
-            else:
-                r["cuota_diaria"]  = None
-                r["cuota_mensual"] = None
+            r["cuota_diaria"]      = None
+            r["cuota_mensual"]     = None
+            prov_upper = (r.get("prov") or "").strip().upper()
+            if prov_upper == "RT":
+                r["cuota_diaria"]  = 8400.0
+                r["cuota_mensual"] = 8400.0
 
     # TMT 2026-05-28 (migración 0061): aplicar la fórmula display-time
     # YY ANTES de calcular saldo_acumulado, así el acumulado refleja el
