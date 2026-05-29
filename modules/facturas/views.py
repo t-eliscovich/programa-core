@@ -589,20 +589,56 @@ def desde_asinfo():
     ) or []
     pc_numfs_str = {(r.get("numf_completo") or "").strip()
                     for r in pc_rows if r.get("numf_completo")}
+    # TMT 2026-05-29 dueña: 'ya agregue siguen siendo muchas'. Las 52 que
+    # sobran NO son problema de alias — la 174177 AJO $723.24 29/04 ya
+    # está en PC con mismo numf/cli/fecha/importe pero igual aparece como
+    # 'faltan cargar'. Causa probable: numf_completo en PC se guarda sin
+    # guiones (o sólo el sufijo) y Match 1 compara contra '001-099-000174177'
+    # de Asinfo — falla. Match 2 también falla si numf en PC quedó como
+    # MAX+1 (cuando se cargó manual sin parsear el numf_completo).
+    # Fix: indexar también el numf extraído del numf_completo y agregar
+    # Match 3 por (cli_pc, fecha, importe) con tolerancia de 1 centavo.
+    def _extract_numf_local(s: str) -> int | None:
+        if not s:
+            return None
+        m = _re.findall(r"\d+", str(s))
+        if not m:
+            return None
+        try:
+            return int(m[-1])
+        except (ValueError, TypeError):
+            return None
+
     # Map (numf, codigo_cli_PC) → True, para alias-aware matching.
     pc_by_numf_cli: set[tuple[int, str]] = set()
     pc_by_numf: dict[int, set[str]] = {}
+    # Map (cli_pc, fecha_iso, importe_cents) → True para Match 3 fallback.
+    pc_by_cli_fecha_importe: set[tuple[str, str, int]] = set()
     for r in pc_rows:
-        numf = r.get("numf")
-        if not numf:
-            continue
-        try:
-            n = int(numf)
-        except (TypeError, ValueError):
-            continue
         cli_pc = (r.get("codigo_cli") or "").strip().upper()
-        pc_by_numf_cli.add((n, cli_pc))
-        pc_by_numf.setdefault(n, set()).add(cli_pc)
+        numf = r.get("numf")
+        n = None
+        if numf:
+            try:
+                n = int(numf)
+            except (TypeError, ValueError):
+                n = None
+        # También indexar numf extraído del numf_completo — cubre el caso
+        # donde numf quedó como MAX+1 pero numf_completo trae el real.
+        n_completo = _extract_numf_local(r.get("numf_completo") or "")
+        for cand in (n, n_completo):
+            if cand is not None:
+                pc_by_numf_cli.add((cand, cli_pc))
+                pc_by_numf.setdefault(cand, set()).add(cli_pc)
+        # Match 3 fallback: cli + fecha + importe (en centavos).
+        try:
+            f_ = r.get("fecha")
+            f_iso = f_.isoformat() if hasattr(f_, "isoformat") else (str(f_)[:10] if f_ else None)
+            imp = float(r.get("importe") or 0)
+            if f_iso and cli_pc:
+                pc_by_cli_fecha_importe.add((cli_pc, f_iso, int(round(imp * 100))))
+        except Exception:
+            pass
 
     def _extract_numf(numero: str) -> int | None:
         if not numero:
@@ -636,6 +672,20 @@ def desde_asinfo():
         cli_pc_esperado = _aliases.to_pc(cli_asinfo)
         if numf and (numf, cli_pc_esperado) in pc_by_numf_cli:
             continue
+        # Match 3 (fallback): (cli_pc, fecha, importe). Cubre cuando numf
+        # quedó mal guardado pero la factura SÍ está cargada con misma
+        # fecha y mismo importe. Tolerancia de 1 centavo (redondeo).
+        try:
+            usd_a = float(r.get("usd") or 0)
+        except (TypeError, ValueError):
+            usd_a = 0.0
+        if fecha and cli_pc_esperado and usd_a:
+            f_iso = fecha.isoformat()
+            cents = int(round(usd_a * 100))
+            if ((cli_pc_esperado, f_iso, cents) in pc_by_cli_fecha_importe
+                or (cli_pc_esperado, f_iso, cents - 1) in pc_by_cli_fecha_importe
+                or (cli_pc_esperado, f_iso, cents + 1) in pc_by_cli_fecha_importe):
+                continue
         # Calcular hint de "está en PC bajo OTRO cli" — sugerencia de alias.
         otros_clis_pc = []
         if numf:
