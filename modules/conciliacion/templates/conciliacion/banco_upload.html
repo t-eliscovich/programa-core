@@ -4,13 +4,19 @@
 {% block content %}
 <div class="max-w-3xl">
 
-  <div class="flex items-center justify-between mb-2">
+  <div class="flex items-center justify-between mb-2 gap-3">
     <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
-    {# TMT 2026-05-29 dueña: 'historial hacelo un boton a la derecha'. #}
-    <a href="/conciliacion/banco-v2/historial"
-       class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
-      Historial de conciliaciones →
-    </a>
+    {# TMT 2026-05-29 dueña: dos botones arriba: Historial + Deshacer. #}
+    <div class="flex items-center gap-2">
+      <a href="/conciliacion/banco-v2/historial"
+         class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
+        Historial de conciliaciones →
+      </a>
+      <a href="/conciliacion/banco-v2/deshacer"
+         class="bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
+        ↶ Deshacer conciliados
+      </a>
+    </div>
   </div>
 
   {# TMT 2026-05-28 dueña: 'esto sacalo' — se removieron 2 cards (Saldo

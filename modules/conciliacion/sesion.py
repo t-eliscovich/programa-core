@@ -161,7 +161,21 @@ def crear_sesion(
             (int(no_banco), usuario[:50], extracto_hash, (extracto_nombre or "")[:200], payload),
             conn=conn,
         )
-        return int(row["id"]) if row else 0
+        sid = int(row["id"]) if row else 0
+    # Snapshot del balance inicial al abrir la sesión (FUERA del db.tx).
+    # Capturado como evento_tipo='sesion_abierta', evento_ref=<sesion_id>.
+    try:
+        from modules.conciliacion import saldo_snapshot as _ss
+        _ss.snapshot(
+            no_banco=int(no_banco),
+            evento_tipo="sesion_abierta",
+            evento_ref=str(sid),
+            usuario=usuario,
+            descripcion=f"apertura sesión #{sid}",
+        )
+    except Exception as e:
+        _LOG.warning("snapshot apertura sesión #%s falló: %s", sid, e)
+    return sid
 
 
 def cerrar_sesion(sesion_id: int, usuario: str, pdf_path: str | None = None) -> bool:

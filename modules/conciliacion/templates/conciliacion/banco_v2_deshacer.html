@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block titulo %}Deshacer conciliados{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="flex items-baseline justify-between mb-3">
+    <h1 class="text-2xl font-semibold">Deshacer conciliados</h1>
+    <a href="{{ url_for('conciliacion.hub') }}"
+       class="text-sm text-sky-600 hover:underline">← Volver a conciliación</a>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <table class="w-full text-sm tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left w-28">Conciliado</th>
+          <th class="px-3 py-2 text-left w-24">Fecha mov</th>
+          <th class="px-3 py-2 text-left w-12">T</th>
+          <th class="px-3 py-2 text-left w-28">Doc</th>
+          <th class="px-3 py-2 text-left">Concepto</th>
+          <th class="px-3 py-2 text-right w-28">Monto</th>
+          <th class="px-3 py-2 text-left w-20">Usuario</th>
+          <th class="px-3 py-2 text-right w-32">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in matches %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.creado_en.strftime('%Y-%m-%d %H:%M') if m.creado_en else '—' }}</td>
+          <td class="px-3 py-1.5 text-slate-600">{{ m.real_fecha.strftime('%Y-%m-%d') if m.real_fecha else '—' }}</td>
+          <td class="px-3 py-1.5">
+            {% if m.real_tipo == 'C' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">+</span>
+            {% elif m.real_tipo == 'D' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold">−</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-slate-500 font-mono text-xs">{{ (m.real_documento or '—')|string|truncate(15,True,'') }}</td>
+          <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300 truncate max-w-md" title="{{ m.real_concepto }}">{{ (m.real_concepto or '—')[:60] }}</td>
+          <td class="px-3 py-1.5 text-right font-mono font-semibold {% if m.real_tipo == 'C' %}text-emerald-700{% elif m.real_tipo == 'D' %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.real_monto|float) if m.real_monto is not none else '—' }}</td>
+          <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.usuario or '—' }}</td>
+          <td class="px-3 py-1.5 text-right">
+            <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline m-0"
+                  onsubmit="return confirm('¿Deshacer este match?\n\n  {{ (m.real_concepto or '')[:50]|e }}\n  Monto: {{ '{:,.2f}'.format(m.real_monto|float) if m.real_monto is not none else '—' }}\n\nEl movimiento vuelve a aparecer como no conciliado.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="match_id" value="{{ m.id }}">
+              <input type="hidden" name="next" value="deshacer">
+              <button class="bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 text-xs rounded-md px-3 py-1 font-medium">
+                ↶ Deshacer
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not matches %}
+        <tr><td colspan="8" class="px-3 py-6 text-center text-slate-400 italic">— sin matches activos —</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

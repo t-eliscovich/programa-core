@@ -37,9 +37,9 @@ from modules.conciliacion.views import (
 
 _LOG = logging.getLogger("programa_core.conciliacion.banco_v2")
 
-# Directorio para PDFs de sesiones cerradas. data/ está en el repo, en el
-# server vive bajo C:\programa-core\data\.
-_PDF_DIR = Path("data") / "conciliacion_pdfs"
+# Directorio para reportes de sesiones cerradas. data/ está en el repo,
+# en el server vive bajo C:\programa-core\data\.
+_PDF_DIR = Path("data") / "conciliacion_pdfs"  # legacy nombre, ahora xlsx
 
 
 def _migracion_lista_o_redirect():
@@ -393,22 +393,22 @@ def banco_transferencias_confirmar():
 # ─── Terminar y guardar + PDF ─────────────────────────────────────────
 
 
-def _generar_pdf_pendientes(sesion: dict, balance: dict) -> str | None:
-    """Genera el PDF formato hoja FEB con los DEPÓSITOS PENDIENTES.
+def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
+    """Genera un XLSX formato hoja FEB con los DEPÓSITOS PENDIENTES.
 
-    Pendientes = movs del banco que quedaron sin conciliar al cerrar la
-    sesión. Excluye impuestos/comisiones (no son "depósitos pendientes").
+    TMT 2026-05-29 dueña: 'no pude descargar excel'. Pasamos de PDF
+    (reportlab puede no estar en el server) a XLSX nativo openpyxl
+    (que ya se usa en el resto de Programa Core). Más natural para
+    el flujo de "imprimir/exportar" de cuentas.
+
+    Pendientes = movs del banco que quedaron sin conciliar al cerrar.
+    Solo tipo C (entradas), como la hoja FEB del xlsx de muestra.
     """
     try:
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib.units import inch
-        from reportlab.platypus import (
-            Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
-        )
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
     except ImportError:
-        _LOG.warning("reportlab no instalado — saltando PDF")
+        _LOG.warning("openpyxl no instalado — saltando export")
         return None
 
     no_banco = sesion.get("no_banco") or _BANCO_PICHINCHA
@@ -416,59 +416,61 @@ def _generar_pdf_pendientes(sesion: dict, balance: dict) -> str | None:
     items = buckets.get("manual_banco") or []
 
     _PDF_DIR.mkdir(parents=True, exist_ok=True)
-    pdf_path = _PDF_DIR / f"sesion_{sesion['id']}.pdf"
+    xlsx_path = _PDF_DIR / f"sesion_{sesion['id']}.xlsx"
 
-    doc = SimpleDocTemplate(
-        str(pdf_path),
-        pagesize=letter,
-        leftMargin=0.5 * inch,
-        rightMargin=0.5 * inch,
-        topMargin=0.5 * inch,
-        bottomMargin=0.5 * inch,
-    )
-    styles = getSampleStyleSheet()
-    elements = []
-    title = Paragraph(
-        f"<b>DEPÓSITOS PENDIENTES</b><br/>"
-        f"<font size=9 color='#666'>Pichincha · Sesión #{sesion['id']} · "
-        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}</font>",
-        styles["Normal"],
-    )
-    elements.append(title)
-    elements.append(Spacer(1, 0.2 * inch))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "DEPÓSITOS PENDIENTES"
 
-    rows = [["FECHA", "DETALLE", "CODIGO", "VALOR", "DETALLE"]]
+    bold = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="DDDDDD")
+
+    ws["A1"] = "DEPÓSITOS PENDIENTES"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.merge_cells("A1:E1")
+    ws["A2"] = (
+        f"Pichincha · Sesión #{sesion['id']} · "
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
+    ws.merge_cells("A2:E2")
+
+    headers = ["FECHA", "DETALLE", "CODIGO", "VALOR", "DETALLE"]
+    for col, h in enumerate(headers, start=1):
+        c = ws.cell(row=4, column=col, value=h)
+        c.font = bold
+        c.fill = header_fill
+
+    row = 5
     total = 0.0
     for it in items:
         m = it["mov"]
         if (m.tipo or "").upper() != "C":
-            # El xlsx muestra solo entradas (depósitos pendientes). Open Q
-            # #4 — default C; si la dueña pide ambos, sacar este filtro.
             continue
         valor = float(m.monto or 0)
         total += valor
-        rows.append([
-            m.fecha.strftime("%d/%m/%Y") if m.fecha else "",
-            (m.concepto or "")[:60],
-            (m.documento or "")[:15],
-            f"{valor:,.2f}",
-            "",
-        ])
-    rows.append(["", "", "", f"Total: {total:,.2f}", ""])
+        ws.cell(row=row, column=1, value=m.fecha.strftime("%d/%m/%Y") if m.fecha else "")
+        ws.cell(row=row, column=2, value=(m.concepto or "")[:100])
+        ws.cell(row=row, column=3, value=(m.documento or "")[:30])
+        ws.cell(row=row, column=4, value=valor).number_format = "#,##0.00"
+        ws.cell(row=row, column=5, value="")
+        row += 1
 
-    tbl = Table(rows, colWidths=[0.9 * inch, 4 * inch, 1.1 * inch, 1 * inch, 0.9 * inch])
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (3, 0), (3, -1), "RIGHT"),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.lightgrey),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-    ]))
-    elements.append(tbl)
-    doc.build(elements)
-    return str(pdf_path)
+    # Fila total
+    ws.cell(row=row + 1, column=3, value="Total:").font = bold
+    cell = ws.cell(row=row + 1, column=4, value=total)
+    cell.font = bold
+    cell.number_format = "#,##0.00"
+    cell.fill = header_fill
+
+    # Column widths
+    ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["C"].width = 15
+    ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["E"].width = 12
+
+    wb.save(str(xlsx_path))
+    return str(xlsx_path)
 
 
 @conciliacion_bp.route("/banco-v2/terminar", methods=["POST"])
@@ -488,9 +490,9 @@ def banco_terminar():
     pdf_path = None
     balance = _bp.calcular(sesion.get("no_banco") or _BANCO_PICHINCHA)
     try:
-        pdf_path = _generar_pdf_pendientes(sesion, balance)
+        pdf_path = _generar_xlsx_pendientes(sesion, balance)
     except Exception as e:
-        _LOG.warning("PDF falló (sigo cerrando sesión sin PDF): %s", e)
+        _LOG.warning("XLSX falló (sigo cerrando sesión sin reporte): %s", e)
 
     ok = _sesion.cerrar_sesion(sesion_id, _usuario_actual(), pdf_path=pdf_path)
 
@@ -531,6 +533,9 @@ def banco_cerrada(sesion_id: int):
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_pdf(sesion_id: int):
+    """Descarga el reporte de pendientes (XLSX, antes PDF). El endpoint
+    se llama 'pdf' por compat hacia atrás — el contenido es xlsx ahora.
+    """
     sesion = _sesion.sesion_por_id(sesion_id)
     if not sesion or not sesion.get("pdf_path"):
         abort(404)
@@ -539,11 +544,13 @@ def banco_pdf(sesion_id: int):
         path = Path.cwd() / path
     if not path.exists():
         abort(404)
+    is_xlsx = str(path).lower().endswith(".xlsx")
     return send_file(
         str(path),
-        mimetype="application/pdf",
-        as_attachment=False,
-        download_name=f"conciliacion_sesion_{sesion_id}.pdf",
+        mimetype=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  if is_xlsx else "application/pdf"),
+        as_attachment=True,
+        download_name=f"conciliacion_sesion_{sesion_id}.{'xlsx' if is_xlsx else 'pdf'}",
     )
 
 
@@ -557,7 +564,68 @@ def banco_historial_v2():
     r = _migracion_lista_o_redirect()
     if r: return r
     sesiones = _sesion.listar_sesiones(no_banco=_BANCO_PICHINCHA, limit=200)
+    # Balance inicial/final por sesión (snapshots evento_tipo+evento_ref).
+    saldo_ini, saldo_fin = {}, {}
+    try:
+        snap_rows = _db.fetch_all(
+            """
+            SELECT evento_tipo, evento_ref, saldo_conc
+              FROM scintela.banco_saldo_conc_snapshot
+             WHERE no_banco = %s
+               AND evento_tipo IN ('sesion_abierta','sesion_cerrada')
+            """,
+            (_BANCO_PICHINCHA,),
+        ) or []
+        for sr in snap_rows:
+            ref = str(sr.get("evento_ref") or "")
+            val = float(sr.get("saldo_conc") or 0)
+            if sr.get("evento_tipo") == "sesion_abierta":
+                saldo_ini[ref] = val
+            elif sr.get("evento_tipo") == "sesion_cerrada":
+                saldo_fin[ref] = val
+    except Exception:
+        pass
+    for s in sesiones:
+        sid = str(s.get("id"))
+        s["saldo_inicial"] = saldo_ini.get(sid)
+        s["saldo_final"] = saldo_fin.get(sid)
     return render_template(
         "conciliacion/banco_v2_historial.html",
         sesiones=sesiones,
+    )
+
+
+# ─── Deshacer conciliados (pantalla minimalista) ──────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/deshacer", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_deshacer_v2():
+    """Lista de matches activos con un botón Deshacer por fila.
+
+    TMT 2026-05-29 dueña: 'deshacer conciliados tiene demasiada data y
+    kpis, solo quiero los movimientos y deshacer con una alerta que
+    confirmar'. Reemplazo de /banco/historial.
+    """
+    matches = []
+    try:
+        matches = _db.fetch_all(
+            """
+            SELECT m.id, m.creado_en, m.real_fecha, m.real_documento,
+                   m.real_concepto, m.real_monto, m.real_tipo,
+                   m.usuario, m.id_transaccion
+              FROM scintela.banco_conciliacion_match m
+             WHERE m.no_banco = %s
+               AND m.deshecho_en IS NULL
+             ORDER BY m.creado_en DESC
+             LIMIT 500
+            """,
+            (_BANCO_PICHINCHA,),
+        ) or []
+    except Exception as e:
+        _LOG.warning("listar matches activos falló: %s", e)
+    return render_template(
+        "conciliacion/banco_v2_deshacer.html",
+        matches=matches,
     )

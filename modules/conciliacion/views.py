@@ -2640,6 +2640,8 @@ def banco_deshacer():
     _next = (request.form.get("next") or "").strip()
     if _next == "cambios":
         back = url_for("conciliacion.cambios_timeline")
+    elif _next == "deshacer":
+        back = url_for("conciliacion.banco_deshacer_v2")
     else:
         back = url_for("conciliacion.banco_historial")
     if match_id <= 0:
