@@ -47,7 +47,7 @@
     <h1 class="text-xl font-bold">HOJA DE CONCILIACIÓN — {{ hoja.nombre_banco }}</h1>
     <div class="text-xs text-slate-600 mt-1">
       Período: <strong>{{ desde.isoformat() }}</strong> → <strong>{{ hasta.isoformat() }}</strong> ·
-      Impreso: {{ g.now.strftime('%Y-%m-%d %H:%M') if g.now else '' }}
+      Impreso: {{ g.now|hora_ec('%Y-%m-%d %H:%M') if g.now else '' }}
     </div>
     <div class="text-[11px] text-slate-500 mt-0.5">
       Saldo a conciliar al cierre del día anterior:

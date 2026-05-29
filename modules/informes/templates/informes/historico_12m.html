@@ -290,7 +290,7 @@
                  26") para liberar altura. El timestamp y badge DEFAULT
                  viajan al tooltip. #}
               <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50{% endif %}"
-                  {% if c.es_mes_actual and c.fecha_crea %}title="Snapshot {{ c.fecha_crea.strftime('%d/%m %H:%M') }}{% if c.es_canonico_default %} · DEFAULT{% endif %}"{% endif %}>
+                  {% if c.es_mes_actual and c.fecha_crea %}title="Snapshot {{ c.fecha_crea|hora_ec('%d/%m %H:%M') }}{% if c.es_canonico_default %} · DEFAULT{% endif %}"{% endif %}>
                 {% if c.es_delta %}Δ
                 {% else %}{{ MES_ABRV[c.mes-1] }} <span class="yr">{{ '%02d' % (c.anio % 100) }}</span>
                 {% endif %}

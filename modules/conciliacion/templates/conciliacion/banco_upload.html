@@ -275,7 +275,7 @@
         {% for u in uploads %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
             <td class="px-3 py-1.5 tabular-nums text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
-              {{ u.creado_en.strftime('%Y-%m-%d %H:%M') if u.creado_en else '—' }}
+              {{ u.creado_en|hora_ec('%Y-%m-%d %H:%M') if u.creado_en else '—' }}
             </td>
             <td class="px-3 py-1.5 text-slate-700 dark:text-slate-300">
               <div class="truncate max-w-xs font-mono text-xs" title="{{ u.filename }} (hash {{ u.file_hash }})">{{ u.filename or '—' }}</div>

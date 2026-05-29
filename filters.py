@@ -60,6 +60,52 @@ def fecha_hora_es(value) -> str:
     return str(value)
 
 
+def _to_ec(value):
+    """Convert UTC datetime → Ecuador local (UTC-5, sin DST).
+
+    Server corre en UTC (memory feedback_yy_display_time_lecciones #4).
+    Si el datetime ya es timezone-aware, hacemos astimezone. Si es naive,
+    asumimos UTC (que es como Postgres CURRENT_TIMESTAMP llega via psycopg2).
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, datetime):
+        return value
+    from datetime import timezone, timedelta
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone(timedelta(hours=-5)))
+
+
+def fecha_hora_ec(value) -> str:
+    """Render datetime as dd/mm/yyyy HH:MM:SS en hora Ecuador (UTC-5)."""
+    v = _to_ec(value)
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.strftime("%d/%m/%Y %H:%M:%S")
+    if isinstance(v, date):
+        return v.strftime("%d/%m/%Y")
+    return str(v)
+
+
+def hora_ec(value, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Render datetime en hora Ecuador con formato configurable.
+
+    Default: '%Y-%m-%d %H:%M' (compat con strftime que usa el código viejo).
+    Para historial: hora_ec(s.abierta_en) en lugar de
+    s.abierta_en.strftime('%Y-%m-%d %H:%M').
+    """
+    v = _to_ec(value)
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.strftime(fmt)
+    if isinstance(v, date):
+        return v.strftime("%Y-%m-%d")
+    return str(v)
+
+
 def humanizar(value) -> str:
     """Convierte una excepción (u objeto tipo excepción) en mensaje legible.
 
@@ -103,5 +149,7 @@ def register(app):
     app.jinja_env.filters["money_es"] = money_es
     app.jinja_env.filters["fecha_es"] = fecha_es
     app.jinja_env.filters["fecha_hora_es"] = fecha_hora_es
+    app.jinja_env.filters["fecha_hora_ec"] = fecha_hora_ec
+    app.jinja_env.filters["hora_ec"] = hora_ec
     app.jinja_env.filters["humanizar"] = humanizar
     app.jinja_env.filters["cleanstr"] = cleanstr

@@ -13,7 +13,18 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+
+
+def _hora_ec_str(value, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Convertir datetime UTC → str en hora Ecuador (UTC-5)."""
+    if value is None:
+        return ""
+    if not isinstance(value, datetime):
+        return str(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone(timedelta(hours=-5))).strftime(fmt)
 from decimal import Decimal as _D
 from pathlib import Path
 
@@ -257,7 +268,7 @@ def banco_crear_sesion():
         prev = _sesion.sesion_por_hash(no_banco, extracto_hash)
         if prev:
             cuando = prev.get("abierta_en")
-            cuando_str = cuando.strftime("%d/%m/%Y %H:%M") if cuando else "fecha desconocida"
+            cuando_str = _hora_ec_str(cuando, "%d/%m/%Y %H:%M") if cuando else "fecha desconocida"
             cerrada = bool(prev.get("cerrada_en"))
             estado = "cerrada" if cerrada else "abierta"
             n_matches = int(prev.get("matches_hechos") or 0)
@@ -1156,7 +1167,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     ws.merge_cells("A1:E1")
     ws["A2"] = (
         f"Pichincha · Sesión #{sesion['id']} · "
-        f"{datetime.now().strftime('%Y-%m-%d %H:%M')} · "
+        f"{_hora_ec_str(datetime.now(), '%Y-%m-%d %H:%M')} · "
         f"{len(rows)} movs"
     )
     ws.merge_cells("A2:E2")

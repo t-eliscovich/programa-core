@@ -84,7 +84,7 @@
         <tbody>
           {% for m in matches %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-            <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.creado_en.strftime('%Y-%m-%d %H:%M') if m.creado_en else '—' }}</td>
+            <td class="px-3 py-1.5 text-slate-500 text-xs">{{ m.creado_en|hora_ec('%Y-%m-%d %H:%M') if m.creado_en else '—' }}</td>
             <td class="px-3 py-1.5 text-slate-600">{{ m.real_fecha.strftime('%Y-%m-%d') if m.real_fecha else '—' }}</td>
             <td class="px-3 py-1.5">
               {% if m.real_tipo == 'C' %}<span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">+</span>

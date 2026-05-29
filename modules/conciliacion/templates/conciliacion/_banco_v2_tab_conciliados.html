@@ -11,7 +11,7 @@
       <strong class="text-sm">Conciliados en esta sesión</strong>
       <span class="text-xs text-slate-500 ml-2">
         {{ matches_sesion|length }} match{% if matches_sesion|length != 1 %}es{% endif %}
-        desde {{ sesion.abierta_en.strftime('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}
+        desde {{ sesion.abierta_en|hora_ec('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}
       </span>
     </div>
     {% if matches_sesion %}
@@ -46,7 +46,7 @@
           {% set _signo_pos = (_tipo == 'C') %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
             <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
-              {{ m.creado_en.strftime('%m-%d %H:%M') if m.creado_en else '—' }}
+              {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
             </td>
             <td class="px-2 py-1">
               {% if m.tipo == 'historico' %}

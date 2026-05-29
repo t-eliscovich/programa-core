@@ -40,7 +40,7 @@
 <div class="imp-sheet">
   <div class="flex items-start justify-between gap-4 flex-wrap">
     <div>
-      <div class="imp-title">Intela — Resumen al {{ _now.strftime('%d/%m/%Y %H:%M') }}</div>
+      <div class="imp-title">Intela — Resumen al {{ _now|hora_ec('%d/%m/%Y %H:%M') }}</div>
       <div class="imp-sub">Generado por {{ g.user.username if g.user else '—' }}</div>
     </div>
     <div class="no-print flex items-center gap-2">
@@ -74,7 +74,7 @@
   </div>
 
   <div class="imp-foot">
-    Documento generado el {{ _now.strftime('%d/%m/%Y') }} a las {{ _now.strftime('%H:%M') }}.
+    Documento generado el {{ _now.strftime('%d/%m/%Y') }} a las {{ _now|hora_ec('%H:%M') }}.
     ID: {{ g.request_id[:8] if g.request_id else '—' }}
   </div>
 </div>

@@ -10,7 +10,7 @@
       <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
       <p class="text-xs text-slate-500">
         Sesión <span class="font-mono">#{{ sesion.id }}</span>
-        · abierta {{ sesion.abierta_en.strftime('%Y-%m-%d %H:%M') if sesion.abierta_en else '' }}
+        · abierta {{ sesion.abierta_en|hora_ec('%Y-%m-%d %H:%M') if sesion.abierta_en else '' }}
         · {{ sesion.matches_hechos }} match{% if sesion.matches_hechos != 1 %}es{% endif %} hechos
         {% if sesion.extracto_nombre %}<span class="text-slate-400">· archivo: {{ sesion.extracto_nombre }}</span>{% endif %}
         {% if buckets.matcher_extracto_desde %}

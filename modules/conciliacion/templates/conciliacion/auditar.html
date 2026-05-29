@@ -124,7 +124,7 @@
         <tbody>
           {% for d in diff_matches %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-            <td class="px-2 py-1 text-slate-500">{{ d.creado_en.strftime('%m-%d %H:%M') if d.creado_en else '—' }}</td>
+            <td class="px-2 py-1 text-slate-500">{{ d.creado_en|hora_ec('%m-%d %H:%M') if d.creado_en else '—' }}</td>
             <td class="px-2 py-1 text-slate-500">{{ d.real_fecha or '—' }}</td>
             <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (d.real_documento or '')[:12] }}</td>
             <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(d.real_monto|float) }}</td>

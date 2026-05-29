@@ -84,7 +84,7 @@
         {% set _prog_m = r.bancsis_importe|float if r.bancsis_importe is not none else None %}
         {% set _diff = (_real_m - _prog_m) if (_real_m is not none and _prog_m is not none) else None %}
         <tr class="border-t border-slate-100 dark:border-slate-800 {% if r.deshecho_en %}opacity-50 line-through{% endif %}">
-          <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.creado_en.strftime('%Y-%m-%d %H:%M') if r.creado_en else '' }}</td>
+          <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.creado_en|hora_ec('%Y-%m-%d %H:%M') if r.creado_en else '' }}</td>
           <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ r.real_fecha or r.bancsis_fecha or '' }}</td>
           <td class="px-2 py-1.5 font-mono">{{ r.real_documento or r.bancsis_documento or '' }}</td>
           <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">
@@ -117,7 +117,7 @@
               <button class="px-2 py-0.5 rounded text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30">Deshacer</button>
             </form>
             {% else %}
-            <span class="text-xs text-slate-400" title="Deshecho por {{ r.deshecho_por }} el {{ r.deshecho_en.strftime('%Y-%m-%d %H:%M') if r.deshecho_en else '' }}">deshecho</span>
+            <span class="text-xs text-slate-400" title="Deshecho por {{ r.deshecho_por }} el {{ r.deshecho_en|hora_ec('%Y-%m-%d %H:%M') if r.deshecho_en else '' }}">deshecho</span>
             {% endif %}
           </td>
         </tr>
