@@ -2638,9 +2638,7 @@ def banco_deshacer():
         match_id = 0
     # Whitelist de destinos. Evita open-redirect.
     _next = (request.form.get("next") or "").strip()
-    if _next == "cambios":
-        back = url_for("conciliacion.cambios_timeline")
-    elif _next == "deshacer":
+    if _next == "deshacer":
         back = url_for("conciliacion.banco_deshacer_v2")
     else:
         back = url_for("conciliacion.banco_historial")
@@ -2831,7 +2829,7 @@ def limpiar_stat_fantasma():
             flash("No había fantasmas para limpiar.", "info")
     except Exception as e:
         flash_exc("No pude correr el limpiador de stat fantasma", e)
-    return redirect(url_for("conciliacion.cambios_timeline"))
+    return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
 
 # ============================================================

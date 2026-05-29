@@ -340,12 +340,11 @@ def create_app() -> Flask:
     app.register_blueprint(costos_ot_bp)
 
     from modules.conciliacion.views import conciliacion_bp
-    # cambios_view se importa para que registre la ruta /conciliacion/cambios
-    # contra el mismo blueprint.
-    from modules.conciliacion import cambios_view  # noqa: F401
     # banco_v2_view registra los endpoints /conciliacion/banco-v2/* — Reforma
     # Sprint 1 (2026-05-28). Coexiste con /conciliacion/hub vigente hasta swap.
     from modules.conciliacion import banco_v2_view  # noqa: F401
+    # /conciliacion/cambios eliminado 2026-05-29 dueña: 'esta pantalla no
+    # sirve para nada'. El historial de matches se ve en /banco-v2/deshacer.
 
     app.register_blueprint(conciliacion_bp)
 
