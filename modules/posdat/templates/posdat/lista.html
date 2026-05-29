@@ -313,6 +313,35 @@
           {{ empty_row(_colspan_empty, 'Sin pasivos con los filtros actuales.') }}
         {% endfor %}
       </tbody>
+      {# TMT 2026-05-29 — fila TOTAL al pie. Suma de IMPORTE (con
+         display-time aplicado) y de CUOTA DIARIA (si la columna está
+         visible). #}
+      {% set _suma_importe = 0 %}
+      {% for f in filas %}{% set _suma_importe = _suma_importe + (f.importe or 0) %}{% endfor %}
+      {% set _suma_cuota = 0 %}
+      {% if _show_mensual %}
+        {% for f in filas %}{% set _suma_cuota = _suma_cuota + (f.cuota_mensual or 0) %}{% endfor %}
+      {% endif %}
+      <tfoot class="bg-slate-100 dark:bg-slate-800 border-t-2 border-slate-300 dark:border-slate-700">
+        <tr class="font-semibold">
+          {# 4 columnas iniciales (Fecha, Venc., Prov, Concepto) ocupadas por el label. #}
+          <td colspan="4" class="px-2 py-2 text-right uppercase tracking-wider text-xs text-slate-700 dark:text-slate-200">Total</td>
+          <td class="px-2 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">{{ _suma_importe | num_es }}</td>
+          {% if _show_mensual %}
+            <td class="px-2 py-2 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">{{ _suma_cuota | num_es }}</td>
+          {% endif %}
+          {% if _show_diaria %}
+            <td class="px-2 py-2"></td>
+          {% endif %}
+          {% if _show_acum %}
+            <td class="px-2 py-2"></td>
+          {% endif %}
+          {% if tiene_permiso('posdat.anular') %}
+            <td class="px-1 py-2 no-print"></td>
+          {% endif %}
+        </tr>
+      </tfoot>
+
       {# TMT 2026-05-20 v6 — "+ Nueva línea" al pie de AMBAS tabs.
          En YY: crea row vacía (prov='YY', importe=0, concepto=''),
          editás inline.
