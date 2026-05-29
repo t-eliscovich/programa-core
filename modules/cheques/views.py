@@ -2116,6 +2116,16 @@ def lista():
     hasta = request.args.get("hasta") or None
     cliente = request.args.get("cliente", "").strip()
 
+    # TMT 2026-05-29 (pedido dueña): "el filtro del cheque no funciona si no
+    # esta en la pagina, me tiene que buscar todos". Cuando hay búsqueda
+    # libre (q), expandimos el scope a TODOS los stats — incluyendo
+    # depositados, endosados y reversados — para que el cheque aparezca
+    # esté donde esté. La pestaña activa sigue mostrándose para contexto,
+    # pero el query corre sobre el universo completo.
+    estado_efectivo = "todos" if q else estado
+    ver_eliminados_arg = request.args.get("ver_eliminados") in ("1", "true", "yes")
+    ver_eliminados = True if q else ver_eliminados_arg
+
     def _parse_num(s: str | None) -> float | None:
         if not s:
             return None
@@ -2150,11 +2160,13 @@ def lista():
         page_offset = 0
     # ?ver_eliminados=1 → incluye cheques stat='X' (reversados) en tab "Todos".
     # Default: ocultos para no saturar. Pedido TMT 2026-05-14 (#40 audit).
-    ver_eliminados = request.args.get("ver_eliminados") in ("1", "true", "yes")
+    # `ver_eliminados` y `estado_efectivo` ya quedaron resueltos arriba: si
+    # hay búsqueda libre (q), pisamos estado='todos' y ver_eliminados=True
+    # para que el cheque buscado aparezca esté en el bucket que esté.
     try:
         filas = queries.buscar(
             q,
-            estado,
+            estado_efectivo,
             desde,
             hasta,
             limite=page_limite,
@@ -2254,7 +2266,7 @@ def lista():
         # total_buscar para que el hero KPI refleje el filtro real.
         agg = queries.total_buscar(
             q,
-            estado,
+            estado_efectivo,
             desde,
             hasta,
             cliente=cliente,
