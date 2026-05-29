@@ -1167,6 +1167,13 @@ def ventas_mes_corriente_resultado() -> dict:
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
           AND (stat IS NULL OR stat <> 'X')
+          -- TMT 2026-05-29: las facturas históricas reimportadas via
+          -- backfill desde Asinfo (usuario_crea='asinfo-backfill') ya
+          -- fueron contabilizadas en scintela.historia; incluirlas acá
+          -- doble-cuenta y los kg/U$ del mes actual quedan inflados
+          -- (ej. mayo 2026: 329k kg en PC vs 283k en dBase = +46k del
+          -- backfill).
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
         )
         or {}
@@ -1214,6 +1221,11 @@ def compras_mes_corriente() -> dict:
           -- reversadas seguían inflando MAT.PR. y U$/kg ponderado.
           -- TMT 2026-05-13.
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+          -- TMT 2026-05-29: compras importadas via backfill desde Asinfo
+          -- (usuario_crea='asinfo-backfill') ya fueron contabilizadas en
+          -- historia.ucom; incluirlas acá doble-cuenta el costo de MP
+          -- del mes actual.
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
         )
         or {}
