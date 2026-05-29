@@ -33,6 +33,21 @@ from modules.posdat import (
     posdat_deuda_viva_where,
 )
 
+
+# ---------------------------------------------------------------------------
+# Filtro común para excluir backfill de Asinfo (TMT 2026-05-29).
+#
+# Cuando se re-importa data histórica desde Asinfo (ERP), se crean filas en
+# scintela.factura / scintela.compra con `usuario_crea='asinfo-backfill'`.
+# Esas filas también están contabilizadas en scintela.historia (cierre
+# mensual). Por eso, CUALQUIER query que sume kg/importe de factura/compra
+# para calcular números LIVE del mes en curso (venta del mes, MAT.PR del
+# mes, Col.Qui del mes, etc.) DEBE excluir el backfill — sino doble-cuenta.
+#
+# Patrón: agregar `AND {NO_BACKFILL_WHERE}` al WHERE de la query.
+# ---------------------------------------------------------------------------
+NO_BACKFILL_WHERE = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
+
 # ---------------------------------------------------------------------------
 # Constantes del PRG legacy (INFORMES.PRG líneas 5-6)
 # ---------------------------------------------------------------------------
@@ -542,7 +557,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     try:
         _h_row = (
             db.fetch_one(
-                """
+                f"""
             SELECT COALESCE(SUM(kg), 0)      AS kg,
                    COALESCE(SUM(importe), 0) AS importe
               FROM scintela.compra
@@ -550,6 +565,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
                AND COALESCE(stat, '') <> 'Y'
                AND EXTRACT(YEAR FROM fecha)  = %s
                AND EXTRACT(MONTH FROM fecha) = %s
+               AND {NO_BACKFILL_WHERE}
             """,
                 (yy, mm),
             )
@@ -637,7 +653,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # con `column "prov" does not exist` y tiraba la página entera.
     compras_hilado = (
         db.fetch_all(
-            """
+            f"""
         SELECT codigo_prov                AS prov,
                COALESCE(SUM(kg), 0)       AS kg,
                COALESCE(SUM(importe), 0)  AS importe
@@ -648,6 +664,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(codigo_prov, '') <> ''
            AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
+           AND {NO_BACKFILL_WHERE}
          GROUP BY codigo_prov
          ORDER BY SUM(importe) DESC
          LIMIT 20
@@ -661,7 +678,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
 
     produc_tejido = (
         db.fetch_all(
-            """
+            f"""
         SELECT codigo_prov                AS prov,
                COALESCE(SUM(kg), 0)       AS kg,
                COALESCE(SUM(importe), 0)  AS importe
@@ -672,6 +689,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(codigo_prov, '') <> ''
+           AND {NO_BACKFILL_WHERE}
          GROUP BY codigo_prov
          ORDER BY SUM(kg) DESC
          LIMIT 20
@@ -729,7 +747,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         {"lim": _LIM_TINT},
     ) or {}
     _ct = db.fetch_one(
-        """
+        f"""
         SELECT
           COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
                             THEN kg ELSE 0 END), 0)                   AS kbaj,
@@ -740,6 +758,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND EXTRACT(YEAR FROM fecha)  = %(yy)s
           AND EXTRACT(MONTH FROM fecha) = %(mm)s
+          AND {NO_BACKFILL_WHERE}
         """,
         {"lim": _LIM_TINT, "yy": yy, "mm": mm},
     ) or {}
@@ -789,13 +808,14 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # kg tinturados del mes (ktin de historia).
     quimicos_mes = (
         db.fetch_one(
-            """
+            f"""
         SELECT COALESCE(SUM(importe), 0) AS importe
           FROM scintela.compra
          WHERE UPPER(COALESCE(tipo, '')) = 'Q'
            AND COALESCE(stat, '') <> 'Y'
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
+           AND {NO_BACKFILL_WHERE}  -- TMT 2026-05-29: ver constante arriba
         """,
             (yy, mm),
         )
@@ -864,13 +884,14 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
             try:
                 q_ant = (
                     db.fetch_one(
-                        """
+                        f"""
                     SELECT COALESCE(SUM(importe), 0) AS importe
                       FROM scintela.compra
                      WHERE UPPER(COALESCE(tipo, '')) = 'Q'
                        AND COALESCE(stat, '') <> 'Y'
                        AND EXTRACT(YEAR FROM fecha)  = %s
                        AND EXTRACT(MONTH FROM fecha) = %s
+                       AND {NO_BACKFILL_WHERE}
                     """,
                         (yy_ant, mm_ant),
                     )
@@ -1159,7 +1180,7 @@ def ventas_mes_corriente_resultado() -> dict:
     """
     row = (
         db.fetch_one(
-            """
+            f"""
         SELECT COUNT(*) AS n,
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
@@ -1167,13 +1188,7 @@ def ventas_mes_corriente_resultado() -> dict:
         WHERE fecha >= date_trunc('month', CURRENT_DATE)
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
           AND (stat IS NULL OR stat <> 'X')
-          -- TMT 2026-05-29: las facturas históricas reimportadas via
-          -- backfill desde Asinfo (usuario_crea='asinfo-backfill') ya
-          -- fueron contabilizadas en scintela.historia; incluirlas acá
-          -- doble-cuenta y los kg/U$ del mes actual quedan inflados
-          -- (ej. mayo 2026: 329k kg en PC vs 283k en dBase = +46k del
-          -- backfill).
-          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+          AND {NO_BACKFILL_WHERE}  -- ver constante arriba
         """
         )
         or {}
@@ -1209,7 +1224,7 @@ def compras_mes_corriente() -> dict:
     """
     row = (
         db.fetch_one(
-            """
+            f"""
         SELECT COUNT(*) AS n,
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
@@ -1221,11 +1236,7 @@ def compras_mes_corriente() -> dict:
           -- reversadas seguían inflando MAT.PR. y U$/kg ponderado.
           -- TMT 2026-05-13.
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
-          -- TMT 2026-05-29: compras importadas via backfill desde Asinfo
-          -- (usuario_crea='asinfo-backfill') ya fueron contabilizadas en
-          -- historia.ucom; incluirlas acá doble-cuenta el costo de MP
-          -- del mes actual.
-          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+          AND {NO_BACKFILL_WHERE}  -- ver constante arriba
         """
         )
         or {}
@@ -1941,6 +1952,7 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
          WHERE c.fecha >= date_trunc('month', CURRENT_DATE)
            AND c.fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
          GROUP BY 1
     """
     rows_compras = db.fetch_all(sql_compras) or []
@@ -2030,6 +2042,7 @@ def compras_iprovk_mes() -> dict:
           AND COALESCE(UPPER(TRIM(codigo_prov)), '') <> 'KK'
           AND COALESCE(kg, 0) > 0
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
         )
         or {}
@@ -2059,6 +2072,7 @@ def compras_tipo_t_externos_mes() -> dict:
           AND COALESCE(UPPER(TRIM(codigo_prov)), '') <> 'KK'
           AND COALESCE(kg, 0) > 0
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
         )
         or {}
@@ -2135,6 +2149,7 @@ def tejido_mes_componentes() -> dict:
           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'K'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY 1
         """
         )
@@ -2278,6 +2293,7 @@ def ventas_anio_en_curso() -> float:
                AND EXTRACT(MONTH FROM fecha) = %s
                AND COALESCE(stat, '') <> 'X'
                AND COALESCE(importe, 0) > 0
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
             """,
                 (yy, mm),
             )
@@ -2367,6 +2383,7 @@ def stock_kg_live(hoy: date | None = None) -> dict:
         WHERE fecha > %s AND fecha <= %s
           AND COALESCE(kg, 0) > 0
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (snap_fecha, hoy),
     )
@@ -4629,6 +4646,7 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
            AND EXTRACT(MONTH FROM fecha) = %s
            AND COALESCE(stat, '') <> 'X'
            AND COALESCE(importe, 0) > 0
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
             (yy, mm),
         )
@@ -4694,6 +4712,7 @@ def ventas_mensuales(meses: int = 12) -> list[dict]:
         FROM scintela.factura
         WHERE fecha >= (CURRENT_DATE - (%s || ' months')::interval)
           AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY mes
         ORDER BY mes DESC
         """,
@@ -4758,6 +4777,7 @@ def ventas_multianual(anios: int = 4) -> dict:
         FROM scintela.factura
         WHERE EXTRACT(YEAR FROM fecha) BETWEEN %s AND %s
           AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY yy, mm
         """,
             (anios_list[0], anios_list[-1]),
@@ -5420,6 +5440,7 @@ def compras_del_periodo(
          WHERE EXTRACT(YEAR FROM c.fecha) = %s
            AND EXTRACT(MONTH FROM c.fecha) = %s
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
            {where_v}
          ORDER BY c.fecha ASC, c.id_compra ASC
         """,
@@ -5443,6 +5464,7 @@ def compras_del_periodo(
            AND EXTRACT(MONTH FROM c.fecha) = %s
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
            AND c.codigo_prov IS NOT NULL
+           AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
          ORDER BY 1
         """,
             (anio, mes),
@@ -6199,6 +6221,7 @@ def balance_components_as_of(as_of) -> dict:
          WHERE fecha <= %s
            AND COALESCE(saldo, 0) > 0
            AND (stat IS NULL OR stat IN ('Z','A','',' '))
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
             (as_of,),
         )
@@ -6270,6 +6293,7 @@ def balance_components_as_of(as_of) -> dict:
          WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
            AND fecha <= %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
             (as_of, as_of),
         )
@@ -6287,6 +6311,7 @@ def balance_components_as_of(as_of) -> dict:
          WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
            AND fecha <= %s
            AND COALESCE(stat, '') <> 'X'
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
             (as_of, as_of),
         )
@@ -7250,6 +7275,7 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
          WHERE EXTRACT(YEAR  FROM f.fecha) = %s
            AND EXTRACT(MONTH FROM f.fecha) = %s
            AND COALESCE(f.stat, '') <> 'X'
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
          GROUP BY 1
          HAVING COALESCE(SUM(f.importe), 0) <> 0 OR COALESCE(SUM(f.kg), 0) <> 0
          ORDER BY SUM(f.importe) DESC NULLS LAST
