@@ -344,34 +344,52 @@ def banco_auditar():
     no_banco = _BANCO_PICHINCHA
     balance = _bp.calcular(no_banco)
 
-    # ── Check 1: drift saldo running PC ────────────────────────────
-    drift_saldo = None
-    suma_signed = None
+    # ── Check 1: walk-forward saldo running PC ─────────────────────
+    # TMT 2026-05-29 dueña: el check anterior sumaba movs vs último saldo
+    # — daba falso positivo porque NO contemplaba el opening histórico del
+    # banco (los $2.2M que PC arrancó antes del primer mov). Ahora hago
+    # walk-forward por fila: saldo[i] vs saldo[i-1] + delta_signed. Si
+    # alguna fila no respeta la cadena, esa es la torcida.
+    filas_torcidas = []
     last_saldo = None
     try:
-        row_sum = _db.fetch_one(
+        rows_walk = _db.fetch_all(
             """
-            SELECT COALESCE(SUM(CASE WHEN documento IN ('CH','ND','DB','GS','PA')
-                                     THEN -importe ELSE importe END), 0) AS suma,
-                   COUNT(*) AS n
+            SELECT id_transaccion, fecha, documento, importe, saldo, concepto
               FROM scintela.transacciones_bancarias
-             WHERE no_banco = %s
-            """,
-            (no_banco,),
-        )
-        suma_signed = float(row_sum["suma"]) if row_sum else 0
-        row_last = _db.fetch_one(
-            """
-            SELECT saldo FROM scintela.transacciones_bancarias
              WHERE no_banco = %s AND saldo IS NOT NULL
-             ORDER BY fecha DESC, id_transaccion DESC LIMIT 1
+             ORDER BY fecha ASC, id_transaccion ASC
             """,
             (no_banco,),
-        )
-        last_saldo = float(row_last["saldo"]) if row_last else 0
-        drift_saldo = round(last_saldo - suma_signed, 2)
+        ) or []
+        saldo_prev = None
+        for r in rows_walk:
+            s = float(r["saldo"] or 0)
+            imp = float(r["importe"] or 0)
+            doc = (r.get("documento") or "").upper()
+            delta = -imp if doc in ("CH", "ND", "DB", "GS", "PA") else imp
+            if saldo_prev is not None:
+                esperado = round(saldo_prev + delta, 2)
+                diff = round(s - esperado, 2)
+                if abs(diff) > 0.01:
+                    filas_torcidas.append({
+                        "id": int(r["id_transaccion"]),
+                        "fecha": r["fecha"],
+                        "documento": doc,
+                        "importe": imp,
+                        "saldo_grabado": s,
+                        "saldo_esperado": esperado,
+                        "diferencia": diff,
+                        "concepto": (r.get("concepto") or "")[:50],
+                    })
+            saldo_prev = s
+        last_saldo = saldo_prev
+        # Top 200 desviaciones por magnitud (las más grandes primero).
+        filas_torcidas.sort(key=lambda x: abs(x["diferencia"]), reverse=True)
+        filas_torcidas = filas_torcidas[:200]
     except Exception as e:
-        _LOG.warning("auditar drift_saldo falló: %s", e)
+        _LOG.warning("auditar walk-forward falló: %s", e)
+    suma_diff_torcidas = round(sum(x["diferencia"] for x in filas_torcidas), 2)
 
     # ── Check 2: matches confirmados con drift de monto ────────────
     diff_matches = []
@@ -449,8 +467,8 @@ def banco_auditar():
         balance=balance,
         saldo_banco_real=saldo_banco_real,
         diferencia_objetivo=diferencia_objetivo,
-        drift_saldo=drift_saldo,
-        suma_signed=suma_signed,
+        filas_torcidas=filas_torcidas,
+        suma_diff_torcidas=suma_diff_torcidas,
         last_saldo=last_saldo,
         diff_matches=diff_matches,
         sum_diff_matches=round(sum_diff_matches, 2),

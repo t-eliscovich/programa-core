@@ -36,49 +36,59 @@
     </div>
   </section>
 
-  {# ── Check 1: drift saldo running PC ──────────────────────────── #}
+  {# ── Check 1: walk-forward saldo running ──────────────────────── #}
   <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
     <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
       <div>
-        <h2 class="text-base font-semibold">1 · Drift del saldo running PC</h2>
-        <p class="text-xs text-slate-500 mt-0.5">La suma de todos los movs debería igualar el último saldo de la columna. Si no, hay un mov que no actualizó la cadena.</p>
+        <h2 class="text-base font-semibold">1 · Filas con saldo running roto</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Por cada fila, saldo[i] debería ser saldo[i−1] + importe signado. Las filas que rompen la cadena se listan acá — son las que están moviendo el running de manera incorrecta.</p>
       </div>
       <div class="text-xs tabular-nums">
-        {% if drift_saldo is not none %}
-          {% if drift_saldo|abs < 0.01 %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ OK</span>
-          {% else %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ '{:+,.2f}'.format(drift_saldo) }}</span>
-          {% endif %}
+        {% if filas_torcidas %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ filas_torcidas|length }} filas torcidas · Σ {{ '{:+,.2f}'.format(suma_diff_torcidas) }}</span>
         {% else %}
-          <span class="text-slate-400">— no pude calcular —</span>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ Cadena coherente</span>
         {% endif %}
       </div>
     </header>
-    {% if drift_saldo is not none %}
-    <table class="w-full text-sm">
-      <tbody>
-        <tr class="border-t border-slate-100 dark:border-slate-800">
-          <td class="px-5 py-2 text-slate-500">Suma signada de todos los movs (CR − DB)</td>
-          <td class="px-5 py-2 text-right font-mono">${{ '{:,.2f}'.format(suma_signed or 0) }}</td>
-        </tr>
-        <tr class="border-t border-slate-100 dark:border-slate-800">
-          <td class="px-5 py-2 text-slate-500">Último saldo de la columna `saldo`</td>
-          <td class="px-5 py-2 text-right font-mono">${{ '{:,.2f}'.format(last_saldo or 0) }}</td>
-        </tr>
-        <tr class="border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
-          <td class="px-5 py-2 font-medium">Drift</td>
-          <td class="px-5 py-2 text-right font-mono font-bold {% if drift_saldo|abs > 0.01 %}text-rose-700{% else %}text-emerald-700{% endif %}">
-            {{ '{:+,.2f}'.format(drift_saldo) }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    {% if drift_saldo|abs > 0.01 %}
-    <div class="px-5 py-3 bg-amber-50/50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200">
-      ⚠ Acción sugerida: apretá <strong>"Verificar y recalcular saldos"</strong> en el hub de conciliación.
+    {% if filas_torcidas %}
+    <div class="overflow-x-auto" style="max-height: 500px;">
+      <table class="w-full text-xs tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+          <tr>
+            <th class="px-2 py-1.5 text-left w-24">ID tx</th>
+            <th class="px-2 py-1.5 text-left w-24">Fecha</th>
+            <th class="px-2 py-1.5 text-left w-16">Doc</th>
+            <th class="px-2 py-1.5 text-right w-24">Importe</th>
+            <th class="px-2 py-1.5 text-right w-32">Saldo grabado</th>
+            <th class="px-2 py-1.5 text-right w-32">Saldo esperado</th>
+            <th class="px-2 py-1.5 text-right w-28">Diferencia</th>
+            <th class="px-2 py-1.5 text-left">Concepto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas_torcidas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-2 py-1 font-mono">{{ f.id }}</td>
+            <td class="px-2 py-1 text-slate-500">{{ f.fecha }}</td>
+            <td class="px-2 py-1 font-mono text-[10px]">{{ f.documento }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.importe) }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.saldo_grabado) }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(f.saldo_esperado) }}</td>
+            <td class="px-2 py-1 text-right font-mono font-bold {% if f.diferencia > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(f.diferencia) }}</td>
+            <td class="px-2 py-1 text-slate-600 truncate max-w-xs" title="{{ f.concepto }}">{{ f.concepto }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-    {% endif %}
+    <div class="px-5 py-3 bg-amber-50/50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200">
+      ⚠ Las top {{ filas_torcidas|length }} filas (por magnitud de drift) están listadas arriba. Apretá <strong>"Verificar y recalcular saldos"</strong> para arrancar la cadena de vuelta desde la primera fila. Si después de eso siguen apareciendo filas acá, es porque algún mov específico se cargó con saldo manual incorrecto.
+    </div>
+    {% else %}
+    <div class="px-5 py-3 bg-emerald-50/40 dark:bg-emerald-900/10 text-xs text-emerald-900 dark:text-emerald-200">
+      Último saldo de la cadena: <strong>${{ '{:,.2f}'.format(last_saldo or 0) }}</strong>
+    </div>
     {% endif %}
   </section>
 
