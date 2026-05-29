@@ -80,9 +80,9 @@
       <div class="mt-1 text-xs text-rose-700">total de cuotas diarias — se suma al importe lunes a viernes</div>
     </div>
     <div class="rounded-lg bg-rose-50 border border-rose-200 px-5 py-4">
-      <div class="text-xs uppercase tracking-wider text-rose-700">Acumulado del mes hasta hoy</div>
+      <div class="text-xs uppercase tracking-wider text-rose-700">Proyección del mes</div>
       <div class="mt-2 text-2xl font-semibold text-rose-900 text-mono">{{ acum_mes_hasta_hoy | money_es }}</div>
-      <div class="mt-1 text-xs text-rose-700">día {{ dia_del_mes }} × $ {{ delta_dia_hoy | money_es }} diario · cierra fin de mes</div>
+      <div class="mt-1 text-xs text-rose-700">25 días hábiles × $ {{ delta_dia_hoy | money_es }} diario</div>
     </div>
   </div>
   {% endif %}

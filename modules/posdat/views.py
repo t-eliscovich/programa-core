@@ -405,15 +405,14 @@ def lista():
             total_importe += float(f.get("importe") or 0)
             total_cuota_mensual += float(f.get("cuota_mensual") or 0)
             total_cuota_diaria += float(f.get("cuota_diaria") or 0)
-    # TMT 2026-05-27 dueña: 'mostrame cuanto subiste de ayer a hoy o algo
-    # para poder llevar la cuenta'. El delta diario = total de cuotas
-    # diarias (1/30 de la cuota mensual de cada provisión). Cada día que
-    # pasa, eso es lo que se suma al pasivo total. Y acumulado del mes
-    # hasta hoy = día del mes × delta diario.
+    # TMT 2026-05-28 sesión replanear: el KPI ahora es la PROYECCIÓN del
+    # mes completo (25 días hábiles × cuota total), no el día_calendario
+    # × cuota que daba números inflados (29 × 29539 = 856k cuando la
+    # dueña esperaba ~600k). Con 25 días la proyección ≈ total YY actual.
     from datetime import date as _date
     _dia_hoy = _date.today().day
     delta_dia_hoy = round(total_cuota_diaria, 2)
-    acum_mes_hasta_hoy = round(total_cuota_diaria * min(_dia_hoy, 30), 2)
+    acum_mes_hasta_hoy = round(total_cuota_diaria * 25, 2)
 
     return render_template(
         "posdat/lista.html",
