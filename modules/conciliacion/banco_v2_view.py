@@ -655,16 +655,15 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
-    # TMT 2026-05-29 dueña: bloque con 5 líneas que la dueña usa cuando
-    # cierra. Formato (con paréntesis para negativos = convención contable):
-    #   TOTAL         (16,832.20)   ← ajuste = -pendientes_conciliar_neto
-    #   SALDO SISTEMA  2,359,683.11
-    #   TOTAL          2,342,850.91 ← saldo_conciliado = SISTEMA + ajuste
-    #   SALDO BANCO    2,342,707.24 ← último saldo del extracto subido
-    #   DIFERENCIA       (143.67)   ← SALDO BANCO − TOTAL conciliado
+    # TMT 2026-05-29 dueña: bloque con líneas que la dueña usa cuando cierra.
+    # Antes había 5 filas: ajuste, SISTEMA, conciliado, BANCO, DIFERENCIA.
+    # Pedido nuevo: 'la diferencia que tenes abajo se deberia sumar al
+    # "total" no aparecer por separado'. Folded la diferencia al TOTAL
+    # conciliado → el TOTAL queda = SALDO BANCO y la línea DIFERENCIA
+    # desaparece (convención: si no cuadra, asumimos el gap como ajuste).
     saldo_sistema = float(balance.get("saldo") or 0)
     total_ajuste = -float(balance.get("pendientes_conciliar_neto") or 0)
-    total_conciliado = float(balance.get("saldo_si_concilio_todo") or 0)
+    total_conciliado_base = float(balance.get("saldo_si_concilio_todo") or 0)
 
     # Saldo banco "real" = último saldo del extracto subido (en el último
     # mov por fecha; si hay empate de fecha tomamos el último del archivo).
@@ -684,7 +683,13 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     except Exception as e:
         _LOG.warning("no pude leer último saldo banco del extracto: %s", e)
 
-    diferencia = (saldo_banco_real - total_conciliado) if saldo_banco_real is not None else None
+    # Si tenemos saldo banco, el TOTAL conciliado absorbe la diferencia y
+    # cierra contra el banco. Si no hay saldo banco (extracto sin saldo),
+    # caemos al cálculo clásico SISTEMA + ajuste.
+    if saldo_banco_real is not None:
+        total_conciliado = saldo_banco_real
+    else:
+        total_conciliado = total_conciliado_base
 
     contable_fmt = '#,##0.00;(#,##0.00)'  # paréntesis para negativos
     label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
@@ -696,7 +701,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ("SALDO SISTEMA", saldo_sistema),
         ("TOTAL", total_conciliado),
         ("SALDO BANCO", saldo_banco_real),
-        ("DIFERENCIA", diferencia),
     ]:
         ws.cell(row=r, column=label_col, value=label).font = bold
         if val is not None:
