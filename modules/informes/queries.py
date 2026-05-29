@@ -1465,6 +1465,11 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
                          WHERE COALESCE(banc, 0) <> 9
                            AND (anulada IS NOT TRUE OR anulada IS NULL)
                            AND UPPER(COALESCE(prov, '')) = 'YY'
+                           -- TMT 2026-05-28 (migración 0061): las filas con
+                           -- baseline_date NOT NULL son manejadas
+                           -- display-time en posdat.queries — el cron
+                           -- ya no debe tocar su importe.
+                           AND baseline_date IS NULL
                            AND LENGTH(TRIM(COALESCE(concepto, ''))) >= 3
                            AND (
                                 UPPER(TRIM(COALESCE(concepto, '')))

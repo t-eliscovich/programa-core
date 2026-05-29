@@ -1,8 +1,192 @@
 """Consultas de posdat (deuda viva con proveedores)."""
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 
 import db
 from periodo_guard import asegurar_fecha_abierta
+
+
+# ---------------------------------------------------------------------------
+# YY display-time (migración 0061 — TMT 2026-05-28).
+# El importe de las posdat prov='YY' se calcula al renderizar como
+#   importe_persistido + cuota_diaria × dias_habiles(baseline_date, hoy)
+# y se RESETEA a 0 cuando se cruza un mes (lazy en primer hit).
+# Ver docs/PLAN_YY_CUOTA_DIARIA_2026_05_28.md para detalle.
+# ---------------------------------------------------------------------------
+
+
+def _dias_habiles_entre(desde: date, hasta: date) -> int:
+    """Cuenta lunes-viernes en el intervalo (desde, hasta]. Excluye `desde`,
+    incluye `hasta`. Devuelve 0 si hasta <= desde.
+
+    Ejemplos (todos con desde=jue 28/05/2026):
+        hasta=28/05 (mismo día)  → 0
+        hasta=29/05 (viernes)    → 1
+        hasta=30/05 (sábado)     → 1
+        hasta=31/05 (domingo)    → 1
+        hasta=01/06 (lunes)      → 2
+    """
+    if hasta is None or desde is None or hasta <= desde:
+        return 0
+    n = 0
+    d = desde
+    while d < hasta:
+        d = d + timedelta(days=1)
+        if d.weekday() < 5:  # 0=L .. 4=V
+            n += 1
+    return n
+
+
+def _ultimo_dia_del_mes(d: date) -> date:
+    """Último día calendario del mes que contiene `d`."""
+    return date(d.year, d.month, monthrange(d.year, d.month)[1])
+
+
+def _ejecutar_cierre_mensual_yy(
+    id_posdat: int,
+    concepto: str,
+    importe_cierre: float,
+    ult_dia_mes_anterior: date,
+) -> None:
+    """Persiste el cierre de mes para una posdat YY.
+
+    Hace en UNA tx:
+      1. Registra mov_doble tipo='posdat_yy_cierre_mes' con el importe final
+         del mes anterior (queda en /historial). Idempotente: si ya hay un
+         cierre de ese mes para esta posdat, no lo duplica.
+      2. UPDATE posdat SET importe=0, baseline_date=ult_dia_mes_anterior.
+
+    `ult_dia_mes_anterior` se usa como nueva baseline para que el primer
+    día hábil del mes nuevo ya cuente como offset=1 en la fórmula display.
+    """
+    with db.tx() as conn:
+        if importe_cierre > 0:
+            ya = db.fetch_one(
+                """
+                SELECT 1 AS x FROM scintela.mov_doble
+                 WHERE origen_table = 'posdat'
+                   AND origen_id    = %s
+                   AND tipo         = 'posdat_yy_cierre_mes'
+                   AND fecha        = %s
+                """,
+                (id_posdat, ult_dia_mes_anterior),
+                conn=conn,
+            )
+            if not ya:
+                try:
+                    import mov_doble as _md
+                    _md.registrar(
+                        conn=conn,
+                        tipo="posdat_yy_cierre_mes",
+                        origen_table="posdat",
+                        origen_id=id_posdat,
+                        destino_table="posdat",
+                        destino_id=id_posdat,
+                        importe=round(importe_cierre, 2),
+                        fecha=ult_dia_mes_anterior,
+                        concepto=(
+                            f"Cierre YY {ult_dia_mes_anterior:%Y-%m} — "
+                            f"{(concepto or '').strip()}"
+                        )[:200],
+                        usuario="cierre_yy_lazy",
+                        metadata={
+                            "mes": ult_dia_mes_anterior.strftime("%Y-%m"),
+                            "importe_cierre": round(importe_cierre, 2),
+                        },
+                    )
+                except Exception:
+                    # No frenamos el reset por un fallo del audit log:
+                    # preferimos que el display funcione bien aunque se pierda
+                    # un mov_doble. Logueamos defensivo (no re-raise).
+                    import logging as _lg
+                    _lg.getLogger(__name__).exception(
+                        "no pude registrar mov_doble del cierre YY id=%s",
+                        id_posdat,
+                    )
+        db.execute(
+            """
+            UPDATE scintela.posdat
+               SET importe = 0,
+                   baseline_date = %s,
+                   usuario_modifica = 'cierre_yy_lazy',
+                   fecha_modifica = CURRENT_TIMESTAMP
+             WHERE id_posdat = %s
+            """,
+            (ult_dia_mes_anterior, id_posdat),
+            conn=conn,
+        )
+
+
+def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
+    """Aplica la fórmula display-time IN-PLACE sobre las filas YY:
+
+        importe_display = importe_persistido
+                        + cuota_diaria × dias_habiles(baseline_date, hoy)
+
+    Si baseline_date apunta a un mes anterior, dispara el cierre mensual
+    lazy (mov_doble + reset a 0 + baseline_date = último día del mes ant).
+    Después aplica la fórmula sobre el nuevo baseline.
+
+    Sólo opera sobre filas con prov='YY' AND baseline_date IS NOT NULL.
+    El resto queda intacto (RT, posdat regulares, YY legacy sin baseline).
+    """
+    hoy = hoy or date.today()
+    for r in rows:
+        if (r.get("prov") or "").strip().upper() != "YY":
+            continue
+        base_date = r.get("baseline_date")
+        if not base_date:
+            continue
+        cd = float(r.get("cuota_diaria") or 0)
+        if cd <= 0:
+            r["importe_base"] = float(r.get("importe") or 0)
+            r["dias_offset"] = 0
+            continue
+        importe_pers = float(r.get("importe") or 0)
+        # Cierre mensual lazy si cruzamos mes. Atención al edge case:
+        # si baseline_date ya ES el último día calendario de su mes,
+        # significa que el cierre YA se ejecutó antes — NO re-disparar
+        # (sería un no-op contable pero genera ruido en /historial y un
+        # UPDATE inútil cada render).
+        #
+        # Limitación conocida: si la dueña no abre la app durante un mes
+        # entero, ese mes "intermedio" no genera mov_doble propio y el
+        # acumulado se ve en el mes actual. Solución manual: abrir la app
+        # al menos una vez por mes (caso normal).
+        if (base_date.year, base_date.month) != (hoy.year, hoy.month):
+            ult_dia_mes_baseline = _ultimo_dia_del_mes(base_date)
+            if base_date < ult_dia_mes_baseline:
+                # Mes del baseline aún NO cerrado → cerrarlo ahora.
+                offset_cierre = _dias_habiles_entre(base_date, ult_dia_mes_baseline)
+                importe_cierre = round(importe_pers + cd * offset_cierre, 2)
+                try:
+                    _ejecutar_cierre_mensual_yy(
+                        int(r["id_posdat"]),
+                        r.get("concepto") or "",
+                        importe_cierre,
+                        ult_dia_mes_baseline,
+                    )
+                except Exception:
+                    # Si el cierre falla, NO aplicamos display-time sobre
+                    # esta fila (sería incorrecto sumarle offset gigante).
+                    # Dejamos el valor persistido y seguimos.
+                    import logging as _lg
+                    _lg.getLogger(__name__).exception(
+                        "cierre lazy YY falló id_posdat=%s — fila queda intacta",
+                        r.get("id_posdat"),
+                    )
+                    continue
+                base_date = ult_dia_mes_baseline
+                importe_pers = 0.0
+                r["baseline_date"] = base_date
+                r["yy_cerrado_lazy"] = True  # marker para la UI / debug
+            # else: base_date == ult_dia_mes_baseline → mes ya cerrado.
+            # Aplicar display directo desde ese baseline (offset cuenta
+            # solo los hábiles del mes actual).
+        offset = _dias_habiles_entre(base_date, hoy)
+        r["importe_base"] = round(importe_pers, 2)
+        r["importe"] = round(importe_pers + cd * offset, 2)
+        r["dias_offset"] = offset
 
 # Filtro reutilizable de "no anuladas": toda query de listado/balance/saldo
 # tiene que excluir las filas soft-deleted (migración 0027). NULL = legacy
@@ -19,6 +203,7 @@ def por_id(id_posdat: int) -> dict | None:
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave,
                pd.anulada, pd.motivo_anulacion, pd.fecha_anulacion,
+               pd.baseline_date,
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
@@ -87,11 +272,18 @@ def crear(
     )
     concepto_full = (f"{concepto} {extras}".strip() if extras else concepto)[:100]
 
+    # TMT 2026-05-28 (migración 0061): YY nuevas nacen con baseline_date = fecha
+    # de creación. Así la fórmula display-time las arranca en offset=0 desde
+    # ya. Sin baseline, el cron viejo todavía las podría incrementar (filtra
+    # IS NULL) — preferimos snapshot HOY desde el alta.
+    baseline_init = fecha if es_yy else None
+
     return db.execute_returning(
         """
         INSERT INTO scintela.posdat
-            (num, fecha, fechad, prov, importe, banc, concepto, clave, usuario_crea)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (num, fecha, fechad, prov, importe, banc, concepto, clave,
+             usuario_crea, baseline_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id_posdat, num
         """,
         (
@@ -99,6 +291,7 @@ def crear(
             concepto_full,
             (clave or None) and clave[:3],
             usuario,
+            baseline_init,
         ),
     ) or {}
 
@@ -179,6 +372,14 @@ def editar(
     if importe is not None:
         campos.append("importe = %s")
         params.append(importe_nuevo)
+        # TMT 2026-05-28 (migración 0061): si es una posdat YY y le
+        # cambian el importe a mano, resetear baseline_date = HOY para que
+        # la fórmula display-time no acumule offsets viejos sobre el valor
+        # nuevo. Sin esto, la dueña edita "86100 → 90000" y al renderizar
+        # ve "90000 + cuota × días_desde_baseline_viejo" = sorpresa.
+        prov_actual = (actual.get("prov") or "").strip().upper()
+        if prov_actual == "YY":
+            campos.append("baseline_date = CURRENT_DATE")
     # TMT 2026-05-19 v8 — `prov` editable. Antes estaba bloqueado por
     # regla legacy (no cambiar matching con proveedor), pero la dueña
     # pide editar todos los campos. Solo aplica si viene; vacío → NULL.
@@ -368,6 +569,7 @@ def buscar(
         """
         SELECT pd.id_posdat, pd.num, pd.fecha, pd.fechad, pd.prov, pd.importe,
                pd.banc, pd.concepto, pd.clave,
+               pd.baseline_date,
                COALESCE(p.nombre, '') AS proveedor
         FROM scintela.posdat pd
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
@@ -467,6 +669,11 @@ def buscar(
                 except Exception:
                     pass
 
+    # TMT 2026-05-28 (migración 0061): aplicar la fórmula display-time
+    # YY ANTES de calcular saldo_acumulado, así el acumulado refleja el
+    # importe que la dueña ve en pantalla.
+    _aplicar_display_time_yy(rows)
+
     # Saldo acumulado = deuda corrida hasta la fecha de vencimiento. Útil
     # para planificar flujo: "al 15 de junio ya vencieron $ X de posdatados".
     # (TMT 2026-05-12)
@@ -500,6 +707,26 @@ def resumen(
     q_s = (q or "").strip()
     like = f"%{q_s}%" if q_s else None
     tab_norm = (tab or "posdatados").strip().lower()
+
+    # TMT 2026-05-28 (migración 0061): para el tab YY el SUM(pd.importe)
+    # del SQL NO refleja el display-time. Delegamos a buscar() y sumamos
+    # los importes ya recalculados. El SQL original del resumen sólo
+    # contaba prov='YY' (no RT), preservamos esa convención para que el
+    # KPI "N provisiones" no cambie.
+    if tab_norm == "yy":
+        filas = buscar(
+            prov=prov, q=q_s, solo_abiertas=solo_abiertas,
+            desde=desde, hasta=hasta, tab="yy",
+        )
+        yy_solo = [
+            f for f in filas
+            if (f.get("prov") or "").strip().upper() == "YY"
+        ]
+        return {
+            "total_abierto": sum(float(f.get("importe") or 0) for f in yy_solo),
+            "partidas_abiertas": len(yy_solo),
+        }
+
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(pd.importe), 0) AS total_abierto,
