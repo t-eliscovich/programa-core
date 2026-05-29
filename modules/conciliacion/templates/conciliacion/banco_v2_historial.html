@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block titulo %}Historial de conciliaciones{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <h1 class="text-2xl font-semibold mb-1">Historial de conciliaciones</h1>
+  <p class="text-sm text-slate-500 mb-4">Pichincha · todas las sesiones (abiertas y cerradas)</p>
+
+  <div class="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
+    <table class="w-full text-xs tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left w-16">#</th>
+          <th class="px-3 py-2 text-left">Archivo</th>
+          <th class="px-3 py-2 text-left w-32">Abierta</th>
+          <th class="px-3 py-2 text-left w-32">Cerrada</th>
+          <th class="px-3 py-2 text-left w-24">Por</th>
+          <th class="px-3 py-2 text-right w-16">Matches</th>
+          <th class="px-3 py-2 text-left w-28">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sesiones %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if not s.cerrada_en %}bg-amber-50/30 dark:bg-amber-900/10{% endif %}">
+          <td class="px-3 py-1.5 font-mono">#{{ s.id }}</td>
+          <td class="px-3 py-1.5 truncate max-w-xs" title="{{ s.extracto_nombre or '' }}">{{ (s.extracto_nombre or '—')[:40] }}</td>
+          <td class="px-3 py-1.5 text-slate-500">{{ s.abierta_en.strftime('%Y-%m-%d %H:%M') if s.abierta_en else '—' }}</td>
+          <td class="px-3 py-1.5 text-slate-500">
+            {% if s.cerrada_en %}
+              {{ s.cerrada_en.strftime('%Y-%m-%d %H:%M') }}
+            {% else %}
+              <span class="text-amber-700 font-semibold">abierta</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-slate-500">{{ s.cerrada_por or s.usuario }}</td>
+          <td class="px-3 py-1.5 text-right font-semibold">{{ s.matches_hechos }}</td>
+          <td class="px-3 py-1.5">
+            {% if s.cerrada_en %}
+              {% if s.pdf_path %}
+              <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" target="_blank"
+                 class="text-emerald-600 hover:underline">📄 PDF</a>
+              {% else %}
+              <span class="text-slate-300">—</span>
+              {% endif %}
+            {% else %}
+              <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}"
+                 class="text-sky-600 hover:underline">retomar →</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not sesiones %}
+        <tr><td colspan="7" class="px-3 py-6 text-center text-slate-400 italic">— sin sesiones todavía —</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

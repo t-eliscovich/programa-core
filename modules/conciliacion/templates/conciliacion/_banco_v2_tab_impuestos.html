@@ -1,0 +1,166 @@
+{# Tab Impuestos y comisiones: lista del banco categorizada como COMISION,
+   todos seleccionados por default. Botón "Conciliar y armar movimiento"
+   crea UNA tx BANCSIS agrupada (N:1) con la suma neta, fecha/concepto/prov
+   editables. El monto NO se edita — sale de la suma de seleccionados.
+#}
+{% set _items = buckets.impuestos %}
+
+<section data-panel="impuestos" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mb-3">
+  <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+    <div>
+      <strong class="text-sm">Impuestos y comisiones</strong>
+      <span class="text-xs text-slate-500">IVA, comisiones bancarias, pago SENAE — se acoplan en un solo movimiento agrupado</span>
+    </div>
+    <div class="text-xs text-slate-500">{{ _items|length }} movs</div>
+  </header>
+
+  <div class="px-3 py-1.5 bg-amber-50/40 dark:bg-amber-900/10 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between text-xs">
+    <div>
+      Seleccionado: <span data-count="impuestos" class="font-bold tabular-nums">0</span> items
+    </div>
+    <div>
+      Total: <span data-total="impuestos" class="font-bold font-mono tabular-nums text-rose-700 dark:text-rose-300">$ 0.00</span>
+    </div>
+  </div>
+
+  <div class="max-h-[55vh] overflow-y-auto">
+    <table class="w-full text-xs tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+        <tr>
+          <th class="px-2 py-1.5 text-left w-6">
+            <input type="checkbox" data-toggle-all="impuestos" class="accent-amber-600" checked>
+          </th>
+          <th class="px-2 py-1.5 text-left w-20">Fecha</th>
+          <th class="px-2 py-1.5 text-left w-5">±</th>
+          <th class="px-2 py-1.5 text-right w-24">Monto</th>
+          <th class="px-2 py-1.5 text-left w-24">Doc</th>
+          <th class="px-2 py-1.5 text-left">Concepto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in _items %}
+          {% set m = item.mov %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-2 py-1">
+              <input type="checkbox" name="real_idx" value="{{ item.idx }}"
+                     data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
+                     data-fecha="{{ m.fecha.isoformat() if m.fecha else '' }}"
+                     data-doc="{{ m.documento or '' }}"
+                     data-concepto="{{ (m.concepto or '')|truncate(80,True,'') }}"
+                     class="accent-amber-600" checked>
+            </td>
+            <td class="px-2 py-1 text-slate-500">{{ m.fecha.strftime('%Y-%m-%d') if m.fecha else '—' }}</td>
+            <td class="px-2 py-1">
+              {% if m.tipo == 'C' %}<span class="text-emerald-700 font-bold">+</span>{% else %}<span class="text-rose-700 font-bold">−</span>{% endif %}
+            </td>
+            <td class="px-2 py-1 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
+            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (m.documento or '')|string|truncate(12,True,'') }}</td>
+            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate" title="{{ m.concepto }}">{{ (m.concepto or '')[:60] }}</td>
+          </tr>
+        {% endfor %}
+        {% if not _items %}
+        <tr><td colspan="6" class="px-3 py-4 text-center text-xs text-slate-400 italic">— el extracto no trajo impuestos ni comisiones detectables —</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3 mb-2">
+  <form method="POST" action="{{ url_for('conciliacion.banco_impuestos_confirmar') }}" id="imp-form" class="space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+    <input type="hidden" name="real_idxs" id="imp-real-idxs" value="">
+
+    <div class="grid grid-cols-3 gap-3 text-xs">
+      <label class="block">
+        <span class="text-slate-500">Fecha del movimiento agrupado</span>
+        <input type="date" name="fecha" id="imp-fecha" class="border rounded px-2 py-1 w-full font-mono">
+      </label>
+      <label class="block">
+        <span class="text-slate-500">Concepto (50 chars)</span>
+        <input type="text" name="concepto" id="imp-concepto" maxlength="50" class="border rounded px-2 py-1 w-full"
+               placeholder="Comisiones e impuestos DD/MM-DD/MM">
+      </label>
+      <label class="block">
+        <span class="text-slate-500">Prov / código (5 chars, opcional)</span>
+        <input type="text" name="prov" maxlength="5" class="border rounded px-2 py-1 w-full font-mono" placeholder="PICH">
+      </label>
+    </div>
+
+    <div class="flex items-baseline justify-between gap-4 pt-2 border-t border-slate-200 dark:border-slate-700">
+      <div class="text-sm">
+        Monto del movimiento agrupado:
+        <span id="imp-monto" class="font-bold font-mono tabular-nums">$ 0.00</span>
+        <span class="text-xs text-slate-500 ml-2">(= suma de seleccionados — no editable)</span>
+      </div>
+      <button type="button" id="imp-btn"
+              class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-sm rounded-md px-4 py-2 font-medium"
+              disabled>
+        Conciliar y armar movimiento
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  function getSel(){
+    var sec = document.querySelector('[data-panel="impuestos"]');
+    if (!sec) return {idxs: [], total: 0, count: 0, fechas: []};
+    var idxs = [], total = 0, fechas = [];
+    sec.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
+      if (!cb.dataset.monto) return;
+      idxs.push(cb.value);
+      var signo = (cb.dataset.tipo === 'C') ? 1 : -1;
+      total += signo * (parseFloat(cb.dataset.monto)||0);
+      if (cb.dataset.fecha) fechas.push(cb.dataset.fecha);
+    });
+    return {idxs: idxs, total: total, count: idxs.length, fechas: fechas};
+  }
+  function updateUI(){
+    var s = getSel();
+    var m = document.getElementById('imp-monto');
+    if (m){
+      m.textContent = '$ ' + s.total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2,signDisplay:'always'});
+      m.className = 'font-bold font-mono tabular-nums ' + (s.total >= 0 ? 'text-emerald-700' : 'text-rose-700');
+    }
+    var btn = document.getElementById('imp-btn');
+    if (btn) btn.disabled = (s.count === 0 || Math.abs(s.total) < 0.005);
+    // Default fecha = max(seleccionadas); default concepto = "Comisiones e impuestos DD/MM"
+    var fechaEl = document.getElementById('imp-fecha');
+    if (fechaEl && !fechaEl.value && s.fechas.length){
+      s.fechas.sort();
+      fechaEl.value = s.fechas[s.fechas.length-1];
+    }
+    var concEl = document.getElementById('imp-concepto');
+    if (concEl && !concEl.value && s.fechas.length){
+      s.fechas.sort();
+      var min = s.fechas[0], max = s.fechas[s.fechas.length-1];
+      var f = function(iso){ var p = iso.split('-'); return p[2]+'/'+p[1]; };
+      concEl.value = (min === max) ? ('Comisiones e impuestos '+f(min))
+                                   : ('Comisiones e impuestos '+f(min)+'-'+f(max));
+    }
+  }
+  window.onSelectionChange = updateUI;
+  var btn = document.getElementById('imp-btn');
+  if (btn){
+    btn.addEventListener('click', function(){
+      var s = getSel();
+      if (!s.count) return;
+      var fechaEl = document.getElementById('imp-fecha');
+      var concEl = document.getElementById('imp-concepto');
+      var preview = 'Vas a crear UN movimiento agrupado:\n\n';
+      preview += '  Documento: ' + (s.total >= 0 ? 'NC (nota crédito)' : 'ND (nota débito)') + '\n';
+      preview += '  Importe:   $ ' + Math.abs(s.total).toFixed(2) + '\n';
+      preview += '  Fecha:     ' + (fechaEl ? fechaEl.value : '') + '\n';
+      preview += '  Concepto:  ' + (concEl ? concEl.value : '') + '\n\n';
+      preview += 'Y conciliar ' + s.count + ' movs del extracto contra ese movimiento.\n\n¿Confirmar?';
+      if (!confirm(preview)) return;
+      document.getElementById('imp-real-idxs').value = s.idxs.join(',');
+      document.getElementById('imp-form').submit();
+    });
+  }
+  updateUI();
+})();
+</script>

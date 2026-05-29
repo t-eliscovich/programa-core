@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block titulo %}Conciliación cerrada · #{{ sesion.id }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="rounded-lg border border-emerald-200 bg-emerald-50/40 dark:bg-emerald-900/10 p-5 mb-4">
+    <h1 class="text-xl font-semibold text-emerald-800 dark:text-emerald-200 mb-1">
+      ✓ Conciliación cerrada
+    </h1>
+    <p class="text-sm text-slate-700 dark:text-slate-300">
+      Sesión <span class="font-mono">#{{ sesion.id }}</span>
+      · cerrada {{ sesion.cerrada_en.strftime('%Y-%m-%d %H:%M') if sesion.cerrada_en else '—' }}
+      por {{ sesion.cerrada_por or '—' }}
+    </p>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4 mb-6">
+    <div class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div class="text-[10px] uppercase text-slate-500">Matches hechos</div>
+      <div class="text-2xl font-bold tabular-nums">{{ sesion.matches_hechos }}</div>
+    </div>
+    <div class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div class="text-[10px] uppercase text-slate-500">Abierta</div>
+      <div class="text-sm">{{ sesion.abierta_en.strftime('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}</div>
+      <div class="text-xs text-slate-500">archivo: {{ sesion.extracto_nombre or '—' }}</div>
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    {% if sesion.pdf_path %}
+    <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=sesion.id) }}" target="_blank"
+       class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-md px-4 py-2 font-medium">
+      📄 Ver PDF de pendientes
+    </a>
+    {% else %}
+    <span class="text-xs text-slate-500 italic">— PDF no disponible para esta sesión —</span>
+    {% endif %}
+    <a href="{{ url_for('conciliacion.banco_historial_v2') }}"
+       class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-md px-4 py-2">
+      ← Historial de sesiones
+    </a>
+    <a href="{{ url_for('conciliacion.hub') }}"
+       class="text-sky-600 hover:underline text-sm self-center">Nueva conciliación →</a>
+  </div>
+</div>
+{% endblock %}

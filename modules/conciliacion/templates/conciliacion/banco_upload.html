@@ -4,10 +4,16 @@
 {% block content %}
 <div class="max-w-3xl">
 
-  <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">Conciliación bancaria</h1>
-  <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
-    Subí el extracto del banco. Te muestro qué coincide con el sistema y qué falta de cada lado, para resolverlo de a uno.
-  </p>
+  <div class="flex items-baseline justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">Conciliación bancaria</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400">
+        Subí el extracto del banco. Te muestro qué coincide con el sistema y qué falta de cada lado, para resolverlo de a uno.
+      </p>
+    </div>
+    <a href="{{ url_for('conciliacion.banco_historial_v2') }}"
+       class="text-sm text-sky-600 hover:underline whitespace-nowrap">historial de conciliaciones →</a>
+  </div>
 
   {# TMT 2026-05-28 dueña: 'esto sacalo' — se removieron 2 cards (Saldo
      a conciliar dBase vs PC + ¿PC y dBase sincronizados?). Cuando PC y
@@ -24,8 +30,12 @@
      Rediseño con jerarquía clara:
      - HERO: Saldo a conciliar (snapshot estable, NO se mueve con movs)
      - Tabla referencial debajo: saldo libros live, pendientes, saldo banco
-     - "Ver historial" → snapshots de cómo evolucionó por conciliaciones. #}
-  {% if saldo_pc_actual and saldo_pc_actual.saldo is not none %}
+     - "Ver historial" → snapshots de cómo evolucionó por conciliaciones.
+     TMT 2026-05-28: el bloque de balance es ahora un partial reusable en
+     modo 'full' acá y en modo 'compact' arriba de cada tab de banco_v2. #}
+  {% set balance = saldo_pc_actual %}
+  {% include 'conciliacion/_balance_pichincha.html' with context %}
+  {% if false %}
   <section class="mb-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
     <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
       <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria · Pichincha</h2>
@@ -173,13 +183,16 @@
     </table>
   </section>
   {% endif %}
+  {% endif %}{# /if false — bloque viejo deprecated, ver partial _balance_pichincha #}
 
-  <form method="POST" enctype="multipart/form-data"
+  {# TMT 2026-05-28 Reforma Sprint 1: el upload entra al flujo v2
+     (sesión persistente + 3 tabs + Terminar y guardar). El endpoint
+     /conciliacion/hub POST queda como rollback de emergencia si algo
+     falla — se accede sin pasar por la UI. #}
+  <form method="POST" action="{{ url_for('conciliacion.banco_crear_sesion') }}" enctype="multipart/form-data"
         class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    {# Banco siempre Pichincha — TMT 2026-05-23. Si en el futuro
-       agregás otros bancos, este hidden vuelve a ser un <select>. #}
     <input type="hidden" name="no_banco" value="{{ no_banco_default }}">
 
     {# Archivo #}
