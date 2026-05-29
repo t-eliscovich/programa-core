@@ -53,6 +53,7 @@ def cambios_timeline():
     # ─── 1) Matches creados ───
     # Incluimos deshecho_en para que el template sepa si todavía está activo
     # (botón "↶ desmatch" solo si está vivo).
+    # saldo_despues = snapshot capturado en el momento del evento.
     sql_creados = """
         SELECT
           m.creado_en       AS ts,
@@ -67,7 +68,13 @@ def cambios_timeline():
           m.real_monto      AS monto,
           m.real_tipo       AS tipo,
           m.estado          AS estado,
-          m.deshecho_en     AS deshecho_en
+          m.deshecho_en     AS deshecho_en,
+          (SELECT s.saldo_conc
+             FROM scintela.banco_saldo_conc_snapshot s
+            WHERE s.no_banco = m.no_banco
+              AND s.evento_tipo = 'match_creado'
+              AND s.evento_ref = m.id::text
+            ORDER BY s.creado_en DESC LIMIT 1) AS saldo_despues
         FROM scintela.banco_conciliacion_match m
         WHERE m.creado_en::date BETWEEN %(desde)s AND %(hasta)s
     """
@@ -93,7 +100,13 @@ def cambios_timeline():
           m.real_concepto   AS concepto,
           m.real_monto      AS monto,
           m.real_tipo       AS tipo,
-          m.estado          AS estado
+          m.estado          AS estado,
+          (SELECT s.saldo_conc
+             FROM scintela.banco_saldo_conc_snapshot s
+            WHERE s.no_banco = m.no_banco
+              AND s.evento_tipo = 'match_deshecho'
+              AND s.evento_ref = m.id::text
+            ORDER BY s.creado_en DESC LIMIT 1) AS saldo_despues
         FROM scintela.banco_conciliacion_match m
         WHERE m.deshecho_en IS NOT NULL
           AND m.deshecho_en::date BETWEEN %(desde)s AND %(hasta)s
@@ -149,6 +162,27 @@ def cambios_timeline():
 
     # Ordenar por timestamp desc, agrupar por día
     eventos.sort(key=lambda e: e.get("ts") or 0, reverse=True)
+
+    # Calcular saldo_antes y delta para cada evento: el "antes" es el saldo
+    # del evento INMEDIATAMENTE ANTERIOR cronológico (que en orden desc es
+    # el siguiente índice). Si no hay snapshot, queda None.
+    # Iteramos de atrás (más viejo) hacia adelante (más nuevo) llevando el
+    # último saldo conocido como running.
+    _running = None
+    for e in reversed(eventos):
+        s_after = e.get("saldo_despues")
+        if s_after is not None:
+            try:
+                s_after_f = float(s_after)
+                e["saldo_antes"] = _running
+                e["delta"] = round(s_after_f - _running, 2) if _running is not None else None
+                _running = s_after_f
+            except (TypeError, ValueError):
+                e["saldo_antes"] = None
+                e["delta"] = None
+        else:
+            e["saldo_antes"] = None
+            e["delta"] = None
     por_dia: dict = {}
     for e in eventos:
         ts = e.get("ts")

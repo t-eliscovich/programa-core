@@ -91,6 +91,8 @@
               <th class="px-2 py-1 text-left w-32">Doc</th>
               <th class="px-2 py-1 text-left">Concepto</th>
               <th class="px-2 py-1 text-right w-24">Importe</th>
+              <th class="px-2 py-1 text-right w-32">Saldo</th>
+              <th class="px-2 py-1 text-right w-24">Δ</th>
             </tr>
           </thead>
           <tbody>
@@ -126,6 +128,12 @@
               <td class="px-2 py-1 text-slate-700 dark:text-slate-300">{{ (e.concepto or '')[:60] }}</td>
               <td class="px-2 py-1 text-right font-bold {% if e.tipo == 'C' %}text-emerald-700{% elif e.tipo == 'D' %}text-rose-700{% endif %}">
                 {% if e.monto is not none %}$ {{ '{:,.2f}'.format(e.monto|float) }}{% else %}—{% endif %}
+              </td>
+              <td class="px-2 py-1 text-right font-mono tabular-nums {% if e.saldo_despues is not none %}text-slate-900 dark:text-slate-100 font-semibold{% else %}text-slate-300{% endif %}">
+                {% if e.saldo_despues is not none %}{{ '{:,.2f}'.format(e.saldo_despues|float) }}{% else %}—{% endif %}
+              </td>
+              <td class="px-2 py-1 text-right font-mono tabular-nums {% if e.delta is not none and e.delta > 0 %}text-emerald-700{% elif e.delta is not none and e.delta < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+                {% if e.delta is not none %}{{ '{:+,.2f}'.format(e.delta) }}{% else %}—{% endif %}
               </td>
             </tr>
             {% endfor %}
