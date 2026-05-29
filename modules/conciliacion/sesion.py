@@ -122,13 +122,20 @@ def sesion_por_id(sesion_id: int) -> dict | None:
 
 
 def matches_de_sesion(sesion: dict) -> list[dict]:
-    """Lista los matches confirmados durante esta sesión.
+    """Lista todo lo que se conciliaron en esta sesión: matches del extracto
+    + históricos marcados como conciliados.
 
-    Aproximamos por ventana temporal: banco_conciliacion_match.creado_en
-    entre sesion.abierta_en y sesion.cerrada_en (o NOW si está abierta).
-    No hay FK directa sesion_id → match (la tabla 0046 es anterior a 0060).
+    Aproximamos por ventana temporal:
+      - banco_conciliacion_match.creado_en entre abierta_en y cerrada_en
+      - banco_historicos_pendientes.conciliado_en entre abierta_en y cerrada_en
 
-    Devuelve filas listas para renderizar: real + bancsis lado a lado.
+    No hay FK directa sesion_id → match (la 0046 es anterior a 0060), por
+    eso usamos timestamps. Devuelve filas con `tipo='match'` o
+    `tipo='historico'` para que el template las distinga.
+
+    TMT 2026-05-29 dueña: 'NECESITO QUE ESTO MUESTRES EN LA PANTALLA DE
+    CONCILIADOS'. Antes solo veía los matches del extracto; los históricos
+    re-conciliados manualmente quedaban fuera del listado.
     """
     if not sesion:
         return []
@@ -139,14 +146,16 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
         return []
     filtro_undo = ""
     try:
-        # Si migration 0047 corrió, tenemos columna deshecho_en.
         from modules.conciliacion.matcher_banco import _tiene_migration_47
         if _tiene_migration_47():
             filtro_undo = "AND m.deshecho_en IS NULL"
     except Exception:
         pass
-    sql = f"""
-        SELECT m.id, m.estado, m.creado_en, m.usuario,
+
+    # 1) Matches del extracto (banco_conciliacion_match).
+    sql_match = f"""
+        SELECT 'match' AS tipo,
+               m.id, m.estado, m.creado_en, m.usuario,
                m.real_fecha, m.real_documento, m.real_monto, m.real_tipo, m.real_concepto,
                m.id_transaccion,
                tb.fecha       AS tb_fecha,
@@ -165,12 +174,49 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
          ORDER BY m.creado_en DESC
          LIMIT 1000
     """
+    out: list[dict] = []
     try:
-        rows = db.fetch_all(sql, (no_banco, abierta, cerrada)) or []
+        rows = db.fetch_all(sql_match, (no_banco, abierta, cerrada)) or []
+        out.extend(dict(r) for r in rows)
     except Exception as e:
-        _LOG.warning("matches_de_sesion falló: %s", e)
-        return []
-    return [dict(r) for r in rows]
+        _LOG.warning("matches_de_sesion (matches) falló: %s", e)
+
+    # 2) Históricos marcados conciliados durante la sesión.
+    sql_hist = """
+        SELECT 'historico' AS tipo,
+               h.id, h.conciliado_en AS creado_en, h.conciliado_por AS usuario,
+               h.fecha     AS real_fecha,
+               h.documento AS real_documento,
+               h.monto     AS real_monto,
+               h.tipo      AS real_tipo,
+               h.concepto  AS real_concepto,
+               h.conciliado_match_id AS id_transaccion,
+               tb.fecha       AS tb_fecha,
+               tb.documento   AS tb_documento,
+               tb.importe     AS tb_importe,
+               tb.numreferencia AS tb_numreferencia,
+               tb.concepto    AS tb_concepto,
+               tb.prov        AS tb_prov,
+               'matched_historico' AS estado
+          FROM scintela.banco_historicos_pendientes h
+          LEFT JOIN scintela.transacciones_bancarias tb
+            ON tb.id_transaccion = h.conciliado_match_id
+         WHERE h.no_banco = %s
+           AND h.conciliado_en IS NOT NULL
+           AND h.conciliado_en >= %s
+           AND h.conciliado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
+         ORDER BY h.conciliado_en DESC
+         LIMIT 1000
+    """
+    try:
+        rows = db.fetch_all(sql_hist, (no_banco, abierta, cerrada)) or []
+        out.extend(dict(r) for r in rows)
+    except Exception as e:
+        _LOG.warning("matches_de_sesion (historicos) falló: %s", e)
+
+    # Ordenar todo por creado_en/conciliado_en DESC.
+    out.sort(key=lambda r: r.get("creado_en") or abierta, reverse=True)
+    return out
 
 
 def sesion_por_hash(no_banco: int, extracto_hash: str) -> dict | None:

@@ -49,7 +49,9 @@
               {{ m.creado_en.strftime('%m-%d %H:%M') if m.creado_en else '—' }}
             </td>
             <td class="px-2 py-1">
-              {% if m.estado == 'matched' %}
+              {% if m.tipo == 'historico' %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200 text-[10px] font-semibold" title="Pendiente histórico del banco, marcado conciliado manualmente">histórico</span>
+              {% elif m.estado == 'matched' %}
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 text-[10px] font-semibold">match</span>
               {% elif m.estado == 'real_only_ok' %}
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-semibold">sólo banco</span>
