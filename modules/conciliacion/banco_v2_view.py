@@ -585,8 +585,42 @@ def banco_historial_v2():
                 saldo_fin[ref] = val
     except Exception:
         pass
+
+    # Fallback: para sesiones viejas (anteriores al feature de snapshot
+    # 'sesion_abierta'), buscar el snapshot más cercano por timestamp.
+    # TMT 2026-05-29 dueña: 'ponele saldo final y saldo inicial' incluso
+    # a sesiones pasadas. Aproximación: último snapshot ANTES de abierta_en
+    # = saldo inicial; último snapshot ANTES (o IGUAL a) cerrada_en = saldo final.
     for s in sesiones:
         sid = str(s.get("id"))
+        if sid not in saldo_ini and s.get("abierta_en"):
+            try:
+                row = _db.fetch_one(
+                    """
+                    SELECT saldo_conc FROM scintela.banco_saldo_conc_snapshot
+                     WHERE no_banco = %s AND creado_en <= %s
+                     ORDER BY creado_en DESC LIMIT 1
+                    """,
+                    (_BANCO_PICHINCHA, s["abierta_en"]),
+                )
+                if row and row.get("saldo_conc") is not None:
+                    saldo_ini[sid] = float(row["saldo_conc"])
+            except Exception:
+                pass
+        if sid not in saldo_fin and s.get("cerrada_en"):
+            try:
+                row = _db.fetch_one(
+                    """
+                    SELECT saldo_conc FROM scintela.banco_saldo_conc_snapshot
+                     WHERE no_banco = %s AND creado_en <= %s
+                     ORDER BY creado_en DESC LIMIT 1
+                    """,
+                    (_BANCO_PICHINCHA, s["cerrada_en"]),
+                )
+                if row and row.get("saldo_conc") is not None:
+                    saldo_fin[sid] = float(row["saldo_conc"])
+            except Exception:
+                pass
         s["saldo_inicial"] = saldo_ini.get(sid)
         s["saldo_final"] = saldo_fin.get(sid)
     return render_template(
