@@ -1,0 +1,96 @@
+{# Tab Conciliados: lo que ya se conciliaron en ESTA sesión.
+   TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
+   hasta ahora'. Aproximación: matches con creado_en dentro de la ventana
+   abierta_en..cerrada_en. Sin FK sesion_id en banco_conciliacion_match
+   (la tabla es anterior a banco_conciliacion_sesion).
+#}
+
+<div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+  <header class="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+    <div>
+      <strong class="text-sm">Conciliados en esta sesión</strong>
+      <span class="text-xs text-slate-500 ml-2">
+        {{ matches_sesion|length }} match{% if matches_sesion|length != 1 %}es{% endif %}
+        desde {{ sesion.abierta_en.strftime('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}
+      </span>
+    </div>
+    {% if matches_sesion %}
+    <div class="text-xs text-slate-500 tabular-nums">
+      {% set _suma_c = matches_sesion|selectattr('real_tipo','equalto','C')|map(attribute='real_monto')|select('number')|sum %}
+      {% set _suma_d = matches_sesion|selectattr('real_tipo','equalto','D')|map(attribute='real_monto')|select('number')|sum %}
+      <span class="text-emerald-700">+ {{ '{:,.2f}'.format(_suma_c|float) }}</span>
+      &nbsp;·&nbsp;
+      <span class="text-rose-700">− {{ '{:,.2f}'.format(_suma_d|float) }}</span>
+    </div>
+    {% endif %}
+  </header>
+
+  <div class="overflow-x-auto" style="max-height: calc(100vh - 360px);">
+    <table class="w-full text-xs tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+        <tr>
+          <th class="px-2 py-1.5 text-left w-32">Conciliado</th>
+          <th class="px-2 py-1.5 text-left w-20">Estado</th>
+          <th class="px-2 py-1.5 text-left w-20">Fecha</th>
+          <th class="px-2 py-1.5 text-left w-5">±</th>
+          <th class="px-2 py-1.5 text-right w-24">Monto</th>
+          <th class="px-2 py-1.5 text-left w-24">Doc banco</th>
+          <th class="px-2 py-1.5 text-left">Concepto (real)</th>
+          <th class="px-2 py-1.5 text-left">Concepto (programa)</th>
+          <th class="px-2 py-1.5 text-left w-16">Usuario</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in matches_sesion %}
+          {% set _tipo = (m.real_tipo or '').upper() %}
+          {% set _signo_pos = (_tipo == 'C') %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
+              {{ m.creado_en.strftime('%m-%d %H:%M') if m.creado_en else '—' }}
+            </td>
+            <td class="px-2 py-1">
+              {% if m.estado == 'matched' %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 text-[10px] font-semibold">match</span>
+              {% elif m.estado == 'real_only_ok' %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-semibold">sólo banco</span>
+              {% elif m.estado == 'bancsis_only_ok' %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 text-[10px] font-semibold">sólo PC</span>
+              {% else %}
+                <span class="text-slate-400 text-[10px]">{{ m.estado }}</span>
+              {% endif %}
+            </td>
+            <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
+              {{ m.real_fecha or m.tb_fecha or '—' }}
+            </td>
+            <td class="px-2 py-1">
+              {% if _signo_pos %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[9px] font-bold">+</span>
+              {% else %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[9px] font-bold">−</span>
+              {% endif %}
+            </td>
+            <td class="px-2 py-1 text-right font-mono font-semibold {% if _signo_pos %}text-emerald-700{% else %}text-rose-700{% endif %}">
+              {{ '{:,.2f}'.format((m.real_monto or m.tb_importe or 0)|float) }}
+            </td>
+            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">
+              {{ (m.real_documento or m.tb_numreferencia or '')|string|truncate(14,True,'') }}
+            </td>
+            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ m.real_concepto or '' }}">
+              {{ (m.real_concepto or '—')[:50] }}
+            </td>
+            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ m.tb_concepto or '' }}">
+              {% if m.tb_prov %}<span class="inline-block px-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[9px] mr-1">{{ m.tb_prov }}</span>{% endif %}
+              {{ (m.tb_concepto or '—')[:50] }}
+            </td>
+            <td class="px-2 py-1 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+          </tr>
+        {% endfor %}
+        {% if not matches_sesion %}
+        <tr>
+          <td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400 italic">
+            — todavía no hay nada conciliado en esta sesión —
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>

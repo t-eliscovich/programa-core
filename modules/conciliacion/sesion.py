@@ -121,6 +121,58 @@ def sesion_por_id(sesion_id: int) -> dict | None:
     )
 
 
+def matches_de_sesion(sesion: dict) -> list[dict]:
+    """Lista los matches confirmados durante esta sesión.
+
+    Aproximamos por ventana temporal: banco_conciliacion_match.creado_en
+    entre sesion.abierta_en y sesion.cerrada_en (o NOW si está abierta).
+    No hay FK directa sesion_id → match (la tabla 0046 es anterior a 0060).
+
+    Devuelve filas listas para renderizar: real + bancsis lado a lado.
+    """
+    if not sesion:
+        return []
+    no_banco = int(sesion.get("no_banco") or 0)
+    abierta = sesion.get("abierta_en")
+    cerrada = sesion.get("cerrada_en")
+    if not no_banco or not abierta:
+        return []
+    filtro_undo = ""
+    try:
+        # Si migration 0047 corrió, tenemos columna deshecho_en.
+        from modules.conciliacion.matcher_banco import _tiene_migration_47
+        if _tiene_migration_47():
+            filtro_undo = "AND m.deshecho_en IS NULL"
+    except Exception:
+        pass
+    sql = f"""
+        SELECT m.id, m.estado, m.creado_en, m.usuario,
+               m.real_fecha, m.real_documento, m.real_monto, m.real_tipo, m.real_concepto,
+               m.id_transaccion,
+               tb.fecha       AS tb_fecha,
+               tb.documento   AS tb_documento,
+               tb.importe     AS tb_importe,
+               tb.numreferencia AS tb_numreferencia,
+               tb.concepto    AS tb_concepto,
+               tb.prov        AS tb_prov
+          FROM scintela.banco_conciliacion_match m
+          LEFT JOIN scintela.transacciones_bancarias tb
+            ON tb.id_transaccion = m.id_transaccion
+         WHERE m.no_banco = %s
+           AND m.creado_en >= %s
+           AND m.creado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
+           {filtro_undo}
+         ORDER BY m.creado_en DESC
+         LIMIT 1000
+    """
+    try:
+        rows = db.fetch_all(sql, (no_banco, abierta, cerrada)) or []
+    except Exception as e:
+        _LOG.warning("matches_de_sesion falló: %s", e)
+        return []
+    return [dict(r) for r in rows]
+
+
 def sesion_por_hash(no_banco: int, extracto_hash: str) -> dict | None:
     """Busca cualquier sesión (abierta o cerrada) con el MISMO hash del
     extracto para el mismo banco. Usado para detectar re-uploads del mismo

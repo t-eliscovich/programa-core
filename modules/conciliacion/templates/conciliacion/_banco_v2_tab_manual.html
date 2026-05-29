@@ -26,6 +26,10 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
     <input type="hidden" name="real_ids" id="manual-real-ids" value="">
+    {# TMT 2026-05-29: además del idx, mandamos firmas (fecha|doc|monto|tipo)
+       por mov real seleccionado. El backend las usa como fallback durable
+       cuando el matcher re-corrido cambia el orden de real_only. #}
+    <input type="hidden" name="real_sigs" id="manual-real-sigs" value="">
     <input type="hidden" name="hist_ids" id="manual-hist-ids" value="">
     <input type="hidden" name="bancsis_ids" id="manual-bancsis-ids" value="">
     <button type="button" id="manual-btn" disabled
@@ -76,8 +80,14 @@
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
                          class="accent-emerald-600 cb-banco">
                 {% else %}
+                  {# TMT 2026-05-29: data-sig = fecha|documento|monto|tipo,
+                     usado como ID durable del mov real frente al re-run del
+                     matcher (idxs antes a veces se invalidaban silenciosamente
+                     → 'Sin cambios' en la confirmación). #}
+                  {% set _sig = (m.fecha.isoformat() if m.fecha else '') ~ '|' ~ (m.documento or '') ~ '|' ~ ('%.2f'|format(m.monto|float)) ~ '|' ~ (m.tipo or '') %}
                   <input type="checkbox" name="real_idx" value="{{ item.idx }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
+                         data-sig="{{ _sig }}"
                          class="accent-emerald-600 cb-banco">
                 {% endif %}
               </td>
@@ -168,16 +178,19 @@
 (function(){
   function read(panel){
     var sec = document.querySelector('[data-panel="'+panel+'"]');
-    var ids = [], histIds = [], tot = 0;
-    if (!sec) return {ids: [], histIds: [], total: 0, count: 0};
+    var ids = [], histIds = [], sigs = [], tot = 0;
+    if (!sec) return {ids: [], histIds: [], sigs: [], total: 0, count: 0};
     sec.querySelectorAll('input[type=checkbox][data-monto]:checked').forEach(function(cb){
       if (cb.name === 'hist_id') histIds.push(cb.value);
-      else ids.push(cb.value);
+      else {
+        ids.push(cb.value);
+        if (cb.dataset.sig) sigs.push(cb.dataset.sig);
+      }
       var signo = parseInt(cb.dataset.signo||'1');
       if (panel === 'banco') signo = (cb.dataset.tipo === 'C') ? 1 : -1;
       tot += signo * (parseFloat(cb.dataset.monto)||0);
     });
-    return {ids: ids, histIds: histIds, total: tot, count: ids.length + histIds.length};
+    return {ids: ids, histIds: histIds, sigs: sigs, total: tot, count: ids.length + histIds.length};
   }
   window.onSelectionChange = function(){
     var b = read('banco'), p = read('programa');
@@ -211,6 +224,7 @@
       btn.disabled = true;
       btn.textContent = 'Procesando…';
       document.getElementById('manual-real-ids').value = b.ids.join(',');
+      document.getElementById('manual-real-sigs').value = (b.sigs||[]).join('||');
       document.getElementById('manual-hist-ids').value = b.histIds.join(',');
       document.getElementById('manual-bancsis-ids').value = p.ids.join(',');
       document.getElementById('manual-form').submit();

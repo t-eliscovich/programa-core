@@ -172,11 +172,14 @@ def banco_post_procesar():
         return redirect(url_for("conciliacion.banco_cerrada", sesion_id=sesion["id"]))
 
     tab = (request.args.get("tab") or "manual").lower()
-    if tab not in ("manual", "impuestos", "transferencias"):
+    if tab not in ("manual", "impuestos", "transferencias", "conciliados"):
         tab = "manual"
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
     balance = _bp.calcular(no_banco)
+    # TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
+    # hasta ahora'. Lista los matches confirmados en esta sesión.
+    matches_sesion = _sesion.matches_de_sesion(sesion)
 
     return render_template(
         "conciliacion/banco_v2.html",
@@ -187,6 +190,7 @@ def banco_post_procesar():
         saldo_pc_actual=balance,        # alias por si algún include lo busca
         banco_nombre="Pichincha",
         modo="compact",
+        matches_sesion=matches_sesion,
     )
 
 
@@ -281,6 +285,7 @@ def banco_manual_confirmar():
         return redirect(url_for("conciliacion.hub"))
 
     real_ids_csv = (request.form.get("real_ids") or "").strip()
+    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
     hist_ids_csv = (request.form.get("hist_ids") or "").strip()
     bancsis_ids_csv = (request.form.get("bancsis_ids") or "").strip()
     try:
@@ -290,6 +295,7 @@ def banco_manual_confirmar():
     except ValueError:
         flash("IDs inválidos.", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+    real_sigs = [s for s in real_sigs_csv.split("||") if s.strip()]
 
     if (not real_idxs and not hist_ids) or not bancsis_ids:
         flash("Marcá al menos un mov de cada lado.", "warn")
@@ -309,7 +315,31 @@ def banco_manual_confirmar():
         real_only = []
     real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
 
+    # TMT 2026-05-29 dueña: 'recien concilie de un lado y del otro y me
+    # hizo confirmar y arriba me salio sin cambios'. Fallback durable:
+    # si los idxs apuntan a posiciones que ya no existen en real_only
+    # (matcher movió el orden, conciliaciones desde otra tab, etc.),
+    # usamos las firmas (fecha|doc|monto|tipo) que el front mandó para
+    # ubicar los movs directo en la lista CRUDA del extracto.
+    if real_idxs and not real_subset and real_sigs:
+        sig_a_mov: dict[str, "MovBanco"] = {}
+        for m in movs:
+            key = "|".join([
+                m.fecha.isoformat() if m.fecha else "",
+                m.documento or "",
+                f"{float(m.monto or 0):.2f}",
+                m.tipo or "",
+            ])
+            sig_a_mov[key] = m
+        real_subset = [sig_a_mov[s] for s in real_sigs if s in sig_a_mov]
+        if real_subset:
+            _LOG.info(
+                "manual confirm: fallback por firma activado (%d reales recuperados de %d sigs)",
+                len(real_subset), len(real_sigs),
+            )
+
     n_matches = 0
+    err_msg: str | None = None
     usuario = _usuario_actual()
     # 1) Matches del extracto contra los bancsis seleccionados.
     # BUG #2 fix 2026-05-29: si N reales vs M bancsis con N!=M, antes
@@ -329,6 +359,8 @@ def banco_manual_confirmar():
                     n_matches += 1
                 except Exception as e:
                     _LOG.warning("manual confirm falló: %s", e)
+                    if err_msg is None:
+                        err_msg = str(e)
         elif len(bancsis_ids) == 1:
             # N reales contra 1 bancsis (depósito agrupado típico).
             bk_id_primary = bancsis_ids[0]
@@ -338,6 +370,8 @@ def banco_manual_confirmar():
                     n_matches += 1
                 except Exception as e:
                     _LOG.warning("manual confirm fallo: %s", e)
+                    if err_msg is None:
+                        err_msg = str(e)
         else:
             flash(
                 f"No puedo conciliar {len(real_subset)} banco vs {len(bancsis_ids)} "
@@ -370,7 +404,24 @@ def banco_manual_confirmar():
     parts = []
     if n_matches: parts.append(f"{n_matches} match(es) del extracto")
     if n_hist: parts.append(f"{n_hist} histórico(s)")
-    flash(" + ".join(parts) + " conciliado(s)." if parts else "Sin cambios.", "ok" if parts else "warn")
+    if parts:
+        flash(" + ".join(parts) + " conciliado(s).", "ok")
+    else:
+        # Mensaje específico cuando lo seleccionado no se pudo procesar.
+        # Antes simplemente decía 'Sin cambios' sin pista del por qué.
+        if real_idxs and not real_subset:
+            flash(
+                f"No se pudo conciliar: los {len(real_idxs)} movimiento(s) "
+                f"seleccionado(s) del banco ya no figuran en el bucket "
+                f"(probablemente se conciliaron desde otra pestaña, o el "
+                f"matcher los re-clasificó). Refrescá la página y volvé a "
+                f"intentar.",
+                "error",
+            )
+        elif err_msg:
+            flash(f"No pude conciliar: {err_msg}", "error")
+        else:
+            flash("Sin cambios.", "warn")
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
 
 

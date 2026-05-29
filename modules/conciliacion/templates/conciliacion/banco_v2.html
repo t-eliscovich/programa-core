@@ -38,6 +38,7 @@
       ('manual',         'Manual',                   buckets.manual_banco|length + buckets.manual_programa|length),
       ('impuestos',      'Impuestos y comisiones',   buckets.impuestos|length),
       ('transferencias', 'Transferencias por doc',   buckets.transferencias|length),
+      ('conciliados',    'Conciliados',              matches_sesion|length),
     ] %}
     {% for slug, label, n in _tabs %}
       {% set _activo = (tab_activo == slug) %}
@@ -57,6 +58,8 @@
       {% include 'conciliacion/_banco_v2_tab_impuestos.html' %}
     {% elif tab_activo == 'transferencias' %}
       {% include 'conciliacion/_banco_v2_tab_transferencias.html' %}
+    {% elif tab_activo == 'conciliados' %}
+      {% include 'conciliacion/_banco_v2_tab_conciliados.html' %}
     {% endif %}
   </div>
 
@@ -93,12 +96,33 @@
     var cbs = panel.querySelectorAll('input[type=checkbox][data-monto]');
     var n = 0, s = 0;
     cbs.forEach(function(cb){
-      if (cb.checked){ n++; s += parseFloat(cb.dataset.monto)||0; }
+      if (!cb.checked) return;
+      n++;
+      // TMT 2026-05-29 dueña: 'los saldos en programa y bancos no estan
+      // sumando cuando estan uno a lado del otro'. Antes sumábamos siempre
+      // en positivo (Σ = entradas + |salidas|) — el total no cuadraba contra
+      // el lado de programa cuando había mixto. Ahora respetamos el signo:
+      //   - banco panel: data-tipo='C' → +, 'D' → −
+      //   - programa panel: data-signo → ±1 (DE/TR/NC/etc. → +, resto → −)
+      //   - impuestos/transferencias: si hay data-signo lo usamos, sino
+      //     caemos a data-tipo, sino asumimos positivo.
+      var signo = 1;
+      if (cb.dataset.signo){
+        var s_int = parseInt(cb.dataset.signo);
+        signo = (s_int < 0) ? -1 : 1;
+      } else if (cb.dataset.tipo){
+        signo = (String(cb.dataset.tipo).toUpperCase() === 'C') ? 1 : -1;
+      }
+      s += signo * (parseFloat(cb.dataset.monto) || 0);
     });
-    var tEl = document.querySelector('[data-total="'+panelName+'"]');
-    var cEl = document.querySelector('[data-count="'+panelName+'"]');
-    if (tEl) tEl.textContent = '$ ' + s.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    if (cEl) cEl.textContent = n;
+    // Actualizar TODOS los spans con data-total="<panel>" (no solo el primero
+    // — el tab Manual tiene uno en la barra superior y otro en el header del
+    // panel y querySelector solo le pegaba al primero).
+    var totEls = document.querySelectorAll('[data-total="'+panelName+'"]');
+    var cntEls = document.querySelectorAll('[data-count="'+panelName+'"]');
+    var txt = '$ ' + s.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    totEls.forEach(function(el){ el.textContent = txt; });
+    cntEls.forEach(function(el){ el.textContent = n; });
     if (typeof window.onSelectionChange === 'function') window.onSelectionChange();
   }
   window.recalcPanel = recalc;
