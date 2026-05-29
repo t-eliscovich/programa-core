@@ -38,6 +38,86 @@ from modules.conciliacion.views import (
 
 _LOG = logging.getLogger("programa_core.conciliacion.banco_v2")
 
+# ── Defensas contra corrupción de saldo running ──────────────────────
+# TMT 2026-05-29: el "BUG #2" reportado durante el E2E (saldo bajó $43K
+# al anular tx de $29) en realidad reveló una cadena previamente corrupta.
+# Ahora validamos pre/post cada mutación destructiva. Si detectamos
+# descalce, log CRITICAL + opcionalmente recompute desde el inicio.
+
+_SIGNOS_C = ("DE", "TR", "AC", "NC", "IN", "XX")
+_SIGNOS_D = ("CH", "ND", "DB", "GS", "PA")
+
+
+def _signed_delta(documento: str, importe: float) -> float:
+    doc = (documento or "").upper()
+    if doc in _SIGNOS_C:
+        return importe
+    if doc in _SIGNOS_D:
+        return -importe
+    return 0.0
+
+
+def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
+    """Recorre las últimas N filas y valida saldo = saldo_prev + signed_delta.
+
+    Returns:
+        {ok: bool, ultimo_saldo: float, problemas: [...], n_chequeadas: int}
+    """
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT id_transaccion, fecha, documento, importe, saldo
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s AND saldo IS NOT NULL
+             ORDER BY fecha DESC, id_transaccion DESC LIMIT %s
+            """,
+            (int(no_banco), int(limit)),
+            conn=conn,
+        ) or []
+    except Exception as e:
+        return {"ok": False, "ultimo_saldo": None, "problemas": [{"error": str(e)}], "n_chequeadas": 0}
+
+    rows = list(reversed(rows))  # ASC
+    if not rows:
+        return {"ok": True, "ultimo_saldo": 0.0, "problemas": [], "n_chequeadas": 0}
+
+    problemas = []
+    saldo_prev = None
+    for r in rows:
+        s = float(r["saldo"] or 0)
+        delta = _signed_delta(r.get("documento"), float(r.get("importe") or 0))
+        if saldo_prev is not None:
+            esperado = round(saldo_prev + delta, 2)
+            diff = round(s - esperado, 2)
+            if abs(diff) > 0.01:
+                problemas.append({
+                    "id": r["id_transaccion"], "diff": diff,
+                    "esperado": esperado, "grabado": s,
+                })
+        saldo_prev = s
+
+    return {
+        "ok": not problemas,
+        "ultimo_saldo": saldo_prev,
+        "problemas": problemas[:5],
+        "n_chequeadas": len(rows),
+    }
+
+
+def _validar_y_loguear(no_banco: int, contexto: str, delta_esperado: float | None = None) -> bool:
+    """Verifica cadena + loguea CRITICAL si está corrupta. Devuelve True si OK."""
+    r = _verificar_cadena_saldos(no_banco)
+    if not r["ok"]:
+        _LOG.critical(
+            "CADENA SALDOS CORRUPTA tras %s — banco=%s, problemas=%s",
+            contexto, no_banco, r["problemas"],
+        )
+        return False
+    if delta_esperado is not None:
+        # Nada que validar acá sin saldo_anterior — se hace en el caller.
+        pass
+    return True
+
 # Directorio para reportes de sesiones cerradas. data/ está en el repo,
 # en el server vive bajo C:\programa-core\data\.
 _PDF_DIR = Path("data") / "conciliacion_pdfs"  # legacy nombre, ahora xlsx
@@ -623,6 +703,71 @@ def banco_pdf(sesion_id: int):
 # ─── Historial ────────────────────────────────────────────────────────
 
 
+@conciliacion_bp.route("/banco-v2/recompute-saldos", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_recompute_saldos():
+    """Recalcula la cadena de saldos completa desde la fila más temprana.
+
+    Útil cuando se detecta descalce (por bugs históricos en
+    crear/anular/insert). Walk-forward desde el primer mov del banco
+    en Pichincha. Idempotente: si la cadena ya está OK, no cambia nada.
+    """
+    pre = _verificar_cadena_saldos(_BANCO_PICHINCHA)
+    try:
+        import bank_helpers
+        with _db.tx() as conn:
+            primera = _db.fetch_one(
+                """
+                SELECT id_transaccion FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s
+                 ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
+                """,
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            )
+            if not primera or not primera.get("id_transaccion"):
+                flash("Sin movimientos para recalcular.", "info")
+                return redirect(url_for("conciliacion.hub"))
+            n = bank_helpers.recompute_saldos_desde(
+                conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
+                ancla_id=int(primera["id_transaccion"]),
+            )
+    except Exception as e:
+        _LOG.exception("recompute manual falló: %s", e)
+        flash(f"Recalculo falló: {e}", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    post = _verificar_cadena_saldos(_BANCO_PICHINCHA)
+    if pre.get("ok") and post.get("ok"):
+        flash(
+            f"✓ Cadena ya estaba coherente. Último saldo: ${post.get('ultimo_saldo', 0):,.2f}",
+            "ok",
+        )
+    elif post.get("ok"):
+        flash(
+            f"✓ Cadena recalculada. Encontré {len(pre.get('problemas', []))} "
+            f"descalces previos. Último saldo: ${post.get('ultimo_saldo', 0):,.2f}",
+            "ok",
+        )
+    else:
+        flash(
+            f"⚠ Cadena recalculada pero siguen quedando {len(post.get('problemas', []))} "
+            f"discrepancias. Revisar /banco-v2/verificar-saldos.",
+            "warn",
+        )
+    return redirect(url_for("conciliacion.hub"))
+
+
+@conciliacion_bp.route("/banco-v2/verificar-saldos", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_verificar_saldos():
+    """Devuelve JSON con el estado de la cadena (para auditoría o UI)."""
+    from flask import jsonify
+    return jsonify(_verificar_cadena_saldos(_BANCO_PICHINCHA, limit=100))
+
+
 @conciliacion_bp.route("/banco-v2/borrar-sesion", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
@@ -1117,13 +1262,13 @@ def banco_anular_grupo():
         flash("Esta tx NO fue creada por conciliación — no la puedo anular desde acá.", "warn")
         return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
+    # Pre-snapshot del último saldo y validación de cadena.
+    pre = _verificar_cadena_saldos(_BANCO_PICHINCHA)
+    saldo_pre = pre.get("ultimo_saldo")
+    delta_esperado = -_signed_delta(tx_row.get("documento"), float(tx_row.get("importe") or 0))
+
     # 2+3) Hard-delete de matches + DELETE de tx + recompute, todo en una
-    # sola transacción atómica. TMT 2026-05-29 dueña: 'sigo viendo los dos
-    # de 67k' tras anular. Causa probable: la FK de banco_conciliacion_match
-    # bloqueaba el DELETE de la fila tx. Soft-undo no es suficiente — al
-    # quedar matches deshechos con id_transaccion FK válido, el DELETE de
-    # la tx aborta por integrity. Hard-deleteamos los matches relacionados
-    # antes del DELETE de la tx, en la misma db.tx().
+    # sola transacción atómica.
     import bank_helpers
     try:
         with _db.tx() as conn:
@@ -1206,6 +1351,39 @@ def banco_anular_grupo():
         )
     except Exception:
         pass
+
+    # 6) Validación post-anular: el saldo debe haber cambiado en el monto
+    # esperado (delta_esperado). Si la diferencia con la realidad es
+    # mayor al threshold, log CRITICAL — indica corrupción previa o
+    # bug en recompute_saldos_desde.
+    post = _verificar_cadena_saldos(_BANCO_PICHINCHA)
+    saldo_post = post.get("ultimo_saldo")
+    if not post.get("ok"):
+        _LOG.critical(
+            "ANULAR GRUPO tx=%s: cadena CORRUPTA post-anular. Pre OK=%s. "
+            "Problemas=%s",
+            id_tx, pre.get("ok"), post.get("problemas"),
+        )
+        flash(
+            "⚠ Cadena de saldos descalibrada — corré recompute desde "
+            "el botón 'Verificar y recalcular saldos'.",
+            "warn",
+        )
+    elif saldo_pre is not None and saldo_post is not None:
+        diff_real = round(saldo_post - saldo_pre, 2)
+        if abs(diff_real - delta_esperado) > 0.5:
+            _LOG.critical(
+                "ANULAR GRUPO tx=%s: saldo cambió %.2f pero el delta "
+                "esperado era %.2f (importe=%s, doc=%s). Pre OK=%s, Post OK=%s.",
+                id_tx, diff_real, delta_esperado,
+                tx_row.get("importe"), tx_row.get("documento"),
+                pre.get("ok"), post.get("ok"),
+            )
+            flash(
+                f"⚠ Saldo cambió ${diff_real:+,.2f} (esperado ${delta_esperado:+,.2f}). "
+                f"Indica corrupción previa. Usá 'Verificar y recalcular saldos'.",
+                "warn",
+            )
 
     flash(
         f"Movimiento agrupado #{id_tx} anulado: tx borrada, "

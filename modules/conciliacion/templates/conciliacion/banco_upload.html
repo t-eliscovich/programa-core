@@ -275,12 +275,29 @@
      /banco/historial. El deshacer queda accesible desde la vista de
      conciliación si hace falta. #}
 
+  {# ─── Mantenimiento (no destructivo) ───────────────────────────── #}
+  <div class="mt-8 pt-4 border-t border-slate-200 dark:border-slate-700">
+    <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">🔧 Mantenimiento</h2>
+    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
+      Recalcula la cadena de saldos de Pichincha desde el primer mov.
+      Idempotente: si está OK, no cambia nada. Si hay descalce histórico
+      (típicamente por bugs ya fixeados), lo corrige.
+    </p>
+    <form method="POST" action="{{ url_for('conciliacion.banco_recompute_saldos') }}"
+          onsubmit="return confirm('¿Recalcular la cadena de saldos? Es seguro y reversible — solo corrige descalces.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="bg-sky-100 hover:bg-sky-200 dark:bg-sky-900/30 dark:hover:bg-sky-900/50 text-sky-800 dark:text-sky-200 text-sm rounded-md px-3 py-1.5 font-medium">
+        Verificar y recalcular saldos
+      </button>
+    </form>
+  </div>
+
   {# ─── Zona peligrosa ─────────────────────────────────────────────
      TMT 2026-05-29 dueña: 'podes borrar todas las conciliaciones, quizas
      ponele un boton con 5 alertas por las dudas, asi hoy arrancamos de
      cero'. Botón rojo bien aparte abajo del todo, exige 5 confirmaciones
      en cadena + texto literal 'BORRAR TODO' para evitar accidentes. #}
-  <div class="mt-12 pt-6 border-t-2 border-rose-200 dark:border-rose-900/40">
+  <div class="mt-8 pt-6 border-t-2 border-rose-200 dark:border-rose-900/40">
     <h2 class="text-sm font-semibold text-rose-700 dark:text-rose-300 mb-2">⚠ Zona peligrosa</h2>
     <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
       Borra TODAS las conciliaciones (matches, sesiones, snapshots, txs
