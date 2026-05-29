@@ -177,49 +177,70 @@ def banco_manual_confirmar():
         return redirect(url_for("conciliacion.hub"))
 
     real_ids_csv = (request.form.get("real_ids") or "").strip()
+    hist_ids_csv = (request.form.get("hist_ids") or "").strip()
     bancsis_ids_csv = (request.form.get("bancsis_ids") or "").strip()
     try:
         real_idxs = [int(x) for x in real_ids_csv.split(",") if x.strip()]
+        hist_ids = [int(x) for x in hist_ids_csv.split(",") if x.strip()]
         bancsis_ids = [int(x) for x in bancsis_ids_csv.split(",") if x.strip()]
     except ValueError:
         flash("IDs inválidos.", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
-    if not real_idxs or not bancsis_ids:
+    if (not real_idxs and not hist_ids) or not bancsis_ids:
         flash("Marcá al menos un mov de cada lado.", "warn")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
     movs = _sesion.cargar_movs(sesion)
     real_subset = [movs[i] for i in real_idxs if 0 <= i < len(movs)]
-    if not real_subset:
-        flash("Los movs del banco seleccionados ya no existen en la sesión.", "error")
-        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
     n_matches = 0
     usuario = _usuario_actual()
-    # Estrategia simple: si hay misma cantidad de cada lado, pareamos 1:1
-    # por orden de monto descendente. Si no, asociamos N reals al primer
-    # bancsis (caso típico: depósito agrupado).
-    if len(real_subset) == len(bancsis_ids):
-        real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
-        bk_sorted = sorted(bancsis_ids, reverse=True)  # IDs no son montos pero los pareamos por orden
-        for r, bk_id in zip(real_sorted, bk_sorted):
-            try:
-                confirmar_match(_BANCO_PICHINCHA, r, bk_id, usuario=usuario, metodo="matched_manual")
-                n_matches += 1
-            except Exception as e:
-                _LOG.warning("manual confirm falló: %s", e)
-    else:
-        bk_id_primary = bancsis_ids[0]
-        for r in real_subset:
-            try:
-                confirmar_match(_BANCO_PICHINCHA, r, bk_id_primary, usuario=usuario, metodo="matched_manual")
-                n_matches += 1
-            except Exception as e:
-                _LOG.warning("manual confirm fallo: %s", e)
+    # 1) Matches del extracto contra el primer bancsis (o 1:1 si cuentan igual).
+    if real_subset and bancsis_ids:
+        if len(real_subset) == len(bancsis_ids):
+            real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
+            bk_sorted = sorted(bancsis_ids, reverse=True)
+            for r, bk_id in zip(real_sorted, bk_sorted):
+                try:
+                    confirmar_match(_BANCO_PICHINCHA, r, bk_id, usuario=usuario, metodo="matched_manual")
+                    n_matches += 1
+                except Exception as e:
+                    _LOG.warning("manual confirm falló: %s", e)
+        else:
+            bk_id_primary = bancsis_ids[0]
+            for r in real_subset:
+                try:
+                    confirmar_match(_BANCO_PICHINCHA, r, bk_id_primary, usuario=usuario, metodo="matched_manual")
+                    n_matches += 1
+                except Exception as e:
+                    _LOG.warning("manual confirm fallo: %s", e)
 
-    _sesion.incrementar_matches(sesion_id, n_matches)
-    flash(f"{n_matches} match(es) creado(s).", "ok")
+    # 2) Históricos seleccionados → marcar conciliados (apuntan al primer bancsis).
+    n_hist = 0
+    if hist_ids:
+        try:
+            bk_id_primary = bancsis_ids[0] if bancsis_ids else None
+            n_hist = _db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = CURRENT_TIMESTAMP,
+                       conciliado_por = %s,
+                       conciliado_match_id = %s
+                 WHERE id = ANY(%s)
+                   AND conciliado_en IS NULL
+                """,
+                (usuario[:50], bk_id_primary, hist_ids),
+            ) or 0
+        except Exception as e:
+            _LOG.warning("conciliar históricos falló: %s", e)
+
+    total = n_matches + n_hist
+    _sesion.incrementar_matches(sesion_id, total)
+    parts = []
+    if n_matches: parts.append(f"{n_matches} match(es) del extracto")
+    if n_hist: parts.append(f"{n_hist} histórico(s)")
+    flash(" + ".join(parts) + " conciliado(s)." if parts else "Sin cambios.", "ok" if parts else "warn")
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
 
 

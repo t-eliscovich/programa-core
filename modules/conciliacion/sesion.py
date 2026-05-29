@@ -298,6 +298,34 @@ def bucketizar(res: ConciliacionBanco) -> dict:
 # ─── Helper top-level: cargar sesión + buckets ────────────────────────
 
 
+def _cargar_historicos_pendientes(no_banco: int) -> list[dict]:
+    """Históricos del banco que quedaron sin conciliar — se mezclan en el
+    panel Banco del tab Manual para que la dueña los vea junto con los
+    movs del extracto actual.
+
+    TMT 2026-05-29 dueña: 'no me estan apareciendo los historicos sin
+    conciliar'. Antes solo veía real_only del matcher (los del extracto
+    de la sesión actual). Los históricos viven en
+    scintela.banco_historicos_pendientes con conciliado_en IS NULL.
+    """
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT id, fecha, documento, no_cheque, concepto, monto, tipo
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s
+               AND conciliado_en IS NULL
+             ORDER BY ABS(monto) DESC
+             LIMIT 500
+            """,
+            (int(no_banco),),
+        ) or []
+        return rows
+    except Exception as e:
+        _LOG.warning("_cargar_historicos_pendientes falló: %s", e)
+        return []
+
+
 def estado_sesion(sesion: dict, no_banco: int) -> dict:
     """De la sesión DB → buckets listos para renderizar.
 
@@ -307,9 +335,16 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
     activo en `banco_conciliacion_match`.
     """
     movs = cargar_movs(sesion)
+    historicos = _cargar_historicos_pendientes(no_banco)
     if not movs:
+        # Sin extracto en sesión, pero puede haber históricos para conciliar.
+        manual_banco_hist = [
+            {"mov": _hist_to_mov_like(h), "cat": None, "idx": -1,
+             "es_historico": True, "id_historico": int(h["id"])}
+            for h in historicos
+        ]
         return {
-            "manual_banco": [], "manual_programa": [],
+            "manual_banco": manual_banco_hist, "manual_programa": [],
             "impuestos": [], "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
@@ -323,6 +358,32 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
     buckets = bucketizar(res)
+    # Mezclar los históricos al inicio del panel Banco (más viejos arriba).
+    hist_items = [
+        {"mov": _hist_to_mov_like(h), "cat": None, "idx": -1,
+         "es_historico": True, "id_historico": int(h["id"])}
+        for h in historicos
+    ]
+    buckets["manual_banco"] = hist_items + (buckets.get("manual_banco") or [])
     buckets["matcher_extracto_desde"] = res.extracto_desde
     buckets["matcher_extracto_hasta"] = res.extracto_hasta
+    buckets["n_historicos_pendientes"] = len(historicos)
     return buckets
+
+
+def _hist_to_mov_like(h: dict):
+    """Wrap un row de banco_historicos_pendientes en algo que el template
+    puede tratar como mov banco. Atributos esperados por el template:
+    fecha, concepto, documento (= no_cheque or documento), monto, tipo.
+    """
+    import types
+    m = types.SimpleNamespace()
+    m.fecha = h.get("fecha")
+    m.concepto = h.get("concepto") or ""
+    m.documento = (h.get("no_cheque") or h.get("documento") or "")
+    try:
+        m.monto = float(h.get("monto") or 0)
+    except (TypeError, ValueError):
+        m.monto = 0
+    m.tipo = (h.get("tipo") or "C").upper()
+    return m
