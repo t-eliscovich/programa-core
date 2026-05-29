@@ -473,26 +473,72 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
         ]
         # TMT 2026-05-29 dueña: 'sin movimientos del programa' — bug.
         # Cuando se abre sesión sin extracto, manual_programa quedaba
-        # vacío. Pero la dueña abrió la sesión PARA matchear pendientes
-        # programa contra históricos. Fix: cargar BANCSIS pendientes
-        # (los que excluye el balance porque stat<>'*' AND NOT EXISTS
-        # match) y usarlos como manual_programa.
+        # vacío. Fix: cargar BANCSIS pendientes con el MISMO filtro que
+        # usa balance.calcular() (stat<>'*' AND NOT EXISTS match), así
+        # cuadra con el contador de "Pendientes en programa".
+        # Antes usaba cargar_bancsis que trae TODO el universo del banco
+        # (~1000+ filas) — mostraba demasiados. TMT 2026-05-29 segunda
+        # iteración: 'aca hay demasiados movimientos para conciliar'.
         manual_programa: list[dict] = []
         try:
-            from datetime import date as _date, timedelta as _td
-            from modules.conciliacion.matcher_banco import cargar_bancsis as _cargar_bk
-            hasta = _date.today()
-            desde = hasta - _td(days=365 * 3)
-            bancsis_pend = _cargar_bk(no_banco, desde, hasta) or []
-            # cargar_bancsis ya excluye los conciliados activos (via
-            # _ya_conciliadas). Mismos shape items que bucketizar.
-            for i, bk in enumerate(bancsis_pend):
+            from modules.conciliacion.matcher_banco import MovBancsis as _MovBk
+            rows_pc = db.fetch_all(
+                """
+                SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto,
+                       tb.importe, tb.numreferencia, tb.no_banco, tb.saldo,
+                       tb.prov, tb.fecha_crea
+                  FROM scintela.transacciones_bancarias tb
+                 WHERE tb.no_banco = %s
+                   AND TRIM(COALESCE(tb.stat, '')) <> '*'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM scintela.banco_conciliacion_match m
+                        WHERE m.id_transaccion = tb.id_transaccion
+                          AND m.deshecho_en IS NULL
+                   )
+                 ORDER BY ABS(tb.importe) DESC, tb.fecha DESC
+                 LIMIT 1000
+                """,
+                (int(no_banco),),
+            ) or []
+            # Resolver nombre de cliente/proveedor en batch.
+            codigos = {
+                (r.get("prov") or "").strip().upper()
+                for r in rows_pc if (r.get("prov") or "").strip()
+            }
+            nombres = {}
+            if codigos:
+                try:
+                    rows_cli = db.fetch_all(
+                        """
+                        SELECT codigo_cli AS cod, nombre FROM scintela.cliente
+                         WHERE UPPER(codigo_cli) = ANY(%s::text[])
+                        """,
+                        (list(codigos),),
+                    ) or []
+                    nombres = {
+                        (r["cod"] or "").strip().upper(): (r.get("nombre") or "").strip()
+                        for r in rows_cli
+                    }
+                except Exception:
+                    pass
+            for i, r in enumerate(rows_pc):
+                prov = (r.get("prov") or "").strip().upper()
+                bk = _MovBk(
+                    id_transaccion=int(r["id_transaccion"]),
+                    fecha=r.get("fecha"),
+                    documento=str(r.get("documento") or "").strip().upper(),
+                    concepto=str(r.get("concepto") or "").strip(),
+                    importe=float(r.get("importe") or 0),
+                    numreferencia=str(r.get("numreferencia") or "").strip(),
+                    no_banco=int(r.get("no_banco") or 0),
+                    saldo=float(r["saldo"]) if r.get("saldo") is not None else None,
+                    prov=prov,
+                    prov_nombre=nombres.get(prov, ""),
+                    fecha_crea=r.get("fecha_crea"),
+                )
                 manual_programa.append({"mov": bk, "cat": None, "idx": i})
-            manual_programa.sort(
-                key=lambda x: abs(float(x["mov"].importe or 0)), reverse=True
-            )
         except Exception as e:
-            _LOG.warning("cargar bancsis sin extracto falló: %s", e)
+            _LOG.warning("cargar pendientes programa sin extracto falló: %s", e)
         return {
             "manual_banco": manual_banco_hist,
             "manual_programa": manual_programa,
