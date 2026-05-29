@@ -51,6 +51,8 @@ def cambios_timeline():
         no_banco = None
 
     # ─── 1) Matches creados ───
+    # Incluimos deshecho_en para que el template sepa si todavía está activo
+    # (botón "↶ desmatch" solo si está vivo).
     sql_creados = """
         SELECT
           m.creado_en       AS ts,
@@ -64,7 +66,8 @@ def cambios_timeline():
           m.real_concepto   AS concepto,
           m.real_monto      AS monto,
           m.real_tipo       AS tipo,
-          m.estado          AS estado
+          m.estado          AS estado,
+          m.deshecho_en     AS deshecho_en
         FROM scintela.banco_conciliacion_match m
         WHERE m.creado_en::date BETWEEN %(desde)s AND %(hasta)s
     """

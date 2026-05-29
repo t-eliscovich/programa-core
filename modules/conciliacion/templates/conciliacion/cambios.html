@@ -101,8 +101,19 @@
                        {% else %}bg-sky-50/40 dark:bg-sky-900/10
                        {% endif %}">
               <td class="px-2 py-1 text-slate-500">{{ e.ts.strftime('%H:%M') if e.ts else '' }}</td>
-              <td class="px-2 py-1">
-                {% if e.accion == 'match_creado' %}<span class="text-emerald-700">✓ match</span>
+              <td class="px-2 py-1 whitespace-nowrap">
+                {% if e.accion == 'match_creado' %}
+                  <span class="text-emerald-700">✓ match</span>
+                  {% if not e.deshecho_en and e.match_id %}
+                  <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline"
+                        onsubmit="return confirm('¿Desmatch? El mov vuelve a aparecer como no conciliado.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="match_id" value="{{ e.match_id }}">
+                    <input type="hidden" name="next" value="cambios">
+                    <button class="ml-1 text-[10px] text-rose-600 hover:text-rose-800 underline"
+                            title="Deshacer este match — el mov vuelve a pendientes">desmatch</button>
+                  </form>
+                  {% endif %}
                 {% elif e.accion == 'match_deshecho' %}<span class="text-rose-700">↶ undo</span>
                 {% else %}<span class="text-sky-700">★ histo</span>
                 {% endif %}

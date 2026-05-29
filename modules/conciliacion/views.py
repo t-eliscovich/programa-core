@@ -2627,14 +2627,24 @@ def banco_historial():
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_deshacer():
-    """Soft-undo de un match. La fila queda con deshecho_en + deshecho_por."""
+    """Soft-undo de un match. La fila queda con deshecho_en + deshecho_por.
+
+    Acepta `next` opcional (whitelist) para volver a la pantalla desde la
+    que se disparó (ej. /conciliacion/cambios). Default: banco_historial.
+    """
     try:
         match_id = int(request.form.get("match_id") or 0)
     except (TypeError, ValueError):
         match_id = 0
+    # Whitelist de destinos. Evita open-redirect.
+    _next = (request.form.get("next") or "").strip()
+    if _next == "cambios":
+        back = url_for("conciliacion.cambios_timeline")
+    else:
+        back = url_for("conciliacion.banco_historial")
     if match_id <= 0:
         flash("match_id inválido.", "error")
-        return redirect(url_for("conciliacion.banco_historial"))
+        return redirect(back)
     n = romper_match(
         match_id=match_id,
         usuario=_usuario_actual(),
@@ -2650,7 +2660,7 @@ def banco_deshacer():
             pass
     else:
         flash(f"No encontré el match #{match_id} (¿ya estaba deshecho?).", "warn")
-    return redirect(url_for("conciliacion.banco_historial"))
+    return redirect(back)
 
 
 # TMT 2026-05-27 dueña: 'borremos estos conciliados. que los que importen

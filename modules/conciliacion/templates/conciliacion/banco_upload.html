@@ -92,7 +92,7 @@
               <div class="text-rose-700 dark:text-rose-400 text-[12px]" title="{{ saldo_pc_actual.n_pendientes_pc_deb }} salida(s) sin conciliar">
                 − {{ '{:,.2f}'.format(saldo_pc_actual.pendientes_pc_debitos) }}
               </div>
-              <div class="text-[10px] text-slate-400 mt-0.5">neto {{ '{:+,.2f}'.format(saldo_pc_actual.pendientes_conciliar_neto) }}</div>
+              <div class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">neto {{ '{:+,.2f}'.format(saldo_pc_actual.pendientes_conciliar_neto) }}</div>
             {% else %}—{% endif %}
           </td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">
@@ -159,7 +159,7 @@
               <div class="text-rose-700 dark:text-rose-400 text-[12px]" title="{{ saldo_pc_actual.n_pendientes_banco_deb }} salida(s) en extracto sin PC">
                 − {{ '{:,.2f}'.format(saldo_pc_actual.pendientes_banco_debitos) }}
               </div>
-              <div class="text-[10px] text-slate-400 mt-0.5">neto {{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}</div>
+              <div class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">neto {{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}</div>
             {% elif saldo_pc_actual.neto_pendientes is not none %}{{ '{:+,.2f}'.format(saldo_pc_actual.neto_pendientes) }}{% else %}—{% endif %}
           </td>
           <td class="px-5 py-1.5 text-[11px] text-slate-400">banco confirmó, PC no tiene</td>
