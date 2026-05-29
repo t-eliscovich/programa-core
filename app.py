@@ -104,6 +104,20 @@ def create_app() -> Flask:
     # silenciosamente y los módulos consumidores muestran placeholder.
     formulas_db.init_pool()
 
+    # TMT 2026-05-28 dueña: 'no quiero usar mi compu como sincamos eso'.
+    # Si hay un xlsx fresco en data/dbase_snapshots/, lo sincamos UNA VEZ
+    # al boot. Marker file con el hash → idempotente entre reboots, pero se
+    # vuelve a correr si subimos un xlsx nuevo (hash distinto).
+    try:
+        from scripts import sync_stat_from_xlsx_boot  # noqa: F401
+
+        sync_stat_from_xlsx_boot.maybe_run_once()
+    except Exception:
+        # No-op si algo falla — el sync se puede correr a mano por endpoint.
+        logging.getLogger("programa_core.boot").exception(
+            "sync_stat_from_xlsx_boot falló silenciosamente"
+        )
+
     # Jinja
     filters.register(app)
     app.jinja_env.globals["tiene_permiso"] = tiene_permiso
