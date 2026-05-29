@@ -177,6 +177,32 @@ def banco_post_procesar():
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
     balance = _bp.calcular(no_banco)
+    # TMT 2026-05-29 dueña: 'Dijiste que tenía que ser 2,797,649 porque en
+    # esta pantalla dice $2,788,626.66'. Inconsistencia: la página mostraba
+    # 'Saldo banco esperado' (cálculo: PC + pendientes) que ≠ saldo banco
+    # real del extracto. Enriquezco el balance con saldo_banco_real de la
+    # sesión actual (último saldo del extracto) + diferencia_no_clasificada.
+    # Cuando hay sesión activa la página y el Excel muestran el MISMO
+    # número final = saldo banco real.
+    try:
+        movs_s = _sesion.cargar_movs(sesion)
+        con_fecha = [
+            m for m in movs_s
+            if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+        ]
+        if con_fecha:
+            ult = max(con_fecha, key=lambda m: m.fecha)
+            balance["saldo_banco_real"] = float(ult.saldo)
+        elif movs_s:
+            v = float(getattr(movs_s[-1], "saldo", None) or 0)
+            balance["saldo_banco_real"] = v if v else None
+        if balance.get("saldo_banco_real") is not None and balance.get("saldo_banco_esperado") is not None:
+            balance["diferencia_no_clasificada"] = round(
+                balance["saldo_banco_real"] - balance["saldo_banco_esperado"], 2
+            )
+    except Exception:
+        pass
+
     # TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
     # hasta ahora'. Lista los matches confirmados en esta sesión.
     matches_sesion = _sesion.matches_de_sesion(sesion)
