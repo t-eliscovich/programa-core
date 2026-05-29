@@ -34,35 +34,42 @@
       <div class="text-xl font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
       <div class="text-[10px] text-slate-400 leading-tight">{% if balance.fecha %}últ. mov · {{ balance.fecha }}{% endif %}</div>
     </div>
-    <div class="flex-1 text-[11px] tabular-nums"
-         style="display:grid; grid-template-columns: 1fr 140px; align-items:start;">
-      {% set _c = 'px-3 py-1 border-b border-slate-100 dark:border-slate-800' %}
-      <div class="{{ _c }} text-slate-500">Libros (live)</div>
-      <div class="{{ _c }} text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(balance.saldo) }}</div>
-
-      <div class="{{ _c }} text-slate-500">− Pend PC ({{ balance.n_pendientes_conciliar or 0 }})</div>
-      <div class="{{ _c }} text-right font-mono leading-tight">
-        {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
-          <div class="text-emerald-700 dark:text-emerald-400">+ {{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</div>
-          <div class="text-rose-700 dark:text-rose-400">− {{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</div>
-          <div class="font-semibold text-slate-700 dark:text-slate-200">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</div>
-        {% else %}—{% endif %}
+    <div class="flex-1 text-[11px] tabular-nums">
+      {% set _cc = 'grid items-baseline px-3 py-1 border-b border-slate-100 dark:border-slate-800' %}
+      {% set _cc_last = 'grid items-baseline px-3 py-1.5' %}
+      {% set _cols_c = 'grid-template-columns: 1fr 150px;' %}
+      <div class="{{ _cc }}" style="{{ _cols_c }}">
+        <div class="text-slate-500">Libros (live)</div>
+        <div class="text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(balance.saldo) }}</div>
       </div>
-
-      <div class="{{ _c }} text-slate-500">= Conciliado live</div>
-      <div class="{{ _c }} text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
-
-      <div class="{{ _c }} text-slate-500">+ Pend banco ({{ balance.n_pendientes or 0 }})</div>
-      <div class="{{ _c }} text-right font-mono leading-tight">
-        {% if balance.pendientes_banco_creditos or balance.pendientes_banco_debitos %}
-          <div class="text-emerald-700 dark:text-emerald-400">+ {{ '{:,.2f}'.format(balance.pendientes_banco_creditos) }}</div>
-          <div class="text-rose-700 dark:text-rose-400">− {{ '{:,.2f}'.format(balance.pendientes_banco_debitos) }}</div>
-          <div class="font-semibold text-slate-700 dark:text-slate-200">{{ '{:+,.2f}'.format(balance.neto_pendientes) }}</div>
-        {% elif balance.neto_pendientes is not none %}{{ '{:+,.2f}'.format(balance.neto_pendientes) }}{% else %}—{% endif %}
+      <div class="{{ _cc }}" style="{{ _cols_c }}">
+        <div class="text-slate-500">− Pend PC ({{ balance.n_pendientes_conciliar or 0 }})</div>
+        <div class="text-right font-mono leading-snug">
+          {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
+            <div class="text-emerald-700 dark:text-emerald-400">+ {{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</div>
+            <div class="text-rose-700 dark:text-rose-400">− {{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</div>
+            <div class="font-semibold text-slate-700 dark:text-slate-200 mt-0.5 pt-0.5 border-t border-slate-200 dark:border-slate-700">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</div>
+          {% else %}<span class="text-slate-300">—</span>{% endif %}
+        </div>
       </div>
-
-      <div class="px-3 py-1 text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</div>
-      <div class="px-3 py-1 text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
+      <div class="{{ _cc }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols_c }}">
+        <div class="text-slate-700 dark:text-slate-200 font-medium">= Conciliado live</div>
+        <div class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
+      </div>
+      <div class="{{ _cc }}" style="{{ _cols_c }}">
+        <div class="text-slate-500">+ Pend banco ({{ balance.n_pendientes or 0 }})</div>
+        <div class="text-right font-mono leading-snug">
+          {% if balance.pendientes_banco_creditos or balance.pendientes_banco_debitos %}
+            <div class="text-emerald-700 dark:text-emerald-400">+ {{ '{:,.2f}'.format(balance.pendientes_banco_creditos) }}</div>
+            <div class="text-rose-700 dark:text-rose-400">− {{ '{:,.2f}'.format(balance.pendientes_banco_debitos) }}</div>
+            <div class="font-semibold text-slate-700 dark:text-slate-200 mt-0.5 pt-0.5 border-t border-slate-200 dark:border-slate-700">{{ '{:+,.2f}'.format(balance.neto_pendientes) }}</div>
+          {% elif balance.neto_pendientes is not none %}{{ '{:+,.2f}'.format(balance.neto_pendientes) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+        </div>
+      </div>
+      <div class="{{ _cc_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols_c }}">
+        <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
+        <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
+      </div>
     </div>
   </div>
 </section>
@@ -89,48 +96,56 @@
     </div>
   </div>
 
-  {# 3 columnas (label · monto stack · comentario). Las filas con split
-     apilan +crédito (verde) arriba, −débito (rojo) abajo, y el neto
-     abajo de los dos. SIN la palabra 'neto'. Todos los montos alineados
-     a la derecha en la columna del medio. TMT 2026-05-29 dueña:
-     'deberia ser lo positivo abajo lo negativa, no una al costado del
-     otro. asi estaba bien puesto. borra la palabra neto'. #}
-  <div class="text-sm tabular-nums border-t border-slate-100 dark:border-slate-800"
-       style="display:grid; grid-template-columns: 1fr 180px 200px; align-items:start;">
-    {% set _r1 = 'px-4 py-2 border-b border-slate-100 dark:border-slate-800' %}
-    {% set _r2 = 'px-4 py-2' %}
+  {# Cada "fila" es su propio grid con 3 columnas — así el border-bottom
+     se aplica una vez por fila completa, en lugar de salir cortado por
+     columna como pasaba con un solo grid contenedor. Resultado limpio,
+     sin rayas a media altura. #}
+  {% set _row = 'grid items-baseline px-5 py-2.5 border-b border-slate-100 dark:border-slate-800' %}
+  {% set _row_last = 'grid items-baseline px-5 py-3' %}
+  {% set _cols = 'grid-template-columns: minmax(180px, 1fr) 200px 220px;' %}
 
-    <div class="{{ _r1 }} text-slate-500">Saldo PC libros (live)</div>
-    <div class="{{ _r1 }} text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(balance.saldo) }}</div>
-    <div class="{{ _r1 }} text-[11px] text-slate-400">se mueve con movs nuevos</div>
-
-    <div class="{{ _r1 }} text-slate-500">− Pendientes PC ({{ balance.n_pendientes_conciliar or 0 }})</div>
-    <div class="{{ _r1 }} text-right font-mono leading-tight">
-      {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
-        <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</div>
-        <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</div>
-        <div class="font-semibold text-slate-700 dark:text-slate-200 mt-0.5">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</div>
-      {% else %}—{% endif %}
+  <div class="text-sm tabular-nums border-t border-slate-100 dark:border-slate-800">
+    <div class="{{ _row }}" style="{{ _cols }}">
+      <div class="text-slate-500">Saldo PC libros (live)</div>
+      <div class="text-right font-mono text-slate-700 dark:text-slate-300">${{ '{:,.2f}'.format(balance.saldo) }}</div>
+      <div class="text-[11px] text-slate-400 pl-4">se mueve con movs nuevos</div>
     </div>
-    <div class="{{ _r1 }} text-[11px] text-slate-400">{% if not (balance.pendientes_pc_creditos or balance.pendientes_pc_debitos) %}sin pendientes{% endif %}</div>
 
-    <div class="{{ _r1 }} text-slate-500">= Saldo conciliado live</div>
-    <div class="{{ _r1 }} text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
-    <div class="{{ _r1 }} text-[11px] text-slate-400">si conciliara todo ahora</div>
-
-    <div class="{{ _r1 }} text-slate-500">+ Pendientes banco ({{ balance.n_pendientes or 0 }})</div>
-    <div class="{{ _r1 }} text-right font-mono leading-tight">
-      {% if balance.pendientes_banco_creditos or balance.pendientes_banco_debitos %}
-        <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ '{:,.2f}'.format(balance.pendientes_banco_creditos) }}</div>
-        <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ '{:,.2f}'.format(balance.pendientes_banco_debitos) }}</div>
-        <div class="font-semibold text-slate-700 dark:text-slate-200 mt-0.5">{{ '{:+,.2f}'.format(balance.neto_pendientes) }}</div>
-      {% elif balance.neto_pendientes is not none %}{{ '{:+,.2f}'.format(balance.neto_pendientes) }}{% else %}—{% endif %}
+    <div class="{{ _row }}" style="{{ _cols }}">
+      <div class="text-slate-500">− Pendientes PC ({{ balance.n_pendientes_conciliar or 0 }})</div>
+      <div class="text-right font-mono leading-snug">
+        {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
+          <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</div>
+          <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</div>
+          <div class="font-semibold text-slate-700 dark:text-slate-200 mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</div>
+        {% else %}<span class="text-slate-300">—</span>{% endif %}
+      </div>
+      <div class="text-[11px] text-slate-400 pl-4">{% if not (balance.pendientes_pc_creditos or balance.pendientes_pc_debitos) %}sin pendientes{% endif %}</div>
     </div>
-    <div class="{{ _r1 }} text-[11px] text-slate-400">banco confirmó, PC no tiene</div>
 
-    <div class="{{ _r2 }} text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</div>
-    <div class="{{ _r2 }} text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
-    <div class="{{ _r2 }} text-[11px] text-slate-400">lo que el banco debería tener</div>
+    <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
+      <div class="text-slate-700 dark:text-slate-200 font-medium">= Saldo conciliado live</div>
+      <div class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</div>
+      <div class="text-[11px] text-slate-400 pl-4">si conciliara todo ahora</div>
+    </div>
+
+    <div class="{{ _row }}" style="{{ _cols }}">
+      <div class="text-slate-500">+ Pendientes banco ({{ balance.n_pendientes or 0 }})</div>
+      <div class="text-right font-mono leading-snug">
+        {% if balance.pendientes_banco_creditos or balance.pendientes_banco_debitos %}
+          <div class="text-emerald-700 dark:text-emerald-400 text-[13px]">+ {{ '{:,.2f}'.format(balance.pendientes_banco_creditos) }}</div>
+          <div class="text-rose-700 dark:text-rose-400 text-[13px]">− {{ '{:,.2f}'.format(balance.pendientes_banco_debitos) }}</div>
+          <div class="font-semibold text-slate-700 dark:text-slate-200 mt-1 pt-1 border-t border-slate-200 dark:border-slate-700">{{ '{:+,.2f}'.format(balance.neto_pendientes) }}</div>
+        {% elif balance.neto_pendientes is not none %}{{ '{:+,.2f}'.format(balance.neto_pendientes) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+      </div>
+      <div class="text-[11px] text-slate-400 pl-4">banco confirmó, PC no tiene</div>
+    </div>
+
+    <div class="{{ _row_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
+      <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
+      <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
+      <div class="text-[11px] text-slate-500 pl-4">lo que el banco debería tener</div>
+    </div>
   </div>
 </section>
 {% endif %}
