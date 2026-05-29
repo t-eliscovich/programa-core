@@ -392,18 +392,38 @@ def banco_manual_confirmar():
             return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
     # 2) Históricos seleccionados → marcar conciliados (apuntan al primer bancsis).
+    # TMT 2026-05-29 dueña: 'NO ESTABAN CONCILIADOS'. El side-effect de
+    # confirmar_match (en matcher_banco.py:1333+) auto-marca cualquier
+    # histórico con misma firma cuando se confirma un match. Entonces si
+    # PASS 0 del matcher pegó un real con un histórico, el histórico ya
+    # quedó marcado SIN que la dueña haya hecho nada. La pantalla seguía
+    # mostrándolo (snapshot del page load) → click → "ya conciliado".
+    # Fix: el click manual GANA. Removemos el filtro `conciliado_en IS NULL`
+    # y siempre re-marcamos (timestamp + match_id). No es destructivo: si
+    # ya estaba con un match, lo re-apuntamos al que la dueña eligió ahora.
     n_hist = 0
+    n_hist_re = 0  # cuántos eran re-marcas (informativo)
     if hist_ids:
         try:
             bk_id_primary = bancsis_ids[0] if bancsis_ids else None
+            # Contamos cuántos ya estaban conciliados (informativo, no bloquea).
+            row_re = _db.fetch_one(
+                """
+                SELECT COUNT(*) AS n
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE id = ANY(%s) AND conciliado_en IS NOT NULL
+                """,
+                (hist_ids,),
+            )
+            n_hist_re = int(row_re["n"]) if row_re else 0
+            # Update sin filtro de estado: la acción de la dueña siempre gana.
             n_hist = _db.execute(
                 """
                 UPDATE scintela.banco_historicos_pendientes
                    SET conciliado_en = CURRENT_TIMESTAMP,
                        conciliado_por = %s,
-                       conciliado_match_id = %s
+                       conciliado_match_id = COALESCE(%s, conciliado_match_id)
                  WHERE id = ANY(%s)
-                   AND conciliado_en IS NULL
                 """,
                 (usuario[:50], bk_id_primary, hist_ids),
             ) or 0
@@ -450,9 +470,9 @@ def banco_manual_confirmar():
             )
         elif hist_ids and not n_hist:
             flash(
-                f"Los {len(hist_ids)} histórico(s) seleccionado(s) ya estaban "
-                f"conciliados — no hubo cambios. [{diag}]",
-                "warn",
+                f"Los {len(hist_ids)} histórico(s) seleccionado(s) no se "
+                f"encontraron en la tabla (¿ids inválidos?). [{diag}]",
+                "error",
             )
         elif err_msg:
             flash(f"No pude conciliar: {err_msg}. [{diag}]", "error")
