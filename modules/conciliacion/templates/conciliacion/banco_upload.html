@@ -11,7 +11,10 @@
         Subí el extracto del banco. Te muestro qué coincide con el sistema y qué falta de cada lado, para resolverlo de a uno.
       </p>
     </div>
-    <a href="{{ url_for('conciliacion.banco_historial_v2') }}"
+    {# TMT 2026-05-29: href estático para no depender de url_for —
+       si el módulo banco_v2_view no se importó (deploy parcial), el
+       url_for hace BuildError → 500 en la pantalla de carga. #}
+    <a href="/conciliacion/banco-v2/historial"
        class="text-sm text-sky-600 hover:underline whitespace-nowrap">historial de conciliaciones →</a>
   </div>
 
@@ -34,7 +37,9 @@
      TMT 2026-05-28: el bloque de balance es ahora un partial reusable en
      modo 'full' acá y en modo 'compact' arriba de cada tab de banco_v2. #}
   {% set balance = saldo_pc_actual %}
-  {% include 'conciliacion/_balance_pichincha.html' with context %}
+  {# ignore missing → si el deploy todavía no trajo el partial nuevo,
+     la pantalla renderiza sin el balance pero NO tira 500. #}
+  {% include 'conciliacion/_balance_pichincha.html' ignore missing with context %}
   {% if false %}
   <section class="mb-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
     <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
