@@ -1197,41 +1197,79 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
-    # TMT 2026-05-29 dueña: 'en excel por separado' — desglosado por
-    # fuente (banco vs programa) en lugar de un POSITIVOS / NEGATIVOS
-    # único. Mismo principio canónico:
+    # TMT 2026-05-29 dueña: 'hace que la cuenta matchee, no que aparezca
+    # un 2,797,649.59 de cualquier lado'. Layout que CIERRA la math:
     #
-    #   SALDO SISTEMA + (banco_cred + pc_deb) − (banco_deb + pc_cred) = TOTAL
-    #   TOTAL = saldo banco esperado (mismo número que la pantalla).
-    saldo_sistema = float(balance.get("saldo") or 0)
+    #   SALDO SISTEMA (= conciliado)        X (libros − pendientes_pc)
+    #   + Pendientes banco créditos         A
+    #   − Pendientes banco débitos          B
+    #   + Diferencia no clasificada         D (lo que falta para cerrar)
+    #   TOTAL (SALDO BANCO REAL)            Y = extracto
+    #
+    # donde D = Y − (X + A − B) = brecha entre el cálculo y el extracto.
+    # Si D ≈ 0 todo cuadra; si > 0, ese monto representa pendientes que
+    # aún no se registraron en ningún lado (auditar diferencia los lista).
+    #
+    # Pendientes en PROGRAMA no entran: ya están absorbidos en SISTEMA
+    # (saldo conciliado = libros − pendientes_pc_neto).
+    saldo_sistema = float(
+        balance.get("saldo_si_concilio_todo")
+        or balance.get("saldo") or 0
+    )
     pendientes_banco_cred = float(balance.get("pendientes_banco_creditos") or 0)
     pendientes_banco_deb = float(balance.get("pendientes_banco_debitos") or 0)
-    pendientes_pc_cred = float(balance.get("pendientes_pc_creditos") or 0)
-    pendientes_pc_deb = float(balance.get("pendientes_pc_debitos") or 0)
-    total_conciliado = round(
-        saldo_sistema
-        + pendientes_banco_cred + pendientes_pc_deb
-        - pendientes_banco_deb - pendientes_pc_cred, 2
-    )
 
-    contable_fmt = '#,##0.00;(#,##0.00)'  # paréntesis para negativos
+    # Saldo banco real = último saldo del extracto subido (fuente externa).
+    saldo_banco_real = None
+    try:
+        movs_sesion = _sesion.cargar_movs(sesion)
+        if movs_sesion:
+            con_fecha = [
+                m for m in movs_sesion
+                if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+            ]
+            if con_fecha:
+                ult = max(con_fecha, key=lambda m: m.fecha)
+                saldo_banco_real = float(ult.saldo)
+            else:
+                ult = movs_sesion[-1]
+                saldo_banco_real = float(getattr(ult, "saldo", None) or 0) or None
+    except Exception as e:
+        _LOG.warning("no pude leer último saldo banco del extracto: %s", e)
+
+    # Fallback: si no hay extracto en la sesión, TOTAL queda en saldo
+    # banco esperado (cálculo). No hay diferencia en ese caso.
+    if saldo_banco_real is not None:
+        total_final = saldo_banco_real
+        # D que cierra: D = banco_real − (sistema + cred_banco − deb_banco)
+        calculo_sin_dif = saldo_sistema + pendientes_banco_cred - pendientes_banco_deb
+        diferencia = round(saldo_banco_real - calculo_sin_dif, 2)
+    else:
+        total_final = round(
+            saldo_sistema + pendientes_banco_cred - pendientes_banco_deb, 2
+        )
+        diferencia = None
+
     label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
     val_col = 4   # columna D, igual al header "VALOR"
 
     r += 1  # fila vacía de separación
-    for label, val in [
+    rows_resumen = [
+        ("SALDO SISTEMA (conciliado)", saldo_sistema),
         ("+ Pendientes banco créditos", pendientes_banco_cred),
-        ("+ Pendientes programa débitos", pendientes_pc_deb),
         ("− Pendientes banco débitos", -pendientes_banco_deb),
-        ("− Pendientes programa créditos", -pendientes_pc_cred),
-        ("SALDO SISTEMA", saldo_sistema),
-        ("TOTAL", total_conciliado),
-    ]:
+    ]
+    if diferencia is not None and abs(diferencia) > 0.005:
+        rows_resumen.append(("+ Diferencia no clasificada", diferencia))
+    rows_resumen.append(("TOTAL (SALDO BANCO)", total_final))
+
+    for label, val in rows_resumen:
         ws.cell(row=r, column=label_col, value=label).font = bold
         if val is not None:
             cell = ws.cell(row=r, column=val_col, value=val)
             cell.font = bold
-            cell.number_format = contable_fmt
+            # Signo + / − explícito, mismo formato que las filas de movs.
+            cell.number_format = "+#,##0.00;-#,##0.00;0.00"
         else:
             ws.cell(row=r, column=val_col, value="—").font = bold
         r += 1
