@@ -1,9 +1,18 @@
 """Consultas de posdat (deuda viva con proveedores)."""
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import db
 from periodo_guard import asegurar_fecha_abierta
+
+
+# TMT 2026-05-28: el server EC2 corre en UTC. Para el cálculo de offsets
+# de YY usamos zona Ecuador (UTC-5) — sino, una posdat creada de noche
+# en Ecuador se ve en el día siguiente del server y el offset queda
+# off-by-one. La hora exacta no importa, solo la fecha calendario EC.
+def _hoy_ec() -> date:
+    """Fecha calendario en zona Ecuador (UTC-5)."""
+    return (datetime.utcnow() - timedelta(hours=5)).date()
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +139,7 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
     Sólo opera sobre filas con prov='YY' AND baseline_date IS NOT NULL.
     El resto queda intacto (RT, posdat regulares, YY legacy sin baseline).
     """
-    hoy = hoy or date.today()
+    hoy = hoy or _hoy_ec()
     for r in rows:
         if (r.get("prov") or "").strip().upper() != "YY":
             continue
@@ -423,9 +432,12 @@ def editar(
         # nuevo. Sin esto, la dueña edita "86100 → 90000" y al renderizar
         # ve "90000 + cuota × días_desde_baseline_viejo" = sorpresa.
         # Skip si la columna aún no existe (migración no aplicada).
+        # Usamos _hoy_ec() (UTC-5) en lugar de CURRENT_DATE para alinear
+        # con lo que ve la dueña en pantalla.
         prov_actual = (actual.get("prov") or "").strip().upper()
         if prov_actual == "YY" and _baseline_col_exists():
-            campos.append("baseline_date = CURRENT_DATE")
+            campos.append("baseline_date = %s")
+            params.append(_hoy_ec())
     # TMT 2026-05-19 v8 — `prov` editable. Antes estaba bloqueado por
     # regla legacy (no cambiar matching con proveedor), pero la dueña
     # pide editar todos los campos. Solo aplica si viene; vacío → NULL.
