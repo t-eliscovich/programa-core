@@ -735,15 +735,16 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
-    # TMT 2026-05-29 dueña: bloque con líneas que la dueña usa cuando cierra.
-    # Antes había 5 filas: ajuste, SISTEMA, conciliado, BANCO, DIFERENCIA.
-    # Pedido nuevo: 'la diferencia que tenes abajo se deberia sumar al
-    # "total" no aparecer por separado'. Folded la diferencia al TOTAL
-    # conciliado → el TOTAL queda = SALDO BANCO y la línea DIFERENCIA
-    # desaparece (convención: si no cuadra, asumimos el gap como ajuste).
+    # TMT 2026-05-29 dueña: 'CUANDO DESCARGO EL EXCEL ES OTRO EL TOTAL'.
+    # El bloque tiene que ser internamente consistente: SISTEMA + AJUSTE
+    # = TOTAL = SALDO BANCO. Si TOTAL está forzado al saldo banco real
+    # (para honrar el pedido anterior 'sumar la diferencia al total'),
+    # entonces AJUSTE tiene que ser SALDO BANCO − SALDO SISTEMA — no
+    # solo los pendientes_pc. Así la suma cierra a la vista.
+    #
+    # Fallback (sin saldo banco real): cálculo clásico AJUSTE=-pendientes_pc,
+    # TOTAL=SISTEMA+AJUSTE.
     saldo_sistema = float(balance.get("saldo") or 0)
-    total_ajuste = -float(balance.get("pendientes_conciliar_neto") or 0)
-    total_conciliado_base = float(balance.get("saldo_si_concilio_todo") or 0)
 
     # Saldo banco "real" = último saldo del extracto subido (en el último
     # mov por fecha; si hay empate de fecha tomamos el último del archivo).
@@ -751,8 +752,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     try:
         movs_sesion = _sesion.cargar_movs(sesion)
         if movs_sesion:
-            # Filtramos los que tienen fecha + saldo; tomamos el de fecha
-            # más alta. Si no, dejamos el último por orden de aparición.
             con_fecha = [m for m in movs_sesion if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None]
             if con_fecha:
                 ult = max(con_fecha, key=lambda m: m.fecha)
@@ -763,13 +762,16 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     except Exception as e:
         _LOG.warning("no pude leer último saldo banco del extracto: %s", e)
 
-    # Si tenemos saldo banco, el TOTAL conciliado absorbe la diferencia y
-    # cierra contra el banco. Si no hay saldo banco (extracto sin saldo),
-    # caemos al cálculo clásico SISTEMA + ajuste.
     if saldo_banco_real is not None:
+        # AJUSTE absorbe TODA la brecha entre PC libros y banco real.
+        # TOTAL = SISTEMA + AJUSTE = SALDO BANCO (cuadra por construcción).
+        total_ajuste = saldo_banco_real - saldo_sistema
         total_conciliado = saldo_banco_real
     else:
-        total_conciliado = total_conciliado_base
+        # Sin saldo banco → cálculo clásico (compatibilidad con extractos
+        # legacy sin columna de saldo).
+        total_ajuste = -float(balance.get("pendientes_conciliar_neto") or 0)
+        total_conciliado = float(balance.get("saldo_si_concilio_todo") or 0)
 
     contable_fmt = '#,##0.00;(#,##0.00)'  # paréntesis para negativos
     label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
