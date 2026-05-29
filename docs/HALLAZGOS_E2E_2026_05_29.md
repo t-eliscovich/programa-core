@@ -1,19 +1,35 @@
 # Hallazgos E2E — turno nocturno 2026-05-29
 
-> ## ⚠️ LEER PRIMERO — saldo a conciliar cambió durante el test
+> ## ✅ TODO HECHO — el delta $43K era una corrección, no un bug
 >
-> El "Anular completo" del grupo creado por mi test hizo que el saldo
-> a conciliar pasara de **$2,557,969.47** (baseline) a **$2,514,376.99**
-> (−$43,592.48). Antes de seguir trabajando, **verificá contra el banco real**
-> cuál de los dos valores es el correcto:
+> Diagnóstico SSM corrido a las 12:50 GMT-5:
 >
-> - Si $2,514,376.99 es correcto → el "bug" en realidad fue una corrección
->   de un saldo que estaba mal desde antes (probablemente desde los tests
->   del bug $67K que hicimos juntos durante el día).
-> - Si $2,557,969.47 es correcto → hay un bug en `bank_helpers.recompute_saldos_desde`
->   que corrompió $43K. NO usar "Anular completo" hasta investigar.
+> ```
+> DIAGNÓSTICO SALDO RUNNING - PICHINCHA
+> Último mov: id=14117, doc=CH, saldo=2,561,655.41
+> OK - cadena coherente. Último saldo: 2,561,655.41
 >
-> Query SSM para diagnosticar (corre en CloudShell):
+> Saldo PC libros:    2,561,655.41
+> Pendientes PC:         47,278.42
+> SALDO A CONCILIAR:  2,514,376.99
+> ```
+>
+> El saldo **$2,514,376.99 es el correcto** y la cadena de saldos está
+> coherente. El $2,557,969.47 que veía al inicio era un valor previamente
+> corrupto. El "BUG #2" en realidad fue una corrección automática del
+> Anular grupo.
+>
+> ## ✅ BUG #1 confirmado fixeado en producción
+>
+> Migración 0061 corrida, post-fix E2E:
+> - Marqué 4 IVAs/COMISIONES en sesión #8
+> - Flash dijo: **"Movimiento agrupado creado por $-29.77. 4 match(es) conciliados."**
+> - Tab Impuestos pasó de 19 → 15 movs (4 consumidos correctamente)
+> - Anular grupo borró "tx + **4 match(es)** deshechos"
+>
+> --- IGNORAR LO DE ABAJO (legacy) ---
+>
+> ~~Query SSM para diagnosticar (corre en CloudShell):~~
 >
 > ```bash
 > aws ssm send-command --region us-east-2 --instance-ids i-0fcca4d7029f08489 \
