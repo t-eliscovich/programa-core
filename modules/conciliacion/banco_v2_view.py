@@ -619,11 +619,66 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     return str(xlsx_path)
 
 
+def _promover_a_historicos(sesion: dict) -> int:
+    """Inserta los movs del extracto NO conciliados en banco_historicos_pendientes.
+
+    Se llama al cerrar la sesión: si dejaste 64 movs sin parear, esos
+    pasan a 'pendientes históricos del banco' con fuente='sesion:N' para
+    que en la próxima conciliación aparezcan como pendientes y los puedas
+    matchear cuando el programa registre la contrapartida.
+
+    Usa el UNIQUE INDEX ux_bhp_firma (no_banco, fecha, documento, monto, tipo)
+    con ON CONFLICT DO NOTHING para evitar duplicar pendientes que ya están.
+    """
+    no_banco = sesion.get("no_banco") or _BANCO_PICHINCHA
+    buckets = _sesion.estado_sesion(sesion, no_banco)
+    items = (buckets.get("manual_banco") or []) + (buckets.get("impuestos") or [])
+    # Excluimos los que ya son históricos (vinieron de tabla); solo
+    # promovemos los del EXTRACTO actual.
+    reales = [it for it in items if not it.get("es_historico")]
+    if not reales:
+        return 0
+
+    fuente = f"sesion:{sesion.get('id')}"
+    creado_por = (sesion.get("usuario") or "web")[:50]
+    n_promovidos = 0
+    for it in reales:
+        m = it.get("mov")
+        if not m:
+            continue
+        try:
+            n = _db.execute(
+                """
+                INSERT INTO scintela.banco_historicos_pendientes
+                    (no_banco, fecha, concepto, documento, monto, tipo,
+                     oficina, detalle, fuente, creado_por)
+                VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    int(no_banco),
+                    m.fecha,
+                    (m.concepto or "")[:120],
+                    (m.documento or "")[:40],
+                    str(m.monto or 0),
+                    (m.tipo or "C")[:2],
+                    (getattr(m, "oficina", "") or "")[:40],
+                    "",  # detalle
+                    fuente,
+                    creado_por,
+                ),
+            ) or 0
+            n_promovidos += n
+        except Exception as e:
+            _LOG.warning("promover_a_historicos mov falló: %s", e)
+    return n_promovidos
+
+
 @conciliacion_bp.route("/banco-v2/terminar", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_terminar():
-    """Cierra la sesión, genera el PDF, redirect al detail."""
+    """Cierra la sesión, promueve movs no conciliados a histos, genera XLSX."""
     sesion_id = int(request.form.get("sesion_id") or 0)
     sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
     if not sesion:
@@ -632,6 +687,16 @@ def banco_terminar():
     if sesion.get("cerrada_en"):
         flash("La sesión ya estaba cerrada.", "info")
         return redirect(url_for("conciliacion.banco_cerrada", sesion_id=sesion_id))
+
+    # PROMOVER movs no conciliados a banco_historicos_pendientes ANTES
+    # del cerrar — así el XLSX y el balance reflejan el estado final.
+    try:
+        n_promovidos = _promover_a_historicos(sesion)
+        if n_promovidos:
+            _LOG.info("sesion #%s: promovidos %s movs a histos", sesion_id, n_promovidos)
+    except Exception as e:
+        _LOG.warning("promover histos falló (sigo cerrando): %s", e)
+        n_promovidos = 0
 
     pdf_path = None
     balance = _bp.calcular(sesion.get("no_banco") or _BANCO_PICHINCHA)
@@ -656,7 +721,10 @@ def banco_terminar():
         pass
 
     if ok:
-        flash(f"Sesión #{sesion_id} cerrada. PDF guardado.", "ok")
+        msg = f"Sesión #{sesion_id} cerrada."
+        if n_promovidos:
+            msg += f" {n_promovidos} mov(s) sin conciliar pasaron a pendientes históricos."
+        flash(msg, "ok")
     else:
         flash("No se pudo cerrar la sesión (¿ya estaba cerrada?).", "warn")
     return redirect(url_for("conciliacion.banco_cerrada", sesion_id=sesion_id))
@@ -817,7 +885,18 @@ def banco_borrar_sesion():
             ) or []
             ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
 
-            # 2. Reset históricos conciliados en este rango.
+            # 2a. Borrar histos que ESTA sesión auto-promovió al cerrar.
+            #     (los que tienen fuente='sesion:N' creados por _promover_a_historicos)
+            counts["historicos_promovidos_borrados"] = _db.execute(
+                """
+                DELETE FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s AND fuente = %s
+                """,
+                (_BANCO_PICHINCHA, f"sesion:{sesion_id}"),
+                conn=conn,
+            ) or 0
+
+            # 2b. Reset históricos QUE FUERON conciliados en este rango.
             counts["historicos_reset"] = _db.execute(
                 """
                 UPDATE scintela.banco_historicos_pendientes
@@ -983,7 +1062,19 @@ def banco_reset_all():
             ) or []
             ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
 
-            # 2. Reset históricos pendientes (vuelven a no-conciliados).
+            # 2a. Borrar todos los histos promovidos por sesiones del programa
+            # (fuente LIKE 'sesion:%'). Los originales del banco se conservan.
+            counts["historicos_promovidos_borrados"] = _db.execute(
+                """
+                DELETE FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s AND fuente LIKE 'sesion:%%'
+                """,
+                (_BANCO_PICHINCHA,),
+                conn=conn,
+            ) or 0
+
+            # 2b. Reset históricos pendientes originales del banco
+            # (vuelven a no-conciliados).
             counts["historicos_reset"] = _db.execute(
                 """
                 UPDATE scintela.banco_historicos_pendientes
