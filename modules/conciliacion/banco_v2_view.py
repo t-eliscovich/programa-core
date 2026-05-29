@@ -325,6 +325,139 @@ def banco_abrir_vacia():
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
 
 
+# ─── Auditar diferencia (root cause de la brecha PC vs banco real) ───
+
+
+@conciliacion_bp.route("/banco-v2/auditar", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_auditar():
+    """Audit page: muestra los componentes que generan la diferencia entre
+    saldo banco esperado (cálculo) y saldo banco real (extracto).
+
+    TMT 2026-05-29 dueña: 'no esta bien que tengamos diferencia' +
+    'necesito que vos hagas la auditoria'. Lista TRES diagnósticos:
+      1) Drift del saldo running PC (suma de movs vs último saldo).
+      2) Matches confirmados con monto distinto entre real y BANCSIS.
+      3) Pendientes de banco con monto raro o duplicados de firma.
+    """
+    no_banco = _BANCO_PICHINCHA
+    balance = _bp.calcular(no_banco)
+
+    # ── Check 1: drift saldo running PC ────────────────────────────
+    drift_saldo = None
+    suma_signed = None
+    last_saldo = None
+    try:
+        row_sum = _db.fetch_one(
+            """
+            SELECT COALESCE(SUM(CASE WHEN documento IN ('CH','ND','DB','GS','PA')
+                                     THEN -importe ELSE importe END), 0) AS suma,
+                   COUNT(*) AS n
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+            """,
+            (no_banco,),
+        )
+        suma_signed = float(row_sum["suma"]) if row_sum else 0
+        row_last = _db.fetch_one(
+            """
+            SELECT saldo FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s AND saldo IS NOT NULL
+             ORDER BY fecha DESC, id_transaccion DESC LIMIT 1
+            """,
+            (no_banco,),
+        )
+        last_saldo = float(row_last["saldo"]) if row_last else 0
+        drift_saldo = round(last_saldo - suma_signed, 2)
+    except Exception as e:
+        _LOG.warning("auditar drift_saldo falló: %s", e)
+
+    # ── Check 2: matches confirmados con drift de monto ────────────
+    diff_matches = []
+    sum_diff_matches = 0.0
+    try:
+        diff_matches = _db.fetch_all(
+            """
+            SELECT m.id, m.creado_en, m.real_fecha, m.real_documento,
+                   m.real_monto, m.real_concepto,
+                   tb.importe   AS tb_importe,
+                   tb.documento AS tb_documento,
+                   tb.concepto  AS tb_concepto,
+                   ROUND(m.real_monto - tb.importe, 2) AS diferencia
+              FROM scintela.banco_conciliacion_match m
+              JOIN scintela.transacciones_bancarias tb
+                ON tb.id_transaccion = m.id_transaccion
+             WHERE m.no_banco = %s
+               AND (m.deshecho_en IS NULL)
+               AND m.id_transaccion IS NOT NULL
+               AND ABS(m.real_monto - tb.importe) > 0.01
+             ORDER BY ABS(m.real_monto - tb.importe) DESC
+             LIMIT 200
+            """,
+            (no_banco,),
+        ) or []
+        sum_diff_matches = sum(float(r.get("diferencia") or 0) for r in diff_matches)
+    except Exception as e:
+        _LOG.warning("auditar diff_matches falló: %s", e)
+
+    # ── Check 3: pendientes históricos con firmas duplicadas ───────
+    duplicados_hist = []
+    try:
+        duplicados_hist = _db.fetch_all(
+            """
+            SELECT no_banco, fecha, COALESCE(documento, '') AS documento,
+                   monto, tipo, COUNT(*) AS n, SUM(monto) AS suma
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s
+               AND conciliado_en IS NULL
+             GROUP BY no_banco, fecha, COALESCE(documento, ''), monto, tipo
+            HAVING COUNT(*) > 1
+             ORDER BY COUNT(*) DESC, ABS(monto) DESC
+             LIMIT 100
+            """,
+            (no_banco,),
+        ) or []
+    except Exception as e:
+        _LOG.warning("auditar duplicados_hist falló: %s", e)
+
+    # ── Diferencia objetivo (lo que la dueña ve en la página) ──────
+    # saldo_banco_esperado calculado vs saldo banco real del último extracto
+    # de la sesión abierta (si existe).
+    sesion = _sesion.sesion_abierta(no_banco, _usuario_actual())
+    saldo_banco_real = None
+    if sesion:
+        try:
+            movs_s = _sesion.cargar_movs(sesion)
+            con_fecha = [
+                m for m in movs_s
+                if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+            ]
+            if con_fecha:
+                ult = max(con_fecha, key=lambda m: m.fecha)
+                saldo_banco_real = float(ult.saldo)
+        except Exception:
+            pass
+    diferencia_objetivo = None
+    if saldo_banco_real is not None and balance.get("saldo_banco_esperado") is not None:
+        diferencia_objetivo = round(
+            saldo_banco_real - balance["saldo_banco_esperado"], 2
+        )
+
+    return render_template(
+        "conciliacion/auditar.html",
+        balance=balance,
+        saldo_banco_real=saldo_banco_real,
+        diferencia_objetivo=diferencia_objetivo,
+        drift_saldo=drift_saldo,
+        suma_signed=suma_signed,
+        last_saldo=last_saldo,
+        diff_matches=diff_matches,
+        sum_diff_matches=round(sum_diff_matches, 2),
+        duplicados_hist=duplicados_hist,
+    )
+
+
 # ─── Reabrir sesión cerrada ──────────────────────────────────────────
 
 

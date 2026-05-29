@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block titulo %}Auditar diferencia{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <div class="flex items-baseline justify-between mb-3">
+    <h1 class="text-2xl font-semibold">Auditar diferencia · Pichincha</h1>
+    <a href="{{ url_for('conciliacion.hub') }}" class="text-sm text-sky-600 hover:underline">← Volver</a>
+  </div>
+  <p class="text-sm text-slate-500 mb-4">Tres chequeos automáticos para encontrar de dónde sale la brecha entre el saldo banco calculado y el saldo banco real.</p>
+
+  {# ── Banner: la diferencia ─────────────────────────────────────── #}
+  <section class="mb-6 rounded-lg border border-amber-200 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-900/10 p-5">
+    <div class="grid grid-cols-3 gap-6">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Saldo banco esperado (cálculo)</div>
+        <div class="text-2xl font-bold tabular-nums">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or 0) }}</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">PC + pendientes</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Saldo banco real (extracto)</div>
+        <div class="text-2xl font-bold tabular-nums">
+          {% if saldo_banco_real is not none %}${{ '{:,.2f}'.format(saldo_banco_real) }}
+          {% else %}<span class="text-slate-400">—</span><span class="text-xs text-slate-500"> (necesitás una sesión abierta con extracto)</span>{% endif %}
+        </div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Último saldo del último xlsx subido</div>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-rose-700 dark:text-rose-300 font-semibold">Diferencia</div>
+        <div class="text-2xl font-bold tabular-nums {% if diferencia_objetivo and diferencia_objetivo|abs > 0.5 %}text-rose-700{% else %}text-emerald-700{% endif %}">
+          {% if diferencia_objetivo is not none %}{{ '{:+,.2f}'.format(diferencia_objetivo) }}
+          {% else %}<span class="text-slate-400">—</span>{% endif %}
+        </div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Real − calculado</div>
+      </div>
+    </div>
+  </section>
+
+  {# ── Check 1: drift saldo running PC ──────────────────────────── #}
+  <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+      <div>
+        <h2 class="text-base font-semibold">1 · Drift del saldo running PC</h2>
+        <p class="text-xs text-slate-500 mt-0.5">La suma de todos los movs debería igualar el último saldo de la columna. Si no, hay un mov que no actualizó la cadena.</p>
+      </div>
+      <div class="text-xs tabular-nums">
+        {% if drift_saldo is not none %}
+          {% if drift_saldo|abs < 0.01 %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ OK</span>
+          {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ '{:+,.2f}'.format(drift_saldo) }}</span>
+          {% endif %}
+        {% else %}
+          <span class="text-slate-400">— no pude calcular —</span>
+        {% endif %}
+      </div>
+    </header>
+    {% if drift_saldo is not none %}
+    <table class="w-full text-sm">
+      <tbody>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-5 py-2 text-slate-500">Suma signada de todos los movs (CR − DB)</td>
+          <td class="px-5 py-2 text-right font-mono">${{ '{:,.2f}'.format(suma_signed or 0) }}</td>
+        </tr>
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-5 py-2 text-slate-500">Último saldo de la columna `saldo`</td>
+          <td class="px-5 py-2 text-right font-mono">${{ '{:,.2f}'.format(last_saldo or 0) }}</td>
+        </tr>
+        <tr class="border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+          <td class="px-5 py-2 font-medium">Drift</td>
+          <td class="px-5 py-2 text-right font-mono font-bold {% if drift_saldo|abs > 0.01 %}text-rose-700{% else %}text-emerald-700{% endif %}">
+            {{ '{:+,.2f}'.format(drift_saldo) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    {% if drift_saldo|abs > 0.01 %}
+    <div class="px-5 py-3 bg-amber-50/50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200">
+      ⚠ Acción sugerida: apretá <strong>"Verificar y recalcular saldos"</strong> en el hub de conciliación.
+    </div>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  {# ── Check 2: matches con drift de monto ──────────────────────── #}
+  <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+      <div>
+        <h2 class="text-base font-semibold">2 · Matches con monto distinto</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Si conciliaste $1000 contra $1010, el $10 se acumula como diferencia.</p>
+      </div>
+      <div class="text-xs tabular-nums">
+        {% if diff_matches %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ diff_matches|length }} matches · suma {{ '{:+,.2f}'.format(sum_diff_matches) }}</span>
+        {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ Todos cuadran</span>
+        {% endif %}
+      </div>
+    </header>
+    {% if diff_matches %}
+    <div class="overflow-x-auto" style="max-height: 400px;">
+      <table class="w-full text-xs tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+          <tr>
+            <th class="px-2 py-1.5 text-left w-32">Conciliado</th>
+            <th class="px-2 py-1.5 text-left w-20">Fecha</th>
+            <th class="px-2 py-1.5 text-left w-20">Doc</th>
+            <th class="px-2 py-1.5 text-right w-24">Real (banco)</th>
+            <th class="px-2 py-1.5 text-right w-24">PC (BANCSIS)</th>
+            <th class="px-2 py-1.5 text-right w-24">Diferencia</th>
+            <th class="px-2 py-1.5 text-left">Concepto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in diff_matches %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-2 py-1 text-slate-500">{{ d.creado_en.strftime('%m-%d %H:%M') if d.creado_en else '—' }}</td>
+            <td class="px-2 py-1 text-slate-500">{{ d.real_fecha or '—' }}</td>
+            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (d.real_documento or '')[:12] }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(d.real_monto|float) }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(d.tb_importe|float) }}</td>
+            <td class="px-2 py-1 text-right font-mono font-bold {% if d.diferencia|float > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(d.diferencia|float) }}</td>
+            <td class="px-2 py-1 text-slate-600 truncate max-w-xs" title="{{ d.real_concepto or '' }}">{{ (d.real_concepto or d.tb_concepto or '—')[:40] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ── Check 3: pendientes históricos duplicados ────────────────── #}
+  <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+      <div>
+        <h2 class="text-base font-semibold">3 · Pendientes históricos duplicados</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Misma fecha + doc + monto + tipo importadas más de una vez = doble cuenta en la suma de pendientes.</p>
+      </div>
+      <div class="text-xs tabular-nums">
+        {% if duplicados_hist %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200 font-semibold">⚠ {{ duplicados_hist|length }} firmas duplicadas</span>
+        {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">✓ Sin duplicados</span>
+        {% endif %}
+      </div>
+    </header>
+    {% if duplicados_hist %}
+    <div class="overflow-x-auto" style="max-height: 300px;">
+      <table class="w-full text-xs tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+          <tr>
+            <th class="px-2 py-1.5 text-left">Fecha</th>
+            <th class="px-2 py-1.5 text-left">Documento</th>
+            <th class="px-2 py-1.5 text-right">Monto</th>
+            <th class="px-2 py-1.5 text-left">Tipo</th>
+            <th class="px-2 py-1.5 text-right"># copias</th>
+            <th class="px-2 py-1.5 text-right">Suma extra (n−1)·monto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in duplicados_hist %}
+          {% set extra = ((r.n|int) - 1) * (r.monto|float) %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-2 py-1 text-slate-500">{{ r.fecha or '—' }}</td>
+            <td class="px-2 py-1 font-mono text-[10px]">{{ (r.documento or '')[:14] }}</td>
+            <td class="px-2 py-1 text-right font-mono">{{ '{:,.2f}'.format(r.monto|float) }}</td>
+            <td class="px-2 py-1 text-slate-500">{{ r.tipo }}</td>
+            <td class="px-2 py-1 text-right font-semibold">{{ r.n }}</td>
+            <td class="px-2 py-1 text-right font-mono text-rose-700">{{ '{:+,.2f}'.format(extra) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}
