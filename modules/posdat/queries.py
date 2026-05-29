@@ -720,7 +720,17 @@ def buscar(
     # TMT 2026-05-28 (migración 0061): aplicar la fórmula display-time
     # YY ANTES de calcular saldo_acumulado, así el acumulado refleja el
     # importe que la dueña ve en pantalla.
-    _aplicar_display_time_yy(rows)
+    # Defensivo: si el cálculo display-time tira por cualquier razón
+    # (mov_doble fail, fila YY rara, edge case del calendario), preferimos
+    # mostrar el importe persistido y NO romper toda la pantalla con un
+    # 500. El log queda con el traceback para debug.
+    try:
+        _aplicar_display_time_yy(rows)
+    except Exception:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger(__name__).exception(
+            "_aplicar_display_time_yy explotó — fallback a importe persistido"
+        )
 
     # Saldo acumulado = deuda corrida hasta la fecha de vencimiento. Útil
     # para planificar flujo: "al 15 de junio ya vencieron $ X de posdatados".

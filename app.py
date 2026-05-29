@@ -381,6 +381,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_migraciones_bp)
 
+    # Debug YY display-time — TMT 2026-05-28. Endpoint diagnóstico que
+    # corre el helper fila por fila y devuelve tracebacks para encontrar
+    # qué provoca el 500 de /posdat?tab=yy sin acceso al log del EC2.
+    from modules.admin_dbase.debug_yy_view import bp as admin_debug_yy_bp
+
+    app.register_blueprint(admin_debug_yy_bp)
+
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
     # middleware so we don't steal its elapsed-time header, and AFTER all
