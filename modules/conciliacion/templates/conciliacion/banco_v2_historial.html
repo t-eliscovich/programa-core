@@ -18,7 +18,9 @@
           <th class="px-3 py-2 text-left w-32">Fecha cierre</th>
           <th class="px-3 py-2 text-right w-32">Saldo inicial</th>
           <th class="px-3 py-2 text-right w-32">Saldo final</th>
-          <th class="px-3 py-2 text-right w-28">Δ</th>
+          <th class="px-3 py-2 text-right w-28">Δ sesión</th>
+          <th class="px-3 py-2 text-right w-32" title="Último saldo del extracto subido">Saldo banco real</th>
+          <th class="px-3 py-2 text-right w-28" title="Saldo banco real − saldo final">Δ vs banco</th>
           <th class="px-3 py-2 text-right w-16">Matches</th>
           <th class="px-3 py-2 text-left">Acción</th>
         </tr>
@@ -45,13 +47,30 @@
             {% else %}text-slate-300{% endif %}">
             {% if s.saldo_inicial is not none and s.saldo_final is not none %}{{ '{:+,.2f}'.format(s.saldo_final - s.saldo_inicial) }}{% else %}—{% endif %}
           </td>
+          <td class="px-3 py-1.5 text-right font-mono {% if s.saldo_banco_real is none %}text-slate-300{% else %}text-slate-700 dark:text-slate-300{% endif %}">
+            {% if s.saldo_banco_real is not none %}{{ '{:,.2f}'.format(s.saldo_banco_real) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right font-mono font-semibold
+            {% if s.diferencia_banco is not none %}
+              {% if s.diferencia_banco|abs > 0.5 %}text-rose-700
+              {% else %}text-emerald-700{% endif %}
+            {% else %}text-slate-300{% endif %}">
+            {% if s.diferencia_banco is not none %}{{ '{:+,.2f}'.format(s.diferencia_banco) }}{% else %}—{% endif %}
+          </td>
           <td class="px-3 py-1.5 text-right font-semibold">{{ s.matches_hechos }}</td>
           <td class="px-3 py-1.5">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-wrap">
               {% if s.cerrada_en %}
                 {% if s.pdf_path %}
                 <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" class="text-emerald-600 hover:underline">📥 Excel</a>
                 {% endif %}
+                {# TMT 2026-05-29 dueña: cerrar deja de ser irreversible. #}
+                <form method="POST" action="{{ url_for('conciliacion.banco_reabrir_sesion') }}" class="inline m-0"
+                      onsubmit="return confirm('¿Reabrir sesión #{{ s.id }} para seguir editando?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="sesion_id" value="{{ s.id }}">
+                  <button class="text-amber-600 hover:underline text-xs">↻ Reabrir</button>
+                </form>
               {% else %}
                 <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">retomar →</a>
               {% endif %}
@@ -66,7 +85,7 @@
         </tr>
         {% endfor %}
         {% if not sesiones %}
-        <tr><td colspan="8" class="px-3 py-6 text-center text-slate-400 italic">— sin sesiones todavía —</td></tr>
+        <tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 italic">— sin sesiones todavía —</td></tr>
         {% endif %}
       </tbody>
     </table>

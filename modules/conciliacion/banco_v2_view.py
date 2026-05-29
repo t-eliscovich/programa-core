@@ -267,6 +267,75 @@ def banco_crear_sesion():
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
 
+# ─── Sesión sin extracto: solo trabajar con pendientes históricos ──────
+
+
+@conciliacion_bp.route("/banco-v2/abrir-vacia", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_abrir_vacia():
+    """Abrir una sesión SIN subir extracto.
+
+    TMT 2026-05-29 dueña: 'QUIZAS QUIERO USAR SOLO HISTORICOS, NO SUBIR
+    UN NUEVO ARCHIVO'. Casos: cuando hay backlog de pendientes históricos
+    que la dueña quiere matchear contra BANCSIS sin esperar al extracto
+    nuevo de Pichincha.
+    """
+    r = _migracion_lista_o_redirect()
+    if r: return r
+    usuario = _usuario_actual()
+    no_banco = _BANCO_PICHINCHA
+    sesion_id = _sesion.crear_sesion(
+        no_banco=no_banco,
+        usuario=usuario,
+        movs=[],
+        extracto_hash=None,
+        extracto_nombre="(sin extracto)",
+    )
+    flash(
+        f"Sesión #{sesion_id} abierta sin extracto — solo pendientes históricos.",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
+
+
+# ─── Reabrir sesión cerrada ──────────────────────────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/reabrir", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_reabrir_sesion():
+    """Reabrir una sesión cerrada.
+
+    TMT 2026-05-29 dueña: 'QUIZAS NO DEBERIAMOS CERRAR Y GUARDAR Y QUE
+    NUNCA MAS SE PUEDA ACCEDER'. Cerrar deja de ser irreversible — la
+    sesión vuelve a editable y la dueña puede seguir conciliando.
+    """
+    try:
+        sesion_id = int(request.form.get("sesion_id") or 0)
+    except ValueError:
+        sesion_id = 0
+    if not sesion_id:
+        flash("Sesión inválida.", "error")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+    n = _db.execute(
+        """
+        UPDATE scintela.banco_conciliacion_sesion
+           SET cerrada_en = NULL,
+               cerrada_por = NULL
+         WHERE id = %s AND cerrada_en IS NOT NULL
+        """,
+        (sesion_id,),
+    )
+    if n:
+        flash(f"Sesión #{sesion_id} reabierta.", "ok")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+    else:
+        flash(f"Sesión #{sesion_id} no estaba cerrada o no existe.", "warn")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+
+
 # ─── Endpoint Tab Manual: confirmar pares marcados ────────────────────
 
 
@@ -777,9 +846,24 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     label_col = 3  # columna C, igual al header "CODIGO" pero usamos como label
     val_col = 4   # columna D, igual al header "VALOR"
 
+    # TMT 2026-05-29 dueña: 'ME PUEDES PASAR POSITIVOS Y NEGATIVOS EN VEZ
+    # DE TOTAL'. Reemplazo el AJUSTE único por dos líneas: + POSITIVOS
+    # (sum de pendientes credit en ambos lados) y − NEGATIVOS (sum de
+    # pendientes debit en ambos lados). El TOTAL conciliado sigue =
+    # SALDO BANCO (absorbe la diferencia, según pedido anterior).
+    positivos = (
+        float(balance.get("pendientes_pc_creditos") or 0)
+        + float(balance.get("pendientes_banco_creditos") or 0)
+    )
+    negativos = (
+        float(balance.get("pendientes_pc_debitos") or 0)
+        + float(balance.get("pendientes_banco_debitos") or 0)
+    )
+
     r += 1  # fila vacía de separación
     for label, val in [
-        ("TOTAL", total_ajuste),
+        ("+ POSITIVOS", positivos),
+        ("− NEGATIVOS", -negativos),
         ("SALDO SISTEMA", saldo_sistema),
         ("TOTAL", total_conciliado),
         ("SALDO BANCO", saldo_banco_real),
@@ -1464,6 +1548,27 @@ def banco_historial_v2():
                 pass
         s["saldo_inicial"] = saldo_ini.get(sid)
         s["saldo_final"] = saldo_fin.get(sid)
+        # TMT 2026-05-29 dueña: 'columnas extra' — saldo banco real (último
+        # saldo del extracto subido) + diferencia (saldo_final − saldo_banco_real).
+        s["saldo_banco_real"] = None
+        s["diferencia_banco"] = None
+        try:
+            sesion_full = _sesion.sesion_por_id(int(s["id"]))
+            if sesion_full:
+                movs_s = _sesion.cargar_movs(sesion_full)
+                con_fecha = [
+                    m for m in movs_s
+                    if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+                ]
+                if con_fecha:
+                    ult = max(con_fecha, key=lambda m: m.fecha)
+                    s["saldo_banco_real"] = float(ult.saldo)
+                elif movs_s:
+                    s["saldo_banco_real"] = float(getattr(movs_s[-1], "saldo", None) or 0) or None
+            if s["saldo_banco_real"] is not None and s["saldo_final"] is not None:
+                s["diferencia_banco"] = round(s["saldo_banco_real"] - s["saldo_final"], 2)
+        except Exception:
+            pass
     return render_template(
         "conciliacion/banco_v2_historial.html",
         sesiones=sesiones,

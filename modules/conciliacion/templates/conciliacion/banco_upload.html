@@ -229,6 +229,24 @@
     </label>
   </form>
 
+  {# TMT 2026-05-29 dueña: 'QUIZAS QUIERO USAR SOLO HISTORICOS, NO SUBIR
+     UN NUEVO ARCHIVO'. Botón aparte para abrir sesión sin extracto y
+     trabajar contra los pendientes históricos solos. #}
+  <div class="mt-3 p-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/40">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <div class="text-sm font-medium text-slate-700 dark:text-slate-200">¿No tenés extracto nuevo?</div>
+        <div class="text-xs text-slate-500 mt-0.5">Abrí una sesión sólo con los pendientes históricos del banco — para ir matcheándolos contra el programa sin esperar al próximo xlsx.</div>
+      </div>
+      <form method="POST" action="{{ url_for('conciliacion.banco_abrir_vacia') }}" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="px-4 py-1.5 rounded bg-slate-700 hover:bg-slate-800 text-white text-sm whitespace-nowrap">
+          Conciliar pendientes →
+        </button>
+      </form>
+    </div>
+  </div>
+
   {# Files subidos — TMT 2026-05-26 dueña: "necesito ver los files ya subidos".
      Tracking real de uploads (incluso los que no se confirmaron matches). #}
   {% if uploads %}
