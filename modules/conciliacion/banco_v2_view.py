@@ -1234,21 +1234,28 @@ def banco_recompute_saldos():
     try:
         import bank_helpers
         with _db.tx() as conn:
+            # TMT 2026-05-29 dueña: 'busca esos 9k de diferencia'. Bug encontrado:
+            # recompute_saldos_desde filtra por id_transaccion >= ancla_id, pero
+            # los movs no están en orden estricto por id (imports legacy de dBase
+            # crearon filas con fecha tardía e id más bajo). Las filas con
+            # fecha > ancla.fecha pero id < ancla.id quedaban FUERA del walk.
+            # Fix: pasar ancla_fecha en lugar de ancla_id → filtra por fecha,
+            # que sí es chronological y captura todas las filas.
             primera = _db.fetch_one(
                 """
-                SELECT id_transaccion FROM scintela.transacciones_bancarias
-                 WHERE no_banco = %s
-                 ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
+                SELECT fecha FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s AND fecha IS NOT NULL
+                 ORDER BY fecha ASC LIMIT 1
                 """,
                 (_BANCO_PICHINCHA,),
                 conn=conn,
             )
-            if not primera or not primera.get("id_transaccion"):
+            if not primera or not primera.get("fecha"):
                 flash("Sin movimientos para recalcular.", "info")
                 return redirect(url_for("conciliacion.hub"))
             n = bank_helpers.recompute_saldos_desde(
                 conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
-                ancla_id=int(primera["id_transaccion"]),
+                ancla_fecha=primera["fecha"],
             )
     except Exception as e:
         _LOG.exception("recompute manual falló: %s", e)
