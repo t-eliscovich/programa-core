@@ -288,7 +288,14 @@ def banco_manual_confirmar():
 
     n_matches = 0
     usuario = _usuario_actual()
-    # 1) Matches del extracto contra el primer bancsis (o 1:1 si cuentan igual).
+    # 1) Matches del extracto contra los bancsis seleccionados.
+    # BUG #2 fix 2026-05-29: si N reales vs M bancsis con N!=M, antes
+    # silenciosamente asociábamos todos los N al PRIMER bancsis (los
+    # otros M-1 bancsis quedaban huérfanos). Ahora exigimos:
+    #   - 1:1 (mismo número de cada lado): pareamos por monto desc
+    #   - N:1 (1 bancsis, N reales): caso típico depósito agrupado,
+    #     OK asociar todos al único bancsis
+    #   - cualquier otro caso → error con mensaje claro
     if real_subset and bancsis_ids:
         if len(real_subset) == len(bancsis_ids):
             real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
@@ -299,7 +306,8 @@ def banco_manual_confirmar():
                     n_matches += 1
                 except Exception as e:
                     _LOG.warning("manual confirm falló: %s", e)
-        else:
+        elif len(bancsis_ids) == 1:
+            # N reales contra 1 bancsis (depósito agrupado típico).
             bk_id_primary = bancsis_ids[0]
             for r in real_subset:
                 try:
@@ -307,6 +315,13 @@ def banco_manual_confirmar():
                     n_matches += 1
                 except Exception as e:
                     _LOG.warning("manual confirm fallo: %s", e)
+        else:
+            flash(
+                f"No puedo conciliar {len(real_subset)} banco vs {len(bancsis_ids)} "
+                f"programa: deben ser 1:1 o N:1 (N reales contra 1 mov del programa).",
+                "error",
+            )
+            return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
     # 2) Históricos seleccionados → marcar conciliados (apuntan al primer bancsis).
     n_hist = 0
@@ -539,6 +554,15 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         c.font = bold
         c.fill = header_fill
 
+    # BUG #10 fix 2026-05-29: defensa contra CSV-injection.
+    # Si un concepto del banco empieza con =, +, -, @, Excel lo evalúa
+    # como fórmula al abrir. Prefijamos con apóstrofe para neutralizar.
+    def _safe_cell(v: str) -> str:
+        s = str(v or "")
+        if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + s
+        return s
+
     r = 5
     total = 0.0
     for row in rows:
@@ -550,10 +574,10 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         total += valor
         fecha = row.get("fecha")
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
-        ws.cell(row=r, column=2, value=(row.get("concepto") or "")[:100])
-        ws.cell(row=r, column=3, value=(row.get("documento") or "")[:30])
+        ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
+        ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
         ws.cell(row=r, column=4, value=valor).number_format = "#,##0.00"
-        ws.cell(row=r, column=5, value=(row.get("detalle") or row.get("oficina") or "")[:30])
+        ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
         r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
@@ -862,9 +886,20 @@ def banco_borrar_sesion():
         flash("Sesión no encontrada.", "warn")
         return redirect(url_for("conciliacion.banco_historial_v2"))
 
+    # BUG #5 fix 2026-05-29: si la sesión está abierta, NO usar NOW() como
+    # cota superior — arrasaría matches de cualquier otro flujo paralelo.
+    # Exigimos sesión cerrada para borrarla.
+    if not sesion.get("cerrada_en"):
+        flash(
+            "No se puede borrar una sesión abierta. Primero cerrala con "
+            "'Terminar y guardar' o anulá los matches individualmente.",
+            "error",
+        )
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+
     usuario = _usuario_actual()
     abierta = sesion.get("abierta_en")
-    cerrada = sesion.get("cerrada_en") or datetime.now()
+    cerrada = sesion.get("cerrada_en")
     counts = {"matches": 0, "snapshots": 0, "txs_grupales": 0, "historicos_reset": 0}
 
     try:
@@ -886,11 +921,15 @@ def banco_borrar_sesion():
             ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
 
             # 2a. Borrar histos que ESTA sesión auto-promovió al cerrar.
-            #     (los que tienen fuente='sesion:N' creados por _promover_a_historicos)
+            # BUG #4 fix 2026-05-29: filtrar por conciliado_en IS NULL para
+            # NO borrar histos que después fueron conciliados en OTRA sesión
+            # (perderíamos el rastro de un match legítimo).
             counts["historicos_promovidos_borrados"] = _db.execute(
                 """
                 DELETE FROM scintela.banco_historicos_pendientes
-                 WHERE no_banco = %s AND fuente = %s
+                 WHERE no_banco = %s
+                   AND fuente = %s
+                   AND conciliado_en IS NULL
                 """,
                 (_BANCO_PICHINCHA, f"sesion:{sesion_id}"),
                 conn=conn,
@@ -1037,7 +1076,9 @@ def banco_reset_all():
     Requiere POST con `confirm_text=BORRAR TODO` para evitar accidentes
     si alguien dispara el endpoint sin pasar por el modal.
     """
-    confirm_text = (request.form.get("confirm_text") or "").strip().upper()
+    # BUG #11 fix 2026-05-29: comparación estricta, sin strip/upper —
+    # exige el texto exacto y previene curl con espacios extra.
+    confirm_text = request.form.get("confirm_text") or ""
     if confirm_text != "BORRAR TODO":
         flash("Reset cancelado — texto de confirmación incorrecto.", "error")
         return redirect(url_for("conciliacion.hub"))
