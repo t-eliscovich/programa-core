@@ -1145,26 +1145,47 @@ def lista():
                             pass
                     # TMT 2026-05-22 — Fallback heurístico para PC sin numf:
                     # match por (codigo_cli + fecha + kg exacto) y validar
-                    # que los importes coincidan (PC sin IVA == card 199 usd).
+                    # que los importes coincidan.
+                    #
+                    # TMT 2026-05-29 dueña: 'asinfo siempre tiene numero, PC no'.
+                    # Ampliado con 3 estrategias en cascada:
+                    #   (a) USD exacto: |pc - ai| < 0.5  (PC sin IVA = card 199)
+                    #   (b) USD con IVA 12%: |pc - ai * 1.12| < 0.5
+                    #   (c) Tolerancia 15% sobre el importe: cubre IVA + redondeos
+                    # Si UNA sola candidata cuadra en CUALQUIERA de las 3, match.
                     if r_ai is None:
                         cli_pc = (f.get("codigo_cli") or "").strip().upper()
                         fecha_pc = f.get("fecha")
                         if cli_pc and fecha_pc:
                             key = (cli_pc, str(fecha_pc)[:10], round(pc_kg, 2))
                             candidatos = idx_compuesto.get(key, [])
-                            # Validar usd con tolerancia ±0.5 USD.
                             pc_imp = float(f.get("importe") or 0)
+
+                            def _coincide_usd(ai_usd: float) -> bool:
+                                # Estrategia (a) USD exacto.
+                                if abs(ai_usd - pc_imp) < 0.5:
+                                    return True
+                                # Estrategia (b) PC trae IVA 12%, Asinfo no.
+                                if abs(pc_imp - ai_usd * 1.12) < 0.5:
+                                    return True
+                                # Estrategia (c) tolerancia 15% (cubre IVA 12-14%
+                                # + redondeos + ajustes chicos). Solo si el monto
+                                # no es trivial (>= $1) para evitar matchear
+                                # comisiones de centavos al voleo.
+                                base = max(abs(ai_usd), abs(pc_imp), 1.0)
+                                if base >= 1.0 and abs(ai_usd - pc_imp) / base < 0.15:
+                                    return True
+                                return False
+
                             ok = [c for c in candidatos
-                                  if abs(float(c.get("usd") or 0) - pc_imp) < 0.5]
+                                  if _coincide_usd(float(c.get("usd") or 0))]
                             if len(ok) == 1:
                                 r_ai = ok[0]
                             elif len(ok) > 1:
                                 # TMT 2026-05-28 — dueña: muchas operaciones tienen
                                 # FACTURA + NTEN simultáneas con mismo cli/kg/usd
                                 # (la NTEN es nota de entrega, la FACTURA es el
-                                # comprobante fiscal). Antes len(ok)==1 rechazaba
-                                # todo. Ahora preferimos FACTURA > NTEN > otros
-                                # cuando hay candidatos múltiples del mismo cli+fecha+kg+usd.
+                                # comprobante fiscal). Preferimos FACTURA > NTEN.
                                 facts = [c for c in ok if c.get("tipo") == "FACTURA"]
                                 ntens = [c for c in ok if c.get("tipo") == "NTEN"]
                                 if len(facts) == 1:
