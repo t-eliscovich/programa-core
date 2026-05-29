@@ -200,13 +200,20 @@
   }
 
   // Filtro: busca por concepto, doc, cliente, monto en ambos paneles.
+  // TMT 2026-05-29 dueña: 'no es necesario comas'. Normalizamos comas/signos
+  // del query Y del contenido — así '1200' matchea con '1,200.00', y al revés.
+  function norm(s){
+    return (s||'').toLowerCase()
+      .replace(/[,$+\-−]/g,'')   // quita comas, $, +, − unicode y ascii
+      .replace(/\s+/g,' ').trim();
+  }
   var filtroEl = document.getElementById('manual-filtro');
   if (filtroEl){
     filtroEl.addEventListener('input', function(){
-      var q = filtroEl.value.toLowerCase().trim();
+      var q = norm(filtroEl.value);
       document.querySelectorAll('[data-panel="banco"] tbody tr, [data-panel="programa"] tbody tr').forEach(function(tr){
         if (!q){ tr.style.display = ''; return; }
-        var txt = tr.textContent.toLowerCase();
+        var txt = norm(tr.textContent);
         tr.style.display = txt.indexOf(q) >= 0 ? '' : 'none';
       });
     });
