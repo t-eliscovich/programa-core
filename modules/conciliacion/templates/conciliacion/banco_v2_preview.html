@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block titulo %}Vista previa · Conciliar{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+
+  <div class="flex items-baseline justify-between mb-4 gap-3">
+    <h1 class="text-2xl font-semibold">Vista previa · ¿Confirmar este match?</h1>
+    <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=sesion.id, tab='manual') }}"
+       class="text-sm text-slate-500 hover:underline">← Volver sin confirmar</a>
+  </div>
+
+  {# ── Warnings ──────────────────────────────────────────────────── #}
+  {% if warnings %}
+  <section class="mb-4 rounded-lg border border-amber-300 bg-amber-50/60 dark:bg-amber-900/10 p-4">
+    <div class="flex items-start gap-2">
+      <span class="text-amber-700 dark:text-amber-300 text-lg leading-none">⚠</span>
+      <div class="flex-1">
+        <h3 class="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-1">Cosas a revisar antes de confirmar</h3>
+        <ul class="text-xs text-amber-900 dark:text-amber-200 space-y-1">
+          {% for w in warnings %}<li>• {{ w }}</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Lado a lado: BANCO vs PROGRAMA ────────────────────────────── #}
+  <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+      <h2 class="text-base font-semibold">Lo que vas a conciliar</h2>
+      <div class="text-xs tabular-nums">
+        <span class="text-emerald-700">Banco Σ {{ '{:+,.2f}'.format(banco_total_signed) }}</span>
+        ·
+        <span class="text-sky-700">Programa Σ {{ '{:+,.2f}'.format(programa_total_signed) }}</span>
+        {% if diff_total|abs > 0.01 %}
+          · <span class="text-rose-700 font-semibold">Δ {{ '{:+,.2f}'.format(diff_total) }}</span>
+        {% else %}
+          · <span class="text-emerald-700">cuadra ✓</span>
+        {% endif %}
+      </div>
+    </header>
+    <div class="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700">
+      <div class="p-4">
+        <div class="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold mb-2">Banco ({{ (real_subset|length) + (hist_rows|length) }})</div>
+        <ul class="space-y-2 text-sm">
+          {% for m in real_subset %}
+          <li class="flex items-start gap-2">
+            <span class="inline-flex w-5 h-5 mt-0.5 items-center justify-center rounded-full text-[10px] font-bold {% if m.tipo == 'C' %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if m.tipo == 'C' %}+{% else %}−{% endif %}</span>
+            <div class="flex-1">
+              <div class="font-mono tabular-nums text-sm">${{ '{:,.2f}'.format(m.monto|float) }}</div>
+              <div class="text-[11px] text-slate-500">{{ m.fecha }} · {{ m.documento or '—' }} · extracto</div>
+              <div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">{{ (m.concepto or '')[:80] }}</div>
+            </div>
+          </li>
+          {% endfor %}
+          {% for h in hist_rows %}
+          <li class="flex items-start gap-2">
+            <span class="inline-flex w-5 h-5 mt-0.5 items-center justify-center rounded-full text-[10px] font-bold {% if h.tipo == 'C' %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if h.tipo == 'C' %}+{% else %}−{% endif %}</span>
+            <div class="flex-1">
+              <div class="font-mono tabular-nums text-sm">${{ '{:,.2f}'.format(h.monto|float) }} <span class="text-[9px] uppercase px-1 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200 font-semibold ml-1">histórico</span></div>
+              <div class="text-[11px] text-slate-500">{{ h.fecha }} · {{ h.documento or '—' }}</div>
+              <div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">{{ (h.concepto or '')[:80] }}</div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="p-4">
+        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-300 font-semibold mb-2">Programa ({{ bancsis_rows|length }})</div>
+        <ul class="space-y-2 text-sm">
+          {% for b in bancsis_rows %}
+          {% set _signo = 1 if b.documento in ('DE','TR','XX','NC','IN','AC') else -1 %}
+          <li class="flex items-start gap-2">
+            <span class="inline-flex w-5 h-5 mt-0.5 items-center justify-center rounded-full text-[10px] font-bold {% if _signo > 0 %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if _signo > 0 %}+{% else %}−{% endif %}</span>
+            <div class="flex-1">
+              <div class="font-mono tabular-nums text-sm">${{ '{:,.2f}'.format(b.importe|float) }} <span class="text-[10px] text-slate-400">#{{ b.id_transaccion }}</span></div>
+              <div class="text-[11px] text-slate-500">{{ b.fecha }} · {{ b.documento or '—' }}{% if b.prov %} · {{ b.prov }}{% endif %}{% if b.numreferencia %} · ref {{ b.numreferencia }}{% endif %}</div>
+              <div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">{{ ((b.prov_nombre + ' · ') if b.prov_nombre else '') + (b.concepto or '')[:80] }}</div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {# ── Antes vs Después ─────────────────────────────────────────── #}
+  <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-100 dark:border-slate-800">
+      <h2 class="text-base font-semibold">Cómo cambiarían los saldos</h2>
+    </header>
+    <table class="w-full text-sm tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-4 py-2 text-left"></th>
+          <th class="px-4 py-2 text-right w-40">Antes</th>
+          <th class="px-4 py-2 text-right w-40">Después</th>
+          <th class="px-4 py-2 text-right w-28">Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set _rows = [
+          ('Saldo banco programa',         balance_before.saldo,                  balance_after.saldo),
+          ('Pendientes en programa (n)',   balance_before.n_pendientes_conciliar, balance_after.n_pendientes_conciliar),
+          ('Pendientes en programa (neto)',balance_before.pendientes_conciliar_neto, balance_after.pendientes_conciliar_neto),
+          ('= Saldo conciliado',           balance_before.saldo_si_concilio_todo, balance_after.saldo_si_concilio_todo),
+          ('Pendientes en banco (n)',      balance_before.n_pendientes,           balance_after.n_pendientes),
+          ('Pendientes en banco (neto)',   balance_before.neto_pendientes,        balance_after.neto_pendientes),
+          ('= Saldo banco esperado',       balance_before.saldo_banco_esperado,   balance_after.saldo_banco_esperado),
+        ] %}
+        {% for label, b, a in _rows %}
+        {% set delta = (a or 0) - (b or 0) %}
+        {% set is_int = '(n)' in label %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if label.startswith('=') %}bg-slate-50/60 dark:bg-slate-800/30 font-semibold{% endif %}">
+          <td class="px-4 py-1.5">{{ label }}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ b }}{% else %}{{ '{:,.2f}'.format(b|float) }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ a }}{% else %}{{ '{:,.2f}'.format(a|float) }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono {% if delta|abs > 0.001 %}{% if delta > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}{% else %}text-slate-400{% endif %}">
+            {% if delta|abs < 0.001 %}=
+            {% elif is_int %}{{ '{:+d}'.format(delta|int) }}
+            {% else %}{{ '{:+,.2f}'.format(delta) }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {# ── Side effects ─────────────────────────────────────────────── #}
+  <section class="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+    <h2 class="text-sm font-semibold mb-2">Side effects al confirmar</h2>
+    <ul class="text-xs text-slate-600 dark:text-slate-300 space-y-1">
+      {% if real_subset %}<li>• Insert {{ real_subset|length }} fila(s) en <code>banco_conciliacion_match</code> (extracto)</li>{% endif %}
+      {% if hist_rows %}<li>• Insert {{ hist_rows|length }} fila(s) en <code>banco_conciliacion_match</code> (histórico) + UPDATE <code>banco_historicos_pendientes</code> conciliado_en=ahora</li>{% endif %}
+      <li>• UPDATE <code>transacciones_bancarias</code> stat='*' para {{ bancsis_rows|length }} BANCSIS</li>
+      <li>• Reversible desde <a href="{{ url_for('conciliacion.banco_deshacer_v2') }}" class="text-sky-600 hover:underline">/banco-v2/deshacer</a></li>
+    </ul>
+  </section>
+
+  {# ── Botones ─────────────────────────────────────────────────── #}
+  <form method="POST" action="{{ url_for('conciliacion.banco_manual_confirmar') }}" class="flex items-center justify-end gap-3 m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="sesion_id" value="{{ sesion_id }}">
+    <input type="hidden" name="real_ids" value="{{ real_ids_csv }}">
+    <input type="hidden" name="real_sigs" value="{{ real_sigs_csv }}">
+    <input type="hidden" name="hist_ids" value="{{ hist_ids_csv }}">
+    <input type="hidden" name="bancsis_ids" value="{{ bancsis_ids_csv }}">
+    <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=sesion.id, tab='manual') }}"
+       class="px-5 py-2 rounded text-sm font-medium border border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+      Cancelar
+    </a>
+    <button type="submit" {% if not can_confirm %}disabled{% endif %}
+            class="px-6 py-2 rounded text-sm font-semibold text-white {% if can_confirm %}bg-emerald-600 hover:bg-emerald-700{% else %}bg-slate-400 cursor-not-allowed{% endif %}">
+      ✓ Confirmar conciliación
+    </button>
+  </form>
+</div>
+{% endblock %}

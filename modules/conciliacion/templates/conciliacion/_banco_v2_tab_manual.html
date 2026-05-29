@@ -22,13 +22,14 @@
     <div>Programa: <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono">$ 0.00</span> <span class="text-slate-400">(<span data-count="programa">0</span>)</span></div>
     <div>Δ <span id="manual-diff" class="font-bold font-mono">$ 0.00</span></div>
   </div>
-  <form method="POST" action="{{ url_for('conciliacion.banco_manual_confirmar') }}" id="manual-form" class="m-0">
+  {# TMT 2026-05-29 dueña: 'haya un final view antes de apretar conciliar y
+     display como cambiarian los movimientos'. El form ahora apunta a
+     /banco-v2/preview en lugar de manual/confirmar. El preview muestra
+     antes/después y de ahí se confirma el match real. #}
+  <form method="POST" action="{{ url_for('conciliacion.banco_preview') }}" id="manual-form" class="m-0">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
     <input type="hidden" name="real_ids" id="manual-real-ids" value="">
-    {# TMT 2026-05-29: además del idx, mandamos firmas (fecha|doc|monto|tipo)
-       por mov real seleccionado. El backend las usa como fallback durable
-       cuando el matcher re-corrido cambia el orden de real_only. #}
     <input type="hidden" name="real_sigs" id="manual-real-sigs" value="">
     <input type="hidden" name="hist_ids" id="manual-hist-ids" value="">
     <input type="hidden" name="bancsis_ids" id="manual-bancsis-ids" value="">
@@ -210,19 +211,11 @@
     btn.addEventListener('click', function(){
       var b = read('banco'), p = read('programa');
       if (!b.count || !p.count){ return; }
-      var diff = b.total - p.total;
-      if (Math.abs(diff) > 0.01){
-        if (!confirm('Atención: los totales no cuadran (diferencia $'+diff.toFixed(2)+'). ¿Conciliar de todas formas?')) return;
-      }
-      var preview = 'Vas a conciliar:\n\n';
-      preview += '  Banco:    ' + b.count + ' movs por $'+b.total.toFixed(2)+'\n';
-      preview += '  Programa: ' + p.count + ' movs por $'+p.total.toFixed(2)+'\n';
-      if (Math.abs(diff) > 0.01) preview += '\n  Diferencia: $'+diff.toFixed(2)+'\n';
-      preview += '\n¿Confirmar?';
-      if (!confirm(preview)) return;
-      // Anti-double-submit
+      // TMT 2026-05-29: sacamos los confirm() dialogs del browser. El preview
+      // (/banco-v2/preview) ya muestra antes/después y warnings — confirmar
+      // ahí es la garantía. Acá solo poblamos hidden fields y submitimos.
       btn.disabled = true;
-      btn.textContent = 'Procesando…';
+      btn.textContent = 'Generando preview…';
       document.getElementById('manual-real-ids').value = b.ids.join(',');
       document.getElementById('manual-real-sigs').value = (b.sigs||[]).join('||');
       document.getElementById('manual-hist-ids').value = b.histIds.join(',');

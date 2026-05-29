@@ -325,6 +325,215 @@ def banco_abrir_vacia():
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
 
 
+# ─── Preview antes de confirmar match (tab Manual) ────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/preview", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_preview():
+    """Vista previa de un match antes de confirmarlo.
+
+    TMT 2026-05-29 dueña: 'necesito que haya un final view antes de
+    apretar conciliar y display como cambiarian los movimientos'.
+
+    Recibe los IDs/firmas que mandó el tab Manual, resuelve los items,
+    valida signos/montos, y muestra ANTES vs DESPUÉS del balance Pichincha
+    junto con la lista de side-effects que se aplicarán. La confirmación
+    final POSTea al endpoint manual/confirmar con los mismos campos.
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion or sesion.get("cerrada_en"):
+        flash("Sesión inválida o cerrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+    no_banco = _BANCO_PICHINCHA
+
+    real_ids_csv = (request.form.get("real_ids") or "").strip()
+    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
+    hist_ids_csv = (request.form.get("hist_ids") or "").strip()
+    bancsis_ids_csv = (request.form.get("bancsis_ids") or "").strip()
+    try:
+        real_idxs = [int(x) for x in real_ids_csv.split(",") if x.strip()]
+        hist_ids = [int(x) for x in hist_ids_csv.split(",") if x.strip()]
+        bancsis_ids = [int(x) for x in bancsis_ids_csv.split(",") if x.strip()]
+    except ValueError:
+        flash("IDs inválidos.", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+    real_sigs = [s for s in real_sigs_csv.split("||") if s.strip()]
+
+    # Resolver reales por firma (mismo método que manual_confirmar).
+    movs = _sesion.cargar_movs(sesion)
+    real_subset = []
+    if real_sigs:
+        sig_a_mov: dict[str, object] = {}
+        for m in movs:
+            key = "|".join([
+                m.fecha.isoformat() if m.fecha else "",
+                m.documento or "",
+                f"{float(m.monto or 0):.2f}",
+                m.tipo or "",
+            ])
+            sig_a_mov[key] = m
+        real_subset = [sig_a_mov[s] for s in real_sigs if s in sig_a_mov]
+
+    # Resolver históricos.
+    hist_rows = []
+    if hist_ids:
+        try:
+            hist_rows = _db.fetch_all(
+                """
+                SELECT id, fecha, concepto, documento, monto, tipo
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE id = ANY(%s)
+                """,
+                (hist_ids,),
+            ) or []
+        except Exception:
+            hist_rows = []
+
+    # Resolver BANCSIS.
+    bancsis_rows = []
+    if bancsis_ids:
+        try:
+            bancsis_rows = _db.fetch_all(
+                """
+                SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.importe,
+                       tb.concepto, tb.prov, tb.numreferencia,
+                       COALESCE(
+                         (SELECT nombre FROM scintela.cliente
+                           WHERE codigo_cli = tb.prov LIMIT 1), ''
+                       ) AS prov_nombre
+                  FROM scintela.transacciones_bancarias tb
+                 WHERE tb.id_transaccion = ANY(%s)
+                 ORDER BY tb.fecha, tb.id_transaccion
+                """,
+                (bancsis_ids,),
+            ) or []
+        except Exception:
+            bancsis_rows = []
+
+    # Validar signos.
+    import bank_helpers as _bh
+    _DOCS_CRED = ("DE", "TR", "XX", "NC", "IN", "AC")
+    def _sign_bancsis(doc: str, imp: float) -> int:
+        return 1 if _bh._signed_delta(doc, imp) >= 0 else -1
+    def _sign_real(tipo: str) -> int:
+        return 1 if (tipo or "").upper() == "C" else -1
+
+    warnings: list[str] = []
+    can_confirm = True
+
+    banco_count = len(real_subset) + len(hist_rows)
+    programa_count = len(bancsis_rows)
+
+    if banco_count == 0 or programa_count == 0:
+        flash("Faltan items de un lado.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    # Totales por lado.
+    banco_total_signed = sum(
+        _sign_real(m.tipo) * float(m.monto or 0) for m in real_subset
+    ) + sum(
+        (1 if (h.get("tipo") or "").upper() == "C" else -1) * float(h.get("monto") or 0)
+        for h in hist_rows
+    )
+    programa_total_signed = sum(
+        _bh._signed_delta((b.get("documento") or ""), float(b.get("importe") or 0))
+        for b in bancsis_rows
+    )
+
+    diff_total = round(banco_total_signed - programa_total_signed, 2)
+    if abs(banco_total_signed) > 0.01 and abs(programa_total_signed) > 0.01:
+        signo_banco = 1 if banco_total_signed > 0 else -1
+        signo_prog = 1 if programa_total_signed > 0 else -1
+        if signo_banco != signo_prog:
+            warnings.append(
+                f"Signos opuestos — banco {'+' if signo_banco > 0 else '−'} vs "
+                f"programa {'+' if signo_prog > 0 else '−'}. Conciliar entradas con "
+                f"salidas crea diferencia."
+            )
+            can_confirm = False
+    if abs(diff_total) > 0.01:
+        warnings.append(
+            f"Montos no cuadran — diferencia ${diff_total:+,.2f}. "
+            f"Si lo confirmás igual, esa diferencia queda como gap permanente."
+        )
+
+    # Cálculo del balance ANTES y DESPUÉS.
+    balance_before = _bp.calcular(no_banco)
+
+    # Deltas a aplicar.
+    delta_pc_cred = 0.0   # créditos PC que dejan de ser pendientes
+    delta_pc_deb = 0.0    # débitos PC que dejan de ser pendientes
+    for b in bancsis_rows:
+        doc = (b.get("documento") or "").upper()
+        imp = float(b.get("importe") or 0)
+        d = _bh._signed_delta(doc, imp)
+        if d >= 0:
+            delta_pc_cred += d
+        else:
+            delta_pc_deb += -d  # storage convention: debits positivos
+
+    delta_banco_cred = 0.0
+    delta_banco_deb = 0.0
+    for h in hist_rows:
+        m = float(h.get("monto") or 0)
+        t = (h.get("tipo") or "").upper()
+        if t == "C":
+            delta_banco_cred += m
+        else:
+            delta_banco_deb += m
+
+    n_after_pc = max(0, int(balance_before.get("n_pendientes_conciliar") or 0) - len(bancsis_rows))
+    n_after_banco = max(0, int(balance_before.get("n_pendientes") or 0) - len(hist_rows))
+
+    pc_cred_after = round(float(balance_before.get("pendientes_pc_creditos") or 0) - delta_pc_cred, 2)
+    pc_deb_after = round(float(balance_before.get("pendientes_pc_debitos") or 0) - delta_pc_deb, 2)
+    pc_neto_after = round(pc_cred_after - pc_deb_after, 2)
+    saldo_si_concilio_after = round(float(balance_before.get("saldo") or 0) - pc_neto_after, 2)
+
+    banco_cred_after = round(float(balance_before.get("pendientes_banco_creditos") or 0) - delta_banco_cred, 2)
+    banco_deb_after = round(float(balance_before.get("pendientes_banco_debitos") or 0) - delta_banco_deb, 2)
+    banco_neto_after = round(banco_cred_after - banco_deb_after, 2)
+    saldo_banco_esperado_after = round(saldo_si_concilio_after + banco_neto_after, 2)
+
+    balance_after = {
+        "saldo": float(balance_before.get("saldo") or 0),
+        "pendientes_pc_creditos": pc_cred_after,
+        "pendientes_pc_debitos": pc_deb_after,
+        "pendientes_conciliar_neto": pc_neto_after,
+        "n_pendientes_conciliar": n_after_pc,
+        "saldo_si_concilio_todo": saldo_si_concilio_after,
+        "pendientes_banco_creditos": banco_cred_after,
+        "pendientes_banco_debitos": banco_deb_after,
+        "neto_pendientes": banco_neto_after,
+        "n_pendientes": n_after_banco,
+        "saldo_banco_esperado": saldo_banco_esperado_after,
+    }
+
+    return render_template(
+        "conciliacion/banco_v2_preview.html",
+        sesion=sesion,
+        balance_before=balance_before,
+        balance_after=balance_after,
+        real_subset=real_subset,
+        hist_rows=hist_rows,
+        bancsis_rows=bancsis_rows,
+        banco_total_signed=banco_total_signed,
+        programa_total_signed=programa_total_signed,
+        diff_total=diff_total,
+        warnings=warnings,
+        can_confirm=can_confirm,
+        # Pass-through para que el submit final repita exactamente.
+        real_ids_csv=real_ids_csv,
+        real_sigs_csv=real_sigs_csv,
+        hist_ids_csv=hist_ids_csv,
+        bancsis_ids_csv=bancsis_ids_csv,
+        sesion_id=sesion_id,
+    )
+
+
 # ─── Auditar diferencia (root cause de la brecha PC vs banco real) ───
 
 
