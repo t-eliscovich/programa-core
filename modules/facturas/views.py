@@ -512,6 +512,70 @@ def diag_cartera():
     }
 
 
+@facturas_bp.route("/facturas/debug-match/<int:numf>")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def debug_match_factura(numf: int):
+    """Debug rápido: para un numf específico, mostrar qué hay en PC
+    y qué match-keys produce, y qué dice Asinfo para esa misma factura.
+    """
+    from modules.asinfo import service as _asinfo_service
+    from modules.asinfo import aliases as _aliases
+    from datetime import date as _date, timedelta as _td
+    pc = db.fetch_all(
+        """SELECT id_factura, fecha, codigo_cli, kg, importe, abono, saldo,
+                  stat, tipo, numf, numf_completo
+             FROM scintela.factura
+            WHERE numf = %s
+            ORDER BY fecha DESC""",
+        (numf,),
+    ) or []
+    pc_norm = []
+    for r in pc:
+        f = r.get("fecha")
+        f_iso = f.isoformat() if hasattr(f, "isoformat") else str(f)[:10]
+        imp = float(r.get("importe") or 0)
+        cli = (r.get("codigo_cli") or "").strip().upper()
+        pc_norm.append({
+            "id_factura": r.get("id_factura"),
+            "fecha": f_iso,
+            "codigo_cli_raw": r.get("codigo_cli"),
+            "codigo_cli_norm": cli,
+            "importe_raw": float(r.get("importe") or 0),
+            "importe_cents": int(round(imp * 100)),
+            "stat": r.get("stat"),
+            "tipo": r.get("tipo"),
+            "numf": r.get("numf"),
+            "numf_completo": r.get("numf_completo"),
+            "match2_key": [r.get("numf"), cli],
+            "match3_key": [cli, f_iso, int(round(imp * 100))],
+        })
+    # Buscar en Asinfo (últimos 60 días, esa factura).
+    try:
+        hoy = _date.today()
+        asinfo_rows = _asinfo_service.facturas_periodo(hoy - _td(days=60), hoy) or []
+    except Exception as e:
+        asinfo_rows = [{"error": str(e)}]
+    ai_match = [r for r in asinfo_rows if str(r.get("numero", "")).endswith(str(numf))]
+    ai_norm = []
+    for r in ai_match:
+        usd_a = float(r.get("usd") or 0)
+        cli_a = (r.get("cliente_codigo") or "").strip().upper()
+        cli_p = _aliases.to_pc(cli_a)
+        ai_norm.append({
+            "numero": r.get("numero"),
+            "tipo": r.get("tipo"),
+            "fecha": str(r.get("fecha"))[:10] if r.get("fecha") else None,
+            "cli_asinfo": cli_a,
+            "cli_pc_esperado": cli_p,
+            "usd": usd_a,
+            "usd_cents": int(round(usd_a * 100)),
+            "match2_key": [numf, cli_p],
+            "match3_key": [cli_p, str(r.get("fecha"))[:10] if r.get("fecha") else None, int(round(usd_a * 100))],
+        })
+    return {"pc": pc_norm, "asinfo": ai_norm, "aliases": _aliases.todos()}
+
+
 @facturas_bp.route("/facturas/desde-asinfo")
 @requiere_login
 @requiere_permiso("facturas.ver")
