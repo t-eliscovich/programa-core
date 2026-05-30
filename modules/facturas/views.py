@@ -644,13 +644,17 @@ def desde_asinfo():
     # lógica de la factura — match más fuerte que solo numf_completo string.
     pc_rows = db.fetch_all(
         """
-        SELECT numf_completo, numf, codigo_cli, importe
+        SELECT numf_completo, numf, codigo_cli, importe, fecha
           FROM scintela.factura
          WHERE fecha BETWEEN %s AND %s
-           AND stat <> 'X'
         """,
         (desde, hasta),
     ) or []
+    # TMT 2026-05-29 dueña 'tenes que arreglar todo': antes excluíamos
+    # stat='X' (anuladas). Pero si Asinfo aún muestra la factura como viva
+    # y PC la cargó y después la anuló, NO es "falta cargar" — ya está
+    # cargada (anulada). Incluir todas. La divergencia "Asinfo dice viva,
+    # PC dice anulada" se ve en otro lado (audit de discrepancias).
     pc_numfs_str = {(r.get("numf_completo") or "").strip()
                     for r in pc_rows if r.get("numf_completo")}
     # TMT 2026-05-29 dueña: 'ya agregue siguen siendo muchas'. Las 52 que
