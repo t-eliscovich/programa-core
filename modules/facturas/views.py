@@ -679,7 +679,18 @@ def desde_asinfo():
     # Map (cli_pc, fecha_iso, importe_cents) → True para Match 3 fallback.
     pc_by_cli_fecha_importe: set[tuple[str, str, int]] = set()
     for r in pc_rows:
-        cli_pc = (r.get("codigo_cli") or "").strip().upper()
+        cli_raw = (r.get("codigo_cli") or "").strip().upper()
+        # TMT 2026-05-29 dueña 'sigue habiendo facturas sin match': PC tiene
+        # facturas cargadas con codigo_cli="AJ2" (alias) cuando el cliente real
+        # canonical es "AJO". El alias AJ2→AJO normaliza al canonical. Mismo
+        # del lado Asinfo: cli_pc_esperado = to_pc(cli_asinfo). Si AMBOS se
+        # canonicalizan con to_pc(), matchean aunque PC haya cargado bajo el
+        # código alias.
+        cli_pc_canonical = _aliases.to_pc(cli_raw) if cli_raw else ""
+        # Indexar bajo el canonical Y bajo el raw — algunos aliases podrían
+        # ir solo en una dirección y queremos cubrir ambos casos.
+        cli_keys = {cli_raw, cli_pc_canonical} if cli_pc_canonical else {cli_raw}
+        cli_keys.discard("")
         numf = r.get("numf")
         n = None
         if numf:
@@ -692,15 +703,17 @@ def desde_asinfo():
         n_completo = _extract_numf_local(r.get("numf_completo") or "")
         for cand in (n, n_completo):
             if cand is not None:
-                pc_by_numf_cli.add((cand, cli_pc))
-                pc_by_numf.setdefault(cand, set()).add(cli_pc)
+                for cli_k in cli_keys:
+                    pc_by_numf_cli.add((cand, cli_k))
+                    pc_by_numf.setdefault(cand, set()).add(cli_k)
         # Match 3 fallback: cli + fecha + importe (en centavos).
         try:
             f_ = r.get("fecha")
             f_iso = f_.isoformat() if hasattr(f_, "isoformat") else (str(f_)[:10] if f_ else None)
             imp = float(r.get("importe") or 0)
-            if f_iso and cli_pc:
-                pc_by_cli_fecha_importe.add((cli_pc, f_iso, int(round(imp * 100))))
+            if f_iso:
+                for cli_k in cli_keys:
+                    pc_by_cli_fecha_importe.add((cli_k, f_iso, int(round(imp * 100))))
         except Exception:
             pass
 
