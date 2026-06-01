@@ -24,6 +24,8 @@ omit =
     .pytest_cache/*
     .ruff_cache/*
     .venv/*
+    */site-packages/*
+    */dist-packages/*
     __pycache__/*
     data/*
     docs/*
