@@ -115,8 +115,8 @@ make test
 make ci
 ```
 
-Ver `docs/TESTING_COVERAGE.md` para el alcance de coverage, la política de
-ratchet y los comandos de DB/CI.
+Ver `docs/TESTING_COVERAGE.md` para el alcance del gate de coverage al 100% y
+los comandos de DB/CI.
 
 ## Estructura
 

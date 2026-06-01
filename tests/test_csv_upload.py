@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from csv_upload import (
+    ResultadoUpload,
     parse_bool,
     parse_fecha,
     parse_int,
@@ -35,6 +36,7 @@ def test_parse_fecha_vacio_es_none():
 
 def test_parse_fecha_invalida_es_none():
     assert parse_fecha("basura") is None
+    assert parse_fecha("31/02/2026") is None
 
 
 def test_parse_monto_formatos_varios():
@@ -90,6 +92,11 @@ def test_plantilla_csv_formato_separador():
     # Primera línea es header, segunda una fila de ejemplo vacía
     assert lines[0].count(";") == 1  # separador ; entre dos cols
     assert "A" in lines[0] and "B" in lines[0]
+
+
+def test_resultado_upload_total_suma_ok_y_error():
+    res = ResultadoUpload(ok=2, error=3)
+    assert res.total == 5
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +165,48 @@ def test_procesar_csv_con_bom():
     assert res.ok == 1
 
 
+def test_procesar_csv_fallback_cp1252():
+    created = []
+
+    def _crear(usuario, **kw):
+        created.append(kw)
+
+    raw = b"Fecha;C\xf3digo;Importe;N\n17/04/2026;JTX;100;\n"
+    res = procesar_csv(raw, _COLS, _crear)
+    assert res.ok == 1
+    assert created[0]["codigo_cli"] == "JTX"
+
+
 def test_procesar_csv_coma_separador():
     def _crear(usuario, **kw):
         return None
     raw = b"Fecha,Codigo,Importe,N\n17/04/2026,JTX,100,\n"
     res = procesar_csv(raw, _COLS, _crear)
     assert res.ok == 1
+
+
+def test_procesar_csv_usa_converter_custom():
+    created = []
+
+    def _crear(usuario, **kw):
+        created.append(kw)
+
+    raw = b"Fecha;Codigo;Importe;N\n17/04/2026;jtx;100;\n"
+    res = procesar_csv(raw, _COLS, _crear, converters={"codigo_cli": str.upper})
+    assert res.ok == 1
+    assert created[0]["codigo_cli"] == "JTX"
+
+
+def test_procesar_csv_campo_bool_por_nombre():
+    created = []
+
+    def _crear(usuario, **kw):
+        created.append(kw)
+
+    cols = [("pagada", "Pagada", True)]
+    res = procesar_csv(b"Pagada\nsi\nno\n", cols, _crear)
+    assert res.ok == 2
+    assert [row["pagada"] for row in created] == [True, False]
 
 
 def test_procesar_csv_monto_invalido_linea_falla_resto_sigue():
@@ -176,6 +219,17 @@ def test_procesar_csv_monto_invalido_linea_falla_resto_sigue():
     assert res.ok == 1
     assert res.error == 1
     assert "monto inválido" in res.detalles[0]["mensaje"].lower()
+
+
+def test_procesar_csv_crear_levanta_error_generico_se_cuenta_como_error():
+    def _crear(usuario, **kw):
+        raise RuntimeError("db offline")
+
+    raw = b"Fecha;Codigo;Importe;N\n17/04/2026;BAD;100;\n"
+    res = procesar_csv(raw, _COLS, _crear)
+    assert res.ok == 0
+    assert res.error == 1
+    assert "RuntimeError: db offline" in res.detalles[0]["mensaje"]
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,22 @@
 [run]
 branch = True
-source = .
 parallel = True
 relative_files = True
+include =
+    config/roles.py
+    csv_upload.py
+    error_messages.py
+    exports.py
+    extensions.py
+    ip_allowlist.py
+    modules/_lib/formulas_db.py
+    modules/conciliacion/matcher.py
+    modules/costos_ot/service.py
+    modules/diag/views.py
+    modules/healthz/views.py
+    modules/recientes/queries.py
+    modules/tintura/service.py
+    modules/two_fa/core.py
 omit =
     .agents/*
     .claude/*

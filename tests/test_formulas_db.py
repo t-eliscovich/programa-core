@@ -61,6 +61,24 @@ def test_init_pool_con_url_invalida_degrada_sin_levantar(monkeypatch):
     assert formulas_db.disponible() is False
 
 
+def test_init_pool_con_url_valida_abre_pool(monkeypatch):
+    fake_pool = MagicMock()
+    monkeypatch.setenv("FORMULAS_DATABASE_URL", "postgresql://reader:pw@db/postgres")
+    monkeypatch.setenv("FORMULAS_POOL_MIN", "2")
+    monkeypatch.setenv("FORMULAS_POOL_MAX", "5")
+
+    with patch("modules._lib.formulas_db.pool.SimpleConnectionPool", return_value=fake_pool) as ctor:
+        formulas_db.init_pool()
+
+    ctor.assert_called_once_with(
+        minconn=2,
+        maxconn=5,
+        dsn="postgresql://reader:pw@db/postgres",
+    )
+    assert formulas_db._pool is fake_pool
+    assert formulas_db.disponible() is True
+
+
 def test_init_pool_es_idempotente(monkeypatch):
     """Re-llamar init_pool() con un pool ya abierto no abre uno segundo."""
     fake_pool = MagicMock()
@@ -88,6 +106,11 @@ def test_fetch_one_sin_pool_devuelve_none():
 def test_healthcheck_sin_pool_devuelve_false():
     assert formulas_db._pool is None
     assert formulas_db.healthcheck() is False
+
+
+def test_conn_sin_pool_entrega_none():
+    with formulas_db._conn() as conn:
+        assert conn is None
 
 
 # ---------------------------------------------------------------------------

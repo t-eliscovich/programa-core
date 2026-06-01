@@ -152,6 +152,11 @@ def test_referencia_matches_en_concepto():
     assert _referencia_matches("1001", linea) is True
 
 
+def test_referencia_matches_no_cheque_vacio_no_matchea():
+    linea = BancoLinea(date(2026, 4, 17), "CHEQUE 1001 DEVUELTO", "1001", Decimal(0), Decimal(0), "test")
+    assert _referencia_matches("", linea) is False
+
+
 # ---------------------------------------------------------------------------
 # matchear() — integración parser + matcher
 # ---------------------------------------------------------------------------
@@ -193,6 +198,16 @@ def test_matchear_cheque_reciente_sin_match_no_es_sospechoso():
     result = matchear([], cheques, dias_sospecha=3, hoy=hoy)
     assert len(result.sospechosos) == 0
     assert len(result.matches) == 0
+
+
+def test_matchear_cheque_sin_fecha_valida_no_es_sospechoso():
+    cheques = [{
+        "id_cheque": 99, "no_cheque": "9999", "importe": 700.0,
+        "fechad": "2026-04-01", "codigo_cli": "MOD",
+    }]
+    result = matchear([], cheques, dias_sospecha=3, hoy=date(2026, 4, 17))
+    assert result.matches == []
+    assert result.sospechosos == []
 
 
 def test_matchear_rebote_marca_es_debito_true():

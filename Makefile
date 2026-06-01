@@ -8,7 +8,7 @@ PYTHON ?= python3
 VENV   ?= .venv
 PIP    := $(VENV)/bin/pip
 PY     := $(VENV)/bin/python
-COVERAGE_FAIL_UNDER ?= 0
+COVERAGE_FAIL_UNDER ?= 100
 
 help:
 	@echo "Targets disponibles:"
@@ -52,15 +52,15 @@ run:
 test: test-unit
 
 test-unit:
-	$(PY) -m pytest -q -m "not db" --cov=. --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m pytest -q -m "not db" --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
 
 test-db:
-	$(PY) -m pytest -q -m db --cov=. --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m pytest -q -m db --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
 
 test-coverage:
 	$(PY) -m coverage erase
-	$(PY) -m pytest -q -m "not db" --cov=. --cov-report= --cov-append
-	$(PY) -m pytest -q -m db --cov=. --cov-report= --cov-append
+	$(PY) -m pytest -q -m "not db" --cov --cov-report= --cov-append
+	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
 	$(PY) -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage xml
 	$(PY) -m coverage html

@@ -19,7 +19,6 @@ import pytest
 from modules.tintura import service
 from modules.tintura.service import StockProducto, TinturadoOrden
 
-
 # ---------------------------------------------------------------------------
 # tinturado_resumen
 # ---------------------------------------------------------------------------
@@ -149,6 +148,13 @@ def test_tinturado_resumen_fecha_invalida_queda_none():
         o = service.tinturado_resumen()[0]
     assert o.fecha is None
     assert o.fecha_terminado is None
+
+
+def test_tintura_parsers_toleran_tipos_y_numeros_invalidos():
+    assert service._parse_ddmmyyyy(None) is None
+    assert service._parse_iso(date(2026, 5, 10)) == date(2026, 5, 10)
+    assert service._f("no-numero", default=7.5) == 7.5
+    assert service._fo("no-numero") is None
 
 
 def test_tinturado_resumen_to_dict_serializa_fechas():

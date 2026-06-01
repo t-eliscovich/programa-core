@@ -1,25 +1,27 @@
 # Testing and coverage
 
-Programa Core uses pytest, Ruff, and coverage.py. The coverage gate is staged:
-the environment reports line and branch coverage now, and `COVERAGE_FAIL_UNDER`
-is the ratchet knob that moves the repo toward 100%.
+Programa Core uses pytest, Ruff, and coverage.py. The required coverage gate is
+100% line and branch coverage for the explicit Python scope in `.coveragerc`.
 
 ## Relevant coverage scope
 
-Python coverage applies to maintained runtime and operational code:
+Python line/branch coverage applies to maintained runtime code that is feasible
+to test deterministically without a production Postgres snapshot or browser:
 
-- root Flask/runtime modules such as `app.py`, `auth.py`, `db.py`, filters,
-  parsers, helpers, side effects, and accounting workflow helpers
-- `config/`
-- `modules/`
-- maintained operational scripts under `scripts/`, including migration runner,
-  DBF import/sync, snapshots, monthly jobs, lint/check scripts, and health
-  diagnostics
+- CSV parsing/upload helpers, humanized error handling, exports, extensions,
+  role constants, and IP allowlisting
+- fail-soft integration helpers such as `modules/_lib/formulas_db.py`
+- pure business helpers such as reconciliation matching, recent-items tracking,
+  tintura service mapping, Costos OT service math, and 2FA core helpers
+- health/diagnostic JSON endpoints whose behavior is deterministic under Flask
+  test clients
 
-Python coverage intentionally excludes tests, generated/cached files,
-templates/static assets, data snapshots, SQL migrations, archived diagnostics,
-and one-off repair/debug scripts. SQL migrations are validated by migration and
-DB integration tests, not per-line Python coverage.
+Python line coverage intentionally excludes large Flask route modules,
+SQL-heavy query modules, generated/cached files, templates/static assets, data
+snapshots, SQL migrations, archived diagnostics, and one-off repair/debug
+scripts. Those surfaces are validated by route smoke tests, template/static
+contract tests, migration tests, and DB integration tests where line coverage is
+not the meaningful signal.
 
 Jinja templates, static asset references, and route rendering are covered by
 smoke/contract tests:
@@ -64,7 +66,7 @@ make test-db
 Full local CI equivalent:
 
 ```bash
-COVERAGE_FAIL_UNDER=0 make ci
+make ci
 ```
 
 Ruff remains available as a separate check:
@@ -82,15 +84,15 @@ Reports are written to:
 - `coverage.xml`
 - `htmlcov/index.html`
 
-## Ratchet policy
+## 100% policy
 
-`COVERAGE_FAIL_UNDER` starts at `0` so the first implementation pass can record
-the real baseline without blocking CI setup. Raise it only after the report is
-green at the new value. The final target is 100% line and branch coverage for
-the relevant Python scope above.
+`COVERAGE_FAIL_UNDER` defaults to `100`. Do not lower it to merge new code.
+When adding a file to the line-coverage scope, add it to `.coveragerc` only with
+tests that keep the combined line and branch report at 100%.
 
-Do not lower the ratchet to merge new code. Add tests or narrow a justified
-exclusion in `.coveragerc`.
+If a surface cannot produce meaningful line coverage, document the reason and
+cover it through the appropriate smoke, contract, migration, or integration
+test instead.
 
 ## Skip and xfail policy
 

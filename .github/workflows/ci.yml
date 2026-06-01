@@ -38,7 +38,7 @@ jobs:
       DB_PASSWORD: app_local_only
       SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
       DISABLE_BOOT_SYNC: "1"
-      COVERAGE_FAIL_UNDER: "0"
+      COVERAGE_FAIL_UNDER: "100"
 
     steps:
       - name: Checkout

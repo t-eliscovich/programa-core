@@ -87,6 +87,16 @@ def test_integraciones_metabase_login_falla(app):
     assert body["metabase"]["reachable"] is False
 
 
+def test_integraciones_metabase_login_levanta_se_absorbe(app):
+    with patch.object(formulas_db, "disponible", return_value=False), \
+         patch.object(metabase_client, "disponible", return_value=True), \
+         patch.object(metabase_client, "_login", side_effect=RuntimeError("expired")):
+        r = app.test_client().get("/healthz/integraciones")
+    body = r.get_json()
+    assert r.status_code == 200
+    assert body["metabase"]["reachable"] is False
+
+
 def test_integraciones_no_expone_credenciales(app):
     """La respuesta no debería incluir URLs / usernames / passwords."""
     with patch.object(formulas_db, "disponible", return_value=True), \

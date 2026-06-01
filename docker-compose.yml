@@ -77,17 +77,17 @@ services:
       DB_PASSWORD: app_local_only
       SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
       DISABLE_BOOT_SYNC: "1"
-      COVERAGE_FAIL_UNDER: "0"
+      COVERAGE_FAIL_UNDER: "100"
     command:
       - python
       - -m
       - pytest
       - -q
-      - --cov=.
+      - --cov
       - --cov-report=term-missing
       - --cov-report=xml
       - --cov-report=html
-      - --cov-fail-under=0
+      - --cov-fail-under=100
     depends_on:
       db:
         condition: service_healthy
