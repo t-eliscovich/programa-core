@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend Staff Reviewer"
+  short_description: "Backend maintainability and boundary review"
+  default_prompt: "Use $backend-staff-reviewer as a direct audit or engineer workflow lens for this Programa Core backend surface."
