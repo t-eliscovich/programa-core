@@ -70,11 +70,6 @@ services:
     profiles: ["test"]
     environment:
       ENV: development
-      DB_HOST: db
-      DB_PORT: "5432"
-      DB_NAME: programa_core
-      DB_USER: app
-      DB_PASSWORD: app_local_only
       SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
       DISABLE_BOOT_SYNC: "1"
       COVERAGE_FAIL_UNDER: "100"
@@ -83,14 +78,13 @@ services:
       - -m
       - pytest
       - -q
+      - -m
+      - not db
       - --cov
       - --cov-report=term-missing
       - --cov-report=xml
       - --cov-report=html
       - --cov-fail-under=100
-    depends_on:
-      db:
-        condition: service_healthy
 
 volumes:
   pgdata:

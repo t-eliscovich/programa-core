@@ -111,7 +111,7 @@ python scripts/procesa_provisiones_mensual.py
 
 # Tests y coverage
 make test
-# Gate completo con Postgres:
+# Gate de CI local; los tests @db corren sólo si hay dump legacy restaurado:
 make ci
 ```
 

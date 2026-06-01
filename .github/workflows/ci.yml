@@ -14,28 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: programa_core_test
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app_local_only
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U app -d programa_core_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-
     env:
       ENV: development
-      DB_HOST: 127.0.0.1
-      DB_PORT: "5432"
-      DB_NAME: programa_core_test
-      DB_USER: app
-      DB_PASSWORD: app_local_only
       SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
       DISABLE_BOOT_SYNC: "1"
       COVERAGE_FAIL_UNDER: "100"

@@ -18,9 +18,9 @@ help:
 	@echo "  run            - correr el app localmente (launcher.sh)"
 	@echo "  test           - correr unit coverage"
 	@echo "  test-unit      - correr pytest sin @db con coverage"
-	@echo "  test-db        - correr pytest @db contra Postgres real"
-	@echo "  test-coverage  - correr unit + db y generar reporte combinado"
-	@echo "  ci             - correr el gate local completo"
+	@echo "  test-db        - correr pytest @db contra Postgres con dump legacy"
+	@echo "  test-coverage  - correr unit + db opcional y generar reporte combinado"
+	@echo "  ci             - correr el gate local de coverage"
 	@echo "  lint           - sólo ruff"
 	@echo "  fmt            - ruff --fix"
 	@echo ""
@@ -55,7 +55,7 @@ test-unit:
 	$(PY) -m pytest -q -m "not db" --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
 
 test-db:
-	$(PY) -m pytest -q -m db --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m pytest -q -m db
 
 test-coverage:
 	$(PY) -m coverage erase

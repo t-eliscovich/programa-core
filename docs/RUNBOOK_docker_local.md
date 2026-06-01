@@ -75,11 +75,12 @@ que seteaste en el paso 3. Debe redirigir al dashboard del Dueño.
 
 ```bash
 docker compose run --rm test
-# expected: pytest + coverage report al 100%. Los tests @pytest.mark.db usan
-#           el Postgres del compose porque DB_HOST=db ya viene configurado.
+# expected: pytest sin @db + coverage report al 100%.
 ```
 
-Para correr sólo los tests `@pytest.mark.db`:
+Para correr sólo los tests `@pytest.mark.db`, primero restaurá el dump legacy
+en el Postgres del compose. Una DB vacía no sirve porque las migraciones son
+overlays sobre ese dump.
 
 ```bash
 docker compose run --rm \

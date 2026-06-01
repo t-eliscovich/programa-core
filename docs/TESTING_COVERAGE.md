@@ -51,7 +51,10 @@ Coverage without DB-marked tests:
 make test-unit
 ```
 
-DB-backed coverage requires Postgres and the usual test env vars:
+DB-backed tests require Postgres with the legacy dBase dump restored before
+running Programa Core migrations. A blank Postgres database is not enough
+because the migration chain currently overlays the dump instead of creating the
+full base `scintela.*` schema from scratch.
 
 ```bash
 DB_HOST=127.0.0.1 \
@@ -76,7 +79,9 @@ make lint
 ```
 
 The current CI workflow runs Ruff as a non-blocking legacy check until the
-existing lint backlog is cleaned up. The required gate is pytest + coverage.
+existing lint backlog is cleaned up. The required CI gate is deterministic
+pytest + coverage; `@pytest.mark.db` tests skip unless a DB with the restored
+legacy dump is explicitly configured.
 
 Reports are written to:
 
@@ -107,5 +112,7 @@ eventually move to one of three states:
 - deleted because the behavior is obsolete
 - converted to a narrower explicit `xfail` on only the still-invalid cases
 
-DB integration tests are marked `@pytest.mark.db`; CI provides Postgres and
-runs them as part of the required gate.
+DB integration tests are marked `@pytest.mark.db`. They are required for
+changes touching migrations or SQL-heavy flows, but they need a restored legacy
+dump. Until the repo has a sanitized dump fixture, CI does not treat an empty
+Postgres service as a valid DB integration environment.
