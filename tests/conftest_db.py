@@ -5,8 +5,11 @@ pueden correr con:
 
     pytest -m db
 
-El fixture detecta un Postgres real vía env `DB_HOST`, pero sólo corre si esa
-DB tiene restaurado el dump legacy que las migraciones esperan.
+El fixture detecta un Postgres real via env `DB_HOST`, pero solo corre si esa
+DB tiene restaurado el dump legacy que las migraciones esperan. Para una DB de
+test vacia, usar:
+
+    make restore-test-db
 """
 from __future__ import annotations
 
@@ -85,7 +88,8 @@ def _ready_db_dsn() -> str | None:
     if missing:
         pytest.skip(
             "Postgres disponible, pero no tiene el dump base legacy requerido "
-            f"para migraciones: faltan {', '.join(missing)}."
+            "para migraciones. Restauralo con `make restore-test-db`; "
+            f"faltan {', '.join(missing)}."
         )
     return dsn
 
@@ -105,7 +109,7 @@ def real_pg_dsn():
     pytest.skip(
         "No hay Postgres disponible en DB_HOST. "
         "Configurá DB_HOST/DB_NAME/DB_USER/DB_PASSWORD con una DB que tenga "
-        "restaurado el dump legacy."
+        "restaurado el dump legacy (`make restore-test-db` en una DB test)."
     )
 
 

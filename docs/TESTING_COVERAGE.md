@@ -51,10 +51,24 @@ Coverage without DB-marked tests:
 make test-unit
 ```
 
-DB-backed tests require Postgres with the legacy dBase dump restored before
-running Programa Core migrations. A blank Postgres database is not enough
-because the migration chain currently overlays the dump instead of creating the
-full base `scintela.*` schema from scratch.
+DB-backed tests require Postgres with the legacy dBase baseline restored before
+running Programa Core migrations. The repo includes a sanitized, test-only
+minimal baseline at `tests/fixtures/legacy_minimal_dump.sql`; it contains table
+shape only, not production data.
+
+Restore a local test database first:
+
+```bash
+DB_HOST=127.0.0.1 \
+DB_PORT=5432 \
+DB_NAME=programa_core_test \
+DB_USER=app \
+DB_PASSWORD=app_local_only \
+SECRET_KEY=test-secret-key-must-be-at-least-32-chars-long-okay \
+make restore-test-db
+```
+
+Then run the DB-backed lane:
 
 ```bash
 DB_HOST=127.0.0.1 \
@@ -80,8 +94,8 @@ make lint
 
 The current CI workflow runs Ruff as a non-blocking legacy check until the
 existing lint backlog is cleaned up. The required CI gate is deterministic
-pytest + coverage; `@pytest.mark.db` tests skip unless a DB with the restored
-legacy dump is explicitly configured.
+pytest + coverage; CI restores the sanitized legacy baseline into a disposable
+Postgres service before running `@pytest.mark.db`.
 
 Reports are written to:
 
@@ -113,6 +127,5 @@ eventually move to one of three states:
 - converted to a narrower explicit `xfail` on only the still-invalid cases
 
 DB integration tests are marked `@pytest.mark.db`. They are required for
-changes touching migrations or SQL-heavy flows, but they need a restored legacy
-dump. Until the repo has a sanitized dump fixture, CI does not treat an empty
-Postgres service as a valid DB integration environment.
+changes touching migrations or SQL-heavy flows, and CI exercises them against
+the sanitized legacy baseline plus the full migration chain.

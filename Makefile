@@ -2,7 +2,7 @@
 #
 # Uso: `make <target>`. Compatible con macOS, Linux, y WSL.
 
-.PHONY: help setup migrate seed run test test-unit test-db test-coverage ci lint fmt sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
+.PHONY: help setup migrate seed run test test-unit test-db restore-test-db test-coverage ci lint fmt sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
 
 PYTHON ?= python3
 VENV   ?= .venv
@@ -19,6 +19,7 @@ help:
 	@echo "  test           - correr unit coverage"
 	@echo "  test-unit      - correr pytest sin @db con coverage"
 	@echo "  test-db        - correr pytest @db contra Postgres con dump legacy"
+	@echo "  restore-test-db - resetear DB test con dump legacy sanitizado"
 	@echo "  test-coverage  - correr unit + db opcional y generar reporte combinado"
 	@echo "  ci             - correr el gate local de coverage"
 	@echo "  lint           - sólo ruff"
@@ -56,6 +57,9 @@ test-unit:
 
 test-db:
 	$(PY) -m pytest -q -m db
+
+restore-test-db:
+	$(PY) scripts/restaurar_test_legacy_dump.py --allow-reset
 
 test-coverage:
 	$(PY) -m coverage erase
