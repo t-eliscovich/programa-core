@@ -109,9 +109,14 @@ python scripts/migrate.py --force 0003
 # actualizar_amortizacion). Idempotente: si ya corrió este mes, sale en 0.
 python scripts/procesa_provisiones_mensual.py
 
-# Tests
-pytest -q
+# Tests y coverage
+make test
+# Gate de CI local; los tests @db corren sólo si hay dump legacy restaurado:
+make ci
 ```
+
+Ver `docs/TESTING_COVERAGE.md` para el alcance del gate de coverage al 100% y
+los comandos de DB/CI.
 
 ## Estructura
 

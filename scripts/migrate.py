@@ -401,7 +401,7 @@ def cmd_force(version: str) -> int:
 # ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Programa Core migration runner")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--status", action="store_true",
@@ -410,7 +410,7 @@ def main() -> int:
                    help="Mostrar qué se ejecutaría sin aplicar nada")
     g.add_argument("--force", metavar="VERSION",
                    help="Re-aplicar una migración ya aplicada (borra su fila)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     # Fail fast if DB env vars are missing.
     for k in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"):

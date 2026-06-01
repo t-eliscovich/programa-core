@@ -114,6 +114,22 @@ def test_ip_invalida_no_permitida(monkeypatch):
     assert ial.ip_permitida_para_rol("Dueño", "") is False
 
 
+def test_client_ip_usa_x_forwarded_for_si_trust_proxy(app, monkeypatch):
+    monkeypatch.setenv("TRUST_PROXY", "1")
+    with app.test_request_context(
+        "/",
+        headers={"X-Forwarded-For": "8.8.8.8, 10.0.0.1"},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        assert ial.client_ip() == "8.8.8.8"
+
+
+def test_client_ip_trust_proxy_sin_header_usa_remote_addr(app, monkeypatch):
+    monkeypatch.setenv("TRUST_PROXY", "true")
+    with app.test_request_context("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}):
+        assert ial.client_ip() == "127.0.0.1"
+
+
 def test_multiples_redes_en_allowlist(monkeypatch):
     monkeypatch.setenv("ROLE_IP_ALLOWLIST_GERENTE",
                        "10.0.0.0/8, 192.168.1.100, 172.16.0.0/12")

@@ -85,11 +85,34 @@ def test_humanize_check_violation():
     assert "rango" in humanize(Fake("check")) or "permitido" in humanize(Fake("check"))
 
 
+def test_humanize_check_violation_por_classname():
+    class CheckViolation(Exception):
+        pass
+
+    assert "rango" in humanize(CheckViolation("check")) or "permitido" in humanize(CheckViolation("check"))
+
+
 def test_humanize_not_null_violation():
     class Fake(Exception):
         pgcode = "23502"
 
     assert "obligatorio" in humanize(Fake("null"))
+
+
+def test_humanize_pgcode_desconocido_usa_fallback_generico():
+    class Fake(Exception):
+        pgcode = "99999"
+
+    msg = humanize(Fake("raw database detail"))
+    assert "soporte" in msg.lower()
+    assert "raw database detail" not in msg
+
+
+def test_humanize_not_null_violation_por_classname():
+    class NotNullViolation(Exception):
+        pass
+
+    assert "obligatorio" in humanize(NotNullViolation("null"))
 
 
 def test_humanize_permission_error():
@@ -131,6 +154,23 @@ def test_filter_humanizar_con_none(app):
     with app.app_context():
         fn = app.jinja_env.filters["humanizar"]
         assert fn(None) == ""
+
+
+def test_flash_exc_flashes_prefix_y_mensaje_humanizado(app):
+    from flask import get_flashed_messages
+
+    from error_messages import flash_exc
+
+    with app.test_request_context("/"):
+        flash_exc("No pude guardar:", ValueError("monto inválido: 'xx'"))
+        messages = get_flashed_messages(with_categories=True)
+
+    assert messages == [
+        (
+            "error",
+            "No pude guardar: El importe 'xx' no es un número válido. Usá formato 1234.56 o 1.234,56.",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

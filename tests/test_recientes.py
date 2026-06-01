@@ -105,6 +105,25 @@ def test_registrar_emite_trim_despues_del_insert(app, rec_db):
     assert "DELETE" in rec_db.executes[1][0]
 
 
+def test_registrar_absorbe_fallo_en_trim(app, monkeypatch):
+    calls = []
+
+    def execute(sql, params=None, conn=None):
+        calls.append((" ".join(sql.split()), params))
+        if "DELETE FROM seguridad.usuario_recientes" in calls[-1][0]:
+            raise RuntimeError("trim failed")
+        return 1
+
+    monkeypatch.setattr(db, "execute", execute)
+    with app.test_request_context("/"):
+        g.user = {"id_usuario": 3}
+        rec.registrar("factura", 100, "Factura 100")
+
+    assert len(calls) == 2
+    assert "ON CONFLICT" in calls[0][0]
+    assert "DELETE FROM seguridad.usuario_recientes" in calls[1][0]
+
+
 # ---------------------------------------------------------------------------
 # listar_recientes()
 # ---------------------------------------------------------------------------

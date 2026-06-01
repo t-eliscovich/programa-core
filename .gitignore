@@ -21,8 +21,12 @@ INTELA.rar
 .tmp_*
 .pytest_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 .tw-build/
 node_modules/
+data/dbase_snapshots/.*.synced
 
 # Skill instructions / secrets
 secrets/

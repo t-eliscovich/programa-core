@@ -19,7 +19,7 @@ def _seed_cliente(conn, codigo_cli: str = "TEST") -> None:
     cur.execute(
         """
         INSERT INTO scintela.cliente (id_cliente, codigo_cli, nombre, stop, pago, cupo, activo)
-        VALUES (DEFAULT, %s, 'Cliente de prueba', 'N', 30, 10000, 1)
+        VALUES (DEFAULT, %s, 'Cliente de prueba', 'N', 30, 10000, TRUE)
         ON CONFLICT (codigo_cli) DO NOTHING
     """,
         (codigo_cli,),
@@ -27,7 +27,7 @@ def _seed_cliente(conn, codigo_cli: str = "TEST") -> None:
 
 
 def _seed_cheque(
-    conn, *, codigo_cli: str, no_cheque: str = "1001", importe: float = 500.0, stat: str = "D"
+    conn, *, codigo_cli: str, no_cheque: str = "1001", importe: float = 500.0, stat: str = "B"
 ) -> int:
     """Inserta un cheque en estado `stat` y devuelve su id."""
     cur = conn.cursor()
@@ -53,7 +53,7 @@ def test_reversar_cheque_depositado_anota_observacion_pero_no_aplica_stop(real_d
     decidir manualmente.
     """
     _seed_cliente(real_db_conn, "TSTA")
-    id_cheque = _seed_cheque(real_db_conn, codigo_cli="TSTA", stat="D", no_cheque="9001")
+    id_cheque = _seed_cheque(real_db_conn, codigo_cli="TSTA", stat="B", no_cheque="9001")
     real_db_conn.commit()
 
     from modules.cheques import queries as chq
@@ -74,9 +74,9 @@ def test_reversar_cheque_depositado_anota_observacion_pero_no_aplica_stop(real_d
     # Pero la observación debe contener el marker [REBOTE].
     assert "[REBOTE]" in (observacion or "")
 
-    # Y el cheque debe estar en stat='R'
+    # Y el cheque debe quedar como primer rebote real.
     cur.execute("SELECT stat FROM scintela.cheque WHERE id_cheque=%s", (id_cheque,))
-    assert cur.fetchone()[0] == "R"
+    assert cur.fetchone()[0] == "1"
 
 
 @pytest.mark.db
