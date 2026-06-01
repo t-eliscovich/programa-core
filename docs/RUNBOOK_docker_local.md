@@ -75,12 +75,11 @@ que seteaste en el paso 3. Debe redirigir al dashboard del Dueño.
 
 ```bash
 docker compose run --rm test
-# expected: 293 passed, 9 skipped (los db integration test se SKIPEAN
-#           hasta que conectes DB_HOST en env del test container)
+# expected: pytest + coverage report. Los tests @pytest.mark.db usan el
+#           Postgres del compose porque DB_HOST=db ya viene configurado.
 ```
 
-Para los tests `@pytest.mark.db` — están marcados y no corren por default.
-Levantarlos explicito:
+Para correr sólo los tests `@pytest.mark.db`:
 
 ```bash
 docker compose run --rm \

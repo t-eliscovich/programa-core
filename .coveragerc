@@ -1,0 +1,59 @@
+[run]
+branch = True
+source = .
+parallel = True
+relative_files = True
+omit =
+    .agents/*
+    .claude/*
+    .git/*
+    .pytest_cache/*
+    .ruff_cache/*
+    .venv/*
+    __pycache__/*
+    data/*
+    docs/*
+    migrations/*
+    preview/*
+    static/*
+    templates/*
+    tests/*
+    zigvG2go/*
+    setup_github.py
+    run.py
+    scripts/_*.py
+    scripts/_archive/*
+    scripts/_diag/*
+    scripts/_snapshots/*
+    scripts/audit_*.py
+    scripts/auto_match_xlsx_one_off.py
+    scripts/backfill_*.py
+    scripts/claude_push.py
+    scripts/cleanup_*.py
+    scripts/dashboard_profile.py
+    scripts/debug_*.py
+    scripts/diagnose_*.py
+    scripts/fix_*.py
+    scripts/limpiar_*.py
+    scripts/purgar_*.py
+    scripts/restaurar_*.py
+    scripts/smoke_test_*.py
+    scripts/sugerir_*.py
+    scripts/validar_reversos.py
+
+[report]
+precision = 2
+show_missing = True
+skip_empty = True
+exclude_also =
+    if __name__ == ["']__main__["']:
+    raise SystemExit
+    pragma: no cover
+    if TYPE_CHECKING:
+    @(abc\.)?abstractmethod
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

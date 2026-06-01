@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: programa_core_test
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_local_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d programa_core_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      ENV: development
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: programa_core_test
+      DB_USER: app
+      DB_PASSWORD: app_local_only
+      SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
+      DISABLE_BOOT_SYNC: "1"
+      COVERAGE_FAIL_UNDER: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run Ruff legacy check
+        continue-on-error: true
+        run: make PY=python lint
+
+      - name: Run coverage gate
+        run: make PY=python ci
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: ignore

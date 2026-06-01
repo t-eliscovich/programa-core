@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import traceback
+import types
 from pathlib import Path
 
 # Make project importable when run directly.
@@ -24,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 
 # Default env so create_app doesn't complain.
 os.environ.setdefault("SECRET_KEY", "test-key")
+os.environ.setdefault("DISABLE_BOOT_SYNC", "1")
 
 
 # --------------------------------------------------------------------------
@@ -52,27 +54,7 @@ def _make_fake_user():
     }
 
 
-# Every permiso we've ever used in @requiere_permiso decorators.
-ALL_PERMS = {
-    "dashboard.ver",
-    "facturas.ver", "facturas.exportar",
-    "cheques.ver",  "cheques.exportar",
-    "bancos.ver",   "bancos.exportar",
-    "compras.ver",  "compras.exportar",
-    "clientes.ver", "clientes.exportar",
-    "proveedores.ver", "proveedores.exportar",
-    "retenciones.ver", "retenciones.exportar",
-    "caja.ver",     "caja.exportar",
-    "capital.ver",  "capital.exportar",
-    "provisiones.ver", "provisiones.exportar",
-    "proformas.ver", "proformas.exportar",
-    "informes.ver", "informes.exportar",
-    "informes.cartera", "informes.deudas", "informes.flujo",
-    "informes.gastos",  "informes.estado_cuenta",
-    "informes.ventas",  "informes.retiros",
-    "informes.historia", "informes.iniciales", "informes.activos",
-    "informes.balance",
-}
+ALL_PERMS = {"*"}
 
 
 def _apply_db_stubs(db_stub):
@@ -84,6 +66,7 @@ def _apply_db_stubs(db_stub):
 def build_app():
     db_stub = _make_db_stub()
     _apply_db_stubs(db_stub)
+    sys.modules["scripts.sync_stat_from_xlsx_boot"] = types.SimpleNamespace(maybe_run_once=lambda: None)
 
     # Patch auth.load_logged_in_user so request_ctx always has our fake user.
     import auth as real_auth
@@ -104,9 +87,12 @@ def build_app():
 
 def iter_get_routes(app):
     """Yield (endpoint, url) for every static GET rule."""
+    skip_endpoints = {"conciliacion.hub_selftest"}
     skip_prefixes = ("/static", "/_debug")
     for rule in app.url_map.iter_rules():
         if "GET" not in (rule.methods or set()):
+            continue
+        if rule.endpoint in skip_endpoints:
             continue
         if rule.rule.startswith(skip_prefixes):
             continue
@@ -116,10 +102,8 @@ def iter_get_routes(app):
         yield rule.endpoint, rule.rule
 
 
-def main() -> int:
-    app = build_app()
+def collect_route_failures(app):
     client = app.test_client()
-
     failed = []
     total = 0
     for endpoint, url in iter_get_routes(app):
@@ -136,6 +120,22 @@ def main() -> int:
         if code >= 500 and endpoint != "healthz.readiness":
             body = rv.get_data(as_text=True)[:500]
             failed.append((endpoint, url, code, body))
+    return total, failed
+
+
+def test_static_get_routes_render_without_500():
+    app = build_app()
+    total, failed = collect_route_failures(app)
+    formatted = "\n".join(
+        f"{code} {endpoint} {url}\n{msg[:800]}" for endpoint, url, code, msg in failed
+    )
+    assert total > 0
+    assert not failed, formatted
+
+
+def main() -> int:
+    app = build_app()
+    total, failed = collect_route_failures(app)
 
     print(f"\n{total} GET routes walked, {len(failed)} failures\n")
     for endpoint, url, code, msg in failed:

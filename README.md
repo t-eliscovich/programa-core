@@ -109,9 +109,14 @@ python scripts/migrate.py --force 0003
 # actualizar_amortizacion). Idempotente: si ya corrió este mes, sale en 0.
 python scripts/procesa_provisiones_mensual.py
 
-# Tests
-pytest -q
+# Tests y coverage
+make test
+# Gate completo con Postgres:
+make ci
 ```
+
+Ver `docs/TESTING_COVERAGE.md` para el alcance de coverage, la política de
+ratchet y los comandos de DB/CI.
 
 ## Estructura
 
