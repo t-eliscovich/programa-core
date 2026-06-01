@@ -13,11 +13,14 @@ A framework for building ui, components and design systems. Components are added
 
 ## Current Project Context
 
-```json
-!`npx shadcn@latest info --json`
-```
+Run `npx shadcn@latest info --json` from the project root when shadcn context
+is needed. If the command fails because this is not a shadcn project, stop
+using this skill for the current task and fall back to the repo's native UI
+patterns.
 
-The JSON above contains the project config and installed components. Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.
+The command output contains the project config and installed components. Use
+`npx shadcn@latest docs <component>` to get documentation and example URLs for
+any component.
 
 ## Principles
 
@@ -165,7 +168,7 @@ npx shadcn@latest docs button dialog select
 
 ## Workflow
 
-1. **Get project context** — already injected above. Run `npx shadcn@latest info` again if you need to refresh.
+1. **Get project context** — run `npx shadcn@latest info --json` from the project root.
 2. **Check installed components first** — before running `add`, always check the `components` list from project context or list the `resolvedPaths.ui` directory. Don't import components that haven't been added, and don't re-add ones already installed.
 3. **Find components** — `npx shadcn@latest search`.
 4. **Get docs and examples** — run `npx shadcn@latest docs <component>` to get URLs, then fetch them. Use `npx shadcn@latest view` to browse registry items you haven't installed. To preview changes to installed components, use `npx shadcn@latest add --diff`.

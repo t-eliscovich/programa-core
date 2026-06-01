@@ -1,42 +1,71 @@
 ---
 name: frontend-design
-description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.
+description: Execute substantial Programa Core UI implementation once product flow and engineering plan are clear. Use for Flask/Jinja/Tailwind visual restructuring, dense operational screens, dashboards, forms, tables, and shared UI polish that must preserve Spanish financial workflow semantics and existing repo conventions.
 license: Complete terms in LICENSE.txt
 ---
 
-This skill guides creation of distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
+This skill supports production-grade Programa Core frontend implementation.
+It is an execution aid, not a substitute for product or engineering planning.
+Use it after the workflow, states, and affected templates/static assets are
+clear.
 
-The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
+Programa Core is a Spanish-first Flask/Jinja/Tailwind application for dense
+financial operations. Frontend work should improve clarity, trust, speed, and
+maintainability without changing business semantics.
 
-## Design Thinking
+## Implementation Priorities
 
-Before coding, understand the context and commit to a BOLD aesthetic direction:
-- **Purpose**: What problem does this interface solve? Who uses it?
-- **Tone**: Pick an extreme: brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined, playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel, industrial/utilitarian, etc. There are so many flavors to choose from. Use these for inspiration but design one that is true to the aesthetic direction.
-- **Constraints**: Technical requirements (framework, performance, accessibility).
-- **Differentiation**: What makes this UNFORGETTABLE? What's the one thing someone will remember?
+- Preserve existing product semantics around saldos, reversos, anulaciones,
+  pending states, permissions, dates, source/freshness, and audit trails.
+- Keep UI quiet, utilitarian, table-forward, and fast to scan.
+- Use Spanish operational terminology already present in the repo.
+- Prefer server-rendered Jinja and progressive enhancement over broad
+  client-side state.
+- Reuse `templates/base.html`, `templates/_ui.html`, `templates/_inputs.html`,
+  module-local templates, `static/tailwind.css`, `static/css/design_system.css`,
+  and existing JavaScript patterns before inventing new structure.
+- Preserve the established sky/slate visual language and dark-mode behavior
+  unless the approved design explicitly changes it.
+- Keep destructive, reversal, and financial submit actions visibly guarded.
+- Make empty, error, pending, stale, success, and reconciliation states explicit
+  where operators make decisions.
 
-**CRITICAL**: Choose a clear conceptual direction and execute it with precision. Bold maximalism and refined minimalism both work - the key is intentionality, not intensity.
+## Design Bar
 
-Then implement working code (HTML/CSS/JS, React, Vue, etc.) that is:
-- Production-grade and functional
-- Visually striking and memorable
-- Cohesive with a clear aesthetic point-of-view
-- Meticulously refined in every detail
+High-quality Programa Core UI is not decorative. It is:
 
-## Frontend Aesthetics Guidelines
+- Dense but organized
+- Consistent with nearby screens
+- Clear about totals, dates, affected records, and status
+- Accessible through native form controls, readable contrast, focus states, and
+  meaningful labels
+- Stable under long Spanish labels, wide money values, legacy identifiers, and
+  partial data
+- Easy to review because template responsibility, route context, and static
+  behavior remain obvious
 
-Focus on:
-- **Typography**: Choose fonts that are beautiful, unique, and interesting. Avoid generic fonts like Arial and Inter; opt instead for distinctive choices that elevate the frontend's aesthetics; unexpected, characterful font choices. Pair a distinctive display font with a refined body font.
-- **Color & Theme**: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes.
-- **Motion**: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Use Motion library for React when available. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions. Use scroll-triggering and hover states that surprise.
-- **Spatial Composition**: Unexpected layouts. Asymmetry. Overlap. Diagonal flow. Grid-breaking elements. Generous negative space OR controlled density.
-- **Backgrounds & Visual Details**: Create atmosphere and depth rather than defaulting to solid colors. Add contextual effects and textures that match the overall aesthetic. Apply creative forms like gradient meshes, noise textures, geometric patterns, layered transparencies, dramatic shadows, decorative borders, custom cursors, and grain overlays.
+Avoid landing-page composition, novelty typography, heavy animation, decorative
+background effects, broad palette shifts, and one-off component systems unless
+the user explicitly approves that direction for a non-operational surface.
 
-NEVER use generic AI-generated aesthetics like overused font families (Inter, Roboto, Arial, system fonts), cliched color schemes (particularly purple gradients on white backgrounds), predictable layouts and component patterns, and cookie-cutter design that lacks context-specific character.
+## Workflow
 
-Interpret creatively and make unexpected choices that feel genuinely designed for the context. No design should be the same. Vary between light and dark themes, different fonts, different aesthetics. NEVER converge on common choices (Space Grotesk, for example) across generations.
+1. Re-ground in the relevant route, template, shared partial, static CSS/JS, and
+   tests before editing.
+2. Confirm the intended workflow state and the exact business meaning of labels,
+   totals, badges, actions, and form fields.
+3. Implement the smallest UI change that improves the approved surface.
+4. Check long labels, empty/error states, mobile/tablet constraints when
+   relevant, and dark mode for shared surfaces.
+5. Run the validation named by `software-engineer` or the approved plan. For
+   UI-only changes, prefer `make lint`, `make test`, focused route smoke tests,
+   and browser verification when layout or interaction changed.
 
-**IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details. Elegance comes from executing the vision well.
+## Related Skills
 
-Remember: Claude is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
+- Use [product-designer](../product-designer/SKILL.md) when workflow, hierarchy,
+  copy, actions, or states are not settled.
+- Use [frontend-staff-reviewer](../frontend-staff-reviewer/SKILL.md) for final
+  maintainability and boundary review of templates/static assets.
+- Use [software-engineer](../software-engineer/SKILL.md) as the implementation
+  owner for plan-driven code changes.
