@@ -1,0 +1,4 @@
+interface:
+  display_name: "Software Architect"
+  short_description: "Decision-complete Programa Core planning"
+  default_prompt: "Use $software-architect to turn this Programa Core request into a decision-complete plan with affected surfaces, reviewer handoff, validation, and implementation handoff."

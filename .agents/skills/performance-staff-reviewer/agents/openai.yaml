@@ -1,0 +1,4 @@
+interface:
+  display_name: "Performance Staff Reviewer"
+  short_description: "Measured Flask and Postgres performance review"
+  default_prompt: "Use $performance-staff-reviewer to audit this Programa Core surface with baseline evidence, hypotheses, and validation criteria."
