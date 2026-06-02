@@ -7,6 +7,13 @@
   <div class="flex items-center justify-between mb-2 gap-3">
     <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
     <div class="flex items-center gap-2">
+      {# TMT 2026-06-02 dueña: 'poneme en esta pantalla boton para ir a
+         la ultima sesion'. Atajo a /banco-v2 (que carga la única sesión
+         abierta del banco; si no hay, redirige acá con mensaje). #}
+      <a href="/conciliacion/banco-v2"
+         class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
+        → Ir a conciliación activa
+      </a>
       <a href="/conciliacion/banco-v2/historial"
          class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
         Historial de conciliaciones →

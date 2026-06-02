@@ -53,6 +53,15 @@
         <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
         <span class="text-slate-400">/ {{ _banco|length }} movs</span>
+        {# TMT 2026-06-02 dueña: 'si hay movimientos que no quiero
+           conciliar... entrada y devolucion de un cheque'. Marca los
+           movs banco seleccionados como conciliados SIN contraparte PC. #}
+        <button type="button" id="descartar-banco-btn" disabled
+                onclick="descartarBancoSeleccionados()"
+                class="ml-2 bg-rose-100 hover:bg-rose-200 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-[11px] rounded px-2 py-0.5 font-medium whitespace-nowrap"
+                title="Marca como 'no necesita conciliación' (ej: entrada+devolución de cheque)">
+          ✕ Descartar
+        </button>
       </div>
     </header>
 
@@ -205,6 +214,54 @@
     if (btn){
       btn.disabled = !(b.count > 0 && p.count > 0);
     }
+    // TMT 2026-06-02: botón Descartar se habilita con cualquier mov banco
+    // seleccionado (no necesita lado programa).
+    var dbtn = document.getElementById('descartar-banco-btn');
+    if (dbtn){
+      dbtn.disabled = (b.count === 0);
+    }
+  };
+
+  // TMT 2026-06-02 dueña: descartar movs banco que no necesitan conciliarse.
+  // Caso típico: entrada $X + devolución $X del mismo cheque (netean a 0,
+  // sin contraparte PC). También sirve para movs ya conciliados externamente.
+  window.descartarBancoSeleccionados = function(){
+    var b = read('banco');
+    if (!b.count){ alert('No marcaste ningún mov del banco.'); return; }
+    var motivo = prompt(
+      '¿Por qué descartar estos ' + b.count + ' mov(s)?\n\n' +
+      'Ejemplos:\n' +
+      '  • entrada+devolucion-cheque\n' +
+      '  • ya-conciliado-dbase\n' +
+      '  • interno-banco\n\n' +
+      'Quedan marcados como conciliados SIN contraparte PC.',
+      'entrada+devolucion-cheque'
+    );
+    if (motivo === null) return;  // cancelado
+    motivo = (motivo || 'descartado').trim().slice(0, 40);
+    if (!confirm(
+      'Vas a descartar ' + b.count + ' mov(s) banco.\n' +
+      'Motivo: ' + motivo + '\n\n' +
+      'Quedan marcados como conciliados (no se eliminan).\n' +
+      'Si te equivocás podés volverlos a pendientes desde "Deshacer conciliados".\n\n' +
+      '¿Continuar?'
+    )) return;
+
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/conciliacion/banco-v2/descartar-banco';
+    function add(name, value){
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = name; i.value = value;
+      form.appendChild(i);
+    }
+    add('csrf_token', document.querySelector('input[name=csrf_token]').value);
+    add('sesion_id', document.querySelector('input[name=sesion_id]').value);
+    add('hist_ids', b.histIds.join(','));
+    add('real_sigs', (b.sigs||[]).join('||'));
+    add('motivo', motivo);
+    document.body.appendChild(form);
+    form.submit();
   };
   var btn = document.getElementById('manual-btn');
   if (btn){

@@ -701,6 +701,130 @@ def banco_auditar():
 # ─── Reabrir sesión cerrada ──────────────────────────────────────────
 
 
+# ─── Endpoint: descartar movs banco (no necesitan conciliarse) ────────
+
+
+@conciliacion_bp.route("/banco-v2/descartar-banco", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_descartar():
+    """Marca movs del lado banco como conciliados SIN contraparte PC.
+
+    TMT 2026-06-02 dueña: 'si hay movimientos que no quiero conciliar,
+    porque ya fueron conciliados o porque si del banco como hago? quizas
+    tengo entrada y devolucion de un cheque'.
+
+    Casos típicos:
+      - Entrada $X + devolución $X del mismo cheque → ambos netean a 0,
+        no hay contraparte PC.
+      - Movs ya conciliados externamente (ej. desde dBase) que el sistema
+        no detecta.
+      - Cargos del banco que la dueña decide no trackear.
+
+    Acepta hist_ids[] (histos backfilled) y real_sigs[] (movs del extracto
+    de la sesión). Para hist: UPDATE conciliado_en. Para real: los inserta
+    como histos con conciliado_en=NOW (queda registro auditable, y como
+    están conciliados no aparecen como pendientes).
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion:
+        flash("Sesión no encontrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    hist_ids_csv = (request.form.get("hist_ids") or "").strip()
+    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
+    motivo = (request.form.get("motivo") or "descartado-banco")[:50]
+
+    try:
+        hist_ids = [int(x) for x in hist_ids_csv.split(",") if x.strip()]
+    except ValueError:
+        hist_ids = []
+    real_sigs = [s for s in real_sigs_csv.split("||") if s.strip()]
+
+    if not hist_ids and not real_sigs:
+        flash("No marcaste ningún mov para descartar.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    usuario = _usuario_actual()
+    no_banco = _BANCO_PICHINCHA
+    n_hist = 0
+    n_real = 0
+
+    # 1) Marcar históricos directamente — UPDATE conciliado_en.
+    if hist_ids:
+        try:
+            n_hist = _db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = CURRENT_TIMESTAMP,
+                       conciliado_por = %s
+                 WHERE id = ANY(%s)
+                   AND no_banco = %s
+                   AND conciliado_en IS NULL
+                """,
+                (f"descart:{motivo}"[:50], hist_ids, no_banco),
+            ) or 0
+        except Exception as e:
+            _LOG.exception("descartar histos falló: %s", e)
+            flash(f"Error al descartar históricos: {e}", "error")
+            return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    # 2) Para movs del extracto: los insertamos en banco_historicos_pendientes
+    # YA conciliados (preserva auditoría + saca de la lista de pendientes).
+    if real_sigs:
+        movs = _sesion.cargar_movs(sesion)
+        sig_a_mov = {}
+        for m in movs:
+            key = "|".join([
+                m.fecha.isoformat() if m.fecha else "",
+                m.documento or "",
+                f"{float(m.monto or 0):.2f}",
+                m.tipo or "",
+            ])
+            sig_a_mov[key] = m
+        for sig in real_sigs:
+            mov = sig_a_mov.get(sig)
+            if not mov:
+                continue
+            try:
+                _db.execute(
+                    """
+                    INSERT INTO scintela.banco_historicos_pendientes
+                        (no_banco, fecha, concepto, documento, monto, tipo,
+                         oficina, detalle, fuente, creado_por,
+                         conciliado_en, conciliado_por, codigo)
+                    VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s,
+                            CURRENT_TIMESTAMP, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        no_banco, mov.fecha,
+                        (mov.concepto or "")[:120],
+                        (mov.documento or "")[:40],
+                        str(mov.monto or 0),
+                        (mov.tipo or "C")[:2],
+                        (getattr(mov, "oficina", "") or "")[:40],
+                        "",  # detalle
+                        f"descart:sesion:{sesion_id}",
+                        usuario[:50],
+                        f"descart:{motivo}"[:50],
+                        (getattr(mov, "codigo", "") or "")[:20],
+                    ),
+                )
+                n_real += 1
+            except Exception as e:
+                _LOG.warning("descartar real_sig %s falló: %s", sig, e)
+
+    total = n_hist + n_real
+    flash(
+        f"Descartados {total} movs ({n_hist} histos + {n_real} del extracto). "
+        f"Marcados como conciliados sin contraparte PC. Motivo: {motivo}.",
+        "ok" if total > 0 else "warn",
+    )
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+
 # ─── Endpoint Tab Manual: confirmar pares marcados ────────────────────
 
 
