@@ -20,6 +20,7 @@ from flask import Flask, g, redirect, request, url_for
 
 import db
 import filters
+from modules._lib import formulas_db
 from auth import (
     auth_bp,
     load_logged_in_user,
@@ -27,7 +28,6 @@ from auth import (
     tiene_permiso,
 )
 from extensions import csrf, limiter
-from modules._lib import formulas_db
 
 # Slow-request threshold. Override with REQ_SLOW_MS in .env.
 REQ_SLOW_MS = int(os.environ.get("REQ_SLOW_MS", "500"))
@@ -108,16 +108,15 @@ def create_app() -> Flask:
     # Si hay un xlsx fresco en data/dbase_snapshots/, lo sincamos UNA VEZ
     # al boot. Marker file con el hash → idempotente entre reboots, pero se
     # vuelve a correr si subimos un xlsx nuevo (hash distinto).
-    if os.environ.get("DISABLE_BOOT_SYNC") != "1":
-        try:
-            from scripts import sync_stat_from_xlsx_boot  # noqa: F401
+    try:
+        from scripts import sync_stat_from_xlsx_boot  # noqa: F401
 
-            sync_stat_from_xlsx_boot.maybe_run_once()
-        except Exception:
-            # No-op si algo falla — el sync se puede correr a mano por endpoint.
-            logging.getLogger("programa_core.boot").exception(
-                "sync_stat_from_xlsx_boot falló silenciosamente"
-            )
+        sync_stat_from_xlsx_boot.maybe_run_once()
+    except Exception:
+        # No-op si algo falla — el sync se puede correr a mano por endpoint.
+        logging.getLogger("programa_core.boot").exception(
+            "sync_stat_from_xlsx_boot falló silenciosamente"
+        )
 
     # Jinja
     filters.register(app)
@@ -340,10 +339,10 @@ def create_app() -> Flask:
 
     app.register_blueprint(costos_ot_bp)
 
+    from modules.conciliacion.views import conciliacion_bp
     # banco_v2_view registra los endpoints /conciliacion/banco-v2/* — Reforma
     # Sprint 1 (2026-05-28). Coexiste con /conciliacion/hub vigente hasta swap.
     from modules.conciliacion import banco_v2_view  # noqa: F401
-    from modules.conciliacion.views import conciliacion_bp
     # /conciliacion/cambios eliminado 2026-05-29 dueña: 'esta pantalla no
     # sirve para nada'. El historial de matches se ve en /banco-v2/deshacer.
 
@@ -395,6 +394,13 @@ def create_app() -> Flask:
     from modules.admin_dbase.debug_yy_view import bp as admin_debug_yy_bp
 
     app.register_blueprint(admin_debug_yy_bp)
+
+    # Debug ustock=0 live — TMT 2026-06-02. /admin/debug-ustock devuelve
+    # JSON con historia[top3], iniciales[mes actual + fallback],
+    # kg_facturas_pc, y simulación del vsto final. Sin SSH/SSM.
+    from modules.admin_dbase.debug_ustock_view import bp as admin_debug_ustock_bp
+
+    app.register_blueprint(admin_debug_ustock_bp)
 
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
