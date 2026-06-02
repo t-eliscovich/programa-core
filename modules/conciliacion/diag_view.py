@@ -264,7 +264,7 @@ def match_potencial():
                                 cxt.id_transaccion
                   FROM scintela.cheque ch
                   JOIN scintela.chequextransaccion cxt
-                    ON cxt.no_cheque = ch.no_cheque
+                    ON cxt.id_cheque = ch.id_cheque
                  WHERE ch.no_cheque IS NOT NULL
             )
             SELECT
