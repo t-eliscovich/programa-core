@@ -595,6 +595,100 @@ def borrar_no_feb2023():
     return jsonify(out)
 
 
+@bp.route("/borrar-ac-duplicados", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def borrar_ac_duplicados():
+    """Borra las entries AC SALDO + IN OP de PC.transacciones_bancarias que
+    duplican los ND reales del banco. También borra matches + recompute saldos.
+
+    GET = dry-run con la lista.
+    POST = ejecuta.
+    """
+    no_banco = _BANCO_PICHINCHA
+    # Identificar candidatos: doc='ND' AND concepto LIKE 'AC % SALDO' o 'IN OP AC %' o 'RR OP AC%'
+    rows = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, concepto, stat
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND fecha >= '2026-06-01'
+           AND documento = 'ND'
+           AND (
+               concepto LIKE 'AC % SALDO%'
+            OR concepto LIKE 'IN OP AC%'
+            OR concepto LIKE 'RR OP AC%'
+            OR concepto = 'CORRECC'
+            OR concepto = 'GS BANCO'
+           )
+         ORDER BY fecha, id_transaccion
+        """,
+        (no_banco,),
+    ) or []
+    ids = [r["id_transaccion"] for r in rows]
+    suma = sum(float(r.get("importe") or 0) for r in rows)
+    out = {
+        "ok": True,
+        "candidatos": len(ids),
+        "suma_importes": round(suma, 2),
+        "ids": ids,
+        "preview": [
+            {"id": r["id_transaccion"], "doc": r["documento"],
+             "importe": float(r["importe"] or 0),
+             "concepto": r.get("concepto"), "stat": r.get("stat")}
+            for r in rows[:30]
+        ],
+    }
+    if request.method != "POST":
+        out["modo"] = "dry-run"
+        return jsonify(out)
+
+    try:
+        with _db.tx() as conn:
+            # 1) Borrar matches que apuntan a esos ids.
+            n_match = _db.execute(
+                """
+                DELETE FROM scintela.banco_conciliacion_match
+                 WHERE id_transaccion = ANY(%s)
+                """,
+                (ids,),
+                conn=conn,
+            ) or 0
+            # 2) Borrar las txs.
+            n_del = _db.execute(
+                """
+                DELETE FROM scintela.transacciones_bancarias
+                 WHERE id_transaccion = ANY(%s) AND no_banco = %s
+                """,
+                (ids, no_banco),
+                conn=conn,
+            ) or 0
+            # 3) Recompute saldos desde el primer mov.
+            import bank_helpers
+            primera = _db.fetch_one(
+                """
+                SELECT fecha FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s AND fecha IS NOT NULL
+                 ORDER BY fecha ASC LIMIT 1
+                """,
+                (no_banco,),
+                conn=conn,
+            )
+            n_rec = 0
+            if primera and primera.get("fecha"):
+                n_rec = bank_helpers.recompute_saldos_desde(
+                    conn, no_banco=no_banco, no_cta=None,
+                    ancla_fecha=primera["fecha"],
+                ) or 0
+        out["modo"] = "ejecutado"
+        out["matches_borrados"] = int(n_match)
+        out["txs_borradas"] = int(n_del)
+        out["saldos_recompute"] = int(n_rec)
+    except Exception as e:
+        out["error"] = str(e)[:300]
+    return jsonify(out)
+
+
 @bp.route("/inspect-recent", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
