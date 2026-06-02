@@ -595,6 +595,127 @@ def borrar_no_feb2023():
     return jsonify(out)
 
 
+@bp.route("/cuadre-saldos", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def cuadre_saldos():
+    """Desglose detallado de saldos PC vs Banco para encontrar la diferencia."""
+    no_banco = _BANCO_PICHINCHA
+    out = {"ok": True, "no_banco": no_banco}
+
+    # 1) Saldo libros PC (último mov).
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT saldo, fecha, id_transaccion, documento, importe, concepto
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s AND saldo IS NOT NULL
+             ORDER BY fecha DESC, id_transaccion DESC LIMIT 1
+            """,
+            (no_banco,),
+        )
+        out["libros_ultimo"] = dict(row) if row else None
+        if row:
+            out["libros_ultimo"]["fecha"] = str(row["fecha"]) if row.get("fecha") else None
+            out["libros_ultimo"]["saldo"] = float(row["saldo"] or 0)
+            out["libros_ultimo"]["importe"] = float(row["importe"] or 0)
+    except Exception as e:
+        out["error_libros"] = str(e)
+
+    # 2) Suma TXs 06-02 por tipo.
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT documento,
+                   CASE WHEN documento IN ('DE','TR','NC','IN','AC','XX') THEN 'CRED'
+                        WHEN documento IN ('CH','ND','DB','GS','PA') THEN 'DEB'
+                        ELSE 'OTRO' END AS clase,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(importe), 0) AS suma,
+                   COALESCE(SUM(CASE WHEN TRIM(COALESCE(stat,'')) = '*' THEN importe ELSE 0 END), 0) AS suma_conciliada
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s AND fecha >= '2026-06-01'
+             GROUP BY documento
+             ORDER BY clase, documento
+            """,
+            (no_banco,),
+        ) or []
+        out["txs_recientes"] = [
+            {"doc": r["documento"], "clase": r["clase"], "n": int(r["n"]),
+             "suma": float(r["suma"] or 0), "conciliada": float(r["suma_conciliada"] or 0)}
+            for r in rows
+        ]
+    except Exception as e:
+        out["error_txs"] = str(e)
+
+    # 3) Counters reales.
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM scintela.transacciones_bancarias
+                WHERE no_banco = %s AND TRIM(COALESCE(stat,'')) = '*') AS pc_conciliadas,
+              (SELECT COUNT(*) FROM scintela.transacciones_bancarias
+                WHERE no_banco = %s AND TRIM(COALESCE(stat,'')) <> '*') AS pc_pendientes,
+              (SELECT COUNT(*) FROM scintela.banco_historicos_pendientes
+                WHERE no_banco = %s AND conciliado_en IS NULL) AS histos_pend,
+              (SELECT COUNT(*) FROM scintela.banco_conciliacion_match
+                WHERE no_banco = %s AND deshecho_en IS NULL) AS matches_activos
+            """,
+            (no_banco, no_banco, no_banco, no_banco),
+        )
+        if row:
+            out["counts"] = {k: int(v) for k, v in row.items()}
+    except Exception as e:
+        out["error_counts"] = str(e)
+
+    # 4) Saldo de pendientes PC (lo que falta sumar/restar al libros para conciliar).
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN documento IN ('DE','TR','NC','IN','AC','XX') THEN importe ELSE 0 END), 0) AS pend_pc_cred,
+              COALESCE(SUM(CASE WHEN documento IN ('CH','ND','DB','GS','PA') THEN importe ELSE 0 END), 0) AS pend_pc_deb
+              FROM scintela.transacciones_bancarias t
+             WHERE t.no_banco = %s
+               AND TRIM(COALESCE(t.stat, '')) <> '*'
+               AND NOT EXISTS (SELECT 1 FROM scintela.banco_conciliacion_match m
+                                WHERE m.id_transaccion = t.id_transaccion AND m.deshecho_en IS NULL)
+            """,
+            (no_banco,),
+        )
+        out["pend_pc"] = {
+            "cred": float(row["pend_pc_cred"] or 0),
+            "deb": float(row["pend_pc_deb"] or 0),
+            "neto": float(row["pend_pc_cred"] or 0) - float(row["pend_pc_deb"] or 0),
+        }
+    except Exception as e:
+        out["error_pend_pc"] = str(e)
+
+    # 5) Suma pendientes banco (histos + extracto sin matchear).
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN tipo='C' THEN monto ELSE 0 END), 0) AS hist_cred,
+              COALESCE(SUM(CASE WHEN tipo='D' THEN monto ELSE 0 END), 0) AS hist_deb,
+              COUNT(*) AS n
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s AND conciliado_en IS NULL
+            """,
+            (no_banco,),
+        )
+        out["pend_histos"] = {
+            "cred": float(row["hist_cred"] or 0),
+            "deb": float(row["hist_deb"] or 0),
+            "n": int(row["n"] or 0),
+        }
+    except Exception as e:
+        out["error_pend_histos"] = str(e)
+
+    return jsonify(out)
+
+
 @bp.route("/match-potencial", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
