@@ -289,33 +289,58 @@ def reset_y_cargar():
             else:
                 out["sesion_payload_vaciada"] = None
 
-            # 3) Insertar las filas nuevas.
+            # 3) Insertar las filas nuevas. Detectar si la columna `codigo`
+            # existe — la mig 0064 puede no estar aplicada en prod.
+            tiene_codigo = False
+            try:
+                r_col = _db.fetch_one(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = 'scintela'
+                       AND table_name = 'banco_historicos_pendientes'
+                       AND column_name = 'codigo'
+                    """,
+                    conn=conn,
+                )
+                tiene_codigo = bool(r_col)
+            except Exception:
+                tiene_codigo = False
+            out["tiene_codigo_col"] = tiene_codigo
+
+            if tiene_codigo:
+                sql = """
+                    INSERT INTO scintela.banco_historicos_pendientes
+                        (no_banco, fecha, concepto, documento, monto, tipo,
+                         oficina, detalle, fuente, creado_por, codigo)
+                    VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s, %s)
+                """
+            else:
+                sql = """
+                    INSERT INTO scintela.banco_historicos_pendientes
+                        (no_banco, fecha, concepto, documento, monto, tipo,
+                         oficina, detalle, fuente, creado_por)
+                    VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s)
+                """
+
             n_ins = 0
             errores = []
             for i, r in enumerate(records):
                 try:
-                    _db.execute(
-                        """
-                        INSERT INTO scintela.banco_historicos_pendientes
-                            (no_banco, fecha, concepto, documento, monto, tipo,
-                             oficina, detalle, fuente, creado_por, codigo)
-                        VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (
-                            no_banco,
-                            r.get("fecha"),
-                            (r.get("concepto") or "")[:120],
-                            (r.get("documento") or "")[:40],
-                            str(r.get("monto") or 0),
-                            (r.get("tipo") or "C")[:2],
-                            "",  # oficina
-                            (r.get("detalle") or "")[:30],
-                            "feb2023-xlsx-2026-06-02",
-                            _usuario_actual()[:50],
-                            (r.get("codigo") or "")[:20],
-                        ),
-                        conn=conn,
-                    )
+                    params = [
+                        no_banco,
+                        r.get("fecha"),
+                        (r.get("concepto") or "")[:120],
+                        (r.get("documento") or "")[:40],
+                        str(r.get("monto") or 0),
+                        (r.get("tipo") or "C")[:2],
+                        "",  # oficina
+                        (r.get("detalle") or "")[:30],
+                        "feb2023-xlsx-2026-06-02",
+                        _usuario_actual()[:50],
+                    ]
+                    if tiene_codigo:
+                        params.append((r.get("codigo") or "")[:20])
+                    _db.execute(sql, tuple(params), conn=conn)
                     n_ins += 1
                 except Exception as e:
                     errores.append({"i": i, "doc": r.get("documento"), "err": str(e)[:120]})
