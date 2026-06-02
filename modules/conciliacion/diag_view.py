@@ -434,7 +434,31 @@ def borrar_conciliados_sesion():
                 ) or 0
                 out["matches_borrados"] = int(n_del)
 
-            # 5) Reset contador de la sesión.
+            # 5) Reset stat='*' orfanos: PCs marcados conciliados pero sin
+            # match activo, que NO sean del dbf-import original. Esos son
+            # residuos de conciliaciones N:M con código viejo.
+            try:
+                n_orphan = _db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias tb
+                       SET stat = NULL
+                     WHERE tb.no_banco = %s
+                       AND TRIM(COALESCE(tb.stat, '')) = '*'
+                       AND tb.usuario_crea NOT IN ('dbf-import', 'asinfo-backfill')
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = tb.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                    """,
+                    (no_banco,),
+                    conn=conn,
+                ) or 0
+                out["stat_orphans_limpiados"] = int(n_orphan)
+            except Exception as e:
+                _LOG.warning("limpiar stat orfans falló: %s", e)
+
+            # 6) Reset contador de la sesión.
             _db.execute(
                 """
                 UPDATE scintela.banco_conciliacion_sesion
