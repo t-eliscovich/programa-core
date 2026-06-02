@@ -73,10 +73,10 @@ def _ejecutar_cierre_mensual_yy(
             ya = db.fetch_one(
                 """
                 SELECT 1 AS x FROM scintela.mov_doble
-                 WHERE origen_table = 'posdat'
-                   AND origen_id    = %s
-                   AND tipo         = 'posdat_yy_cierre_mes'
-                   AND fecha        = %s
+                 WHERE origen_table    = 'posdat'
+                   AND origen_id       = %s
+                   AND tipo            = 'posdat_yy_cierre_mes'
+                   AND fecha_operacion = %s
                 """,
                 (id_posdat, ult_dia_mes_anterior),
                 conn=conn,
