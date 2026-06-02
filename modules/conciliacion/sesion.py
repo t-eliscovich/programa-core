@@ -683,12 +683,14 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
                 manual_programa.append({"mov": bk, "cat": None, "idx": i})
         except Exception as e:
             _LOG.warning("cargar pendientes programa sin extracto falló: %s", e)
-        return {
+        ret = {
             "manual_banco": manual_banco_hist,
             "manual_programa": manual_programa,
             "impuestos": [], "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
+        _reordenar_por_match_monto(ret)
+        return ret
     try:
         res = matchear_extracto_banco(movs, no_banco=no_banco)
     except Exception as e:
@@ -709,7 +711,72 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
     buckets["matcher_extracto_desde"] = res.extracto_desde
     buckets["matcher_extracto_hasta"] = res.extracto_hasta
     buckets["n_historicos_pendientes"] = len(historicos)
+    _reordenar_por_match_monto(buckets)
     return buckets
+
+
+_SIGNOS_C = ("DE", "TR", "AC", "NC", "IN", "XX")
+_SIGNOS_D = ("CH", "ND", "DB", "GS", "PA")
+
+
+def _signed_banco(item: dict) -> float:
+    """Monto banco con signo: C → positivo, D → negativo."""
+    m = item.get("mov")
+    if m is None:
+        return 0.0
+    try:
+        mt = float(getattr(m, "monto", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    tipo = (getattr(m, "tipo", "") or "").upper()
+    return round(mt if tipo == "C" else -mt, 2)
+
+
+def _signed_programa(item: dict) -> float:
+    """Monto programa con signo derivado del documento."""
+    m = item.get("mov")
+    if m is None:
+        return 0.0
+    try:
+        imp = float(getattr(m, "importe", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if imp < 0:
+        return round(imp, 2)
+    doc = (getattr(m, "documento", "") or "").upper()
+    if doc in _SIGNOS_C:
+        return round(imp, 2)
+    if doc in _SIGNOS_D:
+        return round(-imp, 2)
+    return 0.0
+
+
+def _reordenar_por_match_monto(buckets: dict) -> None:
+    """In-place reorder de manual_banco y manual_programa: items cuyo
+    monto signed APARECE en el otro panel aparecen primero. Dentro de
+    cada grupo se ordena por |monto| desc.
+
+    TMT 2026-06-02 dueña: 'en manual, pone los de mismo monto arriba
+    de todo asi es facil el match'.
+    """
+    banco = buckets.get("manual_banco") or []
+    programa = buckets.get("manual_programa") or []
+    montos_banco = {_signed_banco(i) for i in banco}
+    montos_programa = {_signed_programa(i) for i in programa}
+    interseccion = montos_banco & montos_programa
+    interseccion.discard(0.0)
+
+    def _key_banco(item):
+        amt = _signed_banco(item)
+        return (0 if amt in interseccion else 1, -abs(amt))
+
+    def _key_programa(item):
+        amt = _signed_programa(item)
+        return (0 if amt in interseccion else 1, -abs(amt))
+
+    banco.sort(key=_key_banco)
+    programa.sort(key=_key_programa)
+    buckets["n_matcheables_por_monto"] = len(interseccion)
 
 
 def _hist_to_mov_like(h: dict):

@@ -223,6 +223,135 @@ def diagnose():
     return jsonify(out)
 
 
+@bp.route("/match-potencial", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def match_potencial():
+    """Para cada pendiente banco (no conciliado), buscar si existe una
+    transacción PC con numreferencia o no_cheque que matchee el documento.
+
+    TMT 2026-06-02 dueña: 'transferencias por numero de doc no encuentra
+    ninguna, podes aunque sea buscar si para el pasado hubiera matcheado?'.
+
+    Considera TODO el universo de transacciones_bancarias (incluyendo ya
+    conciliadas, para saber si la estrategia PASS 0 tiene fundamento).
+    """
+    out = {"ok": True, "no_banco": _BANCO_PICHINCHA}
+
+    # 1) Match contra numreferencia (todas las txs, no solo pendientes).
+    try:
+        rows = _db.fetch_all(
+            """
+            WITH pend AS (
+                SELECT documento, monto, tipo, fecha
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND conciliado_en IS NULL
+                   AND documento IS NOT NULL AND documento <> ''
+            ),
+            txs AS (
+                SELECT id_transaccion, numreferencia, no_cheque,
+                       documento AS doc_pc, importe, fecha, stat
+                  FROM scintela.transacciones_bancarias
+                 WHERE no_banco = %s
+                   AND (numreferencia IS NOT NULL AND numreferencia <> ''
+                        OR no_cheque IS NOT NULL AND no_cheque <> '')
+            )
+            SELECT
+                COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM txs t WHERE t.numreferencia = pend.documento
+                )) AS match_por_numref,
+                COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM txs t WHERE t.no_cheque = pend.documento
+                )) AS match_por_no_cheque,
+                COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM txs t WHERE t.doc_pc = pend.documento
+                )) AS match_por_doc_pc,
+                COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM txs t
+                     WHERE t.numreferencia = pend.documento OR t.no_cheque = pend.documento
+                )) AS match_cualquiera,
+                COUNT(*) AS pendientes_totales
+              FROM pend
+            """,
+            (_BANCO_PICHINCHA, _BANCO_PICHINCHA),
+        ) or []
+        if rows:
+            r = rows[0]
+            out["pendientes_totales"] = int(r.get("pendientes_totales") or 0)
+            out["match_por_numreferencia"] = int(r.get("match_por_numref") or 0)
+            out["match_por_no_cheque"] = int(r.get("match_por_no_cheque") or 0)
+            out["match_por_documento_pc"] = int(r.get("match_por_doc_pc") or 0)
+            out["match_cualquiera"] = int(r.get("match_cualquiera") or 0)
+    except Exception as e:
+        out["error_agregado"] = str(e)
+
+    # 2) Top 15 ejemplos concretos de matches potenciales.
+    try:
+        ejemplos = _db.fetch_all(
+            """
+            SELECT h.documento, h.monto, h.fecha AS fecha_banco, h.tipo,
+                   t.id_transaccion, t.numreferencia, t.no_cheque,
+                   t.fecha AS fecha_pc, t.importe, t.documento AS doc_pc,
+                   t.stat,
+                   (CASE WHEN TRIM(COALESCE(t.stat,'')) = '*' THEN 'conciliado_dbase'
+                         ELSE 'pendiente_pc' END) AS estado_pc
+              FROM scintela.banco_historicos_pendientes h
+              JOIN scintela.transacciones_bancarias t
+                ON t.no_banco = h.no_banco
+               AND (t.numreferencia = h.documento OR t.no_cheque = h.documento)
+             WHERE h.no_banco = %s
+               AND h.conciliado_en IS NULL
+               AND h.documento IS NOT NULL AND h.documento <> ''
+             ORDER BY h.fecha DESC, h.documento
+             LIMIT 15
+            """,
+            (_BANCO_PICHINCHA,),
+        ) or []
+        out["ejemplos_match_potencial"] = [
+            {
+                "documento": e.get("documento"),
+                "monto_banco": float(e.get("monto") or 0),
+                "fecha_banco": str(e.get("fecha_banco")) if e.get("fecha_banco") else None,
+                "tipo": e.get("tipo"),
+                "id_transaccion": e.get("id_transaccion"),
+                "numref_pc": e.get("numreferencia"),
+                "no_cheque_pc": e.get("no_cheque"),
+                "doc_pc": e.get("doc_pc"),
+                "fecha_pc": str(e.get("fecha_pc")) if e.get("fecha_pc") else None,
+                "importe_pc": float(e.get("importe") or 0),
+                "estado_pc": e.get("estado_pc"),
+            }
+            for e in ejemplos
+        ]
+    except Exception as e:
+        out["error_ejemplos"] = str(e)
+
+    # 3) Match por (monto, fecha) — fallback más relajado.
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT COUNT(*) AS n
+              FROM scintela.banco_historicos_pendientes h
+             WHERE h.no_banco = %s
+               AND h.conciliado_en IS NULL
+               AND EXISTS (
+                   SELECT 1 FROM scintela.transacciones_bancarias t
+                    WHERE t.no_banco = h.no_banco
+                      AND ABS(t.importe) = h.monto
+                      AND t.fecha BETWEEN h.fecha - INTERVAL '3 days'
+                                       AND h.fecha + INTERVAL '3 days'
+               )
+            """,
+            (_BANCO_PICHINCHA,),
+        )
+        out["match_por_monto_fecha_3d"] = int(row["n"]) if row else 0
+    except Exception as e:
+        out["error_monto_fecha"] = str(e)
+
+    return jsonify(out)
+
+
 @bp.route("/cleanup-sesion", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
