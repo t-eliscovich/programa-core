@@ -402,6 +402,15 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_debug_ustock_bp)
 
+    # Diagnóstico pendientes banco — TMT 2026-06-02. /admin/diag-pendientes-banco
+    # cuenta duplicados por (no_banco, documento) en banco_historicos_pendientes
+    # y muestra ejemplos. El dedupe nuevo (mig 0062) corre al subir extracto;
+    # los duplicados del backfill viejo (migs 0056-0058) hay que detectarlos
+    # con este endpoint y limpiarlos aparte.
+    from modules.conciliacion.diag_view import bp as conciliacion_diag_bp
+
+    app.register_blueprint(conciliacion_diag_bp)
+
     # Bitácora — after_request hook. Best-effort audit log for every write
     # request (POST/PUT/DELETE/PATCH). MUST be registered AFTER the timing
     # middleware so we don't steal its elapsed-time header, and AFTER all

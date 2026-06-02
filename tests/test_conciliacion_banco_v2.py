@@ -259,6 +259,109 @@ def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
     assert "extracto_payload = %s::jsonb" in executed["sql"]
 
 
+# ── Edge cases del dedupe por documento (TMT 2026-06-02) ─────────────
+
+
+def test_dedupe_es_case_insensitive(monkeypatch):
+    """'abc123' en histos debe dedupear 'ABC123' del extracto nuevo."""
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: {"ABC123"})  # uppercase ya conocido
+    returnings = [{"id": 1}]
+    monkeypatch.setattr(_sesion.db, "execute_returning",
+                        lambda sql, params=None, conn=None:
+                            returnings.pop(0) if returnings else None)
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="t",
+        movs=[_mov(documento="abc123"), _mov(documento="ABC123"), _mov(documento="xYz999")],
+    )
+    # abc123 y ABC123 ambos chocan con ABC123 conocido → omitidos.
+    # xYz999 nuevo → entra.
+    assert n_added == 1
+    assert n_skipped == 2
+
+
+def test_dedupe_documento_vacio_no_se_dedupe(monkeypatch):
+    """Filas sin documento (None o '') no se pueden comparar — todas entran.
+
+    Razón: el banco a veces devuelve documento vacío en transferencias
+    raras. Si dedupeáramos por 'vacío' descartaríamos filas legítimas.
+    """
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: set())
+    returnings = [{"id": 1}]
+    monkeypatch.setattr(_sesion.db, "execute_returning",
+                        lambda sql, params=None, conn=None:
+                            returnings.pop(0) if returnings else None)
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="t",
+        movs=[_mov(documento=""), _mov(documento=""), _mov(documento="X1")],
+    )
+    assert n_added == 3
+    assert n_skipped == 0
+
+
+def test_dedupe_interno_dentro_del_mismo_upload(monkeypatch):
+    """Si el extracto trae el mismo documento dos veces, dedupea contra sí mismo."""
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: set())
+    returnings = [{"id": 1}]
+    monkeypatch.setattr(_sesion.db, "execute_returning",
+                        lambda sql, params=None, conn=None:
+                            returnings.pop(0) if returnings else None)
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="t",
+        movs=[_mov(documento="D1"), _mov(documento="D1"), _mov(documento="D2")],
+    )
+    assert n_added == 2
+    assert n_skipped == 1
+
+
+def test_dedupe_contra_payload_existente_en_sesion_abierta(monkeypatch):
+    """Re-uploadear el mismo archivo a la sesión abierta no agrega nada."""
+    sesion_existente = {"id": 1, "no_banco": 10, "extracto_payload": []}
+    monkeypatch.setattr(_sesion, "sesion_abierta",
+                        lambda no_banco: sesion_existente)
+    # El helper _documentos_ya_conocidos incluye el payload actual.
+    # Simulamos que D1 ya está en payload.
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: {"D1"})
+    monkeypatch.setattr(_sesion, "cargar_movs", lambda s: [])
+    monkeypatch.setattr(_sesion.db, "execute",
+                        lambda sql, params=None, conn=None: 1)
+
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="t",
+        movs=[_mov(documento="D1"), _mov(documento="D2")],
+    )
+    assert n_added == 1   # D2
+    assert n_skipped == 1  # D1 (ya estaba)
+
+
+def test_documentos_ya_conocidos_junta_histos_matches_y_payload(monkeypatch):
+    """_documentos_ya_conocidos lee de las 3 fuentes y devuelve set uppercase."""
+    fetched = {"histos": False, "matches": False}
+    def fake_fetch_all(sql, params=None):
+        if "banco_historicos_pendientes" in sql:
+            fetched["histos"] = True
+            return [{"documento": "h1"}, {"documento": "H2"}]
+        if "banco_conciliacion_match" in sql:
+            fetched["matches"] = True
+            return [{"real_documento": "m1"}]
+        return []
+    monkeypatch.setattr(_sesion.db, "fetch_all", fake_fetch_all)
+    # Sin sesión abierta → no payload.
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+
+    docs = _sesion._documentos_ya_conocidos(10)
+    assert fetched["histos"] is True
+    assert fetched["matches"] is True
+    # Todo normalizado a UPPER.
+    assert "H1" in docs and "H2" in docs and "M1" in docs
+
+
 def test_incrementar_matches_suma_a_la_columna(monkeypatch):
     captured = {}
     monkeypatch.setattr(_sesion.db, "execute",
