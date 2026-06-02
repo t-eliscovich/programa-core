@@ -172,64 +172,91 @@ def test_bucketizar_resultado_vacio_devuelve_buckets_vacios():
 # ── CRUD sesión (mocked) ─────────────────────────────────────────────
 
 
-def test_sesion_abierta_lee_con_filtros(monkeypatch):
-    """sesion_abierta hace SELECT con (no_banco, usuario, cerrada_en IS NULL)."""
+def test_sesion_abierta_lee_solo_por_banco(monkeypatch):
+    """TMT 2026-06-02: una sesión por banco — no filtra por usuario."""
     captured = {}
     def fake_fetch_one(sql, params=None):
         captured["sql"] = sql
         captured["params"] = params
         return {"id": 42, "matches_hechos": 0, "cerrada_en": None}
     monkeypatch.setattr(_sesion.db, "fetch_one", fake_fetch_one)
-    row = _sesion.sesion_abierta(10, "tamara")
+    row = _sesion.sesion_abierta(10)
     assert row["id"] == 42
     assert "cerrada_en IS NULL" in captured["sql"]
-    assert captured["params"] == (10, "tamara")
+    assert captured["params"] == (10,)
 
 
-def test_crear_sesion_serializa_payload_y_cierra_previa(monkeypatch):
-    """crear_sesion cierra cualquier sesión abierta previa y graba la nueva."""
-    executes = []
+def test_crear_sesion_crea_nueva_si_no_hay_abierta(monkeypatch):
+    """Sin sesión abierta → INSERT directo y devuelve (sid, n_added, 0)."""
+    # No hay sesión abierta.
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: set())
+
     returnings = [{"id": 999}]
-
-    def fake_execute(sql, params=None, conn=None):
-        executes.append(sql)
-        return 1
-
     def fake_execute_returning(sql, params=None, conn=None):
         return returnings.pop(0) if returnings else None
-
-    class FakeConn:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-
-    monkeypatch.setattr(_sesion.db, "execute", fake_execute)
     monkeypatch.setattr(_sesion.db, "execute_returning", fake_execute_returning)
-    monkeypatch.setattr(_sesion.db, "tx", FakeConn)
 
-    sid = _sesion.crear_sesion(
+    sid, n_added, n_skipped = _sesion.crear_sesion(
         no_banco=10, usuario="tamara",
-        movs=[_mov(), _mov(monto="42")],
-        extracto_hash="abc123",
+        movs=[_mov(documento="A1"), _mov(documento="A2", monto="42")],
         extracto_nombre="pichincha.xlsx",
     )
     assert sid == 999
-    # Primero hace UPDATE (auto-cierra abierta previa), después INSERT
-    assert any("UPDATE" in s and "auto-replaced" in s for s in executes)
+    assert n_added == 2
+    assert n_skipped == 0
 
 
-def test_cerrar_sesion_setea_cerrada_en_y_pdf_path(monkeypatch):
-    captured = {}
-    def fake_execute(sql, params=None):
-        captured["sql"] = sql
-        captured["params"] = params
+def test_crear_sesion_dedupe_por_documento(monkeypatch):
+    """TMT 2026-06-02: filas con documento ya conocido se omiten."""
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    # 'A1' ya existe en histos.
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: {"A1"})
+    returnings = [{"id": 100}]
+    def fake_execute_returning(sql, params=None, conn=None):
+        return returnings.pop(0) if returnings else None
+    monkeypatch.setattr(_sesion.db, "execute_returning", fake_execute_returning)
+
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="tamara",
+        movs=[_mov(documento="A1"), _mov(documento="A2", monto="42")],
+        extracto_nombre="x.xlsx",
+    )
+    assert sid == 100
+    assert n_added == 1   # solo A2 entra
+    assert n_skipped == 1  # A1 se omitió
+
+
+def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
+    """Si ya hay sesión abierta, mergea en su payload (UPDATE, no INSERT)."""
+    sesion_existente = {
+        "id": 555, "no_banco": 10, "extracto_payload": [],
+        "extracto_nombre": "viejo.xlsx",
+    }
+    monkeypatch.setattr(_sesion, "sesion_abierta",
+                        lambda no_banco: sesion_existente)
+    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+                        lambda no_banco: set())
+    monkeypatch.setattr(_sesion, "cargar_movs", lambda s: [])
+
+    executed = {}
+    def fake_execute(sql, params=None, conn=None):
+        executed["sql"] = sql
+        executed["params"] = params
         return 1
     monkeypatch.setattr(_sesion.db, "execute", fake_execute)
-    ok = _sesion.cerrar_sesion(42, "tamara", pdf_path="data/pdfs/x.pdf")
-    assert ok is True
-    assert "cerrada_en = CURRENT_TIMESTAMP" in captured["sql"]
-    assert captured["params"][0] == "tamara"
-    assert captured["params"][1] == "data/pdfs/x.pdf"
-    assert captured["params"][2] == 42
+
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="tamara",
+        movs=[_mov(documento="NEW1")],
+        extracto_nombre="nuevo.xlsx",
+    )
+    assert sid == 555  # misma sesión
+    assert n_added == 1
+    assert "UPDATE scintela.banco_conciliacion_sesion" in executed["sql"]
+    assert "extracto_payload = %s::jsonb" in executed["sql"]
 
 
 def test_incrementar_matches_suma_a_la_columna(monkeypatch):

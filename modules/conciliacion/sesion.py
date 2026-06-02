@@ -1,18 +1,25 @@
 """Sesión persistente de conciliación bancaria.
 
 TMT 2026-05-28 dueña: 'puede quedar abierta esa pagina hasta no cerrar la
-conciliacion?'. Sí — guardamos el extracto parseado + flag abierta/cerrada
-en `scintela.banco_conciliacion_sesion` (migration 0060). Cada vez que la
-pantalla post-procesar carga, lee la sesión abierta del usuario, re-corre
-el matcher contra los movs no conciliados todavía, y arma 3 buckets:
+conciliacion?'. Sí — guardamos el extracto parseado en
+`scintela.banco_conciliacion_sesion` (migration 0060).
+
+TMT 2026-06-02 dueña: 'no quiero cerrar la sesion, quiero dejar seguir
+editando. borremos lo necesario.' La sesión vive para siempre — una por
+banco (migration 0062 reemplaza el unique (no_banco, usuario) por
+(no_banco)). Cada upload de extracto se MERGEA en la única sesión del
+banco, dedupeando por número de documento contra:
+
+    - el payload actual (movs ya cargados en la sesión)
+    - banco_historicos_pendientes (filas crudas del banco ya conocidas)
+    - banco_conciliacion_match.real_documento (filas ya conciliadas)
+
+Cada vez que la pantalla post-procesar carga, re-corre el matcher contra
+los movs no conciliados y arma los buckets:
 
     - manual:        real_only y bancsis_only para checkbox 1:1 manual.
     - impuestos:     real_only categorizados como COMISION (auto-acoplar).
     - transferencias: matches con razón 'P0' (doc-id exacto).
-
-Además expone:
-    - sha256_bytes(b) → hash para detectar re-uploads del mismo archivo.
-    - mov_to_dict / dict_to_mov → serialización JSON del payload.
 """
 from __future__ import annotations
 
@@ -92,19 +99,24 @@ def tabla_existe() -> bool:
 # ─── CRUD básico de sesión ────────────────────────────────────────────
 
 
-def sesion_abierta(no_banco: int, usuario: str) -> dict | None:
-    """La sesión abierta del par (no_banco, usuario), o None."""
+def sesion_abierta(no_banco: int, usuario: str | None = None) -> dict | None:
+    """La única sesión abierta del banco, o None.
+
+    TMT 2026-06-02: drop filtro por usuario. Mig 0062 dejó UNA sola sesión
+    abierta por banco (sin importar quién la abrió). El param `usuario` se
+    deja como kwarg compatible con llamadores viejos pero se ignora.
+    """
     return db.fetch_one(
         """
         SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
                extracto_hash, extracto_nombre, extracto_payload,
                matches_hechos, pdf_path
           FROM scintela.banco_conciliacion_sesion
-         WHERE no_banco = %s AND usuario = %s AND cerrada_en IS NULL
+         WHERE no_banco = %s AND cerrada_en IS NULL
          ORDER BY abierta_en DESC
          LIMIT 1
         """,
-        (int(no_banco), usuario[:50]),
+        (int(no_banco),),
     )
 
 
@@ -186,31 +198,65 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
         return []
 
 
-def sesion_por_hash(no_banco: int, extracto_hash: str) -> dict | None:
-    """Busca cualquier sesión (abierta o cerrada) con el MISMO hash del
-    extracto para el mismo banco. Usado para detectar re-uploads del mismo
-    archivo y evitar duplicar el trabajo. TMT 2026-05-29 pedido dueña:
-    'si vuelvo a subir el mismo archivo no se tiene que duplicar'.
+def _documentos_ya_conocidos(no_banco: int) -> set[str]:
+    """Set de números de documento ya en el sistema para este banco.
 
-    Devuelve la sesión más reciente que coincide, o None.
+    Junta tres fuentes:
+      - banco_historicos_pendientes.documento (filas del banco ya cargadas)
+      - banco_conciliacion_match.real_documento (matches activos)
+      - extracto_payload de la sesión abierta (si existe)
+
+    TMT 2026-06-02 dueña: 'que compare numero de documento de banco y si
+    ya esta en nuestra lista, no agregarse'. Dedupe row-level por documento.
     """
-    if not extracto_hash:
-        return None
+    docs: set[str] = set()
     try:
-        return db.fetch_one(
+        rows = db.fetch_all(
             """
-            SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
-                   extracto_hash, extracto_nombre, matches_hechos
-              FROM scintela.banco_conciliacion_sesion
-             WHERE no_banco = %s
-               AND extracto_hash = %s
-             ORDER BY abierta_en DESC
-             LIMIT 1
+            SELECT DISTINCT documento
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s AND documento IS NOT NULL AND documento <> ''
             """,
-            (int(no_banco), extracto_hash),
-        )
-    except Exception:
-        return None
+            (int(no_banco),),
+        ) or []
+        docs.update((r.get("documento") or "").strip().upper() for r in rows)
+    except Exception as e:
+        _LOG.warning("dedupe: historicos query falló: %s", e)
+    try:
+        # Detectar si la columna deshecho_en existe (migration 0047).
+        filtro_undo = ""
+        try:
+            from modules.conciliacion.matcher_banco import _tiene_migration_47
+            if _tiene_migration_47():
+                filtro_undo = "AND deshecho_en IS NULL"
+        except Exception:
+            pass
+        rows = db.fetch_all(
+            f"""
+            SELECT DISTINCT real_documento
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s
+               AND real_documento IS NOT NULL
+               AND real_documento <> ''
+               {filtro_undo}
+            """,
+            (int(no_banco),),
+        ) or []
+        docs.update((r.get("real_documento") or "").strip().upper() for r in rows)
+    except Exception as e:
+        _LOG.warning("dedupe: matches query falló: %s", e)
+    # Documentos en el payload de la sesión actual.
+    abierta = sesion_abierta(int(no_banco))
+    if abierta:
+        try:
+            for m in cargar_movs(abierta):
+                if m.documento:
+                    docs.add(str(m.documento).strip().upper())
+        except Exception:
+            pass
+    # Limpiar vacíos defensivamente.
+    docs.discard("")
+    return docs
 
 
 def crear_sesion(
@@ -220,46 +266,77 @@ def crear_sesion(
     *,
     extracto_hash: str | None = None,
     extracto_nombre: str | None = None,
-) -> int:
-    """Crea una sesión NUEVA con el extracto parseado.
+) -> tuple[int, int, int]:
+    """Mergea movs nuevos en la sesión abierta del banco. Si no hay, crea una.
 
-    Si ya hay una abierta para el par (no_banco, usuario), la cierra primero
-    como 'abandonada' (cerrada_por='auto-replaced') para respetar el unique
-    index parcial.
+    Dedupea por número de documento contra (historicos ∪ matches activos ∪
+    payload existente). Solo agrega filas con `documento` que no se haya
+    visto antes para ese banco.
+
+    Returns:
+        (sesion_id, n_added, n_skipped)
+
+    TMT 2026-06-02 dueña: reformado para soportar "una sesión continua por
+    banco". Cada upload mete filas nuevas; las repetidas (mismo documento)
+    se descartan silenciosamente. Si no hay sesión abierta, la crea.
     """
     movs = list(movs)
-    payload = json.dumps([_mov_to_dict(m) for m in movs])
+    no_banco = int(no_banco)
 
-    with db.tx() as conn:
-        # Si ya hay una abierta, cerrarla automáticamente. La dueña empieza
-        # una conciliación nueva y la vieja queda como abandonada.
+    # Filtrar movs cuyo documento ya está conocido (otras filas, otros uploads).
+    docs_existentes = _documentos_ya_conocidos(no_banco)
+    nuevos: list[MovBanco] = []
+    skipped = 0
+    # Dedupe interno por si el mismo upload trae el documento repetido.
+    docs_en_upload: set[str] = set()
+    for m in movs:
+        doc = (m.documento or "").strip().upper()
+        if not doc:
+            # Sin documento → no podemos dedupear; lo dejamos pasar.
+            nuevos.append(m)
+            continue
+        if doc in docs_existentes or doc in docs_en_upload:
+            skipped += 1
+            continue
+        docs_en_upload.add(doc)
+        nuevos.append(m)
+
+    abierta = sesion_abierta(no_banco)
+    if abierta:
+        # MERGE: concatenar payload existente + nuevos.
+        existentes = cargar_movs(abierta)
+        merged = existentes + nuevos
+        payload = json.dumps([_mov_to_dict(m) for m in merged])
+        nombre = (extracto_nombre or abierta.get("extracto_nombre") or "")[:200]
         db.execute(
             """
             UPDATE scintela.banco_conciliacion_sesion
-               SET cerrada_en = CURRENT_TIMESTAMP,
-                   cerrada_por = 'auto-replaced'
-             WHERE no_banco = %s AND usuario = %s AND cerrada_en IS NULL
+               SET extracto_payload = %s::jsonb,
+                   extracto_nombre = %s,
+                   extracto_hash = COALESCE(%s, extracto_hash)
+             WHERE id = %s
             """,
-            (int(no_banco), usuario[:50]),
-            conn=conn,
+            (payload, nombre, extracto_hash, int(abierta["id"])),
         )
-        row = db.execute_returning(
-            """
-            INSERT INTO scintela.banco_conciliacion_sesion
-                (no_banco, usuario, extracto_hash, extracto_nombre, extracto_payload)
-            VALUES (%s, %s, %s, %s, %s::jsonb)
-            RETURNING id
-            """,
-            (int(no_banco), usuario[:50], extracto_hash, (extracto_nombre or "")[:200], payload),
-            conn=conn,
-        )
-        sid = int(row["id"]) if row else 0
-    # Snapshot del balance inicial al abrir la sesión (FUERA del db.tx).
-    # Capturado como evento_tipo='sesion_abierta', evento_ref=<sesion_id>.
+        return (int(abierta["id"]), len(nuevos), skipped)
+
+    # No hay sesión abierta → crear una.
+    payload = json.dumps([_mov_to_dict(m) for m in nuevos])
+    row = db.execute_returning(
+        """
+        INSERT INTO scintela.banco_conciliacion_sesion
+            (no_banco, usuario, extracto_hash, extracto_nombre, extracto_payload)
+        VALUES (%s, %s, %s, %s, %s::jsonb)
+        RETURNING id
+        """,
+        (no_banco, usuario[:50], extracto_hash, (extracto_nombre or "")[:200], payload),
+    )
+    sid = int(row["id"]) if row else 0
+    # Snapshot inicial.
     try:
         from modules.conciliacion import saldo_snapshot as _ss
         _ss.snapshot(
-            no_banco=int(no_banco),
+            no_banco=no_banco,
             evento_tipo="sesion_abierta",
             evento_ref=str(sid),
             usuario=usuario,
@@ -267,44 +344,7 @@ def crear_sesion(
         )
     except Exception as e:
         _LOG.warning("snapshot apertura sesión #%s falló: %s", sid, e)
-    return sid
-
-
-def cerrar_sesion(sesion_id: int, usuario: str, pdf_path: str | None = None) -> bool:
-    n = db.execute(
-        """
-        UPDATE scintela.banco_conciliacion_sesion
-           SET cerrada_en = CURRENT_TIMESTAMP,
-               cerrada_por = %s,
-               pdf_path = COALESCE(%s, pdf_path)
-         WHERE id = %s
-           AND cerrada_en IS NULL
-        """,
-        (usuario[:50], pdf_path, int(sesion_id)),
-    )
-    # TMT 2026-05-29 dueña: 'EN EL HISTORIAL NO ME PONES INICIAL Y FINAL'.
-    # crear_sesion ya toma snapshot 'sesion_abierta'; faltaba el simétrico
-    # al cerrar. Sin esto el historial mostraba '—' en saldo final aunque
-    # la sesión estaba cerrada.
-    if n:
-        try:
-            row = db.fetch_one(
-                "SELECT no_banco FROM scintela.banco_conciliacion_sesion WHERE id = %s",
-                (int(sesion_id),),
-            )
-            no_banco_s = int(row["no_banco"]) if row else 0
-            if no_banco_s:
-                from modules.conciliacion import saldo_snapshot as _ss
-                _ss.snapshot(
-                    no_banco=no_banco_s,
-                    evento_tipo="sesion_cerrada",
-                    evento_ref=str(sesion_id),
-                    usuario=usuario,
-                    descripcion=f"cierre sesión #{sesion_id}",
-                )
-        except Exception as e:
-            _LOG.warning("snapshot cierre sesión #%s falló: %s", sesion_id, e)
-    return bool(n)
+    return (sid, len(nuevos), skipped)
 
 
 def incrementar_matches(sesion_id: int, n: int = 1) -> None:

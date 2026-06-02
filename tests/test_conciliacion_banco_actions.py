@@ -176,10 +176,24 @@ def test_crear_transaccion_desde_real_acepta_documento_override(fake_db):
 # ─── Fase D — match manual, romper, historial ──────────────────────────────
 
 
+def _find_insert_match(fake_db):
+    """Encuentra el execute() del INSERT en banco_conciliacion_match.
+
+    No usar executes[-1] porque confirmar_match hace dual-write:
+    primero INSERT match, después UPDATE transacciones_bancarias
+    (cuando estado='matched' y hay id_transaccion). El INSERT no es
+    siempre el último.
+    """
+    for sql, params, conn in fake_db["executes"]:
+        if "INSERT INTO scintela.banco_conciliacion_match" in sql:
+            return sql, params, conn
+    raise AssertionError("no se encontró INSERT en banco_conciliacion_match")
+
+
 def test_match_manual_usa_metodo_matched_manual(fake_db):
     real = _mov_credito()
     matcher_banco.match_manual(no_banco=10, real=real, id_transaccion=555, usuario="u")
-    sql, params, conn = fake_db["executes"][-1]
+    sql, params, conn = _find_insert_match(fake_db)
     assert "banco_conciliacion_match" in sql
     # El tercer parámetro (índice 2) es `metodo`
     assert params[2] == "matched_manual"
@@ -250,7 +264,7 @@ def test_candidatos_match_manual_filtra_por_tipo_credito(fake_db):
 def test_confirmar_match_default_metodo_es_matched_auto(fake_db):
     real = _mov_credito()
     matcher_banco.confirmar_match(no_banco=10, real=real, id_transaccion=1, usuario="u")
-    _sql, params, _ = fake_db["executes"][-1]
+    _sql, params, _ = _find_insert_match(fake_db)
     assert params[2] == "matched_auto"
 
 
@@ -264,7 +278,7 @@ def test_confirmar_match_sin_migration_omite_metodo(fake_db_pre_migration):
     """Si la migration 0047 no corrió, el INSERT no incluye `metodo`."""
     real = _mov_credito()
     matcher_banco.confirmar_match(no_banco=10, real=real, id_transaccion=1, usuario="u")
-    sql, params, _ = fake_db_pre_migration["executes"][-1]
+    sql, params, _ = _find_insert_match(fake_db_pre_migration)
     # El SQL no debe mencionar 'metodo' como columna
     assert "metodo" not in sql.lower()
     # El segundo param sigue siendo estado='matched'

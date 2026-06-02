@@ -1,13 +1,19 @@
 {% extends "base.html" %}
-{% block titulo %}Historial de conciliaciones{% endblock %}
+{% block titulo %}Historial de sesiones{% endblock %}
 
 {% block content %}
-<div class="max-w-6xl">
+<div class="max-w-5xl">
   <div class="flex items-baseline justify-between mb-3">
-    <h1 class="text-2xl font-semibold">Historial de conciliaciones</h1>
+    <h1 class="text-2xl font-semibold">Historial de sesiones de conciliación</h1>
     <a href="{{ url_for('conciliacion.hub') }}" class="text-sm text-sky-600 hover:underline">← Volver a conciliación</a>
   </div>
-  <p class="text-sm text-slate-500 mb-4">Pichincha · todas las sesiones (abiertas y cerradas)</p>
+  <p class="text-sm text-slate-500 mb-4">
+    Pichincha · todas las sesiones.
+    {# TMT 2026-06-02 dueña: la sesión ya no se cierra. La fila "abierta"
+       es la sesión activa de hoy. El resto son sesiones cerradas
+       automáticamente por la migración 0062 (sesiones que existían cuando
+       todavía se podía cerrar). #}
+  </p>
 
   <div class="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
     <table class="w-full text-xs tabular-nums">
@@ -15,64 +21,32 @@
         <tr>
           <th class="px-3 py-2 text-left w-16">#</th>
           <th class="px-3 py-2 text-left w-32">Fecha apertura</th>
-          <th class="px-3 py-2 text-left w-32">Fecha cierre</th>
-          <th class="px-3 py-2 text-right w-32">Saldo inicial</th>
-          <th class="px-3 py-2 text-right w-32">Saldo final</th>
-          <th class="px-3 py-2 text-right w-28">Δ sesión</th>
-          <th class="px-3 py-2 text-right w-32" title="Último saldo del extracto subido">Saldo banco real</th>
-          <th class="px-3 py-2 text-right w-28" title="Saldo banco real − saldo final">Δ vs banco</th>
+          <th class="px-3 py-2 text-left w-32">Estado</th>
+          <th class="px-3 py-2 text-left">Archivo</th>
           <th class="px-3 py-2 text-right w-16">Matches</th>
           <th class="px-3 py-2 text-left">Acción</th>
         </tr>
       </thead>
       <tbody>
         {% for s in sesiones %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 {% if not s.cerrada_en %}bg-amber-50/30 dark:bg-amber-900/10{% endif %}">
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if not s.cerrada_en %}bg-emerald-50/30 dark:bg-emerald-900/10{% endif %}">
           <td class="px-3 py-1.5 font-mono">#{{ s.id }}</td>
           <td class="px-3 py-1.5 text-slate-500">{{ s.abierta_en|hora_ec('%Y-%m-%d %H:%M') if s.abierta_en else '—' }}</td>
-          <td class="px-3 py-1.5 text-slate-500">
-            {% if s.cerrada_en %}{{ s.cerrada_en|hora_ec('%Y-%m-%d %H:%M') }}
-            {% else %}<span class="text-amber-700 font-semibold">abierta</span>{% endif %}
+          <td class="px-3 py-1.5">
+            {% if s.cerrada_en %}
+              <span class="text-slate-500">cerrada {{ s.cerrada_en|hora_ec('%Y-%m-%d %H:%M') }}</span>
+            {% else %}
+              <span class="text-emerald-700 font-semibold">activa</span>
+            {% endif %}
           </td>
-          <td class="px-3 py-1.5 text-right font-mono {% if s.saldo_inicial is none %}text-slate-300{% else %}text-slate-700 dark:text-slate-300{% endif %}">
-            {% if s.saldo_inicial is not none %}{{ '{:,.2f}'.format(s.saldo_inicial) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-right font-mono {% if s.saldo_final is none %}text-slate-300{% else %}font-semibold text-slate-900 dark:text-slate-100{% endif %}">
-            {% if s.saldo_final is not none %}{{ '{:,.2f}'.format(s.saldo_final) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-right font-mono font-semibold
-            {% if s.saldo_inicial is not none and s.saldo_final is not none %}
-              {% set _d = (s.saldo_final - s.saldo_inicial) | round(2) %}
-              {% if _d > 0 %}text-emerald-700{% elif _d < 0 %}text-rose-700{% else %}text-slate-500{% endif %}
-            {% else %}text-slate-300{% endif %}">
-            {% if s.saldo_inicial is not none and s.saldo_final is not none %}{{ '{:+,.2f}'.format(s.saldo_final - s.saldo_inicial) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-right font-mono {% if s.saldo_banco_real is none %}text-slate-300{% else %}text-slate-700 dark:text-slate-300{% endif %}">
-            {% if s.saldo_banco_real is not none %}{{ '{:,.2f}'.format(s.saldo_banco_real) }}{% else %}—{% endif %}
-          </td>
-          <td class="px-3 py-1.5 text-right font-mono font-semibold
-            {% if s.diferencia_banco is not none %}
-              {% if s.diferencia_banco|abs > 0.5 %}text-rose-700
-              {% else %}text-emerald-700{% endif %}
-            {% else %}text-slate-300{% endif %}">
-            {% if s.diferencia_banco is not none %}{{ '{:+,.2f}'.format(s.diferencia_banco) }}{% else %}—{% endif %}
+          <td class="px-3 py-1.5 text-slate-500 truncate max-w-md" title="{{ s.extracto_nombre or '' }}">
+            {{ s.extracto_nombre or '—' }}
           </td>
           <td class="px-3 py-1.5 text-right font-semibold">{{ s.matches_hechos }}</td>
           <td class="px-3 py-1.5">
             <div class="flex items-center gap-3 flex-wrap">
-              {% if s.cerrada_en %}
-                {% if s.pdf_path %}
-                <a href="{{ url_for('conciliacion.banco_pdf', sesion_id=s.id) }}" class="text-emerald-600 hover:underline">📥 Excel</a>
-                {% endif %}
-                {# TMT 2026-05-29 dueña: cerrar deja de ser irreversible. #}
-                <form method="POST" action="{{ url_for('conciliacion.banco_reabrir_sesion') }}" class="inline m-0"
-                      onsubmit="return confirm('¿Reabrir sesión #{{ s.id }} para seguir editando?');">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="sesion_id" value="{{ s.id }}">
-                  <button class="text-amber-600 hover:underline text-xs">↻ Reabrir</button>
-                </form>
-              {% else %}
-                <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">retomar →</a>
+              {% if not s.cerrada_en %}
+                <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">abrir →</a>
               {% endif %}
               <form method="POST" action="{{ url_for('conciliacion.banco_borrar_sesion') }}" class="inline m-0"
                     onsubmit="return confirm('¿Borrar sesión #{{ s.id }}?\n\nSe borran los matches, snapshots y txs grupales creados durante esta sesión. Los pendientes históricos conciliados vuelven a pendientes. NO se puede deshacer.');">
@@ -85,7 +59,7 @@
         </tr>
         {% endfor %}
         {% if not sesiones %}
-        <tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 italic">— sin sesiones todavía —</td></tr>
+        <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 italic">— sin sesiones todavía —</td></tr>
         {% endif %}
       </tbody>
     </table>

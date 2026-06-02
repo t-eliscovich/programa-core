@@ -77,10 +77,29 @@
          conciliado'. Quitada la fila 'Diferencia no clasificada' + 'Saldo
          banco real' que confundía — el bloque cierra limpio en
          'Saldo banco esperado' (cálculo: conciliado + pendientes banco). #}
-      <div class="{{ _cc_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols_c }}">
+      <div class="{{ _cc }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols_c }}">
         <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
         <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
       </div>
+      {# TMT 2026-06-02 dueña: 'quiero saber como llegamos al actual valor
+         del banco de hoy, no el del programa, el del extracto'.
+         saldo_banco_real = última fila del extracto subido (columna Saldo,
+         fecha más reciente). Es lo que el banco realmente reporta. La
+         diferencia con el esperado = lo que falta conciliar. #}
+      {% if balance.saldo_banco_real is not none %}
+      <div class="{{ _cc_last }} border-t-2 border-slate-200 dark:border-slate-700"
+           style="{{ _cols_c }}"
+           title="Último saldo del extracto subido (fila con fecha más reciente)">
+        <div class="text-sky-700 dark:text-sky-300 font-semibold">Saldo banco según extracto</div>
+        <div class="text-right font-mono font-bold text-sky-700 dark:text-sky-300">${{ '{:,.2f}'.format(balance.saldo_banco_real) }}</div>
+      </div>
+      {% if balance.diferencia_no_clasificada is not none and balance.diferencia_no_clasificada|abs > 0.5 %}
+      <div class="{{ _cc_last }} text-[10px] text-slate-500" style="{{ _cols_c }}">
+        <div>Diferencia (esperado − extracto)</div>
+        <div class="text-right font-mono {% if balance.diferencia_no_clasificada > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(-balance.diferencia_no_clasificada) }}</div>
+      </div>
+      {% endif %}
+      {% endif %}
     </div>
   </div>
   {# TMT 2026-05-29 dueña: 'los pones en la pantalla en chiquito'. #}
@@ -157,10 +176,26 @@
        sin esas filas: Conciliado + Pendientes banco neto = Esperado.
        Excel sí mantiene el desglose chato (4 filas separadas). #}
 
-    <div class="{{ _row_last }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
+    <div class="{{ _row }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
       <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
       <div class="text-right font-mono font-bold text-slate-900 dark:text-slate-100">${{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</div>
     </div>
+
+    {# TMT 2026-06-02 dueña: 'como sabes cual es el saldo del banco?'.
+       saldo_banco_real lo leemos directo del extracto xlsx: tomamos la fila
+       con fecha más reciente y agarramos su columna `Saldo` (el running
+       balance que el banco reporta). Si no hay extracto cargado, no se
+       muestra esta fila. #}
+    {% if balance.saldo_banco_real is not none %}
+    <div class="{{ _row_last }} border-t-2 border-slate-300 dark:border-slate-600"
+         style="{{ _cols }}">
+      <div class="text-sky-700 dark:text-sky-300 font-semibold">
+        Saldo banco según extracto
+        <span class="block text-[10px] font-normal text-slate-400">última fila del xlsx que subiste</span>
+      </div>
+      <div class="text-right font-mono font-bold text-sky-700 dark:text-sky-300">${{ '{:,.2f}'.format(balance.saldo_banco_real) }}</div>
+    </div>
+    {% endif %}
   </div>
 
   {# TMT 2026-05-29 dueña: 'los pones en la pantalla en chiquito'.

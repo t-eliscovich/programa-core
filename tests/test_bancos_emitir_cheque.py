@@ -41,9 +41,32 @@ class _Cur:
         if "returning" in s:
             self._last_id = self._next_id
             self._next_id += 1
+        # Si es el SELECT que precede al UPDATE multi-posdat, preparar
+        # la respuesta de fetchall con un row matching del posdat pedido.
+        # El test usa id_posdat=42 con importe=500 (mismo que el cheque),
+        # esperamos que el side_effect diga 'Posdat #42 cerrada'.
+        self._next_fetchall: list = []
+        if "from scintela.posdat" in s and "id_posdat = any" in s:
+            ids = list(params[0]) if params and params[0] else []
+            importe_cheque = getattr(self.parent, "importe_actual", 0)
+            self._next_fetchall = [
+                {"id_posdat": i, "prov": "TEST", "importe": importe_cheque}
+                for i in ids
+            ]
 
     def fetchone(self):
-        return (getattr(self, "_last_id", 1234),)
+        # TMT 2026-06-02: producción usa RealDictCursor → cur.fetchone()
+        # devuelve dict-like, no tupla. db.execute_returning hace dict(row)
+        # sobre lo que sale acá; con tupla rompe con TypeError.
+        return {"id_transaccion": getattr(self, "_last_id", 1234)}
+
+    def fetchall(self):
+        # Producción usa cur.fetchall() en bancos.queries.emitir_cheque
+        # para leer las posdats que se van a cerrar. Devolvemos lo que
+        # el execute() previo armó en _next_fetchall.
+        rows = getattr(self, "_next_fetchall", [])
+        self._next_fetchall = []
+        return rows
 
 
 class _Conn:
@@ -58,6 +81,7 @@ class _DBStub:
     def __init__(self, banco_row=None):
         self.banco_row = banco_row or {"no_banco": 1, "nombre": "Pichincha"}
         self.executes: list[tuple] = []
+        self._next_id = 8000
 
     def fetch_one(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
@@ -71,6 +95,23 @@ class _DBStub:
             return {"sum_signed": 0}
         return None
 
+    def execute_returning(self, sql, params=None, conn=None):
+        # TMT 2026-06-02: bank_helpers.insert_movimiento_bancario usa
+        # db.execute_returning con INSERT ... RETURNING id_transaccion.
+        # Capturamos al mismo executes que el cursor para que los asserts
+        # de SQL en los tests sigan funcionando. También guardamos el
+        # `importe` del INSERT para que el cursor pueda devolverlo como
+        # posdat importe en el fetchall siguiente.
+        self.executes.append((sql, tuple(params or ())))
+        if "transacciones_bancarias" in sql and params and len(params) >= 5:
+            try:
+                # signature insert_movimiento_bancario: (fecha, documento, concepto, fechad, importe, ...)
+                self.importe_actual = float(params[4] or 0)
+            except (TypeError, ValueError, IndexError):
+                pass
+        self._next_id += 1
+        return {"id_transaccion": self._next_id}
+
     @contextlib.contextmanager
     def tx(self):
         yield _Conn(self)
@@ -82,6 +123,7 @@ def stub(monkeypatch):
     s = _DBStub()
     monkeypatch.setattr(db, "fetch_one", s.fetch_one)
     monkeypatch.setattr(db, "tx", s.tx)
+    monkeypatch.setattr(db, "execute_returning", s.execute_returning)
     import periodo_guard
     monkeypatch.setattr(periodo_guard, "asegurar_fecha_abierta", lambda *a, **kw: None)
     # bancos.queries hace import lazy de asegurar_fecha_abierta DENTRO de la función,
@@ -90,6 +132,9 @@ def stub(monkeypatch):
     import modules.bancos.queries as bq
     if hasattr(bq, "asegurar_fecha_abierta"):
         monkeypatch.setattr(bq, "asegurar_fecha_abierta", lambda *a, **kw: None)
+    import bank_helpers
+    monkeypatch.setattr(bank_helpers.db, "execute_returning", s.execute_returning)
+    monkeypatch.setattr(bank_helpers.db, "fetch_one", s.fetch_one)
     return s
 
 
