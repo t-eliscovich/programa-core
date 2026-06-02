@@ -176,6 +176,42 @@ def banco_post_procesar():
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
     balance = _bp.calcular(no_banco)
+    # TMT 2026-06-02 dueña: 'si en el extracto tenemos 5k de diferencia'.
+    # El XLSX (resumen) sumaba los movs del extracto sin matchear, la UI
+    # live no. Resultado: la UI mostraba $39K de diff cuando en realidad
+    # era $5.9K. Enriquezco pendientes_banco con los real_only de la sesión.
+    try:
+        movs_s_pend = _sesion.cargar_movs(sesion)
+        if movs_s_pend:
+            from modules.conciliacion.matcher_banco import matchear_extracto_banco
+            res_pend = matchear_extracto_banco(movs_s_pend, no_banco=no_banco)
+            extra_cred = 0.0
+            extra_deb = 0.0
+            extra_n = 0
+            for m in (res_pend.real_only or []):
+                monto_m = float(m.monto or 0)
+                if (m.tipo or "").upper() == "C":
+                    extra_cred += monto_m
+                else:
+                    extra_deb += monto_m
+                extra_n += 1
+            if extra_n:
+                balance["pendientes_banco_creditos"] = round(
+                    float(balance.get("pendientes_banco_creditos") or 0) + extra_cred, 2
+                )
+                balance["pendientes_banco_debitos"] = round(
+                    float(balance.get("pendientes_banco_debitos") or 0) + extra_deb, 2
+                )
+                balance["neto_pendientes"] = round(
+                    balance["pendientes_banco_creditos"] - balance["pendientes_banco_debitos"], 2
+                )
+                balance["n_pendientes"] = int(balance.get("n_pendientes") or 0) + extra_n
+                # Recalcular esperado con el neto actualizado.
+                base_concil = float(balance.get("saldo_si_concilio_todo") or balance.get("saldo") or 0)
+                balance["saldo_banco_esperado"] = round(base_concil + balance["neto_pendientes"], 2)
+    except Exception as e:
+        _LOG.warning("enrich pendientes banco con extracto falló: %s", e)
+
     # TMT 2026-06-02 dueña: 'lo deberia implementar el usuario no? porque
     # por el excel no sabemos cual es el ultimo valor'. Prioridad:
     #   1. sesion.saldo_banco_objetivo (manual, escrito por la dueña).
