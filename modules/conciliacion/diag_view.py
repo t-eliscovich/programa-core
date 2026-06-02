@@ -545,6 +545,56 @@ def stat_orphans():
     return jsonify(out)
 
 
+@bp.route("/borrar-no-feb2023", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def borrar_no_feb2023():
+    """Borra pendientes en banco_historicos_pendientes cuya fuente NO sea
+    el load de la dueña 'feb2023-xlsx-2026-06-02'. Los demás son legacy.
+
+    GET = dry-run con contadores.
+    POST = ejecuta DELETE.
+    """
+    no_banco = _BANCO_PICHINCHA
+    row = _db.fetch_one(
+        """
+        SELECT
+          COUNT(*) FILTER (WHERE conciliado_en IS NULL) AS pend_total,
+          COUNT(*) FILTER (WHERE conciliado_en IS NULL
+                            AND fuente NOT LIKE 'feb2023%%') AS pend_no_feb,
+          COUNT(*) FILTER (WHERE conciliado_en IS NULL
+                            AND fuente LIKE 'feb2023%%') AS pend_feb
+          FROM scintela.banco_historicos_pendientes
+         WHERE no_banco = %s
+        """,
+        (no_banco,),
+    )
+    out = {
+        "ok": True,
+        "pend_total": int(row["pend_total"]) if row else 0,
+        "pend_feb2023": int(row["pend_feb"]) if row else 0,
+        "pend_no_feb2023": int(row["pend_no_feb"]) if row else 0,
+    }
+    if request.method == "POST":
+        try:
+            n = _db.execute(
+                """
+                DELETE FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND conciliado_en IS NULL
+                   AND (fuente IS NULL OR fuente NOT LIKE 'feb2023%%')
+                """,
+                (no_banco,),
+            ) or 0
+            out["borrados"] = int(n)
+            out["modo"] = "ejecutado"
+        except Exception as e:
+            out["error"] = str(e)[:200]
+    else:
+        out["modo"] = "dry-run"
+    return jsonify(out)
+
+
 @bp.route("/match-potencial", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
