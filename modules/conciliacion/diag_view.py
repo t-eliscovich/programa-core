@@ -19,7 +19,17 @@ from flask import Blueprint, jsonify, request, redirect, url_for, flash
 
 import db as _db
 from auth import requiere_login, requiere_permiso
-from modules.conciliacion.views import _usuario_actual
+
+
+def _usuario_actual() -> str:
+    """Wrapper lazy para evitar circular imports cuando el módulo
+    diag_view se carga ANTES de modules.conciliacion.views."""
+    try:
+        from modules.conciliacion.views import _usuario_actual as _ua
+        return _ua()
+    except Exception:
+        from flask import session
+        return (session.get("usuario") or "web")[:50]
 
 _LOG = logging.getLogger("programa_core.conciliacion.diag")
 _BANCO_PICHINCHA = 10
