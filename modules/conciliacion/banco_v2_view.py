@@ -1048,24 +1048,61 @@ def banco_manual_confirmar():
                 if err_msg is None:
                     err_msg = str(e)
 
-        # 3) PC extras (M > N): stat='*' bulk, sin match record.
+        # 3) PC extras (M > N): crear match records con real_*=NULL para
+        # que aparezcan en el tab Conciliados con el lado programa visible.
+        # Detectamos si existe la columna `metodo` (mig 0047). Hacemos
+        # INSERT directo porque confirmar_match() requiere un MovBanco no-null.
         if len(bk_sorted) > n_pair:
             extras = [int(b) for b in bk_sorted[n_pair:]]
+            tiene_metodo = False
             try:
-                rc = _db.execute(
+                row = _db.fetch_one(
                     """
-                    UPDATE scintela.transacciones_bancarias
-                       SET stat = '*'
-                     WHERE id_transaccion = ANY(%s)
-                       AND no_banco = %s
+                    SELECT 1 FROM information_schema.columns
+                     WHERE table_schema='scintela'
+                       AND table_name='banco_conciliacion_match'
+                       AND column_name='metodo'
                     """,
-                    (extras, _BANCO_PICHINCHA),
-                ) or 0
-                n_matches += int(rc)
-            except Exception as e:
-                _LOG.warning("manual confirm UPDATE stat extras falló: %s", e)
-                if err_msg is None:
-                    err_msg = str(e)
+                )
+                tiene_metodo = bool(row)
+            except Exception:
+                pass
+            for bk_id in extras:
+                try:
+                    if tiene_metodo:
+                        _db.execute(
+                            """
+                            INSERT INTO scintela.banco_conciliacion_match (
+                                no_banco, estado, metodo,
+                                id_transaccion, usuario
+                            ) VALUES (%s, %s, %s, %s, %s)
+                            """,
+                            (_BANCO_PICHINCHA, 'matched', 'matched_manual',
+                             bk_id, usuario),
+                        )
+                    else:
+                        _db.execute(
+                            """
+                            INSERT INTO scintela.banco_conciliacion_match (
+                                no_banco, estado, id_transaccion, usuario
+                            ) VALUES (%s, %s, %s, %s)
+                            """,
+                            (_BANCO_PICHINCHA, 'matched', bk_id, usuario),
+                        )
+                    # Dual-write stat='*'.
+                    _db.execute(
+                        """
+                        UPDATE scintela.transacciones_bancarias
+                           SET stat = '*'
+                         WHERE id_transaccion = %s AND no_banco = %s
+                        """,
+                        (bk_id, _BANCO_PICHINCHA),
+                    )
+                    n_matches += 1
+                except Exception as e:
+                    _LOG.warning("manual confirm match PC extra %s falló: %s", bk_id, e)
+                    if err_msg is None:
+                        err_msg = str(e)
 
     # 2) Históricos seleccionados → conciliarlos vía confirmar_match.
     # TMT 2026-05-29 dueña: 'HAY UN BUG' + 'NO ESTABAN CONCILIADOS'.
