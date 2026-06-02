@@ -19,6 +19,7 @@ from flask import Blueprint, jsonify, request, redirect, url_for, flash
 
 import db as _db
 from auth import requiere_login, requiere_permiso
+from modules.conciliacion.views import _usuario_actual
 
 _LOG = logging.getLogger("programa_core.conciliacion.diag")
 _BANCO_PICHINCHA = 10
@@ -219,6 +220,100 @@ def diagnose():
             out["sesion_abierta"] = False
     except Exception as e:
         out["error_solapados"] = str(e)
+
+    return jsonify(out)
+
+
+@bp.route("/reset-y-cargar", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def reset_y_cargar():
+    """Reemplaza TODO el historial de pendientes banco con la lista
+    provista en el body JSON. Operación atómica:
+
+      1. DELETE banco_historicos_pendientes pendientes (WHERE conciliado_en IS NULL).
+      2. Vacía el extracto_payload de la sesión abierta del banco.
+      3. INSERTa todas las filas del payload.
+
+    Body esperado:
+      {"records": [{fecha, concepto, documento, monto, tipo, detalle}, ...]}
+
+    Devuelve contadores. La dueña pidió esto explícitamente:
+    'borres el historial y cargues estos movimientos como historial'.
+    """
+    body = request.get_json(silent=True) or {}
+    records = body.get("records") or []
+    if not isinstance(records, list) or not records:
+        return jsonify({"ok": False, "error": "body.records vacío o inválido"}), 400
+
+    no_banco = _BANCO_PICHINCHA
+    out = {"ok": True, "no_banco": no_banco}
+
+    try:
+        with _db.tx() as conn:
+            # 1) Borrar pendientes.
+            n_del = _db.execute(
+                """
+                DELETE FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s AND conciliado_en IS NULL
+                """,
+                (no_banco,),
+                conn=conn,
+            ) or 0
+            out["histos_borrados"] = int(n_del)
+
+            # 2) Vaciar payload de la sesión abierta.
+            from modules.conciliacion import sesion as _ses
+            sesion = _ses.sesion_abierta(no_banco)
+            if sesion:
+                _db.execute(
+                    """
+                    UPDATE scintela.banco_conciliacion_sesion
+                       SET extracto_payload = '[]'::jsonb
+                     WHERE id = %s
+                    """,
+                    (int(sesion["id"]),),
+                    conn=conn,
+                )
+                out["sesion_payload_vaciada"] = int(sesion["id"])
+            else:
+                out["sesion_payload_vaciada"] = None
+
+            # 3) Insertar las filas nuevas.
+            n_ins = 0
+            errores = []
+            for i, r in enumerate(records):
+                try:
+                    _db.execute(
+                        """
+                        INSERT INTO scintela.banco_historicos_pendientes
+                            (no_banco, fecha, concepto, documento, monto, tipo,
+                             oficina, detalle, fuente, creado_por, codigo)
+                        VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            no_banco,
+                            r.get("fecha"),
+                            (r.get("concepto") or "")[:120],
+                            (r.get("documento") or "")[:40],
+                            str(r.get("monto") or 0),
+                            (r.get("tipo") or "C")[:2],
+                            "",  # oficina
+                            (r.get("detalle") or "")[:30],
+                            "feb2023-xlsx-2026-06-02",
+                            _usuario_actual()[:50],
+                            (r.get("codigo") or "")[:20],
+                        ),
+                        conn=conn,
+                    )
+                    n_ins += 1
+                except Exception as e:
+                    errores.append({"i": i, "doc": r.get("documento"), "err": str(e)[:120]})
+            out["insertados"] = n_ins
+            if errores:
+                out["errores"] = errores[:20]
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
     return jsonify(out)
 
