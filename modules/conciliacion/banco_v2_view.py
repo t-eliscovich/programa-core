@@ -1764,20 +1764,15 @@ def banco_borrar_sesion():
         flash("Sesión no encontrada.", "warn")
         return redirect(url_for("conciliacion.banco_historial_v2"))
 
-    # BUG #5 fix 2026-05-29: si la sesión está abierta, NO usar NOW() como
-    # cota superior — arrasaría matches de cualquier otro flujo paralelo.
-    # Exigimos sesión cerrada para borrarla.
-    if not sesion.get("cerrada_en"):
-        flash(
-            "No se puede borrar una sesión abierta. Primero cerrala con "
-            "'Terminar y guardar' o anulá los matches individualmente.",
-            "error",
-        )
-        return redirect(url_for("conciliacion.banco_historial_v2"))
-
+    # TMT 2026-06-02 dueña: 'poneme boton anular conciliaciones y borrar'.
+    # Sesión abierta también se puede borrar — usamos NOW() como cota
+    # superior si no hay cerrada_en. Anula matches y limpia todo.
     usuario = _usuario_actual()
     abierta = sesion.get("abierta_en")
     cerrada = sesion.get("cerrada_en")
+    if not cerrada:
+        from datetime import datetime, timezone
+        cerrada = datetime.now(timezone.utc)
     counts = {"matches": 0, "snapshots": 0, "txs_grupales": 0, "historicos_reset": 0}
 
     try:
