@@ -69,6 +69,45 @@ def diagnose():
         out["pendientes_sin_documento"] = None
         out["error_sin_doc"] = str(e)
 
+    # 2.5. Cuántas filas marcó la mig 0063 como conciliadas (post-deploy).
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT COUNT(*) AS n
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s AND conciliado_por = 'mig-0063-dedupe'
+            """,
+            (_BANCO_PICHINCHA,),
+        )
+        out["mig_0063_dedupeadas"] = int(row["n"]) if row else 0
+    except Exception as e:
+        out["error_mig0063"] = str(e)
+
+    # 2.6. Duplicados REALES por firma estricta (la que usa mig 0063):
+    # (no_banco, documento, tipo, monto, fecha). Si esto da 0, no hay nada
+    # para dedupear y los 548 son pendientes únicos reales.
+    try:
+        row = _db.fetch_one(
+            """
+            SELECT COUNT(*) AS grupos,
+                   COALESCE(SUM(extras), 0) AS filas_extra
+              FROM (
+                SELECT COUNT(*) - 1 AS extras
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND conciliado_en IS NULL
+                   AND documento IS NOT NULL AND documento <> ''
+                 GROUP BY no_banco, documento, tipo, monto, fecha
+                HAVING COUNT(*) > 1
+              ) t
+            """,
+            (_BANCO_PICHINCHA,),
+        )
+        out["dup_estrictos_grupos"] = int(row["grupos"]) if row else 0
+        out["dup_estrictos_filas_extra"] = int(row["filas_extra"]) if row else 0
+    except Exception as e:
+        out["error_dup_estrictos"] = str(e)
+
     # 3. Documentos duplicados — grupos de (no_banco, documento) con >1 fila pendiente.
     # TMT 2026-06-02 dueña: 'puede ser que esos no esten duplicados entonces?'
     # Ahora desglosamos por tipo: si todas las ocurrencias tienen el mismo
