@@ -434,9 +434,10 @@ def borrar_conciliados_sesion():
                 ) or 0
                 out["matches_borrados"] = int(n_del)
 
-            # 5) Reset stat='*' orfanos: PCs marcados conciliados pero sin
-            # match activo, que NO sean del dbf-import original. Esos son
-            # residuos de conciliaciones N:M con código viejo.
+            # 5) Reset stat='*' orfanos: TODOS los PCs marcados conciliados
+            # sin match activo. Incluye dbf-import porque las conciliaciones
+            # N:M con código viejo dejaron PCs dbf-import sin match. La
+            # próxima sync dBase los restablece si en dBase siguen '*'.
             try:
                 n_orphan = _db.execute(
                     """
@@ -444,7 +445,6 @@ def borrar_conciliados_sesion():
                        SET stat = NULL
                      WHERE tb.no_banco = %s
                        AND TRIM(COALESCE(tb.stat, '')) = '*'
-                       AND tb.usuario_crea NOT IN ('dbf-import', 'asinfo-backfill')
                        AND NOT EXISTS (
                            SELECT 1 FROM scintela.banco_conciliacion_match m
                             WHERE m.id_transaccion = tb.id_transaccion
@@ -471,6 +471,77 @@ def borrar_conciliados_sesion():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
+    return jsonify(out)
+
+
+@bp.route("/stat-orphans", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def stat_orphans():
+    """Lista PCs con stat='*' sin match activo.
+
+    GET: solo lista (dry-run).
+    POST con ?fix=1: resetea stat=NULL en esos PCs.
+    """
+    no_banco = _BANCO_PICHINCHA
+    rows = _db.fetch_all(
+        """
+        SELECT t.id_transaccion, t.fecha, t.documento, t.importe,
+               t.numreferencia, t.usuario_crea, t.fecha_crea, t.concepto
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s
+           AND TRIM(COALESCE(t.stat, '')) = '*'
+           AND NOT EXISTS (
+               SELECT 1 FROM scintela.banco_conciliacion_match m
+                WHERE m.id_transaccion = t.id_transaccion
+                  AND m.deshecho_en IS NULL
+           )
+         ORDER BY t.fecha DESC, t.id_transaccion DESC
+         LIMIT 500
+        """,
+        (no_banco,),
+    ) or []
+
+    out = {
+        "ok": True,
+        "n_orphans": len(rows),
+        "ejemplos": [
+            {
+                "id": r["id_transaccion"],
+                "fecha": str(r["fecha"]) if r.get("fecha") else None,
+                "doc": r.get("documento"),
+                "importe": float(r.get("importe") or 0),
+                "numref": r.get("numreferencia"),
+                "usuario_crea": r.get("usuario_crea"),
+                "fecha_crea": str(r["fecha_crea"]) if r.get("fecha_crea") else None,
+                "concepto": (r.get("concepto") or "")[:60],
+            }
+            for r in rows[:50]
+        ],
+    }
+
+    if request.method == "POST" and request.args.get("fix") == "1":
+        # Filtro: solo PCs recientes (últimos 30 días). Excluye dbf legacy.
+        try:
+            n = _db.execute(
+                """
+                UPDATE scintela.transacciones_bancarias t
+                   SET stat = NULL
+                 WHERE t.no_banco = %s
+                   AND TRIM(COALESCE(t.stat, '')) = '*'
+                   AND t.fecha_crea >= NOW() - INTERVAL '30 days'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM scintela.banco_conciliacion_match m
+                        WHERE m.id_transaccion = t.id_transaccion
+                          AND m.deshecho_en IS NULL
+                   )
+                """,
+                (no_banco,),
+            ) or 0
+            out["fix_aplicado"] = True
+            out["resetados"] = int(n)
+        except Exception as e:
+            out["fix_error"] = str(e)
     return jsonify(out)
 
 
