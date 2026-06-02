@@ -190,7 +190,7 @@ def test_crear_sesion_crea_nueva_si_no_hay_abierta(monkeypatch):
     """Sin sesión abierta → INSERT directo y devuelve (sid, n_added, 0)."""
     # No hay sesión abierta.
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
                         lambda no_banco: set())
 
     returnings = [{"id": 999}]
@@ -208,12 +208,14 @@ def test_crear_sesion_crea_nueva_si_no_hay_abierta(monkeypatch):
     assert n_skipped == 0
 
 
-def test_crear_sesion_dedupe_por_documento(monkeypatch):
-    """TMT 2026-06-02: filas con documento ya conocido se omiten."""
+def test_crear_sesion_dedupe_por_firma_completa(monkeypatch):
+    """TMT 2026-06-02: filas con firma (doc+codigo+tipo+monto+fecha) ya
+    conocida se omiten. El `documento` solo NO es único."""
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
-    # 'A1' ya existe en histos.
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
-                        lambda no_banco: {"A1"})
+    # Firma de A1 con el monto default ($500) ya existe.
+    sig_a1 = _sesion._firma_mov("A1", "001045", "C", "500", date(2026, 5, 28))
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
+                        lambda no_banco: {sig_a1})
     returnings = [{"id": 100}]
     def fake_execute_returning(sql, params=None, conn=None):
         return returnings.pop(0) if returnings else None
@@ -226,7 +228,7 @@ def test_crear_sesion_dedupe_por_documento(monkeypatch):
     )
     assert sid == 100
     assert n_added == 1   # solo A2 entra
-    assert n_skipped == 1  # A1 se omitió
+    assert n_skipped == 1  # A1 se omitió por firma
 
 
 def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
@@ -237,7 +239,7 @@ def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
     }
     monkeypatch.setattr(_sesion, "sesion_abierta",
                         lambda no_banco: sesion_existente)
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
                         lambda no_banco: set())
     monkeypatch.setattr(_sesion, "cargar_movs", lambda s: [])
 
@@ -263,10 +265,13 @@ def test_crear_sesion_mergea_si_hay_abierta(monkeypatch):
 
 
 def test_dedupe_es_case_insensitive(monkeypatch):
-    """'abc123' en histos debe dedupear 'ABC123' del extracto nuevo."""
+    """'abc123' en histos debe dedupear 'ABC123' del extracto nuevo
+    (firma se normaliza a uppercase)."""
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
-                        lambda no_banco: {"ABC123"})  # uppercase ya conocido
+    # Firma de ABC123 con los defaults del _mov helper.
+    sig = _sesion._firma_mov("ABC123", "001045", "C", "500", date(2026, 5, 28))
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
+                        lambda no_banco: {sig})
     returnings = [{"id": 1}]
     monkeypatch.setattr(_sesion.db, "execute_returning",
                         lambda sql, params=None, conn=None:
@@ -275,8 +280,7 @@ def test_dedupe_es_case_insensitive(monkeypatch):
         no_banco=10, usuario="t",
         movs=[_mov(documento="abc123"), _mov(documento="ABC123"), _mov(documento="xYz999")],
     )
-    # abc123 y ABC123 ambos chocan con ABC123 conocido → omitidos.
-    # xYz999 nuevo → entra.
+    # abc123 y ABC123 ambos chocan con la firma → omitidos. xYz999 nuevo → entra.
     assert n_added == 1
     assert n_skipped == 2
 
@@ -288,7 +292,7 @@ def test_dedupe_documento_vacio_no_se_dedupe(monkeypatch):
     raras. Si dedupeáramos por 'vacío' descartaríamos filas legítimas.
     """
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
                         lambda no_banco: set())
     returnings = [{"id": 1}]
     monkeypatch.setattr(_sesion.db, "execute_returning",
@@ -305,7 +309,7 @@ def test_dedupe_documento_vacio_no_se_dedupe(monkeypatch):
 def test_dedupe_interno_dentro_del_mismo_upload(monkeypatch):
     """Si el extracto trae el mismo documento dos veces, dedupea contra sí mismo."""
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
                         lambda no_banco: set())
     returnings = [{"id": 1}]
     monkeypatch.setattr(_sesion.db, "execute_returning",
@@ -324,10 +328,9 @@ def test_dedupe_contra_payload_existente_en_sesion_abierta(monkeypatch):
     sesion_existente = {"id": 1, "no_banco": 10, "extracto_payload": []}
     monkeypatch.setattr(_sesion, "sesion_abierta",
                         lambda no_banco: sesion_existente)
-    # El helper _documentos_ya_conocidos incluye el payload actual.
-    # Simulamos que D1 ya está en payload.
-    monkeypatch.setattr(_sesion, "_documentos_ya_conocidos",
-                        lambda no_banco: {"D1"})
+    sig_d1 = _sesion._firma_mov("D1", "001045", "C", "500", date(2026, 5, 28))
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
+                        lambda no_banco: {sig_d1})
     monkeypatch.setattr(_sesion, "cargar_movs", lambda s: [])
     monkeypatch.setattr(_sesion.db, "execute",
                         lambda sql, params=None, conn=None: 1)
@@ -340,26 +343,68 @@ def test_dedupe_contra_payload_existente_en_sesion_abierta(monkeypatch):
     assert n_skipped == 1  # D1 (ya estaba)
 
 
-def test_documentos_ya_conocidos_junta_histos_matches_y_payload(monkeypatch):
-    """_documentos_ya_conocidos lee de las 3 fuentes y devuelve set uppercase."""
+def test_dedupe_preserva_iva_cost_misma_documento(monkeypatch):
+    """TMT 2026-06-02: el extracto Pichincha emite varias filas con MISMO
+    documento cuando hay cargos relacionados (CHEQUE DEVUELTO + IVA + COST).
+    El dedupe debe preservar las 3 filas — comparten doc pero difieren en
+    codigo/monto."""
+    monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
+    monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
+                        lambda no_banco: set())
+    monkeypatch.setattr(_sesion.db, "execute_returning",
+                        lambda sql, params=None, conn=None: {"id": 1})
+
+    # 3 filas con MISMO documento, distintos codigo + monto (escenario real
+    # mostrado en el extracto de la dueña: cheque devuelto + IVA + costo).
+    from modules.conciliacion.parser_banco import MovBanco as _MB
+    from decimal import Decimal
+    movs = [
+        _MB(fecha=date(2026, 5, 27), concepto="CHEQUE DEVUELTO", documento="106",
+            monto=Decimal("5000.00"), saldo=Decimal("0"), codigo="001314",
+            tipo="D", oficina="LA SCALA"),
+        _MB(fecha=date(2026, 5, 27), concepto="IVA COBRADO", documento="62207167",
+            monto=Decimal("0.37"), saldo=Decimal("0"), codigo="098450",
+            tipo="D", oficina="LA SCALA"),
+        _MB(fecha=date(2026, 5, 27), concepto="COST CHEQUE DEVUELTO", documento="62207167",
+            monto=Decimal("2.49"), saldo=Decimal("0"), codigo="098426",
+            tipo="D", oficina="LA SCALA"),
+    ]
+    sid, n_added, n_skipped = _sesion.crear_sesion(
+        no_banco=10, usuario="t", movs=movs,
+    )
+    # Las 3 filas entran — comparten documento pero las firmas difieren.
+    assert n_added == 3
+    assert n_skipped == 0
+
+
+def test_firmas_ya_conocidas_junta_histos_matches_y_payload(monkeypatch):
+    """_firmas_ya_conocidas lee de las 3 fuentes y devuelve set de tuplas."""
     fetched = {"histos": False, "matches": False}
     def fake_fetch_all(sql, params=None):
         if "banco_historicos_pendientes" in sql:
             fetched["histos"] = True
-            return [{"documento": "h1"}, {"documento": "H2"}]
+            return [
+                {"documento": "h1", "codigo": "098", "fecha": date(2026, 5, 1),
+                 "tipo": "C", "monto": 100},
+                {"documento": "H2", "codigo": "098", "fecha": date(2026, 5, 2),
+                 "tipo": "D", "monto": 50},
+            ]
         if "banco_conciliacion_match" in sql:
             fetched["matches"] = True
-            return [{"real_documento": "m1"}]
+            return [
+                {"real_documento": "m1", "real_fecha": date(2026, 5, 3),
+                 "real_tipo": "C", "real_monto": 200},
+            ]
         return []
     monkeypatch.setattr(_sesion.db, "fetch_all", fake_fetch_all)
-    # Sin sesión abierta → no payload.
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
 
-    docs = _sesion._documentos_ya_conocidos(10)
+    sigs = _sesion._firmas_ya_conocidas(10)
     assert fetched["histos"] is True
     assert fetched["matches"] is True
-    # Todo normalizado a UPPER.
-    assert "H1" in docs and "H2" in docs and "M1" in docs
+    # Verificar que las 3 firmas están (documento normalizado uppercase).
+    docs_solo = {s[0] for s in sigs}
+    assert "H1" in docs_solo and "H2" in docs_solo and "M1" in docs_solo
 
 
 def test_incrementar_matches_suma_a_la_columna(monkeypatch):

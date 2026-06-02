@@ -43,14 +43,16 @@ BEGIN
 END $$;
 
 -- 2) Marcar como conciliados los pendientes EXTRA — quedando 1 por
--- (no_banco, documento, tipo, monto). El "1 que queda" es la fila con
--- menor id (la más vieja).
+-- firma completa (no_banco, documento, tipo, monto, fecha). El "1 que
+-- queda" es la fila con menor id (la más vieja).
 --
--- ⚠ IMPORTANTE — TMT 2026-06-02 dueña: 'puede ser que esos no esten
--- duplicados entonces?'. Si dos filas tienen MISMO documento pero
--- DISTINTO tipo (C vs D), son un PAR CARGO+REVERSO legítimo (suma
--- contable = $0) — NO se deben dedupear. La partición incluye
--- `tipo` y `monto` para preservar esos pares.
+-- ⚠ TMT 2026-06-02 — IMPORTANTE: el `documento` del extracto Pichincha
+-- NO es único por fila. El banco emite varias filas con el mismo
+-- documento cuando hay cargos relacionados (CHEQUE DEVUELTO + IVA
+-- COBRADO + COST CHEQUE DEVUELTO comparten el mismo documento). Si
+-- dedupeamos solo por documento matamos las filas legítimas relacionadas.
+-- La firma completa de 5 campos garantiza que solo colapsamos filas
+-- EXACTAMENTE idénticas (mismo cargo cargado dos veces por el backfill).
 WITH ranked AS (
     SELECT id,
            ROW_NUMBER() OVER (

@@ -204,32 +204,24 @@ def cleanup_sesion_payload():
     if not s:
         return jsonify({"ok": False, "error": "no hay sesión abierta"}), 400
 
-    # 1) Docs en histos (pendientes, no vacíos).
-    docs_histos: set[str] = set()
-    try:
-        rows = _db.fetch_all(
-            """
-            SELECT DISTINCT documento
-              FROM scintela.banco_historicos_pendientes
-             WHERE no_banco = %s
-               AND conciliado_en IS NULL
-               AND documento IS NOT NULL AND documento <> ''
-            """,
-            (_BANCO_PICHINCHA,),
-        ) or []
-        docs_histos = {(r.get("documento") or "").strip().upper() for r in rows}
-        docs_histos.discard("")
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"query histos falló: {e}"}), 500
+    # 1) Firmas completas (doc + codigo + tipo + monto + fecha) en histos.
+    # TMT 2026-06-02: dedupe por firma completa, no solo documento. Caso
+    # IVA + COST de cheque devuelto comparten documento pero difieren en
+    # codigo/monto.
+    sigs_histos = _ses._firmas_ya_conocidas(_BANCO_PICHINCHA)
 
-    # 2) Recorrer payload de la sesión.
+    # 2) Recorrer payload de la sesión y filtrar por firma.
     movs = _ses.cargar_movs(s)
     keep: list = []
     removed: list[str] = []
     for m in movs:
-        doc = (m.documento or "").strip().upper()
-        if doc and doc in docs_histos:
-            removed.append(doc)
+        if not m.documento:
+            keep.append(m)
+            continue
+        sig = _ses._firma_mov(m.documento, getattr(m, "codigo", ""),
+                              m.tipo, m.monto, m.fecha)
+        if sig in sigs_histos:
+            removed.append(f"{m.documento}/{m.codigo}/{m.tipo}/{m.monto}")
             continue
         keep.append(m)
 

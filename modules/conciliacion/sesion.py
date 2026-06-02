@@ -198,32 +198,83 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
         return []
 
 
-def _documentos_ya_conocidos(no_banco: int) -> set[str]:
-    """Set de números de documento ya en el sistema para este banco.
+def _firma_mov(documento, codigo, tipo, monto, fecha) -> tuple:
+    """Firma única de una fila de extracto para dedup row-level.
+
+    TMT 2026-06-02 dueña: 'al final importa el codigo en el banco' +
+    'y codigo importa tambien'. El `Documento` del extracto Pichincha
+    NO es único — el banco emite múltiples filas con el mismo documento
+    cuando hay cargos relacionados (CHEQUE DEVUELTO + IVA + COST
+    comparten doc, distintos codigo/monto). La firma usa los 5 campos:
+        (documento, codigo, tipo, monto, fecha)
+    """
+    def _norm(v):
+        return (str(v) if v is not None else "").strip().upper()
+    try:
+        monto_norm = f"{float(monto or 0):.2f}"
+    except (TypeError, ValueError):
+        monto_norm = "0.00"
+    fecha_norm = fecha.isoformat() if hasattr(fecha, "isoformat") else _norm(fecha)
+    return (_norm(documento), _norm(codigo), _norm(tipo), monto_norm, fecha_norm)
+
+
+def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
+    """Set de firmas (documento, codigo, tipo, monto, fecha) ya en el sistema.
 
     Junta tres fuentes:
-      - banco_historicos_pendientes.documento (filas del banco ya cargadas)
-      - banco_conciliacion_match.real_documento (matches activos)
-      - extracto_payload de la sesión abierta (si existe)
+      - banco_historicos_pendientes (filas del banco ya cargadas; codigo
+        puede ser NULL en filas backfilleadas pre-mig-0064 — se normaliza a '')
+      - banco_conciliacion_match.real_* (matches activos; no tiene codigo,
+        se usa '' para no excluir falsamente)
+      - extracto_payload de la sesión abierta (codigo siempre disponible)
 
-    TMT 2026-06-02 dueña: 'que compare numero de documento de banco y si
-    ya esta en nuestra lista, no agregarse'. Dedupe row-level por documento.
+    Una fila nueva del extracto se omite SOLO si su firma completa coincide.
+    Si comparte documento pero difiere en monto/codigo (caso IVA + COST de
+    cheque devuelto), pasa como nueva.
     """
-    docs: set[str] = set()
+    sigs: set[tuple] = set()
+    # 1) banco_historicos_pendientes. La columna `codigo` existe a partir
+    # de mig 0064; usamos COALESCE para tolerar el estado pre-mig.
     try:
         rows = db.fetch_all(
             """
-            SELECT DISTINCT documento
+            SELECT documento, fecha, tipo, monto,
+                   COALESCE(codigo, '') AS codigo
               FROM scintela.banco_historicos_pendientes
-             WHERE no_banco = %s AND documento IS NOT NULL AND documento <> ''
+             WHERE no_banco = %s
+               AND documento IS NOT NULL AND documento <> ''
             """,
             (int(no_banco),),
         ) or []
-        docs.update((r.get("documento") or "").strip().upper() for r in rows)
+        for r in rows:
+            sigs.add(_firma_mov(
+                r.get("documento"), r.get("codigo"),
+                r.get("tipo"), r.get("monto"), r.get("fecha"),
+            ))
     except Exception as e:
-        _LOG.warning("dedupe: historicos query falló: %s", e)
+        # Fallback si la columna codigo no existe todavía (pre-0064).
+        _LOG.warning("dedupe: histos con codigo falló (¿pre-mig-0064?): %s", e)
+        try:
+            rows = db.fetch_all(
+                """
+                SELECT documento, fecha, tipo, monto
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND documento IS NOT NULL AND documento <> ''
+                """,
+                (int(no_banco),),
+            ) or []
+            for r in rows:
+                sigs.add(_firma_mov(
+                    r.get("documento"), "",
+                    r.get("tipo"), r.get("monto"), r.get("fecha"),
+                ))
+        except Exception as e2:
+            _LOG.warning("dedupe: histos fallback falló: %s", e2)
+
+    # 2) matches activos. No tienen codigo en el schema → usamos '' como
+    # codigo para que coincida solo con extractos sin codigo (defensivo).
     try:
-        # Detectar si la columna deshecho_en existe (migration 0047).
         filtro_undo = ""
         try:
             from modules.conciliacion.matcher_banco import _tiene_migration_47
@@ -233,7 +284,7 @@ def _documentos_ya_conocidos(no_banco: int) -> set[str]:
             pass
         rows = db.fetch_all(
             f"""
-            SELECT DISTINCT real_documento
+            SELECT real_documento, real_fecha, real_tipo, real_monto
               FROM scintela.banco_conciliacion_match
              WHERE no_banco = %s
                AND real_documento IS NOT NULL
@@ -242,21 +293,36 @@ def _documentos_ya_conocidos(no_banco: int) -> set[str]:
             """,
             (int(no_banco),),
         ) or []
-        docs.update((r.get("real_documento") or "").strip().upper() for r in rows)
+        for r in rows:
+            sigs.add(_firma_mov(
+                r.get("real_documento"), "",
+                r.get("real_tipo"), r.get("real_monto"), r.get("real_fecha"),
+            ))
     except Exception as e:
         _LOG.warning("dedupe: matches query falló: %s", e)
-    # Documentos en el payload de la sesión actual.
+
+    # 3) Payload de la sesión abierta — codigo SÍ disponible.
     abierta = sesion_abierta(int(no_banco))
     if abierta:
         try:
             for m in cargar_movs(abierta):
                 if m.documento:
-                    docs.add(str(m.documento).strip().upper())
+                    sigs.add(_firma_mov(
+                        m.documento, getattr(m, "codigo", ""),
+                        m.tipo, m.monto, m.fecha,
+                    ))
         except Exception:
             pass
-    # Limpiar vacíos defensivamente.
-    docs.discard("")
-    return docs
+    return sigs
+
+
+# Alias compat hacia atrás (tests existentes lo importan por nombre).
+def _documentos_ya_conocidos(no_banco: int) -> set[str]:
+    """⚠ DEPRECATED — usar _firmas_ya_conocidas. Devuelve solo documentos
+    sueltos sin tipo/monto/fecha — peligroso por el caso IVA+COST que
+    comparten documento. Se mantiene para tests que lo monkey-patchean.
+    """
+    return {f[0] for f in _firmas_ya_conocidas(no_banco)}
 
 
 def crear_sesion(
@@ -283,22 +349,24 @@ def crear_sesion(
     movs = list(movs)
     no_banco = int(no_banco)
 
-    # Filtrar movs cuyo documento ya está conocido (otras filas, otros uploads).
-    docs_existentes = _documentos_ya_conocidos(no_banco)
+    # Filtrar movs cuya firma completa (doc + codigo + tipo + monto + fecha)
+    # ya esté conocida. TMT 2026-06-02 dueña: dedupe por firma completa, no
+    # solo por documento — el banco emite varias filas con el mismo doc
+    # (caso CHEQUE DEVUELTO → IVA + COST con diferente codigo/monto).
+    sigs_existentes = _firmas_ya_conocidas(no_banco)
     nuevos: list[MovBanco] = []
     skipped = 0
-    # Dedupe interno por si el mismo upload trae el documento repetido.
-    docs_en_upload: set[str] = set()
+    sigs_en_upload: set[tuple] = set()
     for m in movs:
-        doc = (m.documento or "").strip().upper()
-        if not doc:
-            # Sin documento → no podemos dedupear; lo dejamos pasar.
+        if not m.documento:
+            # Sin documento → no podemos firmar bien; lo dejamos pasar.
             nuevos.append(m)
             continue
-        if doc in docs_existentes or doc in docs_en_upload:
+        sig = _firma_mov(m.documento, m.codigo, m.tipo, m.monto, m.fecha)
+        if sig in sigs_existentes or sig in sigs_en_upload:
             skipped += 1
             continue
-        docs_en_upload.add(doc)
+        sigs_en_upload.add(sig)
         nuevos.append(m)
 
     abierta = sesion_abierta(no_banco)
