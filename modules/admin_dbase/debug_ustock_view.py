@@ -228,6 +228,36 @@ def diagnose():
         posdat_bd["error"] = traceback.format_exc()
     out["posdat_breakdown"] = posdat_bd
 
+    # 8. mov_doble cierres YY de hoy — confirma que el delta 615k vs dBase
+    #    es el efecto del fix YY (bug 1) que se aplicó esta mañana. Si
+    #    total_cerrado_hoy ≈ 615k → hipótesis confirmada, no hay bug.
+    try:
+        r = db.fetch_one(
+            """
+            SELECT COUNT(*) AS n_cierres,
+                   COALESCE(SUM(importe), 0) AS total_cerrado,
+                   MIN(fecha_creacion) AS primer_cierre,
+                   MAX(fecha_creacion) AS ultimo_cierre
+            FROM scintela.mov_doble
+            WHERE tipo = 'posdat_yy_cierre_mes'
+              AND fecha_creacion::date = CURRENT_DATE
+            """
+        ) or {}
+        out["yy_cierres_hoy"] = r
+
+        # Cierres históricos (todos)
+        r2 = db.fetch_one(
+            """
+            SELECT COUNT(*) AS n_cierres_total,
+                   COALESCE(SUM(importe), 0) AS total_cerrado_acumulado
+            FROM scintela.mov_doble
+            WHERE tipo = 'posdat_yy_cierre_mes'
+            """
+        ) or {}
+        out["yy_cierres_historicos"] = r2
+    except Exception:
+        out["yy_cierres_error"] = traceback.format_exc()
+
     return Response(
         json.dumps(out, indent=2, default=str),
         mimetype="application/json",
