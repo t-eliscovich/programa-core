@@ -552,17 +552,16 @@ def bucketizar(res: ConciliacionBanco) -> dict:
     manual_programa.sort(key=lambda x: abs(float(x["mov"].importe or 0)), reverse=True)
     impuestos.sort(key=lambda x: float(x["mov"].monto or 0), reverse=True)
 
-    # TMT 2026-06-02 dueña: 'pero yo no quiero ningun match automatico'.
-    # Promovemos todos los matches (P0 y sugerencias) de vuelta a Manual
-    # para que ella tilde manualmente. Transferencias y sugerencias quedan
-    # vacíos.
-    for m in (res.matches or []):
-        if getattr(m, "real", None) is not None:
-            manual_banco.append({"mov": m.real, "cat": None, "idx": -1})
-        if getattr(m, "bancsis", None) is not None:
-            manual_programa.append({"mov": m.bancsis, "cat": None, "idx": -1})
+    # TMT 2026-06-02 dueña: 'transferencias y comisiones impuestos dejalo'.
+    # Revert: los matches vuelven a Transferencias por doc / Sugerencias.
     transferencias = []
     sugerencias = []
+    for m in (res.matches or []):
+        razon = (m.razon or "").upper()
+        if "PASS 0" in razon or "P0" in razon or "DOC-ID" in razon or "DOC ID" in razon:
+            transferencias.append(m)
+        else:
+            sugerencias.append(m)
 
     return {
         "manual_banco": manual_banco,
