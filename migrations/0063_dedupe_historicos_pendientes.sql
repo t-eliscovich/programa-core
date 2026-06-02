@@ -42,13 +42,19 @@ BEGIN
                  n_pre, n_a_dedupear;
 END $$;
 
--- 2) Marcar como conciliados todos los pendientes EXTRA — quedando 1 por
--- (no_banco, documento). El "1 que queda" es la fila con menor id (la
--- más vieja por orden de inserción).
+-- 2) Marcar como conciliados los pendientes EXTRA — quedando 1 por
+-- (no_banco, documento, tipo, monto). El "1 que queda" es la fila con
+-- menor id (la más vieja).
+--
+-- ⚠ IMPORTANTE — TMT 2026-06-02 dueña: 'puede ser que esos no esten
+-- duplicados entonces?'. Si dos filas tienen MISMO documento pero
+-- DISTINTO tipo (C vs D), son un PAR CARGO+REVERSO legítimo (suma
+-- contable = $0) — NO se deben dedupear. La partición incluye
+-- `tipo` y `monto` para preservar esos pares.
 WITH ranked AS (
     SELECT id,
            ROW_NUMBER() OVER (
-               PARTITION BY no_banco, documento
+               PARTITION BY no_banco, documento, tipo, monto, fecha
                ORDER BY id ASC
            ) AS rn
       FROM scintela.banco_historicos_pendientes
