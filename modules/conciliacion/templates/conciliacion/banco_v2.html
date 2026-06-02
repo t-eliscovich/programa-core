@@ -129,12 +129,17 @@
   });
 
   // Toggle "todos" — un checkbox con data-toggle-all="<panel>" marca/desmarca
+  // SOLO las filas VISIBLES (respeta el filtro de búsqueda actual).
+  // TMT 2026-06-02 dueña: 'cuando marco todos, que sea de los filtrados'.
   document.querySelectorAll('input[data-toggle-all]').forEach(function(master){
     master.addEventListener('change', function(){
       var panel = master.dataset.toggleAll;
       var sec = document.querySelector('[data-panel="'+panel+'"]');
       if (!sec) return;
       sec.querySelectorAll('input[type=checkbox][data-monto]').forEach(function(cb){
+        // Si la fila contenedora está oculta por el filtro, no la tocamos.
+        var tr = cb.closest('tr');
+        if (tr && tr.style.display === 'none') return;
         cb.checked = master.checked;
       });
       recalc(panel);

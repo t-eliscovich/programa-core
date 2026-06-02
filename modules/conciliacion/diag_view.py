@@ -238,7 +238,10 @@ def match_potencial():
     """
     out = {"ok": True, "no_banco": _BANCO_PICHINCHA}
 
-    # 1) Match contra numreferencia (todas las txs, no solo pendientes).
+    # 1) Match contra numreferencia y no_cheque (vía chequextransaccion).
+    # no_cheque NO está en transacciones_bancarias — vive en scintela.cheque
+    # ligado vía chequextransaccion. numreferencia es INTEGER en algunos
+    # casos → casteamos a text para comparar con documento.
     try:
         rows = _db.fetch_all(
             """
@@ -250,26 +253,34 @@ def match_potencial():
                    AND documento IS NOT NULL AND documento <> ''
             ),
             txs AS (
-                SELECT id_transaccion, numreferencia, no_cheque,
+                SELECT id_transaccion,
+                       CAST(numreferencia AS TEXT) AS numref,
                        documento AS doc_pc, importe, fecha, stat
                   FROM scintela.transacciones_bancarias
                  WHERE no_banco = %s
-                   AND (numreferencia IS NOT NULL AND numreferencia <> ''
-                        OR no_cheque IS NOT NULL AND no_cheque <> '')
+            ),
+            cheques AS (
+                SELECT DISTINCT CAST(ch.no_cheque AS TEXT) AS no_cheque,
+                                cxt.id_transaccion
+                  FROM scintela.cheque ch
+                  JOIN scintela.chequextransaccion cxt
+                    ON cxt.no_cheque = ch.no_cheque
+                 WHERE ch.no_cheque IS NOT NULL
             )
             SELECT
                 COUNT(*) FILTER (WHERE EXISTS (
-                    SELECT 1 FROM txs t WHERE t.numreferencia = pend.documento
+                    SELECT 1 FROM txs t WHERE t.numref = pend.documento
                 )) AS match_por_numref,
                 COUNT(*) FILTER (WHERE EXISTS (
-                    SELECT 1 FROM txs t WHERE t.no_cheque = pend.documento
+                    SELECT 1 FROM cheques c WHERE c.no_cheque = pend.documento
                 )) AS match_por_no_cheque,
                 COUNT(*) FILTER (WHERE EXISTS (
                     SELECT 1 FROM txs t WHERE t.doc_pc = pend.documento
                 )) AS match_por_doc_pc,
                 COUNT(*) FILTER (WHERE EXISTS (
-                    SELECT 1 FROM txs t
-                     WHERE t.numreferencia = pend.documento OR t.no_cheque = pend.documento
+                    SELECT 1 FROM txs t WHERE t.numref = pend.documento
+                    UNION
+                    SELECT 1 FROM cheques c WHERE c.no_cheque = pend.documento
                 )) AS match_cualquiera,
                 COUNT(*) AS pendientes_totales
               FROM pend
@@ -291,7 +302,8 @@ def match_potencial():
         ejemplos = _db.fetch_all(
             """
             SELECT h.documento, h.monto, h.fecha AS fecha_banco, h.tipo,
-                   t.id_transaccion, t.numreferencia, t.no_cheque,
+                   t.id_transaccion,
+                   CAST(t.numreferencia AS TEXT) AS numref_pc,
                    t.fecha AS fecha_pc, t.importe, t.documento AS doc_pc,
                    t.stat,
                    (CASE WHEN TRIM(COALESCE(t.stat,'')) = '*' THEN 'conciliado_dbase'
@@ -299,7 +311,7 @@ def match_potencial():
               FROM scintela.banco_historicos_pendientes h
               JOIN scintela.transacciones_bancarias t
                 ON t.no_banco = h.no_banco
-               AND (t.numreferencia = h.documento OR t.no_cheque = h.documento)
+               AND CAST(t.numreferencia AS TEXT) = h.documento
              WHERE h.no_banco = %s
                AND h.conciliado_en IS NULL
                AND h.documento IS NOT NULL AND h.documento <> ''
@@ -315,8 +327,7 @@ def match_potencial():
                 "fecha_banco": str(e.get("fecha_banco")) if e.get("fecha_banco") else None,
                 "tipo": e.get("tipo"),
                 "id_transaccion": e.get("id_transaccion"),
-                "numref_pc": e.get("numreferencia"),
-                "no_cheque_pc": e.get("no_cheque"),
+                "numref_pc": e.get("numref_pc"),
                 "doc_pc": e.get("doc_pc"),
                 "fecha_pc": str(e.get("fecha_pc")) if e.get("fecha_pc") else None,
                 "importe_pc": float(e.get("importe") or 0),
