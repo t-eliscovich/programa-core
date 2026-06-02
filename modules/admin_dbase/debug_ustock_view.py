@@ -228,6 +228,24 @@ def diagnose():
         posdat_bd["error"] = traceback.format_exc()
     out["posdat_breakdown"] = posdat_bd
 
+    # 7.4. Dump TODAS las filas PC banc=0 NO_YY para matchear vs POSDAT.DBF
+    # Necesario para identificar las entries exactas que difieren — el
+    # matching lo hacemos client-side contra el DBF leído por la dev.
+    try:
+        out["pc_posdat_banc0_no_yy_dump"] = db.fetch_all(
+            """
+            SELECT id_posdat, num, prov, importe, concepto,
+                   fecha, fechad, usuario_crea
+            FROM scintela.posdat
+            WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+              AND COALESCE(banc, 0) = 0
+              AND UPPER(COALESCE(prov, '')) != 'YY'
+            ORDER BY prov, num
+            """
+        ) or []
+    except Exception:
+        out["pc_posdat_dump_error"] = traceback.format_exc()
+
     # 7.5. Diff PC vs POSDAT.DBF — identificar las 8 entries PC-only
     # (TMT 2026-06-02: queremos saber si son legacy RR, auto-creadas por
     # compras/cheques de la UI, o stale.)
