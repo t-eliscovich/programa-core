@@ -237,12 +237,15 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
 def _firma_mov(documento, codigo, tipo, monto, fecha) -> tuple:
     """Firma única de una fila de extracto para dedup row-level.
 
-    TMT 2026-06-02 dueña: 'al final importa el codigo en el banco' +
-    'y codigo importa tambien'. El `Documento` del extracto Pichincha
-    NO es único — el banco emite múltiples filas con el mismo documento
-    cuando hay cargos relacionados (CHEQUE DEVUELTO + IVA + COST
-    comparten doc, distintos codigo/monto). La firma usa los 5 campos:
-        (documento, codigo, tipo, monto, fecha)
+    TMT 2026-06-02: 4 campos (documento, tipo, monto, fecha). El `codigo`
+    se ignora porque las filas backfilled (mig 0056-0058) no lo tienen
+    cargado (NULL) → la firma 5-field nunca matcheaba contra los nuevos
+    uploads que sí lo tienen, dejando duplicados visibles. El caso
+    IVA+COST que motivó agregar codigo ya queda cubierto por `monto`
+    (un IVA y un COST tienen montos distintos del mismo documento).
+
+    Param `codigo` se mantiene por compat con callers existentes pero
+    no participa en la firma.
     """
     def _norm(v):
         return (str(v) if v is not None else "").strip().upper()
@@ -251,7 +254,7 @@ def _firma_mov(documento, codigo, tipo, monto, fecha) -> tuple:
     except (TypeError, ValueError):
         monto_norm = "0.00"
     fecha_norm = fecha.isoformat() if hasattr(fecha, "isoformat") else _norm(fecha)
-    return (_norm(documento), _norm(codigo), _norm(tipo), monto_norm, fecha_norm)
+    return (_norm(documento), _norm(tipo), monto_norm, fecha_norm)
 
 
 def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:

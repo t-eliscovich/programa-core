@@ -213,7 +213,7 @@ def test_crear_sesion_dedupe_por_firma_completa(monkeypatch):
     conocida se omiten. El `documento` solo NO es único."""
     monkeypatch.setattr(_sesion, "sesion_abierta", lambda no_banco: None)
     # Firma de A1 con el monto default ($500) ya existe.
-    sig_a1 = _sesion._firma_mov("A1", "001045", "C", "500", date(2026, 5, 28))
+    sig_a1 = _sesion._firma_mov("A1", "", "C", "500", date(2026, 5, 28))
     monkeypatch.setattr(_sesion, "_firmas_ya_conocidas",
                         lambda no_banco: {sig_a1})
     returnings = [{"id": 100}]

@@ -838,8 +838,13 @@ def banco_descartar():
             flash(f"Error al descartar históricos: {e}", "error")
             return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
-    # 2) Para movs del extracto: los insertamos en banco_historicos_pendientes
-    # YA conciliados (preserva auditoría + saca de la lista de pendientes).
+    # 2) Para movs del extracto: PRIMERO intentamos marcar como conciliado
+    # un histo existente que matchee firma (caso común: el extracto trajo
+    # una fila que YA está en banco_historicos_pendientes como pendiente).
+    # Si no hay, INSERTAMOS uno nuevo ya conciliado.
+    # TMT 2026-06-02 fix: antes hacíamos solo INSERT ... ON CONFLICT DO
+    # NOTHING, que silenciosamente saltaba cuando el histo ya estaba y no
+    # actualizaba conciliado_en — la dueña veía el mov seguir pendiente.
     if real_sigs:
         movs = _sesion.cargar_movs(sesion)
         sig_a_mov = {}
@@ -856,6 +861,31 @@ def banco_descartar():
             if not mov:
                 continue
             try:
+                # Intento 1: UPDATE del histo existente (pendiente) que matchee firma.
+                rc = _db.execute(
+                    """
+                    UPDATE scintela.banco_historicos_pendientes
+                       SET conciliado_en = CURRENT_TIMESTAMP,
+                           conciliado_por = %s
+                     WHERE no_banco = %s
+                       AND fecha = %s
+                       AND COALESCE(documento, '') = COALESCE(%s, '')
+                       AND monto = %s::numeric
+                       AND tipo = %s
+                       AND conciliado_en IS NULL
+                    """,
+                    (
+                        f"descart:{motivo}"[:50],
+                        no_banco, mov.fecha,
+                        (mov.documento or "")[:40],
+                        str(mov.monto or 0),
+                        (mov.tipo or "C")[:2],
+                    ),
+                ) or 0
+                if rc > 0:
+                    n_real += rc
+                    continue
+                # Intento 2: no había histo existente → INSERT uno ya conciliado.
                 _db.execute(
                     """
                     INSERT INTO scintela.banco_historicos_pendientes
