@@ -3714,6 +3714,24 @@ def informe_balance() -> dict:
     utilidad = patr - patant
     patr_para_utilidad = patr  # mismo que patr — exposed para el panel debug
 
+    # ─── SYNC del diagnostico tras el override de vsto ───
+    # El diagnostico se construyó ~300 líneas arriba con vsto=0 (placeholder)
+    # y por lo tanto totl/patr/utilidad de esa rama quedaron sin contar el
+    # stock. Consumidores que leen `diagnostico.componentes.vsto` (ej.
+    # sync_dbase_actual.comparar_drift_balance) recibían 0 → drift 100% y
+    # patrimonio 38% off. Bug encontrado 2026-06-02 via /admin/dbase-sync.
+    # Top-level resultado["vsto"] siempre estuvo bien — éste es sólo el
+    # mirror para componentes.
+    try:
+        _comp = (diagnostico or {}).get("componentes")
+        if isinstance(_comp, dict):
+            _comp["vsto"] = vsto
+            _comp["totl"] = totl
+            _comp["patr"] = patr
+            _comp["utilidad"] = utilidad
+    except Exception:
+        pass
+
     # Tabla RESULTADOS rediseñada (Federico 2026-05-21) — definida fila por
     # fila con el dueño. Reemplaza en balance.html el viejo bloque VENTA +
     # 5 filas COSTOS + Total + Utilidad Actual. El costo unitario de Materia
