@@ -383,11 +383,30 @@ def cleanup_sesion_payload():
     if not s:
         return jsonify({"ok": False, "error": "no hay sesión abierta"}), 400
 
-    # 1) Firmas completas (doc + codigo + tipo + monto + fecha) en histos.
-    # TMT 2026-06-02: dedupe por firma completa, no solo documento. Caso
-    # IVA + COST de cheque devuelto comparten documento pero difieren en
-    # codigo/monto.
-    sigs_histos = _ses._firmas_ya_conocidas(_BANCO_PICHINCHA)
+    # 1) Firmas EN HISTOS (no usar _firmas_ya_conocidas porque incluye
+    # el propio payload de la sesión → cada fila se encontraría como
+    # duplicada de sí misma y removeríamos TODO el payload).
+    # TMT 2026-06-02 fix crítico: aquí solo queremos histos + matches
+    # activos, NO el payload actual.
+    sigs_histos: set[tuple] = set()
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT documento, fecha, tipo, monto
+              FROM scintela.banco_historicos_pendientes
+             WHERE no_banco = %s
+               AND documento IS NOT NULL AND documento <> ''
+               AND conciliado_en IS NULL
+            """,
+            (_BANCO_PICHINCHA,),
+        ) or []
+        for r in rows:
+            sigs_histos.add(_ses._firma_mov(
+                r.get("documento"), "",
+                r.get("tipo"), r.get("monto"), r.get("fecha"),
+            ))
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"query histos falló: {e}"}), 500
 
     # 2) Recorrer payload de la sesión y filtrar por firma.
     movs = _ses.cargar_movs(s)
