@@ -66,47 +66,47 @@
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <table class="w-full text-[11px] tabular-nums">
-        <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
+      <table class="w-full text-[10px] tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[8px] uppercase text-slate-500 sticky top-0">
           <tr>
-            <th class="px-1.5 py-1 text-left w-5">
-              <input type="checkbox" data-toggle-all="banco" class="accent-emerald-600">
+            <th class="px-1 py-0.5 text-left w-4">
+              <input type="checkbox" data-toggle-all="banco" class="accent-emerald-600 w-3 h-3">
             </th>
-            <th class="px-1.5 py-1 text-left w-14">Fecha</th>
-            <th class="px-1.5 py-1 text-left w-4">±</th>
-            <th class="px-1.5 py-1 text-right w-20">Monto</th>
-            <th class="px-1.5 py-1 text-left w-20">Doc</th>
-            <th class="px-1.5 py-1 text-left">Concepto</th>
+            <th class="px-1 py-0.5 text-left w-12">Fecha</th>
+            <th class="px-1 py-0.5 text-left w-3">±</th>
+            <th class="px-1 py-0.5 text-right w-16">Monto</th>
+            <th class="px-1 py-0.5 text-left w-16">Doc</th>
+            <th class="px-1 py-0.5 text-left">Concepto</th>
           </tr>
         </thead>
         <tbody>
           {% for item in _banco %}
             {% set m = item.mov %}
             {% set _hist = item.es_historico %}
-            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-              <td class="px-1.5 py-0.5">
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 leading-tight">
+              <td class="px-1 py-0">
                 {% if _hist %}
                   <input type="checkbox" name="hist_id" value="{{ item.id_historico }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
-                         class="accent-emerald-600 cb-banco">
+                         class="accent-emerald-600 cb-banco w-3 h-3">
                 {% else %}
                   {% set _sig = (m.fecha.isoformat() if m.fecha else '') ~ '|' ~ (m.documento or '') ~ '|' ~ ('%.2f'|format(m.monto|float)) ~ '|' ~ (m.tipo or '') %}
                   <input type="checkbox" name="real_idx" value="{{ item.idx }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
                          data-sig="{{ _sig }}"
-                         class="accent-emerald-600 cb-banco">
+                         class="accent-emerald-600 cb-banco w-3 h-3">
                 {% endif %}
               </td>
-              <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
-              <td class="px-1.5 py-0.5">
-                {% if m.tipo == 'C' %}<span class="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[9px] font-bold">+</span>
-                {% else %}<span class="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[9px] font-bold">−</span>
+              <td class="px-1 py-0 text-slate-500 text-[9px]">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
+              <td class="px-1 py-0">
+                {% if m.tipo == 'C' %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[8px] font-bold">+</span>
+                {% else %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[8px] font-bold">−</span>
                 {% endif %}
               </td>
-              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
-              <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]">{{ (m.documento or '')|string|truncate(10,True,'') }}</td>
-              <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-0" title="{% if _hist %}histórico · {% endif %}{{ m.concepto }}">
-                {% if _hist %}<span class="inline-flex w-3.5 h-3.5 items-center justify-center rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200 text-[9px] font-bold mr-1" title="histórico">H</span>{% endif %}
+              <td class="px-1 py-0 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
+              <td class="px-1 py-0 text-slate-500 font-mono text-[9px]">{{ (m.documento or '')|string|truncate(9,True,'') }}</td>
+              <td class="px-1 py-0 text-slate-600 dark:text-slate-300 truncate max-w-0" title="{% if _hist %}histórico · {% endif %}{{ m.concepto }}">
+                {% if _hist %}<span class="inline-flex w-3 h-3 items-center justify-center rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200 text-[8px] font-bold mr-0.5" title="histórico">H</span>{% endif %}
                 {{ m.concepto or '' }}
               </td>
             </tr>

@@ -353,6 +353,103 @@ def reset_y_cargar():
     return jsonify(out)
 
 
+@bp.route("/borrar-conciliados-sesion", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def borrar_conciliados_sesion():
+    """Borra todos los matches creados en la ventana de la sesión abierta
+    actual. Resetea stat='*' en las txs PC asociadas (excepto las que
+    vinieron del DBF original) y conciliado_en en los histos linkeados.
+
+    TMT 2026-06-02 dueña: 'borremos estos 36, que son de otra sesion y
+    no sirven'.
+    """
+    no_banco = _BANCO_PICHINCHA
+    from modules.conciliacion import sesion as _ses
+    sesion = _ses.sesion_abierta(no_banco)
+    if not sesion:
+        return jsonify({"ok": False, "error": "no hay sesión abierta"}), 400
+
+    abierta_en = sesion.get("abierta_en")
+    out = {"ok": True, "sesion_id": sesion["id"]}
+
+    try:
+        with _db.tx() as conn:
+            # 1) Capturar IDs de matches afectados (para reset histos / stat).
+            rows = _db.fetch_all(
+                """
+                SELECT id, id_transaccion
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s
+                   AND creado_en >= %s
+                """,
+                (no_banco, abierta_en),
+                conn=conn,
+            ) or []
+            match_ids = [r["id"] for r in rows]
+            tx_ids = [r["id_transaccion"] for r in rows if r.get("id_transaccion")]
+            out["matches_encontrados"] = len(match_ids)
+            out["txs_afectadas"] = len(set(tx_ids))
+
+            # 2) Reset conciliado_en en histos linkeados (vuelven a pendientes).
+            if match_ids:
+                n_hist = _db.execute(
+                    """
+                    UPDATE scintela.banco_historicos_pendientes
+                       SET conciliado_en = NULL,
+                           conciliado_match_id = NULL,
+                           conciliado_por = NULL
+                     WHERE conciliado_match_id = ANY(%s)
+                    """,
+                    (match_ids,),
+                    conn=conn,
+                ) or 0
+                out["histos_revertidos"] = int(n_hist)
+
+            # 3) Reset stat='*' en txs PC (excepto las que vinieron del DBF
+            # original — esas las mantiene el sync con dBase).
+            if tx_ids:
+                n_stat = _db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias
+                       SET stat = NULL
+                     WHERE id_transaccion = ANY(%s)
+                       AND no_banco = %s
+                       AND usuario_crea NOT IN ('dbf-import', 'asinfo-backfill')
+                    """,
+                    (list(set(tx_ids)), no_banco),
+                    conn=conn,
+                ) or 0
+                out["stat_reset"] = int(n_stat)
+
+            # 4) Hard-delete de los matches.
+            if match_ids:
+                n_del = _db.execute(
+                    """
+                    DELETE FROM scintela.banco_conciliacion_match
+                     WHERE id = ANY(%s)
+                    """,
+                    (match_ids,),
+                    conn=conn,
+                ) or 0
+                out["matches_borrados"] = int(n_del)
+
+            # 5) Reset contador de la sesión.
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET matches_hechos = 0
+                 WHERE id = %s
+                """,
+                (int(sesion["id"]),),
+                conn=conn,
+            )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+    return jsonify(out)
+
+
 @bp.route("/match-potencial", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")

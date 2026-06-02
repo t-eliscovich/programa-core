@@ -1008,44 +1008,64 @@ def banco_manual_confirmar():
     n_matches = 0
     err_msg: str | None = None
     usuario = _usuario_actual()
-    # 1) Matches del extracto contra los bancsis seleccionados.
-    # BUG #2 fix 2026-05-29: si N reales vs M bancsis con N!=M, antes
-    # silenciosamente asociábamos todos los N al PRIMER bancsis (los
-    # otros M-1 bancsis quedaban huérfanos). Ahora exigimos:
-    #   - 1:1 (mismo número de cada lado): pareamos por monto desc
-    #   - N:1 (1 bancsis, N reales): caso típico depósito agrupado,
-    #     OK asociar todos al único bancsis
-    #   - cualquier otro caso → error con mensaje claro
+    # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
+    # ser distinto'. Aceptamos cualquier N:M:
+    #
+    # Estrategia unificada:
+    #   1. Min(N, M) pares 1:1 ordenados por monto desc (biggest↔biggest).
+    #   2. Si sobran banco rows (N > M): cada uno se matchea contra el
+    #      PRIMER PC. El unique index es por real_*, así que reusar el
+    #      mismo PC con reales distintos es OK.
+    #   3. Si sobran PC rows (M > N): se marcan stat='*' directamente
+    #      (sin record en banco_conciliacion_match porque la firma real_*
+    #      ya está tomada). Quedan conciliados visualmente.
+    #
+    # Esto cubre 1:1, N:1, 1:N, y N:M arbitrario.
     if real_subset and bancsis_ids:
-        if len(real_subset) == len(bancsis_ids):
-            real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
-            bk_sorted = sorted(bancsis_ids, reverse=True)
-            for r, bk_id in zip(real_sorted, bk_sorted):
-                try:
-                    confirmar_match(_BANCO_PICHINCHA, r, bk_id, usuario=usuario, metodo="matched_manual")
-                    n_matches += 1
-                except Exception as e:
-                    _LOG.warning("manual confirm falló: %s", e)
-                    if err_msg is None:
-                        err_msg = str(e)
-        elif len(bancsis_ids) == 1:
-            # N reales contra 1 bancsis (depósito agrupado típico).
-            bk_id_primary = bancsis_ids[0]
-            for r in real_subset:
-                try:
-                    confirmar_match(_BANCO_PICHINCHA, r, bk_id_primary, usuario=usuario, metodo="matched_manual")
-                    n_matches += 1
-                except Exception as e:
-                    _LOG.warning("manual confirm fallo: %s", e)
-                    if err_msg is None:
-                        err_msg = str(e)
-        else:
-            flash(
-                f"No puedo conciliar {len(real_subset)} banco vs {len(bancsis_ids)} "
-                f"programa: deben ser 1:1 o N:1 (N reales contra 1 mov del programa).",
-                "error",
-            )
-            return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+        real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
+        bk_sorted = sorted(bancsis_ids, reverse=True)
+        n_pair = min(len(real_sorted), len(bk_sorted))
+
+        # 1) Pares 1:1.
+        for i in range(n_pair):
+            try:
+                confirmar_match(_BANCO_PICHINCHA, real_sorted[i], bk_sorted[i],
+                                usuario=usuario, metodo="matched_manual")
+                n_matches += 1
+            except Exception as e:
+                _LOG.warning("manual confirm par %d falló: %s", i, e)
+                if err_msg is None:
+                    err_msg = str(e)
+
+        # 2) Banco extras (N > M): todos matcheados contra PC[0].
+        for r in real_sorted[n_pair:]:
+            try:
+                confirmar_match(_BANCO_PICHINCHA, r, bk_sorted[0],
+                                usuario=usuario, metodo="matched_manual")
+                n_matches += 1
+            except Exception as e:
+                _LOG.warning("manual confirm extra banco falló: %s", e)
+                if err_msg is None:
+                    err_msg = str(e)
+
+        # 3) PC extras (M > N): stat='*' bulk, sin match record.
+        if len(bk_sorted) > n_pair:
+            extras = [int(b) for b in bk_sorted[n_pair:]]
+            try:
+                rc = _db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias
+                       SET stat = '*'
+                     WHERE id_transaccion = ANY(%s)
+                       AND no_banco = %s
+                    """,
+                    (extras, _BANCO_PICHINCHA),
+                ) or 0
+                n_matches += int(rc)
+            except Exception as e:
+                _LOG.warning("manual confirm UPDATE stat extras falló: %s", e)
+                if err_msg is None:
+                    err_msg = str(e)
 
     # 2) Históricos seleccionados → conciliarlos vía confirmar_match.
     # TMT 2026-05-29 dueña: 'HAY UN BUG' + 'NO ESTABAN CONCILIADOS'.
