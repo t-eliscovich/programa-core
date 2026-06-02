@@ -228,6 +228,41 @@ def diagnose():
         posdat_bd["error"] = traceback.format_exc()
     out["posdat_breakdown"] = posdat_bd
 
+    # 7.5. Diff PC vs POSDAT.DBF — identificar las 8 entries PC-only
+    # (TMT 2026-06-02: queremos saber si son legacy RR, auto-creadas por
+    # compras/cheques de la UI, o stale.)
+    try:
+        pc_breakdown = db.fetch_all(
+            """
+            SELECT UPPER(COALESCE(prov, '')) AS prov,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(importe), 0) AS total
+            FROM scintela.posdat
+            WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+              AND COALESCE(banc, 0) = 0
+            GROUP BY UPPER(COALESCE(prov, ''))
+            ORDER BY n DESC
+            """
+        ) or []
+        out["pc_posdat_banc0_por_prov"] = pc_breakdown
+
+        # Posdat por usuario_crea — separa "ui creó" vs "dbf-import / legacy"
+        rows_u = db.fetch_all(
+            """
+            SELECT COALESCE(usuario_crea, '(NULL)') AS usuario,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(importe), 0) AS total
+            FROM scintela.posdat
+            WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+              AND COALESCE(banc, 0) = 0
+            GROUP BY COALESCE(usuario_crea, '(NULL)')
+            ORDER BY n DESC
+            """
+        ) or []
+        out["pc_posdat_banc0_por_usuario_crea"] = rows_u
+    except Exception:
+        out["pc_posdat_breakdown_error"] = traceback.format_exc()
+
     # 8. mov_doble cierres YY de hoy — confirma que el delta 615k vs dBase
     #    es el efecto del fix YY (bug 1) que se aplicó esta mañana. Si
     #    total_cerrado_hoy ≈ 615k → hipótesis confirmada, no hay bug.
