@@ -615,9 +615,9 @@ def borrar_ac_duplicados():
            AND fecha >= '2026-06-01'
            AND documento = 'ND'
            AND (
-               concepto LIKE 'AC % SALDO%'
-            OR concepto LIKE 'IN OP AC%'
-            OR concepto LIKE 'RR OP AC%'
+               concepto LIKE 'AC %% SALDO%%'
+            OR concepto LIKE 'IN OP AC%%'
+            OR concepto LIKE 'RR OP AC%%'
             OR concepto = 'CORRECC'
             OR concepto = 'GS BANCO'
            )
