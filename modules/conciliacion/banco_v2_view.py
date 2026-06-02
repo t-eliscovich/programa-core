@@ -176,31 +176,39 @@ def banco_post_procesar():
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
     balance = _bp.calcular(no_banco)
-    # TMT 2026-05-29 dueña: 'Dijiste que tenía que ser 2,797,649 porque en
-    # esta pantalla dice $2,788,626.66'. Inconsistencia: la página mostraba
-    # 'Saldo banco esperado' (cálculo: PC + pendientes) que ≠ saldo banco
-    # real del extracto. Enriquezco el balance con saldo_banco_real de la
-    # sesión actual (último saldo del extracto) + diferencia_no_clasificada.
-    # Cuando hay sesión activa la página y el Excel muestran el MISMO
-    # número final = saldo banco real.
-    try:
-        movs_s = _sesion.cargar_movs(sesion)
-        con_fecha = [
-            m for m in movs_s
-            if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
-        ]
-        if con_fecha:
-            ult = max(con_fecha, key=lambda m: m.fecha)
-            balance["saldo_banco_real"] = float(ult.saldo)
-        elif movs_s:
-            v = float(getattr(movs_s[-1], "saldo", None) or 0)
-            balance["saldo_banco_real"] = v if v else None
-        if balance.get("saldo_banco_real") is not None and balance.get("saldo_banco_esperado") is not None:
-            balance["diferencia_no_clasificada"] = round(
-                balance["saldo_banco_real"] - balance["saldo_banco_esperado"], 2
-            )
-    except Exception:
-        pass
+    # TMT 2026-06-02 dueña: 'lo deberia implementar el usuario no? porque
+    # por el excel no sabemos cual es el ultimo valor'. Prioridad:
+    #   1. sesion.saldo_banco_objetivo (manual, escrito por la dueña).
+    #   2. Auto-detect = max(fecha).saldo del payload (fallback frágil).
+    saldo_manual = sesion.get("saldo_banco_objetivo")
+    if saldo_manual is not None:
+        try:
+            balance["saldo_banco_real"] = float(saldo_manual)
+            balance["saldo_banco_real_origen"] = "manual"
+        except (TypeError, ValueError):
+            balance["saldo_banco_real"] = None
+    else:
+        try:
+            movs_s = _sesion.cargar_movs(sesion)
+            con_fecha = [
+                m for m in movs_s
+                if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+            ]
+            if con_fecha:
+                ult = max(con_fecha, key=lambda m: m.fecha)
+                balance["saldo_banco_real"] = float(ult.saldo)
+            elif movs_s:
+                v = float(getattr(movs_s[-1], "saldo", None) or 0)
+                balance["saldo_banco_real"] = v if v else None
+            balance["saldo_banco_real_origen"] = "auto"
+        except Exception:
+            pass
+
+    # Diferencia esperado vs real (si tenemos ambos).
+    if balance.get("saldo_banco_real") is not None and balance.get("saldo_banco_esperado") is not None:
+        balance["diferencia_no_clasificada"] = round(
+            balance["saldo_banco_real"] - balance["saldo_banco_esperado"], 2
+        )
 
     # TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
     # hasta ahora'. Lista los matches confirmados en esta sesión.
@@ -699,6 +707,66 @@ def banco_auditar():
 
 
 # ─── Reabrir sesión cerrada ──────────────────────────────────────────
+
+
+# ─── Endpoint: setear saldo banco objetivo manual ─────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/set-saldo-objetivo", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_set_saldo_objetivo():
+    """Guarda el saldo banco que la dueña lee del extracto o de la web del
+    banco. TMT 2026-06-02 dueña: 'lo deberia implementar el usuario no?
+    porque por el excel no sabemos cual es el ultimo valor'.
+
+    Reemplaza el auto-detect por max(fecha) que era frágil cuando había
+    múltiples movs el mismo día o varios uploads merged.
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion:
+        flash("Sesión no encontrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    raw = (request.form.get("saldo_objetivo") or "").strip()
+    if raw == "" or raw.lower() in ("none", "null", "—"):
+        # Clear → vuelve al auto-detect.
+        try:
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET saldo_banco_objetivo = NULL
+                 WHERE id = %s
+                """,
+                (sesion_id,),
+            )
+            flash("Saldo banco objetivo borrado — vuelve al auto-detect.", "ok")
+        except Exception as e:
+            flash(f"Error: {e}", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    # Limpia comas/separadores antes de parsear.
+    try:
+        cleaned = raw.replace(",", "").replace("$", "").strip()
+        valor = float(cleaned)
+    except (ValueError, TypeError):
+        flash(f"Valor inválido: '{raw}'. Usá formato numérico (ej. 2846820.24).", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    try:
+        _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_sesion
+               SET saldo_banco_objetivo = %s
+             WHERE id = %s
+            """,
+            (valor, sesion_id),
+        )
+        flash(f"Saldo banco objetivo: ${valor:,.2f}", "ok")
+    except Exception as e:
+        flash(f"Error al guardar: {e}", "error")
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
 
 # ─── Endpoint: descartar movs banco (no necesitan conciliarse) ────────

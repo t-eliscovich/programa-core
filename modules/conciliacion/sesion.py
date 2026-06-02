@@ -99,6 +99,23 @@ def tabla_existe() -> bool:
 # ─── CRUD básico de sesión ────────────────────────────────────────────
 
 
+def _sesion_select_cols() -> str:
+    """Lista de columnas a leer en SELECT. Tolerante a mig 0065 no aplicada:
+    saldo_banco_objetivo se incluye y si la columna no existe, el caller
+    cae al fallback. Centralizado para no repetir en sesion_abierta/sesion_por_id.
+    """
+    return """id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
+              extracto_hash, extracto_nombre, extracto_payload,
+              matches_hechos, pdf_path, saldo_banco_objetivo"""
+
+
+def _sesion_select_cols_legacy() -> str:
+    """Sin saldo_banco_objetivo — fallback pre-mig-0065."""
+    return """id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
+              extracto_hash, extracto_nombre, extracto_payload,
+              matches_hechos, pdf_path"""
+
+
 def sesion_abierta(no_banco: int, usuario: str | None = None) -> dict | None:
     """La única sesión abierta del banco, o None.
 
@@ -106,31 +123,50 @@ def sesion_abierta(no_banco: int, usuario: str | None = None) -> dict | None:
     abierta por banco (sin importar quién la abrió). El param `usuario` se
     deja como kwarg compatible con llamadores viejos pero se ignora.
     """
-    return db.fetch_one(
-        """
-        SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
-               extracto_hash, extracto_nombre, extracto_payload,
-               matches_hechos, pdf_path
-          FROM scintela.banco_conciliacion_sesion
-         WHERE no_banco = %s AND cerrada_en IS NULL
-         ORDER BY abierta_en DESC
-         LIMIT 1
-        """,
-        (int(no_banco),),
-    )
+    try:
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE no_banco = %s AND cerrada_en IS NULL
+             ORDER BY abierta_en DESC
+             LIMIT 1
+            """,
+            (int(no_banco),),
+        )
+    except Exception:
+        # Fallback pre-mig-0065 (sin columna saldo_banco_objetivo).
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols_legacy()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE no_banco = %s AND cerrada_en IS NULL
+             ORDER BY abierta_en DESC
+             LIMIT 1
+            """,
+            (int(no_banco),),
+        )
 
 
 def sesion_por_id(sesion_id: int) -> dict | None:
-    return db.fetch_one(
-        """
-        SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
-               extracto_hash, extracto_nombre, extracto_payload,
-               matches_hechos, pdf_path
-          FROM scintela.banco_conciliacion_sesion
-         WHERE id = %s
-        """,
-        (int(sesion_id),),
-    )
+    try:
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE id = %s
+            """,
+            (int(sesion_id),),
+        )
+    except Exception:
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols_legacy()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE id = %s
+            """,
+            (int(sesion_id),),
+        )
 
 
 def matches_de_sesion(sesion: dict) -> list[dict]:
