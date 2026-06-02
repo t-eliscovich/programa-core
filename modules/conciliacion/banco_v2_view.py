@@ -206,6 +206,51 @@ def banco_post_procesar():
     # hasta ahora'. Lista los matches confirmados en esta sesión.
     matches_sesion = _sesion.matches_de_sesion(sesion)
 
+    # TMT 2026-06-02 dueña: 'en esta tabla de conciliados, me tiene que
+    # aparecer monto banco, monto programa, y tengo que ver que los totales
+    # coincidan'. Enriquezco cada match con monto_prog_signed (el lado PC
+    # con signo derivado del documento) y totalizo por lado.
+    for m in matches_sesion:
+        tipo = (m.get("real_tipo") or "").upper()
+        try:
+            monto_banco = float(m.get("real_monto") or 0)
+        except (TypeError, ValueError):
+            monto_banco = 0.0
+        m["monto_banco_signed"] = monto_banco if tipo == "C" else (-monto_banco if tipo == "D" else 0.0)
+
+        tb_doc = (m.get("tb_documento") or "").upper()
+        try:
+            tb_imp = float(m.get("tb_importe") or 0)
+        except (TypeError, ValueError):
+            tb_imp = 0.0
+        # tb.importe en transacciones_bancarias es positivo; el signo lo da
+        # documento. Importes ya signados (legacy) — si vienen negativos
+        # los respetamos.
+        if tb_imp < 0:
+            m["monto_prog_signed"] = tb_imp
+        else:
+            m["monto_prog_signed"] = _signed_delta(tb_doc, tb_imp)
+        # Diferencia por fila (banco − programa). Si cuadra → 0.
+        if m.get("estado") == "matched" or m.get("tipo") == "historico":
+            m["diff"] = round(m["monto_banco_signed"] - m["monto_prog_signed"], 2)
+        else:
+            m["diff"] = None  # real_only_ok / bancsis_only_ok no tienen contraparte
+
+    # Totales agregados por lado.
+    tot_banco_c = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "C")
+    tot_banco_d = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "D")
+    tot_prog_c = sum(m["monto_prog_signed"] for m in matches_sesion if m["monto_prog_signed"] > 0)
+    tot_prog_d = sum(-m["monto_prog_signed"] for m in matches_sesion if m["monto_prog_signed"] < 0)
+    conciliados_totales = {
+        "banco_creditos": round(tot_banco_c, 2),
+        "banco_debitos": round(tot_banco_d, 2),
+        "banco_neto": round(tot_banco_c - tot_banco_d, 2),
+        "prog_creditos": round(tot_prog_c, 2),
+        "prog_debitos": round(tot_prog_d, 2),
+        "prog_neto": round(tot_prog_c - tot_prog_d, 2),
+        "diff_neto": round((tot_banco_c - tot_banco_d) - (tot_prog_c - tot_prog_d), 2),
+    }
+
     return render_template(
         "conciliacion/banco_v2.html",
         sesion=sesion,
@@ -216,6 +261,7 @@ def banco_post_procesar():
         banco_nombre="Pichincha",
         modo="compact",
         matches_sesion=matches_sesion,
+        conciliados_totales=conciliados_totales,
     )
 
 
