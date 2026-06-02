@@ -174,6 +174,60 @@ def diagnose():
         out["ok"] = False
     out["sim"] = sim
 
+    # 7. Posdat breakdown — explorar el delta de Pasivos PC vs dBase
+    #    (TMT 2026-06-02: dBase=2.258.509, PC=1.643.386 → diff 615k).
+    #    PC contabiliza sólo banc=0 (POSDAT_DEUDA_VIVA_WHERE); dBase
+    #    podría sumar banc=9 también. Este desglose lo confirma.
+    posdat_bd: dict = {}
+    try:
+        # 7a. Por banc — vivos (no anulados)
+        rows = db.fetch_all(
+            """
+            SELECT COALESCE(banc, 0) AS banc,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(importe), 0) AS total
+            FROM scintela.posdat
+            WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+            GROUP BY COALESCE(banc, 0)
+            ORDER BY banc
+            """
+        ) or []
+        posdat_bd["por_banc"] = rows
+        posdat_bd["total_vivos"] = sum(float(r.get("total") or 0) for r in rows)
+
+        # 7b. banc=0 y banc=9 separados, prov YY vs no-YY
+        rows2 = db.fetch_all(
+            """
+            SELECT COALESCE(banc, 0) AS banc,
+                   CASE WHEN UPPER(COALESCE(prov, '')) = 'YY' THEN 'YY' ELSE 'NO_YY' END AS clase,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(importe), 0) AS total
+            FROM scintela.posdat
+            WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+              AND COALESCE(banc, 0) IN (0, 9)
+            GROUP BY COALESCE(banc, 0),
+                     CASE WHEN UPPER(COALESCE(prov, '')) = 'YY' THEN 'YY' ELSE 'NO_YY' END
+            ORDER BY banc, clase
+            """
+        ) or []
+        posdat_bd["banc_0_y_9_por_prov"] = rows2
+
+        # 7c. Lo que PC contabiliza como TOTP
+        from modules.informes.queries import posdat_totales
+        posdat_bd["pc_posdat_totales"] = posdat_totales()
+
+        # 7d. Si sumáramos banc=0 + banc=9, ¿cuánto da?
+        sum_0 = sum(float(r.get("total") or 0) for r in rows if int(r.get("banc") or 0) == 0)
+        sum_9 = sum(float(r.get("total") or 0) for r in rows if int(r.get("banc") or 0) == 9)
+        posdat_bd["hipotesis"] = {
+            "solo_banc0_(PC actual)": sum_0,
+            "banc0_+_banc9_(dBase candidato)": sum_0 + sum_9,
+            "banc9_delta": sum_9,
+        }
+    except Exception:
+        posdat_bd["error"] = traceback.format_exc()
+    out["posdat_breakdown"] = posdat_bd
+
     return Response(
         json.dumps(out, indent=2, default=str),
         mimetype="application/json",
