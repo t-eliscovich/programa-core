@@ -212,12 +212,19 @@ def banco_post_procesar():
     # con signo derivado del documento) y totalizo por lado.
     for m in matches_sesion:
         tipo = (m.get("real_tipo") or "").upper()
+        # ¿Tiene lado banco? Sí si vino con real_monto (banco_only y matched).
+        # Bancsis_only_ok no tiene lado banco.
+        m["has_banco"] = m.get("real_monto") is not None
         try:
             monto_banco = float(m.get("real_monto") or 0)
         except (TypeError, ValueError):
             monto_banco = 0.0
         m["monto_banco_signed"] = monto_banco if tipo == "C" else (-monto_banco if tipo == "D" else 0.0)
 
+        # ¿Tiene lado programa? Sí si el JOIN con transacciones_bancarias
+        # devolvió una fila (tb.importe IS NOT NULL). Históricos pueden no
+        # tenerlo si la dueña los marcó conciliados sin linkear a una tx PC.
+        m["has_programa"] = m.get("tb_importe") is not None
         tb_doc = (m.get("tb_documento") or "").upper()
         try:
             tb_imp = float(m.get("tb_importe") or 0)
@@ -230,11 +237,11 @@ def banco_post_procesar():
             m["monto_prog_signed"] = tb_imp
         else:
             m["monto_prog_signed"] = _signed_delta(tb_doc, tb_imp)
-        # Diferencia por fila (banco − programa). Si cuadra → 0.
-        if m.get("estado") == "matched" or m.get("tipo") == "historico":
+        # Diferencia por fila (banco − programa) — solo si AMBOS lados existen.
+        if m["has_banco"] and m["has_programa"]:
             m["diff"] = round(m["monto_banco_signed"] - m["monto_prog_signed"], 2)
         else:
-            m["diff"] = None  # real_only_ok / bancsis_only_ok no tienen contraparte
+            m["diff"] = None  # un lado falta → no aplica diferencia
 
     # Totales agregados por lado.
     tot_banco_c = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "C")

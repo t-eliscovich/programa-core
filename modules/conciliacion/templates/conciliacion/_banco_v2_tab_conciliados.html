@@ -1,13 +1,14 @@
 {# Tab Conciliados: lo que ya se conciliaron en ESTA sesión.
-   TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
-   hasta ahora'.
-   TMT 2026-06-02 dueña: 'me tiene que aparecer monto banco, monto
-   programa, y tengo que ver que los totales coincidan'. Agregadas
-   columnas monto banco/programa/diff + header con totales por lado.
+   TMT 2026-06-02 dueña: 'la tabla esta demasiado larga, que entre en
+   la pantalla. Concepto pone solo H asi es mas corto'. Compacto:
+   - Estado: 1 letra (H/M/B/P) en lugar de badge largo.
+   - Conceptos truncados.
+   - Monto programa muestra '—' cuando no hay lado PC (histo conciliado
+     sin counterpart, common case).
 #}
 
 <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
-  <header class="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800">
+  <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
     <div class="flex items-baseline justify-between mb-2">
       <div>
         <strong class="text-sm">Conciliados en esta sesión</strong>
@@ -19,50 +20,48 @@
     </div>
 
     {% if matches_sesion and conciliados_totales %}
-    {# Totales lado a lado: banco vs programa. Si neto cuadra, ✓ verde;
-       si no cuadra, mostramos diff. #}
-    <div class="grid grid-cols-3 gap-3 text-[11px]">
-      <div class="rounded border border-slate-200 dark:border-slate-700 px-3 py-1.5 bg-slate-50/50 dark:bg-slate-800/30">
-        <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">Total banco</div>
-        <div class="flex items-baseline gap-2 tabular-nums">
-          <span class="text-emerald-700">+ {{ '{:,.2f}'.format(conciliados_totales.banco_creditos) }}</span>
-          <span class="text-rose-700">− {{ '{:,.2f}'.format(conciliados_totales.banco_debitos) }}</span>
+    <div class="grid grid-cols-3 gap-2 text-[10px]">
+      <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30">
+        <div class="text-[9px] uppercase tracking-wider text-slate-500">Total banco</div>
+        <div class="flex items-baseline gap-1.5 tabular-nums">
+          <span class="text-emerald-700">+{{ '{:,.2f}'.format(conciliados_totales.banco_creditos) }}</span>
+          <span class="text-rose-700">−{{ '{:,.2f}'.format(conciliados_totales.banco_debitos) }}</span>
         </div>
-        <div class="text-[12px] font-semibold tabular-nums {% if conciliados_totales.banco_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+        <div class="text-[11px] font-semibold tabular-nums {% if conciliados_totales.banco_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
           neto {{ '{:+,.2f}'.format(conciliados_totales.banco_neto) }}
         </div>
       </div>
 
-      <div class="rounded border border-slate-200 dark:border-slate-700 px-3 py-1.5 bg-slate-50/50 dark:bg-slate-800/30">
-        <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">Total programa</div>
-        <div class="flex items-baseline gap-2 tabular-nums">
-          <span class="text-emerald-700">+ {{ '{:,.2f}'.format(conciliados_totales.prog_creditos) }}</span>
-          <span class="text-rose-700">− {{ '{:,.2f}'.format(conciliados_totales.prog_debitos) }}</span>
+      <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30">
+        <div class="text-[9px] uppercase tracking-wider text-slate-500">Total programa</div>
+        <div class="flex items-baseline gap-1.5 tabular-nums">
+          <span class="text-emerald-700">+{{ '{:,.2f}'.format(conciliados_totales.prog_creditos) }}</span>
+          <span class="text-rose-700">−{{ '{:,.2f}'.format(conciliados_totales.prog_debitos) }}</span>
         </div>
-        <div class="text-[12px] font-semibold tabular-nums {% if conciliados_totales.prog_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+        <div class="text-[11px] font-semibold tabular-nums {% if conciliados_totales.prog_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
           neto {{ '{:+,.2f}'.format(conciliados_totales.prog_neto) }}
         </div>
       </div>
 
-      <div class="rounded border px-3 py-1.5
+      <div class="rounded border px-2 py-1
         {% if conciliados_totales.diff_neto|abs < 0.01 %}
           border-emerald-300 bg-emerald-50/60 dark:bg-emerald-900/20
         {% else %}
           border-rose-300 bg-rose-50/60 dark:bg-rose-900/20
         {% endif %}">
-        <div class="text-[9px] uppercase tracking-wider mb-0.5
+        <div class="text-[9px] uppercase tracking-wider
           {% if conciliados_totales.diff_neto|abs < 0.01 %}text-emerald-700{% else %}text-rose-700{% endif %}">
           Diferencia (banco − programa)
         </div>
-        <div class="text-lg font-bold tabular-nums
+        <div class="text-base font-bold tabular-nums
           {% if conciliados_totales.diff_neto|abs < 0.01 %}text-emerald-700{% else %}text-rose-700{% endif %}">
           {% if conciliados_totales.diff_neto|abs < 0.01 %}
-            ✓ ${{ '{:,.2f}'.format(0) }}
+            ✓ $0.00
           {% else %}
             {{ '{:+,.2f}'.format(conciliados_totales.diff_neto) }}
           {% endif %}
         </div>
-        <div class="text-[10px] text-slate-500">
+        <div class="text-[9px] text-slate-500">
           {% if conciliados_totales.diff_neto|abs < 0.01 %}cuadra{% else %}revisar matches{% endif %}
         </div>
       </div>
@@ -70,53 +69,57 @@
     {% endif %}
   </header>
 
-  <div class="overflow-x-auto" style="max-height: calc(100vh - 420px);">
-    <table class="w-full text-xs tabular-nums">
-      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+  <div class="overflow-x-auto" style="max-height: calc(100vh - 380px);">
+    <table class="w-full text-[11px] tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
         <tr>
-          <th class="px-2 py-1.5 text-left w-28">Conciliado</th>
-          <th class="px-2 py-1.5 text-left w-20">Estado</th>
-          <th class="px-2 py-1.5 text-left w-20">Fecha</th>
-          <th class="px-2 py-1.5 text-right w-28">Monto banco</th>
-          <th class="px-2 py-1.5 text-right w-28">Monto programa</th>
-          <th class="px-2 py-1.5 text-right w-20">Diff</th>
-          <th class="px-2 py-1.5 text-left w-20">Doc banco</th>
-          <th class="px-2 py-1.5 text-left">Concepto (real)</th>
-          <th class="px-2 py-1.5 text-left">Concepto (programa)</th>
-          <th class="px-2 py-1.5 text-left w-14">Usuario</th>
+          <th class="px-1.5 py-1 text-left w-20">Hora</th>
+          <th class="px-1.5 py-1 text-center w-6" title="H=histórico · M=match · B=sólo banco · P=sólo PC">Est</th>
+          <th class="px-1.5 py-1 text-left w-16">Fecha</th>
+          <th class="px-1.5 py-1 text-right w-24">Banco</th>
+          <th class="px-1.5 py-1 text-right w-24">Programa</th>
+          <th class="px-1.5 py-1 text-right w-20">Diff</th>
+          <th class="px-1.5 py-1 text-left w-20">Doc</th>
+          <th class="px-1.5 py-1 text-left">Concepto (real)</th>
+          <th class="px-1.5 py-1 text-left">Concepto (programa)</th>
+          <th class="px-1.5 py-1 text-left w-12">Usr</th>
         </tr>
       </thead>
       <tbody>
         {% for m in matches_sesion %}
           {% set _mb = m.monto_banco_signed|default(0)|float %}
           {% set _mp = m.monto_prog_signed|default(0)|float %}
+          {# Letra del estado: H = histórico, M = match, B = sólo banco, P = sólo PC #}
+          {% if m.tipo == 'historico' %}
+            {% set _letra = 'H' %}{% set _color = 'purple' %}{% set _label = 'histórico' %}
+          {% elif m.estado == 'matched' %}
+            {% set _letra = 'M' %}{% set _color = 'emerald' %}{% set _label = 'match' %}
+          {% elif m.estado == 'real_only_ok' %}
+            {% set _letra = 'B' %}{% set _color = 'sky' %}{% set _label = 'sólo banco' %}
+          {% elif m.estado == 'bancsis_only_ok' %}
+            {% set _letra = 'P' %}{% set _color = 'amber' %}{% set _label = 'sólo PC' %}
+          {% else %}
+            {% set _letra = '?' %}{% set _color = 'slate' %}{% set _label = m.estado or '?' %}
+          {% endif %}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-            <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
+            <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
               {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
             </td>
-            <td class="px-2 py-1">
-              {% if m.tipo == 'historico' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200 text-[10px] font-semibold" title="Pendiente histórico del banco, marcado conciliado">histórico</span>
-              {% elif m.estado == 'matched' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 text-[10px] font-semibold">match</span>
-              {% elif m.estado == 'real_only_ok' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-semibold">sólo banco</span>
-              {% elif m.estado == 'bancsis_only_ok' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 text-[10px] font-semibold">sólo PC</span>
-              {% else %}
-                <span class="text-slate-400 text-[10px]">{{ m.estado }}</span>
-              {% endif %}
+            <td class="px-1.5 py-0.5 text-center">
+              <span class="inline-flex w-5 h-5 items-center justify-center rounded-full
+                bg-{{ _color }}-100 text-{{ _color }}-800 dark:bg-{{ _color }}-900/40 dark:text-{{ _color }}-200
+                text-[10px] font-bold" title="{{ _label }}">{{ _letra }}</span>
             </td>
-            <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
+            <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
               {{ m.real_fecha or m.tb_fecha or '—' }}
             </td>
-            <td class="px-2 py-1 text-right font-mono font-semibold {% if _mb > 0 %}text-emerald-700{% elif _mb < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-              {% if m.real_monto is not none %}{{ '{:+,.2f}'.format(_mb) }}{% else %}—{% endif %}
+            <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mb > 0 %}text-emerald-700{% elif _mb < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+              {% if m.has_banco %}{{ '{:+,.2f}'.format(_mb) }}{% else %}—{% endif %}
             </td>
-            <td class="px-2 py-1 text-right font-mono font-semibold {% if _mp > 0 %}text-emerald-700{% elif _mp < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
-              {% if m.id_transaccion %}{{ '{:+,.2f}'.format(_mp) }}{% else %}—{% endif %}
+            <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mp > 0 %}text-emerald-700{% elif _mp < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+              {% if m.has_programa %}{{ '{:+,.2f}'.format(_mp) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
-            <td class="px-2 py-1 text-right font-mono">
+            <td class="px-1.5 py-0.5 text-right font-mono">
               {% if m.diff is not none %}
                 {% if m.diff|abs < 0.01 %}
                   <span class="text-emerald-600">✓</span>
@@ -127,17 +130,17 @@
                 <span class="text-slate-300">—</span>
               {% endif %}
             </td>
-            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">
-              {{ (m.real_documento or m.tb_numreferencia or '')|string|truncate(14,True,'') }}
+            <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]">
+              {{ (m.real_documento or m.tb_numreferencia or '')|string|truncate(12,True,'') }}
             </td>
-            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ m.real_concepto or '' }}">
-              {{ (m.real_concepto or '—')[:50] }}
+            <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[200px]" title="{{ m.real_concepto or '' }}">
+              {{ (m.real_concepto or '—')[:36] }}
             </td>
-            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ m.tb_concepto or '' }}">
+            <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[180px]" title="{{ m.tb_concepto or '' }}">
               {% if m.tb_prov %}<span class="inline-block px-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[9px] mr-1">{{ m.tb_prov }}</span>{% endif %}
-              {{ (m.tb_concepto or '—')[:50] }}
+              {{ (m.tb_concepto or '—')[:32] }}
             </td>
-            <td class="px-2 py-1 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+            <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
           </tr>
         {% endfor %}
         {% if not matches_sesion %}
@@ -149,5 +152,13 @@
         {% endif %}
       </tbody>
     </table>
+  </div>
+
+  {# Leyenda compacta abajo #}
+  <div class="px-3 py-1 border-t border-slate-100 dark:border-slate-800 text-[9px] text-slate-400">
+    <span class="font-semibold text-purple-700">H</span> histórico ·
+    <span class="font-semibold text-emerald-700">M</span> match banco↔PC ·
+    <span class="font-semibold text-sky-700">B</span> sólo banco ·
+    <span class="font-semibold text-amber-700">P</span> sólo PC
   </div>
 </div>
