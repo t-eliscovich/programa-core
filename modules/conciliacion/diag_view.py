@@ -595,6 +595,42 @@ def borrar_no_feb2023():
     return jsonify(out)
 
 
+@bp.route("/inspect-recent", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def inspect_recent():
+    """Lista todas las txs recientes (06-01 y 06-02) con detalle."""
+    no_banco = _BANCO_PICHINCHA
+    rows = _db.fetch_all(
+        """
+        SELECT t.id_transaccion, t.fecha, t.documento, t.importe, t.concepto,
+               t.numreferencia, t.stat, t.usuario_crea, t.no_cta
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s
+           AND t.fecha >= '2026-06-01'
+         ORDER BY t.fecha, t.documento, t.id_transaccion
+        """,
+        (no_banco,),
+    ) or []
+    return jsonify({
+        "ok": True,
+        "n": len(rows),
+        "rows": [
+            {
+                "id": r["id_transaccion"],
+                "fecha": str(r["fecha"]) if r.get("fecha") else None,
+                "doc": r.get("documento"),
+                "importe": float(r.get("importe") or 0),
+                "concepto": (r.get("concepto") or "")[:80],
+                "numref": r.get("numreferencia"),
+                "stat": r.get("stat"),
+                "usuario": r.get("usuario_crea"),
+            }
+            for r in rows
+        ]
+    })
+
+
 @bp.route("/cuadre-saldos", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
