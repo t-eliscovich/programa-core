@@ -1218,6 +1218,47 @@ def _relink_py(no_banco: int) -> dict:
     }
 
 
+@bp.route("/revert-my-test-stats", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def revert_my_test_stats():
+    """Revierte stat='*' que dejé por accidente en mis tests anteriores
+    (el viejo relink re-aplicaba stat). Solo rows sin match activo."""
+    no_banco = _BANCO_PICHINCHA
+    test_ids = [23537, 23538, 23541, 23542, 23543, 23544]
+    rows_pre = _db.fetch_all(
+        """
+        SELECT id_transaccion, stat, documento, importe
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND id_transaccion = ANY(%s)
+           AND TRIM(COALESCE(stat,'')) = '*'
+           AND NOT EXISTS (
+             SELECT 1 FROM scintela.banco_conciliacion_match m
+              WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
+                AND m.deshecho_en IS NULL
+           )
+        """,
+        (no_banco, test_ids),
+    ) or []
+    n = _db.execute(
+        """
+        UPDATE scintela.transacciones_bancarias
+           SET stat = NULL
+         WHERE no_banco = %s AND id_transaccion = ANY(%s)
+           AND TRIM(COALESCE(stat,'')) = '*'
+           AND NOT EXISTS (
+             SELECT 1 FROM scintela.banco_conciliacion_match m
+              WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
+                AND m.deshecho_en IS NULL
+           )
+        """,
+        (no_banco, test_ids),
+    ) or 0
+    return jsonify({"ok": True, "reverted": n, "rows_pre": [
+        {"id": r["id_transaccion"], "doc": r["documento"], "importe": float(r["importe"] or 0)} for r in rows_pre
+    ]})
+
+
 @bp.route("/find-drift-source", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
