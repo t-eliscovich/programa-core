@@ -700,7 +700,7 @@ def dump_todo():
     # 1) Sesión abierta + payload
     sesion = _db.fetch_one(
         """
-        SELECT id, no_banco, payload
+        SELECT id, no_banco, extracto_payload
           FROM scintela.banco_conciliacion_sesion
          WHERE no_banco = %s AND cerrada_en IS NULL
          ORDER BY abierta_en DESC LIMIT 1
@@ -708,20 +708,23 @@ def dump_todo():
         (no_banco,),
     )
     extracto = []
-    if sesion and sesion.get("payload"):
-        p = sesion["payload"]
+    if sesion and sesion.get("extracto_payload"):
+        p = sesion["extracto_payload"]
         if isinstance(p, str):
             try: p = json.loads(p)
             except Exception: p = {}
-        extracto = p.get("extracto") or p.get("movs") or []
+        if isinstance(p, list):
+            extracto = p
+        else:
+            extracto = p.get("extracto") or p.get("movs") or []
 
     # 2) Matches activos
     matches = _db.fetch_all(
         """
         SELECT id, id_transaccion, real_documento, real_monto, real_fecha,
-               cota_kind, sesion_id, descartado
+               real_tipo, real_concepto, estado
           FROM scintela.banco_conciliacion_match
-         WHERE no_banco = %s AND descartado = false
+         WHERE no_banco = %s
          ORDER BY id
         """,
         (no_banco,),
