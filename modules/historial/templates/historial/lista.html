@@ -108,12 +108,13 @@
        y la tabla expandia con el contenido del batch header. #}
     <table class="w-full text-xs" style="table-layout: fixed; max-width: 100%;">
       <colgroup>
-        <col style="width: 9%">   <!-- Fecha (+ usuario) -->
-        <col style="width: 18%">  <!-- Tipo (+ estado chip) -->
-        <col style="width: 13%">  <!-- Origen -->
-        <col style="width: 13%">  <!-- Destino -->
+        <col style="width: 9%">   <!-- Fecha -->
+        <col style="width: 17%">  <!-- Tipo (+ estado chip) -->
+        <col style="width: 12%">  <!-- Origen -->
+        <col style="width: 12%">  <!-- Destino -->
         <col style="width: 9%">   <!-- Importe -->
         <col>                     <!-- Concepto: el resto -->
+        <col style="width: 9%">   <!-- Usuario -->
         <col style="width: 6%">   <!-- Acciones -->
       </colgroup>
       <thead class="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
@@ -124,6 +125,7 @@
           <th class="px-2 py-1 text-left font-medium">Destino</th>
           <th class="px-2 py-1 text-right font-medium">Importe</th>
           <th class="px-2 py-1 text-left font-medium">Concepto</th>
+          <th class="px-2 py-1 text-left font-medium">Usuario</th>
           <th class="px-2 py-1 text-right font-medium no-print">Acc.</th>
         </tr>
       </thead>
@@ -157,7 +159,7 @@
           <tbody class="batch-card">
             {# Header del batch: spanning row con resumen + reverso. #}
             <tr class="border-l-4 border-violet-400 bg-violet-100/80">
-              <td colspan="7" class="px-4 py-2.5 overflow-hidden">
+              <td colspan="8" class="px-4 py-2.5 overflow-hidden">
                 <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-w-0">
                   <div class="flex items-center gap-x-3 gap-y-1 flex-wrap min-w-0">
                     <span class="text-violet-900 font-semibold text-sm">
@@ -203,7 +205,6 @@
                   {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
                 <td class="px-2 py-0.5 whitespace-nowrap pl-4">
                   <div class="text-xs text-violet-700">↳ #{{ r.id_mov_doble }}</div>
-                  {% if r.usuario %}<div class="text-[10px] text-slate-400 truncate" title="{{ r.usuario }}">{{ r.usuario }}</div>{% endif %}
                 </td>
                 <td class="px-2 py-0.5 truncate" title="{{ r.label }}">
                   <div class="font-medium truncate">{{ r.label }}</div>
@@ -223,6 +224,9 @@
                 <td class="px-2 py-0.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
                   {{ r.concepto or '' }}
                 </td>
+                <td class="px-2 py-0.5 text-xs text-slate-600 truncate" title="{{ r.usuario or '' }}">
+                  {{ r.usuario or '—' }}
+                </td>
                 <td class="px-2 py-0.5 text-right no-print">
                   <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
                 </td>
@@ -240,8 +244,8 @@
                 {% if r.row_url %}data-row-url="{{ r.row_url }}"{% endif %}>
               <td class="px-2 py-0.5 whitespace-nowrap">
                 {{ r.fecha_operacion | fecha_es }}
-                <div class="text-[10px] text-slate-400 truncate" title="#{{ r.id_mov_doble }}{% if r.usuario %} · {{ r.usuario }}{% endif %}">
-                  #{{ r.id_mov_doble }}{% if r.usuario %} · {{ r.usuario }}{% endif %}
+                <div class="text-[10px] text-slate-400 truncate" title="#{{ r.id_mov_doble }}">
+                  #{{ r.id_mov_doble }}
                 </div>
               </td>
               <td class="px-2 py-0.5 truncate" title="{{ r.label }}">
@@ -262,6 +266,9 @@
               <td class="px-2 py-0.5 text-xs text-slate-600 truncate" title="{{ r.concepto or '' }}">
                 {{ r.concepto or '' }}
               </td>
+              <td class="px-2 py-0.5 text-xs text-slate-600 truncate" title="{{ r.usuario or '' }}">
+                {{ r.usuario or '—' }}
+              </td>
               <td class="px-2 py-0.5 text-right no-print">
                 {% if r.estado == 'activo' %}
                   <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
@@ -278,7 +285,7 @@
         {% endif %}
       {% else %}
         <tbody>
-          {{ empty_row(7, 'Sin movimientos en este filtro.',
+          {{ empty_row(8, 'Sin movimientos en este filtro.',
                        'Probá ampliar fechas o limpiar filtros.') }}
         </tbody>
       {% endfor %}
