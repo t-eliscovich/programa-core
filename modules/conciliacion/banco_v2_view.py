@@ -2356,9 +2356,10 @@ def banco_cruzar_pendientes():
     """Cruza un archivo de DEPOSITOS PENDIENTES (hoja FEB2023 prevalece)
     contra el backlog del sistema (banco_historicos_pendientes), por doc+monto.
 
-    TMT 2026-06-03 duena: 'dejame subir un archivo para cruzar por las dudas,
-    por si algo cambio'. Read-only: muestra coinciden / monto distinto /
-    faltan en sistema / sobran en sistema. El borrado/alta va en un 2do paso.
+    TMT 2026-06-03 duena: 'asegurate que prevalezcan y arranque desde ahi yo'.
+    APLICA DIRECTO: el archivo prevalece -> borra del backlog los que sobran
+    (no estan en el archivo), agrega los que faltan, corrige montos. Toca solo
+    banco_historicos_pendientes con conciliado_en IS NULL. Redirige con resumen.
     """
     f = request.files.get("archivo")
     if not f or not f.filename:
@@ -2417,24 +2418,48 @@ def banco_cruzar_pendientes():
                 sobran.append({"doc": doc, "monto": s["monto"],
                                "detalle": (s["concepto"] or "")[:60], "id": s["id"]})
 
-    def _suma(lst, key="monto"):
-        return round(sum(x[key] for x in lst), 2)
+# TMT 2026-06-03 duena: 'no me hace falta chequear, asegurate que
+    # prevalezcan y arranque desde ahi yo'. Aplicamos directo: el archivo
+    # FEB2023 prevalece -> el backlog del sistema queda igual a el.
+    n_del = n_add = n_upd = 0
+    try:
+        with _db.tx() as conn:
+            sobran_ids = [s["id"] for s in sobran if s.get("id")]
+            if sobran_ids:
+                n_del = _db.execute(
+                    "DELETE FROM scintela.banco_historicos_pendientes "
+                    "WHERE id = ANY(%s) AND no_banco = %s AND conciliado_en IS NULL",
+                    (sobran_ids, _BANCO_PICHINCHA), conn=conn,
+                ) or 0
+            for it in faltan:
+                tipo = "C" if it["monto"] >= 0 else "D"
+                _db.execute(
+                    "INSERT INTO scintela.banco_historicos_pendientes "
+                    "(no_banco, fecha, concepto, documento, monto, tipo, fuente, creado_en) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, 'cruce-feb2023', CURRENT_TIMESTAMP) "
+                    "ON CONFLICT DO NOTHING",
+                    (_BANCO_PICHINCHA, it.get("fecha"), (it.get("detalle") or "")[:200],
+                     it["doc"], abs(it["monto"]), tipo), conn=conn,
+                )
+                n_add += 1
+            for it in monto_distinto:
+                tipo = "C" if it["monto"] >= 0 else "D"
+                n_upd += _db.execute(
+                    "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
+                    "WHERE documento = %s AND no_banco = %s AND conciliado_en IS NULL",
+                    (abs(it["monto"]), tipo, it["doc"], _BANCO_PICHINCHA), conn=conn,
+                ) or 0
+    except Exception as e:
+        _LOG.exception("aplicar cruce fallo: %s", e)
+        flash(f"Error al aplicar el cruce: {e}", "error")
+        return redirect(url_for("conciliacion.hub"))
 
-    resumen = {
-        "hoja": hoja,
-        "n_archivo": len(items), "suma_archivo": _suma(items),
-        "n_sistema": sum(len(v) for v in sis_por_doc.values()),
-        "suma_sistema": round(sum(s["monto"] for v in sis_por_doc.values() for s in v), 2),
-        "n_coinciden": len(coinciden), "suma_coinciden": _suma(coinciden),
-        "n_monto_distinto": len(monto_distinto),
-        "n_faltan": len(faltan), "suma_faltan": _suma(faltan),
-        "n_sobran": len(sobran), "suma_sobran": _suma(sobran),
-    }
-    return render_template(
-        "conciliacion/banco_v2_cruzar.html",
-        resumen=resumen, coinciden=coinciden, monto_distinto=monto_distinto,
-        faltan=faltan, sobran=sobran,
+    flash(
+        f"Pendientes actualizados desde {hoja}: {n_del} borrado(s), {n_add} agregado(s), "
+        f"{n_upd} corregido(s). El backlog ahora coincide con tu archivo ({len(items)} items).",
+        "ok",
     )
+    return redirect(url_for("conciliacion.hub"))
 
 
 @conciliacion_bp.route("/banco-v2/historial", methods=["GET"])

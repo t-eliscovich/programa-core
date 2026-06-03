@@ -342,12 +342,14 @@ def parse_pendientes_cruce(raw: bytes, sheet_pref: str = "FEB2023") -> tuple[str
             det = (str(row[cmap["detalle"]] or "").strip()
                    if "detalle" in cmap and len(row) > cmap["detalle"] else "")
             val = _cruce_num(row[cmap["valor"]]) if len(row) > cmap["valor"] else None
+            fch = (_parse_fecha_celda(row[cmap["fecha"]])
+                   if "fecha" in cmap and len(row) > cmap["fecha"] else None)
             if _CRUCE_FOOTER.match(det):
                 continue
             if val is None:
                 continue
             if not doc or not doc.isdigit():
                 continue
-            items.append({"doc": doc, "monto": val, "detalle": det[:60]})
+            items.append({"doc": doc, "monto": val, "detalle": det[:60], "fecha": fch})
         return nombre, items
     return None, []
