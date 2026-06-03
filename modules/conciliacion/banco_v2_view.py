@@ -2012,8 +2012,28 @@ def banco_borrar_sesion():
                     conn=conn,
                 ) or 0
 
-            # 4. Borrar txs BANCSIS grupales + recompute.
+            # 4. Borrar txs BANCSIS grupales + recompute LOCAL.
+            # TMT 2026-06-03 dueña: 'fijate que borrar sesion nos vuelva a
+            # dejar en el mismo punto de partida'. Bug: el recompute partía
+            # del PRIMER mov del banco (id_ascendente), re-walking 23k filas
+            # y arrastrando cualquier desviación histórica del saldo column.
+            # Resultado: libros podía desplazarse $147K después de un borrar.
+            # Fix: recompute SOLO desde la fecha más vieja de las txs que
+            # acabamos de borrar. El walk se limita a ~30-50 filas, no toca
+            # historia previa.
             if ids_grupales:
+                # Capturamos la fecha mínima de las txs grupales ANTES de
+                # borrarlas, así sabemos desde dónde recalcular.
+                fecha_ancla_row = _db.fetch_one(
+                    """
+                    SELECT MIN(fecha) AS f
+                      FROM scintela.transacciones_bancarias
+                     WHERE id_transaccion = ANY(%s) AND no_banco = %s
+                    """,
+                    (ids_grupales, _BANCO_PICHINCHA),
+                    conn=conn,
+                )
+                fecha_ancla = fecha_ancla_row.get("f") if fecha_ancla_row else None
                 counts["txs_grupales"] = _db.execute(
                     "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s) AND no_banco = %s",
                     (ids_grupales, _BANCO_PICHINCHA),
@@ -2021,20 +2041,16 @@ def banco_borrar_sesion():
                 ) or 0
                 try:
                     import bank_helpers
-                    siguiente = _db.fetch_one(
-                        """
-                        SELECT id_transaccion FROM scintela.transacciones_bancarias
-                         WHERE no_banco = %s
-                         ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
-                        """,
-                        (_BANCO_PICHINCHA,),
-                        conn=conn,
-                    )
-                    if siguiente and siguiente.get("id_transaccion"):
+                    if fecha_ancla:
+                        # Recompute LOCAL — solo filas desde la fecha de la
+                        # tx más vieja borrada. NO toca el resto de la
+                        # historia (sus saldos siguen siendo lo que ya eran).
                         bank_helpers.recompute_saldos_desde(
                             conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
-                            ancla_id=int(siguiente["id_transaccion"]),
+                            ancla_fecha=fecha_ancla,
                         )
+                    # Si no hay fecha_ancla (caso raro), saltamos el recompute
+                    # — preferimos no tocar saldos antes que pisar todo.
                 except Exception as e:
                     _LOG.warning("recompute_saldos en borrar-sesion falló: %s", e)
 
