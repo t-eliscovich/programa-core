@@ -531,10 +531,24 @@ def banco_preview():
     pc_neto_after = round(pc_cred_after - pc_deb_after, 2)
     saldo_si_concilio_after = round(float(balance_before.get("saldo") or 0) - pc_neto_after, 2)
 
-    banco_cred_after = round(float(balance_before.get("pendientes_banco_creditos") or 0) - delta_banco_cred, 2)
-    banco_deb_after = round(float(balance_before.get("pendientes_banco_debitos") or 0) - delta_banco_deb, 2)
+    # TMT 2026-06-03 BUG FIX: usar *_total (incluye extracto sesión).
+    # Antes: preview usaba pendientes_banco_creditos solo (histos), salto
+    # de $475K en "saldo banco esperado".
+    banco_cred_after = round(
+        float(balance_before.get("pendientes_banco_total_creditos") or balance_before.get("pendientes_banco_creditos") or 0)
+        - delta_banco_cred, 2,
+    )
+    banco_deb_after = round(
+        float(balance_before.get("pendientes_banco_total_debitos") or balance_before.get("pendientes_banco_debitos") or 0)
+        - delta_banco_deb, 2,
+    )
     banco_neto_after = round(banco_cred_after - banco_deb_after, 2)
     saldo_banco_esperado_after = round(saldo_si_concilio_after + banco_neto_after, 2)
+    n_after_banco = max(
+        0,
+        int(balance_before.get("n_pendientes_banco_total") or balance_before.get("n_pendientes") or 0)
+        - len(hist_rows),
+    )
 
     balance_after = {
         "saldo": float(balance_before.get("saldo") or 0),
@@ -545,8 +559,12 @@ def banco_preview():
         "saldo_si_concilio_todo": saldo_si_concilio_after,
         "pendientes_banco_creditos": banco_cred_after,
         "pendientes_banco_debitos": banco_deb_after,
+        "pendientes_banco_total_creditos": banco_cred_after,
+        "pendientes_banco_total_debitos": banco_deb_after,
         "neto_pendientes": banco_neto_after,
+        "neto_pendientes_total": banco_neto_after,
         "n_pendientes": n_after_banco,
+        "n_pendientes_banco_total": n_after_banco,
         "saldo_banco_esperado": saldo_banco_esperado_after,
     }
 
