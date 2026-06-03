@@ -689,6 +689,94 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/test-relink-trace", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def test_relink_trace():
+    """Trace de TODA la secuencia con ids intermedios:
+    1) Crea, registra firmas + ids.
+    2) Break.
+    3) Captura estado pre-relink.
+    4) Relink.
+    5) Captura estado post-relink.
+    6) Reporta diff.
+    7) Cleanup."""
+    no_banco = _BANCO_PICHINCHA
+    pcs = _db.fetch_all(
+        """
+        SELECT id_transaccion FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+           AND COALESCE(TRIM(stat), '') <> '*'
+         ORDER BY id_transaccion ASC LIMIT 3
+        """,
+        (no_banco,),
+    ) or []
+    test_ids = []
+    try:
+        # 1) Crear
+        for p in pcs:
+            _db.execute(
+                "INSERT INTO scintela.banco_conciliacion_match (no_banco, estado, id_transaccion, usuario) VALUES (%s, 'matched', %s, 'trace-test')",
+                (no_banco, p["id_transaccion"]),
+            )
+        created = _db.fetch_all(
+            "SELECT id, id_transaccion, tx_firma FROM scintela.banco_conciliacion_match WHERE no_banco=%s AND usuario='trace-test' ORDER BY id DESC LIMIT 3",
+            (no_banco,),
+        ) or []
+        test_ids = [m["id"] for m in created]
+        s1 = [{"id": m["id"], "tx": m["id_transaccion"], "f": m["tx_firma"]} for m in created]
+
+        # 2) Break
+        max_id = _db.fetch_one("SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias WHERE no_banco=%s", (no_banco,)) or {}
+        huerfano = int(max_id.get("m") or 0) + 999999
+        _db.execute("UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = ANY(%s)", (huerfano, test_ids))
+
+        # 3) Pre-relink
+        pre = _db.fetch_all("SELECT id, id_transaccion, tx_firma FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)", (test_ids,)) or []
+        s2 = [{"id": m["id"], "tx": m["id_transaccion"], "f": m["tx_firma"]} for m in pre]
+
+        # 4) Para cada match, ejecutar el SELECT del relink manualmente y comparar con lo que la función reportará
+        manual_results = []
+        for m in pre:
+            row = _db.fetch_one(
+                """
+                SELECT t.id_transaccion AS new_id
+                  FROM scintela.transacciones_bancarias t
+                 WHERE t.no_banco = %s
+                   AND (COALESCE(t.fecha::TEXT, '') || '|'
+                     || COALESCE(t.documento, '') || '|'
+                     || COALESCE(t.importe::TEXT, '0') || '|'
+                     || COALESCE(t.numreferencia::TEXT, '') || '|'
+                     || COALESCE(LEFT(t.concepto, 40), '')) = %s
+                 ORDER BY t.id_transaccion ASC LIMIT 1
+                """,
+                (no_banco, m["tx_firma"]),
+            ) or {}
+            manual_results.append({"match_id": m["id"], "subquery_new_id": row.get("new_id")})
+
+        # 5) Relink
+        rel = _db.fetch_one("SELECT * FROM scintela.relink_matches_post_sync(%s)", (no_banco,)) or {}
+
+        # 6) Post-relink
+        post = _db.fetch_all("SELECT id, id_transaccion FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)", (test_ids,)) or []
+        s3 = [{"id": m["id"], "tx": m["id_transaccion"]} for m in post]
+
+        return jsonify({
+            "huerfano_set": huerfano,
+            "step1_created": s1,
+            "step2_post_break": s2,
+            "step3_manual_subquery": manual_results,
+            "step4_relink_returned": {"matches_total": rel.get("matches_total"), "relinked": rel.get("relinked"), "sin_firma": rel.get("sin_firma"), "sin_match": rel.get("sin_match")},
+            "step5_post_relink": s3,
+        })
+    finally:
+        if test_ids:
+            try:
+                _db.execute("DELETE FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)", (test_ids,))
+            except Exception:
+                pass
+
+
 @bp.route("/probe-relink-step", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
