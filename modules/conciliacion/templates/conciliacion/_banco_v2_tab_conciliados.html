@@ -72,9 +72,10 @@
   <div class="overflow-x-auto" style="max-height: calc(100vh - 380px);">
     {# data-no-sort: sortable global rompería el orden batch-header → batch-detail. #}
     <table class="w-full text-[11px] tabular-nums" data-no-sort>
+      {# TMT 2026-06-03 dueña: 'saquesmole hora que ocupa mucho lugar para
+         nada'. Columna Hora removida — el usuario que conciliá está en Usr. #}
       <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
         <tr>
-          <th class="px-1.5 py-1 text-left w-20">Hora</th>
           <th class="px-1.5 py-1 text-center w-6" title="H=histórico · M=match · B=sólo banco · P=sólo PC">Est</th>
           <th class="px-1.5 py-1 text-left w-16">Fecha</th>
           <th class="px-1.5 py-1 text-right w-24">Banco</th>
@@ -149,11 +150,8 @@
             <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10 cursor-pointer batch-summary"
                 data-batch="{{ m.confirm_batch_id }}"
                 title="Click para ver/ocultar los {{ _batch_items|length }} items del grupo">
-              <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
-                <span class="batch-chevron text-sky-600" data-batch="{{ m.confirm_batch_id }}">▸</span>
-                {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
-              </td>
               <td class="px-1.5 py-0.5 text-center">
+                <span class="batch-chevron text-sky-600 mr-0.5" data-batch="{{ m.confirm_batch_id }}">▸</span>
                 <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-bold" title="grupo de {{ _batch_items|length }} matches">{{ _batch_items|length }}</span>
               </td>
               <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
@@ -187,9 +185,6 @@
              default + class para que el JS las muestre/oculte al click. #}
           <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if _is_part_of_group %} batch-detail hidden bg-slate-50/40 dark:bg-slate-800/20{% endif %}"
               {% if _is_part_of_group %}data-batch="{{ m.confirm_batch_id }}"{% endif %}>
-            <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
-              {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
-            </td>
             <td class="px-1.5 py-0.5 text-center">
               <span class="inline-flex w-5 h-5 items-center justify-center rounded-full
                 bg-{{ _color }}-100 text-{{ _color }}-800 dark:bg-{{ _color }}-900/40 dark:text-{{ _color }}-200
@@ -237,7 +232,7 @@
         {% endfor %}
         {% if not matches_sesion %}
         <tr>
-          <td colspan="10" class="px-4 py-6 text-center text-xs text-slate-400 italic">
+          <td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400 italic">
             — todavía no hay nada conciliado en esta sesión —
           </td>
         </tr>
