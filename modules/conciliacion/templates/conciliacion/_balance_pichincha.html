@@ -53,44 +53,54 @@
       <div class="text-[10px] text-slate-400">{% if balance.fecha %}{{ balance.fecha }}{% endif %}</div>
     </div>
 
-    {# ── TABLA: todo en text-xs slate, sin colorinche ── #}
+    {# ── TABLA encolumnada: label · cred · deb · neto ── #}
+    {# 4 columnas: label (flex), cred (90px), deb (90px), neto (110px).
+       Cred/deb se muestran solo en filas de pendientes; los saldos
+       individuales se alinean al neto (última columna). #}
     <div class="flex-1 text-xs tabular-nums">
       {% set _row = 'grid items-baseline px-3 py-1 border-b border-slate-100 dark:border-slate-800' %}
-      {% set _row_last = 'grid items-baseline px-3 py-1' %}
-      {% set _cols = 'grid-template-columns: 1fr 260px;' %}
+      {% set _cols = 'grid-template-columns: 1fr 90px 90px 110px;' %}
 
       <div class="{{ _row }}" style="{{ _cols }}">
         <span class="text-slate-500">Libros (live)</span>
+        <span></span><span></span>
         <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:,.2f}'.format(balance.saldo) }}</span>
       </div>
 
       <div class="{{ _row }}" style="{{ _cols }}">
         <span class="text-slate-500">− Pendientes programa <span class="text-slate-400">({{ balance.n_pendientes_conciliar or 0 }})</span></span>
-        <span class="text-right font-mono text-slate-700 dark:text-slate-300">
-          {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
-            <span class="text-slate-400 text-[10px]">+{{ '{:,.0f}'.format(balance.pendientes_pc_creditos) }} −{{ '{:,.0f}'.format(balance.pendientes_pc_debitos) }}</span>
-            <span class="ml-2">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</span>
-          {% else %}<span class="text-slate-300">—</span>{% endif %}
-        </span>
+        {% if balance.pendientes_pc_creditos or balance.pendientes_pc_debitos %}
+          <span class="text-right font-mono text-slate-400 text-[11px]">+{{ '{:,.2f}'.format(balance.pendientes_pc_creditos) }}</span>
+          <span class="text-right font-mono text-slate-400 text-[11px]">−{{ '{:,.2f}'.format(balance.pendientes_pc_debitos) }}</span>
+          <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:+,.2f}'.format(balance.pendientes_conciliar_neto) }}</span>
+        {% else %}
+          <span></span><span></span><span class="text-right text-slate-300">—</span>
+        {% endif %}
       </div>
 
       <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
         <span class="text-slate-700 dark:text-slate-200 font-medium">= Saldo a conciliar</span>
+        <span></span><span></span>
         <span class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">{{ '{:,.2f}'.format(balance.saldo_si_concilio_todo or balance.saldo) }}</span>
       </div>
 
       <div class="{{ _row }}" style="{{ _cols }}">
         <span class="text-slate-500">+ Pendientes banco <span class="text-slate-400">({{ _pbtq or 0 }})</span></span>
-        <span class="text-right font-mono text-slate-700 dark:text-slate-300">
-          {% if _pbtc or _pbtd %}
-            <span class="text-slate-400 text-[10px]">+{{ '{:,.0f}'.format(_pbtc) }} −{{ '{:,.0f}'.format(_pbtd) }}</span>
-            <span class="ml-2">{{ '{:+,.2f}'.format(_pbtn) }}</span>
-          {% elif _pbtn is not none %}{{ '{:+,.2f}'.format(_pbtn) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-        </span>
+        {% if _pbtc or _pbtd %}
+          <span class="text-right font-mono text-slate-400 text-[11px]">+{{ '{:,.2f}'.format(_pbtc) }}</span>
+          <span class="text-right font-mono text-slate-400 text-[11px]">−{{ '{:,.2f}'.format(_pbtd) }}</span>
+          <span class="text-right font-mono text-slate-700 dark:text-slate-300">{{ '{:+,.2f}'.format(_pbtn) }}</span>
+        {% elif _pbtn is not none %}
+          <span></span><span></span>
+          <span class="text-right font-mono text-slate-700">{{ '{:+,.2f}'.format(_pbtn) }}</span>
+        {% else %}
+          <span></span><span></span><span class="text-right text-slate-300">—</span>
+        {% endif %}
       </div>
 
       <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
         <span class="text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</span>
+        <span></span><span></span>
         <span class="text-right font-mono font-semibold text-slate-900 dark:text-slate-100">{{ '{:,.2f}'.format(balance.saldo_banco_esperado or balance.saldo) }}</span>
       </div>
 
@@ -101,14 +111,15 @@
       {% if sesion and sesion.id %}
       <div class="{{ _row }} border-t border-slate-200 dark:border-slate-700" style="{{ _cols }}">
         <span class="text-slate-600 dark:text-slate-300">Saldo banco objetivo</span>
+        <span></span><span></span>
         <span class="text-right">
           <form method="POST" action="{{ url_for('conciliacion.banco_set_saldo_objetivo') }}" class="inline-flex items-center gap-1">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
             <input type="text" name="saldo_objetivo" inputmode="decimal"
                    value="{% if _sbr is not none and _sbr_origen == 'manual' %}{{ '{:.2f}'.format(_sbr) }}{% endif %}"
-                   placeholder="{% if _sbr is not none %}{{ '{:,.2f}'.format(_sbr) }}{% else %}escribilo del extracto{% endif %}"
-                   class="w-32 px-1.5 py-0 text-right font-mono text-slate-700 dark:text-slate-200
+                   placeholder="{% if _sbr is not none %}{{ '{:,.2f}'.format(_sbr) }}{% else %}—{% endif %}"
+                   class="w-24 px-1 py-0 text-right font-mono text-slate-700 dark:text-slate-200
                           border border-slate-200 dark:border-slate-700 rounded text-xs
                           focus:ring-1 focus:ring-slate-400 focus:outline-none">
             <button type="submit" class="text-[10px] text-slate-500 hover:text-slate-700 underline">ok</button>
@@ -116,9 +127,10 @@
         </span>
       </div>
       {% if _dnc is not none and _sbr is not none %}
-      <div class="{{ _row_last }}" style="{{ _cols }}">
+      <div class="grid items-baseline px-3 py-1" style="{{ _cols }}">
         <span class="text-slate-500">Diferencia</span>
-        <span class="text-right font-mono font-semibold {% if _dnc|abs < 0.5 %}text-emerald-700{% elif _dnc|abs > 1000 %}text-rose-700{% else %}text-slate-700{% endif %}">{{ '{:+,.2f}'.format(-_dnc) }}</span>
+        <span></span><span></span>
+        <span class="text-right font-mono font-semibold {% if _dnc|abs < 0.5 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(-_dnc) }}</span>
       </div>
       {% endif %}
       {% endif %}
