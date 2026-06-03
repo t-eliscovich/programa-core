@@ -164,7 +164,8 @@ def estado_banco_completo():
         out["bitacora_acciones_recientes"] = [
             {**r, "ts": str(r.get("ts") or ""),
              "resumen": (r.get("resumen") or "")[:200],
-             "payload": (str(r.get("payload"))[:300] if r.get("payload") else None)}
+             # FULL payload (jsonb) — necesario para recuperar hist_ids etc.
+             "payload": r.get("payload")}
             for r in out["bitacora_acciones_recientes"]
         ]
     except Exception as e:
