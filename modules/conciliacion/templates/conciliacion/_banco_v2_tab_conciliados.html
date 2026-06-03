@@ -70,7 +70,8 @@
   </header>
 
   <div class="overflow-x-auto" style="max-height: calc(100vh - 380px);">
-    <table class="w-full text-[11px] tabular-nums">
+    {# data-no-sort: sortable global rompería el orden batch-header → batch-detail. #}
+    <table class="w-full text-[11px] tabular-nums" data-no-sort>
       <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
         <tr>
           <th class="px-1.5 py-1 text-left w-20">Hora</th>
@@ -121,14 +122,35 @@
             {% set _batch_items = matches_sesion|selectattr('confirm_batch_id','equalto',m.confirm_batch_id)|list %}
             {% set _is_part_of_group = _batch_items|length > 1 %}
           {% endif %}
-          {% set _skip_row = _is_part_of_group and not _is_batch_header %}
+          {# TMT 2026-06-03 dueña: 'no me deja ver todo el grupo'. Antes:
+             cuando un batch tenía >1 match, las filas individuales se
+             SALTABAN del render — solo se veía el resumen. Ahora se
+             RENDERIZAN pero con class="hidden batch-detail" y se toggean
+             clickeando la fila resumen. #}
+          {% set _skip_row = false %}
           {% if _is_batch_header and _is_part_of_group %}
             {# Fila ÚNICA resumen del grupo — reemplaza las N filas individuales. #}
             {% set _bs_banco = _batch_items|map(attribute='monto_banco_signed')|map('default',0)|map('float')|sum %}
-            {% set _bs_prog = _batch_items|map(attribute='monto_prog_signed')|map('default',0)|map('float')|sum %}
+            {# TMT 2026-06-03 dueña: 'el 828 sigue estando mal! deberia ser 69
+               nada mas'. Bug: sumar monto_prog_signed por cada match cuenta
+               la misma tx PC N veces (caso impuestos agrupados: 12 matches
+               apuntan al MISMO mov PC de -69.01 → sum = -828.12 vs real -69.01).
+               Fix: dedupar por id_transaccion antes de sumar — solo cuento
+               cada tx PC una vez. #}
+            {% set _bs_ns = namespace(seen=[], total=0.0) %}
+            {% for _bi in _batch_items %}
+              {% if _bi.id_transaccion not in _bs_ns.seen %}
+                {% set _ = _bs_ns.seen.append(_bi.id_transaccion) %}
+                {% set _bs_ns.total = _bs_ns.total + (_bi.monto_prog_signed|default(0)|float) %}
+              {% endif %}
+            {% endfor %}
+            {% set _bs_prog = _bs_ns.total %}
             {% set _bs_diff = (_bs_banco - _bs_prog)|round(2) %}
-            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10">
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10 cursor-pointer batch-summary"
+                data-batch="{{ m.confirm_batch_id }}"
+                title="Click para ver/ocultar los {{ _batch_items|length }} items del grupo">
               <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
+                <span class="batch-chevron text-sky-600" data-batch="{{ m.confirm_batch_id }}">▸</span>
                 {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
               </td>
               <td class="px-1.5 py-0.5 text-center">
@@ -161,7 +183,10 @@
             {% set _ns.prev_batch = m.confirm_batch_id %}
           {% elif not _skip_row %}
             {% if m.confirm_batch_id %}{% set _ns.prev_batch = m.confirm_batch_id %}{% endif %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          {# Filas individuales: si son parte de un batch >1, hidden por
+             default + class para que el JS las muestre/oculte al click. #}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if _is_part_of_group %} batch-detail hidden bg-slate-50/40 dark:bg-slate-800/20{% endif %}"
+              {% if _is_part_of_group %}data-batch="{{ m.confirm_batch_id }}"{% endif %}>
             <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
               {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
             </td>
@@ -214,6 +239,31 @@
       </tbody>
     </table>
   </div>
+
+  {# TMT 2026-06-03 dueña: 'no me deja ver todo el grupo'. JS para expandir/
+     colapsar las filas detalle de cada batch al click en la fila resumen.
+     Esta tabla tiene data-no-sort porque el sortable global rompería el
+     orden batch-header → batch-detail. #}
+  <script>
+    (function() {
+      document.querySelectorAll('tr.batch-summary').forEach(row => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('a, button, input, label, select')) return;
+          const id = row.dataset.batch;
+          if (!id) return;
+          const details = document.querySelectorAll('tr.batch-detail[data-batch="' + CSS.escape(id) + '"]');
+          let opened = false;
+          details.forEach(d => {
+            const isHidden = d.classList.contains('hidden');
+            d.classList.toggle('hidden', !isHidden);
+            if (isHidden) opened = true;
+          });
+          const chev = row.querySelector('.batch-chevron');
+          if (chev) chev.textContent = opened ? '▾' : '▸';
+        });
+      });
+    })();
+  </script>
 
   {# Leyenda compacta abajo #}
   <div class="px-3 py-1 border-t border-slate-100 dark:border-slate-800 text-[9px] text-slate-400">
