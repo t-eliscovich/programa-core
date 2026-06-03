@@ -1536,6 +1536,7 @@ def crear_transaccion_agrupada_desde_reals(
     concepto: str | None = None,
     prov: str | None = None,
     usuario: str = "web",
+    confirm_batch_id: str | None = None,
 ) -> dict:
     """Crea UNA tx BANCSIS con la suma de N reals y los concilia N:1.
 
@@ -1580,6 +1581,13 @@ def crear_transaccion_agrupada_desde_reals(
             "Los movs se compensan (créditos == débitos) — no genero tx "
             "BANCSIS de monto cero. Revisar el subset."
         )
+
+    # TMT 2026-06-03: si no llega batch_id explícito, lo generamos aquí
+    # para que los N matches del agrupado compartan grupo (deshacer y
+    # totales por id_transaccion los traten como UN grupo).
+    if not confirm_batch_id:
+        import uuid as _uuid
+        confirm_batch_id = _uuid.uuid4().hex
 
     documento = "NC" if neto > 0 else "ND"
     importe_abs = abs(neto)
@@ -1642,6 +1650,7 @@ def crear_transaccion_agrupada_desde_reals(
                         usuario=usuario,
                         metodo="created_from_real_grouped",
                         conn=conn,
+                        confirm_batch_id=confirm_batch_id,
                     )
                     if n:
                         n_matches += 1

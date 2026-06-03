@@ -2512,16 +2512,22 @@ def banco_deshacer_v2():
         by_batch[bid]["items"].append(m)
     for bid, b in by_batch.items():
         # Cómputo de totales lado banco / lado programa.
+        # TMT 2026-06-03: dedup por id_transaccion en PC. Si N matches
+        # apuntan a la misma tx PC (ej. agrupado de impuestos), la tx PC
+        # se cuenta UNA sola vez.
         sum_banco = 0.0
         sum_programa = 0.0
         n_banco_lados = 0
         n_pc_lados = 0
+        seen_tx = set()
         for it in b["items"]:
             if it.get("real_monto") is not None:
                 signo = 1 if (it.get("real_tipo") or "").upper() == "C" else -1
                 sum_banco += signo * float(it.get("real_monto") or 0)
                 n_banco_lados += 1
-            if it.get("id_transaccion") is not None:
+            tx_id = it.get("id_transaccion")
+            if tx_id is not None and tx_id not in seen_tx:
+                seen_tx.add(tx_id)
                 doc = (it.get("pc_documento") or "").upper()
                 imp = float(it.get("pc_importe") or 0)
                 signo_pc = 1 if doc in ("DE","TR","NC","IN","AC","XX") else -1
