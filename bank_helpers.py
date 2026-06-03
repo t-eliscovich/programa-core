@@ -72,38 +72,24 @@ def _es_fila_legacy(usuario_crea) -> bool:
 
 
 def _signed_delta(documento: str, importe: float, usuario_crea: str = "") -> float:
-    """Delta firmado a aplicar al saldo, manejando ambas convenciones.
+    """Delta firmado a aplicar al saldo: signo_documento × importe.
 
-    Bug TMT 2026-05-11: importe en la DB tiene convención MIXTA —
-      - filas DBF legacy: importe SIGNED (NDs egress -N, NDs reverso +N,
-        DE entrada +N). El signo viene del importe mismo.
-      - filas bank_helpers nuevas: importe ABS (+N siempre), sign por doc.
+    TMT 2026-06-03 audit fix v2: el chain dBase legacy aplica
+    `signo_documento × importe` SIN abs, lo que unifica todas las
+    convenciones:
+      - ND +44091 (egress): -1 * 44091 = -44091 → saldo baja ✓
+      - ND -44091 (reverso): -1 * -44091 = +44091 → saldo sube ✓
+      - DE +1500 (deposit): +1 * 1500 = +1500 → saldo sube ✓
+      - Web ND +50 (importe ABS por convención bank_helpers): -1 * 50 = -50 ✓
 
-    TMT 2026-06-03 audit fix: antes del fix, el heurístico "si imp < 0 use
-    as-is, sino sign by doc" rompía NDs reverso del DBF (importe positivo
-    → forzaba -imp incorrectamente). Resultado: el audit reportaba 8 filas
-    torcidas inexistentes que generaban falsa alarma de drift.
+    Validado contra el chain real de DBF: pairs 24346/24347 (ND ±44091)
+    cancelan correctamente con esta regla.
 
-    Ahora: requiere `usuario_crea` para distinguir convenciones.
-      - usuario_crea legacy (dbf-import/asinfo-backfill/dbase-sync/'')
-        → respeta el signo del importe (NDs reverso → +imp legítimo)
-      - usuario_crea web/otro → sign by doc (importe ABS, doc determina ±)
-
-    Default usuario_crea='' = legacy → respeta importe sign. Es el
-    comportamiento CORRECTO para audit walks que leen filas mezcladas
-    de la DB. Los callers que insertan filas web nuevas deben pasar
-    usuario_crea explícitamente.
+    `usuario_crea` se mantiene en la firma por compat con callers existentes
+    pero no afecta el resultado.
     """
     imp = float(importe or 0)
-    if _es_fila_legacy(usuario_crea):
-        # Legacy: importe ya viene signed. NDs reversos tienen importe > 0
-        # legítimamente — no negar.
-        return imp
-    # Nueva convención bank_helpers: importe abs, sign por doc.
-    if imp < 0:
-        # Web no debería pasar negativo; si pasa, respetamos por seguridad.
-        return imp
-    return imp if signo_documento(documento) > 0 else -imp
+    return signo_documento(documento) * imp
 
 
 def _saldo_previo(
