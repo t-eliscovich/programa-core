@@ -1264,6 +1264,42 @@ def confirmar_match(
 
     Si la migration 0047 no corrió todavía, omitimos la columna `metodo`.
     """
+    # TMT 2026-06-03 audit blindaje BUG #9 single-claim roto: Tamara reportó
+    # 4 matches activos contra el mismo PC tx de +2,000 con bancos +300/+1549/
+    # +150/+249. Es bug: la dueña matcheó el mismo PC tx en clicks separados.
+    # Regla: si id_transaccion YA tiene matches activos con confirm_batch_id
+    # DISTINTO al que estamos por insertar, ABORTAR. Si comparten batch_id
+    # es N:1 legítimo del agrupado (impuestos, transferencias).
+    if id_transaccion and estado == "matched":
+        try:
+            existing = db.fetch_one(
+                """
+                SELECT COUNT(*) AS n,
+                       BOOL_OR(COALESCE(confirm_batch_id, '') = COALESCE(%s, ''))
+                         AS comparte_batch
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s
+                   AND id_transaccion = %s
+                   AND deshecho_en IS NULL
+                """,
+                (confirm_batch_id, no_banco, int(id_transaccion)),
+                conn=conn,
+            )
+            if existing and int(existing.get("n") or 0) > 0:
+                if not existing.get("comparte_batch"):
+                    raise ValueError(
+                        f"Single-claim violation: PC tx #{id_transaccion} ya tiene "
+                        f"matches activos con OTRO batch_id. No se puede matchear "
+                        f"el mismo PC tx desde 2 conciliaciones distintas. "
+                        f"Si querés reasignar, primero deshacer el match anterior."
+                    )
+        except ValueError:
+            raise
+        except Exception as _e:
+            # No bloqueamos por fallos del check (p.ej. mock en tests sin
+            # esta query soportada). Solo loggear.
+            import logging
+            logging.warning("confirmar_match single-claim check falló: %s", _e)
     # TMT 2026-05-27 dueña: 'que los que importen sean las de dbase'.
     # Dual-write: además del INSERT en match, marcamos stat='*' en la fila
     # PC para que el flag conciliado sea visible en /bancos y en los saldos

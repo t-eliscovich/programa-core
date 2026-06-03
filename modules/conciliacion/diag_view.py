@@ -41,6 +41,149 @@ bp = Blueprint(
 )
 
 
+@bp.route("/matches-duplicados-id-tx", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def matches_duplicados_id_tx():
+    """TMT 2026-06-03 audit blindaje: detecta el bug single-claim roto.
+
+    Reporta matches activos donde N matches comparten el mismo
+    id_transaccion (mismo PC tx matcheado N veces contra N banco distintos).
+    Si los N matches tienen el MISMO confirm_batch_id, es agrupado legítimo
+    (caso impuestos). Si tienen batch_ids distintos, es bug — la dueña
+    matcheó el mismo PC tx en sesiones/clicks distintos.
+    """
+    rows = _db.fetch_all(
+        """
+        WITH agg AS (
+            SELECT id_transaccion,
+                   COUNT(*) AS n_matches,
+                   COUNT(DISTINCT COALESCE(confirm_batch_id, '')) AS n_batches,
+                   ARRAY_AGG(id ORDER BY id) AS match_ids,
+                   ARRAY_AGG(real_documento ORDER BY id) AS real_docs,
+                   ARRAY_AGG(real_monto ORDER BY id) AS real_montos,
+                   ARRAY_AGG(confirm_batch_id ORDER BY id) AS batch_ids
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s
+               AND deshecho_en IS NULL
+               AND id_transaccion IS NOT NULL
+             GROUP BY id_transaccion
+            HAVING COUNT(*) > 1
+        )
+        SELECT agg.*,
+               tb.fecha AS tx_fecha,
+               tb.documento AS tx_documento,
+               tb.importe AS tx_importe,
+               tb.concepto AS tx_concepto,
+               (agg.n_batches > 1) AS es_bug_multi_batch
+          FROM agg
+          LEFT JOIN scintela.transacciones_bancarias tb
+            ON tb.id_transaccion = agg.id_transaccion
+         ORDER BY agg.n_matches DESC, agg.id_transaccion DESC
+         LIMIT 200
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    bugs = [r for r in rows if r.get("es_bug_multi_batch")]
+    grupos_ok = [r for r in rows if not r.get("es_bug_multi_batch")]
+    return jsonify({
+        "ok": True,
+        "no_banco": _BANCO_PICHINCHA,
+        "total_groups": len(rows),
+        "n_bugs_multi_batch": len(bugs),
+        "n_grupos_legitimos_mismo_batch": len(grupos_ok),
+        "bugs_multi_batch_top20": [
+            {
+                "id_transaccion": int(r["id_transaccion"]),
+                "n_matches": int(r["n_matches"]),
+                "n_batches": int(r["n_batches"]),
+                "tx_fecha": str(r.get("tx_fecha") or ""),
+                "tx_documento": r.get("tx_documento"),
+                "tx_importe": float(r.get("tx_importe") or 0),
+                "tx_concepto": (r.get("tx_concepto") or "")[:50],
+                "match_ids": list(r.get("match_ids") or []),
+                "real_docs": list(r.get("real_docs") or []),
+                "real_montos": [float(x) for x in (r.get("real_montos") or [])],
+                "batch_ids": list(r.get("batch_ids") or []),
+            }
+            for r in bugs[:20]
+        ],
+    })
+
+
+@bp.route("/borrar-matches-duplicados", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def borrar_matches_duplicados():
+    """Deshacer matches duplicados que comparten id_transaccion sin batch.
+
+    Para cada id_transaccion con N>1 matches y N>1 batches distintos:
+      - Conservar el match con id MENOR (el primero creado).
+      - Soft-undo el resto (deshecho_en = NOW, deshecho_por = 'mig-dup-cleanup').
+      - Revertir conciliado_en en histos linkeados a los deshechos.
+
+    Idempotente: si no quedan dupes, no hace nada.
+    """
+    dupes = _db.fetch_all(
+        """
+        SELECT id_transaccion,
+               ARRAY_AGG(id ORDER BY id) AS match_ids,
+               COUNT(DISTINCT COALESCE(confirm_batch_id, '')) AS n_batches
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s
+           AND deshecho_en IS NULL
+           AND id_transaccion IS NOT NULL
+         GROUP BY id_transaccion
+        HAVING COUNT(*) > 1 AND COUNT(DISTINCT COALESCE(confirm_batch_id, '')) > 1
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    n_deshechos = 0
+    ids_deshechos = []
+    for r in dupes:
+        match_ids = list(r.get("match_ids") or [])
+        if len(match_ids) <= 1:
+            continue
+        # Conservar el primero (menor id), deshacer el resto.
+        keep_id = match_ids[0]
+        deshacer_ids = match_ids[1:]
+        try:
+            with _db.tx() as conn:
+                # Soft-undo
+                n = _db.execute(
+                    """
+                    UPDATE scintela.banco_conciliacion_match
+                       SET deshecho_en = CURRENT_TIMESTAMP,
+                           deshecho_por = 'audit-dup-cleanup-2026-06-03'
+                     WHERE id = ANY(%s)
+                       AND deshecho_en IS NULL
+                    """,
+                    (deshacer_ids,), conn=conn,
+                ) or 0
+                # Revertir histos linkeados
+                _db.execute(
+                    """
+                    UPDATE scintela.banco_historicos_pendientes
+                       SET conciliado_en = NULL,
+                           conciliado_por = NULL,
+                           conciliado_match_id = NULL
+                     WHERE conciliado_match_id = ANY(%s)
+                    """,
+                    (deshacer_ids,), conn=conn,
+                )
+                n_deshechos += int(n)
+                ids_deshechos.extend(deshacer_ids)
+        except Exception as e:
+            _LOG.warning("borrar_matches_duplicados id_tx=%s falló: %s",
+                         r.get("id_transaccion"), e)
+    return jsonify({
+        "ok": True,
+        "n_deshechos": n_deshechos,
+        "ids_deshechos": ids_deshechos[:200],
+        "n_grupos_procesados": len(dupes),
+    })
+
+
 @bp.route("/", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
