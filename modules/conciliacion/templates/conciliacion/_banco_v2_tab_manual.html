@@ -53,15 +53,9 @@
         <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
         <span class="text-slate-400">/ {{ _banco|length }} movs</span>
-        {# TMT 2026-06-02 dueña: 'si hay movimientos que no quiero
-           conciliar... entrada y devolucion de un cheque'. Marca los
-           movs banco seleccionados como conciliados SIN contraparte PC. #}
-        <button type="button" id="descartar-banco-btn" disabled
-                onclick="descartarBancoSeleccionados()"
-                class="ml-2 bg-rose-100 hover:bg-rose-200 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-[11px] rounded px-2 py-0.5 font-medium whitespace-nowrap"
-                title="Marca como 'no necesita conciliación' (ej: entrada+devolución de cheque)">
-          ✕ Descartar
-        </button>
+        {# TMT 2026-06-03 dueña: 'borrar boton de descartar'. Botón removido.
+           El endpoint /conciliacion/banco-v2/descartar-banco sigue vivo por
+           si en algún momento se quiere resucitar. #}
       </div>
     </header>
 
