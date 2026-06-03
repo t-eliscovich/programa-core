@@ -114,10 +114,13 @@ def collect_route_failures(app):
             failed.append((endpoint, url, 500, traceback.format_exc()))
             continue
         code = rv.status_code
-        # /healthz/ready intencionalmente devuelve 503 si la DB está caída.
-        # En el smoke test la DB es un stub sin SELECT 1, así que 503 es
-        # esperado — no es falla real.
-        if code >= 500 and endpoint != "healthz.readiness":
+        # /healthz/ready (healthz.readiness) y /_healthz (healthz)
+        # intencionalmente devuelven 503 si la DB está caída. En el smoke test
+        # la DB es un stub sin SELECT 1, así que 503 es esperado — no es falla
+        # real. TMT 2026-06-03: se sumó /_healthz (endpoint "healthz") como
+        # health-check de monitoring externo; antes solo se excluía readiness,
+        # por eso la CI rompía en cada commit.
+        if code >= 500 and endpoint not in ("healthz.readiness", "healthz"):
             body = rv.get_data(as_text=True)[:500]
             failed.append((endpoint, url, code, body))
     return total, failed
