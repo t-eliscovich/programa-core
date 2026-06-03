@@ -1154,6 +1154,136 @@ def test_relink_full():
     return jsonify(result)
 
 
+def _relink_py(no_banco: int) -> dict:
+    """Relink en Python (no pl/pgsql que misteriosamente no persiste UPDATE).
+    UPDATE plain via correlated subquery. Devuelve counts."""
+    total = _db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match WHERE no_banco = %s AND deshecho_en IS NULL",
+        (no_banco,),
+    ) or {}
+    sin_firma = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s AND deshecho_en IS NULL
+           AND tx_firma IS NULL AND id_transaccion IS NOT NULL
+        """,
+        (no_banco,),
+    ) or {}
+    n_relinked = _db.execute(
+        """
+        UPDATE scintela.banco_conciliacion_match m
+           SET id_transaccion = (
+             SELECT t.id_transaccion
+               FROM scintela.transacciones_bancarias t
+              WHERE t.no_banco = m.no_banco
+                AND (COALESCE(t.fecha::TEXT, '') || '|'
+                  || COALESCE(t.documento, '') || '|'
+                  || COALESCE(t.importe::TEXT, '0') || '|'
+                  || COALESCE(t.numreferencia::TEXT, '') || '|'
+                  || COALESCE(LEFT(t.concepto, 40), '')) = m.tx_firma
+              ORDER BY t.id_transaccion ASC LIMIT 1
+           )
+         WHERE m.no_banco = %s
+           AND m.deshecho_en IS NULL
+           AND m.tx_firma IS NOT NULL
+           AND m.id_transaccion IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM scintela.transacciones_bancarias t2
+              WHERE t2.id_transaccion = m.id_transaccion
+           )
+        """,
+        (no_banco,),
+    ) or 0
+    sin_match = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+           AND m.id_transaccion IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM scintela.transacciones_bancarias t
+              WHERE t.id_transaccion = m.id_transaccion
+           )
+        """,
+        (no_banco,),
+    ) or {}
+    # Re-aplicar stat='*'
+    _db.execute(
+        """
+        UPDATE scintela.transacciones_bancarias t
+           SET stat = '*'
+          FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+           AND m.id_transaccion = t.id_transaccion
+           AND COALESCE(TRIM(t.stat), '') <> '*'
+        """,
+        (no_banco,),
+    )
+    return {
+        "matches_total": int(total.get("n") or 0),
+        "relinked": int(n_relinked or 0),
+        "sin_firma": int(sin_firma.get("n") or 0),
+        "sin_match": int(sin_match.get("n") or 0),
+    }
+
+
+@bp.route("/test-relink-py", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def test_relink_py():
+    """Test del relink Python (no SQL function)."""
+    no_banco = _BANCO_PICHINCHA
+    pcs = _db.fetch_all(
+        """
+        SELECT id_transaccion FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+           AND COALESCE(TRIM(stat), '') <> '*'
+         ORDER BY id_transaccion ASC LIMIT 3
+        """,
+        (no_banco,),
+    ) or []
+    test_ids = []
+    try:
+        for p in pcs:
+            _db.execute(
+                """
+                INSERT INTO scintela.banco_conciliacion_match
+                    (no_banco, estado, id_transaccion, tx_firma, usuario)
+                VALUES (%s, 'matched', %s, scintela.compute_tx_firma(%s), 'py-test')
+                """,
+                (no_banco, p["id_transaccion"], p["id_transaccion"]),
+            )
+        new_m = _db.fetch_all(
+            "SELECT id, id_transaccion FROM scintela.banco_conciliacion_match WHERE no_banco=%s AND usuario='py-test' ORDER BY id DESC LIMIT 3",
+            (no_banco,),
+        ) or []
+        test_ids = [m["id"] for m in new_m]
+        originals = {m["id"]: m["id_transaccion"] for m in new_m}
+        # Break
+        max_id = _db.fetch_one("SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias WHERE no_banco=%s", (no_banco,)) or {}
+        huerfano = int(max_id.get("m") or 0) + 999999
+        _db.execute("UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = ANY(%s)", (huerfano, test_ids))
+        # Relink via Python
+        relink_result = _relink_py(no_banco)
+        # Check
+        recovered = _db.fetch_all("SELECT id, id_transaccion FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)", (test_ids,)) or []
+        rec_map = {r["id"]: r["id_transaccion"] for r in recovered}
+        ok_count = sum(1 for mid, orig in originals.items() if rec_map.get(mid) == orig)
+        return jsonify({
+            "ok": ok_count == len(originals),
+            "n_created": len(test_ids),
+            "n_recovered": ok_count,
+            "relink": relink_result,
+            "originals": originals,
+            "recovered": rec_map,
+        })
+    finally:
+        if test_ids:
+            try:
+                _db.execute("DELETE FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)", (test_ids,))
+            except Exception:
+                pass
+
+
 @bp.route("/test-relink", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")

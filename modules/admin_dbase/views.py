@@ -206,12 +206,12 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
     # La función SQL `relink_matches_post_sync` (mig 0066) recupera el id
     # nuevo via tx_firma.
     if rc == 0:
+        # TMT 2026-06-03: el SQL function devolvía relinked=N pero no
+        # persistía el UPDATE (pl/pgsql + psycopg2 quirk). Llamamos al helper
+        # Python directo.
         try:
-            import db as _db
-            row = _db.fetch_one(
-                "SELECT * FROM scintela.relink_matches_post_sync(%s)",
-                (10,),  # Banco Pichincha
-            ) or {}
+            from modules.conciliacion.diag_view import _relink_py
+            row = _relink_py(10) or {}
             yield line("")
             yield line("[relink matches post-sync]")
             yield line(f"  matches_total : {row.get('matches_total', 0)}")
