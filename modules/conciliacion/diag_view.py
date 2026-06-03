@@ -332,7 +332,7 @@ def reset_y_cargar():
                         (r.get("concepto") or "")[:120],
                         (r.get("documento") or "")[:40],
                         str(r.get("monto") or 0),
-                        (r.get("tipo") or "C")[:2],
+                        (r.get("tipo") or "C")[:1],
                         "",  # oficina
                         (r.get("detalle") or "")[:30],
                         "feb2023-xlsx-2026-06-02",

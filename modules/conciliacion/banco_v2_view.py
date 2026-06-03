@@ -941,7 +941,7 @@ def banco_descartar():
                         no_banco, mov.fecha,
                         (mov.documento or "")[:40],
                         str(mov.monto or 0),
-                        (mov.tipo or "C")[:2],
+                        (mov.tipo or "C")[:1],
                     ),
                 ) or 0
                 if rc > 0:
@@ -963,7 +963,7 @@ def banco_descartar():
                         (mov.concepto or "")[:120],
                         (mov.documento or "")[:40],
                         str(mov.monto or 0),
-                        (mov.tipo or "C")[:2],
+                        (mov.tipo or "C")[:1],
                         (getattr(mov, "oficina", "") or "")[:40],
                         "",  # detalle
                         f"descart:sesion:{sesion_id}",
@@ -2064,13 +2064,19 @@ def banco_borrar_sesion():
                     _LOG.warning("recompute_saldos en borrar-sesion falló: %s", e)
 
             # 5. Borrar snapshots de esta sesión.
+            # TMT 2026-06-03 audit fix: el OR temporal arrasaba snapshots de
+            # OTRAS sesiones que hubieran cerrado en la misma ventana de
+            # tiempo (también snapshots reset_total, snapshots de impuestos,
+            # etc.). Filtramos solo por evento_ref = sesion_id. Si algún
+            # snapshot quedó huérfano del rango pero sin evento_ref, mejor
+            # dejarlo — es paper trail, no afecta funcionamiento.
             counts["snapshots"] = _db.execute(
                 """
                 DELETE FROM scintela.banco_saldo_conc_snapshot
                  WHERE no_banco = %s
-                   AND (evento_ref = %s OR creado_en BETWEEN %s AND %s)
+                   AND evento_ref = %s
                 """,
-                (_BANCO_PICHINCHA, str(sesion_id), abierta, cerrada),
+                (_BANCO_PICHINCHA, str(sesion_id)),
                 conn=conn,
             ) or 0
 
@@ -2081,23 +2087,30 @@ def banco_borrar_sesion():
                 conn=conn,
             )
 
-            # 7. Reset stat='*' en movs PC fuera del dbf-import original.
-            _db.execute(
-                """
-                UPDATE scintela.transacciones_bancarias
-                   SET stat = NULL
-                 WHERE no_banco = %s
-                   AND TRIM(COALESCE(stat,'')) = '*'
-                   AND COALESCE(usuario_crea,'') NOT IN ('dbf-import','asinfo-backfill')
-                   AND NOT EXISTS (
-                       SELECT 1 FROM scintela.banco_conciliacion_match m
-                        WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
-                          AND m.deshecho_en IS NULL
-                   )
-                """,
-                (_BANCO_PICHINCHA,),
-                conn=conn,
-            )
+            # 7. Reset stat='*' en movs PC linkeados a ESTA sesión.
+            # TMT 2026-06-03 audit fix: antes este UPDATE arrasaba TODO mov
+            # PC con stat='*' sin match activo, lo que apagaba el flag de
+            # movs vinculados a OTRAS sesiones cerradas. Restringimos al
+            # set de ids capturados en el paso 4 (matches que se acaban de
+            # borrar) — solo afecta lo que esta sesión tocó.
+            if ids_bancsis_sesion:
+                _db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias
+                       SET stat = NULL
+                     WHERE no_banco = %s
+                       AND id_transaccion = ANY(%s)
+                       AND TRIM(COALESCE(stat,'')) = '*'
+                       AND COALESCE(usuario_crea,'') NOT IN ('dbf-import','asinfo-backfill')
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                    """,
+                    (_BANCO_PICHINCHA, ids_bancsis_sesion),
+                    conn=conn,
+                )
 
         # 8. Borrar el archivo XLSX si existe.
         if sesion.get("pdf_path"):
@@ -2332,10 +2345,17 @@ def banco_cerrar_sesion():
     Lifecycle:
       1) Recolecta items del extracto_payload sin firma en matches activos.
       2) Inserta cada uno en banco_historicos_pendientes con fuente
-         'sesion_<id>_cierre' y fecha del cierre.
+         'sesion:<id>' y fecha del cierre.
       3) Marca la sesión cerrada_en = now.
       4) Próxima vez que abra la conciliación, sesión nueva + histos
          arrastrados aparecen en el tab Manual lado banco.
+
+    TMT 2026-06-03 audit fix: fuente unificado a 'sesion:<id>' (antes era
+    'sesion_<id>_cierre'). El borrar-sesion ya filtra por 'sesion:<id>'
+    así que esos histos del cierre quedaban huérfanos para siempre. Es la
+    causa raíz de los 163 dupes legacy que la dueña tenía que limpiar a
+    mano con /borrar-no-feb2023. Con esta unificación, borrar sesión
+    también barre los histos del cierre.
     """
     no_banco = _BANCO_PICHINCHA
     usuario = _usuario_actual()
@@ -2379,7 +2399,7 @@ def banco_cerrar_sesion():
 
     # 3) Insertar los unmatched en histos.
     n_migrados = 0
-    fuente = f"sesion_{sesion_id}_cierre"
+    fuente = f"sesion:{sesion_id}"  # mismo pattern que durante-sesion (audit fix)
     for m in (payload or []):
         if not isinstance(m, dict):
             continue
