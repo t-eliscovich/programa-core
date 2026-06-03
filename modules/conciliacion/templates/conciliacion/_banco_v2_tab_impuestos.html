@@ -153,15 +153,8 @@
     btn.addEventListener('click', function(){
       var s = getSel();
       if (!s.count) return;
-      var fechaEl = document.getElementById('imp-fecha');
-      var concEl = document.getElementById('imp-concepto');
-      var preview = 'Vas a crear UN movimiento agrupado:\n\n';
-      preview += '  Documento: ' + (s.total >= 0 ? 'NC (nota crédito)' : 'ND (nota débito)') + '\n';
-      preview += '  Importe:   $ ' + Math.abs(s.total).toFixed(2) + '\n';
-      preview += '  Fecha:     ' + (fechaEl ? fechaEl.value : '') + '\n';
-      preview += '  Concepto:  ' + (concEl ? concEl.value : '') + '\n\n';
-      preview += 'Y conciliar ' + s.count + ' movs del extracto contra ese movimiento.\n\n¿Confirmar?';
-      if (!confirm(preview)) return;
+      // TMT 2026-06-03 duena: sin confirm() — ya hay pantalla de preview
+      // (banco_impuestos_preview) que confirma antes de aplicar.
       // Anti-double-submit: deshabilitar el botón inmediatamente.
       btn.disabled = true;
       btn.textContent = 'Procesando…';
