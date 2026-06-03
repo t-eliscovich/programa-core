@@ -1259,6 +1259,51 @@ def revert_my_test_stats():
     ]})
 
 
+@bp.route("/dump-matches-batch", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def dump_matches_batch():
+    rows = _db.fetch_all(
+        """
+        SELECT id, confirm_batch_id, creado_en::TEXT AS creado, real_monto, real_documento
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s AND deshecho_en IS NULL
+         ORDER BY id
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    return jsonify({"rows": [
+        {"id": r["id"], "batch": r["confirm_batch_id"], "creado": r["creado"],
+         "monto": float(r["real_monto"]) if r["real_monto"] is not None else None,
+         "doc": r["real_documento"]}
+        for r in rows
+    ]})
+
+
+@bp.route("/backfill-batch-by-second", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def backfill_batch_by_second():
+    """Asigna batch_id a matches viejos agrupándolos por (no_banco, usuario,
+    truncado al segundo). Útil cuando mig 0072 no se aplicó automáticamente."""
+    n = _db.execute(
+        """
+        WITH grupos AS (
+            SELECT id,
+                   'legacy_' || no_banco || '_' || usuario || '_' ||
+                     to_char(date_trunc('second', creado_en), 'YYYYMMDDHH24MISS') AS bid
+              FROM scintela.banco_conciliacion_match
+             WHERE confirm_batch_id IS NULL
+        )
+        UPDATE scintela.banco_conciliacion_match m
+           SET confirm_batch_id = g.bid
+          FROM grupos g
+         WHERE m.id = g.id
+        """,
+    )
+    return jsonify({"ok": True, "filas_actualizadas": int(n or 0)})
+
+
 @bp.route("/find-drift-source", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
