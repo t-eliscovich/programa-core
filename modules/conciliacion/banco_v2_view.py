@@ -522,9 +522,20 @@ def banco_preview():
             delta_banco_cred += m
         else:
             delta_banco_deb += m
+    # TMT 2026-06-03 BUG FIX: real_subset (movs del extracto seleccionados)
+    # también deja de ser pendiente_banco. Antes: solo se restaban histos,
+    # entonces matchear contra extracto bajaba PC pero no banco → saldo
+    # esperado saltaba por el lado del match.
+    for m_obj in real_subset:
+        monto = float(getattr(m_obj, "monto", 0) or 0)
+        tipo = (getattr(m_obj, "tipo", "") or "").upper()
+        if tipo == "C":
+            delta_banco_cred += monto
+        else:
+            delta_banco_deb += monto
 
     n_after_pc = max(0, int(balance_before.get("n_pendientes_conciliar") or 0) - len(bancsis_rows))
-    n_after_banco = max(0, int(balance_before.get("n_pendientes") or 0) - len(hist_rows))
+    # n_after_banco se recalcula más abajo con _total (incluye extracto).
 
     pc_cred_after = round(float(balance_before.get("pendientes_pc_creditos") or 0) - delta_pc_cred, 2)
     pc_deb_after = round(float(balance_before.get("pendientes_pc_debitos") or 0) - delta_pc_deb, 2)
@@ -547,7 +558,7 @@ def banco_preview():
     n_after_banco = max(
         0,
         int(balance_before.get("n_pendientes_banco_total") or balance_before.get("n_pendientes") or 0)
-        - len(hist_rows),
+        - len(hist_rows) - len(real_subset),
     )
 
     balance_after = {
