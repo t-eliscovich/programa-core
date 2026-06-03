@@ -2071,16 +2071,13 @@ def banco_borrar_sesion():
             if ids_grupales:
                 # Capturamos la fecha mínima de las txs grupales ANTES de
                 # borrarlas, así sabemos desde dónde recalcular.
-                fecha_ancla_row = _db.fetch_one(
-                    """
-                    SELECT MIN(fecha) AS f
-                      FROM scintela.transacciones_bancarias
-                     WHERE id_transaccion = ANY(%s) AND no_banco = %s
-                    """,
-                    (ids_grupales, _BANCO_PICHINCHA),
-                    conn=conn,
-                )
-                fecha_ancla = fecha_ancla_row.get("f") if fecha_ancla_row else None
+                # TMT 2026-06-03 FIX drift libros al borrar: anclar el recompute por
+                # ID, no por fecha. Las txs creadas por conciliacion tienen los
+                # ids mas altos (creadas hoy), asi que anclar por id hace que el
+                # walk toque SOLO esas filas y arranque del saldo de la ultima
+                # fila DBF (autoritativa). Anclar por fecha re-derivaba toda la
+                # jornada sumando importes -> drift de 493K vs el saldo DBF.
+                ancla_id_borrar = min(int(x) for x in ids_grupales)
                 counts["txs_grupales"] = _db.execute(
                     "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s) AND no_banco = %s",
                     (ids_grupales, _BANCO_PICHINCHA),
@@ -2088,16 +2085,10 @@ def banco_borrar_sesion():
                 ) or 0
                 try:
                     import bank_helpers
-                    if fecha_ancla:
-                        # Recompute LOCAL — solo filas desde la fecha de la
-                        # tx más vieja borrada. NO toca el resto de la
-                        # historia (sus saldos siguen siendo lo que ya eran).
-                        bank_helpers.recompute_saldos_desde(
-                            conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
-                            ancla_fecha=fecha_ancla,
-                        )
-                    # Si no hay fecha_ancla (caso raro), saltamos el recompute
-                    # — preferimos no tocar saldos antes que pisar todo.
+                    bank_helpers.recompute_saldos_desde(
+                        conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
+                        ancla_id=ancla_id_borrar,
+                    )
                 except Exception as e:
                     # TMT 2026-06-03: NO silenciar — antes el except log+pass
                     # escondía drift de saldos cuando recompute fallaba (ej.
