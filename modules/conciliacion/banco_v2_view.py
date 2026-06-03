@@ -59,13 +59,16 @@ _SIGNOS_C = ("DE", "TR", "AC", "NC", "IN", "XX")
 _SIGNOS_D = ("CH", "ND", "DB", "GS", "PA")
 
 
-def _signed_delta(documento: str, importe: float) -> float:
-    doc = (documento or "").upper()
-    if doc in _SIGNOS_C:
-        return importe
-    if doc in _SIGNOS_D:
-        return -importe
-    return 0.0
+def _signed_delta(documento: str, importe: float, usuario_crea: str = "") -> float:
+    """Wrapper que delega en bank_helpers._signed_delta (single source of truth).
+
+    TMT 2026-06-03 audit fix: la versión local antigua ignoraba el signo del
+    importe y siempre forzaba sign-by-doc — eso destrozaba NDs reverso (importe
+    positivo legítimo del DBF). Ahora respeta convención según usuario_crea:
+    legacy DBF importe-signed vs web importe-abs.
+    """
+    import bank_helpers as _bh_local
+    return _bh_local._signed_delta(documento, importe, usuario_crea)
 
 
 def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
@@ -77,7 +80,8 @@ def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
     try:
         rows = _db.fetch_all(
             """
-            SELECT id_transaccion, fecha, documento, importe, saldo
+            SELECT id_transaccion, fecha, documento, importe, saldo,
+                   COALESCE(usuario_crea, '') AS usuario_crea
               FROM scintela.transacciones_bancarias
              WHERE no_banco = %s AND saldo IS NOT NULL
              ORDER BY fecha DESC, id_transaccion DESC LIMIT %s
@@ -96,7 +100,11 @@ def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
     saldo_prev = None
     for r in rows:
         s = float(r["saldo"] or 0)
-        delta = _signed_delta(r.get("documento"), float(r.get("importe") or 0))
+        delta = _signed_delta(
+            r.get("documento"),
+            float(r.get("importe") or 0),
+            r.get("usuario_crea") or "",
+        )
         if saldo_prev is not None:
             esperado = round(saldo_prev + delta, 2)
             diff = round(s - esperado, 2)
@@ -259,13 +267,10 @@ def banco_post_procesar():
             tb_imp = float(m.get("tb_importe") or 0)
         except (TypeError, ValueError):
             tb_imp = 0.0
-        # tb.importe en transacciones_bancarias es positivo; el signo lo da
-        # documento. Importes ya signados (legacy) — si vienen negativos
-        # los respetamos.
-        if tb_imp < 0:
-            m["monto_prog_signed"] = tb_imp
-        else:
-            m["monto_prog_signed"] = _signed_delta(tb_doc, tb_imp)
+        # TMT 2026-06-03 audit fix: usar _signed_delta con tb_usuario_crea
+        # para que NDs reverso del DBF (importe positivo legítimo) tengan
+        # signo correcto. La versión local antigua siempre forzaba sign-by-doc.
+        m["monto_prog_signed"] = _signed_delta(tb_doc, tb_imp, m.get("tb_usuario_crea") or "")
         # Diferencia por fila (banco − programa) — solo si AMBOS lados existen.
         if m["has_banco"] and m["has_programa"]:
             m["diff"] = round(m["monto_banco_signed"] - m["monto_prog_signed"], 2)
@@ -450,6 +455,7 @@ def banco_preview():
                 """
                 SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.importe,
                        tb.concepto, tb.prov, tb.numreferencia,
+                       COALESCE(tb.usuario_crea, '') AS usuario_crea,
                        COALESCE(
                          (SELECT nombre FROM scintela.cliente
                            WHERE codigo_cli = tb.prov LIMIT 1), ''
@@ -466,8 +472,8 @@ def banco_preview():
     # Validar signos.
     import bank_helpers as _bh
     _DOCS_CRED = ("DE", "TR", "XX", "NC", "IN", "AC")
-    def _sign_bancsis(doc: str, imp: float) -> int:
-        return 1 if _bh._signed_delta(doc, imp) >= 0 else -1
+    def _sign_bancsis(doc: str, imp: float, usuario_crea: str = "") -> int:
+        return 1 if _bh._signed_delta(doc, imp, usuario_crea) >= 0 else -1
     def _sign_real(tipo: str) -> int:
         return 1 if (tipo or "").upper() == "C" else -1
 
@@ -489,7 +495,11 @@ def banco_preview():
         for h in hist_rows
     )
     programa_total_signed = sum(
-        _bh._signed_delta((b.get("documento") or ""), float(b.get("importe") or 0))
+        _bh._signed_delta(
+            (b.get("documento") or ""),
+            float(b.get("importe") or 0),
+            b.get("usuario_crea") or "",
+        )
         for b in bancsis_rows
     )
 
@@ -519,7 +529,7 @@ def banco_preview():
     for b in bancsis_rows:
         doc = (b.get("documento") or "").upper()
         imp = float(b.get("importe") or 0)
-        d = _bh._signed_delta(doc, imp)
+        d = _bh._signed_delta(doc, imp, b.get("usuario_crea") or "")
         if d >= 0:
             delta_pc_cred += d
         else:
@@ -646,7 +656,8 @@ def banco_auditar():
     try:
         rows_walk = _db.fetch_all(
             """
-            SELECT id_transaccion, fecha, documento, importe, saldo, concepto
+            SELECT id_transaccion, fecha, documento, importe, saldo, concepto,
+                   COALESCE(usuario_crea, '') AS usuario_crea
               FROM scintela.transacciones_bancarias
              WHERE no_banco = %s AND saldo IS NOT NULL
              ORDER BY fecha ASC, id_transaccion ASC
@@ -658,7 +669,9 @@ def banco_auditar():
             s = float(r["saldo"] or 0)
             imp = float(r["importe"] or 0)
             doc = (r.get("documento") or "").upper()
-            delta = _bh._signed_delta(doc, imp)
+            # TMT 2026-06-03 audit fix: pasamos usuario_crea para que NDs reverso
+            # del DBF (importe positivo legítimo) no se reporten como torcidas.
+            delta = _bh._signed_delta(doc, imp, r.get("usuario_crea") or "")
             if saldo_prev is not None:
                 esperado = round(saldo_prev + delta, 2)
                 diff = round(s - esperado, 2)
@@ -2640,6 +2653,7 @@ def banco_anular_grupo():
     tx_row = _db.fetch_one(
         """
         SELECT t.id_transaccion, t.fecha, t.documento, t.importe, t.concepto,
+               COALESCE(t.usuario_crea, '') AS usuario_crea,
                (SELECT MIN(m.metodo)
                   FROM scintela.banco_conciliacion_match m
                  WHERE m.id_transaccion = t.id_transaccion) AS metodo
@@ -2658,7 +2672,11 @@ def banco_anular_grupo():
     # Pre-snapshot del último saldo y validación de cadena.
     pre = _verificar_cadena_saldos(_BANCO_PICHINCHA)
     saldo_pre = pre.get("ultimo_saldo")
-    delta_esperado = -_signed_delta(tx_row.get("documento"), float(tx_row.get("importe") or 0))
+    delta_esperado = -_signed_delta(
+        tx_row.get("documento"),
+        float(tx_row.get("importe") or 0),
+        tx_row.get("usuario_crea") or "",
+    )
 
     # 2+3) Hard-delete de matches + DELETE de tx + recompute, todo en una
     # sola transacción atómica.

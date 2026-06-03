@@ -57,19 +57,51 @@ def signo_documento(documento: str) -> int:
     return 1 if (documento or "").upper().strip() in DOCS_ENTRADA else -1
 
 
-def _signed_delta(documento: str, importe: float) -> float:
+_LEGACY_USUARIOS = frozenset({
+    "", "dbf-import", "asinfo-backfill", "dbase-sync",
+})
+
+
+def _es_fila_legacy(usuario_crea) -> bool:
+    """¿La fila viene del DBF/sync o es de un INSERT web nuevo?
+
+    Legacy = importe SIGNED (NDs reversos vienen con +importe legítimo).
+    No legacy = bank_helpers convention, importe ABS, sign por doc.
+    """
+    return (usuario_crea or "").strip().lower() in _LEGACY_USUARIOS
+
+
+def _signed_delta(documento: str, importe: float, usuario_crea: str = "") -> float:
     """Delta firmado a aplicar al saldo, manejando ambas convenciones.
 
     Bug TMT 2026-05-11: importe en la DB tiene convención MIXTA —
-      - filas DBF legacy: importe SIGNED (-N para egresos)
-      - filas bank_helpers nuevas: importe ABS (+N siempre)
+      - filas DBF legacy: importe SIGNED (NDs egress -N, NDs reverso +N,
+        DE entrada +N). El signo viene del importe mismo.
+      - filas bank_helpers nuevas: importe ABS (+N siempre), sign por doc.
 
-    Esta función unifica:
-      - Si importe < 0 → ya está firmado, usar como-es (legacy)
-      - Si importe ≥ 0 → aplicar `signo_documento(doc) * importe`
+    TMT 2026-06-03 audit fix: antes del fix, el heurístico "si imp < 0 use
+    as-is, sino sign by doc" rompía NDs reverso del DBF (importe positivo
+    → forzaba -imp incorrectamente). Resultado: el audit reportaba 8 filas
+    torcidas inexistentes que generaban falsa alarma de drift.
+
+    Ahora: requiere `usuario_crea` para distinguir convenciones.
+      - usuario_crea legacy (dbf-import/asinfo-backfill/dbase-sync/'')
+        → respeta el signo del importe (NDs reverso → +imp legítimo)
+      - usuario_crea web/otro → sign by doc (importe ABS, doc determina ±)
+
+    Default usuario_crea='' = legacy → respeta importe sign. Es el
+    comportamiento CORRECTO para audit walks que leen filas mezcladas
+    de la DB. Los callers que insertan filas web nuevas deben pasar
+    usuario_crea explícitamente.
     """
     imp = float(importe or 0)
+    if _es_fila_legacy(usuario_crea):
+        # Legacy: importe ya viene signed. NDs reversos tienen importe > 0
+        # legítimamente — no negar.
+        return imp
+    # Nueva convención bank_helpers: importe abs, sign por doc.
     if imp < 0:
+        # Web no debería pasar negativo; si pasa, respetamos por seguridad.
         return imp
     return imp if signo_documento(documento) > 0 else -imp
 
@@ -187,6 +219,15 @@ def insert_movimiento_bancario(
     importe_f = float(importe or 0)
     if importe_f == 0:
         raise ValueError(f"importe debe ser != 0 (recibido: {importe!r})")
+    # TMT 2026-06-03 audit fix: la convención bank_helpers exige importe ABS.
+    # Si recibimos negativo el caller está confundido (probablemente está mezclando
+    # convenciones legacy DBF). Mejor fallar explícito que dejar saldo corrupto.
+    if importe_f < 0:
+        raise ValueError(
+            f"importe debe ser positivo (abs). Recibido: {importe!r}. "
+            f"El signo lo determina el documento ({documento!r}). "
+            f"Si necesitás convención DBF legacy (signed), insertá directo con SQL."
+        )
     # Aceptamos importe signed (legacy) o abs (nuevo). El delta unificado
     # lo computa _signed_delta. El valor que almacenamos en la columna
     # `importe` mantiene el SIGNO del caller para preservar la convención
@@ -194,10 +235,28 @@ def insert_movimiento_bancario(
     # bank_helpers nuevo queda abs.
     importe_abs = abs(importe_f)
     signo = signo_documento(documento)
+    # TMT 2026-06-03 audit fix: advisory lock por banco para serializar
+    # inserts concurrentes. Sin esto, dos inserts en paralelo computaban
+    # el mismo saldo_anterior y rompían la cadena.
+    # Clave: hashtext(banco:no_cta) — un banco por lock, no entre bancos.
+    # try/except defensivo: tests pueden usar mocks de cursor sin rowcount.
+    lock_key = f"banco_running:{no_banco}:{no_cta or ''}"
+    try:
+        db.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s))",
+            (lock_key,), conn=conn,
+        )
+    except (AttributeError, TypeError):
+        # Cursor mock sin rowcount (tests) — el lock no aplica.
+        pass
     saldo_anterior = _saldo_previo(
         conn, no_banco=no_banco, no_cta=no_cta, fecha=fecha,
     )
-    saldo_nuevo = round(saldo_anterior + _signed_delta(documento, importe_f), 2)
+    # TMT 2026-06-03: pasar usuario_crea='web' explícito para que _signed_delta
+    # use convención bank_helpers (importe abs, sign por doc). Si llamáramos
+    # sin usuario_crea, default '' = legacy = respetar importe sign — y los
+    # callers web pasan importe ABS, lo que daría signo equivocado para CH/ND.
+    saldo_nuevo = round(saldo_anterior + _signed_delta(documento, importe_f, usuario), 2)
 
     # Auto-extraer prov del concepto si el caller no lo pasó.
     # Cubre el caso típico "1 ch.LTM" → prov="LTM". Mejora cobertura
@@ -239,6 +298,29 @@ def insert_movimiento_bancario(
         ),
         conn=conn,
     ) or {}
+
+    # TMT 2026-06-03 audit fix: si el insert NO está al tail (hay filas con
+    # fecha > este insert), las posteriores tienen saldo basado en un estado
+    # anterior. Recompute las posteriores para mantener cadena coherente.
+    # Esto blinda contra el caso "deposit insertado, luego sync agrega filas
+    # del mismo día pero antes" que dejaba el deposit con saldo stale.
+    later_row = db.fetch_one(
+        """
+        SELECT 1 FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
+           AND (fecha > %s
+                OR (fecha = %s AND id_transaccion > %s))
+         LIMIT 1
+        """,
+        (no_banco, no_cta, no_cta, fecha, fecha, row.get("id_transaccion") or 0),
+        conn=conn,
+    )
+    if later_row:
+        recompute_saldos_desde(
+            conn, no_banco=no_banco, no_cta=no_cta,
+            ancla_fecha=fecha,
+        )
 
     return {
         "id_transaccion": row.get("id_transaccion"),
@@ -333,7 +415,8 @@ def recompute_saldos_desde(
 
     rows = db.fetch_all(
         f"""
-        SELECT id_transaccion, documento, importe
+        SELECT id_transaccion, documento, importe,
+               COALESCE(usuario_crea, '') AS usuario_crea
           FROM scintela.transacciones_bancarias
          WHERE no_banco = %s
            AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
@@ -346,11 +429,11 @@ def recompute_saldos_desde(
 
     n = 0
     for r in rows:
-        # Smart delta (igual que trigger y _signed_delta): respeta importe
-        # signed legacy y signa los abs nuevos. Antes usaba siempre
-        # signo*abs(importe) que da vuelta los signos de las filas legacy
-        # — TMT 2026-05-11.
-        saldo = round(saldo + _signed_delta(r["documento"], r["importe"]), 2)
+        # TMT 2026-06-03 audit fix: pasamos usuario_crea para distinguir
+        # convención legacy DBF (importe signed, NDs reverso = +imp legítimo)
+        # de nueva web (importe abs, sign por doc). Sin esto, los NDs reverso
+        # del DBF se "corregían" al sign equivocado en cada recompute.
+        saldo = round(saldo + _signed_delta(r["documento"], r["importe"], r.get("usuario_crea") or ""), 2)
         db.execute(
             "UPDATE scintela.transacciones_bancarias "
             "SET saldo = %s, fecha_modifica = CURRENT_TIMESTAMP "

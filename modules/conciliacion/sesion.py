@@ -210,6 +210,7 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
                tb.fecha       AS tb_fecha,
                tb.documento   AS tb_documento,
                tb.importe     AS tb_importe,
+               COALESCE(tb.usuario_crea, '') AS tb_usuario_crea,
                tb.numreferencia AS tb_numreferencia,
                tb.concepto    AS tb_concepto,
                tb.prov        AS tb_prov,
