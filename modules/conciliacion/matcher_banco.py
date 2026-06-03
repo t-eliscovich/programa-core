@@ -1247,6 +1247,7 @@ def confirmar_match(
     usuario: str = "web",
     metodo: str = "matched_auto",
     conn=None,
+    confirm_batch_id: str | None = None,
 ) -> int:
     """Inserta un match (o aceptación unilateral) en banco_conciliacion_match.
 
@@ -1268,6 +1269,8 @@ def confirmar_match(
     # dBase (la sync es one-way DBF → PC). Es el comportamiento querido.
     # TMT 2026-06-03: tx_firma se llena directo via scintela.compute_tx_firma()
     # SQL helper (mig 0068). Necesaria para sobrevivir el sync (mig 0066).
+    # confirm_batch_id agrupa matches creados en una sola conciliación (mig 0071)
+    # para que deshacer pueda revertirlos todos juntos.
     if _tiene_migration_47():
         n = db.execute(
             """
@@ -1275,10 +1278,10 @@ def confirmar_match(
                 no_banco, estado, metodo,
                 real_fecha, real_concepto, real_documento, real_monto, real_tipo,
                 real_codigo, real_oficina,
-                id_transaccion, tx_firma, usuario
+                id_transaccion, tx_firma, confirm_batch_id, usuario
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    scintela.compute_tx_firma(%s), %s)
+                    scintela.compute_tx_firma(%s), %s, %s)
             ON CONFLICT DO NOTHING
             """,
             (
@@ -1286,7 +1289,7 @@ def confirmar_match(
                 real.fecha, real.concepto, real.documento,
                 real.monto, real.tipo,
                 real.codigo, real.oficina,
-                id_transaccion, id_transaccion, usuario,
+                id_transaccion, id_transaccion, confirm_batch_id, usuario,
             ),
             conn=conn,
         )
@@ -1298,10 +1301,10 @@ def confirmar_match(
                 no_banco, estado,
                 real_fecha, real_concepto, real_documento, real_monto, real_tipo,
                 real_codigo, real_oficina,
-                id_transaccion, tx_firma, usuario
+                id_transaccion, tx_firma, confirm_batch_id, usuario
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    scintela.compute_tx_firma(%s), %s)
+                    scintela.compute_tx_firma(%s), %s, %s)
             ON CONFLICT DO NOTHING
             """,
             (
@@ -1309,7 +1312,7 @@ def confirmar_match(
                 real.fecha, real.concepto, real.documento,
                 real.monto, real.tipo,
                 real.codigo, real.oficina,
-                id_transaccion, id_transaccion, usuario,
+                id_transaccion, id_transaccion, confirm_batch_id, usuario,
             ),
             conn=conn,
         )
@@ -1690,6 +1693,45 @@ def match_manual(
         usuario=usuario,
         metodo="matched_manual",
     )
+
+
+def romper_match_grupo(
+    match_id: int,
+    usuario: str = "web",
+) -> tuple[int, str | None]:
+    """Deshace TODOS los matches del mismo confirm_batch_id que match_id.
+
+    Si match_id no tiene batch_id (datos viejos pre-mig 0071), solo deshace
+    ese match. Devuelve (n_deshechos, batch_id_o_None).
+
+    TMT 2026-06-03: fix del bug N:M donde deshacer 1 match dejaba la math
+    rota. Ahora una conciliación 2 vs 14 = 14 matches con mismo batch_id;
+    deshacer cualquiera de los 14 los borra a todos atomicamente.
+    """
+    row = db.fetch_one(
+        "SELECT confirm_batch_id FROM scintela.banco_conciliacion_match WHERE id = %s",
+        (int(match_id),),
+    )
+    batch_id = row.get("confirm_batch_id") if row else None
+    if not batch_id:
+        # Caso legacy o match individual: deshacer solo este.
+        n = romper_match(match_id, usuario=usuario)
+        return (n, None)
+    # Encontrar todos los matches activos en el mismo batch.
+    ids = db.fetch_all(
+        """
+        SELECT id FROM scintela.banco_conciliacion_match
+         WHERE confirm_batch_id = %s AND deshecho_en IS NULL
+        """,
+        (batch_id,),
+    ) or []
+    total = 0
+    for r in ids:
+        try:
+            total += romper_match(int(r["id"]), usuario=usuario) or 0
+        except Exception:
+            pass
+    return (total, batch_id)
 
 
 def romper_match(

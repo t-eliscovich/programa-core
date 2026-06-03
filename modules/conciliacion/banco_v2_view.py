@@ -1058,6 +1058,11 @@ def banco_manual_confirmar():
     n_matches = 0
     err_msg: str | None = None
     usuario = _usuario_actual()
+    # TMT 2026-06-03: cada confirmación genera un confirm_batch_id (mig 0071).
+    # Todos los matches creados en esta operación se asocian. Deshacer-grupo
+    # los borra juntos para que la math no se rompa en N:M.
+    import uuid as _uuid
+    batch_id = _uuid.uuid4().hex
     # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
     # ser distinto'. Aceptamos cualquier N:M:
     #
@@ -1080,7 +1085,8 @@ def banco_manual_confirmar():
         for i in range(n_pair):
             try:
                 confirmar_match(_BANCO_PICHINCHA, real_sorted[i], bk_sorted[i],
-                                usuario=usuario, metodo="matched_manual")
+                                usuario=usuario, metodo="matched_manual",
+                                confirm_batch_id=batch_id)
                 n_matches += 1
             except Exception as e:
                 _LOG.warning("manual confirm par %d falló: %s", i, e)
@@ -1091,7 +1097,8 @@ def banco_manual_confirmar():
         for r in real_sorted[n_pair:]:
             try:
                 confirmar_match(_BANCO_PICHINCHA, r, bk_sorted[0],
-                                usuario=usuario, metodo="matched_manual")
+                                usuario=usuario, metodo="matched_manual",
+                                confirm_batch_id=batch_id)
                 n_matches += 1
             except Exception as e:
                 _LOG.warning("manual confirm extra banco falló: %s", e)
@@ -1119,28 +1126,28 @@ def banco_manual_confirmar():
                 pass
             for bk_id in extras:
                 try:
-                    # TMT 2026-06-03: tx_firma se popula via SQL helper.
+                    # TMT 2026-06-03: tx_firma + confirm_batch_id.
                     if tiene_metodo:
                         _db.execute(
                             """
                             INSERT INTO scintela.banco_conciliacion_match (
                                 no_banco, estado, metodo,
-                                id_transaccion, tx_firma, usuario
+                                id_transaccion, tx_firma, confirm_batch_id, usuario
                             ) VALUES (%s, %s, %s, %s,
-                                      scintela.compute_tx_firma(%s), %s)
+                                      scintela.compute_tx_firma(%s), %s, %s)
                             """,
                             (_BANCO_PICHINCHA, 'matched', 'matched_manual',
-                             bk_id, bk_id, usuario),
+                             bk_id, bk_id, batch_id, usuario),
                         )
                     else:
                         _db.execute(
                             """
                             INSERT INTO scintela.banco_conciliacion_match (
-                                no_banco, estado, id_transaccion, tx_firma, usuario
+                                no_banco, estado, id_transaccion, tx_firma, confirm_batch_id, usuario
                             ) VALUES (%s, %s, %s,
-                                      scintela.compute_tx_firma(%s), %s)
+                                      scintela.compute_tx_firma(%s), %s, %s)
                             """,
-                            (_BANCO_PICHINCHA, 'matched', bk_id, bk_id, usuario),
+                            (_BANCO_PICHINCHA, 'matched', bk_id, bk_id, batch_id, usuario),
                         )
                     # Dual-write stat='*'.
                     _db.execute(
@@ -1213,6 +1220,7 @@ def banco_manual_confirmar():
                     confirmar_match(
                         _BANCO_PICHINCHA, mov_h, bk_id_primary,
                         usuario=usuario, metodo="matched_historico",
+                        confirm_batch_id=batch_id,
                     )
                     n_hist += 1
                 except Exception as e:

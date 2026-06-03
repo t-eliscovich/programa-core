@@ -40,6 +40,7 @@ from modules.conciliacion.matcher_banco import (
     crear_transaccion_agrupada_desde_reals,
     match_manual,
     romper_match,
+    romper_match_grupo,
     historial as historial_matches,
     candidatos_match_manual,
 )
@@ -2645,12 +2646,17 @@ def banco_deshacer():
     if match_id <= 0:
         flash("match_id inválido.", "error")
         return redirect(back)
-    n = romper_match(
+    # TMT 2026-06-03: deshacer GRUPAL — si el match tiene confirm_batch_id
+    # (mig 0071), borra todos los matches del mismo batch atómicamente.
+    n, batch_id = romper_match_grupo(
         match_id=match_id,
         usuario=_usuario_actual(),
     )
     if n:
-        flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")
+        if batch_id and n > 1:
+            flash(f"Conciliación deshecha — {n} matches del grupo liberados. Vuelven a aparecer en el próximo extracto.", "ok")
+        else:
+            flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")
         try:
             from modules.conciliacion import saldo_snapshot as _ss
             _ss.snapshot(_BANCO_PICHINCHA, "match_deshecho",
