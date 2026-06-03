@@ -1209,6 +1209,35 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
 # cubre los casos "fantasma-conciliado" que sobreviven al deshacer (bug del
 # dual-write previo al fix de matcher_banco.romper_match).
 # ---------------------------------------------------------------------------
+@bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/set-numreferencia",
+                 methods=["POST"], endpoint="set_numreferencia")
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def set_numreferencia(no_banco: int, id_transaccion: int):
+    """TMT 2026-06-03 dueña: 'aca quiero ver documento y poder editar, asi
+    les agrego numero de documento para hacer la conciliacion por num de
+    documento'. Update inline del campo numreferencia."""
+    import db as _db
+    raw = (request.form.get("numreferencia") or "").strip()
+    valor = raw[:30] if raw else None
+    try:
+        n = _db.execute(
+            """
+            UPDATE scintela.transacciones_bancarias
+               SET numreferencia = %s
+             WHERE id_transaccion = %s AND no_banco = %s
+            """,
+            (valor, id_transaccion, no_banco),
+        )
+        if n:
+            flash(f"N° doc actualizado: {valor or '(vacío)'}", "ok")
+        else:
+            flash("No encontré la transacción.", "warn")
+    except Exception as e:
+        flash(f"Error al actualizar: {e}", "error")
+    return redirect(request.referrer or url_for("bancos.movimientos", no_banco=no_banco))
+
+
 @bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/toggle-conciliado",
                  methods=["POST"])
 @requiere_login
