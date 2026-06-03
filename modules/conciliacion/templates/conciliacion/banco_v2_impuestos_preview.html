@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block titulo %}Vista previa · Impuestos y comisiones{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="flex items-baseline justify-between mb-3">
+    <h1 class="text-xl font-semibold">Vista previa · ¿Confirmar este movimiento agrupado?</h1>
+    <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=sesion.id, tab='impuestos') }}"
+       class="text-sm text-sky-600 hover:underline">← Volver sin confirmar</a>
+  </div>
+
+  {# ── Items que entran al movimiento agrupado ── #}
+  <section class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+      <h2 class="text-sm font-semibold">Items que se agrupan ({{ real_subset|length }})</h2>
+      <div class="text-xs tabular-nums">
+        <span class="text-slate-500">Monto neto agrupado:</span>
+        <span class="font-mono font-bold {% if monto_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+          {{ '{:+,.2f}'.format(monto_neto) }}
+        </span>
+      </div>
+    </header>
+    <ul class="text-[13px] tabular-nums">
+      {% for r in real_subset %}
+      <li class="flex items-baseline gap-3 px-3 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
+        <span class="w-4 text-center font-bold text-sm {% if r.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if r.tipo == 'C' %}+{% else %}−{% endif %}</span>
+        <span class="font-mono font-bold text-sm w-28 text-right {% if r.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(r.monto|float) }}</span>
+        <span class="text-slate-400 w-20">{{ r.fecha }}</span>
+        <span class="text-slate-500 font-mono w-24 truncate">{{ r.documento or '—' }}</span>
+        <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ r.concepto or '' }}">{{ (r.concepto or '')[:70] }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {# ── Tx agrupada que se va a crear ── #}
+  <section class="mb-4 rounded-lg border border-sky-200 dark:border-sky-900/30 bg-sky-50/40 dark:bg-sky-900/10 p-3">
+    <div class="text-xs uppercase tracking-wider text-sky-700 dark:text-sky-300 font-semibold mb-1">Se crea esta nueva transacción en programa</div>
+    <div class="flex items-baseline gap-4 text-sm">
+      <div><span class="text-slate-500">Fecha:</span> <span class="font-mono">{{ fecha or '(hoy)' }}</span></div>
+      <div><span class="text-slate-500">Concepto:</span> <span>{{ concepto or '—' }}</span></div>
+      <div><span class="text-slate-500">Prov:</span> <span class="font-mono">{{ prov or '—' }}</span></div>
+      <div class="ml-auto"><span class="text-slate-500">Monto:</span>
+        <span class="font-mono font-bold {% if monto_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(monto_neto) }}</span>
+      </div>
+    </div>
+  </section>
+
+  {# ── Antes vs Después ─────────────────────────────────────────── #}
+  <section class="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+    <header class="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+      <h2 class="text-sm font-semibold">Cómo cambiarían los saldos</h2>
+    </header>
+    <table class="w-full text-sm tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr>
+          <th class="px-4 py-1.5 text-left"></th>
+          <th class="px-4 py-1.5 text-right w-40">Antes</th>
+          <th class="px-4 py-1.5 text-right w-40">Después</th>
+          <th class="px-4 py-1.5 text-right w-28">Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set _rows = [
+          ('Saldo banco programa (libros)', balance_before.saldo,                  balance_after.saldo),
+          ('= Saldo a conciliar',           balance_before.saldo_si_concilio_todo, balance_after.saldo_si_concilio_todo),
+          ('Pendientes en banco (n)',       (balance_before.n_pendientes_banco_total or balance_before.n_pendientes), balance_after.n_pendientes_banco_total),
+          ('Pendientes en banco (neto)',    (balance_before.neto_pendientes_total or balance_before.neto_pendientes), balance_after.neto_pendientes_total),
+          ('= Saldo banco esperado',        balance_before.saldo_banco_esperado,   balance_after.saldo_banco_esperado),
+        ] %}
+        {% for label, b, a in _rows %}
+        {% set delta = (a or 0) - (b or 0) %}
+        {% set is_int = '(n)' in label %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 {% if label.startswith('=') %}bg-slate-50/60 dark:bg-slate-800/30 font-semibold{% endif %}">
+          <td class="px-4 py-1.5">{{ label }}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ b }}{% else %}{{ '{:,.2f}'.format(b|float) }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono">{% if is_int %}{{ a }}{% else %}{{ '{:,.2f}'.format(a|float) }}{% endif %}</td>
+          <td class="px-4 py-1.5 text-right font-mono {% if delta|abs > 0.001 %}{% if delta > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}{% else %}text-slate-400{% endif %}">
+            {% if delta|abs > 0.001 %}{% if is_int %}{{ '%+d' % delta }}{% else %}{{ '{:+,.2f}'.format(delta) }}{% endif %}{% else %}={% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {# ── Side effects + Confirm button ─────────────────────────────── #}
+  <section class="mb-4 rounded-lg border border-amber-200 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-900/10 p-3 text-[12px] text-amber-900 dark:text-amber-200">
+    <div class="font-semibold mb-1">Side effects al confirmar:</div>
+    <ul class="list-disc list-inside space-y-0.5">
+      <li>Crea 1 nueva fila en <code>transacciones_bancarias</code> (la tx agrupada) por <strong>{{ '{:+,.2f}'.format(monto_neto) }}</strong>.</li>
+      <li>Crea {{ real_subset|length }} match(es) en <code>banco_conciliacion_match</code>, todos apuntando a esa tx.</li>
+      <li>Los {{ real_subset|length }} item(s) del extracto dejan de aparecer como pendientes.</li>
+      <li>Reversible desde <a href="{{ url_for('conciliacion.banco_deshacer_v2') }}" class="text-sky-600 underline">/banco-v2/deshacer</a> (Anular completo).</li>
+    </ul>
+  </section>
+
+  <div class="flex items-center justify-end gap-2 mb-6">
+    <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=sesion.id, tab='impuestos') }}"
+       class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-4 py-2">
+      Cancelar
+    </a>
+    <form method="POST" action="{{ url_for('conciliacion.banco_impuestos_confirmar') }}" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
+      <input type="hidden" name="real_idxs" value="{{ real_idxs_csv }}">
+      <input type="hidden" name="fecha" value="{{ fecha }}">
+      <input type="hidden" name="concepto" value="{{ concepto }}">
+      <input type="hidden" name="prov" value="{{ prov }}">
+      <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-5 py-2">
+        ✓ Confirmar movimiento agrupado
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

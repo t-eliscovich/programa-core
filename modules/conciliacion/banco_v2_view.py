@@ -1282,6 +1282,104 @@ def banco_manual_confirmar():
 # ─── Endpoint Tab Impuestos ───────────────────────────────────────────
 
 
+@conciliacion_bp.route("/banco-v2/impuestos/preview", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_impuestos_preview():
+    """TMT 2026-06-03 dueña: 'que me de el mismo tipo de confirmacion que
+    cuando hago manual, no una confirmacion como ok no ok, que muestre uno
+    a uno y los cambios que van a haber'.
+    Antes de crear la tx agrupada de impuestos, muestra un preview con
+    item-por-item + saldo antes/después + botón confirmar.
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion or sesion.get("cerrada_en"):
+        flash("Sesión inválida o cerrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    try:
+        real_idxs = [int(x) for x in (request.form.get("real_idxs") or "").split(",") if x.strip()]
+    except ValueError:
+        real_idxs = []
+    if not real_idxs:
+        flash("No marcaste ningún movimiento.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
+
+    from modules.conciliacion.matcher_banco import matchear_extracto_banco
+    movs = _sesion.cargar_movs(sesion)
+    try:
+        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
+        real_only = res.real_only or []
+    except Exception as e:
+        _LOG.exception("re-match para preview impuestos falló: %s", e)
+        real_only = []
+    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+    if not real_subset:
+        flash("Los movimientos seleccionados ya no existen.", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
+
+    fecha_str = (request.form.get("fecha") or "").strip()
+    concepto = (request.form.get("concepto") or "").strip()
+    prov = (request.form.get("prov") or "").strip()
+
+    # Calcular monto neto del agrupado (signed).
+    monto_neto = sum(
+        (1 if (r.tipo or '').upper() == 'C' else -1) * float(r.monto or 0)
+        for r in real_subset
+    )
+
+    # Balance antes/después.
+    balance_before = _bp.calcular(_BANCO_PICHINCHA)
+    libros_before = float(balance_before.get("saldo") or 0)
+    libros_after = round(libros_before + monto_neto, 2)
+    # Pendientes banco: real_subset deja de estar pendiente (entra al match).
+    pbtc_before = float(balance_before.get("pendientes_banco_total_creditos")
+                        or balance_before.get("pendientes_banco_creditos") or 0)
+    pbtd_before = float(balance_before.get("pendientes_banco_total_debitos")
+                        or balance_before.get("pendientes_banco_debitos") or 0)
+    delta_cred = sum(float(r.monto or 0) for r in real_subset if (r.tipo or '').upper() == 'C')
+    delta_deb = sum(float(r.monto or 0) for r in real_subset if (r.tipo or '').upper() == 'D')
+    pbtc_after = round(pbtc_before - delta_cred, 2)
+    pbtd_after = round(pbtd_before - delta_deb, 2)
+    pbtn_after = round(pbtc_after - pbtd_after, 2)
+    n_banco_after = max(0, int(balance_before.get("n_pendientes_banco_total")
+                                or balance_before.get("n_pendientes") or 0) - len(real_subset))
+
+    # Conciliado_live = libros - pend_pc_neto. Pend_pc no cambia (es banco-only).
+    saldo_concilio_after = round(
+        libros_after - float(balance_before.get("pendientes_conciliar_neto") or 0), 2
+    )
+    saldo_banco_esperado_after = round(saldo_concilio_after + pbtn_after, 2)
+
+    balance_after = {
+        "saldo": libros_after,
+        "pendientes_pc_creditos": balance_before.get("pendientes_pc_creditos"),
+        "pendientes_pc_debitos": balance_before.get("pendientes_pc_debitos"),
+        "pendientes_conciliar_neto": balance_before.get("pendientes_conciliar_neto"),
+        "n_pendientes_conciliar": balance_before.get("n_pendientes_conciliar"),
+        "saldo_si_concilio_todo": saldo_concilio_after,
+        "pendientes_banco_total_creditos": pbtc_after,
+        "pendientes_banco_total_debitos": pbtd_after,
+        "neto_pendientes_total": pbtn_after,
+        "n_pendientes_banco_total": n_banco_after,
+        "saldo_banco_esperado": saldo_banco_esperado_after,
+    }
+
+    return render_template(
+        "conciliacion/banco_v2_impuestos_preview.html",
+        sesion=sesion,
+        real_subset=real_subset,
+        fecha=fecha_str,
+        concepto=concepto,
+        prov=prov,
+        monto_neto=monto_neto,
+        balance_before=balance_before,
+        balance_after=balance_after,
+        real_idxs_csv=",".join(str(i) for i in real_idxs),
+    )
+
+
 @conciliacion_bp.route("/banco-v2/impuestos/confirmar", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
