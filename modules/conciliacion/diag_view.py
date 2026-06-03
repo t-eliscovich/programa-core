@@ -141,28 +141,30 @@ def estado_banco_completo():
         for r in out["pc_only_txs"]
     ]
     out["last_libros"] = out["top_txs"][0]["saldo"] if out["top_txs"] else None
-    # 6. Bitácora entries de borrar sesión + sync (audit trail recuperable)
+    # 6. Bitácora entries de borrar sesión + conciliación (audit trail recuperable)
     try:
         out["bitacora_acciones_recientes"] = _db.fetch_all(
             """
-            SELECT id, accion, descripcion, usuario, ts, recursos, request_id
-              FROM seguridad.bitacora
+            SELECT id_bitacora, ts, usuario, metodo, ruta, modulo, accion,
+                   entidad, id_entidad, status_http, payload, resumen
+              FROM scintela.bitacora_acciones
              WHERE ts >= NOW() - INTERVAL '2 days'
                AND (
-                    accion ILIKE '%borrar%'
-                 OR accion ILIKE '%sync%'
-                 OR accion ILIKE '%conciliar%'
-                 OR descripcion ILIKE '%sesion%'
-                 OR descripcion ILIKE '%match%'
+                    ruta ILIKE '%conciliacion%'
+                 OR ruta ILIKE '%dbase-sync%'
+                 OR ruta ILIKE '%borrar%'
+                 OR modulo = 'conciliacion'
+                 OR entidad IN ('match', 'sesion', 'tx_bancaria')
                )
              ORDER BY ts DESC
-             LIMIT 50
+             LIMIT 100
             """,
             (),
         ) or []
         out["bitacora_acciones_recientes"] = [
             {**r, "ts": str(r.get("ts") or ""),
-             "descripcion": (r.get("descripcion") or "")[:300]}
+             "resumen": (r.get("resumen") or "")[:200],
+             "payload": (str(r.get("payload"))[:300] if r.get("payload") else None)}
             for r in out["bitacora_acciones_recientes"]
         ]
     except Exception as e:
