@@ -149,40 +149,40 @@ def e2e_borrar_sesion_v2():
         except Exception as e:
             out["steps"].append({"step": 2, "error": str(e)[:200]})
 
-    # ─── STEP 3: llamar borrar_sesion REAL via loopback HTTP (con auth real) ──
-    # En lugar de test_client (que no propaga cookies de auth), hacemos un
-    # request HTTP loopback al propio server con la cookie del usuario actual.
+    # ─── STEP 3: llamar banco_borrar_sesion DIRECTO via test_request_context ──
+    # Approach: empujamos un request context con form data + session login
+    # heredada del request actual, y llamamos la función view directamente.
+    # Esto evita loopback HTTP (que en Windows/Waitress puede dar 10061) y
+    # también las gymnastics de test_client con cookies/CSRF.
     try:
-        import urllib.request
-        from flask import request as _req
-        cookie_str = "; ".join(f"{k}={v}" for k, v in _req.cookies.items())
-        # Generar CSRF token válido (Flask-WTF lo verifica)
-        from flask_wtf.csrf import generate_csrf
-        try:
-            csrf_token = generate_csrf()
-        except Exception:
-            csrf_token = ""
-        data = (f"sesion_id={sesion_id}&csrf_token={csrf_token}").encode()
-        req = urllib.request.Request(
-            "http://127.0.0.1:8000/conciliacion/banco-v2/borrar-sesion",
-            data=data,
+        from flask import current_app, session as _flask_session
+        from flask import request as _outer_req
+        # Snapshot del session actual (que tiene login válido)
+        outer_session = dict(_flask_session)
+        with current_app.test_request_context(
+            "/conciliacion/banco-v2/borrar-sesion",
             method="POST",
-            headers={
-                "Cookie": cookie_str,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-CSRFToken": csrf_token,
-            },
-        )
-        try:
-            resp = urllib.request.urlopen(req, timeout=15)
-            status = resp.status
-            loc = resp.headers.get("Location", "")
-        except urllib.request.HTTPError as he:
-            status = he.code
-            loc = he.headers.get("Location", "")
-        out["steps"].append({"step": 3, "status": status, "loc": loc[:120]})
+            data={"sesion_id": str(sesion_id)},
+        ):
+            # Copiar la sesión Flask del request externo (incluye login)
+            for k, v in outer_session.items():
+                _flask_session[k] = v
+            # Llamar la función view directo (saltea decoradores ya validados arriba)
+            from modules.conciliacion.banco_v2_view import banco_borrar_sesion
+            # banco_borrar_sesion tiene @requiere_login + @requiere_permiso;
+            # como copiamos session, debería pasar. El response es un Redirect.
+            response = banco_borrar_sesion()
+            # response puede ser Response object o tuple
+            if hasattr(response, "status_code"):
+                status = response.status_code
+                loc = (response.headers.get("Location", "") or "")[:120]
+            else:
+                status = "?"
+                loc = repr(response)[:120]
+        out["steps"].append({"step": 3, "status": status, "loc": loc})
     except Exception as e:
-        out["steps"].append({"step": 3, "error": str(e)[:250]})
+        import traceback as _tb
+        out["steps"].append({"step": 3, "error": str(e)[:250], "tb": _tb.format_exc()[-500:]})
 
     # ─── POST snapshot + validation ──────────────────────────────
     post_libros = float((_db.fetch_one(
