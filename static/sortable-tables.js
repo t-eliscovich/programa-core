@@ -262,7 +262,18 @@
   }
 
   function init() {
-    document.querySelectorAll('table.sortable').forEach(makeSortable);
+    // TMT 2026-06-03 dueña: 'agrega js sort en todos lados'. Auto-aplica a
+    // toda tabla con thead+tbody+ ≥2 filas, sin requerir class="sortable"
+    // explícitamente. Para opt-out, agregar data-no-sort al <table>.
+    document.querySelectorAll('table').forEach(t => {
+      if (t.dataset.noSort != null) return;  // opt-out explícito
+      if (t.classList.contains('sortable')) return makeSortable(t);  // backcompat
+      if (!t.tHead || !t.tBodies || t.tBodies.length === 0) return;
+      let rowCount = 0;
+      for (const tb of t.tBodies) rowCount += tb.rows.length;
+      if (rowCount < 2) return;  // tablas de 1 fila no necesitan sort
+      makeSortable(t);
+    });
   }
 
   if (document.readyState === 'loading') {

@@ -157,7 +157,10 @@
   {% endif %}
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm">
+    {# TMT 2026-06-03: data-no-sort para opt-out del sortable-tables.js global,
+       porque acá tenemos lógica custom que mantiene los lote-child pegados
+       al lote-summary durante el sort (ver <script> abajo). #}
+    <table class="w-full text-sm" data-no-sort>
       {# TMT 2026-06-03 dueña: 'dejame ordenar por columnas cuando clickeo
          en la columna'. Click en cualquier header sortea por esa columna,
          alternando asc/desc. Los lotes mantienen sus hijos pegados. #}
