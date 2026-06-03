@@ -1058,9 +1058,9 @@ def banco_manual_confirmar():
     n_matches = 0
     err_msg: str | None = None
     usuario = _usuario_actual()
-    # TMT 2026-06-03: cada confirmación genera un confirm_batch_id (mig 0071).
-    # Todos los matches creados en esta operación se asocian. Deshacer-grupo
-    # los borra juntos para que la math no se rompa en N:M.
+    # TMT 2026-06-03 dueña: 'batch id, cuando selecciono junto'. Cada vez
+    # que aprieta Conciliar, los items seleccionados forman un batch nuevo.
+    # Si después quiere mover items entre batches, usa "Sacar al grupo nuevo".
     import uuid as _uuid
     batch_id = _uuid.uuid4().hex
     # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
@@ -2181,6 +2181,50 @@ def banco_historial_v2():
         "conciliacion/banco_v2_historial.html",
         sesiones=sesiones,
     )
+
+
+# ─── Sacar items de un grupo (sub-batch) ──────────────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/sacar-del-grupo", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_sacar_del_grupo():
+    """Toma N match_ids y los reasigna a un sub-batch_id nuevo.
+    El resto del batch original queda intacto. Útil para extraer un par 1:1
+    de un grupo más grande para deshacerlo solo."""
+    raw = (request.form.get("match_ids") or "").strip()
+    if not raw:
+        flash("No seleccionaste items.", "warn")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    try:
+        ids = [int(x) for x in raw.split(",") if x.strip()]
+    except (TypeError, ValueError):
+        flash("IDs inválidos.", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    if not ids:
+        flash("No seleccionaste items.", "warn")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    import uuid as _uuid
+    new_batch = _uuid.uuid4().hex
+    try:
+        n = _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET confirm_batch_id = %s
+             WHERE id = ANY(%s) AND deshecho_en IS NULL
+            """,
+            (new_batch, ids),
+        ) or 0
+    except Exception as e:
+        _LOG.warning("sacar-del-grupo falló: %s", e)
+        flash("Error al sacar items.", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    if n:
+        flash(f"{n} item(s) movidos a un sub-grupo nuevo. Podés deshacerlos aparte.", "ok")
+    else:
+        flash("No se movió nada (¿ya estaban deshechos?).", "warn")
+    return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
 
 # ─── Deshacer conciliados (pantalla minimalista) ──────────────────────

@@ -65,12 +65,14 @@
   <section>
     <h2 class="text-base font-semibold mb-2 text-slate-700 dark:text-slate-200">
       Conciliaciones hechas
-      <span class="text-xs text-slate-500 font-normal">— deshacer un grupo libera TODOS sus items (banco + programa) atómicamente</span>
+      <span class="text-xs text-slate-500 font-normal">— deshacer un grupo libera TODOS sus items. O seleccioná items y "Sacar al sub-grupo" para deshacer solo esos.</span>
     </h2>
     <div class="space-y-3">
       {% for b in batches %}
       {% set _es_grupo = b.batch_id and b['items']|length > 1 %}
-      <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+      {% set _batch_dom = ('batch_' ~ (b.batch_id|default('solo' ~ loop.index))|replace('-','_'))|truncate(80,True,'') %}
+      <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
+           data-batch="{{ _batch_dom }}">
         <header class="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
           <div class="text-xs">
             <span class="text-slate-500">Conciliado: </span>
@@ -107,6 +109,8 @@
         </header>
 
         {# Detalle: 2 columnas lado banco | lado programa #}
+        {# TMT 2026-06-03: checkboxes por item + boton "Sacar al sub-grupo".
+           Permite extraer un par 1:1 balanceado de un batch más grande. #}
         <div class="grid grid-cols-2 gap-px bg-slate-200 dark:bg-slate-700 text-[11px]">
           {# Lado BANCO #}
           <div class="bg-white dark:bg-slate-900 p-2">
@@ -115,14 +119,15 @@
             {% for it in b['items'] %}
               {% if it.real_monto is not none %}
               {% set _hay_banco = true %}
-              <div class="flex items-baseline gap-2 py-0.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <label class="flex items-baseline gap-2 py-0.5 border-b border-slate-100 dark:border-slate-800 last:border-0 cursor-pointer hover:bg-slate-50/60">
+                <input type="checkbox" class="sacar-cb" data-batch="{{ _batch_dom }}" data-match-id="{{ it.id }}" data-monto="{{ it.real_monto|float }}" data-lado="banco">
                 <span class="text-slate-400 w-16 text-[10px]">{{ it.real_fecha.strftime('%m-%d') if it.real_fecha else '—' }}</span>
                 <span class="text-slate-500 w-10 font-mono text-[10px]">{{ (it.real_documento or '—')|string|truncate(8,True,'') }}</span>
                 <span class="flex-1 text-slate-700 dark:text-slate-300 truncate" title="{{ it.real_concepto or '' }}">{{ (it.real_concepto or '—')[:45] }}</span>
                 <span class="font-mono font-semibold {% if it.real_tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">
                   {% if it.real_tipo == 'C' %}+{% else %}−{% endif %}{{ '{:,.2f}'.format(it.real_monto|float) }}
                 </span>
-              </div>
+              </label>
               {% endif %}
             {% endfor %}
             {% if not _hay_banco %}<div class="text-slate-300 italic">— sin lado banco —</div>{% endif %}
@@ -136,7 +141,8 @@
               {% set _hay_pc = true %}
               {% set _doc_up = (it.pc_documento or '')|upper %}
               {% set _es_cred = _doc_up in ['DE','TR','NC','IN','AC','XX'] %}
-              <div class="flex items-baseline gap-2 py-0.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <label class="flex items-baseline gap-2 py-0.5 border-b border-slate-100 dark:border-slate-800 last:border-0 cursor-pointer hover:bg-slate-50/60">
+                <input type="checkbox" class="sacar-cb" data-batch="{{ _batch_dom }}" data-match-id="{{ it.id }}" data-monto="{{ it.pc_importe|float if it.pc_importe is not none else 0 }}" data-lado="programa">
                 <span class="text-slate-400 w-16 text-[10px]">{{ it.pc_fecha.strftime('%m-%d') if it.pc_fecha else '—' }}</span>
                 <span class="text-slate-500 w-10 font-mono text-[10px]">{{ _doc_up or '—' }}</span>
                 <span class="flex-1 text-slate-700 dark:text-slate-300 truncate" title="{{ it.pc_concepto or '' }}">
@@ -145,11 +151,30 @@
                 <span class="font-mono font-semibold {% if _es_cred %}text-emerald-700{% else %}text-rose-700{% endif %}">
                   {% if _es_cred %}+{% else %}−{% endif %}{{ '{:,.2f}'.format(it.pc_importe|float) if it.pc_importe is not none else '0.00' }}
                 </span>
-              </div>
+              </label>
               {% endif %}
             {% endfor %}
             {% if not _hay_pc %}<div class="text-slate-300 italic">— sin lado programa —</div>{% endif %}
           </div>
+        </div>
+
+        {# Footer con boton "Sacar al sub-grupo" — visible solo cuando hay selecciones #}
+        <div class="sacar-footer hidden px-3 py-2 bg-sky-50 dark:bg-sky-900/20 border-t border-sky-200 dark:border-sky-800 flex items-center justify-between text-[11px]"
+             data-batch-footer="{{ _batch_dom }}">
+          <div class="text-sky-700 dark:text-sky-300">
+            Seleccionados: <span class="sacar-count font-bold">0</span> items ·
+            Banco <span class="sacar-sum-banco font-mono">0.00</span> · Programa <span class="sacar-sum-pc font-mono">0.00</span> ·
+            Δ <span class="sacar-delta font-mono font-bold">0.00</span>
+          </div>
+          <form method="POST" action="{{ url_for('conciliacion.banco_sacar_del_grupo') }}" class="m-0 inline-flex items-center gap-2"
+                onsubmit="return confirm('¿Mover ' + this.querySelector('.sacar-count-form').textContent + ' items a un sub-grupo nuevo?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="match_ids" class="sacar-ids-input" value="">
+            <span class="sacar-count-form hidden">0</span>
+            <button class="bg-sky-600 hover:bg-sky-700 text-white text-xs rounded-md px-3 py-1 font-medium">
+              ↗ Sacar al sub-grupo
+            </button>
+          </form>
         </div>
       </div>
       {% endfor %}
@@ -159,4 +184,38 @@
     </div>
   </section>
 </div>
+
+<script>
+(function () {
+  // Manejo de checkboxes "Sacar al sub-grupo" por batch.
+  // Cada checkbox suma su lado (banco/programa) y muestra contadores + Δ.
+  document.querySelectorAll('.sacar-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const batch = cb.dataset.batch;
+      const footer = document.querySelector('[data-batch-footer="' + batch + '"]');
+      if (!footer) return;
+      const cbs = document.querySelectorAll('.sacar-cb[data-batch="' + batch + '"]:checked');
+      let sumBanco = 0, sumPc = 0;
+      const ids = [];
+      cbs.forEach(c => {
+        const monto = parseFloat(c.dataset.monto || '0');
+        if (c.dataset.lado === 'banco') sumBanco += monto;
+        else sumPc += monto;
+        ids.push(c.dataset.matchId);
+      });
+      const delta = sumBanco - sumPc;
+      footer.querySelector('.sacar-count').textContent = cbs.length;
+      footer.querySelector('.sacar-count-form').textContent = cbs.length;
+      footer.querySelector('.sacar-sum-banco').textContent = sumBanco.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      footer.querySelector('.sacar-sum-pc').textContent = sumPc.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      const deltaEl = footer.querySelector('.sacar-delta');
+      deltaEl.textContent = delta.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2, signDisplay:'exceptZero'});
+      deltaEl.classList.toggle('text-emerald-700', Math.abs(delta) < 0.5);
+      deltaEl.classList.toggle('text-rose-700', Math.abs(delta) >= 0.5);
+      footer.querySelector('.sacar-ids-input').value = ids.join(',');
+      footer.classList.toggle('hidden', cbs.length === 0);
+    });
+  });
+})();
+</script>
 {% endblock %}
