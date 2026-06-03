@@ -689,6 +689,111 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/test-relink-full", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def test_relink_full():
+    """Test integral: crea 3 matches fake, captura ids, rompe ids,
+    relinkea, verifica recovery, cleanup. Devuelve OK/FAIL."""
+    no_banco = _BANCO_PICHINCHA
+    pcs = _db.fetch_all(
+        """
+        SELECT id_transaccion FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+           AND COALESCE(TRIM(stat), '') <> '*'
+         ORDER BY id_transaccion ASC LIMIT 3
+        """,
+        (no_banco,),
+    ) or []
+    if len(pcs) < 3:
+        return jsonify({"ok": False, "note": "menos de 3 PC pendientes para usar"})
+
+    test_ids = []
+    try:
+        # 1) Create 3 fake matches via direct INSERT (trigger populará tx_firma)
+        with _db.tx() as conn:
+            for p in pcs:
+                res = _db.execute(
+                    """
+                    INSERT INTO scintela.banco_conciliacion_match
+                        (no_banco, estado, id_transaccion, usuario)
+                    VALUES (%s, 'matched', %s, 'test-stress')
+                    RETURNING id
+                    """,
+                    (no_banco, p["id_transaccion"]),
+                    conn=conn,
+                )
+                # res is int (rows affected). We need the returned id.
+            # Capture the matches we just created
+            new_matches = _db.fetch_all(
+                """
+                SELECT id, id_transaccion, tx_firma
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s AND usuario = 'test-stress'
+                 ORDER BY id DESC LIMIT 3
+                """,
+                (no_banco,),
+                conn=conn,
+            ) or []
+            test_ids = [m["id"] for m in new_matches]
+
+        # Verify firma was populated by trigger
+        n_sin_firma = sum(1 for m in new_matches if not m.get("tx_firma"))
+        if n_sin_firma:
+            # cleanup and return
+            _db.execute(
+                "DELETE FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)",
+                (test_ids,),
+            )
+            return jsonify({"ok": False, "test": "trigger_firma", "n_sin_firma": n_sin_firma})
+
+        # 2) Break id_transaccion (simulate sync that lost rows)
+        max_id = _db.fetch_one(
+            "SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias WHERE no_banco = %s",
+            (no_banco,),
+        ) or {}
+        huerfano = int(max_id.get("m") or 0) + 999999
+        originals = {m["id"]: m["id_transaccion"] for m in new_matches}
+        _db.execute(
+            "UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = ANY(%s)",
+            (huerfano, test_ids),
+        )
+
+        # 3) Run relink
+        rel = _db.fetch_one(
+            "SELECT * FROM scintela.relink_matches_post_sync(%s)",
+            (no_banco,),
+        ) or {}
+
+        # 4) Verify recovery
+        recovered = _db.fetch_all(
+            "SELECT id, id_transaccion FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)",
+            (test_ids,),
+        ) or []
+        rec_map = {r["id"]: r["id_transaccion"] for r in recovered}
+        ok_count = sum(1 for mid, orig in originals.items() if rec_map.get(mid) == orig)
+
+        result = {
+            "ok": ok_count == len(originals),
+            "n_created": len(test_ids),
+            "n_recovered": ok_count,
+            "relink_reported": int(rel.get("relinked") or 0),
+            "originals": originals,
+            "recovered": rec_map,
+        }
+    finally:
+        # 5) Cleanup
+        if test_ids:
+            try:
+                _db.execute(
+                    "DELETE FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)",
+                    (test_ids,),
+                )
+            except Exception:
+                pass
+    return jsonify(result)
+
+
 @bp.route("/test-relink", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
