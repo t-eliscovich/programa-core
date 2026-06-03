@@ -2349,6 +2349,94 @@ def banco_reset_all():
     return redirect(url_for("conciliacion.hub"))
 
 
+@conciliacion_bp.route("/banco-v2/cruzar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_cruzar_pendientes():
+    """Cruza un archivo de DEPOSITOS PENDIENTES (hoja FEB2023 prevalece)
+    contra el backlog del sistema (banco_historicos_pendientes), por doc+monto.
+
+    TMT 2026-06-03 duena: 'dejame subir un archivo para cruzar por las dudas,
+    por si algo cambio'. Read-only: muestra coinciden / monto distinto /
+    faltan en sistema / sobran en sistema. El borrado/alta va en un 2do paso.
+    """
+    f = request.files.get("archivo")
+    if not f or not f.filename:
+        flash("Falta el archivo de pendientes.", "error")
+        return redirect(url_for("conciliacion.hub"))
+    raw = f.read()
+    if not raw:
+        flash("El archivo vino vacio.", "error")
+        return redirect(url_for("conciliacion.hub"))
+    try:
+        from modules.conciliacion.parser_xlsx import parse_pendientes_cruce
+        hoja, items = parse_pendientes_cruce(raw)
+    except Exception as e:
+        _LOG.exception("parse cruce fallo: %s", e)
+        flash(f"No pude leer el archivo: {e}", "error")
+        return redirect(url_for("conciliacion.hub"))
+    if not items:
+        flash("El archivo no trajo pendientes reconocibles (revisa la hoja FEB2023).", "warn")
+        return redirect(url_for("conciliacion.hub"))
+
+    sis_rows = _db.fetch_all(
+        """
+        SELECT id, fecha, documento, concepto, monto, tipo
+          FROM scintela.banco_historicos_pendientes
+         WHERE no_banco = %s AND conciliado_en IS NULL
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    sis_por_doc: dict = {}
+    for r in sis_rows:
+        doc = str(r.get("documento") or "").strip()
+        if not doc:
+            continue
+        signed = float(r.get("monto") or 0) * (1 if (r.get("tipo") or "").upper() == "C" else -1)
+        sis_por_doc.setdefault(doc, []).append({
+            "id": r.get("id"), "monto": round(signed, 2),
+            "concepto": r.get("concepto") or "", "fecha": r.get("fecha"),
+        })
+
+    file_docs = set()
+    coinciden, monto_distinto, faltan = [], [], []
+    for it in items:
+        doc = it["doc"]
+        file_docs.add(doc)
+        sis = sis_por_doc.get(doc)
+        if not sis:
+            faltan.append(it)
+        elif any(abs(s["monto"] - it["monto"]) <= 0.01 for s in sis):
+            coinciden.append(it)
+        else:
+            monto_distinto.append({**it, "sistema_monto": sis[0]["monto"]})
+    sobran = []
+    for doc, rows in sis_por_doc.items():
+        if doc not in file_docs:
+            for s in rows:
+                sobran.append({"doc": doc, "monto": s["monto"],
+                               "detalle": (s["concepto"] or "")[:60], "id": s["id"]})
+
+    def _suma(lst, key="monto"):
+        return round(sum(x[key] for x in lst), 2)
+
+    resumen = {
+        "hoja": hoja,
+        "n_archivo": len(items), "suma_archivo": _suma(items),
+        "n_sistema": sum(len(v) for v in sis_por_doc.values()),
+        "suma_sistema": round(sum(s["monto"] for v in sis_por_doc.values() for s in v), 2),
+        "n_coinciden": len(coinciden), "suma_coinciden": _suma(coinciden),
+        "n_monto_distinto": len(monto_distinto),
+        "n_faltan": len(faltan), "suma_faltan": _suma(faltan),
+        "n_sobran": len(sobran), "suma_sobran": _suma(sobran),
+    }
+    return render_template(
+        "conciliacion/banco_v2_cruzar.html",
+        resumen=resumen, coinciden=coinciden, monto_distinto=monto_distinto,
+        faltan=faltan, sobran=sobran,
+    )
+
+
 @conciliacion_bp.route("/banco-v2/historial", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")

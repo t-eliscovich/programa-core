@@ -238,6 +238,33 @@
     </p>
   </form>
 
+  {# TMT 2026-06-03 duena: 'dejame subir un archivo para cruzar por las dudas,
+     por si algo cambio'. Sube la hoja de DEPOSITOS PENDIENTES (FEB2023 prevalece)
+     y cruza contra el backlog del sistema por doc+monto. Read-only. #}
+  <form method="POST" action="{{ url_for('conciliacion.banco_cruzar_pendientes') }}" enctype="multipart/form-data"
+        class="mt-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="block">
+      <span class="text-xs text-slate-500 dark:text-slate-400">Cruzar pendientes contra archivo (hoja FEB2023)</span>
+      <div class="mt-1 flex items-center gap-3">
+        <input type="file" name="archivo"
+               accept=".xlsx,.xls,.xlsm,.xlsb,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+               required
+               class="text-sm text-slate-700 dark:text-slate-300
+                      file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0
+                      file:bg-slate-700 file:text-white dark:file:bg-slate-200 dark:file:text-slate-900
+                      file:text-sm file:cursor-pointer">
+        <button type="submit"
+                class="px-4 py-1.5 rounded bg-slate-700 hover:bg-slate-800 text-white text-sm whitespace-nowrap">
+          Cruzar &rarr;
+        </button>
+      </div>
+    </label>
+    <p class="text-xs text-slate-500 dark:text-slate-400">
+      No modifica nada: te muestra que coincide, que falta y que sobra vs el sistema, por si algo cambio desde la ultima vez.
+    </p>
+  </form>
+
   {# Files subidos — TMT 2026-05-26 dueña: "necesito ver los files ya subidos".
      Tracking real de uploads (incluso los que no se confirmaron matches). #}
   {% if uploads %}

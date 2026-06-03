@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block titulo %}Cruzar pendientes{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <div class="flex items-baseline justify-between mb-1">
+    <h1 class="text-2xl font-semibold">Cruzar pendientes contra archivo</h1>
+    <a href="/conciliacion/banco-v2" class="text-sm text-sky-600 hover:underline">← Volver a conciliación</a>
+  </div>
+  <p class="text-sm text-slate-500 mb-4">
+    Hoja usada: <strong>{{ resumen.hoja }}</strong> · archivo {{ resumen.n_archivo }} ítems
+    ({{ '{:+,.2f}'.format(resumen.suma_archivo) }}) · sistema {{ resumen.n_sistema }} pendientes
+    ({{ '{:+,.2f}'.format(resumen.suma_sistema) }})
+  </p>
+
+  {# ── Tarjetas resumen ─────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+    <div class="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-900/20 p-3">
+      <div class="text-xs uppercase text-emerald-700 dark:text-emerald-300 font-semibold">Coinciden ✓</div>
+      <div class="text-2xl font-bold tabular-nums">{{ resumen.n_coinciden }}</div>
+    </div>
+    <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 p-3">
+      <div class="text-xs uppercase text-amber-700 dark:text-amber-300 font-semibold">Monto distinto</div>
+      <div class="text-2xl font-bold tabular-nums">{{ resumen.n_monto_distinto }}</div>
+    </div>
+    <div class="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50/60 dark:bg-sky-900/20 p-3">
+      <div class="text-xs uppercase text-sky-700 dark:text-sky-300 font-semibold">Faltan en sistema</div>
+      <div class="text-2xl font-bold tabular-nums">{{ resumen.n_faltan }}</div>
+      <div class="text-xs text-slate-500">{{ '{:+,.2f}'.format(resumen.suma_faltan) }} · habría que agregarlos</div>
+    </div>
+    <div class="rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50/60 dark:bg-rose-900/20 p-3">
+      <div class="text-xs uppercase text-rose-700 dark:text-rose-300 font-semibold">Sobran en sistema</div>
+      <div class="text-2xl font-bold tabular-nums">{{ resumen.n_sobran }}</div>
+      <div class="text-xs text-slate-500">{{ '{:+,.2f}'.format(resumen.suma_sobran) }} · habría que borrarlos</div>
+    </div>
+  </div>
+
+  {% if resumen.n_faltan == 0 and resumen.n_sobran == 0 and resumen.n_monto_distinto == 0 %}
+    <div class="rounded-lg border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 p-4 text-emerald-800 dark:text-emerald-200 mb-5">
+      ✓ El sistema coincide exactamente con tu archivo — no cambió nada.
+    </div>
+  {% endif %}
+
+  {# ── SOBRAN (candidatos a borrar) ─────────────────────────────── #}
+  {% if sobran %}
+  <section class="mb-5 rounded-lg border border-rose-200 dark:border-rose-800 overflow-hidden">
+    <header class="px-4 py-2 bg-rose-50 dark:bg-rose-900/20 border-b border-rose-200 dark:border-rose-800">
+      <strong class="text-rose-800 dark:text-rose-200">Sobran en el sistema ({{ sobran|length }})</strong>
+      <span class="text-xs text-slate-500">— están pendientes en el sistema pero NO en tu archivo. Si FEB2023 prevalece, habría que borrarlos.</span>
+    </header>
+    <table class="w-full text-[13px] tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr><th class="px-3 py-1 text-left">Doc</th><th class="px-3 py-1 text-right">Monto</th><th class="px-3 py-1 text-left">Concepto</th></tr>
+      </thead>
+      <tbody>
+        {% for r in sobran %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-1 font-mono text-slate-500">{{ r.doc }}</td>
+          <td class="px-3 py-1 text-right font-mono font-semibold {% if r.monto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(r.monto) }}</td>
+          <td class="px-3 py-1 text-slate-600 dark:text-slate-300 truncate max-w-0">{{ r.detalle }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {# ── FALTAN (candidatos a agregar) ────────────────────────────── #}
+  {% if faltan %}
+  <section class="mb-5 rounded-lg border border-sky-200 dark:border-sky-800 overflow-hidden">
+    <header class="px-4 py-2 bg-sky-50 dark:bg-sky-900/20 border-b border-sky-200 dark:border-sky-800">
+      <strong class="text-sky-800 dark:text-sky-200">Faltan en el sistema ({{ faltan|length }})</strong>
+      <span class="text-xs text-slate-500">— están en tu archivo pero el sistema no los tiene pendientes. Habría que agregarlos.</span>
+    </header>
+    <table class="w-full text-[13px] tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr><th class="px-3 py-1 text-left">Doc</th><th class="px-3 py-1 text-right">Monto</th><th class="px-3 py-1 text-left">Detalle</th></tr>
+      </thead>
+      <tbody>
+        {% for r in faltan %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-1 font-mono text-slate-500">{{ r.doc }}</td>
+          <td class="px-3 py-1 text-right font-mono font-semibold {% if r.monto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:+,.2f}'.format(r.monto) }}</td>
+          <td class="px-3 py-1 text-slate-600 dark:text-slate-300 truncate max-w-0">{{ r.detalle }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {# ── MONTO DISTINTO ───────────────────────────────────────────── #}
+  {% if monto_distinto %}
+  <section class="mb-5 rounded-lg border border-amber-200 dark:border-amber-800 overflow-hidden">
+    <header class="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+      <strong class="text-amber-800 dark:text-amber-200">Mismo doc, monto distinto ({{ monto_distinto|length }})</strong>
+      <span class="text-xs text-slate-500">— el doc coincide pero el monto cambió. Revisá cuál es el correcto.</span>
+    </header>
+    <table class="w-full text-[13px] tabular-nums">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500">
+        <tr><th class="px-3 py-1 text-left">Doc</th><th class="px-3 py-1 text-right">Archivo</th><th class="px-3 py-1 text-right">Sistema</th><th class="px-3 py-1 text-left">Detalle</th></tr>
+      </thead>
+      <tbody>
+        {% for r in monto_distinto %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-1 font-mono text-slate-500">{{ r.doc }}</td>
+          <td class="px-3 py-1 text-right font-mono font-semibold">{{ '{:+,.2f}'.format(r.monto) }}</td>
+          <td class="px-3 py-1 text-right font-mono text-slate-500">{{ '{:+,.2f}'.format(r.sistema_monto) }}</td>
+          <td class="px-3 py-1 text-slate-600 dark:text-slate-300 truncate max-w-0">{{ r.detalle }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  <details class="mb-5">
+    <summary class="cursor-pointer text-sm text-slate-500">Ver los {{ coinciden|length }} que coinciden ✓</summary>
+    <table class="w-full text-[12px] tabular-nums mt-2">
+      <tbody>
+        {% for r in coinciden %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-0.5 font-mono text-slate-400">{{ r.doc }}</td>
+          <td class="px-3 py-0.5 text-right font-mono">{{ '{:+,.2f}'.format(r.monto) }}</td>
+          <td class="px-3 py-0.5 text-slate-500 truncate max-w-0">{{ r.detalle }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+
+  <p class="text-xs text-slate-400">Read-only — este cruce no modifica nada. El paso para borrar los "sobran" y agregar los "faltan" se hace aparte, con esta lista a la vista.</p>
+</div>
+{% endblock %}
