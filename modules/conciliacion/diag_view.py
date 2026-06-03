@@ -1226,6 +1226,26 @@ def _relink_py(no_banco: int) -> dict:
     }
 
 
+@bp.route("/sync-matches-counter", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def sync_matches_counter():
+    """One-shot: alinear sesion.matches_hechos con la realidad."""
+    no_banco = _BANCO_PICHINCHA
+    n = _db.execute(
+        """
+        UPDATE scintela.banco_conciliacion_sesion s
+           SET matches_hechos = (
+             SELECT COUNT(*) FROM scintela.banco_conciliacion_match m
+              WHERE m.no_banco = s.no_banco AND m.deshecho_en IS NULL
+           )
+         WHERE s.no_banco = %s AND s.cerrada_en IS NULL
+        """,
+        (no_banco,),
+    )
+    return jsonify({"ok": True, "rows_updated": n})
+
+
 @bp.route("/test-relink-py", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
