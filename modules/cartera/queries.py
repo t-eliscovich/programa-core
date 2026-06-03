@@ -5,11 +5,15 @@ dump tiene un puñado de filas históricas con NULL en vencimiento; se las
 ubica en algún bucket en lugar de perderlas del reporte.
 
 Filtro canónico de "factura viva":
-    COALESCE(saldo, 0) > 0
+    COALESCE(saldo, 0) <> 0
     AND (stat IS NULL OR stat IN ('Z','A','',' '))
 
 Es el mismo que usan `dashboard.queries.kpis_dueno`, `informes.queries.totf`
 y `clientes.queries.buscar`. No divergir.
+
+TMT 2026-06-03 audit fix: antes era `> 0` estricto, escondía clientes con
+sobrepago (saldo<0). Memoria project_cartera_signo dice "sobrepagos negativos
+netean".
 """
 from datetime import date
 
@@ -231,7 +235,7 @@ def clientes_con_vencido(umbral_dias: int = 90) -> list[dict]:
                MAX(CURRENT_DATE - COALESCE(f.vencimiento, f.fecha)) AS dias_mora_max
         FROM scintela.factura f
         JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
-        WHERE COALESCE(f.saldo, 0) > 0
+        WHERE COALESCE(f.saldo, 0) <> 0
           AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
           AND CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) > %s
           AND COALESCE(c.stop, 'N') != 'S'
@@ -261,7 +265,7 @@ def aging_por_grupo() -> list[dict]:
                    COALESCE(SUM(f.saldo), 0) AS saldo
             FROM scintela.factura f
             LEFT JOIN scintela.grupo_cliente g ON g.codigo_hijo = f.codigo_cli
-            WHERE COALESCE(f.saldo, 0) > 0
+            WHERE COALESCE(f.saldo, 0) <> 0
               AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
             GROUP BY f.codigo_cli, COALESCE(g.codigo_padre, f.codigo_cli)
         )
@@ -274,7 +278,7 @@ def aging_por_grupo() -> list[dict]:
         FROM base b
         LEFT JOIN scintela.cliente c ON c.codigo_cli = b.codigo_grupo
         GROUP BY b.codigo_grupo, c.nombre
-        HAVING SUM(b.saldo) > 0
+        HAVING SUM(b.saldo) <> 0
         ORDER BY SUM(b.saldo) DESC
         """
     ) or []
@@ -318,7 +322,7 @@ def tomar_snapshot(fecha: date | None = None) -> dict:
                    COALESCE(SUM(f.saldo), 0) AS saldo_total,
                    COUNT(*)                  AS n_facturas
             FROM scintela.factura f
-            WHERE COALESCE(f.saldo, 0) > 0
+            WHERE COALESCE(f.saldo, 0) <> 0
               AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
             GROUP BY f.codigo_cli
             """,
@@ -409,7 +413,7 @@ def comparar_contra_snapshot(fecha_snapshot=None) -> dict:
                    COALESCE(SUM(f.saldo), 0) AS saldo_hoy,
                    COUNT(*)                  AS n_facturas_hoy
               FROM scintela.factura f
-             WHERE COALESCE(f.saldo, 0) > 0
+             WHERE COALESCE(f.saldo, 0) <> 0
                AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
              GROUP BY f.codigo_cli
         ),
@@ -537,7 +541,7 @@ def cartera_por_cliente_y_color(meses_atras: int = 3) -> dict:
                COALESCE(SUM(f.saldo), 0)           AS saldo_total
           FROM scintela.factura f
           LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
-         WHERE COALESCE(f.saldo, 0) > 0
+         WHERE COALESCE(f.saldo, 0) <> 0
            AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
          GROUP BY f.codigo_cli, c.nombre
          ORDER BY saldo_total DESC

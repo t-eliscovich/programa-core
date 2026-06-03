@@ -4065,7 +4065,9 @@ def cartera_por_cliente() -> list[dict]:
         FROM scintela.factura f
         LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
         LEFT JOIN cheques_cli cc      ON cc.codigo_cli = f.codigo_cli
-        WHERE COALESCE(f.saldo, 0) > 0
+        -- TMT 2026-06-03 audit fix: <> 0 en lugar de > 0 para que sobrepagos
+        -- neteen (memoria project_cartera_signo).
+        WHERE COALESCE(f.saldo, 0) <> 0
           AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
         GROUP BY f.codigo_cli, c.nombre
         """

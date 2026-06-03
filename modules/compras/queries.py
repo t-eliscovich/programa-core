@@ -122,8 +122,11 @@ def crear(
             )
         tipo = tipo_norm
 
-    if numero is None:
-        numero = proximo_numero()
+    # TMT 2026-06-03 audit fix: si numero=None se computa adentro de la tx
+    # con advisory lock. Antes proximo_numero() se llamaba ACÁ AFUERA, lo
+    # que permitía dos crear() concurrentes calcular el mismo MAX+1 y
+    # crear compras duplicadas. La lock vive en el bloque tx más abajo.
+    # numero==None deja la asignación para dentro de la tx.
 
     if fechad is None:
         row = db.fetch_one(
@@ -170,6 +173,21 @@ def crear(
     saldo_posdat = importe_f - importe_pago_inmediato
 
     with db.tx() as conn:
+        # TMT 2026-06-03 audit fix: advisory lock para serializar asignación
+        # de numero. Misma clave que facturas usa para numf (4243 para compras
+        # para no colisionar). Si numero ya vino del caller, igualmente lockeamos
+        # para que no se choquen dos asignaciones automáticas concurrentes.
+        db.execute(
+            "SELECT pg_advisory_xact_lock(4243)",
+            (), conn=conn,
+        )
+        if numero is None:
+            np_row = db.fetch_one(
+                "SELECT COALESCE(MAX(numero), 0) + 1 AS siguiente FROM scintela.compra",
+                (), conn=conn,
+            )
+            numero = int(np_row["siguiente"]) if np_row else 1
+
         prov_row = db.fetch_one(
             "SELECT id_proveedor, tipo AS tipo_prov FROM scintela.proveedor WHERE codigo_prov = %s",
             (codigo_prov,),

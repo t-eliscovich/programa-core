@@ -362,37 +362,42 @@ def editar_numf(
             "numf_completo_nuevo": fact.get("numf_completo"),
         }
 
-    # Chequeo de duplicados: si ya existe otra factura ACTIVA con ese numf,
-    # no dejamos pisarlo (sería incoherencia de inventario). Las anuladas
-    # (stat='X') NO bloquean — pudieron quedar con ese numf de una versión
-    # anterior que la dueña re-emitió.
-    dup = db.fetch_one(
-        "SELECT id_factura, COALESCE(stat,'') AS stat, codigo_cli, fecha, saldo "
-        "FROM scintela.factura "
-        "WHERE numf = %s AND id_factura <> %s "
-        "  AND COALESCE(stat,'') NOT IN ('X','x') "
-        "LIMIT 1",
-        (nuevo_numf, id_factura),
-    )
-    if dup:
-        raise ValueError(
-            f"El N° {nuevo_numf} ya está usado por la factura id={dup['id_factura']} "
-            f"(cliente={dup.get('codigo_cli','?')}, fecha={dup.get('fecha','?')}, "
-            f"stat={dup.get('stat','?')}, saldo=${dup.get('saldo','?')}). "
-            f"Si es duplicado, anulala primero."
+    # TMT 2026-06-03 audit fix: chequeo de duplicados + UPDATE en una sola
+    # tx con advisory lock (misma clave 4242 que usa crear() para numf).
+    # Antes: dos editar_numf() concurrentes podían pasar ambos el dup check
+    # y ambos UPDATE al mismo valor → dos facturas vivas con el mismo numf.
+    with db.tx() as conn:
+        db.execute(
+            "SELECT pg_advisory_xact_lock(4242)",
+            (), conn=conn,
         )
+        dup = db.fetch_one(
+            "SELECT id_factura, COALESCE(stat,'') AS stat, codigo_cli, fecha, saldo "
+            "FROM scintela.factura "
+            "WHERE numf = %s AND id_factura <> %s "
+            "  AND COALESCE(stat,'') NOT IN ('X','x') "
+            "LIMIT 1",
+            (nuevo_numf, id_factura), conn=conn,
+        )
+        if dup:
+            raise ValueError(
+                f"El N° {nuevo_numf} ya está usado por la factura id={dup['id_factura']} "
+                f"(cliente={dup.get('codigo_cli','?')}, fecha={dup.get('fecha','?')}, "
+                f"stat={dup.get('stat','?')}, saldo=${dup.get('saldo','?')}). "
+                f"Si es duplicado, anulala primero."
+            )
 
-    sql_set = ["numf=%s", "usuario_modifica=%s"]
-    params: list = [nuevo_numf, usuario]
-    if nuevo_numf_completo is not None:
-        sql_set.append("numf_completo=%s")
-        params.append(nuevo_numf_completo or None)
-    params.append(id_factura)
+        sql_set = ["numf=%s", "usuario_modifica=%s"]
+        params: list = [nuevo_numf, usuario]
+        if nuevo_numf_completo is not None:
+            sql_set.append("numf_completo=%s")
+            params.append(nuevo_numf_completo or None)
+        params.append(id_factura)
 
-    db.execute(
-        f"UPDATE scintela.factura SET {', '.join(sql_set)} WHERE id_factura=%s",
-        tuple(params),
-    )
+        db.execute(
+            f"UPDATE scintela.factura SET {', '.join(sql_set)} WHERE id_factura=%s",
+            tuple(params), conn=conn,
+        )
     return {
         "id_factura": id_factura,
         "numf_previo": numf_previo,

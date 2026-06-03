@@ -63,8 +63,14 @@ def crear(
     username = (username or "").strip().lower()
     if not username:
         raise ValueError("Username requerido.")
-    if len(password or "") < 6:
-        raise ValueError("Password debe tener al menos 6 caracteres.")
+    # TMT 2026-06-03 audit fix: unificar contra auth._valida_password_nueva
+    # (10 chars + 1 letra + 1 dígito). Antes este check pedía 6 chars sueltos
+    # → usuarios creados quedaban con password que NO podían cambiar después
+    # porque el cambiar_password aplica la política completa.
+    from auth import _valida_password_nueva as _vpn
+    _err = _vpn(password or "")
+    if _err:
+        raise ValueError(_err)
     if not id_rol:
         raise ValueError("Rol requerido.")
     if db.fetch_one("SELECT 1 FROM seguridad.usuario WHERE lower(username) = %s", (username,)):
@@ -111,8 +117,11 @@ def editar(
         campos.append("email = %s")
         params.append((email or "").strip().lower() or None)
     if password:
-        if len(password) < 6:
-            raise ValueError("Password debe tener al menos 6 caracteres.")
+        # TMT 2026-06-03 audit fix: mismo policy que crear() / cambiar_password.
+        from auth import _valida_password_nueva as _vpn
+        _err = _vpn(password)
+        if _err:
+            raise ValueError(_err)
         ph = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         campos.append("password_hash = %s")
         params.append(ph)

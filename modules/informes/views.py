@@ -219,7 +219,7 @@ def historico_12m():
 
 @informes_bp.route("/historico-12m/_api/<int:id_historia>/validar", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — borra los OTROS snapshots del mes
 def historico_validar(id_historia: int):
     """Marca un snapshot como canónico — borra los OTROS del mismo mes."""
     try:
@@ -236,7 +236,7 @@ def historico_validar(id_historia: int):
 
 @informes_bp.route("/historico-12m/_api/<int:id_historia>/borrar", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — DELETE destructivo
 def historico_borrar(id_historia: int):
     """Borra UN snapshot específico de scintela.historia."""
     try:
@@ -248,7 +248,7 @@ def historico_borrar(id_historia: int):
 
 @informes_bp.route("/historico-12m/_api/snapshot-ahora", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — INSERT en historia
 def historico_snapshot_ahora():
     """Fuerza un snapshot del mes actual ignorando el throttle de 24h.
 
@@ -267,7 +267,7 @@ def historico_snapshot_ahora():
 
 @informes_bp.route("/historico-12m/_api/eliminar-ultima", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — DELETE destructivo
 def historico_eliminar_ultima():
     """Borra la columna mas reciente del mes actual (boton Eliminar ultima)."""
     try:
@@ -772,7 +772,7 @@ def diag_stock():
 
 @informes_bp.route("/snapshot-mes", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — escribe historia
 def snapshot_mes():
     """Cierra snapshot mensual en scintela.historia para el mes indicado.
 
@@ -801,7 +801,7 @@ def snapshot_mes():
 
 @informes_bp.route("/snapshot-backfill", methods=["POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — escribe historia
 def snapshot_backfill():
     """Backfill: crea snapshots para los últimos N meses (default 3).
 
@@ -1093,7 +1093,7 @@ def _parse_monto(value):
 
 @informes_bp.route("/flujo/cargar", methods=["GET", "POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("informes.editar")  # TMT 2026-06-03 audit: era .ver — INSERT en scintela.flujo
 def flujo_cargar():
     """Carga manual o por CSV de la tabla scintela.flujo.
 
