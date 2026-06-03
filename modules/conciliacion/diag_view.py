@@ -689,6 +689,109 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/probe-relink-step", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def probe_relink_step():
+    """Trace de cada paso del relink:
+    1) Crear match, capturar firma.
+    2) Break id (capturar firma post-update — chequea si trigger la pisó).
+    3) Probar el subquery del relink manualmente.
+    4) Cleanup."""
+    no_banco = _BANCO_PICHINCHA
+    pcs = _db.fetch_all(
+        """
+        SELECT id_transaccion FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+           AND COALESCE(TRIM(stat), '') <> '*'
+         ORDER BY id_transaccion ASC LIMIT 1
+        """,
+        (no_banco,),
+    ) or []
+    if not pcs:
+        return jsonify({"ok": False, "note": "no hay pendientes"})
+
+    test_id = None
+    try:
+        # 1) Crear
+        _db.execute(
+            """
+            INSERT INTO scintela.banco_conciliacion_match (no_banco, estado, id_transaccion, usuario)
+            VALUES (%s, 'matched', %s, 'probe-step')
+            """,
+            (no_banco, pcs[0]["id_transaccion"]),
+        )
+        m1 = _db.fetch_one(
+            "SELECT id, id_transaccion, tx_firma FROM scintela.banco_conciliacion_match WHERE no_banco=%s AND usuario='probe-step' ORDER BY id DESC LIMIT 1",
+            (no_banco,),
+        ) or {}
+        test_id = m1.get("id")
+        firma_inicial = m1.get("tx_firma")
+        id_orig = m1.get("id_transaccion")
+
+        # 2) Break id (set to huérfano)
+        max_id = _db.fetch_one("SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias WHERE no_banco=%s", (no_banco,)) or {}
+        huerfano = int(max_id.get("m") or 0) + 999999
+        _db.execute(
+            "UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = %s",
+            (huerfano, test_id),
+        )
+        m2 = _db.fetch_one(
+            "SELECT id, id_transaccion, tx_firma FROM scintela.banco_conciliacion_match WHERE id = %s",
+            (test_id,),
+        ) or {}
+        firma_post_break = m2.get("tx_firma")
+
+        # 3) Probar subquery del relink manualmente
+        encontrado = _db.fetch_one(
+            """
+            SELECT t.id_transaccion AS new_id,
+                   (COALESCE(t.fecha::TEXT, '') || '|'
+                 || COALESCE(t.documento, '') || '|'
+                 || COALESCE(t.importe::TEXT, '0') || '|'
+                 || COALESCE(t.numreferencia::TEXT, '') || '|'
+                 || COALESCE(LEFT(t.concepto, 40), '')) AS firma_calc
+              FROM scintela.transacciones_bancarias t
+             WHERE t.no_banco = %s
+               AND (COALESCE(t.fecha::TEXT, '') || '|'
+                 || COALESCE(t.documento, '') || '|'
+                 || COALESCE(t.importe::TEXT, '0') || '|'
+                 || COALESCE(t.numreferencia::TEXT, '') || '|'
+                 || COALESCE(LEFT(t.concepto, 40), '')) = %s
+             ORDER BY t.id_transaccion ASC LIMIT 1
+            """,
+            (no_banco, firma_post_break),
+        ) or {}
+
+        # 4) Check NOT EXISTS para dead_matches CTE
+        ne = _db.fetch_one(
+            """
+            SELECT NOT EXISTS (
+                SELECT 1 FROM scintela.transacciones_bancarias t
+                 WHERE t.id_transaccion = %s
+            ) AS no_existe
+            """,
+            (huerfano,),
+        ) or {}
+
+        return jsonify({
+            "id_orig": id_orig,
+            "huerfano_set": huerfano,
+            "firma_inicial": firma_inicial,
+            "firma_post_break": firma_post_break,
+            "firma_iguales": firma_inicial == firma_post_break,
+            "subquery_manual_encuentra": encontrado.get("new_id"),
+            "subquery_firma_calc": encontrado.get("firma_calc"),
+            "huerfano_no_existe": ne.get("no_existe"),
+        })
+    finally:
+        if test_id:
+            try:
+                _db.execute("DELETE FROM scintela.banco_conciliacion_match WHERE id = %s", (test_id,))
+            except Exception:
+                pass
+
+
 @bp.route("/probe-firmas", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
