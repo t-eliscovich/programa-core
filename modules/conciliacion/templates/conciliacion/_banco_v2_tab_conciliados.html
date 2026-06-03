@@ -176,7 +176,19 @@
               <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[200px]" colspan="2" title="batch_id {{ m.confirm_batch_id }}">
                 {{ _batch_items|length }} matches contra el mismo mov PC (impuestos/comisiones agrupados)
               </td>
-              <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+              <td class="px-1.5 py-0.5 text-slate-500 text-[10px] whitespace-nowrap">
+                {{ m.usuario or '' }}
+                {# TMT 2026-06-03 duena: deshacer desde el tab Conciliados (no pagina aparte). #}
+                <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline m-0"
+                      onclick="event.stopPropagation()"
+                      onsubmit="return confirm('Deshacer esta conciliacion ({{ _batch_items|length }} match{% if _batch_items|length != 1 %}es{% endif %})? Todos los items vuelven a pendientes.');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="match_id" value="{{ m.id }}">
+                  <input type="hidden" name="sesion_id" value="{{ sesion.id if sesion else 0 }}">
+                  <input type="hidden" name="next" value="conciliados">
+                  <button class="ml-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] rounded px-2 py-0.5 font-medium whitespace-nowrap">↶ Deshacer grupo</button>
+                </form>
+              </td>
             </tr>
             {% set _ns.prev_batch = m.confirm_batch_id %}
           {% elif not _skip_row %}
@@ -226,7 +238,19 @@
               {% if m.tb_prov %}<span class="inline-block px-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[9px] mr-1">{{ m.tb_prov }}</span>{% endif %}
               {{ (m.tb_concepto or '—')[:32] }}
             </td>
-            <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+            <td class="px-1.5 py-0.5 text-slate-500 text-[10px] whitespace-nowrap">
+              {{ m.usuario or '' }}
+              {% if not _is_part_of_group %}
+              <form method="POST" action="{{ url_for('conciliacion.banco_deshacer') }}" class="inline m-0"
+                    onsubmit="return confirm('Deshacer este match? Vuelve a pendientes.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="match_id" value="{{ m.id }}">
+                <input type="hidden" name="sesion_id" value="{{ sesion.id if sesion else 0 }}">
+                <input type="hidden" name="next" value="conciliados">
+                <button class="ml-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] rounded px-2 py-0.5 font-medium whitespace-nowrap">↶ Deshacer</button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% endif %}{# /elif not _skip_row #}
         {% endfor %}

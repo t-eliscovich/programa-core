@@ -47,7 +47,7 @@
       <div class="p-3">
         <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold mb-2 px-1">Banco ({{ (real_subset|length) + (hist_rows|length) }})</div>
         <ul class="text-[13px] tabular-nums">
-          {% for m in real_subset %}
+          {% for m in real_subset|sort(attribute='monto', reverse=true) %}
           <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
             <span class="w-4 text-center font-bold text-sm {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if m.tipo == 'C' %}+{% else %}−{% endif %}</span>
             <span class="font-mono font-bold text-sm w-28 text-right {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</span>
@@ -56,7 +56,7 @@
             <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ m.concepto or '' }}">{{ (m.concepto or '')[:55] }}</span>
           </li>
           {% endfor %}
-          {% for h in hist_rows %}
+          {% for h in hist_rows|sort(attribute='monto', reverse=true) %}
           <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
             <span class="w-4 text-center font-bold text-sm {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if h.tipo == 'C' %}+{% else %}−{% endif %}</span>
             <span class="font-mono font-bold text-sm w-28 text-right {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(h.monto|float) }}</span>
@@ -70,7 +70,7 @@
       <div class="p-3">
         <div class="text-xs uppercase tracking-wider text-sky-700 dark:text-sky-300 font-semibold mb-2 px-1">Programa ({{ bancsis_rows|length }})</div>
         <ul class="text-[13px] tabular-nums">
-          {% for b in bancsis_rows %}
+          {% for b in bancsis_rows|sort(attribute='importe', reverse=true) %}
           {% set _signo = 1 if b.documento in ('DE','TR','XX','NC','IN','AC') else -1 %}
           <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
             <span class="w-4 text-center font-bold text-sm {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if _signo > 0 %}+{% else %}−{% endif %}</span>

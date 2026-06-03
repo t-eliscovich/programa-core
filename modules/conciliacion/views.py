@@ -2641,6 +2641,14 @@ def banco_deshacer():
     _next = (request.form.get("next") or "").strip()
     if _next == "deshacer":
         back = url_for("conciliacion.banco_deshacer_v2")
+    elif _next == "conciliados":
+        # TMT 2026-06-03 duena: 'deshacer deberia estar en conciliados, no en
+        # una pagina aparte'. Volver al tab Conciliados de la sesion.
+        try:
+            _sid = int(request.form.get("sesion_id") or 0)
+        except (TypeError, ValueError):
+            _sid = 0
+        back = url_for("conciliacion.banco_post_procesar", sesion_id=_sid, tab="conciliados")
     else:
         back = url_for("conciliacion.banco_historial")
     if match_id <= 0:

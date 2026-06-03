@@ -614,6 +614,79 @@ def _cargar_historicos_pendientes(no_banco: int) -> list[dict]:
         return []
 
 
+def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
+    """Backlog COMPLETO de movimientos PC sin conciliar (stat<>'*' AND sin
+    match activo), SIN filtro de fecha. Lado Programa del tab Manual, con y
+    sin extracto.
+
+    TMT 2026-06-03 duena: 'del programa solo veo cosas de 06-02, deberia
+    aparecerme transacciones de mayo'. Antes (con extracto) el lado programa
+    salia del matcher, que carga BANCSIS solo en la ventana del extracto
+    (desde-1d .. hasta+15d) -> los pendientes PC mas viejos no aparecian.
+    Ahora mostramos todo el backlog, igual que el lado banco (historicos).
+    """
+    out: list[dict] = []
+    try:
+        from modules.conciliacion.matcher_banco import MovBancsis as _MovBk
+        rows_pc = db.fetch_all(
+            """
+            SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto,
+                   tb.importe, tb.numreferencia, tb.no_banco, tb.saldo,
+                   tb.prov, tb.fecha_crea
+              FROM scintela.transacciones_bancarias tb
+             WHERE tb.no_banco = %s
+               AND TRIM(COALESCE(tb.stat, '')) <> '*'
+               AND NOT EXISTS (
+                   SELECT 1 FROM scintela.banco_conciliacion_match m
+                    WHERE m.id_transaccion = tb.id_transaccion
+                      AND m.deshecho_en IS NULL
+               )
+             ORDER BY ABS(tb.importe) DESC, tb.fecha DESC
+             LIMIT 1000
+            """,
+            (int(no_banco),),
+        ) or []
+        codigos = {
+            (r.get("prov") or "").strip().upper()
+            for r in rows_pc if (r.get("prov") or "").strip()
+        }
+        nombres = {}
+        if codigos:
+            try:
+                rows_cli = db.fetch_all(
+                    """
+                    SELECT codigo_cli AS cod, nombre FROM scintela.cliente
+                     WHERE UPPER(codigo_cli) = ANY(%s::text[])
+                    """,
+                    (list(codigos),),
+                ) or []
+                nombres = {
+                    (r["cod"] or "").strip().upper(): (r.get("nombre") or "").strip()
+                    for r in rows_cli
+                }
+            except Exception:
+                pass
+        for i, r in enumerate(rows_pc):
+            prov = (r.get("prov") or "").strip().upper()
+            bk = _MovBk(
+                id_transaccion=int(r["id_transaccion"]),
+                fecha=r.get("fecha"),
+                documento=str(r.get("documento") or "").strip().upper(),
+                concepto=str(r.get("concepto") or "").strip(),
+                importe=float(r.get("importe") or 0),
+                numreferencia=str(r.get("numreferencia") or "").strip(),
+                no_banco=int(r.get("no_banco") or 0),
+                saldo=float(r["saldo"]) if r.get("saldo") is not None else None,
+                prov=prov,
+                prov_nombre=nombres.get(prov, ""),
+                fecha_crea=r.get("fecha_crea"),
+            )
+            out.append({"mov": bk, "cat": None, "idx": i})
+    except Exception as e:
+        _LOG.warning("_cargar_programa_pendiente fallo: %s", e)
+    return out
+
+
 def estado_sesion(sesion: dict, no_banco: int) -> dict:
     """De la sesión DB → buckets listos para renderizar.
 
@@ -639,66 +712,7 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
         # Antes usaba cargar_bancsis que trae TODO el universo del banco
         # (~1000+ filas) — mostraba demasiados. TMT 2026-05-29 segunda
         # iteración: 'aca hay demasiados movimientos para conciliar'.
-        manual_programa: list[dict] = []
-        try:
-            from modules.conciliacion.matcher_banco import MovBancsis as _MovBk
-            rows_pc = db.fetch_all(
-                """
-                SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto,
-                       tb.importe, tb.numreferencia, tb.no_banco, tb.saldo,
-                       tb.prov, tb.fecha_crea
-                  FROM scintela.transacciones_bancarias tb
-                 WHERE tb.no_banco = %s
-                   AND TRIM(COALESCE(tb.stat, '')) <> '*'
-                   AND NOT EXISTS (
-                       SELECT 1 FROM scintela.banco_conciliacion_match m
-                        WHERE m.id_transaccion = tb.id_transaccion
-                          AND m.deshecho_en IS NULL
-                   )
-                 ORDER BY ABS(tb.importe) DESC, tb.fecha DESC
-                 LIMIT 1000
-                """,
-                (int(no_banco),),
-            ) or []
-            # Resolver nombre de cliente/proveedor en batch.
-            codigos = {
-                (r.get("prov") or "").strip().upper()
-                for r in rows_pc if (r.get("prov") or "").strip()
-            }
-            nombres = {}
-            if codigos:
-                try:
-                    rows_cli = db.fetch_all(
-                        """
-                        SELECT codigo_cli AS cod, nombre FROM scintela.cliente
-                         WHERE UPPER(codigo_cli) = ANY(%s::text[])
-                        """,
-                        (list(codigos),),
-                    ) or []
-                    nombres = {
-                        (r["cod"] or "").strip().upper(): (r.get("nombre") or "").strip()
-                        for r in rows_cli
-                    }
-                except Exception:
-                    pass
-            for i, r in enumerate(rows_pc):
-                prov = (r.get("prov") or "").strip().upper()
-                bk = _MovBk(
-                    id_transaccion=int(r["id_transaccion"]),
-                    fecha=r.get("fecha"),
-                    documento=str(r.get("documento") or "").strip().upper(),
-                    concepto=str(r.get("concepto") or "").strip(),
-                    importe=float(r.get("importe") or 0),
-                    numreferencia=str(r.get("numreferencia") or "").strip(),
-                    no_banco=int(r.get("no_banco") or 0),
-                    saldo=float(r["saldo"]) if r.get("saldo") is not None else None,
-                    prov=prov,
-                    prov_nombre=nombres.get(prov, ""),
-                    fecha_crea=r.get("fecha_crea"),
-                )
-                manual_programa.append({"mov": bk, "cat": None, "idx": i})
-        except Exception as e:
-            _LOG.warning("cargar pendientes programa sin extracto falló: %s", e)
+        manual_programa = _cargar_programa_pendiente(no_banco)
         ret = {
             "manual_banco": manual_banco_hist,
             "manual_programa": manual_programa,
@@ -717,6 +731,9 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
     buckets = bucketizar(res)
+    # TMT 2026-06-03: lado Programa = backlog COMPLETO de PC pendiente
+    # (no solo la ventana del matcher). Ver _cargar_programa_pendiente.
+    buckets["manual_programa"] = _cargar_programa_pendiente(no_banco)
     # Mezclar los históricos al inicio del panel Banco (más viejos arriba).
     hist_items = [
         {"mov": _hist_to_mov_like(h), "cat": None, "idx": -1,

@@ -1101,39 +1101,125 @@ def banco_manual_confirmar():
     #      ya está tomada). Quedan conciliados visualmente.
     #
     # Esto cubre 1:1, N:1, 1:N, y N:M arbitrario.
-    if real_subset and bancsis_ids:
-        real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
-        bk_sorted = sorted(bancsis_ids, reverse=True)
-        n_pair = min(len(real_sorted), len(bk_sorted))
+    # TMT 2026-06-03 FIX BUG GIGANTE: el bloque de historicos matcheaba
+    # TODOS los historicos contra bancsis_ids[0], ignorando los demas movs
+    # de programa seleccionados (N historicos -> 1 PC). Ahora unificamos el
+    # lado banco (reales del extracto + historicos) en UNA lista ordenada y
+    # la pareamos 1:1 contra el lado programa ordenado POR MONTO (antes el
+    # programa se ordenaba por id, lo que tampoco correspondia por importe).
+    #
+    # Reglas N:M:
+    #   1. min(N, M) pares 1:1 por monto desc (biggest<->biggest).
+    #   2. Banco extras (N > M): cada uno contra PC[0] (caso agrupar).
+    #   3. PC extras (M > N): INSERT stat-only (firma real_* ya tomada).
+    import bank_helpers as _bh_confirm
+    from decimal import Decimal as _D_cf
+    from modules.conciliacion.parser_banco import MovBanco as _MB_cf
 
-        # 1) Pares 1:1.
+    banco_movs: list[tuple] = []
+    for _m in real_subset:
+        banco_movs.append((_m, "matched_manual"))
+
+    hist_rows = []
+    if hist_ids:
+        try:
+            hist_rows = _db.fetch_all(
+                """
+                SELECT id, no_banco, fecha, concepto, documento, monto, tipo,
+                       oficina, detalle
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE id = ANY(%s)
+                """,
+                (hist_ids,),
+            ) or []
+        except Exception as e:
+            _LOG.exception("fetch historicos fallo: %s", e)
+            hist_rows = []
+        for h in hist_rows:
+            mov_h = _MB_cf(
+                fecha=h.get("fecha"),
+                concepto=str(h.get("concepto") or ""),
+                documento=str(h.get("documento") or ""),
+                monto=_D_cf(str(h.get("monto") or 0)),
+                saldo=_D_cf("0"),
+                codigo=str(h.get("oficina") or "")[:10],
+                tipo=str(h.get("tipo") or "C").upper(),
+                oficina=str(h.get("oficina") or ""),
+            )
+            banco_movs.append((mov_h, "matched_historico"))
+
+    def _signed_banco(mov) -> float:
+        s = 1.0 if (getattr(mov, "tipo", "") or "").upper() == "C" else -1.0
+        return s * float(getattr(mov, "monto", 0) or 0)
+
+    prog_meta: dict = {}
+    if bancsis_ids:
+        try:
+            _pr = _db.fetch_all(
+                """
+                SELECT id_transaccion, importe, documento,
+                       COALESCE(usuario_crea, '') AS usuario_crea
+                  FROM scintela.transacciones_bancarias
+                 WHERE id_transaccion = ANY(%s) AND no_banco = %s
+                """,
+                (bancsis_ids, _BANCO_PICHINCHA),
+            ) or []
+            for r in _pr:
+                prog_meta[int(r["id_transaccion"])] = r
+        except Exception as e:
+            _LOG.warning("fetch importes programa fallo: %s", e)
+
+    def _signed_prog(bk_id) -> float:
+        r = prog_meta.get(int(bk_id))
+        if not r:
+            return 0.0
+        try:
+            return float(_bh_confirm._signed_delta(
+                (r.get("documento") or ""),
+                float(r.get("importe") or 0),
+                r.get("usuario_crea") or "",
+            ))
+        except Exception:
+            return float(r.get("importe") or 0)
+
+    n_hist = 0
+    if banco_movs and bancsis_ids:
+        banco_sorted = sorted(banco_movs, key=lambda t: _signed_banco(t[0]), reverse=True)
+        bk_sorted = sorted(bancsis_ids, key=_signed_prog, reverse=True)
+        n_pair = min(len(banco_sorted), len(bk_sorted))
+
+        # 1) Pares 1:1 por monto.
         for i in range(n_pair):
+            mov_i, metodo_i = banco_sorted[i]
             try:
-                confirmar_match(_BANCO_PICHINCHA, real_sorted[i], bk_sorted[i],
-                                usuario=usuario, metodo="matched_manual",
+                confirmar_match(_BANCO_PICHINCHA, mov_i, bk_sorted[i],
+                                usuario=usuario, metodo=metodo_i,
                                 confirm_batch_id=batch_id)
-                n_matches += 1
+                if metodo_i == "matched_historico":
+                    n_hist += 1
+                else:
+                    n_matches += 1
             except Exception as e:
-                _LOG.warning("manual confirm par %d falló: %s", i, e)
+                _LOG.warning("manual confirm par %d fallo: %s", i, e)
                 if err_msg is None:
                     err_msg = str(e)
 
-        # 2) Banco extras (N > M): todos matcheados contra PC[0].
-        for r in real_sorted[n_pair:]:
+        # 2) Banco extras (N > M): cada uno contra PC[0].
+        for mov_i, metodo_i in banco_sorted[n_pair:]:
             try:
-                confirmar_match(_BANCO_PICHINCHA, r, bk_sorted[0],
-                                usuario=usuario, metodo="matched_manual",
+                confirmar_match(_BANCO_PICHINCHA, mov_i, bk_sorted[0],
+                                usuario=usuario, metodo=metodo_i,
                                 confirm_batch_id=batch_id)
-                n_matches += 1
+                if metodo_i == "matched_historico":
+                    n_hist += 1
+                else:
+                    n_matches += 1
             except Exception as e:
-                _LOG.warning("manual confirm extra banco falló: %s", e)
+                _LOG.warning("manual confirm extra banco fallo: %s", e)
                 if err_msg is None:
                     err_msg = str(e)
 
-        # 3) PC extras (M > N): crear match records con real_*=NULL para
-        # que aparezcan en el tab Conciliados con el lado programa visible.
-        # Detectamos si existe la columna `metodo` (mig 0047). Hacemos
-        # INSERT directo porque confirmar_match() requiere un MovBanco no-null.
+        # 3) PC extras (M > N): INSERT stat-only.
         if len(bk_sorted) > n_pair:
             extras = [int(b) for b in bk_sorted[n_pair:]]
             tiene_metodo = False
@@ -1151,7 +1237,6 @@ def banco_manual_confirmar():
                 pass
             for bk_id in extras:
                 try:
-                    # TMT 2026-06-03: tx_firma + confirm_batch_id.
                     if tiene_metodo:
                         _db.execute(
                             """
@@ -1174,7 +1259,6 @@ def banco_manual_confirmar():
                             """,
                             (_BANCO_PICHINCHA, 'matched', bk_id, bk_id, batch_id, usuario),
                         )
-                    # Dual-write stat='*'.
                     _db.execute(
                         """
                         UPDATE scintela.transacciones_bancarias
@@ -1185,74 +1269,15 @@ def banco_manual_confirmar():
                     )
                     n_matches += 1
                 except Exception as e:
-                    _LOG.warning("manual confirm match PC extra %s falló: %s", bk_id, e)
+                    _LOG.warning("manual confirm match PC extra %s fallo: %s", bk_id, e)
                     if err_msg is None:
                         err_msg = str(e)
-
-    # 2) Históricos seleccionados → conciliarlos vía confirmar_match.
-    # TMT 2026-05-29 dueña: 'HAY UN BUG' + 'NO ESTABAN CONCILIADOS'.
-    # Bug real: el UPDATE viejo seteaba conciliado_match_id = bancsis_id
-    # (id_transaccion), pero la columna tiene un FK a
-    # banco_conciliacion_match.id — otro id totalmente distinto. Postgres
-    # tiraba FK violation, la excepción se tragaba silenciosa, n_hist=0
-    # siempre. La dueña veía "no hubo cambios" sin razón visible.
-    #
-    # Fix: tratar cada histórico como un mov real (mismo shape MovBanco)
-    # y pasarlo por confirmar_match. Esto:
-    #   - Inserta una fila en banco_conciliacion_match (ON CONFLICT NOTHING).
-    #   - Marca stat='*' en transacciones_bancarias del BANCSIS pareado.
-    #   - El side-effect del propio confirmar_match actualiza el histórico
-    #     con conciliado_match_id correcto (= el match.id recién creado).
-    # Resultado: la conciliación queda bien guardada, persiste cierre,
-    # y aparece en el tab Conciliados.
-    n_hist = 0
-    if hist_ids:
-        bk_id_primary = bancsis_ids[0] if bancsis_ids else None
-        if not bk_id_primary:
-            flash(
-                "Para conciliar históricos hay que seleccionar UN movimiento "
-                "del programa.",
-                "warn",
-            )
-        else:
-            try:
-                hist_rows = _db.fetch_all(
-                    """
-                    SELECT id, no_banco, fecha, concepto, documento, monto, tipo,
-                           oficina, detalle
-                      FROM scintela.banco_historicos_pendientes
-                     WHERE id = ANY(%s)
-                    """,
-                    (hist_ids,),
-                ) or []
-            except Exception as e:
-                _LOG.exception("fetch historicos falló: %s", e)
-                hist_rows = []
-            from decimal import Decimal as _D
-            from modules.conciliacion.parser_banco import MovBanco as _MB
-            for h in hist_rows:
-                try:
-                    mov_h = _MB(
-                        fecha=h.get("fecha"),
-                        concepto=str(h.get("concepto") or ""),
-                        documento=str(h.get("documento") or ""),
-                        monto=_D(str(h.get("monto") or 0)),
-                        saldo=_D("0"),
-                        codigo=str(h.get("oficina") or "")[:10],
-                        tipo=str(h.get("tipo") or "C").upper(),
-                        oficina=str(h.get("oficina") or ""),
-                    )
-                    confirmar_match(
-                        _BANCO_PICHINCHA, mov_h, bk_id_primary,
-                        usuario=usuario, metodo="matched_historico",
-                        confirm_batch_id=batch_id,
-                    )
-                    n_hist += 1
-                except Exception as e:
-                    _LOG.warning("conciliar histórico id=%s falló: %s", h.get("id"), e)
-                    if err_msg is None:
-                        err_msg = str(e)
-
+    elif hist_ids and not bancsis_ids:
+        flash(
+            "Para conciliar historicos hay que seleccionar al menos un "
+            "movimiento del programa.",
+            "warn",
+        )
     total = n_matches + n_hist
     _sesion.incrementar_matches(sesion_id, total)
     parts = []
