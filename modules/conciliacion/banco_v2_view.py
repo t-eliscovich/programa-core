@@ -170,6 +170,22 @@ def banco_post_procesar():
         flash("Subí un extracto para empezar la conciliación.", "info")
         return redirect(url_for("conciliacion.hub"))
 
+    # TMT 2026-06-03: el contador sesion.matches_hechos venía desincronizado
+    # con la realidad (decía 14 con 0 matches reales). Lo recomputamos live
+    # desde banco_conciliacion_match. Single source of truth.
+    try:
+        _real_matches = _db.fetch_one(
+            """
+            SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s AND deshecho_en IS NULL
+            """,
+            (no_banco,),
+        ) or {}
+        sesion = dict(sesion)
+        sesion["matches_hechos"] = int(_real_matches.get("n") or 0)
+    except Exception:
+        pass
+
     tab = (request.args.get("tab") or "manual").lower()
     if tab not in ("manual", "impuestos", "transferencias", "conciliados"):
         tab = "manual"
