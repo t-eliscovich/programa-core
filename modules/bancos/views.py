@@ -1216,7 +1216,8 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
 def set_numreferencia(no_banco: int, id_transaccion: int):
     """TMT 2026-06-03 dueña: 'aca quiero ver documento y poder editar, asi
     les agrego numero de documento para hacer la conciliacion por num de
-    documento'. Update inline del campo numreferencia."""
+    documento'. Update inline del campo numreferencia_manual (sobrevive
+    al sync dBase, mig 0074)."""
     import db as _db
     raw = (request.form.get("numreferencia") or "").strip()
     valor = raw[:30] if raw else None
@@ -1224,7 +1225,7 @@ def set_numreferencia(no_banco: int, id_transaccion: int):
         n = _db.execute(
             """
             UPDATE scintela.transacciones_bancarias
-               SET numreferencia = %s
+               SET numreferencia_manual = %s
              WHERE id_transaccion = %s AND no_banco = %s
             """,
             (valor, id_transaccion, no_banco),

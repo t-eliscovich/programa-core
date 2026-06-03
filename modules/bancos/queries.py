@@ -141,7 +141,11 @@ def movimientos(
         SELECT
             t.id_transaccion, t.fecha, t.documento, t.concepto, t.fechad,
             t.importe, t.saldo, t.stat, t.no_banco, t.no_cta, t.prov,
-            t.numreferencia, t.usuario_crea, t.fecha_crea,
+            -- TMT 2026-06-03: COALESCE numreferencia_manual > numreferencia
+            -- (mig 0074). Edits web sobreviven al sync dBase.
+            COALESCE(NULLIF(TRIM(t.numreferencia_manual), ''), t.numreferencia::TEXT) AS numreferencia,
+            t.numreferencia_manual,
+            t.usuario_crea, t.fecha_crea,
             md.id_mov_doble        AS mov_doble_id,
             md.estado              AS mov_estado,
             md.usuario             AS mov_usuario,
@@ -158,7 +162,8 @@ def movimientos(
           AND (%(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
           AND (%(monto)s::numeric IS NULL OR t.importe = %(monto)s::numeric)
-          AND (%(doc_like)s IS NULL OR UPPER(COALESCE(t.numreferencia::text,'')) LIKE %(doc_like)s)
+          AND (%(doc_like)s IS NULL OR
+               UPPER(COALESCE(NULLIF(TRIM(t.numreferencia_manual),''), t.numreferencia::text, '')) LIKE %(doc_like)s)
           AND (%(cliente_like)s IS NULL OR EXISTS (
                 SELECT 1
                   FROM scintela.chequextransaccion cxt

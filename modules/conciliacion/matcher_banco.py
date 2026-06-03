@@ -421,7 +421,10 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     rows = db.fetch_all(
         """
         SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
-               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov, tb.fecha_crea,
+               -- TMT 2026-06-03: COALESCE manual > dBase. La edición web (mig 0074)
+               -- sobrevive al sync porque numreferencia_manual no se pisa.
+               COALESCE(NULLIF(TRIM(tb.numreferencia_manual), ''), tb.numreferencia::TEXT) AS numreferencia,
+               tb.no_banco, tb.saldo, tb.prov, tb.fecha_crea,
                (SELECT STRING_AGG(DISTINCT ch.no_cheque::text, ',')
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
