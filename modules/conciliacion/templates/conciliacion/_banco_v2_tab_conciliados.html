@@ -106,25 +106,62 @@
           {% else %}
             {% set _letra = '?' %}{% set _color = 'slate' %}{% set _label = m.estado or '?' %}
           {% endif %}
-          {# Header del batch — solo cuando cambia el batch_id #}
-          {% if m.confirm_batch_id and m.confirm_batch_id != _ns.prev_batch %}
-            {# Buscar otras filas del mismo batch para totalizar #}
+          {# TMT 2026-06-03 dueña: 'hay muchos 69s deberia haber uno solo'.
+             Cuando un batch tiene >1 match (caso impuestos agrupados), mostramos
+             UNA SOLA fila resumen con Σ banco vs Σ programa. Las filas individuales
+             se ocultan — se ven con click → /conciliacion/banco-v2/deshacer.
+             Si el batch es de 1 solo (match normal 1:1), se muestra la fila como
+             antes (no hay agrupación que mostrar).
+             Jinja2 stock no tiene {% continue %} sin loopcontrols ext, así que
+             usamos if/else: render del batch summary O fila individual, nunca ambas. #}
+          {% set _is_batch_header = m.confirm_batch_id and m.confirm_batch_id != _ns.prev_batch %}
+          {% set _batch_items = [] %}
+          {% set _is_part_of_group = false %}
+          {% if m.confirm_batch_id %}
             {% set _batch_items = matches_sesion|selectattr('confirm_batch_id','equalto',m.confirm_batch_id)|list %}
-            {% if _batch_items|length > 1 %}
-              {% set _bs_banco = _batch_items|map(attribute='monto_banco_signed')|map('default',0)|map('float')|sum %}
-              {% set _bs_prog = _batch_items|map(attribute='monto_prog_signed')|map('default',0)|map('float')|sum %}
-              <tr class="bg-sky-50/60 dark:bg-sky-900/20 border-t-2 border-sky-200 dark:border-sky-800">
-                <td colspan="3" class="px-3 py-1 text-[10px] text-sky-700 dark:text-sky-300 font-semibold">
-                  ↳ Grupo de {{ _batch_items|length }} matches (mismo confirmar)
-                </td>
-                <td class="px-1.5 py-1 text-right font-mono text-[11px] font-bold {% if _bs_banco >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">Σ {{ '{:+,.2f}'.format(_bs_banco) }}</td>
-                <td class="px-1.5 py-1 text-right font-mono text-[11px] font-bold {% if _bs_prog >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">Σ {{ '{:+,.2f}'.format(_bs_prog) }}</td>
-                <td colspan="5" class="text-[10px] text-slate-500 px-2 py-1">cada match suma al mismo movimiento PC; el monto programa se muestra una vez aquí y se repite en cada fila</td>
-              </tr>
-            {% endif %}
-            {% set _ns.prev_batch = m.confirm_batch_id %}
+            {% set _is_part_of_group = _batch_items|length > 1 %}
           {% endif %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if m.confirm_batch_id %} bg-sky-50/20 dark:bg-sky-900/10{% endif %}">
+          {% set _skip_row = _is_part_of_group and not _is_batch_header %}
+          {% if _is_batch_header and _is_part_of_group %}
+            {# Fila ÚNICA resumen del grupo — reemplaza las N filas individuales. #}
+            {% set _bs_banco = _batch_items|map(attribute='monto_banco_signed')|map('default',0)|map('float')|sum %}
+            {% set _bs_prog = _batch_items|map(attribute='monto_prog_signed')|map('default',0)|map('float')|sum %}
+            {% set _bs_diff = (_bs_banco - _bs_prog)|round(2) %}
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10">
+              <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
+                {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
+              </td>
+              <td class="px-1.5 py-0.5 text-center">
+                <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-bold" title="grupo de {{ _batch_items|length }} matches">{{ _batch_items|length }}</span>
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
+                {{ m.real_fecha or m.tb_fecha or '—' }}
+              </td>
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _bs_banco > 0 %}text-emerald-700{% elif _bs_banco < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+                Σ {{ '{:+,.2f}'.format(_bs_banco) }}
+              </td>
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _bs_prog > 0 %}text-emerald-700{% elif _bs_prog < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+                {{ '{:+,.2f}'.format(_bs_prog) }}
+              </td>
+              <td class="px-1.5 py-0.5 text-right font-mono">
+                {% if _bs_diff|abs < 0.01 %}
+                  <span class="text-emerald-600">✓</span>
+                {% else %}
+                  <span class="text-rose-700 font-semibold">{{ '{:+,.2f}'.format(_bs_diff) }}</span>
+                {% endif %}
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]" title="grupo {{ m.confirm_batch_id }}">
+                grupo · {{ _batch_items|length }} items
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[200px]" colspan="2" title="batch_id {{ m.confirm_batch_id }}">
+                {{ _batch_items|length }} matches contra el mismo mov PC (impuestos/comisiones agrupados)
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+            </tr>
+            {% set _ns.prev_batch = m.confirm_batch_id %}
+          {% elif not _skip_row %}
+            {% if m.confirm_batch_id %}{% set _ns.prev_batch = m.confirm_batch_id %}{% endif %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
             <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
               {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
             </td>
@@ -165,6 +202,7 @@
             </td>
             <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
           </tr>
+          {% endif %}{# /elif not _skip_row #}
         {% endfor %}
         {% if not matches_sesion %}
         <tr>

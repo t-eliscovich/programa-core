@@ -718,7 +718,35 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
          "es_historico": True, "id_historico": int(h["id"])}
         for h in historicos
     ]
-    buckets["manual_banco"] = hist_items + (buckets.get("manual_banco") or [])
+    # TMT 2026-06-03 dueña: '223 esta mal'. Bug: histos + extracto concat sin
+    # dedup, mismo mov aparece dos veces (uno como histo, otro como extracto).
+    # Fix: si la firma (fecha+doc+monto+tipo) del item del extracto coincide con
+    # un histo, NO se agrega — ya está representado por el histo. Sin esto, un
+    # extracto que repite un histo conocido infla el conteo del tab Manual.
+    def _firma_item(item):
+        mv = item.get("mov")
+        if not mv or not getattr(mv, "documento", None):
+            return None
+        try:
+            monto = f"{float(getattr(mv, 'monto', 0) or 0):.2f}"
+        except (TypeError, ValueError):
+            monto = "0.00"
+        fecha = mv.fecha.isoformat() if hasattr(mv.fecha, "isoformat") else str(mv.fecha or "")
+        return (
+            fecha,
+            (mv.documento or "").strip().upper(),
+            monto,
+            (getattr(mv, "tipo", "") or "").strip().upper()[:1],
+        )
+    hist_firmas = {_firma_item(it) for it in hist_items}
+    hist_firmas.discard(None)
+    extracto_unicos = []
+    for it in (buckets.get("manual_banco") or []):
+        fir = _firma_item(it)
+        if fir is not None and fir in hist_firmas:
+            continue  # ya está como histo — no duplicar
+        extracto_unicos.append(it)
+    buckets["manual_banco"] = hist_items + extracto_unicos
     buckets["matcher_extracto_desde"] = res.extracto_desde
     buckets["matcher_extracto_hasta"] = res.extracto_hasta
     buckets["n_historicos_pendientes"] = len(historicos)
