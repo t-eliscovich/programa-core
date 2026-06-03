@@ -1206,18 +1206,10 @@ def _relink_py(no_banco: int) -> dict:
         """,
         (no_banco,),
     ) or {}
-    # Re-aplicar stat='*'
-    _db.execute(
-        """
-        UPDATE scintela.transacciones_bancarias t
-           SET stat = '*'
-          FROM scintela.banco_conciliacion_match m
-         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
-           AND m.id_transaccion = t.id_transaccion
-           AND COALESCE(TRIM(t.stat), '') <> '*'
-        """,
-        (no_banco,),
-    )
+    # TMT 2026-06-03 dueña: 'lo unico conciliado sea el * del dbase'.
+    # NO re-aplicar stat='*' después del sync. Si dBase no lo trae '*',
+    # la fila vuelve a aparecer en pendientes y la dueña puede re-matchear.
+    # El match record persiste como historial, pero no fuerza stat.
     return {
         "matches_total": int(total.get("n") or 0),
         "relinked": int(n_relinked or 0),
