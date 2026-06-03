@@ -41,6 +41,109 @@ bp = Blueprint(
 )
 
 
+@bp.route("/estado-banco-completo", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def estado_banco_completo():
+    """Estado completo del banco para diagnosticar drift de libros.
+
+    Devuelve:
+      - últimas 30 txs Pichincha con saldos
+      - todas las sesiones recientes
+      - todos los matches activos y deshechos recientes
+      - txs PC-only (no DBF) en el último mes
+    """
+    from datetime import datetime, timedelta
+    out = {"ok": True}
+    # 1. Top 30 txs (últimas por fecha + id)
+    out["top_txs"] = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, saldo, concepto,
+               COALESCE(usuario_crea,'') AS usuario_crea
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+         ORDER BY fecha DESC, id_transaccion DESC
+         LIMIT 30
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    # Convertir Decimals/dates a primitivos
+    out["top_txs"] = [
+        {**r, "fecha": str(r["fecha"]), "importe": float(r["importe"] or 0),
+         "saldo": float(r["saldo"] or 0)}
+        for r in out["top_txs"]
+    ]
+    # 2. Sesiones (todas las recientes)
+    out["sesiones"] = _db.fetch_all(
+        """
+        SELECT id, no_banco, abierta_en, cerrada_en, usuario, matches_hechos,
+               extracto_nombre
+          FROM scintela.banco_conciliacion_sesion
+         WHERE no_banco = %s
+         ORDER BY abierta_en DESC
+         LIMIT 20
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    out["sesiones"] = [
+        {**r, "abierta_en": str(r["abierta_en"]),
+         "cerrada_en": str(r.get("cerrada_en") or "")}
+        for r in out["sesiones"]
+    ]
+    # 3. Matches activos
+    out["matches_activos_count"] = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s AND deshecho_en IS NULL
+        """,
+        (_BANCO_PICHINCHA,),
+    ).get("n", 0)
+    # 4. Matches deshechos en últimos 30 días
+    out["matches_deshechos_recientes"] = _db.fetch_all(
+        """
+        SELECT id, real_fecha, real_documento, real_monto, real_tipo,
+               id_transaccion, confirm_batch_id, creado_en, deshecho_en,
+               deshecho_por
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s
+           AND deshecho_en IS NOT NULL
+           AND deshecho_en >= NOW() - INTERVAL '30 days'
+         ORDER BY deshecho_en DESC
+         LIMIT 100
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    out["matches_deshechos_recientes"] = [
+        {**r,
+         "real_fecha": str(r.get("real_fecha") or ""),
+         "real_monto": float(r.get("real_monto") or 0),
+         "creado_en": str(r.get("creado_en") or ""),
+         "deshecho_en": str(r.get("deshecho_en") or "")}
+        for r in out["matches_deshechos_recientes"]
+    ]
+    # 5. PC-only txs últimas
+    out["pc_only_txs"] = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, saldo, concepto,
+               COALESCE(usuario_crea,'') AS usuario_crea
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND COALESCE(usuario_crea,'') NOT IN ('','dbf-import','asinfo-backfill','dbase-sync')
+         ORDER BY fecha DESC, id_transaccion DESC
+         LIMIT 50
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or []
+    out["pc_only_txs"] = [
+        {**r, "fecha": str(r["fecha"]),
+         "importe": float(r["importe"] or 0),
+         "saldo": float(r["saldo"] or 0)}
+        for r in out["pc_only_txs"]
+    ]
+    out["last_libros"] = out["top_txs"][0]["saldo"] if out["top_txs"] else None
+    return jsonify(out)
+
+
 @bp.route("/matches-duplicados-id-tx", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
