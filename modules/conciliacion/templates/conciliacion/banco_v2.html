@@ -30,6 +30,15 @@
          class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-2 whitespace-nowrap">
         ⬆ Subir extracto
       </a>
+      {# TMT 2026-06-03 dueña: cerrar la sesión + migrar pendientes a histos
+         para arrastrarlos a la próxima conciliación (lifecycle mensual). #}
+      <form method="POST" action="{{ url_for('conciliacion.banco_cerrar_sesion') }}" class="m-0 inline"
+            onsubmit="return confirm('Cerrar la sesión actual. Los items no matcheados pasan a Históricos y los vas a ver en la próxima conciliación. ¿Continuar?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="bg-slate-700 hover:bg-slate-800 text-white text-sm rounded-md px-3 py-2 whitespace-nowrap">
+          ✓ Cerrar sesión
+        </button>
+      </form>
     </div>
   </div>
 

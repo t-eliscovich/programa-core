@@ -2183,6 +2183,117 @@ def banco_historial_v2():
     )
 
 
+# ─── Cerrar sesión + migrar pendientes a histos (lifecycle mensual) ──
+
+
+@conciliacion_bp.route("/banco-v2/cerrar-sesion", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_cerrar_sesion():
+    """Cierra la sesión activa Y migra los items NO MATCHEADOS del extracto
+    a banco_historicos_pendientes. Mañana se ven como histos.
+
+    TMT 2026-06-03 dueña: 'que los que no se matchearon hoy pasen a histos'.
+    Lifecycle:
+      1) Recolecta items del extracto_payload sin firma en matches activos.
+      2) Inserta cada uno en banco_historicos_pendientes con fuente
+         'sesion_<id>_cierre' y fecha del cierre.
+      3) Marca la sesión cerrada_en = now.
+      4) Próxima vez que abra la conciliación, sesión nueva + histos
+         arrastrados aparecen en el tab Manual lado banco.
+    """
+    no_banco = _BANCO_PICHINCHA
+    usuario = _usuario_actual()
+    sesion = _sesion.sesion_abierta(no_banco)
+    if not sesion:
+        flash("No hay sesión abierta para cerrar.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+
+    sesion_id = int(sesion.get("id") or 0)
+    # 1) Obtener firmas de matches activos para excluir matcheados.
+    matched_firmas = set()
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT real_fecha, real_documento, real_monto, real_tipo
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s AND deshecho_en IS NULL
+               AND real_documento IS NOT NULL
+            """,
+            (no_banco,),
+        ) or []
+        for r in rows:
+            matched_firmas.add((
+                str(r.get("real_fecha")),
+                (r.get("real_documento") or "").strip(),
+                round(float(r.get("real_monto") or 0), 2),
+                (r.get("real_tipo") or "").strip(),
+            ))
+    except Exception:
+        pass
+
+    # 2) Leer payload de la sesión.
+    payload = sesion.get("extracto_payload") or []
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = []
+    if isinstance(payload, dict):
+        payload = payload.get("extracto") or payload.get("movs") or []
+
+    # 3) Insertar los unmatched en histos.
+    n_migrados = 0
+    fuente = f"sesion_{sesion_id}_cierre"
+    for m in (payload or []):
+        if not isinstance(m, dict):
+            continue
+        fecha = m.get("fecha")
+        doc = (m.get("documento") or m.get("doc") or "").strip()
+        monto = round(float(m.get("monto") or m.get("importe") or 0), 2)
+        tipo = (m.get("tipo") or m.get("clase") or "").strip().upper()[:1] or ("C" if monto > 0 else "D")
+        concepto = (m.get("concepto") or "")[:200]
+        oficina = (m.get("oficina") or m.get("codigo") or "")[:50]
+        key = (str(fecha), doc, abs(monto), tipo)
+        if key in matched_firmas:
+            continue  # ya está conciliado vía match
+        try:
+            _db.execute(
+                """
+                INSERT INTO scintela.banco_historicos_pendientes
+                    (no_banco, fecha, concepto, documento, monto, tipo, oficina, fuente, creado_en)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT DO NOTHING
+                """,
+                (no_banco, fecha, concepto, doc, abs(monto), tipo, oficina, fuente),
+            )
+            n_migrados += 1
+        except Exception as e:
+            _LOG.warning("migrar histo desde cierre %s falló: %s", doc, e)
+
+    # 4) Cerrar la sesión.
+    try:
+        _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_sesion
+               SET cerrada_en = CURRENT_TIMESTAMP, cerrada_por = %s
+             WHERE id = %s AND cerrada_en IS NULL
+            """,
+            (usuario[:50], sesion_id),
+        )
+    except Exception as e:
+        _LOG.exception("cerrar sesion %s falló: %s", sesion_id, e)
+        flash(f"Error al cerrar la sesión: {e}", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+
+    flash(
+        f"Sesión #{sesion_id} cerrada. {n_migrados} item(s) sin conciliar pasaron a históricos. "
+        f"Mañana los vas a ver del lado banco en la próxima sesión.",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.hub"))
+
+
 # ─── Sacar items de un grupo (sub-batch) ──────────────────────────────
 
 
