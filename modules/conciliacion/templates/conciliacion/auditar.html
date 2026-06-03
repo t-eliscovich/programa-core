@@ -82,8 +82,15 @@
         </tbody>
       </table>
     </div>
-    <div class="px-5 py-3 bg-amber-50/50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200">
-      ⚠ Las top {{ filas_torcidas|length }} filas (por magnitud de drift) están listadas arriba. Apretá <strong>"Verificar y recalcular saldos"</strong> para arrancar la cadena de vuelta desde la primera fila. Si después de eso siguen apareciendo filas acá, es porque algún mov específico se cargó con saldo manual incorrecto.
+    <div class="px-5 py-3 bg-amber-50/50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-4">
+      <span class="flex-1">⚠ Las top {{ filas_torcidas|length }} filas (por magnitud de drift) están listadas arriba. Apretá el botón para arrancar la cadena de vuelta desde la primera fila. Si después de eso siguen apareciendo filas acá, es porque algún mov específico se cargó con saldo manual incorrecto.</span>
+      <form method="POST" action="{{ url_for('conciliacion.banco_recompute_saldos') }}" class="m-0"
+            onsubmit="return confirm('¿Recalcular toda la cadena de saldos del banco Pichincha?\n\nWalk-forward desde el primer movimiento. Idempotente — si la cadena ya está OK no cambia nada. Si está rota, fixea los {{ filas_torcidas|length }} drifts ($ {{ '{:+,.2f}'.format(suma_diff_torcidas) }}).');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold whitespace-nowrap shadow-sm">
+          Verificar y recalcular saldos
+        </button>
+      </form>
     </div>
     {% else %}
     <div class="px-5 py-3 bg-emerald-50/40 dark:bg-emerald-900/10 text-xs text-emerald-900 dark:text-emerald-200">
