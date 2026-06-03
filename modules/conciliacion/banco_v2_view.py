@@ -273,10 +273,22 @@ def banco_post_procesar():
             m["diff"] = None  # un lado falta → no aplica diferencia
 
     # Totales agregados por lado.
+    # TMT 2026-06-03 dueña: 'mira los totales'. Bug: el agrupado de impuestos
+    # crea 12 matches que apuntan a la MISMA tx PC (-$69.01). Sumar
+    # monto_prog_signed por cada match contaba la tx 12 veces.
+    # Fix: dedupar el lado PC por id_transaccion antes de sumar.
     tot_banco_c = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "C")
     tot_banco_d = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "D")
-    tot_prog_c = sum(m["monto_prog_signed"] for m in matches_sesion if m["monto_prog_signed"] > 0)
-    tot_prog_d = sum(-m["monto_prog_signed"] for m in matches_sesion if m["monto_prog_signed"] < 0)
+    _seen_tx = set()
+    _prog_dedup = []
+    for m in matches_sesion:
+        tx_id = m.get("id_transaccion")
+        if tx_id is None or tx_id in _seen_tx:
+            continue
+        _seen_tx.add(tx_id)
+        _prog_dedup.append(m["monto_prog_signed"])
+    tot_prog_c = sum(v for v in _prog_dedup if v > 0)
+    tot_prog_d = sum(-v for v in _prog_dedup if v < 0)
     conciliados_totales = {
         "banco_creditos": round(tot_banco_c, 2),
         "banco_debitos": round(tot_banco_d, 2),

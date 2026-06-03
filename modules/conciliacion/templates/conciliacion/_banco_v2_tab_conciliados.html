@@ -86,10 +86,15 @@
         </tr>
       </thead>
       <tbody>
+        {# TMT 2026-06-03 dueña: 'no deberian aparecer como un batch?'. Agrupo
+           visualmente por confirm_batch_id. Cuando varios matches comparten
+           batch (ej. impuestos agrupados de 12 items → 1 tx de $-69.01),
+           la primera fila del batch muestra un header con el total, y las
+           filas siguientes del mismo batch quedan indentadas/marcadas. #}
+        {% set _ns = namespace(prev_batch=None, batch_idx=0) %}
         {% for m in matches_sesion %}
           {% set _mb = m.monto_banco_signed|default(0)|float %}
           {% set _mp = m.monto_prog_signed|default(0)|float %}
-          {# Letra del estado: H = histórico, M = match, B = sólo banco, P = sólo PC #}
           {% if m.tipo == 'historico' %}
             {% set _letra = 'H' %}{% set _color = 'purple' %}{% set _label = 'histórico' %}
           {% elif m.estado == 'matched' %}
@@ -101,7 +106,25 @@
           {% else %}
             {% set _letra = '?' %}{% set _color = 'slate' %}{% set _label = m.estado or '?' %}
           {% endif %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          {# Header del batch — solo cuando cambia el batch_id #}
+          {% if m.confirm_batch_id and m.confirm_batch_id != _ns.prev_batch %}
+            {# Buscar otras filas del mismo batch para totalizar #}
+            {% set _batch_items = matches_sesion|selectattr('confirm_batch_id','equalto',m.confirm_batch_id)|list %}
+            {% if _batch_items|length > 1 %}
+              {% set _bs_banco = _batch_items|map(attribute='monto_banco_signed')|map('default',0)|map('float')|sum %}
+              {% set _bs_prog = _batch_items|map(attribute='monto_prog_signed')|map('default',0)|map('float')|sum %}
+              <tr class="bg-sky-50/60 dark:bg-sky-900/20 border-t-2 border-sky-200 dark:border-sky-800">
+                <td colspan="3" class="px-3 py-1 text-[10px] text-sky-700 dark:text-sky-300 font-semibold">
+                  ↳ Grupo de {{ _batch_items|length }} matches (mismo confirmar)
+                </td>
+                <td class="px-1.5 py-1 text-right font-mono text-[11px] font-bold {% if _bs_banco >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">Σ {{ '{:+,.2f}'.format(_bs_banco) }}</td>
+                <td class="px-1.5 py-1 text-right font-mono text-[11px] font-bold {% if _bs_prog >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">Σ {{ '{:+,.2f}'.format(_bs_prog) }}</td>
+                <td colspan="5" class="text-[10px] text-slate-500 px-2 py-1">cada match suma al mismo movimiento PC; el monto programa se muestra una vez aquí y se repite en cada fila</td>
+              </tr>
+            {% endif %}
+            {% set _ns.prev_batch = m.confirm_batch_id %}
+          {% endif %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if m.confirm_batch_id %} bg-sky-50/20 dark:bg-sky-900/10{% endif %}">
             <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
               {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
             </td>
