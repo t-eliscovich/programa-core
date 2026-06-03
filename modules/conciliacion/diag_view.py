@@ -689,6 +689,27 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/probe-fn-source", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def probe_fn_source():
+    """Devuelve el source de la función relink y los triggers en la tabla."""
+    fn = _db.fetch_one(
+        "SELECT pg_get_functiondef(p.oid) AS body FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = 'scintela' AND p.proname = 'relink_matches_post_sync'",
+    ) or {}
+    triggers = _db.fetch_all(
+        """
+        SELECT t.tgname, pg_get_triggerdef(t.oid) AS def
+          FROM pg_trigger t
+          JOIN pg_class c ON t.tgrelid = c.oid
+          JOIN pg_namespace n ON c.relnamespace = n.oid
+         WHERE n.nspname = 'scintela' AND c.relname = 'banco_conciliacion_match'
+           AND NOT t.tgisinternal
+        """,
+    ) or []
+    return jsonify({"fn_body": (fn.get("body") or "")[:5000], "triggers": triggers})
+
+
 @bp.route("/test-relink-trace", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
