@@ -689,6 +689,71 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/probe-firmas", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def probe_firmas():
+    """Compara firmas: la guardada en match vs la que computamos de tx ahora."""
+    no_banco = _BANCO_PICHINCHA
+    pcs = _db.fetch_all(
+        """
+        SELECT t.id_transaccion,
+               COALESCE(t.fecha::TEXT, '') || '|'
+            || COALESCE(t.documento, '') || '|'
+            || COALESCE(t.importe::TEXT, '0') || '|'
+            || COALESCE(t.numreferencia::TEXT, '') || '|'
+            || COALESCE(LEFT(t.concepto, 40), '') AS firma_calc
+          FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s AND t.fecha >= '2026-06-01'
+           AND COALESCE(TRIM(t.stat), '') <> '*'
+         ORDER BY t.id_transaccion ASC LIMIT 3
+        """,
+        (no_banco,),
+    ) or []
+    if len(pcs) < 1:
+        return jsonify({"ok": False, "note": "sin PC pendientes para probar"})
+    # Create one match, capture firma, compare
+    test_id = None
+    try:
+        with _db.tx() as conn:
+            _db.execute(
+                """
+                INSERT INTO scintela.banco_conciliacion_match
+                    (no_banco, estado, id_transaccion, usuario)
+                VALUES (%s, 'matched', %s, 'probe-firmas')
+                """,
+                (no_banco, pcs[0]["id_transaccion"]),
+                conn=conn,
+            )
+            m = _db.fetch_one(
+                """
+                SELECT id, id_transaccion, tx_firma
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s AND usuario = 'probe-firmas'
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (no_banco,),
+                conn=conn,
+            ) or {}
+            test_id = m.get("id")
+        result = {
+            "pc_id": pcs[0]["id_transaccion"],
+            "pc_firma_calc": pcs[0]["firma_calc"],
+            "match_firma_stored": m.get("tx_firma"),
+            "iguales": pcs[0]["firma_calc"] == m.get("tx_firma"),
+        }
+    finally:
+        if test_id:
+            try:
+                _db.execute(
+                    "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
+                    (test_id,),
+                )
+            except Exception:
+                pass
+    return jsonify(result)
+
+
 @bp.route("/test-relink-full", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
