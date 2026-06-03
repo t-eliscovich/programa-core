@@ -689,6 +689,20 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/dump-balance", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def dump_balance():
+    """Dump del dict balance que produce balance_pichincha.calcular()."""
+    from modules.conciliacion import balance_pichincha as _bp
+    b = _bp.calcular(_BANCO_PICHINCHA)
+    return jsonify({
+        k: (str(v) if hasattr(v, 'isoformat') else v)
+        for k, v in b.items()
+        if k not in ("pendientes_conciliar_rows",)
+    })
+
+
 @bp.route("/dump-todo", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
