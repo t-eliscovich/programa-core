@@ -155,6 +155,33 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                         ))
                 except Exception:
                     pass
+                # TMT 2026-06-03 dueña: 'no se deberian duplicar los extractos
+                # del banco si estamos comparandolos para que no haya duplicados'.
+                # Filas del payload que ya existen como histo pendiente NO se
+                # cuentan acá — ya están contadas en `n_pendientes` (los histos).
+                # Sin este dedup, una sesión que re-incluye un histo viejo lo
+                # contaría dos veces (una en histos, otra en extracto).
+                histo_firmas: set = set()
+                try:
+                    hr = _db.fetch_all(
+                        """
+                        SELECT fecha, documento, monto, tipo
+                          FROM scintela.banco_historicos_pendientes
+                         WHERE no_banco = %(no_banco)s
+                           AND conciliado_en IS NULL
+                           AND documento IS NOT NULL AND documento <> ''
+                        """,
+                        {"no_banco": no_banco},
+                    ) or []
+                    for r in hr:
+                        histo_firmas.add((
+                            str(r.get("fecha")),
+                            (r.get("documento") or "").strip(),
+                            round(float(r.get("monto") or 0), 2),
+                            (r.get("tipo") or "").strip().upper()[:1],
+                        ))
+                except Exception:
+                    pass
                 for m in movs:
                     fecha = m.get("fecha")
                     doc = (m.get("documento") or m.get("doc") or "").strip()
@@ -162,6 +189,9 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                     tipo = (m.get("tipo") or m.get("clase") or "").strip().upper()[:1] or ("C" if monto > 0 else "D")
                     key = (str(fecha), doc, abs(monto), tipo)
                     if key in match_firmas:
+                        continue
+                    # Dedup vs histos pendientes — ya contados en n_pendientes.
+                    if (str(fecha), doc, abs(monto), tipo) in histo_firmas:
                         continue
                     sess_n += 1
                     amt = abs(monto)

@@ -352,6 +352,12 @@ def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
                     ))
         except Exception:
             pass
+
+    # NOTA: NO agregamos transacciones_bancarias acá. Si lo hiciéramos,
+    # las filas del extracto que coinciden con una tx PC (las que JUSTO
+    # querés conciliar manualmente) desaparecerían del Manual tab — la
+    # dueña perdería visibilidad. El dedup contra tx_bancarias se hace en
+    # otro paso (match) que SÍ tiene UI para esto.
     return sigs
 
 
