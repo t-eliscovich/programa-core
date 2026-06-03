@@ -1928,22 +1928,14 @@ def banco_borrar_sesion():
             ) or []
             ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
 
-            # 2a. Borrar histos que ESTA sesión auto-promovió al cerrar.
-            # BUG #4 fix 2026-05-29: filtrar por conciliado_en IS NULL para
-            # NO borrar histos que después fueron conciliados en OTRA sesión
-            # (perderíamos el rastro de un match legítimo).
-            counts["historicos_promovidos_borrados"] = _db.execute(
-                """
-                DELETE FROM scintela.banco_historicos_pendientes
-                 WHERE no_banco = %s
-                   AND fuente = %s
-                   AND conciliado_en IS NULL
-                """,
-                (_BANCO_PICHINCHA, f"sesion:{sesion_id}"),
-                conn=conn,
-            ) or 0
-
-            # 2b. Reset históricos QUE FUERON conciliados en este rango.
+            # 2a. PRIMERO reset histos QUE FUERON conciliados en este rango.
+            # TMT 2026-06-03 dueña: 'borramos pero todo se rompió, no tiene
+            # sentido, hay que re armarlo'. Bug del orden: cuando un histo
+            # de fuente='sesion:N' fue conciliado en la MISMA sesión, tenía
+            # conciliado_en NOT NULL y el DELETE de 2b (con filtro IS NULL)
+            # lo saltaba. Después el UPDATE lo reseteaba a NULL — quedaba
+            # huérfano forever, aparece en pendientes después de borrar.
+            # Fix: resetear PRIMERO; así el delete de abajo lo atrapa.
             counts["historicos_reset"] = _db.execute(
                 """
                 UPDATE scintela.banco_historicos_pendientes
@@ -1954,6 +1946,23 @@ def banco_borrar_sesion():
                    AND conciliado_en BETWEEN %s AND %s
                 """,
                 (_BANCO_PICHINCHA, abierta, cerrada),
+                conn=conn,
+            ) or 0
+
+            # 2b. Borrar histos que ESTA sesión auto-promovió.
+            # Después del reset de 2a, los histos sesion:N conciliados-en-esta-sesión
+            # ya tienen conciliado_en IS NULL y caen acá. Histos sesion:N que
+            # fueron conciliados en OTRA sesión (conciliado_en fuera del rango)
+            # conservan su conciliado_en y NO son borrados — el rastro de su
+            # match legítimo se preserva.
+            counts["historicos_promovidos_borrados"] = _db.execute(
+                """
+                DELETE FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND fuente = %s
+                   AND conciliado_en IS NULL
+                """,
+                (_BANCO_PICHINCHA, f"sesion:{sesion_id}"),
                 conn=conn,
             ) or 0
 
