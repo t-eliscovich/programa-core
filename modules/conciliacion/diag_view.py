@@ -987,17 +987,18 @@ def test_relink_full():
 
     test_ids = []
     try:
-        # 1) Create 3 fake matches via direct INSERT (trigger populará tx_firma)
+        # 1) Create 3 fake matches via direct INSERT con tx_firma vía SQL helper
         with _db.tx() as conn:
             for p in pcs:
                 res = _db.execute(
                     """
                     INSERT INTO scintela.banco_conciliacion_match
-                        (no_banco, estado, id_transaccion, usuario)
-                    VALUES (%s, 'matched', %s, 'test-stress')
+                        (no_banco, estado, id_transaccion, tx_firma, usuario)
+                    VALUES (%s, 'matched', %s,
+                            scintela.compute_tx_firma(%s), 'test-stress')
                     RETURNING id
                     """,
-                    (no_banco, p["id_transaccion"]),
+                    (no_banco, p["id_transaccion"], p["id_transaccion"]),
                     conn=conn,
                 )
                 # res is int (rows affected). We need the returned id.
