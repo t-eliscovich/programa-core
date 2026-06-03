@@ -2203,13 +2203,29 @@ def banco_deshacer_v2():
     """
     matches = []
     grupos = []
+    batches = []
     try:
+        # TMT 2026-06-03: JOIN con transacciones_bancarias para traer el LADO
+        # programa (que antes mostraba "—"). Agrupamos por confirm_batch_id
+        # para que la N:M se vea como UNA conciliación con varios items.
         matches = _db.fetch_all(
             """
             SELECT m.id, m.creado_en, m.real_fecha, m.real_documento,
                    m.real_concepto, m.real_monto, m.real_tipo,
-                   m.usuario, m.id_transaccion, m.metodo
+                   m.usuario, m.id_transaccion, m.metodo,
+                   m.confirm_batch_id,
+                   t.fecha       AS pc_fecha,
+                   t.documento   AS pc_documento,
+                   t.importe     AS pc_importe,
+                   t.concepto    AS pc_concepto,
+                   t.prov        AS pc_prov,
+                   COALESCE(
+                     (SELECT nombre FROM scintela.cliente
+                       WHERE codigo_cli = t.prov LIMIT 1), ''
+                   ) AS pc_cliente_nombre
               FROM scintela.banco_conciliacion_match m
+              LEFT JOIN scintela.transacciones_bancarias t
+                     ON t.id_transaccion = m.id_transaccion
              WHERE m.no_banco = %s
                AND m.deshecho_en IS NULL
              ORDER BY m.creado_en DESC
@@ -2219,6 +2235,41 @@ def banco_deshacer_v2():
         ) or []
     except Exception as e:
         _LOG.warning("listar matches activos falló: %s", e)
+
+    # Agrupar por confirm_batch_id (matches con batch_id NULL = individuales).
+    from collections import OrderedDict
+    by_batch = OrderedDict()
+    for m in matches:
+        bid = m.get("confirm_batch_id") or f"_solo_{m['id']}"
+        if bid not in by_batch:
+            by_batch[bid] = {"batch_id": m.get("confirm_batch_id"), "items": [],
+                             "creado_en": m.get("creado_en"), "usuario": m.get("usuario")}
+        by_batch[bid]["items"].append(m)
+    for bid, b in by_batch.items():
+        # Cómputo de totales lado banco / lado programa.
+        sum_banco = 0.0
+        sum_programa = 0.0
+        n_banco_lados = 0
+        n_pc_lados = 0
+        for it in b["items"]:
+            if it.get("real_monto") is not None:
+                signo = 1 if (it.get("real_tipo") or "").upper() == "C" else -1
+                sum_banco += signo * float(it.get("real_monto") or 0)
+                n_banco_lados += 1
+            if it.get("id_transaccion") is not None:
+                doc = (it.get("pc_documento") or "").upper()
+                imp = float(it.get("pc_importe") or 0)
+                signo_pc = 1 if doc in ("DE","TR","NC","IN","AC","XX") else -1
+                sum_programa += signo_pc * imp
+                n_pc_lados += 1
+        b["sum_banco"] = round(sum_banco, 2)
+        b["sum_programa"] = round(sum_programa, 2)
+        b["n_banco"] = n_banco_lados
+        b["n_pc"] = n_pc_lados
+        b["delta"] = round(sum_banco - sum_programa, 2)
+        batches.append(b)
+    # Sort by creado_en DESC.
+    batches.sort(key=lambda b: b.get("creado_en") or "", reverse=True)
 
     try:
         grupos = _db.fetch_all(
@@ -2246,6 +2297,7 @@ def banco_deshacer_v2():
         "conciliacion/banco_v2_deshacer.html",
         matches=matches,
         grupos=grupos,
+        batches=batches,
     )
 
 
