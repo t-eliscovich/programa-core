@@ -141,6 +141,32 @@ def estado_banco_completo():
         for r in out["pc_only_txs"]
     ]
     out["last_libros"] = out["top_txs"][0]["saldo"] if out["top_txs"] else None
+    # 6. Bitácora entries de borrar sesión + sync (audit trail recuperable)
+    try:
+        out["bitacora_acciones_recientes"] = _db.fetch_all(
+            """
+            SELECT id, accion, descripcion, usuario, ts, recursos, request_id
+              FROM seguridad.bitacora
+             WHERE ts >= NOW() - INTERVAL '2 days'
+               AND (
+                    accion ILIKE '%borrar%'
+                 OR accion ILIKE '%sync%'
+                 OR accion ILIKE '%conciliar%'
+                 OR descripcion ILIKE '%sesion%'
+                 OR descripcion ILIKE '%match%'
+               )
+             ORDER BY ts DESC
+             LIMIT 50
+            """,
+            (),
+        ) or []
+        out["bitacora_acciones_recientes"] = [
+            {**r, "ts": str(r.get("ts") or ""),
+             "descripcion": (r.get("descripcion") or "")[:300]}
+            for r in out["bitacora_acciones_recientes"]
+        ]
+    except Exception as e:
+        out["bitacora_error"] = str(e)[:200]
     return jsonify(out)
 
 
