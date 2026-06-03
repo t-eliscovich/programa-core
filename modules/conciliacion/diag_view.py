@@ -689,6 +689,88 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/test-relink-direct", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def test_relink_direct():
+    """Test directo: usa UPDATE plain (no función) para relink."""
+    no_banco = _BANCO_PICHINCHA
+    pcs = _db.fetch_all(
+        """
+        SELECT id_transaccion FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+           AND COALESCE(TRIM(stat), '') <> '*'
+         ORDER BY id_transaccion ASC LIMIT 3
+        """,
+        (no_banco,),
+    ) or []
+    test_ids = []
+    try:
+        for p in pcs:
+            _db.execute(
+                """
+                INSERT INTO scintela.banco_conciliacion_match
+                    (no_banco, estado, id_transaccion, tx_firma, usuario)
+                VALUES (%s, 'matched', %s, scintela.compute_tx_firma(%s), 'direct-test')
+                """,
+                (no_banco, p["id_transaccion"], p["id_transaccion"]),
+            )
+        new_matches = _db.fetch_all(
+            "SELECT id, id_transaccion, tx_firma FROM scintela.banco_conciliacion_match WHERE no_banco=%s AND usuario='direct-test' ORDER BY id DESC LIMIT 3",
+            (no_banco,),
+        ) or []
+        test_ids = [m["id"] for m in new_matches]
+        originals = {m["id"]: m["id_transaccion"] for m in new_matches}
+
+        # Break
+        max_id = _db.fetch_one("SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias WHERE no_banco=%s", (no_banco,)) or {}
+        huerfano = int(max_id.get("m") or 0) + 999999
+        _db.execute("UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = ANY(%s)", (huerfano, test_ids))
+
+        # Direct relink via correlated subquery
+        n_updated = _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match m
+               SET id_transaccion = (
+                 SELECT t.id_transaccion
+                   FROM scintela.transacciones_bancarias t
+                  WHERE t.no_banco = m.no_banco
+                    AND (COALESCE(t.fecha::TEXT, '') || '|'
+                      || COALESCE(t.documento, '') || '|'
+                      || COALESCE(t.importe::TEXT, '0') || '|'
+                      || COALESCE(t.numreferencia::TEXT, '') || '|'
+                      || COALESCE(LEFT(t.concepto, 40), '')) = m.tx_firma
+                  ORDER BY t.id_transaccion ASC LIMIT 1
+               )
+             WHERE m.id = ANY(%s)
+               AND m.tx_firma IS NOT NULL
+            """,
+            (test_ids,),
+        )
+
+        # Post-update state
+        recovered = _db.fetch_all(
+            "SELECT id, id_transaccion FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)",
+            (test_ids,),
+        ) or []
+        rec_map = {r["id"]: r["id_transaccion"] for r in recovered}
+        ok_count = sum(1 for mid, orig in originals.items() if rec_map.get(mid) == orig)
+
+        return jsonify({
+            "n_updated_reported": n_updated,
+            "originals": originals,
+            "recovered": rec_map,
+            "ok": ok_count == len(originals),
+            "ok_count": ok_count,
+        })
+    finally:
+        if test_ids:
+            try:
+                _db.execute("DELETE FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)", (test_ids,))
+            except Exception:
+                pass
+
+
 @bp.route("/probe-fn-source", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
