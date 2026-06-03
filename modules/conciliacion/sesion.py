@@ -202,6 +202,12 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
     except Exception:
         pass
 
+    # TMT 2026-06-03 dueña: 'deja de filtrar por fechas porque hay matches
+    # que no me aparecen. Queremos ver todos los movimientos sin importar
+    # fecha'. Removido el filtro `creado_en BETWEEN abierta_en AND cerrada_en`
+    # — ahora muestra TODOS los matches activos del banco. La sesión sigue
+    # siendo el contexto operativo (subir extracto, conciliar nuevos) pero
+    # la VISTA de Conciliados muestra el universo completo.
     sql = f"""
         SELECT CASE WHEN h.id IS NOT NULL THEN 'historico' ELSE 'match' END AS tipo,
                m.id, m.estado, m.creado_en, m.usuario, m.confirm_batch_id,
@@ -221,14 +227,12 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
           LEFT JOIN scintela.banco_historicos_pendientes h
             ON h.conciliado_match_id = m.id
          WHERE m.no_banco = %s
-           AND m.creado_en >= %s
-           AND m.creado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
            {filtro_undo}
          ORDER BY m.creado_en DESC
-         LIMIT 1000
+         LIMIT 2000
     """
     try:
-        rows = db.fetch_all(sql, (no_banco, abierta, cerrada)) or []
+        rows = db.fetch_all(sql, (no_banco,)) or []
         return [dict(r) for r in rows]
     except Exception as e:
         _LOG.warning("matches_de_sesion falló: %s", e)

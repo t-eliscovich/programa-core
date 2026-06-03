@@ -2074,7 +2074,16 @@ def banco_borrar_sesion():
                     # Si no hay fecha_ancla (caso raro), saltamos el recompute
                     # — preferimos no tocar saldos antes que pisar todo.
                 except Exception as e:
-                    _LOG.warning("recompute_saldos en borrar-sesion falló: %s", e)
+                    # TMT 2026-06-03: NO silenciar — antes el except log+pass
+                    # escondía drift de saldos cuando recompute fallaba (ej.
+                    # por bug de _signed_delta). La dueña veía "borrar OK"
+                    # pero libros quedaba wrong. Ahora escalamos al outer
+                    # except → flash error visible.
+                    _LOG.exception("recompute_saldos en borrar-sesion falló: %s", e)
+                    raise RuntimeError(
+                        f"Borrar OK pero recompute de saldos falló: {e}. "
+                        f"Libros puede estar inconsistente. Hacer sync dBase."
+                    ) from e
 
             # 5. Borrar snapshots de esta sesión.
             # TMT 2026-06-03 audit fix: el OR temporal arrasaba snapshots de
