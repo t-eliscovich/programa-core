@@ -104,7 +104,7 @@ def _label(codigo: str) -> tuple[str, str, str]:
 _REGLAS: list[tuple[re.Pattern, str | None, str]] = [
     # COMISIONES / IMPUESTOS (alta prioridad — son chicos)
     (re.compile(r"\b(comision|comisi[oó]n|cargo\s+por|servicio\s+banco)\b", re.I), None, "COMISION_BANCARIA"),
-    (re.compile(r"\b(iva|retenci[oó]n|impuesto|isr|sri|^rr\s|^rr-)", re.I), None, "IMPUESTO"),
+    (re.compile(r"\b(iva|retenci[oó]n|impuesto|isr|sri)\b|^rr[\s-]", re.I), None, "IMPUESTO"),
 
     # ENTRADAS
     (re.compile(r"transferencia\s+(directa|interbancaria|interna)?\s*(de|recibida)", re.I), "C", "ENTRADA_COBRO_TRANSFERENCIA"),
