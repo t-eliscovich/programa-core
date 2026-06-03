@@ -445,6 +445,27 @@ def create_app() -> Flask:
             return redirect(url_for("auth.login"))
         return redirect(url_for("dashboard.index"))
 
+    @app.route("/_healthz")
+    def healthz():
+        """Health check liviano para monitoring externo (Route53/CloudWatch).
+
+        TMT 2026-06-03: documentado en docs/SERVER_AUTO_RECOVERY.md. Sin
+        auth, sin DB write. Chequea que el proceso Flask responde Y que el
+        pool de DB puede ejecutar `SELECT 1` en <2s. Si DB stuck → 503.
+
+        Uso por monitoring externo: GET /_healthz → 200 healthy, 503 sick.
+        """
+        from flask import jsonify
+        try:
+            import db as _db_local
+            row = _db_local.fetch_one("SELECT 1 AS ok", ())
+            db_ok = bool(row and row.get("ok") == 1)
+        except Exception as _e:
+            return jsonify({"ok": False, "db": False, "error": str(_e)[:100]}), 503
+        if not db_ok:
+            return jsonify({"ok": False, "db": False}), 503
+        return jsonify({"ok": True, "db": True}), 200
+
     # --- Error handlers globales --------------------------------------------
     # 404 amigable; 500 genérico con request_id para que el operador pueda
     # pegar el ID corto en la bitácora. 403 sigue lo que ya hace ip_allowlist
