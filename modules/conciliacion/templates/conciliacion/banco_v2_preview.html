@@ -105,8 +105,8 @@
           ('Pendientes en programa (n)',   balance_before.n_pendientes_conciliar, balance_after.n_pendientes_conciliar),
           ('Pendientes en programa (neto)',balance_before.pendientes_conciliar_neto, balance_after.pendientes_conciliar_neto),
           ('= Saldo conciliado',           balance_before.saldo_si_concilio_todo, balance_after.saldo_si_concilio_todo),
-          ('Pendientes en banco (n)',      balance_before.n_pendientes,           balance_after.n_pendientes),
-          ('Pendientes en banco (neto)',   balance_before.neto_pendientes,        balance_after.neto_pendientes),
+          ('Pendientes en banco (n)',      (balance_before.n_pendientes_banco_total or balance_before.n_pendientes), (balance_after.n_pendientes_banco_total or balance_after.n_pendientes)),
+          ('Pendientes en banco (neto)',   (balance_before.neto_pendientes_total or balance_before.neto_pendientes), (balance_after.neto_pendientes_total or balance_after.neto_pendientes)),
           ('= Saldo banco esperado',       balance_before.saldo_banco_esperado,   balance_after.saldo_banco_esperado),
         ] %}
         {% for label, b, a in _rows %}
