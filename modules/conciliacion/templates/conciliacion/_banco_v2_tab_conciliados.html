@@ -205,7 +205,13 @@
               {% if m.has_programa %}{{ '{:+,.2f}'.format(_mp) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
             <td class="px-1.5 py-0.5 text-right font-mono">
-              {% if m.diff is not none %}
+              {# TMT 2026-06-03 dueña: 'la diferencia no hace falta'. En filas
+                 detalle de un batch (impuestos agrupados) el diff individual
+                 es engañoso (mini-banco vs full PC tx). El diff real ya está
+                 en la fila resumen. #}
+              {% if _is_part_of_group %}
+                <span class="text-slate-300">—</span>
+              {% elif m.diff is not none %}
                 {% if m.diff|abs < 0.01 %}
                   <span class="text-emerald-600">✓</span>
                 {% else %}
