@@ -431,6 +431,22 @@ Tres flows conviven bajo `/conciliacion/`:
 2. **`/conciliacion/depositos`** (xlsx de depósitos pendientes del sistema). Útil cuando solo querés ver los depósitos cargados que el banco no confirmó, sin todo el extracto. Persistencia en `scintela.conciliacion_manual_log` (append-only).
 3. **`/conciliacion/`** (CSV legacy del banco). Cazar rebotes — el POST "confirmar rebote" llama a `cheques.reversar` con motivo editable + dispara STOP al cliente si corresponde. **No replicado por el flow #1** — mantener vivo para ese side-effect.
 
+### Lecciones sesión 2026-06-03 — match N:N + borrado de sesión (QA en vivo)
+
+Tamara corrió una conciliación real de punta a punta en prod. Cuatro bugs cazados y fixeados (commits hasta `4702c18`):
+
+1. **Match manual de históricos colapsaba N→1 (BUG GIGANTE).** En `banco_manual_confirmar`, el bloque de históricos hacía `bk_id_primary = bancsis_ids[0]` y matcheaba TODOS los históricos contra ese único PC, ignorando los demás movs de programa seleccionados. 11 transferencias quedaron contra 1 cheque. **Fix:** unificar lado banco (reales del extracto + históricos) en una lista y parearla 1:1 contra el programa ordenado **por monto** (antes el programa se ordenaba por `id`, que tampoco correspondía por importe). `min(N,M)` pares 1:1; banco extras → PC[0]; PC extras → INSERT stat-only. El caso agrupar (impuestos N:1) sigue intacto.
+
+2. **Lado Programa del tab Manual estaba limitado a la ventana del extracto.** Con extracto cargado, `manual_programa` salía del matcher, que carga BANCSIS solo `desde-1d .. hasta+15d` (`ventana_carga_atras=1`). Los pendientes PC de mayo/abril no aparecían (el lado banco/históricos nunca estuvo filtrado). **Fix:** helper `_cargar_programa_pendiente(no_banco)` en `sesion.py` — backlog COMPLETO de PC sin conciliar (`stat<>'*'` AND sin match activo, sin filtro de fecha), usado con y sin extracto.
+
+3. **`borrar-sesion` corrompía el saldo de libros (−493K).** Al borrar, el recompute anclaba por **fecha** (`ancla_fecha=min(fecha grupales)`) y re-derivaba TODA la jornada sumando importes. Como el `saldo` autoritativo viene del DBF y NO es suma limpia de importes (filas AC/SALDO, ajustes), driftaba. La **creación** ya anclaba por `id` (solo la fila nueva, id más alto); el borrado no. **Fix:** anclar el borrado por `id` también (`ancla_id=min(ids_grupales)`) — el walk toca solo las txs creadas por conciliación (ids más altos) y arranca del saldo de la última fila DBF, sin re-derivar el DBF. **Recuperación del libros ya corrompido:** sync dBase (`/admin/dbase-sync`) re-importa PICHINCH.DBF. ⚠️ **`banco_reset_all` (Zona peligrosa) tiene el MISMO patrón de drift** — ancla en la primera fila del banco → recompute total. Pendiente de fix.
+
+4. **Categorizador marcaba "ISRAEL" como impuesto.** La regla IMPUESTO en `categorizar.py` tenía `\b(...|isr|sri)` sin límite de palabra final → "TRANSFERENCIA DIRECTA DE ... ISRAEL" matcheaba `isr` y caía en el tab Impuestos. **Fix:** `\b(iva|retenci[oó]n|impuesto|isr|sri)\b|^rr[\s-]` — palabra completa. Tokens cortos en regex de categorización SIEMPRE con `\b` a ambos lados.
+
+**UX del tab Conciliados (mismo día):** botón "↶ Deshacer grupo" inline (antes solo en `/banco-v2/deshacer` aparte); la fila-resumen del grupo se comía el primer item (mostraba N−1) → ahora resumen + N filas; label dinámico "N pares conciliados (M movs PC)" para N:N vs "mismo mov PC (impuestos/comisiones agrupados)" solo para N:1.
+
+**Lección transversal — `recompute_saldos_desde` y el DBF:** la columna `saldo` de `transacciones_bancarias` es **autoritativa por fila desde el DBF** y NO reconcilia como suma de `importe`. Cualquier recompute que abarque filas DBF las re-deriva mal → drift. Recomputar SOLO sobre txs creadas por conciliación (ids altos), anclando por `id`, nunca por `fecha` sobre una jornada con movimientos DBF.
+
 ## Backfill / limpieza si los números no cuadran
 
 1. `python scripts/validar_reversos.py` — ¿drift en saldos?
@@ -441,6 +457,9 @@ Tres flows conviven bajo `/conciliacion/`:
 ## Lo que NO hacer
 
 - **No** `recompute_saldos_desde` sin ancla.
+- **No** `recompute_saldos_desde` anclado por **fecha** sobre filas DBF — re-deriva por importes y driftea libros (saldo DBF no es suma de importes). Anclar por `id` en txs creadas por conciliación (ids altos). Ver lección 2026-06-03 (borrado de sesión).
+- **No** matchear N históricos contra un solo PC (`bancsis_ids[0]`) — parear 1:1 por monto. Ver lección 2026-06-03.
+- **No** usar tokens cortos sin `\b` a ambos lados en regex de categorización (`isr` matcheaba "ISRAEL").
 - **No** raw INSERT en `transacciones_bancarias` o `caja` — usar helpers.
 - **No** `try/except: pass` silencioso en `mov_doble.registrar`.
 - **No** reusar ND para reversar CH — usar NC.
