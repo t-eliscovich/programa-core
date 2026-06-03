@@ -689,6 +689,128 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/dump-todo", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def dump_todo():
+    """Dump COMPLETO: sesión payload extracto + transacciones_bancarias 06-01+
+    + histos pendientes + matches activos. Para investigar diff residual."""
+    no_banco = _BANCO_PICHINCHA
+
+    # 1) Sesión abierta + payload
+    sesion = _db.fetch_one(
+        """
+        SELECT id, no_banco, payload
+          FROM scintela.banco_conciliacion_sesion
+         WHERE no_banco = %s AND cerrada_en IS NULL
+         ORDER BY abierta_en DESC LIMIT 1
+        """,
+        (no_banco,),
+    )
+    extracto = []
+    if sesion and sesion.get("payload"):
+        p = sesion["payload"]
+        if isinstance(p, str):
+            try: p = json.loads(p)
+            except Exception: p = {}
+        extracto = p.get("extracto") or p.get("movs") or []
+
+    # 2) Matches activos
+    matches = _db.fetch_all(
+        """
+        SELECT id, id_transaccion, real_documento, real_monto, real_fecha,
+               cota_kind, sesion_id, descartado
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s AND descartado = false
+         ORDER BY id
+        """,
+        (no_banco,),
+    ) or []
+
+    # 3) Transacciones 06-01+
+    txs = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, concepto, stat
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+         ORDER BY fecha, id_transaccion
+        """,
+        (no_banco,),
+    ) or []
+
+    # 4) Histos pendientes (no FEB2023 separados)
+    histos_all = _db.fetch_all(
+        """
+        SELECT id, fecha, documento, monto, tipo, fuente, conciliado_en
+          FROM scintela.banco_historicos_pendientes
+         WHERE no_banco = %s AND conciliado_en IS NULL
+         ORDER BY fecha
+        """,
+        (no_banco,),
+    ) or []
+
+    # Aggregations
+    def _sum_signed_pc(rows):
+        cred = 0; deb = 0
+        for r in rows:
+            doc = r.get("documento") or ""
+            imp = float(r.get("importe") or r.get("monto") or 0)
+            if doc in ("DE","TR","NC","IN","AC","XX"):
+                cred += imp
+            else:
+                deb += imp
+        return {"cred": round(cred,2), "deb": round(deb,2)}
+
+    def _sum_extracto(rows):
+        cred = 0; deb = 0
+        for r in rows:
+            t = (r.get("tipo") or r.get("clase") or "").upper()
+            imp = float(r.get("monto") or r.get("importe") or 0)
+            if t in ("C","CRED","CREDITO","CREDITOS"):
+                cred += abs(imp)
+            elif t in ("D","DEB","DEBITO","DEBITOS"):
+                deb += abs(imp)
+            elif imp > 0:
+                cred += imp
+            else:
+                deb += abs(imp)
+        return {"cred": round(cred,2), "deb": round(deb,2)}
+
+    txs_pend = [t for t in txs if (t.get("stat") or "") != "*"]
+    txs_concil = [t for t in txs if (t.get("stat") or "") == "*"]
+
+    # Match-back: rows del extracto con coincidencia en matches por (fecha, monto, tipo)
+    extracto_pend = []
+    extracto_match = []
+    matched_keys = set()
+    for m in matches:
+        if m.get("real_monto") is not None:
+            matched_keys.add((str(m.get("real_fecha")), float(m.get("real_monto") or 0), m.get("real_documento")))
+
+    for r in extracto:
+        key = (str(r.get("fecha")), float(r.get("monto") or r.get("importe") or 0), r.get("tipo") or r.get("documento"))
+        if key in matched_keys:
+            extracto_match.append(r)
+        else:
+            extracto_pend.append(r)
+
+    return jsonify({
+        "ok": True,
+        "sesion": {"id": sesion.get("id") if sesion else None, "extracto_n": len(extracto)},
+        "extracto_pend": {"n": len(extracto_pend), "sum": _sum_extracto(extracto_pend)},
+        "extracto_match": {"n": len(extracto_match), "sum": _sum_extracto(extracto_match)},
+        "txs_06_01plus": {
+            "total": len(txs),
+            "pendientes": {"n": len(txs_pend), "sum": _sum_signed_pc(txs_pend)},
+            "conciliados": {"n": len(txs_concil), "sum": _sum_signed_pc(txs_concil)},
+        },
+        "matches_activos": len(matches),
+        "histos_pend": {"n": len(histos_all), "sum": _sum_signed_pc(histos_all)},
+        "sample_extracto_pend": extracto_pend[:20],
+        "sample_extracto_match": extracto_match[:10],
+    })
+
+
 @bp.route("/inspect-recent", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
