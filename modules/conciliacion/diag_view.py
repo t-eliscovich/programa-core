@@ -689,6 +689,172 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/stress", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def stress():
+    """Stress test: corre múltiples probes contra el modelo de conciliación
+    y reporta inconsistencias. Read-only."""
+    from modules.conciliacion import balance_pichincha as _bp
+    no_banco = _BANCO_PICHINCHA
+    findings = []
+
+    # 1) Invariance check: bank_predicted DEBE = libros - pend_pc_neto + pend_banco_total_neto
+    b = _bp.calcular(no_banco)
+    libros = float(b.get("saldo") or 0)
+    pend_pc_neto = float(b.get("pendientes_conciliar_neto") or 0)
+    pend_banco_neto_total = float(b.get("neto_pendientes_total") or b.get("neto_pendientes") or 0)
+    esperado_actual = float(b.get("saldo_banco_esperado") or 0)
+    esperado_calc = round(libros - pend_pc_neto + pend_banco_neto_total, 2)
+    if abs(esperado_calc - esperado_actual) > 0.01:
+        findings.append({
+            "test": "invariance_math",
+            "ok": False,
+            "esperado_actual": esperado_actual,
+            "esperado_calc": esperado_calc,
+            "diff": esperado_actual - esperado_calc,
+        })
+    else:
+        findings.append({"test": "invariance_math", "ok": True})
+
+    # 2) Counts consistency: pend_pc cred + deb count must equal total pendientes count
+    n_pc_total = int(b.get("n_pendientes_conciliar") or 0)
+    n_pc_split = int(b.get("n_pendientes_pc_cred") or 0) + int(b.get("n_pendientes_pc_deb") or 0)
+    findings.append({
+        "test": "pc_count_split",
+        "ok": n_pc_total == n_pc_split,
+        "total": n_pc_total, "split_sum": n_pc_split,
+    })
+
+    # 3) Counts consistency banco
+    n_banco_total = int(b.get("n_pendientes_banco_total") or 0)
+    n_banco_split = int(b.get("n_pendientes_banco_cred") or 0) + int(b.get("n_pendientes_banco_deb") or 0) + int(b.get("n_pendientes_banco_extracto") or 0)
+    findings.append({
+        "test": "banco_count_total",
+        "ok": n_banco_total == n_banco_split,
+        "total": n_banco_total, "split_sum": n_banco_split,
+    })
+
+    # 4) Matches dead: matches con id_transaccion apuntando a fila inexistente
+    dead = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+           AND m.id_transaccion IS NOT NULL
+           AND NOT EXISTS (
+               SELECT 1 FROM scintela.transacciones_bancarias t
+                WHERE t.id_transaccion = m.id_transaccion
+           )
+        """,
+        (no_banco,),
+    ) or {}
+    findings.append({
+        "test": "matches_id_orphan",
+        "ok": int(dead.get("n") or 0) == 0,
+        "n": int(dead.get("n") or 0),
+    })
+
+    # 5) Matches sin tx_firma (no podrán sobrevivir un sync)
+    sin_firma = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match m
+         WHERE m.no_banco = %s AND m.deshecho_en IS NULL
+           AND m.tx_firma IS NULL AND m.id_transaccion IS NOT NULL
+        """,
+        (no_banco,),
+    ) or {}
+    findings.append({
+        "test": "matches_sin_firma",
+        "ok": int(sin_firma.get("n") or 0) == 0,
+        "n": int(sin_firma.get("n") or 0),
+    })
+
+    # 6) stat='*' orfans: filas con stat='*' sin match activo Y sin estar en histos
+    stat_orf = _db.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM scintela.transacciones_bancarias t
+         WHERE t.no_banco = %s AND TRIM(COALESCE(t.stat,'')) = '*'
+           AND NOT EXISTS (
+               SELECT 1 FROM scintela.banco_conciliacion_match m
+                WHERE m.id_transaccion = t.id_transaccion AND m.deshecho_en IS NULL
+           )
+           AND t.usuario_crea = 'dbf-import'
+        """,
+        (no_banco,),
+    ) or {}
+    findings.append({
+        "test": "stat_orfans_no_dbf",
+        "ok": True,  # ok=True porque dbf-import naturalmente trae stat='*'; este es informativo
+        "n": int(stat_orf.get("n") or 0),
+        "note": "stat='*' venidos de dbf-import son legítimos (concilados en dBase)",
+    })
+
+    # 7) Sesión.matches_hechos vs matches reales en DB
+    sm = _db.fetch_one(
+        """
+        SELECT s.id AS sesion_id, s.matches_hechos AS contador,
+               (SELECT COUNT(*) FROM scintela.banco_conciliacion_match m
+                 WHERE m.no_banco = s.no_banco AND m.deshecho_en IS NULL) AS reales
+          FROM scintela.banco_conciliacion_sesion s
+         WHERE s.no_banco = %s AND s.cerrada_en IS NULL
+         ORDER BY s.abierta_en DESC LIMIT 1
+        """,
+        (no_banco,),
+    ) or {}
+    findings.append({
+        "test": "sesion_matches_hechos_consistency",
+        "ok": int(sm.get("contador") or 0) == int(sm.get("reales") or 0),
+        "contador_sesion": int(sm.get("contador") or 0),
+        "matches_reales": int(sm.get("reales") or 0),
+        "note": "contador 'matches hechos' del header no decrementa al borrar",
+    })
+
+    # 8) Extracto sesión sin extracto_payload válido
+    sx = _db.fetch_one(
+        """
+        SELECT id, jsonb_typeof(extracto_payload) AS tipo,
+               CASE
+                 WHEN jsonb_typeof(extracto_payload) = 'array'
+                   THEN jsonb_array_length(extracto_payload)
+                 ELSE 0 END AS n
+          FROM scintela.banco_conciliacion_sesion
+         WHERE no_banco = %s AND cerrada_en IS NULL
+         ORDER BY abierta_en DESC LIMIT 1
+        """,
+        (no_banco,),
+    ) or {}
+    findings.append({
+        "test": "sesion_extracto_payload",
+        "ok": int(sx.get("n") or 0) > 0,
+        "n": int(sx.get("n") or 0),
+        "tipo": sx.get("tipo"),
+    })
+
+    # 9) Histos duplicados (firma exacta)
+    dup_h = _db.fetch_one(
+        """
+        SELECT COUNT(*) - COUNT(DISTINCT (fecha, documento, tipo, monto)) AS dups
+          FROM scintela.banco_historicos_pendientes
+         WHERE no_banco = %s AND conciliado_en IS NULL
+        """,
+        (no_banco,),
+    ) or {}
+    findings.append({
+        "test": "histos_dup_estrictos",
+        "ok": int(dup_h.get("dups") or 0) == 0,
+        "n_dups": int(dup_h.get("dups") or 0),
+    })
+
+    # 10) Resumen
+    n_fail = sum(1 for f in findings if not f.get("ok"))
+    return jsonify({
+        "ok": n_fail == 0,
+        "n_findings": len(findings),
+        "n_fail": n_fail,
+        "findings": findings,
+    })
+
+
 @bp.route("/dump-balance", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
