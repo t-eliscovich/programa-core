@@ -135,12 +135,11 @@ def crear(
     # + delta). Si en el futuro alguien deja `saldo=NULL`, el trigger lo
     # llena pero esta validación se saltea — por eso siempre pasamos saldo.
     importe_firmado = importe if tipo == "E" else (-importe if tipo == "S" else importe)
-    saldo_prev = saldo_actual()
-    saldo_nuevo = saldo_prev + importe_firmado
-    if saldo_nuevo < -0.01:
-        raise ValueError(
-            f"El movimiento dejaría la caja en negativo ({saldo_nuevo:.2f})."
-        )
+    # TMT 2026-06-03 audit fix: el cálculo de saldo_prev/saldo_nuevo se
+    # mueve DENTRO del with db.tx() (línea 178+) con un advisory lock para
+    # serializar inserts concurrentes. Antes leíamos saldo_actual() acá
+    # afuera — dos requests simultáneas computaban el mismo saldo y
+    # ambas INSERTaban con saldo igual, corrompiendo el running balance.
 
     # Side effects automáticos basados en el concepto (TMT 2026-05-12).
     # "Concept-driven double entries": si el concepto matchea un patrón
@@ -176,7 +175,30 @@ def crear(
     # side effect falla, no queda la caja huérfana.
     side_effect_result = None
     with db.tx() as conn:
-        # 1) INSERT en caja con saldo running calculado.
+        # 0) Advisory lock — serializa inserts concurrentes contra esta
+        # caja. Sin esto, dos crear() en paralelo computan el mismo
+        # saldo_prev y corrompen el running.
+        db.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('scintela.caja.running'))",
+            (), conn=conn,
+        )
+        # 1) Computar saldo_prev DENTRO de la tx + del lock.
+        sp_row = db.fetch_one(
+            """
+            SELECT COALESCE(saldo, 0) AS s
+              FROM scintela.caja
+             ORDER BY id_caja DESC
+             LIMIT 1
+            """,
+            (), conn=conn,
+        ) or {}
+        saldo_prev = float(sp_row.get("s") or 0)
+        saldo_nuevo = saldo_prev + importe_firmado
+        if saldo_nuevo < -0.01:
+            raise ValueError(
+                f"El movimiento dejaría la caja en negativo ({saldo_nuevo:.2f})."
+            )
+        # 2) INSERT en caja con saldo running calculado.
         row = db.execute_returning(
             """
             INSERT INTO scintela.caja
@@ -423,7 +445,12 @@ def reversar(id_caja: int, motivo: str = "", usuario: str = "web") -> dict:
     if not orig:
         raise ValueError(f"Movimiento de caja id={id_caja} no existe.")
 
-    asegurar_fecha_abierta(date.today())
+    # TMT 2026-06-03 audit fix: usar zona EC en lugar de date.today() (UTC).
+    # Tarde noche EC, UTC ya está en el día siguiente → reverso queda con
+    # fecha futura. Igual criterio que posdat._hoy_ec().
+    from datetime import datetime as _dt_, timedelta as _td_
+    _hoy_ec = (_dt_.utcnow() - _td_(hours=5)).date()
+    asegurar_fecha_abierta(_hoy_ec)
 
     tipo_orig = (orig.get("tipo") or "").strip().upper()
     if tipo_orig not in ("E", "S", "CB"):
@@ -458,7 +485,7 @@ def reversar(id_caja: int, motivo: str = "", usuario: str = "web") -> dict:
 
     concepto_orig = orig.get("concepto") or ""
     concepto_nuevo = f"REVERSO id {id_caja} — {(motivo or 'sin motivo')[:40]}"
-    fecha_rev = date.today()
+    fecha_rev = _hoy_ec  # TMT 2026-06-03: zona EC, no UTC.
     # Chequear que el saldo nuevo no caiga negativo si es un egreso
     importe_firmado = importe if tipo_nuevo == "E" else -importe
     saldo_prev = saldo_actual()

@@ -1877,6 +1877,60 @@ def backfill_asinfo_endpoint():
             "usuario_crea": MARKER,
         })
 
+    # TMT 2026-06-03 audit fix: hasta hoy esta función armaba `candidatas`
+    # y terminaba sin return — devolvía 500 y nunca insertaba nada. El
+    # bloque INSERT (que vivía pegado al final del endpoint siguiente
+    # como código muerto) se movió acá adentro.
+    resumen = {
+        "ok": True,
+        "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
+        "asinfo_trajo": len(asinfo_rows),
+        "chunks": chunk_log,
+        "ya_estaban_en_pc": ya_estaban,
+        "saltadas_sin_cli_mapeable": saltadas_sin_cli,
+        "saltadas_sin_importe_ni_numf": saltadas_sin_importe,
+        "candidatas_a_insertar": len(candidatas),
+        "por_tipo_asinfo": dict(por_tipo),
+        "dry_run": dry_run,
+    }
+
+    if dry_run:
+        resumen["sample_candidatas"] = [
+            {"fecha": str(c["fecha"]), "codigo_cli": c["codigo_cli"],
+             "numf": c["numf"], "numf_completo": c["numf_completo"],
+             "tipo": c["tipo"], "importe": c["importe"], "kg": c["kg"]}
+            for c in candidatas[:10]
+        ]
+        return jsonify(resumen)
+
+    # 4) INSERT bulk en chunks de 500
+    insertadas = errores = 0
+    sql = """
+        INSERT INTO scintela.factura
+            (numf, fecha, codigo_cli, kg, importe, abono, saldo,
+             stat, condic, tipo, vencimiento, numf_completo, clave, usuario_crea)
+        VALUES (%(numf)s, %(fecha)s, %(codigo_cli)s, %(kg)s, %(importe)s, %(abono)s, %(saldo)s,
+                %(stat)s, %(condic)s, %(tipo)s, %(vencimiento)s, %(numf_completo)s, %(clave)s, %(usuario_crea)s)
+    """
+    CHUNK = 500
+    err_log_bk = []
+    for i in range(0, len(candidatas), CHUNK):
+        ch = candidatas[i:i+CHUNK]
+        try:
+            with db.tx() as conn, conn.cursor() as cur:
+                for c in ch:
+                    cur.execute(sql, c)
+                    insertadas += 1
+        except Exception as e:
+            errores += len(ch)
+            err_log_bk.append({"chunk_start": i, "size": len(ch), "error": str(e)[:200]})
+
+    resumen["insertadas"] = insertadas
+    resumen["errores"] = errores
+    if err_log_bk:
+        resumen["errores_detalle"] = err_log_bk
+    return jsonify(resumen)
+
 
 # ---------------------------------------------------------------------------
 # Auto-fix huérfanas: registrar aliases sugeridos + backfill numf_completo
@@ -2282,53 +2336,5 @@ def consolidar_duplicados_asinfo():
             for p in pares[:10]
         ],
     })
-
-    resumen = {
-        "ok": True,
-        "rango": {"desde": desde.isoformat(), "hasta": hasta.isoformat()},
-        "asinfo_trajo": len(asinfo_rows),
-        "chunks": chunk_log,
-        "ya_estaban_en_pc": ya_estaban,
-        "saltadas_sin_cli_mapeable": saltadas_sin_cli,
-        "saltadas_sin_importe_ni_numf": saltadas_sin_importe,
-        "candidatas_a_insertar": len(candidatas),
-        "por_tipo_asinfo": dict(por_tipo),
-        "dry_run": dry_run,
-    }
-
-    if dry_run:
-        resumen["sample_candidatas"] = [
-            {"fecha": str(c["fecha"]), "codigo_cli": c["codigo_cli"],
-             "numf": c["numf"], "numf_completo": c["numf_completo"],
-             "tipo": c["tipo"], "importe": c["importe"], "kg": c["kg"]}
-            for c in candidatas[:10]
-        ]
-        return jsonify(resumen)
-
-    # 4) INSERT bulk en chunks de 500
-    insertadas = errores = 0
-    sql = """
-        INSERT INTO scintela.factura
-            (numf, fecha, codigo_cli, kg, importe, abono, saldo,
-             stat, condic, tipo, vencimiento, numf_completo, clave, usuario_crea)
-        VALUES (%(numf)s, %(fecha)s, %(codigo_cli)s, %(kg)s, %(importe)s, %(abono)s, %(saldo)s,
-                %(stat)s, %(condic)s, %(tipo)s, %(vencimiento)s, %(numf_completo)s, %(clave)s, %(usuario_crea)s)
-    """
-    CHUNK = 500
-    err_log = []
-    for i in range(0, len(candidatas), CHUNK):
-        ch = candidatas[i:i+CHUNK]
-        try:
-            with db.tx() as conn, conn.cursor() as cur:
-                for c in ch:
-                    cur.execute(sql, c)
-                    insertadas += 1
-        except Exception as e:
-            errores += len(ch)
-            err_log.append({"chunk_start": i, "size": len(ch), "error": str(e)[:200]})
-
-    resumen["insertadas"] = insertadas
-    resumen["errores"] = errores
-    if err_log:
-        resumen["errores_detalle"] = err_log
-    return jsonify(resumen)
+    # TMT 2026-06-03 audit fix: el bloque INSERT que estaba acá era código
+    # muerto post-return. Pertenecía a backfill_asinfo_endpoint y se movió.

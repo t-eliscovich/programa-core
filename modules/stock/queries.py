@@ -126,6 +126,9 @@ def _compras_mes_actual_por_tipo(ano: int, mes: int) -> dict:
     """SUM(kg) + SUM(importe) de compras del MES en curso por tipo (H/K/T/Q).
 
     Filtrado al mes actual para mantener consistencia con _opening_mes_actual.
+    TMT 2026-06-03 audit fix: excluir usuario_crea='asinfo-backfill' — las
+    históricas ya están contabilizadas en el opening del snapshot (memoria
+    feedback_backfill_asinfo_excluir_calculos_live).
     """
     rows = db.fetch_all(
         """
@@ -134,6 +137,7 @@ def _compras_mes_actual_por_tipo(ano: int, mes: int) -> dict:
                SUM(COALESCE(importe, 0))       AS importe
           FROM scintela.compra
          WHERE COALESCE(stat, '') != 'Y'
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
          GROUP BY 1
@@ -146,7 +150,10 @@ def _compras_mes_actual_por_tipo(ano: int, mes: int) -> dict:
 
 
 def _compras_ytd_por_tipo(ano: int) -> dict:
-    """SUM(kg)+SUM(importe) YTD por tipo — para U$/kg ponderado del año."""
+    """SUM(kg)+SUM(importe) YTD por tipo — para U$/kg ponderado del año.
+
+    TMT 2026-06-03 audit fix: excluir asinfo-backfill (ya contabilizadas).
+    """
     rows = db.fetch_all(
         """
         SELECT UPPER(TRIM(COALESCE(tipo, ''))) AS tipo,
@@ -154,6 +161,7 @@ def _compras_ytd_por_tipo(ano: int) -> dict:
                SUM(COALESCE(importe, 0))       AS importe
           FROM scintela.compra
          WHERE COALESCE(stat, '') != 'Y'
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
            AND EXTRACT(YEAR FROM fecha) = %s
          GROUP BY 1
         """,
@@ -165,12 +173,16 @@ def _compras_ytd_por_tipo(ano: int) -> dict:
 
 
 def _facturas_kg_mes_actual(ano: int, mes: int) -> float:
-    """SUM(kg) facturados del MES (kg que salieron del stock terminado)."""
+    """SUM(kg) facturados del MES (kg que salieron del stock terminado).
+
+    TMT 2026-06-03 audit fix: excluir asinfo-backfill (ya contabilizadas en opening).
+    """
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(COALESCE(kg, 0)), 0) AS kg
           FROM scintela.factura
          WHERE COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
            AND EXTRACT(YEAR FROM fecha)  = %s
            AND EXTRACT(MONTH FROM fecha) = %s
         """,

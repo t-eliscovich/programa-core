@@ -819,9 +819,12 @@ def resumen(
            AND (NOT %(solo_abiertas)s OR COALESCE(pd.banc,0) = 0)
            AND (%(desde)s::date IS NULL OR pd.fechad >= %(desde)s::date)
            AND (%(hasta)s::date IS NULL OR pd.fechad <= %(hasta)s::date)
+           -- TMT 2026-06-03 audit fix: resumen() debe usar la misma
+           -- regla que buscar() — RT también es tab=yy (memoria 2026-05-27).
+           -- Antes resumen contaba RT como posdatado → total ≠ filas visibles.
            AND (
-                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) = 'YY')
-             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) <> 'YY')
+                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
+             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
            )
            AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
         """,
