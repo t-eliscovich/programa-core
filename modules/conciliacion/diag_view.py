@@ -689,6 +689,101 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/test-relink", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def test_relink():
+    """Test endpoint: invoca relink_matches_post_sync sin haber sincronizado.
+    Debe devolver 0 relinked si todo está consistente."""
+    r = _db.fetch_one(
+        "SELECT * FROM scintela.relink_matches_post_sync(%s)",
+        (_BANCO_PICHINCHA,),
+    ) or {}
+    return jsonify({
+        "matches_total": int(r.get("matches_total") or 0),
+        "relinked": int(r.get("relinked") or 0),
+        "sin_firma": int(r.get("sin_firma") or 0),
+        "sin_match": int(r.get("sin_match") or 0),
+    })
+
+
+@bp.route("/test-fake-sync", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def test_fake_sync():
+    """Test destructivo: simula un sync rompiendo id_transaccion de matches.
+    1) Captura ids actuales de matches activos.
+    2) Modifica id_transaccion a -1 (huérfano artificial) preservando firma.
+    3) Llama relink → debe recuperar todos.
+    4) Reporta antes/después.
+
+    SOLO ejecutar si querés stress-test del relink."""
+    no_banco = _BANCO_PICHINCHA
+    # Capture
+    snapshot = _db.fetch_all(
+        """
+        SELECT id, id_transaccion, tx_firma
+          FROM scintela.banco_conciliacion_match
+         WHERE no_banco = %s AND deshecho_en IS NULL
+           AND id_transaccion IS NOT NULL
+        """,
+        (no_banco,),
+    ) or []
+    n_pre = len(snapshot)
+    if n_pre == 0:
+        return jsonify({"ok": True, "n_pre": 0, "note": "no hay matches activos, no se testea"})
+
+    # Save originals & break them (set id_transaccion to a value that doesn't exist)
+    max_id_row = _db.fetch_one(
+        "SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias WHERE no_banco = %s",
+        (no_banco,),
+    ) or {}
+    huerfano_id = int(max_id_row.get("m") or 0) + 999999
+
+    originals = {row["id"]: row["id_transaccion"] for row in snapshot}
+    try:
+        with _db.tx() as conn:
+            for mid, orig_tx in originals.items():
+                _db.execute(
+                    "UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = %s",
+                    (huerfano_id, mid),
+                    conn=conn,
+                )
+        # Now relink
+        r = _db.fetch_one(
+            "SELECT * FROM scintela.relink_matches_post_sync(%s)",
+            (no_banco,),
+        ) or {}
+        # Check recovery
+        recovered = _db.fetch_all(
+            "SELECT id, id_transaccion FROM scintela.banco_conciliacion_match WHERE id = ANY(%s)",
+            (list(originals.keys()),),
+        ) or []
+        recovered_map = {row["id"]: row["id_transaccion"] for row in recovered}
+        ok_recovery = sum(1 for mid, orig in originals.items() if recovered_map.get(mid) == orig)
+        bad_recovery = sum(1 for mid, orig in originals.items() if recovered_map.get(mid) != orig)
+        return jsonify({
+            "ok": bad_recovery == 0,
+            "n_pre": n_pre,
+            "relinked_reported": int(r.get("relinked") or 0),
+            "ok_recovery": ok_recovery,
+            "bad_recovery": bad_recovery,
+        })
+    except Exception as e:
+        # Restore
+        try:
+            with _db.tx() as conn:
+                for mid, orig_tx in originals.items():
+                    _db.execute(
+                        "UPDATE scintela.banco_conciliacion_match SET id_transaccion = %s WHERE id = %s",
+                        (orig_tx, mid),
+                        conn=conn,
+                    )
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)[:300]})
+
+
 @bp.route("/stress", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
