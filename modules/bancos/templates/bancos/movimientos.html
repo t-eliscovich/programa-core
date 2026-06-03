@@ -158,17 +158,20 @@
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+      {# TMT 2026-06-03 dueña: 'dejame ordenar por columnas cuando clickeo
+         en la columna'. Click en cualquier header sortea por esa columna,
+         alternando asc/desc. Los lotes mantienen sus hijos pegados. #}
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500" id="movs-thead">
         <tr>
-          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">Fecha</th>
-          <th class="px-3 py-3 text-left font-medium">Doc</th>
+          <th class="px-3 py-3 text-left font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" style="white-space: nowrap;" data-sort="date" data-col="0">Fecha <span class="sort-ind text-slate-300">↕</span></th>
+          <th class="px-3 py-3 text-left font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" data-sort="text" data-col="1">Doc <span class="sort-ind text-slate-300">↕</span></th>
           {# TMT 2026-06-03 dueña: columna editable de N° doc/referencia
              para poder agregar el numreferencia y conciliar por num. #}
-          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">N° doc</th>
-          <th class="px-3 py-3 text-left font-medium">Concepto</th>
-          <th class="px-3 py-3 text-left font-medium" style="white-space: nowrap;">F. dep.</th>
-          <th class="px-3 py-3 text-right font-medium">Importe</th>
-          <th class="px-3 py-3 text-right font-medium">Saldo</th>
+          <th class="px-3 py-3 text-left font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" style="white-space: nowrap;" data-sort="text" data-col="2">N° doc <span class="sort-ind text-slate-300">↕</span></th>
+          <th class="px-3 py-3 text-left font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" data-sort="text" data-col="3">Concepto <span class="sort-ind text-slate-300">↕</span></th>
+          <th class="px-3 py-3 text-left font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" style="white-space: nowrap;" data-sort="date" data-col="4">F. dep. <span class="sort-ind text-slate-300">↕</span></th>
+          <th class="px-3 py-3 text-right font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" data-sort="num" data-col="5">Importe <span class="sort-ind text-slate-300">↕</span></th>
+          <th class="px-3 py-3 text-right font-medium cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800" data-sort="num" data-col="6">Saldo <span class="sort-ind text-slate-300">↕</span></th>
           {# TMT 2026-05-26 dueña: columna dedicada SI/NO de conciliación. #}
           <th class="px-3 py-3 text-center font-medium" style="white-space: nowrap;">Conc.</th>
           <th class="px-3 py-3 text-left font-medium no-print"></th>
@@ -367,6 +370,122 @@
             if (openIcon)  openIcon.classList.toggle('hidden', !expanded);
             if (closeIcon) closeIcon.classList.toggle('hidden', expanded);
           }
+        });
+      });
+    })();
+  </script>
+
+  {# TMT 2026-06-03 — Sortable columns. Click en <th> ordena por esa
+     columna, alternando asc/desc. Lotes mantienen sus hijos pegados al
+     header del lote. Date parsing en formato DD/MM/YYYY (es-EC). #}
+  <script>
+    (function() {
+      const thead = document.getElementById('movs-thead');
+      if (!thead) return;
+      const tbody = thead.parentElement.querySelector('tbody');
+      if (!tbody) return;
+
+      // Estado actual de sort.
+      let sortState = { col: null, dir: 'asc' };
+
+      function parseDate(s) {
+        // DD/MM/YYYY → millis. Si no parsea, devuelve null.
+        if (!s) return null;
+        const m = String(s).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+        if (!m) return null;
+        const dd = parseInt(m[1], 10), mm = parseInt(m[2], 10) - 1;
+        let yyyy = parseInt(m[3], 10);
+        if (yyyy < 100) yyyy += 2000;
+        return new Date(yyyy, mm, dd).getTime();
+      }
+
+      function parseNum(s) {
+        if (!s) return 0;
+        // Acepta es-EC ("1.234,56") y ISO ("1234.56"). Quita todo lo no
+        // numérico excepto . , - y signo.
+        let t = String(s).trim().replace(/[^0-9.,\-]/g, '');
+        // Si hay coma y punto, asumir coma=miles + punto=decimal NO suele
+        // ser el caso acá; asumir es-EC: punto=miles, coma=decimal.
+        if (t.indexOf(',') >= 0 && t.lastIndexOf(',') > t.lastIndexOf('.')) {
+          t = t.replace(/\./g, '').replace(',', '.');
+        } else {
+          // ISO o sin separadores. Quitar comas de miles si las hay.
+          t = t.replace(/,/g, '');
+        }
+        const n = parseFloat(t);
+        return isNaN(n) ? 0 : n;
+      }
+
+      function cellValue(row, colIdx, type) {
+        const cell = row.cells && row.cells[colIdx];
+        if (!cell) return type === 'num' ? 0 : '';
+        // Si hay un <input> editable (caso N° doc inline), usar su .value.
+        const inp = cell.querySelector('input[type=text], input:not([type])');
+        const raw = inp ? inp.value : cell.textContent;
+        const t = String(raw || '').trim();
+        if (type === 'num') return parseNum(t);
+        if (type === 'date') return parseDate(t) || 0;
+        return t.toLowerCase();
+      }
+
+      function sortBy(colIdx, type) {
+        // Agrupar lote-summary + sus lote-child (mantienen orden de display).
+        const allRows = Array.from(tbody.querySelectorAll('tr'));
+        const groups = [];
+        let cur = null;
+        allRows.forEach(r => {
+          if (r.classList.contains('lote-child')) {
+            if (cur) cur.kids.push(r);
+            else groups.push({ head: r, kids: [] });  // huérfano defensivo
+          } else {
+            if (cur) groups.push(cur);
+            cur = { head: r, kids: [] };
+          }
+        });
+        if (cur) groups.push(cur);
+
+        // Toggle dir si misma col, sino arrancar asc.
+        if (sortState.col === colIdx) {
+          sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState.col = colIdx;
+          sortState.dir = 'asc';
+        }
+        const mult = sortState.dir === 'asc' ? 1 : -1;
+
+        groups.sort((a, b) => {
+          const va = cellValue(a.head, colIdx, type);
+          const vb = cellValue(b.head, colIdx, type);
+          if (va < vb) return -1 * mult;
+          if (va > vb) return 1 * mult;
+          return 0;
+        });
+
+        // Re-attach en el orden nuevo.
+        const frag = document.createDocumentFragment();
+        groups.forEach(g => {
+          frag.appendChild(g.head);
+          g.kids.forEach(k => frag.appendChild(k));
+        });
+        tbody.appendChild(frag);
+
+        // Actualizar indicadores visuales en headers.
+        thead.querySelectorAll('th[data-sort]').forEach(th => {
+          const ind = th.querySelector('.sort-ind');
+          if (!ind) return;
+          const isActive = parseInt(th.dataset.col, 10) === colIdx;
+          ind.textContent = isActive
+            ? (sortState.dir === 'asc' ? '▲' : '▼')
+            : '↕';
+          ind.className = 'sort-ind ' + (isActive ? 'text-slate-700 dark:text-slate-200 font-bold' : 'text-slate-300');
+        });
+      }
+
+      thead.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', (e) => {
+          const colIdx = parseInt(th.dataset.col, 10);
+          const type = th.dataset.sort;
+          sortBy(colIdx, type);
         });
       });
     })();
