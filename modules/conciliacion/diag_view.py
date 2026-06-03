@@ -149,27 +149,38 @@ def e2e_borrar_sesion_v2():
         except Exception as e:
             out["steps"].append({"step": 2, "error": str(e)[:200]})
 
-    # ─── STEP 3: llamar borrar_sesion REAL via test_client con auth/CSRF bypass ──
+    # ─── STEP 3: llamar borrar_sesion REAL via loopback HTTP (con auth real) ──
+    # En lugar de test_client (que no propaga cookies de auth), hacemos un
+    # request HTTP loopback al propio server con la cookie del usuario actual.
     try:
-        client = current_app.test_client()
-        # Forward la cookie de session/auth real del request actual al test_client
+        import urllib.request
         from flask import request as _req
-        for name, value in _req.cookies.items():
-            client.set_cookie(domain="programa.intela.com.ec", key=name, value=value)
-        # Disable CSRF para esta request del test_client (Flask-WTF)
-        # via header X-CSRF-Test bypass o forzando WTF_CSRF_ENABLED off temporal
-        original_csrf = current_app.config.get("WTF_CSRF_ENABLED", True)
-        current_app.config["WTF_CSRF_ENABLED"] = False
+        cookie_str = "; ".join(f"{k}={v}" for k, v in _req.cookies.items())
+        # Generar CSRF token válido (Flask-WTF lo verifica)
+        from flask_wtf.csrf import generate_csrf
         try:
-            resp = client.post(
-                "/conciliacion/banco-v2/borrar-sesion",
-                data={"sesion_id": str(sesion_id)},
-                follow_redirects=False,
-            )
-        finally:
-            current_app.config["WTF_CSRF_ENABLED"] = original_csrf
-        out["steps"].append({"step": 3, "status": resp.status_code,
-                             "loc": resp.headers.get("Location", "")[:120]})
+            csrf_token = generate_csrf()
+        except Exception:
+            csrf_token = ""
+        data = (f"sesion_id={sesion_id}&csrf_token={csrf_token}").encode()
+        req = urllib.request.Request(
+            "http://127.0.0.1:8000/conciliacion/banco-v2/borrar-sesion",
+            data=data,
+            method="POST",
+            headers={
+                "Cookie": cookie_str,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-CSRFToken": csrf_token,
+            },
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=15)
+            status = resp.status
+            loc = resp.headers.get("Location", "")
+        except urllib.request.HTTPError as he:
+            status = he.code
+            loc = he.headers.get("Location", "")
+        out["steps"].append({"step": 3, "status": status, "loc": loc[:120]})
     except Exception as e:
         out["steps"].append({"step": 3, "error": str(e)[:250]})
 
