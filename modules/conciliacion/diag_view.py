@@ -41,6 +41,54 @@ bp = Blueprint(
 )
 
 
+@bp.route("/verificar-ids-vivos", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def verificar_ids_vivos():
+    """Toma listas de bancsis_ids y hist_ids del payload y verifica que sigan vivos."""
+    body = request.get_json(silent=True) or {}
+    bancsis_ids = [int(x) for x in (body.get("bancsis_ids") or "").split(",") if x.strip().isdigit()]
+    hist_ids = [int(x) for x in (body.get("hist_ids") or "").split(",") if x.strip().isdigit()]
+    out = {"ok": True}
+    out["bancsis_request"] = len(bancsis_ids)
+    out["hist_request"] = len(hist_ids)
+    if bancsis_ids:
+        rows = _db.fetch_all(
+            """
+            SELECT id_transaccion, fecha, documento, importe,
+                   COALESCE(stat,'') AS stat
+              FROM scintela.transacciones_bancarias
+             WHERE id_transaccion = ANY(%s) AND no_banco = %s
+            """,
+            (bancsis_ids, _BANCO_PICHINCHA),
+        ) or []
+        out["bancsis_vivos"] = [
+            {**r, "fecha": str(r["fecha"]), "importe": float(r["importe"] or 0)}
+            for r in rows
+        ]
+        out["bancsis_perdidos"] = sorted(set(bancsis_ids) - {r["id_transaccion"] for r in rows})
+    if hist_ids:
+        rows_h = _db.fetch_all(
+            """
+            SELECT id, no_banco, fecha, documento, monto, tipo,
+                   conciliado_en, conciliado_por
+              FROM scintela.banco_historicos_pendientes
+             WHERE id = ANY(%s)
+            """,
+            (hist_ids,),
+        ) or []
+        out["hist_vivos"] = [
+            {**r, "fecha": str(r["fecha"]),
+             "monto": float(r["monto"] or 0),
+             "conciliado_en": str(r.get("conciliado_en") or "")}
+            for r in rows_h
+        ]
+        out["hist_perdidos"] = sorted(set(hist_ids) - {r["id"] for r in rows_h})
+        out["hist_disponibles_para_match"] = [r["id"] for r in rows_h if not r.get("conciliado_en")]
+        out["hist_ya_conciliados"] = [r["id"] for r in rows_h if r.get("conciliado_en")]
+    return jsonify(out)
+
+
 @bp.route("/estado-banco-completo", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
