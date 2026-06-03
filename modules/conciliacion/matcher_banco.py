@@ -1266,6 +1266,8 @@ def confirmar_match(
     # — el mismo flag que usa dBase. Así PC y dBase quedan visualmente
     # alineados. Si dBase vuelve a sincronizar con stat distinto, gana
     # dBase (la sync es one-way DBF → PC). Es el comportamiento querido.
+    # TMT 2026-06-03: tx_firma se llena directo via scintela.compute_tx_firma()
+    # SQL helper (mig 0068). Necesaria para sobrevivir el sync (mig 0066).
     if _tiene_migration_47():
         n = db.execute(
             """
@@ -1273,9 +1275,10 @@ def confirmar_match(
                 no_banco, estado, metodo,
                 real_fecha, real_concepto, real_documento, real_monto, real_tipo,
                 real_codigo, real_oficina,
-                id_transaccion, usuario
+                id_transaccion, tx_firma, usuario
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    scintela.compute_tx_firma(%s), %s)
             ON CONFLICT DO NOTHING
             """,
             (
@@ -1283,7 +1286,7 @@ def confirmar_match(
                 real.fecha, real.concepto, real.documento,
                 real.monto, real.tipo,
                 real.codigo, real.oficina,
-                id_transaccion, usuario,
+                id_transaccion, id_transaccion, usuario,
             ),
             conn=conn,
         )
@@ -1295,9 +1298,10 @@ def confirmar_match(
                 no_banco, estado,
                 real_fecha, real_concepto, real_documento, real_monto, real_tipo,
                 real_codigo, real_oficina,
-                id_transaccion, usuario
+                id_transaccion, tx_firma, usuario
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    scintela.compute_tx_firma(%s), %s)
             ON CONFLICT DO NOTHING
             """,
             (
@@ -1305,7 +1309,7 @@ def confirmar_match(
                 real.fecha, real.concepto, real.documento,
                 real.monto, real.tipo,
                 real.codigo, real.oficina,
-                id_transaccion, usuario,
+                id_transaccion, id_transaccion, usuario,
             ),
             conn=conn,
         )
@@ -1382,20 +1386,22 @@ def confirmar_bancsis_only(
         return db.execute(
             """
             INSERT INTO scintela.banco_conciliacion_match
-                (no_banco, estado, metodo, id_transaccion, usuario)
-            VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s, %s)
+                (no_banco, estado, metodo, id_transaccion, tx_firma, usuario)
+            VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s,
+                    scintela.compute_tx_firma(%s), %s)
             ON CONFLICT DO NOTHING
             """,
-            (no_banco, id_transaccion, usuario),
+            (no_banco, id_transaccion, id_transaccion, usuario),
         )
     return db.execute(
         """
         INSERT INTO scintela.banco_conciliacion_match
-            (no_banco, estado, id_transaccion, usuario)
-        VALUES (%s, 'bancsis_only_ok', %s, %s)
+            (no_banco, estado, id_transaccion, tx_firma, usuario)
+        VALUES (%s, 'bancsis_only_ok', %s,
+                scintela.compute_tx_firma(%s), %s)
         ON CONFLICT DO NOTHING
         """,
-        (no_banco, id_transaccion, usuario),
+        (no_banco, id_transaccion, id_transaccion, usuario),
     )
 
 

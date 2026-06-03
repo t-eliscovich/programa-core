@@ -1090,25 +1090,28 @@ def banco_manual_confirmar():
                 pass
             for bk_id in extras:
                 try:
+                    # TMT 2026-06-03: tx_firma se popula via SQL helper.
                     if tiene_metodo:
                         _db.execute(
                             """
                             INSERT INTO scintela.banco_conciliacion_match (
                                 no_banco, estado, metodo,
-                                id_transaccion, usuario
-                            ) VALUES (%s, %s, %s, %s, %s)
+                                id_transaccion, tx_firma, usuario
+                            ) VALUES (%s, %s, %s, %s,
+                                      scintela.compute_tx_firma(%s), %s)
                             """,
                             (_BANCO_PICHINCHA, 'matched', 'matched_manual',
-                             bk_id, usuario),
+                             bk_id, bk_id, usuario),
                         )
                     else:
                         _db.execute(
                             """
                             INSERT INTO scintela.banco_conciliacion_match (
-                                no_banco, estado, id_transaccion, usuario
-                            ) VALUES (%s, %s, %s, %s)
+                                no_banco, estado, id_transaccion, tx_firma, usuario
+                            ) VALUES (%s, %s, %s,
+                                      scintela.compute_tx_firma(%s), %s)
                             """,
-                            (_BANCO_PICHINCHA, 'matched', bk_id, usuario),
+                            (_BANCO_PICHINCHA, 'matched', bk_id, bk_id, usuario),
                         )
                     # Dual-write stat='*'.
                     _db.execute(
