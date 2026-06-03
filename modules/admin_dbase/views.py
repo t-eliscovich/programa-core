@@ -199,6 +199,28 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
 
     yield line("")
     yield line(f"[4/4] sync_dbase_actual.py terminó con exit={rc}")
+
+    # TMT 2026-06-03: post-sync relink de matches. Cada sync DELETE+INSERT
+    # transacciones_bancarias y el SERIAL id_transaccion cambia. Los matches
+    # quedaban apuntando a ids muertos → conciliados pasaban a pendientes.
+    # La función SQL `relink_matches_post_sync` (mig 0066) recupera el id
+    # nuevo via tx_firma.
+    if rc == 0:
+        try:
+            import db as _db
+            row = _db.fetch_one(
+                "SELECT * FROM scintela.relink_matches_post_sync(%s)",
+                (10,),  # Banco Pichincha
+            ) or {}
+            yield line("")
+            yield line("[relink matches post-sync]")
+            yield line(f"  matches_total : {row.get('matches_total', 0)}")
+            yield line(f"  relinked      : {row.get('relinked', 0)}")
+            yield line(f"  sin_firma     : {row.get('sin_firma', 0)} (no se podrán recuperar)")
+            yield line(f"  sin_match     : {row.get('sin_match', 0)} (id_transaccion huérfano sin firma match)")
+        except Exception as exc:
+            yield line(f"[WARN] relink falló (no fatal): {exc}")
+
     if rc == 0:
         yield line("OK ✓")
     else:
