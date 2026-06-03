@@ -481,6 +481,50 @@ def main():
             for d in snaps.get("detalle") or []:
                 print(f"    · {d}")
 
+    # ─── RECOMPUTE SALDOS POST-SYNC ──────────────────────────────────────
+    # TMT 2026-06-03 audit blindaje: el sync borra y re-inserta DBF rows con
+    # IDs nuevos. Las filas PC-only (depósitos de cheque, conciliación
+    # creada_from_real, etc.) NO se tocan, pero su saldo running puede
+    # quedar stale si el sync trajo nuevas filas DBF con fechas anteriores.
+    # Solución: por cada banco con PC-only rows, recompute la cadena desde
+    # la fecha más vieja de las PC-only. Con el _signed_delta fixed
+    # (respeta NDs reversos del DBF, sign-by-doc para PC-only), el walk
+    # es seguro y rebuilds la cadena coherente.
+    if not args.dry_run:
+        print()
+        print("─── RECOMPUTE SALDOS POST-SYNC ────────────────────────────────")
+        try:
+            import db as _db_mod
+            import bank_helpers as _bh
+            # Bancos que tienen PC-only rows (insertadas via insert_movimiento_bancario).
+            bancos_pc = _db_mod.fetch_all(
+                """
+                SELECT no_banco, MIN(fecha) AS fecha_min, COUNT(*) AS n_pc_rows
+                  FROM scintela.transacciones_bancarias
+                 WHERE COALESCE(usuario_crea,'') NOT IN ('','dbf-import','asinfo-backfill','dbase-sync')
+                 GROUP BY no_banco
+                """
+            ) or []
+            for b in bancos_pc:
+                no_b = int(b["no_banco"])
+                fecha_min = b.get("fecha_min")
+                n_pc = int(b.get("n_pc_rows") or 0)
+                if not fecha_min:
+                    continue
+                try:
+                    with _db_mod.tx() as conn:
+                        n_walk = _bh.recompute_saldos_desde(
+                            conn, no_banco=no_b, no_cta=None,
+                            ancla_fecha=fecha_min,
+                        )
+                    print(f"  banco {no_b}: {n_pc} PC-rows, recompute desde {fecha_min} → {n_walk} filas actualizadas ✓")
+                except Exception as e:
+                    print(f"  banco {no_b}: ⚠ recompute falló: {e}")
+            if not bancos_pc:
+                print("  ✓ No hay PC-only rows — chain DBF intacto.")
+        except Exception as e:
+            print(f"  ⚠ recompute post-sync falló: {e}")
+
     # ─── DRIFT BALANCE ───────────────────────────────────────────────────
     if not args.dry_run:
         print()

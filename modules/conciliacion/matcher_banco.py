@@ -1737,12 +1737,19 @@ def romper_match_grupo(
         """,
         (batch_id,),
     ) or []
+    # TMT 2026-06-03 audit blindaje: si una falla, las demás también — pero
+    # cada `romper_match` ya tiene su propia db.tx() interna. Si fallan
+    # algunas, devolvemos cuantas se deshicieron — caller ve el conteo y
+    # puede decidir si reintentar. Mejor que silenciar excepción.
     total = 0
+    fallos = 0
     for r in ids:
         try:
             total += romper_match(int(r["id"]), usuario=usuario) or 0
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging
+            logging.warning("romper_match_grupo: falla en match %s: %s", r.get("id"), _e)
+            fallos += 1
     return (total, batch_id)
 
 
@@ -1772,72 +1779,81 @@ def romper_match(
     match activo apuntando a la misma id_transaccion (defensa por si un mov
     tiene 2 matches PC apuntándolo — improbable pero no imposible).
     """
-    # 0) Antes de marcar deshecho, agarrar la id_transaccion del match
-    # para poder revertir stat='*' después.
-    row_match = None
-    try:
-        row_match = db.fetch_one(
-            "SELECT id_transaccion FROM scintela.banco_conciliacion_match WHERE id = %s",
-            (int(match_id),),
-        )
-    except Exception:
-        pass
+    # TMT 2026-06-03 audit blindaje: envolvemos en db.tx() para atomicidad.
+    # Antes, cada UPDATE era tx implícita — si paso 3 fallaba, match quedaba
+    # deshecho pero stat='*' permanecía → drift PC vs match.
+    with db.tx() as conn:
+        # 0) Antes de marcar deshecho, agarrar la id_transaccion del match
+        # para poder revertir stat='*' después.
+        row_match = None
+        try:
+            row_match = db.fetch_one(
+                "SELECT id_transaccion FROM scintela.banco_conciliacion_match WHERE id = %s",
+                (int(match_id),),
+                conn=conn,
+            )
+        except Exception:
+            pass
 
-    # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
-    try:
-        db.execute(
-            """
-            UPDATE scintela.banco_historicos_pendientes
-               SET conciliado_en = NULL,
-                   conciliado_por = NULL,
-                   conciliado_match_id = NULL
-             WHERE conciliado_match_id = %s
-            """,
-            (int(match_id),),
-        )
-    except Exception:
-        pass  # fail-soft: si la columna no existe (pre-migration), seguimos
-
-    # 2) Soft-undo o hard-delete del match propio.
-    if _tiene_migration_47():
-        n = db.execute(
-            """
-            UPDATE scintela.banco_conciliacion_match
-               SET deshecho_en = CURRENT_TIMESTAMP,
-                   deshecho_por = %s
-             WHERE id = %s
-               AND deshecho_en IS NULL
-            """,
-            (usuario[:50], int(match_id)),
-        )
-    else:
-        n = db.execute(
-            "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
-            (int(match_id),),
-        )
-
-    # 3) Revertir stat='*' en la fila PC si no queda otro match activo
-    # apuntándola. El matcher excluye stat='*' del pool de conciliables, así
-    # que al PC-conciliar la fila NO tenía '*' antes → limpiarlo es seguro.
-    id_tx = row_match.get("id_transaccion") if row_match else None
-    if id_tx:
+        # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
         try:
             db.execute(
                 """
-                UPDATE scintela.transacciones_bancarias t
-                   SET stat = NULL
-                 WHERE t.id_transaccion = %s
-                   AND TRIM(COALESCE(t.stat, '')) = '*'
-                   AND NOT EXISTS (
-                       SELECT 1 FROM scintela.banco_conciliacion_match m
-                        WHERE m.id_transaccion = t.id_transaccion
-                          AND m.deshecho_en IS NULL
-                   )
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = NULL,
+                       conciliado_por = NULL,
+                       conciliado_match_id = NULL
+                 WHERE conciliado_match_id = %s
                 """,
-                (int(id_tx),),
+                (int(match_id),),
+                conn=conn,
             )
         except Exception:
-            pass  # fail-soft: no romper el deshacer si falla el revert de stat
+            pass  # fail-soft: si la columna no existe (pre-migration), seguimos
+
+        # 2) Soft-undo o hard-delete del match propio.
+        if _tiene_migration_47():
+            n = db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_match
+                   SET deshecho_en = CURRENT_TIMESTAMP,
+                       deshecho_por = %s
+                 WHERE id = %s
+                   AND deshecho_en IS NULL
+                """,
+                (usuario[:50], int(match_id)),
+                conn=conn,
+            )
+        else:
+            n = db.execute(
+                "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
+                (int(match_id),),
+                conn=conn,
+            )
+
+        # 3) Revertir stat='*' en la fila PC si no queda otro match activo
+        # apuntándola. El matcher excluye stat='*' del pool de conciliables, así
+        # que al PC-conciliar la fila NO tenía '*' antes → limpiarlo es seguro.
+        id_tx = row_match.get("id_transaccion") if row_match else None
+        if id_tx:
+            try:
+                db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias t
+                       SET stat = NULL
+                     WHERE t.id_transaccion = %s
+                       AND TRIM(COALESCE(t.stat, '')) = '*'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = t.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                    """,
+                    (int(id_tx),),
+                    conn=conn,
+                )
+            except Exception:
+                pass  # fail-soft: no romper el deshacer si falla el revert de stat
     return n
 
 
