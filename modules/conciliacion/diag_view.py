@@ -1218,6 +1218,71 @@ def _relink_py(no_banco: int) -> dict:
     }
 
 
+@bp.route("/find-drift-source", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def find_drift_source():
+    """Lista las txs PC con stat='*' en 06-01+ que NO tienen contraparte
+    en el extracto sesión actual (= drift fuente)."""
+    no_banco = _BANCO_PICHINCHA
+    # Get extracto firmas
+    sess = _db.fetch_one(
+        "SELECT extracto_payload FROM scintela.banco_conciliacion_sesion WHERE no_banco=%s AND cerrada_en IS NULL ORDER BY abierta_en DESC LIMIT 1",
+        (no_banco,),
+    ) or {}
+    payload = sess.get("extracto_payload") or []
+    if isinstance(payload, str):
+        try: payload = json.loads(payload)
+        except Exception: payload = []
+    if isinstance(payload, dict):
+        payload = payload.get("extracto") or payload.get("movs") or []
+    extr_keys = set()
+    for m in (payload or []):
+        if not isinstance(m, dict): continue
+        f = str(m.get("fecha") or "")
+        try: amt = round(float(m.get("monto") or m.get("importe") or 0), 2)
+        except Exception: amt = 0
+        extr_keys.add((f, amt))
+
+    # Get PC stat='*' rows in 06-01+
+    rows = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, concepto, stat, usuario_crea
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s AND fecha >= '2026-06-01'
+           AND TRIM(COALESCE(stat,'')) = '*'
+         ORDER BY fecha, id_transaccion
+        """,
+        (no_banco,),
+    ) or []
+
+    sin_extracto = []
+    for r in rows:
+        f = str(r.get("fecha") or "")
+        try: amt = round(float(r.get("importe") or 0), 2)
+        except Exception: amt = 0
+        if (f, amt) not in extr_keys:
+            sin_extracto.append({
+                "id": r["id_transaccion"], "fecha": f, "doc": r.get("documento"),
+                "importe": amt, "concepto": (r.get("concepto") or "")[:60],
+            })
+
+    # Suma signed (PC convention)
+    sum_signed = 0
+    for r in sin_extracto:
+        doc = r["doc"] or ""
+        sign = 1 if doc in ("DE","TR","NC","IN","AC","XX") else -1
+        sum_signed += sign * r["importe"]
+
+    return jsonify({
+        "n_pc_stat_star_06_01plus": len(rows),
+        "n_extracto_payload": len(payload or []),
+        "n_sin_match_en_extracto": len(sin_extracto),
+        "sum_signed_drift_potencial": round(sum_signed, 2),
+        "sample": sin_extracto[:30],
+    })
+
+
 @bp.route("/sync-matches-counter", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
