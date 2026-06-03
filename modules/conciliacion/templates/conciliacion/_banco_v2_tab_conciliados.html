@@ -157,10 +157,10 @@
               <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
                 {{ m.real_fecha or m.tb_fecha or '—' }}
               </td>
-              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _bs_banco > 0 %}text-emerald-700{% elif _bs_banco < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_banco > 0 %}text-emerald-700{% elif _bs_banco < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
                 Σ {{ '{:+,.2f}'.format(_bs_banco) }}
               </td>
-              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _bs_prog > 0 %}text-emerald-700{% elif _bs_prog < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold whitespace-nowrap {% if _bs_prog > 0 %}text-emerald-700{% elif _bs_prog < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
                 {{ '{:+,.2f}'.format(_bs_prog) }}
               </td>
               <td class="px-1.5 py-0.5 text-right font-mono">
@@ -170,11 +170,11 @@
                   <span class="text-rose-700 font-semibold">{{ '{:+,.2f}'.format(_bs_diff) }}</span>
                 {% endif %}
               </td>
-              <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]" title="grupo {{ m.confirm_batch_id }}">
+              <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px] whitespace-nowrap" title="grupo {{ m.confirm_batch_id }}">
                 grupo · {{ _batch_items|length }} items
               </td>
               <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[200px]" colspan="2" title="batch_id {{ m.confirm_batch_id }}">
-                {{ _batch_items|length }} matches contra el mismo mov PC (impuestos/comisiones agrupados)
+                {% if (_bs_ns.seen|length) <= 1 %}{{ _batch_items|length }} matches contra el mismo mov PC (impuestos/comisiones agrupados){% else %}{{ _batch_items|length }} pares conciliados ({{ _bs_ns.seen|length }} movs PC){% endif %}
               </td>
               <td class="px-1.5 py-0.5 text-slate-500 text-[10px] whitespace-nowrap">
                 {{ m.usuario or '' }}
@@ -186,12 +186,13 @@
                   <input type="hidden" name="match_id" value="{{ m.id }}">
                   <input type="hidden" name="sesion_id" value="{{ sesion.id if sesion else 0 }}">
                   <input type="hidden" name="next" value="conciliados">
-                  <button class="ml-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] rounded px-2 py-0.5 font-medium whitespace-nowrap">↶ Deshacer grupo</button>
+                  <button title="Deshacer grupo" class="ml-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] rounded px-1.5 py-0.5 font-medium">↶</button>
                 </form>
               </td>
             </tr>
             {% set _ns.prev_batch = m.confirm_batch_id %}
-          {% elif not _skip_row %}
+          {% endif %}
+          {% if not _skip_row %}
             {% if m.confirm_batch_id %}{% set _ns.prev_batch = m.confirm_batch_id %}{% endif %}
           {# Filas individuales: si son parte de un batch >1, hidden por
              default + class para que el JS las muestre/oculte al click. #}
@@ -247,7 +248,7 @@
                 <input type="hidden" name="match_id" value="{{ m.id }}">
                 <input type="hidden" name="sesion_id" value="{{ sesion.id if sesion else 0 }}">
                 <input type="hidden" name="next" value="conciliados">
-                <button class="ml-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] rounded px-2 py-0.5 font-medium whitespace-nowrap">↶ Deshacer</button>
+                <button title="Deshacer" class="ml-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] rounded px-1.5 py-0.5 font-medium">↶</button>
               </form>
               {% endif %}
             </td>
