@@ -106,8 +106,94 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
         saldo_pc_actual["saldo_si_concilio_todo"] = round(
             saldo_pc_actual["saldo"] - saldo_pc_actual["pendientes_conciliar_neto"], 2
         )
+
+        # --- FIX 2026-06-03: incluir extracto de sesión abierta en pend_banco ---
+        # Antes: saldo_banco_esperado solo sumaba banco_historicos_pendientes (FEB2023).
+        # Eso ignoraba el extracto recién subido de la sesión actual.
+        # Ahora: sumamos también los movs del extracto que NO están conciliados
+        # via match. Así pend_banco_TOTAL = histos + extracto_sin_match.
+        sess_neto = 0.0
+        sess_cred = 0.0
+        sess_deb = 0.0
+        sess_n = 0
+        try:
+            import json as _json
+            sess_row = _db.fetch_one(
+                """
+                SELECT id, extracto_payload
+                  FROM scintela.banco_conciliacion_sesion
+                 WHERE no_banco = %(no_banco)s AND cerrada_en IS NULL
+                 ORDER BY abierta_en DESC LIMIT 1
+                """,
+                {"no_banco": no_banco},
+            )
+            if sess_row and sess_row.get("extracto_payload"):
+                payload = sess_row["extracto_payload"]
+                if isinstance(payload, str):
+                    try: payload = _json.loads(payload)
+                    except Exception: payload = []
+                movs = payload if isinstance(payload, list) else (payload.get("extracto") or payload.get("movs") or [])
+                # Movs ya conciliados (firma en matches activos)
+                match_firmas = set()
+                try:
+                    mr = _db.fetch_all(
+                        """
+                        SELECT real_fecha, real_documento, real_monto, real_tipo
+                          FROM scintela.banco_conciliacion_match
+                         WHERE no_banco = %(no_banco)s
+                           AND deshecho_en IS NULL
+                           AND real_documento IS NOT NULL
+                        """,
+                        {"no_banco": no_banco},
+                    ) or []
+                    for r in mr:
+                        match_firmas.add((
+                            str(r.get("real_fecha")),
+                            (r.get("real_documento") or "").strip(),
+                            round(float(r.get("real_monto") or 0), 2),
+                            (r.get("real_tipo") or "").strip(),
+                        ))
+                except Exception:
+                    pass
+                for m in movs:
+                    fecha = m.get("fecha")
+                    doc = (m.get("documento") or m.get("doc") or "").strip()
+                    monto = round(float(m.get("monto") or m.get("importe") or 0), 2)
+                    tipo = (m.get("tipo") or m.get("clase") or "").strip().upper()[:1] or ("C" if monto > 0 else "D")
+                    key = (str(fecha), doc, abs(monto), tipo)
+                    if key in match_firmas:
+                        continue
+                    sess_n += 1
+                    amt = abs(monto)
+                    if tipo == "C":
+                        sess_cred += amt
+                        sess_neto += amt
+                    else:
+                        sess_deb += amt
+                        sess_neto -= amt
+        except Exception as _e:
+            _LOG.exception("calcular(): error sumando extracto sesion: %s", _e)
+
+        saldo_pc_actual["pendientes_banco_extracto_creditos"] = round(sess_cred, 2)
+        saldo_pc_actual["pendientes_banco_extracto_debitos"] = round(sess_deb, 2)
+        saldo_pc_actual["n_pendientes_banco_extracto"] = sess_n
+        saldo_pc_actual["neto_pendientes_extracto"] = round(sess_neto, 2)
+
+        # TOTAL pend_banco = histos + extracto
+        neto_pend_total = round(saldo_pc_actual["neto_pendientes"] + sess_neto, 2)
+        saldo_pc_actual["neto_pendientes_total"] = neto_pend_total
+        saldo_pc_actual["pendientes_banco_total_creditos"] = round(
+            saldo_pc_actual["pendientes_banco_creditos"] + sess_cred, 2
+        )
+        saldo_pc_actual["pendientes_banco_total_debitos"] = round(
+            saldo_pc_actual["pendientes_banco_debitos"] + sess_deb, 2
+        )
+        saldo_pc_actual["n_pendientes_banco_total"] = (
+            saldo_pc_actual["n_pendientes"] + sess_n
+        )
+
         saldo_pc_actual["saldo_banco_esperado"] = round(
-            saldo_pc_actual["saldo_si_concilio_todo"] + saldo_pc_actual["neto_pendientes"], 2
+            saldo_pc_actual["saldo_si_concilio_todo"] + neto_pend_total, 2
         )
         try:
             saldo_pc_actual["pendientes_conciliar_rows"] = _db.fetch_all(
