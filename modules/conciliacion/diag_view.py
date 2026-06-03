@@ -41,6 +41,183 @@ bp = Blueprint(
 )
 
 
+@bp.route("/e2e-borrar-sesion", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def e2e_borrar_sesion():
+    """E2E test del lifecycle borrar-sesion. Inserta una sesión + un match
+    dummy, llama borrar_sesion, valida que TODO quede limpio.
+
+    Returns: dict con snapshot pre/post + diff. ok=True si todo limpio.
+    """
+    from datetime import datetime, timezone
+    import uuid
+
+    out = {"ok": True, "steps": []}
+
+    # ─── PRE: snapshot ────────────────────────────────────────────
+    pre_libros_row = _db.fetch_one(
+        """
+        SELECT saldo FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s ORDER BY fecha DESC, id_transaccion DESC LIMIT 1
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or {}
+    pre_libros = float(pre_libros_row.get("saldo") or 0)
+    pre_matches = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match WHERE no_banco = %s AND deshecho_en IS NULL",
+        (_BANCO_PICHINCHA,),
+    ) or {}).get("n", 0)
+    pre_histos_pendientes = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_historicos_pendientes WHERE no_banco = %s AND conciliado_en IS NULL",
+        (_BANCO_PICHINCHA,),
+    ) or {}).get("n", 0)
+    out["pre"] = {"libros": pre_libros, "matches_activos": pre_matches,
+                  "histos_pendientes": pre_histos_pendientes}
+
+    # ─── STEP 1: crear sesion test ───────────────────────────────
+    try:
+        with _db.tx() as conn:
+            sesion_row = _db.execute_returning(
+                """
+                INSERT INTO scintela.banco_conciliacion_sesion
+                    (no_banco, usuario, extracto_hash, extracto_nombre, extracto_payload, abierta_en)
+                VALUES (%s, %s, %s, %s, %s::jsonb, NOW())
+                RETURNING id
+                """,
+                (_BANCO_PICHINCHA, "e2e-test", None, "e2e-test.xlsx", "[]"),
+                conn=conn,
+            )
+            sesion_id = sesion_row.get("id") if sesion_row else None
+        out["steps"].append({"step": 1, "msg": f"Sesion creada id={sesion_id}"})
+    except Exception as e:
+        out["ok"] = False
+        out["steps"].append({"step": 1, "error": str(e)[:200]})
+        return jsonify(out)
+
+    # ─── STEP 2: crear 1 match dummy linkeado a esta sesion ─────
+    # Tomamos cualquier hist disponible para asociar.
+    hist_row = _db.fetch_one(
+        """
+        SELECT id, fecha, documento, monto, tipo FROM scintela.banco_historicos_pendientes
+         WHERE no_banco = %s AND conciliado_en IS NULL
+         ORDER BY id ASC LIMIT 1
+        """,
+        (_BANCO_PICHINCHA,),
+    )
+    match_id_creado = None
+    if hist_row:
+        try:
+            batch_id = uuid.uuid4().hex
+            row = _db.execute_returning(
+                """
+                INSERT INTO scintela.banco_conciliacion_match (
+                    no_banco, estado, metodo,
+                    real_fecha, real_documento, real_monto, real_tipo,
+                    confirm_batch_id, usuario, creado_en
+                )
+                VALUES (%s, 'matched', 'e2e-test', %s, %s, %s, %s, %s, 'e2e-test', NOW())
+                RETURNING id
+                """,
+                (
+                    _BANCO_PICHINCHA, hist_row["fecha"], hist_row["documento"],
+                    hist_row["monto"], hist_row["tipo"], batch_id,
+                ),
+            )
+            match_id_creado = row.get("id") if row else None
+            # Marcar el hist conciliado
+            _db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = NOW(),
+                       conciliado_por = 'e2e-test',
+                       conciliado_match_id = %s
+                 WHERE id = %s
+                """,
+                (match_id_creado, hist_row["id"]),
+            )
+            out["steps"].append({"step": 2,
+                "msg": f"Match dummy creado id={match_id_creado} link hist={hist_row['id']}"})
+        except Exception as e:
+            out["ok"] = False
+            out["steps"].append({"step": 2, "error": str(e)[:200]})
+
+    # ─── STEP 3: llamar borrar-sesion programaticamente ─────────
+    # Vamos a importar el endpoint y llamarlo via test_client de Flask.
+    try:
+        from flask import current_app
+        client = current_app.test_client()
+        # Necesitamos auth cookie — la heredamos del request actual.
+        from flask import request as _req
+        cookies = _req.cookies
+        for name, value in cookies.items():
+            client.set_cookie(domain="programa.intela.com.ec", key=name, value=value)
+        # CSRF token del session
+        from flask_wtf.csrf import generate_csrf
+        csrf = generate_csrf()
+        resp = client.post(
+            "/conciliacion/banco-v2/borrar-sesion",
+            data={"sesion_id": str(sesion_id), "csrf_token": csrf},
+            follow_redirects=False,
+        )
+        out["steps"].append({"step": 3, "status": resp.status_code,
+            "redirect": resp.headers.get("Location", "")[:80]})
+    except Exception as e:
+        out["ok"] = False
+        out["steps"].append({"step": 3, "error": str(e)[:200]})
+
+    # ─── POST: snapshot ──────────────────────────────────────────
+    post_libros_row = _db.fetch_one(
+        """
+        SELECT saldo FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s ORDER BY fecha DESC, id_transaccion DESC LIMIT 1
+        """,
+        (_BANCO_PICHINCHA,),
+    ) or {}
+    post_libros = float(post_libros_row.get("saldo") or 0)
+    post_matches = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match WHERE no_banco = %s AND deshecho_en IS NULL",
+        (_BANCO_PICHINCHA,),
+    ) or {}).get("n", 0)
+    post_histos_pendientes = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_historicos_pendientes WHERE no_banco = %s AND conciliado_en IS NULL",
+        (_BANCO_PICHINCHA,),
+    ) or {}).get("n", 0)
+    sesion_existe = (_db.fetch_one(
+        "SELECT 1 AS x FROM scintela.banco_conciliacion_sesion WHERE id = %s",
+        (sesion_id,),
+    ) or {}).get("x")
+    out["post"] = {"libros": post_libros, "matches_activos": post_matches,
+                   "histos_pendientes": post_histos_pendientes,
+                   "sesion_existe": bool(sesion_existe)}
+    out["diffs"] = {
+        "libros_delta": round(post_libros - pre_libros, 2),
+        "matches_delta": post_matches - pre_matches,
+        "histos_delta": post_histos_pendientes - pre_histos_pendientes,
+    }
+    # Validación final
+    validations = []
+    if abs(out["diffs"]["libros_delta"]) > 0.5:
+        validations.append(f"❌ libros drift {out['diffs']['libros_delta']:+.2f}")
+    else:
+        validations.append("✓ libros unchanged")
+    if out["diffs"]["matches_delta"] != 0:
+        validations.append(f"❌ matches drift {out['diffs']['matches_delta']:+d}")
+    else:
+        validations.append("✓ matches count restored")
+    if out["diffs"]["histos_delta"] != 0:
+        validations.append(f"❌ histos drift {out['diffs']['histos_delta']:+d}")
+    else:
+        validations.append("✓ histos count restored")
+    if out["post"]["sesion_existe"]:
+        validations.append("❌ sesion still exists")
+    else:
+        validations.append("✓ sesion deleted")
+    out["validations"] = validations
+    out["ok"] = all("✓" in v for v in validations)
+    return jsonify(out)
+
+
 @bp.route("/verificar-ids-vivos", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
