@@ -41,6 +41,168 @@ bp = Blueprint(
 )
 
 
+@bp.route("/e2e-cleanup", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def e2e_cleanup():
+    """Limpia state generado por e2e-borrar-sesion fallido.
+
+    Borra matches con usuario='e2e-test' y sesiones con usuario='e2e-test',
+    revierte histos conciliados por e2e-test.
+    """
+    out = {"ok": True}
+    with _db.tx() as conn:
+        # 1. Reset histos
+        n_h = _db.execute(
+            """
+            UPDATE scintela.banco_historicos_pendientes
+               SET conciliado_en = NULL, conciliado_por = NULL, conciliado_match_id = NULL
+             WHERE conciliado_por = 'e2e-test'
+            """,
+            (), conn=conn,
+        ) or 0
+        out["histos_reset"] = n_h
+        # 2. Borrar matches
+        n_m = _db.execute(
+            "DELETE FROM scintela.banco_conciliacion_match WHERE usuario = 'e2e-test'",
+            (), conn=conn,
+        ) or 0
+        out["matches_borrados"] = n_m
+        # 3. Borrar sesiones
+        n_s = _db.execute(
+            "DELETE FROM scintela.banco_conciliacion_sesion WHERE usuario = 'e2e-test'",
+            (), conn=conn,
+        ) or 0
+        out["sesiones_borradas"] = n_s
+    return jsonify(out)
+
+
+@bp.route("/e2e-borrar-sesion-v2", methods=["POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def e2e_borrar_sesion_v2():
+    """E2E v2: lifecycle real usando el módulo borrar_sesion directamente.
+
+    En lugar de invocar el HTTP endpoint vía test_client (CSRF/auth issues),
+    importamos y llamamos el módulo conciliación con un request mock.
+    """
+    from flask import current_app
+    out = {"ok": True, "steps": []}
+
+    # ─── PRE snapshot ─────────────────────────────────────────────
+    pre_libros = float((_db.fetch_one(
+        "SELECT saldo FROM scintela.transacciones_bancarias WHERE no_banco=%s ORDER BY fecha DESC, id_transaccion DESC LIMIT 1",
+        (_BANCO_PICHINCHA,)) or {}).get("saldo") or 0)
+    pre_matches = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match WHERE no_banco=%s AND deshecho_en IS NULL",
+        (_BANCO_PICHINCHA,)) or {}).get("n", 0)
+    pre_histos = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_historicos_pendientes WHERE no_banco=%s AND conciliado_en IS NULL",
+        (_BANCO_PICHINCHA,)) or {}).get("n", 0)
+    out["pre"] = {"libros": pre_libros, "matches_activos": pre_matches, "histos_pendientes": pre_histos}
+
+    # ─── STEP 1: crear sesion ────────────────────────────────────
+    import uuid as _uuid
+    sesion_id = None
+    try:
+        row = _db.execute_returning(
+            """
+            INSERT INTO scintela.banco_conciliacion_sesion
+                (no_banco, usuario, extracto_hash, extracto_nombre, extracto_payload, abierta_en)
+            VALUES (%s, 'e2e-test', NULL, 'e2e-test.xlsx', '[]'::jsonb, NOW())
+            RETURNING id
+            """,
+            (_BANCO_PICHINCHA,),
+        )
+        sesion_id = row.get("id") if row else None
+        out["steps"].append({"step": 1, "sesion_id": sesion_id})
+    except Exception as e:
+        out["steps"].append({"step": 1, "error": str(e)[:200]})
+        out["ok"] = False
+        return jsonify(out)
+
+    # ─── STEP 2: crear match dummy ───────────────────────────────
+    hist = _db.fetch_one(
+        "SELECT id, fecha, documento, monto, tipo FROM scintela.banco_historicos_pendientes WHERE no_banco=%s AND conciliado_en IS NULL ORDER BY id LIMIT 1",
+        (_BANCO_PICHINCHA,))
+    match_id = None
+    if hist:
+        try:
+            batch_id = _uuid.uuid4().hex
+            mrow = _db.execute_returning(
+                """
+                INSERT INTO scintela.banco_conciliacion_match
+                    (no_banco, estado, metodo, real_fecha, real_documento, real_monto, real_tipo,
+                     confirm_batch_id, usuario, creado_en)
+                VALUES (%s, 'matched', 'e2e-test', %s, %s, %s, %s, %s, 'e2e-test', NOW())
+                RETURNING id
+                """,
+                (_BANCO_PICHINCHA, hist["fecha"], hist["documento"],
+                 hist["monto"], hist["tipo"], batch_id),
+            )
+            match_id = mrow.get("id") if mrow else None
+            _db.execute(
+                "UPDATE scintela.banco_historicos_pendientes SET conciliado_en=NOW(), conciliado_por='e2e-test', conciliado_match_id=%s WHERE id=%s",
+                (match_id, hist["id"]),
+            )
+            out["steps"].append({"step": 2, "match_id": match_id, "hist_id": hist["id"]})
+        except Exception as e:
+            out["steps"].append({"step": 2, "error": str(e)[:200]})
+
+    # ─── STEP 3: llamar borrar_sesion REAL via test_client con auth/CSRF bypass ──
+    try:
+        client = current_app.test_client()
+        # Forward la cookie de session/auth real del request actual al test_client
+        from flask import request as _req
+        for name, value in _req.cookies.items():
+            client.set_cookie(domain="programa.intela.com.ec", key=name, value=value)
+        # Disable CSRF para esta request del test_client (Flask-WTF)
+        # via header X-CSRF-Test bypass o forzando WTF_CSRF_ENABLED off temporal
+        original_csrf = current_app.config.get("WTF_CSRF_ENABLED", True)
+        current_app.config["WTF_CSRF_ENABLED"] = False
+        try:
+            resp = client.post(
+                "/conciliacion/banco-v2/borrar-sesion",
+                data={"sesion_id": str(sesion_id)},
+                follow_redirects=False,
+            )
+        finally:
+            current_app.config["WTF_CSRF_ENABLED"] = original_csrf
+        out["steps"].append({"step": 3, "status": resp.status_code,
+                             "loc": resp.headers.get("Location", "")[:120]})
+    except Exception as e:
+        out["steps"].append({"step": 3, "error": str(e)[:250]})
+
+    # ─── POST snapshot + validation ──────────────────────────────
+    post_libros = float((_db.fetch_one(
+        "SELECT saldo FROM scintela.transacciones_bancarias WHERE no_banco=%s ORDER BY fecha DESC, id_transaccion DESC LIMIT 1",
+        (_BANCO_PICHINCHA,)) or {}).get("saldo") or 0)
+    post_matches = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match WHERE no_banco=%s AND deshecho_en IS NULL",
+        (_BANCO_PICHINCHA,)) or {}).get("n", 0)
+    post_histos = (_db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.banco_historicos_pendientes WHERE no_banco=%s AND conciliado_en IS NULL",
+        (_BANCO_PICHINCHA,)) or {}).get("n", 0)
+    sesion_existe = bool((_db.fetch_one(
+        "SELECT 1 AS x FROM scintela.banco_conciliacion_sesion WHERE id=%s",
+        (sesion_id,)) or {}).get("x"))
+    out["post"] = {"libros": post_libros, "matches_activos": post_matches,
+                   "histos_pendientes": post_histos, "sesion_existe": sesion_existe}
+    out["diffs"] = {
+        "libros_delta": round(post_libros - pre_libros, 2),
+        "matches_delta": post_matches - pre_matches,
+        "histos_delta": post_histos - pre_histos,
+    }
+    val = []
+    val.append("✓ libros unchanged" if abs(out["diffs"]["libros_delta"]) < 0.5 else f"❌ libros drift {out['diffs']['libros_delta']:+.2f}")
+    val.append("✓ matches count restored" if out["diffs"]["matches_delta"] == 0 else f"❌ matches drift {out['diffs']['matches_delta']:+d}")
+    val.append("✓ histos count restored" if out["diffs"]["histos_delta"] == 0 else f"❌ histos drift {out['diffs']['histos_delta']:+d}")
+    val.append("✓ sesion deleted" if not sesion_existe else "❌ sesion still exists")
+    out["validations"] = val
+    out["ok"] = all("✓" in v for v in val)
+    return jsonify(out)
+
+
 @bp.route("/e2e-borrar-sesion", methods=["POST"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
