@@ -186,13 +186,17 @@ def historico_12m():
         # Federico 2026-05-21 -- foto automatica al entrar (reactivada).
         # El bug que la habia desactivado (snapshot con ktej/ktin en 0)
         # quedo resuelto con el carry-forward en insertar_snapshot.
-        # Flujo: (1) crear la columna de esta entrada -- throttle corto
-        # para que un refresh no la duplique; (2) consolidar dejando las
-        # 2 columnas mas recientes del mes (la previa + la nueva).
+        # Flujo: (1) tomar a lo sumo UNA foto por dia (throttle 24h) para que
+        # las columnas sean "ayer vs hoy" y no "hace 3 minutos"; (2) consolidar
+        # dejando las 2 columnas mas recientes (la previa + la de hoy).
+        # TMT 2026-06-04 (Bug #3): el throttle era 180s -> se creaba una columna
+        # nueva por cada visita >3min y las 2 columnas salian casi identicas
+        # (delta ~0). Con 24h la comparacion intra-mes tiene sentido. Para
+        # forzar una foto fuera de hora esta el boton "Snapshot ahora".
         try:
             snap_info = queries.tomar_snapshot_mes_actual(
                 usuario=(g.user or {}).get("username", "web"),
-                throttle_segundos=180,
+                throttle_segundos=86400,
             )
         except Exception as e:  # noqa: BLE001
             snap_info = {"accion": "error", "error": str(e)}

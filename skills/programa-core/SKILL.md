@@ -447,15 +447,21 @@ Tamara corrió una conciliación real de punta a punta en prod. Cuatro bugs caza
 
 **Lección transversal — `recompute_saldos_desde` y el DBF:** la columna `saldo` de `transacciones_bancarias` es **autoritativa por fila desde el DBF** y NO reconcilia como suma de `importe`. Cualquier recompute que abarque filas DBF las re-deriva mal → drift. Recomputar SOLO sobre txs creadas por conciliación (ids altos), anclando por `id`, nunca por `fecha` sobre una jornada con movimientos DBF.
 
-### Lección 2026-06-04 — fix −500k: pendientes de banco = la HOJA (no el extracto crudo)
+### Lección 2026-06-04 — pendientes de banco = la HOJA, no el extracto crudo (fix −500k)
 
-**Síntoma (dueña):** `/conciliacion/banco-v2` (activa) mostraba "Pendientes de banco" ≈ −487K y diferencia ≈ −573K ("−500k sin explicarse"); el landing daba +69.895,71.
+**Síntoma (dueña):** en `/conciliacion/banco-v2` (activa) aparecía "Pendientes de banco" ≈ **−487K** y "saldo banco esperado" se desplomaba (diferencia ≈ −573K), mientras el landing `/conciliacion/` mostraba un sano +69.895,71. "Hay −500k sin explicarse."
 
-**Causa:** el bloque "FIX 2026-06-03" en `balance_pichincha.calcular()` sumaba el extracto crudo de la sesión a pendientes de banco; el "dedup nuclear" vs `transacciones_bancarias` no limpia el 100% (desfase de fecha, montos agrupados) → ~−557K fantasma. El landing usaba históricos solos, por eso ahí cuadraba.
+**Causa raíz:** el bloque "FIX 2026-06-03" en `balance_pichincha.calcular()` sumaba el **extracto crudo de la sesión abierta** a pendientes de banco (`*_total`). El extracto trae el día entero del banco (PAGO SENAE, débitos ya en libros) y el "dedup nuclear" vs `transacciones_bancarias` (fecha ±1, abs(monto), tipo) **nunca limpia el 100%** por desfase de fecha y montos agrupados (un depósito de N cheques vs N filas PC). ~33 filas, ≈ −557K fantasma. El landing usaba históricos solos (camino viejo de `views.hub`), por eso ahí cuadraba.
 
-**Fix:** la sección TOTAL de `calcular()` ahora ignora `sess_*` (extracto): `saldo_banco_esperado = saldo_si_concilio_todo + neto históricos`. `banco_v2_view.banco_preview` revierte el "BUG FIX 2026-06-03" (real_subset ya no baja pendientes de banco; matchear extracto↔PC baja pendientes de PROGRAMA). Guard: `tests/test_balance_pichincha_dedup_nuclear.py::test_extracto_fuera_de_libros_no_infla_balance`.
+**Modelo correcto (dueña, literal):** *"lo único que se mantiene como pendientes es lo del archivo (la hoja). si subimos hoja se toma de la hoja."* La **hoja de conciliación** (`CONCILIACION_*.xlsx`, pestaña del período ej. `FEB2023`: depósitos pendientes positivos + cheques/SENAE negativos + ajustes tipo `AC97`) es la verdad de los pendientes de banco. El extracto es solo insumo para **cruzar/parear**, NO define pendientes. La hoja sola cuadra: `SALDO SISTEMA + Σneto = SALDO BANCO`, diferencia 0.
 
-**Pendientes de banco = la hoja.** El backlog (`banco_historicos_pendientes`) se setea con `banco_cruzar_pendientes` (form "Cruzar pendientes contra archivo (hoja FEB2023)" → "Hacer prevalecer"). FEB2023: 100 filas, neto +85.731,31 → 2.374.620,96 + 85.731,31 = 2.460.352,27 = objetivo, diferencia 0. Los 99 históricos previos ya eran la hoja menos AC97 (+15.835,60).
+**Fix aplicado:**
+- `balance_pichincha.calcular()` — la sección TOTAL ahora ignora `sess_*` (extracto): `neto_pendientes_total = neto_pendientes` (históricos), `saldo_banco_esperado = saldo_si_concilio_todo + neto históricos`. El bloque del extracto sigue calculándose pero se descarta (cleanup Sprint 2).
+- `banco_v2_view.banco_preview` — revertido el "BUG FIX 2026-06-03": `real_subset` (extracto) ya **no** baja pendientes de banco (matchear extracto↔PC baja pendientes de PROGRAMA vía `delta_pc`); solo `hist_rows` baja banco.
+- **Importador de hoja** (lo que la dueña usa): `modules/conciliacion/hoja_parser.py` (`parse_hoja_pendientes`, `resumen`, `reemplazar_historicos_desde_hoja` = DELETE+INSERT idempotente). Endpoint **`POST /conciliacion/banco-v2/subir-hoja`** (form "Hoja de pendientes" en el landing, con checkbox de confirmación) + script `scripts/importar_hoja_pendientes.py` (CLI/SSM, soporta `--dry-run`, `--saldo-sistema`, `--objetivo`).
+- Tests: `tests/test_balance_pichincha_dedup_nuclear.py::test_extracto_fuera_de_libros_no_infla_balance` (guard −500k) + `tests/test_hoja_parser.py`.
+
+**Verificación caso FEB2023:** 100 filas (94 C +144.611,79 / 6 D −58.880,48), neto **+85.731,31**. `2.374.620,96 + 85.731,31 = 2.460.352,27` = objetivo, **diferencia 0,00**. Los 99 históricos previos del sistema ya eran la hoja menos `AC97 (+15.835,60)` — por eso el landing daba 2.444.516,67 (15.835,60 corto).
 
 ## Backfill / limpieza si los números no cuadran
 
@@ -469,6 +475,7 @@ Tamara corrió una conciliación real de punta a punta en prod. Cuatro bugs caza
 - **No** `recompute_saldos_desde` sin ancla.
 - **No** `recompute_saldos_desde` anclado por **fecha** sobre filas DBF — re-deriva por importes y driftea libros (saldo DBF no es suma de importes). Anclar por `id` en txs creadas por conciliación (ids altos). Ver lección 2026-06-03 (borrado de sesión).
 - **No** matchear N históricos contra un solo PC (`bancsis_ids[0]`) — parear 1:1 por monto. Ver lección 2026-06-03.
+- **No** sumar el extracto crudo de la sesión a "pendientes de banco" — pendientes de banco = la hoja (`banco_historicos_pendientes`). El extracto es solo insumo para cruzar. Ver lección 2026-06-04 (fix −500k).
 - **No** usar tokens cortos sin `\b` a ambos lados en regex de categorización (`isr` matcheaba "ISRAEL").
 - **No** raw INSERT en `transacciones_bancarias` o `caja` — usar helpers.
 - **No** `try/except: pass` silencioso en `mov_doble.registrar`.
@@ -1688,3 +1695,31 @@ El flujo de hilado ya estaba implementado como `dolares.convertir_a_compra` (BAP
 - mov_doble `bap_anticipo_a_compra`.
 
 No requiere cambios — la dueña ya lo usa.
+
+## Histórico de balances (`/informes/historico-12m`) — auditoría 2026-06-04
+
+Matriz "5 meses cerrados + mes actual" alimentada por `scintela.historia`. Hay **dos** rutas que crean snapshots y NO calculan igual:
+
+- **`scripts/snapshot_historia_mensual.py::calcular_kpis`** (la que usa la pantalla vía `tomar_snapshot_mes_actual` + el cron `procesa_provisiones_mensual`): toma `informe_balance()` **LIVE** (no as_of). Para el cierre mensual corre el día 1-2 del mes siguiente → guarda saldos vivos de ESE día etiquetados como fin de mes.
+- **`crear_snapshot_historia()`** (botón Backfill + `sync_dbase_actual`): usa `informe_balance_as_of(fin_de_mes)` — correcto. Comentario propio dice que se creó para arreglar el bug del LIVE, pero el cron NO la usa. ⇒ columnas con fuente de verdad inconsistente según cómo se creó cada mes.
+
+**Bugs confirmados (severidad):**
+
+1. **[ALTA] `TOTAL ACTIVO` omite Caja.** `_valor_para_linea('_activo')` suma banco+cart+anticipos+ustock+uqui+maquinaria+realty — `scintela.historia` no tiene columna de caja (salcaj). Pero `PATRIM.NET` (guardado = patr−uret) SÍ incluye caja. ⇒ se rompe la identidad ACTIVO−PASIVO=PATRIM. Verificado en prod: cierres ENE-MAY cuadran (caja≈0 al cierre) pero JUN mid-mes difiere **$46,7k** (= caja del día). Fix: snapshotear caja y sumarla en `_activo`, o restarla de PATRIM.
+2. **[MEDIA] kvent/uvent NO excluyen `usuario_crea='asinfo-backfill'`.** Las queries de ventas/compras en `calcular_kpis` (snapshot_historia_mensual.py) suman por fecha sin el filtro que el resto de `informes/queries.py` aplica → meses con backfill inflan VENTAS kg/US$, precio, utilidad y MARGEN.
+3. **[MEDIA] Throttle real = 180s, no 24h.** La vista llama `tomar_snapshot_mes_actual(throttle_segundos=180)` overrideando el default 86400; `consolidar_snapshots_mes_actual(conservar=2)` recorta a 2. ⇒ la columna "previa" se vuelve "hace 3 min", las 2 columnas JUN salen idénticas y la Δ da 0 (visto en prod, id 208). El compare-feature no compara nada útil.
+4. **[BAJA] Timestamp del tooltip −5h doble.** `historico_5m_con_actual` ya pasa `fecha_crea` por `_hora_quito` (UTC−5); el template vuelve a aplicar `|hora_ec` (otro −5) → tooltip 5h antes. Sacar uno de los dos.
+5. **[BAJA/cosmético] `{{ n }}` y `data.meses` no existen** en el contexto de la vista matriz: header muestra "**0** meses · paginable" y "Últimos _ meses"; el form Backfill postea `meses=""` (cae al default 3, no rompe). `_cargar_snapshots` ordena por `fecha DESC` mientras el resto usa `fecha_crea DESC` (inconsistente para meses con >1 snapshot).
+6. **Artefacto, no bug:** la columna del mes en curso mezcla balance point-in-time con flujos MTD parciales → utilidad/margen negativos a principio de mes (JUN: −6,6% margen). Esperable; considerar marcarla visualmente como "parcial".
+
+### Fixes aplicados 2026-06-04 (verificados en local — pendiente deploy)
+
+- **#1 Caja:** NO hizo falta columna nueva. El camino as_of (`balance_components_as_of`) ya suma caja a `banco`. Se alineó el camino LIVE: `calcular_kpis` ahora hace `banco = salbanc + salcaj`. Los meses cerrados ENE-MAY ya cuadraban (caja≈0 al cierre) → no se re-backfillea historia (sería tocar data financiera buena con la aproximación de totf). El botón "Generar meses faltantes" solo crea meses ausentes (idempotente, as_of).
+- **#2 backfill:** filtro `<>'asinfo-backfill'` agregado en cart/ventas/compras de `calcular_kpis`. Los meses 2026 mostrados NO estaban inflados (no tienen facturas asinfo-backfill) → tampoco requieren regeneración.
+- **#3 throttle:** la vista ahora pasa `throttle_segundos=86400` (1 foto/día, conservar 2 → "ayer vs hoy"). Antes 180s.
+- **Root + bonus:** el cron `procesa_provisiones_mensual` (tarea `snapshot_historia`) ahora usa `crear_snapshot_historia` (as_of fin de mes) en vez de `ejecutar` (LIVE). Además se arreglaron claves rotas en `crear_snapshot_historia` (`gastos_mes`/`gastos_total`/`uret` → `gasto`/`gstotal`/`usret`/`retiro`) que guardaban gasto=0 y RR=0 en el camino as_of.
+- **⚠ Regresión cazada en self-review:** `crear_snapshot_historia` dedupeaba por `snapshot_historia_existe(anio, mes)` (año/mes). Como el mes en curso casi siempre tiene snapshots web (fecha = día intermedio), el cron habría **saltado el cierre de fin de mes**. Cambiado a dedup por la **fecha de cierre EXACTA** (último día) vía `_existe_cierre()`. El camino viejo (`ejecutar`→`existe_snapshot(fecha)`) ya chequeaba fecha exacta; había que preservar esa semántica.
+- **Columna "en vivo" (pedido dueña 2026-06-04):** la columna del mes en curso del Histórico ahora se **recalcula en vivo en cada carga** (helper `_snap_live_mes_actual` → `calcular_kpis(hoy)`, sin guardar) → refleja cualquier factura/cobranza/pago al instante, igual que Resultados, sin depender de Validar. La última foto guardada del mes queda como columna **"previa"** y la Δ muestra qué cambió desde esa foto. Badges: `en vivo` (live), `previa` (foto guardada), `actual` (si no hay live). El snapshot diario (throttle 24h) se sigue tomando en background para la previa + historia. La pantalla carga sola (auto-snapshot + fallback live "en curso" si falta) sin apretar Validar. Columnas del mes distinguidas con badges actual/previa/en curso. Tooltip −5h doble corregido.
+- **Verificación local:** py_compile + ruff limpios en lo editado; `test_procesa_provisiones_mensual` + `test_snapshot_carry_forward` + `test_no_backfill_filter_balance` + `test_historial_consolidacion` verdes.
+- **Archivos (commitear SOLO estos):** `modules/informes/queries.py`, `modules/informes/views.py`, `modules/informes/templates/informes/historico_12m.html`, `scripts/snapshot_historia_mensual.py`, `scripts/procesa_provisiones_mensual.py`, `tests/test_procesa_provisiones_mensual.py`. ⚠ El working tree tiene ~30 archivos ajenos sin commitear — NO incluirlos.
+- **Pendiente:** verificar `scintela.historia` Windows Scheduled Task en EC2 (que el cron mensual corra día 1-2) vía SSM/intela-aws-deploy.

@@ -227,6 +227,22 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(db_mod, "fetch_one", fake.fetch_one)
     monkeypatch.setattr(db_mod, "execute", fake.execute)
     monkeypatch.setattr(db_mod, "tx", fake.tx)
+    # 2026-06-04 — el cron ahora crea el snapshot del cierre vía
+    # crear_snapshot_historia (camino as_of, fin de mes), no vía el balance
+    # LIVE. Lo stubbeamos: la responsabilidad de ESTE test es el tracking de
+    # tareas en ejecuciones_tareas, no el cálculo del balance (cubierto aparte).
+    import modules.informes.queries as _iq
+    monkeypatch.setattr(
+        _iq,
+        "crear_snapshot_historia",
+        lambda anio, mes, usuario="auto": {
+            "aplicado": True,
+            "anio": anio,
+            "mes": mes,
+            "id_historia": 999,
+            "razon": "stub test",
+        },
+    )
     return fake
 
 

@@ -120,13 +120,17 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         log.warning("informe_balance falló — campos avanzados en 0: %s", e)
         bal = {}
 
-    # Cartera viva al cierre — saldos > 0 con stat válido
+    # Cartera viva al cierre — saldos > 0 con stat válido.
+    # Bug #2 fix (2026-06-04): excluir usuario_crea='asinfo-backfill' —
+    # las facturas backfilleadas de Asinfo son históricas ya contabilizadas
+    # (mismo filtro que el resto de informes/queries.py).
     cart = safe_one(
         """
         SELECT COALESCE(SUM(saldo), 0) AS v
         FROM scintela.factura
         WHERE COALESCE(saldo, 0) > 0
           AND (stat IS NULL OR stat IN ('Z','A','',' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     ).get("v") or 0
 
@@ -175,7 +179,8 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         (primer_dia, fecha_cierre),
     ).get("v") or 0
 
-    # Ventas del mes — kg y USD
+    # Ventas del mes — kg y USD.
+    # Bug #2 fix (2026-06-04): excluir 'asinfo-backfill' (ver nota en cart).
     ventas = safe_one(
         """
         SELECT COALESCE(SUM(kg), 0)      AS kvent,
@@ -183,11 +188,13 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         FROM scintela.factura
         WHERE fecha >= %s AND fecha <= %s
           AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (primer_dia, fecha_cierre),
     )
 
-    # Compras del mes — kg y USD
+    # Compras del mes — kg y USD.
+    # Bug #2 fix (2026-06-04): excluir 'asinfo-backfill' (ver nota en cart).
     compras = safe_one(
         """
         SELECT COALESCE(SUM(kg), 0)      AS kcom,
@@ -195,6 +202,7 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         FROM scintela.compra
         WHERE fecha >= %s AND fecha <= %s
           AND (stat IS NULL OR stat <> 'Y')
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (primer_dia, fecha_cierre),
     )
@@ -204,7 +212,14 @@ def calcular_kpis(fecha_cierre: date) -> dict:
     # muestra ES lo que se snapshotea).
     cart_bal   = bal.get("totc", 0) + bal.get("totf", 0)
     deuda_bal  = bal.get("totp", 0)
+    # Bug #1 fix (2026-06-04): incluir la CAJA en `banco`, igual que
+    # balance_components_as_of (la columna `banco` del snapshot representa
+    # "bancos + caja"). Sin esto, TOTAL ACTIVO del Histórico omitía la caja
+    # y se rompía la identidad ACTIVO − PASIVO = PATRIMONIO por el monto de
+    # la caja (visible a mitad de mes; al cierre la caja suele ser ≈ 0).
     banco_bal  = bal.get("salbanc", banco)
+    if bal:
+        banco_bal = float(bal.get("salbanc") or 0) + float(bal.get("salcaj") or 0)
 
     return {
         "fecha":     fecha_cierre,

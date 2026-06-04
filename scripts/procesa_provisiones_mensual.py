@@ -179,10 +179,23 @@ def _ejecutar_tarea(tarea: str, sql_call: str, fecha: date) -> None:
         scripts_dir = os.path.dirname(os.path.abspath(__file__))
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
-        from snapshot_historia_mensual import _ultimo_dia_mes_anterior, ejecutar
+        from snapshot_historia_mensual import _ultimo_dia_mes_anterior
         fecha_cierre = _ultimo_dia_mes_anterior(fecha)
-        result = ejecutar(fecha_cierre, force=False, usuario=f"cron_{tarea}")
-        log.info("snapshot_historia %s → %s (id=%s)", fecha_cierre, result["accion"], result["id_historia"])
+        # 2026-06-04 — usar crear_snapshot_historia (calcula el balance
+        # `as_of` el último día del mes via balance_components_as_of) en
+        # lugar de ejecutar() (que tomaba el balance LIVE de hoy, día 1-2 del
+        # mes siguiente, e inflaba/desfasaba los saldos del cierre). El
+        # camino as_of además incluye la caja en `banco` y excluye
+        # 'asinfo-backfill'. Idempotente: salta si ya existe el mes.
+        from modules.informes.queries import crear_snapshot_historia
+        result = crear_snapshot_historia(
+            fecha_cierre.year, fecha_cierre.month, usuario=f"cron_{tarea}"
+        )
+        log.info(
+            "snapshot_historia %s -> aplicado=%s (id=%s, %s)",
+            fecha_cierre, result.get("aplicado"), result.get("id_historia"),
+            result.get("razon", ""),
+        )
         return
 
     # procesa_provisiones toma (fecha); actualizar_amortizacion no toma args.

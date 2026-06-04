@@ -5644,6 +5644,33 @@ def _cargar_snapshots_mes(anio: int, mes: int, limite: int = 3) -> list[dict]:
     )
 
 
+def _snap_live_mes_actual(hoy):
+    """Snapshot del mes en curso calculado EN VIVO (sin guardarlo).
+
+    2026-06-04 — alimenta la columna "actual / en vivo" del Histórico, que se
+    recalcula en cada carga para que refleje cualquier operación al instante
+    (pedido dueña: que cambie al mover algo, no al apretar Validar). Reusa
+    `calcular_kpis` para no duplicar la lógica del snapshot (caja sumada a
+    banco, exclusión de asinfo-backfill, etc.). Devuelve un dict tipo-snap con
+    todos los campos de `_HIST_LINEAS`, o None si algo falla (la página no se
+    rompe — simplemente no muestra la columna live).
+    """
+    import os
+    import sys
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    scripts_dir = os.path.join(repo_root, "scripts")
+    for _p in (repo_root, scripts_dir):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+    try:
+        import snapshot_historia_mensual as _snap
+
+        return _snap.calcular_kpis(hoy)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
     """Matriz histórica estilo TINT.BAT — TMT 2026-05-19 v7.
 
@@ -5844,15 +5871,17 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 "snap": snap,
             }
         )
-    # Mes actual — N columnas (la última = más reciente = "candidata default").
+    # ── Mes en curso ────────────────────────────────────────────────────
+    # 2026-06-04 (pedido dueña: "que el cuadro cambie cada vez que muevo algo,
+    # no cuando pongo validar"). La columna "actual" se RECALCULA EN VIVO en
+    # cada carga (refleja cualquier factura/cobranza/pago al instante, igual
+    # que la pantalla Resultados). La foto guardada más reciente del mes queda
+    # como "previa" para comparar (Δ = qué cambió desde esa foto).
     n_actual = len(snaps_actual_asc)
-    for i, snap in enumerate(snaps_actual_asc):
-        es_ultima = i == n_actual - 1
-        sufijo = ""
-        if n_actual > 1:
-            # Mostrar fecha_crea como sufijo si hay >1 snapshot del mes.
-            fc = snap.get("fecha_crea")
-            sufijo = f" #{i + 1}" + (f" ({fc.strftime('%d/%m')})" if fc else "")
+    # Foto guardada más reciente del mes → columna "previa" (a lo sumo 1).
+    for snap in snaps_actual_asc[-1:]:
+        fc_ec = _hora_quito(snap.get("fecha_crea"))
+        sufijo = " · previa" + (f" {fc_ec.strftime('%d/%m %H:%M')}" if fc_ec else "")
         columnas.append(
             {
                 "key": f"{hoy.year:04d}-{hoy.month:02d}-{snap['id_historia']}",
@@ -5861,12 +5890,37 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
                 "label_largo": f"{hoy.month:02d}/{hoy.year}{sufijo}",
                 "id_historia": int(snap["id_historia"]),
-                "fecha_crea": _hora_quito(snap.get("fecha_crea")),
+                # fecha_crea CRUDA (UTC); el template aplica |hora_ec una sola vez.
+                "fecha_crea": snap.get("fecha_crea"),
                 "es_mes_actual": True,
-                "es_canonico_default": es_ultima,
+                "es_canonico_default": False,
+                "es_live": False,
                 "snap": snap,
             }
         )
+
+    # Columna ACTUAL — estado LIVE recalculado en CADA carga (no guardado).
+    # Reusa calcular_kpis (misma lógica que el snapshot: caja en banco,
+    # excluye asinfo-backfill) → tiene TODAS las filas, incluido operativo.
+    hubo_live = False
+    _live_snap = _snap_live_mes_actual(hoy)
+    if _live_snap is not None:
+        columnas.append(
+            {
+                "key": f"{hoy.year:04d}-{hoy.month:02d}-live",
+                "anio": hoy.year,
+                "mes": hoy.month,
+                "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d} · ahora",
+                "label_largo": f"{hoy.month:02d}/{hoy.year} · en vivo",
+                "id_historia": None,
+                "fecha_crea": None,
+                "es_mes_actual": True,
+                "es_canonico_default": True,
+                "es_live": True,
+                "snap": _live_snap,
+            }
+        )
+        hubo_live = True
 
     # Armar líneas (igual que historico_12m_matriz).
     lineas_out = []
@@ -5884,8 +5938,8 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
         )
 
     sin_snap = [f"{m_:02d}/{a_}" for (a_, m_) in meses_pasados if (a_, m_) not in snaps_pasados]
-    if not snaps_actual_asc:
-        sin_snap.append(f"{hoy.month:02d}/{hoy.year} (actual — pulsá '↻ Snapshot ahora')")
+    if not snaps_actual_asc and not hubo_live:
+        sin_snap.append(f"{hoy.month:02d}/{hoy.year} (actual — se genera al entrar)")
 
     # Federico 2026-05-21 -- columna fina de DIFERENCIAS entre las 2
     # columnas mas recientes, SOLO si las 2 ultimas son del mes actual.
@@ -6520,28 +6574,40 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
 
     Devuelve `{aplicado: bool, anio, mes, id_historia: int|None, razon: str}`.
     """
+    import calendar
     from datetime import date as _date
 
     anio = int(anio)
     mes = int(mes)
     periodo_clave = f"{anio:04d}-{mes:02d}"
 
-    if snapshot_historia_existe(anio, mes):
+    # TMT 2026-05-19 v6 audit — calculamos el balance "as_of último día del mes"
+    # para que los snapshots de backfill queden con la foto correcta. Antes
+    # esto usaba `informe_balance()` LIVE → backfills con saldo de hoy.
+    last_day = calendar.monthrange(anio, mes)[1]
+    fecha_snap = _date(anio, mes, last_day)
+
+    def _existe_cierre() -> bool:
+        # 2026-06-04 — dedup por la fecha EXACTA del cierre (último día del
+        # mes), NO por año/mes. El mes puede tener snapshots web de mitad de
+        # mes (fecha = día intermedio) y aún faltar el cierre canónico de fin
+        # de mes. Con el chequeo viejo `snapshot_historia_existe(anio, mes)`
+        # el cron saltaba el cierre si ya había cualquier foto del mes.
+        return bool(
+            db.fetch_one(
+                "SELECT 1 FROM scintela.historia WHERE fecha = %s LIMIT 1",
+                (fecha_snap,),
+            )
+        )
+
+    if _existe_cierre():
         return {
             "aplicado": False,
             "anio": anio,
             "mes": mes,
             "id_historia": None,
-            "razon": f"Ya existe snapshot para {periodo_clave}.",
+            "razon": f"Ya existe snapshot de cierre ({fecha_snap}) para {periodo_clave}.",
         }
-
-    # TMT 2026-05-19 v6 audit — calculamos el balance "as_of último día del mes"
-    # para que los snapshots de backfill queden con la foto correcta. Antes
-    # esto usaba `informe_balance()` LIVE → backfills con saldo de hoy.
-    import calendar
-
-    last_day = calendar.monthrange(anio, mes)[1]
-    fecha_snap = _date(anio, mes, last_day)
 
     bal = informe_balance_as_of(fecha_snap)
     if not bal or bal.get("error"):
@@ -6562,8 +6628,8 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
             "SELECT pg_advisory_xact_lock(hashtext('snapshot_historia'))",
             conn=conn,
         )
-        # Re-check después del lock
-        if snapshot_historia_existe(anio, mes):
+        # Re-check después del lock (por fecha de cierre exacta).
+        if _existe_cierre():
             return {
                 "aplicado": False,
                 "anio": anio,
@@ -6607,20 +6673,27 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
                 "utin": float(kg.get("utin") or 0),
                 "uvent": float(kg.get("uvent") or 0),
                 "costo": float(kg.get("costo_mes") or 0),
-                # Resultados del mes
-                "gasto": float(d.get("gastos_mes") or 0),
-                "gstotal": float(d.get("gastos_total") or 0),
-                # Balance components
+                # Resultados del mes.
+                # 2026-06-04 fix — balance_components_as_of expone las claves
+                # `gasto`/`gstotal`/`usret`/`retiro`, NO `gastos_mes`/
+                # `gastos_total`/`uret`. Antes estos .get() caían al default y
+                # guardaban gasto=0 y RR=0 en cada snapshot del camino as_of
+                # (backfill + cron nuevo).
+                "gasto": float(d.get("gasto") or 0),
+                "gstotal": float(d.get("gstotal") or d.get("gasto") or 0),
+                # Balance components. `salbanc` ya incluye la CAJA
+                # (balance_components_as_of la suma) → cierra la identidad
+                # ACTIVO − PASIVO = PATRIMONIO.
                 "banco": float(d.get("salbanc") or 0),
                 "cart": float(d.get("totc", 0) or 0) + float(d.get("totf", 0) or 0),
                 "deuda": float(d.get("totp") or 0),
-                "retiro": float(d.get("uret") or 0),
+                "retiro": float(d.get("retiro", d.get("usret")) or 0),
                 "patrimonio": float(d.get("patr") or 0),
                 "anticipos": float(d.get("antic") or 0),
                 "dolar": 0.0,  # no usado en PC
                 "maquinaria": float(d.get("umaq") or 0),
                 "realty": float(d.get("uact") or 0),
-                "usret": float(d.get("uret") or 0),
+                "usret": float(d.get("usret") or 0),
                 "usuti": float(d.get("utilidad") or 0),
                 "usuario": usuario[:50],
             },

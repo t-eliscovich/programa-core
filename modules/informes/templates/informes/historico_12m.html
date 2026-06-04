@@ -93,6 +93,15 @@
     font-size: 9px !important; font-weight: 400 !important;
     color: rgb(100 116 139); background: rgb(248 250 252);
   }
+  /* TMT 2026-06-04 — badges para distinguir las columnas del mes en curso. */
+  .h12-tbl .col-badge {
+    display: inline-block; font-size: 8px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+    padding: 0 4px; border-radius: 4px; margin-left: 3px; vertical-align: middle;
+  }
+  .h12-tbl .badge-actual { background: rgb(186 230 253); color: rgb(3 105 161); }   /* sky */
+  .h12-tbl .badge-previa { background: rgb(226 232 240); color: rgb(71 85 105); }    /* slate */
+  .h12-tbl .badge-live   { background: rgb(254 230 138); color: rgb(146 64 14); }    /* amber */
 
   @media print {
     .no-print { display: none !important; }
@@ -133,7 +142,7 @@
         {% if modo == 'mom' %}
           Comparación mes vs mes — elegí dos meses para ver la diferencia.
         {% else %}
-          Últimos {{ n }} meses (paginable). Snapshots de <code class="text-xs">scintela.historia</code>.
+          Últimos 5 meses cerrados + el mes en curso. Snapshots de <code class="text-xs">scintela.historia</code>.
         {% endif %}
       </p>
     </div>
@@ -250,9 +259,9 @@
       {% if modo != 'mom' %}
         <form method="post" action="{{ url_for('informes.snapshot_backfill') }}" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="meses" value="{{ n }}">
+          <input type="hidden" name="meses" value="6">
           <button class="text-xs px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 font-medium">
-            Backfillear {{ n }} meses
+            Generar meses faltantes
           </button>
         </form>
       {% endif %}
@@ -270,7 +279,7 @@
         {% if modo == 'mom' %}
           {{ MES_ABRV[mom.par_a[1]-1] }} {{ mom.par_a[0] }} → {{ MES_ABRV[mom.par_b[1]-1] }} {{ mom.par_b[0] }}
         {% else %}
-          {{ data.meses|length }} meses · paginable
+          5 cierres + mes en curso
         {% endif %}
       </div>
     </div>
@@ -289,10 +298,15 @@
               {# TMT 2026-05-24 — unifico mes+año en una sola línea ("May
                  26") para liberar altura. El timestamp y badge DEFAULT
                  viajan al tooltip. #}
-              <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_mes_actual %}bg-sky-50{% endif %}"
-                  {% if c.es_mes_actual and c.fecha_crea %}title="Snapshot {{ c.fecha_crea|hora_ec('%d/%m %H:%M') }}{% if c.es_canonico_default %} · DEFAULT{% endif %}"{% endif %}>
+              <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_live %}bg-amber-50{% elif c.es_mes_actual %}bg-sky-50{% endif %}"
+                  {% if c.es_mes_actual and c.fecha_crea %}title="Snapshot {{ c.fecha_crea|hora_ec('%d/%m %H:%M') }}{% if c.es_canonico_default %} · ACTUAL{% endif %}"{% endif %}>
                 {% if c.es_delta %}Δ
                 {% else %}{{ MES_ABRV[c.mes-1] }} <span class="yr">{{ '%02d' % (c.anio % 100) }}</span>
+                  {# 2026-06-04 — distinguir las columnas del mes en curso (antes se veían "JUN 26 / JUN 26" idénticas). #}
+                  {% if c.es_live %}<span class="col-badge badge-live">en vivo</span>
+                  {% elif c.es_mes_actual and c.es_canonico_default %}<span class="col-badge badge-actual">actual</span>
+                  {% elif c.es_mes_actual %}<span class="col-badge badge-previa">previa</span>
+                  {% endif %}
                 {% endif %}
               </th>
             {% endfor %}
@@ -512,7 +526,9 @@
       Verde = subió respecto del mes A, rojo = bajó.
     {% else %}
       Valores en <strong>miles de U$</strong> excepto operativo (kg y U$/kg) y MARGEN %.
-      Δ% verde/rojo abajo del número en la sección operativa.
+      La columna <strong>en vivo</strong> se recalcula en cada carga y refleja cualquier cambio al
+      instante (no hace falta apretar nada). La columna <strong>previa</strong> es la última foto
+      guardada; la <strong>Δ</strong> muestra qué cambió desde esa foto.
     {% endif %}
     Imprimí con el botón <em>Imprimir</em> (queda en blanco para guardar en PDF).
   </p>
