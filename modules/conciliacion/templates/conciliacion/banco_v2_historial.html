@@ -48,6 +48,14 @@
               {% if not s.cerrada_en %}
                 <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=s.id) }}" class="text-sky-600 hover:underline">abrir →</a>
               {% endif %}
+              {% if s.cerrada_en %}
+                <form method="POST" action="{{ url_for('conciliacion.banco_reabrir_sesion') }}" class="inline m-0"
+                      onsubmit="return confirm('¿Reabrir sesión #{{ s.id }}?\n\nSe cierra la sesión activa actual (sin tocar los pendientes) y queda abierta esta.');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="sesion_id" value="{{ s.id }}">
+                  <button class="text-sky-600 hover:text-sky-800 hover:underline text-xs">↩ Reabrir</button>
+                </form>
+              {% endif %}
               <form method="POST" action="{{ url_for('conciliacion.banco_borrar_sesion') }}" class="inline m-0"
                     onsubmit="return confirm('¿Borrar sesión #{{ s.id }}?\n\nSe borran los matches, snapshots y txs grupales creados durante esta sesión. Los pendientes históricos conciliados vuelven a pendientes. NO se puede deshacer.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

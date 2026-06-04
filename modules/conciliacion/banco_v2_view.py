@@ -2477,6 +2477,63 @@ def banco_historial_v2():
     )
 
 
+# ─── Reabrir sesión cerrada ──────────────────────────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/reabrir-sesion", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_reabrir_sesion():
+    """Reabre una sesión cerrada.
+
+    TMT 2026-06-04 dueña: 'abilita reabrir'. Como el modelo permite UNA sola
+    sesión abierta por banco, primero cierra la que esté abierta (sin promover
+    nada al backlog — la hoja es la verdad de los pendientes) y después reabre
+    la elegida. Redirige a la pantalla activa con la sesión reabierta.
+    """
+    no_banco = _BANCO_PICHINCHA
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    if not sesion_id:
+        flash("Falta la sesión a reabrir.", "error")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+    sesion = _sesion.sesion_por_id(sesion_id)
+    if not sesion:
+        flash("Sesión no encontrada.", "error")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+    if not sesion.get("cerrada_en"):
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+    try:
+        with _db.tx() as conn:
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET cerrada_en = CURRENT_TIMESTAMP, cerrada_por = %s
+                 WHERE no_banco = %s AND cerrada_en IS NULL AND id <> %s
+                """,
+                (f"auto-al-reabrir-{sesion_id}"[:50], no_banco, sesion_id),
+                conn=conn,
+            )
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET cerrada_en = NULL, cerrada_por = NULL
+                 WHERE id = %s AND no_banco = %s
+                """,
+                (sesion_id, no_banco),
+                conn=conn,
+            )
+    except Exception as e:
+        _LOG.exception("reabrir sesion %s falló: %s", sesion_id, e)
+        flash(f"Error al reabrir la sesión: {e}", "error")
+        return redirect(url_for("conciliacion.banco_historial_v2"))
+    flash(
+        f"Sesión #{sesion_id} reabierta. Cerré la que estaba abierta para dejar "
+        f"solo esta (sin tocar los pendientes).",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+
 # ─── Cerrar sesión + migrar pendientes a histos (lifecycle mensual) ──
 
 
