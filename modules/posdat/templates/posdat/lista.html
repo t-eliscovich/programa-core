@@ -16,7 +16,7 @@
        tabs (pedido dueña: "necesito que en ambas tabs arriba diga
        el KPI total posdatados + YY = x. en el de posdatados tmbn
        el kpi de posdatados. en el de yy el total de yy tmbn"). #}
-    {{ page_hero('Posdatados', 'Pasivos con proveedores. Posdatados = deuda con proveedores · YY = cuotas mensuales (provisiones).') }}
+    {{ page_hero('Posdatados', 'Pasivos con proveedores. Posdatados = deuda con proveedores · YY = provisiones (saldos acumulados).') }}
     <div class="no-print flex items-center gap-2 shrink-0">
       <a href="{{ url_for('informes.balance') }}"
          class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -62,9 +62,9 @@
       <div class="mt-1 text-xs text-slate-500">{{ _pos_n }} partida{{ '' if _pos_n == 1 else 's' }} a proveedores</div>
     </div>
     <div class="bg-white dark:bg-slate-900 border-2 {{ 'border-sky-300 dark:border-sky-700' if tab == 'yy' else 'border-slate-200 dark:border-slate-800' }} rounded p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-500">YY (cuotas mensuales)</div>
+      <div class="text-xs uppercase tracking-wider text-slate-500">Provisiones (saldo actual)</div>
       <div class="mt-2 text-2xl font-semibold text-mono">{{ _yy_total | money_es }}</div>
-      <div class="mt-1 text-xs text-slate-500">{{ _yy_n }} provisione{{ '' if _yy_n == 1 else 's' }}</div>
+      <div class="mt-1 text-xs text-slate-500">{{ _yy_n }} provisione{{ '' if _yy_n == 1 else 's' }} · suma de importes acumulados</div>
     </div>
   </div>
 
@@ -75,14 +75,14 @@
   {% if tab == 'yy' and (delta_dia_hoy or 0) > 0 %}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
     <div class="rounded-lg bg-rose-50 border border-rose-200 px-5 py-4">
-      <div class="text-xs uppercase tracking-wider text-rose-700">+ Suma cada día hábil</div>
+      <div class="text-xs uppercase tracking-wider text-rose-700">Cuota diaria total</div>
       <div class="mt-2 text-2xl font-semibold text-rose-900 text-mono">{{ delta_dia_hoy | money_es }}</div>
-      <div class="mt-1 text-xs text-rose-700">total de cuotas diarias — se suma al importe lunes a viernes</div>
+      <div class="mt-1 text-xs text-rose-700">se suma al saldo cada día hábil (L-V)</div>
     </div>
     <div class="rounded-lg bg-rose-50 border border-rose-200 px-5 py-4">
-      <div class="text-xs uppercase tracking-wider text-rose-700">Proyección del mes</div>
+      <div class="text-xs uppercase tracking-wider text-rose-700">Acumulación del mes</div>
       <div class="mt-2 text-2xl font-semibold text-rose-900 text-mono">{{ acum_mes_hasta_hoy | money_es }}</div>
-      <div class="mt-1 text-xs text-rose-700">25 días hábiles × $ {{ delta_dia_hoy | money_es }} diario</div>
+      <div class="mt-1 text-xs text-rose-700">cuota × 25 días hábiles — cuánto crecería el saldo en un mes sin pagos</div>
     </div>
   </div>
   {% endif %}
@@ -213,6 +213,19 @@
               <span class="ml-1 inline-block px-1 py-0 rounded bg-violet-100 text-violet-700 text-[9px] font-medium"
                     title="Importe ≤ 0 — anticipo o ajuste contable (reduce el pasivo)">
                 ajuste
+              </span>
+            {% endif %}
+            {# TMT 2026-06-04 — badge "anual" cuando el saldo de la provisión
+               acumula más de 30 días hábiles de cuota. Indica provisiones
+               con ciclo anual (Décimo 13, Décimo 14, Jub Patronal, Prov
+               Incobrable, AB Provision) que se pagan 1 vez al año pero
+               acumulan diariamente. Sin esto, sus saldos altos parecen
+               "atrasados" cuando es la acumulación normal. #}
+            {% if _show_mensual and f.cuota_diaria and (f.cuota_diaria | float) > 0
+                  and ((f.importe | float) / (f.cuota_diaria | float)) > 30 %}
+              <span class="ml-1 inline-block px-1 py-0 rounded bg-amber-100 text-amber-800 text-[9px] font-medium"
+                    title="Provisión con ciclo anual — su saldo se acumula durante el año hasta el pago único (ej. Décimo 13/14, Jubilación Patronal, Provisión Incobrable). No está atrasada, es así por diseño.">
+                anual
               </span>
             {% endif %}
           </td>
