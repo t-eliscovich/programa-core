@@ -2484,24 +2484,16 @@ def banco_historial_v2():
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_cerrar_sesion():
-    """Cierra la sesión activa Y migra los items NO MATCHEADOS del extracto
-    a banco_historicos_pendientes. Mañana se ven como histos.
+    """Cierra la sesión activa. NO migra nada.
 
-    TMT 2026-06-03 dueña: 'que los que no se matchearon hoy pasen a histos'.
-    Lifecycle:
-      1) Recolecta items del extracto_payload sin firma en matches activos.
-      2) Inserta cada uno en banco_historicos_pendientes con fuente
-         'sesion:<id>' y fecha del cierre.
-      3) Marca la sesión cerrada_en = now.
-      4) Próxima vez que abra la conciliación, sesión nueva + histos
-         arrastrados aparecen en el tab Manual lado banco.
-
-    TMT 2026-06-03 audit fix: fuente unificado a 'sesion:<id>' (antes era
-    'sesion_<id>_cierre'). El borrar-sesion ya filtra por 'sesion:<id>'
-    así que esos histos del cierre quedaban huérfanos para siempre. Es la
-    causa raíz de los 163 dupes legacy que la dueña tenía que limpiar a
-    mano con /borrar-no-feb2023. Con esta unificación, borrar sesión
-    también barre los histos del cierre.
+    TMT 2026-06-04 dueña: 'no puede no estar en extracto y no estar en
+    histórico'. Antes el cierre promovía el extracto sin parear a
+    banco_historicos_pendientes — eso inflaba pendientes de banco (225 /
+    −299k) y, al correr "Hacer prevalecer" con la hoja, esos movs (no
+    presentes en la hoja) se borraban y desaparecían. Ahora el cierre solo
+    marca cerrada_en; los pendientes de banco son SIEMPRE la hoja
+    (banco_cruzar_pendientes). El extracto sin conciliar no se pierde: se
+    vuelve a ver subiéndolo en una sesión nueva.
     """
     no_banco = _BANCO_PICHINCHA
     usuario = _usuario_actual()
@@ -2511,68 +2503,17 @@ def banco_cerrar_sesion():
         return redirect(url_for("conciliacion.banco_post_procesar"))
 
     sesion_id = int(sesion.get("id") or 0)
-    # 1) Obtener firmas de matches activos para excluir matcheados.
-    matched_firmas = set()
-    try:
-        rows = _db.fetch_all(
-            """
-            SELECT real_fecha, real_documento, real_monto, real_tipo
-              FROM scintela.banco_conciliacion_match
-             WHERE no_banco = %s AND deshecho_en IS NULL
-               AND real_documento IS NOT NULL
-            """,
-            (no_banco,),
-        ) or []
-        for r in rows:
-            matched_firmas.add((
-                str(r.get("real_fecha")),
-                (r.get("real_documento") or "").strip(),
-                round(float(r.get("real_monto") or 0), 2),
-                (r.get("real_tipo") or "").strip(),
-            ))
-    except Exception:
-        pass
-
-    # 2) Leer payload de la sesión.
-    payload = sesion.get("extracto_payload") or []
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except Exception:
-            payload = []
-    if isinstance(payload, dict):
-        payload = payload.get("extracto") or payload.get("movs") or []
-
-    # 3) Insertar los unmatched en histos.
+    # TMT 2026-06-04 dueña: 'no puede no estar en extracto y no estar en
+    # histórico'. El cierre YA NO promueve el extracto sin parear a
+    # banco_historicos_pendientes. Esa promoción inflaba pendientes de banco
+    # (llegó a 225 / −299k) metiendo el día entero del banco como "pendiente",
+    # y al correr "Hacer prevalecer" con la hoja esos movs (que no están en la
+    # hoja) se borraban → desaparecían. La ÚNICA verdad de los pendientes de
+    # banco es la hoja (banco_cruzar_pendientes). El extracto sin conciliar se
+    # vuelve a ver subiéndolo de nuevo en una sesión nueva — no se pierde.
     n_migrados = 0
-    fuente = f"sesion:{sesion_id}"  # mismo pattern que durante-sesion (audit fix)
-    for m in (payload or []):
-        if not isinstance(m, dict):
-            continue
-        fecha = m.get("fecha")
-        doc = (m.get("documento") or m.get("doc") or "").strip()
-        monto = round(float(m.get("monto") or m.get("importe") or 0), 2)
-        tipo = (m.get("tipo") or m.get("clase") or "").strip().upper()[:1] or ("C" if monto > 0 else "D")
-        concepto = (m.get("concepto") or "")[:200]
-        oficina = (m.get("oficina") or m.get("codigo") or "")[:50]
-        key = (str(fecha), doc, abs(monto), tipo)
-        if key in matched_firmas:
-            continue  # ya está conciliado vía match
-        try:
-            _db.execute(
-                """
-                INSERT INTO scintela.banco_historicos_pendientes
-                    (no_banco, fecha, concepto, documento, monto, tipo, oficina, fuente, creado_en)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT DO NOTHING
-                """,
-                (no_banco, fecha, concepto, doc, abs(monto), tipo, oficina, fuente),
-            )
-            n_migrados += 1
-        except Exception as e:
-            _LOG.warning("migrar histo desde cierre %s falló: %s", doc, e)
 
-    # 4) Cerrar la sesión.
+    # Cerrar la sesión.
     try:
         _db.execute(
             """
@@ -2588,8 +2529,8 @@ def banco_cerrar_sesion():
         return redirect(url_for("conciliacion.banco_post_procesar"))
 
     flash(
-        f"Sesión #{sesion_id} cerrada. {n_migrados} item(s) sin conciliar pasaron a históricos. "
-        f"Mañana los vas a ver del lado banco en la próxima sesión.",
+        f"Sesión #{sesion_id} cerrada. Los pendientes de banco siguen siendo los "
+        f"de la hoja; el extracto sin conciliar lo volvés a ver subiéndolo de nuevo.",
         "ok",
     )
     return redirect(url_for("conciliacion.hub"))
