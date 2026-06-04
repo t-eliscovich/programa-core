@@ -1604,41 +1604,22 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     except Exception as e:
         _LOG.warning("xlsx historicos query falló: %s", e)
 
-    # TMT 2026-06-02: incluir también los movs del extracto en la sesión
-    # actual que NO están matcheados (antes se "promovían a histos" al
-    # cerrar; con sesión continua no hay promoción, así que los traemos
-    # de la sesión directamente). Dedupe por (fecha, documento) contra
-    # los histos que ya pusimos.
-    seen_keys = {
-        (r.get("fecha"), (r.get("documento") or "").strip().upper())
-        for r in rows
-    }
-    try:
-        movs_s = _sesion.cargar_movs(sesion)
-        if movs_s:
-            from modules.conciliacion.matcher_banco import matchear_extracto_banco
-            try:
-                res = matchear_extracto_banco(movs_s, no_banco=no_banco)
-                for m in (res.real_only or []):
-                    key = (m.fecha, (m.documento or "").strip().upper())
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-                    rows.append({
-                        "fecha": m.fecha,
-                        "concepto": m.concepto or "",
-                        "documento": m.documento or "",
-                        "monto": float(m.monto or 0),
-                        "oficina": getattr(m, "oficina", "") or "",
-                        "detalle": "",
-                        "tipo": (m.tipo or "C").upper(),
-                    })
-            except Exception as e:
-                _LOG.warning("xlsx matcher inline falló: %s", e)
-    except Exception as e:
-        _LOG.warning("xlsx cargar movs sesion falló: %s", e)
-    # Re-ordenar por fecha asc (los nuevos pueden venir desordenados).
+    # TMT 2026-06-04: el export ya NO incluye el extracto crudo de la sesión
+    # (era la misma inflación que sacamos del balance). Pendientes = la hoja
+    # (banco_historicos_pendientes); el extracto se usa para cruzar en pantalla.
     rows.sort(key=lambda r: (r.get("fecha") or date.min, str(r.get("documento") or "")))
+
+    # Separar PENDIENTES REALES vs CARGOS DEL BANCO. Los cargos (comisiones,
+    # IVA, costos de cheque, par SENAE/acreditación de aduana) van abajo como
+    # DIFERENCIA —como los pone Alex— en vez de mezclarse con los pendientes.
+    from modules.conciliacion import cargos_banco as _cb
+    _cls_items = []
+    for _r in rows:
+        _ms = float(_r.get("monto") or 0) * (1 if (_r.get("tipo") or "C").strip().upper().startswith("C") else -1)
+        _cls_items.append({"documento": _r.get("documento"), "concepto": _r.get("concepto"), "monto": _ms, "_row": _r})
+    _reales_it, _cargos_it = _cb.clasificar_cargos(_cls_items)
+    rows_reales = [it["_row"] for it in _reales_it]
+    rows_cargos = [it["_row"] for it in _cargos_it]
 
     _PDF_DIR.mkdir(parents=True, exist_ok=True)
     xlsx_path = _PDF_DIR / f"sesion_{sesion['id']}.xlsx"
@@ -1682,7 +1663,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # (convención contable) usando el number_format '#,##0.00;(#,##0.00)'.
     r = 5
     total = 0.0
-    for row in rows:
+    for row in rows_reales:
         tipo = (row.get("tipo") or "C").upper()
         monto = float(row.get("monto") or 0)
         valor = monto if tipo == "C" else -monto  # negativos para débitos
@@ -1694,6 +1675,29 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
         ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
         r += 1
+
+    # ── Sección CARGOS DEL BANCO (a asentar = la diferencia) ──────────
+    # TMT 2026-06-04: los cargos del banco no son pendientes; van acá abajo
+    # y su neto es la DIFERENCIA. Así la hoja del sistema sale igual a la
+    # que arma Alex a mano.
+    if rows_cargos:
+        r += 1
+        _h = ws.cell(row=r, column=1, value="CARGOS DEL BANCO (a asentar — no son pendientes)")
+        _h.font = bold
+        _h.fill = header_fill
+        ws.merge_cells(f"A{r}:E{r}")
+        r += 1
+        for row in rows_cargos:
+            tipo = (row.get("tipo") or "C").upper()
+            monto = float(row.get("monto") or 0)
+            valor = monto if tipo == "C" else -monto
+            fecha = row.get("fecha")
+            ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
+            ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
+            ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
+            ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
+            ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
+            r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
     # TMT 2026-05-29 dueña — decisión final: layout viejo de 5 filas con
@@ -1723,17 +1727,8 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     try:
         movs_sesion = _sesion.cargar_movs(sesion)
         if movs_sesion:
-            from modules.conciliacion.matcher_banco import matchear_extracto_banco
-            try:
-                res = matchear_extracto_banco(movs_sesion, no_banco=_BANCO_PICHINCHA)
-                for m in (res.real_only or []):
-                    monto_m = float(m.monto or 0)
-                    if (m.tipo or "").upper() == "C":
-                        pendientes_banco_cred += monto_m
-                    else:
-                        pendientes_banco_deb += monto_m
-            except Exception:
-                pass
+            # TMT 2026-06-04: ya no sumamos el extracto a pendientes (AJUSTE =
+            # solo histos reales, vía balance). Solo leemos el saldo objetivo.
             con_fecha = [
                 m for m in movs_sesion
                 if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
@@ -1758,15 +1753,18 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # TMT 2026-05-29 dueña: 'puedes separar en ajuste los positivos y los
     # negativos?'. Ajuste = banco_cred − banco_deb; mostramos las dos
     # componentes y el neto antes del SISTEMA.
+    _cargos_neto = float(balance.get("cargos_neto") or 0)
     rows_resumen = [
         ("+ Pendientes banco créditos", pendientes_banco_cred),
         ("− Pendientes banco débitos", -pendientes_banco_deb),
-        ("AJUSTE", ajuste),
+        ("AJUSTE (pendientes reales)", ajuste),
         ("SALDO SISTEMA (conciliado)", saldo_sistema),
         ("TOTAL", total_calc),
     ]
     if saldo_banco_real is not None:
         rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
+        if abs(_cargos_neto) > 0.005:
+            rows_resumen.append(("CARGOS DEL BANCO (a asentar)", _cargos_neto))
         rows_resumen.append(("DIFERENCIA", diferencia))
 
     for label, val in rows_resumen:
