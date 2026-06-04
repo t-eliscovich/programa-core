@@ -553,6 +553,24 @@ def bucketizar(res: ConciliacionBanco) -> dict:
         bucket = impuestos if _es_comision(cat) else manual_banco
         bucket.append({"mov": mov, "cat": cat, "idx": i})
 
+    # TMT 2026-06-04 dueña: 'el banco los tiene que mostrar si o si, nada de
+    # hacer algo automatico y que no aparezca'. El matcher 'sugiere' matches
+    # (res.matches) y antes sacaba esos movs del extracto del panel Banco —
+    # iban a transferencias/sugerencias, que el tab Manual no renderiza, así
+    # que desaparecían (ej. el depósito de 12.24, doc 29359944). Ahora el LADO
+    # BANCO de cada sugerencia también entra al panel Banco (o Impuestos si es
+    # comisión). Son sugerencias, no conciliaciones: la dueña cruza a mano.
+    # idx=-1 → la confirmación los resuelve por firma (data-sig), no por índice.
+    _matches = res.matches or []
+    _matches_cats = res.matches_cats or [None] * len(_matches)
+    for j, mm in enumerate(_matches):
+        mov_real = getattr(mm, "real", None)
+        if mov_real is None:
+            continue
+        cat = _matches_cats[j] if j < len(_matches_cats) else None
+        bucket = impuestos if _es_comision(cat) else manual_banco
+        bucket.append({"mov": mov_real, "cat": cat, "idx": -1})
+
     manual_programa = []
     for i, mov in enumerate(bancsis_only):
         cat = bancsis_cats[i] if i < len(bancsis_cats) else None
