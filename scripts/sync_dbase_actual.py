@@ -582,30 +582,46 @@ def verificar_saldos_bancos_post(src: Path) -> tuple[bool, list[str]]:
         if dbf is None or pc is None:
             lineas.append(f"  {dbf_name:<14} ⚠ no pude leer DBF o PC")
             continue
-        problemas = []
-        if dbf["last_saldo"] is not None and pc["last_saldo"] is not None:
-            if abs(dbf["last_saldo"] - pc["last_saldo"]) > 0.01:
-                problemas.append(
-                    f"último saldo PC {pc['last_saldo']:,.2f} ≠ DBF {dbf['last_saldo']:,.2f}"
-                )
-        # PC puede tener filas PC-only (depósitos web) además del DBF, así que
-        # exigimos pc.n >= dbf.n (nunca MENOS que el DBF).
+        # FATALES (hacen fallar el check): son los síntomas de una TRUNCACIÓN,
+        # que es el incidente que estos checks existen para cazar.
+        #   - PC quedó con MENOS filas que el DBF ⇒ se perdieron movimientos.
+        #   - El último saldo running del DBF no aparece en PC ⇒ el DBF no entró
+        #     entero (PC puede tener filas PC-only después, por eso chequeamos
+        #     pertenencia al set en vez de igualdad estricta del último saldo).
+        fatales = []
         if pc["n"] < dbf["n"]:
-            problemas.append(f"PC tiene {pc['n']} filas < DBF {dbf['n']} (faltan movimientos)")
+            fatales.append(f"PC tiene {pc['n']} filas < DBF {dbf['n']} (faltan movimientos)")
+        if dbf["last_saldo"] is not None and dbf["last_saldo"] not in pc.get("saldos", set()):
+            fatales.append(
+                f"el último saldo del DBF {dbf['last_saldo']:,.2f} no entró a PC"
+            )
+
+        # NO FATALES (solo informativos): los quiebres del walk-forward. El
+        # walk asume ND=salida / DE=entrada, asunción que NO matchea los movs
+        # reversos del dBase (ND que en realidad son AC, etc.) ⇒ marca falsos
+        # positivos. Ver /conciliacion/banco-v2/auditar. Solo importa si el
+        # saldo conciliado no cuadra contra el banco — y eso lo cubren los
+        # fatales de arriba. TMT 2026-06-03: degradado a warn tras confirmar
+        # que el recompute ya estaba deshabilitado por esta misma razón.
+        warns = []
         try:
             quiebres = _contar_quiebres_cadena(no_banco)
             if quiebres > 0:
-                problemas.append(f"{quiebres} quiebres en la cadena de saldo")
+                warns.append(
+                    f"{quiebres} quiebres de cadena (probables falsos positivos "
+                    f"por reversos — revisar /auditar)"
+                )
         except Exception as e:
-            problemas.append(f"no pude validar cadena ({e})")
-        if problemas:
+            warns.append(f"no pude validar cadena ({e})")
+
+        cola = f"PC={pc['n']} filas, último saldo {pc['last_saldo']:,.2f}"
+        if fatales:
             ok = False
-            lineas.append(f"  {dbf_name:<14} ✗ FALLO — " + "; ".join(problemas))
+            lineas.append(f"  {dbf_name:<14} ✗ FALLO — " + "; ".join(fatales + warns))
+        elif warns:
+            lineas.append(f"  {dbf_name:<14} ✓ {cola}  (⚠ {'; '.join(warns)})")
         else:
-            lineas.append(
-                f"  {dbf_name:<14} ✓ PC={pc['n']} filas, último saldo "
-                f"{pc['last_saldo']:,.2f}, cadena íntegra"
-            )
+            lineas.append(f"  {dbf_name:<14} ✓ {cola}, cadena íntegra")
     return ok, lineas
 
 
