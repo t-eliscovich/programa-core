@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import io
 import logging
-import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -217,9 +216,11 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
                 continue
             if valor <= 0:
                 continue
-            # Filas sin fecha = ruido (TOTAL, SALDO, etc.). Skip.
-            if fecha is None:
-                continue
+            # TMT decisión 2026-06-03: cargar filas sin fecha (ANTES se descartaban
+            # silenciosamente y se perdían depósitos reales — ej. AC97 $15.835,60).
+            # Filtramos solo las que CLARAMENTE son agregados (TOTAL/SALDO/SUMA/
+            # SUBTOTAL en concepto o detalle), todo lo demás entra con fecha=None.
+            # La UI las marca con badge "sin fecha".
             concepto = ""
             if col_map.get("concepto") is not None:
                 try:
@@ -241,6 +242,21 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
                 except IndexError:
                     pass
 
+            # TMT decisión 2026-06-03: si el row es agregado (TOTAL/SALDO/SUMA/
+            # SUBTOTAL) en concepto/detalle, lo skippeamos — son ruido. Pero si
+            # es un mov real sin fecha (ej. AC97 $15.835,60), lo cargamos con
+            # fecha=None y la UI lo marca como "sin fecha".
+            _agreg_kw = ("TOTAL", "SALDO", "SUMA", "SUBTOTAL", "BALANCE")
+            _txt_agreg = (concepto + " " + nota).strip().upper()
+            # Heurística conservadora: si parece etiqueta agregada Y NO tiene
+            # código/referencia, lo skippeamos como ruido.
+            if (
+                _txt_agreg
+                and not codigo
+                and any(kw in _txt_agreg for kw in _agreg_kw)
+            ):
+                continue
+
             salida.append(
                 DepositoPendiente(
                     fecha=fecha,
@@ -254,102 +270,3 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
 
     wb.close()
     return salida
-
-
-# ─── Cruce de pendientes (subir hoja "DEPÓSITOS PENDIENTES" para validar) ──
-# TMT 2026-06-03 dueña: 'dejame subir un archivo para cruzar por las dudas,
-# por si algo cambió desde la última vez'. La hoja FEB2023 prevalece.
-
-_CRUCE_FOOTER = re.compile(r"^\s*(total|saldo|diferencia|sistema|banco)\b", re.I)
-
-
-def _cruce_num(v):
-    if v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return round(float(v), 2)
-    s = str(v).strip().replace("$", "").replace(" ", "")
-    if not s:
-        return None
-    if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        s = s.replace(",", ".")
-    try:
-        return round(float(s), 2)
-    except ValueError:
-        return None
-
-
-def _cruce_doc(v):
-    if v is None:
-        return ""
-    s = str(v).strip()
-    if s.endswith(".0"):
-        s = s[:-2]
-    return s
-
-
-def parse_pendientes_cruce(raw: bytes, sheet_pref: str = "FEB2023") -> tuple[str | None, list[dict]]:
-    """Parsea una hoja de DEPÓSITOS PENDIENTES para CRUZAR contra el backlog.
-
-    A diferencia de parse_xlsx (que recorre TODAS las hojas y descarta
-    negativos), esto:
-      - Prioriza la hoja `sheet_pref` (FEB2023) — la dueña dijo que prevalece.
-      - INCLUYE negativos (PAGO SENAE, etc. son pendientes válidos).
-      - Exige `codigo` numérico (descarta ajustes tipo 'AC97' y footer TOTAL/SALDO).
-
-    Returns: (nombre_hoja_usada, [{doc, monto, detalle}, ...]).
-    """
-    from openpyxl import load_workbook
-
-    wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
-    names = wb.sheetnames
-    order = []
-    for n in names:
-        if n.strip().upper() == sheet_pref.strip().upper():
-            order.insert(0, n)
-        else:
-            order.append(n)
-
-    for nombre in order:
-        ws = wb[nombre]
-        hdr = None
-        cmap: dict = {}
-        for i, row in enumerate(ws.iter_rows(values_only=True), 1):
-            if i > 12:
-                break
-            cells = [str(c or "").strip().lower() for c in row]
-            ci: dict = {}
-            for j, c in enumerate(cells):
-                if c in ("fecha", "fec ha") and "fecha" not in ci:
-                    ci["fecha"] = j
-                elif c == "codigo" and "codigo" not in ci:
-                    ci["codigo"] = j
-                elif c == "valor" and "valor" not in ci:
-                    ci["valor"] = j
-                elif c in ("detalle", "concepto") and "detalle" not in ci:
-                    ci["detalle"] = j
-            if "valor" in ci and ("codigo" in ci or "fecha" in ci):
-                hdr = i
-                cmap = ci
-                break
-        if hdr is None or "codigo" not in cmap:
-            continue
-        items = []
-        for row in ws.iter_rows(min_row=hdr + 1, values_only=True):
-            doc = _cruce_doc(row[cmap["codigo"]]) if len(row) > cmap["codigo"] else ""
-            det = (str(row[cmap["detalle"]] or "").strip()
-                   if "detalle" in cmap and len(row) > cmap["detalle"] else "")
-            val = _cruce_num(row[cmap["valor"]]) if len(row) > cmap["valor"] else None
-            fch = (_parse_fecha_celda(row[cmap["fecha"]])
-                   if "fecha" in cmap and len(row) > cmap["fecha"] else None)
-            if _CRUCE_FOOTER.match(det):
-                continue
-            if val is None:
-                continue
-            if not doc or not doc.isdigit():
-                continue
-            items.append({"doc": doc, "monto": val, "detalle": det[:60], "fecha": fch})
-        return nombre, items
-    return None, []
