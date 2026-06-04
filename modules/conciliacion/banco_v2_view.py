@@ -697,20 +697,33 @@ def banco_auditar():
     try:
         diff_matches = _db.fetch_all(
             """
-            SELECT m.id, m.creado_en, m.real_fecha, m.real_documento,
-                   m.real_monto, m.real_concepto,
+            -- TMT 2026-06-04: agrupar por PC tx. En grupos N:1 (ej. 15 cheques
+            -- contra 1 depósito) cada match tiene real_monto chico vs el importe
+            -- total del PC → comparar uno a uno daba falso positivo gigante.
+            -- Ahora sumamos los real_monto del grupo y comparamos la SUMA vs el
+            -- importe del PC. Solo salta si la suma del grupo NO cuadra.
+            SELECT MAX(m.creado_en) AS creado_en,
+                   MIN(m.real_fecha) AS real_fecha,
+                   CASE WHEN COUNT(*) > 1
+                        THEN COUNT(*)::text || ' movs (grupo)'
+                        ELSE MIN(m.real_documento) END AS real_documento,
+                   SUM(m.real_monto) AS real_monto,
+                   MIN(m.real_concepto) AS real_concepto,
                    tb.importe   AS tb_importe,
                    tb.documento AS tb_documento,
                    tb.concepto  AS tb_concepto,
-                   ROUND(m.real_monto - tb.importe, 2) AS diferencia
+                   ROUND(SUM(m.real_monto) - tb.importe, 2) AS diferencia
               FROM scintela.banco_conciliacion_match m
               JOIN scintela.transacciones_bancarias tb
                 ON tb.id_transaccion = m.id_transaccion
              WHERE m.no_banco = %s
                AND (m.deshecho_en IS NULL)
                AND m.id_transaccion IS NOT NULL
-               AND ABS(m.real_monto - tb.importe) > 0.01
-             ORDER BY ABS(m.real_monto - tb.importe) DESC
+               AND m.real_monto IS NOT NULL
+               AND m.estado = 'matched'
+             GROUP BY tb.id_transaccion, tb.importe, tb.documento, tb.concepto
+            HAVING ABS(SUM(m.real_monto) - tb.importe) > 0.01
+             ORDER BY ABS(SUM(m.real_monto) - tb.importe) DESC
              LIMIT 200
             """,
             (no_banco,),

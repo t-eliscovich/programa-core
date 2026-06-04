@@ -87,17 +87,21 @@
           {% for item in _banco %}
             {% set m = item.mov %}
             {% set _hist = item.es_historico %}
+            {% set _cc = (m.concepto or '')|upper %}
+            {% set _clase = ('transf' if 'TRANSFERENCIA' in _cc else ('cargo' if ('COMISION' in _cc or 'IVA' in _cc or 'GASTO' in _cc or 'COST' in _cc) else ('devuelto' if 'CHEQUE DEVUELTO' in _cc else ('senae' if 'SENAE' in _cc else ('dep' if ('DEPOSITO' in _cc or 'DEP ' in _cc or 'CHEQUE' in _cc) else 'otro'))))) %}
             <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 leading-tight">
               <td class="px-1 py-0">
                 {% if _hist %}
                   <input type="checkbox" name="hist_id" value="{{ item.id_historico }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
+                         data-clase="{{ _clase }}"
                          class="accent-emerald-600 cb-banco w-3 h-3">
                 {% else %}
                   {% set _sig = (m.fecha.isoformat() if m.fecha else '') ~ '|' ~ (m.documento or '') ~ '|' ~ ('%.2f'|format(m.monto|float)) ~ '|' ~ (m.tipo or '') %}
                   <input type="checkbox" name="real_idx" value="{{ item.idx }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
                          data-sig="{{ _sig }}"
+                         data-clase="{{ _clase }}"
                          class="accent-emerald-600 cb-banco w-3 h-3">
                 {% endif %}
               </td>
@@ -190,19 +194,20 @@
 (function(){
   function read(panel){
     var sec = document.querySelector('[data-panel="'+panel+'"]');
-    var ids = [], histIds = [], sigs = [], tot = 0;
-    if (!sec) return {ids: [], histIds: [], sigs: [], total: 0, count: 0};
+    var ids = [], histIds = [], sigs = [], clases = [], tot = 0;
+    if (!sec) return {ids: [], histIds: [], sigs: [], clases: [], total: 0, count: 0};
     sec.querySelectorAll('input[type=checkbox][data-monto]:checked').forEach(function(cb){
       if (cb.name === 'hist_id') histIds.push(cb.value);
       else {
         ids.push(cb.value);
         if (cb.dataset.sig) sigs.push(cb.dataset.sig);
       }
+      if (cb.dataset.clase) clases.push(cb.dataset.clase);
       var signo = parseInt(cb.dataset.signo||'1');
       if (panel === 'banco') signo = (cb.dataset.tipo === 'C') ? 1 : -1;
       tot += signo * (parseFloat(cb.dataset.monto)||0);
     });
-    return {ids: ids, histIds: histIds, sigs: sigs, total: tot, count: ids.length + histIds.length};
+    return {ids: ids, histIds: histIds, sigs: sigs, clases: clases, total: tot, count: ids.length + histIds.length};
   }
   window.onSelectionChange = function(){
     var b = read('banco'), p = read('programa');
@@ -270,6 +275,21 @@
     btn.addEventListener('click', function(){
       var b = read('banco'), p = read('programa');
       if (!b.count || !p.count){ return; }
+      // TMT 2026-06-04 dueña: aviso (NO bloqueo) SOLO si es un GRUPO (>1 mov
+      // banco) con tipos mezclados — ej. una transferencia metida en un
+      // depósito de cheques. En 1:1 no avisa (ahí cruzan transferencia como
+      // cheque normalmente).
+      if (b.count > 1) {
+        var _lbl = {transf:'transferencia', dep:'depósito/cheque', cargo:'comisión/gasto', senae:'pago SENAE', devuelto:'cheque devuelto', otro:'otro'};
+        var _set = {}; (b.clases||[]).forEach(function(c){ _set[c]=1; });
+        var _tipos = Object.keys(_set);
+        if (_tipos.length > 1) {
+          var _nom = _tipos.map(function(t){ return _lbl[t]||t; }).join(' + ');
+          if (!confirm('Ojo: estás agrupando ' + b.count + ' movimientos de tipos DISTINTOS (' + _nom + ') contra el mismo del programa.\n\nNormalmente un grupo es del mismo tipo (ej. todos cheques de un depósito). ¿Seguro que van juntos?')) {
+            return;  // canceló — no concilia
+          }
+        }
+      }
       // TMT 2026-05-29: sacamos los confirm() dialogs del browser. El preview
       // (/banco-v2/preview) ya muestra antes/después y warnings — confirmar
       // ahí es la garantía. Acá solo poblamos hidden fields y submitimos.
