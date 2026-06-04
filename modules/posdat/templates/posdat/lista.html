@@ -216,13 +216,13 @@
               </span>
             {% endif %}
             {# TMT 2026-06-04 — badge "anual" cuando el saldo de la provisión
-               acumula más de 30 días hábiles de cuota. Indica provisiones
-               con ciclo anual (Décimo 13, Décimo 14, Jub Patronal, Prov
-               Incobrable, AB Provision) que se pagan 1 vez al año pero
-               acumulan diariamente. Sin esto, sus saldos altos parecen
-               "atrasados" cuando es la acumulación normal. #}
+               acumula más de 50 días hábiles de cuota (2 ciclos mensuales).
+               Indica provisiones con ciclo anual (Décimo 13, Décimo 14,
+               Jub Patronal, Prov Incobrable, AB Provision) que se pagan
+               1 vez al año pero acumulan diariamente. Umbral 50 (no 30)
+               para evitar falsos positivos como INTERESES con buffer. #}
             {% if _show_mensual and f.cuota_diaria and (f.cuota_diaria | float) > 0
-                  and ((f.importe | float) / (f.cuota_diaria | float)) > 30 %}
+                  and ((f.importe | float) / (f.cuota_diaria | float)) > 50 %}
               <span class="ml-1 inline-block px-1 py-0 rounded bg-amber-100 text-amber-800 text-[9px] font-medium"
                     title="Provisión con ciclo anual — su saldo se acumula durante el año hasta el pago único (ej. Décimo 13/14, Jubilación Patronal, Provisión Incobrable). No está atrasada, es así por diseño.">
                 anual
