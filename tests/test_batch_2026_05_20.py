@@ -96,23 +96,30 @@ def stub(monkeypatch):
 
 
 # ── posdat tabs ───────────────────────────────────────────────────────
+def _find_buscar_params(stub):
+    """Encuentra los params del SELECT principal de buscar() entre los logs.
+    _baseline_col_exists() corre primero (params=None) y desplaza el índice."""
+    for _sql, params in stub.params_log:
+        if isinstance(params, dict) and "tab" in params:
+            return params
+    return None
+
+
 def test_posdat_buscar_tab_posdatados_excluye_yy(stub):
     """tab='posdatados' debe pasar el SQL con `<> 'YY'` y `= 'posdatados'`."""
     from modules.posdat import queries as q
     stub.fetch_all_responses = [[]]  # rows vacío, OK
     q.buscar(tab="posdatados")
-    # Inspeccionar params del fetch_all principal.
-    main_call = stub.params_log[0]
-    params = main_call[1]
-    assert params["tab"] == "posdatados", "tab debe llegar como 'posdatados'"
+    params = _find_buscar_params(stub)
+    assert params is not None and params["tab"] == "posdatados"
 
 
 def test_posdat_buscar_tab_yy_solo_yy(stub):
     from modules.posdat import queries as q
     stub.fetch_all_responses = [[]]
     q.buscar(tab="yy")
-    params = stub.params_log[0][1]
-    assert params["tab"] == "yy"
+    params = _find_buscar_params(stub)
+    assert params is not None and params["tab"] == "yy"
 
 
 def test_posdat_buscar_tab_invalida_normaliza_a_posdatados(stub):
@@ -120,11 +127,8 @@ def test_posdat_buscar_tab_invalida_normaliza_a_posdatados(stub):
     from modules.posdat import queries as q
     stub.fetch_all_responses = [[]]
     q.buscar(tab="basura")
-    # tab_norm es lowercase. La condición CASE WHEN del SQL hace match
-    # contra 'yy'/'posdatados' — si tab no matchea ninguno, ambos lados
-    # del OR son FALSE → query no devuelve nada (no rompe el contrato).
-    params = stub.params_log[0][1]
-    assert params["tab"] == "basura"  # se normaliza a lower pero no se coerce
+    params = _find_buscar_params(stub)
+    assert params is not None and params["tab"] == "basura"
 
 
 # ── posdat resumen ────────────────────────────────────────────────────

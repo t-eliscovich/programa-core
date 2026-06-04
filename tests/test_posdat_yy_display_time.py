@@ -1,26 +1,24 @@
-"""Tests del display-time YY (migración 0061, TMT 2026-05-28).
+"""Tests del display-time YY/RT (TMT 2026-06-03 — reforma sin cierre).
 
 Cubre:
   - posdat.queries._dias_habiles_entre — fórmula de offset L-V.
-  - posdat.queries._ultimo_dia_del_mes — helper de fin de mes.
+  - posdat.queries._ultimo_dia_del_mes — helper (legacy, sólo helper).
   - posdat.queries._aplicar_display_time_yy:
-      · No toca filas non-YY.
-      · No toca YY sin baseline_date.
-      · No toca YY con cuota_diaria=0.
-      · Aplica fórmula correcta dentro del mes (hoy = baseline → offset 0,
-        hoy = baseline+1 hábil → offset 1, etc.).
+      · Aplica a filas prov IN ('YY','RT') con baseline_date + cuota > 0.
+      · No toca filas con prov fuera de (YY,RT).
+      · No toca YY/RT sin baseline_date.
+      · No toca YY/RT con cuota_diaria=0.
+      · Acumula PERPETUO (sin cierre mensual lazy): el offset crece
+        sin reset al cruzar mes — comportamiento dBase MENU.PRG L283-333.
       · Saltea fines de semana.
-      · Cruza de mes → dispara cierre lazy + reset a 0 (mockeado).
 
-Patrón: sin DB real. Lo único que importa es la matemática + el flujo
-de decisiones; los efectos en DB (mov_doble + UPDATE) se mockean.
+Patrón: sin DB real, sólo la matemática + el flujo de decisiones.
 """
 from __future__ import annotations
 
 import os
 import sys
 from datetime import date
-from unittest.mock import patch
 
 import pytest
 
@@ -46,7 +44,6 @@ class TestDiasHabilesEntre:
         assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 27)) == 0
 
     def test_jueves_a_viernes_es_uno(self):
-        # Jue 28/05 → Vie 29/05 (intervalo (jue, vie]).
         assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 29)) == 1
 
     def test_jueves_a_sabado_no_suma_finde(self):
@@ -59,21 +56,20 @@ class TestDiasHabilesEntre:
         # (jue 28, lun 01] = vie 29 + lun 01 = 2.
         assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 6, 1)) == 2
 
-    def test_cierre_mensual_baseline_31_a_lunes_es_uno(self):
-        # Reset: baseline = 31/05 (dom). Lun 01/06 → offset 1.
-        assert q._dias_habiles_entre(date(2026, 5, 31), date(2026, 6, 1)) == 1
-
     def test_un_mes_completo_habil(self):
-        # Mayo 2026: lu 4, ma 5, ..., vie 29. Días hábiles = 21.
-        # Desde "30/04" (jue, no incluido) hasta "31/05" (dom): cuenta L-V de mayo.
+        # Mayo 2026: L-V de mayo = 21 días hábiles.
         assert q._dias_habiles_entre(date(2026, 4, 30), date(2026, 5, 31)) == 21
+
+    def test_perpetuo_cruza_meses(self):
+        # (30/04, 03/06] = mayo L-V (21) + junio L,M,Mi (3) = 24.
+        assert q._dias_habiles_entre(date(2026, 4, 30), date(2026, 6, 3)) == 24
 
     def test_none_safe(self):
         assert q._dias_habiles_entre(None, date(2026, 5, 28)) == 0
         assert q._dias_habiles_entre(date(2026, 5, 28), None) == 0
 
 
-# ── _ultimo_dia_del_mes ─────────────────────────────────────────────────
+# ── _ultimo_dia_del_mes (legacy helper) ─────────────────────────────────
 
 class TestUltimoDiaDelMes:
     def test_mayo_31(self):
@@ -92,11 +88,11 @@ class TestUltimoDiaDelMes:
 # ── _aplicar_display_time_yy ─────────────────────────────────────────────
 
 def _fila_yy(*, importe=1000, baseline=date(2026, 5, 28), cuota=100,
-             id_posdat=42, concepto="SUELDOS"):
+             id_posdat=42, concepto="SUELDOS", prov="YY"):
     """Construye una fila estilo `buscar()` para los tests."""
     return {
         "id_posdat": id_posdat,
-        "prov": "YY",
+        "prov": prov,
         "importe": importe,
         "baseline_date": baseline,
         "cuota_diaria": cuota,
@@ -105,8 +101,10 @@ def _fila_yy(*, importe=1000, baseline=date(2026, 5, 28), cuota=100,
 
 
 class TestAplicarDisplayTimeYY:
-    def test_no_toca_filas_non_yy(self):
-        f = {"prov": "RT", "importe": 500, "baseline_date": None, "cuota_diaria": 50}
+    def test_no_toca_filas_otras_provs(self):
+        # provedor regular (EM, BP, etc) no devenga
+        f = {"prov": "EM", "importe": 500, "baseline_date": date(2026, 5, 28),
+             "cuota_diaria": 50}
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 29))
         assert f["importe"] == 500
 
@@ -121,7 +119,6 @@ class TestAplicarDisplayTimeYY:
         assert f["importe"] == 1000
 
     def test_hoy_igual_baseline_offset_cero(self):
-        # 28/05 hoy = baseline. No suma nada.
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 28))
         assert f["importe"] == 86100.0
@@ -129,128 +126,96 @@ class TestAplicarDisplayTimeYY:
         assert f["importe_base"] == 86100.0
 
     def test_un_dia_habil_despues(self):
-        # Jue 28/05 + 1 (vie 29/05) → +5000.
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 29))
         assert f["importe"] == 91100.0
         assert f["dias_offset"] == 1
 
     def test_fin_de_semana_no_suma(self):
-        # Sábado 30/05 → mismo que viernes (+1 hábil).
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 30))
         assert f["importe"] == 91100.0
-        # Domingo 31/05 → idem.
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 31))
         assert f["importe"] == 91100.0
 
     def test_redondeo_a_2_decimales(self):
-        # cuota fraccional para verificar round(...,2).
         f = _fila_yy(importe=100.005, baseline=date(2026, 5, 28), cuota=33.337)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 29))
-        # 100.005 + 33.337 = 133.342 → 133.34
         assert f["importe"] == 133.34
 
 
-class TestCierreMensualLazy:
-    """Cruce de mes: 28/05 baseline → 01/06 hoy.
-    Esperado:
-      1. _ejecutar_cierre_mensual_yy se llama con importe_cierre=86100+5000*1=91100
-         (= valor display al último día hábil de mayo, vie 29).
-      2. Después del cierre, importe_base=0, baseline=31/05, offset=1, importe=5000.
-    """
+class TestAcumulaPerpetuoSinCierre:
+    """TMT 2026-06-03 reforma: SIN cierre mensual lazy.
 
-    def test_cruza_mes_dispara_cierre_y_resetea(self):
+    El offset se acumula sobre TODOS los meses entre baseline y hoy, igual
+    que dBase REPLACE IMPORTE+cuota cada día hábil sin reset. Estos tests
+    blindan que el cierre no vuelva por accidente."""
+
+    def test_cruza_mes_acumula_sin_reset(self):
+        # Jue 28/05 baseline → Lun 01/06 hoy. Hábiles = vie 29 + lun 01 = 2.
+        # Comportamiento perpetuo: importe = 86100 + 5000*2 = 96100. NO 5000.
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-
-        with patch.object(q, "_ejecutar_cierre_mensual_yy") as mock_cierre:
-            q._aplicar_display_time_yy([f], hoy=date(2026, 6, 1))
-
-        # 1. Cierre invocado con importe del último día hábil de mayo.
-        assert mock_cierre.called
-        call_args = mock_cierre.call_args[0]
-        # (id_posdat, concepto, importe_cierre, ult_dia_mes_ant)
-        assert call_args[0] == 42  # id_posdat
-        assert call_args[2] == 91100.0  # 86100 + 5000 × 1 (vie 29)
-        assert call_args[3] == date(2026, 5, 31)  # último día calendario mayo
-
-        # 2. Tras el cierre, la fila refleja el reset + lunes 01/06 suma 1.
-        assert f["importe_base"] == 0.0
-        assert f["baseline_date"] == date(2026, 5, 31)
-        assert f["dias_offset"] == 1
-        assert f["importe"] == 5000.0
-        assert f.get("yy_cerrado_lazy") is True
-
-    def test_no_redispara_cierre_si_baseline_ya_es_ultimo_dia_del_mes(self):
-        """Edge case: la fila ya fue cerrada (baseline = 31/05). Hoy es 02/06.
-        El render NO debe re-disparar el cierre (sería un UPDATE inútil
-        cada vez que se carga la página)."""
-        f = _fila_yy(importe=0, baseline=date(2026, 5, 31), cuota=5000)
-        with patch.object(q, "_ejecutar_cierre_mensual_yy") as mock_cierre:
-            q._aplicar_display_time_yy([f], hoy=date(2026, 6, 2))
-        assert not mock_cierre.called  # NO se disparó cierre
-        # Display normal: offset = días_hábiles(31/05, 02/06] = 2 (lun + mar).
-        assert f["importe"] == 10000
+        q._aplicar_display_time_yy([f], hoy=date(2026, 6, 1))
+        assert f["importe"] == 96100.0
+        assert f["importe_base"] == 86100.0  # no se resetea
         assert f["dias_offset"] == 2
+        # marker yy_cerrado_lazy NO debe aparecer (el cierre fue removido)
+        assert "yy_cerrado_lazy" not in f
 
-    def test_si_cierre_falla_no_aplica_display_time(self):
-        """Si el cierre lazy levanta, la fila queda con el importe
-        persistido tal cual — sin sumar offsets erróneos."""
-        f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-
-        with patch.object(q, "_ejecutar_cierre_mensual_yy",
-                          side_effect=RuntimeError("DB down")):
-            q._aplicar_display_time_yy([f], hoy=date(2026, 6, 1))
-
-        # La fila NO se modificó (importe sigue el persistido).
-        assert f["importe"] == 86100
-        assert f["baseline_date"] == date(2026, 5, 28)
+    def test_cruza_meses_sigue_acumulando(self):
+        # baseline 30/04 → 03/06 hoy. (30/04, 03/06] = 21 may + 3 jun = 24 hábiles.
+        f = _fila_yy(importe=10000, baseline=date(2026, 4, 30), cuota=1000)
+        q._aplicar_display_time_yy([f], hoy=date(2026, 6, 3))
+        assert f["importe"] == 34000.0  # 10000 + 1000*24
+        assert f["importe_base"] == 10000.0
+        assert f["dias_offset"] == 24
 
 
-class TestEjemploSueldosCompleto:
-    """End-to-end del ejemplo del plan: SUELDOS cuota_diaria=5000.
+class TestRTtambienAcumula:
+    """RT (IVA) debe acumular igual que YY (mismo dBase L319-321).
 
+    Antes RT estaba excluido del display-time; ahora entra."""
+
+    def test_rt_aplica_display_time(self):
+        f = _fila_yy(importe=125000, baseline=date(2026, 5, 28),
+                     cuota=8400, prov="RT", concepto="")
+        q._aplicar_display_time_yy([f], hoy=date(2026, 6, 3))
+        # (28/05, 03/06] = vie 29 + lun 01 + mar 02 + mie 03 = 4 hábiles.
+        assert f["importe"] == 125000 + 8400 * 4
+        assert f["dias_offset"] == 4
+
+    def test_rt_sin_baseline_intacto(self):
+        f = {"prov": "RT", "importe": 100000, "baseline_date": None,
+             "cuota_diaria": 8400}
+        q._aplicar_display_time_yy([f], hoy=date(2026, 6, 3))
+        assert f["importe"] == 100000  # sin baseline, no se toca
+
+
+class TestEjemploSueldosCompletoSinCierre:
+    """End-to-end de SUELDOS cuota_diaria=5000, baseline=jue 28/05/2026.
+
+    Comportamiento NUEVO (perpetuo, sin cierre):
     | Día | importe esperado |
-    | Jue 28/05 (hoy real) | 86.100 |
+    | Jue 28/05 (baseline) | 86.100 |
     | Vie 29/05            | 91.100 |
     | Sáb 30/05            | 91.100 |
     | Dom 31/05            | 91.100 |
-    | Lun 01/06 (post bake-in) | 5.000 |
-    | Mar 02/06            | 10.000 |
+    | Lun 01/06            | 96.100 |  (antes era 5.000 post-reset)
+    | Mar 02/06            | 101.100 |  (antes era 10.000)
+    | Mie 03/06            | 106.100 |
     """
 
-    def test_jueves_baseline(self):
+    @pytest.mark.parametrize("hoy,esperado", [
+        (date(2026, 5, 28), 86100),
+        (date(2026, 5, 29), 91100),
+        (date(2026, 5, 30), 91100),
+        (date(2026, 5, 31), 91100),
+        (date(2026, 6, 1),  96100),
+        (date(2026, 6, 2),  101100),
+        (date(2026, 6, 3),  106100),
+    ])
+    def test_acumulacion_perpetua(self, hoy, esperado):
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-        q._aplicar_display_time_yy([f], hoy=date(2026, 5, 28))
-        assert f["importe"] == 86100
-
-    def test_viernes_29(self):
-        f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-        q._aplicar_display_time_yy([f], hoy=date(2026, 5, 29))
-        assert f["importe"] == 91100
-
-    def test_sabado_30(self):
-        f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-        q._aplicar_display_time_yy([f], hoy=date(2026, 5, 30))
-        assert f["importe"] == 91100
-
-    def test_domingo_31(self):
-        f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-        q._aplicar_display_time_yy([f], hoy=date(2026, 5, 31))
-        assert f["importe"] == 91100
-
-    def test_lunes_01_06_post_bake_in(self):
-        f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
-        with patch.object(q, "_ejecutar_cierre_mensual_yy"):
-            q._aplicar_display_time_yy([f], hoy=date(2026, 6, 1))
-        assert f["importe"] == 5000  # reset + 1 día hábil
-
-    def test_martes_02_06(self):
-        # Fila ya en estado post-reset (importe=0, baseline=31/05).
-        # baseline = último día de mayo → no redispara cierre.
-        f = _fila_yy(importe=0, baseline=date(2026, 5, 31), cuota=5000)
-        with patch.object(q, "_ejecutar_cierre_mensual_yy") as mock_cierre:
-            q._aplicar_display_time_yy([f], hoy=date(2026, 6, 2))
-        assert not mock_cierre.called
-        assert f["importe"] == 10000  # 2 hábiles × 5000
+        q._aplicar_display_time_yy([f], hoy=hoy)
+        assert f["importe"] == esperado

@@ -51,97 +51,43 @@ def _ultimo_dia_del_mes(d: date) -> date:
     return date(d.year, d.month, monthrange(d.year, d.month)[1])
 
 
-def _ejecutar_cierre_mensual_yy(
-    id_posdat: int,
-    concepto: str,
-    importe_cierre: float,
-    ult_dia_mes_anterior: date,
-) -> None:
-    """Persiste el cierre de mes para una posdat YY.
-
-    Hace en UNA tx:
-      1. Registra mov_doble tipo='posdat_yy_cierre_mes' con el importe final
-         del mes anterior (queda en /historial). Idempotente: si ya hay un
-         cierre de ese mes para esta posdat, no lo duplica.
-      2. UPDATE posdat SET importe=0, baseline_date=ult_dia_mes_anterior.
-
-    `ult_dia_mes_anterior` se usa como nueva baseline para que el primer
-    día hábil del mes nuevo ya cuente como offset=1 en la fórmula display.
-    """
-    with db.tx() as conn:
-        if importe_cierre > 0:
-            ya = db.fetch_one(
-                """
-                SELECT 1 AS x FROM scintela.mov_doble
-                 WHERE origen_table    = 'posdat'
-                   AND origen_id       = %s
-                   AND tipo            = 'posdat_yy_cierre_mes'
-                   AND fecha_operacion = %s
-                """,
-                (id_posdat, ult_dia_mes_anterior),
-                conn=conn,
-            )
-            if not ya:
-                try:
-                    import mov_doble as _md
-                    _md.registrar(
-                        conn=conn,
-                        tipo="posdat_yy_cierre_mes",
-                        origen_table="posdat",
-                        origen_id=id_posdat,
-                        destino_table="posdat",
-                        destino_id=id_posdat,
-                        importe=round(importe_cierre, 2),
-                        fecha=ult_dia_mes_anterior,
-                        concepto=(
-                            f"Cierre YY {ult_dia_mes_anterior:%Y-%m} — "
-                            f"{(concepto or '').strip()}"
-                        )[:200],
-                        usuario="cierre_yy_lazy",
-                        metadata={
-                            "mes": ult_dia_mes_anterior.strftime("%Y-%m"),
-                            "importe_cierre": round(importe_cierre, 2),
-                        },
-                    )
-                except Exception:
-                    # No frenamos el reset por un fallo del audit log:
-                    # preferimos que el display funcione bien aunque se pierda
-                    # un mov_doble. Logueamos defensivo (no re-raise).
-                    import logging as _lg
-                    _lg.getLogger(__name__).exception(
-                        "no pude registrar mov_doble del cierre YY id=%s",
-                        id_posdat,
-                    )
-        db.execute(
-            """
-            UPDATE scintela.posdat
-               SET importe = 0,
-                   baseline_date = %s,
-                   usuario_modifica = 'cierre_yy_lazy',
-                   fecha_modifica = CURRENT_TIMESTAMP
-             WHERE id_posdat = %s
-            """,
-            (ult_dia_mes_anterior, id_posdat),
-            conn=conn,
-        )
+# TMT 2026-06-03 dueña: REMOVED _ejecutar_cierre_mensual_yy.
+# Antes hacía cierre mensual lazy (reset importe=0 + mov_doble audit).
+# Decisión: PC debe acumular perpetuo como dBase (REPLACE IMPORTE+cuota
+# diaria, sin reset). Los mov_doble 'posdat_yy_cierre_mes' previamente
+# generados (mayo-junio 2026) quedan EN scintela.mov_doble como audit
+# histórico inmutable. /admin/debug-ustock los sigue contando.
 
 
 def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
-    """Aplica la fórmula display-time IN-PLACE sobre las filas YY:
+    """Aplica la fórmula display-time IN-PLACE sobre filas YY y RT:
 
         importe_display = importe_persistido
                         + cuota_diaria × dias_habiles(baseline_date, hoy)
 
-    Si baseline_date apunta a un mes anterior, dispara el cierre mensual
-    lazy (mov_doble + reset a 0 + baseline_date = último día del mes ant).
-    Después aplica la fórmula sobre el nuevo baseline.
+    TMT 2026-06-03 dueña: SACADO el cierre mensual lazy. Antes esto
+    "limpiaba" el importe persistido a 0 cada cambio de mes y registraba
+    un mov_doble tipo='posdat_yy_cierre_mes' con el acumulado. La dueña
+    pidió que PC se comporte exactamente como dBase: acumular perpetuo
+    (dBase MENU.PRG L283-333 hace REPLACE IMPORTE+cuota DAILY y nunca
+    cierra). Con esa decisión:
+      - importe_persistido queda como base permanente (no se resetea).
+      - El display = base + cuota × días hábiles desde baseline.
+      - Los mov_doble 'posdat_yy_cierre_mes' previos quedan EN
+        scintela.mov_doble como audit histórico (no se borran).
 
-    Sólo opera sobre filas con prov='YY' AND baseline_date IS NOT NULL.
-    El resto queda intacto (RT, posdat regulares, YY legacy sin baseline).
+    También extendido a prov='RT' — antes RT estaba afuera del display
+    porque el cierre rompía con sus volúmenes, y el importe persistido
+    se actualizaba manualmente. Con la lógica nueva (sin reset) RT acumula
+    coherentemente como en dBase.
+
+    Sólo opera sobre filas con prov IN ('YY','RT') AND baseline_date IS NOT NULL.
+    El resto queda intacto (posdat regulares, YY/RT legacy sin baseline).
     """
     hoy = hoy or _hoy_ec()
     for r in rows:
-        if (r.get("prov") or "").strip().upper() != "YY":
+        prov_upper = (r.get("prov") or "").strip().upper()
+        if prov_upper not in ("YY", "RT"):
             continue
         base_date = r.get("baseline_date")
         if not base_date:
@@ -152,46 +98,9 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
             r["dias_offset"] = 0
             continue
         importe_pers = float(r.get("importe") or 0)
-        # Cierre mensual lazy si cruzamos mes. Atención al edge case:
-        # si baseline_date ya ES el último día calendario de su mes,
-        # significa que el cierre YA se ejecutó antes — NO re-disparar
-        # (sería un no-op contable pero genera ruido en /historial y un
-        # UPDATE inútil cada render).
-        #
-        # Limitación conocida: si la dueña no abre la app durante un mes
-        # entero, ese mes "intermedio" no genera mov_doble propio y el
-        # acumulado se ve en el mes actual. Solución manual: abrir la app
-        # al menos una vez por mes (caso normal).
-        if (base_date.year, base_date.month) != (hoy.year, hoy.month):
-            ult_dia_mes_baseline = _ultimo_dia_del_mes(base_date)
-            if base_date < ult_dia_mes_baseline:
-                # Mes del baseline aún NO cerrado → cerrarlo ahora.
-                offset_cierre = _dias_habiles_entre(base_date, ult_dia_mes_baseline)
-                importe_cierre = round(importe_pers + cd * offset_cierre, 2)
-                try:
-                    _ejecutar_cierre_mensual_yy(
-                        int(r["id_posdat"]),
-                        r.get("concepto") or "",
-                        importe_cierre,
-                        ult_dia_mes_baseline,
-                    )
-                except Exception:
-                    # Si el cierre falla, NO aplicamos display-time sobre
-                    # esta fila (sería incorrecto sumarle offset gigante).
-                    # Dejamos el valor persistido y seguimos.
-                    import logging as _lg
-                    _lg.getLogger(__name__).exception(
-                        "cierre lazy YY falló id_posdat=%s — fila queda intacta",
-                        r.get("id_posdat"),
-                    )
-                    continue
-                base_date = ult_dia_mes_baseline
-                importe_pers = 0.0
-                r["baseline_date"] = base_date
-                r["yy_cerrado_lazy"] = True  # marker para la UI / debug
-            # else: base_date == ult_dia_mes_baseline → mes ya cerrado.
-            # Aplicar display directo desde ese baseline (offset cuenta
-            # solo los hábiles del mes actual).
+        # NOTA arquitectura (2026-06-03): no hay cierre mensual lazy. Si
+        # baseline_date está varios meses atrás, se acumulan todos los
+        # días hábiles entre baseline y hoy (perpetuo, como dBase).
         offset = _dias_habiles_entre(base_date, hoy)
         r["importe_base"] = round(importe_pers, 2)
         r["importe"] = round(importe_pers + cd * offset, 2)
