@@ -110,11 +110,11 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
             saldo_pc_actual["saldo"] - saldo_pc_actual["pendientes_conciliar_neto"], 2
         )
 
-        # --- FIX 2026-06-03: incluir extracto de sesión abierta en pend_banco ---
-        # Antes: saldo_banco_esperado solo sumaba banco_historicos_pendientes (FEB2023).
-        # Eso ignoraba el extracto recién subido de la sesión actual.
-        # Ahora: sumamos también los movs del extracto que NO están conciliados
-        # via match. Así pend_banco_TOTAL = histos + extracto_sin_match.
+        # --- TMT 2026-06-04: extracto crudo YA NO se suma a pend_banco ---
+        # Pendientes de banco = la hoja (banco_historicos_pendientes). El
+        # extracto de la sesión es solo insumo para cruzar. Ver nota larga en
+        # la sección TOTAL más abajo. Este bloque sigue calculando sess_* por
+        # ahora (cleanup de Sprint 2), pero la sección TOTAL los ignora.
         sess_neto = 0.0
         sess_cred = 0.0
         sess_deb = 0.0
@@ -284,18 +284,21 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
         saldo_pc_actual["n_pendientes_banco_extracto"] = sess_n
         saldo_pc_actual["neto_pendientes_extracto"] = round(sess_neto, 2)
 
-        # TOTAL pend_banco = histos + extracto
-        neto_pend_total = round(saldo_pc_actual["neto_pendientes"] + sess_neto, 2)
+        # ── TOTAL pend_banco = la HOJA (históricos), NO el extracto crudo ──
+        # TMT 2026-06-04 dueña: "lo único que se tiene que mantener como
+        # pendientes es lo del archivo (la hoja)". El extracto de la sesión
+        # es solo el insumo para CRUZAR/parear; no define pendientes de banco.
+        # El viejo 'FIX 2026-06-03' lo sumaba acá y metía ~−557k fantasma en
+        # la pantalla activa: el extracto trae el día entero del banco (SENAE,
+        # débitos ya en libros) y el dedup contra transacciones_bancarias
+        # nunca limpia el 100% por desfase de fecha y montos agrupados.
+        # Pendientes de banco sale 100% de banco_historicos_pendientes; subir
+        # una hoja nueva reemplaza esos históricos. sess_* quedan ignorados.
+        neto_pend_total = saldo_pc_actual["neto_pendientes"]
         saldo_pc_actual["neto_pendientes_total"] = neto_pend_total
-        saldo_pc_actual["pendientes_banco_total_creditos"] = round(
-            saldo_pc_actual["pendientes_banco_creditos"] + sess_cred, 2
-        )
-        saldo_pc_actual["pendientes_banco_total_debitos"] = round(
-            saldo_pc_actual["pendientes_banco_debitos"] + sess_deb, 2
-        )
-        saldo_pc_actual["n_pendientes_banco_total"] = (
-            saldo_pc_actual["n_pendientes"] + sess_n
-        )
+        saldo_pc_actual["pendientes_banco_total_creditos"] = saldo_pc_actual["pendientes_banco_creditos"]
+        saldo_pc_actual["pendientes_banco_total_debitos"] = saldo_pc_actual["pendientes_banco_debitos"]
+        saldo_pc_actual["n_pendientes_banco_total"] = saldo_pc_actual["n_pendientes"]
 
         saldo_pc_actual["saldo_banco_esperado"] = round(
             saldo_pc_actual["saldo_si_concilio_todo"] + neto_pend_total, 2

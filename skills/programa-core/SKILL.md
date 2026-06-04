@@ -447,6 +447,16 @@ Tamara corrió una conciliación real de punta a punta en prod. Cuatro bugs caza
 
 **Lección transversal — `recompute_saldos_desde` y el DBF:** la columna `saldo` de `transacciones_bancarias` es **autoritativa por fila desde el DBF** y NO reconcilia como suma de `importe`. Cualquier recompute que abarque filas DBF las re-deriva mal → drift. Recomputar SOLO sobre txs creadas por conciliación (ids altos), anclando por `id`, nunca por `fecha` sobre una jornada con movimientos DBF.
 
+### Lección 2026-06-04 — fix −500k: pendientes de banco = la HOJA (no el extracto crudo)
+
+**Síntoma (dueña):** `/conciliacion/banco-v2` (activa) mostraba "Pendientes de banco" ≈ −487K y diferencia ≈ −573K ("−500k sin explicarse"); el landing daba +69.895,71.
+
+**Causa:** el bloque "FIX 2026-06-03" en `balance_pichincha.calcular()` sumaba el extracto crudo de la sesión a pendientes de banco; el "dedup nuclear" vs `transacciones_bancarias` no limpia el 100% (desfase de fecha, montos agrupados) → ~−557K fantasma. El landing usaba históricos solos, por eso ahí cuadraba.
+
+**Fix:** la sección TOTAL de `calcular()` ahora ignora `sess_*` (extracto): `saldo_banco_esperado = saldo_si_concilio_todo + neto históricos`. `banco_v2_view.banco_preview` revierte el "BUG FIX 2026-06-03" (real_subset ya no baja pendientes de banco; matchear extracto↔PC baja pendientes de PROGRAMA). Guard: `tests/test_balance_pichincha_dedup_nuclear.py::test_extracto_fuera_de_libros_no_infla_balance`.
+
+**Pendientes de banco = la hoja.** El backlog (`banco_historicos_pendientes`) se setea con `banco_cruzar_pendientes` (form "Cruzar pendientes contra archivo (hoja FEB2023)" → "Hacer prevalecer"). FEB2023: 100 filas, neto +85.731,31 → 2.374.620,96 + 85.731,31 = 2.460.352,27 = objetivo, diferencia 0. Los 99 históricos previos ya eran la hoja menos AC97 (+15.835,60).
+
 ## Backfill / limpieza si los números no cuadran
 
 1. `python scripts/validar_reversos.py` — ¿drift en saldos?

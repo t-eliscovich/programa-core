@@ -217,6 +217,39 @@ def test_re_subir_mismo_extracto_no_infla_balance():
 # ─── Test 3: smoke — drift máximo $100 sin causa ─────────────────────
 
 
+def test_extracto_fuera_de_libros_no_infla_balance():
+    """REGRESIÓN −500k (TMT 2026-06-04 dueña: "hay −500k sin explicarse").
+
+    El caso real: el extracto mov-02-06 traía ~−557k de débitos (PAGO SENAE,
+    etc.) que NO se dedupean limpio contra transacciones_bancarias (desfase
+    de fecha / montos agrupados). El viejo bloque los sumaba a pendientes de
+    banco y el saldo_banco_esperado se desplomaba a ~1.887.337.
+
+    Nueva regla: pendientes de banco = la hoja (históricos). El extracto NO
+    aporta nunca. Acá mandamos un extracto SIN contraparte en tx (tx_rows
+    vacío) y el balance debe quedar clavado en el target de históricos.
+    """
+    from modules.conciliacion import balance_pichincha as bp
+
+    extracto = [
+        {"fecha": "2026-06-02", "documento": "16241744", "monto": 15441.80, "tipo": "D"},
+        {"fecha": "2026-06-02", "documento": "17416319", "monto": 14602.70, "tipo": "D"},
+        {"fecha": "2026-06-02", "documento": "99999999", "monto": 527135.01, "tipo": "D"},
+    ]
+    # tx_rows vacío → el dedup nuclear NO puede filtrar nada. Con el bug
+    # viejo, estos −557k entrarían como pendiente y hundirían el saldo.
+    fake = _make_fake_db(extracto_rows=extracto, tx_rows=[])
+
+    with patch.dict(sys.modules, {"db": fake}):
+        resultado = bp.calcular()
+
+    esperado = resultado["saldo_banco_esperado"]
+    assert abs(esperado - TARGET_ESPERADO) <= 1.0, (
+        f"saldo_banco_esperado = {esperado:.2f}, target = {TARGET_ESPERADO:.2f}. "
+        "El extracto crudo volvió a inflar pendientes de banco (regresión −500k)."
+    )
+
+
 @pytest.mark.parametrize("n_extra_extracto", [0, 1, 4, 10])
 def test_drift_balance_acotado(n_extra_extracto):
     """Para varios tamaños del extracto (todas filas que existen en tx),
