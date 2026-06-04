@@ -421,7 +421,10 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
     rows = db.fetch_all(
         """
         SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto, tb.importe,
-               tb.numreferencia, tb.no_banco, tb.saldo, tb.prov, tb.fecha_crea,
+               -- TMT 2026-06-03: COALESCE manual > dBase. La edición web (mig 0074)
+               -- sobrevive al sync porque numreferencia_manual no se pisa.
+               COALESCE(NULLIF(TRIM(tb.numreferencia_manual), ''), tb.numreferencia::TEXT) AS numreferencia,
+               tb.no_banco, tb.saldo, tb.prov, tb.fecha_crea,
                (SELECT STRING_AGG(DISTINCT ch.no_cheque::text, ',')
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque ch ON ch.id_cheque = cxt.id_cheque
@@ -1247,6 +1250,7 @@ def confirmar_match(
     usuario: str = "web",
     metodo: str = "matched_auto",
     conn=None,
+    confirm_batch_id: str | None = None,
 ) -> int:
     """Inserta un match (o aceptación unilateral) en banco_conciliacion_match.
 
@@ -1260,12 +1264,52 @@ def confirmar_match(
 
     Si la migration 0047 no corrió todavía, omitimos la columna `metodo`.
     """
+    # TMT 2026-06-03 audit blindaje BUG #9 single-claim roto: Tamara reportó
+    # 4 matches activos contra el mismo PC tx de +2,000 con bancos +300/+1549/
+    # +150/+249. Es bug: la dueña matcheó el mismo PC tx en clicks separados.
+    # Regla: si id_transaccion YA tiene matches activos con confirm_batch_id
+    # DISTINTO al que estamos por insertar, ABORTAR. Si comparten batch_id
+    # es N:1 legítimo del agrupado (impuestos, transferencias).
+    if id_transaccion and estado == "matched":
+        try:
+            existing = db.fetch_one(
+                """
+                SELECT COUNT(*) AS n,
+                       BOOL_OR(COALESCE(confirm_batch_id, '') = COALESCE(%s, ''))
+                         AS comparte_batch
+                  FROM scintela.banco_conciliacion_match
+                 WHERE no_banco = %s
+                   AND id_transaccion = %s
+                   AND deshecho_en IS NULL
+                """,
+                (confirm_batch_id, no_banco, int(id_transaccion)),
+                conn=conn,
+            )
+            if existing and int(existing.get("n") or 0) > 0:
+                if not existing.get("comparte_batch"):
+                    raise ValueError(
+                        f"Single-claim violation: PC tx #{id_transaccion} ya tiene "
+                        f"matches activos con OTRO batch_id. No se puede matchear "
+                        f"el mismo PC tx desde 2 conciliaciones distintas. "
+                        f"Si querés reasignar, primero deshacer el match anterior."
+                    )
+        except ValueError:
+            raise
+        except Exception as _e:
+            # No bloqueamos por fallos del check (p.ej. mock en tests sin
+            # esta query soportada). Solo loggear.
+            import logging
+            logging.warning("confirmar_match single-claim check falló: %s", _e)
     # TMT 2026-05-27 dueña: 'que los que importen sean las de dbase'.
     # Dual-write: además del INSERT en match, marcamos stat='*' en la fila
     # PC para que el flag conciliado sea visible en /bancos y en los saldos
     # — el mismo flag que usa dBase. Así PC y dBase quedan visualmente
     # alineados. Si dBase vuelve a sincronizar con stat distinto, gana
     # dBase (la sync es one-way DBF → PC). Es el comportamiento querido.
+    # TMT 2026-06-03: tx_firma se llena directo via scintela.compute_tx_firma()
+    # SQL helper (mig 0068). Necesaria para sobrevivir el sync (mig 0066).
+    # confirm_batch_id agrupa matches creados en una sola conciliación (mig 0071)
+    # para que deshacer pueda revertirlos todos juntos.
     if _tiene_migration_47():
         n = db.execute(
             """
@@ -1273,9 +1317,10 @@ def confirmar_match(
                 no_banco, estado, metodo,
                 real_fecha, real_concepto, real_documento, real_monto, real_tipo,
                 real_codigo, real_oficina,
-                id_transaccion, usuario
+                id_transaccion, tx_firma, confirm_batch_id, usuario
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    scintela.compute_tx_firma(%s), %s, %s)
             ON CONFLICT DO NOTHING
             """,
             (
@@ -1283,7 +1328,7 @@ def confirmar_match(
                 real.fecha, real.concepto, real.documento,
                 real.monto, real.tipo,
                 real.codigo, real.oficina,
-                id_transaccion, usuario,
+                id_transaccion, id_transaccion, confirm_batch_id, usuario,
             ),
             conn=conn,
         )
@@ -1295,9 +1340,10 @@ def confirmar_match(
                 no_banco, estado,
                 real_fecha, real_concepto, real_documento, real_monto, real_tipo,
                 real_codigo, real_oficina,
-                id_transaccion, usuario
+                id_transaccion, tx_firma, confirm_batch_id, usuario
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    scintela.compute_tx_firma(%s), %s, %s)
             ON CONFLICT DO NOTHING
             """,
             (
@@ -1305,7 +1351,7 @@ def confirmar_match(
                 real.fecha, real.concepto, real.documento,
                 real.monto, real.tipo,
                 real.codigo, real.oficina,
-                id_transaccion, usuario,
+                id_transaccion, id_transaccion, confirm_batch_id, usuario,
             ),
             conn=conn,
         )
@@ -1382,20 +1428,22 @@ def confirmar_bancsis_only(
         return db.execute(
             """
             INSERT INTO scintela.banco_conciliacion_match
-                (no_banco, estado, metodo, id_transaccion, usuario)
-            VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s, %s)
+                (no_banco, estado, metodo, id_transaccion, tx_firma, usuario)
+            VALUES (%s, 'bancsis_only_ok', 'bancsis_only_ok', %s,
+                    scintela.compute_tx_firma(%s), %s)
             ON CONFLICT DO NOTHING
             """,
-            (no_banco, id_transaccion, usuario),
+            (no_banco, id_transaccion, id_transaccion, usuario),
         )
     return db.execute(
         """
         INSERT INTO scintela.banco_conciliacion_match
-            (no_banco, estado, id_transaccion, usuario)
-        VALUES (%s, 'bancsis_only_ok', %s, %s)
+            (no_banco, estado, id_transaccion, tx_firma, usuario)
+        VALUES (%s, 'bancsis_only_ok', %s,
+                scintela.compute_tx_firma(%s), %s)
         ON CONFLICT DO NOTHING
         """,
-        (no_banco, id_transaccion, usuario),
+        (no_banco, id_transaccion, id_transaccion, usuario),
     )
 
 
@@ -1527,6 +1575,7 @@ def crear_transaccion_agrupada_desde_reals(
     concepto: str | None = None,
     prov: str | None = None,
     usuario: str = "web",
+    confirm_batch_id: str | None = None,
 ) -> dict:
     """Crea UNA tx BANCSIS con la suma de N reals y los concilia N:1.
 
@@ -1571,6 +1620,13 @@ def crear_transaccion_agrupada_desde_reals(
             "Los movs se compensan (créditos == débitos) — no genero tx "
             "BANCSIS de monto cero. Revisar el subset."
         )
+
+    # TMT 2026-06-03: si no llega batch_id explícito, lo generamos aquí
+    # para que los N matches del agrupado compartan grupo (deshacer y
+    # totales por id_transaccion los traten como UN grupo).
+    if not confirm_batch_id:
+        import uuid as _uuid
+        confirm_batch_id = _uuid.uuid4().hex
 
     documento = "NC" if neto > 0 else "ND"
     importe_abs = abs(neto)
@@ -1633,6 +1689,7 @@ def crear_transaccion_agrupada_desde_reals(
                         usuario=usuario,
                         metodo="created_from_real_grouped",
                         conn=conn,
+                        confirm_batch_id=confirm_batch_id,
                     )
                     if n:
                         n_matches += 1
@@ -1686,6 +1743,52 @@ def match_manual(
     )
 
 
+def romper_match_grupo(
+    match_id: int,
+    usuario: str = "web",
+) -> tuple[int, str | None]:
+    """Deshace TODOS los matches del mismo confirm_batch_id que match_id.
+
+    Si match_id no tiene batch_id (datos viejos pre-mig 0071), solo deshace
+    ese match. Devuelve (n_deshechos, batch_id_o_None).
+
+    TMT 2026-06-03: fix del bug N:M donde deshacer 1 match dejaba la math
+    rota. Ahora una conciliación 2 vs 14 = 14 matches con mismo batch_id;
+    deshacer cualquiera de los 14 los borra a todos atomicamente.
+    """
+    row = db.fetch_one(
+        "SELECT confirm_batch_id FROM scintela.banco_conciliacion_match WHERE id = %s",
+        (int(match_id),),
+    )
+    batch_id = row.get("confirm_batch_id") if row else None
+    if not batch_id:
+        # Caso legacy o match individual: deshacer solo este.
+        n = romper_match(match_id, usuario=usuario)
+        return (n, None)
+    # Encontrar todos los matches activos en el mismo batch.
+    ids = db.fetch_all(
+        """
+        SELECT id FROM scintela.banco_conciliacion_match
+         WHERE confirm_batch_id = %s AND deshecho_en IS NULL
+        """,
+        (batch_id,),
+    ) or []
+    # TMT 2026-06-03 audit blindaje: si una falla, las demás también — pero
+    # cada `romper_match` ya tiene su propia db.tx() interna. Si fallan
+    # algunas, devolvemos cuantas se deshicieron — caller ve el conteo y
+    # puede decidir si reintentar. Mejor que silenciar excepción.
+    total = 0
+    fallos = 0
+    for r in ids:
+        try:
+            total += romper_match(int(r["id"]), usuario=usuario) or 0
+        except Exception as _e:
+            import logging
+            logging.warning("romper_match_grupo: falla en match %s: %s", r.get("id"), _e)
+            fallos += 1
+    return (total, batch_id)
+
+
 def romper_match(
     match_id: int,
     usuario: str = "web",
@@ -1712,72 +1815,81 @@ def romper_match(
     match activo apuntando a la misma id_transaccion (defensa por si un mov
     tiene 2 matches PC apuntándolo — improbable pero no imposible).
     """
-    # 0) Antes de marcar deshecho, agarrar la id_transaccion del match
-    # para poder revertir stat='*' después.
-    row_match = None
-    try:
-        row_match = db.fetch_one(
-            "SELECT id_transaccion FROM scintela.banco_conciliacion_match WHERE id = %s",
-            (int(match_id),),
-        )
-    except Exception:
-        pass
+    # TMT 2026-06-03 audit blindaje: envolvemos en db.tx() para atomicidad.
+    # Antes, cada UPDATE era tx implícita — si paso 3 fallaba, match quedaba
+    # deshecho pero stat='*' permanecía → drift PC vs match.
+    with db.tx() as conn:
+        # 0) Antes de marcar deshecho, agarrar la id_transaccion del match
+        # para poder revertir stat='*' después.
+        row_match = None
+        try:
+            row_match = db.fetch_one(
+                "SELECT id_transaccion FROM scintela.banco_conciliacion_match WHERE id = %s",
+                (int(match_id),),
+                conn=conn,
+            )
+        except Exception:
+            pass
 
-    # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
-    try:
-        db.execute(
-            """
-            UPDATE scintela.banco_historicos_pendientes
-               SET conciliado_en = NULL,
-                   conciliado_por = NULL,
-                   conciliado_match_id = NULL
-             WHERE conciliado_match_id = %s
-            """,
-            (int(match_id),),
-        )
-    except Exception:
-        pass  # fail-soft: si la columna no existe (pre-migration), seguimos
-
-    # 2) Soft-undo o hard-delete del match propio.
-    if _tiene_migration_47():
-        n = db.execute(
-            """
-            UPDATE scintela.banco_conciliacion_match
-               SET deshecho_en = CURRENT_TIMESTAMP,
-                   deshecho_por = %s
-             WHERE id = %s
-               AND deshecho_en IS NULL
-            """,
-            (usuario[:50], int(match_id)),
-        )
-    else:
-        n = db.execute(
-            "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
-            (int(match_id),),
-        )
-
-    # 3) Revertir stat='*' en la fila PC si no queda otro match activo
-    # apuntándola. El matcher excluye stat='*' del pool de conciliables, así
-    # que al PC-conciliar la fila NO tenía '*' antes → limpiarlo es seguro.
-    id_tx = row_match.get("id_transaccion") if row_match else None
-    if id_tx:
+        # 1) Limpiar la marca de histórico (si el match estaba apuntado por una).
         try:
             db.execute(
                 """
-                UPDATE scintela.transacciones_bancarias t
-                   SET stat = NULL
-                 WHERE t.id_transaccion = %s
-                   AND TRIM(COALESCE(t.stat, '')) = '*'
-                   AND NOT EXISTS (
-                       SELECT 1 FROM scintela.banco_conciliacion_match m
-                        WHERE m.id_transaccion = t.id_transaccion
-                          AND m.deshecho_en IS NULL
-                   )
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = NULL,
+                       conciliado_por = NULL,
+                       conciliado_match_id = NULL
+                 WHERE conciliado_match_id = %s
                 """,
-                (int(id_tx),),
+                (int(match_id),),
+                conn=conn,
             )
         except Exception:
-            pass  # fail-soft: no romper el deshacer si falla el revert de stat
+            pass  # fail-soft: si la columna no existe (pre-migration), seguimos
+
+        # 2) Soft-undo o hard-delete del match propio.
+        if _tiene_migration_47():
+            n = db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_match
+                   SET deshecho_en = CURRENT_TIMESTAMP,
+                       deshecho_por = %s
+                 WHERE id = %s
+                   AND deshecho_en IS NULL
+                """,
+                (usuario[:50], int(match_id)),
+                conn=conn,
+            )
+        else:
+            n = db.execute(
+                "DELETE FROM scintela.banco_conciliacion_match WHERE id = %s",
+                (int(match_id),),
+                conn=conn,
+            )
+
+        # 3) Revertir stat='*' en la fila PC si no queda otro match activo
+        # apuntándola. El matcher excluye stat='*' del pool de conciliables, así
+        # que al PC-conciliar la fila NO tenía '*' antes → limpiarlo es seguro.
+        id_tx = row_match.get("id_transaccion") if row_match else None
+        if id_tx:
+            try:
+                db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias t
+                       SET stat = NULL
+                     WHERE t.id_transaccion = %s
+                       AND TRIM(COALESCE(t.stat, '')) = '*'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = t.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                    """,
+                    (int(id_tx),),
+                    conn=conn,
+                )
+            except Exception:
+                pass  # fail-soft: no romper el deshacer si falla el revert de stat
     return n
 
 

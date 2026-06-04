@@ -40,44 +40,44 @@
         {% endif %}
       </div>
     </header>
+    {# TMT 2026-06-03 dueña: 'esta muy muy chico, agrandalo un poco'.
+       Subido a text-[13px] body, monto bold a text-sm. Cada item sigue
+       en 1 línea pero ahora se entiende a primera vista. #}
     <div class="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700">
-      <div class="p-4">
-        <div class="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold mb-2">Banco ({{ (real_subset|length) + (hist_rows|length) }})</div>
-        <ul class="space-y-2 text-sm">
+      <div class="p-3">
+        <div class="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300 font-semibold mb-2 px-1">Banco ({{ (real_subset|length) + (hist_rows|length) }})</div>
+        <ul class="text-[13px] tabular-nums">
           {% for m in real_subset %}
-          <li class="flex items-start gap-2">
-            <span class="inline-flex w-5 h-5 mt-0.5 items-center justify-center rounded-full text-[10px] font-bold {% if m.tipo == 'C' %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if m.tipo == 'C' %}+{% else %}−{% endif %}</span>
-            <div class="flex-1">
-              <div class="font-mono tabular-nums text-sm">${{ '{:,.2f}'.format(m.monto|float) }}</div>
-              <div class="text-[11px] text-slate-500">{{ m.fecha }} · {{ m.documento or '—' }} · extracto</div>
-              <div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">{{ (m.concepto or '')[:80] }}</div>
-            </div>
+          <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
+            <span class="w-4 text-center font-bold text-sm {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if m.tipo == 'C' %}+{% else %}−{% endif %}</span>
+            <span class="font-mono font-bold text-sm w-28 text-right {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</span>
+            <span class="text-slate-400 w-16">{{ m.fecha }}</span>
+            <span class="text-slate-500 font-mono w-24 truncate">{{ m.documento or '—' }}</span>
+            <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ m.concepto or '' }}">{{ (m.concepto or '')[:55] }}</span>
           </li>
           {% endfor %}
           {% for h in hist_rows %}
-          <li class="flex items-start gap-2">
-            <span class="inline-flex w-5 h-5 mt-0.5 items-center justify-center rounded-full text-[10px] font-bold {% if h.tipo == 'C' %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if h.tipo == 'C' %}+{% else %}−{% endif %}</span>
-            <div class="flex-1">
-              <div class="font-mono tabular-nums text-sm">${{ '{:,.2f}'.format(h.monto|float) }} <span class="text-[9px] uppercase px-1 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200 font-semibold ml-1">histórico</span></div>
-              <div class="text-[11px] text-slate-500">{{ h.fecha }} · {{ h.documento or '—' }}</div>
-              <div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">{{ (h.concepto or '')[:80] }}</div>
-            </div>
+          <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
+            <span class="w-4 text-center font-bold text-sm {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if h.tipo == 'C' %}+{% else %}−{% endif %}</span>
+            <span class="font-mono font-bold text-sm w-28 text-right {% if h.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(h.monto|float) }}</span>
+            <span class="text-slate-400 w-16">{{ h.fecha }}</span>
+            <span class="text-slate-500 font-mono w-24 truncate">{{ h.documento or '—' }}</span>
+            <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ h.concepto or '' }}"><span class="text-purple-600 font-bold text-[10px] uppercase mr-1">H</span>{{ (h.concepto or '')[:50] }}</span>
           </li>
           {% endfor %}
         </ul>
       </div>
-      <div class="p-4">
-        <div class="text-[10px] uppercase tracking-wider text-sky-700 dark:text-sky-300 font-semibold mb-2">Programa ({{ bancsis_rows|length }})</div>
-        <ul class="space-y-2 text-sm">
+      <div class="p-3">
+        <div class="text-xs uppercase tracking-wider text-sky-700 dark:text-sky-300 font-semibold mb-2 px-1">Programa ({{ bancsis_rows|length }})</div>
+        <ul class="text-[13px] tabular-nums">
           {% for b in bancsis_rows %}
           {% set _signo = 1 if b.documento in ('DE','TR','XX','NC','IN','AC') else -1 %}
-          <li class="flex items-start gap-2">
-            <span class="inline-flex w-5 h-5 mt-0.5 items-center justify-center rounded-full text-[10px] font-bold {% if _signo > 0 %}bg-emerald-100 text-emerald-700{% else %}bg-rose-100 text-rose-700{% endif %}">{% if _signo > 0 %}+{% else %}−{% endif %}</span>
-            <div class="flex-1">
-              <div class="font-mono tabular-nums text-sm">${{ '{:,.2f}'.format(b.importe|float) }} <span class="text-[10px] text-slate-400">#{{ b.id_transaccion }}</span></div>
-              <div class="text-[11px] text-slate-500">{{ b.fecha }} · {{ b.documento or '—' }}{% if b.prov %} · {{ b.prov }}{% endif %}{% if b.numreferencia %} · ref {{ b.numreferencia }}{% endif %}</div>
-              <div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">{{ ((b.prov_nombre + ' · ') if b.prov_nombre else '') + (b.concepto or '')[:80] }}</div>
-            </div>
+          <li class="flex items-baseline gap-3 px-1 py-1 border-b border-slate-100 dark:border-slate-800 last:border-0">
+            <span class="w-4 text-center font-bold text-sm {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if _signo > 0 %}+{% else %}−{% endif %}</span>
+            <span class="font-mono font-bold text-sm w-28 text-right {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(b.importe|float) }}</span>
+            <span class="text-slate-400 w-16">{{ b.fecha }}</span>
+            <span class="text-slate-500 font-mono w-16 truncate">{{ b.documento or '—' }}</span>
+            <span class="text-slate-600 dark:text-slate-300 flex-1 truncate" title="{{ b.concepto or '' }}">{% if b.prov %}<span class="text-slate-500 text-xs">[{{ b.prov }}]</span> {% endif %}{{ ((b.prov_nombre + ' · ') if b.prov_nombre else '') + (b.concepto or '')[:50] }}</span>
           </li>
           {% endfor %}
         </ul>
@@ -105,8 +105,8 @@
           ('Pendientes en programa (n)',   balance_before.n_pendientes_conciliar, balance_after.n_pendientes_conciliar),
           ('Pendientes en programa (neto)',balance_before.pendientes_conciliar_neto, balance_after.pendientes_conciliar_neto),
           ('= Saldo conciliado',           balance_before.saldo_si_concilio_todo, balance_after.saldo_si_concilio_todo),
-          ('Pendientes en banco (n)',      balance_before.n_pendientes,           balance_after.n_pendientes),
-          ('Pendientes en banco (neto)',   balance_before.neto_pendientes,        balance_after.neto_pendientes),
+          ('Pendientes en banco (n)',      (balance_before.n_pendientes_banco_total or balance_before.n_pendientes), (balance_after.n_pendientes_banco_total or balance_after.n_pendientes)),
+          ('Pendientes en banco (neto)',   (balance_before.neto_pendientes_total or balance_before.neto_pendientes), (balance_after.neto_pendientes_total or balance_after.neto_pendientes)),
           ('= Saldo banco esperado',       balance_before.saldo_banco_esperado,   balance_after.saldo_banco_esperado),
         ] %}
         {% for label, b, a in _rows %}

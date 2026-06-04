@@ -138,13 +138,17 @@ def parse_banco_xlsx(raw: bytes) -> list[MovBanco]:
             try:
                 fecha = _parse_fecha(row_list[col_idx["fecha"]])
                 monto = _parse_decimal(row_list[col_idx["monto"]])
-                tipo = str(row_list[col_idx["tipo"]] or "").strip().upper()
+                # TMT 2026-06-03 audit blindaje: aceptar "CR","DB","CRED","DEB"
+                # → primer char C/D. Sin esto, filas con tipo distinto a 1 char
+                # exacto se silenciaban y se perdía data del extracto.
+                tipo_raw = str(row_list[col_idx["tipo"]] or "").strip().upper()
+                tipo = tipo_raw[:1] if tipo_raw else ""
             except IndexError:
                 continue
             if fecha is None or monto == 0:
                 continue
             if tipo not in ("C", "D"):
-                _LOG.debug("Hoja %s fila %d: tipo %r desconocido", nombre_hoja, i, tipo)
+                _LOG.debug("Hoja %s fila %d: tipo %r desconocido", nombre_hoja, i, tipo_raw)
                 continue
 
             def _g(key: str, default: str = "") -> str:

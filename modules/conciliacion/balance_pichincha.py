@@ -6,7 +6,10 @@ encapsula. Si esto se rompe, la pantalla original tira el mismo error.
 """
 from __future__ import annotations
 
+import json as _json
 import logging
+from datetime import date as _date
+from datetime import timedelta as _td
 
 _LOG = logging.getLogger("programa_core.conciliacion.balance_pichincha")
 
@@ -106,8 +109,196 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
         saldo_pc_actual["saldo_si_concilio_todo"] = round(
             saldo_pc_actual["saldo"] - saldo_pc_actual["pendientes_conciliar_neto"], 2
         )
+
+        # --- FIX 2026-06-03: incluir extracto de sesión abierta en pend_banco ---
+        # Antes: saldo_banco_esperado solo sumaba banco_historicos_pendientes (FEB2023).
+        # Eso ignoraba el extracto recién subido de la sesión actual.
+        # Ahora: sumamos también los movs del extracto que NO están conciliados
+        # via match. Así pend_banco_TOTAL = histos + extracto_sin_match.
+        sess_neto = 0.0
+        sess_cred = 0.0
+        sess_deb = 0.0
+        sess_n = 0
+        try:
+            sess_row = _db.fetch_one(
+                """
+                SELECT id, extracto_payload
+                  FROM scintela.banco_conciliacion_sesion
+                 WHERE no_banco = %(no_banco)s AND cerrada_en IS NULL
+                 ORDER BY abierta_en DESC LIMIT 1
+                """,
+                {"no_banco": no_banco},
+            )
+            if sess_row and sess_row.get("extracto_payload"):
+                payload = sess_row["extracto_payload"]
+                if isinstance(payload, str):
+                    try:
+                        payload = _json.loads(payload)
+                    except Exception:
+                        payload = []
+                movs = payload if isinstance(payload, list) else (payload.get("extracto") or payload.get("movs") or [])
+                # Movs ya conciliados (firma en matches activos)
+                match_firmas = set()
+                try:
+                    mr = _db.fetch_all(
+                        """
+                        SELECT real_fecha, real_documento, real_monto, real_tipo
+                          FROM scintela.banco_conciliacion_match
+                         WHERE no_banco = %(no_banco)s
+                           AND deshecho_en IS NULL
+                           AND real_documento IS NOT NULL
+                        """,
+                        {"no_banco": no_banco},
+                    ) or []
+                    for r in mr:
+                        match_firmas.add((
+                            str(r.get("real_fecha")),
+                            (r.get("real_documento") or "").strip(),
+                            round(float(r.get("real_monto") or 0), 2),
+                            (r.get("real_tipo") or "").strip(),
+                        ))
+                except Exception:
+                    pass
+                # TMT 2026-06-03 dueña: 'no se deberian duplicar los extractos
+                # del banco si estamos comparandolos para que no haya duplicados'.
+                # Filas del payload que ya existen como histo pendiente NO se
+                # cuentan acá — ya están contadas en `n_pendientes` (los histos).
+                # Sin este dedup, una sesión que re-incluye un histo viejo lo
+                # contaría dos veces (una en histos, otra en extracto).
+                histo_firmas: set = set()
+                try:
+                    hr = _db.fetch_all(
+                        """
+                        SELECT fecha, documento, monto, tipo
+                          FROM scintela.banco_historicos_pendientes
+                         WHERE no_banco = %(no_banco)s
+                           AND conciliado_en IS NULL
+                           AND documento IS NOT NULL AND documento <> ''
+                        """,
+                        {"no_banco": no_banco},
+                    ) or []
+                    for r in hr:
+                        histo_firmas.add((
+                            str(r.get("fecha")),
+                            (r.get("documento") or "").strip(),
+                            round(float(r.get("monto") or 0), 2),
+                            (r.get("tipo") or "").strip().upper()[:1],
+                        ))
+                except Exception:
+                    pass
+
+                # ─── DEDUP NUCLEAR vs scintela.transacciones_bancarias ───────
+                # TMT decisión 2026-06-03 (dueña, literal): "no podemos tener
+                # movimientos dobles. No dupliques hace un mecanismo para no
+                # duplicar." Antes el dedup solo miraba matches activos +
+                # histos pendientes — si la dueña re-sincaba PC los matches
+                # se borraban y el extracto crudo entraba doble (una vez en
+                # transacciones_bancarias, otra como "pendiente_extracto").
+                #
+                # Ahora: para CADA fila del extracto a contar como pendiente,
+                # buscamos si ya existe una tx en transacciones_bancarias con
+                # firma "razonable" (fecha ±1 día, abs(importe) ±$0.01, tipo
+                # C/D consistente). Si existe → NO se cuenta como pendiente.
+                #
+                # Clave de tx_firmas: (fecha_iso, abs(importe_redondeado_2), tipo)
+                # con expansion ±1 día. NO usamos documento porque el documento
+                # del extracto (ej. "38078012") y el de PC (ej. "CH", "DE") usan
+                # nomenclaturas distintas — son incomparables.
+                tx_firmas: set = set()
+                try:
+                    fechas_movs: list[str] = []
+                    for m in movs:
+                        fv = m.get("fecha")
+                        if not fv:
+                            continue
+                        s = str(fv)[:10]
+                        if len(s) == 10 and s.count("-") == 2:
+                            fechas_movs.append(s)
+                    if fechas_movs:
+                        fechas_movs.sort()
+                        f_min, f_max = fechas_movs[0], fechas_movs[-1]
+                        tx_rows = _db.fetch_all(
+                            """
+                            SELECT t.fecha, t.documento, t.importe
+                              FROM scintela.transacciones_bancarias t
+                             WHERE t.no_banco = %(no_banco)s
+                               AND t.importe IS NOT NULL
+                               AND t.fecha BETWEEN (%(f_min)s::date - INTERVAL '2 days')
+                                              AND (%(f_max)s::date + INTERVAL '2 days')
+                            """,
+                            {"no_banco": no_banco, "f_min": f_min, "f_max": f_max},
+                        ) or []
+                        for r in tx_rows:
+                            t_fecha = r.get("fecha")
+                            t_doc = (r.get("documento") or "").strip().upper()
+                            try:
+                                t_imp = round(abs(float(r.get("importe") or 0)), 2)
+                            except (TypeError, ValueError):
+                                continue
+                            if t_imp == 0:
+                                continue
+                            t_tipo = "D" if t_doc in ("CH", "ND", "DB", "GS", "PA") else "C"
+                            # Expansion ±1 día — banco y PC a veces bookean
+                            # con desfase de 1 día.
+                            if isinstance(t_fecha, _date):
+                                for d in (-1, 0, 1):
+                                    fk = (t_fecha + _td(days=d)).isoformat()
+                                    tx_firmas.add((fk, t_imp, t_tipo))
+                            else:
+                                # fallback: si por algún motivo no es date
+                                tx_firmas.add((str(t_fecha)[:10], t_imp, t_tipo))
+                except Exception:
+                    _LOG.exception("calcular(): error construyendo tx_firmas (dedup nuclear)")
+
+                # Counter de cuántos extractos quedaron deduped vs tx — útil para debug
+                dedup_vs_tx = 0
+                for m in movs:
+                    fecha = m.get("fecha")
+                    doc = (m.get("documento") or m.get("doc") or "").strip()
+                    monto = round(float(m.get("monto") or m.get("importe") or 0), 2)
+                    tipo = (m.get("tipo") or m.get("clase") or "").strip().upper()[:1] or ("C" if monto > 0 else "D")
+                    key = (str(fecha), doc, abs(monto), tipo)
+                    if key in match_firmas:
+                        continue
+                    # Dedup vs histos pendientes — ya contados en n_pendientes.
+                    if (str(fecha), doc, abs(monto), tipo) in histo_firmas:
+                        continue
+                    # Dedup NUCLEAR vs transacciones_bancarias.
+                    if (str(fecha)[:10], abs(monto), tipo) in tx_firmas:
+                        dedup_vs_tx += 1
+                        continue
+                    sess_n += 1
+                    amt = abs(monto)
+                    if tipo == "C":
+                        sess_cred += amt
+                        sess_neto += amt
+                    else:
+                        sess_deb += amt
+                        sess_neto -= amt
+                saldo_pc_actual["dedup_vs_tx"] = dedup_vs_tx
+        except Exception as _e:
+            _LOG.exception("calcular(): error sumando extracto sesion: %s", _e)
+
+        saldo_pc_actual["pendientes_banco_extracto_creditos"] = round(sess_cred, 2)
+        saldo_pc_actual["pendientes_banco_extracto_debitos"] = round(sess_deb, 2)
+        saldo_pc_actual["n_pendientes_banco_extracto"] = sess_n
+        saldo_pc_actual["neto_pendientes_extracto"] = round(sess_neto, 2)
+
+        # TOTAL pend_banco = histos + extracto
+        neto_pend_total = round(saldo_pc_actual["neto_pendientes"] + sess_neto, 2)
+        saldo_pc_actual["neto_pendientes_total"] = neto_pend_total
+        saldo_pc_actual["pendientes_banco_total_creditos"] = round(
+            saldo_pc_actual["pendientes_banco_creditos"] + sess_cred, 2
+        )
+        saldo_pc_actual["pendientes_banco_total_debitos"] = round(
+            saldo_pc_actual["pendientes_banco_debitos"] + sess_deb, 2
+        )
+        saldo_pc_actual["n_pendientes_banco_total"] = (
+            saldo_pc_actual["n_pendientes"] + sess_n
+        )
+
         saldo_pc_actual["saldo_banco_esperado"] = round(
-            saldo_pc_actual["saldo_si_concilio_todo"] + saldo_pc_actual["neto_pendientes"], 2
+            saldo_pc_actual["saldo_si_concilio_todo"] + neto_pend_total, 2
         )
         try:
             saldo_pc_actual["pendientes_conciliar_rows"] = _db.fetch_all(

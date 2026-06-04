@@ -82,8 +82,14 @@
         </tbody>
       </table>
     </div>
-    <div class="px-5 py-3 bg-amber-50/50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-900/30 text-xs text-amber-900 dark:text-amber-200">
-      ⚠ Las top {{ filas_torcidas|length }} filas (por magnitud de drift) están listadas arriba. Apretá <strong>"Verificar y recalcular saldos"</strong> para arrancar la cadena de vuelta desde la primera fila. Si después de eso siguen apareciendo filas acá, es porque algún mov específico se cargó con saldo manual incorrecto.
+    <div class="px-5 py-3 bg-rose-50/60 dark:bg-rose-900/20 border-t border-rose-200 dark:border-rose-900/40 text-xs text-rose-900 dark:text-rose-200">
+      <strong>⚠ NO USES el recompute todavía.</strong> El walk-forward usa una asunción
+      simplista de signos (ND = siempre salida, DE = siempre entrada) que NO matchea
+      los movs reversos del dBase — recompute mueve libros en la dirección equivocada.
+      <br>
+      Si ves filas acá y el saldo del extracto no cuadra, el origen real es <em>otro</em>
+      (extractos duplicados, txs grupales que no se borraron, etc.) — no es el running
+      saldo. TMT 2026-06-03 deshabilitado tras incidente.
     </div>
     {% else %}
     <div class="px-5 py-3 bg-emerald-50/40 dark:bg-emerald-900/10 text-xs text-emerald-900 dark:text-emerald-200">

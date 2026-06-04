@@ -39,7 +39,7 @@ from modules.conciliacion.matcher_banco import (
     crear_transaccion_desde_real,
     crear_transaccion_agrupada_desde_reals,
     match_manual,
-    romper_match,
+    romper_match_grupo,
     historial as historial_matches,
     candidatos_match_manual,
 )
@@ -193,14 +193,23 @@ def depositos():
             return redirect(url_for("conciliacion.depositos"))
 
         # Rango de fechas: ± 30 días del rango de los depósitos.
+        # TMT decisión 2026-06-03: si TODO el xlsx es sin fecha, usamos rango
+        # default (últimos 90 días) en vez de abortar. Las filas sin fecha
+        # caen automáticamente a rojo en el matcher (ya tenía esa lógica).
         fechas = [d.fecha for d in deps if d.fecha]
         if not fechas:
-            flash("Ningún depósito del Excel tiene fecha válida.", "warn")
-            return redirect(url_for("conciliacion.depositos"))
-        desde = min(fechas) - timedelta(days=30)
-        hasta = max(fechas) + timedelta(days=30)
-        if hasta > date.today():
             hasta = date.today()
+            desde = hasta - timedelta(days=90)
+            flash(
+                f"Atención: {len(deps)} depósito(s) sin fecha — se cargan con flag "
+                "'sin fecha' y van a categoría roja por defecto.",
+                "warn",
+            )
+        else:
+            desde = min(fechas) - timedelta(days=30)
+            hasta = max(fechas) + timedelta(days=30)
+            if hasta > date.today():
+                hasta = date.today()
 
         movs = transacciones_en_rango(desde, hasta)
         resultado = matchear_depositos(deps, movs, dias_tolerancia=5)
@@ -220,6 +229,9 @@ def depositos():
                 {
                     "firma_dep": firma,
                     "fecha": (f.deposito.fecha.isoformat() if f.deposito.fecha else None),
+                    # TMT 2026-06-03: flag explícito para que la UI pueda mostrar
+                    # un badge "sin fecha" en vez de un "—" silencioso.
+                    "sin_fecha": f.deposito.fecha is None,
                     "concepto": f.deposito.concepto,
                     "codigo": f.deposito.codigo,
                     "valor": float(f.deposito.valor),
@@ -2645,12 +2657,17 @@ def banco_deshacer():
     if match_id <= 0:
         flash("match_id inválido.", "error")
         return redirect(back)
-    n = romper_match(
+    # TMT 2026-06-03: deshacer GRUPAL — si el match tiene confirm_batch_id
+    # (mig 0071), borra todos los matches del mismo batch atómicamente.
+    n, batch_id = romper_match_grupo(
         match_id=match_id,
         usuario=_usuario_actual(),
     )
     if n:
-        flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")
+        if batch_id and n > 1:
+            flash(f"Conciliación deshecha — {n} matches del grupo liberados. Vuelven a aparecer en el próximo extracto.", "ok")
+        else:
+            flash(f"Match #{match_id} deshecho. Vuelve a aparecer en el próximo extracto.", "ok")
         try:
             from modules.conciliacion import saldo_snapshot as _ss
             _ss.snapshot(_BANCO_PICHINCHA, "match_deshecho",

@@ -1,18 +1,25 @@
 """Sesión persistente de conciliación bancaria.
 
 TMT 2026-05-28 dueña: 'puede quedar abierta esa pagina hasta no cerrar la
-conciliacion?'. Sí — guardamos el extracto parseado + flag abierta/cerrada
-en `scintela.banco_conciliacion_sesion` (migration 0060). Cada vez que la
-pantalla post-procesar carga, lee la sesión abierta del usuario, re-corre
-el matcher contra los movs no conciliados todavía, y arma 3 buckets:
+conciliacion?'. Sí — guardamos el extracto parseado en
+`scintela.banco_conciliacion_sesion` (migration 0060).
+
+TMT 2026-06-02 dueña: 'no quiero cerrar la sesion, quiero dejar seguir
+editando. borremos lo necesario.' La sesión vive para siempre — una por
+banco (migration 0062 reemplaza el unique (no_banco, usuario) por
+(no_banco)). Cada upload de extracto se MERGEA en la única sesión del
+banco, dedupeando por número de documento contra:
+
+    - el payload actual (movs ya cargados en la sesión)
+    - banco_historicos_pendientes (filas crudas del banco ya conocidas)
+    - banco_conciliacion_match.real_documento (filas ya conciliadas)
+
+Cada vez que la pantalla post-procesar carga, re-corre el matcher contra
+los movs no conciliados y arma los buckets:
 
     - manual:        real_only y bancsis_only para checkbox 1:1 manual.
     - impuestos:     real_only categorizados como COMISION (auto-acoplar).
     - transferencias: matches con razón 'P0' (doc-id exacto).
-
-Además expone:
-    - sha256_bytes(b) → hash para detectar re-uploads del mismo archivo.
-    - mov_to_dict / dict_to_mov → serialización JSON del payload.
 """
 from __future__ import annotations
 
@@ -92,33 +99,74 @@ def tabla_existe() -> bool:
 # ─── CRUD básico de sesión ────────────────────────────────────────────
 
 
-def sesion_abierta(no_banco: int, usuario: str) -> dict | None:
-    """La sesión abierta del par (no_banco, usuario), o None."""
-    return db.fetch_one(
-        """
-        SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
-               extracto_hash, extracto_nombre, extracto_payload,
-               matches_hechos, pdf_path
-          FROM scintela.banco_conciliacion_sesion
-         WHERE no_banco = %s AND usuario = %s AND cerrada_en IS NULL
-         ORDER BY abierta_en DESC
-         LIMIT 1
-        """,
-        (int(no_banco), usuario[:50]),
-    )
+def _sesion_select_cols() -> str:
+    """Lista de columnas a leer en SELECT. Tolerante a mig 0065 no aplicada:
+    saldo_banco_objetivo se incluye y si la columna no existe, el caller
+    cae al fallback. Centralizado para no repetir en sesion_abierta/sesion_por_id.
+    """
+    return """id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
+              extracto_hash, extracto_nombre, extracto_payload,
+              matches_hechos, pdf_path, saldo_banco_objetivo"""
+
+
+def _sesion_select_cols_legacy() -> str:
+    """Sin saldo_banco_objetivo — fallback pre-mig-0065."""
+    return """id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
+              extracto_hash, extracto_nombre, extracto_payload,
+              matches_hechos, pdf_path"""
+
+
+def sesion_abierta(no_banco: int, usuario: str | None = None) -> dict | None:
+    """La única sesión abierta del banco, o None.
+
+    TMT 2026-06-02: drop filtro por usuario. Mig 0062 dejó UNA sola sesión
+    abierta por banco (sin importar quién la abrió). El param `usuario` se
+    deja como kwarg compatible con llamadores viejos pero se ignora.
+    """
+    try:
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE no_banco = %s AND cerrada_en IS NULL
+             ORDER BY abierta_en DESC
+             LIMIT 1
+            """,
+            (int(no_banco),),
+        )
+    except Exception:
+        # Fallback pre-mig-0065 (sin columna saldo_banco_objetivo).
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols_legacy()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE no_banco = %s AND cerrada_en IS NULL
+             ORDER BY abierta_en DESC
+             LIMIT 1
+            """,
+            (int(no_banco),),
+        )
 
 
 def sesion_por_id(sesion_id: int) -> dict | None:
-    return db.fetch_one(
-        """
-        SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
-               extracto_hash, extracto_nombre, extracto_payload,
-               matches_hechos, pdf_path
-          FROM scintela.banco_conciliacion_sesion
-         WHERE id = %s
-        """,
-        (int(sesion_id),),
-    )
+    try:
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE id = %s
+            """,
+            (int(sesion_id),),
+        )
+    except Exception:
+        return db.fetch_one(
+            f"""
+            SELECT {_sesion_select_cols_legacy()}
+              FROM scintela.banco_conciliacion_sesion
+             WHERE id = %s
+            """,
+            (int(sesion_id),),
+        )
 
 
 def matches_de_sesion(sesion: dict) -> list[dict]:
@@ -154,14 +202,21 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
     except Exception:
         pass
 
+    # TMT 2026-06-03 dueña: 'deja de filtrar por fechas porque hay matches
+    # que no me aparecen. Queremos ver todos los movimientos sin importar
+    # fecha'. Removido el filtro `creado_en BETWEEN abierta_en AND cerrada_en`
+    # — ahora muestra TODOS los matches activos del banco. La sesión sigue
+    # siendo el contexto operativo (subir extracto, conciliar nuevos) pero
+    # la VISTA de Conciliados muestra el universo completo.
     sql = f"""
         SELECT CASE WHEN h.id IS NOT NULL THEN 'historico' ELSE 'match' END AS tipo,
-               m.id, m.estado, m.creado_en, m.usuario,
+               m.id, m.estado, m.creado_en, m.usuario, m.confirm_batch_id,
                m.real_fecha, m.real_documento, m.real_monto, m.real_tipo, m.real_concepto,
                m.id_transaccion,
                tb.fecha       AS tb_fecha,
                tb.documento   AS tb_documento,
                tb.importe     AS tb_importe,
+               COALESCE(tb.usuario_crea, '') AS tb_usuario_crea,
                tb.numreferencia AS tb_numreferencia,
                tb.concepto    AS tb_concepto,
                tb.prov        AS tb_prov,
@@ -172,45 +227,152 @@ def matches_de_sesion(sesion: dict) -> list[dict]:
           LEFT JOIN scintela.banco_historicos_pendientes h
             ON h.conciliado_match_id = m.id
          WHERE m.no_banco = %s
-           AND m.creado_en >= %s
-           AND m.creado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
            {filtro_undo}
          ORDER BY m.creado_en DESC
-         LIMIT 1000
+         LIMIT 2000
     """
     try:
-        rows = db.fetch_all(sql, (no_banco, abierta, cerrada)) or []
+        rows = db.fetch_all(sql, (no_banco,)) or []
         return [dict(r) for r in rows]
     except Exception as e:
         _LOG.warning("matches_de_sesion falló: %s", e)
         return []
 
 
-def sesion_por_hash(no_banco: int, extracto_hash: str) -> dict | None:
-    """Busca cualquier sesión (abierta o cerrada) con el MISMO hash del
-    extracto para el mismo banco. Usado para detectar re-uploads del mismo
-    archivo y evitar duplicar el trabajo. TMT 2026-05-29 pedido dueña:
-    'si vuelvo a subir el mismo archivo no se tiene que duplicar'.
+def _firma_mov(documento, codigo, tipo, monto, fecha) -> tuple:
+    """Firma única de una fila de extracto para dedup row-level.
 
-    Devuelve la sesión más reciente que coincide, o None.
+    TMT 2026-06-02: 4 campos (documento, tipo, monto, fecha). El `codigo`
+    se ignora porque las filas backfilled (mig 0056-0058) no lo tienen
+    cargado (NULL) → la firma 5-field nunca matcheaba contra los nuevos
+    uploads que sí lo tienen, dejando duplicados visibles. El caso
+    IVA+COST que motivó agregar codigo ya queda cubierto por `monto`
+    (un IVA y un COST tienen montos distintos del mismo documento).
+
+    Param `codigo` se mantiene por compat con callers existentes pero
+    no participa en la firma.
     """
-    if not extracto_hash:
-        return None
+    def _norm(v):
+        return (str(v) if v is not None else "").strip().upper()
     try:
-        return db.fetch_one(
+        monto_norm = f"{float(monto or 0):.2f}"
+    except (TypeError, ValueError):
+        monto_norm = "0.00"
+    fecha_norm = fecha.isoformat() if hasattr(fecha, "isoformat") else _norm(fecha)
+    return (_norm(documento), _norm(tipo), monto_norm, fecha_norm)
+
+
+def _firmas_ya_conocidas(no_banco: int) -> set[tuple]:
+    """Set de firmas (documento, codigo, tipo, monto, fecha) ya en el sistema.
+
+    Junta tres fuentes:
+      - banco_historicos_pendientes (filas del banco ya cargadas; codigo
+        puede ser NULL en filas backfilleadas pre-mig-0064 — se normaliza a '')
+      - banco_conciliacion_match.real_* (matches activos; no tiene codigo,
+        se usa '' para no excluir falsamente)
+      - extracto_payload de la sesión abierta (codigo siempre disponible)
+
+    Una fila nueva del extracto se omite SOLO si su firma completa coincide.
+    Si comparte documento pero difiere en monto/codigo (caso IVA + COST de
+    cheque devuelto), pasa como nueva.
+    """
+    sigs: set[tuple] = set()
+    # 1) banco_historicos_pendientes. La columna `codigo` existe a partir
+    # de mig 0064; usamos COALESCE para tolerar el estado pre-mig.
+    try:
+        rows = db.fetch_all(
             """
-            SELECT id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
-                   extracto_hash, extracto_nombre, matches_hechos
-              FROM scintela.banco_conciliacion_sesion
+            SELECT documento, fecha, tipo, monto,
+                   COALESCE(codigo, '') AS codigo
+              FROM scintela.banco_historicos_pendientes
              WHERE no_banco = %s
-               AND extracto_hash = %s
-             ORDER BY abierta_en DESC
-             LIMIT 1
+               AND documento IS NOT NULL AND documento <> ''
             """,
-            (int(no_banco), extracto_hash),
-        )
-    except Exception:
-        return None
+            (int(no_banco),),
+        ) or []
+        for r in rows:
+            sigs.add(_firma_mov(
+                r.get("documento"), r.get("codigo"),
+                r.get("tipo"), r.get("monto"), r.get("fecha"),
+            ))
+    except Exception as e:
+        # Fallback si la columna codigo no existe todavía (pre-0064).
+        _LOG.warning("dedupe: histos con codigo falló (¿pre-mig-0064?): %s", e)
+        try:
+            rows = db.fetch_all(
+                """
+                SELECT documento, fecha, tipo, monto
+                  FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND documento IS NOT NULL AND documento <> ''
+                """,
+                (int(no_banco),),
+            ) or []
+            for r in rows:
+                sigs.add(_firma_mov(
+                    r.get("documento"), "",
+                    r.get("tipo"), r.get("monto"), r.get("fecha"),
+                ))
+        except Exception as e2:
+            _LOG.warning("dedupe: histos fallback falló: %s", e2)
+
+    # 2) matches activos. No tienen codigo en el schema → usamos '' como
+    # codigo para que coincida solo con extractos sin codigo (defensivo).
+    try:
+        filtro_undo = ""
+        try:
+            from modules.conciliacion.matcher_banco import _tiene_migration_47
+            if _tiene_migration_47():
+                filtro_undo = "AND deshecho_en IS NULL"
+        except Exception:
+            pass
+        rows = db.fetch_all(
+            f"""
+            SELECT real_documento, real_fecha, real_tipo, real_monto
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s
+               AND real_documento IS NOT NULL
+               AND real_documento <> ''
+               {filtro_undo}
+            """,
+            (int(no_banco),),
+        ) or []
+        for r in rows:
+            sigs.add(_firma_mov(
+                r.get("real_documento"), "",
+                r.get("real_tipo"), r.get("real_monto"), r.get("real_fecha"),
+            ))
+    except Exception as e:
+        _LOG.warning("dedupe: matches query falló: %s", e)
+
+    # 3) Payload de la sesión abierta — codigo SÍ disponible.
+    abierta = sesion_abierta(int(no_banco))
+    if abierta:
+        try:
+            for m in cargar_movs(abierta):
+                if m.documento:
+                    sigs.add(_firma_mov(
+                        m.documento, getattr(m, "codigo", ""),
+                        m.tipo, m.monto, m.fecha,
+                    ))
+        except Exception:
+            pass
+
+    # NOTA: NO agregamos transacciones_bancarias acá. Si lo hiciéramos,
+    # las filas del extracto que coinciden con una tx PC (las que JUSTO
+    # querés conciliar manualmente) desaparecerían del Manual tab — la
+    # dueña perdería visibilidad. El dedup contra tx_bancarias se hace en
+    # otro paso (match) que SÍ tiene UI para esto.
+    return sigs
+
+
+# Alias compat hacia atrás (tests existentes lo importan por nombre).
+def _documentos_ya_conocidos(no_banco: int) -> set[str]:
+    """⚠ DEPRECATED — usar _firmas_ya_conocidas. Devuelve solo documentos
+    sueltos sin tipo/monto/fecha — peligroso por el caso IVA+COST que
+    comparten documento. Se mantiene para tests que lo monkey-patchean.
+    """
+    return {f[0] for f in _firmas_ya_conocidas(no_banco)}
 
 
 def crear_sesion(
@@ -220,46 +382,79 @@ def crear_sesion(
     *,
     extracto_hash: str | None = None,
     extracto_nombre: str | None = None,
-) -> int:
-    """Crea una sesión NUEVA con el extracto parseado.
+) -> tuple[int, int, int]:
+    """Mergea movs nuevos en la sesión abierta del banco. Si no hay, crea una.
 
-    Si ya hay una abierta para el par (no_banco, usuario), la cierra primero
-    como 'abandonada' (cerrada_por='auto-replaced') para respetar el unique
-    index parcial.
+    Dedupea por número de documento contra (historicos ∪ matches activos ∪
+    payload existente). Solo agrega filas con `documento` que no se haya
+    visto antes para ese banco.
+
+    Returns:
+        (sesion_id, n_added, n_skipped)
+
+    TMT 2026-06-02 dueña: reformado para soportar "una sesión continua por
+    banco". Cada upload mete filas nuevas; las repetidas (mismo documento)
+    se descartan silenciosamente. Si no hay sesión abierta, la crea.
     """
     movs = list(movs)
-    payload = json.dumps([_mov_to_dict(m) for m in movs])
+    no_banco = int(no_banco)
 
-    with db.tx() as conn:
-        # Si ya hay una abierta, cerrarla automáticamente. La dueña empieza
-        # una conciliación nueva y la vieja queda como abandonada.
+    # Filtrar movs cuya firma completa (doc + codigo + tipo + monto + fecha)
+    # ya esté conocida. TMT 2026-06-02 dueña: dedupe por firma completa, no
+    # solo por documento — el banco emite varias filas con el mismo doc
+    # (caso CHEQUE DEVUELTO → IVA + COST con diferente codigo/monto).
+    sigs_existentes = _firmas_ya_conocidas(no_banco)
+    nuevos: list[MovBanco] = []
+    skipped = 0
+    sigs_en_upload: set[tuple] = set()
+    for m in movs:
+        if not m.documento:
+            # Sin documento → no podemos firmar bien; lo dejamos pasar.
+            nuevos.append(m)
+            continue
+        sig = _firma_mov(m.documento, m.codigo, m.tipo, m.monto, m.fecha)
+        if sig in sigs_existentes or sig in sigs_en_upload:
+            skipped += 1
+            continue
+        sigs_en_upload.add(sig)
+        nuevos.append(m)
+
+    abierta = sesion_abierta(no_banco)
+    if abierta:
+        # MERGE: concatenar payload existente + nuevos.
+        existentes = cargar_movs(abierta)
+        merged = existentes + nuevos
+        payload = json.dumps([_mov_to_dict(m) for m in merged])
+        nombre = (extracto_nombre or abierta.get("extracto_nombre") or "")[:200]
         db.execute(
             """
             UPDATE scintela.banco_conciliacion_sesion
-               SET cerrada_en = CURRENT_TIMESTAMP,
-                   cerrada_por = 'auto-replaced'
-             WHERE no_banco = %s AND usuario = %s AND cerrada_en IS NULL
+               SET extracto_payload = %s::jsonb,
+                   extracto_nombre = %s,
+                   extracto_hash = COALESCE(%s, extracto_hash)
+             WHERE id = %s
             """,
-            (int(no_banco), usuario[:50]),
-            conn=conn,
+            (payload, nombre, extracto_hash, int(abierta["id"])),
         )
-        row = db.execute_returning(
-            """
-            INSERT INTO scintela.banco_conciliacion_sesion
-                (no_banco, usuario, extracto_hash, extracto_nombre, extracto_payload)
-            VALUES (%s, %s, %s, %s, %s::jsonb)
-            RETURNING id
-            """,
-            (int(no_banco), usuario[:50], extracto_hash, (extracto_nombre or "")[:200], payload),
-            conn=conn,
-        )
-        sid = int(row["id"]) if row else 0
-    # Snapshot del balance inicial al abrir la sesión (FUERA del db.tx).
-    # Capturado como evento_tipo='sesion_abierta', evento_ref=<sesion_id>.
+        return (int(abierta["id"]), len(nuevos), skipped)
+
+    # No hay sesión abierta → crear una.
+    payload = json.dumps([_mov_to_dict(m) for m in nuevos])
+    row = db.execute_returning(
+        """
+        INSERT INTO scintela.banco_conciliacion_sesion
+            (no_banco, usuario, extracto_hash, extracto_nombre, extracto_payload)
+        VALUES (%s, %s, %s, %s, %s::jsonb)
+        RETURNING id
+        """,
+        (no_banco, usuario[:50], extracto_hash, (extracto_nombre or "")[:200], payload),
+    )
+    sid = int(row["id"]) if row else 0
+    # Snapshot inicial.
     try:
         from modules.conciliacion import saldo_snapshot as _ss
         _ss.snapshot(
-            no_banco=int(no_banco),
+            no_banco=no_banco,
             evento_tipo="sesion_abierta",
             evento_ref=str(sid),
             usuario=usuario,
@@ -267,44 +462,7 @@ def crear_sesion(
         )
     except Exception as e:
         _LOG.warning("snapshot apertura sesión #%s falló: %s", sid, e)
-    return sid
-
-
-def cerrar_sesion(sesion_id: int, usuario: str, pdf_path: str | None = None) -> bool:
-    n = db.execute(
-        """
-        UPDATE scintela.banco_conciliacion_sesion
-           SET cerrada_en = CURRENT_TIMESTAMP,
-               cerrada_por = %s,
-               pdf_path = COALESCE(%s, pdf_path)
-         WHERE id = %s
-           AND cerrada_en IS NULL
-        """,
-        (usuario[:50], pdf_path, int(sesion_id)),
-    )
-    # TMT 2026-05-29 dueña: 'EN EL HISTORIAL NO ME PONES INICIAL Y FINAL'.
-    # crear_sesion ya toma snapshot 'sesion_abierta'; faltaba el simétrico
-    # al cerrar. Sin esto el historial mostraba '—' en saldo final aunque
-    # la sesión estaba cerrada.
-    if n:
-        try:
-            row = db.fetch_one(
-                "SELECT no_banco FROM scintela.banco_conciliacion_sesion WHERE id = %s",
-                (int(sesion_id),),
-            )
-            no_banco_s = int(row["no_banco"]) if row else 0
-            if no_banco_s:
-                from modules.conciliacion import saldo_snapshot as _ss
-                _ss.snapshot(
-                    no_banco=no_banco_s,
-                    evento_tipo="sesion_cerrada",
-                    evento_ref=str(sesion_id),
-                    usuario=usuario,
-                    descripcion=f"cierre sesión #{sesion_id}",
-                )
-        except Exception as e:
-            _LOG.warning("snapshot cierre sesión #%s falló: %s", sesion_id, e)
-    return bool(n)
+    return (sid, len(nuevos), skipped)
 
 
 def incrementar_matches(sesion_id: int, n: int = 1) -> None:
@@ -405,6 +563,8 @@ def bucketizar(res: ConciliacionBanco) -> dict:
     manual_programa.sort(key=lambda x: abs(float(x["mov"].importe or 0)), reverse=True)
     impuestos.sort(key=lambda x: float(x["mov"].monto or 0), reverse=True)
 
+    # TMT 2026-06-02 dueña: 'transferencias y comisiones impuestos dejalo'.
+    # Revert: los matches vuelven a Transferencias por doc / Sugerencias.
     transferencias = []
     sugerencias = []
     for m in (res.matches or []):
@@ -539,12 +699,14 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
                 manual_programa.append({"mov": bk, "cat": None, "idx": i})
         except Exception as e:
             _LOG.warning("cargar pendientes programa sin extracto falló: %s", e)
-        return {
+        ret = {
             "manual_banco": manual_banco_hist,
             "manual_programa": manual_programa,
             "impuestos": [], "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
+        _reordenar_por_match_monto(ret)
+        return ret
     try:
         res = matchear_extracto_banco(movs, no_banco=no_banco)
     except Exception as e:
@@ -561,11 +723,104 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
          "es_historico": True, "id_historico": int(h["id"])}
         for h in historicos
     ]
-    buckets["manual_banco"] = hist_items + (buckets.get("manual_banco") or [])
+    # TMT 2026-06-03 dueña: '223 esta mal'. Bug: histos + extracto concat sin
+    # dedup, mismo mov aparece dos veces (uno como histo, otro como extracto).
+    # Fix: si la firma (fecha+doc+monto+tipo) del item del extracto coincide con
+    # un histo, NO se agrega — ya está representado por el histo. Sin esto, un
+    # extracto que repite un histo conocido infla el conteo del tab Manual.
+    def _firma_item(item):
+        mv = item.get("mov")
+        if not mv or not getattr(mv, "documento", None):
+            return None
+        try:
+            monto = f"{float(getattr(mv, 'monto', 0) or 0):.2f}"
+        except (TypeError, ValueError):
+            monto = "0.00"
+        fecha = mv.fecha.isoformat() if hasattr(mv.fecha, "isoformat") else str(mv.fecha or "")
+        return (
+            fecha,
+            (mv.documento or "").strip().upper(),
+            monto,
+            (getattr(mv, "tipo", "") or "").strip().upper()[:1],
+        )
+    hist_firmas = {_firma_item(it) for it in hist_items}
+    hist_firmas.discard(None)
+    extracto_unicos = []
+    for it in (buckets.get("manual_banco") or []):
+        fir = _firma_item(it)
+        if fir is not None and fir in hist_firmas:
+            continue  # ya está como histo — no duplicar
+        extracto_unicos.append(it)
+    buckets["manual_banco"] = hist_items + extracto_unicos
     buckets["matcher_extracto_desde"] = res.extracto_desde
     buckets["matcher_extracto_hasta"] = res.extracto_hasta
     buckets["n_historicos_pendientes"] = len(historicos)
+    _reordenar_por_match_monto(buckets)
     return buckets
+
+
+_SIGNOS_C = ("DE", "TR", "AC", "NC", "IN", "XX")
+_SIGNOS_D = ("CH", "ND", "DB", "GS", "PA")
+
+
+def _signed_banco(item: dict) -> float:
+    """Monto banco con signo: C → positivo, D → negativo."""
+    m = item.get("mov")
+    if m is None:
+        return 0.0
+    try:
+        mt = float(getattr(m, "monto", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    tipo = (getattr(m, "tipo", "") or "").upper()
+    return round(mt if tipo == "C" else -mt, 2)
+
+
+def _signed_programa(item: dict) -> float:
+    """Monto programa con signo derivado del documento."""
+    m = item.get("mov")
+    if m is None:
+        return 0.0
+    try:
+        imp = float(getattr(m, "importe", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if imp < 0:
+        return round(imp, 2)
+    doc = (getattr(m, "documento", "") or "").upper()
+    if doc in _SIGNOS_C:
+        return round(imp, 2)
+    if doc in _SIGNOS_D:
+        return round(-imp, 2)
+    return 0.0
+
+
+def _reordenar_por_match_monto(buckets: dict) -> None:
+    """In-place reorder de manual_banco y manual_programa: items cuyo
+    monto signed APARECE en el otro panel aparecen primero. Dentro de
+    cada grupo se ordena por |monto| desc.
+
+    TMT 2026-06-02 dueña: 'en manual, pone los de mismo monto arriba
+    de todo asi es facil el match'.
+    """
+    banco = buckets.get("manual_banco") or []
+    programa = buckets.get("manual_programa") or []
+    montos_banco = {_signed_banco(i) for i in banco}
+    montos_programa = {_signed_programa(i) for i in programa}
+    interseccion = montos_banco & montos_programa
+    interseccion.discard(0.0)
+
+    def _key_banco(item):
+        amt = _signed_banco(item)
+        return (0 if amt in interseccion else 1, -abs(amt))
+
+    def _key_programa(item):
+        amt = _signed_programa(item)
+        return (0 if amt in interseccion else 1, -abs(amt))
+
+    banco.sort(key=_key_banco)
+    programa.sort(key=_key_programa)
+    buckets["n_matcheables_por_monto"] = len(interseccion)
 
 
 def _hist_to_mov_like(h: dict):

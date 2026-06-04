@@ -7,6 +7,13 @@
   <div class="flex items-center justify-between mb-2 gap-3">
     <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
     <div class="flex items-center gap-2">
+      {# TMT 2026-06-02 dueña: 'poneme en esta pantalla boton para ir a
+         la ultima sesion'. Atajo a /banco-v2 (que carga la única sesión
+         abierta del banco; si no hay, redirige acá con mensaje). #}
+      <a href="/conciliacion/banco-v2"
+         class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
+        → Ir a conciliación activa
+      </a>
       <a href="/conciliacion/banco-v2/historial"
          class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-1.5 font-medium whitespace-nowrap">
         Historial de conciliaciones →
@@ -221,35 +228,15 @@
       </div>
     </label>
 
-    {# TMT 2026-05-29 dueña: 'si vuelvo a subir el mismo archivo no se
-       tiene que duplicar, tiene que cross check'. Backend bloquea por
-       hash; este checkbox permite forzar el re-procesamiento explícito
-       (ej. correcciones puntuales sobre una sesión cerrada). #}
-    <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 select-none">
-      <input type="checkbox" name="forzar" value="1"
-             class="rounded border-slate-300 dark:border-slate-700">
-      Subir igual aunque sea duplicado
-      <span class="text-slate-400">— sólo si sabés lo que hacés</span>
-    </label>
+    {# TMT 2026-06-02 dueña: 'que compare numero de documento de banco y
+       si ya esta en nuestra lista, no agregarse'. El dedupe es ahora
+       row-level por número de documento (no por hash de archivo). Subir
+       el mismo archivo dos veces es seguro: las filas ya cargadas se
+       omiten silenciosamente. #}
+    <p class="text-xs text-slate-500 dark:text-slate-400">
+      Subir varias veces es seguro — las filas con número de documento ya cargado se omiten.
+    </p>
   </form>
-
-  {# TMT 2026-05-29 dueña: 'QUIZAS QUIERO USAR SOLO HISTORICOS, NO SUBIR
-     UN NUEVO ARCHIVO'. Botón aparte para abrir sesión sin extracto y
-     trabajar contra los pendientes históricos solos. #}
-  <div class="mt-3 p-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/40">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <div class="text-sm font-medium text-slate-700 dark:text-slate-200">¿No tenés extracto nuevo?</div>
-        <div class="text-xs text-slate-500 mt-0.5">Abrí una sesión sólo con los pendientes históricos del banco — para ir matcheándolos contra el programa sin esperar al próximo xlsx.</div>
-      </div>
-      <form method="POST" action="{{ url_for('conciliacion.banco_abrir_vacia') }}" class="m-0">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="px-4 py-1.5 rounded bg-slate-700 hover:bg-slate-800 text-white text-sm whitespace-nowrap">
-          Conciliar pendientes →
-        </button>
-      </form>
-    </div>
-  </div>
 
   {# Files subidos — TMT 2026-05-26 dueña: "necesito ver los files ya subidos".
      Tracking real de uploads (incluso los que no se confirmaron matches). #}
@@ -302,82 +289,13 @@
   </div>
   {% endif %}
 
-  {# TMT 2026-05-28 dueña: 'Esto tambien no me esta siendo util. borremos
-     todo el historial, solo va a importar lo que hayamos traido de dbase'.
-     Sacamos el panel "Resumen por día (matches confirmados)" y el link a
-     /banco/historial. El deshacer queda accesible desde la vista de
-     conciliación si hace falta. #}
-
-  {# ─── Mantenimiento (no destructivo) ───────────────────────────── #}
-  <div class="mt-8 pt-4 border-t border-slate-200 dark:border-slate-700">
-    <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">🔧 Mantenimiento</h2>
-    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
-      Recalcula la cadena de saldos de Pichincha desde el primer mov.
-      Idempotente: si está OK, no cambia nada. Si hay descalce histórico
-      (típicamente por bugs ya fixeados), lo corrige.
-    </p>
-    <form method="POST" action="{{ url_for('conciliacion.banco_recompute_saldos') }}"
-          onsubmit="return confirm('¿Recalcular la cadena de saldos? Es seguro y reversible — solo corrige descalces.');">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="bg-sky-100 hover:bg-sky-200 dark:bg-sky-900/30 dark:hover:bg-sky-900/50 text-sky-800 dark:text-sky-200 text-sm rounded-md px-3 py-1.5 font-medium">
-        Verificar y recalcular saldos
-      </button>
-    </form>
-  </div>
-
-  {# ─── Zona peligrosa ─────────────────────────────────────────────
-     TMT 2026-05-29 dueña: 'podes borrar todas las conciliaciones, quizas
-     ponele un boton con 5 alertas por las dudas, asi hoy arrancamos de
-     cero'. Botón rojo bien aparte abajo del todo, exige 5 confirmaciones
-     en cadena + texto literal 'BORRAR TODO' para evitar accidentes. #}
-  <div class="mt-8 pt-6 border-t-2 border-rose-200 dark:border-rose-900/40">
-    <h2 class="text-sm font-semibold text-rose-700 dark:text-rose-300 mb-2">⚠ Zona peligrosa</h2>
-    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
-      Borra TODAS las conciliaciones (matches, sesiones, snapshots, txs
-      creadas por agrupado, marcas de pendientes históricos). Útil cuando
-      hay drift acumulado y querés arrancar de cero. <strong>No se puede
-      deshacer.</strong>
-    </p>
-    <form method="POST" action="{{ url_for('conciliacion.banco_reset_all') }}" id="reset-form" class="m-0">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="confirm_text" id="reset-confirm-text" value="">
-      <button type="button" id="reset-btn"
-              class="bg-rose-100 hover:bg-rose-200 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-800 dark:text-rose-200 text-sm rounded-md px-4 py-2 font-medium border border-rose-300 dark:border-rose-900/60">
-        🗑 Borrar todas las conciliaciones
-      </button>
-    </form>
-    <script>
-    (function(){
-      var btn = document.getElementById('reset-btn');
-      if (!btn) return;
-      btn.addEventListener('click', function(){
-        var steps = [
-          '⚠ ALERTA 1/5 — ¿Borrar TODAS las conciliaciones?\n\n' +
-            'Esto borra TODOS los matches, sesiones, snapshots y movimientos ' +
-            'creados por conciliación (impuestos agrupados).',
-          '⚠ ALERTA 2/5 — Esto NO se puede deshacer.\n\n' +
-            'Los pendientes históricos del banco van a volver a aparecer ' +
-            'como NO conciliados. El saldo a conciliar se va a recalcular.',
-          '⚠ ALERTA 3/5 — ¿Estás SEGURA?\n\n' +
-            'Esta acción es irreversible. Recomendado: cerrá sesiones ' +
-            'abiertas y descargá historial antes.',
-          '⚠ ALERTA 4/5 — Última confirmación antes del campo de texto.\n\n' +
-            'Si seguís, te voy a pedir que escribas BORRAR TODO para confirmar.',
-        ];
-        for (var i = 0; i < steps.length; i++){
-          if (!confirm(steps[i])){ alert('Cancelado.'); return; }
-        }
-        var typed = prompt('⚠ ALERTA 5/5 — escribí exactamente:\n\nBORRAR TODO');
-        if (!typed || typed.trim().toUpperCase() !== 'BORRAR TODO'){
-          alert('Cancelado — el texto no coincide.');
-          return;
-        }
-        document.getElementById('reset-confirm-text').value = typed.trim();
-        document.getElementById('reset-form').submit();
-      });
-    })();
-    </script>
-  </div>
+  {# TMT 2026-06-02 dueña: 'esta demasiado lleno'. Sacamos las secciones
+     de Mantenimiento (Verificar y recalcular saldos) y Zona peligrosa
+     (Borrar todas) del landing. Los endpoints siguen activos accesibles
+     por URL directa si hace falta:
+       POST /conciliacion/banco-v2/recompute-saldos
+       POST /conciliacion/banco-v2/reset-all (requiere confirm_text=BORRAR TODO)
+  #}
 
 </div>
 {% endblock %}

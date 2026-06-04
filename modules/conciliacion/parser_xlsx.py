@@ -216,9 +216,11 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
                 continue
             if valor <= 0:
                 continue
-            # Filas sin fecha = ruido (TOTAL, SALDO, etc.). Skip.
-            if fecha is None:
-                continue
+            # TMT decisión 2026-06-03: cargar filas sin fecha (ANTES se descartaban
+            # silenciosamente y se perdían depósitos reales — ej. AC97 $15.835,60).
+            # Filtramos solo las que CLARAMENTE son agregados (TOTAL/SALDO/SUMA/
+            # SUBTOTAL en concepto o detalle), todo lo demás entra con fecha=None.
+            # La UI las marca con badge "sin fecha".
             concepto = ""
             if col_map.get("concepto") is not None:
                 try:
@@ -239,6 +241,21 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
                     nota = str(row_list[col_map["nota"]] or "").strip()
                 except IndexError:
                     pass
+
+            # TMT decisión 2026-06-03: si el row es agregado (TOTAL/SALDO/SUMA/
+            # SUBTOTAL) en concepto/detalle, lo skippeamos — son ruido. Pero si
+            # es un mov real sin fecha (ej. AC97 $15.835,60), lo cargamos con
+            # fecha=None y la UI lo marca como "sin fecha".
+            _agreg_kw = ("TOTAL", "SALDO", "SUMA", "SUBTOTAL", "BALANCE")
+            _txt_agreg = (concepto + " " + nota).strip().upper()
+            # Heurística conservadora: si parece etiqueta agregada Y NO tiene
+            # código/referencia, lo skippeamos como ruido.
+            if (
+                _txt_agreg
+                and not codigo
+                and any(kw in _txt_agreg for kw in _agreg_kw)
+            ):
+                continue
 
             salida.append(
                 DepositoPendiente(

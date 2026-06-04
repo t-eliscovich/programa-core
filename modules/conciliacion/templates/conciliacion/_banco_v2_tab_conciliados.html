@@ -1,89 +1,234 @@
 {# Tab Conciliados: lo que ya se conciliaron en ESTA sesión.
-   TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
-   hasta ahora'. Aproximación: matches con creado_en dentro de la ventana
-   abierta_en..cerrada_en. Sin FK sesion_id en banco_conciliacion_match
-   (la tabla es anterior a banco_conciliacion_sesion).
+   TMT 2026-06-02 dueña: 'la tabla esta demasiado larga, que entre en
+   la pantalla. Concepto pone solo H asi es mas corto'. Compacto:
+   - Estado: 1 letra (H/M/B/P) en lugar de badge largo.
+   - Conceptos truncados.
+   - Monto programa muestra '—' cuando no hay lado PC (histo conciliado
+     sin counterpart, common case).
 #}
 
 <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
-  <header class="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-    <div>
-      <strong class="text-sm">Conciliados en esta sesión</strong>
-      <span class="text-xs text-slate-500 ml-2">
-        {{ matches_sesion|length }} match{% if matches_sesion|length != 1 %}es{% endif %}
-        desde {{ sesion.abierta_en|hora_ec('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}
-      </span>
+  <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+    <div class="flex items-baseline justify-between mb-2">
+      <div>
+        <strong class="text-sm">Conciliados en esta sesión</strong>
+        <span class="text-xs text-slate-500 ml-2">
+          {{ matches_sesion|length }} match{% if matches_sesion|length != 1 %}es{% endif %}
+          desde {{ sesion.abierta_en|hora_ec('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}
+        </span>
+      </div>
     </div>
-    {% if matches_sesion %}
-    <div class="text-xs text-slate-500 tabular-nums">
-      {% set _suma_c = matches_sesion|selectattr('real_tipo','equalto','C')|map(attribute='real_monto')|select('number')|sum %}
-      {% set _suma_d = matches_sesion|selectattr('real_tipo','equalto','D')|map(attribute='real_monto')|select('number')|sum %}
-      <span class="text-emerald-700">+ {{ '{:,.2f}'.format(_suma_c|float) }}</span>
-      &nbsp;·&nbsp;
-      <span class="text-rose-700">− {{ '{:,.2f}'.format(_suma_d|float) }}</span>
+
+    {% if matches_sesion and conciliados_totales %}
+    <div class="grid grid-cols-3 gap-2 text-[10px]">
+      <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30">
+        <div class="text-[9px] uppercase tracking-wider text-slate-500">Total banco</div>
+        <div class="flex items-baseline gap-1.5 tabular-nums">
+          <span class="text-emerald-700">+{{ '{:,.2f}'.format(conciliados_totales.banco_creditos) }}</span>
+          <span class="text-rose-700">−{{ '{:,.2f}'.format(conciliados_totales.banco_debitos) }}</span>
+        </div>
+        <div class="text-[11px] font-semibold tabular-nums {% if conciliados_totales.banco_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+          neto {{ '{:+,.2f}'.format(conciliados_totales.banco_neto) }}
+        </div>
+      </div>
+
+      <div class="rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30">
+        <div class="text-[9px] uppercase tracking-wider text-slate-500">Total programa</div>
+        <div class="flex items-baseline gap-1.5 tabular-nums">
+          <span class="text-emerald-700">+{{ '{:,.2f}'.format(conciliados_totales.prog_creditos) }}</span>
+          <span class="text-rose-700">−{{ '{:,.2f}'.format(conciliados_totales.prog_debitos) }}</span>
+        </div>
+        <div class="text-[11px] font-semibold tabular-nums {% if conciliados_totales.prog_neto >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+          neto {{ '{:+,.2f}'.format(conciliados_totales.prog_neto) }}
+        </div>
+      </div>
+
+      <div class="rounded border px-2 py-1
+        {% if conciliados_totales.diff_neto|abs < 0.01 %}
+          border-emerald-300 bg-emerald-50/60 dark:bg-emerald-900/20
+        {% else %}
+          border-rose-300 bg-rose-50/60 dark:bg-rose-900/20
+        {% endif %}">
+        <div class="text-[9px] uppercase tracking-wider
+          {% if conciliados_totales.diff_neto|abs < 0.01 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+          Diferencia (banco − programa)
+        </div>
+        <div class="text-base font-bold tabular-nums
+          {% if conciliados_totales.diff_neto|abs < 0.01 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+          {% if conciliados_totales.diff_neto|abs < 0.01 %}
+            ✓ $0.00
+          {% else %}
+            {{ '{:+,.2f}'.format(conciliados_totales.diff_neto) }}
+          {% endif %}
+        </div>
+        <div class="text-[9px] text-slate-500">
+          {% if conciliados_totales.diff_neto|abs < 0.01 %}cuadra{% else %}revisar matches{% endif %}
+        </div>
+      </div>
     </div>
     {% endif %}
   </header>
 
-  <div class="overflow-x-auto" style="max-height: calc(100vh - 360px);">
-    <table class="w-full text-xs tabular-nums">
-      <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+  <div class="overflow-x-auto" style="max-height: calc(100vh - 380px);">
+    {# data-no-sort: sortable global rompería el orden batch-header → batch-detail. #}
+    <table class="w-full text-[11px] tabular-nums" data-no-sort>
+      {# TMT 2026-06-03 dueña: 'saquesmole hora que ocupa mucho lugar para
+         nada'. Columna Hora removida — el usuario que conciliá está en Usr. #}
+      <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
         <tr>
-          <th class="px-2 py-1.5 text-left w-32">Conciliado</th>
-          <th class="px-2 py-1.5 text-left w-20">Estado</th>
-          <th class="px-2 py-1.5 text-left w-20">Fecha</th>
-          <th class="px-2 py-1.5 text-left w-5">±</th>
-          <th class="px-2 py-1.5 text-right w-24">Monto</th>
-          <th class="px-2 py-1.5 text-left w-24">Doc banco</th>
-          <th class="px-2 py-1.5 text-left">Concepto (real)</th>
-          <th class="px-2 py-1.5 text-left">Concepto (programa)</th>
-          <th class="px-2 py-1.5 text-left w-16">Usuario</th>
+          <th class="px-1.5 py-1 text-center w-6" title="H=histórico · M=match · B=sólo banco · P=sólo PC">Est</th>
+          <th class="px-1.5 py-1 text-left w-16">Fecha</th>
+          <th class="px-1.5 py-1 text-right w-24">Banco</th>
+          <th class="px-1.5 py-1 text-right w-24">Programa</th>
+          <th class="px-1.5 py-1 text-right w-20">Diff</th>
+          <th class="px-1.5 py-1 text-left w-20">Doc</th>
+          <th class="px-1.5 py-1 text-left">Concepto (real)</th>
+          <th class="px-1.5 py-1 text-left">Concepto (programa)</th>
+          <th class="px-1.5 py-1 text-left w-12">Usr</th>
         </tr>
       </thead>
       <tbody>
+        {# TMT 2026-06-03 dueña: 'no deberian aparecer como un batch?'. Agrupo
+           visualmente por confirm_batch_id. Cuando varios matches comparten
+           batch (ej. impuestos agrupados de 12 items → 1 tx de $-69.01),
+           la primera fila del batch muestra un header con el total, y las
+           filas siguientes del mismo batch quedan indentadas/marcadas. #}
+        {% set _ns = namespace(prev_batch=None, batch_idx=0) %}
         {% for m in matches_sesion %}
-          {% set _tipo = (m.real_tipo or '').upper() %}
-          {% set _signo_pos = (_tipo == 'C') %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-            <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
-              {{ m.creado_en|hora_ec('%m-%d %H:%M') if m.creado_en else '—' }}
-            </td>
-            <td class="px-2 py-1">
-              {% if m.tipo == 'historico' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200 text-[10px] font-semibold" title="Pendiente histórico del banco, marcado conciliado manualmente">histórico</span>
-              {% elif m.estado == 'matched' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 text-[10px] font-semibold">match</span>
-              {% elif m.estado == 'real_only_ok' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-semibold">sólo banco</span>
-              {% elif m.estado == 'bancsis_only_ok' %}
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 text-[10px] font-semibold">sólo PC</span>
-              {% else %}
-                <span class="text-slate-400 text-[10px]">{{ m.estado }}</span>
+          {% set _mb = m.monto_banco_signed|default(0)|float %}
+          {% set _mp = m.monto_prog_signed|default(0)|float %}
+          {% if m.tipo == 'historico' %}
+            {% set _letra = 'H' %}{% set _color = 'purple' %}{% set _label = 'histórico' %}
+          {% elif m.estado == 'matched' %}
+            {% set _letra = 'M' %}{% set _color = 'emerald' %}{% set _label = 'match' %}
+          {% elif m.estado == 'real_only_ok' %}
+            {% set _letra = 'B' %}{% set _color = 'sky' %}{% set _label = 'sólo banco' %}
+          {% elif m.estado == 'bancsis_only_ok' %}
+            {% set _letra = 'P' %}{% set _color = 'amber' %}{% set _label = 'sólo PC' %}
+          {% else %}
+            {% set _letra = '?' %}{% set _color = 'slate' %}{% set _label = m.estado or '?' %}
+          {% endif %}
+          {# TMT 2026-06-03 dueña: 'hay muchos 69s deberia haber uno solo'.
+             Cuando un batch tiene >1 match (caso impuestos agrupados), mostramos
+             UNA SOLA fila resumen con Σ banco vs Σ programa. Las filas individuales
+             se ocultan — se ven con click → /conciliacion/banco-v2/deshacer.
+             Si el batch es de 1 solo (match normal 1:1), se muestra la fila como
+             antes (no hay agrupación que mostrar).
+             Jinja2 stock no tiene {% continue %} sin loopcontrols ext, así que
+             usamos if/else: render del batch summary O fila individual, nunca ambas. #}
+          {% set _is_batch_header = m.confirm_batch_id and m.confirm_batch_id != _ns.prev_batch %}
+          {% set _batch_items = [] %}
+          {% set _is_part_of_group = false %}
+          {% if m.confirm_batch_id %}
+            {% set _batch_items = matches_sesion|selectattr('confirm_batch_id','equalto',m.confirm_batch_id)|list %}
+            {% set _is_part_of_group = _batch_items|length > 1 %}
+          {% endif %}
+          {# TMT 2026-06-03 dueña: 'no me deja ver todo el grupo'. Antes:
+             cuando un batch tenía >1 match, las filas individuales se
+             SALTABAN del render — solo se veía el resumen. Ahora se
+             RENDERIZAN pero con class="hidden batch-detail" y se toggean
+             clickeando la fila resumen. #}
+          {% set _skip_row = false %}
+          {% if _is_batch_header and _is_part_of_group %}
+            {# Fila ÚNICA resumen del grupo — reemplaza las N filas individuales. #}
+            {% set _bs_banco = _batch_items|map(attribute='monto_banco_signed')|map('default',0)|map('float')|sum %}
+            {# TMT 2026-06-03 dueña: 'el 828 sigue estando mal! deberia ser 69
+               nada mas'. Bug: sumar monto_prog_signed por cada match cuenta
+               la misma tx PC N veces (caso impuestos agrupados: 12 matches
+               apuntan al MISMO mov PC de -69.01 → sum = -828.12 vs real -69.01).
+               Fix: dedupar por id_transaccion antes de sumar — solo cuento
+               cada tx PC una vez. #}
+            {% set _bs_ns = namespace(seen=[], total=0.0) %}
+            {% for _bi in _batch_items %}
+              {% if _bi.id_transaccion not in _bs_ns.seen %}
+                {% set _ = _bs_ns.seen.append(_bi.id_transaccion) %}
+                {% set _bs_ns.total = _bs_ns.total + (_bi.monto_prog_signed|default(0)|float) %}
               {% endif %}
+            {% endfor %}
+            {% set _bs_prog = _bs_ns.total %}
+            {% set _bs_diff = (_bs_banco - _bs_prog)|round(2) %}
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-sky-50/30 dark:bg-sky-900/10 cursor-pointer batch-summary"
+                data-batch="{{ m.confirm_batch_id }}"
+                title="Click para ver/ocultar los {{ _batch_items|length }} items del grupo">
+              <td class="px-1.5 py-0.5 text-center">
+                <span class="batch-chevron text-sky-600 mr-0.5" data-batch="{{ m.confirm_batch_id }}">▸</span>
+                <span class="inline-flex w-5 h-5 items-center justify-center rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200 text-[10px] font-bold" title="grupo de {{ _batch_items|length }} matches">{{ _batch_items|length }}</span>
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
+                {{ m.real_fecha or m.tb_fecha or '—' }}
+              </td>
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _bs_banco > 0 %}text-emerald-700{% elif _bs_banco < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+                Σ {{ '{:+,.2f}'.format(_bs_banco) }}
+              </td>
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _bs_prog > 0 %}text-emerald-700{% elif _bs_prog < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+                {{ '{:+,.2f}'.format(_bs_prog) }}
+              </td>
+              <td class="px-1.5 py-0.5 text-right font-mono">
+                {% if _bs_diff|abs < 0.01 %}
+                  <span class="text-emerald-600">✓</span>
+                {% else %}
+                  <span class="text-rose-700 font-semibold">{{ '{:+,.2f}'.format(_bs_diff) }}</span>
+                {% endif %}
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]" title="grupo {{ m.confirm_batch_id }}">
+                grupo · {{ _batch_items|length }} items
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[200px]" colspan="2" title="batch_id {{ m.confirm_batch_id }}">
+                {{ _batch_items|length }} matches contra el mismo mov PC (impuestos/comisiones agrupados)
+              </td>
+              <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+            </tr>
+            {% set _ns.prev_batch = m.confirm_batch_id %}
+          {% elif not _skip_row %}
+            {% if m.confirm_batch_id %}{% set _ns.prev_batch = m.confirm_batch_id %}{% endif %}
+          {# Filas individuales: si son parte de un batch >1, hidden por
+             default + class para que el JS las muestre/oculte al click. #}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{% if _is_part_of_group %} batch-detail hidden bg-slate-50/40 dark:bg-slate-800/20{% endif %}"
+              {% if _is_part_of_group %}data-batch="{{ m.confirm_batch_id }}"{% endif %}>
+            <td class="px-1.5 py-0.5 text-center">
+              <span class="inline-flex w-5 h-5 items-center justify-center rounded-full
+                bg-{{ _color }}-100 text-{{ _color }}-800 dark:bg-{{ _color }}-900/40 dark:text-{{ _color }}-200
+                text-[10px] font-bold" title="{{ _label }}">{{ _letra }}</span>
             </td>
-            <td class="px-2 py-1 text-slate-500 whitespace-nowrap">
+            <td class="px-1.5 py-0.5 text-slate-500 whitespace-nowrap text-[10px]">
               {{ m.real_fecha or m.tb_fecha or '—' }}
             </td>
-            <td class="px-2 py-1">
-              {% if _signo_pos %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[9px] font-bold">+</span>
-              {% else %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[9px] font-bold">−</span>
+            <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mb > 0 %}text-emerald-700{% elif _mb < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+              {% if m.has_banco %}{{ '{:+,.2f}'.format(_mb) }}{% else %}—{% endif %}
+            </td>
+            <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _mp > 0 %}text-emerald-700{% elif _mp < 0 %}text-rose-700{% else %}text-slate-300{% endif %}">
+              {% if m.has_programa %}{{ '{:+,.2f}'.format(_mp) }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+            </td>
+            <td class="px-1.5 py-0.5 text-right font-mono">
+              {# TMT 2026-06-03 dueña: 'la diferencia no hace falta'. En filas
+                 detalle de un batch (impuestos agrupados) el diff individual
+                 es engañoso (mini-banco vs full PC tx). El diff real ya está
+                 en la fila resumen. #}
+              {% if _is_part_of_group %}
+                <span class="text-slate-300">—</span>
+              {% elif m.diff is not none %}
+                {% if m.diff|abs < 0.01 %}
+                  <span class="text-emerald-600">✓</span>
+                {% else %}
+                  <span class="text-rose-700 font-semibold">{{ '{:+,.2f}'.format(m.diff) }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-slate-300">—</span>
               {% endif %}
             </td>
-            <td class="px-2 py-1 text-right font-mono font-semibold {% if _signo_pos %}text-emerald-700{% else %}text-rose-700{% endif %}">
-              {{ '{:,.2f}'.format((m.real_monto or m.tb_importe or 0)|float) }}
+            <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]">
+              {{ (m.real_documento or m.tb_numreferencia or '')|string|truncate(12,True,'') }}
             </td>
-            <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">
-              {{ (m.real_documento or m.tb_numreferencia or '')|string|truncate(14,True,'') }}
+            <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[200px]" title="{{ m.real_concepto or '' }}">
+              {{ (m.real_concepto or '—')[:36] }}
             </td>
-            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ m.real_concepto or '' }}">
-              {{ (m.real_concepto or '—')[:50] }}
-            </td>
-            <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs" title="{{ m.tb_concepto or '' }}">
+            <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-[180px]" title="{{ m.tb_concepto or '' }}">
               {% if m.tb_prov %}<span class="inline-block px-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[9px] mr-1">{{ m.tb_prov }}</span>{% endif %}
-              {{ (m.tb_concepto or '—')[:50] }}
+              {{ (m.tb_concepto or '—')[:32] }}
             </td>
-            <td class="px-2 py-1 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
+            <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.usuario or '' }}</td>
           </tr>
+          {% endif %}{# /elif not _skip_row #}
         {% endfor %}
         {% if not matches_sesion %}
         <tr>
@@ -94,5 +239,38 @@
         {% endif %}
       </tbody>
     </table>
+  </div>
+
+  {# TMT 2026-06-03 dueña: 'no me deja ver todo el grupo'. JS para expandir/
+     colapsar las filas detalle de cada batch al click en la fila resumen.
+     Esta tabla tiene data-no-sort porque el sortable global rompería el
+     orden batch-header → batch-detail. #}
+  <script>
+    (function() {
+      document.querySelectorAll('tr.batch-summary').forEach(row => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('a, button, input, label, select')) return;
+          const id = row.dataset.batch;
+          if (!id) return;
+          const details = document.querySelectorAll('tr.batch-detail[data-batch="' + CSS.escape(id) + '"]');
+          let opened = false;
+          details.forEach(d => {
+            const isHidden = d.classList.contains('hidden');
+            d.classList.toggle('hidden', !isHidden);
+            if (isHidden) opened = true;
+          });
+          const chev = row.querySelector('.batch-chevron');
+          if (chev) chev.textContent = opened ? '▾' : '▸';
+        });
+      });
+    })();
+  </script>
+
+  {# Leyenda compacta abajo #}
+  <div class="px-3 py-1 border-t border-slate-100 dark:border-slate-800 text-[9px] text-slate-400">
+    <span class="font-semibold text-purple-700">H</span> histórico ·
+    <span class="font-semibold text-emerald-700">M</span> match banco↔PC ·
+    <span class="font-semibold text-sky-700">B</span> sólo banco ·
+    <span class="font-semibold text-amber-700">P</span> sólo PC
   </div>
 </div>

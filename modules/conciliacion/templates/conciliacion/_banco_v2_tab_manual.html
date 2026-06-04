@@ -40,69 +40,69 @@
   </form>
 </div>
 
-<div class="grid grid-cols-2 gap-3 mb-2" style="height: calc(100vh - 360px); min-height: 320px;">
+<div class="grid grid-cols-2 gap-3 mb-2" style="height: calc(100vh - 240px); min-height: 480px;">
 
   {# ── PANEL BANCO ─────────────────────────────────────────────── #}
   <section data-panel="banco" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
     <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-      <div>
+      <div class="flex items-baseline gap-2">
         <strong class="text-sm">Banco</strong>
+        {# TMT 2026-06-03 dueña: 'decime arriba de banco y programa cantidad
+           de documentos'. Pill grande con el conteo total al lado del label. #}
+        <span class="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold tabular-nums">
+          {{ _banco|length }} <span class="text-[10px] font-normal opacity-70">docs</span>
+        </span>
         <span class="text-xs text-slate-500">sin parear · extracto + históricos</span>
       </div>
       <div class="text-xs text-slate-500 flex items-baseline gap-3">
         <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
-        <span class="text-slate-400">/ {{ _banco|length }} movs</span>
       </div>
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <table class="w-full text-xs tabular-nums">
-        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+      <table class="w-full text-[10px] tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[8px] uppercase text-slate-500 sticky top-0">
           <tr>
-            <th class="px-2 py-1.5 text-left w-6">
-              <input type="checkbox" data-toggle-all="banco" class="accent-emerald-600">
+            <th class="px-1 py-0.5 text-left w-4">
+              <input type="checkbox" data-toggle-all="banco" class="accent-emerald-600 w-3 h-3">
             </th>
-            <th class="px-2 py-1.5 text-left w-20">Fecha</th>
-            <th class="px-2 py-1.5 text-left w-5">±</th>
-            <th class="px-2 py-1.5 text-right w-24">Monto</th>
-            <th class="px-2 py-1.5 text-left w-24">Doc banco</th>
-            <th class="px-2 py-1.5 text-left">Concepto</th>
+            <th class="px-1 py-0.5 text-left w-12">Fecha</th>
+            <th class="px-1 py-0.5 text-left w-3">±</th>
+            <th class="px-1 py-0.5 text-right w-16">Monto</th>
+            <th class="px-1 py-0.5 text-left w-16">Doc</th>
+            <th class="px-1 py-0.5 text-left">Concepto</th>
           </tr>
         </thead>
         <tbody>
           {% for item in _banco %}
             {% set m = item.mov %}
             {% set _hist = item.es_historico %}
-            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-              <td class="px-2 py-1">
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 leading-tight">
+              <td class="px-1 py-0">
                 {% if _hist %}
                   <input type="checkbox" name="hist_id" value="{{ item.id_historico }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
-                         class="accent-emerald-600 cb-banco">
+                         class="accent-emerald-600 cb-banco w-3 h-3">
                 {% else %}
-                  {# TMT 2026-05-29: data-sig = fecha|documento|monto|tipo,
-                     usado como ID durable del mov real frente al re-run del
-                     matcher (idxs antes a veces se invalidaban silenciosamente
-                     → 'Sin cambios' en la confirmación). #}
                   {% set _sig = (m.fecha.isoformat() if m.fecha else '') ~ '|' ~ (m.documento or '') ~ '|' ~ ('%.2f'|format(m.monto|float)) ~ '|' ~ (m.tipo or '') %}
                   <input type="checkbox" name="real_idx" value="{{ item.idx }}"
                          data-monto="{{ m.monto|float }}" data-tipo="{{ m.tipo }}"
                          data-sig="{{ _sig }}"
-                         class="accent-emerald-600 cb-banco">
+                         class="accent-emerald-600 cb-banco w-3 h-3">
                 {% endif %}
               </td>
-              <td class="px-2 py-1 text-slate-500">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
-              <td class="px-2 py-1">
-                {% if m.tipo == 'C' %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[9px] font-bold">+</span>
-                {% else %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[9px] font-bold">−</span>
+              <td class="px-1 py-0 text-slate-500 text-[9px]">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
+              <td class="px-1 py-0">
+                {% if m.tipo == 'C' %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[8px] font-bold">+</span>
+                {% else %}<span class="inline-flex w-3 h-3 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[8px] font-bold">−</span>
                 {% endif %}
               </td>
-              <td class="px-2 py-1 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
-              <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (m.documento or '')|string|truncate(12,True,'') }}</td>
-              <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate" title="{{ m.concepto }}">
-                {% if _hist %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-semibold uppercase">histórico</span>{% endif %}
-                {{ (m.concepto or '')[:40] }}
+              <td class="px-1 py-0 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
+              <td class="px-1 py-0 text-slate-500 font-mono text-[9px]">{{ (m.documento or '')|string|truncate(9,True,'') }}</td>
+              <td class="px-1 py-0 text-slate-600 dark:text-slate-300 truncate max-w-0" title="{% if _hist %}histórico · {% endif %}{{ m.concepto }}">
+                {% if _hist %}<span class="inline-flex w-3 h-3 items-center justify-center rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200 text-[8px] font-bold mr-0.5" title="histórico">H</span>{% endif %}
+                {{ m.concepto or '' }}
               </td>
             </tr>
           {% endfor %}
@@ -117,29 +117,31 @@
   {# ── PANEL PROGRAMA ──────────────────────────────────────────── #}
   <section data-panel="programa" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
     <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-      <div>
+      <div class="flex items-baseline gap-2">
         <strong class="text-sm">Programa</strong>
+        <span class="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-full bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 text-xs font-semibold tabular-nums">
+          {{ _programa|length }} <span class="text-[10px] font-normal opacity-70">docs</span>
+        </span>
         <span class="text-xs text-slate-500">sin parear · según PC</span>
       </div>
       <div class="text-xs text-slate-500 flex items-baseline gap-3">
         <span>Sel: <span data-count="programa" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono tabular-nums">$ 0.00</span></span>
-        <span class="text-slate-400">/ {{ _programa|length }} movs</span>
       </div>
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <table class="w-full text-xs tabular-nums">
-        <thead class="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase text-slate-500 sticky top-0">
+      <table class="w-full text-[11px] tabular-nums">
+        <thead class="bg-slate-50 dark:bg-slate-800 text-[9px] uppercase text-slate-500 sticky top-0">
           <tr>
-            <th class="px-2 py-1.5 text-left w-6">
+            <th class="px-1.5 py-1 text-left w-5">
               <input type="checkbox" data-toggle-all="programa" class="accent-sky-600">
             </th>
-            <th class="px-2 py-1.5 text-left w-20">Fecha</th>
-            <th class="px-2 py-1.5 text-left w-5">±</th>
-            <th class="px-2 py-1.5 text-right w-24">Monto</th>
-            <th class="px-2 py-1.5 text-left w-24">Doc banco</th>
-            <th class="px-2 py-1.5 text-left">Cliente / Concepto</th>
+            <th class="px-1.5 py-1 text-left w-14">Fecha</th>
+            <th class="px-1.5 py-1 text-left w-4">±</th>
+            <th class="px-1.5 py-1 text-right w-20">Monto</th>
+            <th class="px-1.5 py-1 text-left w-20">Doc</th>
+            <th class="px-1.5 py-1 text-left">Cliente / Concepto</th>
           </tr>
         </thead>
         <tbody>
@@ -147,22 +149,22 @@
             {% set m = item.mov %}
             {% set _signo = 1 if m.documento in ('DE','TR','XX','NC','IN','AC') else -1 %}
             <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-              <td class="px-2 py-1">
+              <td class="px-1.5 py-0.5">
                 <input type="checkbox" name="bancsis_id" value="{{ m.id_transaccion }}"
                        data-monto="{{ m.importe|float }}" data-tipo="{{ m.documento }}"
                        data-signo="{{ _signo }}"
                        class="accent-sky-600 cb-programa">
               </td>
-              <td class="px-2 py-1 text-slate-500">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
-              <td class="px-2 py-1">
-                {% if _signo > 0 %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[9px] font-bold">+</span>
-                {% else %}<span class="inline-flex w-4 h-4 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[9px] font-bold">−</span>{% endif %}
+              <td class="px-1.5 py-0.5 text-slate-500 text-[10px]">{{ m.fecha.strftime('%m-%d') if m.fecha else '—' }}</td>
+              <td class="px-1.5 py-0.5">
+                {% if _signo > 0 %}<span class="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 text-[9px] font-bold">+</span>
+                {% else %}<span class="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 text-[9px] font-bold">−</span>{% endif %}
               </td>
-              <td class="px-2 py-1 text-right font-mono font-semibold {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.importe|float) }}</td>
-              <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (m.numreferencia or '')|string|truncate(12,True,'') }}</td>
-              <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate" title="{{ m.prov_nombre or m.concepto }}">
+              <td class="px-1.5 py-0.5 text-right font-mono font-semibold {% if _signo > 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.importe|float) }}</td>
+              <td class="px-1.5 py-0.5 text-slate-500 font-mono text-[10px]">{{ (m.numreferencia or '')|string|truncate(10,True,'') }}</td>
+              <td class="px-1.5 py-0.5 text-slate-600 dark:text-slate-300 truncate max-w-0" title="{{ m.prov_nombre or m.concepto }}">
                 {% if m.prov %}<span class="inline-block px-1 py-0 mr-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[9px]">{{ m.prov }}</span>{% endif %}
-                {{ (m.prov_nombre or m.concepto or '')[:35] }}
+                {{ m.prov_nombre or m.concepto or '' }}
               </td>
             </tr>
           {% endfor %}
@@ -205,6 +207,54 @@
     if (btn){
       btn.disabled = !(b.count > 0 && p.count > 0);
     }
+    // TMT 2026-06-02: botón Descartar se habilita con cualquier mov banco
+    // seleccionado (no necesita lado programa).
+    var dbtn = document.getElementById('descartar-banco-btn');
+    if (dbtn){
+      dbtn.disabled = (b.count === 0);
+    }
+  };
+
+  // TMT 2026-06-02 dueña: descartar movs banco que no necesitan conciliarse.
+  // Caso típico: entrada $X + devolución $X del mismo cheque (netean a 0,
+  // sin contraparte PC). También sirve para movs ya conciliados externamente.
+  window.descartarBancoSeleccionados = function(){
+    var b = read('banco');
+    if (!b.count){ alert('No marcaste ningún mov del banco.'); return; }
+    var motivo = prompt(
+      '¿Por qué descartar estos ' + b.count + ' mov(s)?\n\n' +
+      'Ejemplos:\n' +
+      '  • entrada+devolucion-cheque\n' +
+      '  • ya-conciliado-dbase\n' +
+      '  • interno-banco\n\n' +
+      'Quedan marcados como conciliados SIN contraparte PC.',
+      'entrada+devolucion-cheque'
+    );
+    if (motivo === null) return;  // cancelado
+    motivo = (motivo || 'descartado').trim().slice(0, 40);
+    if (!confirm(
+      'Vas a descartar ' + b.count + ' mov(s) banco.\n' +
+      'Motivo: ' + motivo + '\n\n' +
+      'Quedan marcados como conciliados (no se eliminan).\n' +
+      'Si te equivocás podés volverlos a pendientes desde "Deshacer conciliados".\n\n' +
+      '¿Continuar?'
+    )) return;
+
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/conciliacion/banco-v2/descartar-banco';
+    function add(name, value){
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = name; i.value = value;
+      form.appendChild(i);
+    }
+    add('csrf_token', document.querySelector('input[name=csrf_token]').value);
+    add('sesion_id', document.querySelector('input[name=sesion_id]').value);
+    add('hist_ids', b.histIds.join(','));
+    add('real_sigs', (b.sigs||[]).join('||'));
+    add('motivo', motivo);
+    document.body.appendChild(form);
+    form.submit();
   };
   var btn = document.getElementById('manual-btn');
   if (btn){

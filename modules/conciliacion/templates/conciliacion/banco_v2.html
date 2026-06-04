@@ -4,7 +4,10 @@
 {% block content %}
 <div class="max-w-6xl">
 
-  {# ── Header: título + estado de la sesión + Terminar arriba ──── #}
+  {# ── Header: título + estado de la sesión + Descargar resumen ──── #}
+  {# TMT 2026-06-02 dueña: 'no quiero cerrar la sesion, quiero dejar
+     seguir editando'. Se removió "Terminar y guardar". El resumen XLSX
+     queda disponible como download on-demand. #}
   <div class="flex items-baseline justify-between mb-3 gap-3">
     <div class="flex-1">
       <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Conciliación bancaria</h1>
@@ -12,46 +15,69 @@
         Sesión <span class="font-mono">#{{ sesion.id }}</span>
         · abierta {{ sesion.abierta_en|hora_ec('%Y-%m-%d %H:%M') if sesion.abierta_en else '' }}
         · {{ sesion.matches_hechos }} match{% if sesion.matches_hechos != 1 %}es{% endif %} hechos
-        {% if sesion.extracto_nombre %}<span class="text-slate-400">· archivo: {{ sesion.extracto_nombre }}</span>{% endif %}
+        {% if sesion.extracto_nombre %}<span class="text-slate-400">· último archivo: {{ sesion.extracto_nombre }}</span>{% endif %}
         {% if buckets.matcher_extracto_desde %}
           · <span class="text-slate-400">ventana: {{ buckets.matcher_extracto_desde }} → {{ buckets.matcher_extracto_hasta }}</span>
         {% endif %}
       </p>
     </div>
-    {# TMT 2026-05-29 dueña: 'Terminar y guardar arriba de todo' — botón también arriba. #}
-    <form method="POST" action="{{ url_for('conciliacion.banco_terminar') }}" class="m-0"
-          onsubmit="return confirm('¿Cerrar esta conciliación? Se genera el PDF de pendientes y la sesión queda archivada.');">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
-      <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-4 py-2 whitespace-nowrap">
-        ✓ Terminar y guardar
-      </button>
-    </form>
+    <div class="flex gap-2">
+      <a href="{{ url_for('conciliacion.banco_resumen_xlsx') }}"
+         class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-4 py-2 whitespace-nowrap">
+        📥 Descargar resumen
+      </a>
+      <a href="{{ url_for('conciliacion.hub') }}"
+         class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm rounded-md px-3 py-2 whitespace-nowrap">
+        ⬆ Subir extracto
+      </a>
+      {# TMT 2026-06-03 dueña: cerrar la sesión + migrar pendientes a histos
+         para arrastrarlos a la próxima conciliación (lifecycle mensual). #}
+      <form method="POST" action="{{ url_for('conciliacion.banco_cerrar_sesion') }}" class="m-0 inline"
+            onsubmit="return confirm('Cerrar la sesión actual. Los items no matcheados pasan a Históricos y los vas a ver en la próxima conciliación. ¿Continuar?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="bg-slate-700 hover:bg-slate-800 text-white text-sm rounded-md px-3 py-2 whitespace-nowrap">
+          ✓ Cerrar sesión
+        </button>
+      </form>
+    </div>
   </div>
 
   {# ── Balance Pichincha compact (sticky) ──────────────────────── #}
   {% include 'conciliacion/_balance_pichincha.html' with context %}
 
   {# ── Nav tabs ────────────────────────────────────────────────── #}
+  {# TMT 2026-06-03 dueña: 'tiene que ser banco (x) programa (x)'.
+     Antes el badge mostraba la suma manual_banco+manual_programa (que sumaba
+     filas de 2 paneles distintos sin sentido contable). Ahora cada tab tiene
+     dos pills cuando aplica: banco (N) · programa (M). #}
   <nav class="flex border-b border-slate-200 dark:border-slate-700 mb-3 text-sm">
+    {% set _manual_b = buckets.manual_banco|length %}
+    {% set _manual_p = buckets.manual_programa|length %}
     {% set _tabs = [
-      ('manual',         'Manual',                   buckets.manual_banco|length + buckets.manual_programa|length),
-      ('impuestos',      'Impuestos y comisiones',   buckets.impuestos|length),
-      ('transferencias', 'Transferencias por doc',   buckets.transferencias|length),
-      ('conciliados',    'Conciliados',              matches_sesion|length),
+      ('manual',         'Manual',                   None,                              _manual_b, _manual_p),
+      ('impuestos',      'Impuestos y comisiones',   buckets.impuestos|length,          None,      None),
+      ('transferencias', 'Transferencias por doc',   buckets.transferencias|length,     None,      None),
+      ('conciliados',    'Conciliados',              matches_sesion|length,             None,      None),
     ] %}
-    {% for slug, label, n in _tabs %}
+    {% for slug, label, n, n_banco, n_prog in _tabs %}
       {% set _activo = (tab_activo == slug) %}
-      <a href="{{ url_for('conciliacion.banco_post_procesar', tab=slug) }}"
-         class="px-4 py-2 -mb-px border-b-2 {% if _activo %}border-emerald-500 text-emerald-700 dark:text-emerald-300 font-semibold{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
-        {{ label }}
-        <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] {% if _activo %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300{% else %}bg-slate-100 text-slate-500 dark:bg-slate-800{% endif %}">{{ n }}</span>
+      <a href="{{ url_for('conciliacion.banco_post_procesar', sesion_id=sesion.id, tab=slug) }}"
+         class="px-4 py-2 -mb-px border-b-2 inline-flex items-baseline gap-1 {% if _activo %}border-emerald-500 text-emerald-700 dark:text-emerald-300 font-semibold{% else %}border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300{% endif %}">
+        <span>{{ label }}</span>
+        {% if n is not none %}
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] {% if _activo %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300{% else %}bg-slate-100 text-slate-500 dark:bg-slate-800{% endif %}">{{ n }}</span>
+        {% else %}
+          <span class="text-[10px] text-slate-400">banco</span>
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] {% if _activo %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300{% else %}bg-slate-100 text-slate-500 dark:bg-slate-800{% endif %}">{{ n_banco }}</span>
+          <span class="text-[10px] text-slate-400">programa</span>
+          <span class="px-1.5 py-0.5 rounded-full text-[10px] {% if _activo %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300{% else %}bg-slate-100 text-slate-500 dark:bg-slate-800{% endif %}">{{ n_prog }}</span>
+        {% endif %}
       </a>
     {% endfor %}
   </nav>
 
   {# ── Tab content ─────────────────────────────────────────────── #}
-  <div id="tab-content" class="mb-24">
+  <div id="tab-content" class="mb-6">
     {% if tab_activo == 'manual' %}
       {% include 'conciliacion/_banco_v2_tab_manual.html' %}
     {% elif tab_activo == 'impuestos' %}
@@ -63,23 +89,9 @@
     {% endif %}
   </div>
 
-  {# ── Footer sticky: Terminar y guardar ───────────────────────── #}
-  <div class="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-      <div class="text-xs text-slate-500">
-        Esta pantalla queda abierta hasta que aprietes <span class="font-semibold text-slate-700 dark:text-slate-200">Terminar y guardar</span>.
-        Podés volver cuando quieras — la sesión persiste.
-      </div>
-      <form method="POST" action="{{ url_for('conciliacion.banco_terminar') }}"
-            onsubmit="return confirm('¿Cerrar esta conciliación? Se genera el PDF de pendientes y la sesión queda archivada.');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="sesion_id" value="{{ sesion.id }}">
-        <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md px-4 py-2">
-          ✓ Terminar y guardar
-        </button>
-      </form>
-    </div>
-  </div>
+  {# TMT 2026-06-02 dueña: 'no quiero cerrar la sesion'. Removido footer
+     sticky con botón "Terminar y guardar". Reemplazado por el botón
+     "📥 Descargar resumen" en el header. #}
 
 </div>
 
@@ -136,12 +148,17 @@
   });
 
   // Toggle "todos" — un checkbox con data-toggle-all="<panel>" marca/desmarca
+  // SOLO las filas VISIBLES (respeta el filtro de búsqueda actual).
+  // TMT 2026-06-02 dueña: 'cuando marco todos, que sea de los filtrados'.
   document.querySelectorAll('input[data-toggle-all]').forEach(function(master){
     master.addEventListener('change', function(){
       var panel = master.dataset.toggleAll;
       var sec = document.querySelector('[data-panel="'+panel+'"]');
       if (!sec) return;
       sec.querySelectorAll('input[type=checkbox][data-monto]').forEach(function(cb){
+        // Si la fila contenedora está oculta por el filtro, no la tocamos.
+        var tr = cb.closest('tr');
+        if (tr && tr.style.display === 'none') return;
         cb.checked = master.checked;
       });
       recalc(panel);

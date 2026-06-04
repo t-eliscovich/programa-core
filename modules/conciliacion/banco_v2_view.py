@@ -59,13 +59,16 @@ _SIGNOS_C = ("DE", "TR", "AC", "NC", "IN", "XX")
 _SIGNOS_D = ("CH", "ND", "DB", "GS", "PA")
 
 
-def _signed_delta(documento: str, importe: float) -> float:
-    doc = (documento or "").upper()
-    if doc in _SIGNOS_C:
-        return importe
-    if doc in _SIGNOS_D:
-        return -importe
-    return 0.0
+def _signed_delta(documento: str, importe: float, usuario_crea: str = "") -> float:
+    """Wrapper que delega en bank_helpers._signed_delta (single source of truth).
+
+    TMT 2026-06-03 audit fix: la versión local antigua ignoraba el signo del
+    importe y siempre forzaba sign-by-doc — eso destrozaba NDs reverso (importe
+    positivo legítimo del DBF). Ahora respeta convención según usuario_crea:
+    legacy DBF importe-signed vs web importe-abs.
+    """
+    import bank_helpers as _bh_local
+    return _bh_local._signed_delta(documento, importe, usuario_crea)
 
 
 def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
@@ -77,7 +80,8 @@ def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
     try:
         rows = _db.fetch_all(
             """
-            SELECT id_transaccion, fecha, documento, importe, saldo
+            SELECT id_transaccion, fecha, documento, importe, saldo,
+                   COALESCE(usuario_crea, '') AS usuario_crea
               FROM scintela.transacciones_bancarias
              WHERE no_banco = %s AND saldo IS NOT NULL
              ORDER BY fecha DESC, id_transaccion DESC LIMIT %s
@@ -96,7 +100,11 @@ def _verificar_cadena_saldos(no_banco: int, limit: int = 30, conn=None) -> dict:
     saldo_prev = None
     for r in rows:
         s = float(r["saldo"] or 0)
-        delta = _signed_delta(r.get("documento"), float(r.get("importe") or 0))
+        delta = _signed_delta(
+            r.get("documento"),
+            float(r.get("importe") or 0),
+            r.get("usuario_crea") or "",
+        )
         if saldo_prev is not None:
             esperado = round(saldo_prev + delta, 2)
             diff = round(s - esperado, 2)
@@ -155,32 +163,36 @@ def _migracion_lista_o_redirect():
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_post_procesar():
-    """Renderiza la pantalla con los 3 tabs.
+    """Renderiza la pantalla con los 4 tabs.
 
-    Requiere una sesión abierta. Si no hay, redirect a /conciliacion/ para
-    subir el extracto.
+    TMT 2026-06-02 dueña: sesión nunca se cierra → siempre operamos contra
+    la única sesión abierta del banco. Si no existe ninguna, redirect al
+    landing para subir el primer extracto (o usar "Conciliar pendientes").
     """
     r = _migracion_lista_o_redirect()
     if r: return r
-    usuario = _usuario_actual()
     no_banco = _BANCO_PICHINCHA
 
-    sesion_id_qs = request.args.get("sesion_id")
-    sesion = None
-    if sesion_id_qs:
-        try:
-            sesion = _sesion.sesion_por_id(int(sesion_id_qs))
-        except (ValueError, TypeError):
-            sesion = None
-    if not sesion:
-        sesion = _sesion.sesion_abierta(no_banco, usuario)
+    sesion = _sesion.sesion_abierta(no_banco)
     if not sesion:
         flash("Subí un extracto para empezar la conciliación.", "info")
         return redirect(url_for("conciliacion.hub"))
 
-    if sesion.get("cerrada_en"):
-        # Si llegan con ?sesion_id de una ya cerrada, mandalos al detail.
-        return redirect(url_for("conciliacion.banco_cerrada", sesion_id=sesion["id"]))
+    # TMT 2026-06-03: el contador sesion.matches_hechos venía desincronizado
+    # con la realidad (decía 14 con 0 matches reales). Lo recomputamos live
+    # desde banco_conciliacion_match. Single source of truth.
+    try:
+        _real_matches = _db.fetch_one(
+            """
+            SELECT COUNT(*) AS n FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s AND deshecho_en IS NULL
+            """,
+            (no_banco,),
+        ) or {}
+        sesion = dict(sesion)
+        sesion["matches_hechos"] = int(_real_matches.get("n") or 0)
+    except Exception:
+        pass
 
     tab = (request.args.get("tab") or "manual").lower()
     if tab not in ("manual", "impuestos", "transferencias", "conciliados"):
@@ -188,35 +200,109 @@ def banco_post_procesar():
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
     balance = _bp.calcular(no_banco)
-    # TMT 2026-05-29 dueña: 'Dijiste que tenía que ser 2,797,649 porque en
-    # esta pantalla dice $2,788,626.66'. Inconsistencia: la página mostraba
-    # 'Saldo banco esperado' (cálculo: PC + pendientes) que ≠ saldo banco
-    # real del extracto. Enriquezco el balance con saldo_banco_real de la
-    # sesión actual (último saldo del extracto) + diferencia_no_clasificada.
-    # Cuando hay sesión activa la página y el Excel muestran el MISMO
-    # número final = saldo banco real.
-    try:
-        movs_s = _sesion.cargar_movs(sesion)
-        con_fecha = [
-            m for m in movs_s
-            if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
-        ]
-        if con_fecha:
-            ult = max(con_fecha, key=lambda m: m.fecha)
-            balance["saldo_banco_real"] = float(ult.saldo)
-        elif movs_s:
-            v = float(getattr(movs_s[-1], "saldo", None) or 0)
-            balance["saldo_banco_real"] = v if v else None
-        if balance.get("saldo_banco_real") is not None and balance.get("saldo_banco_esperado") is not None:
-            balance["diferencia_no_clasificada"] = round(
-                balance["saldo_banco_real"] - balance["saldo_banco_esperado"], 2
-            )
-    except Exception:
-        pass
+    # TMT 2026-06-02 dueña: 'si en el extracto tenemos 5k de diferencia'.
+    # TMT 2026-06-03: balance_pichincha.calcular() ya incluye el extracto de
+    # sesión en neto_pendientes_total. No re-enriquecemos acá — un solo lugar
+    # para la math. La dueña pidió "totales que cierren de ambos lados".
+
+    # TMT 2026-06-02 dueña: 'lo deberia implementar el usuario no? porque
+    # por el excel no sabemos cual es el ultimo valor'. Prioridad:
+    #   1. sesion.saldo_banco_objetivo (manual, escrito por la dueña).
+    #   2. Auto-detect = max(fecha).saldo del payload (fallback frágil).
+    saldo_manual = sesion.get("saldo_banco_objetivo")
+    if saldo_manual is not None:
+        try:
+            balance["saldo_banco_real"] = float(saldo_manual)
+            balance["saldo_banco_real_origen"] = "manual"
+        except (TypeError, ValueError):
+            balance["saldo_banco_real"] = None
+    else:
+        try:
+            movs_s = _sesion.cargar_movs(sesion)
+            con_fecha = [
+                m for m in movs_s
+                if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+            ]
+            if con_fecha:
+                ult = max(con_fecha, key=lambda m: m.fecha)
+                balance["saldo_banco_real"] = float(ult.saldo)
+            elif movs_s:
+                v = float(getattr(movs_s[-1], "saldo", None) or 0)
+                balance["saldo_banco_real"] = v if v else None
+            balance["saldo_banco_real_origen"] = "auto"
+        except Exception:
+            pass
+
+    # Diferencia esperado vs real (si tenemos ambos).
+    if balance.get("saldo_banco_real") is not None and balance.get("saldo_banco_esperado") is not None:
+        balance["diferencia_no_clasificada"] = round(
+            balance["saldo_banco_real"] - balance["saldo_banco_esperado"], 2
+        )
 
     # TMT 2026-05-29 dueña: 'Hacer un cuarto tab que muestre conciliaciones
     # hasta ahora'. Lista los matches confirmados en esta sesión.
     matches_sesion = _sesion.matches_de_sesion(sesion)
+
+    # TMT 2026-06-02 dueña: 'en esta tabla de conciliados, me tiene que
+    # aparecer monto banco, monto programa, y tengo que ver que los totales
+    # coincidan'. Enriquezco cada match con monto_prog_signed (el lado PC
+    # con signo derivado del documento) y totalizo por lado.
+    for m in matches_sesion:
+        tipo = (m.get("real_tipo") or "").upper()
+        # ¿Tiene lado banco? Sí si vino con real_monto (banco_only y matched).
+        # Bancsis_only_ok no tiene lado banco.
+        m["has_banco"] = m.get("real_monto") is not None
+        try:
+            monto_banco = float(m.get("real_monto") or 0)
+        except (TypeError, ValueError):
+            monto_banco = 0.0
+        m["monto_banco_signed"] = monto_banco if tipo == "C" else (-monto_banco if tipo == "D" else 0.0)
+
+        # ¿Tiene lado programa? Sí si el JOIN con transacciones_bancarias
+        # devolvió una fila (tb.importe IS NOT NULL). Históricos pueden no
+        # tenerlo si la dueña los marcó conciliados sin linkear a una tx PC.
+        m["has_programa"] = m.get("tb_importe") is not None
+        tb_doc = (m.get("tb_documento") or "").upper()
+        try:
+            tb_imp = float(m.get("tb_importe") or 0)
+        except (TypeError, ValueError):
+            tb_imp = 0.0
+        # TMT 2026-06-03 audit fix: usar _signed_delta con tb_usuario_crea
+        # para que NDs reverso del DBF (importe positivo legítimo) tengan
+        # signo correcto. La versión local antigua siempre forzaba sign-by-doc.
+        m["monto_prog_signed"] = _signed_delta(tb_doc, tb_imp, m.get("tb_usuario_crea") or "")
+        # Diferencia por fila (banco − programa) — solo si AMBOS lados existen.
+        if m["has_banco"] and m["has_programa"]:
+            m["diff"] = round(m["monto_banco_signed"] - m["monto_prog_signed"], 2)
+        else:
+            m["diff"] = None  # un lado falta → no aplica diferencia
+
+    # Totales agregados por lado.
+    # TMT 2026-06-03 dueña: 'mira los totales'. Bug: el agrupado de impuestos
+    # crea 12 matches que apuntan a la MISMA tx PC (-$69.01). Sumar
+    # monto_prog_signed por cada match contaba la tx 12 veces.
+    # Fix: dedupar el lado PC por id_transaccion antes de sumar.
+    tot_banco_c = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "C")
+    tot_banco_d = sum(float(m.get("real_monto") or 0) for m in matches_sesion if (m.get("real_tipo") or "").upper() == "D")
+    _seen_tx = set()
+    _prog_dedup = []
+    for m in matches_sesion:
+        tx_id = m.get("id_transaccion")
+        if tx_id is None or tx_id in _seen_tx:
+            continue
+        _seen_tx.add(tx_id)
+        _prog_dedup.append(m["monto_prog_signed"])
+    tot_prog_c = sum(v for v in _prog_dedup if v > 0)
+    tot_prog_d = sum(-v for v in _prog_dedup if v < 0)
+    conciliados_totales = {
+        "banco_creditos": round(tot_banco_c, 2),
+        "banco_debitos": round(tot_banco_d, 2),
+        "banco_neto": round(tot_banco_c - tot_banco_d, 2),
+        "prog_creditos": round(tot_prog_c, 2),
+        "prog_debitos": round(tot_prog_d, 2),
+        "prog_neto": round(tot_prog_c - tot_prog_d, 2),
+        "diff_neto": round((tot_banco_c - tot_banco_d) - (tot_prog_c - tot_prog_d), 2),
+    }
 
     return render_template(
         "conciliacion/banco_v2.html",
@@ -228,6 +314,7 @@ def banco_post_procesar():
         banco_nombre="Pichincha",
         modo="compact",
         matches_sesion=matches_sesion,
+        conciliados_totales=conciliados_totales,
     )
 
 
@@ -238,9 +325,12 @@ def banco_post_procesar():
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_crear_sesion():
-    """Recibe el xlsx, parsea, abre sesión y redirect al post-procesar.
+    """Recibe el xlsx, parsea, mergea en la sesión abierta del banco
+    (o crea una si no hay) y redirect al post-procesar.
 
-    Se usa en lugar de /conciliacion/hub POST para entrar al flujo v2.
+    TMT 2026-06-02 dueña: 'que compare numero de documento de banco y si
+    ya esta en nuestra lista, no agregarse'. El dedupe es row-level por
+    documento contra todo lo que ya tenemos (sesión + histos + matches).
     """
     r = _migracion_lista_o_redirect()
     if r: return r
@@ -257,29 +347,6 @@ def banco_crear_sesion():
         flash("El archivo vino vacío.", "error")
         return redirect(url_for("conciliacion.hub"))
 
-    # TMT 2026-05-29 pedido dueña: 'si vuelvo a subir el mismo archivo no
-    # se tiene que duplicar, tiene que cross check'. Calculamos el hash
-    # ANTES de parsear y, si ya hay una sesión (abierta o cerrada) con
-    # ese mismo hash para este banco, bloqueamos el alta — salvo que la
-    # usuaria fuerce con `forzar=1` (ej. correcciones puntuales).
-    extracto_hash = _sesion.sha256_bytes(raw)
-    forzar = (request.form.get("forzar") or "").strip() in ("1", "true", "yes")
-    if not forzar:
-        prev = _sesion.sesion_por_hash(no_banco, extracto_hash)
-        if prev:
-            cuando = prev.get("abierta_en")
-            cuando_str = _hora_ec_str(cuando, "%d/%m/%Y %H:%M") if cuando else "fecha desconocida"
-            cerrada = bool(prev.get("cerrada_en"))
-            estado = "cerrada" if cerrada else "abierta"
-            n_matches = int(prev.get("matches_hechos") or 0)
-            flash(
-                f"Este archivo ya se subió el {cuando_str} (sesión #{prev['id']}, "
-                f"{estado}, {n_matches} matches). Si querés re-procesarlo igual, "
-                f"tildá 'Subir igual aunque sea duplicado' en el formulario.",
-                "warn",
-            )
-            return redirect(url_for("conciliacion.hub"))
-
     try:
         movs = parse_banco_xlsx(raw)
     except Exception as e:
@@ -290,50 +357,27 @@ def banco_crear_sesion():
         flash("El extracto no trajo movimientos.", "warn")
         return redirect(url_for("conciliacion.hub"))
 
-    sesion_id = _sesion.crear_sesion(
+    sesion_id, n_added, n_skipped = _sesion.crear_sesion(
         no_banco=no_banco,
         usuario=usuario,
         movs=movs,
-        extracto_hash=extracto_hash,
+        extracto_hash=None,  # ya no se usa para dedupe
         extracto_nombre=f.filename,
     )
-    flash(
-        f"Sesión #{sesion_id} abierta — {len(movs)} movimientos del extracto.",
-        "ok",
-    )
-    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
-
-
-# ─── Sesión sin extracto: solo trabajar con pendientes históricos ──────
-
-
-@conciliacion_bp.route("/banco-v2/abrir-vacia", methods=["POST"])
-@requiere_login
-@requiere_permiso("bancos.conciliar")
-def banco_abrir_vacia():
-    """Abrir una sesión SIN subir extracto.
-
-    TMT 2026-05-29 dueña: 'QUIZAS QUIERO USAR SOLO HISTORICOS, NO SUBIR
-    UN NUEVO ARCHIVO'. Casos: cuando hay backlog de pendientes históricos
-    que la dueña quiere matchear contra BANCSIS sin esperar al extracto
-    nuevo de Pichincha.
-    """
-    r = _migracion_lista_o_redirect()
-    if r: return r
-    usuario = _usuario_actual()
-    no_banco = _BANCO_PICHINCHA
-    sesion_id = _sesion.crear_sesion(
-        no_banco=no_banco,
-        usuario=usuario,
-        movs=[],
-        extracto_hash=None,
-        extracto_nombre="(sin extracto)",
-    )
-    flash(
-        f"Sesión #{sesion_id} abierta sin extracto — solo pendientes históricos.",
-        "ok",
-    )
-    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="manual"))
+    if n_added and n_skipped:
+        msg = f"Sesión #{sesion_id}: agregadas {n_added} filas nuevas, omitidas {n_skipped} duplicadas."
+        cat = "ok"
+    elif n_added:
+        msg = f"Sesión #{sesion_id}: agregadas {n_added} filas nuevas."
+        cat = "ok"
+    elif n_skipped:
+        msg = f"Sesión #{sesion_id}: las {n_skipped} filas del archivo ya estaban cargadas — nada nuevo para agregar."
+        cat = "info"
+    else:
+        msg = f"Sesión #{sesion_id}: el archivo no trajo movimientos procesables."
+        cat = "warn"
+    flash(msg, cat)
+    return redirect(url_for("conciliacion.banco_post_procesar"))
 
 
 # ─── Preview antes de confirmar match (tab Manual) ────────────────────
@@ -411,6 +455,7 @@ def banco_preview():
                 """
                 SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.importe,
                        tb.concepto, tb.prov, tb.numreferencia,
+                       COALESCE(tb.usuario_crea, '') AS usuario_crea,
                        COALESCE(
                          (SELECT nombre FROM scintela.cliente
                            WHERE codigo_cli = tb.prov LIMIT 1), ''
@@ -427,8 +472,8 @@ def banco_preview():
     # Validar signos.
     import bank_helpers as _bh
     _DOCS_CRED = ("DE", "TR", "XX", "NC", "IN", "AC")
-    def _sign_bancsis(doc: str, imp: float) -> int:
-        return 1 if _bh._signed_delta(doc, imp) >= 0 else -1
+    def _sign_bancsis(doc: str, imp: float, usuario_crea: str = "") -> int:
+        return 1 if _bh._signed_delta(doc, imp, usuario_crea) >= 0 else -1
     def _sign_real(tipo: str) -> int:
         return 1 if (tipo or "").upper() == "C" else -1
 
@@ -450,7 +495,11 @@ def banco_preview():
         for h in hist_rows
     )
     programa_total_signed = sum(
-        _bh._signed_delta((b.get("documento") or ""), float(b.get("importe") or 0))
+        _bh._signed_delta(
+            (b.get("documento") or ""),
+            float(b.get("importe") or 0),
+            b.get("usuario_crea") or "",
+        )
         for b in bancsis_rows
     )
 
@@ -480,7 +529,7 @@ def banco_preview():
     for b in bancsis_rows:
         doc = (b.get("documento") or "").upper()
         imp = float(b.get("importe") or 0)
-        d = _bh._signed_delta(doc, imp)
+        d = _bh._signed_delta(doc, imp, b.get("usuario_crea") or "")
         if d >= 0:
             delta_pc_cred += d
         else:
@@ -495,19 +544,44 @@ def banco_preview():
             delta_banco_cred += m
         else:
             delta_banco_deb += m
+    # TMT 2026-06-03 BUG FIX: real_subset (movs del extracto seleccionados)
+    # también deja de ser pendiente_banco. Antes: solo se restaban histos,
+    # entonces matchear contra extracto bajaba PC pero no banco → saldo
+    # esperado saltaba por el lado del match.
+    for m_obj in real_subset:
+        monto = float(getattr(m_obj, "monto", 0) or 0)
+        tipo = (getattr(m_obj, "tipo", "") or "").upper()
+        if tipo == "C":
+            delta_banco_cred += monto
+        else:
+            delta_banco_deb += monto
 
     n_after_pc = max(0, int(balance_before.get("n_pendientes_conciliar") or 0) - len(bancsis_rows))
-    n_after_banco = max(0, int(balance_before.get("n_pendientes") or 0) - len(hist_rows))
+    # n_after_banco se recalcula más abajo con _total (incluye extracto).
 
     pc_cred_after = round(float(balance_before.get("pendientes_pc_creditos") or 0) - delta_pc_cred, 2)
     pc_deb_after = round(float(balance_before.get("pendientes_pc_debitos") or 0) - delta_pc_deb, 2)
     pc_neto_after = round(pc_cred_after - pc_deb_after, 2)
     saldo_si_concilio_after = round(float(balance_before.get("saldo") or 0) - pc_neto_after, 2)
 
-    banco_cred_after = round(float(balance_before.get("pendientes_banco_creditos") or 0) - delta_banco_cred, 2)
-    banco_deb_after = round(float(balance_before.get("pendientes_banco_debitos") or 0) - delta_banco_deb, 2)
+    # TMT 2026-06-03 BUG FIX: usar *_total (incluye extracto sesión).
+    # Antes: preview usaba pendientes_banco_creditos solo (histos), salto
+    # de $475K en "saldo banco esperado".
+    banco_cred_after = round(
+        float(balance_before.get("pendientes_banco_total_creditos") or balance_before.get("pendientes_banco_creditos") or 0)
+        - delta_banco_cred, 2,
+    )
+    banco_deb_after = round(
+        float(balance_before.get("pendientes_banco_total_debitos") or balance_before.get("pendientes_banco_debitos") or 0)
+        - delta_banco_deb, 2,
+    )
     banco_neto_after = round(banco_cred_after - banco_deb_after, 2)
     saldo_banco_esperado_after = round(saldo_si_concilio_after + banco_neto_after, 2)
+    n_after_banco = max(
+        0,
+        int(balance_before.get("n_pendientes_banco_total") or balance_before.get("n_pendientes") or 0)
+        - len(hist_rows) - len(real_subset),
+    )
 
     balance_after = {
         "saldo": float(balance_before.get("saldo") or 0),
@@ -518,8 +592,12 @@ def banco_preview():
         "saldo_si_concilio_todo": saldo_si_concilio_after,
         "pendientes_banco_creditos": banco_cred_after,
         "pendientes_banco_debitos": banco_deb_after,
+        "pendientes_banco_total_creditos": banco_cred_after,
+        "pendientes_banco_total_debitos": banco_deb_after,
         "neto_pendientes": banco_neto_after,
+        "neto_pendientes_total": banco_neto_after,
         "n_pendientes": n_after_banco,
+        "n_pendientes_banco_total": n_after_banco,
         "saldo_banco_esperado": saldo_banco_esperado_after,
     }
 
@@ -578,7 +656,8 @@ def banco_auditar():
     try:
         rows_walk = _db.fetch_all(
             """
-            SELECT id_transaccion, fecha, documento, importe, saldo, concepto
+            SELECT id_transaccion, fecha, documento, importe, saldo, concepto,
+                   COALESCE(usuario_crea, '') AS usuario_crea
               FROM scintela.transacciones_bancarias
              WHERE no_banco = %s AND saldo IS NOT NULL
              ORDER BY fecha ASC, id_transaccion ASC
@@ -590,7 +669,9 @@ def banco_auditar():
             s = float(r["saldo"] or 0)
             imp = float(r["importe"] or 0)
             doc = (r.get("documento") or "").upper()
-            delta = _bh._signed_delta(doc, imp)
+            # TMT 2026-06-03 audit fix: pasamos usuario_crea para que NDs reverso
+            # del DBF (importe positivo legítimo) no se reporten como torcidas.
+            delta = _bh._signed_delta(doc, imp, r.get("usuario_crea") or "")
             if saldo_prev is not None:
                 esperado = round(saldo_prev + delta, 2)
                 diff = round(s - esperado, 2)
@@ -703,38 +784,218 @@ def banco_auditar():
 # ─── Reabrir sesión cerrada ──────────────────────────────────────────
 
 
-@conciliacion_bp.route("/banco-v2/reabrir", methods=["POST"])
+# ─── Endpoint: setear saldo banco objetivo manual ─────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/set-saldo-objetivo", methods=["POST"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
-def banco_reabrir_sesion():
-    """Reabrir una sesión cerrada.
+def banco_set_saldo_objetivo():
+    """Guarda el saldo banco que la dueña lee del extracto o de la web del
+    banco. TMT 2026-06-02 dueña: 'lo deberia implementar el usuario no?
+    porque por el excel no sabemos cual es el ultimo valor'.
 
-    TMT 2026-05-29 dueña: 'QUIZAS NO DEBERIAMOS CERRAR Y GUARDAR Y QUE
-    NUNCA MAS SE PUEDA ACCEDER'. Cerrar deja de ser irreversible — la
-    sesión vuelve a editable y la dueña puede seguir conciliando.
+    Reemplaza el auto-detect por max(fecha) que era frágil cuando había
+    múltiples movs el mismo día o varios uploads merged.
     """
-    try:
-        sesion_id = int(request.form.get("sesion_id") or 0)
-    except ValueError:
-        sesion_id = 0
-    if not sesion_id:
-        flash("Sesión inválida.", "error")
-        return redirect(url_for("conciliacion.banco_historial_v2"))
-    n = _db.execute(
-        """
-        UPDATE scintela.banco_conciliacion_sesion
-           SET cerrada_en = NULL,
-               cerrada_por = NULL
-         WHERE id = %s AND cerrada_en IS NOT NULL
-        """,
-        (sesion_id,),
-    )
-    if n:
-        flash(f"Sesión #{sesion_id} reabierta.", "ok")
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion:
+        flash("Sesión no encontrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    raw = (request.form.get("saldo_objetivo") or "").strip()
+    if raw == "" or raw.lower() in ("none", "null", "—"):
+        # Clear → vuelve al auto-detect.
+        try:
+            _db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET saldo_banco_objetivo = NULL
+                 WHERE id = %s
+                """,
+                (sesion_id,),
+            )
+            flash("Saldo banco objetivo borrado — vuelve al auto-detect.", "ok")
+        except Exception as e:
+            flash(f"Error: {e}", "error")
         return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
-    else:
-        flash(f"Sesión #{sesion_id} no estaba cerrada o no existe.", "warn")
-        return redirect(url_for("conciliacion.banco_historial_v2"))
+
+    # Limpia comas/separadores antes de parsear.
+    try:
+        cleaned = raw.replace(",", "").replace("$", "").strip()
+        valor = float(cleaned)
+    except (ValueError, TypeError):
+        flash(f"Valor inválido: '{raw}'. Usá formato numérico (ej. 2846820.24).", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    try:
+        _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_sesion
+               SET saldo_banco_objetivo = %s
+             WHERE id = %s
+            """,
+            (valor, sesion_id),
+        )
+        flash(f"Saldo banco objetivo: ${valor:,.2f}", "ok")
+    except Exception as e:
+        flash(f"Error al guardar: {e}", "error")
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+
+# ─── Endpoint: descartar movs banco (no necesitan conciliarse) ────────
+
+
+@conciliacion_bp.route("/banco-v2/descartar-banco", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_descartar():
+    """Marca movs del lado banco como conciliados SIN contraparte PC.
+
+    TMT 2026-06-02 dueña: 'si hay movimientos que no quiero conciliar,
+    porque ya fueron conciliados o porque si del banco como hago? quizas
+    tengo entrada y devolucion de un cheque'.
+
+    Casos típicos:
+      - Entrada $X + devolución $X del mismo cheque → ambos netean a 0,
+        no hay contraparte PC.
+      - Movs ya conciliados externamente (ej. desde dBase) que el sistema
+        no detecta.
+      - Cargos del banco que la dueña decide no trackear.
+
+    Acepta hist_ids[] (histos backfilled) y real_sigs[] (movs del extracto
+    de la sesión). Para hist: UPDATE conciliado_en. Para real: los inserta
+    como histos con conciliado_en=NOW (queda registro auditable, y como
+    están conciliados no aparecen como pendientes).
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion:
+        flash("Sesión no encontrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    hist_ids_csv = (request.form.get("hist_ids") or "").strip()
+    real_sigs_csv = (request.form.get("real_sigs") or "").strip()
+    motivo = (request.form.get("motivo") or "descartado-banco")[:50]
+
+    try:
+        hist_ids = [int(x) for x in hist_ids_csv.split(",") if x.strip()]
+    except ValueError:
+        hist_ids = []
+    real_sigs = [s for s in real_sigs_csv.split("||") if s.strip()]
+
+    if not hist_ids and not real_sigs:
+        flash("No marcaste ningún mov para descartar.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    usuario = _usuario_actual()
+    no_banco = _BANCO_PICHINCHA
+    n_hist = 0
+    n_real = 0
+
+    # 1) Marcar históricos directamente — UPDATE conciliado_en.
+    if hist_ids:
+        try:
+            n_hist = _db.execute(
+                """
+                UPDATE scintela.banco_historicos_pendientes
+                   SET conciliado_en = CURRENT_TIMESTAMP,
+                       conciliado_por = %s
+                 WHERE id = ANY(%s)
+                   AND no_banco = %s
+                   AND conciliado_en IS NULL
+                """,
+                (f"descart:{motivo}"[:50], hist_ids, no_banco),
+            ) or 0
+        except Exception as e:
+            _LOG.exception("descartar histos falló: %s", e)
+            flash(f"Error al descartar históricos: {e}", "error")
+            return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    # 2) Para movs del extracto: PRIMERO intentamos marcar como conciliado
+    # un histo existente que matchee firma (caso común: el extracto trajo
+    # una fila que YA está en banco_historicos_pendientes como pendiente).
+    # Si no hay, INSERTAMOS uno nuevo ya conciliado.
+    # TMT 2026-06-02 fix: antes hacíamos solo INSERT ... ON CONFLICT DO
+    # NOTHING, que silenciosamente saltaba cuando el histo ya estaba y no
+    # actualizaba conciliado_en — la dueña veía el mov seguir pendiente.
+    if real_sigs:
+        movs = _sesion.cargar_movs(sesion)
+        sig_a_mov = {}
+        for m in movs:
+            key = "|".join([
+                m.fecha.isoformat() if m.fecha else "",
+                m.documento or "",
+                f"{float(m.monto or 0):.2f}",
+                m.tipo or "",
+            ])
+            sig_a_mov[key] = m
+        for sig in real_sigs:
+            mov = sig_a_mov.get(sig)
+            if not mov:
+                continue
+            try:
+                # Intento 1: UPDATE del histo existente (pendiente) que matchee firma.
+                rc = _db.execute(
+                    """
+                    UPDATE scintela.banco_historicos_pendientes
+                       SET conciliado_en = CURRENT_TIMESTAMP,
+                           conciliado_por = %s
+                     WHERE no_banco = %s
+                       AND fecha = %s
+                       AND COALESCE(documento, '') = COALESCE(%s, '')
+                       AND monto = %s::numeric
+                       AND tipo = %s
+                       AND conciliado_en IS NULL
+                    """,
+                    (
+                        f"descart:{motivo}"[:50],
+                        no_banco, mov.fecha,
+                        (mov.documento or "")[:40],
+                        str(mov.monto or 0),
+                        (mov.tipo or "C")[:1],
+                    ),
+                ) or 0
+                if rc > 0:
+                    n_real += rc
+                    continue
+                # Intento 2: no había histo existente → INSERT uno ya conciliado.
+                _db.execute(
+                    """
+                    INSERT INTO scintela.banco_historicos_pendientes
+                        (no_banco, fecha, concepto, documento, monto, tipo,
+                         oficina, detalle, fuente, creado_por,
+                         conciliado_en, conciliado_por, codigo)
+                    VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s,
+                            CURRENT_TIMESTAMP, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        no_banco, mov.fecha,
+                        (mov.concepto or "")[:120],
+                        (mov.documento or "")[:40],
+                        str(mov.monto or 0),
+                        (mov.tipo or "C")[:1],
+                        (getattr(mov, "oficina", "") or "")[:40],
+                        "",  # detalle
+                        f"descart:sesion:{sesion_id}",
+                        usuario[:50],
+                        f"descart:{motivo}"[:50],
+                        (getattr(mov, "codigo", "") or "")[:20],
+                    ),
+                )
+                n_real += 1
+            except Exception as e:
+                _LOG.warning("descartar real_sig %s falló: %s", sig, e)
+
+    total = n_hist + n_real
+    flash(
+        f"Descartados {total} movs ({n_hist} histos + {n_real} del extracto). "
+        f"Marcados como conciliados sin contraparte PC. Motivo: {motivo}.",
+        "ok" if total > 0 else "warn",
+    )
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
 
 # ─── Endpoint Tab Manual: confirmar pares marcados ────────────────────
@@ -822,44 +1083,111 @@ def banco_manual_confirmar():
     n_matches = 0
     err_msg: str | None = None
     usuario = _usuario_actual()
-    # 1) Matches del extracto contra los bancsis seleccionados.
-    # BUG #2 fix 2026-05-29: si N reales vs M bancsis con N!=M, antes
-    # silenciosamente asociábamos todos los N al PRIMER bancsis (los
-    # otros M-1 bancsis quedaban huérfanos). Ahora exigimos:
-    #   - 1:1 (mismo número de cada lado): pareamos por monto desc
-    #   - N:1 (1 bancsis, N reales): caso típico depósito agrupado,
-    #     OK asociar todos al único bancsis
-    #   - cualquier otro caso → error con mensaje claro
+    # TMT 2026-06-03 dueña: 'batch id, cuando selecciono junto'. Cada vez
+    # que aprieta Conciliar, los items seleccionados forman un batch nuevo.
+    # Si después quiere mover items entre batches, usa "Sacar al grupo nuevo".
+    import uuid as _uuid
+    batch_id = _uuid.uuid4().hex
+    # TMT 2026-06-02 dueña: 'los movimientos no tienen que ser 1:1' / 'puede
+    # ser distinto'. Aceptamos cualquier N:M:
+    #
+    # Estrategia unificada:
+    #   1. Min(N, M) pares 1:1 ordenados por monto desc (biggest↔biggest).
+    #   2. Si sobran banco rows (N > M): cada uno se matchea contra el
+    #      PRIMER PC. El unique index es por real_*, así que reusar el
+    #      mismo PC con reales distintos es OK.
+    #   3. Si sobran PC rows (M > N): se marcan stat='*' directamente
+    #      (sin record en banco_conciliacion_match porque la firma real_*
+    #      ya está tomada). Quedan conciliados visualmente.
+    #
+    # Esto cubre 1:1, N:1, 1:N, y N:M arbitrario.
     if real_subset and bancsis_ids:
-        if len(real_subset) == len(bancsis_ids):
-            real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
-            bk_sorted = sorted(bancsis_ids, reverse=True)
-            for r, bk_id in zip(real_sorted, bk_sorted):
+        real_sorted = sorted(real_subset, key=lambda r: float(r.monto or 0), reverse=True)
+        bk_sorted = sorted(bancsis_ids, reverse=True)
+        n_pair = min(len(real_sorted), len(bk_sorted))
+
+        # 1) Pares 1:1.
+        for i in range(n_pair):
+            try:
+                confirmar_match(_BANCO_PICHINCHA, real_sorted[i], bk_sorted[i],
+                                usuario=usuario, metodo="matched_manual",
+                                confirm_batch_id=batch_id)
+                n_matches += 1
+            except Exception as e:
+                _LOG.warning("manual confirm par %d falló: %s", i, e)
+                if err_msg is None:
+                    err_msg = str(e)
+
+        # 2) Banco extras (N > M): todos matcheados contra PC[0].
+        for r in real_sorted[n_pair:]:
+            try:
+                confirmar_match(_BANCO_PICHINCHA, r, bk_sorted[0],
+                                usuario=usuario, metodo="matched_manual",
+                                confirm_batch_id=batch_id)
+                n_matches += 1
+            except Exception as e:
+                _LOG.warning("manual confirm extra banco falló: %s", e)
+                if err_msg is None:
+                    err_msg = str(e)
+
+        # 3) PC extras (M > N): crear match records con real_*=NULL para
+        # que aparezcan en el tab Conciliados con el lado programa visible.
+        # Detectamos si existe la columna `metodo` (mig 0047). Hacemos
+        # INSERT directo porque confirmar_match() requiere un MovBanco no-null.
+        if len(bk_sorted) > n_pair:
+            extras = [int(b) for b in bk_sorted[n_pair:]]
+            tiene_metodo = False
+            try:
+                row = _db.fetch_one(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                     WHERE table_schema='scintela'
+                       AND table_name='banco_conciliacion_match'
+                       AND column_name='metodo'
+                    """,
+                )
+                tiene_metodo = bool(row)
+            except Exception:
+                pass
+            for bk_id in extras:
                 try:
-                    confirmar_match(_BANCO_PICHINCHA, r, bk_id, usuario=usuario, metodo="matched_manual")
+                    # TMT 2026-06-03: tx_firma + confirm_batch_id.
+                    if tiene_metodo:
+                        _db.execute(
+                            """
+                            INSERT INTO scintela.banco_conciliacion_match (
+                                no_banco, estado, metodo,
+                                id_transaccion, tx_firma, confirm_batch_id, usuario
+                            ) VALUES (%s, %s, %s, %s,
+                                      scintela.compute_tx_firma(%s), %s, %s)
+                            """,
+                            (_BANCO_PICHINCHA, 'matched', 'matched_manual',
+                             bk_id, bk_id, batch_id, usuario),
+                        )
+                    else:
+                        _db.execute(
+                            """
+                            INSERT INTO scintela.banco_conciliacion_match (
+                                no_banco, estado, id_transaccion, tx_firma, confirm_batch_id, usuario
+                            ) VALUES (%s, %s, %s,
+                                      scintela.compute_tx_firma(%s), %s, %s)
+                            """,
+                            (_BANCO_PICHINCHA, 'matched', bk_id, bk_id, batch_id, usuario),
+                        )
+                    # Dual-write stat='*'.
+                    _db.execute(
+                        """
+                        UPDATE scintela.transacciones_bancarias
+                           SET stat = '*'
+                         WHERE id_transaccion = %s AND no_banco = %s
+                        """,
+                        (bk_id, _BANCO_PICHINCHA),
+                    )
                     n_matches += 1
                 except Exception as e:
-                    _LOG.warning("manual confirm falló: %s", e)
+                    _LOG.warning("manual confirm match PC extra %s falló: %s", bk_id, e)
                     if err_msg is None:
                         err_msg = str(e)
-        elif len(bancsis_ids) == 1:
-            # N reales contra 1 bancsis (depósito agrupado típico).
-            bk_id_primary = bancsis_ids[0]
-            for r in real_subset:
-                try:
-                    confirmar_match(_BANCO_PICHINCHA, r, bk_id_primary, usuario=usuario, metodo="matched_manual")
-                    n_matches += 1
-                except Exception as e:
-                    _LOG.warning("manual confirm fallo: %s", e)
-                    if err_msg is None:
-                        err_msg = str(e)
-        else:
-            flash(
-                f"No puedo conciliar {len(real_subset)} banco vs {len(bancsis_ids)} "
-                f"programa: deben ser 1:1 o N:1 (N reales contra 1 mov del programa).",
-                "error",
-            )
-            return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
     # 2) Históricos seleccionados → conciliarlos vía confirmar_match.
     # TMT 2026-05-29 dueña: 'HAY UN BUG' + 'NO ESTABAN CONCILIADOS'.
@@ -917,6 +1245,7 @@ def banco_manual_confirmar():
                     confirmar_match(
                         _BANCO_PICHINCHA, mov_h, bk_id_primary,
                         usuario=usuario, metodo="matched_historico",
+                        confirm_batch_id=batch_id,
                     )
                     n_hist += 1
                 except Exception as e:
@@ -976,6 +1305,104 @@ def banco_manual_confirmar():
 
 
 # ─── Endpoint Tab Impuestos ───────────────────────────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/impuestos/preview", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_impuestos_preview():
+    """TMT 2026-06-03 dueña: 'que me de el mismo tipo de confirmacion que
+    cuando hago manual, no una confirmacion como ok no ok, que muestre uno
+    a uno y los cambios que van a haber'.
+    Antes de crear la tx agrupada de impuestos, muestra un preview con
+    item-por-item + saldo antes/después + botón confirmar.
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion or sesion.get("cerrada_en"):
+        flash("Sesión inválida o cerrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    try:
+        real_idxs = [int(x) for x in (request.form.get("real_idxs") or "").split(",") if x.strip()]
+    except ValueError:
+        real_idxs = []
+    if not real_idxs:
+        flash("No marcaste ningún movimiento.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
+
+    from modules.conciliacion.matcher_banco import matchear_extracto_banco
+    movs = _sesion.cargar_movs(sesion)
+    try:
+        res = matchear_extracto_banco(movs, no_banco=_BANCO_PICHINCHA)
+        real_only = res.real_only or []
+    except Exception as e:
+        _LOG.exception("re-match para preview impuestos falló: %s", e)
+        real_only = []
+    real_subset = [real_only[i] for i in real_idxs if 0 <= i < len(real_only)]
+    if not real_subset:
+        flash("Los movimientos seleccionados ya no existen.", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="impuestos"))
+
+    fecha_str = (request.form.get("fecha") or "").strip()
+    concepto = (request.form.get("concepto") or "").strip()
+    prov = (request.form.get("prov") or "").strip()
+
+    # Calcular monto neto del agrupado (signed).
+    monto_neto = sum(
+        (1 if (r.tipo or '').upper() == 'C' else -1) * float(r.monto or 0)
+        for r in real_subset
+    )
+
+    # Balance antes/después.
+    balance_before = _bp.calcular(_BANCO_PICHINCHA)
+    libros_before = float(balance_before.get("saldo") or 0)
+    libros_after = round(libros_before + monto_neto, 2)
+    # Pendientes banco: real_subset deja de estar pendiente (entra al match).
+    pbtc_before = float(balance_before.get("pendientes_banco_total_creditos")
+                        or balance_before.get("pendientes_banco_creditos") or 0)
+    pbtd_before = float(balance_before.get("pendientes_banco_total_debitos")
+                        or balance_before.get("pendientes_banco_debitos") or 0)
+    delta_cred = sum(float(r.monto or 0) for r in real_subset if (r.tipo or '').upper() == 'C')
+    delta_deb = sum(float(r.monto or 0) for r in real_subset if (r.tipo or '').upper() == 'D')
+    pbtc_after = round(pbtc_before - delta_cred, 2)
+    pbtd_after = round(pbtd_before - delta_deb, 2)
+    pbtn_after = round(pbtc_after - pbtd_after, 2)
+    n_banco_after = max(0, int(balance_before.get("n_pendientes_banco_total")
+                                or balance_before.get("n_pendientes") or 0) - len(real_subset))
+
+    # Conciliado_live = libros - pend_pc_neto. Pend_pc no cambia (es banco-only).
+    saldo_concilio_after = round(
+        libros_after - float(balance_before.get("pendientes_conciliar_neto") or 0), 2
+    )
+    saldo_banco_esperado_after = round(saldo_concilio_after + pbtn_after, 2)
+
+    balance_after = {
+        "saldo": libros_after,
+        "pendientes_pc_creditos": balance_before.get("pendientes_pc_creditos"),
+        "pendientes_pc_debitos": balance_before.get("pendientes_pc_debitos"),
+        "pendientes_conciliar_neto": balance_before.get("pendientes_conciliar_neto"),
+        "n_pendientes_conciliar": balance_before.get("n_pendientes_conciliar"),
+        "saldo_si_concilio_todo": saldo_concilio_after,
+        "pendientes_banco_total_creditos": pbtc_after,
+        "pendientes_banco_total_debitos": pbtd_after,
+        "neto_pendientes_total": pbtn_after,
+        "n_pendientes_banco_total": n_banco_after,
+        "saldo_banco_esperado": saldo_banco_esperado_after,
+    }
+
+    return render_template(
+        "conciliacion/banco_v2_impuestos_preview.html",
+        sesion=sesion,
+        real_subset=real_subset,
+        fecha=fecha_str,
+        concepto=concepto,
+        prov=prov,
+        monto_neto=monto_neto,
+        balance_before=balance_before,
+        balance_after=balance_after,
+        real_idxs_csv=",".join(str(i) for i in real_idxs),
+    )
 
 
 @conciliacion_bp.route("/banco-v2/impuestos/confirmar", methods=["POST"])
@@ -1110,7 +1537,12 @@ def banco_transferencias_confirmar():
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id, tab="transferencias"))
 
 
-# ─── Terminar y guardar + PDF ─────────────────────────────────────────
+# ─── XLSX resumen de pendientes ───────────────────────────────────────
+# TMT 2026-06-02 dueña: 'pero si quiero el resumen que imprimiamos!!'
+# El XLSX que se generaba al cerrar sesión sigue disponible como descarga
+# on-demand vía /banco-v2/resumen-xlsx. Genera el listado actual de
+# pendientes (histos + extract no-matcheado) con el resumen contable
+# al pie. No cierra ni promueve nada.
 
 
 def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
@@ -1137,7 +1569,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # Listado completo de pendientes del banco. ORDER BY fecha ASC para
     # que arranquen los más viejos primero (igual al formato Tamara
     # subió: marzo → abril → mayo).
-    rows = []
+    rows: list[dict] = []
     try:
         rows = _db.fetch_all(
             """
@@ -1151,6 +1583,42 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ) or []
     except Exception as e:
         _LOG.warning("xlsx historicos query falló: %s", e)
+
+    # TMT 2026-06-02: incluir también los movs del extracto en la sesión
+    # actual que NO están matcheados (antes se "promovían a histos" al
+    # cerrar; con sesión continua no hay promoción, así que los traemos
+    # de la sesión directamente). Dedupe por (fecha, documento) contra
+    # los histos que ya pusimos.
+    seen_keys = {
+        (r.get("fecha"), (r.get("documento") or "").strip().upper())
+        for r in rows
+    }
+    try:
+        movs_s = _sesion.cargar_movs(sesion)
+        if movs_s:
+            from modules.conciliacion.matcher_banco import matchear_extracto_banco
+            try:
+                res = matchear_extracto_banco(movs_s, no_banco=no_banco)
+                for m in (res.real_only or []):
+                    key = (m.fecha, (m.documento or "").strip().upper())
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    rows.append({
+                        "fecha": m.fecha,
+                        "concepto": m.concepto or "",
+                        "documento": m.documento or "",
+                        "monto": float(m.monto or 0),
+                        "oficina": getattr(m, "oficina", "") or "",
+                        "detalle": "",
+                        "tipo": (m.tipo or "C").upper(),
+                    })
+            except Exception as e:
+                _LOG.warning("xlsx matcher inline falló: %s", e)
+    except Exception as e:
+        _LOG.warning("xlsx cargar movs sesion falló: %s", e)
+    # Re-ordenar por fecha asc (los nuevos pueden venir desordenados).
+    rows.sort(key=lambda r: (r.get("fecha") or date.min, str(r.get("documento") or "")))
 
     _PDF_DIR.mkdir(parents=True, exist_ok=True)
     xlsx_path = _PDF_DIR / f"sesion_{sesion['id']}.xlsx"
@@ -1302,152 +1770,44 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     return str(xlsx_path)
 
 
-def _promover_a_historicos(sesion: dict) -> int:
-    """Inserta los movs del extracto NO conciliados en banco_historicos_pendientes.
-
-    Se llama al cerrar la sesión: si dejaste 64 movs sin parear, esos
-    pasan a 'pendientes históricos del banco' con fuente='sesion:N' para
-    que en la próxima conciliación aparezcan como pendientes y los puedas
-    matchear cuando el programa registre la contrapartida.
-
-    Usa el UNIQUE INDEX ux_bhp_firma (no_banco, fecha, documento, monto, tipo)
-    con ON CONFLICT DO NOTHING para evitar duplicar pendientes que ya están.
-    """
-    no_banco = sesion.get("no_banco") or _BANCO_PICHINCHA
-    buckets = _sesion.estado_sesion(sesion, no_banco)
-    items = (buckets.get("manual_banco") or []) + (buckets.get("impuestos") or [])
-    # Excluimos los que ya son históricos (vinieron de tabla); solo
-    # promovemos los del EXTRACTO actual.
-    reales = [it for it in items if not it.get("es_historico")]
-    if not reales:
-        return 0
-
-    fuente = f"sesion:{sesion.get('id')}"
-    creado_por = (sesion.get("usuario") or "web")[:50]
-    n_promovidos = 0
-    for it in reales:
-        m = it.get("mov")
-        if not m:
-            continue
-        try:
-            n = _db.execute(
-                """
-                INSERT INTO scintela.banco_historicos_pendientes
-                    (no_banco, fecha, concepto, documento, monto, tipo,
-                     oficina, detalle, fuente, creado_por)
-                VALUES (%s, %s, %s, %s, %s::numeric, %s, %s, %s, %s, %s)
-                ON CONFLICT DO NOTHING
-                """,
-                (
-                    int(no_banco),
-                    m.fecha,
-                    (m.concepto or "")[:120],
-                    (m.documento or "")[:40],
-                    str(m.monto or 0),
-                    (m.tipo or "C")[:2],
-                    (getattr(m, "oficina", "") or "")[:40],
-                    "",  # detalle
-                    fuente,
-                    creado_por,
-                ),
-            ) or 0
-            n_promovidos += n
-        except Exception as e:
-            _LOG.warning("promover_a_historicos mov falló: %s", e)
-    return n_promovidos
-
-
-@conciliacion_bp.route("/banco-v2/terminar", methods=["POST"])
+@conciliacion_bp.route("/banco-v2/resumen-xlsx", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
-def banco_terminar():
-    """Cierra la sesión, promueve movs no conciliados a histos, genera XLSX."""
-    sesion_id = int(request.form.get("sesion_id") or 0)
-    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+def banco_resumen_xlsx():
+    """Genera y descarga el resumen XLSX de movimientos pendientes.
+
+    TMT 2026-06-02 dueña: 'quiero el resumen que imprimiamos'. Reemplaza
+    el viejo flujo "Terminar y guardar" → XLSX. Ahora es un download
+    on-demand: NO cierra sesión, NO promueve nada a histos, solo genera
+    el listado actual (histos sin conciliar + extracto no matcheado) con
+    el resumen contable al pie. Se puede pedir cuantas veces se quiera.
+    """
+    no_banco = _BANCO_PICHINCHA
+    sesion = _sesion.sesion_abierta(no_banco)
     if not sesion:
-        flash("Sesión no encontrada.", "error")
+        flash("No hay sesión abierta — subí un extracto primero.", "info")
         return redirect(url_for("conciliacion.hub"))
-    if sesion.get("cerrada_en"):
-        flash("La sesión ya estaba cerrada.", "info")
-        return redirect(url_for("conciliacion.banco_cerrada", sesion_id=sesion_id))
-
-    # PROMOVER movs no conciliados a banco_historicos_pendientes ANTES
-    # del cerrar — así el XLSX y el balance reflejan el estado final.
+    balance = _bp.calcular(no_banco)
     try:
-        n_promovidos = _promover_a_historicos(sesion)
-        if n_promovidos:
-            _LOG.info("sesion #%s: promovidos %s movs a histos", sesion_id, n_promovidos)
+        path = _generar_xlsx_pendientes(sesion, balance)
     except Exception as e:
-        _LOG.warning("promover histos falló (sigo cerrando): %s", e)
-        n_promovidos = 0
-
-    pdf_path = None
-    balance = _bp.calcular(sesion.get("no_banco") or _BANCO_PICHINCHA)
-    try:
-        pdf_path = _generar_xlsx_pendientes(sesion, balance)
-    except Exception as e:
-        _LOG.warning("XLSX falló (sigo cerrando sesión sin reporte): %s", e)
-
-    ok = _sesion.cerrar_sesion(sesion_id, _usuario_actual(), pdf_path=pdf_path)
-
-    # Snapshot saldo al cierre (igual que /banco/deshacer).
-    try:
-        from modules.conciliacion import saldo_snapshot as _ss
-        _ss.snapshot(
-            _BANCO_PICHINCHA,
-            "sesion_cerrada",
-            evento_ref=sesion_id,
-            usuario=_usuario_actual(),
-            descripcion=f"cierre sesión #{sesion_id}",
-        )
-    except Exception:
-        pass
-
-    if ok:
-        msg = f"Sesión #{sesion_id} cerrada."
-        if n_promovidos:
-            msg += f" {n_promovidos} mov(s) sin conciliar pasaron a pendientes históricos."
-        flash(msg, "ok")
-    else:
-        flash("No se pudo cerrar la sesión (¿ya estaba cerrada?).", "warn")
-    return redirect(url_for("conciliacion.banco_cerrada", sesion_id=sesion_id))
-
-
-@conciliacion_bp.route("/banco-v2/cerrada/<int:sesion_id>", methods=["GET"])
-@requiere_login
-@requiere_permiso("bancos.conciliar")
-def banco_cerrada(sesion_id: int):
-    sesion = _sesion.sesion_por_id(sesion_id)
-    if not sesion:
+        _LOG.exception("resumen xlsx falló: %s", e)
+        flash(f"No pude generar el resumen: {e}", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+    if not path:
+        flash("openpyxl no disponible — no se pudo generar.", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+    p = Path(path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    if not p.exists():
         abort(404)
-    return render_template(
-        "conciliacion/banco_v2_cerrada.html",
-        sesion=sesion,
-    )
-
-
-@conciliacion_bp.route("/banco-v2/pdf/<int:sesion_id>", methods=["GET"])
-@requiere_login
-@requiere_permiso("bancos.conciliar")
-def banco_pdf(sesion_id: int):
-    """Descarga el reporte de pendientes (XLSX, antes PDF). El endpoint
-    se llama 'pdf' por compat hacia atrás — el contenido es xlsx ahora.
-    """
-    sesion = _sesion.sesion_por_id(sesion_id)
-    if not sesion or not sesion.get("pdf_path"):
-        abort(404)
-    path = Path(sesion["pdf_path"])
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    if not path.exists():
-        abort(404)
-    is_xlsx = str(path).lower().endswith(".xlsx")
+    fname = f"conciliacion_pendientes_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return send_file(
-        str(path),
-        mimetype=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  if is_xlsx else "application/pdf"),
+        str(p),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name=f"conciliacion_sesion_{sesion_id}.{'xlsx' if is_xlsx else 'pdf'}",
+        download_name=fname,
     )
 
 
@@ -1552,20 +1912,15 @@ def banco_borrar_sesion():
         flash("Sesión no encontrada.", "warn")
         return redirect(url_for("conciliacion.banco_historial_v2"))
 
-    # BUG #5 fix 2026-05-29: si la sesión está abierta, NO usar NOW() como
-    # cota superior — arrasaría matches de cualquier otro flujo paralelo.
-    # Exigimos sesión cerrada para borrarla.
-    if not sesion.get("cerrada_en"):
-        flash(
-            "No se puede borrar una sesión abierta. Primero cerrala con "
-            "'Terminar y guardar' o anulá los matches individualmente.",
-            "error",
-        )
-        return redirect(url_for("conciliacion.banco_historial_v2"))
-
+    # TMT 2026-06-02 dueña: 'poneme boton anular conciliaciones y borrar'.
+    # Sesión abierta también se puede borrar — usamos NOW() como cota
+    # superior si no hay cerrada_en. Anula matches y limpia todo.
     usuario = _usuario_actual()
     abierta = sesion.get("abierta_en")
     cerrada = sesion.get("cerrada_en")
+    if not cerrada:
+        from datetime import datetime, timezone
+        cerrada = datetime.now(timezone.utc)
     counts = {"matches": 0, "snapshots": 0, "txs_grupales": 0, "historicos_reset": 0}
 
     try:
@@ -1586,22 +1941,14 @@ def banco_borrar_sesion():
             ) or []
             ids_grupales = [r["id_transaccion"] for r in ids_rows if r.get("id_transaccion")]
 
-            # 2a. Borrar histos que ESTA sesión auto-promovió al cerrar.
-            # BUG #4 fix 2026-05-29: filtrar por conciliado_en IS NULL para
-            # NO borrar histos que después fueron conciliados en OTRA sesión
-            # (perderíamos el rastro de un match legítimo).
-            counts["historicos_promovidos_borrados"] = _db.execute(
-                """
-                DELETE FROM scintela.banco_historicos_pendientes
-                 WHERE no_banco = %s
-                   AND fuente = %s
-                   AND conciliado_en IS NULL
-                """,
-                (_BANCO_PICHINCHA, f"sesion:{sesion_id}"),
-                conn=conn,
-            ) or 0
-
-            # 2b. Reset históricos QUE FUERON conciliados en este rango.
+            # 2a. PRIMERO reset histos QUE FUERON conciliados en este rango.
+            # TMT 2026-06-03 dueña: 'borramos pero todo se rompió, no tiene
+            # sentido, hay que re armarlo'. Bug del orden: cuando un histo
+            # de fuente='sesion:N' fue conciliado en la MISMA sesión, tenía
+            # conciliado_en NOT NULL y el DELETE de 2b (con filtro IS NULL)
+            # lo saltaba. Después el UPDATE lo reseteaba a NULL — quedaba
+            # huérfano forever, aparece en pendientes después de borrar.
+            # Fix: resetear PRIMERO; así el delete de abajo lo atrapa.
             counts["historicos_reset"] = _db.execute(
                 """
                 UPDATE scintela.banco_historicos_pendientes
@@ -1612,6 +1959,23 @@ def banco_borrar_sesion():
                    AND conciliado_en BETWEEN %s AND %s
                 """,
                 (_BANCO_PICHINCHA, abierta, cerrada),
+                conn=conn,
+            ) or 0
+
+            # 2b. Borrar histos que ESTA sesión auto-promovió.
+            # Después del reset de 2a, los histos sesion:N conciliados-en-esta-sesión
+            # ya tienen conciliado_en IS NULL y caen acá. Histos sesion:N que
+            # fueron conciliados en OTRA sesión (conciliado_en fuera del rango)
+            # conservan su conciliado_en y NO son borrados — el rastro de su
+            # match legítimo se preserva.
+            counts["historicos_promovidos_borrados"] = _db.execute(
+                """
+                DELETE FROM scintela.banco_historicos_pendientes
+                 WHERE no_banco = %s
+                   AND fuente = %s
+                   AND conciliado_en IS NULL
+                """,
+                (_BANCO_PICHINCHA, f"sesion:{sesion_id}"),
                 conn=conn,
             ) or 0
 
@@ -1670,8 +2034,28 @@ def banco_borrar_sesion():
                     conn=conn,
                 ) or 0
 
-            # 4. Borrar txs BANCSIS grupales + recompute.
+            # 4. Borrar txs BANCSIS grupales + recompute LOCAL.
+            # TMT 2026-06-03 dueña: 'fijate que borrar sesion nos vuelva a
+            # dejar en el mismo punto de partida'. Bug: el recompute partía
+            # del PRIMER mov del banco (id_ascendente), re-walking 23k filas
+            # y arrastrando cualquier desviación histórica del saldo column.
+            # Resultado: libros podía desplazarse $147K después de un borrar.
+            # Fix: recompute SOLO desde la fecha más vieja de las txs que
+            # acabamos de borrar. El walk se limita a ~30-50 filas, no toca
+            # historia previa.
             if ids_grupales:
+                # Capturamos la fecha mínima de las txs grupales ANTES de
+                # borrarlas, así sabemos desde dónde recalcular.
+                fecha_ancla_row = _db.fetch_one(
+                    """
+                    SELECT MIN(fecha) AS f
+                      FROM scintela.transacciones_bancarias
+                     WHERE id_transaccion = ANY(%s) AND no_banco = %s
+                    """,
+                    (ids_grupales, _BANCO_PICHINCHA),
+                    conn=conn,
+                )
+                fecha_ancla = fecha_ancla_row.get("f") if fecha_ancla_row else None
                 counts["txs_grupales"] = _db.execute(
                     "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = ANY(%s) AND no_banco = %s",
                     (ids_grupales, _BANCO_PICHINCHA),
@@ -1679,31 +2063,42 @@ def banco_borrar_sesion():
                 ) or 0
                 try:
                     import bank_helpers
-                    siguiente = _db.fetch_one(
-                        """
-                        SELECT id_transaccion FROM scintela.transacciones_bancarias
-                         WHERE no_banco = %s
-                         ORDER BY fecha ASC, id_transaccion ASC LIMIT 1
-                        """,
-                        (_BANCO_PICHINCHA,),
-                        conn=conn,
-                    )
-                    if siguiente and siguiente.get("id_transaccion"):
+                    if fecha_ancla:
+                        # Recompute LOCAL — solo filas desde la fecha de la
+                        # tx más vieja borrada. NO toca el resto de la
+                        # historia (sus saldos siguen siendo lo que ya eran).
                         bank_helpers.recompute_saldos_desde(
                             conn, no_banco=_BANCO_PICHINCHA, no_cta=None,
-                            ancla_id=int(siguiente["id_transaccion"]),
+                            ancla_fecha=fecha_ancla,
                         )
+                    # Si no hay fecha_ancla (caso raro), saltamos el recompute
+                    # — preferimos no tocar saldos antes que pisar todo.
                 except Exception as e:
-                    _LOG.warning("recompute_saldos en borrar-sesion falló: %s", e)
+                    # TMT 2026-06-03: NO silenciar — antes el except log+pass
+                    # escondía drift de saldos cuando recompute fallaba (ej.
+                    # por bug de _signed_delta). La dueña veía "borrar OK"
+                    # pero libros quedaba wrong. Ahora escalamos al outer
+                    # except → flash error visible.
+                    _LOG.exception("recompute_saldos en borrar-sesion falló: %s", e)
+                    raise RuntimeError(
+                        f"Borrar OK pero recompute de saldos falló: {e}. "
+                        f"Libros puede estar inconsistente. Hacer sync dBase."
+                    ) from e
 
             # 5. Borrar snapshots de esta sesión.
+            # TMT 2026-06-03 audit fix: el OR temporal arrasaba snapshots de
+            # OTRAS sesiones que hubieran cerrado en la misma ventana de
+            # tiempo (también snapshots reset_total, snapshots de impuestos,
+            # etc.). Filtramos solo por evento_ref = sesion_id. Si algún
+            # snapshot quedó huérfano del rango pero sin evento_ref, mejor
+            # dejarlo — es paper trail, no afecta funcionamiento.
             counts["snapshots"] = _db.execute(
                 """
                 DELETE FROM scintela.banco_saldo_conc_snapshot
                  WHERE no_banco = %s
-                   AND (evento_ref = %s OR creado_en BETWEEN %s AND %s)
+                   AND evento_ref = %s
                 """,
-                (_BANCO_PICHINCHA, str(sesion_id), abierta, cerrada),
+                (_BANCO_PICHINCHA, str(sesion_id)),
                 conn=conn,
             ) or 0
 
@@ -1714,23 +2109,30 @@ def banco_borrar_sesion():
                 conn=conn,
             )
 
-            # 7. Reset stat='*' en movs PC fuera del dbf-import original.
-            _db.execute(
-                """
-                UPDATE scintela.transacciones_bancarias
-                   SET stat = NULL
-                 WHERE no_banco = %s
-                   AND TRIM(COALESCE(stat,'')) = '*'
-                   AND COALESCE(usuario_crea,'') NOT IN ('dbf-import','asinfo-backfill')
-                   AND NOT EXISTS (
-                       SELECT 1 FROM scintela.banco_conciliacion_match m
-                        WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
-                          AND m.deshecho_en IS NULL
-                   )
-                """,
-                (_BANCO_PICHINCHA,),
-                conn=conn,
-            )
+            # 7. Reset stat='*' en movs PC linkeados a ESTA sesión.
+            # TMT 2026-06-03 audit fix: antes este UPDATE arrasaba TODO mov
+            # PC con stat='*' sin match activo, lo que apagaba el flag de
+            # movs vinculados a OTRAS sesiones cerradas. Restringimos al
+            # set de ids capturados en el paso 4 (matches que se acaban de
+            # borrar) — solo afecta lo que esta sesión tocó.
+            if ids_bancsis_sesion:
+                _db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias
+                       SET stat = NULL
+                     WHERE no_banco = %s
+                       AND id_transaccion = ANY(%s)
+                       AND TRIM(COALESCE(stat,'')) = '*'
+                       AND COALESCE(usuario_crea,'') NOT IN ('dbf-import','asinfo-backfill')
+                       AND NOT EXISTS (
+                           SELECT 1 FROM scintela.banco_conciliacion_match m
+                            WHERE m.id_transaccion = scintela.transacciones_bancarias.id_transaccion
+                              AND m.deshecho_en IS NULL
+                       )
+                    """,
+                    (_BANCO_PICHINCHA, ids_bancsis_sesion),
+                    conn=conn,
+                )
 
         # 8. Borrar el archivo XLSX si existe.
         if sesion.get("pdf_path"):
@@ -1935,141 +2337,182 @@ def banco_reset_all():
 @requiere_login
 @requiere_permiso("bancos.conciliar")
 def banco_historial_v2():
+    """Listado simple de sesiones para auditoría.
+
+    TMT 2026-06-02: sesión no se cierra → la única fila 'activa' por
+    banco es la sesión vigente. El resto son sesiones cerradas (legacy
+    pre-mig-0062). Sin columnas de saldo inicial/final/diferencia: eso
+    se ve live en la pantalla principal.
+    """
     r = _migracion_lista_o_redirect()
     if r: return r
     sesiones = _sesion.listar_sesiones(no_banco=_BANCO_PICHINCHA, limit=200)
-    # Balance inicial/final por sesión (snapshots evento_tipo+evento_ref).
-    saldo_ini, saldo_fin = {}, {}
-    try:
-        snap_rows = _db.fetch_all(
-            """
-            SELECT evento_tipo, evento_ref, saldo_conc
-              FROM scintela.banco_saldo_conc_snapshot
-             WHERE no_banco = %s
-               AND evento_tipo IN ('sesion_abierta','sesion_cerrada')
-            """,
-            (_BANCO_PICHINCHA,),
-        ) or []
-        for sr in snap_rows:
-            ref = str(sr.get("evento_ref") or "")
-            val = float(sr.get("saldo_conc") or 0)
-            if sr.get("evento_tipo") == "sesion_abierta":
-                saldo_ini[ref] = val
-            elif sr.get("evento_tipo") == "sesion_cerrada":
-                saldo_fin[ref] = val
-    except Exception:
-        pass
-
-    # Fallback: para sesiones viejas (anteriores al feature de snapshot
-    # 'sesion_abierta'), buscar el snapshot más cercano por timestamp.
-    # TMT 2026-05-29 dueña: 'ponele saldo final y saldo inicial' incluso
-    # a sesiones pasadas. Aproximación: último snapshot ANTES de abierta_en
-    # = saldo inicial; último snapshot ANTES (o IGUAL a) cerrada_en = saldo final.
-    for s in sesiones:
-        sid = str(s.get("id"))
-        if sid not in saldo_ini and s.get("abierta_en"):
-            try:
-                row = _db.fetch_one(
-                    """
-                    SELECT saldo_conc FROM scintela.banco_saldo_conc_snapshot
-                     WHERE no_banco = %s AND creado_en <= %s
-                     ORDER BY creado_en DESC LIMIT 1
-                    """,
-                    (_BANCO_PICHINCHA, s["abierta_en"]),
-                )
-                if row and row.get("saldo_conc") is not None:
-                    saldo_ini[sid] = float(row["saldo_conc"])
-            except Exception:
-                pass
-        if sid not in saldo_fin and s.get("cerrada_en"):
-            try:
-                row = _db.fetch_one(
-                    """
-                    SELECT saldo_conc FROM scintela.banco_saldo_conc_snapshot
-                     WHERE no_banco = %s AND creado_en <= %s
-                     ORDER BY creado_en DESC LIMIT 1
-                    """,
-                    (_BANCO_PICHINCHA, s["cerrada_en"]),
-                )
-                if row and row.get("saldo_conc") is not None:
-                    saldo_fin[sid] = float(row["saldo_conc"])
-            except Exception:
-                pass
-        # TMT 2026-05-29 dueña: 'el inicial tenia que decir 2,557,969.47'.
-        # Bug: snapshot at sesion_abierta a veces se tomaba DESPUÉS de un
-        # match instantáneo (race), entonces inicial == final y Δ=0 aunque
-        # hubo trabajo. Solución determinista: saldo_inicial = saldo_final −
-        # IMPACTO de los matches activos en esta sesión. Así Δ siempre
-        # refleja exactamente lo que la sesión hizo.
-        # IMPACTO de un match = _signed_delta(doc, importe) del BANCSIS
-        # pareado — mismo cómputo que el balance.
-        try:
-            row_impact = _db.fetch_one(
-                """
-                SELECT COALESCE(SUM(
-                    CASE
-                        WHEN tb.importe < 0 THEN tb.importe
-                        WHEN tb.documento IN ('DE','TR','XX','NC','IN','AC') THEN tb.importe
-                        ELSE -tb.importe
-                    END
-                ), 0) AS impacto
-                  FROM scintela.banco_conciliacion_match m
-                  JOIN scintela.transacciones_bancarias tb
-                    ON tb.id_transaccion = m.id_transaccion
-                 WHERE m.no_banco = %s
-                   AND m.creado_en >= %s
-                   AND m.creado_en <= COALESCE(%s, CURRENT_TIMESTAMP)
-                """,
-                (_BANCO_PICHINCHA, s.get("abierta_en"), s.get("cerrada_en")),
-            )
-            impacto = float(row_impact["impacto"]) if row_impact else 0.0
-        except Exception:
-            impacto = 0.0
-        s["impacto_sesion"] = round(impacto, 2)
-
-        # Determinar saldo_final: snapshot al cierre si existe; si no, live.
-        saldo_final_val = saldo_fin.get(sid)
-        if saldo_final_val is None:
-            try:
-                _live_balance = _bp.calcular(_BANCO_PICHINCHA)
-                _live_val = _live_balance.get("saldo_si_concilio_todo") \
-                            or _live_balance.get("saldo")
-                if _live_val is not None:
-                    saldo_final_val = float(_live_val)
-            except Exception:
-                saldo_final_val = None
-        # saldo_inicial = final − impacto (cierra Δ = impacto siempre).
-        if saldo_final_val is not None:
-            saldo_inicial_val = round(saldo_final_val - impacto, 2)
-        else:
-            saldo_inicial_val = saldo_ini.get(sid)
-        s["saldo_inicial"] = saldo_inicial_val
-        s["saldo_final"] = saldo_final_val
-        # TMT 2026-05-29 dueña: 'columnas extra' — saldo banco real (último
-        # saldo del extracto subido) + diferencia (saldo_final − saldo_banco_real).
-        s["saldo_banco_real"] = None
-        s["diferencia_banco"] = None
-        try:
-            sesion_full = _sesion.sesion_por_id(int(s["id"]))
-            if sesion_full:
-                movs_s = _sesion.cargar_movs(sesion_full)
-                con_fecha = [
-                    m for m in movs_s
-                    if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
-                ]
-                if con_fecha:
-                    ult = max(con_fecha, key=lambda m: m.fecha)
-                    s["saldo_banco_real"] = float(ult.saldo)
-                elif movs_s:
-                    s["saldo_banco_real"] = float(getattr(movs_s[-1], "saldo", None) or 0) or None
-            if s["saldo_banco_real"] is not None and s["saldo_final"] is not None:
-                s["diferencia_banco"] = round(s["saldo_banco_real"] - s["saldo_final"], 2)
-        except Exception:
-            pass
     return render_template(
         "conciliacion/banco_v2_historial.html",
         sesiones=sesiones,
     )
+
+
+# ─── Cerrar sesión + migrar pendientes a histos (lifecycle mensual) ──
+
+
+@conciliacion_bp.route("/banco-v2/cerrar-sesion", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_cerrar_sesion():
+    """Cierra la sesión activa Y migra los items NO MATCHEADOS del extracto
+    a banco_historicos_pendientes. Mañana se ven como histos.
+
+    TMT 2026-06-03 dueña: 'que los que no se matchearon hoy pasen a histos'.
+    Lifecycle:
+      1) Recolecta items del extracto_payload sin firma en matches activos.
+      2) Inserta cada uno en banco_historicos_pendientes con fuente
+         'sesion:<id>' y fecha del cierre.
+      3) Marca la sesión cerrada_en = now.
+      4) Próxima vez que abra la conciliación, sesión nueva + histos
+         arrastrados aparecen en el tab Manual lado banco.
+
+    TMT 2026-06-03 audit fix: fuente unificado a 'sesion:<id>' (antes era
+    'sesion_<id>_cierre'). El borrar-sesion ya filtra por 'sesion:<id>'
+    así que esos histos del cierre quedaban huérfanos para siempre. Es la
+    causa raíz de los 163 dupes legacy que la dueña tenía que limpiar a
+    mano con /borrar-no-feb2023. Con esta unificación, borrar sesión
+    también barre los histos del cierre.
+    """
+    no_banco = _BANCO_PICHINCHA
+    usuario = _usuario_actual()
+    sesion = _sesion.sesion_abierta(no_banco)
+    if not sesion:
+        flash("No hay sesión abierta para cerrar.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+
+    sesion_id = int(sesion.get("id") or 0)
+    # 1) Obtener firmas de matches activos para excluir matcheados.
+    matched_firmas = set()
+    try:
+        rows = _db.fetch_all(
+            """
+            SELECT real_fecha, real_documento, real_monto, real_tipo
+              FROM scintela.banco_conciliacion_match
+             WHERE no_banco = %s AND deshecho_en IS NULL
+               AND real_documento IS NOT NULL
+            """,
+            (no_banco,),
+        ) or []
+        for r in rows:
+            matched_firmas.add((
+                str(r.get("real_fecha")),
+                (r.get("real_documento") or "").strip(),
+                round(float(r.get("real_monto") or 0), 2),
+                (r.get("real_tipo") or "").strip(),
+            ))
+    except Exception:
+        pass
+
+    # 2) Leer payload de la sesión.
+    payload = sesion.get("extracto_payload") or []
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = []
+    if isinstance(payload, dict):
+        payload = payload.get("extracto") or payload.get("movs") or []
+
+    # 3) Insertar los unmatched en histos.
+    n_migrados = 0
+    fuente = f"sesion:{sesion_id}"  # mismo pattern que durante-sesion (audit fix)
+    for m in (payload or []):
+        if not isinstance(m, dict):
+            continue
+        fecha = m.get("fecha")
+        doc = (m.get("documento") or m.get("doc") or "").strip()
+        monto = round(float(m.get("monto") or m.get("importe") or 0), 2)
+        tipo = (m.get("tipo") or m.get("clase") or "").strip().upper()[:1] or ("C" if monto > 0 else "D")
+        concepto = (m.get("concepto") or "")[:200]
+        oficina = (m.get("oficina") or m.get("codigo") or "")[:50]
+        key = (str(fecha), doc, abs(monto), tipo)
+        if key in matched_firmas:
+            continue  # ya está conciliado vía match
+        try:
+            _db.execute(
+                """
+                INSERT INTO scintela.banco_historicos_pendientes
+                    (no_banco, fecha, concepto, documento, monto, tipo, oficina, fuente, creado_en)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT DO NOTHING
+                """,
+                (no_banco, fecha, concepto, doc, abs(monto), tipo, oficina, fuente),
+            )
+            n_migrados += 1
+        except Exception as e:
+            _LOG.warning("migrar histo desde cierre %s falló: %s", doc, e)
+
+    # 4) Cerrar la sesión.
+    try:
+        _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_sesion
+               SET cerrada_en = CURRENT_TIMESTAMP, cerrada_por = %s
+             WHERE id = %s AND cerrada_en IS NULL
+            """,
+            (usuario[:50], sesion_id),
+        )
+    except Exception as e:
+        _LOG.exception("cerrar sesion %s falló: %s", sesion_id, e)
+        flash(f"Error al cerrar la sesión: {e}", "error")
+        return redirect(url_for("conciliacion.banco_post_procesar"))
+
+    flash(
+        f"Sesión #{sesion_id} cerrada. {n_migrados} item(s) sin conciliar pasaron a históricos. "
+        f"Mañana los vas a ver del lado banco en la próxima sesión.",
+        "ok",
+    )
+    return redirect(url_for("conciliacion.hub"))
+
+
+# ─── Sacar items de un grupo (sub-batch) ──────────────────────────────
+
+
+@conciliacion_bp.route("/banco-v2/sacar-del-grupo", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_sacar_del_grupo():
+    """Toma N match_ids y los reasigna a un sub-batch_id nuevo.
+    El resto del batch original queda intacto. Útil para extraer un par 1:1
+    de un grupo más grande para deshacerlo solo."""
+    raw = (request.form.get("match_ids") or "").strip()
+    if not raw:
+        flash("No seleccionaste items.", "warn")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    try:
+        ids = [int(x) for x in raw.split(",") if x.strip()]
+    except (TypeError, ValueError):
+        flash("IDs inválidos.", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    if not ids:
+        flash("No seleccionaste items.", "warn")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    import uuid as _uuid
+    new_batch = _uuid.uuid4().hex
+    try:
+        n = _db.execute(
+            """
+            UPDATE scintela.banco_conciliacion_match
+               SET confirm_batch_id = %s
+             WHERE id = ANY(%s) AND deshecho_en IS NULL
+            """,
+            (new_batch, ids),
+        ) or 0
+    except Exception as e:
+        _LOG.warning("sacar-del-grupo falló: %s", e)
+        flash("Error al sacar items.", "error")
+        return redirect(url_for("conciliacion.banco_deshacer_v2"))
+    if n:
+        flash(f"{n} item(s) movidos a un sub-grupo nuevo. Podés deshacerlos aparte.", "ok")
+    else:
+        flash("No se movió nada (¿ya estaban deshechos?).", "warn")
+    return redirect(url_for("conciliacion.banco_deshacer_v2"))
 
 
 # ─── Deshacer conciliados (pantalla minimalista) ──────────────────────
@@ -2092,13 +2535,29 @@ def banco_deshacer_v2():
     """
     matches = []
     grupos = []
+    batches = []
     try:
+        # TMT 2026-06-03: JOIN con transacciones_bancarias para traer el LADO
+        # programa (que antes mostraba "—"). Agrupamos por confirm_batch_id
+        # para que la N:M se vea como UNA conciliación con varios items.
         matches = _db.fetch_all(
             """
             SELECT m.id, m.creado_en, m.real_fecha, m.real_documento,
                    m.real_concepto, m.real_monto, m.real_tipo,
-                   m.usuario, m.id_transaccion, m.metodo
+                   m.usuario, m.id_transaccion, m.metodo,
+                   m.confirm_batch_id,
+                   t.fecha       AS pc_fecha,
+                   t.documento   AS pc_documento,
+                   t.importe     AS pc_importe,
+                   t.concepto    AS pc_concepto,
+                   t.prov        AS pc_prov,
+                   COALESCE(
+                     (SELECT nombre FROM scintela.cliente
+                       WHERE codigo_cli = t.prov LIMIT 1), ''
+                   ) AS pc_cliente_nombre
               FROM scintela.banco_conciliacion_match m
+              LEFT JOIN scintela.transacciones_bancarias t
+                     ON t.id_transaccion = m.id_transaccion
              WHERE m.no_banco = %s
                AND m.deshecho_en IS NULL
              ORDER BY m.creado_en DESC
@@ -2108,6 +2567,47 @@ def banco_deshacer_v2():
         ) or []
     except Exception as e:
         _LOG.warning("listar matches activos falló: %s", e)
+
+    # Agrupar por confirm_batch_id (matches con batch_id NULL = individuales).
+    from collections import OrderedDict
+    by_batch = OrderedDict()
+    for m in matches:
+        bid = m.get("confirm_batch_id") or f"_solo_{m['id']}"
+        if bid not in by_batch:
+            by_batch[bid] = {"batch_id": m.get("confirm_batch_id"), "items": [],
+                             "creado_en": m.get("creado_en"), "usuario": m.get("usuario")}
+        by_batch[bid]["items"].append(m)
+    for bid, b in by_batch.items():
+        # Cómputo de totales lado banco / lado programa.
+        # TMT 2026-06-03: dedup por id_transaccion en PC. Si N matches
+        # apuntan a la misma tx PC (ej. agrupado de impuestos), la tx PC
+        # se cuenta UNA sola vez.
+        sum_banco = 0.0
+        sum_programa = 0.0
+        n_banco_lados = 0
+        n_pc_lados = 0
+        seen_tx = set()
+        for it in b["items"]:
+            if it.get("real_monto") is not None:
+                signo = 1 if (it.get("real_tipo") or "").upper() == "C" else -1
+                sum_banco += signo * float(it.get("real_monto") or 0)
+                n_banco_lados += 1
+            tx_id = it.get("id_transaccion")
+            if tx_id is not None and tx_id not in seen_tx:
+                seen_tx.add(tx_id)
+                doc = (it.get("pc_documento") or "").upper()
+                imp = float(it.get("pc_importe") or 0)
+                signo_pc = 1 if doc in ("DE","TR","NC","IN","AC","XX") else -1
+                sum_programa += signo_pc * imp
+                n_pc_lados += 1
+        b["sum_banco"] = round(sum_banco, 2)
+        b["sum_programa"] = round(sum_programa, 2)
+        b["n_banco"] = n_banco_lados
+        b["n_pc"] = n_pc_lados
+        b["delta"] = round(sum_banco - sum_programa, 2)
+        batches.append(b)
+    # Sort by creado_en DESC.
+    batches.sort(key=lambda b: b.get("creado_en") or "", reverse=True)
 
     try:
         grupos = _db.fetch_all(
@@ -2135,6 +2635,7 @@ def banco_deshacer_v2():
         "conciliacion/banco_v2_deshacer.html",
         matches=matches,
         grupos=grupos,
+        batches=batches,
     )
 
 
@@ -2161,6 +2662,7 @@ def banco_anular_grupo():
     tx_row = _db.fetch_one(
         """
         SELECT t.id_transaccion, t.fecha, t.documento, t.importe, t.concepto,
+               COALESCE(t.usuario_crea, '') AS usuario_crea,
                (SELECT MIN(m.metodo)
                   FROM scintela.banco_conciliacion_match m
                  WHERE m.id_transaccion = t.id_transaccion) AS metodo
@@ -2179,7 +2681,11 @@ def banco_anular_grupo():
     # Pre-snapshot del último saldo y validación de cadena.
     pre = _verificar_cadena_saldos(_BANCO_PICHINCHA)
     saldo_pre = pre.get("ultimo_saldo")
-    delta_esperado = -_signed_delta(tx_row.get("documento"), float(tx_row.get("importe") or 0))
+    delta_esperado = -_signed_delta(
+        tx_row.get("documento"),
+        float(tx_row.get("importe") or 0),
+        tx_row.get("usuario_crea") or "",
+    )
 
     # 2+3) Hard-delete de matches + DELETE de tx + recompute, todo en una
     # sola transacción atómica.
