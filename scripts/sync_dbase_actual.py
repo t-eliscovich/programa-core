@@ -65,8 +65,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# Insertamos el repo root Y la carpeta scripts/ — así `import import_dbf`
+# (bare) funciona tanto corriendo el script directo (python scripts/...py)
+# como importándolo como módulo (scripts.sync_dbase_actual) desde los tests.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+for _p in (str(ROOT), str(_SCRIPTS_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 # Importar el sync existente y db en lazy mode (solo cuando hace falta).
 import import_dbf  # noqa: E402
@@ -365,6 +370,245 @@ def correr_sync_principal(source: Path, dry_run: bool, only: str, encoding: str 
         return int(e.code) if isinstance(e.code, int) else 1
 
 
+# ─── BLINDAJE BANCOS: anti-regresión + integridad de saldo ──────────────
+# TMT 2026-06-03 incidente: un PICHINCH.DBF STALE (truncado en la fila 422,
+# saldo 2,340,586.90) pisó vía TRUNCATE+INSERT los datos buenos que PC ya
+# tenía (493 filas, saldo 2,385,393.30). El sync no chistó porque PC quedó
+# coherente con el DBF malo. Resultado: PC "perdió" 71 movimientos y el saldo
+# retrocedió "de la nada". Estos dos checks lo cazan:
+#
+#   1. PRE  — verificar_no_regresion_bancos(): si el DBF entrante es un PREFIJO
+#             truncado de lo que PC ya tiene (menos filas y el saldo final del
+#             DBF aparece como saldo intermedio en PC), ABORTA. Es exactamente
+#             el patrón "tarball viejo de CloudShell".
+#   2. POST — verificar_saldos_bancos_post(): tras el sync, PC tiene que
+#             terminar en el MISMO último saldo que el DBF, con el mismo conteo
+#             y 0 quiebres de cadena. Si no, grita FALLO.
+
+_BANCO_DBFS = (
+    ("PICHINCH.DBF", "_lookup_no_banco_pichincha"),
+    ("INTER.DBF", "_lookup_no_banco_internacional"),
+)
+_DOCS_DEBITO = {"CH", "ND", "DB", "GS", "PA"}
+
+
+def _resumen_dbf_banco(dbf_path: Path) -> dict | None:
+    """Lee un DBF de banco y devuelve {n, max_fecha, last_saldo, saldos:set}.
+
+    last_saldo = saldo running de la ÚLTIMA fila en orden físico (= orden de
+    inserción del dBase). saldos = set de todos los saldos running, para
+    detectar prefijos truncados.
+    """
+    try:
+        rows = import_dbf._read_dbf(dbf_path)
+    except Exception:
+        return None
+    if not rows:
+        return None
+    saldos: set[float] = set()
+    fechas = []
+    last_saldo = None
+    for r in rows:
+        s = r.get("SALDO")
+        if s is not None:
+            try:
+                sv = round(float(s), 2)
+                saldos.add(sv)
+                last_saldo = sv
+            except (TypeError, ValueError):
+                pass
+        f = r.get("FECHA")
+        if f:
+            fechas.append(str(f))
+    return {
+        "n": len(rows),
+        "max_fecha": max(fechas) if fechas else None,
+        "last_saldo": last_saldo,
+        "saldos": saldos,
+    }
+
+
+def _resumen_pc_banco(no_banco: int) -> dict | None:
+    """Estado actual de PC para un banco: {n, max_fecha, last_saldo, saldos:set}."""
+    import db as _db
+
+    try:
+        agg = _db.fetch_one(
+            "SELECT COUNT(*) AS n, MAX(fecha)::text AS max_fecha "
+            "FROM scintela.transacciones_bancarias WHERE no_banco = %s",
+            (no_banco,),
+        ) or {}
+        n = int(agg.get("n") or 0)
+        if n == 0:
+            return {"n": 0, "max_fecha": None, "last_saldo": None, "saldos": set()}
+        last = _db.fetch_one(
+            "SELECT saldo FROM scintela.transacciones_bancarias "
+            "WHERE no_banco = %s AND saldo IS NOT NULL "
+            "ORDER BY fecha DESC, id_transaccion DESC LIMIT 1",
+            (no_banco,),
+        ) or {}
+        saldos_rows = _db.fetch_all(
+            "SELECT DISTINCT ROUND(saldo, 2) AS s FROM scintela.transacciones_bancarias "
+            "WHERE no_banco = %s AND saldo IS NOT NULL",
+            (no_banco,),
+        ) or []
+        return {
+            "n": n,
+            "max_fecha": agg.get("max_fecha"),
+            "last_saldo": (round(float(last["saldo"]), 2) if last.get("saldo") is not None else None),
+            "saldos": {round(float(r["s"]), 2) for r in saldos_rows if r.get("s") is not None},
+        }
+    except Exception:
+        return None
+
+
+def _evaluar_regresion_banco(dbf: dict, pc: dict) -> tuple[str, str]:
+    """Función PURA (testeable). Devuelve (nivel, msg).
+
+    nivel ∈ {'ok', 'warn', 'abort'}.
+      abort — el DBF entrante es un prefijo truncado de lo que PC ya tiene.
+      warn  — el DBF entrante tiene fecha máxima anterior a la de PC (posible
+              stale, pero podría ser un roll legítimo del archivo dBase).
+      ok    — el DBF avanza o iguala a PC.
+    """
+    if not pc or pc.get("n", 0) == 0:
+        return ("ok", "PC vacío — nada que proteger")
+    if not dbf or dbf.get("last_saldo") is None:
+        return ("ok", "DBF sin saldos legibles — se omite el guard")
+
+    dbf_last = dbf["last_saldo"]
+    pc_last = pc["last_saldo"]
+    # Caso regresión: el DBF termina ANTES (menos filas) y su saldo final ya
+    # es un saldo intermedio de PC, mientras que el saldo final de PC no
+    # existe en el DBF. ⇒ el DBF es un prefijo viejo. ABORTAR.
+    if (
+        dbf_last != pc_last
+        and dbf.get("n", 0) < pc.get("n", 0)
+        and dbf_last in pc.get("saldos", set())
+        and pc_last not in dbf.get("saldos", set())
+    ):
+        return (
+            "abort",
+            f"DBF STALE/truncado: termina en saldo {dbf_last:,.2f} (fila {dbf['n']}), "
+            f"pero PC ya avanzó hasta {pc_last:,.2f} ({pc['n']} filas) y "
+            f"{dbf_last:,.2f} es un saldo INTERMEDIO de PC. Sincronizar pisaría "
+            f"datos más nuevos. Si es intencional, corré con --force.",
+        )
+    # Heurística secundaria: fecha máxima del DBF anterior a la de PC.
+    if dbf.get("max_fecha") and pc.get("max_fecha") and dbf["max_fecha"] < pc["max_fecha"]:
+        return (
+            "warn",
+            f"DBF con fecha máxima {dbf['max_fecha']} < PC {pc['max_fecha']} — "
+            f"podría estar stale. Revisá que sea el pull fresco.",
+        )
+    return ("ok", f"DBF avanza/iguala a PC (DBF n={dbf['n']} last={dbf_last:,.2f})")
+
+
+def verificar_no_regresion_bancos(src: Path, force: bool = False) -> tuple[bool, list[str]]:
+    """PRE-CHECK: para cada DBF de banco, aborta si es un prefijo stale de PC.
+
+    Devuelve (ok, lineas). ok=False ⇒ abortar el sync (salvo force).
+    """
+    import db as _db
+
+    lineas: list[str] = []
+    ok = True
+    for dbf_name, lookup_fn_name in _BANCO_DBFS:
+        dbf_path = src / dbf_name
+        if not dbf_path.exists():
+            continue
+        try:
+            no_banco = getattr(import_dbf, lookup_fn_name)()
+        except Exception as e:
+            lineas.append(f"  {dbf_name:<14} ⚠ no pude resolver no_banco ({e})")
+            continue
+        dbf = _resumen_dbf_banco(dbf_path)
+        pc = _resumen_pc_banco(int(no_banco))
+        if dbf is None or pc is None:
+            lineas.append(f"  {dbf_name:<14} ⚠ no pude leer DBF o PC — guard omitido")
+            continue
+        nivel, msg = _evaluar_regresion_banco(dbf, pc)
+        badge = {"ok": "✓", "warn": "⚠", "abort": "✗"}[nivel]
+        lineas.append(f"  {dbf_name:<14} {badge} {msg}")
+        if nivel == "abort" and not force:
+            ok = False
+    return ok, lineas
+
+
+def _contar_quiebres_cadena(no_banco: int) -> int:
+    """Cuenta filas donde saldo != saldo_prev + signed_delta (orden físico)."""
+    import bank_helpers as _bh
+    import db as _db
+
+    rows = _db.fetch_all(
+        "SELECT documento, importe, saldo, COALESCE(usuario_crea,'') AS usuario_crea "
+        "FROM scintela.transacciones_bancarias "
+        "WHERE no_banco = %s AND saldo IS NOT NULL "
+        "ORDER BY fecha ASC, id_transaccion ASC",
+        (no_banco,),
+    ) or []
+    quiebres = 0
+    prev = None
+    for r in rows:
+        s = round(float(r["saldo"] or 0), 2)
+        if prev is not None:
+            delta = _bh._signed_delta(
+                r.get("documento"), float(r.get("importe") or 0), r.get("usuario_crea") or ""
+            )
+            if abs(round(s - round(prev + delta, 2), 2)) > 0.01:
+                quiebres += 1
+        prev = s
+    return quiebres
+
+
+def verificar_saldos_bancos_post(src: Path) -> tuple[bool, list[str]]:
+    """POST-CHECK: tras el sync, PC tiene que cerrar igual que el DBF fuente.
+
+    Verifica último saldo, conteo de filas y 0 quiebres de cadena por banco.
+    """
+    lineas: list[str] = []
+    ok = True
+    for dbf_name, lookup_fn_name in _BANCO_DBFS:
+        dbf_path = src / dbf_name
+        if not dbf_path.exists():
+            continue
+        try:
+            no_banco = int(getattr(import_dbf, lookup_fn_name)())
+        except Exception as e:
+            lineas.append(f"  {dbf_name:<14} ⚠ no pude resolver no_banco ({e})")
+            continue
+        dbf = _resumen_dbf_banco(dbf_path)
+        pc = _resumen_pc_banco(no_banco)
+        if dbf is None or pc is None:
+            lineas.append(f"  {dbf_name:<14} ⚠ no pude leer DBF o PC")
+            continue
+        problemas = []
+        if dbf["last_saldo"] is not None and pc["last_saldo"] is not None:
+            if abs(dbf["last_saldo"] - pc["last_saldo"]) > 0.01:
+                problemas.append(
+                    f"último saldo PC {pc['last_saldo']:,.2f} ≠ DBF {dbf['last_saldo']:,.2f}"
+                )
+        # PC puede tener filas PC-only (depósitos web) además del DBF, así que
+        # exigimos pc.n >= dbf.n (nunca MENOS que el DBF).
+        if pc["n"] < dbf["n"]:
+            problemas.append(f"PC tiene {pc['n']} filas < DBF {dbf['n']} (faltan movimientos)")
+        try:
+            quiebres = _contar_quiebres_cadena(no_banco)
+            if quiebres > 0:
+                problemas.append(f"{quiebres} quiebres en la cadena de saldo")
+        except Exception as e:
+            problemas.append(f"no pude validar cadena ({e})")
+        if problemas:
+            ok = False
+            lineas.append(f"  {dbf_name:<14} ✗ FALLO — " + "; ".join(problemas))
+        else:
+            lineas.append(
+                f"  {dbf_name:<14} ✓ PC={pc['n']} filas, último saldo "
+                f"{pc['last_saldo']:,.2f}, cadena íntegra"
+            )
+    return ok, lineas
+
+
 def main():
     _force_utf8_stdout()
     ap = argparse.ArgumentParser(
@@ -381,6 +625,10 @@ def main():
     ap.add_argument("--skip-post-checks", action="store_true", help="Omite sanity check post-import")
     ap.add_argument(
         "--skip-backfills", action="store_true", help="Omite backfills encadenados (snapshots, etc.)"
+    )
+    ap.add_argument(
+        "--force", action="store_true",
+        help="Ignora el guard anti-regresión de bancos (DBF stale/truncado). Usar con cuidado.",
     )
     ap.add_argument("--verbose", "-v", action="store_true")
     args = ap.parse_args()
@@ -417,6 +665,23 @@ def main():
                 return 2
         except Exception as e:
             print(f"  schema version: ⚠ no se pudo verificar ({e})")
+
+        # GUARD anti-regresión de bancos (TMT 2026-06-03). Caza el caso del
+        # DBF stale/truncado que pisa datos más nuevos de PC.
+        try:
+            ok_reg, lineas_reg = verificar_no_regresion_bancos(src, force=args.force)
+            print("  anti-regresión bancos:")
+            for ln in lineas_reg:
+                print(ln)
+            if not ok_reg:
+                print()
+                print("  ✗ ABORTADO: el DBF entrante parece STALE/truncado respecto")
+                print("    a lo que PC ya tiene. NO se tocó la base. Verificá que el")
+                print("    tarball sea el pull fresco (¿borraste el viejo antes de subir?).")
+                print("    Si de verdad querés pisar, repetí con --force.")
+                return 2
+        except Exception as e:
+            print(f"  anti-regresión bancos: ⚠ no se pudo verificar ({e})")
 
     # ─── BACKUP ──────────────────────────────────────────────────────────
     if not args.skip_backup and not args.dry_run:
@@ -470,6 +735,18 @@ def main():
                 print(f"  {k:<30} {badge} {v}")
         except Exception as e:
             print(f"  nulls: ✗ {e}")
+
+        # Integridad de saldos de banco: PC tiene que cerrar igual que el DBF.
+        try:
+            ok_bancos, lineas_bancos = verificar_saldos_bancos_post(src)
+            print("  integridad saldos banco:")
+            for ln in lineas_bancos:
+                print(ln)
+            if not ok_bancos:
+                print("  ✗ POST-CHECK BANCOS FALLÓ — PC no cerró igual que el DBF.")
+                print("    Revisá arriba; puede haber quedado un sync parcial.")
+        except Exception as e:
+            print(f"  integridad saldos banco: ✗ {e}")
 
     # ─── BACKFILLS ───────────────────────────────────────────────────────
     if not args.dry_run and not args.skip_backfills:
