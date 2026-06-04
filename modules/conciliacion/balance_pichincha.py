@@ -6,7 +6,10 @@ encapsula. Si esto se rompe, la pantalla original tira el mismo error.
 """
 from __future__ import annotations
 
+import json as _json
 import logging
+from datetime import date as _date
+from datetime import timedelta as _td
 
 _LOG = logging.getLogger("programa_core.conciliacion.balance_pichincha")
 
@@ -117,7 +120,6 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
         sess_deb = 0.0
         sess_n = 0
         try:
-            import json as _json
             sess_row = _db.fetch_one(
                 """
                 SELECT id, extracto_payload
@@ -130,8 +132,10 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
             if sess_row and sess_row.get("extracto_payload"):
                 payload = sess_row["extracto_payload"]
                 if isinstance(payload, str):
-                    try: payload = _json.loads(payload)
-                    except Exception: payload = []
+                    try:
+                        payload = _json.loads(payload)
+                    except Exception:
+                        payload = []
                 movs = payload if isinstance(payload, list) else (payload.get("extracto") or payload.get("movs") or [])
                 # Movs ya conciliados (firma en matches activos)
                 match_firmas = set()
@@ -182,6 +186,72 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                         ))
                 except Exception:
                     pass
+
+                # ─── DEDUP NUCLEAR vs scintela.transacciones_bancarias ───────
+                # TMT decisión 2026-06-03 (dueña, literal): "no podemos tener
+                # movimientos dobles. No dupliques hace un mecanismo para no
+                # duplicar." Antes el dedup solo miraba matches activos +
+                # histos pendientes — si la dueña re-sincaba PC los matches
+                # se borraban y el extracto crudo entraba doble (una vez en
+                # transacciones_bancarias, otra como "pendiente_extracto").
+                #
+                # Ahora: para CADA fila del extracto a contar como pendiente,
+                # buscamos si ya existe una tx en transacciones_bancarias con
+                # firma "razonable" (fecha ±1 día, abs(importe) ±$0.01, tipo
+                # C/D consistente). Si existe → NO se cuenta como pendiente.
+                #
+                # Clave de tx_firmas: (fecha_iso, abs(importe_redondeado_2), tipo)
+                # con expansion ±1 día. NO usamos documento porque el documento
+                # del extracto (ej. "38078012") y el de PC (ej. "CH", "DE") usan
+                # nomenclaturas distintas — son incomparables.
+                tx_firmas: set = set()
+                try:
+                    fechas_movs: list[str] = []
+                    for m in movs:
+                        fv = m.get("fecha")
+                        if not fv:
+                            continue
+                        s = str(fv)[:10]
+                        if len(s) == 10 and s.count("-") == 2:
+                            fechas_movs.append(s)
+                    if fechas_movs:
+                        fechas_movs.sort()
+                        f_min, f_max = fechas_movs[0], fechas_movs[-1]
+                        tx_rows = _db.fetch_all(
+                            """
+                            SELECT t.fecha, t.documento, t.importe
+                              FROM scintela.transacciones_bancarias t
+                             WHERE t.no_banco = %(no_banco)s
+                               AND t.importe IS NOT NULL
+                               AND t.fecha BETWEEN (%(f_min)s::date - INTERVAL '2 days')
+                                              AND (%(f_max)s::date + INTERVAL '2 days')
+                            """,
+                            {"no_banco": no_banco, "f_min": f_min, "f_max": f_max},
+                        ) or []
+                        for r in tx_rows:
+                            t_fecha = r.get("fecha")
+                            t_doc = (r.get("documento") or "").strip().upper()
+                            try:
+                                t_imp = round(abs(float(r.get("importe") or 0)), 2)
+                            except (TypeError, ValueError):
+                                continue
+                            if t_imp == 0:
+                                continue
+                            t_tipo = "D" if t_doc in ("CH", "ND", "DB", "GS", "PA") else "C"
+                            # Expansion ±1 día — banco y PC a veces bookean
+                            # con desfase de 1 día.
+                            if isinstance(t_fecha, _date):
+                                for d in (-1, 0, 1):
+                                    fk = (t_fecha + _td(days=d)).isoformat()
+                                    tx_firmas.add((fk, t_imp, t_tipo))
+                            else:
+                                # fallback: si por algún motivo no es date
+                                tx_firmas.add((str(t_fecha)[:10], t_imp, t_tipo))
+                except Exception:
+                    _LOG.exception("calcular(): error construyendo tx_firmas (dedup nuclear)")
+
+                # Counter de cuántos extractos quedaron deduped vs tx — útil para debug
+                dedup_vs_tx = 0
                 for m in movs:
                     fecha = m.get("fecha")
                     doc = (m.get("documento") or m.get("doc") or "").strip()
@@ -193,6 +263,10 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                     # Dedup vs histos pendientes — ya contados en n_pendientes.
                     if (str(fecha), doc, abs(monto), tipo) in histo_firmas:
                         continue
+                    # Dedup NUCLEAR vs transacciones_bancarias.
+                    if (str(fecha)[:10], abs(monto), tipo) in tx_firmas:
+                        dedup_vs_tx += 1
+                        continue
                     sess_n += 1
                     amt = abs(monto)
                     if tipo == "C":
@@ -201,6 +275,7 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
                     else:
                         sess_deb += amt
                         sess_neto -= amt
+                saldo_pc_actual["dedup_vs_tx"] = dedup_vs_tx
         except Exception as _e:
             _LOG.exception("calcular(): error sumando extracto sesion: %s", _e)
 
