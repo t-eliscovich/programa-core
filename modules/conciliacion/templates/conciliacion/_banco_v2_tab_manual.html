@@ -47,12 +47,21 @@
     <header class="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
       <div class="flex items-baseline gap-2">
         <strong class="text-sm">Banco</strong>
-        {# TMT 2026-06-03 dueña: 'decime arriba de banco y programa cantidad
-           de documentos'. Pill grande con el conteo total al lado del label. #}
+        {# TMT 2026-06-04 dueña: 'que no diga 165'. El pill muestra los
+           PENDIENTES (la hoja), no el total mezclado con el extracto. El
+           extracto se sigue listando junto en la misma lista, pero contado
+           aparte como "a cruzar". n_historicos_pendientes lo setea
+           estado_sesion; si falta (sesión sin extracto) cae al total. #}
+        {% set _n_pend = buckets.n_historicos_pendientes if buckets.n_historicos_pendientes is not none else (_banco|length) %}
+        {% set _n_extracto = (_banco|length) - _n_pend %}
         <span class="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold tabular-nums">
-          {{ _banco|length }} <span class="text-[10px] font-normal opacity-70">docs</span>
+          {{ _n_pend }} <span class="text-[10px] font-normal opacity-70">pendientes</span>
         </span>
-        <span class="text-xs text-slate-500">sin parear · extracto + históricos</span>
+        {% if _n_extracto > 0 %}
+        <span class="text-xs text-slate-500">+ {{ _n_extracto }} del extracto a cruzar</span>
+        {% else %}
+        <span class="text-xs text-slate-500">sin parear</span>
+        {% endif %}
       </div>
       <div class="text-xs text-slate-500 flex items-baseline gap-3">
         <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
