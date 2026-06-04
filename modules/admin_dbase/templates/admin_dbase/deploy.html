@@ -72,13 +72,11 @@
     }
 
     document.getElementById('btn-pull').addEventListener('click', async () => {
-      if (!confirm('¿Pullear origin/main?')) return;
       await stream('/admin/deploy/pull', document.getElementById('pull-out'),
                    document.getElementById('btn-pull'), 'Pull');
     });
 
     document.getElementById('btn-restart').addEventListener('click', async () => {
-      if (!confirm('¿Reiniciar la app? La página se va a desconectar por ~10 segundos.')) return;
       await stream('/admin/deploy/restart', document.getElementById('restart-out'),
                    document.getElementById('btn-restart'), 'Reiniciar app');
     });
