@@ -270,3 +270,44 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
 
     wb.close()
     return salida
+
+
+# ─── Cruce hoja FEB2023 → items para banco_cruzar_pendientes ──────────
+
+
+def parse_pendientes_cruce(raw: bytes):
+    """Parsea la hoja de pendientes para el cruce 'la hoja prevalece'.
+
+    TMT 2026-06-04 dueña: 'quiero que los -15.835,60 prevalezcan aunque no
+    tengan fecha. ponele un tag sin fecha pero sumalo igual'. La fila de
+    ajuste (ej. AC97) viene sin fecha — se mantiene igual con fecha=None y
+    se suma como cualquier otro pendiente (la UI ya le pone el badge "sin
+    fecha"; el balance la suma porque calcular() no filtra por fecha).
+
+    Devuelve (nombre_hoja, items), cada item:
+        {doc, monto (SIGNADO: + crédito / − débito), fecha (date|None), detalle}
+
+    Reusa hoja_parser (depósitos +, pagos −, ajustes sin fecha) — fuente
+    única de parseo de la hoja.
+    """
+    from modules.conciliacion import hoja_parser as _hp
+
+    import openpyxl as _ox
+    _wb = _ox.load_workbook(io.BytesIO(raw), data_only=True)
+    try:
+        ws = _hp._elegir_hoja(_wb, None)
+        hoja = ws.title
+    finally:
+        _wb.close()
+
+    rows = _hp.parse_hoja_pendientes(raw, sheet=hoja)
+    items = []
+    for r in rows:
+        signed = r["monto"] if (r.get("tipo") or "C") == "C" else -r["monto"]
+        items.append({
+            "doc": r["documento"],
+            "monto": round(signed, 2),
+            "fecha": r.get("fecha"),          # None = sin fecha (se suma igual)
+            "detalle": r.get("concepto") or "",
+        })
+    return hoja, items
