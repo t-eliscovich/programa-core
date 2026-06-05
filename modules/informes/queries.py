@@ -3211,7 +3211,11 @@ def resultados_costos_tabla(
     # extrapola: sale del PRESUPUESTO XPRETOT (= pretot de scintela.iniciales)
     # menos lo ya gastado (VK=tej_us + GTIN=tin_us + GS=adm_us). KGPRO = meta
     # del mes (no la regla de 3). PROVI = provisión que falta aprovisionar.
-    _costo_var_kg = (mp_ukg + col_ukg) * float(factor_desperdicio or 1.0)
+    # dBase usa ITIN/KR (no ITIN/KTINT = col_ukg) en el costo variable de la
+    # proyección (PRG L419: (UMX+ITIN/KR)). `ktint` param = KR (tin.kr). Sutil
+    # pero mueve ~7k en la UT.PROY. TMT 2026-06-05.
+    _col_kr = _div(float(itin or 0), ktint)
+    _costo_var_kg = (mp_ukg + _col_kr) * float(factor_desperdicio or 1.0)
     _margen_var_kg = precio - _costo_var_kg
     _gasto_fijo_restante = float(pretot or 0) - (tej_us + tin_us + adm_us)
     _utproy = (
