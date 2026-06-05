@@ -4,7 +4,7 @@
 {% block title %}Metas mensuales {{ yy }}{% endblock %}
 
 {% block content %}
-  {{ page_header("Metas mensuales", "Programación de kg, gastos y ventas por mes") }}
+  {{ page_header("Metas mensuales", "Programación de kg, presupuesto y gastos por mes") }}
 
   {% if error %}
     <div class="mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">
@@ -51,7 +51,7 @@
       <div class="text-xs text-emerald-700 text-right">total año {{ yy }}</div>
     </div>
     <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
-      <div class="text-xs text-sky-700 uppercase tracking-wide">Ventas objetivo</div>
+      <div class="text-xs text-sky-700 uppercase tracking-wide">Presupuesto</div>
       <div class="text-xl font-semibold text-sky-900 text-right tabular-nums">
         {{ total_importe | num_es }}
       </div>
@@ -73,7 +73,7 @@
         <tr>
           <th class="px-4 py-3 text-left">Mes</th>
           <th class="px-4 py-3 text-right" style="white-space: nowrap;">Kg programados</th>
-          <th class="px-4 py-3 text-right" style="white-space: nowrap;">Ventas objetivo</th>
+          <th class="px-4 py-3 text-right" style="white-space: nowrap;">Presupuesto</th>
           <th class="px-4 py-3 text-right" style="white-space: nowrap;">Gastos programados</th>
           <th class="px-4 py-3 text-right" style="white-space: nowrap;">Hilado</th>
           <th class="px-4 py-3 text-right" style="white-space: nowrap;">Tejido</th>
