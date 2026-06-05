@@ -307,8 +307,14 @@ def nuevo():
             if not ch.get("no_cheque") and not ch.get("es_deposito"):
                 errores.append(f"N° de cheque{(' (' + etq + ')') if etq else ''} requerido.")
             imp = ch.get("importe")
-            if imp is None or imp <= 0:
-                errores.append(f"Importe{(' (' + etq + ')') if etq else ''} mayor que cero requerido.")
+            # TMT 2026-06-06 dueña: permitir importes NEGATIVOS (correcciones,
+            # créditos a favor, devoluciones). La aplicación a facturas ya los
+            # soporta (ver `aplicaciones_pre`, |imp|<0.005). Sólo bloqueamos el
+            # cero. OJO: el `abono` de la factura viene del DBF — una corrección
+            # con negativo en PC se pisa en el próximo sync; sirve para créditos
+            # genuinos / facturas creadas en PC, no para revertir abonos del dBase.
+            if imp is None or abs(imp) < 0.005:
+                errores.append(f"Importe{(' (' + etq + ')') if etq else ''} distinto de cero requerido.")
             # TMT 2026-05-20 — si stat='P' (postdatado) la fecha de
             # depósito es obligatoria. Pedido literal dueña: "agregar P
             # en el dropdown y pedir fecha".
