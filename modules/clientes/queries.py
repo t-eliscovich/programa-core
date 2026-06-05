@@ -278,6 +278,11 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
         """
         SELECT c.id_cliente, c.codigo_cli, c.nombre, c.telefono, c.ruc, c.stop, c.cupo,
                c.pago, c.vend, c.fecha_cupo,
+               COALESCE(c.direccion1, '') AS direccion1,
+               COALESCE(c.direccion2, '') AS direccion2,
+               COALESCE(c.provincia, '')  AS provincia,
+               COALESCE(c.canton, '')     AS canton,
+               COALESCE(c.parroquia, '')  AS parroquia,
                COALESCE(c.activo, TRUE) AS activo,
                COALESCE(s.saldo_total, 0) AS saldo_total,
                COALESCE(s.n_abiertas, 0)  AS n_abiertas

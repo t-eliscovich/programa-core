@@ -63,6 +63,11 @@
           </td>
           <td class="px-4 py-2">
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}" class="hover:text-blue-600">{{ c.nombre }}</a>
+            {# Dirección (TMT 2026-06-06) como línea secundaria bajo el nombre. #}
+            {% set _dir = ((c.direccion1 ~ ' ' ~ c.direccion2) if c.direccion2 else c.direccion1) | cleanstr %}
+            {% if _dir and _dir | trim %}
+              <div class="text-xs text-slate-400 dark:text-slate-500">{{ _dir }}{% if c.canton or c.provincia %} · {{ [c.canton, c.provincia] | select | join(', ') }}{% endif %}</div>
+            {% endif %}
           </td>
           <td class="px-4 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ c.ruc | cleanstr }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ c.telefono | cleanstr }}</td>
