@@ -4,14 +4,16 @@ CLIENTES.DBF NO está en el sync normal (no tiene mapper), así que las fichas
 (dirección, teléfono, RUC, provincia/cantón/parroquia, vendedor) de los clientes
 agregados/editados en el dBase después de la carga inicial nunca llegaron a PC.
 
-Este importador es por codigo_cli:
-- Cliente que existe en PC  → UPDATE de los campos de ficha (rellena con el valor
-  del DBF cuando el DBF lo trae; no pisa con vacío). Preserva id_cliente, activo,
-  cupo, stop y demás estado propio de PC.
-- Cliente que falta en PC   → INSERT.
+Política CONSERVADORA (rellenar-solo):
+- Cliente que existe en PC → UPDATE SÓLO de los campos que en PC están VACÍOS y
+  el DBF trae. NO pisa datos ya cargados en PC (evita meter encoding roto o
+  perder ediciones hechas en PC).
+- Cliente que falta en PC → INSERT.
+- El DBF se DEDUPLICA por código (tiene ~25 repetidos); se prefiere la fila con
+  dirección cargada.
+- Encoding cp850 (igual que import_dbf) para que ñ/acentos salgan bien.
 
-Dry-run por defecto (no toca nada, reporta el plan). "Aplicar" lo ejecuta en una
-transacción. Mapeo DBF→cliente:
+Dry-run por defecto. "Aplicar" lo ejecuta en una transacción. Mapeo DBF→cliente:
   CLIENTE→codigo_cli, NOMBRE→nombre, TELEFONO→telefono, RUC→ruc,
   DIRECCION→direccion1, DIRECCION1→direccion2,
   PROV→provincia, CANTON→canton, PARROQ→parroquia, VEND→vend.
@@ -39,7 +41,6 @@ else:
 
 MAX_TARBALL_BYTES = 10 * 1024 * 1024
 
-# Campos de ficha que rellenamos desde el DBF (no se pisan con vacío).
 # (col_pc, campo_dbf, maxlen)
 FICHA = [
     ("nombre", "NOMBRE", 200),
@@ -60,14 +61,21 @@ def _s(v, maxlen=None) -> str:
 
 
 def _leer_dbf(dbf_path: Path) -> list[dict]:
+    """Lee CLIENTES.DBF (cp850) y deduplica por código (prefiere fila con dir)."""
     import dbfread
-    out = []
-    for r in dbfread.DBF(str(dbf_path), char_decode_errors="replace", load=False):
+    by_code: dict[str, dict] = {}
+    for r in dbfread.DBF(str(dbf_path), encoding="cp850",
+                         char_decode_errors="replace", load=False):
         cod = _s(r.get("CLIENTE"), 5).upper()
         if not cod:
             continue
-        out.append({"codigo_cli": cod, **{col: _s(r.get(dbf), ml) for col, dbf, ml in FICHA}})
-    return out
+        row = {"codigo_cli": cod, **{col: _s(r.get(dbf), ml) for col, dbf, ml in FICHA}}
+        prev = by_code.get(cod)
+        if (prev is None
+                or (not (prev["direccion1"] or prev["direccion2"])
+                    and (row["direccion1"] or row["direccion2"]))):
+            by_code[cod] = row
+    return list(by_code.values())
 
 
 def _leer_pc() -> dict:
@@ -84,8 +92,9 @@ FORM = """
 <div style="max-width:640px;margin:2rem auto;font-family:system-ui">
 <h2>Importar fichas de clientes desde CLIENTES.DBF</h2>
 <p>Subí el tarball con CLIENTES.DBF (el mismo de /admin/dbase-sync). Rellena
-dirección/teléfono/RUC/provincia de los clientes y agrega los que falten.
-Corre en <b>DRY-RUN</b> salvo que marques Aplicar.</p>
+SÓLO los campos vacíos (dirección/teléfono/RUC/provincia) y agrega los clientes
+que falten. No pisa datos ya cargados. Corre en <b>DRY-RUN</b> salvo que marques
+Aplicar.</p>
 <form method=post action="/admin/clientes-import/run" enctype="multipart/form-data">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
   <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
@@ -151,10 +160,15 @@ def _run(aplicar: bool):
 
     dbf = _leer_dbf(dbf_path)
     pc = _leer_pc()
-    yield line(f"DBF: {len(dbf)} clientes  |  PC: {len(pc)} clientes")
+    dbf_codes = {d["codigo_cli"] for d in dbf}
+    pc_only = [c for c in pc if c not in dbf_codes]
+
+    yield line(f"DBF: {len(dbf)} clientes únicos  |  PC: {len(pc)} clientes")
+    yield line(f"  PC que NO están en el DBF (quedan intactos, no se borran): {len(pc_only)}")
+    yield line("")
 
     inserts = []
-    updates = []  # (codigo, {col: val}, set_dir)
+    updates = []  # (codigo, {col: val})
     dir_nuevas = 0
     for d in dbf:
         cod = d["codigo_cli"]
@@ -167,28 +181,29 @@ def _run(aplicar: bool):
         cambios = {}
         for col, _dbf, _ml in FICHA:
             val = d[col]
-            if val and _s(cur.get(col)) != val:  # DBF trae algo y difiere
+            if val and not _s(cur.get(col)):  # RELLENAR-SOLO (PC vacío)
                 cambios[col] = val
         if cambios:
-            tenia_dir = bool(_s(cur.get("direccion1")) or _s(cur.get("direccion2")))
-            if ("direccion1" in cambios or "direccion2" in cambios) and not tenia_dir:
+            if "direccion1" in cambios or "direccion2" in cambios:
                 dir_nuevas += 1
             updates.append((cod, cambios))
 
-    yield line(f"PLAN: {len(updates)} UPDATE · {len(inserts)} INSERT · "
+    yield line(f"PLAN: {len(updates)} UPDATE (rellenan vacíos) · {len(inserts)} INSERT · "
                f"{dir_nuevas} clientes que GANAN dirección")
+    yield line(f"Después PC tendría: {len(pc) + len(inserts)} clientes "
+               f"({len(dbf_codes)} del DBF + {len(pc_only)} solo-PC)")
     yield line("")
     yield line("--- INSERT (faltan en PC) ---")
-    for d in inserts[:80]:
-        yield line(f"  {d['codigo_cli']:6} {d['nombre'][:32]:32} {d['direccion1'][:30]}")
-    if len(inserts) > 80:
-        yield line(f"  … +{len(inserts) - 80} más")
+    for d in inserts[:120]:
+        yield line(f"  {d['codigo_cli']:6} {d['nombre'][:34]:34} {d['direccion1'][:28]}")
+    if len(inserts) > 120:
+        yield line(f"  … +{len(inserts) - 120} más")
     yield line("")
-    yield line("--- UPDATE (rellenan ficha) — primeros 60 ---")
-    for cod, cambios in updates[:60]:
-        yield line(f"  {cod:6} {', '.join(f'{k}' for k in cambios)}")
-    if len(updates) > 60:
-        yield line(f"  … +{len(updates) - 60} más")
+    yield line("--- UPDATE (rellenan campos vacíos) — primeros 80 ---")
+    for cod, cambios in updates[:80]:
+        yield line(f"  {cod:6} {', '.join(cambios)}")
+    if len(updates) > 80:
+        yield line(f"  … +{len(updates) - 80} más")
     yield line("")
 
     if not aplicar:
