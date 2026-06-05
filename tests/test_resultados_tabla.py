@@ -44,12 +44,20 @@ def test_venta_precio_promedio():
     assert abs(v["ukg"] - 5.0) < 1e-9
 
 
-def test_proyeccion_regla_de_3_al_dia_30():
-    """Proyeccion: kg vendidos escalados al dia 30, mismo precio."""
-    p = _row(_tabla(dia_actual=20), "Proyección")
-    assert abs(p["kg"] - 300000.0) < 1e-6      # 200000 * 30 / 20
-    assert abs(p["us"] - 1500000.0) < 1e-6
+def test_proyeccion_usa_meta_kgpro():
+    """Proyección: meta del mes (KGPRO de Iniciales) × precio — igual que el dBase
+    (INFORMES.PRG L4: PROYECCION = KGPRO × precio), NO regla de 3. TMT 2026-06-05."""
+    p = _row(_tabla(kgpro=300000.0), "Proyección")
+    assert abs(p["kg"] - 300000.0) < 1e-6      # = KGPRO (meta), no regla de 3
+    assert abs(p["us"] - 1500000.0) < 1e-6     # KGPRO × precio (5.0)
     assert abs(p["ukg"] - 5.0) < 1e-9
+
+
+def test_tejeduria_usa_compras_tipo_k_si_se_pasa():
+    """Tejeduría: si se pasa tej_base_us (importe compras tipo K = VK del dBase),
+    usa eso + dtj en vez de V1+V2+V3. INFORMES.PRG L241. TMT 2026-06-05."""
+    t = _row(_tabla(tej_base_us=12000.0), "Tejeduría")
+    assert abs(t["us"] - 14000.0) < 1e-6       # tej_base_us(12000) + dtj(2000)
 
 
 def test_materia_prima_solo_unitario():
