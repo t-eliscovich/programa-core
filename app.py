@@ -396,6 +396,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(posdat_reconcile_bp)
 
+    # Importador de fichas de clientes — TMT 2026-06-06. /admin/clientes-import
+    # completa dirección/teléfono/RUC/provincia desde CLIENTES.DBF (que no entra
+    # al sync normal) y agrega los clientes que falten. Dry-run por defecto.
+    from modules.admin_dbase.clientes_import_view import bp as clientes_import_bp
+
+    app.register_blueprint(clientes_import_bp)
+
     # Debug YY display-time — TMT 2026-05-28. Endpoint diagnóstico que
     # corre el helper fila por fila y devuelve tracebacks para encontrar
     # qué provoca el 500 de /posdat?tab=yy sin acceso al log del EC2.
