@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # Mapeo canónico de tipo → orden + label.
@@ -531,7 +532,7 @@ def activar_maquinaria(
         raise ValueError("Vida útil debe ser > 0 meses.")
 
     ids_unique = sorted({int(i) for i in ids_anticipos if i})
-    hoy = date.today()
+    hoy = today_ec()
     asegurar_fecha_abierta(hoy)
 
     with _db.tx() as conn:
@@ -727,7 +728,7 @@ def correr_amortizacion(usuario: str = "web") -> dict:
 
     Devuelve `{ejecutada: True, mes: 'YYYY-MM', filas_tocadas: N}`.
     """
-    mes = date.today().strftime("%Y-%m")
+    mes = today_ec().strftime("%Y-%m")
     filas_antes = db.fetch_one(
         """
         SELECT COUNT(*) AS n

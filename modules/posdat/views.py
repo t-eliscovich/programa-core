@@ -1,6 +1,5 @@
 """Posdat — vista/CRUD de pasivos abiertos con proveedores."""
 
-from datetime import date as _date
 from datetime import datetime
 
 from flask import (
@@ -19,6 +18,7 @@ import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_int, parse_monto
 
 from . import queries
@@ -409,8 +409,7 @@ def lista():
     # mes completo (25 días hábiles × cuota total), no el día_calendario
     # × cuota que daba números inflados (29 × 29539 = 856k cuando la
     # dueña esperaba ~600k). Con 25 días la proyección ≈ total YY actual.
-    from datetime import date as _date
-    _dia_hoy = _date.today().day
+    _dia_hoy = today_ec().day
     delta_dia_hoy = round(total_cuota_diaria, 2)
     acum_mes_hasta_hoy = round(total_cuota_diaria * 25, 2)
 
@@ -606,7 +605,7 @@ def api_nuevo():
         if fecha is None:
             return jsonify({"ok": False, "error": f"Fecha inválida: {fecha_raw!r}."}), 400
     else:
-        fecha = _date.today()
+        fecha = today_ec()
     if fechad_raw:
         fechad = parse_date(fechad_raw)
         if fechad is None:

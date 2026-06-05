@@ -17,6 +17,7 @@ queda fuera de cualquier vista (cartera, canceladas, eliminadas, estado).
 from datetime import date, timedelta
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # Stats que cuentan como "vivos" (cartera viva). Excluye T (cancelada) y X (anulada).
@@ -279,7 +280,7 @@ def editar(
                     destino_table="factura",
                     destino_id=id_factura,
                     importe=round(abono_nuevo - abono_actual, 2),
-                    fecha=fact.get("fecha") or date.today(),
+                    fecha=fact.get("fecha") or today_ec(),
                     concepto=(
                         f"Abono manual factura #{fact.get('numf') or id_factura} "
                         f"{abono_actual:.2f} → {abono_nuevo:.2f}"

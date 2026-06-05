@@ -27,12 +27,12 @@ Schema realities (verified against intela12042026.sql):
 from datetime import date
 
 import db
+from filters import today_ec
 from modules.posdat import (
     POSDAT_DEUDA_VIVA_WHERE,
     POSDAT_EGRESO_FLUJO_WHERE,
     posdat_deuda_viva_where,
 )
-
 
 # ---------------------------------------------------------------------------
 # Filtro común para excluir backfill de Asinfo (TMT 2026-05-29).
@@ -85,7 +85,7 @@ def provision_pendiente_mes(hoy: date | None = None) -> float:
     """
     import calendar as _cal
 
-    h = hoy or date.today()
+    h = hoy or today_ec()
     X = h.day
     ultimo_dia = _cal.monthrange(h.year, h.month)[1]
     if ultimo_dia <= X:
@@ -303,16 +303,39 @@ def saldo_bancos() -> list[dict]:
 
 
 def salcaj() -> float:
-    """Saldo en caja: último movimiento."""
+    """Saldo en caja: opening + Σ entradas − Σ salidas.
+
+    TMT 2026-06-05 (bug hunt lente 6 — bug #2 del reporte 2026-06-04):
+    antes leíamos el `saldo` guardado de la última fila por
+    `ORDER BY fecha DESC, id_caja DESC`. PROBLEMA: el running `saldo` se
+    mantiene en orden de `id_caja` (insert), no de fecha. Si un mov queda
+    back-dateado (ej. un reverso fechado en UTC mientras la entrada es de
+    ayer Ecuador), salcaj() leía un saldo viejo y Resultados se
+    desincronizaba de la caja real (episodio del 2026-06-04: salcaj
+    reportó +$100 fantasma).
+
+    Fix: misma fórmula que `caja.queries.saldo_actual()` — agregar signos
+    desde `tipo` (E=+, S=−) + opening de la primera fila con saldo no-NULL.
+    Robusto contra desorden de fechas.
+    """
     row = db.fetch_one(
         """
-        SELECT saldo
+        SELECT
+            COALESCE(SUM(CASE WHEN tipo='E' THEN importe
+                              WHEN tipo='S' THEN -importe
+                              ELSE importe END), 0)
+          + COALESCE(
+              (SELECT saldo - CASE WHEN tipo='E' THEN importe
+                                   WHEN tipo='S' THEN -importe
+                                   ELSE importe END
+                 FROM scintela.caja
+                 WHERE saldo IS NOT NULL
+                 ORDER BY fecha ASC, id_caja ASC LIMIT 1), 0
+            ) AS saldo
         FROM scintela.caja
-        ORDER BY fecha DESC, id_caja DESC
-        LIMIT 1
         """
     )
-    return float(row["saldo"] or 0) if row and row["saldo"] is not None else 0.0
+    return float(row["saldo"]) if row and row["saldo"] is not None else 0.0
 
 
 def posdat_totales() -> dict:
@@ -478,9 +501,8 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     /informes/flujo-produccion). Default = mes en curso. TINTORERIA y CS
     se calculan acá; queda como N/D si los datos no están.
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     yy = int(anio) if anio else hoy.year
     mm = int(mes) if mes else hoy.month
     # TMT 2026-05-19 v8 — defensivo: si historia falla por cualquier
@@ -1087,7 +1109,7 @@ def iniciales_mes_actual() -> dict | None:
     PROYEC. y para los KG de stock (HILADO/TEJIDO/TERMINADO) + precios
     (UM/UK/UF) en el informe de resultados.
     """
-    hoy = date.today()
+    hoy = today_ec()
     # 1. Intento exacto del mes actual.
     #    Tie-breaker `id_iniciales DESC` por si hay (mes, yy) duplicados:
     #    el DBF tiene 4 combos repetidos históricamente (Apr 2020, Oct 2021,
@@ -1205,7 +1227,7 @@ def ventas_mes_corriente_resultado() -> dict:
         )
         or {}
     )
-    hoy = date.today()
+    hoy = today_ec()
     # primer día del mes siguiente menos un día
     if hoy.month == 12:
         ultimo_dia = date(hoy.year + 1, 1, 1).day
@@ -1382,7 +1404,7 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
     from datetime import date as _date
     from datetime import timedelta as _td
 
-    hoy = _date.today()
+    hoy = today_ec()
     hoy_iso = hoy.isoformat()
 
     # TMT 2026-05-14 (audit #36): toda la lógica de leer ult_fecha,
@@ -2271,9 +2293,8 @@ def ventas_anio_en_curso() -> float:
 
     Si historia falla, fallback a la suma live de factura (solo positivos).
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     yy = hoy.year
     mm = hoy.month
 
@@ -2371,7 +2392,7 @@ def stock_kg_live(hoy: date | None = None) -> dict:
     Mezclar ustock con kg comprados/vendidos daba un live_kg sin sentido
     (suma de US$ + kg). Ver auditoría 2026-04-30.
     """
-    hoy = hoy or date.today()
+    hoy = hoy or today_ec()
     hist = historia_ultimo_mes() or {}
     snap_fecha = hist.get("fecha")
     snap_kg = float(hist.get("stock") or 0)  # kg, NO ustock (que está en US$)
@@ -3371,7 +3392,7 @@ def informe_balance() -> dict:
     # ver de un vistazo qué componente puede estar vacío o desfasado.
     chq_breakdown = cheques_por_stat()
     snap_fecha = hist.get("fecha")
-    dias_snapshot = (date.today() - snap_fecha).days if snap_fecha else None
+    dias_snapshot = (today_ec() - snap_fecha).days if snap_fecha else None
     activos_count_row = (
         db.fetch_one("SELECT COUNT(*) AS n FROM scintela.activos WHERE COALESCE(valor,0) > 0") or {}
     )
@@ -3780,7 +3801,7 @@ def informe_balance() -> dict:
     tabla_resultados = resultados_costos_tabla(
         venta_kg=h_kvent,
         venta_us=h_uvent,
-        dia_actual=date.today().day,
+        dia_actual=today_ec().day,
         mp_ukg=_mp_ukg_flujo,
         v1=gxg["v1"],
         v2=gxg["v2"],
@@ -4034,7 +4055,7 @@ def informe_balance() -> dict:
         # Top-level para que el template pueda intercalarla entre UT.ACT
         # y UT.PROY sin tener que entrar a resultados.utilidad.*.
         "provision_pendiente": provision_pendiente_us,
-        "fecha": date.today(),
+        "fecha": today_ec(),
         "snapshot_historia_fecha": snap_fecha,
         "kg": kg,
         "diagnostico": diagnostico,
@@ -4361,7 +4382,7 @@ def flujo_calculado(
     posdat_por_dia = {r["fecha"]: float(r["total"] or 0) for r in posdat_rows}
 
     # 6) Construir la curva día a día.
-    hoy = date.today()
+    hoy = today_ec()
     filas: list[dict] = []
     saldo_acum = saldo_hoy
 
@@ -4690,9 +4711,8 @@ def ventas_mes_a_mes_anio_actual() -> list[dict]:
        - mes en curso   → live de scintela.factura (mismo filtro
                           que ventas_anio_en_curso: stat<>'X', any sign)
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     yy, mm = hoy.year, hoy.month
 
     # Meses cerrados del año (historia.uvent ya tiene el cierre definitivo).
@@ -4838,7 +4858,7 @@ def ventas_multianual(anios: int = 4) -> dict:
     except (TypeError, ValueError):
         n = 4
 
-    hoy = date.today()
+    hoy = today_ec()
     anio_actual = hoy.year
     anios_list = [anio_actual - (n - 1) + i for i in range(n)]  # asc
 
@@ -5109,7 +5129,7 @@ def historia_multianual(meses: int = 12) -> dict:
     except (TypeError, ValueError):
         n_meses = 12
 
-    hoy = date.today()
+    hoy = today_ec()
     anio_actual = hoy.year
     anios = [anio_actual - 2, anio_actual - 1, anio_actual]
 
@@ -5489,10 +5509,9 @@ def compras_del_periodo(
     a efectos del cuadre con la línea "Compras" del balance — la tabla
     sigue mostrando todas (con badge cuando es producción).
     """
-    from datetime import date as _date
 
     if anio is None or mes is None:
-        hoy = _date.today()
+        hoy = today_ec()
         anio = anio or hoy.year
         mes = mes or hoy.month
     prov_norm = (prov or "").strip().upper() or None
@@ -5736,11 +5755,10 @@ def historico_12m_matriz(meses_atras: int = 5, offset_meses: int = 0) -> dict:
         nav: {prev_offset: int|None, next_offset: int|None}
       }
     """
-    from datetime import date as _date
 
     n = max(1, min(int(meses_atras or 5), 24))
     off = max(0, int(offset_meses or 0))
-    hoy = _date.today()
+    hoy = today_ec()
 
     # La última columna del matriz cae en (hoy - off) meses.
     a, m = hoy.year, hoy.month
@@ -5863,9 +5881,8 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
         meses_sin_snap: ['MM/AAAA', ...],
       }
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
 
     # Últimos 5 meses CERRADOS (excluyendo el actual).
     meses_pasados: list[tuple[int, int]] = []
@@ -6029,10 +6046,9 @@ def tomar_snapshot_mes_actual(
 
     Devuelve `{accion: 'inserted'|'throttled', id_historia, kpis}`.
     """
-    from datetime import date as _date
     from datetime import datetime as _dt
 
-    hoy = _date.today()
+    hoy = today_ec()
 
     # Chequear throttle.
     ult = db.fetch_one(
@@ -6117,9 +6133,8 @@ def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
     previa + la nueva (conservar=2) para comparar; lo mas viejo se limpia.
     Devuelve la cantidad de filas borradas.
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     k = max(1, int(conservar))
     return db.execute(
         """
@@ -6146,9 +6161,8 @@ def eliminar_ultima_columna_mes_actual() -> dict:
     recien creada tiene errores, se borra y queda viva la previa (el
     ultimo milestone bueno).
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     ult = db.fetch_one(
         """
         SELECT id_historia
@@ -6262,10 +6276,9 @@ def balance_components_as_of(as_of) -> dict:
 
     Returns dict con todos los campos necesarios para `scintela.historia`.
     """
-    from datetime import date as _date
 
     if not as_of:
-        as_of = _date.today()
+        as_of = today_ec()
 
     # --- Saldos running ---
     salcaj_row = (
@@ -6563,9 +6576,8 @@ def informe_balance_as_of(as_of=None) -> dict:
     `crear_snapshot_historia`. Para uso UI completo, seguir usando
     `informe_balance()`.
     """
-    from datetime import date as _date
 
-    if as_of is None or as_of == _date.today():
+    if as_of is None or as_of == today_ec():
         # As_of = hoy → comportamiento clásico, llama al balance live.
         return informe_balance()
     components = balance_components_as_of(as_of)
@@ -6879,7 +6891,7 @@ def fuentes_y_usos(
             return float(b.get(k) or 0)
 
         return {
-            "fecha": _date.today(),
+            "fecha": today_ec(),
             # CAJA Y BANCOS = bancos + caja (Resultados: salbanc + salcaj).
             "banco": _g("salbanc") + _g("salcaj"),
             # CARTERA = cheques + facturas.
@@ -6906,7 +6918,7 @@ def fuentes_y_usos(
     # snapshots de scintela.historia son consistentes mes a mes (validados
     # contra el dBase original y /historico-12m), así que arrancamos por
     # ellos y solo caemos a as_of() si falta el snapshot del mes pedido.
-    hoy = _date.today()
+    hoy = today_ec()
     es_mes_actual = yy == hoy.year and mm == hoy.month
 
     last_day_fin = _cal.monthrange(yy, mm)[1]
@@ -7411,9 +7423,8 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
           "total_kg": int, "total_monto": float, "n_clientes": int,
         }
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     yy = int(anio) if anio else hoy.year
     mm = int(mes) if mes else hoy.month
 

@@ -1,7 +1,6 @@
 """Comisiones de vendedores — list + inline edit + detalle mensual."""
 
 import io
-from datetime import date
 
 from flask import (
     Blueprint,
@@ -18,6 +17,7 @@ from flask import (
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_monto
 
 from . import queries
@@ -27,7 +27,7 @@ comisiones_bp = Blueprint("comisiones", __name__, template_folder="templates")
 
 def _yy_mm() -> tuple[int, int]:
     """Lee ?anio= y ?mes= del query string. Default: mes en curso."""
-    hoy = date.today()
+    hoy = today_ec()
     try:
         yy = int(request.args.get("anio") or hoy.year)
     except (TypeError, ValueError):
@@ -99,6 +99,7 @@ def debug():
     Devuelve JSON con counts por stat / vend / orphan / cobros / fecha.
     """
     from flask import jsonify
+
     import db as _db
 
     yy, mm = _yy_mm()

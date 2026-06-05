@@ -18,6 +18,7 @@ import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_int, parse_monto
 
 from . import queries
@@ -147,7 +148,7 @@ def nuevo():
     # "fecha de emisión" del cheque NO interesa a la dueña; usamos
     # `fecha_recibido` (cuándo entró al sistema) tanto para `fecha` como
     # para `fecha_recibido` internamente.
-    fecha_recibido = parse_date(request.form.get("fecha_recibido")) or date.today()
+    fecha_recibido = parse_date(request.form.get("fecha_recibido")) or today_ec()
     fecha = fecha_recibido
     codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()
     # Multi-cheque: el form manda no_cheque[], importe[], fechad[] como
@@ -214,7 +215,7 @@ def nuevo():
         # Para el resto, colapsa a fecha_recibido.
         fd_parsed = parse_date(fd_clean) if fd_clean else None
         if es_deposito:
-            cheque_fechad = date.today()  # dueña: 'obligatoriamente fecha de hoy'
+            cheque_fechad = today_ec()  # dueña: 'obligatoriamente fecha de hoy'
         elif st_clean == "P":
             cheque_fechad = fd_parsed  # puede ser None → error abajo
         else:
@@ -1262,7 +1263,7 @@ def endosar(id_cheque: int):
         "codigo_prov": "",
         "concepto": "",
         "tipo_compra": "C",
-        "fecha": date.today().isoformat(),
+        "fecha": today_ec().isoformat(),
     }
     # Restaurar campos via query string — si veníamos de crear un proveedor
     # nuevo, /proveedores/nuevo nos redirige con los datos del form
@@ -1276,7 +1277,7 @@ def endosar(id_cheque: int):
         codigo_prov = (request.form.get("codigo_prov") or "").strip().upper()
         concepto = (request.form.get("concepto") or "").strip()
         tipo_compra = (request.form.get("tipo_compra") or "C").strip().upper()[:1]
-        fecha = parse_date(request.form.get("fecha")) or date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
 
         form.update(
             {
@@ -1379,9 +1380,9 @@ def boleta_deposito():
 
     fecha_str = (request.args.get("fecha") or "").strip()
     try:
-        fecha = _dt.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else date.today()
+        fecha = _dt.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else today_ec()
     except ValueError:
-        fecha = date.today()
+        fecha = today_ec()
     # TMT 2026-05-15 (re-audit H5): NO hardcodear no_banco=1 — en data 2026
     # Pichincha es no_banco=10. Resolvemos dinámicamente igual que
     # depositar_lote (matching por nombre).
@@ -2098,7 +2099,7 @@ def depositar_lote():
         "cheques/depositar_lote.html",
         cheques=cheques_lote,
         bancos=bancos,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
     )
 
 
@@ -2297,7 +2298,7 @@ def lista():
         transiciones_legales=queries.TRANSICIONES_LEGALES,
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
-        hoy_iso=date.today().isoformat(),
+        hoy_iso=today_ec().isoformat(),
         # TMT 2026-05-27 dueña: paginación 500/pag.
         page=page,
         por_pagina=POR_PAGINA,

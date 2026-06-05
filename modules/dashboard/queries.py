@@ -7,9 +7,9 @@ Important schema facts (verified against intela12042026.sql):
     - scintela.compra     has NO saldo column — deudas son vía posdat
     - scintela.posdat     tiene banc (no banco); banc<>9 son pasivos
 """
-from datetime import date
 
 import db
+from filters import today_ec
 
 
 def kpis_dueno() -> dict:
@@ -296,7 +296,7 @@ def saldo_mes_en_curso() -> dict:
         "neto":            facturado - cobrado,
         "n_facturas":      int(f.get("n") or 0),
         "n_cheques":       int(c.get("n") or 0),
-        "mes_desde":       date.today().replace(day=1),
+        "mes_desde":       today_ec().replace(day=1),
     }
 
 
@@ -349,7 +349,7 @@ def evolucion_cartera(meses: int = 12) -> list[dict]:
         """
     ) or {"total": 0}
     historicos.append({
-        "mes":     date.today().replace(day=1).isoformat(),
+        "mes":     today_ec().replace(day=1).isoformat(),
         "cartera": float(hoy_cartera.get("total") or 0),
         "deuda":   float(hoy_deuda.get("total") or 0),
     })

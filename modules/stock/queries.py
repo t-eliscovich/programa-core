@@ -22,6 +22,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+from filters import today_ec
 
 
 def _tarifas_mes_actual(ano: int, mes: int) -> dict:
@@ -265,7 +266,7 @@ def resumen_stock() -> dict:
           "snapshot_fecha": "YYYY-MM" o None,
         }
     """
-    hoy = date.today()
+    hoy = today_ec()
     ano, mes = hoy.year, hoy.month
 
     # TMT 2026-05-18 v2 — Opening del MES en curso + delta INTRA-MES.
@@ -370,7 +371,7 @@ def compras_mes_por_tipo(meses_atras: int = 3) -> list[dict]:
     # Antes: `today.replace(day=1) - timedelta(days=meses*31)` salta más
     # días de los que debería cuando hay meses cortos (ej. dic-feb).
     # Ahora retrocedemos mes a mes para landing exacto en el día 1.
-    _hoy = date.today().replace(day=1)
+    _hoy = today_ec().replace(day=1)
     _yr, _mo = _hoy.year, _hoy.month
     _mo -= meses_atras
     while _mo <= 0:

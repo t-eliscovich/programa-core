@@ -27,6 +27,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import db
+from filters import today_ec
 from modules.conciliacion.parser_banco import MovBanco
 
 _LOG = logging.getLogger("programa_core.conciliacion.matcher_banco")
@@ -312,6 +313,7 @@ def _extraer_cliente_concepto(concepto: str, codigos_validos: set[str] | None = 
 # Cache del set de códigos válidos (cliente + proveedor + aliases).
 # TTL 5 min — refresca con el cambio de catálogo o de aliases.
 import time as _time
+
 _CODIGOS_CACHE: dict = {"ts": 0.0, "set": set()}
 _CODIGOS_TTL = 300
 
@@ -1189,7 +1191,7 @@ def matchear_extracto_banco(
     return res
 
 
-def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
+def _adjuntar_categorias(res: ConciliacionBanco) -> None:
     """Calcula y adjunta categorías a los 3 grupos del resultado.
 
     Fail-graceful: si el módulo ai_categorizar revienta, usamos solo regex.
@@ -1207,7 +1209,7 @@ def _adjuntar_categorias(res: "ConciliacionBanco") -> None:
     # ruido como "0HQ" que no corresponde a nadie.
     _codigos_validos = codigos_validos_set()
 
-    def _to_cat(concepto: str, tipo: str) -> "Categorizado":
+    def _to_cat(concepto: str, tipo: str) -> Categorizado:
         # TMT 2026-05-26 dueña: SIEMPRE intentar extraer codigo + nombre
         # largo del concepto vía _extraer_cliente_concepto. Si AI también
         # devuelve "cliente" (vía extra), gana el de AI por ser más confiable.
@@ -1631,7 +1633,7 @@ def crear_transaccion_agrupada_desde_reals(
     documento = "NC" if neto > 0 else "ND"
     importe_abs = abs(neto)
     fechas = [r.fecha for r in reals if r.fecha]
-    fecha_tx = fecha or (max(fechas) if fechas else date.today())
+    fecha_tx = fecha or (max(fechas) if fechas else today_ec())
 
     if not concepto:
         if fechas:

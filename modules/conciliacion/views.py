@@ -6,6 +6,8 @@ from datetime import date, timedelta
 
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
+from filters import today_ec
+
 
 def _usuario_actual() -> str:
     """Username del user logueado, fallback 'conciliacion' si no hay g.user.
@@ -24,26 +26,27 @@ from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from modules.conciliacion import queries
 from modules.conciliacion.matcher import matchear
+from modules.conciliacion.matcher_banco import (
+    candidatos_match_manual,
+    confirmar_bancsis_only,
+    confirmar_match,
+    confirmar_real_only,
+    crear_transaccion_agrupada_desde_reals,
+    crear_transaccion_desde_real,
+    match_manual,
+    matchear_extracto_banco,
+    romper_match_grupo,
+)
+from modules.conciliacion.matcher_banco import (
+    historial as historial_matches,
+)
 from modules.conciliacion.matcher_depositos import (
     matchear_depositos,
     transacciones_en_rango,
 )
 from modules.conciliacion.parser import parse_csv
-from modules.conciliacion.parser_xlsx import parse_xlsx
 from modules.conciliacion.parser_banco import parse_banco_xlsx
-from modules.conciliacion.matcher_banco import (
-    matchear_extracto_banco,
-    confirmar_match,
-    confirmar_bancsis_only,
-    confirmar_real_only,
-    crear_transaccion_desde_real,
-    crear_transaccion_agrupada_desde_reals,
-    match_manual,
-    romper_match,
-    romper_match_grupo,
-    historial as historial_matches,
-    candidatos_match_manual,
-)
+from modules.conciliacion.parser_xlsx import parse_xlsx
 
 conciliacion_bp = Blueprint(
     "conciliacion",
@@ -79,8 +82,8 @@ def index():
 
         # Rango: desde la fecha más antigua del CSV, hasta la más nueva.
         fechas = [ln.fecha for ln in lineas if ln.fecha]
-        desde = min(fechas) - timedelta(days=3) if fechas else date.today() - timedelta(days=45)
-        hasta = max(fechas) if fechas else date.today()
+        desde = min(fechas) - timedelta(days=3) if fechas else today_ec() - timedelta(days=45)
+        hasta = max(fechas) if fechas else today_ec()
 
         cheques = queries.cheques_depositados_rango(desde, hasta)
         result = matchear(lineas, cheques, dias_sospecha=3)
@@ -199,7 +202,7 @@ def depositos():
         # caen automáticamente a rojo en el matcher (ya tenía esa lógica).
         fechas = [d.fecha for d in deps if d.fecha]
         if not fechas:
-            hasta = date.today()
+            hasta = today_ec()
             desde = hasta - timedelta(days=90)
             flash(
                 f"Atención: {len(deps)} depósito(s) sin fecha — se cargan con flag "
@@ -209,8 +212,8 @@ def depositos():
         else:
             desde = min(fechas) - timedelta(days=30)
             hasta = max(fechas) + timedelta(days=30)
-            if hasta > date.today():
-                hasta = date.today()
+            if hasta > today_ec():
+                hasta = today_ec()
 
         movs = transacciones_en_rango(desde, hasta)
         resultado = matchear_depositos(deps, movs, dias_tolerancia=5)
@@ -1006,8 +1009,9 @@ def hub():
     # marcan conciliados en confirmar_match (dual-write a la tabla
     # historicos).
     try:
-        import db as _db_h
         from decimal import Decimal as _Dec_h
+
+        import db as _db_h
         from modules.conciliacion.parser_banco import MovBanco as _MB_h
         _hist_rows = _db_h.fetch_all(
             """
@@ -1730,9 +1734,10 @@ def marcar_depositos_dia_conciliados():
     import json as _json
     from datetime import date as _date
     from decimal import Decimal as _Dec
-    from modules.conciliacion.parser_banco import MovBanco as _MB
-    from modules.conciliacion.matcher_banco import confirmar_bancsis_only, confirmar_real_only
+
     import db as _db
+    from modules.conciliacion.matcher_banco import confirmar_bancsis_only, confirmar_real_only
+    from modules.conciliacion.parser_banco import MovBanco as _MB
 
     raw = request.form.get("fechas_json") or "[]"
     try:
@@ -1826,6 +1831,7 @@ def hub_confirmar_matches():
     import json as _json
     from datetime import date as _date
     from decimal import Decimal as _Dec
+
     from modules.conciliacion.parser_banco import MovBanco as _MB
 
     raw = request.form.get("matches_json") or "[]"
@@ -1879,8 +1885,10 @@ def hub_selftest():
     Si el matcher funciona perfecto, deberían quedar 0 sin match y
     Movimientos banco == Movimientos programa.
     """
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
     import db as _db
-    from datetime import date as _date, timedelta as _td
     # Tomar últimos 5 días con txs Pichincha
     row = _db.fetch_one(
         "SELECT MAX(fecha) AS fmax FROM scintela.transacciones_bancarias WHERE no_banco = 10"
@@ -1905,8 +1913,9 @@ def hub_selftest():
         return {"error": f"sin txs entre {dia_min} y {dia_max}"}, 500
 
     # Generar MovBanco equivalentes (uno por tx del programa)
-    from modules.conciliacion.parser_banco import MovBanco
     from decimal import Decimal as _Dec
+
+    from modules.conciliacion.parser_banco import MovBanco
     _CRED = ("DE", "TR", "XX", "NC", "IN", "AC")
     movs_real = []
     for t in txs:
@@ -1971,8 +1980,17 @@ def hub_kpi_debug():
     try:
         resultado = matchear_extracto_banco(movs_real, no_banco=no_banco)
     except Exception as e:
-        import traceback
-        return {"error": str(e), "tb": traceback.format_exc().split("\n")[-15:]}, 500
+        # TMT 2026-06-05 (bug hunt lente 8): antes devolvíamos el traceback
+        # crudo al cliente (`tb: traceback.format_exc()...`). Eso filtraba
+        # paths internos, nombres de variables y stack frames al frontend
+        # — info-leak innecesario aún para usuarios con permiso
+        # `conciliacion.ver`. Ahora logueamos server-side y devolvemos solo
+        # el mensaje del error.
+        import logging
+        logging.getLogger(__name__).exception(
+            "matchear_extracto_banco falló: no_banco=%s", no_banco,
+        )
+        return {"error": str(e)}, 500
 
     data = _serialize_resultado_banco(resultado, no_banco)
     kpis = _calc_kpis(data)
@@ -2285,10 +2303,11 @@ def _form_no_banco(req) -> int | None:
         return None
 
 
-def _reconstruir_real(form) -> "MovBanco":
+def _reconstruir_real(form) -> MovBanco:
     """Reconstruye un MovBanco desde fields ocultos del template."""
     from datetime import date as _date
     from decimal import Decimal as _Dec
+
     from modules.conciliacion.parser_banco import MovBanco as _MB
     fecha_s = (form.get("real_fecha") or "").strip()
     return _MB(
@@ -2383,6 +2402,7 @@ def hub_crear_bancsis_agrupado():
     import json as _json
     from datetime import date as _date
     from decimal import Decimal as _Dec
+
     from modules.conciliacion.parser_banco import MovBanco as _MB
 
     no_banco = _form_no_banco(request) or _BANCO_PICHINCHA
@@ -2885,7 +2905,7 @@ def imprimir_banco():
     from modules.conciliacion.hoja_queries import hoja_conciliacion
 
     # Defaults: banco Pichincha; rango = mes en curso.
-    hoy = date.today()
+    hoy = today_ec()
     try:
         no_banco = int(request.args.get("no_banco") or _BANCO_PICHINCHA)
     except (TypeError, ValueError):

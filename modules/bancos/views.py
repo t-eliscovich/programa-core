@@ -1,12 +1,11 @@
 """Bancos — lista, movimientos y emisión de cheques propios (chequera)."""
 
-from datetime import date
-
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_int, parse_monto
 
 from . import queries
@@ -192,7 +191,7 @@ def transferir():
         no_origen = parse_int(request.form.get("no_banco_origen"))
         no_destino = parse_int(request.form.get("no_banco_destino"))
         importe = parse_monto(request.form.get("importe"))
-        fecha = parse_date(request.form.get("fecha")) or date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
         concepto = (request.form.get("concepto") or "").strip()
         confirmado = request.form.get("confirmado") in ("1", "true", "yes")
 
@@ -212,7 +211,7 @@ def transferir():
             return render_template(
                 "bancos/transferir.html",
                 bancos=bancos,
-                hoy=date.today().isoformat(),
+                hoy=today_ec().isoformat(),
                 form={
                     "no_banco_origen": no_origen,
                     "no_banco_destino": no_destino,
@@ -299,7 +298,7 @@ def transferir():
     return render_template(
         "bancos/transferir.html",
         bancos=bancos,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
     )
 
 
@@ -320,7 +319,7 @@ def emitir_cheque():
         tipo = (request.form.get("tipo") or "").strip().lower()
         no_banco = parse_int(request.form.get("no_banco"))
         importe = parse_monto(request.form.get("importe"))
-        fecha = parse_date(request.form.get("fecha")) or date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
         no_cheque = (request.form.get("no_cheque") or "").strip()
         beneficiario = (request.form.get("beneficiario") or "").strip().upper()
         concepto = (request.form.get("concepto") or "").strip()
@@ -482,7 +481,7 @@ def emitir_cheque():
         tipo_inicial=tipo_inicial,
         no_banco_inicial=no_banco_inicial,
         no_cheque_sugerido=no_cheque_sugerido,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
         conceptos=conceptos,
         proveedores=proveedores,
         posdat_target=posdat_target,
@@ -736,7 +735,7 @@ def movimientos(no_banco):
         ws["A1"].font = Font(bold=True, size=14)
         if desde or hasta:
             ws["A2"] = f"Período: {desde or 'inicio'} → {hasta or 'hoy'}"
-        ws["A3"] = f"Generado: {date.today().isoformat()}"
+        ws["A3"] = f"Generado: {today_ec().isoformat()}"
 
         # Headers de la tabla en la fila 5.
         headers = ["Fecha", "Doc", "Concepto", "F. depósito", "Importe", "Saldo", "Estado"]
@@ -1065,7 +1064,7 @@ def nuevo_movimiento():
     if request.method == "POST":
         no_banco = parse_int(request.form.get("no_banco"))
         importe = parse_monto(request.form.get("importe"))
-        fecha = parse_date(request.form.get("fecha")) or date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
         concepto = (request.form.get("concepto") or "").strip()
         prov = (request.form.get("beneficiario") or "").strip().upper() or None
         usuario = (g.user or {}).get("username", "web")
@@ -1114,7 +1113,7 @@ def nuevo_movimiento():
         bancos=bancos,
         no_banco_inicial=no_banco_inicial,
         proveedores=proveedores,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
     )
 
 

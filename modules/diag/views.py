@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from flask import Blueprint, render_template, request
 
 from auth import requiere_login, requiere_permiso
+from filters import today_ec
 from modules._lib import formulas_db, metabase_client
 from modules.asinfo import service as asinfo
 from modules.tintura import service as tintura
@@ -42,7 +43,7 @@ def _parse_fecha(s: str | None, default: date) -> date:
 def integraciones():
     """Pantalla unificada de diagnóstico de los bridges."""
     # Rango por default: hoy
-    hoy = date.today()
+    hoy = today_ec()
     fecha_desde = _parse_fecha(request.args.get("desde"), hoy)
     fecha_hasta = _parse_fecha(request.args.get("hasta"), hoy)
 

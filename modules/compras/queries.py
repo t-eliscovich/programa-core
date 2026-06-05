@@ -28,6 +28,7 @@ La discriminación compras vs producción es:
 from datetime import date, timedelta
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # Set de tipos válidos para validación al alta. Cualquier otro valor → ValueError.
@@ -628,7 +629,7 @@ def anular(id_compra: int, *, motivo: str = "", usuario: str = "web") -> int:
     importe_compra = float(compra.get("importe") or 0)
     cuenta = (compra.get("cuenta_pagada") or "").upper()
     obs_marca = f"[ANUL] {motivo[:150]}" if motivo else "[ANUL]"
-    fecha_rev = date.today()
+    fecha_rev = today_ec()
 
     with db.tx() as conn:
         # 1) Marca la compra como anulada

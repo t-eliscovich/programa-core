@@ -1,5 +1,4 @@
 """Anticipos en USD — listado y vista agrupada de scintela.dolares."""
-from datetime import date as _date
 
 from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
@@ -7,6 +6,7 @@ import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_monto
 
 from . import queries
@@ -111,7 +111,7 @@ def convertir_lote():
                                     prov=codigo_prov))
         concepto = (request.form.get("concepto") or "").strip()
         tipo_compra = (request.form.get("tipo_compra") or "H").strip().upper()
-        fecha = parse_date(request.form.get("fecha")) or _date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
         kg = parse_monto(request.form.get("kg"))
         motivo = (request.form.get("motivo") or "").strip()
 
@@ -188,5 +188,5 @@ def convertir_lote():
         prov_sel=prov_sel,
         anticipos=anticipos,
         nombres=nombres,
-        hoy=_date.today().isoformat(),
+        hoy=today_ec().isoformat(),
     )

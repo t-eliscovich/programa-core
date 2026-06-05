@@ -22,6 +22,7 @@ Categorías (`doc`) sugeridas — son códigos cortos:
 from datetime import date, timedelta
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # Categorías canónicas para el dropdown de alta de gasto.
@@ -700,8 +701,8 @@ def crear(
 
 def resumen(desde: str | None = None, hasta: str | None = None) -> dict:
     """Total + n + ticket promedio del filtro actual."""
-    desde_d = desde or (date.today() - timedelta(days=90)).isoformat()
-    hasta_d = hasta or date.today().isoformat()
+    desde_d = desde or (today_ec() - timedelta(days=90)).isoformat()
+    hasta_d = hasta or today_ec().isoformat()
     row = (
         db.fetch_one(
             """
@@ -775,7 +776,7 @@ def anular(id_xgast: int, *, motivo: str = "", usuario: str = "web") -> dict:
     stat_prev = (g_row.get("stat") or "").upper() or "A"
     importe_gasto = float(g_row.get("importe") or 0)
     obs_marca = f"[ANULADO {motivo}]" if motivo else "[ANULADO]"
-    fecha_rev = date.today()
+    fecha_rev = today_ec()
 
     # Buscar el mov_doble original para entender cómo se pagó. El alta
     # registra tipo='gasto_simple' (pagado) o 'gasto_a_posdat' (no pagado).
@@ -1071,7 +1072,7 @@ def desclasificar(
             destino_table="caja",
             destino_id=id_caja_origen,
             importe=importe_md,
-            fecha=date.today(),
+            fecha=today_ec(),
             concepto=(
                 f"DESCLASIFICAR xgast #{id_xgast} "
                 f"(V{g_row.get('num') or '?'}) ← caja #{id_caja_origen}" + (f" — {motivo}" if motivo else "")

@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+from filters import today_ec
 
 
 def tinto_pc_por_dia_color(desde: date, hasta: date) -> list[dict]:
@@ -105,8 +106,7 @@ def _amortizacion_dcc_por_mes(desde: date, hasta: date) -> dict:
     depract = by.get("I", 0.0)
     dcc_full = deprmaq + depract * 0.5
 
-    from datetime import date as _date
-    hoy = _date.today()
+    hoy = today_ec()
     res: dict = {}
     cur_yy, cur_mm = desde.year, desde.month
     end_yy, end_mm = hasta.year, hasta.month

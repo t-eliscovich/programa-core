@@ -1,7 +1,8 @@
 """Queries de retiros del dueño (scintela.retiros)."""
-from datetime import date, timedelta
+from datetime import timedelta
 
 import db
+from filters import today_ec
 
 
 def buscar(
@@ -40,8 +41,8 @@ def buscar(
 
 def totales_por_persona(desde: str | None = None, hasta: str | None = None) -> list[dict]:
     """Cuánto retiró cada socio en el periodo. Útil para informe trimestral."""
-    desde_d = desde or (date.today() - timedelta(days=365)).isoformat()
-    hasta_d = hasta or date.today().isoformat()
+    desde_d = desde or (today_ec() - timedelta(days=365)).isoformat()
+    hasta_d = hasta or today_ec().isoformat()
     return db.fetch_all(
         """
         SELECT COALESCE(de, '(sin asignar)') AS de,
@@ -75,8 +76,8 @@ def totales_por_mes(meses: int = 12) -> list[dict]:
 
 def resumen(desde: str | None = None, hasta: str | None = None) -> dict:
     """Total + n del filtro actual."""
-    desde_d = desde or (date.today() - timedelta(days=90)).isoformat()
-    hasta_d = hasta or date.today().isoformat()
+    desde_d = desde or (today_ec() - timedelta(days=90)).isoformat()
+    hasta_d = hasta or today_ec().isoformat()
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(ret), 0)        AS total,

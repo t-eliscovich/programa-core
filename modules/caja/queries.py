@@ -449,10 +449,11 @@ def reversar(id_caja: int, motivo: str = "", usuario: str = "web") -> dict:
     if not orig:
         raise ValueError(f"Movimiento de caja id={id_caja} no existe.")
 
-    # TMT 2026-06-03 audit fix: usar zona EC en lugar de date.today() (UTC).
+    # TMT 2026-06-03 audit fix: usar zona EC en lugar de today_ec() (UTC).
     # Tarde noche EC, UTC ya está en el día siguiente → reverso queda con
     # fecha futura. Igual criterio que posdat._hoy_ec().
-    from datetime import datetime as _dt_, timedelta as _td_
+    from datetime import datetime as _dt_
+    from datetime import timedelta as _td_
     _hoy_ec = (_dt_.utcnow() - _td_(hours=5)).date()
     asegurar_fecha_abierta(_hoy_ec)
 
@@ -521,6 +522,36 @@ def reversar(id_caja: int, motivo: str = "", usuario: str = "web") -> dict:
         {"provs_validos": provs_validos, "bancos": bancos_map},
     )
 
+    # TMT 2026-06-05 (bug hunt lente 6 — bug #3 reverso caja doble):
+    # antes confiábamos sólo en el re-parse del concepto para decidir si
+    # había side effect a deshacer. Bug: el re-parse podía cambiar de
+    # decisión vs el parse-time (proveedores nuevos, bancos editados),
+    # o falsos positivos sobre conceptos ambiguos (ej. Entrada con
+    # concepto que matchea un proveedor pero NO creó compra). Resultado:
+    # "se reversó el side effect" sobre un mov sin side effect →
+    # doble-reversión (caja −$100 y banco/compra −$100 fantasma).
+    #
+    # Fix: la VERDAD canónica es el `tipo` del mov_doble original. Si es
+    # `caja_x_simple` → fue un mov puro de caja, NO reversar side
+    # effects. Si es `caja_x_to_<algo>` → sí hubo side effect y se
+    # reversa con la lógica de re-parse (orig_md ya garantiza que existió).
+    # Defensa final: si no hay mov_doble del original (legacy data anterior
+    # a Fase H/I 2026-05-12), caer al re-parse con warning (current
+    # behavior, riesgo conocido pero data legacy).
+    import mov_doble as _md_pre
+    orig_md_pre = _md_pre.buscar_por_origen(
+        origen_table="caja", origen_id=id_caja,
+    )
+    tiene_side_effect_orig: bool
+    if orig_md_pre and orig_md_pre.get("tipo"):
+        md_tipo = (orig_md_pre.get("tipo") or "").lower()
+        # `caja_s_simple` / `caja_e_simple` / `caja_cb_simple` → sin side
+        # effect. Cualquier otro `caja_*_to_*` → con side effect.
+        tiene_side_effect_orig = "_simple" not in md_tipo
+    else:
+        # Legacy sin mov_doble — confiamos en el re-parse (current behavior).
+        tiene_side_effect_orig = parsed.get("tipo") not in (None, "none")
+
     side_effect_rev = None
     id_mov_doble_rev = None
     id_cheque_link = orig.get("id_cheque")  # Por si era 'CB'
@@ -567,8 +598,11 @@ def reversar(id_caja: int, motivo: str = "", usuario: str = "web") -> dict:
         # Para compra_proveedor, además pasamos el id_compra original
         # (vía mov_doble.destino_id) para que se anule en vez de insertar
         # una compensación negativa — UX más limpia. TMT 2026-05-13.
+        # TMT 2026-06-05: el gate ahora es `tiene_side_effect_orig` (basado
+        # en el `tipo` del mov_doble del original), no el re-parse — ver
+        # comentario arriba sobre bug #3.
         import mov_doble as _md
-        if parsed.get("tipo") not in (None, "none"):
+        if tiene_side_effect_orig and parsed.get("tipo") not in (None, "none"):
             origen_orig = ("caja_egreso" if tipo_orig == "S"
                            else "caja_ingreso" if tipo_orig == "E"
                            else "caja_egreso")

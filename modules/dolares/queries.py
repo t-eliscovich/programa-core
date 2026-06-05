@@ -2,6 +2,7 @@
 from datetime import date
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # Alias retro-compat para sentinels (sortKey usa _date.min).
@@ -244,7 +245,7 @@ def convertir_a_compra(
 
     Devuelve `{id_compra, numero, comprobante, importe_total, n_anticipos}`.
     """
-    fecha = fecha or date.today()
+    fecha = fecha or today_ec()
     asegurar_fecha_abierta(fecha)
 
     codigo_prov = (codigo_prov or "").strip().upper()

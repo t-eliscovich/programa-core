@@ -4,8 +4,6 @@ TMT 2026-05-17: agregado endpoint /activos/nuevo para dar de alta activos
 fijos desde la UI (antes sólo se podían cargar via DBF dump). Cuota mensual
 se autocalcula como inicial/vida_util si la dueña no la especifica.
 """
-from datetime import date
-
 from flask import (
     Blueprint,
     flash,
@@ -20,6 +18,7 @@ from flask import (
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_int, parse_monto
 
 from . import queries
@@ -105,7 +104,7 @@ def nuevo():
     aplica la cuota mes a mes a partir del próximo cierre.
     """
     form = {
-        "fecha":           date.today().isoformat(),
+        "fecha":           today_ec().isoformat(),
         "concepto":        "",
         "tipo":            "MAQ",
         "inicial":         "",
@@ -114,7 +113,7 @@ def nuevo():
         "id_proveedor":    "",
     }
     if request.method == "POST":
-        fecha           = parse_date(request.form.get("fecha")) or date.today()
+        fecha           = parse_date(request.form.get("fecha")) or today_ec()
         concepto        = (request.form.get("concepto") or "").strip()
         tipo            = (request.form.get("tipo") or "").strip().upper()
         inicial         = parse_monto(request.form.get("inicial"))
@@ -168,7 +167,7 @@ def nuevo():
         "activos/nuevo.html",
         form=form,
         proveedores=proveedores,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
     )
 
 
@@ -285,14 +284,14 @@ def activar_maquinaria():
     except Exception as e:  # noqa: BLE001
         flash(f"No pude cargar anticipos: {e}", "warn")
 
-    primera_cuota_default = (date.today() + timedelta(days=90)).isoformat()
+    primera_cuota_default = (today_ec() + timedelta(days=90)).isoformat()
     return render_template(
         "activos/activar_maquinaria.html",
         grupos=grupos,
         prov_sel=prov_sel,
         anticipos=anticipos,
         nombres=nombres,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
         primera_cuota_default=primera_cuota_default,
         tipos_canonicos=queries.TIPOS_CANONICOS,
     )

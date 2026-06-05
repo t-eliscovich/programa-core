@@ -4,9 +4,9 @@ Siguiendo la regla de la skill: el saldo acumulado en transacciones_bancarias
 está históricamente desconfiable. Mostramos el saldo stored y entre paréntesis
 el saldo derivado (suma corrida). Durante la migración sirve como sanity check.
 """
-from datetime import date as _date
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 
@@ -828,7 +828,7 @@ def reversar_movimiento_simple(
         )
 
     importe_f = abs(float(md_orig.get("importe") or 0))
-    fecha_rev = _date.today()
+    fecha_rev = today_ec()
     asegurar_fecha_abierta(fecha_rev)
 
     motivo_clean = (motivo or "").strip()
@@ -999,7 +999,7 @@ def reversar_transferencia(
     import mov_doble as _md
 
     motivo = (motivo or "").strip()
-    fecha_rev = _date.today()
+    fecha_rev = today_ec()
     asegurar_fecha_abierta(fecha_rev)
 
     md = db.fetch_one(
@@ -1127,7 +1127,7 @@ def reversar_cheque_emitido(
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValueError("Motivo requerido para reversar el cheque.")
-    fecha_rev = _date.today()
+    fecha_rev = today_ec()
     asegurar_fecha_abierta(fecha_rev)
 
     tx = db.fetch_one(

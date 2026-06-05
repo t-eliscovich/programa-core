@@ -42,6 +42,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+from filters import today_ec
 
 # Documentos que SUMAN al saldo (entradas). Cualquier otro RESTA.
 #   DE = depósito de cheque
@@ -500,7 +501,9 @@ def insertar_compensacion(
         conn,
         no_banco=orig["no_banco"],
         no_cta=orig["no_cta"],
-        fecha=date.today(),
+        # TMT 2026-06-05 (bug hunt lente 3): today_ec() para que la compensación
+        # quede fechada en Ecuador, no en UTC del server (de noche fechaba mañana).
+        fecha=today_ec(),
         documento=doc_comp,
         importe=orig["importe"],
         concepto=f"Comp. tx#{transaccion_origen_id}: {motivo[:30]}"[:50],

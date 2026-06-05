@@ -16,12 +16,13 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import db
+from filters import today_ec
 
 
 def cheques_proximos(dias_atras: int = 7, dias_adelante: int = 30) -> list[dict]:
     """Cheques posfechados en cartera que vencen en el rango."""
-    desde = date.today() - timedelta(days=int(dias_atras))
-    hasta = date.today() + timedelta(days=int(dias_adelante))
+    desde = today_ec() - timedelta(days=int(dias_atras))
+    hasta = today_ec() + timedelta(days=int(dias_adelante))
     return db.fetch_all(
         """
         SELECT ch.id_cheque,
@@ -51,8 +52,8 @@ def cheques_proximos(dias_atras: int = 7, dias_adelante: int = 30) -> list[dict]
 
 def facturas_proximas(dias_atras: int = 7, dias_adelante: int = 30) -> list[dict]:
     """Facturas vivas con vencimiento en el rango."""
-    desde = date.today() - timedelta(days=int(dias_atras))
-    hasta = date.today() + timedelta(days=int(dias_adelante))
+    desde = today_ec() - timedelta(days=int(dias_atras))
+    hasta = today_ec() + timedelta(days=int(dias_adelante))
     return db.fetch_all(
         """
         SELECT f.id_factura,
@@ -106,9 +107,9 @@ def agenda_dias(dias_atras: int = 7, dias_adelante: int = 30) -> list[dict]:
         bloque["total_cheques"]  = total_ch
         bloque["total_facturas"] = total_fa
         bloque["total_dia"]      = total_ch + total_fa
-        bloque["es_pasado"]      = d < date.today()
-        bloque["es_hoy"]         = d == date.today()
-        bloque["dias_relativo"]  = (d - date.today()).days
+        bloque["es_pasado"]      = d < today_ec()
+        bloque["es_hoy"]         = d == today_ec()
+        bloque["dias_relativo"]  = (d - today_ec()).days
         out.append(bloque)
     return out
 
@@ -118,7 +119,7 @@ def cobros_recientes(dias: int = 7) -> list[dict]:
 
     Trae el nombre del cliente vía LEFT JOIN. Ordenado fecha DESC.
     """
-    desde = date.today() - timedelta(days=int(dias))
+    desde = today_ec() - timedelta(days=int(dias))
     return db.fetch_all(
         """
         SELECT co.id_cobro,
@@ -154,7 +155,7 @@ def cobros_agenda(dias: int = 7) -> list[dict]:
     out = []
     for d in sorted(por_dia.keys(), reverse=True):
         bloque = por_dia[d]
-        bloque["es_hoy"] = d == date.today()
+        bloque["es_hoy"] = d == today_ec()
         out.append(bloque)
     return out
 
@@ -223,7 +224,7 @@ def cobros_matriz_3_semanas(fecha_hasta: date | None = None) -> list[dict]:
         Los incluimos sin filtro de delay porque ya son cobros
         efectivamente acreditados.
     """
-    hasta = fecha_hasta or date.today()
+    hasta = fecha_hasta or today_ec()
 
     # Encontrar el lunes de la semana de `hasta`. Python weekday(): lun=0…dom=6.
     lunes_actual = hasta - timedelta(days=hasta.weekday())
@@ -276,7 +277,7 @@ def cobros_matriz_3_semanas(fecha_hasta: date | None = None) -> list[dict]:
     # Map fecha → total
     por_fecha: dict = {r["fecha"]: float(r["total"] or 0) for r in rows}
 
-    hoy = date.today()
+    hoy = today_ec()
     dias_keys = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado"]
     out: list[dict] = []
     for i, lunes in enumerate(semana_lunes):
@@ -317,7 +318,7 @@ def totales_periodo(dias_atras: int = 7, dias_adelante: int = 30) -> dict:
     total_fa = sum(float(f.get("saldo")   or 0) for f in facturas)
 
     # Subset: solo lo que está vencido o vence hoy
-    hoy = date.today()
+    hoy = today_ec()
     vencidos_ch = sum(float(c.get("importe") or 0)
                       for c in cheques if c.get("fechad") and c["fechad"] <= hoy)
     vencidos_fa = sum(float(f.get("saldo") or 0)

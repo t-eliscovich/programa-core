@@ -37,8 +37,8 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass
 from datetime import date
-from typing import Optional
 
+from filters import today_ec
 from modules._lib import formulas_db
 
 _LOG = logging.getLogger("programa_core.tintura")
@@ -58,18 +58,18 @@ class TinturadoOrden:
     """
 
     numero: str
-    fecha: Optional[date]                  # parsed de fecha DD/MM/YYYY → date
-    fecha_terminado: Optional[date]        # parsed de fecha YYYY-MM-DD → date
-    formula_cod: Optional[str]
-    color: Optional[str]
-    categoria: Optional[str]
+    fecha: date | None                  # parsed de fecha DD/MM/YYYY → date
+    fecha_terminado: date | None        # parsed de fecha YYYY-MM-DD → date
+    formula_cod: str | None
+    color: str | None
+    categoria: str | None
     kilos_planeados: float                 # ordenes.kil
-    tela_cruda_kg: Optional[float]
-    tela_terminada_kg: Optional[float]
-    desperdicio_kg: Optional[float]
-    jet: Optional[int]
+    tela_cruda_kg: float | None
+    tela_terminada_kg: float | None
+    desperdicio_kg: float | None
+    jet: int | None
     es_reproceso: bool
-    observaciones: Optional[str]
+    observaciones: str | None
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -97,7 +97,7 @@ class StockProducto:
     unidad: str
     precio_us: float                       # productos.us (weighted-average)
     stock_kg: float                        # última lectura, 0.0 si nunca contado
-    fecha_lectura: Optional[date]          # cuándo se contó por última vez
+    fecha_lectura: date | None          # cuándo se contó por última vez
     nota: str
 
     def to_dict(self) -> dict:
@@ -111,7 +111,7 @@ class StockProducto:
 # ---------------------------------------------------------------------------
 
 
-def _parse_ddmmyyyy(s) -> Optional[date]:
+def _parse_ddmmyyyy(s) -> date | None:
     """'DD/MM/YYYY' → date. None si vacío/inválido."""
     if not s or not isinstance(s, str):
         return None
@@ -122,7 +122,7 @@ def _parse_ddmmyyyy(s) -> Optional[date]:
         return None
 
 
-def _parse_iso(s) -> Optional[date]:
+def _parse_iso(s) -> date | None:
     """'YYYY-MM-DD' → date. None si vacío/inválido."""
     if not s:
         return None
@@ -144,7 +144,7 @@ def _f(v, default: float = 0.0) -> float:
         return default
 
 
-def _fo(v) -> Optional[float]:
+def _fo(v) -> float | None:
     """Cast tolerante a Optional[float] — preserva None."""
     if v is None:
         return None
@@ -162,10 +162,10 @@ def _fo(v) -> Optional[float]:
 def tinturado_resumen(
     limite: int = 500,
     solo_terminadas: bool = False,
-    creacion_desde: Optional[date] = None,
-    creacion_hasta: Optional[date] = None,
-    terminado_desde: Optional[date] = None,
-    terminado_hasta: Optional[date] = None,
+    creacion_desde: date | None = None,
+    creacion_hasta: date | None = None,
+    terminado_desde: date | None = None,
+    terminado_hasta: date | None = None,
 ) -> list[TinturadoOrden]:
     """Órdenes con kg crudo/terminado/desperdicio.
 
@@ -422,7 +422,7 @@ class StockProductoAlDia:
     unidad: str
     precio_us: float
     lectura_kg: float                      # base: última lectura ≤ fecha
-    fecha_lectura: Optional[date]
+    fecha_lectura: date | None
     ajustes_kg: float                      # suma de ajustes > fecha_lectura
     compras_kg: float                      # suma de compras > fecha_lectura
     consumo_kg: float                      # suma de consumo > fecha_lectura
@@ -434,7 +434,7 @@ class StockProductoAlDia:
         return d
 
 
-def stock_quimicos_al_dia(fecha: Optional[date] = None) -> list[StockProductoAlDia]:
+def stock_quimicos_al_dia(fecha: date | None = None) -> list[StockProductoAlDia]:
     """Stock al día por producto químico replicando la fórmula de formulas_app.
 
     Para cada producto:
@@ -454,9 +454,8 @@ def stock_quimicos_al_dia(fecha: Optional[date] = None) -> list[StockProductoAlD
         Lista de StockProductoAlDia ordenada por (familia, num_visible).
         [] si formulas_db no está configurado.
     """
-    from datetime import date as _date
 
-    fecha_corte = (fecha or _date.today()).isoformat()
+    fecha_corte = (fecha or today_ec()).isoformat()
 
     rows = formulas_db.fetch_all(
         """

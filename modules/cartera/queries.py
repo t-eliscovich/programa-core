@@ -18,6 +18,7 @@ netean".
 from datetime import date
 
 import db
+from filters import today_ec
 
 # Stats de cheque que cuentan como "en cartera" (vivos, no efectivos todavía).
 # Restan de la cartera por cliente — el cliente nos los dio pero no se cobraron.
@@ -303,7 +304,7 @@ def tomar_snapshot(fecha: date | None = None) -> dict:
     Devuelve `{fecha, n_clientes, n_filas_insertadas, n_filas_actualizadas,
     saldo_total}`.
     """
-    fecha = fecha or date.today()
+    fecha = fecha or today_ec()
     n_ins = 0
     n_upd = 0
     saldo_total = 0.0
@@ -531,7 +532,7 @@ def cartera_por_cliente_y_color(meses_atras: int = 3) -> dict:
     except (TypeError, ValueError):
         meses_atras_int = 3
     meses_atras_int = max(1, min(meses_atras_int, 24))
-    desde = date.today() - _td(days=meses_atras_int * 31)
+    desde = today_ec() - _td(days=meses_atras_int * 31)
 
     # Cartera viva por cliente (filtro canónico — ver `aging_buckets`).
     clientes = db.fetch_all(
@@ -617,7 +618,7 @@ def aplicar_stop_automatico(umbral_dias: int = 90, usuario: str = "web") -> dict
     if not victimas:
         return {"n": 0, "codigos": [], "detalle": []}
 
-    marca = f"[S] STOP AUTO {date.today().isoformat()} (>{umbral_dias}d)"
+    marca = f"[S] STOP AUTO {today_ec().isoformat()} (>{umbral_dias}d)"
     codigos = [v["codigo_cli"] for v in victimas]
     with db.tx() as conn:
         db.execute(

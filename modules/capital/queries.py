@@ -6,6 +6,7 @@ scintela.capital: id_capital, fecha, doc(5), concepto(50), importe, invanual,
 from datetime import date
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 
@@ -362,7 +363,7 @@ def reversar_aporte(
     import mov_doble as _md
 
     motivo = (motivo or "").strip()
-    fecha_rev = date.today()
+    fecha_rev = today_ec()
     asegurar_fecha_abierta(fecha_rev)
 
     cap_orig = db.fetch_one(
@@ -531,7 +532,7 @@ def reversar_retiro(
     import mov_doble as _md
 
     motivo = (motivo or "").strip()
-    fecha_rev = date.today()
+    fecha_rev = today_ec()
     asegurar_fecha_abierta(fecha_rev)
 
     ret_orig = db.fetch_one(

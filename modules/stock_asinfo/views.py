@@ -36,10 +36,10 @@ def quimicos():
     Es la fuente confiable de químicos — no Asinfo, que solo tiene 55K kg
     (vs ~396K kg reales en formulas_app/PC).
     """
-    from datetime import date as _date
+    from filters import today_ec
     error = None
     rows = []
-    fecha_corte = _date.today()
+    fecha_corte = today_ec()
     try:
         from modules.tintura import service as tintura
         rows = tintura.stock_quimicos_al_dia(fecha_corte)

@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import date
 
 import db
+from filters import today_ec
 
 MESES_ES = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -208,7 +209,7 @@ def editar(id_iniciales: int, *, kprog=None, gprog=None, pretot=None,
 
 def anio_actual() -> int:
     """Año en curso, helper para el default del selector."""
-    return date.today().year
+    return today_ec().year
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +247,7 @@ def cerrar_mes_auto(fecha_cierre: date | None = None,
     Devuelve `{aplicado: bool, mes_origen: 'YYYY-MM', mes_destino: 'YYYY-MM',
     id_iniciales_nuevo: int | None, razon: str}`.
     """
-    fecha_cierre = fecha_cierre or date.today()
+    fecha_cierre = fecha_cierre or today_ec()
     mes_origen_num = fecha_cierre.month
     anio_origen = fecha_cierre.year
 

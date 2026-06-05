@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import traceback
-from datetime import date
 
 from flask import Blueprint, Response
 
 from auth import requiere_login, requiere_permiso
+from filters import today_ec
 
 _LOG = logging.getLogger("programa_core.admin_dbase.debug_yy")
 
@@ -61,7 +61,7 @@ def diagnose():
         return Response(json.dumps(out, indent=2, default=str), mimetype="application/json")
 
     # 3. Para cada fila YY, simular el cálculo display-time aislado.
-    hoy = date.today()
+    hoy = today_ec()
     from modules.posdat import queries as pq
     for raw in raw_rows:
         cell = {

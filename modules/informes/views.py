@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
@@ -10,6 +10,7 @@ from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, rende
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 
 from . import queries
 
@@ -73,9 +74,8 @@ def balance():
 @requiere_permiso("informes.ver")
 def balance_compras():
     """Drill-down de compras del período. Reuse de /informes/balance."""
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     try:
         anio = int(request.args.get("anio") or hoy.year)
     except (TypeError, ValueError):
@@ -157,9 +157,8 @@ def historico_12m():
 
     if modo == "mom":
         # Defaults: comparar mes actual (b) vs mes anterior (a).
-        from datetime import date as _date
 
-        hoy = _date.today()
+        hoy = today_ec()
 
         def _parse_par(prefix: str, default_anio: int, default_mes: int):
             try:
@@ -697,11 +696,10 @@ def diag_stock():
     Terminado=0. Pensado para que la dueña abra la URL una vez y mande
     screenshot — más eficiente que pelear con SSM PowerShell quoting.
     """
-    from datetime import date as _date
 
     import db
 
-    y = _date.today().year
+    y = today_ec().year
 
     def _safe_q(sql, params=()):
         try:
@@ -782,11 +780,10 @@ def snapshot_mes():
 
     POST con form (anio, mes). Idempotente.
     """
-    from datetime import date as _date
 
     try:
-        anio = int(request.form.get("anio") or _date.today().year)
-        mes = int(request.form.get("mes") or _date.today().month)
+        anio = int(request.form.get("anio") or today_ec().year)
+        mes = int(request.form.get("mes") or today_ec().month)
     except (TypeError, ValueError):
         flash("Parámetros inválidos.", "error")
         return redirect(url_for("informes.fuentes_y_usos"))
@@ -811,7 +808,6 @@ def snapshot_backfill():
 
     POST con form (meses=N). Idempotente.
     """
-    from datetime import date as _date
 
     try:
         n = int(request.form.get("meses") or 3)
@@ -819,7 +815,7 @@ def snapshot_backfill():
         n = 3
     # TMT 2026-05-19 v6 — Feature B permite hasta 12 meses (antes 12 cap).
     n = max(1, min(n, 12))
-    hoy = _date.today()
+    hoy = today_ec()
     aplicados, saltados = [], []
     usuario = (g.user or {}).get("username", "web")
     for i in range(1, n + 1):
@@ -852,9 +848,8 @@ def fuentes_y_usos():
     INFORMES.PRG::PROCEDURE FUENTES L1654-1727). Granularidad: mensual,
     porque la data viene de scintela.historia (un snapshot por mes).
     """
-    from datetime import date
 
-    hoy = date.today()
+    hoy = today_ec()
 
     def _p(k, default):
         try:
@@ -1020,7 +1015,7 @@ def flujo_grafico():
             "concepto": r.get("concepto") or "",
             "importe": float(r.get("importe") or 0),
             "banc": int(r.get("banc") or 0),
-            "vencido": bool(r.get("fechad") and r["fechad"] < date.today()),
+            "vencido": bool(r.get("fechad") and r["fechad"] < today_ec()),
         }
         for r in posdat_egresos
     ]
@@ -1036,7 +1031,7 @@ def flujo_grafico():
         "informes/flujo_grafico.html",
         datos=datos,
         egresos_lista=egresos_lista,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
         ventana_dias=ventana,
         ignorar_cheques=ignorar_cheques,
         plazos=plazos,
@@ -1114,7 +1109,7 @@ def flujo_cargar():
         # Una fila de ejemplo para que el usuario vea el formato.
         w.writerow(
             [
-                date.today().isoformat(),
+                today_ec().isoformat(),
                 "0",
                 "0",
                 "0",
@@ -1209,7 +1204,7 @@ def flujo_cargar():
         cols=queries.FLUJO_COLS,
         errores=errores,
         resultado=resultado,
-        hoy=date.today().isoformat(),
+        hoy=today_ec().isoformat(),
     )
 
 
@@ -1239,9 +1234,8 @@ def ventas():
     # la pantalla TINT.BAT del dBase (ranking clientes del mes). Por default
     # ahora redirigimos al ranking del mes; el listado multi-mes vive en
     # ventas_multianual (link sigue disponible desde ahí).
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     try:
         anio = int(request.args.get("anio") or hoy.year)
     except (TypeError, ValueError):
@@ -1296,7 +1290,6 @@ def ventas_anio():
             ],
             filename="ventas_anio.csv",
         )
-    from datetime import date as _date
 
     return render_template(
         "informes/ventas_anio.html",
@@ -1304,7 +1297,7 @@ def ventas_anio():
         total_kg=total_kg,
         total_importe=total_importe,
         precio_prom=precio_prom,
-        anio=_date.today().year,
+        anio=today_ec().year,
         error=error,
     )
 
@@ -1319,9 +1312,8 @@ def flujo_produccion():
     /informes/balance, muestra MOVIMIENTOS MES (hilado/crudo/term/col),
     COMPRAS HILADO, PRODUC.TEJIDO, TINTORERIA y CS.COLORANTES/PRODUCCION.
     """
-    from datetime import date as _date
 
-    hoy = _date.today()
+    hoy = today_ec()
     try:
         anio = int(request.args.get("anio") or hoy.year)
     except (TypeError, ValueError):

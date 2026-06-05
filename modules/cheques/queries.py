@@ -29,6 +29,7 @@ a `stat='B'`. Después de esa migración, 'D' es unambiguamente Daniela.
 from datetime import date
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # scintela.cliente.observacion es varchar(200). Al trazar rebotes en la
@@ -100,7 +101,7 @@ def editar(
 
     Devuelve `{id_cheque, fechad_nueva, fechad_shifted_lunes}`.
     """
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     # TMT 2026-05-26: la tabla scintela.cheque NO tiene columna `concepto`
     # (se confirmó contra prod). Antes el SELECT incluía `concepto` y rompía
@@ -265,7 +266,7 @@ def transicionar_stat(
 
     Devuelve dict con `id_cheque, stat_previo, stat_nuevo, side_effect_id`.
     """
-    fecha = fecha or date.today()
+    fecha = fecha or today_ec()
     asegurar_fecha_abierta(fecha)
 
     stat_destino = (stat_destino or "").upper().strip()
@@ -492,7 +493,7 @@ def anular_por_error_de_carga(
     motivo = (motivo or "").strip()
     # TMT 2026-05-21 dueña: motivo opcional sin minlen.
 
-    fecha = date.today()
+    fecha = today_ec()
     asegurar_fecha_abierta(fecha)
 
     # TMT 2026-05-15: caller puede pasar `conn` (batch atómico).
@@ -587,7 +588,7 @@ def anular_por_error_de_carga(
 
         # --- DELETE posdat hermana si existía ---
         db.execute(
-            "DELETE FROM scintela.posdat WHERE banc=0 AND num=%s AND prov=%s",
+            "DELETE FROM scintela.posdat WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
             (id_cheque, ch.get("codigo_cli")),
             conn=conn,
         )
@@ -651,7 +652,7 @@ def reemplazar(
     Devuelve `{id_cheque_viejo, id_cheque_nuevo, no_cheque_nuevo,
                 aplicaciones_migradas, importe_viejo, importe_nuevo}`.
     """
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     nuevo_no_cheque = (nuevo_no_cheque or "").strip()
     if not nuevo_no_cheque:
@@ -688,7 +689,7 @@ def reemplazar(
         # 1) Crear el cheque nuevo — hereda fecha/codigo_cli/banco del viejo.
         # Usamos el INSERT directo (no `crear()`) para no disparar la lógica
         # de espejo de anticipo, y para poder setear id_cheque_padre.
-        fecha_nuevo = date.today()
+        fecha_nuevo = today_ec()
         fechad_nuevo = ch_viejo.get("fechad") or fecha_nuevo
         row_nuevo = (
             db.execute_returning(
@@ -705,7 +706,7 @@ def reemplazar(
                     nuevo_no_cheque[:10],
                     fecha_nuevo,
                     fechad_nuevo,
-                    date.today(),
+                    today_ec(),
                     ch_viejo.get("codigo_cli"),
                     importe_nuevo,
                     ch_viejo.get("no_banco"),
@@ -848,7 +849,7 @@ def reemplazar(
         # de saldos. Sólo cambiamos stat y observación.
         marca = (
             f"[X] reemplazado por nuevo cheque #{nuevo_no_cheque} "
-            f"(id #{id_cheque_nuevo}) {date.today().isoformat()}"
+            f"(id #{id_cheque_nuevo}) {today_ec().isoformat()}"
         )
         if motivo:
             marca += f" — {motivo[:80]}"
@@ -908,7 +909,7 @@ def reemplazar(
             destino_table="cheque",
             destino_id=id_cheque_nuevo,
             importe=importe_nuevo,
-            fecha=date.today(),
+            fecha=today_ec(),
             concepto=(
                 f"REEMPLAZO cheque #{ch_viejo.get('no_cheque') or id_cheque_viejo} "
                 f"→ #{nuevo_no_cheque}" + (f" — {motivo}" if motivo else "")
@@ -1019,7 +1020,7 @@ def depositar_lote(
         raise ValueError("Debe seleccionar al menos un cheque.")
     if not no_banco:
         raise ValueError("Banco destino requerido.")
-    fecha_deposito = fecha_deposito or date.today()
+    fecha_deposito = fecha_deposito or today_ec()
     asegurar_fecha_abierta(fecha_deposito)
 
     # Validar el banco existe
@@ -1528,7 +1529,7 @@ def crear(
     # (paridad ALTAS.PRG L119). Solo en alta — la edición ya lo hacía
     # (línea 115). 3 cheques en cartera tenían fechad domingo por este bug.
     fechad = _domingo_a_lunes(fechad)
-    fecha_recibido = fecha_recibido or date.today()
+    fecha_recibido = fecha_recibido or today_ec()
     # Cheques nuevos SIEMPRE arrancan en cartera (Z), aunque fechad > fecha.
     # 'P' (postergado) sólo se aplica cuando la usuaria mueve un cheque YA
     # vencido hacia adelante — no es el estado inicial de un cheque recibido.
@@ -1778,7 +1779,7 @@ def postergar(
         fila banc=0; si no había, la crea (cheques que originalmente eran
         Z ahora pasan a vivir en el flujo de "cheques futuros").
     """
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     with db.tx() as conn:
         ch = db.fetch_one(
@@ -1798,7 +1799,7 @@ def postergar(
                 f"Sólo cheques en cartera (Z) o ya postergados (P) se pueden "
                 f"postergar. Este está en stat='{stat_prev}'."
             )
-        if not nueva_fechad or nueva_fechad <= (ch["fechad"] or date.today()):
+        if not nueva_fechad or nueva_fechad <= (ch["fechad"] or today_ec()):
             raise ValueError("La nueva fecha debe ser posterior a la fecha actual del cheque.")
 
         db.execute(
@@ -1819,7 +1820,7 @@ def postergar(
             SELECT %s, %s, %s, %s, 0, %s
             WHERE NOT EXISTS (
                 SELECT 1 FROM scintela.posdat
-                 WHERE banc = 0 AND num = %s AND prov = %s
+                 WHERE COALESCE(banc, 0) = 0 AND num = %s AND prov = %s
             )
             """,
             (
@@ -1834,7 +1835,7 @@ def postergar(
             conn=conn,
         )
         db.execute(
-            "UPDATE scintela.posdat SET fecha=%s, usuario_modifica=%s WHERE banc=0 AND num=%s AND prov=%s",
+            "UPDATE scintela.posdat SET fecha=%s, usuario_modifica=%s WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
             (nueva_fechad, usuario, id_cheque, ch["codigo_cli"]),
             conn=conn,
         )
@@ -1860,7 +1861,7 @@ def marcar_daniela(
     cobranza con Daniela). No cambia ni la fecha ni el banco — sólo la
     flagging del estado.
     """
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     with db.tx() as conn:
         ch = db.fetch_one(
@@ -1928,7 +1929,7 @@ def endosar(
 
     Devuelve dict con id_cheque, id_compra, codigo_prov, stat_previo.
     """
-    fecha = fecha or date.today()
+    fecha = fecha or today_ec()
     asegurar_fecha_abierta(fecha)
 
     codigo_prov = (codigo_prov or "").strip().upper()
@@ -2040,7 +2041,7 @@ def endosar(
         # DELETE posdat hermana (si el cheque era postdatado/postergado).
         # Ya no figura como "futuro a depositar".
         db.execute(
-            "DELETE FROM scintela.posdat WHERE banc=0 AND num=%s AND prov=%s",
+            "DELETE FROM scintela.posdat WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
             (id_cheque, ch.get("codigo_cli")),
             conn=conn,
         )
@@ -2106,7 +2107,7 @@ def desaplicar_factura(
 
     TMT 2026-05-13.
     """
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     # TMT 2026-05-15: caller puede pasar `conn` (batch atómico).
     import contextlib as _ctx
@@ -2205,7 +2206,7 @@ def desaplicar_factura(
             destino_table="factura",
             destino_id=id_factura,
             importe=total_desaplicar,
-            fecha=date.today(),
+            fecha=today_ec(),
             concepto=(
                 f"DESAPLICAR cheque #{id_cheque} de factura #{f.get('numf') or id_factura}"
                 + (f" — {motivo}" if motivo else "")
@@ -2254,7 +2255,7 @@ def reversar_endoso(
     Si el cheque NO está en stat='E', levanta ValueError.
     TMT 2026-05-13.
     """
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     with db.tx() as conn:
         ch = db.fetch_one(
@@ -2332,7 +2333,7 @@ def reversar_endoso(
         # 4) Restaurar el cheque a cartera.
         stat_destino = "Z"
         marca = (
-            f"[REVERSO_ENDOSO {date.today().isoformat()} — antes a {ch.get('prov') or '?'}"
+            f"[REVERSO_ENDOSO {today_ec().isoformat()} — antes a {ch.get('prov') or '?'}"
             + (f" — {motivo[:80]}" if motivo else "")
             + "]"
         )
@@ -2359,7 +2360,7 @@ def reversar_endoso(
             destino_table="cheque",
             destino_id=id_cheque,
             importe=importe_reverso,
-            fecha=date.today(),
+            fecha=today_ec(),
             concepto=(
                 f"REVERSO endoso ch {ch.get('no_cheque') or id_cheque}" + (f" — {motivo}" if motivo else "")
             )[:200],
@@ -2579,7 +2580,7 @@ def aplicar_a_factura(
             # Fallback de fecha: ch.fecha puede ser NULL para cheques
             # legacy importados sin fecha — usar HOY. Antes pasaba None y
             # mov_doble guardaba fecha NULL. TMT 2026-05-14 (#29).
-            fecha_md = ch.get("fecha") or date.today()
+            fecha_md = ch.get("fecha") or today_ec()
             _md.registrar(
                 conn=conn,
                 tipo="cheque_aplicado_a_factura",
@@ -2676,7 +2677,7 @@ def reversar(
     estaba en stop, no pisa nada; rowcount=0 ⇒ stop_aplicado=False.
 
     Guardas:
-      - `asegurar_fecha_abierta(date.today())` — la reversión se asienta con
+      - `asegurar_fecha_abierta(today_ec())` — la reversión se asienta con
         fecha de hoy (fechaout=CURRENT_DATE), así que el período contable de
         hoy tiene que estar abierto, no el del cheque original.
       - El append a `cliente.observacion` va capado con RIGHT(..., 200) porque
@@ -2686,7 +2687,7 @@ def reversar(
     Todo en una sola transacción.
     """
     # Guard de período: la reversión se escribe con fecha de hoy.
-    asegurar_fecha_abierta(date.today())
+    asegurar_fecha_abierta(today_ec())
 
     with db.tx() as conn:
         ch = db.fetch_one(
@@ -2767,7 +2768,7 @@ def reversar(
         stop_aplicado = False
         es_rebote_real = es_rebote_real and bool(ch["codigo_cli"])
         if es_rebote_real:
-            marca = f"[REBOTE] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} {date.today().isoformat()}"
+            marca = f"[REBOTE] CHEQUE {ch['no_cheque'] or '#' + str(id_cheque)} {today_ec().isoformat()}"
             if motivo:
                 marca += f" — {motivo[:80]}"
             # Anotar en observación SIN tocar el flag stop (lo decide la
@@ -2784,7 +2785,7 @@ def reversar(
 
         # Si era postdatado, borrar su posdat
         db.execute(
-            "DELETE FROM scintela.posdat WHERE banc=0 AND num=%s AND prov=%s",
+            "DELETE FROM scintela.posdat WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
             (id_cheque, ch["codigo_cli"]),
             conn=conn,
         )
@@ -2820,7 +2821,7 @@ def reversar(
             destino_table="cheque",
             destino_id=id_cheque,
             importe=total_reversado,
-            fecha=date.today(),
+            fecha=today_ec(),
             concepto=(
                 f"REVERSO cheque {ch.get('no_cheque') or id_cheque} "
                 f"{stat_prev}→{stat_nuevo}" + (f" — {motivo}" if motivo else "")

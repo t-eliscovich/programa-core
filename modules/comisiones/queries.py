@@ -19,9 +19,9 @@ fechad incluso si el cheque está depositado.
 Comisión = cobranzas_mes * (pct_comision / 100). El dBase no calculaba
 esto (la dueña lo hacía a mano); acá lo automatizamos.
 """
-from datetime import date
 
 import db
+from filters import today_ec
 
 
 def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
@@ -33,7 +33,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
         codigo, nombre, pct_comision, activo,
         n_clientes, cobranzas_mes, ventas_mes, comision_mes
     """
-    hoy = date.today()
+    hoy = today_ec()
     yy = int(anio) if anio else hoy.year
     mm = int(mes) if mes else hoy.month
 

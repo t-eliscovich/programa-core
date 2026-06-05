@@ -148,7 +148,7 @@ def total_por_mes(anio: int | None = None) -> list[dict]:
     return db.fetch_all(
         """
         SELECT date_trunc('month', fecha)::date AS mes,
-               SUM(rete) AS total_retenido,
+               COALESCE(SUM(rete), 0) AS total_retenido,
                COUNT(*)  AS n
         FROM scintela.retencion
         WHERE fecha IS NOT NULL

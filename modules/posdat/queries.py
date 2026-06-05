@@ -3,6 +3,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 
@@ -377,7 +378,7 @@ def editar(
                     destino_table="posdat",
                     destino_id=id_posdat,
                     importe=round(importe_nuevo - importe_prev, 2),
-                    fecha=actual.get("fecha") or date.today(),
+                    fecha=actual.get("fecha") or today_ec(),
                     concepto=(
                         f"Edit importe posdat #{actual.get('num') or id_posdat} "
                         f"{importe_prev:.2f} → {importe_nuevo:.2f}"
@@ -491,7 +492,7 @@ def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
                 destino_table="posdat",
                 destino_id=id_posdat,
                 importe=float(pd.get("importe") or 0),
-                fecha=pd.get("fecha") or date.today(),
+                fecha=pd.get("fecha") or today_ec(),
                 concepto=(
                     f"ANULACION posdat #{pd.get('num') or id_posdat} "
                     f"{pd.get('prov') or ''}"

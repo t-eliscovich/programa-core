@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+from filters import today_ec
 from modules.conciliacion.parser import BancoLinea
 
 
@@ -69,7 +70,7 @@ def matchear(
     Los cheques con `fechad` antigua y sin match en el estado de cuenta se
     incluyen en `sospechosos` — candidatos a marcar como rechazados.
     """
-    hoy = hoy or date.today()
+    hoy = hoy or today_ec()
     result = MatchResult()
 
     # Índice defensivo: si tenemos miles de líneas, este paso es O(N*M).

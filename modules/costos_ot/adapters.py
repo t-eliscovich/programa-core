@@ -23,6 +23,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from typing import Protocol
 
+from filters import today_ec
+
 _LOG = logging.getLogger("programa_core.costos_ot")
 
 
@@ -73,14 +75,14 @@ _FAKE_OTS: dict[str, list[dict]] = {
     "JTX": [
         {
             "n_orden": "24089",
-            "fecha_cierre": date.today() - timedelta(days=3),
+            "fecha_cierre": today_ec() - timedelta(days=3),
             "descripcion": "Jersey 30/1 · Azul marino",
             "kg": 185.5,
             "costo_kg": 1.78,
         },
         {
             "n_orden": "24112",
-            "fecha_cierre": date.today() - timedelta(days=11),
+            "fecha_cierre": today_ec() - timedelta(days=11),
             "descripcion": "Piqué 24/1 · Rojo Coral",
             "kg": 92.3,
             "costo_kg": 1.65,
@@ -89,7 +91,7 @@ _FAKE_OTS: dict[str, list[dict]] = {
     "TEX": [
         {
             "n_orden": "24095",
-            "fecha_cierre": date.today() - timedelta(days=7),
+            "fecha_cierre": today_ec() - timedelta(days=7),
             "descripcion": "Ribb 1x1 24/1 · Negro",
             "kg": 320.0,
             "costo_kg": 1.92,
@@ -98,14 +100,14 @@ _FAKE_OTS: dict[str, list[dict]] = {
     "MOD": [
         {
             "n_orden": "24102",
-            "fecha_cierre": date.today() - timedelta(days=2),
+            "fecha_cierre": today_ec() - timedelta(days=2),
             "descripcion": "Fleece 30/1 · Heather grey",
             "kg": 210.7,
             "costo_kg": 2.15,
         },
         {
             "n_orden": "24103",
-            "fecha_cierre": date.today() - timedelta(days=2),
+            "fecha_cierre": today_ec() - timedelta(days=2),
             "descripcion": "Jersey 30/1 · Blanco óptico",
             "kg": 145.2,
             "costo_kg": 1.55,

@@ -470,8 +470,8 @@ def nc_generar(id_factura_electronica: int):
         - motivo (requerido)
         - valor_modificacion (requerido, opcional si la NC anula todo)
     """
-    from datetime import date as _date
 
+    from filters import today_ec
     from modules.sri.xml import Comprador, DetalleLinea
     from modules.sri.xml_nota_credito import (
         InfoNotaCredito,
@@ -537,10 +537,10 @@ def nc_generar(id_factura_electronica: int):
             email=fact.get("email") or "",
             telefono=fact.get("telefono") or "",
         ),
-        fecha_emision=_date.today(),
+        fecha_emision=today_ec(),
         cod_doc_modificado="01",
         num_doc_modificado=fact.get("numf_completo") or str(fact.get("numf") or ""),
-        fecha_emision_doc_sustento=fe.get("fecha_emision") or _date.today(),
+        fecha_emision_doc_sustento=fe.get("fecha_emision") or today_ec(),
         motivo=motivo,
         detalles=[detalle],
     )

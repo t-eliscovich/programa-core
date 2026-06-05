@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import json
 import traceback
-from datetime import date
 
 from flask import Blueprint, Response
 
 from auth import requiere_login, requiere_permiso
+from filters import today_ec
 
 bp = Blueprint(
     "admin_debug_ustock",
@@ -33,8 +33,8 @@ bp = Blueprint(
 @requiere_login
 @requiere_permiso("admin_dbase.ver")
 def diagnose():
-    out: dict = {"ok": True, "hoy": str(date.today())}
-    hoy = date.today()
+    out: dict = {"ok": True, "hoy": str(today_ec())}
+    hoy = today_ec()
 
     import db
 
@@ -122,9 +122,9 @@ def diagnose():
     sim: dict = {}
     try:
         from modules.informes.queries import (
+            historia_ultimo_mes,
             informe_balance,
             iniciales_mes_actual,
-            historia_ultimo_mes,
             kg_facturas_pc_no_sincronizadas,
         )
         hist = historia_ultimo_mes() or {}

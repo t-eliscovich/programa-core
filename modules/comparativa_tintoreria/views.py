@@ -14,6 +14,7 @@ from flask import Blueprint, render_template, request
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
+from filters import today_ec
 
 from . import queries
 
@@ -114,8 +115,7 @@ def _inject_tintoreria_mensual():
     if request.endpoint != "informes.flujo_produccion":
         return {}
     try:
-        from datetime import date as _date
-        hoy = _date.today()
+        hoy = today_ec()
         anio = int(request.args.get("anio") or hoy.year)
         mes = max(1, min(12, int(request.args.get("mes") or hoy.month)))
         data = _build_tintoreria_mensual(anio, mes, n_meses=12)
@@ -147,7 +147,7 @@ def tintoreria_detalle():
         % kg sobre el total del mes, kg, $/kg promedio, $
     Y al final una fila PROMEDIO mensual.
     """
-    hoy = date.today()
+    hoy = today_ec()
     # Default: últimos 12 meses completos hasta hoy.
     default_desde = (hoy.replace(day=1) - timedelta(days=365)).replace(day=1)
     desde = _parse_date(request.args.get("desde"), default_desde)
@@ -255,7 +255,7 @@ def comparativa_tintoreria():
     permitiría matchear a nivel orden. El detalle por color se muestra
     como filas hijas de cada día.
     """
-    hoy = date.today()
+    hoy = today_ec()
     # TMT 2026-05-27 dueña: "DEJA DE FILTRAR POR FECHA DE CREACION!
     # ME SALE TODO MAL" — volver al default ultimos 14 dias.
     default_desde = hoy - timedelta(days=14)
@@ -630,12 +630,13 @@ def debug_tintoreria_diff():
     Params: desde, hasta (YYYY-MM-DD). Default últimos 26 días.
     """
     from collections import defaultdict
+
     from flask import jsonify
 
     from modules._lib import formulas_db
     from modules.tintura import service as tintura_service
 
-    hoy = date.today()
+    hoy = today_ec()
     desde = _parse_date(request.args.get("desde"), hoy - timedelta(days=26))
     hasta = _parse_date(request.args.get("hasta"), hoy)
 

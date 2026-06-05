@@ -1,5 +1,4 @@
 """Capital — sólo Dueño."""
-from datetime import date, datetime
 
 from flask import (
     Blueprint,
@@ -16,6 +15,7 @@ import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_monto
 
 from . import queries
@@ -30,7 +30,8 @@ def nuevo():
     errores: list[str] = []
     form: dict = {}
     if request.method == "GET":
-        form["fecha"] = datetime.now().date().isoformat()
+        # TMT 2026-06-05 (bug hunt lente 3): today_ec(), no datetime.now() UTC.
+        form["fecha"] = today_ec().isoformat()
         form["estado"] = queries.estado_actual() or {}
         return render_template("capital/nuevo.html", form=form, errores=errores)
 
@@ -94,7 +95,7 @@ def aportar():
     """
     errores: list[str] = []
     form: dict = {
-        "fecha": date.today().isoformat(),
+        "fecha": today_ec().isoformat(),
         "importe": "",
         "cuenta": "pichincha",
         "socio": "",
@@ -102,7 +103,7 @@ def aportar():
     }
 
     if request.method == "POST":
-        fecha = parse_date(request.form.get("fecha")) or date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
         importe = parse_monto(request.form.get("importe"))
         cuenta = (request.form.get("cuenta") or "").strip().lower()
         socio = (request.form.get("socio") or "").strip().upper()[:5] or None
@@ -161,7 +162,7 @@ def retirar():
     """
     errores: list[str] = []
     form: dict = {
-        "fecha": date.today().isoformat(),
+        "fecha": today_ec().isoformat(),
         "importe": "",
         "cuenta": "pichincha",
         "socio": "",
@@ -169,7 +170,7 @@ def retirar():
     }
 
     if request.method == "POST":
-        fecha = parse_date(request.form.get("fecha")) or date.today()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
         importe = parse_monto(request.form.get("importe"))
         cuenta = (request.form.get("cuenta") or "").strip().lower()
         socio = (request.form.get("socio") or "").strip().upper()[:5]
