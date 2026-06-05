@@ -299,7 +299,12 @@ def nuevo():
     else:
         for i, ch in enumerate(cheques_in, start=1):
             etq = f"Cheque #{i}" if len(cheques_in) > 1 else ""
-            if not ch.get("no_cheque"):
+            # Bancos de depósito directo (90/91/95/97/99 = DEP.PICH, EFECTIVO,
+            # ANTICIPO, etc.) NO requieren N° de cheque: es una cobranza en
+            # efectivo/depósito, no hay cheque físico. La dueña ya lo había
+            # pedido (ver _BANCOS_DEPOSITO arriba); la validación quedó
+            # inconsistente y lo exigía igual. TMT 2026-06-06.
+            if not ch.get("no_cheque") and not ch.get("es_deposito"):
                 errores.append(f"N° de cheque{(' (' + etq + ')') if etq else ''} requerido.")
             imp = ch.get("importe")
             if imp is None or imp <= 0:
