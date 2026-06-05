@@ -42,6 +42,15 @@ def balance():
     # se corrió hoy. Útil para emparejar contra dBase cuando estábamos
     # atrasados N días: cargar la URL con ese param N veces. NO usar
     # sin saber lo que hacés (cada click duplica los montos).
+    # Persistir acumulación YY/RT en el importe guardado (dBase REPLACE DAILY).
+    # Idempotente (baseline=hoy → no-op). Sin esto el Pasivos YY queda congelado
+    # bajo el dBase. TMT 2026-06-05.
+    try:
+        from modules.posdat.queries import persistir_acumulacion_yy
+        persistir_acumulacion_yy()
+    except Exception:  # noqa: BLE001
+        pass
+
     forzar = request.args.get("forzar_provisiones") in ("1", "true", "yes")
     try:
         prov_result = queries.correr_provisiones_diarias(forzar=forzar)

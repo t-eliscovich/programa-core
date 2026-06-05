@@ -305,6 +305,12 @@ def anular(id_posdat: int):
 @requiere_login
 @requiere_permiso("posdat.ver")
 def lista():
+    # Persistir acumulación YY/RT antes de listar (dBase REPLACE DAILY).
+    # Idempotente. TMT 2026-06-05.
+    try:
+        queries.persistir_acumulacion_yy()
+    except Exception:  # noqa: BLE001
+        pass
     q = request.args.get("q", "").strip()
     prov = (request.args.get("prov") or "").strip().upper() or None
     # TMT 2026-05-20 v2 — vuelve default solo_abiertas=True (pedido
