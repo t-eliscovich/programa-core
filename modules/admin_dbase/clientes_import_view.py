@@ -165,6 +165,10 @@ def _run(aplicar: bool):
 
     yield line(f"DBF: {len(dbf)} clientes únicos  |  PC: {len(pc)} clientes")
     yield line(f"  PC que NO están en el DBF (quedan intactos, no se borran): {len(pc_only)}")
+    for c in sorted(pc_only):
+        cur = pc[c]
+        yield line(f"      solo-PC: [{c}] {_s(cur.get('nombre'))[:45]}  "
+                   f"tel={_s(cur.get('telefono'))[:14]} ruc={_s(cur.get('ruc'))[:14]}")
     yield line("")
 
     inserts = []
