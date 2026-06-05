@@ -3871,10 +3871,12 @@ def informe_balance() -> dict:
         v8=gxg["v8"],
         v9=gxg["v9"],
         deprcar=amort["deprcar"],
-        # Utilidad Real = utilidad del mes ya calculada en scintela.historia
-        # (fila UTILIDADES del Historial = historia_ultimo_snapshot.usuti).
-        # patant/uret en 0 => ur_us = (patr-patant)+uret = usuti.
-        patr=float(hist_live.get("usuti") or 0),
+        # Utilidad Real = UTILIDAD del dBase (INFORMES.PRG L380: PATR − PATANT
+        # LIVE), NO historia.usuti (snapshot del último cierre, stale). La dueña
+        # pidió "calcularlo de variables de resultados, no de historia". Con el
+        # Pasivos ya reconciliado al dBase, `utilidad` (= patr − patant) cuadra
+        # con el UT.ACT del dBase. patant/uret en 0 → ur_us = utilidad. TMT 2026-06-05.
+        patr=float(utilidad or 0),
         patant=0.0,
         uret=0.0,
         # UT.PROY estilo dBase — gastos proyectados de scintela.iniciales.
