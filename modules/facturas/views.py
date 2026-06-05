@@ -18,6 +18,7 @@ import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc, humanize
 from exports import csv_response
+from filters import today_ec
 
 from . import queries
 
@@ -75,7 +76,8 @@ def nueva():
         except Exception:
             form["numf_sugerido"] = ""
         # Fecha default en DD/MM/YYYY — formato que la contadora espera tipear.
-        form["fecha"] = datetime.now().date().strftime("%d/%m/%Y")
+        # TMT 2026-06-04: today_ec(), no datetime.now() UTC (de noche fechaba mañana).
+        form["fecha"] = today_ec().strftime("%d/%m/%Y")
         # Restaurar campos pre-cargados via query string (ej. cuando se
         # redirige de /clientes/nuevo después de crear un cliente nuevo
         # que disparó este form). Cualquier campo del form aparece en
@@ -519,9 +521,10 @@ def debug_match_factura(numf: int):
     """Debug rápido: para un numf específico, mostrar qué hay en PC
     y qué match-keys produce, y qué dice Asinfo para esa misma factura.
     """
-    from modules.asinfo import service as _asinfo_service
+    from datetime import timedelta as _td
+
     from modules.asinfo import aliases as _aliases
-    from datetime import date as _date, timedelta as _td
+    from modules.asinfo import service as _asinfo_service
     pc = db.fetch_all(
         """SELECT id_factura, fecha, codigo_cli, kg, importe, abono, saldo,
                   stat, tipo, numf, numf_completo
@@ -552,7 +555,7 @@ def debug_match_factura(numf: int):
         })
     # Buscar en Asinfo (últimos 60 días, esa factura).
     try:
-        hoy = _date.today()
+        hoy = today_ec()
         asinfo_rows = _asinfo_service.facturas_periodo(hoy - _td(days=60), hoy) or []
     except Exception as e:
         asinfo_rows = [{"error": str(e)}]
@@ -594,10 +597,12 @@ def desde_asinfo():
     Filtros: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (default: últimos 30 días).
     """
     import re as _re
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
     from modules.asinfo import aliases as _aliases
 
-    hoy = _date.today()
+    hoy = today_ec()
     # TMT 2026-05-26 dueña: cutoff para no marcar como missing facturas
     # del día que aún no llegaron por sync DBF (gap de carga).
     # TMT 2026-05-28 v1: bajamos de 3d a 1d (ocultaba misses legítimos
@@ -975,7 +980,6 @@ def cargar_desde_asinfo_bulk():
 def cargar_desde_asinfo():
     """Crea una factura en PC con los datos provenientes de Asinfo."""
     try:
-        from datetime import date as _date
         fecha = _parse_date(request.form.get("fecha") or "")
         codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()
         kg = Decimal(str(request.form.get("kg") or "0"))
@@ -1641,7 +1645,6 @@ def borrar_snapshots_historia_hoy():
     """Borra filas de scintela.historia con fecha=HOY (snapshots daily auto).
     Eso fuerza historia_ultimo_snapshot a leer el snapshot mensual previo
     (cierre 30/04/2026) que tiene los valores correctos pre-bug."""
-    from datetime import date as _date
     from flask import jsonify
 
     dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
@@ -1716,14 +1719,15 @@ def backfill_asinfo_endpoint():
 
     Devuelve JSON con resumen. dry_run=1 NO inserta nada \u2014 solo reporta.
     """
-    import os, re, sys
+    import re
+    from calendar import monthrange
     from collections import Counter
     from datetime import date, timedelta
-    from calendar import monthrange
+
     from flask import jsonify
 
-    from modules.asinfo import service as asinfo_service
     from modules.asinfo import aliases as cli_aliases
+    from modules.asinfo import service as asinfo_service
 
     MARKER = "asinfo-backfill"
     TIPO_MAP = {
@@ -1759,7 +1763,7 @@ def backfill_asinfo_endpoint():
 
     # Parsing params
     desde_s = (request.values.get("desde") or "2025-01-01").strip()
-    hasta_s = (request.values.get("hasta") or date.today().isoformat()).strip()
+    hasta_s = (request.values.get("hasta") or today_ec().isoformat()).strip()
     dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
     try:
         desde = date.fromisoformat(desde_s)
@@ -1963,12 +1967,14 @@ def fix_huerfanas_con_aliases():
     """
     import re
     from datetime import date as _date
+
     from flask import jsonify
-    from modules.asinfo import service as asinfo_service
+
     from modules.asinfo import aliases as _aliases
+    from modules.asinfo import service as asinfo_service
 
     desde_s = (request.values.get("desde") or "2025-01-01").strip()
-    hasta_s = (request.values.get("hasta") or _date.today().isoformat()).strip()
+    hasta_s = (request.values.get("hasta") or today_ec().isoformat()).strip()
     min_pct = float(request.values.get("min_pct") or 100.0)
     dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")
     try:
@@ -2097,7 +2103,8 @@ def fix_huerfanas_con_aliases():
     bf_stats = {}
     if not dry_run:
         try:
-            import sys, os
+            import os
+            import sys
             _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             if _root not in sys.path:
                 sys.path.insert(0, _root)
@@ -2162,7 +2169,9 @@ def consolidar_duplicados_asinfo():
         dry_run=1   default 0 — si 1, solo reporta sin tocar nada
     """
     from collections import Counter
+
     from flask import jsonify
+
     from modules.asinfo import aliases as _aliases
 
     dry_run = (request.values.get("dry_run") or "").strip() in ("1", "true", "yes")

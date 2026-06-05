@@ -1,7 +1,5 @@
 """Caja — libro de caja en efectivo."""
 
-from datetime import datetime
-
 from flask import (
     Blueprint,
     flash,
@@ -14,6 +12,7 @@ from flask import (
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_monto
 
 from . import queries
@@ -71,7 +70,9 @@ def nuevo():
         conceptos = []
 
     if request.method == "GET":
-        form["fecha"] = datetime.now().date().isoformat()
+        # TMT 2026-06-04: today_ec() (fecha Ecuador), no datetime.now() del
+        # server UTC, que de noche fecha la caja con el día de mañana.
+        form["fecha"] = today_ec().isoformat()
         # Prefijar el tipo según el botón clickeado: ?tipo=E (entrada) o S (salida).
         # Convención legacy dBase: E=entrada, S=salida (importe siempre positivo).
         # Default 'E' para que el form arranque en ingreso.

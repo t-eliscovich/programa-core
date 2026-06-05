@@ -1,8 +1,20 @@
 """Jinja filters. Spanish/Ecuadorian number formatting to match formulas_app."""
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from error_messages import humanize as _humanize
+
+
+def today_ec() -> date:
+    """Fecha de HOY en Ecuador (America/Guayaquil = UTC-5, sin horario de verano).
+
+    TMT 2026-06-04 (bug hunt lente 3): el servidor corre en UTC, ~5h adelante
+    de Ecuador. `date.today()` del server salta al día siguiente después de
+    las ~19h de Ecuador, lo que fecha transacciones (caja, facturas, cheques,
+    bancos) con el día de MAÑANA y rompe cálculos de fin de mes. Para fechar
+    o comparar fechas de negocio, usar today_ec() en lugar de date.today().
+    """
+    return (datetime.now(UTC) - timedelta(hours=5)).date()
 
 
 def num_es(value, decimales: int = 2) -> str:
@@ -71,9 +83,9 @@ def _to_ec(value):
         return None
     if not isinstance(value, datetime):
         return value
-    from datetime import timezone, timedelta
+    from datetime import timedelta
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return value.astimezone(timezone(timedelta(hours=-5)))
 
 

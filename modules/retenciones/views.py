@@ -1,6 +1,5 @@
 """Listado y emisión de retenciones emitidas por clientes."""
 import contextlib
-from datetime import datetime
 
 from flask import (
     Blueprint,
@@ -16,6 +15,7 @@ from flask import (
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
+from filters import today_ec
 from parsers import parse_date, parse_int, parse_monto
 
 from . import queries
@@ -39,7 +39,8 @@ def emitir():
     codigo_cli_preview = (request.args.get("codigo_cli") or "").strip().upper()
 
     if request.method == "GET":
-        form["fecha"] = datetime.now().date().isoformat()
+        # TMT 2026-06-04: today_ec(), no datetime.now() UTC del server.
+        form["fecha"] = today_ec().isoformat()
         form["codigo_cli"] = codigo_cli_preview
         if codigo_cli_preview:
             try:
