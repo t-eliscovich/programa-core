@@ -388,6 +388,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(admin_deploy_bp)
 
+    # Reconciliador POSDAT — TMT 2026-06-05. /admin/posdat-reconcile alinea
+    # scintela.posdat con POSDAT.DBF (quirúrgico: UPDATE in-place preservando
+    # id_posdat, DELETE de las que sobran salvo linkeadas, INSERT de las que
+    # faltan; YY fija baseline=hoy). Dry-run por defecto.
+    from modules.admin_dbase.posdat_reconcile_view import bp as posdat_reconcile_bp
+
+    app.register_blueprint(posdat_reconcile_bp)
+
     # Debug YY display-time — TMT 2026-05-28. Endpoint diagnóstico que
     # corre el helper fila por fila y devuelve tracebacks para encontrar
     # qué provoca el 500 de /posdat?tab=yy sin acceso al log del EC2.
