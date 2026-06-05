@@ -1,4 +1,0 @@
-interface:
-  display_name: "Product Designer"
-  short_description: "Programa Core UX brief and critique partner"
-  default_prompt: "Use $product-designer to turn this Programa Core feature, flow, or screen into a concrete design brief, or critique an existing UI and propose a sharper direction."

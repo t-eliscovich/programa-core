@@ -1,4 +1,0 @@
-interface:
-  display_name: "Frontend Staff Reviewer"
-  short_description: "Jinja UI maintainability review"
-  default_prompt: "Use $frontend-staff-reviewer as a direct audit or engineer workflow lens for this Programa Core UI surface."

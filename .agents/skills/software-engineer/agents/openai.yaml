@@ -1,4 +1,0 @@
-interface:
-  display_name: "Software Engineer"
-  short_description: "Plan-driven Programa Core implementation"
-  default_prompt: "Use $software-engineer to execute this approved Programa Core plan with shared staff principles, required reviewer lenses, and thorough validation."
