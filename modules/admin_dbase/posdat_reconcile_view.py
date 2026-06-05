@@ -236,7 +236,7 @@ def _run(aplicar: bool):
 
     yield line(f"PLAN: {len(ups)} UPDATE · {len(dels)} DELETE · {len(ins)} INSERT")
     if linked_dels:
-        yield line(f"  ⚠ {len(linked_dels)} DELETE tienen link de compra (mov_doble) → se SALTAN (no se borran).")
+        yield line(f"  ⚠ {len(linked_dels)} con link de compra (mov_doble) → se ANULAN (anulada=true: salen del Pasivos, preservan id/link).")
     yield line("")
     yield line("--- UPDATE (conserva id) ---")
     for u in ups:
@@ -245,7 +245,7 @@ def _run(aplicar: bool):
     yield line("--- DELETE (PC tiene de más) ---")
     for d in dels:
         yield line(f"  id={d['id']:<6} {d['prov']:4} {d['importe']:>12,.2f}"
-                   + ("  ⚠LINKED-SE-SALTA" if d["linked"] else ""))
+                   + ("  ⚠LINKED→ANULA" if d["linked"] else "  DELETE"))
     yield line("--- INSERT (falta en PC) ---")
     for i in ins:
         yield line(f"  {i['prov']:4} {i['importe']:>12,.2f}  {(i['concepto'] or '')[:24]}")
@@ -257,14 +257,12 @@ def _run(aplicar: bool):
         old = next((r["importe"] for r in pc if r["id_posdat"] == u["id"]), 0)
         proj += u["importe"] - old
     for d in dels:
-        if not d["linked"]:
-            proj -= d["importe"]
+        # linked → se anulan (salen del Pasivos igual); no-linked → delete.
+        proj -= d["importe"]
     for i in ins:
         proj += i["importe"]
     dbf_sum = sum(x["importe"] for x in dbf)
     yield line(f"Suma PC proyectada: {proj:,.2f}   |   dBase: {dbf_sum:,.2f}   |   diff: {proj - dbf_sum:,.2f}")
-    if linked_dels:
-        yield line("  (si la diff != 0 es por los DELETE linkeados que se saltaron — revisar a mano.)")
     yield line("")
 
     if not aplicar:
@@ -273,7 +271,7 @@ def _run(aplicar: bool):
 
     # ── APLICAR en una transacción ──
     hoy = _hoy_ec()
-    n_up = n_del = n_ins = 0
+    n_up = n_del = n_ins = n_anul = 0
     try:
         with db.tx() as conn:
             for u in ups:
@@ -288,9 +286,17 @@ def _run(aplicar: bool):
                 n_up += 1
             for d in dels:
                 if d["linked"]:
-                    continue
-                db.execute("DELETE FROM scintela.posdat WHERE id_posdat=%s", (d["id"],), conn=conn)
-                n_del += 1
+                    # No se puede borrar (mov_doble la referencia) → anular:
+                    # sale del Pasivos (filtra anulada) y preserva el id/link.
+                    db.execute(
+                        "UPDATE scintela.posdat SET anulada=TRUE, "
+                        "motivo_anulacion=%s, fecha_anulacion=NOW() WHERE id_posdat=%s",
+                        ("reconcile-dbf: no está en POSDAT.DBF; anulada (tiene link de compra)",
+                         d["id"]), conn=conn)
+                    n_anul += 1
+                else:
+                    db.execute("DELETE FROM scintela.posdat WHERE id_posdat=%s", (d["id"],), conn=conn)
+                    n_del += 1
             for i in ins:
                 db.execute(
                     "INSERT INTO scintela.posdat (prov, importe, concepto, banc, usuario_crea) "
@@ -301,9 +307,7 @@ def _run(aplicar: bool):
         yield line(f"[ERROR] rollback — {exc!r}")
         return
 
-    yield line(f"APLICADO ✓ — {n_up} UPDATE, {n_del} DELETE, {n_ins} INSERT.")
-    if linked_dels:
-        yield line(f"  {len(linked_dels)} DELETE linkeados se saltaron — revisá esas filas a mano.")
+    yield line(f"APLICADO ✓ — {n_up} UPDATE, {n_del} DELETE, {n_anul} ANULADAS (linkeadas), {n_ins} INSERT.")
     nuevo = _leer_pc_banc0()
     yield line(f"PC banc=0 ahora: {len(nuevo)} filas, suma {sum(x['importe'] for x in nuevo):,.2f}")
     yield line(f"dBase: {dbf_sum:,.2f}")
