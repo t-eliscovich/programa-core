@@ -20,7 +20,7 @@ from collections import defaultdict
 from datetime import datetime
 
 import openpyxl
-from flask import Blueprint, Response, render_template, request
+from flask import Blueprint, render_template, request
 
 import db as _db
 from auth import requiere_login, requiere_permiso

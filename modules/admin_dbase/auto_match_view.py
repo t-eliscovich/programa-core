@@ -13,7 +13,6 @@ from __future__ import annotations
 import io
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import openpyxl
 from flask import Blueprint, Response, render_template, request, stream_with_context
@@ -215,7 +214,7 @@ def run():
             for f_b, t, mt, doc, c in log_no[:30]:
                 yield f"  {f_b} {t} ${mt:>10,.2f} doc={doc:<10s} {c}\n"
         if log_multi:
-            yield f"\n=== MULTI-MATCH (top 15) ===\n"
+            yield "\n=== MULTI-MATCH (top 15) ===\n"
             for f_b, t, mt, ids in log_multi[:15]:
                 yield f"  {f_b} {t} ${mt:>10,.2f} candidatos PC: {ids}\n"
 

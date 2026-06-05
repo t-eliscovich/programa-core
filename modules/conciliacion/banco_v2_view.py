@@ -10,10 +10,8 @@ y el viejo queda para borrar en sprint 2.
 """
 from __future__ import annotations
 
-import json
 import logging
-import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 
 def _hora_ec_str(value, fmt: str = "%Y-%m-%d %H:%M") -> str:
@@ -23,28 +21,33 @@ def _hora_ec_str(value, fmt: str = "%Y-%m-%d %H:%M") -> str:
     if not isinstance(value, datetime):
         return str(value)
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return value.astimezone(timezone(timedelta(hours=-5))).strftime(fmt)
-from decimal import Decimal as _D
 from pathlib import Path
 
 from flask import (
-    abort, flash, redirect, render_template, request, send_file, url_for,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
 )
 
 import db as _db
 from auth import requiere_login, requiere_permiso
-from modules.conciliacion import sesion as _sesion
 from modules.conciliacion import balance_pichincha as _bp
+from modules.conciliacion import sesion as _sesion
 from modules.conciliacion.matcher_banco import (
     confirmar_match,
     crear_transaccion_agrupada_desde_reals,
 )
 from modules.conciliacion.parser_banco import parse_banco_xlsx
 from modules.conciliacion.views import (
-    conciliacion_bp,
-    _usuario_actual,
     _BANCO_PICHINCHA,
+    _usuario_actual,
+    conciliacion_bp,
 )
 
 _LOG = logging.getLogger("programa_core.conciliacion.banco_v2")
@@ -1120,8 +1123,9 @@ def banco_manual_confirmar():
     #   1. min(N, M) pares 1:1 por monto desc (biggest<->biggest).
     #   2. Banco extras (N > M): cada uno contra PC[0] (caso agrupar).
     #   3. PC extras (M > N): INSERT stat-only (firma real_* ya tomada).
-    import bank_helpers as _bh_confirm
     from decimal import Decimal as _D_cf
+
+    import bank_helpers as _bh_confirm
     from modules.conciliacion.parser_banco import MovBanco as _MB_cf
 
     banco_movs: list[tuple] = []
@@ -1950,8 +1954,8 @@ def banco_borrar_sesion():
     abierta = sesion.get("abierta_en")
     cerrada = sesion.get("cerrada_en")
     if not cerrada:
-        from datetime import datetime, timezone
-        cerrada = datetime.now(timezone.utc)
+        from datetime import datetime
+        cerrada = datetime.now(UTC)
     counts = {"matches": 0, "snapshots": 0, "txs_grupales": 0, "historicos_reset": 0}
 
     try:

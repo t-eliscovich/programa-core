@@ -247,7 +247,6 @@ def stat_xlsx_form():
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def stat_xlsx_run():
-    from decimal import Decimal
 
     import db as _db
 

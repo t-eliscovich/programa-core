@@ -66,7 +66,7 @@ def lista():
     facturas+caja+bancos pero NO retiros. Sino exigir informes.ver
     como antes.
     """
-    from flask import abort, g as _g
+    from flask import abort
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     tipo = request.args.get("tipo") or None

@@ -1746,3 +1746,9 @@ UT.PROY (pantalla) = UTPROY - PROVI
 - Antes PC mostraba `proy_kg × (precio − costo total)` (regla de 3) → daba ~0/negativo. Ahora proyecta utilidad de mes completo (jun ≈ +427k vs −6k).
 - **Gastos proyectados — origen:** hoy de `scintela.iniciales` (cols `pretej/pretin/preadm/pretot`, `kprog`), que se llena del **INICIALES.DBF** vía `import_dbf.py::_map_iniciales`. La pantalla `/informes/iniciales` existe pero **NO está en el menú** (solo por URL).
 - **FUTURO pedido dueña:** form en PC para que el usuario complete/edite los gastos proyectados directo en `scintela.iniciales` (dejar de depender del DBF para esos campos) + agregar el link al menú.
+
+### Bugs de caja encontrados 2026-06-04 (test de liveness)
+
+- **[ALTA] Caja se fecha en UTC, no Quito.** `/caja/nuevo` usa `datetime.now().date()` (servidor UTC, un día adelante de Ecuador). El reverso de caja usa otra fecha → el reverso queda back-dateado un día → rompe el orden de saldos. Fix: usar fecha America/Guayaquil consistente en create y reverso (ya hay `_to_ec`/`hora_ec` en `filters.py`).
+- **[ALTA] `informes/queries.py::salcaj()` es frágil.** Lee `saldo` guardado de la última fila por `ORDER BY fecha DESC, id_caja DESC` → si hay un movimiento fuera de orden de fecha, lee un saldo viejo y Resultados se desincroniza de la caja real. En cambio `caja/queries.py::saldo_actual()` suma `opening + Σ entradas − Σ salidas` (robusto). Fix: que `salcaj()` use la suma, no el saldo guardado.
+- **Episodio:** un test de liveness (Entrada $100 id 417 + reverso id 418) dejó Resultados Caja +$100 (salcaj lee el 417 del 05/06; el reverso quedó en 04/06). `saldo_actual()`/página caja OK en 46.747. Limpia con el sync del DBF (o recomputando saldos). NO agregar movimientos para "arreglar" — corrompe más (`saldo_prev` por id, no por suma).

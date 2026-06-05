@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
-from typing import Optional
 
 import db
 from modules.asinfo import service as asinfo_service

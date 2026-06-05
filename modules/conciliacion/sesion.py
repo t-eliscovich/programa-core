@@ -26,10 +26,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import asdict, fields, is_dataclass
-from datetime import date, datetime
+from collections.abc import Iterable
+from datetime import date
 from decimal import Decimal
-from typing import Iterable
 
 import db
 from modules.conciliacion.matcher_banco import (

@@ -11,11 +11,10 @@ podemos limpiarlos.
 """
 from __future__ import annotations
 
+import json
 import logging
 
-import json
-
-from flask import Blueprint, jsonify, request, redirect, url_for, flash
+from flask import Blueprint, jsonify, request
 
 import db as _db
 from auth import requiere_login, requiere_permiso
@@ -155,8 +154,8 @@ def e2e_borrar_sesion_v2():
     # Esto evita loopback HTTP (que en Windows/Waitress puede dar 10061) y
     # también las gymnastics de test_client con cookies/CSRF.
     try:
-        from flask import current_app, session as _flask_session
-        from flask import request as _outer_req
+        from flask import current_app
+        from flask import session as _flask_session
         # Snapshot del session actual (que tiene login válido)
         outer_session = dict(_flask_session)
         with current_app.test_request_context(
@@ -223,7 +222,6 @@ def e2e_borrar_sesion():
 
     Returns: dict con snapshot pre/post + diff. ok=True si todo limpio.
     """
-    from datetime import datetime, timezone
     import uuid
 
     out = {"ok": True, "steps": []}
@@ -451,7 +449,6 @@ def estado_banco_completo():
       - todos los matches activos y deshechos recientes
       - txs PC-only (no DBF) en el último mes
     """
-    from datetime import datetime, timedelta
     out = {"ok": True}
     # 1. Top 30 txs (últimas por fecha + id)
     out["top_txs"] = _db.fetch_all(

@@ -290,9 +290,9 @@ def parse_pendientes_cruce(raw: bytes):
     Reusa hoja_parser (depósitos +, pagos −, ajustes sin fecha) — fuente
     única de parseo de la hoja.
     """
-    from modules.conciliacion import hoja_parser as _hp
-
     import openpyxl as _ox
+
+    from modules.conciliacion import hoja_parser as _hp
     _wb = _ox.load_workbook(io.BytesIO(raw), data_only=True)
     try:
         ws = _hp._elegir_hoja(_wb, None)

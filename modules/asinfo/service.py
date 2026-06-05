@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from modules._lib import metabase_client
 
@@ -47,7 +46,7 @@ _LOG = logging.getLogger("programa_core.asinfo")
 # ---------------------------------------------------------------------------
 
 
-def fetch_card_from_env(env_var: str, params: Optional[list[dict]] = None) -> list[dict]:
+def fetch_card_from_env(env_var: str, params: list[dict] | None = None) -> list[dict]:
     """Lee la card cuyo ID está en la env var y la ejecuta vía Metabase.
 
     Args:
@@ -71,7 +70,7 @@ def fetch_card_from_env(env_var: str, params: Optional[list[dict]] = None) -> li
 # ---------------------------------------------------------------------------
 
 
-def ventas_vendedor_usd(vendedor: Optional[str] = None) -> list[dict]:
+def ventas_vendedor_usd(vendedor: str | None = None) -> list[dict]:
     """Comparativo interanual de ventas en USD por vendedor.
 
     Si la card tiene un template-tag `{{vendedor}}` (opcional), se le pasa
@@ -89,7 +88,7 @@ def ventas_vendedor_usd(vendedor: Optional[str] = None) -> list[dict]:
     return fetch_card_from_env("ASINFO_CARD_VENDEDOR_USD", params=params)
 
 
-def ventas_vendedor_kg(vendedor: Optional[str] = None) -> list[dict]:
+def ventas_vendedor_kg(vendedor: str | None = None) -> list[dict]:
     """Comparativo interanual de ventas en Kg por vendedor."""
     params = None
     if vendedor:
@@ -103,7 +102,7 @@ def ventas_vendedor_kg(vendedor: Optional[str] = None) -> list[dict]:
     return fetch_card_from_env("ASINFO_CARD_VENDEDOR_KG", params=params)
 
 
-def ventas_cliente_kg(vendedor: Optional[str] = None) -> list[dict]:
+def ventas_cliente_kg(vendedor: str | None = None) -> list[dict]:
     """Comparativo interanual de ventas en Kg por cliente (con filtro
     opcional por vendedor — la card 164 tiene ese template-tag)."""
     params = None

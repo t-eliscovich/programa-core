@@ -32,7 +32,6 @@ from typing import Any
 
 import db as _db
 
-
 # Documentos que suman al saldo (créditos) vs los que restan (débitos).
 # Misma matriz que el resto de modules/conciliacion/*.py.
 DOCS_CREDITO = ("DE", "TR", "XX", "NC", "IN", "AC")
