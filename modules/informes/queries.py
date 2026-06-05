@@ -3112,6 +3112,11 @@ def resultados_costos_tabla(
     factor_desperdicio: float = 1.0,
     provision_pendiente: float = 0.0,
     utilidad_econ: float = 0.0,
+    # 2026-06-05 — Costo Total réplica EXACTA del dBase. Si se pasan, el caller
+    # ya calculó COSTUNI (u$/kg, INFORMES.PRG L406) y CSVTATOT (U$, L411);
+    # los usamos tal cual. Si None, cae a la aprox Subtotal+4.5% + Admin.
+    costo_total_ukg: float | None = None,
+    costo_total_us: float | None = None,
 ) -> list[dict]:
     """Tabla RESULTADOS del /informes/balance — rediseno Federico 2026-05-21.
 
@@ -3174,8 +3179,15 @@ def resultados_costos_tabla(
               + float(deprcar or 0))
     adm_ukg = _div(adm_us, venta_kg)
 
-    ct_ukg = sub_ukg + adm_ukg
-    ct_us = venta_kg * ct_ukg
+    # Costo Total — dBase muestra DOS fórmulas distintas: u$/kg = COSTUNI
+    # (factor sobre MP+Col), U$ = CSVTATOT (otra fórmula). Si el caller las pasa,
+    # las usamos tal cual (réplica exacta). Sino, aprox Subtotal+Admin. TMT 2026-06-05.
+    if costo_total_ukg is not None:
+        ct_ukg = float(costo_total_ukg)
+        ct_us = float(costo_total_us) if costo_total_us is not None else venta_kg * ct_ukg
+    else:
+        ct_ukg = sub_ukg + adm_ukg
+        ct_us = venta_kg * ct_ukg
 
     # Utilidad NO ESTANDARIZADA = Venta − Costo Total (operativa pura).
     ue_ukg = precio - ct_ukg
@@ -3807,6 +3819,33 @@ def informe_balance() -> dict:
     _ktint_tin = float(tin.get("ktint") or 0)
     _desp_pct = ((1 - _kr_tin / _ktint_tin) * 100) if _ktint_tin > 0 else 4.0
     _factor_desp = 1 + (_desp_pct + 0.5) / 100
+
+    # ─── Costo Total estilo dBase (réplica exacta INFORMES.PRG) ─────────
+    # u$/kg = COSTUNI (L406) = factor*(UMX+ITIN/KR)+VK/KK+GTIN/KR+GS/KV
+    # U$    = CSVTATOT (L411) = KV*1.04*(UMX+VK/KK+ITIN/KT+GC/(KTINT+KPROVT))+GS
+    _vk_kk = _safe_div(VK, KK)
+    _itin_kr = _safe_div(ITIN, KR)
+    _gtin_kr = _safe_div(GTIN, KR)
+    _gs_kv = _safe_div(GS, KV)
+    _costuni = _factor_desp * (UMX + _itin_kr) + _vk_kk + _gtin_kr + _gs_kv
+    # KT = kg crudo que entran a tinturar = tipo-T externo + KTINT − servicios (PRG L263).
+    _kt = (compras_tipo_t_externos_mes().get("kg", 0.0) + KTINT - tinto_kg_servicios_mes()) or KTINT
+    # KPROVT = kg tintura tercerizada prov 'TT' (PRG L222).
+    _kprovt_row = db.fetch_one(
+        "SELECT COALESCE(SUM(kg),0) AS kg FROM scintela.compra "
+        "WHERE fecha >= date_trunc('month',CURRENT_DATE) "
+        "  AND fecha <  date_trunc('month',CURRENT_DATE)+INTERVAL '1 month' "
+        "  AND UPPER(TRIM(tipo))='T' AND UPPER(TRIM(COALESCE(codigo_prov,'')))='TT' "
+        "  AND COALESCE(stat,'') NOT IN ('X','Y') "
+        "  AND COALESCE(usuario_crea,'') <> 'asinfo-backfill'"
+    ) or {}
+    _kprovt = float(_kprovt_row.get("kg") or 0)
+    # GC = gs.tintorería sin amort. PC lo aproxima de xgast V4+V5+V6 (el PRG lo
+    # saca del flujo bancario GCC1+GCC2+CC — puede haber diferencia chica).
+    _gc = float(gxg["gtin_sin_dcc"])
+    _csvtatot = (KV * 1.04 * (UMX + _vk_kk + _safe_div(ITIN, _kt)
+                 + _safe_div(_gc, (KTINT + _kprovt))) + GS)
+
     tabla_resultados = resultados_costos_tabla(
         venta_kg=h_kvent,
         venta_us=h_uvent,
@@ -3844,6 +3883,8 @@ def informe_balance() -> dict:
         factor_desperdicio=_factor_desp,
         provision_pendiente=provision_pendiente_us,
         utilidad_econ=float(utilidad or 0),
+        costo_total_ukg=_costuni,
+        costo_total_us=_csvtatot,
     )
 
     resultados = {
