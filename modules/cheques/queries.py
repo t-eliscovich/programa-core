@@ -2506,18 +2506,18 @@ def aplicar_a_factura(
                             f"factura {f['numf']} ({saldo_actual:.2f}) "
                             f"por más de $50."
                         )
-                else:  # imp < 0 → absorción
-                    if saldo_actual > 0.005:
+                else:  # imp < 0 → REVERSA de abono (abono mal cargado) o
+                    # absorción de un crédito a favor. TMT 2026-06-06 dueña:
+                    # antes esto se BLOQUEABA si la factura tenía saldo
+                    # POSITIVO, pero un negativo sirve justamente para
+                    # REVERTIR un abono (sube el saldo de vuelta). Única
+                    # regla: no se puede revertir más de lo que hay abonado.
+                    if abs(imp) > abono_actual + 0.01:
                         raise ValueError(
-                            f"Factura {f['numf']} tiene saldo POSITIVO "
-                            f"({saldo_actual:.2f}) — no podés aplicar un "
-                            f"importe negativo a una factura viva."
-                        )
-                    if abs(imp) > abs(saldo_actual) + 0.01:
-                        raise ValueError(
-                            f"Absorción ({abs(imp):.2f}) excede el crédito a "
-                            f"favor de la factura {f['numf']} "
-                            f"({abs(saldo_actual):.2f})."
+                            f"El importe negativo ({abs(imp):.2f}) excede el "
+                            f"abono de la factura {f['numf']} "
+                            f"({abono_actual:.2f}) — no podés revertir más de "
+                            f"lo abonado."
                         )
                 nuevo_abono = abono_actual + imp
             nuevo_saldo = float(f["importe"] or 0) - nuevo_abono
