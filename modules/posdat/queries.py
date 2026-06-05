@@ -107,6 +107,53 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
         r["importe"] = round(importe_pers + cd * offset, 2)
         r["dias_offset"] = offset
 
+
+def persistir_acumulacion_yy(hoy: date | None = None) -> int:
+    """Persiste la acumulación YY/RT en el importe GUARDADO, igual que el dBase
+    (MENU.PRG: REPLACE IMPORTE + cuota DAILY, perpetuo). TMT 2026-06-05.
+
+    Antes la acumulación era sólo display-time (`base + cuota×offset` calculado
+    al render) y NO se persistía: el importe guardado quedaba congelado mientras
+    el dBase incrementaba el suyo a diario → PC siempre se desfasaba por debajo,
+    y cada edición reseteaba el baseline perdiendo lo acumulado.
+
+    Esta función hace, por cada YY/RT con baseline < hoy y cuota > 0:
+        importe  = importe + cuota_diaria × días_hábiles(baseline, hoy)
+        baseline = hoy
+    Es IDEMPOTENTE: si ya corrió hoy, baseline=hoy → offset 0 → no toca nada.
+    Una vez persistido, `_aplicar_display_time_yy` calcula offset 0, así que el
+    display sigue siendo el importe guardado (sin doble conteo). El KPI Pasivos,
+    que usa el importe persistido, queda = acumulado = dBase.
+    """
+    if not _baseline_col_exists():
+        return 0
+    hoy = hoy or _hoy_ec()
+    rows = db.fetch_all(
+        f"""
+        SELECT id_posdat, importe, cuota_diaria, baseline_date
+          FROM scintela.posdat
+         WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
+           AND baseline_date IS NOT NULL
+           AND baseline_date < %s
+           AND COALESCE(cuota_diaria, 0) > 0
+           AND {POSDAT_NO_ANULADA_WHERE}
+        """,
+        (hoy,),
+    ) or []
+    n = 0
+    for r in rows:
+        off = _dias_habiles_entre(r["baseline_date"], hoy)
+        if off <= 0:
+            continue
+        nuevo = float(r["importe"] or 0) + float(r["cuota_diaria"] or 0) * off
+        db.execute(
+            "UPDATE scintela.posdat SET importe = %s, baseline_date = %s "
+            "WHERE id_posdat = %s",
+            (round(nuevo, 2), hoy, r["id_posdat"]),
+        )
+        n += 1
+    return n
+
 # Filtro reutilizable de "no anuladas": toda query de listado/balance/saldo
 # tiene que excluir las filas soft-deleted (migración 0027). NULL = legacy
 # pre-migración, equivalente a FALSE.
