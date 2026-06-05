@@ -365,27 +365,17 @@ def posdat_totales() -> dict:
 
     totp_raw = float(row["totp"] or 0)
 
-    # TMT 2026-05-29: agregar el delta del display-time YY al TOTP.
-    # SUM(importe) del SQL devuelve los importes persistidos (baseline),
-    # pero los YY se muestran como `importe + cuota_diaria × offset`. Sin
-    # este ajuste, el KPI "Pasivos" del balance queda 23.600 más bajo que
-    # el total que la dueña ve en /posdat?tab=yy. Defensivo: si falla por
-    # cualquier razón (módulo no cargado, etc.), seguimos con totp_raw.
-    delta_yy = 0.0
-    try:
-        from modules.posdat import queries as _pq
-        yy_filas = _pq.buscar(tab="yy", solo_abiertas=True)
-        for r in yy_filas:
-            cd = float(r.get("cuota_diaria") or 0)
-            off = int(r.get("dias_offset") or 0)
-            delta_yy += cd * off
-    except Exception:  # noqa: BLE001
-        delta_yy = 0.0
-
+    # TMT 2026-06-05: el pasivo del balance debe IGUALAR al dBase, que usa el
+    # importe PERSISTIDO de POSDAT (TOTP = SUM(importe) WHERE banc<>9), SIN la
+    # acumulación display-time de las provisiones YY. Antes (2026-05-29) sumábamos
+    # ese delta_yy para que matcheara /posdat?tab=yy, pero eso lo despegaba del
+    # dBase (PC quedaba +51k). El dBase no acumula al display; usa el valor
+    # guardado. La acumulación YY sigue viva en el tab /posdat?tab=yy (display-time);
+    # sólo NO entra al KPI Pasivos del balance.
     return {
         "pos1": float(row["pos1"] or 0),
         "pos2": float(row["pos2"] or 0),
-        "totp": round(totp_raw + delta_yy, 2),
+        "totp": round(totp_raw, 2),
     }
 
 
@@ -3099,6 +3089,7 @@ def resultados_costos_tabla(
     v2: float,
     v3: float,
     dtj: float,
+    tej_base_us: float | None = None,  # 2026-06-05: importe compras tipo K del mes (= VK del dBase). Si None, cae a v1+v2+v3.
     kg_tejidos: float,
     v4: float,
     v5: float,
@@ -3151,14 +3142,19 @@ def resultados_costos_tabla(
     venta_us = float(venta_us or 0)
     precio = _div(venta_us, venta_kg)
 
-    factor = (30.0 / dia_actual) if dia_actual else 0.0
-    proy_kg = venta_kg * factor
+    # PROYECCIÓN — dBase INFORMES.PRG L4: PROYECCION = KGPRO (meta del mes) × precio,
+    # NO regla de 3 (venta_kg × 30/día). Antes daba ~379k kg en vez de la meta. TMT 2026-06-05.
+    proy_kg = float(kgpro or 0)
     proy_us = proy_kg * precio
 
     mp_ukg = float(mp_ukg or 0)
 
     kg_tejidos = float(kg_tejidos or 0)
-    tej_us = float(v1 or 0) + float(v2 or 0) + float(v3 or 0) + float(dtj or 0)
+    # TEJEDURÍA — dBase INFORMES.PRG L241: VK = IMPORTE(compras tipo K) + DTJ.
+    # Antes PC usaba V1+V2+V3 (gastos) + DTJ → daba ~2× el dBase. TMT 2026-06-05.
+    _tej_base = (float(tej_base_us) if tej_base_us is not None
+                 else float(v1 or 0) + float(v2 or 0) + float(v3 or 0))
+    tej_us = _tej_base + float(dtj or 0)
     tej_ukg = _div(tej_us, kg_tejidos)
 
     ktint = float(ktint or 0)
@@ -3221,8 +3217,8 @@ def resultados_costos_tabla(
          "ayuda": "Facturas del mes en curso (stat != X). U$/kg = U$ / Kg."},
         {"label": "Proyección", "kg": proy_kg, "ukg": precio, "us": proy_us,
          "clase": "dato",
-         "ayuda": ("Regla de 3 al dia 30 con el mismo precio promedio: "
-                   "Kg vendidos * 30 / dia actual.")},
+         "ayuda": ("Meta del mes (KPROG de Iniciales) × precio promedio — "
+                   "igual que la PROYECCIÓN del dBase (INFORMES.PRG).")},
         {"label": "COSTOS", "clase": "seccion"},
         {"label": "Materia Prima", "kg": None, "ukg": mp_ukg, "us": None,
          "clase": "dato",
@@ -3686,23 +3682,36 @@ def informe_balance() -> dict:
     # Días de cobranza: CART / VENTANUAL * 360 (PRG línea 441).
     cart_dias = _safe_div(cart * 360, venta_anual["uvent_anual"])
 
-    # Stock por etapa — del último snapshot.
+    # Stock por etapa.
+    # HILADO / TEJIDO — del último snapshot (hoy coinciden con dBase).
     h_hilado = float(hist.get("hilado") or 0) if "hilado" in hist else 0.0
     h_tejido_kg = float(hist.get("tejido") or 0) if "tejido" in hist else 0.0
-    h_terminado_kg = float(hist.get("terminado") or 0) if "terminado" in hist else 0.0
-    # Si historia no tiene desglose de stock por etapa (sólo `stock` agregado),
-    # usamos iniciales como fallback (es el opening — mejor que nada).
-    if h_hilado == 0 and h_tejido_kg == 0 and h_terminado_kg == 0:
+    if h_hilado == 0 and h_tejido_kg == 0:
         h_hilado = float(inic.get("hilado") or 0)
         h_tejido_kg = float(inic.get("tejido") or 0)
-        h_terminado_kg = float(inic.get("terminado") or 0)
 
-    # Descontar facturas creadas en Programa Core que todavía no están en
-    # el DBF (y por lo tanto no se reflejaron en iniciales.terminado). Sin
-    # esto, agregás una factura por la UI y el stock terminado no baja
-    # hasta el próximo sync de DBF — TMT 2026-05-11.
-    kg_facturas_pc = kg_facturas_pc_no_sincronizadas()
-    h_terminado_kg = max(0.0, h_terminado_kg - kg_facturas_pc)
+    # TERMINADO — réplica EXACTA del dBase (INFORMES.PRG L315/L320):
+    #   PF = PF0 + KR − KV
+    #   PF0 = TERMINADO del mes ANTERIOR en iniciales (dBase: GO BOTT + SKIP -1)
+    #   KR  = kg netos que llegan a terminado (tin.kr, excl. lavados COLOR LIKE 'LAV%')
+    #   KV  = kg vendidos del mes (facturas LIVE = h_kvent)
+    # Antes PC leía iniciales[mes_actual].terminado, que es un caché que el dBase
+    # graba en la fila del mes y queda stale apenas se vende más después del último
+    # write-back (PC mostraba 349.782 vs dBase 340.151). Recompute en vivo —
+    # KV ya incluye las facturas creadas en PC, así que no hace falta el ajuste
+    # kg_facturas_pc_no_sincronizadas() de antes. TMT 2026-06-05.
+    _cur_m = int(inic.get("mesnum") or today_ec().month)
+    _cur_y = int(inic.get("yy") or today_ec().year)
+    _prev_m = 12 if _cur_m == 1 else _cur_m - 1
+    _prev_y = _cur_y - 1 if _cur_m == 1 else _cur_y
+    _prev_inic = db.fetch_one(
+        "SELECT terminado FROM scintela.iniciales "
+        "WHERE yy = %s AND mesnum = %s "
+        "ORDER BY id_iniciales DESC LIMIT 1",
+        (_prev_y, _prev_m),
+    ) or {}
+    pf0_terminado = float(_prev_inic.get("terminado") or 0)
+    h_terminado_kg = max(0.0, pf0_terminado + float(KR or 0) - float(h_kvent or 0))
 
     # ─── Tarifas del panel STOCK ───────────────────────────────────────
     # Reglas PRG (INFORMES.PRG líneas 303-345 + reglas TMT):
@@ -3807,6 +3816,7 @@ def informe_balance() -> dict:
         v2=gxg["v2"],
         v3=gxg["v3"],
         dtj=amort["dtj"],
+        tej_base_us=float(tej.get("us_total") or 0),
         kg_tejidos=float(tej.get("kg_total") or 0),
         v4=gxg["v4"],
         v5=gxg["v5"],
