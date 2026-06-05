@@ -3093,6 +3093,13 @@ def resultados_costos_tabla(
     patr: float,
     patant: float,
     uret: float,
+    # 2026-06-04 — inputs para la UT.PROY estilo dBase (INFORMES.PRG L419).
+    # Defaults conservadores → callers viejos no rompen (UT.PROY cae a 0).
+    kgpro: float = 0.0,
+    pretot: float = 0.0,
+    factor_desperdicio: float = 1.0,
+    provision_pendiente: float = 0.0,
+    utilidad_econ: float = 0.0,
 ) -> list[dict]:
     """Tabla RESULTADOS del /informes/balance — rediseno Federico 2026-05-21.
 
@@ -3167,9 +3174,25 @@ def resultados_costos_tabla(
     ur_us = (float(patr or 0) - float(patant or 0)) + float(uret or 0)
     ur_ukg = _div(ur_us, venta_kg)
 
-    # Utilidad PROYECTADA — mismo margen unitario × kg proyectados al día 30.
-    up_ukg = ue_ukg
-    up_us = proy_kg * up_ukg
+    # Utilidad PROYECTADA — réplica EXACTA del dBase (INFORMES.PRG L419-421):
+    #   UTPROY = UTILIDAD + (KGPRO-KV)*(PRECIO - (UMX+ITIN/KR)*factor_desp)
+    #                     - (XPRETOT - VK - GTIN - GS)
+    #   UT.PROY (pantalla) = UTPROY - PROVI
+    # UTILIDAD = PATR-PATANT live (param utilidad_econ). El gasto fijo NO se
+    # extrapola: sale del PRESUPUESTO XPRETOT (= pretot de scintela.iniciales)
+    # menos lo ya gastado (VK=tej_us + GTIN=tin_us + GS=adm_us). KGPRO = meta
+    # del mes (no la regla de 3). PROVI = provisión que falta aprovisionar.
+    _costo_var_kg = (mp_ukg + col_ukg) * float(factor_desperdicio or 1.0)
+    _margen_var_kg = precio - _costo_var_kg
+    _gasto_fijo_restante = float(pretot or 0) - (tej_us + tin_us + adm_us)
+    _utproy = (
+        float(utilidad_econ or 0)
+        + (float(kgpro or 0) - venta_kg) * _margen_var_kg
+        - _gasto_fijo_restante
+    )
+    up_kg = float(kgpro or 0)
+    up_us = _utproy - float(provision_pendiente or 0)
+    up_ukg = _div(up_us, up_kg)
 
     return [
         {"label": "Venta", "kg": venta_kg, "ukg": precio, "us": venta_us,
@@ -3213,10 +3236,12 @@ def resultados_costos_tabla(
          "ayuda": ("(PATR − PATANT) + URET — delta del patrimonio + dividendos "
                    "del mes. Cuenta económica completa (incluye revalúo de "
                    "stock, cambios de cartera, etc.).")},
-        {"label": "Utilidad Proyectada", "kg": proy_kg, "ukg": up_ukg,
+        {"label": "Utilidad Proyectada", "kg": up_kg, "ukg": up_ukg,
          "us": up_us, "clase": "dato",
-         "ayuda": ("Mismo margen unitario × kg proyectados (regla de 3 al "
-                   "día 30). U$ = kg proyectados × (precio − costo total).")},
+         "ayuda": ("Réplica dBase (UT.PROY): utilidad real del mes (PATR−PATANT) "
+                   "+ margen variable × kg que faltan vender para la meta KPROG "
+                   "− gastos fijos PROYECTADOS que faltan (XPRETOT de Iniciales − "
+                   "lo ya gastado) − provisión pendiente del mes.")},
         {"label": "Utilidad no estandarizada", "kg": venta_kg, "ukg": ue_ukg,
          "us": ue_us, "clase": "dato",
          "ayuda": ("Venta − Costo Total — utilidad operativa pura. Sólo usa "
@@ -3746,6 +3771,12 @@ def informe_balance() -> dict:
         )
     except Exception:
         _mp_ukg_flujo = 0.0
+    # Factor de desperdicio (DESP+DESK) para la UT.PROY — misma fórmula que
+    # _costo_total_con_desperdicio (PRG L258-261; DESK=0.5, DESP default 4).
+    _kr_tin = float(tin.get("kr") or 0)
+    _ktint_tin = float(tin.get("ktint") or 0)
+    _desp_pct = ((1 - _kr_tin / _ktint_tin) * 100) if _ktint_tin > 0 else 4.0
+    _factor_desp = 1 + (_desp_pct + 0.5) / 100
     tabla_resultados = resultados_costos_tabla(
         venta_kg=h_kvent,
         venta_us=h_uvent,
@@ -3776,6 +3807,12 @@ def informe_balance() -> dict:
         patr=float(hist_live.get("usuti") or 0),
         patant=0.0,
         uret=0.0,
+        # UT.PROY estilo dBase — gastos proyectados de scintela.iniciales.
+        kgpro=kgpro,
+        pretot=pretot,
+        factor_desperdicio=_factor_desp,
+        provision_pendiente=provision_pendiente_us,
+        utilidad_econ=float(utilidad or 0),
     )
 
     resultados = {

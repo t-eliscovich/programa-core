@@ -1723,3 +1723,26 @@ Matriz "5 meses cerrados + mes actual" alimentada por `scintela.historia`. Hay *
 - **Verificación local:** py_compile + ruff limpios en lo editado; `test_procesa_provisiones_mensual` + `test_snapshot_carry_forward` + `test_no_backfill_filter_balance` + `test_historial_consolidacion` verdes.
 - **Archivos (commitear SOLO estos):** `modules/informes/queries.py`, `modules/informes/views.py`, `modules/informes/templates/informes/historico_12m.html`, `scripts/snapshot_historia_mensual.py`, `scripts/procesa_provisiones_mensual.py`, `tests/test_procesa_provisiones_mensual.py`. ⚠ El working tree tiene ~30 archivos ajenos sin commitear — NO incluirlos.
 - **Pendiente:** verificar `scintela.historia` Windows Scheduled Task en EC2 (que el cron mensual corra día 1-2) vía SSM/intela-aws-deploy.
+- **Deploy 2026-06-04 verificado en prod:** identidad EN VIVO cierra (22.577.711 − 2.201.333 = 20.376.378 = PATRIM), Histórico EN VIVO == Resultados al dólar, header/columnas/throttle OK. La columna PREVIA seguía mostrando la foto pre-deploy (sin caja) hasta tomar una nueva → tip: "Snapshot ahora" la refresca y la Δ va a ~0.
+
+### Backlog de mejoras Resultados/Historial (auditoría 2026-06-04, no bloqueante)
+
+1. **[MEDIA] `?forzar_provisiones=1` es un footgun.** Param GET en `/informes/balance` que aplica un día EXTRA de provisiones por cada carga (cada refresh duplica montos). Pasar a POST + confirmación, o quitarlo, o auditar cada aplicación forzada. Ver `correr_provisiones_diarias(forzar=...)`.
+2. **[MEDIA] Utilidad mid-mes negativa confunde.** "Utilidad Real" (Resultados) y UTILIDADES/MARGEN del mes en curso (Histórico) salen negativos a principio de mes porque `PATR−PATANT` no es significativo hasta el cierre. Marcar la columna/fila del mes en curso como "parcial" o mostrar solo la Proyección hasta cerrar. El warning actual solo salta si |diff| ≥ $2M.
+3. **[BAJA] Test preventivo de la identidad del snapshot.** Agregar guard/test que afirme que los campos snapshoteados cumplen `_activo − deuda == patrimonio` (banco debe incluir caja). Evita reintroducir el bug #1 si alguien cambia los campos.
+4. **[BAJA] Perf Histórico.** La pantalla llama `informe_balance()` (pesado) para la columna live y, si no está throttleado, otra vez para el snapshot. Computar el balance live UNA vez por request y reusarlo.
+5. **[BAJA] Operativo del mes en curso es parcial (MTD).** VENTAS kg / precio / margen del mes corriente se muestran al lado de meses completos sin marca de "parcial (N días)". Anotarlo para no confundir.
+
+### Utilidad Proyectada — réplica dBase UTPROY (2026-06-04, pendiente deploy)
+
+Pedido dueña: replicar la UT.PROY del dBase, que usa **gastos proyectados**. Implementado en `resultados_costos_tabla` (fila "Utilidad Proyectada") la fórmula exacta de `INFORMES.PRG` L419-421:
+
+```
+UTPROY = UTILIDAD + (KGPRO-KV)*(PRECIO - (UMX+ITIN/KR)*factor_desp) - (XPRETOT - VK - GTIN - GS)
+UT.PROY (pantalla) = UTPROY - PROVI
+```
+
+- **UTILIDAD** = PATR−PATANT live (param `utilidad_econ`). **KGPRO** = meta `kprog` de Iniciales (no la regla de 3). **XPRETOT** = `pretot` (PRETEJ+PRETIN+PREADM) de `scintela.iniciales`. **VK/GTIN/GS** = tej_us/tin_us/adm_us. **PROVI** = `provision_pendiente_mes()` (80k×(1−día/30)). **factor_desp** = 1+(DESP+DESK)/100.
+- Antes PC mostraba `proy_kg × (precio − costo total)` (regla de 3) → daba ~0/negativo. Ahora proyecta utilidad de mes completo (jun ≈ +427k vs −6k).
+- **Gastos proyectados — origen:** hoy de `scintela.iniciales` (cols `pretej/pretin/preadm/pretot`, `kprog`), que se llena del **INICIALES.DBF** vía `import_dbf.py::_map_iniciales`. La pantalla `/informes/iniciales` existe pero **NO está en el menú** (solo por URL).
+- **FUTURO pedido dueña:** form en PC para que el usuario complete/edite los gastos proyectados directo en `scintela.iniciales` (dejar de depender del DBF para esos campos) + agregar el link al menú.
