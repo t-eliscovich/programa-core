@@ -157,6 +157,12 @@
   <div class="flex items-start justify-between mb-5 gap-4 flex-wrap no-print">
     {{ page_hero('Informe de Resultados', descripcion_safe=_desc) }}
     <div class="flex items-center gap-2">
+      {# Botón a Metas/Iniciales — editar gastos proyectados (Presupuesto) que
+         alimentan la Utilidad Proyectada. TMT 2026-06-06. #}
+      <a href="{{ url_for('iniciales.lista') }}" class="text-sm px-3 py-1.5 rounded border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 inline-flex items-center gap-1.5">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m9 17 4-4 3 3 5-5"/></svg>
+        Metas / Iniciales
+      </a>
       {# Federico 2026-05-22 — navegación entre pantallas movida a la
          barra nav_resultados (arriba del título). #}
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
@@ -193,6 +199,8 @@
       'Tejeduría':        url_for('compras.produccion_tejeduria'),
       'Tintorería':       url_for('informes.flujo_produccion'),
       'Colorantes/Quím.': url_for('informes.flujo_produccion'),
+      'Proyección':          url_for('iniciales.lista'),
+      'Utilidad Proyectada': url_for('iniciales.lista'),
     } %}
     <div class="border-r border-slate-200 dark:border-slate-800">
       <table class="balance-table">

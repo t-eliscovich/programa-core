@@ -846,6 +846,21 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
     insertadas = 0
     # db.tx() yielde una connection psycopg2; usamos cursor() + execute().
     with db.tx() as conn, conn.cursor() as cur:
+        # TMT 2026-06-06: preservar las ediciones de PC de los GASTOS
+        # PROYECTADOS (pretot/kprog/gprog) de scintela.iniciales. La dueña
+        # los edita en /iniciales (Presupuesto) y el TRUNCATE+INSERT del DBF
+        # los pisaría. Snapshot de las filas con usuario_modifica (= tocadas
+        # en PC) ANTES del truncate; se restauran después del reload. Los
+        # campos de STOCK (hilado/tejido/terminado/um/uk) sí vienen del DBF.
+        # Ver memoria project_iniciales_editar_gastos_proyectados.
+        _ini_overrides = []
+        if pg_table == "scintela.iniciales":
+            cur.execute(
+                "SELECT yy, mesnum, pretot, kprog, gprog, usuario_modifica "
+                "FROM scintela.iniciales WHERE usuario_modifica IS NOT NULL"
+            )
+            _ini_overrides = cur.fetchall()
+
         # Estrategia de limpieza pre-load:
         # - Default: TRUNCATE total (tabla 1:1 con DBF).
         # - delete_where: tabla compartida entre múltiples DBFs (caso
@@ -867,6 +882,16 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         for r in pg_rows:
             cur.execute(sql, [r[c] for c in cols])
             insertadas += 1
+
+        # Restaurar las ediciones PC de gastos proyectados (ver snapshot arriba).
+        if pg_table == "scintela.iniciales" and _ini_overrides:
+            for yy, mesnum, pretot, kprog, gprog, usr in _ini_overrides:
+                cur.execute(
+                    "UPDATE scintela.iniciales "
+                    "SET pretot = %s, kprog = %s, gprog = %s, usuario_modifica = %s "
+                    "WHERE yy = %s AND mesnum = %s",
+                    (pretot, kprog, gprog, usr, yy, mesnum),
+                )
 
     msg = f"{insertadas} filas cargadas en {pg_table}"
     if skipped_legacy:
