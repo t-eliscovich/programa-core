@@ -204,7 +204,10 @@ def nueva():
         )
         etiqueta = "Devolución" if devolucion else "Factura"
         flash(f"{etiqueta} N° {creada.get('numf')} creada.", "ok")
-        return redirect(url_for("facturas.detalle", id_factura=creada["id_factura"]))
+        return redirect(url_for(
+            "facturas.detalle",
+            id_factura=(creada.get("numf") or creada["id_factura"]),
+        ))
     except Exception as e:
         # TMT 2026-05-14 (#37): humanizar antes de mostrar.
         import logging as _logging
@@ -225,12 +228,13 @@ def editar(id_factura: int):
     Sólo se puede tocar abono / condic / observacion. Para corregir importe,
     cliente, fecha, kg, numf → anular y reemitir (regla Ecuador).
     """
-    fact = queries.por_id(id_factura)
+    fact = queries.por_id_interno(id_factura)
     if not fact:
         abort(404)
+    _numf_url = fact.get("numf") or id_factura
     if (fact.get("stat") or "").upper() in queries.STATS_ANULADAS:
         flash("La factura está anulada/eliminada — no se puede editar.", "warn")
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=_numf_url))
 
     errores: list[str] = []
     form: dict = {
@@ -274,7 +278,7 @@ def editar(id_factura: int):
                 f"Factura editada — saldo nuevo: $ {res['saldo']:,.2f} (stat: {res['stat_nuevo']}).",
                 "ok",
             )
-            return redirect(url_for("facturas.detalle", id_factura=id_factura))
+            return redirect(url_for("facturas.detalle", id_factura=_numf_url))
         except ValueError as e:
             errores.append(str(e))
             return render_template(
@@ -379,12 +383,13 @@ def editar_numf(id_factura: int):
 @requiere_permiso("facturas.anular")
 def confirmar_anulacion(id_factura: int):
     """Paso 1 del 2-step undo: muestra el resumen + pide motivo antes de anular."""
-    fact = queries.por_id(id_factura)
+    fact = queries.por_id_interno(id_factura)
     if not fact:
         abort(404)
+    _numf_url = fact.get("numf") or id_factura
     if fact.get("stat") == "Y":
         flash("La factura ya está anulada.", "warn")
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=_numf_url))
     detalle = {
         "N° factura": fact.get("numf_completo") or fact.get("numf"),
         "Fecha": (fact.get("fecha").strftime("%d/%m/%Y") if fact.get("fecha") else "—"),
@@ -401,7 +406,7 @@ def confirmar_anulacion(id_factura: int):
         ),
         detalle_registro=detalle,
         accion_url=url_for("facturas.anular", id_factura=id_factura),
-        volver_url=url_for("facturas.detalle", id_factura=id_factura),
+        volver_url=url_for("facturas.detalle", id_factura=_numf_url),
         motivo_requerido=True,
         confirm_label="Confirmar anulación",
     )
@@ -426,7 +431,9 @@ def reversar_carga(id_factura: int):
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude reversar la carga", e)
-    return redirect(url_for("facturas.detalle", id_factura=id_factura))
+    _f = queries.por_id_interno(id_factura)
+    _numf_url = (_f or {}).get("numf") or id_factura
+    return redirect(url_for("facturas.detalle", id_factura=_numf_url))
 
 
 @facturas_bp.route("/facturas/<int:id_factura>/anular", methods=["POST"])
@@ -436,15 +443,18 @@ def anular(id_factura: int):
     motivo = (request.form.get("motivo") or "").strip()
     # Motivo opcional — la dueña puede dejarlo vacío (ej. "error de carga"
     # implícito). TMT 2026-05-13.
+    # numf para el flash/redirect (el único número visible de la factura).
+    _f = queries.por_id_interno(id_factura)
+    _numf_url = (_f or {}).get("numf") or id_factura
     try:
         usuario = (g.user or {}).get("username", "web")
         queries.anular(id_factura, motivo=motivo, usuario=usuario)
-        flash(f"Factura {id_factura} anulada.", "ok")
+        flash(f"Factura {_numf_url} anulada.", "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude anular", e)
-    return redirect(url_for("facturas.detalle", id_factura=id_factura))
+    return redirect(url_for("facturas.detalle", id_factura=_numf_url))
 
 
 @facturas_bp.route("/facturas/<int:id_factura>")

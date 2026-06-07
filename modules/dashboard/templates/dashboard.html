@@ -327,7 +327,7 @@
           {% for f in facturas_recientes %}
             <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
               <td class="px-3 py-1.5 font-mono">
-                <a href="{{ url_for('facturas.detalle', id_factura=f.id_factura) }}" class="hover:text-blue-600">{{ f.numf_completo or f.numf }}</a>
+                <a href="{{ url_for('facturas.detalle', id_factura=(f.numf or f.id_factura)) }}" class="hover:text-blue-600">{{ f.numf_completo or f.numf }}</a>
               </td>
               <td class="px-3 py-1.5">{{ f.fecha | fecha_es }}</td>
               <td class="px-3 py-1.5">{{ f.cliente }}</td>

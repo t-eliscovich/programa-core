@@ -531,6 +531,33 @@ def editar_campo(
         }
 
 
+def por_id_interno(id_factura: int) -> dict | None:
+    """Cabecera de factura ESTRICTAMENTE por la PK interna (id_factura).
+
+    TMT 2026-06-07: a diferencia de `por_id` (que resuelve numf-OR-id,
+    priorizando numf para soportar URLs con el número del dBase), esta
+    versión busca SOLO por la PK interna. Es OBLIGATORIA en handlers de
+    ACCIÓN (editar/anular/confirmar) donde el parámetro es el id interno:
+    como el id interno de una factura puede COINCIDIR con el numf de OTRA
+    (ej. id 161497 de una = numf 161497 de otra), usar `por_id` ahí
+    mostraría/editaría la factura equivocada.
+    """
+    return db.fetch_one(
+        """
+        SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
+               f.codigo_cli, f.kg, f.importe, f.abono, f.saldo,
+               f.stat, f.condic, f.tipo, f.pase, f.clave,
+               COALESCE(c.nombre, '')    AS cliente,
+               c.ruc, c.telefono, c.pago
+          FROM scintela.factura f
+          LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+         WHERE f.id_factura = %s
+         LIMIT 1
+        """,
+        (id_factura,),
+    )
+
+
 def por_id(id_factura: int) -> dict | None:
     """Cabecera de factura por id_factura interno O por numf.
 

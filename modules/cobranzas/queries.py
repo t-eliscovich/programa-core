@@ -130,10 +130,12 @@ def cobros_recientes(dias: int = 7) -> list[dict]:
                co.tipo_doc,
                co.no_docpago,
                co.id_factura,
+               f2.numf                AS factura_numf,
                co.abono_total,
                COALESCE(c.nombre, '') AS cliente
         FROM scintela.cobro co
         LEFT JOIN scintela.cliente c ON c.codigo_cli = co.codigo_cli
+        LEFT JOIN scintela.factura f2 ON f2.id_factura = co.id_factura
         WHERE co.fecha >= %s
         ORDER BY co.fecha DESC, co.id_cobro DESC
         """,

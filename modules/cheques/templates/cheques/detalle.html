@@ -393,7 +393,7 @@
           <td class="px-3 py-2">{{ a.fechaing | fecha_es }}</td>
           <td class="px-3 py-2 font-mono text-xs">
             {% if a.id_fact %}
-              <a href="{{ url_for('facturas.detalle', id_factura=a.id_fact) }}" class="hover:text-blue-600">{{ a.numf_completo or a.numf }}</a>
+              <a href="{{ url_for('facturas.detalle', id_factura=(a.numf or a.id_fact)) }}" class="hover:text-blue-600">{{ a.numf_completo or a.numf }}</a>
             {% endif %}
           </td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.fact_importe | money_es }}</td>

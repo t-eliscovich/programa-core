@@ -141,7 +141,7 @@ def generar(id_factura: int):
 
     No firma. No envía. Devuelve redirect a la vista del comprobante.
     """
-    fact = facturas_q.por_id(id_factura)
+    fact = facturas_q.por_id_interno(id_factura)
     if not fact:
         abort(404)
 
@@ -243,7 +243,7 @@ def detalle_comprobante(id_factura_electronica: int):
     fe = sri_q.por_id(id_factura_electronica)
     if not fe:
         abort(404)
-    fact = facturas_q.por_id(fe["id_factura"]) if fe.get("id_factura") else None
+    fact = facturas_q.por_id_interno(fe["id_factura"]) if fe.get("id_factura") else None
     errores_estructurales = validar_estructura_factura(fe.get("xml_generado") or "")
     return render_template(
         "sri/detalle.html",
@@ -455,7 +455,7 @@ def nc_form(id_factura_electronica: int):
         flash("Sólo se puede emitir NC contra una factura autorizada por el SRI.", "warn")
         return redirect(url_for("sri.detalle_comprobante",
                                 id_factura_electronica=id_factura_electronica))
-    fact = facturas_q.por_id(fe["id_factura"])
+    fact = facturas_q.por_id_interno(fe["id_factura"])
     return render_template("sri/nc_form.html", fe=fe, fact=fact)
 
 
@@ -488,7 +488,7 @@ def nc_generar(id_factura_electronica: int):
         return redirect(url_for("sri.detalle_comprobante",
                                 id_factura_electronica=id_factura_electronica))
 
-    fact = facturas_q.por_id(fe["id_factura"])
+    fact = facturas_q.por_id_interno(fe["id_factura"])
     if not fact:
         abort(404)
 

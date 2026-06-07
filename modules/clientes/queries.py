@@ -387,7 +387,11 @@ def cuenta_corriente(codigo_cli: str) -> dict:
                CASE WHEN COALESCE(f.importe,0) <  0
                     THEN -COALESCE(f.importe, 0) ELSE 0 END AS haber,
                'Factura ' || COALESCE(f.numf::text, '')  AS concepto,
-               f.id_factura                              AS ref_id,
+               -- TMT 2026-06-07: ref_id de facturas = numf (el número del
+               -- dBase, único identificador visible). El link del estado de
+               -- cuenta va a /facturas/<numf>, no al id interno (que puede
+               -- colisionar con el numf de OTRA factura).
+               COALESCE(NULLIF(f.numf, 0), f.id_factura)  AS ref_id,
                f.stat
           FROM scintela.factura f
          WHERE f.codigo_cli = %(codigo)s

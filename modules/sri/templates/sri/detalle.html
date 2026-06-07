@@ -4,7 +4,7 @@
 {% block breadcrumb %}
   {% if fact %}
     <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
-    <a href="{{ url_for('facturas.detalle', id_factura=fact.id_factura) }}" class="hover:underline">{{ fact.numf_completo or fact.numf }}</a> /
+    <a href="{{ url_for('facturas.detalle', id_factura=(fact.numf or fact.id_factura)) }}" class="hover:underline">{{ fact.numf_completo or fact.numf }}</a> /
   {% endif %}
   <strong>Comprobante SRI</strong>
 {% endblock %}
@@ -26,7 +26,7 @@
         Ver XML
       </a>
       {% if fact %}
-        <a href="{{ url_for('facturas.detalle', id_factura=fact.id_factura) }}"
+        <a href="{{ url_for('facturas.detalle', id_factura=(fact.numf or fact.id_factura)) }}"
            class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
           Volver a la factura
         </a>

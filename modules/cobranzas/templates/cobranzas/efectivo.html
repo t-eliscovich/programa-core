@@ -123,9 +123,9 @@
                   </td>
                   <td class="px-4 py-1.5 text-xs">
                     {% if c.id_factura %}
-                      <a href="{{ url_for('facturas.detalle', id_factura=c.id_factura) }}"
+                      <a href="{{ url_for('facturas.detalle', id_factura=(c.factura_numf or c.id_factura)) }}"
                          class="text-sky-700 hover:underline font-mono">
-                        Fact #{{ c.id_factura }}
+                        Fact {{ c.factura_numf or '—' }}
                       </a>
                     {% else %}
                       <span class="text-slate-300">—</span>

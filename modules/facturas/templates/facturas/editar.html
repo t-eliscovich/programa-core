@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Editar factura {{ fact.numf }}{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('facturas.lista') }}">Facturas</a> /
-  <a href="{{ url_for('facturas.detalle', id_factura=fact.id_factura) }}">{{ fact.numf_completo or fact.numf }}</a> /
+  <a href="{{ url_for('facturas.detalle', id_factura=(fact.numf or fact.id_factura)) }}">{{ fact.numf_completo or fact.numf }}</a> /
   <strong>Editar</strong>{% endblock %}
 
 {% block content %}
@@ -76,7 +76,7 @@
     </div>
 
     <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-      <a href="{{ url_for('facturas.detalle', id_factura=fact.id_factura) }}"
+      <a href="{{ url_for('facturas.detalle', id_factura=(fact.numf or fact.id_factura)) }}"
          class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
       <button type="submit"
               class="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium">

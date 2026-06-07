@@ -192,7 +192,7 @@
                           {% if fa.correo %}<span title="{{ fa.correo }}">✉</span>{% endif %}
                         </td>
                         <td class="py-1.5 pl-2 text-right">
-                          <a href="{{ url_for('facturas.detalle', id_factura=fa.id_factura) }}"
+                          <a href="{{ url_for('facturas.detalle', id_factura=(fa.numf or fa.id_factura)) }}"
                              class="text-xs text-slate-500 hover:text-sky-700 hover:underline">ver</a>
                         </td>
                       </tr>
