@@ -449,6 +449,7 @@
               <div class="inline-flex items-center gap-1 justify-end">
                 <input type="text" inputmode="decimal" name="aplicar[${f.id_factura}]"
                        data-id="${f.id_factura}" data-saldo="${f.saldo}"
+                       data-importe="${f.importe}" data-abono="${f.abono || 0}"
                        value="${Math.abs(sugerido) > 0.005 ? sugerido.toFixed(2) : ''}"
                        placeholder="0,00"
                        class="w-24 border rounded px-2 py-1 text-right text-xs font-mono aplic-input">
@@ -574,10 +575,15 @@
       if (!inp || !cell) return;
       const v = parseMonto(inp.value);
       const saldo = parseFloat(inp.dataset.saldo || '0') || 0;
+      const importe = parseFloat(inp.dataset.importe || '0') || 0;
       // Resta = saldo de la factura − lo que se aplica.
       // Si v=0, resta = saldo (toda la deuda sigue viva).
       // Si v=saldo, resta = 0 (cancelada).
-      const resta = saldo - v;
+      // TMT 2026-06-07: ACOTADA a [0, importe]. Una factura nunca puede
+      // deber más que su importe ni menos que 0. Sin el tope, aplicar un
+      // negativo de más mostraba una resta inflada (ej. 842,58 > 519,86).
+      let resta = saldo - v;
+      if (importe > 0) resta = Math.max(0, Math.min(importe, resta));
       cell.textContent = Math.abs(resta) > 0.005 ? fmt(resta) : '—';
     });
   }
