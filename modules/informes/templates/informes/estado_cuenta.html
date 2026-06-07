@@ -31,9 +31,13 @@
      Sin no-print: se imprime con el estado. #}
   {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono %}
   <div class="mb-5 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-    {% if _dir and _dir | trim %}
-      <div><span class="text-slate-400">Dirección:</span> {{ _dir }}{% if data.cliente.canton or data.cliente.provincia %} · {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}{% endif %}</div>
-    {% endif %}
+    {# TMT 2026-06-07: el dBase guarda la dirección en DOS renglones
+       (direccion1 + direccion2). Mostramos ambos. #}
+    {% set _d1 = data.cliente.direccion1 | cleanstr %}
+    {% set _d2 = data.cliente.direccion2 | cleanstr %}
+    {% if _d1 and _d1 | trim %}<div><span class="text-slate-400">Dirección:</span> {{ _d1 }}</div>{% endif %}
+    {% if _d2 and _d2 | trim %}<div><span class="text-slate-400">Dirección (2):</span> {{ _d2 }}</div>{% endif %}
+    {% if data.cliente.canton or data.cliente.provincia %}<div><span class="text-slate-400">Ciudad:</span> {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}</div>{% endif %}
     <div>
       {% if data.cliente.ruc %}<span class="text-slate-400">RUC:</span> {{ data.cliente.ruc | cleanstr }}{% endif %}
       {% if data.cliente.ruc and data.cliente.telefono %} &nbsp;·&nbsp; {% endif %}
