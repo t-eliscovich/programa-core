@@ -10,7 +10,7 @@
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 {# TMT 2026-06-07: dirección en el header del estado de cuenta. #}
 {% set _dir = ((data.cliente.direccion1 ~ ' ' ~ data.cliente.direccion2) if data.cliente.direccion2 else data.cliente.direccion1) | cleanstr %}
-{% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% if data.cliente.ruc %} · RUC: {{ data.cliente.ruc }}{% endif %}{% if data.cliente.telefono %} · Tel: {{ data.cliente.telefono }}{% endif %}{% if _dir and _dir | trim %} · {{ _dir }}{% if data.cliente.canton or data.cliente.provincia %} ({{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}){% endif %}{% endif %}{% endset %}
+{% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% endset %}
 <div class="max-w-6xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
@@ -21,12 +21,33 @@
          title="Volver al listado de la cartera">
         ← Volver a Cartera
       </a>
-      <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli) }}"
-         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
-        Cuenta corriente (timeline)
-      </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
     </div>
+  </div>
+
+  {# TMT 2026-06-07: bloque de contacto prominente — la dueña pidió que el
+     estado de cuenta clásico sirva también a los empleados (dirección / RUC /
+     tel claros y legibles). Solo va acá (no se repite en la cuenta corriente).
+     Sin no-print: se imprime con el estado. #}
+  {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono %}
+  <div class="mb-5 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+    {% if _dir and _dir | trim %}
+      <div><span class="text-slate-400">Dirección:</span> {{ _dir }}{% if data.cliente.canton or data.cliente.provincia %} · {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}{% endif %}</div>
+    {% endif %}
+    <div>
+      {% if data.cliente.ruc %}<span class="text-slate-400">RUC:</span> {{ data.cliente.ruc | cleanstr }}{% endif %}
+      {% if data.cliente.ruc and data.cliente.telefono %} &nbsp;·&nbsp; {% endif %}
+      {% if data.cliente.telefono %}<span class="text-slate-400">Tel:</span> {{ data.cliente.telefono | cleanstr }}{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# TMT 2026-06-07: tabs cuenta del cliente — clásica (activa) + timeline.
+     Unifica las dos vistas que antes eran páginas separadas. #}
+  <div class="flex gap-1 border-b border-slate-200 dark:border-slate-800 mb-5 no-print">
+    <span class="px-4 py-2 text-sm font-medium border-b-2 border-sky-600 text-sky-700">Estado de cuenta</span>
+    <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli) }}"
+       class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cuenta corriente</a>
   </div>
 
   {# TMT 2026-05-17: tile principal — saldo del cliente.

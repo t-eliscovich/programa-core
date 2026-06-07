@@ -22,31 +22,14 @@
           · <span class="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">INACTIVO</span>
         {% endif %}
       </p>
-      {# TMT 2026-06-07: dirección + datos fiscales del cliente, para
-         imprimir/mandar el estado de cuenta. #}
-      {% set _dir = ((data.cliente.direccion1 ~ ' ' ~ data.cliente.direccion2) if data.cliente.direccion2 else data.cliente.direccion1) | cleanstr %}
-      {% if _dir and _dir | trim %}
-        <p class="text-xs text-slate-400 mt-0.5">
-          {{ _dir }}{% if data.cliente.canton or data.cliente.provincia %} · {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}{% endif %}
-        </p>
-      {% endif %}
-      {% if data.cliente.ruc or data.cliente.telefono %}
-        <p class="text-xs text-slate-400">
-          {% if data.cliente.ruc %}RUC {{ data.cliente.ruc | cleanstr }}{% endif %}
-          {% if data.cliente.ruc and data.cliente.telefono %} · {% endif %}
-          {% if data.cliente.telefono %}Tel {{ data.cliente.telefono | cleanstr }}{% endif %}
-        </p>
-      {% endif %}
+      {# TMT 2026-06-07: la dirección/RUC/tel va SOLO en el Estado de cuenta
+         clásico (pedido dueña: no repetir info acá). #}
     </div>
     <div class="no-print flex items-center gap-2">
       {# TMT 2026-05-18 — botón Volver canónico #}
       <a href="{{ url_for('cartera.aging') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">
         ← Volver a Cartera
-      </a>
-      <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
-        Ver estado de cuenta clásico
       </a>
       <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
@@ -55,6 +38,13 @@
         Imprimir
       </button>
     </div>
+  </div>
+
+  {# TMT 2026-06-07: tabs cuenta del cliente — clásica + timeline (activa). #}
+  <div class="flex gap-1 border-b border-slate-200 dark:border-slate-800 mb-5 no-print">
+    <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}"
+       class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Estado de cuenta</a>
+    <span class="px-4 py-2 text-sm font-medium border-b-2 border-sky-600 text-sky-700">Cuenta corriente</span>
   </div>
 
   {# ─── KPIs ─────────────────────────────────────────────── #}
