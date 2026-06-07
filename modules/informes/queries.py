@@ -5358,7 +5358,12 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     """
     cliente = db.fetch_one(
         """
-        SELECT codigo_cli, nombre, telefono, ruc, cupo, stop, pago, pase, descuento
+        SELECT codigo_cli, nombre, telefono, ruc, cupo, stop, pago, pase, descuento,
+               -- TMT 2026-06-07: dirección para el header del estado de cuenta
+               COALESCE(direccion1, '') AS direccion1,
+               COALESCE(direccion2, '') AS direccion2,
+               COALESCE(provincia, '')  AS provincia,
+               COALESCE(canton, '')     AS canton
         FROM scintela.cliente
         WHERE codigo_cli = %s
         """,

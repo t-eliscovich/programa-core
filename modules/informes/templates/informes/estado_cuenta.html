@@ -8,7 +8,9 @@
 
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
-{% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% if data.cliente.ruc %} · RUC: {{ data.cliente.ruc }}{% endif %}{% if data.cliente.telefono %} · Tel: {{ data.cliente.telefono }}{% endif %}{% endset %}
+{# TMT 2026-06-07: dirección en el header del estado de cuenta. #}
+{% set _dir = ((data.cliente.direccion1 ~ ' ' ~ data.cliente.direccion2) if data.cliente.direccion2 else data.cliente.direccion1) | cleanstr %}
+{% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% if data.cliente.ruc %} · RUC: {{ data.cliente.ruc }}{% endif %}{% if data.cliente.telefono %} · Tel: {{ data.cliente.telefono }}{% endif %}{% if _dir and _dir | trim %} · {{ _dir }}{% if data.cliente.canton or data.cliente.provincia %} ({{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}){% endif %}{% endif %}{% endset %}
 <div class="max-w-6xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
