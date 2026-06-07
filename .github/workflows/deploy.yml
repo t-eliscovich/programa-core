@@ -100,11 +100,21 @@ jobs:
           Set-Location C:\programa-core
           & C:\Python312\python.exe -m pip install -r requirements.txt --quiet --disable-pip-version-check 2>&1 | Select -Last 3
 
-          # 5. Restart task
+          # 5. Restart task. TMT 2026-06-07: matar el python.exe HUÉRFANO que
+          #    queda tomando el puerto 5002. Stop-ScheduledTask para la TAREA
+          #    pero no siempre mata el proceso hijo; el python nuevo entonces
+          #    no puede bindear el puerto, sale, y el viejo sigue sirviendo →
+          #    el código nuevo NUNCA se carga (deploys silenciosamente no-op).
           Stop-ScheduledTask -TaskName ProgramaCoreApp -ErrorAction SilentlyContinue
+          Start-Sleep 2
+          Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Sleep 3
           Start-ScheduledTask -TaskName ProgramaCoreApp
-          Start-Sleep 6
+          # TMT 2026-06-07: 15s (antes 6/8) — Waitress + imports tardan más;
+          # con 6s el health check daba falso negativo ("Failed") aunque el
+          # deploy se aplicaba bien.
+          Start-Sleep 15
 
           # 6. Health check
           \$state = (Get-ScheduledTask -TaskName ProgramaCoreApp).State
