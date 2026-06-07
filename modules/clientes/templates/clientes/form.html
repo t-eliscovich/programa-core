@@ -76,6 +76,26 @@
                class="border rounded px-2 py-1 mt-1" maxlength="200">
       </label>
 
+      {# TMT 2026-06-07: provincia / cantón / parroquia — antes se mostraban
+         pero no se podían editar desde PC. #}
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Provincia</span>
+        <input type="text" name="provincia" value="{{ form.provincia or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="30">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Cantón</span>
+        <input type="text" name="canton" value="{{ form.canton or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="30">
+      </label>
+
+      <label class="flex flex-col">
+        <span class="text-sm text-slate-600">Parroquia</span>
+        <input type="text" name="parroquia" value="{{ form.parroquia or '' }}"
+               class="border rounded px-2 py-1 mt-1" maxlength="30">
+      </label>
+
       <label class="flex flex-col">
         <span class="text-sm text-slate-600">Plazo de pago (días)</span>
         <input type="text" name="pago" value="{{ form.pago or '' }}"

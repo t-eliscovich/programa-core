@@ -76,6 +76,9 @@ def crear(
     correo: str | None = None,
     direccion1: str | None = None,
     direccion2: str | None = None,
+    provincia: str | None = None,
+    canton: str | None = None,
+    parroquia: str | None = None,
     pago: str | None = None,
     cupo: int | None = None,
     vend: str | None = None,
@@ -95,10 +98,12 @@ def crear(
         """
         INSERT INTO scintela.cliente
             (codigo_cli, nombre, telefono, ruc, correo,
-             direccion1, direccion2, pago, cupo, vend,
+             direccion1, direccion2, provincia, canton, parroquia,
+             pago, cupo, vend,
              observacion, clave, stop, usuario_crea)
         VALUES (%s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
+                %s, %s, %s,
                 %s, %s, 'N', %s)
         RETURNING id_cliente, codigo_cli
         """,
@@ -107,6 +112,9 @@ def crear(
             (ruc or None) and ruc[:16], (correo or None) and correo[:50],
             (direccion1 or None) and direccion1[:200],
             (direccion2 or None) and direccion2[:200],
+            (provincia or None) and provincia[:30],
+            (canton or None) and canton[:30],
+            (parroquia or None) and parroquia[:30],
             (pago or None) and pago[:2], cupo,
             (vend or None) and vend[:50],
             (observacion or None) and observacion[:200],
@@ -125,6 +133,9 @@ def editar(
     correo: str | None = None,
     direccion1: str | None = None,
     direccion2: str | None = None,
+    provincia: str | None = None,
+    canton: str | None = None,
+    parroquia: str | None = None,
     pago: str | None = None,
     cupo: int | None = None,
     vend: str | None = None,
@@ -142,6 +153,9 @@ def editar(
         "correo": (correo, 50),
         "direccion1": (direccion1, 200),
         "direccion2": (direccion2, 200),
+        "provincia": (provincia, 30),
+        "canton": (canton, 30),
+        "parroquia": (parroquia, 30),
         "pago": (pago, 2),
         "vend": (vend, 50),
         "observacion": (observacion, 200),

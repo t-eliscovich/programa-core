@@ -811,7 +811,10 @@ def aplicar(id_cheque: int):
     for f in pendientes:
         raw = request.form.get(f"aplicar[{f['id_factura']}]")
         imp = parse_monto(raw)
-        if imp is None or imp <= 0:
+        # TMT 2026-06-07: aceptar NEGATIVOS (reversa de abono), igual que
+        # Nueva Cobranza. Antes `imp <= 0` los descartaba en silencio. El
+        # backend (aplicar_a_factura) ya valida que |imp| <= abono.
+        if imp is None or abs(imp) < 0.005:
             continue
         aplicaciones.append({"id_fact": f["id_factura"], "importe": float(imp)})
 
@@ -1646,8 +1649,10 @@ def actualizar(id_cheque: int):
             importe_nuevo = parse_monto(importe_str)
             if importe_nuevo is None:
                 errores.append("Importe inválido.")
-            elif importe_nuevo <= 0:
-                errores.append("Importe debe ser mayor a 0.")
+            elif abs(importe_nuevo) < 0.005:
+                # TMT 2026-06-07: permitir NEGATIVO (notas de crédito /
+                # correcciones), igual que crear. Solo bloqueamos el cero.
+                errores.append("El importe no puede ser cero.")
             else:
                 importe_actual = _Dec(str(ch.get("importe") or 0))
                 if abs(importe_nuevo - importe_actual) < _Dec("0.01"):

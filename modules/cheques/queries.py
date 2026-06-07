@@ -155,8 +155,10 @@ def editar(
     if importe is not None:
         from decimal import Decimal as _Dec
         imp_dec = _Dec(str(importe))
-        if imp_dec <= 0:
-            raise ValueError("Importe debe ser > 0.")
+        # TMT 2026-06-07: permitir NEGATIVO (notas de crédito/correcciones),
+        # igual que crear. Solo bloqueamos el cero.
+        if abs(imp_dec) < _Dec("0.005"):
+            raise ValueError("El importe no puede ser cero.")
         # numeric(9,2) en DB — max 9_999_999.99. Validar para no tirar
         # NumericValueOutOfRange como 500.
         if imp_dec >= _Dec("10000000"):
