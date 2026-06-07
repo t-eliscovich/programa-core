@@ -454,7 +454,19 @@ def detalle(id_factura: int):
     fact = queries.por_id(id_factura)
     if not fact:
         abort(404)
-    aplicaciones = queries.cheques_aplicados(id_factura)
+    # TMT 2026-06-07 dueña: "la factura tiene UN solo número, el del dBase
+    # (numf). No quiero un número 'programa'." Canonalizamos la URL al numf:
+    # si entraron por el id interno, redirigimos para que la barra de
+    # direcciones muestre el número real de la factura, no el id.
+    if fact.get("numf") and int(id_factura) != int(fact["numf"]):
+        return redirect(url_for("facturas.detalle", id_factura=fact["numf"]))
+    # TMT 2026-06-07: el param de la URL puede venir como numf (el número del
+    # dBase, el ÚNICO visible) y `por_id` lo resuelve a la fila real. Las
+    # aplicaciones de cheques se buscan por el id_factura INTERNO resuelto
+    # (`fact["id_factura"]`), NO por el numf — si no, una factura cuyo
+    # numf != id_factura mostraba "Sin cheques aplicados" aunque tuviera.
+    _id_real = fact["id_factura"]
+    aplicaciones = queries.cheques_aplicados(_id_real)
     retenciones = queries.retenciones_aplicadas(fact["codigo_cli"], fact["numf"])
     total_aplicado = sum(float(a["aplicado"] or 0) for a in aplicaciones)
     total_retenido = sum(float(r["rete"] or 0) for r in retenciones)
