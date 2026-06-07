@@ -142,7 +142,7 @@
               <span class="text-slate-600">{{ fechad_orig | fecha_es if fechad_orig else '—' }}</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-xs">{{ a.cheque_banco }}</td>
+          <td class="px-3 py-2 text-xs">{{ a.cheque_banco or '—' }}</td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.cheque_importe | money_es }}</td>
           <td class="px-3 py-2 text-right text-mono">{{ a.aplicado | money_es }}</td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.abono_f | money_es }}</td>

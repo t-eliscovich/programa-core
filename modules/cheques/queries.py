@@ -1558,7 +1558,13 @@ def crear(
     # contaba en comisiones ni en el flujo real. BED (HECTOR BEDON) es el
     # caso testigo: $341k de débito, 0 cobrado en sistema porque "paga
     # mucho en efectivo" y entraba como banco=99 sin side-effect.
-    if no_banco in (90, 91, 99) and (stat or "").upper() == "Z":
+    # TMT 2026-06-07: SOLO auto-flip a 'B' (depositado) para importes
+    # POSITIVOS. Un importe NEGATIVO (reversa/crédito) que se marcaba 'B'
+    # quedaba "depositado" SIN movimiento de banco/caja (el insert de banco
+    # y el de caja tienen gate importe>0) → se tragaba el negativo en
+    # silencio y el saldo bancario/caja quedaba inflado. Dejándolo en 'Z'
+    # (cartera) el negativo queda VISIBLE como nota de crédito y consistente.
+    if no_banco in (90, 91, 99) and (stat or "").upper() == "Z" and float(importe or 0) > 0:
         stat = "B"
 
     importe_principal = float(importe or 0)

@@ -594,9 +594,13 @@ def cheques_aplicados(id_factura: int) -> list[dict]:
                -- mostrar "original X · postergado Y" si el cheque fue postergado.
                ch.fechad_original, ch.fecha_postergacion,
                ch.importe AS cheque_importe, ch.stat AS cheque_stat,
-               ch.banco AS cheque_banco
+               -- TMT 2026-06-07: si el cheque no tiene texto de banco
+               -- (ej. creados en PC), resolvemos el nombre desde la tabla
+               -- banco por no_banco → evita mostrar "None".
+               COALESCE(NULLIF(ch.banco, ''), b.nombre, '') AS cheque_banco
         FROM scintela.chequesxfact cxf
         LEFT JOIN scintela.cheque ch ON ch.id_cheque = cxf.id_cheque
+        LEFT JOIN scintela.banco  b  ON b.no_banco  = ch.no_banco
         WHERE cxf.id_fact = %s
         ORDER BY cxf.fechaing DESC
         """,
