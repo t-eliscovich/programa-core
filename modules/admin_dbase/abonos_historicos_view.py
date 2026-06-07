@@ -27,7 +27,6 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, render_template_string, request
 
-import db
 from auth import requiere_login, requiere_permiso
 
 bp = Blueprint("abonos_historicos", __name__, url_prefix="/admin/abonos-historicos")
@@ -99,6 +98,8 @@ el que corresponda. Recalcula <code>abono = suma de movimientos</code>.
 @requiere_login
 @requiere_permiso("facturas.editar")
 def vincular():
+    import db  # lazy — igual que los otros admin_dbase views (evita romper el arranque)
+
     numf_raw = (request.values.get("numf") or "").strip()
     do_apply = request.values.get("apply") == "1"
     sel = request.values.getlist("ch")
