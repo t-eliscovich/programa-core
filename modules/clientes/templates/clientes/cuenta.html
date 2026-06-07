@@ -22,6 +22,21 @@
           · <span class="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">INACTIVO</span>
         {% endif %}
       </p>
+      {# TMT 2026-06-07: dirección + datos fiscales del cliente, para
+         imprimir/mandar el estado de cuenta. #}
+      {% set _dir = ((data.cliente.direccion1 ~ ' ' ~ data.cliente.direccion2) if data.cliente.direccion2 else data.cliente.direccion1) | cleanstr %}
+      {% if _dir and _dir | trim %}
+        <p class="text-xs text-slate-400 mt-0.5">
+          {{ _dir }}{% if data.cliente.canton or data.cliente.provincia %} · {{ [data.cliente.canton, data.cliente.provincia] | select | join(', ') }}{% endif %}
+        </p>
+      {% endif %}
+      {% if data.cliente.ruc or data.cliente.telefono %}
+        <p class="text-xs text-slate-400">
+          {% if data.cliente.ruc %}RUC {{ data.cliente.ruc | cleanstr }}{% endif %}
+          {% if data.cliente.ruc and data.cliente.telefono %} · {% endif %}
+          {% if data.cliente.telefono %}Tel {{ data.cliente.telefono | cleanstr }}{% endif %}
+        </p>
+      {% endif %}
     </div>
     <div class="no-print flex items-center gap-2">
       {# TMT 2026-05-18 — botón Volver canónico #}

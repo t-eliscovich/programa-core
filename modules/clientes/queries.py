@@ -356,7 +356,12 @@ def cuenta_corriente(codigo_cli: str) -> dict:
     cli = db.fetch_one(
         """
         SELECT codigo_cli, nombre, telefono, ruc, cupo, stop, pago, pase,
-               COALESCE(activo, TRUE) AS activo
+               COALESCE(activo, TRUE) AS activo,
+               -- TMT 2026-06-07: dirección para mostrar/imprimir en la cuenta
+               COALESCE(direccion1, '') AS direccion1,
+               COALESCE(direccion2, '') AS direccion2,
+               COALESCE(provincia, '')  AS provincia,
+               COALESCE(canton, '')     AS canton
         FROM scintela.cliente
         WHERE codigo_cli = %s
         """,
