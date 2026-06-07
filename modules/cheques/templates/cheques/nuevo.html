@@ -576,15 +576,31 @@
       const v = parseMonto(inp.value);
       const saldo = parseFloat(inp.dataset.saldo || '0') || 0;
       const importe = parseFloat(inp.dataset.importe || '0') || 0;
+      const abono = parseFloat(inp.dataset.abono || '0') || 0;
       // Resta = saldo de la factura − lo que se aplica.
       // Si v=0, resta = saldo (toda la deuda sigue viva).
       // Si v=saldo, resta = 0 (cancelada).
-      // TMT 2026-06-07: ACOTADA a [0, importe]. Una factura nunca puede
-      // deber más que su importe ni menos que 0. Sin el tope, aplicar un
-      // negativo de más mostraba una resta inflada (ej. 842,58 > 519,86).
+      // ACOTADA a [0, importe]: una factura nunca puede deber más que su
+      // importe ni menos que 0.
       let resta = saldo - v;
       if (importe > 0) resta = Math.max(0, Math.min(importe, resta));
       cell.textContent = Math.abs(resta) > 0.005 ? fmt(resta) : '—';
+
+      // TMT 2026-06-07: validar el RANGO aplicable y marcar inválido.
+      // El rango válido es [-abono, saldo+$50]: un POSITIVO no puede pasar
+      // el saldo (tolerancia $50 como el backend); un NEGATIVO (reversa)
+      // no puede revertir más que lo ABONADO. Fuera de rango el backend
+      // lo rechaza → lo marcamos rojo ACÁ para que se vea antes de guardar.
+      // (Antes esto se "escondía" acotando la resta y parecía válido.)
+      const invalidaPos = v > saldo + 50 + 0.005;
+      const invalidaNeg = v < 0 && Math.abs(v) > abono + 0.01;
+      const invalida = Math.abs(v) > 0.005 && (invalidaPos || invalidaNeg);
+      inp.classList.toggle('border-rose-500', invalida);
+      inp.classList.toggle('bg-rose-50', invalida);
+      cell.classList.toggle('text-rose-600', invalida);
+      inp.title = !invalida ? '' : (v < 0
+        ? `No podés revertir ${fmt(Math.abs(v))}: esta factura tiene sólo ${fmt(abono)} abonado.`
+        : `Excede el saldo (${fmt(saldo)}) por más de $50.`);
     });
   }
 
