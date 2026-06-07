@@ -144,8 +144,16 @@ def restart():
         # versiones de Windows desde XP. Dos pasos: End (kill instancia)
         # + Run (arranca nueva). Equivalente funcional a Restart-* sin la
         # dependencia del module.
+        # TMT 2026-06-07: matar el python.exe HUÉRFANO. `schtasks /End` para
+        # la instancia de la tarea pero NO siempre mata el python hijo, que
+        # queda tomando el puerto 5002 → la instancia nueva no puede bindear,
+        # sale, y el código nuevo NUNCA se carga (deploys no-op silenciosos).
+        # Matamos python/pythonw entre End y Run.
         cmd_script = (
             f"schtasks /End /TN '{SCHEDULED_TASK_NAME}'; "
+            f"Start-Sleep -Seconds 2; "
+            f"Get-Process python,pythonw -ErrorAction SilentlyContinue | "
+            f"Stop-Process -Force -ErrorAction SilentlyContinue; "
             f"Start-Sleep -Seconds 2; "
             f"schtasks /Run /TN '{SCHEDULED_TASK_NAME}'"
         )
