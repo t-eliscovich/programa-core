@@ -221,6 +221,34 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         except Exception as exc:
             yield line(f"[WARN] relink falló (no fatal): {exc}")
 
+    # TMT 2026-06-08: reconcile POSDAT en cada sync. El sync NO extrae POSDAT
+    # (NEVER_EXTRACT, para no pisar baselines YY + links mov_doble), pero el
+    # archivo SIGUE en el tarball. Acá lo sacamos y corremos el reconcile
+    # quirúrgico en modo APLICAR + soft_delete (anula en vez de borrar →
+    # recuperable). Así los cheques posdatados NUEVOS entran en cada sync y
+    # las provisiones YY/RT quedan pinneadas al dBase. Pedido de la dueña.
+    if rc == 0:
+        try:
+            from modules.admin_dbase.posdat_reconcile_view import reconcile_desde_dbf
+            posdat_tmp = EXTRACT_DIR / "_POSDAT_reconcile.DBF"
+            encontrado = False
+            with tarfile.open(TARBALL_PATH, "r:gz") as tar:
+                for m in tar.getmembers():
+                    if m.isfile() and Path(m.name).name.upper() == "POSDAT.DBF":
+                        m.name = "_POSDAT_reconcile.DBF"
+                        tar.extract(m, EXTRACT_DIR)
+                        encontrado = True
+                        break
+            yield line("")
+            yield line("[reconcile POSDAT post-sync]")
+            if not encontrado:
+                yield line("  (el tarball no traía POSDAT.DBF — se omite el reconcile)")
+            else:
+                yield from reconcile_desde_dbf(posdat_tmp, aplicar=True, soft_delete=True)
+                posdat_tmp.unlink(missing_ok=True)
+        except Exception as exc:  # noqa: BLE001
+            yield line(f"[WARN] reconcile POSDAT falló (no fatal): {exc!r}")
+
     if rc == 0:
         yield line("OK ✓")
     else:

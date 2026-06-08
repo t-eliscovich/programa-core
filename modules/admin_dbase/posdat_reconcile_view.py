@@ -49,62 +49,73 @@ def _norm(s) -> str:
 
 
 def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict:
-    """Calcula el plan (puro, testeable). Pareo por prov + importe ordenado.
+    """Calcula el plan (puro, testeable).
+
+    Pareo por CLAVE ESTABLE (prov, concepto) — no por importe ordenado. El
+    concepto del DBF lleva la referencia del cheque (doc/proveedor), y es
+    único para ~95% de las filas; sólo colisiona en grupos con concepto vacío
+    (p.ej. prov 'TJ'), donde caemos al fallback de importe ordenado dentro del
+    grupo. Esto evita los falsos UPDATE/DELETE que tenía el pareo por importe
+    cuando aparecían cheques nuevos (TMT 2026-06-08).
+
+    YY **y RT** (IVA) son provisiones display-time → siempre se les fija
+    importe=dBase + baseline=hoy (yy=True). El resto son cheques reales.
 
     dbf_banc0: [{prov, importe, concepto}]  (banc != 9 del POSDAT.DBF)
     pc_banc0:  [{id_posdat, prov, importe, concepto, linked}]
-    Returns: {updates:[{id,importe,concepto,yy}], deletes:[{id,prov,importe,linked}],
+    Returns: {updates:[{id,importe,concepto,yy,que}], deletes:[{id,prov,importe,concepto,linked}],
               inserts:[{prov,importe,concepto}]}
     """
     updates: list[dict] = []
     deletes: list[dict] = []
     inserts: list[dict] = []
 
-    def is_yy(p):
-        return _norm(p) == "YY"
+    def is_yy_like(p):
+        # RT (IVA) acumula display-time igual que YY → mismo tratamiento.
+        return _norm(p) in ("YY", "RT")
 
-    # ── YY: match por concepto (único) ──
-    dbf_yy = {}
+    # ── YY/RT: provisiones. Match por (prov, concepto). importe=dBase + baseline=hoy ──
+    dbf_yy: dict = {}
     for r in dbf_banc0:
-        if is_yy(r["prov"]):
-            dbf_yy[_norm(r["concepto"])] = r
-    used = set()
+        if is_yy_like(r["prov"]):
+            dbf_yy[(_norm(r["prov"]), _norm(r["concepto"]))] = r
+    used: set = set()
     for r in pc_banc0:
-        if not is_yy(r["prov"]):
+        if not is_yy_like(r["prov"]):
             continue
-        c = _norm(r["concepto"])
-        if c in dbf_yy:
-            used.add(c)
-            d = dbf_yy[c]
-            # YY siempre: fija baseline=hoy y el importe del dBase.
+        k = (_norm(r["prov"]), _norm(r["concepto"]))
+        if k in dbf_yy:
+            used.add(k)
+            d = dbf_yy[k]
             updates.append({"id": r["id_posdat"], "importe": round(float(d["importe"]), 2),
                             "concepto": r["concepto"], "yy": True,
-                            "que": f"YY {c or '(sin concepto)'}"})
+                            "que": f"{k[0]} {k[1] or '(sin concepto)'}"})
         else:
-            deletes.append({"id": r["id_posdat"], "prov": "YY",
+            deletes.append({"id": r["id_posdat"], "prov": _norm(r["prov"]),
                             "importe": round(float(r["importe"]), 2),
                             "concepto": r.get("concepto"), "linked": bool(r.get("linked"))})
-    for c, d in dbf_yy.items():
-        if c not in used:
-            inserts.append({"prov": "YY", "importe": round(float(d["importe"]), 2),
+    for k, d in dbf_yy.items():
+        if k not in used:
+            inserts.append({"prov": k[0], "importe": round(float(d["importe"]), 2),
                             "concepto": d["concepto"]})
 
-    # ── no-YY: por prov, pareo por importe ordenado ──
-    dbf_n = defaultdict(list)
-    pc_n = defaultdict(list)
+    # ── cheques reales: match por (prov, concepto); fallback importe dentro del grupo ──
+    dbf_n: dict = defaultdict(list)
+    pc_n: dict = defaultdict(list)
     for r in dbf_banc0:
-        if not is_yy(r["prov"]):
-            dbf_n[_norm(r["prov"])].append(r)
+        if not is_yy_like(r["prov"]):
+            dbf_n[(_norm(r["prov"]), _norm(r["concepto"]))].append(r)
     for r in pc_banc0:
-        if not is_yy(r["prov"]):
-            pc_n[_norm(r["prov"])].append(r)
-    for prov in sorted(set(list(dbf_n) + list(pc_n))):
-        d = sorted(dbf_n.get(prov, []), key=lambda x: float(x["importe"]))
-        p = sorted(pc_n.get(prov, []), key=lambda x: float(x["importe"]))
+        if not is_yy_like(r["prov"]):
+            pc_n[(_norm(r["prov"]), _norm(r["concepto"]))].append(r)
+    for key in sorted(set(list(dbf_n) + list(pc_n))):
+        prov = key[0]
+        d = sorted(dbf_n.get(key, []), key=lambda x: float(x["importe"]))
+        p = sorted(pc_n.get(key, []), key=lambda x: float(x["importe"]))
         n = min(len(d), len(p))
         for i in range(n):
-            if (abs(float(p[i]["importe"]) - float(d[i]["importe"])) > 0.005
-                    or (p[i].get("concepto") or "") != (d[i].get("concepto") or "")):
+            # Mismo (prov, concepto) → sólo el importe puede diferir.
+            if abs(float(p[i]["importe"]) - float(d[i]["importe"])) > 0.005:
                 updates.append({"id": p[i]["id_posdat"], "importe": round(float(d[i]["importe"]), 2),
                                 "concepto": d[i].get("concepto"), "yy": False, "que": prov})
         for i in range(n, len(p)):
@@ -224,11 +235,37 @@ def _run(aplicar: bool):
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
 
-    dbf = _leer_dbf_banc0(miembro)
+    yield from reconcile_desde_dbf(miembro, aplicar, soft_delete=False)
+
+
+def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False):
+    """Lee POSDAT.DBF + PC, calcula el plan, lo loguea y (si aplicar) lo ejecuta.
+
+    Reusable: lo llama el endpoint manual /admin/posdat-reconcile (soft_delete=
+    False → DELETE real para no-linkeadas) y el pipeline de /admin/dbase-sync
+    (soft_delete=True → ANULA en vez de borrar, recuperable, para el auto-run
+    en cada sync). TMT 2026-06-08.
+
+    Guard de seguridad: si `aplicar` y el DBF trae <50% de las filas que tiene
+    PC (dump parcial/corrupto), ABORTA — no queremos borrar/anular en masa por
+    un archivo malo.
+    """
+    import db
+
+    def line(m=""):
+        return m.rstrip("\n") + "\n"
+
+    dbf = _leer_dbf_banc0(dbf_path)
     pc = _leer_pc_banc0()
     yield line(f"DBF banc<>9: {len(dbf)} filas, suma {sum(x['importe'] for x in dbf):,.2f}")
     yield line(f"PC  banc=0 : {len(pc)} filas, suma {sum(x['importe'] for x in pc):,.2f}")
     yield line("")
+
+    # ── Guard anti-borrado masivo ──
+    if aplicar and len(pc) > 0 and len(dbf) < 0.5 * len(pc):
+        yield line(f"[ABORT] el DBF trae {len(dbf)} filas vs {len(pc)} en PC "
+                   f"(<50%). Parece un dump parcial — no aplico para no borrar en masa.")
+        return
 
     plan = reconciliar_posdat_plan(dbf, pc)
     ups, dels, ins = plan["updates"], plan["deletes"], plan["inserts"]
@@ -236,28 +273,28 @@ def _run(aplicar: bool):
 
     yield line(f"PLAN: {len(ups)} UPDATE · {len(dels)} DELETE · {len(ins)} INSERT")
     if linked_dels:
-        yield line(f"  ⚠ {len(linked_dels)} con link de compra (mov_doble) → se ANULAN (anulada=true: salen del Pasivos, preservan id/link).")
+        yield line(f"  ⚠ {len(linked_dels)} con link de compra (mov_doble) → se ANULAN (preservan id/link).")
     yield line("")
     yield line("--- UPDATE (conserva id) ---")
     for u in ups:
         yield line(f"  id={u['id']:<6} {u['que']:18} -> {u['importe']:>12,.2f}"
                    + ("  [baseline=hoy]" if u["yy"] else ""))
-    yield line("--- DELETE (PC tiene de más) ---")
+    accion_del = "ANULA" if soft_delete else "DELETE"
+    yield line(f"--- {accion_del} (PC tiene de más) ---")
     for d in dels:
         yield line(f"  id={d['id']:<6} {d['prov']:4} {d['importe']:>12,.2f}"
-                   + ("  ⚠LINKED→ANULA" if d["linked"] else "  DELETE"))
+                   + ("  ⚠LINKED→ANULA" if d["linked"] else f"  {accion_del}"))
     yield line("--- INSERT (falta en PC) ---")
     for i in ins:
         yield line(f"  {i['prov']:4} {i['importe']:>12,.2f}  {(i['concepto'] or '')[:24]}")
     yield line("")
 
-    # Sum proyectada post-plan (saltando linked deletes).
+    # Sum proyectada post-plan.
     proj = sum(x["importe"] for x in pc)
     for u in ups:
         old = next((r["importe"] for r in pc if r["id_posdat"] == u["id"]), 0)
         proj += u["importe"] - old
     for d in dels:
-        # linked → se anulan (salen del Pasivos igual); no-linked → delete.
         proj -= d["importe"]
     for i in ins:
         proj += i["importe"]
@@ -272,6 +309,9 @@ def _run(aplicar: bool):
     # ── APLICAR en una transacción ──
     hoy = _hoy_ec()
     n_up = n_del = n_ins = n_anul = 0
+    motivo = ("reconcile-sync: no está en POSDAT.DBF"
+              if soft_delete else
+              "reconcile-dbf: no está en POSDAT.DBF; anulada (tiene link de compra)")
     try:
         with db.tx() as conn:
             for u in ups:
@@ -285,14 +325,13 @@ def _run(aplicar: bool):
                         (u["importe"], u["id"]), conn=conn)
                 n_up += 1
             for d in dels:
-                if d["linked"]:
-                    # No se puede borrar (mov_doble la referencia) → anular:
-                    # sale del Pasivos (filtra anulada) y preserva el id/link.
+                # soft_delete=True → SIEMPRE anula (recuperable). Si no, sólo las
+                # linkeadas se anulan (no se pueden borrar) y el resto se borra.
+                if soft_delete or d["linked"]:
                     db.execute(
                         "UPDATE scintela.posdat SET anulada=TRUE, "
                         "motivo_anulacion=%s, fecha_anulacion=NOW() WHERE id_posdat=%s",
-                        ("reconcile-dbf: no está en POSDAT.DBF; anulada (tiene link de compra)",
-                         d["id"]), conn=conn)
+                        (motivo, d["id"]), conn=conn)
                     n_anul += 1
                 else:
                     db.execute("DELETE FROM scintela.posdat WHERE id_posdat=%s", (d["id"],), conn=conn)
@@ -307,7 +346,7 @@ def _run(aplicar: bool):
         yield line(f"[ERROR] rollback — {exc!r}")
         return
 
-    yield line(f"APLICADO ✓ — {n_up} UPDATE, {n_del} DELETE, {n_anul} ANULADAS (linkeadas), {n_ins} INSERT.")
+    yield line(f"APLICADO ✓ — {n_up} UPDATE, {n_del} DELETE, {n_anul} ANULADAS, {n_ins} INSERT.")
     nuevo = _leer_pc_banc0()
     yield line(f"PC banc=0 ahora: {len(nuevo)} filas, suma {sum(x['importe'] for x in nuevo):,.2f}")
     yield line(f"dBase: {dbf_sum:,.2f}")
