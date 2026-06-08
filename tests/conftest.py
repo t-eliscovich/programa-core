@@ -18,32 +18,38 @@ from pathlib import Path
 
 import pytest
 
-LEGACY_STUB_DEBT_FILES = {
-    # TMT 2026-05-16: stubs viejos tras cambios de SQL en producción
-    # (Bugs A-I). Se colectan como xfail para que la deuda sea visible en
-    # pytest/coverage en vez de quedar escondida por collect_ignore_glob.
-    "test_bank_helpers.py",
-    "test_bancos_emitir_cheque.py",
-    "test_cheques_anticipo.py",
-    "test_cheques_depositar_lote.py",
-    "test_cheques_reversar.py",
-    "test_compras_anular.py",
-    "test_compras_editar.py",
-    "test_confirmar_accion.py",
-    "test_facturas_editar.py",
-    "test_paridad_compra_a_balance.py",
-    "test_paridad_factura_a_balance.py",
-}
-
-KNOWN_TEST_DRIFT_NODEIDS = {
-    "tests/test_batch_2026_05_20.py::test_posdat_buscar_tab_invalida_normaliza_a_posdatados",
-    "tests/test_batch_2026_05_20.py::test_posdat_buscar_tab_posdatados_excluye_yy",
-    "tests/test_batch_2026_05_20.py::test_posdat_buscar_tab_yy_solo_yy",
-    "tests/test_conciliacion_banco_actions.py::test_confirmar_match_default_metodo_es_matched_auto",
-    "tests/test_conciliacion_banco_actions.py::test_confirmar_match_sin_migration_omite_metodo",
-    "tests/test_conciliacion_banco_actions.py::test_match_manual_usa_metodo_matched_manual",
+# Tests que TODAVÍA fallan por deuda de stubs/fixtures: la forma del SQL de
+# producción cambió y los fakes (FakeDB / monkeypatch) no se actualizaron.
+#
+# TMT 2026-06-08: antes se marcaban xfail por ARCHIVO ENTERO (11 archivos), lo
+# que escondía ~71 tests que YA pasan (XPASS) — la suite no los enforce-aba. Lo
+# pasamos a nodeid EXACTO: SÓLO los 28 que realmente fallan quedan xfail; el
+# resto de cada archivo ahora SÍ protege. Lista derivada del run de CI verde
+# 2026-06-08. Al arreglar el fixture de un test, sacalo de este set.
+KNOWN_FAILING_NODEIDS = {
+    "tests/test_cheques_anticipo.py::test_cheque_anticipo_crea_espejo_negativo",
+    "tests/test_cheques_anticipo.py::test_cheque_anticipo_default_es_false",
+    "tests/test_cheques_anticipo.py::test_cheque_normal_no_crea_espejo",
+    "tests/test_cheques_depositar_lote.py::test_happy_path_dos_cheques",
+    "tests/test_cheques_depositar_lote.py::test_postdatado_p_es_depositable",
+    "tests/test_compras_anular.py::test_compra_sin_numero_no_borra_posdat",
+    "tests/test_compras_anular.py::test_happy_path_anular_actualiza_stat_y_borra_posdat",
+    "tests/test_compras_anular.py::test_motivo_solo_espacios_raisa_value_error",
+    "tests/test_compras_anular.py::test_motivo_vacio_raisa_value_error",
+    "tests/test_compras_editar.py::test_crear_anticipo_dolares_inserta_dolares",
+    "tests/test_compras_editar.py::test_crear_no_pagada_inserta_posdat",
+    "tests/test_confirmar_accion.py::test_cheques_confirmar_reverso_get_200",
+    "tests/test_confirmar_accion.py::test_cheques_reversar_sin_motivo_redirige",
+    "tests/test_confirmar_accion.py::test_facturas_anular_sin_motivo_redirige_a_confirmacion",
+    "tests/test_confirmar_accion.py::test_facturas_confirmar_anulacion_get_200",
+    "tests/test_confirmar_accion.py::test_posdat_anular_sin_motivo_redirige",
+    "tests/test_confirmar_accion.py::test_provisiones_eliminar_sin_motivo_redirige",
+    "tests/test_confirmar_accion.py::test_retenciones_anular_sin_motivo_redirige",
     "tests/test_csv_upload.py::test_cargar_csv_requiere_permiso",
     "tests/test_diag_integraciones.py::test_diag_integraciones_sin_permiso_redirige",
+    "tests/test_paridad_compra_a_balance.py::test_paridad_compra_anular_borra_posdat",
+    "tests/test_paridad_compra_a_balance.py::test_paridad_compra_no_pagada_inserta_posdat",
+    "tests/test_paridad_factura_a_balance.py::test_paridad_factura_alta_modifica_anular",
     "tests/test_resultados_tabla.py::test_sin_ventas_no_rompe",
     "tests/test_roles_config.py::test_only_accionista_has_wildcard",
     "tests/test_session_timeout.py::test_sesion_dentro_del_timeout_actualiza_last_activity",
@@ -53,19 +59,13 @@ KNOWN_TEST_DRIFT_NODEIDS = {
 
 
 def pytest_collection_modifyitems(config, items):
-    legacy_marker = pytest.mark.xfail(
-        reason="legacy stub debt: SQL production shape changed; update fake DB fixtures before enforcing",
-        strict=False,
-    )
-    drift_marker = pytest.mark.xfail(
-        reason="known test drift surfaced while enabling the coverage ratchet",
+    xfail_debt = pytest.mark.xfail(
+        reason="stub/fixture debt: SQL production shape changed; fix the fake DB fixture and remove from KNOWN_FAILING_NODEIDS",
         strict=False,
     )
     for item in items:
-        if Path(str(item.fspath)).name in LEGACY_STUB_DEBT_FILES:
-            item.add_marker(legacy_marker)
-        if item.nodeid in KNOWN_TEST_DRIFT_NODEIDS:
-            item.add_marker(drift_marker)
+        if item.nodeid in KNOWN_FAILING_NODEIDS:
+            item.add_marker(xfail_debt)
 
 
 # project root on path
