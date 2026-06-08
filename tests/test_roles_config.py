@@ -14,10 +14,14 @@ def test_roles_are_non_empty_and_unique():
 
 
 def test_only_accionista_has_wildcard():
+    # TMT 2026-05-26 dueña: "Andres debería ver todo" → Administrador también
+    # tiene '*' (funcionalmente igual que Accionista). El guard sigue vigente:
+    # NINGÚN otro rol debe tener el wildcard.
+    CON_WILDCARD = {"Accionista", "Administrador"}
     for nombre, permisos in ROLES:
         has_wild = "*" in permisos
-        if nombre == "Accionista":
-            assert has_wild, "Accionista debe tener '*'"
+        if nombre in CON_WILDCARD:
+            assert has_wild, f"{nombre} debe tener '*'"
         else:
             assert not has_wild, f"El rol {nombre!r} no debe tener '*'"
 

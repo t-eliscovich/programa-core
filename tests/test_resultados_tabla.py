@@ -130,7 +130,8 @@ def test_sin_ventas_no_rompe():
     """venta_kg = 0 no debe lanzar ZeroDivisionError."""
     tab = _tabla(venta_kg=0.0, venta_us=0.0)
     assert _row(tab, "Venta")["ukg"] == 0.0
-    assert len(tab) == 12
+    # 13 filas: se agregó "Utilidad no estandarizada" a la tabla de Resultados.
+    assert len(tab) == 13
 
 
 def test_seccion_costos_presente():

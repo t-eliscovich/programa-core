@@ -50,8 +50,6 @@ KNOWN_FAILING_NODEIDS = {
     "tests/test_paridad_compra_a_balance.py::test_paridad_compra_anular_borra_posdat",
     "tests/test_paridad_compra_a_balance.py::test_paridad_compra_no_pagada_inserta_posdat",
     "tests/test_paridad_factura_a_balance.py::test_paridad_factura_alta_modifica_anular",
-    "tests/test_resultados_tabla.py::test_sin_ventas_no_rompe",
-    "tests/test_roles_config.py::test_only_accionista_has_wildcard",
     "tests/test_session_timeout.py::test_sesion_dentro_del_timeout_actualiza_last_activity",
     "tests/test_session_timeout.py::test_sesion_expirada_se_limpia",
     "tests/test_session_timeout.py::test_sesion_sin_last_activity_no_expira_inmediata",
