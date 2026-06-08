@@ -40,7 +40,8 @@ def _login_as_dueno(app, fake_db):
 
 def test_facturas_confirmar_anulacion_get_200(app, fake_db, monkeypatch):
     from modules.facturas import queries as fq
-    monkeypatch.setattr(fq, "por_id", lambda _id: {
+    # La view de confirmación usa por_id_interno (no por_id). TMT 2026-06-08.
+    monkeypatch.setattr(fq, "por_id_interno", lambda _id: {
         "id_factura": 1, "numf": 123, "numf_completo": "001-001-000000123",
         "fecha": None, "codigo_cli": "JTX", "cliente": "Jimenez",
         "importe": 1234.56, "saldo": 500.0, "stat": "Z",
@@ -54,20 +55,24 @@ def test_facturas_confirmar_anulacion_get_200(app, fake_db, monkeypatch):
     assert b'name="motivo"' in r.data
 
 
-def test_facturas_anular_sin_motivo_redirige_a_confirmacion(app, fake_db, monkeypatch):
+def test_facturas_anular_sin_motivo_ejecuta(app, fake_db, monkeypatch):
+    # TMT 2026-05-13 dueña: el motivo es OPCIONAL. POST sin motivo NO redirige a
+    # confirmación — ejecuta la anulación y vuelve al detalle de la factura.
     from modules.facturas import queries as fq
-    monkeypatch.setattr(fq, "por_id", lambda _id: {
+    monkeypatch.setattr(fq, "por_id_interno", lambda _id: {
         "id_factura": 1, "numf": 123, "numf_completo": "001-001-000000123",
         "fecha": None, "codigo_cli": "JTX", "cliente": "J",
         "importe": 10, "saldo": 10, "stat": "Z",
     })
-    monkeypatch.setattr(fq, "anular", lambda *a, **k: 1)
+    calls = []
+    monkeypatch.setattr(fq, "anular", lambda *a, **k: calls.append((a, k)) or 1)
 
     c = _login_as_dueno(app, fake_db)
     r = c.post("/facturas/1/anular", data={})  # sin motivo
-    # Redirige a la confirmación, NO ejecuta anular.
     assert r.status_code in (302, 303)
-    assert "/confirmar-anulacion" in r.headers["Location"]
+    assert calls, "anular debió ejecutarse (motivo opcional)"
+    loc = r.headers["Location"]
+    assert "/facturas/" in loc and "/confirmar" not in loc
 
 
 # ---------------------------------------------------------------------------
@@ -75,29 +80,36 @@ def test_facturas_anular_sin_motivo_redirige_a_confirmacion(app, fake_db, monkey
 # ---------------------------------------------------------------------------
 
 def test_cheques_confirmar_reverso_get_200(app, fake_db, monkeypatch):
+    # stat B = "sin fondos" (rebote real) → la página de confirmación menciona
+    # el STOP al cliente. (stat D/Z/P/V serían "reversar/me confundí", sin STOP
+    # — TMT 2026-05-24 dueña: "no es lo mismo reversar que rebote".)
     from modules.cheques import queries as cq
     monkeypatch.setattr(cq, "por_id", lambda _id: {
         "id_cheque": 7, "no_cheque": "C-42", "fecha": None,
-        "codigo_cli": "JTX", "importe": 1000, "stat": "D",
+        "codigo_cli": "JTX", "importe": 1000, "stat": "B",
     })
     c = _login_as_dueno(app, fake_db)
     r = c.get("/cheques/7/confirmar-reverso")
     assert r.status_code == 200
-    # Es rebote real (stat D) → menciona STOP
     assert b"STOP" in r.data
 
 
-def test_cheques_reversar_sin_motivo_redirige(app, fake_db, monkeypatch):
+def test_cheques_reversar_sin_motivo_ejecuta(app, fake_db, monkeypatch):
+    # TMT 2026-05-21 dueña: motivo opcional. POST sin motivo ejecuta y vuelve al
+    # detalle del cheque (no redirige a confirmación).
     from modules.cheques import queries as cq
     monkeypatch.setattr(cq, "por_id", lambda _id: {
         "id_cheque": 7, "no_cheque": "C-42", "fecha": None,
         "codigo_cli": "JTX", "importe": 1, "stat": "Z",
     })
-    monkeypatch.setattr(cq, "reversar", lambda **kw: {"reversadas": 0})
+    calls = []
+    monkeypatch.setattr(cq, "reversar", lambda **kw: calls.append(kw) or {"reversadas": 0})
     c = _login_as_dueno(app, fake_db)
     r = c.post("/cheques/7/reversar", data={})
     assert r.status_code in (302, 303)
-    assert "/confirmar-reverso" in r.headers["Location"]
+    assert calls, "reversar debió ejecutarse (motivo opcional)"
+    loc = r.headers["Location"]
+    assert "/cheques/" in loc and "/confirmar" not in loc
 
 
 # ---------------------------------------------------------------------------
@@ -117,18 +129,23 @@ def test_retenciones_confirmar_anulacion_get_200(app, fake_db, monkeypatch):
     assert b"Confirmar anulaci" in r.data
 
 
-def test_retenciones_anular_sin_motivo_redirige(app, fake_db, monkeypatch):
+def test_retenciones_anular_sin_motivo_ejecuta(app, fake_db, monkeypatch):
+    # TMT 2026-05-13 dueña: motivo opcional. POST sin motivo ejecuta y vuelve a
+    # la lista de retenciones.
     from modules.retenciones import queries as rq
     monkeypatch.setattr(rq, "por_id", lambda _id: {
         "id_retencion": 5, "codigo_cli": "JTX", "numf": 123, "rete": 50,
         "fecha": None, "cliente": "", "importe_factura": 0,
         "numf_completo": "",
     })
-    monkeypatch.setattr(rq, "anular", lambda *a, **k: 1)
+    calls = []
+    monkeypatch.setattr(rq, "anular", lambda *a, **k: calls.append((a, k)) or 1)
     c = _login_as_dueno(app, fake_db)
     r = c.post("/retenciones/5/anular", data={})
     assert r.status_code in (302, 303)
-    assert "/confirmar-anulacion" in r.headers["Location"]
+    assert calls, "anular debió ejecutarse (motivo opcional)"
+    loc = r.headers["Location"]
+    assert "/retenciones" in loc and "/confirmar" not in loc
 
 
 # ---------------------------------------------------------------------------
@@ -147,17 +164,22 @@ def test_provisiones_confirmar_eliminacion_get_200(app, fake_db, monkeypatch):
     assert b"Alquiler" in r.data
 
 
-def test_provisiones_eliminar_sin_motivo_redirige(app, fake_db, monkeypatch):
+def test_provisiones_eliminar_sin_motivo_ejecuta(app, fake_db, monkeypatch):
+    # TMT 2026-05-13 dueña: motivo opcional. POST sin motivo ejecuta y vuelve a
+    # la lista de provisiones.
     from modules.provisiones import queries as pq
     monkeypatch.setattr(pq, "por_id", lambda _id: {
         "id_provisiones": 9, "concepto": "X", "importe": 1,
         "periodo_aplica": "MENSUAL",
     })
-    monkeypatch.setattr(pq, "eliminar", lambda *a, **k: 1)
+    calls = []
+    monkeypatch.setattr(pq, "eliminar", lambda *a, **k: calls.append((a, k)) or 1)
     c = _login_as_dueno(app, fake_db)
     r = c.post("/provisiones/9/eliminar", data={})
     assert r.status_code in (302, 303)
-    assert "/confirmar-eliminacion" in r.headers["Location"]
+    assert calls, "eliminar debió ejecutarse (motivo opcional)"
+    loc = r.headers["Location"]
+    assert "/provisiones" in loc and "/confirmar" not in loc
 
 
 # ---------------------------------------------------------------------------
@@ -176,14 +198,19 @@ def test_posdat_confirmar_anulacion_get_200(app, fake_db, monkeypatch):
     assert b"PROV" in r.data
 
 
-def test_posdat_anular_sin_motivo_redirige(app, fake_db, monkeypatch):
+def test_posdat_anular_sin_motivo_ejecuta(app, fake_db, monkeypatch):
+    # TMT 2026-05-21 dueña: motivo opcional. POST sin motivo ejecuta y vuelve a
+    # la lista de posdatados.
     from modules.posdat import queries as pq
     monkeypatch.setattr(pq, "por_id", lambda _id: {
         "id_posdat": 3, "num": 101, "prov": "PROV",
         "importe": 1, "fechad": None, "banc": 0,
     })
-    monkeypatch.setattr(pq, "anular", lambda *a, **k: 1)
+    calls = []
+    monkeypatch.setattr(pq, "anular", lambda *a, **k: calls.append((a, k)) or 1)
     c = _login_as_dueno(app, fake_db)
     r = c.post("/posdat/3/anular", data={})
     assert r.status_code in (302, 303)
-    assert "/confirmar-anulacion" in r.headers["Location"]
+    assert calls, "anular debió ejecutarse (motivo opcional)"
+    loc = r.headers["Location"]
+    assert "/posdat" in loc and "/confirmar" not in loc
