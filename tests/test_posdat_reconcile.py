@@ -37,24 +37,44 @@ def test_yy_repin_por_concepto():
     }
 
 
-def test_cheque_cambia_importe_mismo_concepto_es_update():
+def test_mismo_importe_distinto_concepto_no_churn():
+    """EL FIX CLAVE: el concepto del DBF lleva un contador volátil ("6023 4" →
+    "6023 3"). Match por (prov, importe) → mismo importe matchea aunque el
+    concepto difiera → NO genera delete+insert espurio."""
+    plan = reconciliar_posdat_plan(
+        [_dbf("AQ", 9710.60, "6023  4")], [_pc(1, "AQ", 9710.60, "6023  9")],
+    )
+    assert plan["updates"] == [] and plan["inserts"] == [] and plan["deletes"] == []
+
+
+def test_cheque_cambia_importe_es_delete_insert():
+    """Cambio de importe = cheque distinto → delete del viejo + insert del nuevo."""
     plan = reconciliar_posdat_plan(
         [_dbf("AQ", 9000, "6023  4")], [_pc(1, "AQ", 8500, "6023  4")],
     )
-    assert len(plan["updates"]) == 1
-    assert plan["updates"][0]["id"] == 1 and plan["updates"][0]["yy"] is False
-    assert plan["inserts"] == [] and plan["deletes"] == []
+    assert plan["updates"] == []
+    assert len(plan["deletes"]) == 1 and plan["deletes"][0]["id"] == 1
+    assert len(plan["inserts"]) == 1 and plan["inserts"][0]["importe"] == 9000.0
 
 
 def test_cheque_nuevo_solo_inserta_sin_tocar_existentes():
-    """EL FIX: un cheque nuevo (concepto nuevo) → INSERT, los existentes NO se
-    tocan. El matcher viejo (por importe ordenado) los habría mis-updateado."""
+    """Un cheque nuevo (importe nuevo) → INSERT; el existente (mismo importe)
+    matchea y NO se toca. El matcher viejo (importe ordenado por posición) los
+    habría mis-updateado al correrse el orden."""
     dbf = [_dbf("AQ", 8500, "6023  4"), _dbf("AQ", 9700, "7  2")]
     pc = [_pc(1, "AQ", 8500, "6023  4")]
     plan = reconciliar_posdat_plan(dbf, pc)
     assert plan["updates"] == []
     assert len(plan["inserts"]) == 1 and plan["inserts"][0]["importe"] == 9700.0
     assert plan["deletes"] == []
+
+
+def test_dos_cheques_mismo_importe_se_parean_por_count():
+    """Dos AQ de 5922.50 en ambos lados → matchean por count, sin churn."""
+    dbf = [_dbf("AQ", 5922.50, "a"), _dbf("AQ", 5922.50, "b")]
+    pc = [_pc(1, "AQ", 5922.50, "x"), _pc(2, "AQ", 5922.50, "y")]
+    plan = reconciliar_posdat_plan(dbf, pc)
+    assert plan["updates"] == [] and plan["inserts"] == [] and plan["deletes"] == []
 
 
 def test_cheque_removido_se_borra_con_flag_linked():

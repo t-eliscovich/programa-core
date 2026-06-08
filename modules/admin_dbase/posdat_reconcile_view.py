@@ -99,32 +99,33 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
             inserts.append({"prov": k[0], "importe": round(float(d["importe"]), 2),
                             "concepto": d["concepto"]})
 
-    # ── cheques reales: match por (prov, concepto); fallback importe dentro del grupo ──
+    # ── cheques reales: match por (prov, importe) MULTISET ──
+    # El importe es la identidad económica estable del cheque. El concepto del
+    # DBF lleva un contador que cambia día a día (p.ej. "6023  4" → "6023  3"),
+    # así que NO sirve como clave (churn). Tampoco el pareo por importe-ordenado
+    # -por-posición (mis-pareaba al entrar cheques nuevos). Multiset por importe:
+    # los importes que coinciden matchean (no-op); los que sobran en dBase →
+    # INSERT, los que sobran en PC → DELETE. Sin UPDATE (cambio de importe =
+    # delete+insert, raro). TMT 2026-06-08.
     dbf_n: dict = defaultdict(list)
     pc_n: dict = defaultdict(list)
     for r in dbf_banc0:
         if not is_yy_like(r["prov"]):
-            dbf_n[(_norm(r["prov"]), _norm(r["concepto"]))].append(r)
+            dbf_n[(_norm(r["prov"]), round(float(r["importe"]), 2))].append(r)
     for r in pc_banc0:
         if not is_yy_like(r["prov"]):
-            pc_n[(_norm(r["prov"]), _norm(r["concepto"]))].append(r)
+            pc_n[(_norm(r["prov"]), round(float(r["importe"]), 2))].append(r)
     for key in sorted(set(list(dbf_n) + list(pc_n))):
-        prov = key[0]
-        d = sorted(dbf_n.get(key, []), key=lambda x: float(x["importe"]))
-        p = sorted(pc_n.get(key, []), key=lambda x: float(x["importe"]))
+        prov, amt = key
+        d = dbf_n.get(key, [])
+        p = pc_n.get(key, [])
         n = min(len(d), len(p))
-        for i in range(n):
-            # Mismo (prov, concepto) → sólo el importe puede diferir.
-            if abs(float(p[i]["importe"]) - float(d[i]["importe"])) > 0.005:
-                updates.append({"id": p[i]["id_posdat"], "importe": round(float(d[i]["importe"]), 2),
-                                "concepto": d[i].get("concepto"), "yy": False, "que": prov})
-        for i in range(n, len(p)):
-            deletes.append({"id": p[i]["id_posdat"], "prov": prov,
-                            "importe": round(float(p[i]["importe"]), 2),
+        # Las primeras n filas matchean por (prov, importe) → no-op.
+        for i in range(n, len(p)):  # PC tiene de más → borrar
+            deletes.append({"id": p[i]["id_posdat"], "prov": prov, "importe": amt,
                             "concepto": p[i].get("concepto"), "linked": bool(p[i].get("linked"))})
-        for i in range(n, len(d)):
-            inserts.append({"prov": prov, "importe": round(float(d[i]["importe"]), 2),
-                            "concepto": d[i].get("concepto")})
+        for i in range(n, len(d)):  # dBase tiene de más → insertar (cheque nuevo)
+            inserts.append({"prov": prov, "importe": amt, "concepto": d[i].get("concepto")})
     return {"updates": updates, "deletes": deletes, "inserts": inserts}
 
 
