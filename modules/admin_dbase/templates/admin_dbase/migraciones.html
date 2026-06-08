@@ -50,8 +50,24 @@
     btnStatus.addEventListener('click', loadStatus);
     loadStatus();
 
+    // Confirmación inline en 2 clicks (en vez de confirm() nativo, que bloquea
+    // y rompe automatización). 1er click → "arma" 4s; 2do click → corre.
+    let _armed = false, _armTimer = null;
+    const _labelIdle = 'Aplicar pendientes', _labelArmed = 'Confirmar — clic de nuevo';
     btnRun.addEventListener('click', async () => {
-      if (!confirm('¿Aplicar todas las migraciones pendientes?')) return;
+      if (!_armed) {
+        _armed = true;
+        btnRun.textContent = _labelArmed;
+        btnRun.classList.add('ring', 'ring-amber-400');
+        _armTimer = setTimeout(() => {
+          _armed = false; btnRun.textContent = _labelIdle;
+          btnRun.classList.remove('ring', 'ring-amber-400');
+        }, 4000);
+        return;
+      }
+      clearTimeout(_armTimer);
+      _armed = false;
+      btnRun.classList.remove('ring', 'ring-amber-400');
       btnRun.disabled = true; btnRun.textContent = 'Corriendo…';
       out.textContent = '';
       try {
