@@ -149,21 +149,59 @@ def verificar_source_dir(src: Path) -> tuple[bool, str]:
     return True, f"{len(dbfs)} archivos .DBF detectados"
 
 
+def _backup_python(target_dir: Path, tablas: list[str], db_url: str) -> tuple[bool, str]:
+    """Fallback de backup SIN pg_dump: COPY ... TO STDOUT (CSV) por tabla vía
+    psycopg2. El EC2 Windows no tiene pg_dump en el PATH, así que este path es
+    el que corre en producción. Recuperable con COPY ... FROM. TMT 2026-06-08.
+    """
+    try:
+        import psycopg2
+    except ImportError as e:
+        return False, f"psycopg2 no disponible: {e}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = target_dir / f"backup_pre_sync_{stamp}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    total = 0
+    hechas = 0
+    try:
+        conn = psycopg2.connect(db_url)
+    except Exception as e:  # noqa: BLE001
+        return False, f"no pude conectar para backup: {e}"
+    try:
+        cur = conn.cursor()
+        for t in tablas:
+            fp = out_dir / (t.replace(".", "_") + ".csv")
+            try:
+                with open(fp, "w", encoding="utf-8", newline="") as f:
+                    cur.copy_expert(f"COPY {t} TO STDOUT WITH CSV HEADER", f)
+                total += fp.stat().st_size
+                hechas += 1
+            except Exception:  # noqa: BLE001 — tabla inexistente u otra; seguimos
+                conn.rollback()
+    finally:
+        conn.close()
+    if hechas == 0:
+        return False, "ninguna tabla respaldada"
+    return True, f"backup (python COPY) en {out_dir} ({total / 1048576:.1f} MB · {hechas} tablas)"
+
+
 def hacer_backup(target_dir: Path, tablas: list[str]) -> tuple[bool, str]:
     """Dump local de las tablas que vamos a TRUNCATE+INSERT.
 
-    Usa `pg_dump --data-only -t scintela.X ...`. Si no está disponible
-    `pg_dump` en el PATH, retorna warning y continúa.
+    Usa `pg_dump --data-only -t scintela.X ...` si está en el PATH; si no
+    (caso EC2 Windows), cae al fallback Python con COPY vía psycopg2 — así
+    SIEMPRE queda un backup pre-sync para rollback.
     """
-    pg_dump = shutil.which("pg_dump")
-    if not pg_dump:
-        return True, "pg_dump no disponible; backup omitido (warning)"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = target_dir / f"backup_pre_sync_{stamp}.sql"
     db_url = os.environ.get("DATABASE_URL") or _build_dburl_from_env()
     if not db_url:
         return True, "DATABASE_URL no seteado; backup omitido (warning)"
+    pg_dump = shutil.which("pg_dump")
+    if not pg_dump:
+        return _backup_python(target_dir, tablas, db_url)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_file = target_dir / f"backup_pre_sync_{stamp}.sql"
     # Backup parcial: solo las tablas que vamos a tocar.
     t_args = []
     for t in tablas:
