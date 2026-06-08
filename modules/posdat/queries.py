@@ -747,9 +747,14 @@ def resumen(
             prov=prov, q=q_s, solo_abiertas=solo_abiertas,
             desde=desde, hasta=hasta, tab="yy",
         )
+        # TMT 2026-06-08: incluir RT además de YY. La fila RT (retenciones,
+        # provisión) aparece en el tab YY pero antes el resumen la descartaba
+        # → el TOTAL del módulo se comía la RT (~119k) y no cuadraba con el
+        # balance Pasivos (que sí la suma: es banc=0 deuda viva). RT solo vive
+        # en el tab YY (posdatados la excluye), así que no hay doble conteo.
         yy_solo = [
             f for f in filas
-            if (f.get("prov") or "").strip().upper() == "YY"
+            if (f.get("prov") or "").strip().upper() in ("YY", "RT")
         ]
         total = _Dec("0")
         for f in yy_solo:
