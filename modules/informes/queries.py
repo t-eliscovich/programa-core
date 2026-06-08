@@ -1437,13 +1437,12 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
 
         # Calcular días hábiles pendientes (entre ult_fecha+1 y hoy inclusive).
         # Si forzar=True, agregamos un día extra al final como catch-up manual.
-        # TMT 2026-06-08 dueña: 'usar lo mismo que dBase' → L-SÁBADO (excluye
-        # sólo domingo), igual que MENU.PRG L283 `IF DOW(DATE())>1`. La
-        # fábrica provisiona los sábados. Revierte el 'lunes a viernes' del
-        # 2026-05-28 (el dBase real sí suma sábados).
+        # TMT 2026-06-08: VERIFICADO contra POSDAT.DBF — el dBase real avanza
+        # L-V (no contó el sábado 06/06). MENU.PRG dice DOW>1 pero el sistema
+        # no se abre los sábados, así que en la práctica es L-V. Mantener L-V.
         cursor_d = ult_fecha + _td(days=1)
         while cursor_d <= hoy:
-            if cursor_d.weekday() < 6:  # 0=L .. 5=S (sólo excluye domingo=6)
+            if cursor_d.weekday() < 5:  # 0=L .. 4=V (sin S/D)
                 dias_a_aplicar.append(cursor_d)
             cursor_d += _td(days=1)
 
@@ -1466,9 +1465,9 @@ def correr_provisiones_diarias(forzar: bool = False) -> dict:
                         f"≥ hoy {hoy_iso}. No permitimos doble-aplicar."
                     ),
                 }
-            # Forzar: agregar último día hábil (L-S); si hoy es domingo, retroceder.
+            # Forzar: agregar último día hábil (L-V); si hoy es S/D, retroceder.
             _f = hoy
-            while _f.weekday() >= 6:
+            while _f.weekday() >= 5:
                 _f -= _td(days=1)
             dias_a_aplicar = [_f]
 

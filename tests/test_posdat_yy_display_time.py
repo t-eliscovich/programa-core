@@ -46,25 +46,23 @@ class TestDiasHabilesEntre:
     def test_jueves_a_viernes_es_uno(self):
         assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 29)) == 1
 
-    def test_jueves_a_sabado_suma_sabado(self):
-        # L-S: vie 29 + sáb 30 = 2 (el sábado SÍ cuenta).
-        assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 30)) == 2
+    def test_jueves_a_sabado_no_suma_finde(self):
+        assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 30)) == 1
 
-    def test_jueves_a_domingo_no_suma_domingo(self):
-        # vie 29 + sáb 30 (dom 31 NO cuenta) = 2.
-        assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 31)) == 2
+    def test_jueves_a_domingo_no_suma_finde(self):
+        assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 5, 31)) == 1
 
-    def test_jueves_a_lunes_siguiente_tres_habiles(self):
-        # (jue 28, lun 01] = vie 29 + sáb 30 + lun 01 = 3.
-        assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 6, 1)) == 3
+    def test_jueves_a_lunes_siguiente_dos_habiles(self):
+        # (jue 28, lun 01] = vie 29 + lun 01 = 2.
+        assert q._dias_habiles_entre(date(2026, 5, 28), date(2026, 6, 1)) == 2
 
     def test_un_mes_completo_habil(self):
-        # Mayo 2026: L-S de mayo = 26 días (31 − 5 domingos).
-        assert q._dias_habiles_entre(date(2026, 4, 30), date(2026, 5, 31)) == 26
+        # Mayo 2026: L-V de mayo = 21 días hábiles.
+        assert q._dias_habiles_entre(date(2026, 4, 30), date(2026, 5, 31)) == 21
 
     def test_perpetuo_cruza_meses(self):
-        # (30/04, 03/06] = mayo L-S (26) + junio L,M,Mi (3) = 29.
-        assert q._dias_habiles_entre(date(2026, 4, 30), date(2026, 6, 3)) == 29
+        # (30/04, 03/06] = mayo L-V (21) + junio L,M,Mi (3) = 24.
+        assert q._dias_habiles_entre(date(2026, 4, 30), date(2026, 6, 3)) == 24
 
     def test_none_safe(self):
         assert q._dias_habiles_entre(None, date(2026, 5, 28)) == 0
@@ -133,15 +131,13 @@ class TestAplicarDisplayTimeYY:
         assert f["importe"] == 91100.0
         assert f["dias_offset"] == 1
 
-    def test_sabado_suma_domingo_no(self):
-        # Sáb 30: vie 29 + sáb 30 = 2 → 96100 (el sábado cuenta).
+    def test_fin_de_semana_no_suma(self):
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 30))
-        assert f["importe"] == 96100.0
-        # Dom 31: sigue 2 (el domingo NO cuenta) → 96100.
+        assert f["importe"] == 91100.0
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 5, 31))
-        assert f["importe"] == 96100.0
+        assert f["importe"] == 91100.0
 
     def test_redondeo_a_2_decimales(self):
         f = _fila_yy(importe=100.005, baseline=date(2026, 5, 28), cuota=33.337)
@@ -157,23 +153,23 @@ class TestAcumulaPerpetuoSinCierre:
     blindan que el cierre no vuelva por accidente."""
 
     def test_cruza_mes_acumula_sin_reset(self):
-        # Jue 28/05 baseline → Lun 01/06 hoy. Hábiles L-S = vie 29 + sáb 30
-        # + lun 01 = 3. Perpetuo: importe = 86100 + 5000*3 = 101100. NO 5000.
+        # Jue 28/05 baseline → Lun 01/06 hoy. Hábiles = vie 29 + lun 01 = 2.
+        # Comportamiento perpetuo: importe = 86100 + 5000*2 = 96100. NO 5000.
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 6, 1))
-        assert f["importe"] == 101100.0
+        assert f["importe"] == 96100.0
         assert f["importe_base"] == 86100.0  # no se resetea
-        assert f["dias_offset"] == 3
+        assert f["dias_offset"] == 2
         # marker yy_cerrado_lazy NO debe aparecer (el cierre fue removido)
         assert "yy_cerrado_lazy" not in f
 
     def test_cruza_meses_sigue_acumulando(self):
-        # baseline 30/04 → 03/06 hoy. (30/04, 03/06] = 26 may (L-S) + 3 jun = 29.
+        # baseline 30/04 → 03/06 hoy. (30/04, 03/06] = 21 may + 3 jun = 24 hábiles.
         f = _fila_yy(importe=10000, baseline=date(2026, 4, 30), cuota=1000)
         q._aplicar_display_time_yy([f], hoy=date(2026, 6, 3))
-        assert f["importe"] == 39000.0  # 10000 + 1000*29
+        assert f["importe"] == 34000.0  # 10000 + 1000*24
         assert f["importe_base"] == 10000.0
-        assert f["dias_offset"] == 29
+        assert f["dias_offset"] == 24
 
 
 class TestRTtambienAcumula:
@@ -185,9 +181,9 @@ class TestRTtambienAcumula:
         f = _fila_yy(importe=125000, baseline=date(2026, 5, 28),
                      cuota=8400, prov="RT", concepto="")
         q._aplicar_display_time_yy([f], hoy=date(2026, 6, 3))
-        # (28/05, 03/06] L-S = vie 29 + sáb 30 + lun 01 + mar 02 + mie 03 = 5.
-        assert f["importe"] == 125000 + 8400 * 5
-        assert f["dias_offset"] == 5
+        # (28/05, 03/06] = vie 29 + lun 01 + mar 02 + mie 03 = 4 hábiles.
+        assert f["importe"] == 125000 + 8400 * 4
+        assert f["dias_offset"] == 4
 
     def test_rt_sin_baseline_intacto(self):
         f = {"prov": "RT", "importe": 100000, "baseline_date": None,
@@ -199,25 +195,25 @@ class TestRTtambienAcumula:
 class TestEjemploSueldosCompletoSinCierre:
     """End-to-end de SUELDOS cuota_diaria=5000, baseline=jue 28/05/2026.
 
-    Comportamiento NUEVO (perpetuo, L-S sin cierre):
+    Comportamiento NUEVO (perpetuo, sin cierre):
     | Día | importe esperado |
     | Jue 28/05 (baseline) | 86.100 |
     | Vie 29/05            | 91.100 |
-    | Sáb 30/05            | 96.100 |  (el sábado SÍ suma)
-    | Dom 31/05            | 96.100 |  (el domingo NO suma)
-    | Lun 01/06            | 101.100 |
-    | Mar 02/06            | 106.100 |
-    | Mie 03/06            | 111.100 |
+    | Sáb 30/05            | 91.100 |
+    | Dom 31/05            | 91.100 |
+    | Lun 01/06            | 96.100 |  (antes era 5.000 post-reset)
+    | Mar 02/06            | 101.100 |  (antes era 10.000)
+    | Mie 03/06            | 106.100 |
     """
 
     @pytest.mark.parametrize("hoy,esperado", [
         (date(2026, 5, 28), 86100),
         (date(2026, 5, 29), 91100),
-        (date(2026, 5, 30), 96100),
-        (date(2026, 5, 31), 96100),
-        (date(2026, 6, 1),  101100),
-        (date(2026, 6, 2),  106100),
-        (date(2026, 6, 3),  111100),
+        (date(2026, 5, 30), 91100),
+        (date(2026, 5, 31), 91100),
+        (date(2026, 6, 1),  96100),
+        (date(2026, 6, 2),  101100),
+        (date(2026, 6, 3),  106100),
     ])
     def test_acumulacion_perpetua(self, hoy, esperado):
         f = _fila_yy(importe=86100, baseline=date(2026, 5, 28), cuota=5000)
