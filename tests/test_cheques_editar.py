@@ -199,7 +199,7 @@ def test_editar_importe_invalido(monkeypatch):
     fake = _RecorderDB(cheque={"id_cheque": 1, "no_cheque": "001", "stat": "Z", "fechad": None})
     fake.apply_to(monkeypatch, db_mod)
 
-    with pytest.raises(ValueError, match=">"):
+    with pytest.raises(ValueError, match="cero"):
         queries.editar(1, importe=0, usuario="tmt")
     with pytest.raises(ValueError, match="máximo|maximo"):
         queries.editar(1, importe=10_000_000, usuario="tmt")

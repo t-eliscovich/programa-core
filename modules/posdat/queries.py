@@ -26,15 +26,19 @@ def _hoy_ec() -> date:
 
 
 def _dias_habiles_entre(desde: date, hasta: date) -> int:
-    """Cuenta lunes-viernes en el intervalo (desde, hasta]. Excluye `desde`,
+    """Cuenta lunes-SÁBADO en el intervalo (desde, hasta]. Excluye `desde`,
     incluye `hasta`. Devuelve 0 si hasta <= desde.
+
+    TMT 2026-06-08 (dueña): igual que dBase MENU.PRG L283 `IF DOW(DATE())>1`
+    — suma todos los días EXCEPTO domingo (la fábrica provisiona los sábados).
+    Revierte el "lunes a viernes" del 2026-05-28.
 
     Ejemplos (todos con desde=jue 28/05/2026):
         hasta=28/05 (mismo día)  → 0
         hasta=29/05 (viernes)    → 1
-        hasta=30/05 (sábado)     → 1
-        hasta=31/05 (domingo)    → 1
-        hasta=01/06 (lunes)      → 2
+        hasta=30/05 (sábado)     → 2
+        hasta=31/05 (domingo)    → 2
+        hasta=01/06 (lunes)      → 3
     """
     if hasta is None or desde is None or hasta <= desde:
         return 0
@@ -42,7 +46,7 @@ def _dias_habiles_entre(desde: date, hasta: date) -> int:
     d = desde
     while d < hasta:
         d = d + timedelta(days=1)
-        if d.weekday() < 5:  # 0=L .. 4=V
+        if d.weekday() < 6:  # 0=L .. 5=S (sólo excluye domingo=6)
             n += 1
     return n
 
