@@ -259,6 +259,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(stock_asinfo_bp, url_prefix="/stock")
 
+    # TMT 2026-06-09 — /importaciones: importaciones de Asinfo cruzadas con las
+    # compras/anticipos del programa por el código que va en la Nota.
+    from modules.importaciones.views import importaciones_bp
+
+    app.register_blueprint(importaciones_bp)
+
     from modules.retenciones.views import retenciones_bp
 
     app.register_blueprint(retenciones_bp)

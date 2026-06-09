@@ -227,3 +227,132 @@ def test_facturas_totales_robusto_con_nulls_y_strings(monkeypatch):
     assert totales["FACTURA"]["kg"] == 0.0
     assert totales["FACTURA"]["usd"] == 1500.5
     assert "?" in totales
+
+
+# ---------------------------------------------------------------------------
+# stock_asinfo_lote / stock_asinfo_lote_totales
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_lote_caches():
+    service._STOCK_LOTE_CACHE.clear()
+    service._STOCK_LOTE_TOTALES_CACHE.clear()
+    yield
+    service._STOCK_LOTE_CACHE.clear()
+    service._STOCK_LOTE_TOTALES_CACHE.clear()
+
+
+def test_stock_lote_bodega_invalida_no_consulta():
+    with patch.object(metabase_client, "fetch_dataset") as m:
+        assert service.stock_asinfo_lote(None) == []
+        assert service.stock_asinfo_lote("x") == []
+    m.assert_not_called()
+
+
+def test_stock_lote_mapea_y_pasa_bodega_al_sql():
+    rows = [
+        {"codigo": "TC-WAF", "producto": "TC WAFFER", "lote": "0003467002",
+         "tejido": "TELA CRUDA", "calidad": "PRI", "color": "TELA CRUDA",
+         "acabado": None, "estampado": None, "titulo_hilo": "HILO 22",
+         "proveedor": "HYLTEXPOY 10", "unidad": "KG", "saldo": 22.75},
+    ]
+    with patch.object(metabase_client, "fetch_dataset", return_value=rows) as m:
+        out = service.stock_asinfo_lote(52)
+    # el id de bodega (int) viaja embebido en el SQL
+    sql_arg = m.call_args.args[1]
+    assert "id_bodega = 52" in sql_arg
+    assert len(out) == 1
+    r = out[0]
+    assert r["codigo"] == "TC-WAF"
+    assert r["titulo_hilo"] == "HILO 22"
+    assert r["proveedor"] == "HYLTEXPOY 10"
+    assert r["unidad"] == "KG"
+    assert r["saldo"] == 22.75
+    # nulls → string vacío, nunca None
+    assert r["acabado"] == "" and r["estampado"] == ""
+
+
+def test_stock_lote_descarta_saldo_no_positivo():
+    rows = [
+        {"codigo": "A", "producto": "A", "lote": "1", "saldo": 0},
+        {"codigo": "B", "producto": "B", "lote": "2", "saldo": 5.0},
+    ]
+    with patch.object(metabase_client, "fetch_dataset", return_value=rows):
+        out = service.stock_asinfo_lote(51)
+    assert [r["codigo"] for r in out] == ["B"]
+
+
+def test_stock_lote_q_va_al_sql_con_like():
+    with patch.object(metabase_client, "fetch_dataset", return_value=[]) as m:
+        service.stock_asinfo_lote(52, q="waf")
+    sql_arg = m.call_args.args[1]
+    assert "LIKE '%WAF%'" in sql_arg  # se normaliza a mayúsculas
+
+
+def test_stock_lote_totales_mapea():
+    rows = [
+        {"id_bodega": 51, "bodega": "Bodega Hilo", "lotes": 61666, "total_kg": 1790694.44},
+    ]
+    with patch.object(metabase_client, "fetch_dataset", return_value=rows):
+        out = service.stock_asinfo_lote_totales()
+    assert out[0]["id_bodega"] == 51
+    assert out[0]["lotes"] == 61666
+    assert out[0]["total_kg"] == 1790694.44
+
+
+# ---------------------------------------------------------------------------
+# Vista /stock/asinfo-lote — render (landing + detalle)
+# ---------------------------------------------------------------------------
+
+
+def _login_informes(app, fake_db):
+    rid = fake_db.add_role("Tester", ["stock.ver"])
+    uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
+
+
+def test_vista_lote_landing_renderiza(app, fake_db):
+    c = _login_informes(app, fake_db)
+    totales = [{"id_bodega": 52, "bodega": "Bodega Tela Cruda", "lotes": 11971, "total_kg": 255795.25}]
+    with patch.object(service, "stock_asinfo_lote_totales", return_value=totales):
+        r = c.get("/stock/asinfo-lote")
+    assert r.status_code == 200
+    assert b"Tela Cruda" in r.data
+
+
+def test_vista_lote_detalle_renderiza(app, fake_db):
+    c = _login_informes(app, fake_db)
+    totales = [{"id_bodega": 52, "bodega": "Bodega Tela Cruda", "lotes": 1, "total_kg": 22.75}]
+    detalle = [{
+        "codigo": "TC-WAF", "producto": "TC WAFFER", "lote": "0003467002",
+        "tejido": "TELA CRUDA", "calidad": "PRI", "color": "TELA CRUDA",
+        "acabado": "", "estampado": "", "titulo_hilo": "HILO 22",
+        "proveedor": "HYLTEXPOY 10", "unidad": "KG", "saldo": 22.75,
+    }]
+    with patch.object(service, "stock_asinfo_lote_totales", return_value=totales), \
+         patch.object(service, "stock_asinfo_lote", return_value=detalle):
+        r = c.get("/stock/asinfo-lote?bodega=52")
+    assert r.status_code == 200
+    assert b"TC-WAF" in r.data
+    assert b"HILO 22" in r.data
+    assert b"0003467002" in r.data
+
+
+def test_vista_lote_export_csv(app, fake_db):
+    c = _login_informes(app, fake_db)
+    detalle = [{
+        "codigo": "TC-WAF", "producto": "TC WAFFER", "lote": "0003467002",
+        "tejido": "TELA CRUDA", "calidad": "PRI", "color": "TELA CRUDA",
+        "acabado": "", "estampado": "", "titulo_hilo": "HILO 22",
+        "proveedor": "HYLTEXPOY 10", "unidad": "KG", "saldo": 22.75,
+    }]
+    with patch.object(service, "stock_asinfo_lote_totales", return_value=[]), \
+         patch.object(service, "stock_asinfo_lote", return_value=detalle):
+        r = c.get("/stock/asinfo-lote?bodega=52&export=csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["Content-Type"]
+    assert b"TC-WAF" in r.data

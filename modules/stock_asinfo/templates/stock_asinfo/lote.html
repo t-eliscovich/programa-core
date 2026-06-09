@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Stock por Lote — Asinfo{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('stock.lista') }}" class="hover:underline">Stock</a> /
+  <a href="{{ url_for('stock_asinfo.lote') }}" class="hover:underline">Asinfo por lote</a>
+  {% if modo == 'detalle' %} / <strong>{{ bodega_nombre }}</strong>{% endif %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .sa { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .sa table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .sa th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); letter-spacing: 0.03em;
+           border-bottom: 1px solid rgb(203 213 225); }
+  .sa td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .sa td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .sa td.muted { color: rgb(148 163 184); }
+  .sa .kpi { background: white; border: 1px solid rgb(226 232 240);
+             border-radius: 8px; padding: 12px 16px; }
+  .sa .kpi-label { color: rgb(100 116 139); font-size: 11px;
+                   text-transform: uppercase; letter-spacing: 0.05em; }
+  .sa .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .sa .chip { display: inline-block; padding: 2px 8px; border-radius: 9999px;
+              font-size: 10px; font-weight: 600; background: rgb(241 245 249);
+              color: rgb(51 65 85); text-transform: uppercase; letter-spacing: 0.04em; }
+  .sa .bodega-card { display: block; background: white; border: 1px solid rgb(226 232 240);
+                     border-radius: 10px; padding: 18px 20px; transition: box-shadow .15s; }
+  .sa .bodega-card:hover { box-shadow: 0 4px 14px rgb(15 23 42 / 0.08); border-color: rgb(148 163 184); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full sa">
+
+  <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
+    <div>
+      <h1 class="text-xl font-semibold">Stock por Lote — Asinfo</h1>
+      <p class="text-xs text-slate-500">
+        Réplica del reporte <em>Stock Valorado por Lote</em>: último saldo por
+        producto · bodega · lote desde <code>saldo_producto_lote</code>, con
+        atributos (calidad, color, acabado, estampado, título hilo, proveedor).
+        Solo cantidad (kg) — los dólares de Asinfo no son confiables.
+      </p>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      <strong>Error consultando Asinfo:</strong> <code>{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% if modo == 'landing' %}
+    {# ---------------- LANDING: totales por bodega ---------------- #}
+    <p class="text-sm text-slate-500 mb-4">Elegí una bodega para ver el detalle de lotes.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for t in totales %}
+        <a href="{{ url_for('stock_asinfo.lote', bodega=t.id_bodega) }}" class="bodega-card">
+          <div class="text-sm font-semibold text-slate-800">{{ t.bodega }}</div>
+          <div class="kpi-val">{{ t.total_kg | num_es(2) }} <span class="text-sm text-slate-500">kg</span></div>
+          <div class="text-xs text-slate-500 mt-1">{{ '{:,}'.format(t.lotes).replace(',', '.') }} lotes</div>
+        </a>
+      {% else %}
+        <div class="text-slate-500 text-sm">Sin datos de stock por lote disponibles.</div>
+      {% endfor %}
+    </div>
+
+  {% else %}
+    {# ---------------- DETALLE: lotes de una bodega ---------------- #}
+    <div class="mb-4 flex flex-wrap gap-2 no-print">
+      {% for t in totales %}
+        <a href="{{ url_for('stock_asinfo.lote', bodega=t.id_bodega) }}"
+           class="text-xs px-3 py-1.5 rounded border
+                  {% if t.id_bodega == id_bodega %}bg-slate-900 text-white border-slate-900{% else %}border-slate-300 hover:bg-slate-50{% endif %}">
+          {{ t.bodega }}
+        </a>
+      {% endfor %}
+    </div>
+
+    {# Filtros #}
+    <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
+      <input type="hidden" name="bodega" value="{{ id_bodega }}">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Buscar producto</label>
+        <input type="text" name="q" value="{{ q }}" placeholder="código / nombre"
+               class="w-52 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Categoría</label>
+        <select name="tejido" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+          <option value="">Todas</option>
+          {% for t in tejidos_universo %}
+            <option value="{{ t }}" {% if t == tejido_filtro %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Título Hilo</label>
+        <select name="titulo" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+          <option value="">Todos</option>
+          {% for t in titulos_universo %}
+            <option value="{{ t }}" {% if t == titulo_filtro %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
+        <select name="proveedor" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+          <option value="">Todos</option>
+          {% for p in proveedores_universo %}
+            <option value="{{ p }}" {% if p == proveedor_filtro %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Calidad</label>
+        <select name="calidad" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+          <option value="">Todas</option>
+          {% for c in calidades_universo %}
+            <option value="{{ c }}" {% if c == calidad_filtro %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if colores_universo %}
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Color</label>
+        <select name="color" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+          <option value="">Todos</option>
+          {% for c in colores_universo %}
+            <option value="{{ c }}" {% if c == color_filtro %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
+      <a href="{{ url_for('stock_asinfo.lote', bodega=id_bodega) }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
+      <a href="{{ url_for('stock_asinfo.lote', bodega=id_bodega, q=q, tejido=tejido_filtro, titulo=titulo_filtro, proveedor=proveedor_filtro, calidad=calidad_filtro, color=color_filtro, export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+    </form>
+
+    {# KPIs #}
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+      <div class="kpi">
+        <div class="kpi-label">Bodega</div>
+        <div class="kpi-val text-base">{{ bodega_nombre }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Lotes</div>
+        <div class="kpi-val">{{ '{:,}'.format(total_lotes).replace(',', '.') }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Total kg</div>
+        <div class="kpi-val">{{ total_kg | num_es(2) }}</div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <table class="sortable">
+        <thead>
+          <tr>
+            <th style="width: 26%">Producto</th>
+            <th style="width: 10%">Color</th>
+            <th style="width: 10%">Lote</th>
+            <th style="width: 7%">Calidad</th>
+            <th style="width: 11%">Título Hilo</th>
+            <th style="width: 13%">Proveedor</th>
+            <th style="width: 9%">Estampado</th>
+            <th class="text-right" style="width: 14%">Saldo (kg)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr title="{{ r.codigo }} — {{ r.producto }}">
+              <td data-sort-value="{{ r.producto }}">
+                <div class="font-medium text-slate-800">{{ r.producto or r.codigo }}</div>
+                <div class="font-mono text-[10px] text-slate-400">{{ r.codigo }}</div>
+              </td>
+              <td>
+                {% if r.color and r.color != r.tejido %}
+                  <span class="chip">{{ r.color }}</span>
+                {% else %}<span class="text-slate-300">—</span>{% endif %}
+              </td>
+              <td class="font-mono text-slate-500">{{ r.lote }}</td>
+              <td>{% if r.calidad %}<span class="chip">{{ r.calidad }}</span>{% endif %}</td>
+              <td>{{ r.titulo_hilo or '—' }}</td>
+              <td class="text-slate-600">{{ r.proveedor or '—' }}</td>
+              <td class="{% if not r.estampado %}muted{% endif %}">{{ r.estampado or '—' }}</td>
+              <td class="num">{{ r.saldo | num_es(2) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8" class="text-center py-8 text-slate-500">
+              {% if error %}Error en la consulta.{% else %}Sin lotes con stock en el filtro actual.{% endif %}
+            </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-xs text-slate-500 mt-3">
+      Fuente: <code>saldo_producto_lote</code> en Asinfo (database 2 Metabase),
+      último snapshot por producto · bodega · lote. Atributos resueltos contra
+      <code>lote</code> / <code>valor_atributo</code>. Cache 10 min.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

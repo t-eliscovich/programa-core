@@ -33,6 +33,8 @@ comunes que empiezan con 2 letras (ALQUILER, SUELDOS, etc.).
 
 from __future__ import annotations
 
+import re
+
 # Prefijos reservados — ningún proveedor puede usar estos códigos.
 _PREFIJOS_RESERVADOS = ("PICH", "INTER", "RR", "IN.", "INHB")
 
@@ -274,6 +276,69 @@ def _test() -> None:
     assert descripcion_humana(parse_concepto("ALQUILER", ctx)) == ""
 
     print(f"OK — {len(cases)} casos pasaron.")
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Nota de importación Asinfo → código de compra/anticipo del programa
+# ───────────────────────────────────────────────────────────────────────────
+# En Asinfo, la `Nota` (factura_proveedor.descripcion) de cada importación
+# lleva al final el código con que el PROGRAMA registró esa compra/anticipo:
+# 2-3 letras (= scintela.proveedor.codigo_prov: AC=Ariescope, MH=More Human,
+# AI=Aartimpex, …) + número (= scintela.compra.numero), casi siempre entre
+# paréntesis. Ejemplos reales (con todo su desorden):
+#     "ACMT/EXP/2026-27/8197 ( AC 36)"      → AC / 36
+#     "INV 2026030405 ( MH  63)"            → MH / 63   (doble espacio)
+#     "ACMT/EXP/2026-27/8157 ( AC 22"       → AC / 22   (sin cerrar paréntesis)
+#     "ACMT/EXP/2026-27/8044 ( AC 25)\n"    → AC / 25   (basura al final)
+#     "AYF2653 ( AI 15 )    ----1"          → AI / 15   (split de una factura)
+#     "ALG ( MH 64-65 )"                    → MH / 64 (numero_hasta=65, rango)
+#
+# OJO con falsos positivos: "INV 2026030405" también parece "letras+número".
+# Por eso (a) preferimos el código entre paréntesis, (b) tomamos la ÚLTIMA
+# coincidencia (el código va al final), (c) el código del programa son grupos
+# de 2-3 letras seguidos de número chico.
+
+#: paréntesis abierto + 2-3 letras + número (+ rango opcional). Lo preferido.
+_NOTA_CODE_PAREN = re.compile(
+    r"\(\s*([A-Za-z]{2,3})\s+0*(\d+)(?:\s*[-/]\s*0*(\d+))?", re.UNICODE
+)
+#: fallback — 2-3 letras + número cerca del final (sin exigir paréntesis).
+_NOTA_CODE_BARE = re.compile(
+    r"([A-Za-z]{2,3})\s+0*(\d+)(?:\s*[-/]\s*0*(\d+))?\s*\)?\s*[\s\W]*$", re.UNICODE
+)
+
+
+def parse_nota_importacion(nota: str | None) -> dict:
+    """Extrae el código de compra/anticipo del programa embebido en la Nota
+    de una importación de Asinfo.
+
+    Returns:
+        {"prov": "AC", "numero": 36, "numero_hasta": None,
+         "codigo": "AC 36", "raw": "<nota original>"}  si matchea,
+        {} si no encuentra un código.
+    """
+    raw = nota or ""
+    s = raw.strip()
+    if not s:
+        return {}
+
+    # 1) Preferimos códigos entre paréntesis; nos quedamos con el último.
+    matches = list(_NOTA_CODE_PAREN.finditer(s))
+    m = matches[-1] if matches else _NOTA_CODE_BARE.search(s)
+    if not m:
+        return {}
+
+    prov = m.group(1).upper()
+    numero = int(m.group(2))
+    numero_hasta = int(m.group(3)) if m.lastindex and m.group(3) else None
+    codigo = f"{prov} {numero}" + (f"-{numero_hasta}" if numero_hasta else "")
+    return {
+        "prov": prov,
+        "numero": numero,
+        "numero_hasta": numero_hasta,
+        "codigo": codigo,
+        "raw": raw,
+    }
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ stock_bp = Blueprint("stock", __name__, template_folder="templates")
 
 @stock_bp.route("/stock")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("stock.ver")
 def lista():
     """Pantalla principal de Stock.
 

@@ -74,6 +74,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "Gerente",
         [
+            "stock.ver",
             "informes.ver",
             "flujo.ver",
             "tintura.ver",
@@ -105,6 +106,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "Contabilidad",
         [
+            "stock.ver",
             "informes.ver",
             "tintura.ver",
             "clientes.ver",
@@ -152,6 +154,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "Compras",
         [
+            "stock.ver",
             "proveedores.ver",
             "proveedores.crear",
             "proveedores.editar",
@@ -172,6 +175,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "Cobranzas",
         [
+            "stock.ver",
             "clientes.ver",
             "clientes.editar",
             "cupos.editar",
@@ -195,6 +199,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "Ventas",
         [
+            "stock.ver",
             "clientes.ver",
             "clientes.crear",
             "clientes.editar",
@@ -218,6 +223,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "QC",
         [
+            "stock.ver",
             "tintura.ver",
             "tintura.registrar",
             "costos.ver",
@@ -234,6 +240,7 @@ ROLES: list[tuple[str, list[str]]] = [
         # TMT 2026-05-22 — la dueña pidió que el rol se llame "Alex" (no Operario).
         "Alex",
         [
+            "stock.ver",
             # Operativa diaria — todo el flujo de cheques, caja, bancos.
             "caja.ver",
             "caja.crear",
@@ -307,6 +314,7 @@ ROLES: list[tuple[str, list[str]]] = [
     (
         "Lectura",
         [
+            "stock.ver",
             "informes.ver",
             "clientes.ver",
             "proveedores.ver",

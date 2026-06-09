@@ -131,21 +131,26 @@
   </p>
 
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
-    <table>
+    <table class="sortable">
       <thead>
         <tr>
-          <th style="width: 16%">Tejido</th>
-          <th style="width: 18%">Variante</th>
-          <th style="width: 10%">Color</th>
+          <th style="width: 26%">Producto</th>
+          <th style="width: 13%">Tejido</th>
+          <th style="width: 13%">Variante</th>
+          <th style="width: 9%">Color</th>
           <th class="text-right" style="width: 12%">Cantidad</th>
-          <th class="text-right" style="width: 7%">Bodegas</th>
-          <th class="text-right" style="width: 13%">Precio últ.</th>
-          <th class="text-right" style="width: 14%">Valor estimado</th>
+          <th class="text-right" style="width: 6%">Bodegas</th>
+          <th class="text-right" style="width: 10%">Precio últ.</th>
+          <th class="text-right" style="width: 11%">Valor estimado</th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
           <tr title="{{ r.codigo }} — {{ r.nombre }}">
+            <td data-sort-value="{{ r.nombre }}">
+              <div class="font-medium text-slate-800">{{ r.nombre or r.codigo }}</div>
+              <div class="font-mono text-[10px] text-slate-400">{{ r.codigo }}</div>
+            </td>
             <td>{% if r.tejido %}<span class="chip">{{ r.tejido }}</span>{% endif %}</td>
             <td class="text-slate-600">{{ r.subcategoria or '—' }}</td>
             <td>
@@ -165,7 +170,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="text-center py-8 text-slate-500">
+          <tr><td colspan="8" class="text-center py-8 text-slate-500">
             {% if error %}
               Error en la consulta.
             {% else %}

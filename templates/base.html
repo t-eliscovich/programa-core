@@ -727,6 +727,22 @@
         {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.hub', 'Conciliar con banco', 'check') }}{% endif %}
       </details>
 
+      {# TMT 2026-06-09 dueña: sección Stock. Resumen = stock valorado del
+         programa (kg + $); las vistas Asinfo son kg (dólares de Asinfo no
+         confiables). Importaciones cruza con compras del programa por la Nota.
+         Químicos sigue en Tintorería (perm tintura.ver, fuente formulas_app).
+         TMT 2026-06-09 dueña: Stock lo ve TODO el mundo → perm `stock.ver`
+         concedido a todos los roles en config/roles.py. #}
+      {% if tiene_permiso('stock.ver') %}
+      <details class="sidebar-section" data-key="stock" open>
+        <summary>Stock</summary>
+        {{ nav_link('stock.lista', 'Resumen', 'box') }}
+        {{ nav_link('stock_asinfo.lote', 'Por lote (Asinfo)', 'box') }}
+        {{ nav_link('stock_asinfo.lista', 'Por producto (Asinfo)', 'box') }}
+        {{ nav_link('importaciones.lista', 'Importaciones', 'truck') }}
+      </details>
+      {% endif %}
+
       {# TMT 2026-05-26 dueña: nueva sección Tintorería visible para todos los
          roles con `tintura.ver` (Accionista, Administrador, Gerente,
          Contabilidad, Alex, QC). Trae data de formulas_app + DBF tinto. #}

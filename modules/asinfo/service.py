@@ -370,3 +370,262 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
             continue
     _STOCK_CACHE[cache_key] = (now, out)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Stock por LOTE (Asinfo) — réplica del reporte "Stock Valorado por Lote"
+# ---------------------------------------------------------------------------
+# A diferencia de stock_asinfo() (que consolida por producto sobre todas las
+# bodegas), esta función baja al nivel de LOTE individual con sus atributos,
+# que es lo que pide el reporte oficial del ERP. Fuente: `saldo_producto_lote`
+# (snapshot diario por producto+bodega+lote) tomando el último snapshot por
+# (producto, bodega, lote) con ROW_NUMBER. Verificado 2026-06-09 contra el
+# reporte oficial:
+#     Bodega Hilo        = 1.790.694,44 kg
+#     Bodega Tela Cruda  =   255.795,25 kg   (reporte: 255.660 → ±0,05%)
+#     Bodega Prod.Term.  =   347.389,93 kg
+#
+# Atributos del lote (tabla `lote`, slots EAV id_atributo_N/id_valor_atributo_N
+# resueltos contra `valor_atributo`). Mapa de `atributo` (id → nombre):
+#     1 = Acabado | 2 = Calidad (PRI/SEG) | 3 = Color | 51 = Estampado
+#     101 = Titulo Hilo | 103 = Proveedor | 151 = Fallas PT | 152 = Fallas TC
+# Bodegas: 1=Colorantes, 51=Hilo, 52=Tela Cruda, 53=Prod.Terminado,
+#          151=Reproceso, 201=Cuarentena.
+#
+# Dólares: NO se traen de Asinfo (no confiables). Solo cantidad (kg).
+
+_STOCK_LOTE_TTL_SECS = 600  # 10 minutos
+_STOCK_LOTE_CACHE: dict = {}
+_STOCK_LOTE_TOTALES_CACHE: dict = {}
+
+
+def stock_asinfo_lote(
+    id_bodega: int,
+    q: str = "",
+    limit: int = 50000,
+) -> list[dict]:
+    """Stock por LOTE de una bodega, con atributos resueltos.
+
+    Args:
+        id_bodega: bodega a consultar (requerida — el universo completo son
+            ~95k lotes, traerlos todos juntos no escala). 51/52/53/...
+        q: filtro opcional sobre código/nombre de producto (se empuja al SQL
+            con LIKE para no bajar filas de más). Case-insensitive.
+        limit: tope de filas (Bodega Hilo sola tiene ~61k lotes).
+
+    Cada fila:
+        codigo, producto, lote, tejido (categoría), calidad, color, acabado,
+        estampado, titulo_hilo, proveedor, unidad, saldo (kg).
+
+    Returns:
+        Lista de dicts ordenada por saldo DESC. [] si Metabase no está
+        configurado o si falla (fail-soft).
+    """
+    try:
+        id_bodega = int(id_bodega)
+    except (TypeError, ValueError):
+        return []
+
+    import time as _time
+    q_norm = (q or "").strip().upper()
+    cache_key = f"b{id_bodega}_q{q_norm}_l{limit}"
+    now = _time.time()
+    cached = _STOCK_LOTE_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _STOCK_LOTE_TTL_SECS:
+        return cached[1]
+
+    # Filtro de producto empujado al SQL. Escapamos comillas simples para no
+    # romper el literal — id_bodega ya es int (sanitizado arriba).
+    filtro_q = ""
+    if q_norm:
+        safe = q_norm.replace("'", "''")
+        filtro_q = (
+            f" AND (UPPER(p.codigo) LIKE '%{safe}%' "
+            f"OR UPPER(p.nombre) LIKE '%{safe}%') "
+        )
+
+    sql = f"""
+        WITH ult AS (
+            SELECT id_producto, id_bodega, id_lote, saldo,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY id_producto, id_bodega, id_lote
+                       ORDER BY fecha DESC, id_saldo_producto_lote DESC
+                   ) AS rn
+              FROM saldo_producto_lote
+             WHERE id_bodega = {id_bodega}
+        ),
+        attr AS (
+            SELECT u.id_lote,
+                MAX(CASE WHEN va.id_atributo = 2   THEN va.nombre END) AS calidad,
+                MAX(CASE WHEN va.id_atributo = 3   THEN va.nombre END) AS color,
+                MAX(CASE WHEN va.id_atributo = 1   THEN va.nombre END) AS acabado,
+                MAX(CASE WHEN va.id_atributo = 51  THEN va.nombre END) AS estampado,
+                MAX(CASE WHEN va.id_atributo = 101 THEN va.nombre END) AS titulo_hilo,
+                MAX(CASE WHEN va.id_atributo = 103 THEN va.nombre END) AS proveedor
+              FROM lote l
+              UNPIVOT (idv FOR slot IN (
+                  id_valor_atributo_1, id_valor_atributo_2, id_valor_atributo_3,
+                  id_valor_atributo_4, id_valor_atributo_5, id_valor_atributo_6,
+                  id_valor_atributo_7, id_valor_atributo_8, id_valor_atributo_9,
+                  id_valor_atributo_10)) u
+              JOIN valor_atributo va ON va.id_valor_atributo = u.idv
+             GROUP BY u.id_lote
+        )
+        SELECT TOP {int(limit)}
+               p.codigo                                                AS codigo,
+               COALESCE(NULLIF(p.descripcion, ''), p.nombre, p.codigo) AS producto,
+               l.codigo                                                AS lote,
+               COALESCE(cp.nombre, '')                                 AS tejido,
+               a.calidad, a.color, a.acabado, a.estampado,
+               a.titulo_hilo, a.proveedor,
+               COALESCE(NULLIF(u.codigo, ''), u.nombre, 'KG')          AS unidad,
+               ult.saldo                                               AS saldo
+          FROM ult
+          INNER JOIN producto p ON p.id_producto = ult.id_producto
+          INNER JOIN lote l ON l.id_lote = ult.id_lote
+          LEFT JOIN categoria_producto cp ON cp.id_categoria_producto = p.id_categoria_producto
+          LEFT JOIN unidad u ON u.id_unidad = p.id_unidad
+          LEFT JOIN attr a ON a.id_lote = ult.id_lote
+         WHERE ult.rn = 1 AND ult.saldo > 0 {filtro_q}
+         ORDER BY ult.saldo DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limit))
+    out = []
+    for r in rows:
+        try:
+            saldo = float(r.get("saldo") or 0)
+            if saldo <= 0:
+                continue
+            out.append({
+                "codigo": str(r.get("codigo") or "").strip(),
+                "producto": str(r.get("producto") or "").strip(),
+                "lote": str(r.get("lote") or "").strip(),
+                "tejido": str(r.get("tejido") or "").strip(),
+                "calidad": str(r.get("calidad") or "").strip(),
+                "color": str(r.get("color") or "").strip(),
+                "acabado": str(r.get("acabado") or "").strip(),
+                "estampado": str(r.get("estampado") or "").strip(),
+                "titulo_hilo": str(r.get("titulo_hilo") or "").strip(),
+                "proveedor": str(r.get("proveedor") or "").strip(),
+                "unidad": str(r.get("unidad") or "KG").strip() or "KG",
+                "saldo": saldo,
+            })
+        except (TypeError, ValueError):
+            continue
+    _STOCK_LOTE_CACHE[cache_key] = (now, out)
+    return out
+
+
+def stock_asinfo_lote_totales() -> list[dict]:
+    """Totales de stock por bodega a nivel lote (landing del reporte).
+
+    Barato (un GROUP BY) — sirve de resumen y de ancla de reconciliación.
+    Cada fila: id_bodega, bodega, lotes, total_kg.
+    """
+    import time as _time
+    now = _time.time()
+    cached = _STOCK_LOTE_TOTALES_CACHE.get("all")
+    if cached and (now - cached[0]) < _STOCK_LOTE_TTL_SECS:
+        return cached[1]
+
+    sql = """
+        WITH ult AS (
+            SELECT id_producto, id_bodega, id_lote, saldo,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY id_producto, id_bodega, id_lote
+                       ORDER BY fecha DESC, id_saldo_producto_lote DESC
+                   ) AS rn
+              FROM saldo_producto_lote
+        )
+        SELECT b.id_bodega AS id_bodega,
+               b.nombre    AS bodega,
+               COUNT(*)    AS lotes,
+               SUM(u.saldo) AS total_kg
+          FROM ult u
+          JOIN bodega b ON b.id_bodega = u.id_bodega
+         WHERE u.rn = 1 AND u.saldo > 0
+         GROUP BY b.id_bodega, b.nombre
+         ORDER BY SUM(u.saldo) DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=100)
+    out = []
+    for r in rows:
+        try:
+            out.append({
+                "id_bodega": int(r.get("id_bodega")),
+                "bodega": str(r.get("bodega") or "").strip(),
+                "lotes": int(r.get("lotes") or 0),
+                "total_kg": float(r.get("total_kg") or 0),
+            })
+        except (TypeError, ValueError):
+            continue
+    _STOCK_LOTE_TOTALES_CACHE["all"] = (now, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Importaciones de Asinfo (para cruzar contra compras/anticipos del programa)
+# ---------------------------------------------------------------------------
+# La lista "Importación" del ERP. La `Nota` (factura_proveedor.descripcion)
+# lleva el código de la compra/anticipo del programa al final — ver
+# concepto_parser.parse_nota_importacion(). Los DÓLARES de Asinfo (total) son
+# referenciales; los confiables vienen del programa (scintela.compra).
+
+_IMPORT_TTL_SECS = 300  # 5 minutos
+_IMPORT_CACHE: dict = {}
+
+
+def importaciones_asinfo(limite: int = 400) -> list[dict]:
+    """Lista de importaciones del ERP, con su Nota (código de cruce).
+
+    Cada fila:
+        im_numero       — número de importación user-facing (IM-0000537)
+        fecha           — fecha de la factura proveedor (YYYY-MM-DD)
+        fecha_recepcion — fecha de recepción (YYYY-MM-DD o None)
+        total_asinfo    — total del ERP (REFERENCIAL — no confiable)
+        proveedor       — razón comercial/fiscal de la empresa
+        prov_cod_asinfo — código de empresa en Asinfo (≠ código del programa)
+        nota            — descripción libre; lleva el código del programa
+
+    Returns:
+        Lista de dicts ordenada por importación más reciente primero.
+        [] si Metabase no está configurado o falla (fail-soft).
+    """
+    import time as _time
+    cache_key = f"l{int(limite)}"
+    now = _time.time()
+    cached = _IMPORT_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _IMPORT_TTL_SECS:
+        return cached[1]
+
+    sql = f"""
+        SELECT TOP {int(limite)}
+               fp.numero                                       AS im_numero,
+               CONVERT(varchar, fp.fecha, 23)                  AS fecha,
+               CONVERT(varchar, fp.fecha_recepcion, 23)        AS fecha_recepcion,
+               fp.total                                        AS total_asinfo,
+               COALESCE(e.nombre_comercial, e.nombre_fiscal, '') AS proveedor,
+               e.codigo                                        AS prov_cod_asinfo,
+               fp.descripcion                                  AS nota
+          FROM factura_proveedor_importacion fpi
+          JOIN factura_proveedor fp ON fp.id_factura_proveedor = fpi.id_factura_proveedor
+          LEFT JOIN empresa e ON e.id_empresa = fp.id_empresa
+         ORDER BY fpi.id_factura_proveedor DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    out = []
+    for r in rows:
+        try:
+            out.append({
+                "im_numero": str(r.get("im_numero") or "").strip(),
+                "fecha": str(r.get("fecha") or "").strip() or None,
+                "fecha_recepcion": str(r.get("fecha_recepcion") or "").strip() or None,
+                "total_asinfo": float(r.get("total_asinfo") or 0),
+                "proveedor": str(r.get("proveedor") or "").strip(),
+                "prov_cod_asinfo": str(r.get("prov_cod_asinfo") or "").strip(),
+                "nota": str(r.get("nota") or "").strip(),
+            })
+        except (TypeError, ValueError):
+            continue
+    _IMPORT_CACHE[cache_key] = (now, out)
+    return out

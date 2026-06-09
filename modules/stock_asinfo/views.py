@@ -124,9 +124,151 @@ def quimicos():
     )
 
 
+@stock_asinfo_bp.route("/asinfo-lote")
+@requiere_login
+@requiere_permiso("stock.ver")
+def lote():
+    """Stock por LOTE desde Asinfo — réplica del reporte 'Stock Valorado por Lote'.
+
+    Sin bodega seleccionada: landing con los totales por bodega (resumen +
+    ancla de reconciliación). Con `bodega=<id>`: detalle de lotes de esa
+    bodega con atributos (calidad, color, acabado, estampado, título hilo,
+    proveedor). Solo cantidad (kg) — los dólares de Asinfo no son confiables.
+
+    Filtros (query string):
+        bodega    — id de bodega (51 Hilo / 52 Tela Cruda / 53 PT / ...)
+        q         — busca en código / nombre de producto (empujado al SQL)
+        tejido    — categoría del producto
+        titulo    — título de hilo
+        proveedor — proveedor del lote
+        calidad   — PRI / SEG
+    """
+    from modules.asinfo import service as asinfo_service
+
+    error = None
+    try:
+        bodega_raw = (request.args.get("bodega") or "").strip()
+        id_bodega = int(bodega_raw) if bodega_raw else None
+    except (TypeError, ValueError):
+        id_bodega = None
+
+    # Landing: totales por bodega
+    totales = []
+    try:
+        totales = asinfo_service.stock_asinfo_lote_totales()
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+
+    if id_bodega is None:
+        return render_template(
+            "stock_asinfo/lote.html",
+            modo="landing",
+            totales=totales,
+            error=error,
+        )
+
+    # Detalle de una bodega
+    q = (request.args.get("q") or "").strip().upper()
+    tejido_filtro = (request.args.get("tejido") or "").strip()
+    titulo_filtro = (request.args.get("titulo") or "").strip()
+    proveedor_filtro = (request.args.get("proveedor") or "").strip()
+    calidad_filtro = (request.args.get("calidad") or "").strip().upper()
+    color_filtro = (request.args.get("color") or "").strip()
+
+    rows = []
+    try:
+        rows = asinfo_service.stock_asinfo_lote(id_bodega, q=q)
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+
+    bodega_nombre = next(
+        (t["bodega"] for t in totales if t["id_bodega"] == id_bodega),
+        f"Bodega {id_bodega}",
+    )
+
+    # Universos para dropdowns (sobre todo lo traído de la bodega, pre-filtro).
+    # El "color" sólo es informativo cuando difiere de la categoría (en crudo
+    # el atributo Color viene como 'TELA CRUDA' = ruido).
+    tejidos_universo = sorted({(r.get("tejido") or "") for r in rows if r.get("tejido")})
+    titulos_universo = sorted({(r.get("titulo_hilo") or "") for r in rows if r.get("titulo_hilo")})
+    proveedores_universo = sorted({(r.get("proveedor") or "") for r in rows if r.get("proveedor")})
+    calidades_universo = sorted({(r.get("calidad") or "") for r in rows if r.get("calidad")})
+    colores_universo = sorted({
+        r.get("color") for r in rows
+        if r.get("color") and r.get("color") != r.get("tejido")
+    })
+
+    if tejido_filtro:
+        rows = [r for r in rows if r.get("tejido") == tejido_filtro]
+    if titulo_filtro:
+        rows = [r for r in rows if r.get("titulo_hilo") == titulo_filtro]
+    if proveedor_filtro:
+        rows = [r for r in rows if r.get("proveedor") == proveedor_filtro]
+    if calidad_filtro:
+        rows = [r for r in rows if (r.get("calidad") or "").upper() == calidad_filtro]
+    if color_filtro:
+        rows = [r for r in rows if r.get("color") == color_filtro]
+
+    total_lotes = len(rows)
+    total_kg = sum(r["saldo"] for r in rows)
+
+    # Subtotal por producto (para el desglose tipo reporte)
+    por_producto: dict[str, dict] = {}
+    for r in rows:
+        cod = r.get("codigo") or "(s/código)"
+        slot = por_producto.setdefault(cod, {"n": 0, "kg": 0.0, "nombre": r.get("producto", "")})
+        slot["n"] += 1
+        slot["kg"] += r["saldo"]
+    distribucion = sorted(por_producto.items(), key=lambda kv: -kv[1]["kg"])
+
+    if request.args.get("export") == "csv":
+        return csv_response(
+            rows,
+            columnas=[
+                ("codigo", "Código"),
+                ("producto", "Producto"),
+                ("lote", "Lote"),
+                ("tejido", "Categoría"),
+                ("calidad", "Calidad"),
+                ("titulo_hilo", "Título Hilo"),
+                ("proveedor", "Proveedor"),
+                ("color", "Color"),
+                ("acabado", "Acabado"),
+                ("estampado", "Estampado"),
+                ("unidad", "Unidad"),
+                ("saldo", "Saldo"),
+            ],
+            filename=f"stock_lote_{id_bodega}.csv",
+        )
+
+    return render_template(
+        "stock_asinfo/lote.html",
+        modo="detalle",
+        rows=rows,
+        totales=totales,
+        id_bodega=id_bodega,
+        bodega_nombre=bodega_nombre,
+        total_lotes=total_lotes,
+        total_kg=total_kg,
+        distribucion=distribucion,
+        tejidos_universo=tejidos_universo,
+        titulos_universo=titulos_universo,
+        proveedores_universo=proveedores_universo,
+        calidades_universo=calidades_universo,
+        colores_universo=colores_universo,
+        q=q,
+        tejido_filtro=tejido_filtro,
+        titulo_filtro=titulo_filtro,
+        proveedor_filtro=proveedor_filtro,
+        calidad_filtro=calidad_filtro,
+        color_filtro=color_filtro,
+        error=error,
+    )
+
+
 @stock_asinfo_bp.route("/asinfo")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso("stock.ver")
 def lista():
     """Stock por producto en Asinfo. Read-only, cantidad + precio referencial."""
     try:

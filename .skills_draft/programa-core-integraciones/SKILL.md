@@ -801,3 +801,161 @@ Próximos pasos:
 3. (Equipo) Wirear UI consumidora de `asinfo/` (cards 116/163/164 son los reportes canónicos del ERP).
 
 Mantener esta lista actualizada en este SKILL.md a medida que las cosas se vayan tachando.
+
+## Stock por LOTE de Asinfo — schema + surface (verificado 2026-06-09)
+
+Réplica del reporte oficial **"Stock Valorado por Lote"** del ERP. A diferencia
+de `stock_asinfo()` (consolida por producto sobre todas las bodegas), esto baja
+al **lote individual** con sus atributos. **Solo cantidad (kg)** — los dólares de
+Asinfo no son confiables (vienen del programa, no del ERP).
+
+### Tablas (Asinfo = Metabase DB 2, SQL Server)
+
+| Tabla | Para qué | Columnas clave |
+|---|---|---|
+| `saldo_producto_lote` | snapshot **diario** de saldo por producto·bodega·lote (~3,5M filas) | `id_saldo_producto_lote`, `fecha` (date), `saldo` (numeric), `id_bodega`, `id_lote`, `id_producto` |
+| `saldo_producto` | snapshot diario por producto·bodega (sin lote) — lo usa `stock_asinfo()` | igual pero sin `id_lote` |
+| `lote` | dimensión lote, atributos en slots **EAV** | `id_lote`, `codigo`, `activo`, `id_valor_atributo_1..10` (cada slot apunta a `valor_atributo`) |
+| `valor_atributo` | valor de cada atributo | `id_valor_atributo`, `id_atributo`, `nombre` |
+| `atributo` | catálogo de atributos | `id_atributo`, `nombre` |
+| `producto` | master | `id_producto`, `codigo`, `descripcion`, `nombre`, `id_categoria_producto`, `id_unidad` |
+| `categoria_producto` | tejido/categoría | `id_categoria_producto`, `nombre` |
+| `unidad` | unidad de medida | `id_unidad`, `codigo` (KG), `nombre` |
+| `bodega` | bodegas | `id_bodega`, `nombre` |
+
+**Mapa `atributo` (id → nombre):** `1`=Acabado · `2`=Calidad (PRI/SEG) · `3`=Color ·
+`51`=Estampado · `101`=Titulo Hilo · `103`=Proveedor · `151`=Fallas PT · `152`=Fallas TC.
+
+**Bodegas (`id_bodega`):** `1`=Colorantes y Auxiliares · `51`=Hilo · `52`=Tela Cruda ·
+`53`=Producto Terminado · `151`=Reproceso · `201`=Cuarentena.
+
+### Patrón de query (clave: snapshot + UNPIVOT de atributos)
+
+El "stock actual" = **último snapshot** por (producto, bodega, lote) con
+`ROW_NUMBER() OVER (PARTITION BY id_producto,id_bodega,id_lote ORDER BY fecha DESC,
+id_saldo_producto_lote DESC)` y `rn=1 AND saldo>0`. Igual que `stock_asinfo()`
+pero agregando `id_lote` a la partición.
+
+Los atributos del lote son EAV posicional: se resuelven con `UNPIVOT` de los 10
+slots `id_valor_atributo_N` → join a `valor_atributo` → pivot con
+`MAX(CASE WHEN va.id_atributo = N THEN va.nombre END)`. Ver
+`modules/asinfo/service.py::stock_asinfo_lote()` para el SQL completo.
+
+### Anclas de reconciliación (2026-06-09, contra reporte oficial)
+
+| Bodega | Total kg lote-level | Reporte ERP |
+|---|---|---|
+| Hilo (51) | 1.790.694 | ✓ |
+| Tela Cruda (52) | 255.795 | 255.660 (±0,06%, drift intradía — todos los lotes `activo=1`) |
+| Prod. Terminado (53) | 347.390 | ✓ |
+
+(El product-level `stock_asinfo()` ya estaba verificado al centavo: Bodega Hilo
+1.767.920,41 kg. El lote-level da ~1,3% más porque incluye lotes que el reporte
+no-lote filtra.)
+
+### Surface en Programa Core
+
+- `modules/asinfo/service.py::stock_asinfo_lote(id_bodega, q="", limit=50000)` —
+  detalle de lotes de una bodega (bodega **requerida**: el universo son ~95k lotes,
+  Hilo sola ~61k). El filtro `q` se empuja al SQL con `LIKE` (no bajar filas de más).
+  Cache 10 min. Fail-soft. Cantidad únicamente.
+- `modules/asinfo/service.py::stock_asinfo_lote_totales()` — totales por bodega
+  (landing + ancla de reconciliación). GROUP BY barato, cache 10 min.
+- `modules/stock_asinfo/views.py::lote()` → `GET /stock/asinfo-lote`
+  (perm `stock.ver` — concedido a todos los roles). Sin `?bodega=` → landing con totales por bodega; con
+  `?bodega=<id>` → detalle con filtros (categoría, título hilo, proveedor, calidad)
+  + export CSV. Template `stock_asinfo/lote.html`.
+- Tests: `tests/test_asinfo.py` (mock `metabase_client.fetch_dataset`).
+
+**Gotcha:** la unidad NO está en una columna `unidad` de `producto` — se trae de la
+tabla `unidad` (`COALESCE(NULLIF(u.codigo,''), u.nombre, 'KG')`). `producto.id_unidad`
+es la FK.
+
+## Importaciones Asinfo ↔ compras/anticipos del programa (Nota link, 2026-06-09)
+
+La lista **"Importación"** del ERP cruza con las compras/anticipos del programa
+por un código embebido en la **Nota**. Esto resuelve el problema de los dólares:
+la cantidad/importación vive en Asinfo, pero el **importe confiable en USD** está
+en `scintela.compra` del programa (los dólares de Asinfo NO son confiables).
+
+### Origen en Asinfo (Metabase DB 2)
+
+- `factura_proveedor_importacion` (extiende la factura con datos de importación) →
+  `factura_proveedor` (la factura: `numero` = "IM-0000537", `descripcion` = **la Nota**,
+  `fecha`, `fecha_recepcion`, `total` REFERENCIAL, `id_empresa`) → `empresa`
+  (`nombre_comercial`/`nombre_fiscal`, `codigo`).
+- **OJO:** `empresa.codigo` (código Asinfo) ≠ el código del programa. Para Ariescope
+  coinciden (AC=AC) pero More Human es `EXT0059` en Asinfo y `MH` en el programa;
+  Aartimpex es `AART` vs `AI`. El código que importa es el del PROGRAMA, que va en la Nota.
+
+### El código en la Nota
+
+Formato: `<2-3 letras><espacio><número>`, casi siempre entre paréntesis al final.
+Las letras = `scintela.proveedor.codigo_prov`; el número = `scintela.compra.numero`.
+Ejemplos reales y su desorden (todos parseados OK):
+`( AC 36)`, `( MH  63)` (doble espacio), `( AC 22` (sin cerrar), `( AC 25)\n` (basura),
+`( AI 15 )  ----1` (split de factura), `( MH 64-65 )` (rango → suma 64 y 65).
+
+**Parser:** `concepto_parser.parse_nota_importacion(nota)` →
+`{prov, numero, numero_hasta, codigo, raw}` o `{}`. Prefiere el código entre
+paréntesis y toma la **última** coincidencia (evita el falso positivo de
+"INV 2026030405 ..." que también parece letras+número).
+
+### Surface en Programa Core
+
+- `modules/asinfo/service.py::importaciones_asinfo(limite=400)` — trae las
+  importaciones de Asinfo (vía `fetch_dataset(2, ...)`), cache 5 min, fail-soft.
+- `modules/importaciones/service.py::importaciones_con_cruce()` — parsea la Nota
+  de cada una y cruza contra `scintela.compra` (UNA query:
+  `WHERE UPPER(codigo_prov)=ANY(%s) AND numero=ANY(%s)`). Soporta rangos (suma
+  las N compras). Fail-soft: si la DB del programa cae, las importaciones se
+  muestran igual sin cruce.
+- `modules/importaciones/views.py::lista()` → `GET /importaciones` (perm
+  `stock.ver` — concedido a todos los roles). Tabla con código (badge), total Asinfo (referencial, tenue) y
+  el importe del programa enlazado a `compras.editar`. Filtros: q + estado
+  (cruzadas / con código sin cruce / sin código). Export CSV. Registrado en
+  `app.py` (sin url_prefix → `/importaciones`).
+- Tests: `tests/test_importaciones.py` (parser + cruce + render; mocks de
+  `asinfo_service.importaciones_asinfo` y `db.fetch_all`).
+
+**Join key (confirmar con la dueña si algún caso no matchea):** `(codigo_prov, numero)`.
+Para Ariescope #36 el match es directo; si la dueña usa otro criterio de numeración
+para anticipos, ajustar solo `_buscar_compras()` en el service.
+
+### Nav + permisos (2026-06-09)
+
+Sección **Stock** en el sidebar (`templates/base.html`, `data-key="stock"`, después
+de Bancos): Resumen (`stock.lista`, kg+$ del programa) · Por lote (`stock_asinfo.lote`)
+· Por producto (`stock_asinfo.lista`) · Importaciones (`importaciones.lista`).
+Químicos NO va acá — sigue en Tintorería (perm `tintura.ver`).
+
+**Permiso `stock.ver`**: la dueña pidió que Stock lo vea TODO el mundo. `stock.ver`
+ya existía como reservado; ahora está concedido a **todos** los roles en
+`config/roles.py` (Accionista/Administrador por `*`, Bodega ya lo tenía, +8
+agregados). Las 4 vistas (`stock.lista`, `stock_asinfo.lista`, `stock_asinfo.lote`,
+`importaciones.lista`) y el guard del nav pasaron de `informes.ver` → `stock.ver`.
+OJO: Resumen (`/stock`) muestra el stock VALORADO en $ del programa — ahora visible
+para todos los roles. Si se quiere restringir solo eso, volver `stock.lista` a
+`informes.ver` (1 línea).
+
+### Tie-out + display (audit 2026-06-09)
+
+**No sumar `v_saldo_producto_lote` (la vista del reporte).** Tiene **1.421 fechas**
+(todos los snapshots diarios 2022→hoy) y además está EXPLOTADA (varias filas por
+lote — una por slot de atributo). Sumarla cruda da ~15.000.000 kg en Hilo. El
+reporte oficial aplica "Hasta: <fecha>" + último-por-lote encima. **La fuente
+confiable sigue siendo la tabla raw `saldo_producto_lote` con ROW_NUMBER (último
+snapshot por producto·bodega·lote)** — lo que ya hace `stock_asinfo_lote()`.
+
+**Tie-out (mismo snapshot, 2026-06-09):** lote-level reconcilia con product-level
+(`saldo_producto`, que está probado al centavo vs el Excel del ERP) al 99,97–99,98 %:
+Hilo 1.784.592 vs 1.784.974 · Tela Cruda 256.603 vs 256.676 · PT 345.501 vs 345.560.
+El residual (~0,03 %) son productos cuyo stock no está 100 % descompuesto en lotes
+(ej. Hilo `22/1-65:35-PEI`: 783 kg en el saldo de producto, sin lote). Colorantes
+(bodega 1) NO lleva lote (0 en lote, 55k en producto). `inventario_comprometido` ≈ 0,
+el reporte usa `saldo` crudo.
+
+**Display:** el nombre útil es `producto.nombre` (`descripcion` viene vacío); el
+`codigo` es SKU corto/ID — va secundario (muted). Color (atributo 3) es real sólo en
+Producto Terminado (NEGRO/BLANCO/MARINO…); en crudo/hilo viene 'TELA CRUDA' (= ruido,
+se oculta cuando `color == tejido`). Tablas con `class="sortable"` (orden por columna).
