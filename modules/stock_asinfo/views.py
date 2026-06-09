@@ -195,21 +195,24 @@ def lote():
     mostrando = len(rows)
     hay_mas = total_lotes > mostrando
 
-    # Columnas de atributo visibles = solo las que tienen datos útiles en esta
-    # bodega. Hilo no tiene atributos → tabla mínima Producto/Lote/Saldo. El
-    # color sólo cuenta si difiere de la categoría (en crudo viene 'TELA CRUDA').
-    def _con_datos(key, vs_tejido=False):
-        return any(
-            (r.get(key) or "").strip()
-            and (not vs_tejido or (r.get(key) or "").strip() != (r.get("tejido") or "").strip())
-            for r in rows
-        )
+    # Columnas de atributo visibles = sólo las que APORTAN: tienen ≥2 valores
+    # distintos en esta bodega. Hilo no tiene atributos → tabla mínima
+    # Producto/Lote/Saldo. Una columna con un único valor repetido (ej.
+    # Estampado='SE' en todo PT) es ruido → se oculta. El color sólo cuenta si
+    # difiere de la categoría (en crudo viene 'TELA CRUDA').
+    def _distintos(key, vs_tejido=False):
+        vals = set()
+        for r in rows:
+            v = (r.get(key) or "").strip()
+            if v and (not vs_tejido or v != (r.get("tejido") or "").strip()):
+                vals.add(v)
+        return vals
     cols = {
-        "color": _con_datos("color", vs_tejido=True),
-        "calidad": _con_datos("calidad"),
-        "titulo_hilo": _con_datos("titulo_hilo"),
-        "proveedor": _con_datos("proveedor"),
-        "estampado": _con_datos("estampado"),
+        "color": len(_distintos("color", vs_tejido=True)) >= 2,
+        "calidad": len(_distintos("calidad")) >= 2,
+        "titulo_hilo": len(_distintos("titulo_hilo")) >= 2,
+        "proveedor": len(_distintos("proveedor")) >= 2,
+        "estampado": len(_distintos("estampado")) >= 2,
     }
 
     # Universos para los dropdowns (de lo traído).
