@@ -63,8 +63,9 @@ def _imp(nota, im="IM-1", prov_name="ARIESCOPE", total=1000.0, fecha_recepcion=N
 
 def test_cruce_matchea_compra_del_programa():
     importaciones = [_imp("ACMT/EXP/2026-27/8197 ( AC 36)", im="IM-588")]
-    compras = [{"id_compra": 501, "codigo_prov": "AC", "numero": 36,
-                "importe": 51418.26, "tipo": "  ", "comprobante": "x", "fecha": "2026-05-01"}]
+    # _buscar_compras cruza por concepto-numérico: la fila trae ref_num (= concepto).
+    compras = [{"id_compra": 501, "codigo_prov": "AC", "ref_num": 36, "numero": None,
+                "importe": 51418.26, "tipo": "  ", "comprobante": "x", "concepto": "36", "fecha": "2026-05-01"}]
     with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
          patch.object(service.db, "fetch_all", return_value=compras):
         rows = service.importaciones_con_cruce()
@@ -78,8 +79,8 @@ def test_cruce_matchea_compra_del_programa():
 def test_cruce_rango_suma_varias_compras():
     importaciones = [_imp("ALG ( MH 64-65 )", im="IM-700", prov_name="MORE HUMAN")]
     compras = [
-        {"id_compra": 1, "codigo_prov": "MH", "numero": 64, "importe": 100.0, "tipo": "", "comprobante": "", "fecha": "2026-05-01"},
-        {"id_compra": 2, "codigo_prov": "MH", "numero": 65, "importe": 200.0, "tipo": "", "comprobante": "", "fecha": "2026-05-02"},
+        {"id_compra": 1, "codigo_prov": "MH", "ref_num": 64, "numero": None, "importe": 100.0, "tipo": "", "comprobante": "", "concepto": "64", "fecha": "2026-05-01"},
+        {"id_compra": 2, "codigo_prov": "MH", "ref_num": 65, "numero": None, "importe": 200.0, "tipo": "", "comprobante": "", "concepto": "65", "fecha": "2026-05-02"},
     ]
     with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
          patch.object(service.db, "fetch_all", return_value=compras):

@@ -255,7 +255,7 @@ _STOCK_TTL_SECS = 600  # 10 minutos
 _STOCK_CACHE: dict = {}
 
 
-def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
+def stock_asinfo(min_saldo: float = 0.0, id_bodega: int | None = None) -> list[dict]:
     """Stock por producto desde Asinfo, usando la vista pre-calculada
     `v_saldo_producto_vista` que ya:
       - consolida el saldo más reciente por producto+bodega,
@@ -285,11 +285,19 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
     el max-results de Metabase a 10000 para no truncar (default 2000).
     """
     import time as _time
-    cache_key = f"min_{min_saldo}"
+    try:
+        id_bodega = int(id_bodega) if id_bodega is not None else None
+    except (TypeError, ValueError):
+        id_bodega = None
+    cache_key = f"min_{min_saldo}_b{id_bodega}"
     now = _time.time()
     cached = _STOCK_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _STOCK_TTL_SECS:
         return cached[1]
+
+    # Filtro opcional por bodega (para las tabs Hilo / Tela Cruda / Tela
+    # Terminada de la vista "Por producto"). Sin bodega = consolida todas.
+    filtro_bodega = f"WHERE id_bodega = {id_bodega}" if id_bodega is not None else ""
 
     # CRITICAL 2026-05-22: la vista `v_saldo_producto_vista` agrega LOTES
     # adicionales que el reporte oficial del ERP filtra (no respeta
@@ -298,7 +306,7 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
     # `saldo_producto`, tomando el último snapshot por (producto, bodega)
     # con ROW_NUMBER. Verificado: Bodega Hilo = 1.767.920,41 kg coincide
     # al centavo con el export Excel del ERP.
-    sql = """
+    sql = f"""
         WITH ult AS (
             SELECT id_producto, id_bodega, saldo,
                    ROW_NUMBER() OVER (
@@ -306,6 +314,7 @@ def stock_asinfo(min_saldo: float = 0.0) -> list[dict]:
                        ORDER BY fecha DESC, id_saldo_producto DESC
                    ) AS rn
               FROM saldo_producto
+              {filtro_bodega}
         )
         SELECT p.codigo                                                AS codigo,
                COALESCE(NULLIF(p.descripcion, ''), p.nombre, p.codigo) AS nombre,

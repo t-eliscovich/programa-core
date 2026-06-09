@@ -280,11 +280,23 @@ def lista():
     tejido_filtro = (request.args.get("tejido") or "").strip()
     color_filtro = (request.args.get("color") or "").strip().upper()
 
+    # Tabs por bodega (Hilo / Tela Cruda / Tela Terminada). Sin bodega = todas.
+    BODEGAS_TABS = [
+        (51, "Hilo"),
+        (52, "Tela Cruda"),
+        (53, "Tela Terminada"),
+    ]
+    try:
+        bodega_raw = (request.args.get("bodega") or "").strip()
+        id_bodega = int(bodega_raw) if bodega_raw else None
+    except (TypeError, ValueError):
+        id_bodega = None
+
     error = None
     rows = []
     try:
         from modules.asinfo import service as asinfo_service
-        rows = asinfo_service.stock_asinfo(min_saldo=min_saldo)
+        rows = asinfo_service.stock_asinfo(min_saldo=min_saldo, id_bodega=id_bodega)
     except Exception as e:  # noqa: BLE001
         error = str(e)
 
@@ -357,5 +369,7 @@ def lista():
         tejidos_universo=tejidos_universo,
         colores_universo=colores_universo,
         distribucion=distribucion,
+        bodegas_tabs=BODEGAS_TABS,
+        id_bodega=id_bodega,
         error=error,
     )

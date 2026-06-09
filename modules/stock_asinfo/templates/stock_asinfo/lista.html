@@ -42,8 +42,21 @@
     </div>
   </div>
 
+  {# Tabs por bodega #}
+  <div class="mb-4 flex flex-wrap gap-2 no-print">
+    <a href="{{ url_for('stock_asinfo.lista') }}"
+       class="text-xs px-3 py-1.5 rounded border
+              {% if not id_bodega %}bg-slate-900 text-white border-slate-900{% else %}border-slate-300 hover:bg-slate-50{% endif %}">Todas</a>
+    {% for bid, bnombre in bodegas_tabs %}
+      <a href="{{ url_for('stock_asinfo.lista', bodega=bid) }}"
+         class="text-xs px-3 py-1.5 rounded border
+                {% if id_bodega == bid %}bg-slate-900 text-white border-slate-900{% else %}border-slate-300 hover:bg-slate-50{% endif %}">{{ bnombre }}</a>
+    {% endfor %}
+  </div>
+
   {# Filtros #}
   <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
+    {% if id_bodega %}<input type="hidden" name="bodega" value="{{ id_bodega }}">{% endif %}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
       <input type="text" name="q" value="{{ q }}" placeholder="código / nombre / tejido"
@@ -73,9 +86,9 @@
              placeholder="0" class="w-24 rounded border border-slate-300 px-2 py-1 text-sm">
     </div>
     <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
-    <a href="{{ url_for('stock_asinfo.lista') }}"
+    <a href="{{ url_for('stock_asinfo.lista', bodega=id_bodega) }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
-    <a href="{{ url_for('stock_asinfo.lista', q=q, tejido=tejido_filtro, color=color_filtro, min=min_saldo, export='csv') }}"
+    <a href="{{ url_for('stock_asinfo.lista', q=q, tejido=tejido_filtro, color=color_filtro, min=min_saldo, bodega=id_bodega, export='csv') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
   </form>
 
@@ -134,14 +147,12 @@
     <table class="sortable">
       <thead>
         <tr>
-          <th style="width: 26%">Producto</th>
-          <th style="width: 13%">Tejido</th>
-          <th style="width: 13%">Variante</th>
-          <th style="width: 9%">Color</th>
-          <th class="text-right" style="width: 12%">Cantidad</th>
-          <th class="text-right" style="width: 6%">Bodegas</th>
-          <th class="text-right" style="width: 10%">Precio últ.</th>
-          <th class="text-right" style="width: 11%">Valor estimado</th>
+          <th style="width: 34%">Producto</th>
+          <th style="width: 16%">Tejido</th>
+          <th style="width: 12%">Color</th>
+          <th class="text-right" style="width: 14%">Cantidad</th>
+          <th class="text-right" style="width: 12%">Precio últ.</th>
+          <th class="text-right" style="width: 12%">Valor estimado</th>
         </tr>
       </thead>
       <tbody>
@@ -152,7 +163,6 @@
               <div class="font-mono text-[10px] text-slate-400">{{ r.codigo }}</div>
             </td>
             <td>{% if r.tejido %}<span class="chip">{{ r.tejido }}</span>{% endif %}</td>
-            <td class="text-slate-600">{{ r.subcategoria or '—' }}</td>
             <td>
               {% if r.color %}
                 <span class="chip" style="background: rgb(241 245 249); color: rgb(15 23 42);">{{ r.color }}</span>
@@ -161,7 +171,6 @@
               {% endif %}
             </td>
             <td class="num">{{ r.cantidad_total | num_es(2) }}</td>
-            <td class="num">{{ r.n_bodegas }}</td>
             <td class="num {% if not r.precio_ultima %}muted{% endif %}">
               {% if r.precio_ultima %}$ {{ r.precio_ultima | num_es(2) }}{% else %}—{% endif %}
             </td>
@@ -170,7 +179,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+          <tr><td colspan="6" class="text-center py-8 text-slate-500">
             {% if error %}
               Error en la consulta.
             {% else %}

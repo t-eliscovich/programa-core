@@ -37,10 +37,16 @@ def _numeros_de(code: dict) -> list[int]:
 
 
 def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
-    """{(codigo_prov, numero): fila de compra} para las refs pedidas.
+    """{(codigo_prov, ref_num): fila de compra} para las refs pedidas.
 
-    Una sola query a scintela.compra. Devuelve {} si no hay refs o si la DB
-    falla (fail-soft — las importaciones se muestran igual sin cruce).
+    El número de la Nota de Asinfo (ej. "AC 98") NO es `scintela.compra.numero`
+    (ese campo va vacío en estas compras de importación) sino el **`concepto`**
+    de la compra: para los proveedores de importación (Ariescope, More Human,
+    Aartimpex…) el concepto es justo ese número ("98", "16", …). Por eso
+    cruzamos por `(codigo_prov, concepto-numérico)`. Verificado contra
+    /compras en vivo 2026-06-09.
+
+    Una sola query a scintela.compra. Fail-soft: {} si no hay refs o la DB falla.
     """
     if not refs:
         return {}
@@ -49,21 +55,34 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
     try:
         rows = db.fetch_all(
             """
-            SELECT id_compra, codigo_prov, numero, importe, tipo, comprobante,
+            SELECT id_compra,
+                   UPPER(codigo_prov) AS codigo_prov,
+                   NULLIF(regexp_replace(COALESCE(concepto, ''), '[^0-9]', '', 'g'), '')::int
+                       AS ref_num,
+                   numero, importe, tipo, comprobante, concepto,
                    TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha
               FROM scintela.compra
-             WHERE UPPER(codigo_prov) = ANY(%s) AND numero = ANY(%s)
+             WHERE UPPER(codigo_prov) = ANY(%s)
+               AND NULLIF(regexp_replace(COALESCE(concepto, ''), '[^0-9]', '', 'g'), '')::int
+                   = ANY(%s)
             """,
             (provs, numeros),
         )
     except Exception as e:  # noqa: BLE001
         _LOG.warning("buscar_compras falló: %s", e)
         return {}
-    return {
-        (str(r["codigo_prov"]).strip().upper(), int(r["numero"])): r
-        for r in rows
-        if r.get("codigo_prov") is not None and r.get("numero") is not None
-    }
+    out: dict[tuple[str, int], dict] = {}
+    for r in rows:
+        if r.get("ref_num") is None or r.get("codigo_prov") is None:
+            continue
+        key = (str(r["codigo_prov"]).strip().upper(), int(r["ref_num"]))
+        # Si dos compras comparten (prov, concepto) — ej. importación partida —
+        # acumulamos el importe en vez de pisar.
+        if key in out:
+            out[key] = {**out[key], "importe": float(out[key].get("importe") or 0) + float(r.get("importe") or 0)}
+        else:
+            out[key] = r
+    return out
 
 
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
