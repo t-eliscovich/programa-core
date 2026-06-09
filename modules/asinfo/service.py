@@ -598,11 +598,15 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
     if cached and (now - cached[0]) < _IMPORT_TTL_SECS:
         return cached[1]
 
+    # La "Fecha Recepción" real es la del documento de recepción de mercadería
+    # (recepcion_proveedor.fecha, doc BOD-…), NO fp.fecha_recepcion (siempre NULL).
+    # Si la importación todavía no tiene recepción → en tránsito (no recibida).
     sql = f"""
         SELECT TOP {int(limite)}
                fp.numero                                       AS im_numero,
                CONVERT(varchar, fp.fecha, 23)                  AS fecha,
-               CONVERT(varchar, fp.fecha_recepcion, 23)        AS fecha_recepcion,
+               CONVERT(varchar, rp.fecha, 23)                  AS fecha_recepcion,
+               rp.numero                                       AS bod,
                fp.total                                        AS total_asinfo,
                COALESCE(e.nombre_comercial, e.nombre_fiscal, '') AS proveedor,
                e.codigo                                        AS prov_cod_asinfo,
@@ -610,16 +614,20 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
           FROM factura_proveedor_importacion fpi
           JOIN factura_proveedor fp ON fp.id_factura_proveedor = fpi.id_factura_proveedor
           LEFT JOIN empresa e ON e.id_empresa = fp.id_empresa
+          LEFT JOIN recepcion_proveedor rp ON rp.id_recepcion_proveedor = fp.id_recepcion_proveedor
          ORDER BY fpi.id_factura_proveedor DESC
     """
     rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
     out = []
     for r in rows:
         try:
+            frec = str(r.get("fecha_recepcion") or "").strip() or None
             out.append({
                 "im_numero": str(r.get("im_numero") or "").strip(),
                 "fecha": str(r.get("fecha") or "").strip() or None,
-                "fecha_recepcion": str(r.get("fecha_recepcion") or "").strip() or None,
+                "fecha_recepcion": frec,
+                "recibida": frec is not None,
+                "bod": str(r.get("bod") or "").strip(),
                 "total_asinfo": float(r.get("total_asinfo") or 0),
                 "proveedor": str(r.get("proveedor") or "").strip(),
                 "prov_cod_asinfo": str(r.get("prov_cod_asinfo") or "").strip(),

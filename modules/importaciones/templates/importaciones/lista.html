@@ -21,7 +21,10 @@
                background: rgb(238 242 255); color: rgb(55 48 163); }
   .imp .nota { color: rgb(100 116 139); font-size: 11px; max-width: 320px; }
   .imp .ok { color: rgb(22 101 52); font-weight: 600; }
-  .imp .no { color: rgb(180 83 9); }
+  .imp .no { color: rgb(180 83 9); font-weight: 600; }
+  .imp .recep { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; }
+  .imp .recep-ok { background: rgb(220 252 231); color: rgb(22 101 52); }
+  .imp .recep-no { background: rgb(254 243 199); color: rgb(146 64 14); }
 </style>
 {% endblock %}
 
@@ -45,10 +48,10 @@
 
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
     <div class="kpi"><div class="kpi-label">Importaciones</div><div class="kpi-val">{{ total }}</div></div>
+    <div class="kpi"><div class="kpi-label">Recibidas</div><div class="kpi-val ok">{{ recibidas }}</div></div>
+    <div class="kpi"><div class="kpi-label">Pendientes (en tránsito)</div><div class="kpi-val no">{{ pendientes }}</div></div>
     <div class="kpi"><div class="kpi-label">Con código</div><div class="kpi-val">{{ con_codigo }}</div></div>
-    <div class="kpi"><div class="kpi-label">Cruzadas c/ programa</div><div class="kpi-val ok">{{ con_match }}</div></div>
-    <div class="kpi"><div class="kpi-label">Sin código en Nota</div><div class="kpi-val">{{ sin_codigo }}</div></div>
-    <div class="kpi"><div class="kpi-label">Importe programa (US)</div><div class="kpi-val">$ {{ importe_programa | num_es(0) }}</div></div>
+    <div class="kpi"><div class="kpi-label">Cruzadas c/ programa</div><div class="kpi-val">{{ con_match }}</div></div>
   </div>
 
   <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
@@ -58,7 +61,15 @@
              class="w-64 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
     </div>
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Estado</label>
+      <label class="block text-xs text-slate-500 mb-1">Recepción</label>
+      <select name="recep" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+        <option value="" {% if not recep %}selected{% endif %}>Todas</option>
+        <option value="recibida" {% if recep == 'recibida' %}selected{% endif %}>Recibidas</option>
+        <option value="pendiente" {% if recep == 'pendiente' %}selected{% endif %}>Pendientes (en tránsito)</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Cruce programa</label>
       <select name="estado" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
         <option value="" {% if not estado %}selected{% endif %}>Todas</option>
         <option value="match" {% if estado == 'match' %}selected{% endif %}>Cruzadas</option>
@@ -68,7 +79,7 @@
     </div>
     <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
     <a href="{{ url_for('importaciones.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
-    <a href="{{ url_for('importaciones.lista', q=q, estado=estado, export='csv') }}"
+    <a href="{{ url_for('importaciones.lista', q=q, estado=estado, recep=recep, export='csv') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
   </form>
 
@@ -76,13 +87,13 @@
     <table class="sortable">
       <thead>
         <tr>
-          <th style="width: 10%">Importación</th>
-          {# Nota: la columna 'Nota Asinfo' no aporta como criterio de orden #}
-          <th style="width: 9%">Fecha</th>
-          <th style="width: 20%">Proveedor</th>
-          <th style="width: 8%">Código</th>
-          <th style="width: 25%" data-no-sort>Nota Asinfo</th>
-          <th class="text-right" style="width: 13%">Total Asinfo*</th>
+          <th style="width: 9%">Importación</th>
+          <th style="width: 8%">Fecha</th>
+          <th style="width: 15%">Recepción</th>
+          <th style="width: 16%">Proveedor</th>
+          <th style="width: 7%">Código</th>
+          <th style="width: 18%" data-no-sort>Nota Asinfo</th>
+          <th class="text-right" style="width: 12%">Total Asinfo*</th>
           <th class="text-right" style="width: 15%">Compra programa (US)</th>
         </tr>
       </thead>
@@ -91,6 +102,14 @@
           <tr>
             <td class="font-mono">{{ r.im_numero }}</td>
             <td class="text-slate-500">{{ r.fecha or '—' }}</td>
+            <td data-sort-value="{{ '1 ' ~ r.fecha_recepcion if r.recibida else '0' }}">
+              {% if r.recibida %}
+                <span class="recep recep-ok">✓ Recibida</span>
+                <div class="text-[11px] text-slate-500 mt-0.5">{{ r.fecha_recepcion }}{% if r.bod %} · {{ r.bod }}{% endif %}</div>
+              {% else %}
+                <span class="recep recep-no">⏳ En tránsito</span>
+              {% endif %}
+            </td>
             <td>{{ r.proveedor or '—' }}</td>
             <td>{% if r.codigo %}<span class="code">{{ r.codigo }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
             <td class="nota">{{ r.nota or '—' }}</td>
@@ -109,7 +128,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="text-center py-8 text-slate-500">
+          <tr><td colspan="8" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
           </td></tr>
         {% endfor %}

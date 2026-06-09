@@ -51,9 +51,11 @@ def test_parse_nota_sin_codigo(nota):
 # ---------------------------------------------------------------------------
 
 
-def _imp(nota, im="IM-1", prov_name="ARIESCOPE", total=1000.0):
+def _imp(nota, im="IM-1", prov_name="ARIESCOPE", total=1000.0, fecha_recepcion=None):
     return {
-        "im_numero": im, "fecha": "2026-06-01", "fecha_recepcion": None,
+        "im_numero": im, "fecha": "2026-06-01",
+        "fecha_recepcion": fecha_recepcion, "recibida": fecha_recepcion is not None,
+        "bod": "BOD-000001" if fecha_recepcion else "",
         "total_asinfo": total, "proveedor": prov_name, "prov_cod_asinfo": "AC",
         "nota": nota,
     }
@@ -130,7 +132,8 @@ def _login_informes(app, fake_db):
 
 def _row(**kw):
     base = {
-        "im_numero": "IM-588", "fecha": "2026-06-01", "fecha_recepcion": None,
+        "im_numero": "IM-588", "fecha": "2026-06-01",
+        "fecha_recepcion": "2026-06-03", "recibida": True, "bod": "BOD-000002270",
         "total_asinfo": 51418.26, "proveedor": "ARIESCOPE", "prov_cod_asinfo": "AC",
         "nota": "ACMT/EXP/2026-27/8197 ( AC 36)", "codigo": "AC 36", "prov": "AC",
         "numero": 36, "numero_hasta": None,

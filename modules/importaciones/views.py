@@ -21,6 +21,7 @@ def lista():
 
     q = (request.args.get("q") or "").strip().upper()
     estado = (request.args.get("estado") or "").strip()  # "" | "match" | "sin_match" | "sin_codigo"
+    recep = (request.args.get("recep") or "").strip()    # "" | "recibida" | "pendiente"
 
     error = None
     rows = []
@@ -43,11 +44,17 @@ def lista():
         rows = [r for r in rows if r.get("codigo") and not r.get("compra")]
     elif estado == "sin_codigo":
         rows = [r for r in rows if not r.get("codigo")]
+    if recep == "recibida":
+        rows = [r for r in rows if r.get("recibida")]
+    elif recep == "pendiente":
+        rows = [r for r in rows if not r.get("recibida")]
 
     total = len(rows)
     con_codigo = sum(1 for r in rows if r.get("codigo"))
     con_match = sum(1 for r in rows if r.get("compra"))
     sin_codigo = total - con_codigo
+    recibidas = sum(1 for r in rows if r.get("recibida"))
+    pendientes = total - recibidas
     importe_programa = sum(
         r["compra"]["importe_total"] for r in rows if r.get("compra")
     )
@@ -57,6 +64,9 @@ def lista():
             {
                 "im_numero": r["im_numero"],
                 "fecha": r.get("fecha") or "",
+                "fecha_recepcion": r.get("fecha_recepcion") or "",
+                "recepcion": "Recibida" if r.get("recibida") else "Pendiente",
+                "bod": r.get("bod") or "",
                 "proveedor": r.get("proveedor") or "",
                 "codigo": r.get("codigo") or "",
                 "nota": r.get("nota") or "",
@@ -75,6 +85,9 @@ def lista():
             columnas=[
                 ("im_numero", "Importación"),
                 ("fecha", "Fecha"),
+                ("fecha_recepcion", "Fecha Recepción"),
+                ("recepcion", "Recepción"),
+                ("bod", "Doc. Recepción"),
                 ("proveedor", "Proveedor"),
                 ("codigo", "Código programa"),
                 ("nota", "Nota Asinfo"),
@@ -92,8 +105,11 @@ def lista():
         con_codigo=con_codigo,
         con_match=con_match,
         sin_codigo=sin_codigo,
+        recibidas=recibidas,
+        pendientes=pendientes,
         importe_programa=importe_programa,
         q=q,
         estado=estado,
+        recep=recep,
         error=error,
     )
