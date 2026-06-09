@@ -25,6 +25,7 @@
   .imp .recep { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; }
   .imp .recep-ok { background: rgb(220 252 231); color: rgb(22 101 52); }
   .imp .recep-no { background: rgb(254 243 199); color: rgb(146 64 14); }
+  .imp .recep-compra { background: rgb(219 234 254); color: rgb(30 64 175); }
 </style>
 {% endblock %}
 
@@ -93,7 +94,7 @@
           <th style="width: 7%">Código</th>
           <th style="width: 18%" data-no-sort>Nota Asinfo</th>
           <th class="text-right" style="width: 12%">Total Asinfo*</th>
-          <th class="text-right" style="width: 15%">Compra programa (US)</th>
+          <th class="text-right" style="width: 15%">Programa (US$)</th>
         </tr>
       </thead>
       <tbody>
@@ -114,13 +115,15 @@
             <td class="nota">{{ r.nota or '—' }}</td>
             <td class="num muted">$ {{ r.total_asinfo | num_es(2) }}</td>
             <td class="num">
-              {% if r.compra %}
-                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">
-                  $ {{ r.compra.importe_total | num_es(2) }}
-                </a>
+              {% if r.fuente == 'compra' %}
+                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">$ {{ r.importe_programa | num_es(2) }}</a>
                 {% if r.compra.n > 1 %}<span class="text-slate-400">({{ r.compra.n }})</span>{% endif %}
+                <span class="recep recep-compra">compra</span>
+              {% elif r.fuente == 'anticipo' %}
+                <span class="ok">$ {{ r.importe_programa | num_es(2) }}</span>
+                <span class="recep recep-no" title="Anticipo USD — todavía no convertido a compra">anticipo</span>
               {% elif r.codigo %}
-                <span class="no" title="Código {{ r.codigo }} sin compra en el programa">sin cruce</span>
+                <span class="no" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}

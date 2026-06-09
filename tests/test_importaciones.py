@@ -89,6 +89,33 @@ def test_cruce_rango_suma_varias_compras():
     assert rows[0]["compra"]["importe_total"] == 300.0
 
 
+def test_cruce_usa_anticipo_cuando_no_hay_compra():
+    importaciones = [_imp("ACMT/EXP/2026-27/8197 ( AC 36)", im="IM-X")]
+    # 1ª llamada a db = _buscar_compras (vacío), 2ª = _buscar_anticipos (match).
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
+         patch.object(service.db, "fetch_all",
+                      side_effect=[[], [{"cta": "AC", "ref_num": 36, "importe": 55871.19, "n": 3}]]):
+        rows = service.importaciones_con_cruce()
+    r = rows[0]
+    assert r["compra"] is None
+    assert r["fuente"] == "anticipo"
+    assert r["importe_programa"] == 55871.19
+    assert r["anticipo"]["n"] == 3
+
+
+def test_cruce_compra_tiene_prioridad_sobre_anticipo():
+    importaciones = [_imp("ACMT/EXP/2026-27/8197 ( AC 36)", im="IM-X")]
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
+         patch.object(service.db, "fetch_all",
+                      side_effect=[
+                          [{"id_compra": 7, "codigo_prov": "AC", "ref_num": 36, "importe": 100.0, "concepto": "36"}],
+                          [{"cta": "AC", "ref_num": 36, "importe": 999.0, "n": 2}],
+                      ]):
+        rows = service.importaciones_con_cruce()
+    assert rows[0]["fuente"] == "compra"
+    assert rows[0]["importe_programa"] == 100.0
+
+
 def test_cruce_codigo_sin_compra_queda_sin_match():
     importaciones = [_imp("ACMT/EXP/2026-27/8200 ( AC 999)")]
     with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
@@ -139,6 +166,7 @@ def _row(**kw):
         "nota": "ACMT/EXP/2026-27/8197 ( AC 36)", "codigo": "AC 36", "prov": "AC",
         "numero": 36, "numero_hasta": None,
         "compra": {"ids": [501], "first_id": 501, "importe_total": 51418.26, "n": 1, "tipo": ""},
+        "anticipo": None, "fuente": "compra", "importe_programa": 51418.26,
     }
     base.update(kw)
     return base

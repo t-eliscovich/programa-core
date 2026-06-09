@@ -85,15 +85,58 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
     return out
 
 
+def _buscar_anticipos(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
+    """{(cta, ref_num): {importe, n}} de anticipos USD en scintela.dolares.
+
+    Muchas importaciones se pagan como ANTICIPO USD (crédito/adelanto) y viven
+    en `scintela.dolares` (cuenta = código de proveedor, concepto = nº de
+    importación + tags CAE/SALDO/MAPFRE/INI). Recién se vuelven compra al
+    "Convertir a compra". Acá sumamos todas las partidas por (cuenta, nº) para
+    dar el USD del anticipo. Verificado contra /dolares en vivo 2026-06-09.
+
+    Fail-soft: {} si no hay refs o la DB falla.
+    """
+    if not refs:
+        return {}
+    provs = sorted({p for p, _ in refs})
+    numeros = sorted({n for _, n in refs})
+    try:
+        rows = db.fetch_all(
+            r"""
+            WITH d AS (
+                SELECT UPPER(cta) AS cta, importe,
+                       NULLIF(substring(concepto FROM '^\s*(\d{1,6})'), '')::int AS ref_num
+                  FROM scintela.dolares
+                 WHERE UPPER(cta) = ANY(%s)
+            )
+            SELECT cta, ref_num, SUM(importe) AS importe, COUNT(*) AS n
+              FROM d
+             WHERE ref_num IS NOT NULL AND ref_num = ANY(%s)
+             GROUP BY cta, ref_num
+            """,
+            (provs, numeros),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("buscar_anticipos falló: %s", e)
+        return {}
+    return {
+        (str(r["cta"]).strip().upper(), int(r["ref_num"])): r
+        for r in rows
+        if r.get("ref_num") is not None and r.get("cta") is not None
+    }
+
+
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
-    """Importaciones de Asinfo enriquecidas con el código parseado y el
-    cruce contra scintela.compra.
+    """Importaciones de Asinfo enriquecidas con el código parseado y el cruce
+    contra el programa: primero compra (`scintela.compra`), si no hay, anticipo
+    USD (`scintela.dolares`).
 
     Cada fila agrega:
-        codigo        — "AC 36" | None
-        prov, numero, numero_hasta
-        compra        — None, o dict {ids, first_id, importe_total, n, tipo}
-                        con el/los registro(s) del programa que matchearon.
+        codigo, prov, numero, numero_hasta
+        compra            — None | {ids, first_id, importe_total, n, tipo}
+        anticipo          — None | {importe_total, n}
+        fuente            — 'compra' | 'anticipo' | None
+        importe_programa  — float | None  (USD confiable del programa)
     """
     rows = asinfo_service.importaciones_asinfo(limite=limite)
 
@@ -108,14 +151,19 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             for n in _numeros_de(code):
                 refs.add((r["prov"], n))
 
-    matches = _buscar_compras(refs)
+    compras = _buscar_compras(refs)
+    anticipos = _buscar_anticipos(refs)
 
     for r in rows:
         r["compra"] = None
+        r["anticipo"] = None
+        r["fuente"] = None
+        r["importe_programa"] = None
         if not (r.get("prov") and r.get("numero") is not None):
             continue
         keys = [(r["prov"], n) for n in _numeros_de(r)]
-        hits = [matches[k] for k in keys if k in matches]
+
+        hits = [compras[k] for k in keys if k in compras]
         if hits:
             r["compra"] = {
                 "ids": [h["id_compra"] for h in hits],
@@ -124,4 +172,16 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
                 "n": len(hits),
                 "tipo": (hits[0].get("tipo") or "").strip(),
             }
+            r["fuente"] = "compra"
+            r["importe_programa"] = r["compra"]["importe_total"]
+            continue
+
+        ahits = [anticipos[k] for k in keys if k in anticipos]
+        if ahits:
+            r["anticipo"] = {
+                "importe_total": sum(float(h["importe"] or 0) for h in ahits),
+                "n": sum(int(h["n"] or 0) for h in ahits),
+            }
+            r["fuente"] = "anticipo"
+            r["importe_programa"] = r["anticipo"]["importe_total"]
     return rows

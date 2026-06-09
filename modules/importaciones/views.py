@@ -39,9 +39,9 @@ def lista():
             or q in (r.get("im_numero") or "").upper()
         ]
     if estado == "match":
-        rows = [r for r in rows if r.get("compra")]
+        rows = [r for r in rows if r.get("fuente")]
     elif estado == "sin_match":
-        rows = [r for r in rows if r.get("codigo") and not r.get("compra")]
+        rows = [r for r in rows if r.get("codigo") and not r.get("fuente")]
     elif estado == "sin_codigo":
         rows = [r for r in rows if not r.get("codigo")]
     if recep == "recibida":
@@ -51,12 +51,12 @@ def lista():
 
     total = len(rows)
     con_codigo = sum(1 for r in rows if r.get("codigo"))
-    con_match = sum(1 for r in rows if r.get("compra"))
+    con_match = sum(1 for r in rows if r.get("fuente"))
     sin_codigo = total - con_codigo
     recibidas = sum(1 for r in rows if r.get("recibida"))
     pendientes = total - recibidas
     importe_programa = sum(
-        r["compra"]["importe_total"] for r in rows if r.get("compra")
+        r["importe_programa"] for r in rows if r.get("importe_programa")
     )
 
     if request.args.get("export") == "csv":
@@ -71,11 +71,9 @@ def lista():
                 "codigo": r.get("codigo") or "",
                 "nota": r.get("nota") or "",
                 "total_asinfo": round(r.get("total_asinfo") or 0, 2),
-                "compra_programa": (
-                    "; ".join(str(i) for i in r["compra"]["ids"]) if r.get("compra") else ""
-                ),
+                "fuente": (r.get("fuente") or "").capitalize(),
                 "importe_programa": (
-                    round(r["compra"]["importe_total"], 2) if r.get("compra") else ""
+                    round(r["importe_programa"], 2) if r.get("importe_programa") else ""
                 ),
             }
             for r in rows
@@ -92,7 +90,7 @@ def lista():
                 ("codigo", "Código programa"),
                 ("nota", "Nota Asinfo"),
                 ("total_asinfo", "Total Asinfo (ref)"),
-                ("compra_programa", "ID compra(s)"),
+                ("fuente", "Fuente programa"),
                 ("importe_programa", "Importe programa (US)"),
             ],
             filename="importaciones_cruce.csv",
