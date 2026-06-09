@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Carga Tintura · {{ '%02d' % mes }}/{{ anio }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
+  <a href="{{ url_for('comparativa_tintoreria.comparativa_tintoreria') }}" class="hover:underline">Comparativa Tintorería</a> /
+  <strong>Carga</strong>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full" style="font-variant-numeric: tabular-nums;">
+
+  <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
+    <div>
+      <h1 class="text-xl font-semibold">Carga Tintura — {{ '%02d' % mes }}/{{ anio }}</h1>
+      <p class="text-xs text-slate-500">
+        Igual que el dBase: código + kg bruto + kg neto. El color y el
+        $/kg salen del catálogo y el importe se calcula solo.
+        Lo cargado acá <strong>entra directo al balance</strong> (COL.QUI. / KR).
+      </p>
+    </div>
+    <form method="get" class="flex items-end gap-2">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Mes</label>
+        <input type="number" name="mes" min="1" max="12" value="{{ mes }}"
+               class="rounded border border-slate-300 px-2 py-1 text-sm w-16">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Año</label>
+        <input type="number" name="anio" min="2020" max="2040" value="{{ anio }}"
+               class="rounded border border-slate-300 px-2 py-1 text-sm w-24">
+      </div>
+      <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
+    </form>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-amber-50 text-amber-900 border border-amber-200 text-sm">
+      <strong>Aviso:</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-3 gap-3 mb-4">
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Kg bruto</div>
+      <div class="text-xl font-semibold mt-1">{{ tot_kg | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Kg neto</div>
+      <div class="text-xl font-semibold mt-1">{{ tot_kgn | num_es(0) }}</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wide">Importe</div>
+      <div class="text-xl font-semibold mt-1">$ {{ tot_imp | num_es(0) }}</div>
+    </div>
+  </div>
+
+  {% if tiene_permiso('tintura.registrar') %}
+  {# ── Alta de fila — réplica del ADD (999) del dBase ─────────────── #}
+  <form method="post" action="{{ url_for('comparativa_tintoreria.tinto_carga_agregar') }}"
+        class="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-4 flex items-end gap-3 flex-wrap">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Fecha</label>
+      <input type="date" name="fecha" value="{{ hoy.isoformat() }}" required
+             class="rounded border border-slate-300 px-2 py-1 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Código</label>
+      <input type="text" name="cod" list="catalogo-cods" required maxlength="5"
+             placeholder="ROJ" style="text-transform: uppercase"
+             class="rounded border border-slate-300 px-2 py-1 text-sm w-24 font-mono" id="alta-cod">
+      <datalist id="catalogo-cods">
+        {% for c in catalogo %}
+          <option value="{{ c.cod }}">{{ c.color }} — $ {{ '%.4f' % c.costo }}/kg</option>
+        {% endfor %}
+      </datalist>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Kg bruto</label>
+      <input type="text" name="kg" required inputmode="decimal" placeholder="1.250"
+             class="rounded border border-slate-300 px-2 py-1 text-sm w-28 text-right" id="alta-kg">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Kg neto</label>
+      <input type="text" name="kgn" inputmode="decimal" placeholder="= bruto"
+             class="rounded border border-slate-300 px-2 py-1 text-sm w-28 text-right">
+    </div>
+    <div class="text-sm text-slate-500 pb-1.5" id="alta-preview"></div>
+    <button class="text-sm px-4 py-1.5 rounded bg-emerald-700 text-white hover:bg-emerald-800">
+      + Cargar
+    </button>
+  </form>
+  {% endif %}
+
+  {# ── Filas del mes ───────────────────────────────────────────────── #}
+  <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto mb-6">
+    <table class="text-sm w-full" style="min-width: 760px;">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">Fecha</th>
+          <th class="px-3 py-2 text-left">Cód</th>
+          <th class="px-3 py-2 text-left">Color</th>
+          <th class="px-3 py-2 text-right">Kg bruto</th>
+          <th class="px-3 py-2 text-right">Kg neto</th>
+          <th class="px-3 py-2 text-right">Importe</th>
+          <th class="px-3 py-2 text-right">$/kg</th>
+          <th class="px-3 py-2 text-center">Origen</th>
+          <th class="px-3 py-2"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr class="border-t border-slate-100 hover:bg-slate-50">
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ r.fecha.strftime('%d/%m/%Y') if r.fecha else '—' }}</td>
+          <td class="px-3 py-1.5 font-mono">{{ r.cod or '—' }}</td>
+          <td class="px-3 py-1.5">{{ r.color or '—' }}</td>
+          <td class="px-3 py-1.5 text-right">{{ (r.kg or 0) | num_es(1) }}</td>
+          <td class="px-3 py-1.5 text-right">{{ (r.kgn or 0) | num_es(1) }}</td>
+          <td class="px-3 py-1.5 text-right">$ {{ (r.importe or 0) | num_es(2) }}</td>
+          <td class="px-3 py-1.5 text-right text-slate-500">
+            {% if r.kg and r.kg > 0 %}{{ '%.4f' % ((r.importe or 0) / r.kg) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-center">
+            {% if r.usuario_crea == marker %}
+              <span class="inline-block px-2 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800">PC</span>
+            {% elif r.usuario_crea == 'manual-kg-edit' %}
+              <span class="inline-block px-2 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800" title="Ajuste de KG desde Comparativa — se borra con el próximo sync">AJUSTE</span>
+            {% else %}
+              <span class="inline-block px-2 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">dBase</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right">
+            {% if r.usuario_crea == marker and tiene_permiso('tintura.registrar') %}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('comparativa_tintoreria.tinto_carga_borrar', id_tinto=r.id_tinto) }}">
+              <button class="text-rose-700 text-xs hover:underline">borrar</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="px-3 py-8 text-center text-slate-500">Sin filas en {{ '%02d' % mes }}/{{ anio }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Catálogo de costos ──────────────────────────────────────────── #}
+  <details class="mb-4" {% if not catalogo %}open{% endif %}>
+    <summary class="cursor-pointer text-xs text-slate-500 uppercase tracking-wide select-none hover:text-slate-700">
+      ▶ Catálogo de costos ({{ catalogo | length }} códigos) — color y $/kg por código
+    </summary>
+    <div class="rounded-lg border border-slate-200 bg-white mt-2 px-4 py-3">
+      {% if tiene_permiso('tintura.registrar') %}
+      <form method="post" action="{{ url_for('comparativa_tintoreria.tinto_carga_costo') }}"
+            class="flex items-end gap-3 flex-wrap mb-3 pb-3 border-b border-slate-100">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Código</label>
+          <input type="text" name="cod" required maxlength="5" placeholder="ROJ"
+                 style="text-transform: uppercase"
+                 class="rounded border border-slate-300 px-2 py-1 text-sm w-24 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Color</label>
+          <input type="text" name="color" maxlength="30" placeholder="ROJO"
+                 class="rounded border border-slate-300 px-2 py-1 text-sm w-40">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Costo $/kg</label>
+          <input type="text" name="costo" required inputmode="decimal" placeholder="0,3500"
+                 class="rounded border border-slate-300 px-2 py-1 text-sm w-28 text-right">
+        </div>
+        <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Guardar</button>
+        <span class="text-xs text-slate-400 pb-1.5">Mismo código = actualiza.</span>
+      </form>
+      {% endif %}
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-sm">
+        {% for c in catalogo %}
+          <div class="flex justify-between border-b border-slate-50 py-0.5">
+            <span><span class="font-mono">{{ c.cod }}</span> <span class="text-slate-500 text-xs">{{ c.color }}</span></span>
+            <span class="text-right">$ {{ '%.4f' % c.costo }}</span>
+          </div>
+        {% else %}
+          <div class="text-slate-500 text-sm col-span-4">Catálogo vacío — corré la migración 0083 en /admin/migraciones o cargá códigos acá arriba.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+
+  <p class="text-xs text-slate-500">
+    <strong>Notas:</strong> el importe se calcula <code>kg bruto × costo</code>
+    del catálogo (igual que el dBase). Las filas <span class="font-semibold">PC</span>
+    del mes en curso sobreviven al sync dBase — ojo con cargar lo mismo en los
+    dos lados (se duplica). El balance suma todo lo de esta tabla.
+  </p>
+</div>
+
+<script>
+(function() {
+  // Preview de importe: kg × costo del catálogo.
+  var costos = {
+    {% for c in catalogo %}"{{ c.cod }}": {{ '%.6f' % c.costo }}{{ ',' if not loop.last }}{% endfor %}
+  };
+  var inCod = document.getElementById('alta-cod');
+  var inKg = document.getElementById('alta-kg');
+  var prev = document.getElementById('alta-preview');
+  if (!inCod || !inKg || !prev) return;
+  function upd() {
+    var cod = (inCod.value || '').toUpperCase().trim();
+    var kgs = (inKg.value || '').trim();
+    if (kgs.indexOf(',') >= 0) kgs = kgs.replace(/\./g, '').replace(',', '.');
+    var kg = parseFloat(kgs);
+    if (!(cod in costos)) { prev.textContent = cod ? cod + ' no está en el catálogo' : ''; return; }
+    if (!kg || kg <= 0) { prev.textContent = '$ ' + costos[cod].toFixed(4) + '/kg'; return; }
+    prev.textContent = '= $ ' + (kg * costos[cod]).toFixed(2) + '  (' + costos[cod].toFixed(4) + '/kg)';
+  }
+  inCod.addEventListener('input', upd);
+  inKg.addEventListener('input', upd);
+})();
+</script>
+{% endblock %}

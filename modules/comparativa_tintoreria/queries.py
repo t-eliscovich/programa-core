@@ -191,6 +191,35 @@ def gs_produccion_tintoreria_por_mes(desde: date, hasta: date) -> dict:
     return out
 
 
+def tinto_filas_mes(yy: int, mm: int) -> list[dict]:
+    """Filas crudas de scintela.tinto del mes (yy, mm) para la planilla
+    de carga (/informes/tinto-carga). Incluye TODO menos stat X/Y para
+    que la dueña vea exactamente lo que suma el balance."""
+    return db.fetch_all(
+        """
+        SELECT id_tinto, fecha, cod, color, kg, kgn, importe, stat,
+               COALESCE(usuario_crea, '') AS usuario_crea
+          FROM scintela.tinto
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+         ORDER BY fecha DESC, id_tinto DESC
+        """,
+        (yy, mm),
+    )
+
+
+def tinto_costos_catalogo() -> list[dict]:
+    """Catálogo cod → color + costo $/kg (réplica PC del COSTOS.DBF)."""
+    return db.fetch_all(
+        """
+        SELECT cod, color, costo
+          FROM scintela.tinto_costos
+         ORDER BY cod
+        """
+    )
+
+
 def tinto_pc_por_dia(desde: date, hasta: date) -> list[dict]:
     """Agregado de scintela.tinto por fecha (sin desglosar color).
 

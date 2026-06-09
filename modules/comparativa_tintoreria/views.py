@@ -10,7 +10,7 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
@@ -610,6 +610,291 @@ def comparativa_tintoreria():
             tot_diff_pct=None,
             error=f"Error renderizando tabla: {_e_render}",
         )
+
+
+_KG_EDIT_MARKER = "manual-kg-edit"
+
+
+def _parse_kg_es(s) -> float:
+    """Parsea '20.974,5' (es) o '20974.5' (en) a float."""
+    s = str(s or "").strip().replace(" ", "")
+    if not s:
+        raise ValueError("vacío")
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    return float(s)
+
+
+@comparativa_tintoreria_bp.route("/comparativa-tintoreria/editar-kg", methods=["POST"])
+@requiere_login
+@requiere_permiso("tintura.registrar")
+def editar_kg_dbase():
+    """Setea el total KG DBASE de un día (para cargar data de prueba).
+
+    TMT 2026-06-09 dueña: 'Dejame editar kg dbase, asi podemos cargar
+    aca para probar'.
+
+    No pisa las filas reales del DBF: inserta UNA fila de ajuste manual
+    en scintela.tinto (cod 'MAN', usuario_crea 'manual-kg-edit') con el
+    delta necesario para que el SUM del día quede en el valor ingresado.
+    Re-editar reemplaza el ajuste anterior; ingresar el total original
+    lo elimina.
+
+    OJO: el sync dBase (/admin/dbase-sync) trunca scintela.tinto, así
+    que los ajustes se pierden en el próximo sync — intencional, es
+    data de prueba.
+
+    Acepta JSON o form: {fecha: 'YYYY-MM-DD', kg: '20.974,5' | '20974.5'}.
+    """
+    from flask import jsonify
+
+    import db
+
+    data = request.get_json(silent=True) or request.form
+    try:
+        fecha = date.fromisoformat(str(data.get("fecha", "")).strip())
+    except (ValueError, AttributeError):
+        return jsonify({"ok": False, "error": "Fecha inválida."}), 400
+    try:
+        nuevo = _parse_kg_es(data.get("kg"))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "KG inválido."}), 400
+
+    try:
+        with db.tx() as conn:
+            # Total actual del día SIN el ajuste manual previo — misma
+            # fórmula GREATEST(kgn, kg) que usa la pantalla, así el
+            # resultado matchea exacto lo que se ve.
+            base = db.fetch_one(
+                """
+                SELECT COALESCE(SUM(GREATEST(COALESCE(kgn, 0), COALESCE(kg, 0))), 0) AS kg
+                  FROM scintela.tinto
+                 WHERE fecha = %s
+                   AND COALESCE(stat, '') NOT IN ('X', 'Y')
+                   AND COALESCE(usuario_crea, '') <> %s
+                """,
+                (fecha, _KG_EDIT_MARKER),
+                conn=conn,
+            )
+            delta = round(nuevo - float((base or {}).get("kg") or 0), 3)
+            db.execute(
+                "DELETE FROM scintela.tinto WHERE fecha = %s AND usuario_crea = %s",
+                (fecha, _KG_EDIT_MARKER),
+                conn=conn,
+            )
+            if abs(delta) >= 0.001:
+                db.execute(
+                    """
+                    INSERT INTO scintela.tinto
+                           (fecha, cod, color, kg, kgn, importe, stat, usuario_crea)
+                    VALUES (%s, 'MAN', 'AJUSTE MANUAL', %s, %s, 0, '', %s)
+                    """,
+                    (fecha, delta, delta, _KG_EDIT_MARKER),
+                    conn=conn,
+                )
+    except Exception as e:  # noqa: BLE001
+        _LOG.exception("editar_kg_dbase falló: %s", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    return jsonify({
+        "ok": True,
+        "fecha": fecha.isoformat(),
+        "kg": nuevo,
+        "ajuste": delta,
+    })
+
+
+# ---------------------------------------------------------------------------
+# PLANILLA DE CARGA — réplica de la pantalla TINTO del dBase (MODIFICA.PRG)
+# ---------------------------------------------------------------------------
+# TMT 2026-06-09 dueña: "lo mismo que ingresan en el dbase, tienen que
+# ingresar aca". En el dBase ingresan COD + KG + KGN; el COLOR y el costo
+# $/kg salen del catálogo COSTOS.DBF y el programa calcula
+# IMPORTE = KG × COSTO. Acá el catálogo es scintela.tinto_costos
+# (migración 0083, editable en esta misma pantalla).
+#
+# El balance (Resultados → COL.QUI./KR, vía tinto_mes_corriente_resultado)
+# suma scintela.tinto ENTERA — las filas cargadas acá entran solas, sin
+# tocar informes/. El sync dBase preserva las filas pc-carga del mes en
+# curso (ver import_dbf.py TINTO.DBF delete_where).
+
+_PC_CARGA_MARKER = "pc-carga"
+
+
+@comparativa_tintoreria_bp.route("/tinto-carga")
+@requiere_login
+@requiere_permiso("tintura.ver")
+def tinto_carga():
+    """Planilla del mes: filas de scintela.tinto + alta + catálogo de costos."""
+    hoy = today_ec()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+        mes = max(1, min(12, int(request.args.get("mes") or hoy.month)))
+    except (TypeError, ValueError):
+        anio, mes = hoy.year, hoy.month
+
+    error = None
+    filas: list[dict] = []
+    catalogo: list[dict] = []
+    try:
+        filas = queries.tinto_filas_mes(anio, mes) or []
+    except Exception as e:  # noqa: BLE001
+        error = f"tinto: {e}"
+    try:
+        catalogo = queries.tinto_costos_catalogo() or []
+    except Exception as e:  # noqa: BLE001
+        # Tabla puede no existir hasta correr la migración 0083.
+        error = (error + " | " if error else "") + f"catálogo: {e} — ¿corriste /admin/migraciones?"
+
+    tot_kg = sum(float(r.get("kg") or 0) for r in filas)
+    tot_kgn = sum(float(r.get("kgn") or 0) for r in filas)
+    tot_imp = sum(float(r.get("importe") or 0) for r in filas)
+
+    return render_template(
+        "comparativa_tintoreria/tinto_carga.html",
+        filas=filas,
+        catalogo=catalogo,
+        anio=anio,
+        mes=mes,
+        hoy=hoy,
+        tot_kg=tot_kg,
+        tot_kgn=tot_kgn,
+        tot_imp=tot_imp,
+        error=error,
+        marker=_PC_CARGA_MARKER,
+    )
+
+
+@comparativa_tintoreria_bp.route("/tinto-carga/agregar", methods=["POST"])
+@requiere_login
+@requiere_permiso("tintura.registrar")
+def tinto_carga_agregar():
+    """Alta de fila — replica el ADD (999) del dBase: COD + KG + KGN.
+
+    COLOR e IMPORTE salen del catálogo: importe = kg × costo (kg BRUTO,
+    igual que `REPLA ... IMPORTE WITH KG * B->COSTO` del PRG). STAT 'Z'
+    ('S' si COD='SER', como el PRG). Si el COD no está en el catálogo se
+    rechaza (el dBase hace lo mismo: borra la fila).
+    """
+    import db
+
+    try:
+        fecha = date.fromisoformat(str(request.form.get("fecha", "")).strip())
+    except (ValueError, AttributeError):
+        flash("Fecha inválida.", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    cod = (request.form.get("cod") or "").upper().strip()[:5]
+    try:
+        kg = _parse_kg_es(request.form.get("kg"))
+        kgn_raw = (request.form.get("kgn") or "").strip()
+        kgn = _parse_kg_es(kgn_raw) if kgn_raw else kg
+    except (ValueError, TypeError):
+        flash("KG inválido.", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    if not cod or kg <= 0:
+        flash("Falta código o KG.", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    cat = db.fetch_one(
+        "SELECT color, costo FROM scintela.tinto_costos WHERE cod = %s", (cod,)
+    )
+    if not cat:
+        flash(
+            f"El código {cod} no está en el catálogo de costos — agregalo abajo primero.",
+            "error",
+        )
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    importe = round(kg * float(cat.get("costo") or 0), 2)
+    stat = "S" if cod == "SER" else "Z"
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+
+    try:
+        db.execute(
+            """
+            INSERT INTO scintela.tinto
+                   (fecha, cod, color, kg, kgn, importe, stat,
+                    usuario_crea, usuario_modifica)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (fecha, cod, (cat.get("color") or "")[:30], kg, kgn, importe,
+             stat, _PC_CARGA_MARKER, usuario),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.exception("tinto_carga_agregar falló: %s", e)
+        flash(f"No se pudo guardar: {e}", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    flash(
+        f"Cargado {cod} {fecha.strftime('%d/%m')}: {kg:,.1f} kg × "
+        f"$ {float(cat.get('costo') or 0):,.4f} = $ {importe:,.2f}",
+        "success",
+    )
+    return redirect(url_for(
+        "comparativa_tintoreria.tinto_carga", anio=fecha.year, mes=fecha.month,
+    ))
+
+
+@comparativa_tintoreria_bp.route("/tinto-carga/<int:id_tinto>/borrar", methods=["POST"])
+@requiere_login
+@requiere_permiso("tintura.registrar")
+def tinto_carga_borrar(id_tinto: int):
+    """Borra una fila cargada en PC. Las del DBF no se tocan."""
+    import db
+
+    n = db.execute(
+        "DELETE FROM scintela.tinto WHERE id_tinto = %s AND usuario_crea = %s",
+        (id_tinto, _PC_CARGA_MARKER),
+    )
+    if n:
+        flash("Fila borrada.", "success")
+    else:
+        flash("Solo se pueden borrar filas cargadas en PC (no las del dBase).", "error")
+    return redirect(request.referrer or url_for("comparativa_tintoreria.tinto_carga"))
+
+
+@comparativa_tintoreria_bp.route("/tinto-carga/costo", methods=["POST"])
+@requiere_login
+@requiere_permiso("tintura.registrar")
+def tinto_carga_costo():
+    """Upsert de una entrada del catálogo de costos (cod, color, costo)."""
+    import db
+
+    cod = (request.form.get("cod") or "").upper().strip()[:5]
+    color = (request.form.get("color") or "").upper().strip()[:30]
+    try:
+        costo = _parse_kg_es(request.form.get("costo"))
+    except (ValueError, TypeError):
+        flash("Costo inválido.", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+    if not cod or costo < 0:
+        flash("Falta código o costo.", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+    try:
+        db.execute(
+            """
+            INSERT INTO scintela.tinto_costos (cod, color, costo, usuario_crea)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (cod) DO UPDATE
+               SET color = CASE WHEN EXCLUDED.color <> '' THEN EXCLUDED.color
+                                ELSE scintela.tinto_costos.color END,
+                   costo = EXCLUDED.costo,
+                   fecha_modifica = CURRENT_TIMESTAMP,
+                   usuario_modifica = %s
+            """,
+            (cod, color, costo, usuario, usuario),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.exception("tinto_carga_costo falló: %s", e)
+        flash(f"No se pudo guardar el costo: {e}", "error")
+        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
+
+    flash(f"Catálogo: {cod} → $ {costo:,.4f}/kg", "success")
+    return redirect(url_for("comparativa_tintoreria.tinto_carga"))
 
 
 # ---------------------------------------------------------------------------

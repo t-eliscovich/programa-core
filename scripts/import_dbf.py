@@ -661,6 +661,18 @@ TABLE_MAP: dict[str, dict] = {
         "mapper": _map_tinto,
         "criticidad": "CRITICO",
         "descripcion": "Tintura del mes — alimenta COL.QUI. + KR del panel Resultados",
+        # TMT 2026-06-09 dueña: planilla /informes/tinto-carga carga filas
+        # directo en PC (usuario_crea='pc-carga'). El sync NO debe pisarlas.
+        # PERO: scintela.tinto es "solo mes en curso" (el balance suma la
+        # tabla ENTERA sin filtro de fecha, igual que el PRG) → las pc-carga
+        # de meses anteriores SÍ se borran en cada sync, para no inflar el
+        # balance del mes nuevo. Las filas de ajuste 'manual-kg-edit'
+        # (editar KG en comparativa) son data de prueba: se borran siempre.
+        "delete_where": (
+            "COALESCE(usuario_crea, '') <> %s "
+            "OR fecha < date_trunc('month', CURRENT_DATE)",
+            "_lookup_pc_carga_marker",
+        ),
     },
 }
 
@@ -794,10 +806,18 @@ def _lookup_asinfo_backfill_marker() -> str:
     return "asinfo-backfill"
 
 
+def _lookup_pc_carga_marker() -> str:
+    """Marker de `usuario_crea` para filas de tintura cargadas en la
+    planilla PC (/informes/tinto-carga). El sync preserva las del mes
+    en curso — ver delete_where de TINTO.DBF."""
+    return "pc-carga"
+
+
 _DELETE_WHERE_FNS = {
     "_lookup_no_banco_pichincha": _lookup_no_banco_pichincha,
     "_lookup_no_banco_internacional": _lookup_no_banco_internacional,
     "_lookup_asinfo_backfill_marker": _lookup_asinfo_backfill_marker,
+    "_lookup_pc_carga_marker": _lookup_pc_carga_marker,
 }
 
 
