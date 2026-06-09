@@ -55,39 +55,45 @@
   </div>
 
   {% if tiene_permiso('tintura.registrar') %}
-  {# ── Alta de fila — réplica del ADD (999) del dBase ─────────────── #}
+  {# ── Alta multi-línea — réplica del ADD (999) del dBase ──────────
+     TMT 2026-06-09 dueña: "dejame agregar mas lineas antes de cargar"
+     — N líneas + un solo botón Cargar (all-or-nothing en el backend). #}
   <form method="post" action="{{ url_for('comparativa_tintoreria.tinto_carga_agregar') }}"
-        class="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-4 flex items-end gap-3 flex-wrap">
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Fecha</label>
-      <input type="date" name="fecha" value="{{ hoy.isoformat() }}" required
-             class="rounded border border-slate-300 px-2 py-1 text-sm">
+        class="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-4" id="alta-form">
+    <datalist id="catalogo-cods">
+      {% for c in catalogo %}
+        <option value="{{ c.cod }}">{{ c.color }} — $ {{ '%.4f' % c.costo }}/kg</option>
+      {% endfor %}
+    </datalist>
+    <div class="flex items-center gap-3 flex-wrap text-xs text-slate-500 mb-1">
+      <span style="width:150px">Fecha</span><span class="w-24">Código</span><span class="w-28 text-right">Kg bruto</span><span class="w-28 text-right">Kg neto</span><span>Importe</span>
     </div>
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Código</label>
-      <input type="text" name="cod" list="catalogo-cods" required maxlength="5"
-             placeholder="ROJ" style="text-transform: uppercase"
-             class="rounded border border-slate-300 px-2 py-1 text-sm w-24 font-mono" id="alta-cod">
-      <datalist id="catalogo-cods">
-        {% for c in catalogo %}
-          <option value="{{ c.cod }}">{{ c.color }} — $ {{ '%.4f' % c.costo }}/kg</option>
-        {% endfor %}
-      </datalist>
+    <div id="alta-lineas">
+      <div class="alta-linea flex items-center gap-3 flex-wrap mb-2">
+        <input type="date" name="fecha" value="{{ hoy.isoformat() }}" style="width:150px"
+               class="rounded border border-slate-300 px-2 py-1 text-sm">
+        <input type="text" name="cod" list="catalogo-cods" maxlength="5"
+               placeholder="ROJ" style="text-transform: uppercase" autocomplete="off"
+               class="alta-cod w-24 rounded border border-slate-300 px-2 py-1 text-sm font-mono">
+        <input type="text" name="kg" inputmode="decimal" placeholder="1.250"
+               class="alta-kg w-28 rounded border border-slate-300 px-2 py-1 text-sm text-right">
+        <input type="text" name="kgn" inputmode="decimal" placeholder="= bruto"
+               class="w-28 rounded border border-slate-300 px-2 py-1 text-sm text-right">
+        <span class="alta-prev text-sm text-slate-500"></span>
+        <button type="button" class="alta-quitar text-rose-700 text-sm hover:bg-rose-50 rounded px-1" title="Quitar línea">✕</button>
+      </div>
     </div>
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Kg bruto</label>
-      <input type="text" name="kg" required inputmode="decimal" placeholder="1.250"
-             class="rounded border border-slate-300 px-2 py-1 text-sm w-28 text-right" id="alta-kg">
+    <div class="flex items-center gap-3 mt-2 flex-wrap">
+      <button type="button" id="alta-mas"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">
+        + línea
+      </button>
+      <button type="submit" id="alta-submit"
+              class="text-sm px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
+        Cargar
+      </button>
+      <span class="text-sm text-slate-500" id="alta-total"></span>
     </div>
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">Kg neto</label>
-      <input type="text" name="kgn" inputmode="decimal" placeholder="= bruto"
-             class="rounded border border-slate-300 px-2 py-1 text-sm w-28 text-right">
-    </div>
-    <div class="text-sm text-slate-500 pb-1.5" id="alta-preview"></div>
-    <button class="text-sm px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
-      + Cargar
-    </button>
   </form>
   {% endif %}
 
@@ -196,25 +202,92 @@
 
 <script>
 (function() {
-  // Preview de importe: kg × costo del catálogo.
+  // Carga multi-línea: + línea / quitar / preview de importe por línea
+  // (kg × costo del catálogo) + total. El backend es all-or-nothing.
   var costos = {
     {% for c in catalogo %}"{{ c.cod }}": {{ '%.6f' % c.costo }}{{ ',' if not loop.last }}{% endfor %}
   };
-  var inCod = document.getElementById('alta-cod');
-  var inKg = document.getElementById('alta-kg');
-  var prev = document.getElementById('alta-preview');
-  if (!inCod || !inKg || !prev) return;
-  function upd() {
-    var cod = (inCod.value || '').toUpperCase().trim();
-    var kgs = (inKg.value || '').trim();
-    if (kgs.indexOf(',') >= 0) kgs = kgs.replace(/\./g, '').replace(',', '.');
-    var kg = parseFloat(kgs);
-    if (!(cod in costos)) { prev.textContent = cod ? cod + ' no está en el catálogo' : ''; return; }
-    if (!kg || kg <= 0) { prev.textContent = '$ ' + costos[cod].toFixed(4) + '/kg'; return; }
-    prev.textContent = '= $ ' + (kg * costos[cod]).toFixed(2) + '  (' + costos[cod].toFixed(4) + '/kg)';
+  var cont = document.getElementById('alta-lineas');
+  var btnMas = document.getElementById('alta-mas');
+  var lblTotal = document.getElementById('alta-total');
+  var form = document.getElementById('alta-form');
+  if (!cont || !btnMas || !form) return;
+
+  function parseKg(s) {
+    s = (s || '').trim();
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    return parseFloat(s);
   }
-  inCod.addEventListener('input', upd);
-  inKg.addEventListener('input', upd);
+
+  function updLinea(linea) {
+    var cod = (linea.querySelector('.alta-cod').value || '').toUpperCase().trim();
+    var kg = parseKg(linea.querySelector('.alta-kg').value);
+    var prev = linea.querySelector('.alta-prev');
+    if (!cod) { prev.textContent = ''; }
+    else if (!(cod in costos)) { prev.textContent = cod + ' no está en el catálogo'; prev.style.color = '#be123c'; }
+    else if (!kg || kg <= 0) { prev.textContent = '$ ' + costos[cod].toFixed(4) + '/kg'; prev.style.color = ''; }
+    else { prev.textContent = '= $ ' + (kg * costos[cod]).toFixed(2) + ' (' + costos[cod].toFixed(4) + '/kg)'; prev.style.color = ''; }
+    updTotal();
+  }
+
+  function updTotal() {
+    var n = 0, tkg = 0, timp = 0;
+    cont.querySelectorAll('.alta-linea').forEach(function(l) {
+      var cod = (l.querySelector('.alta-cod').value || '').toUpperCase().trim();
+      var kg = parseKg(l.querySelector('.alta-kg').value);
+      if (cod && kg > 0) {
+        n++; tkg += kg;
+        if (cod in costos) timp += kg * costos[cod];
+      }
+    });
+    lblTotal.textContent = n ? n + ' línea' + (n > 1 ? 's' : '') + ' — ' +
+      tkg.toLocaleString('es') + ' kg, $ ' + timp.toFixed(2) : '';
+  }
+
+  function wire(linea) {
+    linea.querySelector('.alta-cod').addEventListener('input', function() { updLinea(linea); });
+    linea.querySelector('.alta-kg').addEventListener('input', function() { updLinea(linea); });
+    linea.querySelector('.alta-quitar').addEventListener('click', function() {
+      if (cont.querySelectorAll('.alta-linea').length > 1) { linea.remove(); }
+      else {
+        linea.querySelectorAll('input').forEach(function(i) { if (i.type !== 'date') i.value = ''; });
+        updLinea(linea);
+      }
+      updTotal();
+    });
+  }
+
+  btnMas.addEventListener('click', function() {
+    var lineas = cont.querySelectorAll('.alta-linea');
+    var ultima = lineas[lineas.length - 1];
+    var nueva = ultima.cloneNode(true);
+    // Mantener la fecha de la última línea; limpiar el resto.
+    var fecha = ultima.querySelector('input[name="fecha"]').value;
+    nueva.querySelectorAll('input').forEach(function(i) { if (i.type !== 'date') i.value = ''; });
+    nueva.querySelector('input[name="fecha"]').value = fecha;
+    nueva.querySelector('.alta-prev').textContent = '';
+    cont.appendChild(nueva);
+    wire(nueva);
+    nueva.querySelector('.alta-cod').focus();
+  });
+
+  // Validación client-side: códigos fuera de catálogo o KG inválidos.
+  form.addEventListener('submit', function(e) {
+    var errs = [], n = 0;
+    cont.querySelectorAll('.alta-linea').forEach(function(l, idx) {
+      var cod = (l.querySelector('.alta-cod').value || '').toUpperCase().trim();
+      var kgRaw = (l.querySelector('.alta-kg').value || '').trim();
+      if (!cod && !kgRaw) return; // vacía — el backend la ignora
+      n++;
+      var kg = parseKg(kgRaw);
+      if (!cod || !kg || kg <= 0) errs.push('línea ' + (idx + 1) + ': falta código o KG');
+      else if (!(cod in costos)) errs.push('línea ' + (idx + 1) + ': ' + cod + ' no está en el catálogo');
+    });
+    if (!n) { errs.push('no hay líneas con datos'); }
+    if (errs.length) { e.preventDefault(); alert('No se cargó nada:\n' + errs.join('\n')); }
+  });
+
+  cont.querySelectorAll('.alta-linea').forEach(wire);
 })();
 </script>
 {% endblock %}

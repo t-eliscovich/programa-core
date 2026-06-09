@@ -769,71 +769,114 @@ def tinto_carga():
 @requiere_login
 @requiere_permiso("tintura.registrar")
 def tinto_carga_agregar():
-    """Alta de fila — replica el ADD (999) del dBase: COD + KG + KGN.
+    """Alta de filas — replica el ADD (999) del dBase: COD + KG + KGN.
 
-    COLOR e IMPORTE salen del catálogo: importe = kg × costo (kg BRUTO,
-    igual que `REPLA ... IMPORTE WITH KG * B->COSTO` del PRG). STAT 'Z'
-    ('S' si COD='SER', como el PRG). Si el COD no está en el catálogo se
-    rechaza (el dBase hace lo mismo: borra la fila).
+    TMT 2026-06-09 dueña: "dejame agregar mas lineas antes de cargar" —
+    acepta N líneas en un solo POST (inputs repetidos fecha/cod/kg/kgn).
+    Filas totalmente vacías se ignoran. Si CUALQUIER fila con data tiene
+    error, no se carga NADA (all-or-nothing, así no quedan cargas a
+    medias).
+
+    Por fila: COLOR e IMPORTE salen del catálogo: importe = kg × costo
+    (kg BRUTO, igual que `REPLA ... IMPORTE WITH KG * B->COSTO` del PRG).
+    STAT 'Z' ('S' si COD='SER'). COD fuera del catálogo se rechaza (el
+    dBase hace lo mismo: borra la fila).
     """
     import db
 
-    try:
-        fecha = date.fromisoformat(str(request.form.get("fecha", "")).strip())
-    except (ValueError, AttributeError):
-        flash("Fecha inválida.", "error")
+    fechas = request.form.getlist("fecha")
+    cods = request.form.getlist("cod")
+    kgs = request.form.getlist("kg")
+    kgns = request.form.getlist("kgn")
+    n = max(len(fechas), len(cods), len(kgs), len(kgns))
+
+    def _at(lst, i):
+        return lst[i] if i < len(lst) else ""
+
+    filas: list[dict] = []
+    errores: list[str] = []
+    for i in range(n):
+        f_raw = str(_at(fechas, i) or "").strip()
+        cod = (_at(cods, i) or "").upper().strip()[:5]
+        kg_raw = str(_at(kgs, i) or "").strip()
+        kgn_raw = str(_at(kgns, i) or "").strip()
+        if not cod and not kg_raw:
+            continue  # línea vacía — ignorar
+        rotulo = f"línea {len(filas) + len(errores) + 1}"
+        try:
+            fecha = date.fromisoformat(f_raw)
+        except (ValueError, AttributeError):
+            errores.append(f"{rotulo}: fecha inválida")
+            continue
+        try:
+            kg = _parse_kg_es(kg_raw)
+            kgn = _parse_kg_es(kgn_raw) if kgn_raw else kg
+        except (ValueError, TypeError):
+            errores.append(f"{rotulo} ({cod or '?'}): KG inválido")
+            continue
+        if not cod or kg <= 0:
+            errores.append(f"{rotulo}: falta código o KG")
+            continue
+        filas.append({"fecha": fecha, "cod": cod, "kg": kg, "kgn": kgn})
+
+    if not filas and not errores:
+        flash("No hay líneas para cargar.", "error")
         return redirect(url_for("comparativa_tintoreria.tinto_carga"))
 
-    cod = (request.form.get("cod") or "").upper().strip()[:5]
-    try:
-        kg = _parse_kg_es(request.form.get("kg"))
-        kgn_raw = (request.form.get("kgn") or "").strip()
-        kgn = _parse_kg_es(kgn_raw) if kgn_raw else kg
-    except (ValueError, TypeError):
-        flash("KG inválido.", "error")
-        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
-
-    if not cod or kg <= 0:
-        flash("Falta código o KG.", "error")
-        return redirect(url_for("comparativa_tintoreria.tinto_carga"))
-
-    cat = db.fetch_one(
-        "SELECT color, costo FROM scintela.tinto_costos WHERE cod = %s", (cod,)
-    )
-    if not cat:
-        flash(
-            f"El código {cod} no está en el catálogo de costos — agregalo abajo primero.",
-            "error",
+    # Lookup de catálogo para todos los códigos de una.
+    cat_by_cod: dict[str, dict] = {}
+    if filas:
+        rows = db.fetch_all(
+            "SELECT cod, color, costo FROM scintela.tinto_costos WHERE cod = ANY(%s)",
+            ([f["cod"] for f in filas],),
         )
+        cat_by_cod = {r["cod"]: r for r in rows}
+        sin_cat = sorted({f["cod"] for f in filas} - set(cat_by_cod))
+        if sin_cat:
+            errores.append(
+                "código(s) fuera del catálogo: " + ", ".join(sin_cat)
+                + " — agregalos al catálogo primero"
+            )
+
+    if errores:
+        flash("No se cargó nada. " + " | ".join(errores), "error")
         return redirect(url_for("comparativa_tintoreria.tinto_carga"))
 
-    importe = round(kg * float(cat.get("costo") or 0), 2)
-    stat = "S" if cod == "SER" else "Z"
     usuario = (getattr(g, "user", None) or {}).get("username", "web")
-
+    tot_kg = tot_imp = 0.0
     try:
-        db.execute(
-            """
-            INSERT INTO scintela.tinto
-                   (fecha, cod, color, kg, kgn, importe, stat,
-                    usuario_crea, usuario_modifica)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (fecha, cod, (cat.get("color") or "")[:30], kg, kgn, importe,
-             stat, _PC_CARGA_MARKER, usuario),
-        )
+        with db.tx() as conn:
+            for f in filas:
+                cat = cat_by_cod[f["cod"]]
+                importe = round(f["kg"] * float(cat.get("costo") or 0), 2)
+                stat = "S" if f["cod"] == "SER" else "Z"
+                db.execute(
+                    """
+                    INSERT INTO scintela.tinto
+                           (fecha, cod, color, kg, kgn, importe, stat,
+                            usuario_crea, usuario_modifica)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (f["fecha"], f["cod"], (cat.get("color") or "")[:30],
+                     f["kg"], f["kgn"], importe, stat,
+                     _PC_CARGA_MARKER, usuario),
+                    conn=conn,
+                )
+                tot_kg += f["kg"]
+                tot_imp += importe
     except Exception as e:  # noqa: BLE001
         _LOG.exception("tinto_carga_agregar falló: %s", e)
         flash(f"No se pudo guardar: {e}", "error")
         return redirect(url_for("comparativa_tintoreria.tinto_carga"))
 
     flash(
-        f"Cargado {cod} {fecha.strftime('%d/%m')}: {kg:,.1f} kg × "
-        f"$ {float(cat.get('costo') or 0):,.4f} = $ {importe:,.2f}",
+        f"Cargada{'s' if len(filas) != 1 else ''} {len(filas)} línea"
+        f"{'s' if len(filas) != 1 else ''}: {tot_kg:,.1f} kg, $ {tot_imp:,.2f}",
         "success",
     )
+    ult = filas[-1]["fecha"]
     return redirect(url_for(
-        "comparativa_tintoreria.tinto_carga", anio=fecha.year, mes=fecha.month,
+        "comparativa_tintoreria.tinto_carga", anio=ult.year, mes=ult.month,
     ))
 
 
