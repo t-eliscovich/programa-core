@@ -411,24 +411,22 @@ _STOCK_LOTE_TOTALES_CACHE: dict = {}
 def stock_asinfo_lote(
     id_bodega: int,
     q: str = "",
-    limit: int = 50000,
+    tejido: str = "",
+    titulo: str = "",
+    proveedor: str = "",
+    calidad: str = "",
+    color: str = "",
+    limit: int = 1500,
 ) -> list[dict]:
     """Stock por LOTE de una bodega, con atributos resueltos.
 
-    Args:
-        id_bodega: bodega a consultar (requerida — el universo completo son
-            ~95k lotes, traerlos todos juntos no escala). 51/52/53/...
-        q: filtro opcional sobre código/nombre de producto (se empuja al SQL
-            con LIKE para no bajar filas de más). Case-insensitive.
-        limit: tope de filas (Bodega Hilo sola tiene ~61k lotes).
-
-    Cada fila:
-        codigo, producto, lote, tejido (categoría), calidad, color, acabado,
-        estampado, titulo_hilo, proveedor, unidad, saldo (kg).
+    TODOS los filtros se empujan al SQL. Cada fila incluye `_total_lotes` y
+    `_total_kg` = COUNT/SUM OVER() del set filtrado COMPLETO (no del recorte),
+    para que los KPIs sean correctos aunque la tabla muestre solo `limit` filas
+    (Bodega Hilo sola tiene ~61k lotes; no se renderizan todas).
 
     Returns:
-        Lista de dicts ordenada por saldo DESC. [] si Metabase no está
-        configurado o si falla (fail-soft).
+        Lista de dicts (≤ limit) ordenada por saldo DESC. [] si falla.
     """
     try:
         id_bodega = int(id_bodega)
@@ -436,22 +434,35 @@ def stock_asinfo_lote(
         return []
 
     import time as _time
+
+    def _esc(s: str) -> str:
+        return (s or "").strip().replace("'", "''")
+
     q_norm = (q or "").strip().upper()
-    cache_key = f"b{id_bodega}_q{q_norm}_l{limit}"
+    cache_key = (
+        f"b{id_bodega}_q{q_norm}_te{tejido}_ti{titulo}"
+        f"_pr{proveedor}_ca{calidad}_co{color}_l{limit}"
+    )
     now = _time.time()
     cached = _STOCK_LOTE_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _STOCK_LOTE_TTL_SECS:
         return cached[1]
 
-    # Filtro de producto empujado al SQL. Escapamos comillas simples para no
-    # romper el literal — id_bodega ya es int (sanitizado arriba).
+    # Filtros empujados al SQL (id_bodega ya es int sanitizado).
     filtro_q = ""
     if q_norm:
-        safe = q_norm.replace("'", "''")
-        filtro_q = (
-            f" AND (UPPER(p.codigo) LIKE '%{safe}%' "
-            f"OR UPPER(p.nombre) LIKE '%{safe}%') "
-        )
+        s = _esc(q_norm)
+        filtro_q += f" AND (UPPER(p.codigo) LIKE '%{s}%' OR UPPER(p.nombre) LIKE '%{s}%')"
+    if tejido:
+        filtro_q += f" AND cp.nombre = '{_esc(tejido)}'"
+    if titulo:
+        filtro_q += f" AND a.titulo_hilo = '{_esc(titulo)}'"
+    if proveedor:
+        filtro_q += f" AND a.proveedor = '{_esc(proveedor)}'"
+    if calidad:
+        filtro_q += f" AND UPPER(a.calidad) = '{_esc(calidad).upper()}'"
+    if color:
+        filtro_q += f" AND a.color = '{_esc(color)}'"
 
     sql = f"""
         WITH ult AS (
@@ -488,7 +499,9 @@ def stock_asinfo_lote(
                a.calidad, a.color, a.acabado, a.estampado,
                a.titulo_hilo, a.proveedor,
                COALESCE(NULLIF(u.codigo, ''), u.nombre, 'KG')          AS unidad,
-               ult.saldo                                               AS saldo
+               ult.saldo                                               AS saldo,
+               COUNT(*)        OVER ()                                  AS _total_lotes,
+               SUM(ult.saldo)  OVER ()                                  AS _total_kg
           FROM ult
           INNER JOIN producto p ON p.id_producto = ult.id_producto
           INNER JOIN lote l ON l.id_lote = ult.id_lote
@@ -518,6 +531,8 @@ def stock_asinfo_lote(
                 "proveedor": str(r.get("proveedor") or "").strip(),
                 "unidad": str(r.get("unidad") or "KG").strip() or "KG",
                 "saldo": saldo,
+                "_total_lotes": int(r.get("_total_lotes") or 0),
+                "_total_kg": float(r.get("_total_kg") or 0),
             })
         except (TypeError, ValueError):
             continue

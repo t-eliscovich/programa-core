@@ -36,13 +36,8 @@
 
   <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
     <div>
-      <h1 class="text-xl font-semibold">Stock por Lote — Asinfo</h1>
-      <p class="text-xs text-slate-500">
-        Réplica del reporte <em>Stock Valorado por Lote</em>: último saldo por
-        producto · bodega · lote desde <code>saldo_producto_lote</code>, con
-        atributos (calidad, color, acabado, estampado, título hilo, proveedor).
-        Solo cantidad (kg) — los dólares de Asinfo no son confiables.
-      </p>
+      <h1 class="text-xl font-semibold">Stock por Lote</h1>
+      <p class="text-xs text-slate-500">Saldo por lote desde Asinfo · sólo cantidad (kg).</p>
     </div>
   </div>
 
@@ -87,6 +82,7 @@
         <input type="text" name="q" value="{{ q }}" placeholder="código / nombre"
                class="w-52 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
       </div>
+      {% if tejidos_universo|length > 1 %}
       <div>
         <label class="block text-xs text-slate-500 mb-1">Categoría</label>
         <select name="tejido" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
@@ -96,6 +92,8 @@
           {% endfor %}
         </select>
       </div>
+      {% endif %}
+      {% if cols.titulo_hilo %}
       <div>
         <label class="block text-xs text-slate-500 mb-1">Título Hilo</label>
         <select name="titulo" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
@@ -105,6 +103,8 @@
           {% endfor %}
         </select>
       </div>
+      {% endif %}
+      {% if cols.proveedor %}
       <div>
         <label class="block text-xs text-slate-500 mb-1">Proveedor</label>
         <select name="proveedor" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
@@ -114,6 +114,8 @@
           {% endfor %}
         </select>
       </div>
+      {% endif %}
+      {% if cols.calidad %}
       <div>
         <label class="block text-xs text-slate-500 mb-1">Calidad</label>
         <select name="calidad" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
@@ -123,6 +125,7 @@
           {% endfor %}
         </select>
       </div>
+      {% endif %}
       {% if colores_universo %}
       <div>
         <label class="block text-xs text-slate-500 mb-1">Color</label>
@@ -142,11 +145,7 @@
     </form>
 
     {# KPIs #}
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-      <div class="kpi">
-        <div class="kpi-label">Bodega</div>
-        <div class="kpi-val text-base">{{ bodega_nombre }}</div>
-      </div>
+    <div class="grid grid-cols-2 gap-3 mb-4">
       <div class="kpi">
         <div class="kpi-label">Lotes</div>
         <div class="kpi-val">{{ '{:,}'.format(total_lotes).replace(',', '.') }}</div>
@@ -157,18 +156,25 @@
       </div>
     </div>
 
+    {% if hay_mas %}
+    <p class="text-xs text-slate-500 mb-2">
+      Mostrando los <strong>{{ '{:,}'.format(mostrando).replace(',', '.') }}</strong> lotes de mayor saldo
+      de {{ '{:,}'.format(total_lotes).replace(',', '.') }}. Filtrá (producto, color…) para acotar.
+    </p>
+    {% endif %}
+
     <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
       <table class="sortable">
         <thead>
           <tr>
-            <th style="width: 26%">Producto</th>
-            <th style="width: 10%">Color</th>
-            <th style="width: 10%">Lote</th>
-            <th style="width: 7%">Calidad</th>
-            <th style="width: 11%">Título Hilo</th>
-            <th style="width: 13%">Proveedor</th>
-            <th style="width: 9%">Estampado</th>
-            <th class="text-right" style="width: 14%">Saldo (kg)</th>
+            <th>Producto</th>
+            {% if cols.color %}<th>Color</th>{% endif %}
+            <th>Lote</th>
+            {% if cols.calidad %}<th>Calidad</th>{% endif %}
+            {% if cols.titulo_hilo %}<th>Título Hilo</th>{% endif %}
+            {% if cols.proveedor %}<th>Proveedor</th>{% endif %}
+            {% if cols.estampado %}<th>Estampado</th>{% endif %}
+            <th class="text-right">Saldo (kg)</th>
           </tr>
         </thead>
         <tbody>
@@ -178,16 +184,14 @@
                 <div class="font-medium text-slate-800">{{ r.producto or r.codigo }}</div>
                 <div class="font-mono text-[10px] text-slate-400">{{ r.codigo }}</div>
               </td>
-              <td>
-                {% if r.color and r.color != r.tejido %}
-                  <span class="chip">{{ r.color }}</span>
-                {% else %}<span class="text-slate-300">—</span>{% endif %}
-              </td>
+              {% if cols.color %}
+              <td>{% if r.color and r.color != r.tejido %}<span class="chip">{{ r.color }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
+              {% endif %}
               <td class="font-mono text-slate-500">{{ r.lote }}</td>
-              <td>{% if r.calidad %}<span class="chip">{{ r.calidad }}</span>{% endif %}</td>
-              <td>{{ r.titulo_hilo or '—' }}</td>
-              <td class="text-slate-600">{{ r.proveedor or '—' }}</td>
-              <td class="{% if not r.estampado %}muted{% endif %}">{{ r.estampado or '—' }}</td>
+              {% if cols.calidad %}<td>{% if r.calidad %}<span class="chip">{{ r.calidad }}</span>{% endif %}</td>{% endif %}
+              {% if cols.titulo_hilo %}<td>{{ r.titulo_hilo or '—' }}</td>{% endif %}
+              {% if cols.proveedor %}<td class="text-slate-600">{{ r.proveedor or '—' }}</td>{% endif %}
+              {% if cols.estampado %}<td class="{% if not r.estampado %}muted{% endif %}">{{ r.estampado or '—' }}</td>{% endif %}
               <td class="num">{{ r.saldo | num_es(2) }}</td>
             </tr>
           {% else %}
@@ -198,12 +202,6 @@
         </tbody>
       </table>
     </div>
-
-    <p class="text-xs text-slate-500 mt-3">
-      Fuente: <code>saldo_producto_lote</code> en Asinfo (database 2 Metabase),
-      último snapshot por producto · bodega · lote. Atributos resueltos contra
-      <code>lote</code> / <code>valor_atributo</code>. Cache 10 min.
-    </p>
   {% endif %}
 </div>
 {% endblock %}

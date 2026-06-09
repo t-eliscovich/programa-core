@@ -34,11 +34,8 @@
 
   <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">
     <div>
-      <h1 class="text-xl font-semibold">Stock Asinfo</h1>
-      <p class="text-xs text-slate-500">
-        Cantidad por producto desde el ERP (<code>v_saldo_producto_vista</code>).
-        Tejido = categoría, color = hex Asinfo, precio = última venta como referencial.
-      </p>
+      <h1 class="text-xl font-semibold">Stock por Producto</h1>
+      <p class="text-xs text-slate-500">Saldo por producto desde Asinfo · sólo cantidad (kg).</p>
     </div>
   </div>
 
@@ -99,42 +96,25 @@
   {% endif %}
 
   {# KPIs #}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div class="grid grid-cols-2 gap-3 mb-4">
     <div class="kpi">
       <div class="kpi-label">Productos con stock</div>
       <div class="kpi-val">{{ '{:,}'.format(total_productos).replace(',', '.') }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Unidades totales</div>
+      <div class="kpi-label">Total kg</div>
       <div class="kpi-val">{{ total_unidades | num_es(0) }}</div>
     </div>
-    <div class="kpi">
-      <div class="kpi-label">Con precio cargado</div>
-      <div class="kpi-val">{{ productos_con_precio }} <span class="text-sm text-slate-500">de {{ total_productos }}</span></div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label">Valor estimado (US)*</div>
-      <div class="kpi-val">$ {{ valor_proxy | num_es(0) }}</div>
-    </div>
   </div>
-
-  <p class="text-[11px] text-slate-500 mb-3">
-    * Valor estimado usa <code>precio_ultima_venta</code> donde está cargado.
-    Asinfo no tiene <code>costo_estandar</code> en el master de producto — este
-    número subestima el inventario porque solo <strong>{{ productos_con_precio }}</strong> de
-    los productos tienen precio. Es una referencia, no contabilidad.
-  </p>
 
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
     <table class="sortable">
       <thead>
         <tr>
-          <th style="width: 34%">Producto</th>
-          <th style="width: 16%">Tejido</th>
-          <th style="width: 12%">Color</th>
-          <th class="text-right" style="width: 14%">Cantidad</th>
-          <th class="text-right" style="width: 12%">Precio últ.</th>
-          <th class="text-right" style="width: 12%">Valor estimado</th>
+          <th>Producto</th>
+          <th>Tejido</th>
+          <th>Color</th>
+          <th class="text-right">Cantidad (kg)</th>
         </tr>
       </thead>
       <tbody>
@@ -153,15 +133,9 @@
               {% endif %}
             </td>
             <td class="num">{{ r.cantidad_total | num_es(2) }}</td>
-            <td class="num {% if not r.precio_ultima %}muted{% endif %}">
-              {% if r.precio_ultima %}$ {{ r.precio_ultima | num_es(2) }}{% else %}—{% endif %}
-            </td>
-            <td class="num {% if not r.precio_ultima %}muted{% endif %}">
-              {% if r.precio_ultima %}$ {{ (r.cantidad_total * r.precio_ultima) | num_es(2) }}{% else %}—{% endif %}
-            </td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-center py-8 text-slate-500">
+          <tr><td colspan="4" class="text-center py-8 text-slate-500">
             {% if error %}
               Error en la consulta.
             {% else %}

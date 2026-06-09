@@ -332,6 +332,7 @@ def test_vista_lote_detalle_renderiza(app, fake_db):
         "tejido": "TELA CRUDA", "calidad": "PRI", "color": "TELA CRUDA",
         "acabado": "", "estampado": "", "titulo_hilo": "HILO 22",
         "proveedor": "HYLTEXPOY 10", "unidad": "KG", "saldo": 22.75,
+        "_total_lotes": 1, "_total_kg": 22.75,
     }]
     with patch.object(service, "stock_asinfo_lote_totales", return_value=totales), \
          patch.object(service, "stock_asinfo_lote", return_value=detalle):
@@ -349,6 +350,7 @@ def test_vista_lote_export_csv(app, fake_db):
         "tejido": "TELA CRUDA", "calidad": "PRI", "color": "TELA CRUDA",
         "acabado": "", "estampado": "", "titulo_hilo": "HILO 22",
         "proveedor": "HYLTEXPOY 10", "unidad": "KG", "saldo": 22.75,
+        "_total_lotes": 1, "_total_kg": 22.75,
     }]
     with patch.object(service, "stock_asinfo_lote_totales", return_value=[]), \
          patch.object(service, "stock_asinfo_lote", return_value=detalle):

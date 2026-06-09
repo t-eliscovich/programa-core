@@ -167,17 +167,20 @@ def lote():
             error=error,
         )
 
-    # Detalle de una bodega
+    # Detalle de una bodega — filtros empujados al SQL en el service.
     q = (request.args.get("q") or "").strip().upper()
     tejido_filtro = (request.args.get("tejido") or "").strip()
     titulo_filtro = (request.args.get("titulo") or "").strip()
     proveedor_filtro = (request.args.get("proveedor") or "").strip()
-    calidad_filtro = (request.args.get("calidad") or "").strip().upper()
+    calidad_filtro = (request.args.get("calidad") or "").strip()
     color_filtro = (request.args.get("color") or "").strip()
 
     rows = []
     try:
-        rows = asinfo_service.stock_asinfo_lote(id_bodega, q=q)
+        rows = asinfo_service.stock_asinfo_lote(
+            id_bodega, q=q, tejido=tejido_filtro, titulo=titulo_filtro,
+            proveedor=proveedor_filtro, calidad=calidad_filtro, color=color_filtro,
+        )
     except Exception as e:  # noqa: BLE001
         error = str(e)
 
@@ -186,9 +189,30 @@ def lote():
         f"Bodega {id_bodega}",
     )
 
-    # Universos para dropdowns (sobre todo lo traído de la bodega, pre-filtro).
-    # El "color" sólo es informativo cuando difiere de la categoría (en crudo
-    # el atributo Color viene como 'TELA CRUDA' = ruido).
+    # KPIs: totales del set filtrado COMPLETO (window COUNT/SUM), no del recorte.
+    total_lotes = rows[0]["_total_lotes"] if rows else 0
+    total_kg = rows[0]["_total_kg"] if rows else 0.0
+    mostrando = len(rows)
+    hay_mas = total_lotes > mostrando
+
+    # Columnas de atributo visibles = solo las que tienen datos útiles en esta
+    # bodega. Hilo no tiene atributos → tabla mínima Producto/Lote/Saldo. El
+    # color sólo cuenta si difiere de la categoría (en crudo viene 'TELA CRUDA').
+    def _con_datos(key, vs_tejido=False):
+        return any(
+            (r.get(key) or "").strip()
+            and (not vs_tejido or (r.get(key) or "").strip() != (r.get("tejido") or "").strip())
+            for r in rows
+        )
+    cols = {
+        "color": _con_datos("color", vs_tejido=True),
+        "calidad": _con_datos("calidad"),
+        "titulo_hilo": _con_datos("titulo_hilo"),
+        "proveedor": _con_datos("proveedor"),
+        "estampado": _con_datos("estampado"),
+    }
+
+    # Universos para los dropdowns (de lo traído).
     tejidos_universo = sorted({(r.get("tejido") or "") for r in rows if r.get("tejido")})
     titulos_universo = sorted({(r.get("titulo_hilo") or "") for r in rows if r.get("titulo_hilo")})
     proveedores_universo = sorted({(r.get("proveedor") or "") for r in rows if r.get("proveedor")})
@@ -198,48 +222,20 @@ def lote():
         if r.get("color") and r.get("color") != r.get("tejido")
     })
 
-    if tejido_filtro:
-        rows = [r for r in rows if r.get("tejido") == tejido_filtro]
-    if titulo_filtro:
-        rows = [r for r in rows if r.get("titulo_hilo") == titulo_filtro]
-    if proveedor_filtro:
-        rows = [r for r in rows if r.get("proveedor") == proveedor_filtro]
-    if calidad_filtro:
-        rows = [r for r in rows if (r.get("calidad") or "").upper() == calidad_filtro]
-    if color_filtro:
-        rows = [r for r in rows if r.get("color") == color_filtro]
-
-    total_lotes = len(rows)
-    total_kg = sum(r["saldo"] for r in rows)
-
-    # Subtotal por producto (para el desglose tipo reporte)
-    por_producto: dict[str, dict] = {}
-    for r in rows:
-        cod = r.get("codigo") or "(s/código)"
-        slot = por_producto.setdefault(cod, {"n": 0, "kg": 0.0, "nombre": r.get("producto", "")})
-        slot["n"] += 1
-        slot["kg"] += r["saldo"]
-    distribucion = sorted(por_producto.items(), key=lambda kv: -kv[1]["kg"])
-
     if request.args.get("export") == "csv":
-        return csv_response(
-            rows,
-            columnas=[
-                ("codigo", "Código"),
-                ("producto", "Producto"),
-                ("lote", "Lote"),
-                ("tejido", "Categoría"),
-                ("calidad", "Calidad"),
-                ("titulo_hilo", "Título Hilo"),
-                ("proveedor", "Proveedor"),
-                ("color", "Color"),
-                ("acabado", "Acabado"),
-                ("estampado", "Estampado"),
-                ("unidad", "Unidad"),
-                ("saldo", "Saldo"),
-            ],
-            filename=f"stock_lote_{id_bodega}.csv",
-        )
+        columnas = [("codigo", "Código"), ("producto", "Producto"), ("lote", "Lote")]
+        if cols["calidad"]:
+            columnas.append(("calidad", "Calidad"))
+        if cols["titulo_hilo"]:
+            columnas.append(("titulo_hilo", "Título Hilo"))
+        if cols["proveedor"]:
+            columnas.append(("proveedor", "Proveedor"))
+        if cols["color"]:
+            columnas.append(("color", "Color"))
+        if cols["estampado"]:
+            columnas.append(("estampado", "Estampado"))
+        columnas += [("unidad", "Unidad"), ("saldo", "Saldo")]
+        return csv_response(rows, columnas=columnas, filename=f"stock_lote_{id_bodega}.csv")
 
     return render_template(
         "stock_asinfo/lote.html",
@@ -250,7 +246,9 @@ def lote():
         bodega_nombre=bodega_nombre,
         total_lotes=total_lotes,
         total_kg=total_kg,
-        distribucion=distribucion,
+        mostrando=mostrando,
+        hay_mas=hay_mas,
+        cols=cols,
         tejidos_universo=tejidos_universo,
         titulos_universo=titulos_universo,
         proveedores_universo=proveedores_universo,
