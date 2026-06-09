@@ -32,11 +32,10 @@
 <div class="page-shell page-shell--full imp">
 
   <div class="mb-4 no-print">
-    <h1 class="text-xl font-semibold">Importaciones — Asinfo ↔ Programa</h1>
+    <h1 class="text-xl font-semibold">Importaciones</h1>
     <p class="text-xs text-slate-500">
-      Importaciones del ERP cruzadas con las compras/anticipos del programa por el
-      código que va en la <em>Nota</em> (ej. <code>AC 36</code>). El total de Asinfo
-      es <strong>referencial</strong>; el importe confiable en dólares viene del programa.
+      Cruzadas con la compra/anticipo del programa por el código de la <em>Nota</em>
+      (ej. <code>AC 36</code> = proveedor AC, concepto 36). Dólares del programa; el total de Asinfo es referencial.
     </p>
   </div>
 
@@ -137,10 +136,9 @@
   </div>
 
   <p class="text-xs text-slate-500 mt-3">
-    * El total de Asinfo es referencial (sus dólares no son confiables). El importe
-    confiable es el de la compra/anticipo del programa, enlazada por el código de la Nota
-    (<code>scintela.proveedor.codigo_prov</code> + <code>scintela.compra.numero</code>).
-    Fuente Asinfo: <code>factura_proveedor</code> + <code>_importacion</code> (Metabase DB 2). Cache 5 min.
+    * Total de Asinfo referencial (dólares no confiables). El importe confiable es el de
+    la compra/anticipo del programa, enlazada por <code>codigo_prov</code> + <code>concepto</code>.
+    Las que figuran "sin cruce" todavía no tienen una compra cargada en el programa.
   </p>
 </div>
 {% endblock %}
