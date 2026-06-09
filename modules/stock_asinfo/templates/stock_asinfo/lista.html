@@ -118,24 +118,6 @@
     </div>
   </div>
 
-  {# Distribución por tejido — barras visuales #}
-  {% if distribucion %}
-  <div class="mb-4 p-4 bg-white border border-slate-200 rounded">
-    <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Distribución por tejido</div>
-    {% set _max_kg = (distribucion[0][1].kg) or 1 %}
-    {% for t, slot in distribucion[:12] %}
-      <div class="flex items-center gap-2 text-xs mb-1">
-        <div class="w-28 truncate" title="{{ t }}">{{ t }}</div>
-        <div class="flex-1 bg-slate-100 rounded h-4 relative overflow-hidden">
-          <div class="bg-sky-500 h-4" style="width: {{ (slot.kg / _max_kg * 100) | round(1) }}%;"></div>
-        </div>
-        <div class="w-20 text-right font-mono">{{ slot.kg | num_es(0) }}</div>
-        <div class="w-12 text-right text-slate-400">{{ slot.n }} prod</div>
-      </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
   <p class="text-[11px] text-slate-500 mb-3">
     * Valor estimado usa <code>precio_ultima_venta</code> donde está cargado.
     Asinfo no tiene <code>costo_estandar</code> en el master de producto — este
