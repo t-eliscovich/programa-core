@@ -22,6 +22,7 @@ from __future__ import annotations
 def run(conn) -> None:
     cur = conn.cursor()
 
+    cur.execute("CREATE SCHEMA IF NOT EXISTS scintela")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS scintela.tinto_costos (
@@ -38,6 +39,12 @@ def run(conn) -> None:
 
     # Seed desde el histórico de tinto (la tabla es el mes en curso, pero
     # alcanza para los códigos de uso frecuente; el resto se cargan a mano).
+    # GUARD: en la DB fresca de CI scintela.tinto no existe (la crean los
+    # imports DBF, no las migraciones) — skipear el seed en ese caso.
+    cur.execute("SELECT to_regclass('scintela.tinto')")
+    if cur.fetchone()[0] is None:
+        print("  scintela.tinto no existe (DB fresca) — seed skipeado")
+        return
     cur.execute(
         """
         INSERT INTO scintela.tinto_costos (cod, color, costo, usuario_crea)
