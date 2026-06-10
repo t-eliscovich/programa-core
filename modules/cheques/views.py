@@ -635,6 +635,11 @@ def nuevo():
                         usuario=usuario,
                         batch_id=batch_id,
                         conn=conn,
+                        # TMT 2026-06-10: los cheques de este batch se crearon
+                        # recién en ESTA tx. Si el banco era de depósito
+                        # (90/91/99) crear() los flipeó a 'B' — igual se
+                        # aplican (cobro directo + aplicación es UNA operación).
+                        permitir_depositado=True,
                     )
                     n_aplicaciones += int(r.get("n") or 0)
 

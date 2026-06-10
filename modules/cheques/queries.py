@@ -2400,6 +2400,7 @@ def aplicar_a_factura(
     usuario: str = "web",
     batch_id: str | None = None,
     conn=None,
+    permitir_depositado: bool = False,
 ) -> dict:
     """Aplicar un cheque a una o varias facturas.
 
@@ -2422,6 +2423,14 @@ def aplicar_a_factura(
     `conn` — opcional. Si se pasa, NO se abre tx propia (caller controla).
     Permite que multi-cheque haga crear() + aplicar() en la misma transacción
     para que el batch sea verdaderamente atómico (todo o nada).
+
+    `permitir_depositado` — TMT 2026-06-10: Nueva Cobranza con banco de
+    depósito (90/91/99) crea el cheque directamente en stat='B' (cobro
+    directo, auto-flip en crear()). Ese cheque RECIÉN creado sí se puede
+    aplicar a facturas en la misma transacción — es el flujo normal de un
+    depósito/efectivo que cancela facturas. Sólo el flujo de creación pasa
+    True; el guard estricto (#26) sigue vigente para cheques viejos ya
+    depositados (ruta /cheques/<id>/aplicar y default False).
     """
     if not aplicaciones:
         raise ValueError("Sin facturas para aplicar.")
@@ -2446,7 +2455,8 @@ def aplicar_a_factura(
         # aceptaba B/A/E/etc, generando aplicaciones contra cheques ya
         # depositados/endosados/eliminados.
         stat_ch = (ch.get("stat") or "").upper()
-        if stat_ch not in STATS_APLICABLES:
+        stats_ok = STATS_APLICABLES + (("B",) if permitir_depositado else ())
+        if stat_ch not in stats_ok:
             raise ValueError(
                 f"Cheque {id_cheque} en stat='{stat_ch}' no se puede aplicar a "
                 f"facturas. Sólo desde {STATS_APLICABLES} (cartera/postergado/Daniela)."
