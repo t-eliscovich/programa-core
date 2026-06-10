@@ -343,6 +343,27 @@ def test_vista_lote_detalle_renderiza(app, fake_db):
     assert b"0003467002" in r.data
 
 
+def test_vista_en_proceso_renderiza(app, fake_db):
+    c = _login_informes(app, fake_db)
+    data = {
+        "pasos": [
+            {"id_bodega": 52, "paso": "Tejeduría (Hilo → Tela Cruda)", "issued": 134714.67,
+             "producido": 100284.58, "en_proceso": 34430.09, "n_ofts": 208},
+        ],
+        "ofts": [
+            {"id_bodega": 52, "paso": "Tejeduría (Hilo → Tela Cruda)", "oft": "OFT-000035309",
+             "producto": "TC Waffer", "prod_codigo": "TC-WAF", "planif": 4900.0,
+             "fab": 4899.16, "issued": 4950.72, "en_proceso": 51.56},
+        ],
+    }
+    with patch.object(service, "stock_en_proceso", return_value=data):
+        r = c.get("/stock/en-proceso")
+    assert r.status_code == 200
+    assert b"Tejer" in r.data or b"Tejedur" in r.data
+    assert b"OFT-000035309" in r.data
+    assert b"En Proceso" in r.data or b"en Proceso" in r.data
+
+
 def test_vista_lote_export_csv(app, fake_db):
     c = _login_informes(app, fake_db)
     detalle = [{

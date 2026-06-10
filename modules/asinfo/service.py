@@ -588,6 +588,101 @@ def stock_asinfo_lote_totales() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Stock EN PROCESO (WIP entre pasos de producción)
+# ---------------------------------------------------------------------------
+# Material despachado a órdenes de fabricación ABIERTAS pero todavía no
+# devuelto como el producto del siguiente paso → "stock entre pasos" que no
+# está en ningún saldo de bodega. Definición live (verificada 2026-06-09):
+#   issued = SUM(detalle_orden_salida_material.cantidad_despachada) por OFT,
+#            vía la junction detalle_orden_salida_material_orden_fabricacion.
+#            (OFT-000035309 → 4.950,72, coincide al centavo con el Excel.)
+#   producido = orden_fabricacion.cantidad_fabricada (declarado, estado actual).
+#   en_proceso = issued − producido.
+# Pasos por bodega de salida de la OFT: 52 = Tejeduría (Hilo→Tela Cruda),
+# 53 = Tintorería/Confección (Tela Cruda→Producto Terminado).
+
+_EN_PROCESO_TTL_SECS = 600
+_EN_PROCESO_CACHE: dict = {}
+
+_PASOS_PROCESO = {52: "Tejeduría (Hilo → Tela Cruda)", 53: "Tintorería (Tela Cruda → PT)"}
+
+
+def stock_en_proceso() -> dict:
+    """WIP entre pasos. Devuelve {pasos: [...], ofts: [...]} (fail-soft).
+
+    pasos: por bodega de salida — issued, producido, en_proceso, n_ofts.
+    ofts:  detalle por OFT con en_proceso > 0 (material claramente en proceso).
+    """
+    import time as _time
+    now = _time.time()
+    cached = _EN_PROCESO_CACHE.get("all")
+    if cached and (now - cached[0]) < _EN_PROCESO_TTL_SECS:
+        return cached[1]
+
+    sql = """
+        WITH ofs AS (
+            SELECT id_orden_fabricacion, numero, id_bodega, id_producto,
+                   ISNULL(cantidad, 0) AS planif, ISNULL(cantidad_fabricada, 0) AS fab
+              FROM orden_fabricacion
+             WHERE id_bodega IN (52, 53) AND estado_produccion <> 5
+        ),
+        issued AS (
+            SELECT j.id_orden_fabricacion,
+                   SUM(ISNULL(d.cantidad_despachada, 0)) AS issued
+              FROM detalle_orden_salida_material_orden_fabricacion j
+              JOIN detalle_orden_salida_material d
+                ON d.id_detalle_orden_salida_material = j.id_detalle_orden_salida_material
+             WHERE j.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM ofs)
+             GROUP BY j.id_orden_fabricacion
+        )
+        SELECT o.id_bodega                                      AS id_bodega,
+               o.numero                                         AS oft,
+               COALESCE(NULLIF(p.descripcion,''), p.nombre, p.codigo) AS producto,
+               p.codigo                                         AS prod_codigo,
+               o.planif                                         AS planif,
+               o.fab                                            AS fab,
+               ISNULL(i.issued, 0)                              AS issued,
+               ISNULL(i.issued, 0) - o.fab                      AS en_proceso
+          FROM ofs o
+          LEFT JOIN issued i ON i.id_orden_fabricacion = o.id_orden_fabricacion
+          LEFT JOIN producto p ON p.id_producto = o.id_producto
+         ORDER BY ISNULL(i.issued, 0) - o.fab DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    pasos: dict[int, dict] = {}
+    ofts = []
+    for r in rows:
+        try:
+            b = int(r.get("id_bodega"))
+            issued = float(r.get("issued") or 0)
+            fab = float(r.get("fab") or 0)
+            ep = float(r.get("en_proceso") or 0)
+            slot = pasos.setdefault(b, {"id_bodega": b, "paso": _PASOS_PROCESO.get(b, f"Bodega {b}"),
+                                        "issued": 0.0, "producido": 0.0, "en_proceso": 0.0, "n_ofts": 0})
+            slot["issued"] += issued
+            slot["producido"] += fab
+            slot["en_proceso"] += ep
+            slot["n_ofts"] += 1
+            if ep > 0.01:
+                ofts.append({
+                    "id_bodega": b,
+                    "paso": _PASOS_PROCESO.get(b, f"Bodega {b}"),
+                    "oft": str(r.get("oft") or "").strip(),
+                    "producto": str(r.get("producto") or "").strip(),
+                    "prod_codigo": str(r.get("prod_codigo") or "").strip(),
+                    "planif": float(r.get("planif") or 0),
+                    "fab": fab,
+                    "issued": issued,
+                    "en_proceso": ep,
+                })
+        except (TypeError, ValueError):
+            continue
+    out = {"pasos": sorted(pasos.values(), key=lambda x: x["id_bodega"]), "ofts": ofts}
+    _EN_PROCESO_CACHE["all"] = (now, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Importaciones de Asinfo (para cruzar contra compras/anticipos del programa)
 # ---------------------------------------------------------------------------
 # La lista "Importación" del ERP. La `Nota` (factura_proveedor.descripcion)

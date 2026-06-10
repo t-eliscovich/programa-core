@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Stock en Proceso{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('stock_asinfo.lote') }}" class="hover:underline">Stock</a> /
+  <strong>En Proceso</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .sa { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .sa table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .sa th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); letter-spacing: 0.03em;
+           border-bottom: 1px solid rgb(203 213 225); }
+  .sa td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .sa td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .sa .kpi { background: white; border: 1px solid rgb(226 232 240); border-radius: 8px; padding: 14px 18px; }
+  .sa .kpi-label { color: rgb(100 116 139); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .sa .kpi-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full sa">
+
+  <div class="mb-4">
+    <h1 class="text-xl font-semibold">Stock en Proceso</h1>
+    <p class="text-xs text-slate-500">
+      Material despachado a órdenes de fabricación abiertas y todavía no devuelto como el
+      producto del siguiente paso — no aparece en el saldo de ninguna bodega. Sólo kg.
+    </p>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      <strong>Error consultando Asinfo:</strong> <code>{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# KPIs por paso #}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+    <div class="kpi">
+      <div class="kpi-label">Total en proceso</div>
+      <div class="kpi-val">{{ total_en_proceso | num_es(2) }} <span class="text-sm text-slate-500">kg</span></div>
+    </div>
+    {% for p in pasos %}
+      <a href="{{ url_for('stock_asinfo.en_proceso', paso=p.id_bodega) }}" class="kpi block hover:border-slate-400">
+        <div class="kpi-label">{{ p.paso }}</div>
+        <div class="kpi-val">{{ p.en_proceso | num_es(2) }} <span class="text-sm text-slate-500">kg</span></div>
+        <div class="text-xs text-slate-500 mt-1">
+          despachado {{ p.issued | num_es(0) }} − producido {{ p.producido | num_es(0) }} · {{ p.n_ofts }} órdenes
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+  <div class="flex items-center justify-between mb-2 no-print">
+    <div class="text-xs text-slate-500">
+      {% if paso_filtro %}<a href="{{ url_for('stock_asinfo.en_proceso') }}" class="underline">Ver todos los pasos</a>{% endif %}
+    </div>
+    <a href="{{ url_for('stock_asinfo.en_proceso', paso=paso_filtro, export='csv') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="sortable">
+      <thead>
+        <tr>
+          <th>Paso</th>
+          <th>Orden Fab.</th>
+          <th>Producto (salida)</th>
+          <th class="text-right">Planificado</th>
+          <th class="text-right">Fabricado</th>
+          <th class="text-right">Despachado</th>
+          <th class="text-right">En proceso (kg)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in ofts %}
+          <tr>
+            <td class="text-slate-600">{{ o.paso }}</td>
+            <td class="font-mono text-slate-500">{{ o.oft }}</td>
+            <td data-sort-value="{{ o.producto }}">
+              <div class="font-medium text-slate-800">{{ o.producto or o.prod_codigo }}</div>
+              {% if o.prod_codigo %}<div class="font-mono text-[10px] text-slate-400">{{ o.prod_codigo }}</div>{% endif %}
+            </td>
+            <td class="num text-slate-500">{{ o.planif | num_es(2) }}</td>
+            <td class="num text-slate-500">{{ o.fab | num_es(2) }}</td>
+            <td class="num text-slate-500">{{ o.issued | num_es(2) }}</td>
+            <td class="num font-semibold">{{ o.en_proceso | num_es(2) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="text-center py-8 text-slate-500">
+            {% if error %}Error en la consulta.{% else %}Sin material en proceso.{% endif %}
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    En proceso = material despachado a la orden (OSM) − producido (cantidad fabricada declarada).
+    Órdenes de fabricación abiertas (no cerradas). Cache 10 min.
+  </p>
+</div>
+{% endblock %}

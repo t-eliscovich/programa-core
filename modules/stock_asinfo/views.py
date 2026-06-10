@@ -374,3 +374,55 @@ def lista():
         id_bodega=id_bodega,
         error=error,
     )
+
+
+@stock_asinfo_bp.route("/en-proceso")
+@requiere_login
+@requiere_permiso("stock.ver")
+def en_proceso():
+    """Stock EN PROCESO (WIP entre pasos): material despachado a órdenes de
+    fabricación abiertas pero todavía no devuelto como el producto siguiente."""
+    from modules.asinfo import service as asinfo_service
+
+    error = None
+    data = {"pasos": [], "ofts": []}
+    try:
+        data = asinfo_service.stock_en_proceso()
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+
+    pasos = data.get("pasos", [])
+    ofts = data.get("ofts", [])
+    total_en_proceso = sum(p.get("en_proceso", 0) for p in pasos)
+
+    paso_filtro = (request.args.get("paso") or "").strip()
+    if paso_filtro:
+        try:
+            ofts = [o for o in ofts if o.get("id_bodega") == int(paso_filtro)]
+        except (TypeError, ValueError):
+            pass
+
+    if request.args.get("export") == "csv":
+        return csv_response(
+            ofts,
+            columnas=[
+                ("paso", "Paso"),
+                ("oft", "Orden Fabricación"),
+                ("prod_codigo", "Código"),
+                ("producto", "Producto"),
+                ("planif", "Planificado"),
+                ("fab", "Fabricado"),
+                ("issued", "Material despachado"),
+                ("en_proceso", "En proceso"),
+            ],
+            filename="stock_en_proceso.csv",
+        )
+
+    return render_template(
+        "stock_asinfo/en_proceso.html",
+        pasos=pasos,
+        ofts=ofts,
+        total_en_proceso=total_en_proceso,
+        paso_filtro=paso_filtro,
+        error=error,
+    )
