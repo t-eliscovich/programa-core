@@ -20,7 +20,6 @@ from flask import Flask, g, redirect, request, url_for
 
 import db
 import filters
-from modules._lib import formulas_db
 from auth import (
     auth_bp,
     load_logged_in_user,
@@ -28,6 +27,7 @@ from auth import (
     tiene_permiso,
 )
 from extensions import csrf, limiter
+from modules._lib import formulas_db
 
 # Slow-request threshold. Override with REQ_SLOW_MS in .env.
 REQ_SLOW_MS = int(os.environ.get("REQ_SLOW_MS", "500"))
@@ -345,10 +345,10 @@ def create_app() -> Flask:
 
     app.register_blueprint(costos_ot_bp)
 
-    from modules.conciliacion.views import conciliacion_bp
     # banco_v2_view registra los endpoints /conciliacion/banco-v2/* — Reforma
     # Sprint 1 (2026-05-28). Coexiste con /conciliacion/hub vigente hasta swap.
     from modules.conciliacion import banco_v2_view  # noqa: F401
+    from modules.conciliacion.views import conciliacion_bp
     # /conciliacion/cambios eliminado 2026-05-29 dueña: 'esta pantalla no
     # sirve para nada'. El historial de matches se ve en /banco-v2/deshacer.
 
@@ -408,6 +408,12 @@ def create_app() -> Flask:
     from modules.admin_dbase.clientes_import_view import bp as clientes_import_bp
 
     app.register_blueprint(clientes_import_bp)
+
+    # Cleanup one-off — marcar facturas Asinfo retroactivas como
+    # usuario_crea='asinfo-backfill'. TMT 2026-06-10.
+    from modules.admin_dbase.marcar_asinfo_view import bp as marcar_asinfo_bp
+
+    app.register_blueprint(marcar_asinfo_bp)
 
     # Vincular cheques históricos del dBase a sus facturas — TMT 2026-06-07.
     # /admin/abonos-historicos reconstruye el chequesxfact que el dBase nunca
