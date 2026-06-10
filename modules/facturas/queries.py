@@ -873,7 +873,15 @@ def buscar(
                f.codigo_cli, COALESCE(c.nombre, '') AS cliente,
                f.kg, f.importe, f.abono, f.saldo, f.stat, f.condic, f.tipo
         FROM scintela.factura f
-        LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+        -- TMT 2026-06-10: LATERAL escalar para evitar fanout cuando un
+        -- codigo_cli tiene >1 fila en scintela.cliente (drift TOTF $23k
+        -- detectado por /admin/health/cartera-coherence). Mismo patrón
+        -- que se aplicó a cheques previamente (lección 2026-05-19 v8).
+        LEFT JOIN LATERAL (
+          SELECT nombre FROM scintela.cliente
+           WHERE codigo_cli = f.codigo_cli
+           LIMIT 1
+        ) c ON true
         WHERE (
                 %(q)s IS NULL
              OR (
@@ -1015,7 +1023,12 @@ def contar_filtrado(
                COALESCE(SUM(f.importe), 0) AS total_importe,
                COALESCE(SUM(f.saldo), 0)   AS total_saldo
         FROM scintela.factura f
-        LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+        -- TMT 2026-06-10: LATERAL escalar (mismo motivo que buscar() arriba)
+        LEFT JOIN LATERAL (
+          SELECT nombre FROM scintela.cliente
+           WHERE codigo_cli = f.codigo_cli
+           LIMIT 1
+        ) c ON true
         WHERE (
                 %(q)s IS NULL
              OR (
