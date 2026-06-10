@@ -1823,3 +1823,44 @@ Para Resultados / TOTF / display de "Venta del mes" sí se usa `vent_mes` filtra
 
 `/admin/marcar-asinfo-hoy/` — interfaz GET/POST que lista filas Asinfo huérfanas en `factura` (último día) + `compra/dolares` (mes completo) y permite marcar todas con `usuario_crea='asinfo-backfill'` en una transacción. Solo `usuarios.admin`.
 
+
+## Toggle UI "Incluir Asinfo backfill" (TMT 2026-06-10)
+
+Los listados `/facturas?vista=cartera` y `/cheques` tienen un checkbox **"Incluir Asinfo backfill"** que por **default está OFF**. Convención:
+
+- **OFF (default)**: el listado **EXCLUYE** filas con `usuario_crea='asinfo-backfill'` y por lo tanto coincide con `/informes/balance` TOTF/TOTC al centavo (modulo redondeo SQL). Esto es lo que el usuario ve normalmente y NO genera confusión "el listado dice $X pero el balance dice $Y".
+- **ON**: el listado **INCLUYE** todas las filas, incluyendo las marcadas como backfill. Se renderiza un banner amarillo arriba que aclara *"estas filas NO se cuentan en `/informes/balance` (TOTF/TOTC) hasta el cierre mensual"*.
+
+URL: `?incluir_backfill=1` activa el toggle. El CSV export respeta el toggle.
+
+### Cómo se implementa
+
+1. `modules/facturas/queries.py::buscar()` y `contar_filtrado()` aceptan `incluir_backfill: bool = False`. La query SQL agrega `AND (%(incluir_backfill)s OR COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')`. El comentario `-- noqa: backfill (toggle UI)` evita que el lint de Capa 5 falle.
+2. `modules/cheques/queries.py::buscar()` igual.
+3. Views (`/facturas`, `/cheques`) leen `request.args.get("incluir_backfill") == "1"` y lo propagan a las queries + al template.
+4. Templates renderizan checkbox + banner amarillo cuando ON.
+
+### Endpoint de health: cartera-coherence
+
+`/admin/health/cartera-coherence` valida en cada llamada que:
+- `totf()` del balance == `contar_filtrado(vista="cartera", incluir_backfill=False)` (lista facturas)
+- `totc()` del balance == SUM(importe) cheques stat Z+P+1+D excluyendo backfill (lista cheques)
+
+Si difieren > $1 absoluto, devuelve `alerts: [...]` con detalle. Incluido en `/admin/health/all` junto con `usuario-crea-audit` y `utilidad-watchdog`.
+
+### Tests contract
+
+`tests/test_cartera_coherence.py` assertea:
+- `queries.buscar()` y `contar_filtrado()` aceptan param `incluir_backfill: bool = False`.
+- Los SQL contienen tanto `asinfo-backfill` (filtro) como `incluir_backfill` (gate del filtro).
+- El blueprint health expone `cartera_coherence()` y está consolidado en `/all`.
+- La constante canónica `NO_BACKFILL_WHERE` mantiene `'asinfo-backfill'`.
+
+Si alguien refactoriza estas queries y olvida el toggle, los tests fallan en CI antes de mergear.
+
+### Por qué default OFF (no ON)
+
+Convención de la dueña 2026-06-10: "no contar Asinfo hasta el cierre". Las facturas Asinfo que se cargan vía `/facturas/cargar-desde-asinfo*` representan ventas históricas que se reflejarán en el patrimonio al hacer el snapshot mensual del 30 del mes. Hasta entonces, contarlas en el balance LIVE inflaba utilidad (~$420k de drift detectado el 2026-06-10).
+
+Si en el futuro la convención cambia y se quiere ver siempre todo, basta con cambiar el `incluir_backfill = request.args.get("incluir_backfill") == "1"` a `incluir_backfill = True` en views, sin tocar queries — los filtros siguen siendo robustos contra el bug original.
+
