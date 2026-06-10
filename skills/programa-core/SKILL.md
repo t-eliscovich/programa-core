@@ -1752,3 +1752,74 @@ UT.PROY (pantalla) = UTPROY - PROVI
 - **[ALTA] Caja se fecha en UTC, no Quito.** `/caja/nuevo` usa `datetime.now().date()` (servidor UTC, un día adelante de Ecuador). El reverso de caja usa otra fecha → el reverso queda back-dateado un día → rompe el orden de saldos. Fix: usar fecha America/Guayaquil consistente en create y reverso (ya hay `_to_ec`/`hora_ec` en `filters.py`).
 - **[ALTA] `informes/queries.py::salcaj()` es frágil.** Lee `saldo` guardado de la última fila por `ORDER BY fecha DESC, id_caja DESC` → si hay un movimiento fuera de orden de fecha, lee un saldo viejo y Resultados se desincroniza de la caja real. En cambio `caja/queries.py::saldo_actual()` suma `opening + Σ entradas − Σ salidas` (robusto). Fix: que `salcaj()` use la suma, no el saldo guardado.
 - **Episodio:** un test de liveness (Entrada $100 id 417 + reverso id 418) dejó Resultados Caja +$100 (salcaj lee el 417 del 05/06; el reverso quedó en 04/06). `saldo_actual()`/página caja OK en 46.747. Limpia con el sync del DBF (o recomputando saldos). NO agregar movimientos para "arreglar" — corrompe más (`saldo_prev` por id, no por suma).
+
+## Convención `usuario_crea` — protección contra utilidad inflada (TMT 2026-06-10)
+
+**El bug que pasó:** Tamara cargó 320 facturas Asinfo vía `/facturas/cargar-desde-asinfo*`. Cada factura quedó con `usuario_crea='tamara'` (el current user) en vez del marker canónico `'asinfo-backfill'`. Como los filtros `NO_BACKFILL_WHERE` del balance live (TOTF, vent_mes, calcular_kpis, etc.) sólo excluyen `'asinfo-backfill'`, esas 320 filas se sumaron a cartera/utilidad → **utilidad infló +$420k** y stock terminado infló +$80k adicionales por las kg físicas que no se descontaron correctamente.
+
+### Markers canónicos de `usuario_crea`
+
+| Marker | Cuándo se usa | Filtros que lo excluyen |
+|---|---|---|
+| **`'asinfo-backfill'`** | Carga manual vía `/facturas/cargar-desde-asinfo*` (forward fix) o cualquier endpoint que importa data Asinfo. **NUNCA cuenta en LIVE del mes**. Se activa al cierre mensual cuando pasa a `historia.patrimonio`. | TOTF, TOTC, anticipos, retiros_total_mes_actual, retiros_total_anual, ventas_mes_corriente_resultado, compras_mes_corriente, calcular_kpis (snapshot mensual), y todos los reports con `NO_BACKFILL_WHERE` |
+| **`'dbf-import'`** | Sync dBase canónico (CLIENTES/FACTURAS/COMPRAS/etc.dbf via `import_dbf.py` o `/admin/dbase-sync`). Es data autoritativa histórica. | Igual que `asinfo-backfill` — los filtros excluyen ambos |
+| **`'web'`** | Fallback default cuando el flask user es None (Edge case raro). | Cuenta normal |
+| `'tamara'`, `'andres'`, `'alex'` | Cargas manuales vía forms web normales (`/facturas/nueva`, `/compras/nueva`, etc.). Son ventas/compras REALES que sí cuentan. | Cuentan normal |
+| `'auto'`, `'asinfo'` | Edge cases legacy. | Cuentan normal salvo si el filtro los nombra explícito |
+
+### Constante canónica
+
+```python
+# modules/informes/queries.py
+NO_BACKFILL_WHERE = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
+```
+
+Usada en TODAS las queries que suman para reports live del mes en curso.
+
+### Query CORRECTA (con filtro) vs INCORRECTA (sin filtro)
+
+```sql
+-- ✗ INCORRECTA — cuenta filas asinfo-backfill, infla cartera live
+SELECT COALESCE(SUM(saldo), 0) FROM scintela.factura
+WHERE stat IS NULL OR stat IN ('Z','A','',' ');
+
+-- ✓ CORRECTA — excluye las filas Asinfo manual
+SELECT COALESCE(SUM(saldo), 0) FROM scintela.factura
+WHERE (stat IS NULL OR stat IN ('Z','A','',' '))
+  AND COALESCE(usuario_crea, '') <> 'asinfo-backfill';
+```
+
+### EXCEPCIONES legítimas (listado que muestra TODO)
+
+Algunas queries sí deben mostrar todas las filas, incluyendo backfill — ej. `/facturas?vista=cartera&export=csv` (listado completo para la dueña). Esas se marcan con:
+
+```python
+src = """
+    SELECT id_factura, ... FROM scintela.factura
+    WHERE ...
+    -- noqa: backfill (listado completo, intencional)
+"""
+```
+
+El lint `scripts/lint_no_backfill_filter.py` respeta el marker `# noqa: backfill` en las 3 líneas adyacentes.
+
+### Caso especial: `ventas_mes_corriente_kg_fisico()` NO filtra backfill
+
+Esta función específica devuelve kg de ventas SIN filtrar backfill, usada SOLO en el cálculo de `h_terminado_kg = pf0 + KR - kvent_fisico`. Razón: las facturas asinfo-backfill SON ventas físicas reales (la mercadería salió del depósito). Si filtramos kvent, terminado_kg infla por las kg vendidas que no se descuentan → stock infla → utilidad infla. Bug detectado y fixed 2026-06-10.
+
+Para Resultados / TOTF / display de "Venta del mes" sí se usa `vent_mes` filtrado (no contar la venta en utilidad hasta cierre).
+
+### Capas de protección (instaladas 2026-06-10)
+
+1. **Tests contract** (`tests/test_asinfo_backfill_contract.py`): assertean que `/facturas/cargar-desde-asinfo*` pasa `usuario='asinfo-backfill'` y que las funciones críticas (`totf`, `totc`, `anticipos`) tienen el filtro en su source code.
+2. **DB trigger** (`migrations/0084_usuario_crea_guard.sql`): `BEFORE INSERT OR UPDATE` en `scintela.factura` que fuerza `usuario_crea='asinfo-backfill'` si `numf_completo` matchea el formato Asinfo `^[0-9]{3}-[0-9]{3}-[0-9]{9}$`. Trigger ACTIVO (rewrite, no warning) — más fuerte.
+3. **Endpoint audit** (`/admin/health/usuario-crea-audit`): JSON con count de filas Asinfo sin marker en últimos 7 días. Si >0, alerta.
+4. **Watchdog utilidad** (`/admin/health/utilidad-watchdog`): JSON comparando utilidad/cartera/stock LIVE vs PREVIA snapshot. Threshold $200k delta patrimonio, $100k delta cartera, $50k delta stock.
+5. **CI lint** (`scripts/lint_no_backfill_filter.py` en `.github/workflows/ci.yml`): baseline de 20 violaciones legacy ignoradas; nuevas queries SUM/COUNT contra `scintela.factura/compra/dolares/retiros/cheque` sin filtro hacen fallar CI.
+6. **Esta documentación**.
+7. (Bonus) Dashboard `/admin/health/all` agrega ambos checks en una respuesta JSON para cron único.
+
+### Endpoint para cleanup retroactivo
+
+`/admin/marcar-asinfo-hoy/` — interfaz GET/POST que lista filas Asinfo huérfanas en `factura` (último día) + `compra/dolares` (mes completo) y permite marcar todas con `usuario_crea='asinfo-backfill'` en una transacción. Solo `usuarios.admin`.
+
