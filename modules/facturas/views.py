@@ -1108,7 +1108,7 @@ def cargar_desde_asinfo_bulk():
                 importe=importe,
                 numf_completo=numf_completo or None,
                 tipo=tipo_asinfo[:2],
-                usuario=usuario,
+                usuario='asinfo-backfill',
             )
             ok += 1
         except Exception as e:
@@ -1169,7 +1169,7 @@ def cargar_desde_asinfo():
             importe=importe,
             numf_completo=numf_completo or None,
             tipo=tipo_asinfo[:2],  # 'FA', 'NT'
-            usuario=usuario,
+            usuario='asinfo-backfill',
         )
         flash(f"Factura {numf_completo or '#'+str(res.get('numf'))} cargada desde Asinfo.", "ok")
     except _CargaAsinfoSkip as e:
