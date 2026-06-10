@@ -736,11 +736,12 @@
       {% if tiene_permiso('stock.ver') %}
       <details class="sidebar-section" data-key="stock" open>
         <summary>Stock</summary>
-        {{ nav_link('stock.lista', 'Resumen', 'box') }}
-        {{ nav_link('stock_asinfo.lote', 'Por lote (Asinfo)', 'box') }}
-        {{ nav_link('stock_asinfo.lista', 'Por producto (Asinfo)', 'box') }}
-        {{ nav_link('stock_asinfo.en_proceso', 'En Proceso', 'trend') }}
-        {{ nav_link('importaciones.lista', 'Importaciones', 'truck') }}
+        {# TMT 2026-06-10 dueña: Stock = 2 tabs réplica del Excel de la nube
+           (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
+           e importaciones siguen vivas por URL y linkeadas DENTRO de estas
+           dos páginas — sólo salen del menú. #}
+        {{ nav_link('stock_asinfo.fabricacion_tc', 'Fabricación TC', 'box') }}
+        {{ nav_link('stock_asinfo.fabricacion_pt', 'Fabricación PT', 'box') }}
       </details>
       {% endif %}
 

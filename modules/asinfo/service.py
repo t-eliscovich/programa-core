@@ -686,6 +686,115 @@ def stock_en_proceso() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Fabricación por proceso (réplica Excel "Saldos Inventarios Proceso Produccion")
+# ---------------------------------------------------------------------------
+# TMT 2026-06-10 dueña: Stock pasa a 2 tabs — Fabricación TC (52) y
+# Fabricación PT (53) — con la misma estructura del Excel de la nube:
+#   - Inventario en Proceso: Total OSM | Total Ing. Fab. | Saldo
+#   - Órdenes de Fabricación: Planificada | Fabricada | Por producir
+#     (PT agrupado por tejido/categoría: Fleece, Jersey, Pique, ...)
+#   - Detalle por OFT.
+# A diferencia de stock_en_proceso(), acá se incluyen TODAS las OFTs abiertas
+# (también las de saldo ≤ 0 por yield/timing) para que los totales cierren
+# EXACTO contra el Excel: Saldo = ΣOSM − ΣIng.Fab. sobre todo el universo.
+
+_FABRICACION_TTL_SECS = 600
+_FABRICACION_CACHE: dict = {}
+
+
+def fabricacion_proceso(id_bodega: int) -> dict:
+    """Proceso de fabricación de una bodega (52 TC / 53 PT). Fail-soft.
+
+    Devuelve:
+        resumen:    {issued, fab, saldo, planif, por_producir, n_ofts}
+        por_tejido: [{tejido, planif, fab, por_producir, n_ofts}, ...]
+        ofts:       [{oft, producto, prod_codigo, tejido, planif, fab,
+                      issued, saldo, por_producir}, ...]
+    """
+    import time as _time
+    now = _time.time()
+    cached = _FABRICACION_CACHE.get(id_bodega)
+    if cached and (now - cached[0]) < _FABRICACION_TTL_SECS:
+        return cached[1]
+
+    sql = f"""
+        WITH ofs AS (
+            SELECT id_orden_fabricacion, numero, id_producto,
+                   ISNULL(cantidad, 0) AS planif, ISNULL(cantidad_fabricada, 0) AS fab
+              FROM orden_fabricacion
+             WHERE id_bodega = {int(id_bodega)} AND estado_produccion <> 5
+        ),
+        issued AS (
+            SELECT j.id_orden_fabricacion,
+                   SUM(ISNULL(d.cantidad_despachada, 0)) AS issued
+              FROM detalle_orden_salida_material_orden_fabricacion j
+              JOIN detalle_orden_salida_material d
+                ON d.id_detalle_orden_salida_material = j.id_detalle_orden_salida_material
+             WHERE j.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM ofs)
+             GROUP BY j.id_orden_fabricacion
+        )
+        SELECT o.numero                                         AS oft,
+               COALESCE(NULLIF(p.descripcion,''), p.nombre, p.codigo) AS producto,
+               p.codigo                                         AS prod_codigo,
+               COALESCE(cp.nombre, '')                          AS tejido,
+               o.planif                                         AS planif,
+               o.fab                                            AS fab,
+               ISNULL(i.issued, 0)                              AS issued
+          FROM ofs o
+          LEFT JOIN issued i ON i.id_orden_fabricacion = o.id_orden_fabricacion
+          LEFT JOIN producto p ON p.id_producto = o.id_producto
+          LEFT JOIN categoria_producto cp
+            ON cp.id_categoria_producto = p.id_categoria_producto
+         ORDER BY ISNULL(i.issued, 0) - o.fab DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    resumen = {"issued": 0.0, "fab": 0.0, "saldo": 0.0,
+               "planif": 0.0, "por_producir": 0.0, "n_ofts": 0}
+    por_tejido: dict[str, dict] = {}
+    ofts = []
+    for r in rows:
+        try:
+            planif = float(r.get("planif") or 0)
+            fab = float(r.get("fab") or 0)
+            issued = float(r.get("issued") or 0)
+        except (TypeError, ValueError):
+            continue
+        saldo = issued - fab
+        por_producir = planif - fab
+        tejido = str(r.get("tejido") or "").strip() or "(s/categoría)"
+        resumen["issued"] += issued
+        resumen["fab"] += fab
+        resumen["saldo"] += saldo
+        resumen["planif"] += planif
+        resumen["por_producir"] += por_producir
+        resumen["n_ofts"] += 1
+        slot = por_tejido.setdefault(tejido, {"tejido": tejido, "planif": 0.0,
+                                              "fab": 0.0, "por_producir": 0.0, "n_ofts": 0})
+        slot["planif"] += planif
+        slot["fab"] += fab
+        slot["por_producir"] += por_producir
+        slot["n_ofts"] += 1
+        ofts.append({
+            "oft": str(r.get("oft") or "").strip(),
+            "producto": str(r.get("producto") or "").strip(),
+            "prod_codigo": str(r.get("prod_codigo") or "").strip(),
+            "tejido": tejido if tejido != "(s/categoría)" else "",
+            "planif": planif,
+            "fab": fab,
+            "issued": issued,
+            "saldo": saldo,
+            "por_producir": por_producir,
+        })
+    out = {
+        "resumen": resumen,
+        "por_tejido": sorted(por_tejido.values(), key=lambda x: -x["planif"]),
+        "ofts": ofts,
+    }
+    _FABRICACION_CACHE[id_bodega] = (now, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Importaciones de Asinfo (para cruzar contra compras/anticipos del programa)
 # ---------------------------------------------------------------------------
 # La lista "Importación" del ERP. La `Nota` (factura_proveedor.descripcion)

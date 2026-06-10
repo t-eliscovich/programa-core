@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}{{ cfg.titulo }}{% endblock %}
+{% block breadcrumb %}
+  <span>Stock</span> / <strong>{{ cfg.titulo }}</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fb { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .fb table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .fb th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); letter-spacing: 0.03em;
+           border-bottom: 1px solid rgb(203 213 225); }
+  .fb td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .fb td.num, .fb th.num { text-align: right; }
+  .fb td.num { font-family: ui-monospace, Menlo, monospace; }
+  .fb .kpi { background: white; border: 1px solid rgb(226 232 240); border-radius: 8px; padding: 12px 16px; }
+  .fb .kpi-label { color: rgb(100 116 139); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .fb .kpi-val { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .fb tr.total-row td { font-weight: 700; background: rgb(248 250 252);
+                        border-top: 2px solid rgb(203 213 225); }
+  .fb details.seccion { background: white; border: 1px solid rgb(226 232 240); border-radius: 8px; }
+  .fb details.seccion > summary { cursor: pointer; padding: 12px 16px; font-weight: 600;
+                                  font-size: 13px; color: rgb(51 65 85); user-select: none; }
+  .fb details.seccion[open] > summary { border-bottom: 1px solid rgb(241 245 249); }
+  .fb .neg { color: rgb(185 28 28); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full fb">
+
+  {# ── Switch de proceso ─────────────────────────────────────────── #}
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-semibold">{{ cfg.titulo }}</h1>
+      <p class="text-xs text-slate-500">{{ cfg.material }} → {{ cfg.produce }} · sólo kg (fuente Asinfo)</p>
+    </div>
+    <div class="flex gap-1 no-print">
+      <a href="{{ url_for('stock_asinfo.fabricacion_tc') }}"
+         class="px-3 py-1.5 rounded text-sm {{ 'bg-slate-800 text-white' if proceso == 'tc' else 'border border-slate-300 hover:bg-slate-50' }}">TC</a>
+      <a href="{{ url_for('stock_asinfo.fabricacion_pt') }}"
+         class="px-3 py-1.5 rounded text-sm {{ 'bg-slate-800 text-white' if proceso == 'pt' else 'border border-slate-300 hover:bg-slate-50' }}">PT</a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      <strong>Error consultando Asinfo:</strong> <code>{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# ── Totales de TODO el stock (arriba, en las dos tabs) ───────── #}
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+    {% for t in totales_bodega %}
+      <a href="{{ url_for('stock_asinfo.lote', bodega=t.id_bodega) }}" class="kpi block hover:border-slate-400">
+        <div class="kpi-label">{{ t.bodega }}</div>
+        <div class="kpi-val">{{ t.total_kg | num_es(0) }} <span class="text-sm text-slate-500">kg</span></div>
+        <div class="text-[11px] text-slate-400 mt-0.5">{{ t.lotes }} lotes</div>
+      </a>
+    {% endfor %}
+    <div class="kpi">
+      <div class="kpi-label">En proceso {{ proceso | upper }}</div>
+      <div class="kpi-val">{{ (resumen.saldo or 0) | num_es(0) }} <span class="text-sm text-slate-500">kg</span></div>
+      <div class="text-[11px] text-slate-400 mt-0.5">{{ resumen.n_ofts or 0 }} órdenes abiertas</div>
+    </div>
+    {% if stock_programa.get('total') %}
+      <a href="{{ url_for('stock.lista') }}" class="kpi block hover:border-slate-400">
+        <div class="kpi-label">Valor stock</div>
+        <div class="kpi-val">$ {{ stock_programa['total']['us'] | num_es(0) }}</div>
+        <div class="text-[11px] text-slate-400 mt-0.5">{{ stock_programa['total']['kg'] | num_es(0) }} kg</div>
+      </a>
+    {% endif %}
+  </div>
+
+  {# ── Bloque 1: Inventario en Proceso (estructura del Excel) ───── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+    <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <table>
+        <thead>
+          <tr>
+            <th>Inventario Proceso</th>
+            <th class="num">Total OSM</th>
+            <th class="num">Total Ing. Fab.</th>
+            <th class="num">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="total-row">
+            <td>{{ cfg.material }}</td>
+            <td class="num">{{ (resumen.issued or 0) | num_es(2) }}</td>
+            <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
+            <td class="num {{ 'neg' if (resumen.saldo or 0) < 0 }}">{{ (resumen.saldo or 0) | num_es(2) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="text-[11px] text-slate-400 px-3 py-2">
+        OSM = material despachado a órdenes abiertas · Ing. Fab. = lo devuelto fabricado · Saldo = en proceso.
+      </p>
+    </div>
+
+    {# ── Bloque 2: Órdenes de Fabricación ── #}
+    <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <table>
+        <thead>
+          <tr>
+            <th>Órdenes de Fabricación</th>
+            <th class="num">Planificada</th>
+            <th class="num">Fabricada</th>
+            <th class="num">Por producir</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if proceso == 'pt' %}
+            {% for t in por_tejido %}
+              <tr>
+                <td>{{ t.tejido }}</td>
+                <td class="num">{{ t.planif | num_es(2) }}</td>
+                <td class="num">{{ t.fab | num_es(2) }}</td>
+                <td class="num {{ 'neg' if t.por_producir < 0 }}">{{ t.por_producir | num_es(2) }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+          <tr class="total-row">
+            <td>{{ 'Total general' if proceso == 'pt' else cfg.produce }}</td>
+            <td class="num">{{ (resumen.planif or 0) | num_es(2) }}</td>
+            <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
+            <td class="num {{ 'neg' if (resumen.por_producir or 0) < 0 }}">{{ (resumen.por_producir or 0) | num_es(2) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Detalle por OFT ───────────────────────────────────────────── #}
+  <div class="flex items-center justify-between mb-2 no-print">
+    <form method="get" class="flex gap-2">
+      <input type="text" name="q" value="{{ q }}" placeholder="Buscar OFT / producto…"
+             class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64">
+      <button class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Filtrar</button>
+    </form>
+    <a href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, q=q, export='csv') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden mb-5">
+    <table class="sortable">
+      <thead>
+        <tr>
+          <th>Orden Fab.</th>
+          <th>Producto</th>
+          {% if proceso == 'pt' %}<th>Tejido</th>{% endif %}
+          <th class="num">Planificada</th>
+          <th class="num">Fabricada</th>
+          <th class="num">Por producir</th>
+          <th class="num">OSM despachado</th>
+          <th class="num">Saldo en proceso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in ofts %}
+          <tr>
+            <td class="font-mono text-slate-500">{{ o.oft }}</td>
+            <td data-sort-value="{{ o.producto }}">
+              <div class="font-medium text-slate-800">{{ o.producto or o.prod_codigo }}</div>
+              {% if o.prod_codigo %}<div class="font-mono text-[10px] text-slate-400">{{ o.prod_codigo }}</div>{% endif %}
+            </td>
+            {% if proceso == 'pt' %}<td class="text-slate-600">{{ o.tejido }}</td>{% endif %}
+            <td class="num text-slate-500">{{ o.planif | num_es(2) }}</td>
+            <td class="num text-slate-500">{{ o.fab | num_es(2) }}</td>
+            <td class="num text-slate-500 {{ 'neg' if o.por_producir < 0 }}">{{ o.por_producir | num_es(2) }}</td>
+            <td class="num text-slate-500">{{ o.issued | num_es(2) }}</td>
+            <td class="num font-semibold {{ 'neg' if o.saldo < 0 }}">{{ o.saldo | num_es(2) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="{{ 8 if proceso == 'pt' else 7 }}" class="text-center py-8 text-slate-500">
+            {% if error %}Error en la consulta.{% else %}Sin órdenes abiertas.{% endif %}
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Secciones: el resto de la info de Stock ───────────────────── #}
+  <div class="space-y-3">
+
+    <details class="seccion">
+      <summary>Stock por producto</summary>
+      <div class="px-4 py-3 text-sm text-slate-600 flex flex-wrap gap-3">
+        <a class="underline" href="{{ url_for('stock_asinfo.lista', bodega=cfg.bodega_material) }}">{{ cfg.material | capitalize }}</a>
+        <a class="underline" href="{{ url_for('stock_asinfo.lista', bodega=cfg.bodega_produce) }}">{{ cfg.produce | capitalize }}</a>
+        <a class="underline" href="{{ url_for('stock_asinfo.lista') }}">Todas las bodegas</a>
+      </div>
+    </details>
+
+    <details class="seccion">
+      <summary>Stock por lote</summary>
+      <div class="px-4 py-3 text-sm text-slate-600 flex flex-wrap gap-3">
+        {% for t in totales_bodega %}
+          <a class="underline" href="{{ url_for('stock_asinfo.lote', bodega=t.id_bodega) }}">
+            {{ t.bodega }} · {{ t.total_kg | num_es(0) }} kg</a>
+        {% endfor %}
+      </div>
+    </details>
+
+    {% if proceso == 'tc' %}
+    <details class="seccion" {{ 'open' if importaciones_pend }}>
+      <summary>Importaciones pendientes de recepción {% if importaciones_pend %}({{ importaciones_pend | length }}){% endif %}</summary>
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr><th>N°</th><th>Fecha</th><th>Proveedor</th><th>Nota</th><th class="num">Total Asinfo</th></tr>
+          </thead>
+          <tbody>
+            {% for r in importaciones_pend %}
+              <tr>
+                <td class="font-mono text-slate-500">{{ r.im_numero }}</td>
+                <td>{{ r.fecha or '' }}</td>
+                <td>{{ r.proveedor or '' }}</td>
+                <td class="text-slate-500">{{ r.nota or '' }}</td>
+                <td class="num">{{ (r.total_asinfo or 0) | num_es(2) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-center py-4 text-slate-500">Sin pendientes.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-2 text-sm">
+        <a class="underline text-slate-600" href="{{ url_for('importaciones.lista') }}">Ver todas las importaciones</a>
+      </div>
+    </details>
+    {% endif %}
+
+  </div>
+
+  <p class="text-xs text-slate-500 mt-4">
+    Incluye todas las órdenes de fabricación abiertas. Saldos negativos = se fabricó más de lo
+    despachado (yield/timing) — en el Excel restan igual. Cache 10 min.
+  </p>
+</div>
+{% endblock %}

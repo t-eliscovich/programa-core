@@ -13,7 +13,7 @@ Filtros disponibles (query string):
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, abort, render_template, request
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
@@ -426,3 +426,121 @@ def en_proceso():
         paso_filtro=paso_filtro,
         error=error,
     )
+
+
+# ---------------------------------------------------------------------------
+# Fabricación TC / PT — las DOS tabs de Stock (TMT 2026-06-10 dueña)
+# ---------------------------------------------------------------------------
+# Réplica del Excel "Saldos Inventarios Proceso Produccion Nube": una página
+# por proceso (TC = hilo→tela cruda en bodega 52; PT = tela cruda→terminado
+# en bodega 53), con los totales de TODO el stock arriba y el resto de las
+# vistas históricas (por producto, por lote, importaciones) como secciones
+# dentro de la misma página. Las URLs viejas siguen vivas, sólo salen del menú.
+
+_PROCESOS = {
+    "tc": {"bodega": 52, "titulo": "Fabricación TC",
+           "material": "HILO", "produce": "TELA CRUDA",
+           "bodega_material": 51, "bodega_produce": 52},
+    "pt": {"bodega": 53, "titulo": "Fabricación PT",
+           "material": "TELA CRUDA", "produce": "PRODUCTO TERMINADO",
+           "bodega_material": 52, "bodega_produce": 53},
+}
+
+
+def _fabricacion_page(proceso: str):
+    from modules.asinfo import service as asinfo_service
+
+    cfg = _PROCESOS.get((proceso or "").lower())
+    if not cfg:
+        abort(404)
+
+    error = None
+    data = {"resumen": {}, "por_tejido": [], "ofts": []}
+    try:
+        data = asinfo_service.fabricacion_proceso(cfg["bodega"])
+    except Exception as e:  # noqa: BLE001
+        error = str(e)
+
+    # Totales de TODO el stock (kg por bodega Asinfo) — arriba de la página.
+    totales_bodega = []
+    try:
+        totales_bodega = asinfo_service.stock_asinfo_lote_totales()
+    except Exception:  # noqa: BLE001
+        totales_bodega = []
+
+    # Valor del stock del programa (kg + $) — mismo cálculo que el Balance.
+    stock_programa = {}
+    try:
+        from modules.stock import queries as stock_queries
+
+        stock_programa = stock_queries.resumen_stock()
+    except Exception:  # noqa: BLE001
+        stock_programa = {}
+
+    ofts = data.get("ofts", [])
+    q = (request.args.get("q") or "").strip().upper()
+    if q:
+        ofts = [
+            o for o in ofts
+            if q in (o.get("oft") or "").upper()
+            or q in (o.get("producto") or "").upper()
+            or q in (o.get("prod_codigo") or "").upper()
+            or q in (o.get("tejido") or "").upper()
+        ]
+
+    if request.args.get("export") == "csv":
+        return csv_response(
+            ofts,
+            columnas=[
+                ("oft", "Orden Fabricación"),
+                ("producto", "Producto"),
+                ("tejido", "Tejido"),
+                ("planif", "Planificada"),
+                ("fab", "Fabricada"),
+                ("por_producir", "Por producir"),
+                ("issued", "Material despachado (OSM)"),
+                ("saldo", "Saldo en proceso"),
+            ],
+            filename=f"fabricacion_{proceso}.csv",
+        )
+
+    # Sección Importaciones — sólo en TC (el hilo es lo que se importa).
+    importaciones_pend = []
+    if proceso == "tc":
+        try:
+            from modules.importaciones import service as imp_service
+
+            importaciones_pend = [
+                r for r in imp_service.importaciones_con_cruce()
+                if not r.get("recibida")
+            ][:15]
+        except Exception:  # noqa: BLE001
+            importaciones_pend = []
+
+    return render_template(
+        "stock_asinfo/fabricacion.html",
+        proceso=proceso,
+        cfg=cfg,
+        resumen=data.get("resumen", {}),
+        por_tejido=data.get("por_tejido", []),
+        ofts=ofts,
+        q=q,
+        totales_bodega=totales_bodega,
+        stock_programa=stock_programa,
+        importaciones_pend=importaciones_pend,
+        error=error,
+    )
+
+
+@stock_asinfo_bp.route("/fabricacion-tc")
+@requiere_login
+@requiere_permiso("stock.ver")
+def fabricacion_tc():
+    return _fabricacion_page("tc")
+
+
+@stock_asinfo_bp.route("/fabricacion-pt")
+@requiere_login
+@requiere_permiso("stock.ver")
+def fabricacion_pt():
+    return _fabricacion_page("pt")
