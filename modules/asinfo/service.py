@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time as _time
 
 from modules._lib import metabase_client
 
@@ -124,8 +125,6 @@ def ventas_cliente_kg(vendedor: str | None = None) -> list[dict]:
 # tarda 10-30s. Cacheamos por rango de fechas durante 5 min — la cartera
 # no cambia segundo a segundo y la diferencia entre "ahora" y "hace 5 min"
 # es irrelevante para conciliación. Reiniciar el proceso lo invalida.
-
-import time as _time
 
 _FACTURAS_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 _FACTURAS_TTL_SECS = 300  # 5 minutos

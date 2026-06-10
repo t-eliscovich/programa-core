@@ -18,7 +18,6 @@ import pytest
 from concepto_parser import parse_nota_importacion
 from modules.importaciones import service
 
-
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
