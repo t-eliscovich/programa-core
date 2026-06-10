@@ -2996,7 +2996,6 @@ def buscar(
     monto_max: float | None = None,
     ver_eliminados: bool = False,
     offset: int = 0,
-    incluir_backfill: bool = False,
 ) -> list[dict]:
     """Filtros (mismas reglas que /facturas):
     cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
@@ -3106,14 +3105,6 @@ def buscar(
           AND (%(stats)s::text[] IS NULL OR c.stat = ANY(%(stats)s::text[]))
           -- Excluir eliminados (stat='X') cuando el filtro es "todos".
           AND (NOT %(excluir_eliminados)s OR COALESCE(c.stat, '') <> 'X')
-          -- TMT 2026-06-10 (toggle UI backfill): default `incluir_backfill=False`
-          -- excluye cheques con usuario_crea='asinfo-backfill' para coherencia
-          -- con /informes/balance TOTC. No hay flow Asinfo de cheques HOY pero
-          -- el filtro es defensivo a futuro. noqa: backfill (toggle UI)
-          AND (
-                %(incluir_backfill)s
-             OR COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
-          )
         ORDER BY c.fecha ASC, c.id_cheque ASC
         LIMIT %(limite)s OFFSET %(offset)s
         """
@@ -3135,7 +3126,6 @@ def buscar(
                 "excluir_eliminados": excluir_eliminados,
                 "limite": limite,
                 "offset": max(0, int(offset or 0)),
-                "incluir_backfill": incluir_backfill,
             },
         )
         or []

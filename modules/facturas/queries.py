@@ -812,7 +812,6 @@ def buscar(
     monto_max: float | None = None,
     estado: str = "",
     estados: list[str] | None = None,
-    incluir_backfill: bool = False,
 ) -> list[dict]:
     """Filtros:
         q             — busqueda libre (numero, numf_completo, nombre)
@@ -929,15 +928,6 @@ def buscar(
                  AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
              OR f.stat = ANY(%(estados_para_in)s::text[])
           )
-          -- TMT 2026-06-10 (toggle UI backfill): default `incluir_backfill=False`
-          -- excluye facturas con usuario_crea='asinfo-backfill' para que el
-          -- listado coincida con `/informes/balance` TOTF (que también las
-          -- excluye). Toggle `?incluir_backfill=1` las muestra (con banner
-          -- amarillo en el template). noqa: backfill (toggle UI)
-          AND (
-                %(incluir_backfill)s
-             OR COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
-          )
         ORDER BY f.fecha DESC, f.numf DESC
         LIMIT %(limite)s OFFSET %(offset)s
         """,
@@ -956,7 +946,6 @@ def buscar(
             "estados_para_in": estados_para_in,
             "limite": limite,
             "offset": offset,
-            "incluir_backfill": incluir_backfill,
         },
     ) or []
     # Running total cronológico (ascendente).
@@ -991,7 +980,6 @@ def contar_filtrado(
     monto_max: float | None = None,
     estado: str = "",
     estados: list[str] | None = None,
-    incluir_backfill: bool = False,
 ) -> dict:
     """COUNT(*) + SUM(saldo) + SUM(importe) con los MISMOS filtros que `buscar()`.
 
@@ -1070,12 +1058,6 @@ def contar_filtrado(
                  AND (f.stat IS NULL OR f.stat IN ('Z','',' ')))
              OR f.stat = ANY(%(estados_para_in)s::text[])
           )
-          -- TMT 2026-06-10 toggle backfill (igual que buscar()).
-          -- noqa: backfill (toggle UI)
-          AND (
-                %(incluir_backfill)s
-             OR COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
-          )
         """,
         {
             "q": q or None, "like": like,
@@ -1090,7 +1072,6 @@ def contar_filtrado(
             "estados_vacia": not estados_lista,
             "estado_incluye_z": estado_incluye_z,
             "estados_para_in": estados_para_in,
-            "incluir_backfill": incluir_backfill,
         },
     ) or {}
     return {

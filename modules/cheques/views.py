@@ -2153,10 +2153,6 @@ def lista():
 
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
-    # TMT 2026-06-10 — toggle "Incluir Asinfo backfill" (default OFF). Igual
-    # patrón que /facturas. Hoy no hay endpoint Asinfo de carga de cheques,
-    # pero el filtro queda consistente para coherencia con TOTC en balance.
-    incluir_backfill = request.args.get("incluir_backfill") == "1"
     # Show all (default 100k) — antes era 2000. Pedido TMT 2026-05-14.
     try:
         limite = int(request.args.get("limite") or 100000)
@@ -2196,7 +2192,6 @@ def lista():
             monto_max=monto_max,
             ver_eliminados=ver_eliminados,
             offset=page_offset,
-            incluir_backfill=incluir_backfill,
         )
         error = None
     except Exception as e:
@@ -2320,8 +2315,6 @@ def lista():
         # TMT 2026-05-20 — fecha hoy ISO para el date input de la barra
         # flotante "Depositar lote" (depósito inline sin segunda pantalla).
         hoy_iso=today_ec().isoformat(),
-        # TMT 2026-06-10 — toggle "Incluir Asinfo backfill" (default OFF).
-        incluir_backfill=incluir_backfill,
         # TMT 2026-05-27 dueña: paginación 500/pag.
         page=page,
         por_pagina=POR_PAGINA,

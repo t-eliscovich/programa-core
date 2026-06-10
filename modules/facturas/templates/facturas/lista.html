@@ -80,7 +80,7 @@
               <div class="font-medium">Descargar plantilla CSV</div>
             </a>
           {% endif %}
-          <a href="{{ url_for('facturas.lista', q=q, desde=desde, hasta=hasta, abiertas=('1' if solo_abiertas else None), incluir_backfill=('1' if incluir_backfill else None), export='csv') }}"
+          <a href="{{ url_for('facturas.lista', q=q, desde=desde, hasta=hasta, abiertas=('1' if solo_abiertas else None), export='csv') }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">Exportar CSV</div>
           </a>
@@ -216,41 +216,9 @@
       </select>
     </div>
 
-    {# TMT 2026-06-10 — toggle "Incluir Asinfo backfill" (default OFF).
-       OFF: lista coincide con /informes/balance TOTF (excluye backfill).
-       ON: muestra facturas Asinfo cargadas vía /facturas/cargar-desde-asinfo*. #}
-    <div>
-      <label class="block text-xs text-slate-500 mb-1">&nbsp;</label>
-      <label class="inline-flex items-center gap-2 px-3 py-1.5 rounded border
-                    {% if incluir_backfill %}
-                      border-amber-400 bg-amber-50 text-amber-900
-                      dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700
-                    {% else %}
-                      border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800
-                    {% endif %}
-                    cursor-pointer text-sm"
-             title="Por default oculta facturas marcadas como 'asinfo-backfill' para que el listado coincida con el balance. Tildá para verlas.">
-        <input type="checkbox" name="incluir_backfill" value="1"
-               {% if incluir_backfill %}checked{% endif %}
-               onchange="this.form.submit()"
-               class="rounded border-slate-400">
-        <span>Incluir Asinfo backfill</span>
-      </label>
-    </div>
-
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
   </form>
 
-  {# TMT 2026-06-10 — banner amarillo cuando el toggle está activo. Explicita
-     que esas filas no se cuentan en el balance hasta el cierre mensual. #}
-  {% if incluir_backfill %}
-  <div class="no-print mb-4 px-4 py-2 rounded border border-amber-400 bg-amber-50 text-amber-900
-              dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700 text-sm">
-    <b>Mostrando facturas Asinfo backfill</b> — estas filas NO se cuentan en
-    <code>/informes/balance</code> (TOTF) hasta el cierre mensual.
-    Para volver a la vista coherente con balance, destildá "Incluir Asinfo backfill".
-  </div>
-  {% endif %}
 
   {# TMT 2026-05-22 — Auditoría: 2 direcciones de huérfanas (PC↔Asinfo). #}
   <div class="no-print mb-4 flex items-center gap-2 text-sm flex-wrap">
