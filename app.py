@@ -423,6 +423,11 @@ def create_app() -> Flask:
 
     app.register_blueprint(health_audit_bp)
 
+    # Regenerar snapshot scintela.historia. TMT 2026-06-10.
+    from modules.admin_dbase.regen_snapshot_view import bp as regen_snapshot_bp
+
+    app.register_blueprint(regen_snapshot_bp)
+
     # Vincular cheques históricos del dBase a sus facturas — TMT 2026-06-07.
     # /admin/abonos-historicos reconstruye el chequesxfact que el dBase nunca
     # guardó (CHEQUES.DBF no referencia la factura) y recalcula

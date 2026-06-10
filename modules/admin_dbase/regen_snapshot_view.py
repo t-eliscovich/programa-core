@@ -1,0 +1,194 @@
+"""Endpoint /admin/regenerar-snapshot — borra + recrea el snapshot mensual.
+
+TMT 2026-06-10. Problema: el snapshot 31/05 (PATANT) está congelado con
+los datos del momento de creación. Si las queries del balance cambian
+(ej. se quita el filtro `asinfo-backfill`), el snapshot ya guardado queda
+inconsistente con el balance live → utilidad = patr_live − patant_stale
+infla por el delta.
+
+GET muestra preview de snapshots del mes seleccionado. POST aplicar=1
+borra los snapshots del mes target + invoca `crear_snapshot_historia()`
+con el código actual.
+
+Read-only por default (GET). Sólo `usuarios.admin`.
+"""
+from __future__ import annotations
+
+from flask import Blueprint, Response, render_template_string, request
+
+import db
+from auth import requiere_login, requiere_permiso
+from filters import today_ec
+
+bp = Blueprint(
+    "regen_snapshot", __name__, url_prefix="/admin/regenerar-snapshot"
+)
+
+
+_PAGE = """\
+<!doctype html>
+<html lang=es><head><meta charset=utf-8><title>Regenerar snapshot</title>
+<style>
+  body{font-family:system-ui;max-width:1100px;margin:24px auto;padding:0 12px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:12px}
+  th,td{border:1px solid #ddd;padding:4px 8px;text-align:right}
+  th:nth-child(2),td:nth-child(2),th:nth-child(8),td:nth-child(8){text-align:left}
+  .ok{background:#e7f5e8;padding:8px;border:1px solid #6c6;border-radius:4px}
+  .warn{background:#fff7d8;padding:8px;border:1px solid #cb8;border-radius:4px}
+  button{padding:8px 16px;font-weight:bold;background:#b00;color:#fff;border:0;
+         border-radius:4px;cursor:pointer;margin-top:12px}
+  input[type=number]{padding:4px 8px;width:80px}
+  form.inline{display:inline-block}
+  code{background:#eee;padding:2px 6px;border-radius:3px}
+</style>
+</head><body>
+<h1>Regenerar snapshot de scintela.historia</h1>
+<p>Borra los snapshots del mes target en <code>scintela.historia</code> y
+crea uno nuevo con el código actual. Útil cuando cambian las queries del
+balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
+
+<form method=GET style="margin-bottom:16px">
+  Año: <input type="number" name="anio" value="{{ anio }}" min="2020" max="2030">
+  Mes: <input type="number" name="mes" value="{{ mes }}" min="1" max="12">
+  <button type=submit style="background:#345;font-weight:normal">Mirar</button>
+</form>
+
+<h2>Snapshots actuales en {{ anio }}-{{ '%02d'|format(mes) }}</h2>
+{% if snapshots %}
+<table>
+  <thead><tr>
+    <th>id</th><th>fecha</th><th>patrimonio</th><th>cart</th><th>banco</th>
+    <th>ustock</th><th>fecha_crea</th><th>usuario_crea</th>
+  </tr></thead>
+  <tbody>
+    {% for s in snapshots %}
+    <tr>
+      <td>{{ s.id_historia }}</td>
+      <td>{{ s.fecha }}</td>
+      <td>{{ '%.2f'|format(s.patrimonio or 0) }}</td>
+      <td>{{ '%.2f'|format(s.cart or 0) }}</td>
+      <td>{{ '%.2f'|format(s.banco or 0) }}</td>
+      <td>{{ '%.2f'|format(s.ustock or 0) }}</td>
+      <td>{{ s.fecha_crea.strftime('%Y-%m-%d %H:%M') if s.fecha_crea else '' }}</td>
+      <td>{{ s.usuario_crea or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p><i>No hay snapshots para ese mes todavía.</i></p>
+{% endif %}
+
+<form method=POST style="margin-top:24px">
+  <input type=hidden name=anio value="{{ anio }}">
+  <input type=hidden name=mes value="{{ mes }}">
+
+  {% if aplicado %}
+  <div class=ok>
+    <b>✓ Regenerado.</b> Borradas {{ n_borrados }} filas, creada 1 nueva
+    (id={{ id_nuevo }}, patrimonio=${{ '%.2f'|format(patrimonio_nuevo) }}).
+  </div>
+  {% elif error %}
+  <div class=warn><b>Error:</b> {{ error }}</div>
+  {% else %}
+  <div class=warn>
+    <b>Acción destructiva:</b> esto va a borrar {{ snapshots|length }} fila(s) de
+    <code>scintela.historia</code> del mes y recalcular el snapshot del último
+    día del mes con las queries actuales. NO se hace backup automático.
+  </div>
+  <button type=submit name=aplicar value=1
+    onclick="return confirm('Borrar {{ snapshots|length }} snapshots de {{ anio }}-{{ mes }} y recrear?');">
+    REGENERAR SNAPSHOT {{ anio }}-{{ '%02d'|format(mes) }}
+  </button>
+  {% endif %}
+</form>
+
+<p style="margin-top:24px"><a href="/informes/balance">← Volver a balance</a></p>
+</body></html>
+"""
+
+
+@bp.route("/", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def index() -> Response:
+    hoy = today_ec()
+    try:
+        anio = int(request.values.get("anio") or hoy.year)
+        mes = int(request.values.get("mes") or hoy.month)
+    except (TypeError, ValueError):
+        anio, mes = hoy.year, hoy.month
+    mes = max(1, min(mes, 12))
+
+    aplicado = False
+    n_borrados = 0
+    id_nuevo: int | None = None
+    patrimonio_nuevo = 0.0
+    error: str | None = None
+
+    if request.method == "POST" and request.form.get("aplicar") == "1":
+        try:
+            from modules.informes import queries as iq
+            with db.tx() as conn:
+                # 1. Borrar TODOS los snapshots del mes target
+                rows = db.fetch_all(
+                    """
+                    SELECT id_historia FROM scintela.historia
+                     WHERE EXTRACT(YEAR FROM fecha) = %s
+                       AND EXTRACT(MONTH FROM fecha) = %s
+                    """,
+                    (anio, mes), conn=conn,
+                ) or []
+                n_borrados = len(rows)
+                if n_borrados:
+                    db.execute(
+                        """
+                        DELETE FROM scintela.historia
+                         WHERE EXTRACT(YEAR FROM fecha) = %s
+                           AND EXTRACT(MONTH FROM fecha) = %s
+                        """,
+                        (anio, mes), conn=conn,
+                    )
+            # 2. Recrear (fuera de la tx del DELETE — crear_snapshot_historia
+            #    abre su propia tx con advisory lock)
+            res = iq.crear_snapshot_historia(anio, mes, usuario="regen-admin")
+            if res.get("aplicado"):
+                aplicado = True
+                id_nuevo = res.get("id_historia")
+                # Re-fetch para el patrimonio nuevo
+                row = db.fetch_one(
+                    "SELECT patrimonio FROM scintela.historia WHERE id_historia = %s",
+                    (id_nuevo,),
+                ) or {}
+                patrimonio_nuevo = float(row.get("patrimonio") or 0)
+            else:
+                error = f"Re-creación falló: {res.get('razon')}"
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+
+    # Snapshot listing
+    snapshots = db.fetch_all(
+        """
+        SELECT id_historia, fecha, patrimonio, cart, banco, ustock,
+               fecha_crea, usuario_crea
+          FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %s
+           AND EXTRACT(MONTH FROM fecha) = %s
+         ORDER BY fecha DESC, id_historia DESC
+        """,
+        (anio, mes),
+    ) or []
+
+    return Response(
+        render_template_string(
+            _PAGE,
+            anio=anio, mes=mes,
+            snapshots=snapshots,
+            aplicado=aplicado,
+            n_borrados=n_borrados,
+            id_nuevo=id_nuevo,
+            patrimonio_nuevo=patrimonio_nuevo,
+            error=error,
+        ),
+        mimetype="text/html",
+    )
