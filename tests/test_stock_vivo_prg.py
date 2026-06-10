@@ -100,3 +100,23 @@ def test_editar_kg_fetch_manda_csrf():
     assert i > 0 and "X-CSRFToken" in tpl[i:i+600], (
         "el fetch de editar-kg no manda CSRF token"
     )
+
+
+def test_vqx_vivo_formula_prg():
+    """Stock Quí vivo (PRG L322: VQX = VQ0 + VQQ − ITIN), no el caché del
+    snapshot de historia ('stock químicos seguro muy mal' — dueña 2026-06-10)."""
+    src = _src()
+    assert 'tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "vq")' in src
+    assert "_vqq_mes" in src and "- ITIN" in src
+    from modules.informes import queries as iq
+    assert "vq" in iq._TARIFA_COLS_PREV
+
+
+def test_editar_kg_estima_desperdicio_e_importe():
+    """El ajuste manual imita la planilla del dBase: kgn con rinde promedio
+    (no kgn=kg) e importe con $/kg promedio (resta químicos de Stock Quí)."""
+    import inspect as _i
+    from modules.comparativa_tintoreria import views as v
+    src = _i.getsource(v.editar_kg_dbase)
+    assert "rinde" in src and "imp_est" in src and "kgn_est" in src
+    assert "VALUES (%s, 'MAN', 'AJUSTE MANUAL', %s, %s, 0, '', %s)" not in src

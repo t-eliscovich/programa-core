@@ -683,13 +683,39 @@ def editar_kg_dbase():
                 conn=conn,
             )
             if abs(delta) >= 0.001:
+                # TMT 2026-06-10 dueña ("¿restaste la tela cruda?", "275k
+                # me parece mucho"): el ajuste imita lo que pasa en el dBase
+                # al tipear la planilla — kgn con el DESPERDICIO promedio
+                # del mes (antes kgn=kg inflaba terminado) e importe con el
+                # $/kg promedio (antes importe=0 no restaba los químicos
+                # consumidos del Stock Quí → utilidad optimista). Son
+                # ESTIMACIONES: el sync trae los valores reales y absorbe
+                # esta fila (dBase gana por fecha).
+                prom = db.fetch_one(
+                    """
+                    SELECT COALESCE(SUM(kgn), 0) AS kr,
+                           COALESCE(SUM(kg), 0)  AS kt,
+                           COALESCE(SUM(importe), 0) AS itin
+                      FROM scintela.tinto
+                     WHERE fecha >= date_trunc('month', CURRENT_DATE)
+                       AND UPPER(TRIM(COALESCE(color,''))) NOT LIKE 'LAV%%'
+                       AND COALESCE(usuario_crea, '') <> %s
+                    """,
+                    (_KG_EDIT_MARKER,),
+                    conn=conn,
+                ) or {}
+                _kt = float(prom.get("kt") or 0)
+                rinde = (float(prom.get("kr") or 0) / _kt) if _kt > 0 else 0.957
+                ukg = (float(prom.get("itin") or 0) / _kt) if _kt > 0 else 0.0
+                kgn_est = round(delta * min(max(rinde, 0.90), 1.0), 1)
+                imp_est = round(delta * ukg, 2)
                 db.execute(
                     """
                     INSERT INTO scintela.tinto
                            (fecha, cod, color, kg, kgn, importe, stat, usuario_crea)
-                    VALUES (%s, 'MAN', 'AJUSTE MANUAL', %s, %s, 0, '', %s)
+                    VALUES (%s, 'MAN', 'AJUSTE MANUAL', %s, %s, %s, '', %s)
                     """,
-                    (fecha, delta, delta, _KG_EDIT_MARKER),
+                    (fecha, delta, kgn_est, imp_est, _KG_EDIT_MARKER),
                     conn=conn,
                 )
     except Exception as e:  # noqa: BLE001

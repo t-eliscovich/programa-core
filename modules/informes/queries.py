@@ -1164,7 +1164,7 @@ def iniciales_mes_actual() -> dict | None:
     )
 
 
-_TARIFA_COLS_PREV = {"um", "uk", "uf", "uq", "pre", "hilado", "tejido", "terminado"}
+_TARIFA_COLS_PREV = {"um", "uk", "uf", "uq", "pre", "hilado", "tejido", "terminado", "vq"}
 
 
 def tarifa_iniciales_mes_anterior(mesnum: int, yy: int, columna: str) -> float:
@@ -3859,6 +3859,31 @@ def informe_balance() -> dict:
     # Para que panel ACTIVO derecho "STOCK MP+PROD." muestre el MISMO
     # número que el TOTAL del panel STOCK izquierdo.
     vsto = stock_total_us
+
+    # ─── VQX vivo (PRG L322: VQX = VQ0 + VQQ − ITIN) ───────────────────
+    # TMT 2026-06-10 dueña ("stock químicos seguro muy mal"): vqx venía del
+    # ÚLTIMO SNAPSHOT de historia (uqui = lo que el dBase calculó en su
+    # última corrida) — caché congelado, igual que hilado/tejido. No se
+    # movía con compras Q nuevas ni con tintura cargada en PC. Ahora:
+    #   VQ0  = iniciales.vq del mes ANTERIOR (cierre — la fila del mes en
+    #          curso la reescribe el dBase en cada corrida)
+    #   VQQ  = compras tipo 'Q' del mes (live)
+    #   ITIN = importes de tinto del mes (live — incluye pc-carga/ajustes)
+    _vq0_prev = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "vq")
+    _vqq_mes = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS importe
+          FROM scintela.compra
+         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+           AND UPPER(COALESCE(tipo, '')) = 'Q'
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+        """
+    ) or {}
+    if _vq0_prev:
+        vqx = round(_vq0_prev + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
+    # si no hay iniciales del mes anterior, queda el fallback del snapshot
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
