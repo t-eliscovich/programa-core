@@ -1259,26 +1259,26 @@ def ventas_mes_corriente_resultado() -> dict:
 
 
 def ventas_mes_corriente_kg_fisico() -> float:
-    """Ventas del mes EN kg SIN filtro asinfo-backfill — para cálculo de stock físico.
+    """Ventas del mes EN kg SIN el filtro de backfill — para stock físico.
 
-    TMT 2026-06-10: `ventas_mes_corriente_resultado()` filtra `usuario_crea
-    != 'asinfo-backfill'` para que las facturas Asinfo cargadas con marker
-    backfill NO inflen la cartera (TOTF) ni cuenten como ventas del mes en
-    Resultados. Eso es correcto para "no contar lo que se trajo de Asinfo
+    TMT 2026-06-10: `ventas_mes_corriente_resultado()` aplica
+    NO_BACKFILL_WHERE para que las facturas traídas de Asinfo NO inflen la
+    cartera (TOTF) ni cuenten como ventas del mes en Resultados. Eso es correcto para "no contar lo que se trajo de Asinfo
     todavía". PERO esas facturas YA REPRESENTAN VENTAS FÍSICAS REALES — la
     mercadería salió del depósito. El cálculo de stock terminado_kg/tejido_kg
     debe descontar esas kg para que `vsto_display` (= kg × tarifas) refleje
     el stock real, no el "stock virtual asumiendo que esas ventas no
-    ocurrieron". Sin este filtro, terminado_kg infla por las kg vendidas
-    backfill que no se descuentan → vsto sube → patr sube → utilidad infla.
+    ocurrieron". Sin este "incluir todo", terminado_kg infla por las kg
+    vendidas que no se descuentan → vsto sube → patr sube → utilidad infla.
 
-    Esta función NO filtra backfill. Solo se usa en el cálculo de stock_kg
-    para que terminado/tejido reflejen kg físicos reales.
+    Esta función NO aplica el filtro A PROPÓSITO (no agregar
+    NO_BACKFILL_WHERE acá — hay un contract test que lo vigila). Solo se usa
+    en stock_kg para que terminado/tejido reflejen kg físicos reales.
     """
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(kg), 0) AS kg
-          FROM scintela.factura
+          FROM scintela.factura  -- kg-fisico-incluye-todo (a propósito)
          WHERE fecha >= date_trunc('month', CURRENT_DATE)
            AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
            AND (stat IS NULL OR stat <> 'X')

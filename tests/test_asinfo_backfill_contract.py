@@ -38,7 +38,8 @@ def app_client():
         with client.session_transaction() as sess:
             sess["user_id"] = 1
             sess["username"] = "tamara"
-            sess["permisos"] = {"facturas.crear", "facturas.ver"}
+            # list, no set: la session de Flask se serializa a JSON
+            sess["permisos"] = ["facturas.crear", "facturas.ver"]
         yield client
 
 
