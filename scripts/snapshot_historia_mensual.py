@@ -121,16 +121,17 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         bal = {}
 
     # Cartera viva al cierre — saldos > 0 con stat válido.
-    # Bug #2 fix (2026-06-04): excluir usuario_crea='asinfo-backfill' —
-    # las facturas backfilleadas de Asinfo son históricas ya contabilizadas
-    # (mismo filtro que el resto de informes/queries.py).
+    # TMT 2026-06-10 revert: filtro asinfo-backfill removido. La convención
+    # "no contar Asinfo hasta cierre" fue descartada: balance es 100% live,
+    # facturas Asinfo cuentan SIEMPRE como cartera real. El snapshot también
+    # debe ser consistente con la vista live (sino patant subestima y
+    # utilidad infla por el delta fantasma).
     cart = safe_one(
         """
         SELECT COALESCE(SUM(saldo), 0) AS v
         FROM scintela.factura
         WHERE COALESCE(saldo, 0) > 0
           AND (stat IS NULL OR stat IN ('Z','A','',' '))
-          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     ).get("v") or 0
 
@@ -180,7 +181,7 @@ def calcular_kpis(fecha_cierre: date) -> dict:
     ).get("v") or 0
 
     # Ventas del mes — kg y USD.
-    # Bug #2 fix (2026-06-04): excluir 'asinfo-backfill' (ver nota en cart).
+    # TMT 2026-06-10 revert: sin filtro asinfo-backfill (live = todo).
     ventas = safe_one(
         """
         SELECT COALESCE(SUM(kg), 0)      AS kvent,
@@ -188,13 +189,12 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         FROM scintela.factura
         WHERE fecha >= %s AND fecha <= %s
           AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
-          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (primer_dia, fecha_cierre),
     )
 
     # Compras del mes — kg y USD.
-    # Bug #2 fix (2026-06-04): excluir 'asinfo-backfill' (ver nota en cart).
+    # TMT 2026-06-10 revert: sin filtro asinfo-backfill.
     compras = safe_one(
         """
         SELECT COALESCE(SUM(kg), 0)      AS kcom,
@@ -202,7 +202,6 @@ def calcular_kpis(fecha_cierre: date) -> dict:
         FROM scintela.compra
         WHERE fecha >= %s AND fecha <= %s
           AND (stat IS NULL OR stat <> 'Y')
-          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (primer_dia, fecha_cierre),
     )
