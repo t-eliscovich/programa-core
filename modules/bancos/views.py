@@ -1083,16 +1083,17 @@ def nuevo_movimiento():
             )
             if r.get("dedupe"):
                 # TMT 2026-06-09: dedupe silencioso — el mov ya estaba.
-                flash(
+                msg = (
                     f"{label} por $ {r['importe']:.2f} ya estaba cargada "
-                    f"(mov #{r['id_transaccion']}) — no se duplicó.",
-                    "ok",
+                    f"(mov #{r['id_transaccion']}) — no se duplicó."
                 )
             else:
-                flash(
-                    f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
-                    "ok",
-                )
+                msg = f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}."
+            if r.get("side_effect"):
+                # TMT 2026-06-09 paridad dBase: contraparte creada a la vez
+                # (anticipo USD / retiro / caja).
+                msg += f" {r['side_effect']}."
+            flash(msg, "ok")
             return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
         except ValueError as e:
             flash(str(e), "warn")

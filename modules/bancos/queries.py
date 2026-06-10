@@ -5,9 +5,156 @@ está históricamente desconfiable. Mostramos el saldo stored y entre paréntesi
 el saldo derivado (suma corrida). Durante la migración sirve como sanity check.
 """
 
+import re
+
 import db
 from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
+
+
+def _detectar_cta_usd(concepto: str, prov: str | None) -> tuple[str | None, str]:
+    """Detecta si un ND manual es un anticipo USD — paridad dBase BANCOS.PRG.
+
+    Regla legacy (línea ~212):
+        CASE (PROV='IN' AND LEFT(CC,2) ∈ TOT+'II') OR (DOC='ND' AND LEFT(CC,2) ∈ TOT)
+        → INSERT en DOLARES con CTA=LEFT(CC,2), CONCEPTO=SUBSTR(CC,4,15)
+
+    TOT (cuentas USD válidas) acá = DISTINCT cta ya existentes en
+    scintela.dolares. Devuelve (cta, concepto_para_dolares); cta=None si el
+    movimiento no es anticipo (queda solo en el banco, como siempre).
+    """
+    c = (concepto or "").strip().upper()
+    p = (prov or "").strip().upper()
+    if not c and not p:
+        return None, c
+    try:
+        # TOT del dBase = códigos de proveedor activos (FABRICA.DBF). Acá:
+        # proveedores activos ∪ cuentas que ya existen en dolares.
+        rows = db.fetch_all(
+            """
+            SELECT DISTINCT UPPER(TRIM(cta)) AS cta FROM scintela.dolares
+             WHERE TRIM(COALESCE(cta,'')) <> ''
+            UNION
+            SELECT DISTINCT UPPER(TRIM(codigo_prov)) FROM scintela.proveedor
+             WHERE COALESCE(activo, '1') NOT IN ('0', 'N')
+               AND LENGTH(TRIM(COALESCE(codigo_prov,''))) = 2
+            """
+        ) or []
+        cuentas = {r["cta"] for r in rows}
+    except Exception:
+        return None, c
+    # 1) Prefijo explícito IN.XX / IN XX (mismo formato que emitir-cheque).
+    m = re.match(r"^IN[. ]+([A-Z0-9]{2})(?:[. ]+(.*))?$", c)
+    if m and (m.group(1) in cuentas or m.group(1) == "II"):
+        return m.group(1), ((m.group(2) or "").strip() or c)[:50]
+    # 2) dBase ND: concepto "XX resto" con XX cuenta USD conocida.
+    m = re.match(r"^([A-Z0-9]{2})[. ]+(.+)$", c)
+    if m and m.group(1) in cuentas:
+        return m.group(1), m.group(2).strip()[:50]
+    # 3) prov del form = cuenta USD conocida.
+    if p and p in cuentas:
+        return p, (c or f"ANTICIPO {p}")[:50]
+    return None, c
+
+
+def _routear_mov_simple(
+    conn,
+    *,
+    documento: str,
+    importe_f: float,
+    fecha,
+    concepto_in: str,
+    prov: str | None,
+    usuario: str,
+) -> dict:
+    """Side effects de un movimiento simple manual — paridad dBase BANCOS.PRG.
+
+    El dBase, al cargar movimientos del banco, los RUTEA según prov/concepto
+    (mismo CASE, mismas convenciones). Acá replicamos los casos que la carga
+    manual de PC necesita, TODO en la misma transacción que el insert
+    bancario (banco baja y la contraparte sube A LA VEZ, pedido Tamara):
+
+      1. ND anticipo USD  (PRG ~212): concepto 'IN.XX …' / 'XX …' o prov=XX
+         con XX proveedor/cuenta USD → INSERT scintela.dolares (anticipo vivo).
+      2. ND/DE retiro RR  (PRG ~222): prov='RR' o concepto 'RR …' →
+         INSERT scintela.retiros (ret=+imp si ND, −imp si DE devolución;
+         de = iniciales en concepto pos 4-5, como SUBSTR(CC,4,2)).
+      3. ND a caja        (PRG ~233): concepto empieza 'CAJA' →
+         INSERT scintela.caja tipo 'E' (la plata pasa del banco a la caja).
+
+    Casos del PRG NO ruteados acá (siguen su flujo propio en PC): compras a
+    proveedor (case ~195 — wizard emitir-cheque), INOP→posdat (~240, viene
+    del sync), espejo posdatado ST='P' (reconcile POSDAT).
+
+    Devuelve {destino_table, destino_id, meta, side} — side es el texto
+    para el flash; destino_* para linkear el mov_doble.
+    """
+    out = {"destino_table": None, "destino_id": None, "meta": {}, "side": None}
+    c = (concepto_in or "").strip().upper()
+    p = (prov or "").strip().upper()
+
+    # 1) Anticipo USD (solo ND).
+    if documento == "ND":
+        cta_usd, concepto_usd = _detectar_cta_usd(concepto_in, prov)
+        if cta_usd:
+            row = db.execute_returning(
+                """
+                INSERT INTO scintela.dolares
+                    (fecha, cta, importe, concepto, usuario_crea)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id_dolares
+                """,
+                (fecha, cta_usd, importe_f,
+                 (concepto_usd or f"ANTICIPO {cta_usd}")[:50], usuario[:50]),
+                conn=conn,
+            )
+            id_dol = (row or {}).get("id_dolares")
+            out.update(destino_table="dolares", destino_id=id_dol,
+                       meta={"id_dolares": id_dol, "cta_usd": cta_usd},
+                       side=f"Anticipo USD #{id_dol} creado en cuenta {cta_usd} (ver Anticipos)")
+            return out
+
+    # 2) Retiro RR (ND saca, DE devuelve).
+    if documento in ("ND", "DE") and (p == "RR" or re.match(r"^RR[. ]", c)):
+        de_owner = c[3:5].strip() if c.startswith("RR") else (p if p != "RR" else "")
+        ret = importe_f if documento == "ND" else -importe_f
+        row = db.execute_returning(
+            """
+            INSERT INTO scintela.retiros
+                (fecha, ret, de, concepto, usuario_crea)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id_retiro
+            """,
+            (fecha, ret, (de_owner or None) and de_owner[:5],
+             (concepto_in or "RETIRO")[:100], usuario[:50]),
+            conn=conn,
+        )
+        id_ret = (row or {}).get("id_retiro")
+        out.update(destino_table="retiros", destino_id=id_ret,
+                   meta={"id_retiro": id_ret},
+                   side=("Retiro" if ret >= 0 else "Devolución de retiro")
+                        + f" #{id_ret} registrado (URET)")
+        return out
+
+    # 3) Banco → caja (solo ND con concepto CAJA…).
+    if documento == "ND" and c.startswith("CAJA"):
+        import caja_helpers
+        mov_caja = caja_helpers.insert_movimiento_caja(
+            conn,
+            fecha=fecha,
+            tipo="E",
+            importe=importe_f,
+            concepto=(concepto_in or "ND BANCO")[:100],
+            usuario=usuario,
+        )
+        id_caja = mov_caja.get("id_caja")
+        out.update(destino_table="caja", destino_id=id_caja,
+                   meta={"id_caja": id_caja},
+                   side=f"Entrada a caja #{id_caja} "
+                        f"(saldo caja $ {mov_caja.get('saldo_nuevo', 0):,.2f})")
+        return out
+
+    return out
 
 
 def lista_bancos() -> list[dict]:
@@ -739,23 +886,65 @@ def crear_movimiento_simple(
         if prev:
             prev_conc = (prev.get("concepto") or "").strip()
             if not prev_conc and concepto_in:
-                # (a) completar la fila pelada en vez de duplicar.
-                db.execute(
-                    """
-                    UPDATE scintela.transacciones_bancarias
-                       SET concepto = %s,
-                           prov = COALESCE(NULLIF(TRIM(COALESCE(prov,'')),''), %s),
-                           usuario_modifica = %s,
-                           fecha_modifica = NOW()
-                     WHERE id_transaccion = %s
-                    """,
-                    (concepto_in, (prov or None), usuario[:50],
-                     prev["id_transaccion"]),
-                )
+                # (a) completar la fila pelada en vez de duplicar. El concepto
+                # nuevo puede revelar un side effect dBase (anticipo/retiro/
+                # caja) que la fila pelada no creó → router acá también.
+                with db.tx() as conn_dd:
+                    db.execute(
+                        """
+                        UPDATE scintela.transacciones_bancarias
+                           SET concepto = %s,
+                               prov = COALESCE(NULLIF(TRIM(COALESCE(prov,'')),''), %s),
+                               usuario_modifica = %s,
+                               fecha_modifica = NOW()
+                         WHERE id_transaccion = %s
+                        """,
+                        (concepto_in, (prov or None), usuario[:50],
+                         prev["id_transaccion"]),
+                        conn=conn_dd,
+                    )
+                    ruta_dd = _routear_mov_simple(
+                        conn_dd,
+                        documento=documento,
+                        importe_f=importe_f,
+                        fecha=fecha,
+                        concepto_in=concepto_in,
+                        prov=prov,
+                        usuario=usuario,
+                    )
+                    if ruta_dd["destino_id"]:
+                        import json as _json
+                        db.execute(
+                            """
+                            UPDATE scintela.mov_doble
+                               SET destino_table = %s,
+                                   destino_id = %s,
+                                   metadata = COALESCE(metadata, '{}'::jsonb)
+                                              || %s::jsonb
+                             WHERE origen_table = 'transacciones_bancarias'
+                               AND origen_id = %s
+                               AND estado = 'activo'
+                            """,
+                            (ruta_dd["destino_table"], ruta_dd["destino_id"],
+                             _json.dumps(ruta_dd["meta"] or {}),
+                             prev["id_transaccion"]),
+                            conn=conn_dd,
+                        )
+                        if ruta_dd["destino_table"] == "retiros":
+                            db.execute(
+                                "UPDATE scintela.retiros "
+                                "SET id_transaccion_bancaria = %s "
+                                "WHERE id_retiro = %s",
+                                (prev["id_transaccion"], ruta_dd["destino_id"]),
+                                conn=conn_dd,
+                            )
                 return {
                     "id_transaccion": prev["id_transaccion"],
                     "saldo_nuevo": float(prev.get("saldo") or 0),
                     "id_mov_doble": None,
+                    "id_dolares": ruta_dd["meta"].get("id_dolares"),
+                    "cta_usd": ruta_dd["meta"].get("cta_usd"),
+                    "side_effect": ruta_dd["side"],
                     "no_banco": no_banco,
                     "importe": importe_f,
                     "dedupe": "completado",
@@ -785,6 +974,10 @@ def crear_movimiento_simple(
 
     concepto_clean = concepto_in
 
+    # TMT 2026-06-09 (pedido Tamara, paridad dBase): el movimiento manual se
+    # rutea IGUAL que BANCOS.PRG y TODO en la misma transacción — el banco
+    # baja y la contraparte (anticipo USD / retiro / caja) sube a la vez.
+    # Si no matchea ningún caso, queda solo en el banco (como siempre).
     with db.tx() as conn:
         mov = bank_helpers.insert_movimiento_bancario(
             conn,
@@ -797,16 +990,27 @@ def crear_movimiento_simple(
             prov=(prov or None),
             usuario=usuario,
         )
-        # Auto-link: origen=destino = la fila bancaria misma (no hay
-        # contraparte tipo factura/posdat). Esto permite reversarlo
-        # individualmente desde /historial usando id_mov_doble.
+
+        ruta = _routear_mov_simple(
+            conn,
+            documento=documento,
+            importe_f=importe_f,
+            fecha=fecha,
+            concepto_in=concepto_in,
+            prov=prov,
+            usuario=usuario,
+        )
+
+        # Auto-link: origen = la fila bancaria. Destino = la contraparte
+        # creada por el router (dolares/retiros/caja — visible en /historial
+        # y el reverso deshace ambos), sino la fila bancaria misma.
         id_md = _md.registrar(
             conn=conn,
             tipo=tipo_md,
             origen_table="transacciones_bancarias",
             origen_id=mov.get("id_transaccion"),
-            destino_table="transacciones_bancarias",
-            destino_id=mov.get("id_transaccion"),
+            destino_table=ruta["destino_table"] or "transacciones_bancarias",
+            destino_id=ruta["destino_id"] or mov.get("id_transaccion"),
             importe=importe_f,
             fecha=fecha,
             concepto=f"{documento} {concepto_clean}".strip()[:200],
@@ -815,8 +1019,18 @@ def crear_movimiento_simple(
                 "no_banco": no_banco,
                 "documento": documento,
                 "prov": prov or "",
+                **(ruta["meta"] or {}),
             },
         )
+
+        # Link inverso retiros→banco (columna dedicada).
+        if ruta["destino_table"] == "retiros" and ruta["destino_id"]:
+            db.execute(
+                "UPDATE scintela.retiros SET id_transaccion_bancaria = %s "
+                "WHERE id_retiro = %s",
+                (mov.get("id_transaccion"), ruta["destino_id"]),
+                conn=conn,
+            )
 
     return {
         "id_transaccion": mov.get("id_transaccion"),
@@ -825,6 +1039,9 @@ def crear_movimiento_simple(
         "documento":      documento,
         "importe":        importe_f,
         "no_banco":       no_banco,
+        "id_dolares":     ruta["meta"].get("id_dolares"),
+        "cta_usd":        ruta["meta"].get("cta_usd"),
+        "side_effect":    ruta["side"],
     }
 
 
@@ -917,6 +1134,61 @@ def reversar_movimiento_simple(
             concepto=concepto_rev,
             usuario=usuario,
         )
+
+        # TMT 2026-06-09: si el movimiento original creó una contraparte
+        # (paridad dBase: anticipo USD / retiro / caja), el reverso la
+        # deshace también — todo en la misma transacción.
+        meta = md_orig.get("metadata") or {}
+        if isinstance(meta, str):
+            import json as _json
+            try:
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+
+        # Anticipo USD → st='X' (anulado, deja de sumar a ANTICIPOS). Si ya
+        # fue consumido por un BAP (st='B'), bloqueamos con mensaje claro.
+        id_dol = meta.get("id_dolares")
+        if id_dol:
+            dol = db.fetch_one(
+                "SELECT id_dolares, st FROM scintela.dolares WHERE id_dolares = %s",
+                (id_dol,), conn=conn,
+            )
+            if dol:
+                st_dol = (dol.get("st") or "").strip()
+                if st_dol:
+                    raise ValueError(
+                        f"El anticipo USD #{id_dol} ligado a esta ND ya fue "
+                        f"aplicado (st='{st_dol}') — resolvé el anticipo en "
+                        f"/dolares antes de reversar la ND."
+                    )
+                db.execute(
+                    "UPDATE scintela.dolares SET st = 'X', "
+                    "usuario_modifica = %s, fecha_modifica = NOW() "
+                    "WHERE id_dolares = %s",
+                    (usuario[:50], id_dol), conn=conn,
+                )
+
+        # Retiro → borrar la fila (URET vuelve a su valor).
+        id_ret = meta.get("id_retiro")
+        if id_ret:
+            db.execute(
+                "DELETE FROM scintela.retiros WHERE id_retiro = %s",
+                (id_ret,), conn=conn,
+            )
+
+        # Caja → borrar la entrada + walk-forward de saldos de caja.
+        id_caja = meta.get("id_caja")
+        if id_caja:
+            import caja_helpers
+            db.execute(
+                "DELETE FROM scintela.caja WHERE id_caja = %s",
+                (id_caja,), conn=conn,
+            )
+            try:
+                caja_helpers.recompute_saldos_desde(conn, ancla_id=int(id_caja))
+            except Exception:
+                pass  # sin filas posteriores no hay nada que recomputar
 
         # mov_doble del reverso, linkeado al original via id_original.
         id_md_rev = _md.registrar(
