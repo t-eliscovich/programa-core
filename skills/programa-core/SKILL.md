@@ -1924,3 +1924,32 @@ LEFT JOIN simple a `scintela.cliente` puede generar fanout si un `codigo_cli` ti
 
 Si después de un cambio cualquiera de las 3 alerta, el cambio rompió algo. Endpoint canónico de salud del sistema.
 
+
+## /admin/facturas-reconcile — dry-run PC vs FACTURAS.DBF (TMT 2026-06-10)
+
+Automatiza la verificación de superset del estudio dBase-vs-PC: subís el
+tarball (el mismo de /admin/dbase-sync) y reporta, SIN ESCRIBIR NUNCA
+(el "apply" de facturas ES el sync normal):
+
+- **[A] SOLO dBASE** — pendiente de sync; el próximo /admin/dbase-sync las trae.
+- **[B] SOLO PC backfill Asinfo** — legítimas; el sync las preserva (delete_where).
+- **[C] SOLO PC creadas directo** (usuario_crea ≠ dbf-import/backfill) — ⚠ el
+  próximo sync las BORRA (delete_where borra todo lo no-backfill). Si la fábrica
+  no las tipeó en dBase, se pierden — este bucket es el valor del reporte.
+- **[D] SOLO PC huérfanas dbf-import** — el dBase las borró/re-claveó; el sync las saca.
+- **[E] DIFFS** — misma (codigo_cli, numf), distinta firma (importe, abono, saldo,
+  stat) = cobranza tipeada en dBase post-sync (timing esperado).
+
+Cierra con identidad `TOTF_PC = TOTF_dBase − A + B + C + D + ΔE` (residuo 0,00
+por construcción = self-check del bucketeo).
+
+Detalles que importan:
+- Pareo por (codigo_cli, numf) **multiset** (hay numf duplicados); numf=0 (477
+  filas sin numerar en el DBF) cae a (codigo_cli, importe).
+- Lector DBF = el `_map_factura` REAL de scripts/import_dbf.py cargado por path
+  (importlib) → paridad garantizada con lo que el sync importaría, incluyendo
+  el remap de stat legacy (V→A) y los descartes.
+- Verificado contra FACTURAS.DBF fresco 10/06: TOTF(ZA) = 4.949.730,58 = el
+  número del estudio, exacto al centavo.
+- Código: modules/admin_dbase/facturas_reconcile_view.py · tests:
+  tests/test_facturas_reconcile.py (plan puro, 8 tests).
