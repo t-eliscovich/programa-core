@@ -238,9 +238,76 @@ def test_facturas_totales_robusto_con_nulls_y_strings(monkeypatch):
 def _reset_lote_caches():
     service._STOCK_LOTE_CACHE.clear()
     service._STOCK_LOTE_TOTALES_CACHE.clear()
+    service._EN_PROCESO_CACHE.clear()
     yield
     service._STOCK_LOTE_CACHE.clear()
     service._STOCK_LOTE_TOTALES_CACHE.clear()
+    service._EN_PROCESO_CACHE.clear()
+
+
+# ---------------------------------------------------------------------------
+# stock_en_proceso (WIP entre pasos)
+# ---------------------------------------------------------------------------
+
+
+def test_stock_en_proceso_agrega_y_filtra():
+    rows = [
+        # Tejeduría: en_proceso > 0 → entra al detalle
+        {"id_bodega": 52, "oft": "OFT-1", "producto": "TC A", "prod_codigo": "TCA",
+         "planif": 100, "fab": 60, "issued": 100, "en_proceso": 40},
+        # Tintorería: en_proceso ~0 → NO entra al detalle pero sí suma al paso
+        {"id_bodega": 53, "oft": "OFT-2", "producto": "PT B", "prod_codigo": "PTB",
+         "planif": 50, "fab": 50, "issued": 50, "en_proceso": 0},
+        # fila corrupta → except, se saltea
+        {"id_bodega": None, "oft": "X", "issued": 1, "fab": 0, "en_proceso": 1},
+    ]
+    with patch.object(metabase_client, "fetch_dataset", return_value=rows):
+        out = service.stock_en_proceso()
+    pasos = {p["id_bodega"]: p for p in out["pasos"]}
+    assert pasos[52]["en_proceso"] == 40
+    assert pasos[52]["n_ofts"] == 1
+    assert pasos[53]["n_ofts"] == 1
+    # solo la OFT con en_proceso>0 está en el detalle
+    assert [o["oft"] for o in out["ofts"]] == ["OFT-1"]
+    assert "Tejedur" in pasos[52]["paso"]
+
+
+def test_stock_en_proceso_cachea():
+    rows = [{"id_bodega": 52, "oft": "O", "producto": "p", "prod_codigo": "p",
+             "planif": 1, "fab": 0, "issued": 1, "en_proceso": 1}]
+    with patch.object(metabase_client, "fetch_dataset", return_value=rows) as m:
+        service.stock_en_proceso()
+        service.stock_en_proceso()  # 2ª vez sale del cache
+    assert m.call_count == 1
+
+
+def test_vista_en_proceso_filtro_y_csv(app, fake_db):
+    c = _login_informes(app, fake_db)
+    data = {
+        "pasos": [{"id_bodega": 52, "paso": "Tejeduría (Hilo → Tela Cruda)", "issued": 100.0,
+                   "producido": 60.0, "en_proceso": 40.0, "n_ofts": 1}],
+        "ofts": [{"id_bodega": 52, "paso": "Tejeduría (Hilo → Tela Cruda)", "oft": "OFT-1",
+                  "producto": "TC A", "prod_codigo": "TCA", "planif": 100.0, "fab": 60.0,
+                  "issued": 100.0, "en_proceso": 40.0}],
+    }
+    with patch.object(service, "stock_en_proceso", return_value=data):
+        r = c.get("/stock/en-proceso?paso=52")
+        assert r.status_code == 200
+        assert b"OFT-1" in r.data
+        # paso inválido → no filtra, no rompe
+        r2 = c.get("/stock/en-proceso?paso=abc")
+        assert r2.status_code == 200
+        rc = c.get("/stock/en-proceso?paso=52&export=csv")
+        assert rc.status_code == 200
+        assert "text/csv" in rc.headers["Content-Type"]
+
+
+def test_vista_en_proceso_error_no_rompe(app, fake_db):
+    c = _login_informes(app, fake_db)
+    with patch.object(service, "stock_en_proceso", side_effect=RuntimeError("asinfo caído")):
+        r = c.get("/stock/en-proceso")
+    assert r.status_code == 200
+    assert b"asinfo" in r.data.lower() or b"Error" in r.data
 
 
 def test_stock_lote_bodega_invalida_no_consulta():
