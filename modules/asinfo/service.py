@@ -697,6 +697,59 @@ _IMPORT_TTL_SECS = 300  # 5 minutos
 _IMPORT_CACHE: dict = {}
 
 
+def cliente_ficha(codigos: list[str]) -> dict[str, dict]:
+    """Ficha básica (nombre, RUC) de clientes por código, desde Asinfo.
+
+    TMT 2026-06-10: los clientes nuevos del dBase llegan a PC sin ficha
+    (CLIENTES.DBF viaja con semanas de atraso), pero Asinfo SIEMPRE tiene
+    la razón social y el RUC (factura electrónica SRI). Este helper la
+    trae vía Metabase para que el auto-create de cargar-desde-asinfo y el
+    backfill /admin/clientes-ficha-asinfo no dejen clientes "(ficha
+    pendiente)".
+
+    Fail-soft: devuelve {} si Metabase está caído / sin config. Los
+    códigos se sanitizan (solo A-Z0-9), el resto se descarta.
+
+    Returns:
+        {CODIGO: {"nombre": str, "ruc": str}} — solo los encontrados.
+    """
+    import re as _re
+    cods = sorted({
+        c for c in ((x or "").strip().upper() for x in codigos)
+        if c and _re.fullmatch(r"[A-Z0-9]{1,10}", c)
+    })
+    if not cods or not metabase_client.disponible():
+        return {}
+    in_list = ", ".join(f"'{c}'" for c in cods)
+    # `identificacion` puede no existir en todas las versiones del schema —
+    # probamos con RUC y caemos a sin-RUC si la query falla.
+    sql_con_ruc = f"""
+        SELECT e.codigo,
+               COALESCE(NULLIF(e.nombre_comercial, ''), e.nombre_fiscal, '') AS nombre,
+               COALESCE(e.identificacion, '') AS ruc
+          FROM empresa e
+         WHERE e.codigo IN ({in_list})
+    """
+    sql_sin_ruc = f"""
+        SELECT e.codigo,
+               COALESCE(NULLIF(e.nombre_comercial, ''), e.nombre_fiscal, '') AS nombre,
+               '' AS ruc
+          FROM empresa e
+         WHERE e.codigo IN ({in_list})
+    """
+    rows = metabase_client.fetch_dataset(2, sql_con_ruc, max_results=len(cods) + 5)
+    if not rows:
+        rows = metabase_client.fetch_dataset(2, sql_sin_ruc, max_results=len(cods) + 5)
+    out: dict[str, dict] = {}
+    for r in rows or []:
+        cod = str(r.get("codigo") or "").strip().upper()
+        nombre = str(r.get("nombre") or "").strip()
+        if cod and nombre:
+            out[cod] = {"nombre": nombre[:200],
+                        "ruc": str(r.get("ruc") or "").strip()[:16]}
+    return out
+
+
 def importaciones_asinfo(limite: int = 400) -> list[dict]:
     """Lista de importaciones del ERP, con su Nota (código de cruce).
 

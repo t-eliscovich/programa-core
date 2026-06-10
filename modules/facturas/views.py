@@ -1045,15 +1045,28 @@ def _resolver_cliente_asinfo(
     # de tests si — drift), asi que ON CONFLICT explota con "no unique or
     # exclusion constraint". WHERE NOT EXISTS logra el mismo no-duplicar
     # sin depender del constraint. (probado en prod 2026-06-10)
+    # TMT 2026-06-10: traer nombre/RUC de Asinfo al crear (la razón social
+    # SIEMPRE está en el ERP — factura electrónica SRI). Fail-soft: si
+    # Metabase no responde, el cliente nace sin ficha y la completa después
+    # /admin/clientes-ficha-asinfo o el próximo CLIENTES.DBF.
+    nombre = ruc = None
+    try:
+        from modules.asinfo import service as _asinfo_svc
+        ficha = _asinfo_svc.cliente_ficha([codigo_cli, nuevo]) or {}
+        f = ficha.get(codigo_cli) or ficha.get(nuevo) or {}
+        nombre = (f.get("nombre") or "").strip() or None
+        ruc = (f.get("ruc") or "").strip() or None
+    except Exception:  # noqa: BLE001
+        pass
     db.execute(
         """
-        INSERT INTO scintela.cliente (codigo_cli, usuario_crea)
-        SELECT %s, %s
+        INSERT INTO scintela.cliente (codigo_cli, nombre, ruc, usuario_crea)
+        SELECT %s, %s, %s, %s
          WHERE NOT EXISTS (
                SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s
          )
         """,
-        (nuevo, (usuario or "asinfo")[:50], nuevo),
+        (nuevo, nombre, ruc, (usuario or "asinfo")[:50], nuevo),
     )
     return nuevo, True
 

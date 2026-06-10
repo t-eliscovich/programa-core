@@ -526,9 +526,11 @@ def test_resolver_cliente_faltante_auto_crea(monkeypatch):
     cod, creado = views._resolver_cliente_asinfo("NUEVO", "tam")
     assert (cod, creado) == ("NUEVO", True)
     assert len(inserts) == 1
+    # params: (codigo, nombre, ruc, usuario, codigo_where) — nombre/ruc
+    # vienen de Asinfo (None acá porque Metabase no está configurado)
     assert inserts[0][0] == "NUEVO"
-    assert inserts[0][1] == "tam"
-    assert inserts[0][2] == "NUEVO"  # param del WHERE NOT EXISTS
+    assert inserts[0][3] == "tam"
+    assert inserts[0][4] == "NUEVO"  # param del WHERE NOT EXISTS
 
 
 def test_resolver_cliente_normaliza_y_trunca(monkeypatch):
@@ -536,7 +538,7 @@ def test_resolver_cliente_normaliza_y_trunca(monkeypatch):
     cod, creado = views._resolver_cliente_asinfo("  abcdef ", "u" * 80)
     assert creado is True
     assert cod == "ABCDE"  # upper + varchar(5)
-    assert len(inserts[0][1]) == 50  # usuario truncado a varchar(50)
+    assert len(inserts[0][3]) == 50  # usuario truncado a varchar(50)
 
 
 def test_resolver_guard_factura_ya_cargada_otro_cli_auto_alias(monkeypatch):
@@ -591,3 +593,31 @@ def test_resolver_guard_numf_libre_crea_normal(monkeypatch):
     )
     assert (cod, creado) == ("NUEVO", True)
     assert len(inserts) == 1 and aliases_creados == []
+
+
+# ─── cliente_ficha desde Asinfo (TMT 2026-06-10) ───────────────────────────
+
+def test_cliente_ficha_sanitiza_codigos_y_mapea(monkeypatch):
+    from modules.asinfo import service as svc
+    from modules._lib import metabase_client as mc
+    capturas = []
+
+    def fake_fetch_dataset(db_id, sql, max_results=None):
+        capturas.append((db_id, sql))
+        return [{"codigo": "AQN", "nombre": "ANA QUISPE NUÑEZ", "ruc": "1712345678001"}]
+
+    monkeypatch.setattr(mc, "disponible", lambda: True)
+    monkeypatch.setattr(mc, "fetch_dataset", fake_fetch_dataset)
+    out = svc.cliente_ficha(["aqn", "x'; DROP TABLE--", "", None, "MNM"])
+    assert out == {"AQN": {"nombre": "ANA QUISPE NUÑEZ", "ruc": "1712345678001"}}
+    db_id, sql = capturas[0]
+    assert db_id == 2
+    assert "'AQN'" in sql and "'MNM'" in sql
+    assert "DROP" not in sql  # el código inválido fue descartado
+
+
+def test_cliente_ficha_sin_metabase_devuelve_vacio(monkeypatch):
+    from modules.asinfo import service as svc
+    from modules._lib import metabase_client as mc
+    monkeypatch.setattr(mc, "disponible", lambda: False)
+    assert svc.cliente_ficha(["AQN"]) == {}

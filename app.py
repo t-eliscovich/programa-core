@@ -406,8 +406,10 @@ def create_app() -> Flask:
     # completa dirección/teléfono/RUC/provincia desde CLIENTES.DBF (que no entra
     # al sync normal) y agrega los clientes que falten. Dry-run por defecto.
     from modules.admin_dbase.clientes_import_view import bp as clientes_import_bp
+    from modules.admin_dbase.ficha_asinfo_view import bp as ficha_asinfo_bp
 
     app.register_blueprint(clientes_import_bp)
+    app.register_blueprint(ficha_asinfo_bp)
 
     # Cleanup one-off — marcar facturas Asinfo retroactivas como
     # usuario_crea='asinfo-backfill'. TMT 2026-06-10.
