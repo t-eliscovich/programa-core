@@ -37,12 +37,28 @@ _PAGE = """\
   .warn{background:#fff7d8;padding:8px;border:1px solid #cb8;border-radius:4px}
   button{padding:8px 16px;font-weight:bold;background:#b00;color:#fff;border:0;
          border-radius:4px;cursor:pointer;margin-top:12px}
+  button.restore{background:#0a0;font-weight:bold;color:#fff}
   input[type=number]{padding:4px 8px;width:80px}
   form.inline{display:inline-block}
   code{background:#eee;padding:2px 6px;border-radius:3px}
 </style>
 </head><body>
 <h1>Regenerar snapshot de scintela.historia</h1>
+
+<div style="background:#fee;border:1px solid #f00;padding:8px;margin:8px 0;border-radius:4px">
+  <b>RESTAURAR snapshot 2026-05-31 original (id 205, perdido por bug
+  balance_components_as_of)</b><br>
+  Si el snapshot del 31/05 quedó con patrimonio bajo ($15M) tras un regen
+  fallido, este botón lo restaura con los valores conocidos del original
+  (patrimonio=20469347).
+  <form method=POST class=inline>
+    <input type=hidden name=restore_205 value=1>
+    <button class=restore type=submit
+      onclick="return confirm('Restaurar snapshot 31/05 a valores del id=205?');">
+      RESTAURAR 2026-05-31 (id 205)
+    </button>
+  </form>
+</div>
 <p>Borra los snapshots del mes target en <code>scintela.historia</code> y
 crea uno nuevo con el código actual. Útil cuando cambian las queries del
 balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
@@ -126,7 +142,50 @@ def index() -> Response:
     patrimonio_nuevo = 0.0
     error: str | None = None
 
-    if request.method == "POST" and request.form.get("aplicar") == "1":
+    # Botón "restore_205" — restaura el snapshot 31/05 con valores hardcoded
+    # del id=205 que se perdió cuando regen falló por balance_components_as_of
+    # incompleto. TMT 2026-06-10 fix de emergencia.
+    if request.method == "POST" and request.form.get("restore_205") == "1":
+        try:
+            with db.tx() as conn:
+                # Borrar TODOS los snapshots del 2026-05
+                db.execute(
+                    """
+                    DELETE FROM scintela.historia
+                     WHERE EXTRACT(YEAR FROM fecha) = 2026
+                       AND EXTRACT(MONTH FROM fecha) = 5
+                    """,
+                    conn=conn,
+                )
+                # INSERT con valores conocidos del id=205 original
+                # (vistos en /informes/balance/utilidad-debug pre-regen)
+                res = db.execute_returning(
+                    """
+                    INSERT INTO scintela.historia
+                        (fecha, stock, kcom, ktej, ktin, ustock, uqui, kvent,
+                         uvent, costo, ucom, utej, utin, gasto, gstotal,
+                         banco, cart, deuda, retiro, patrimonio, anticipos,
+                         dolar, maquinaria, realty, usret, usuti,
+                         fecha_crea, usuario_crea)
+                    VALUES ('2026-05-31'::date,
+                            2323544, 173823, 331207, 329103, 7689579,
+                            232546, 295688, 2538201, 3074260, 472036,
+                            253886, 297291, 255884, 807061,
+                            2600053, 7055192, 2150418, 241600,
+                            20469347, 1493681, 0,
+                            1140800, 2407914, 241600, 595061,
+                            CURRENT_TIMESTAMP, 'restore-original-205')
+                    RETURNING id_historia
+                    """,
+                    conn=conn,
+                )
+                id_nuevo = int(res["id_historia"]) if res else None
+                patrimonio_nuevo = 20469347.0
+                aplicado = True
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+
+    elif request.method == "POST" and request.form.get("aplicar") == "1":
         try:
             from modules.informes import queries as iq
             with db.tx() as conn:
