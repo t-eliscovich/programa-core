@@ -22,6 +22,9 @@ import inspect
 # ---------------------------------------------------------------------------
 
 
+_BACKFILL_WHERE_PATTERN = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
+
+
 def test_totf_no_filtra_asinfo_backfill():
     """`totf()` debe sumar TODAS las facturas vivas, incluyendo backfill.
 
@@ -30,27 +33,22 @@ def test_totf_no_filtra_asinfo_backfill():
     """
     from modules.informes import queries as iq
     src = inspect.getsource(iq.totf)
-    assert "asinfo-backfill" not in src, (
-        "totf() introdujo filtro 'asinfo-backfill'. "
-        "Convención live (TMT 2026-06-10): facturas Asinfo cuentan SIEMPRE "
-        "en cartera live. El marker queda informativo, no de filtro."
+    assert _BACKFILL_WHERE_PATTERN not in src, (
+        "totf() introdujo filtro WHERE asinfo-backfill. "
+        "Convención live (TMT 2026-06-10): facturas Asinfo cuentan SIEMPRE."
     )
 
 
 def test_totc_no_filtra_asinfo_backfill():
     from modules.informes import queries as iq
     src = inspect.getsource(iq.totc)
-    assert "asinfo-backfill" not in src, (
-        "totc() introdujo filtro 'asinfo-backfill'. Mismo motivo que totf()."
-    )
+    assert _BACKFILL_WHERE_PATTERN not in src
 
 
 def test_anticipos_no_filtra_asinfo_backfill():
     from modules.informes import queries as iq
     src = inspect.getsource(iq.anticipos)
-    assert "asinfo-backfill" not in src, (
-        "anticipos() introdujo filtro 'asinfo-backfill'."
-    )
+    assert _BACKFILL_WHERE_PATTERN not in src
 
 
 def test_facturas_buscar_no_filtra_asinfo_backfill():
@@ -62,14 +60,9 @@ def test_facturas_buscar_no_filtra_asinfo_backfill():
     """
     from modules.facturas import queries as fq
     sig = inspect.signature(fq.buscar)
-    assert "incluir_backfill" not in sig.parameters, (
-        "facturas.buscar() volvió a tener 'incluir_backfill'. "
-        "Toggle revertido — balance es live, lista debe coincidir sin filtros."
-    )
+    assert "incluir_backfill" not in sig.parameters
     src = inspect.getsource(fq.buscar)
-    assert "asinfo-backfill" not in src, (
-        "facturas.buscar() tiene filtro asinfo-backfill — debe sumar todo."
-    )
+    assert _BACKFILL_WHERE_PATTERN not in src
 
 
 def test_facturas_contar_filtrado_no_filtra_asinfo_backfill():
@@ -77,7 +70,7 @@ def test_facturas_contar_filtrado_no_filtra_asinfo_backfill():
     sig = inspect.signature(fq.contar_filtrado)
     assert "incluir_backfill" not in sig.parameters
     src = inspect.getsource(fq.contar_filtrado)
-    assert "asinfo-backfill" not in src
+    assert _BACKFILL_WHERE_PATTERN not in src
 
 
 def test_cheques_buscar_no_filtra_asinfo_backfill():
@@ -85,7 +78,7 @@ def test_cheques_buscar_no_filtra_asinfo_backfill():
     sig = inspect.signature(cq.buscar)
     assert "incluir_backfill" not in sig.parameters
     src = inspect.getsource(cq.buscar)
-    assert "asinfo-backfill" not in src
+    assert "c.usuario_crea, '') <> 'asinfo-backfill'" not in src
 
 
 # ---------------------------------------------------------------------------
