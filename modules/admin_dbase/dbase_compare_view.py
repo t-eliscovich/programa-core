@@ -194,7 +194,7 @@ def _pc_movs_pichincha(desde: date) -> list[dict]:
     import db
     rows = db.fetch_all(
         """
-        SELECT t.fecha, COALESCE(t.doc, '') AS doc, t.importe,
+        SELECT t.fecha, COALESCE(t.documento, '') AS doc, t.importe,
                COALESCE(t.concepto, '') AS concepto
           FROM scintela.transacciones_bancarias t
           JOIN scintela.banco b ON b.no_banco = t.no_banco
@@ -348,7 +348,7 @@ def reporte(dias_banco: int = 30):
 
     yield line("── [9] PRODUCCIÓN DEL MES (COMPRAS + TINTO, PRG L228-267) ──")
     res = pc.get("resultados") or {}
-    tabla = {r.get("label"): r for r in (res.get("tabla") or [])}
+    tabla = {r.get("label"): r for r in (res.get("costos") or [])}
 
     def _kg(lbl):
         return _f((tabla.get(lbl) or {}).get("kg"))
