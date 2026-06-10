@@ -1841,3 +1841,73 @@ def gastos_forzados_importar():
         return jsonify({"ok": True, **r})
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@informes_bp.route("/flujo-fondos")
+@requiere_login
+@requiere_permiso("informes.ver")
+def flujo_fondos():
+    """Flujo de Fondos PROYECTADO — réplica de la opción 6 del dBase (MENU.PRG
+    L631-707, FLUJO.DBF): cuánta plata entra y sale semana a semana hacia
+    adelante, según vencimientos.
+
+    TMT 2026-06-10 (estudio dBase vs PC): era el gap funcional #1 para usar
+    PC sin dBase. Entradas: facturas por cobrar (vencimiento, stat Z/A) +
+    cheques en cartera por depositar (fechad, stat Z/1/2/3/P). Salidas:
+    posdatados por pagar (fechad, banc=0, no anuladas — incluye provisiones
+    YY/RT a su vencimiento). Saldo proyectado arranca de Bancos+Caja live.
+    """
+    import db
+    semanas = db.fetch_all(
+        """
+        WITH items AS (
+            SELECT date_trunc('week', COALESCE(vencimiento, CURRENT_DATE))::date AS sem,
+                   saldo AS imp, 'fact' AS tipo
+              FROM scintela.factura
+             WHERE stat IN ('Z', 'A') AND COALESCE(saldo, 0) <> 0
+            UNION ALL
+            SELECT date_trunc('week', COALESCE(fechad, CURRENT_DATE))::date,
+                   importe, 'chq'
+              FROM scintela.cheque
+             WHERE stat IN ('Z', '1', '2', '3', 'P')
+            UNION ALL
+            SELECT date_trunc('week', COALESCE(fechad, CURRENT_DATE))::date,
+                   -importe, 'pos'
+              FROM scintela.posdat
+             WHERE COALESCE(banc, 0) = 0
+               AND (anulada IS NOT TRUE OR anulada IS NULL)
+        )
+        SELECT GREATEST(sem, date_trunc('week', CURRENT_DATE)::date) AS semana,
+               SUM(CASE WHEN tipo = 'fact' THEN imp ELSE 0 END) AS cobros_facturas,
+               SUM(CASE WHEN tipo = 'chq'  THEN imp ELSE 0 END) AS cheques_deposito,
+               SUM(CASE WHEN tipo = 'pos'  THEN imp ELSE 0 END) AS pagos_posdat,
+               SUM(imp) AS neto
+          FROM items
+         GROUP BY 1
+         ORDER BY 1
+        """,
+    ) or []
+    # Saldo de arranque: bancos + caja (mismas fuentes del balance live).
+    try:
+        row_b = db.fetch_one(
+            """
+            SELECT COALESCE((SELECT saldo FROM scintela.transacciones_bancarias
+                              WHERE no_banco = 10 ORDER BY id_transaccion DESC LIMIT 1), 0)
+                 + COALESCE((SELECT saldo FROM scintela.caja
+                              ORDER BY id_caja DESC LIMIT 1), 0) AS arranque
+            """,
+        )
+        arranque = float((row_b or {}).get("arranque") or 0)
+    except Exception:  # noqa: BLE001
+        arranque = 0.0
+    acum = arranque
+    for s in semanas:
+        for k in ("cobros_facturas", "cheques_deposito", "pagos_posdat", "neto"):
+            s[k] = float(s.get(k) or 0)
+        acum += s["neto"]
+        s["acumulado"] = round(acum, 2)
+    return render_template(
+        "informes/flujo_fondos.html",
+        semanas=semanas, arranque=arranque,
+        total_neto=round(sum(s["neto"] for s in semanas), 2),
+    )

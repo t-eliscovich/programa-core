@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Flujo de Fondos{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Flujo de Fondos</strong>{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Flujo de Fondos proyectado',
+                 descripcion='Réplica de la opción 6 del dBase: entradas y salidas semana a semana según vencimientos. Cobros = facturas por vencer + cheques en cartera. Pagos = posdatados y provisiones a su vencimiento.') }}
+  </div>
+
+  <div class="grid grid-cols-2 gap-4 mb-6 max-w-xl">
+    <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 shadow-sm">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Arranque (Bancos + Caja hoy)</div>
+      <div class="text-2xl font-semibold tabular-nums">{{ arranque | num_es }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 shadow-sm">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Flujo neto total proyectado</div>
+      <div class="text-2xl font-semibold tabular-nums {% if total_neto < 0 %}text-rose-700{% endif %}">{{ total_neto | num_es }}</div>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-x-auto">
+    <table class="w-full text-sm" id="flujo-tabla">
+      <thead class="text-xs uppercase tracking-wide text-slate-500 bg-slate-50 dark:bg-slate-800">
+        <tr>
+          <th class="px-3 py-2 text-left">Semana (lunes)</th>
+          <th class="px-3 py-2 text-right" title="Facturas stat Z/A por vencimiento">+ Cobros facturas</th>
+          <th class="px-3 py-2 text-right" title="Cheques en cartera (Z/1/2/3/P) por fecha de depósito">+ Cheques</th>
+          <th class="px-3 py-2 text-right" title="Posdatados y provisiones por fecha de pago">− Pagos posdat</th>
+          <th class="px-3 py-2 text-right">Neto</th>
+          <th class="px-3 py-2 text-right">Saldo proyectado</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for s in semanas %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if s.acumulado < 0 %}bg-rose-50/50{% endif %}">
+          <td class="px-3 py-1.5 whitespace-nowrap">{{ s.semana | fecha_es }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ s.cobros_facturas | num_es }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums">{{ s.cheques_deposito | num_es }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums text-rose-700">{{ s.pagos_posdat | num_es }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums font-medium {% if s.neto < 0 %}text-rose-700{% endif %}">{{ s.neto | num_es }}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums font-semibold {% if s.acumulado < 0 %}text-rose-700{% endif %}">{{ s.acumulado | num_es }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">Sin vencimientos pendientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-slate-400 mt-3">Los vencimientos pasados se agrupan en la semana actual (igual que el dBase corre FECHAD a hoy). Las provisiones YY/RT entran por su saldo actual a la fecha de vencimiento.</p>
+</div>
+{% endblock %}
