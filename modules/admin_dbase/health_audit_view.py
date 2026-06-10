@@ -268,6 +268,83 @@ def utilidad_watchdog():
 
 
 # ---------------------------------------------------------------------------
+# Diagnóstico: compras tipo=K kg>0 del último mes (paso tejeduría manual)
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/compras-tipo-k-detalle", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def compras_tipo_k_detalle():
+    """Lista las últimas 200 filas de scintela.compra con tipo='K' AND kg>0
+    (= producción tejeduría) con usuario_crea. Para identificar QUÉ flow
+    está cargando estas filas (Asinfo backfill / dbf-import / carga web manual).
+
+    Sin parámetros — devuelve mes en curso. Read-only.
+    """
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT id_compra, fecha, fecha_crea, codigo_prov, tipo, kg,
+                   importe, concepto, comprobante, numero, usuario_crea,
+                   stat
+              FROM scintela.compra
+             WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
+               AND COALESCE(kg, 0) > 0
+               AND fecha >= date_trunc('month', CURRENT_DATE)
+                                     - INTERVAL '1 month'
+             ORDER BY fecha_crea DESC, id_compra DESC
+             LIMIT 200
+            """,
+        ) or []
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    # Agregados por usuario_crea
+    by_user = {}
+    by_prov = {}
+    by_endpoint_hint = {}
+    for r in rows:
+        u = (r.get("usuario_crea") or "(null)")
+        by_user.setdefault(u, {"n": 0, "kg": 0.0, "importe": 0.0})
+        by_user[u]["n"] += 1
+        by_user[u]["kg"] += float(r.get("kg") or 0)
+        by_user[u]["importe"] += float(r.get("importe") or 0)
+
+        p = (r.get("codigo_prov") or "(null)")
+        by_prov.setdefault(p, {"n": 0, "kg": 0.0, "importe": 0.0})
+        by_prov[p]["n"] += 1
+        by_prov[p]["kg"] += float(r.get("kg") or 0)
+        by_prov[p]["importe"] += float(r.get("importe") or 0)
+
+    # Snapshot de los 10 más recientes para inspección visual
+    recientes = []
+    for r in rows[:10]:
+        recientes.append({
+            "id_compra": r["id_compra"],
+            "fecha": str(r.get("fecha")),
+            "fecha_crea": (r["fecha_crea"].isoformat()
+                           if r.get("fecha_crea") else None),
+            "codigo_prov": r.get("codigo_prov"),
+            "kg": float(r.get("kg") or 0),
+            "importe": float(r.get("importe") or 0),
+            "concepto": (r.get("concepto") or "")[:60],
+            "comprobante": r.get("comprobante"),
+            "numero": r.get("numero"),
+            "usuario_crea": r.get("usuario_crea"),
+            "stat": r.get("stat"),
+        })
+
+    return jsonify({
+        "ok": True,
+        "total_rows": len(rows),
+        "by_usuario_crea": by_user,
+        "by_codigo_prov": by_prov,
+        "ejemplos_recientes": recientes,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
