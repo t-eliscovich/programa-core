@@ -667,6 +667,7 @@ def crear_movimiento_simple(
     concepto: str = "",
     prov: str | None = None,
     usuario: str = "web",
+    permitir_duplicado: bool = False,
 ) -> dict:
     """Crea un movimiento bancario "simple" (DE / NC / ND).
 
@@ -703,6 +704,74 @@ def crear_movimiento_simple(
         raise ValueError("fecha requerida")
     asegurar_fecha_abierta(fecha)
 
+    concepto_in = (concepto or "").strip()[:50]
+
+    # TMT 2026-06-09: dedupe SILENCIOSO contra doble carga manual. El bug de
+    # los "movimientos dobles" del 09/06 (29016/29017, 29018/29019): Enter en
+    # el campo importe disparaba el submit implícito ANTES de tipear el
+    # concepto → quedaba una fila pelada, y el usuario la volvía a cargar
+    # completa. Regla quirúrgica — si EL MISMO usuario cargó en los últimos
+    # 15 minutos un movimiento idéntico (banco + doc + fecha + importe):
+    #   a) si el existente quedó SIN concepto y este trae → completamos el
+    #      existente (UPDATE) en vez de insertar otro;
+    #   b) si los conceptos coinciden (o este viene vacío) → devolvemos el
+    #      existente tal cual (doble click / re-submit).
+    # Repetidos legítimos (ej. dos ND de 9.026,00 el mismo día, conceptos
+    # 'IN OP AI 11' vs 'IN OP AI 14') tienen conceptos distintos → pasan y
+    # se insertan normal. Sin checkboxes ni pasos extra (pedido Tamara).
+    if not permitir_duplicado:
+        prev = db.fetch_one(
+            """
+            SELECT id_transaccion, TRIM(COALESCE(concepto,'')) AS concepto,
+                   saldo, prov
+              FROM scintela.transacciones_bancarias
+             WHERE no_banco = %s
+               AND UPPER(TRIM(COALESCE(documento,''))) = %s
+               AND fecha = %s
+               AND ROUND(importe::numeric, 2) = ROUND(%s::numeric, 2)
+               AND TRIM(COALESCE(usuario_crea,'')) = %s
+               AND COALESCE(fecha_crea, NOW()) > NOW() - INTERVAL '15 minutes'
+             ORDER BY id_transaccion DESC
+             LIMIT 1
+            """,
+            (no_banco, documento, fecha, importe_f, (usuario or "").strip()),
+        )
+        if prev:
+            prev_conc = (prev.get("concepto") or "").strip()
+            if not prev_conc and concepto_in:
+                # (a) completar la fila pelada en vez de duplicar.
+                db.execute(
+                    """
+                    UPDATE scintela.transacciones_bancarias
+                       SET concepto = %s,
+                           prov = COALESCE(NULLIF(TRIM(COALESCE(prov,'')),''), %s),
+                           usuario_modifica = %s,
+                           fecha_modifica = NOW()
+                     WHERE id_transaccion = %s
+                    """,
+                    (concepto_in, (prov or None), usuario[:50],
+                     prev["id_transaccion"]),
+                )
+                return {
+                    "id_transaccion": prev["id_transaccion"],
+                    "saldo_nuevo": float(prev.get("saldo") or 0),
+                    "id_mov_doble": None,
+                    "no_banco": no_banco,
+                    "importe": importe_f,
+                    "dedupe": "completado",
+                }
+            if prev_conc == concepto_in or not concepto_in:
+                # (b) idempotente: ya estaba cargado.
+                return {
+                    "id_transaccion": prev["id_transaccion"],
+                    "saldo_nuevo": float(prev.get("saldo") or 0),
+                    "id_mov_doble": None,
+                    "no_banco": no_banco,
+                    "importe": importe_f,
+                    "dedupe": "ya_existia",
+                }
+            # conceptos distintos y no vacíos → repetido legítimo, sigue.
+
     # Tipo de mov_doble: 1 a 1 con documento para que el dispatcher de
     # /historial sepa cómo reversarlo. Convención:
     #   DE → "deposito"
@@ -714,7 +783,7 @@ def crear_movimiento_simple(
         "ND": "nota_debito",
     }[documento]
 
-    concepto_clean = (concepto or "").strip()[:50]
+    concepto_clean = concepto_in
 
     with db.tx() as conn:
         mov = bank_helpers.insert_movimiento_bancario(

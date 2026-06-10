@@ -81,10 +81,41 @@
          class="text-sm px-4 py-2 rounded border border-slate-300 hover:bg-slate-50">
         Cancelar
       </a>
-      <button type="submit"
-              class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium">
+      <button type="submit" id="btn-registrar-mov"
+              class="text-sm px-4 py-2 rounded bg-sky-600 text-white hover:bg-sky-700 font-medium disabled:opacity-50">
         Registrar {{ label }}
       </button>
     </div>
   </form>
+
+  {# TMT 2026-06-09: fix movimientos dobles — invisible, sin pasos extra.
+     1) Enter en un input ya NO envía el form (era el bug: Enter en
+        "importe" lo mandaba ANTES de tipear el concepto → fila pelada +
+        re-carga completa = duplicado). Enter ahora salta al campo
+        siguiente; se registra sólo con el botón.
+     2) Doble click en Registrar: el botón se deshabilita al primer submit.
+     Backstop adicional en el server (dedupe silencioso en
+     crear_movimiento_simple). #}
+  <script>
+    (function () {
+      var btn = document.getElementById('btn-registrar-mov');
+      var form = btn.form;
+      form.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') return;
+        var t = ev.target;
+        if (t.tagName === 'TEXTAREA' || t === btn) return;
+        ev.preventDefault();
+        var campos = Array.prototype.filter.call(
+          form.querySelectorAll('input:not([type=hidden]), select'),
+          function (el) { return !el.disabled; });
+        var i = campos.indexOf(t);
+        if (i >= 0 && i < campos.length - 1) campos[i + 1].focus();
+        else btn.focus();
+      });
+      form.addEventListener('submit', function () {
+        btn.disabled = true;
+        btn.textContent = 'Registrando…';
+      });
+    })();
+  </script>
 {% endblock %}

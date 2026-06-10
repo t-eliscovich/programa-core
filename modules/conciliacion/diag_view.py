@@ -1359,6 +1359,100 @@ def borrar_ac_duplicados():
     return jsonify(out)
 
 
+@bp.route("/borrar-nd-dobles-20260609", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def borrar_nd_dobles_20260609():
+    """One-off TMT 2026-06-09: borra las ND peladas duplicadas de la carga
+    manual del 09/06 (bug Enter-submit en /bancos/nuevo-movimiento).
+
+    Candidatas = ND Pichincha del 09/06/2026, concepto VACÍO, usuario_crea
+    'andres', NO conciliadas (stat <> '*'). Eso da exactamente 29016 y
+    29018 — las gemelas peladas de 29017 (cae) y 29019 (53 cae). La 29022
+    (sin concepto pero stat='*') NO se toca.
+
+    Borra tx + mov_doble linkeados + recompute saldos. GET = dry-run.
+    """
+    no_banco = _BANCO_PICHINCHA
+    rows = _db.fetch_all(
+        """
+        SELECT id_transaccion, fecha, documento, importe, concepto, stat,
+               usuario_crea
+          FROM scintela.transacciones_bancarias
+         WHERE no_banco = %s
+           AND fecha = '2026-06-09'
+           AND documento = 'ND'
+           AND TRIM(COALESCE(concepto, '')) = ''
+           AND TRIM(COALESCE(usuario_crea, '')) = 'andres'
+           AND COALESCE(stat, '') <> '*'
+         ORDER BY id_transaccion
+        """,
+        (no_banco,),
+    ) or []
+    ids = [r["id_transaccion"] for r in rows]
+    out = {
+        "ok": True,
+        "candidatos": len(ids),
+        "ids": ids,
+        "preview": [
+            {"id": r["id_transaccion"], "doc": r["documento"],
+             "importe": float(r["importe"] or 0),
+             "concepto": r.get("concepto"), "stat": r.get("stat"),
+             "usuario": r.get("usuario_crea")}
+            for r in rows
+        ],
+    }
+    if request.method != "POST":
+        out["modo"] = "dry-run"
+        return jsonify(out)
+    if not ids:
+        out["modo"] = "ejecutado"
+        out["txs_borradas"] = 0
+        return jsonify(out)
+
+    try:
+        with _db.tx() as conn:
+            n_match = _db.execute(
+                "DELETE FROM scintela.banco_conciliacion_match "
+                "WHERE id_transaccion = ANY(%s)",
+                (ids,), conn=conn,
+            ) or 0
+            n_md = _db.execute(
+                """
+                DELETE FROM scintela.mov_doble
+                 WHERE (origen_table = 'transacciones_bancarias' AND origen_id = ANY(%s))
+                    OR (destino_table = 'transacciones_bancarias' AND destino_id = ANY(%s))
+                """,
+                (ids, ids), conn=conn,
+            ) or 0
+            n_del = _db.execute(
+                "DELETE FROM scintela.transacciones_bancarias "
+                "WHERE id_transaccion = ANY(%s) AND no_banco = %s",
+                (ids, no_banco), conn=conn,
+            ) or 0
+            import bank_helpers
+            primera = _db.fetch_one(
+                "SELECT fecha FROM scintela.transacciones_bancarias "
+                "WHERE no_banco = %s AND fecha IS NOT NULL "
+                "ORDER BY fecha ASC LIMIT 1",
+                (no_banco,), conn=conn,
+            )
+            n_rec = 0
+            if primera and primera.get("fecha"):
+                n_rec = bank_helpers.recompute_saldos_desde(
+                    conn, no_banco=no_banco, no_cta=None,
+                    ancla_fecha=primera["fecha"],
+                ) or 0
+        out["modo"] = "ejecutado"
+        out["matches_borrados"] = int(n_match)
+        out["mov_doble_borrados"] = int(n_md)
+        out["txs_borradas"] = int(n_del)
+        out["saldos_recompute"] = int(n_rec)
+    except Exception as e:
+        out["error"] = str(e)[:300]
+    return jsonify(out)
+
+
 @bp.route("/test-relink-direct", methods=["GET"])
 @requiere_login
 @requiere_permiso("admin_dbase.ver")

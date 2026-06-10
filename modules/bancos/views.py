@@ -1068,6 +1068,8 @@ def nuevo_movimiento():
         concepto = (request.form.get("concepto") or "").strip()
         prov = (request.form.get("beneficiario") or "").strip().upper() or None
         usuario = (g.user or {}).get("username", "web")
+        # TMT 2026-06-09: override del guard anti-duplicado (repetidos reales).
+        permitir_dup = (request.form.get("permitir_duplicado") or "") == "1"
         try:
             r = queries.crear_movimiento_simple(
                 no_banco=no_banco,
@@ -1077,11 +1079,20 @@ def nuevo_movimiento():
                 concepto=concepto,
                 prov=prov,
                 usuario=usuario,
+                permitir_duplicado=permitir_dup,
             )
-            flash(
-                f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
-                "ok",
-            )
+            if r.get("dedupe"):
+                # TMT 2026-06-09: dedupe silencioso — el mov ya estaba.
+                flash(
+                    f"{label} por $ {r['importe']:.2f} ya estaba cargada "
+                    f"(mov #{r['id_transaccion']}) — no se duplicó.",
+                    "ok",
+                )
+            else:
+                flash(
+                    f"{label} registrada por $ {r['importe']:.2f}. Nuevo saldo: $ {r['saldo_nuevo']:.2f}.",
+                    "ok",
+                )
             return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
         except ValueError as e:
             flash(str(e), "warn")
