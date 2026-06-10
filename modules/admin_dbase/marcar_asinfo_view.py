@@ -140,16 +140,16 @@ _WHERE_FACTURA = """
     AND numf_completo IS NOT NULL
     AND numf_completo ~ '^[0-9]{3}-[0-9]{3}-[0-9]{9}$'
 """
-# Para compras: filtramos por fecha_crea hoy (carga reciente) + usuario_crea
-# distinto al marker. Sin restricción de formato porque scintela.compra no
-# tiene un campo equivalente a numf_completo. La intención es capturar las
-# cargas masivas Asinfo del día.
+# Para compras y dolares: ampliamos a MES en curso (no solo último día).
+# Las cargas Asinfo a estas tablas pueden ser de varios días/semanas atrás
+# y NO se marcan automáticamente como asinfo-backfill (forward fix solo
+# aplicó a facturas).
 _WHERE_COMPRA = """
-    fecha_crea >= (CURRENT_DATE - INTERVAL '1 day')
+    fecha_crea >= date_trunc('month', CURRENT_DATE)
     AND COALESCE(usuario_crea, '') NOT IN ('asinfo-backfill', 'dbf-import')
 """
 _WHERE_DOLARES = """
-    fecha_crea >= (CURRENT_DATE - INTERVAL '1 day')
+    fecha_crea >= date_trunc('month', CURRENT_DATE)
     AND COALESCE(usuario_crea, '') NOT IN ('asinfo-backfill', 'dbf-import')
 """
 
