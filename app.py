@@ -410,6 +410,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(facturas_reconcile_bp)
 
+    # Comparador sistemático PC vs dBase — TMT 2026-06-10 (pedido dueña:
+    # "quiero poder comparar exacto sin sync, se están usando los dos
+    # programas"). /admin/dbase-compare: tarball DBFs → 13 checks con reglas
+    # PRG + identidad de utilidad (residuo 0 = todo explicado). SOLO LECTURA.
+    from modules.admin_dbase.dbase_compare_view import bp as dbase_compare_bp
+
+    app.register_blueprint(dbase_compare_bp)
+
     # Importador de fichas de clientes — TMT 2026-06-06. /admin/clientes-import
     # completa dirección/teléfono/RUC/provincia desde CLIENTES.DBF (que no entra
     # al sync normal) y agrega los clientes que falten. Dry-run por defecto.

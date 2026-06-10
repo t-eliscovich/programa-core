@@ -120,3 +120,17 @@ def test_editar_kg_estima_desperdicio_e_importe():
     src = _i.getsource(v.editar_kg_dbase)
     assert "rinde" in src and "imp_est" in src and "kgn_est" in src
     assert "VALUES (%s, 'MAN', 'AJUSTE MANUAL', %s, %s, 0, '', %s)" not in src
+
+
+def test_dbase_compare_existe_y_es_solo_lectura():
+    """Comparador sistemático (pedido dueña 2026-06-10): 13 checks PRG vs PC
+    + identidad de utilidad. NUNCA escribe (no INSERT/UPDATE/DELETE/tx)."""
+    import inspect as _i
+    from modules.admin_dbase import dbase_compare_view as dcv
+    src = _i.getsource(dcv)
+    for kw in ("INSERT INTO", "UPDATE scintela", "DELETE FROM", "db.tx("):
+        assert kw not in src, f"dbase-compare contiene escritura: {kw}"
+    for seccion in ("CAJA", "BANCOS", "CHEQUES", "FACTURAS", "ANTICIPOS",
+                    "PASIVOS", "ACTIVOS", "RETIROS", "PRODUCCIÓN", "STOCK",
+                    "QUÍMICOS", "PATANT", "UTILIDAD", "RESIDUO"):
+        assert seccion in src, f"falta la sección {seccion}"
