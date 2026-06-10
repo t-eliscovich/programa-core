@@ -674,6 +674,11 @@ def desde_asinfo():
         SELECT numf_completo, numf, codigo_cli, importe, fecha
           FROM scintela.factura
          WHERE fecha BETWEEN %s AND %s
+           -- TMT 2026-06-10 decisión dueña: las backfill automáticas NO
+           -- cuentan como "cargadas" → siguen apareciendo acá como
+           -- pendientes; al apretar Cargar, el guard las convierte en
+           -- 'asinfo-carga' (cuentan) en vez de duplicar.
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
         (desde, hasta),
     ) or []
@@ -1008,9 +1013,24 @@ def _resolver_cliente_asinfo(
                 and abs(float(r.get("importe") or 0) - imp) <= 0.01
             } - {""})
             if duenos_mismo_importe == [codigo_cli]:
-                # Ya cargada bajo este mismo codigo (factura sin ficha de
-                # cliente). No duplicar la factura; crear la ficha abajo
-                # tampoco hace falta porque la factura ya esta.
+                # Ya esta en PC bajo este mismo codigo. Si la copia es
+                # backfill automatico (NO cuenta en cartera), apretarle
+                # Cargar la CONVIERTE en 'asinfo-carga' (cuenta) — decision
+                # duena 2026-06-10: "solo si alguien aprieta cargar cuentan".
+                flipped = db.execute(
+                    """
+                    UPDATE scintela.factura
+                       SET usuario_crea = 'asinfo-carga'
+                     WHERE usuario_crea = 'asinfo-backfill'
+                       AND (numf = %s OR (%s <> '' AND numf_completo = %s))
+                    """,
+                    (numf, numero, numero),
+                )
+                if flipped:
+                    raise _CargaAsinfoSkip(
+                        f"estaba como backfill bajo '{codigo_cli}' — ahora "
+                        f"CARGADA (cuenta en cartera), no se duplicó"
+                    )
                 raise _CargaAsinfoSkip(
                     f"ya está cargada en PC bajo '{codigo_cli}' — no se duplicó"
                 )
@@ -1121,7 +1141,7 @@ def cargar_desde_asinfo_bulk():
                 importe=importe,
                 numf_completo=numf_completo or None,
                 tipo=tipo_asinfo[:2],
-                usuario='asinfo-backfill',
+                usuario='asinfo-carga',  # botón Cargar = a propósito → CUENTA (mig 0087)
             )
             ok += 1
         except Exception as e:
@@ -1182,7 +1202,7 @@ def cargar_desde_asinfo():
             importe=importe,
             numf_completo=numf_completo or None,
             tipo=tipo_asinfo[:2],  # 'FA', 'NT'
-            usuario='asinfo-backfill',
+            usuario='asinfo-carga',  # botón Cargar = a propósito → CUENTA (mig 0087)
         )
         flash(f"Factura {numf_completo or '#'+str(res.get('numf'))} cargada desde Asinfo.", "ok")
     except _CargaAsinfoSkip as e:

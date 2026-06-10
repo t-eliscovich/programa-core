@@ -27,8 +27,8 @@ def test_match_exacto_no_genera_nada():
     )
     assert plan["match"] == 1
     assert plan["solo_dbase"] == [] and plan["diffs"] == []
-    assert (plan["solo_pc_backfill"] == plan["solo_pc_directa"]
-            == plan["solo_pc_dbf_huerfana"] == [])
+    assert (plan["solo_pc_backfill"] == plan["solo_pc_carga"]
+            == plan["solo_pc_directa"] == plan["solo_pc_dbf_huerfana"] == [])
 
 
 def test_solo_dbase_pendiente_de_sync():
@@ -43,9 +43,11 @@ def test_solo_pc_clasifica_por_usuario_crea():
         _row(301, "EF", 200.0, uc="tamara", id_=2),         # creada directo en PC
         _row(302, "EF", 300.0, uc="dbf-import", id_=3),      # huérfana (dBase la borró)
         _row(303, "EF", 400.0, uc=None, id_=4),              # legacy NULL → huérfana
+        _row(304, "EF", 500.0, uc="asinfo-carga", id_=5),    # botón Cargar
     ]
     plan = reconciliar_facturas_plan([], pc)
     assert [r["numf"] for r in plan["solo_pc_backfill"]] == [300]
+    assert [r["numf"] for r in plan["solo_pc_carga"]] == [304]
     assert [r["numf"] for r in plan["solo_pc_directa"]] == [301]
     assert sorted(r["numf"] for r in plan["solo_pc_dbf_huerfana"]) == [302, 303]
 
@@ -106,6 +108,7 @@ def test_identidad_totf_cierra():
     a = sum(_saldo_za(r) for r in plan["solo_dbase"])
     b = sum(_saldo_za(r) for r in plan["solo_pc_backfill"])
     c = sum(_saldo_za(r) for r in plan["solo_pc_directa"])
+    c2 = sum(_saldo_za(r) for r in plan["solo_pc_carga"])
     h = sum(_saldo_za(r) for r in plan["solo_pc_dbf_huerfana"])
     e = sum(x["delta_za"] for x in plan["diffs"])
-    assert abs((totf_pc - totf_dbf) - (-a + b + c + h + e)) < 0.01
+    assert abs((totf_pc - totf_dbf) - (-a + b + c + c2 + h + e)) < 0.01

@@ -118,19 +118,19 @@ def totf() -> float:
     Verificado contra FACTURAS.DBF mayo 2026: SUM(saldo) Z+A sin filtro de
     signo = $4.916.202,77 (= lo que TMT veía en el dBase live).
 
-    TMT 2026-06-10 (revert): se REMOVIÓ el filtro `asinfo-backfill`.
-    Convención previa "no contar Asinfo hasta el cierre" estaba mal —
-    las facturas Asinfo cargadas vía /facturas/cargar-desde-asinfo* son
-    ventas reales del período y deben aparecer en el balance LIVE
-    inmediatamente. El marker `usuario_crea='asinfo-backfill'` queda
-    como información de auditoría (de dónde vino la fila) pero NO como
-    filtro contable.
+    TMT 2026-06-10 (decisión dueña, FINAL — 3er flip del día): el filtro
+    vuelve pero distinto. "Solo si alguien aprieta CARGAR cuentan; si no,
+    pertenecen a la lista Asinfo sin cargar. Una carga de dBase gana por
+    sobre todo." → se excluye SOLO 'asinfo-backfill' (automático);
+    'asinfo-carga' (botón Cargar) SÍ suma; el sync absorbe la copia
+    asinfo cuando el DBF trae la misma factura (import_dbf, mig 0087).
     """
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(saldo), 0) AS total
         FROM scintela.factura
-        WHERE stat IS NULL OR stat IN ('Z','A','',' ')
+        WHERE (stat IS NULL OR stat IN ('Z','A','',' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0)
@@ -169,6 +169,7 @@ def totc() -> float:
         SELECT COALESCE(SUM(importe), 0) AS total
         FROM scintela.cheque
         WHERE stat IN ('Z','1','2','3','P','D')
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0)
@@ -443,7 +444,8 @@ def anticipos() -> float:
         """
         SELECT COALESCE(SUM(importe), 0) AS total
         FROM scintela.dolares
-        WHERE st IS NULL OR st IN ('', ' ')
+        WHERE (st IS NULL OR st IN ('', ' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -5150,6 +5152,7 @@ def retiros_total_mes_actual() -> float:
         FROM scintela.retiros
         WHERE EXTRACT(YEAR FROM fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
           AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -5161,6 +5164,7 @@ def retiros_total_anual() -> float:
         SELECT COALESCE(SUM(ret), 0) AS total
         FROM scintela.retiros
         WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0) if row else 0.0

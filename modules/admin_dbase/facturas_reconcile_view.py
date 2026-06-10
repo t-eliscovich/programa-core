@@ -47,6 +47,7 @@ else:
 MAX_TARBALL_BYTES = 40 * 1024 * 1024
 
 BACKFILL_MARKER = "asinfo-backfill"
+CARGA_MARKER = "asinfo-carga"
 MAX_LISTADO = 40  # filas por sección en el reporte
 
 
@@ -134,18 +135,20 @@ def reconciliar_facturas_plan(dbf_rows: list[dict], pc_rows: list[dict]) -> dict
         solo_dbase.extend(d_rest[n:])
         solo_pc.extend(p_rest[n:])
 
-    backfill, huerfanas, directas = [], [], []
+    backfill, cargas, huerfanas, directas = [], [], [], []
     for r in solo_pc:
         uc = (r.get("usuario_crea") or "").strip()
         if uc == BACKFILL_MARKER:
             backfill.append(r)
+        elif uc == CARGA_MARKER:
+            cargas.append(r)
         elif uc in ("", "dbf-import"):
             huerfanas.append(r)
         else:
             directas.append(r)
     return {"solo_dbase": solo_dbase, "solo_pc_backfill": backfill,
-            "solo_pc_directa": directas, "solo_pc_dbf_huerfana": huerfanas,
-            "diffs": diffs, "match": n_match}
+            "solo_pc_carga": cargas, "solo_pc_directa": directas,
+            "solo_pc_dbf_huerfana": huerfanas, "diffs": diffs, "match": n_match}
 
 
 # ───────────────────────── lectura de fuentes ─────────────────────────
@@ -229,8 +232,11 @@ def reporte_desde_dbf(dbf_path: Path):
     totf_pc = round(sum(_saldo_za(r) for r in pc), 2)
     yield line(f"DBF: {len(dbf)} filas (+{descartadas} stat legacy descartadas, igual que el sync)"
                f" · TOTF(ZA) = {totf_dbf:,.2f}")
-    yield line(f"PC : {len(pc)} filas · TOTF(ZA) = {totf_pc:,.2f}")
-    yield line(f"Delta PC − dBase = {totf_pc - totf_dbf:,.2f}")
+    totf_pc_app = round(sum(_saldo_za(r) for r in pc
+                            if (r.get("usuario_crea") or "").strip() != BACKFILL_MARKER), 2)
+    yield line(f"PC : {len(pc)} filas · TOTF(ZA) crudo = {totf_pc:,.2f} · "
+               f"TOTF del programa (sin backfill) = {totf_pc_app:,.2f}")
+    yield line(f"Delta crudo PC − dBase = {totf_pc - totf_dbf:,.2f}")
     yield line()
 
     plan = reconciliar_facturas_plan(dbf, pc)
@@ -239,8 +245,12 @@ def reporte_desde_dbf(dbf_path: Path):
 
     yield from _seccion("[A] SOLO dBASE — el próximo /admin/dbase-sync las trae",
                         plan["solo_dbase"])
-    yield from _seccion("[B] SOLO PC — backfill Asinfo (legítimas; el sync las preserva)",
+    yield from _seccion("[B1] SOLO PC — backfill Asinfo automático (NO cuenta en "
+                        "cartera; el sync la preserva)",
                         plan["solo_pc_backfill"])
+    yield from _seccion("[B2] SOLO PC — asinfo-carga (botón Cargar: CUENTA en cartera; "
+                        "si el DBF la trae, dBase gana y se absorbe)",
+                        plan["solo_pc_carga"])
     yield from _seccion("[C] SOLO PC — creadas directo en PC "
                         "(⚠ el próximo sync las BORRA si no están tipeadas en dBase)",
                         plan["solo_pc_directa"], con_origen=True)
@@ -264,13 +274,15 @@ def reporte_desde_dbf(dbf_path: Path):
 
     # Identidad (self-check del bucketeo — residuo 0,00 por construcción)
     s = {k: round(sum(_saldo_za(r) for r in plan[k]), 2)
-         for k in ("solo_dbase", "solo_pc_backfill", "solo_pc_directa", "solo_pc_dbf_huerfana")}
+         for k in ("solo_dbase", "solo_pc_backfill", "solo_pc_carga",
+                   "solo_pc_directa", "solo_pc_dbf_huerfana")}
     residuo = round((totf_pc - totf_dbf)
-                    - (-s["solo_dbase"] + s["solo_pc_backfill"] + s["solo_pc_directa"]
-                       + s["solo_pc_dbf_huerfana"] + delta_diffs), 2)
+                    - (-s["solo_dbase"] + s["solo_pc_backfill"] + s["solo_pc_carga"]
+                       + s["solo_pc_directa"] + s["solo_pc_dbf_huerfana"] + delta_diffs), 2)
     yield line("IDENTIDAD TOTF:")
     yield line(f"  PC ({totf_pc:,.2f}) = dBase ({totf_dbf:,.2f})"
-               f" − A({s['solo_dbase']:,.2f}) + B({s['solo_pc_backfill']:,.2f})"
+               f" − A({s['solo_dbase']:,.2f}) + B1({s['solo_pc_backfill']:,.2f})"
+               f" + B2({s['solo_pc_carga']:,.2f})"
                f" + C({s['solo_pc_directa']:,.2f}) + D({s['solo_pc_dbf_huerfana']:,.2f})"
                f" + ΔE({delta_diffs:,.2f})")
     yield line(f"  residuo = {residuo:,.2f}  {'✓' if abs(residuo) < 0.01 else '✗ REVISAR'}")

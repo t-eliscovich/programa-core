@@ -922,7 +922,10 @@ def buscar(
              -- (~$-293k). Cambio: saldo <> 0 para que ambos números cuadren.
              OR (%(vista)s = 'cartera'
                  AND COALESCE(f.saldo, 0) <> 0
-                 AND (f.stat IS NULL OR f.stat IN ('Z','A','',' ')))
+                 AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                 -- TMT 2026-06-10 decisión dueña: backfill automático Asinfo
+                 -- NO es cartera (solo lo cargado a propósito / dBase).
+                 AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat = 'X')
           )
@@ -1061,7 +1064,10 @@ def contar_filtrado(
                 %(vista)s = 'estado'
              OR (%(vista)s = 'cartera'
                  AND COALESCE(f.saldo, 0) <> 0
-                 AND (f.stat IS NULL OR f.stat IN ('Z','A','',' ')))
+                 AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                 -- TMT 2026-06-10 decisión dueña: backfill automático Asinfo
+                 -- NO es cartera (solo lo cargado a propósito / dBase).
+                 AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
              OR (%(vista)s = 'canceladas' AND f.stat = 'T')
              OR (%(vista)s = 'eliminadas' AND f.stat = 'X')
           )
@@ -1104,7 +1110,9 @@ def conteos_por_vista() -> dict:
           -- negativos por sobrepago — netean cartera).
           CASE
             WHEN COALESCE(saldo, 0) <> 0
-                 AND (stat IS NULL OR stat IN ('Z','A','',' '))    THEN 'cartera'
+                 AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                 -- TMT 2026-06-10: backfill automático fuera de cartera
+                 AND COALESCE(usuario_crea, '') <> 'asinfo-backfill' THEN 'cartera'
             WHEN stat = 'T'                                         THEN 'canceladas'
             WHEN stat = 'X'                                         THEN 'eliminadas'
             ELSE 'otras'

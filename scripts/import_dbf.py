@@ -564,7 +564,7 @@ TABLE_MAP: dict[str, dict] = {
         # en cada sync — son intocables. Sólo borramos las filas que vinieron
         # del DBF mismo (usuario_crea IS NULL o 'dbf-import' o cualquier
         # otro valor distinto al marcador 'asinfo-backfill').
-        "delete_where": ("COALESCE(usuario_crea, '') <> %s", "_lookup_asinfo_backfill_marker"),
+        "delete_where": ("COALESCE(usuario_crea, '') NOT IN (%s, 'asinfo-carga')", "_lookup_asinfo_backfill_marker"),
     },
     "CHEQUES.DBF": {
         "pg_table": "scintela.cheque",
@@ -576,7 +576,7 @@ TABLE_MAP: dict[str, dict] = {
         # DBF los preserva. Por ahora no hay backfill de cheques, pero la
         # cláusula es no-op (no hay filas con ese marker) y deja la puerta
         # abierta sin tener que tocar el code path en el futuro.
-        "delete_where": ("COALESCE(usuario_crea, '') <> %s", "_lookup_asinfo_backfill_marker"),
+        "delete_where": ("COALESCE(usuario_crea, '') NOT IN (%s, 'asinfo-carga')", "_lookup_asinfo_backfill_marker"),
     },
     "POSDAT.DBF": {
         "pg_table": "scintela.posdat",
@@ -902,6 +902,32 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
         for r in pg_rows:
             cur.execute(sql, [r[c] for c in cols])
             insertadas += 1
+
+        # TMT 2026-06-10 (decisión dueña): "una carga de dBase GANA por sobre
+        # todo". Si el DBF trae una factura que también existe como copia
+        # asinfo (cargada con el botón o backfill), la copia asinfo se
+        # absorbe — evita el doble conteo en cartera. Clave conservadora
+        # (codigo_cli, numf, fecha) con numf>0; lo que no matchee exacto lo
+        # muestra /admin/facturas-reconcile.
+        if pg_table == "scintela.factura":
+            cur.execute(
+                """
+                DELETE FROM scintela.factura a
+                 WHERE a.usuario_crea IN ('asinfo-carga', 'asinfo-backfill')
+                   AND COALESCE(a.numf, 0) > 0
+                   AND EXISTS (
+                        SELECT 1 FROM scintela.factura b
+                         WHERE b.usuario_crea = 'dbf-import'
+                           AND b.numf = a.numf
+                           AND UPPER(TRIM(COALESCE(b.codigo_cli,''))) =
+                               UPPER(TRIM(COALESCE(a.codigo_cli,'')))
+                           AND b.fecha = a.fecha
+                   )
+                """
+            )
+            if cur.rowcount:
+                print(f"   [dBase gana] {cur.rowcount} copias asinfo absorbidas "
+                      f"(el DBF trae la misma factura)")
 
         # Restaurar las ediciones PC de gastos proyectados (ver snapshot arriba).
         if pg_table == "scintela.iniciales" and _ini_overrides:
