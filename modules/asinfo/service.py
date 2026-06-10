@@ -806,6 +806,79 @@ _IMPORT_TTL_SECS = 300  # 5 minutos
 _IMPORT_CACHE: dict = {}
 
 
+# ---------------------------------------------------------------------------
+# Kg por importación (detalle de la factura proveedor)
+# ---------------------------------------------------------------------------
+# TMT 2026-06-10 dueña: "importaciones no dice kg". El total en kg sale del
+# detalle de la factura_proveedor. El nombre físico de la tabla de detalle no
+# está documentado → se descubre UNA vez vía INFORMATION_SCHEMA (cacheado) y
+# si no se encuentra, kg queda en None (la vista muestra —). Fail-soft total.
+
+_IMPORT_KG_TTL_SECS = 600
+_IMPORT_KG_CACHE: dict = {}
+_IMPORT_KG_DETALLE: dict = {}  # {"tabla": ..., "col": ...} descubierto
+
+
+def _descubrir_detalle_fp() -> dict | None:
+    """Tabla+columna de cantidad del detalle de factura_proveedor."""
+    if _IMPORT_KG_DETALLE.get("done"):
+        return _IMPORT_KG_DETALLE.get("hit")
+    sql = """
+        SELECT c.TABLE_NAME AS tabla, c.COLUMN_NAME AS col
+          FROM INFORMATION_SCHEMA.COLUMNS c
+         WHERE c.TABLE_NAME LIKE '%factura_proveedor%'
+           AND c.COLUMN_NAME LIKE '%cantidad%'
+           AND EXISTS (
+               SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS c2
+                WHERE c2.TABLE_NAME = c.TABLE_NAME
+                  AND c2.COLUMN_NAME = 'id_factura_proveedor'
+           )
+         ORDER BY CASE WHEN c.TABLE_NAME = 'detalle_factura_proveedor' THEN 0 ELSE 1 END,
+                  CASE WHEN c.COLUMN_NAME = 'cantidad' THEN 0 ELSE 1 END
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=10)
+    hit = None
+    for r in rows:
+        t, col = str(r.get("tabla") or ""), str(r.get("col") or "")
+        if t and col and "precio" not in col.lower():
+            hit = {"tabla": t, "col": col}
+            break
+    _IMPORT_KG_DETALLE["done"] = True
+    _IMPORT_KG_DETALLE["hit"] = hit
+    return hit
+
+
+def importaciones_kg(limite: int = 400) -> dict[str, float]:
+    """{im_numero: kg total} sumando el detalle. {} si no se pudo (fail-soft)."""
+    import time as _time
+    now = _time.time()
+    cached = _IMPORT_KG_CACHE.get("all")
+    if cached and (now - cached[0]) < _IMPORT_KG_TTL_SECS:
+        return cached[1]
+    det = _descubrir_detalle_fp()
+    if not det:
+        return {}
+    sql = f"""
+        SELECT TOP {int(limite)}
+               fp.numero            AS im_numero,
+               SUM(ISNULL(d.{det["col"]}, 0)) AS kg
+          FROM factura_proveedor_importacion fpi
+          JOIN factura_proveedor fp ON fp.id_factura_proveedor = fpi.id_factura_proveedor
+          JOIN {det["tabla"]} d ON d.id_factura_proveedor = fp.id_factura_proveedor
+         GROUP BY fp.numero, fpi.id_factura_proveedor
+         ORDER BY fpi.id_factura_proveedor DESC
+    """
+    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    out: dict[str, float] = {}
+    for r in rows:
+        try:
+            out[str(r.get("im_numero") or "").strip()] = float(r.get("kg") or 0)
+        except (TypeError, ValueError):
+            continue
+    _IMPORT_KG_CACHE["all"] = (now, out)
+    return out
+
+
 def cliente_ficha(codigos: list[str]) -> dict[str, dict]:
     """Ficha básica (nombre, RUC) de clientes por código, desde Asinfo.
 

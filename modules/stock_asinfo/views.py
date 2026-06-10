@@ -13,7 +13,7 @@ Filtros disponibles (query string):
 """
 from __future__ import annotations
 
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
@@ -464,11 +464,49 @@ def _fabricacion_page(proceso: str):
     # Totales de TODO el stock (kg por bodega Asinfo) — arriba de la página.
     # Sólo las 3 bodegas del flujo, en orden de proceso: Hilo → TC → PT.
     totales_bodega = []
+    _tot: dict = {}
     try:
         _tot = {t["id_bodega"]: t for t in asinfo_service.stock_asinfo_lote_totales()}
         totales_bodega = [_tot[b] for b in (51, 52, 53) if b in _tot]
     except Exception:  # noqa: BLE001
         totales_bodega = []
+
+    # TMT 2026-06-10 dueña: "falta este saldo para los totales de arriba —
+    # hacelo lógico y completo". El stock TOTAL en kg es la cadena del flujo:
+    #   Hilo + en proceso TC + Tela Cruda + en proceso PT + Prod. Terminado
+    # (los saldos en proceso no están en el saldo de ninguna bodega). Por eso
+    # acá se traen LOS DOS procesos, no sólo el de la tab actual.
+    otro_bodega = 53 if cfg["bodega"] == 52 else 52
+    try:
+        data_otro = asinfo_service.fabricacion_proceso(otro_bodega)
+    except Exception:  # noqa: BLE001
+        data_otro = {"resumen": {}}
+    _res_actual = data.get("resumen", {}) or {}
+    _res_otro = data_otro.get("resumen", {}) or {}
+    saldo_tc = _res_actual if cfg["bodega"] == 52 else _res_otro
+    saldo_pt = _res_actual if cfg["bodega"] == 53 else _res_otro
+
+    def _kg(b):
+        return float((_tot.get(b) or {}).get("total_kg") or 0)
+
+    def _lotes(b):
+        return int((_tot.get(b) or {}).get("lotes") or 0)
+
+    cadena = [
+        {"label": "Hilo", "kg": _kg(51), "sub": f"{_lotes(51):,} lotes".replace(",", "."),
+         "url": url_for("stock_asinfo.lote", bodega=51), "actual": False},
+        {"label": "En proceso TC", "kg": float(saldo_tc.get("saldo") or 0),
+         "sub": f"{int(saldo_tc.get('n_ofts') or 0)} órdenes",
+         "url": url_for("stock_asinfo.fabricacion_tc"), "actual": proceso == "tc"},
+        {"label": "Tela Cruda", "kg": _kg(52), "sub": f"{_lotes(52):,} lotes".replace(",", "."),
+         "url": url_for("stock_asinfo.lote", bodega=52), "actual": False},
+        {"label": "En proceso PT", "kg": float(saldo_pt.get("saldo") or 0),
+         "sub": f"{int(saldo_pt.get('n_ofts') or 0)} órdenes",
+         "url": url_for("stock_asinfo.fabricacion_pt"), "actual": proceso == "pt"},
+        {"label": "Prod. Terminado", "kg": _kg(53), "sub": f"{_lotes(53):,} lotes".replace(",", "."),
+         "url": url_for("stock_asinfo.lote", bodega=53), "actual": False},
+    ]
+    total_kg = sum(c["kg"] for c in cadena)
 
     # Valor del stock del programa (kg + $) — mismo cálculo que el Balance.
     stock_programa = {}
@@ -515,6 +553,8 @@ def _fabricacion_page(proceso: str):
         ofts=ofts,
         q=q,
         totales_bodega=totales_bodega,
+        cadena=cadena,
+        total_kg=total_kg,
         stock_programa=stock_programa,
         error=error,
     )

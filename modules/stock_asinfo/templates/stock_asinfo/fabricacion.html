@@ -8,20 +8,28 @@
 <style>
   .fb { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
 
-  /* ── KPIs: una sola fila pareja ─────────────────────────────── */
-  .fb .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-              gap: 12px; margin-bottom: 20px; }
-  @media (max-width: 1100px) { .fb .kpis { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 640px)  { .fb .kpis { grid-template-columns: repeat(2, 1fr); } }
-  .fb .kpi { background: white; border: 1px solid rgb(226 232 240); border-radius: 10px;
-             padding: 12px 14px; min-width: 0; }
-  .fb .kpi-label { color: rgb(100 116 139); font-size: 11px; text-transform: uppercase;
-                   letter-spacing: 0.04em; white-space: nowrap; overflow: hidden;
-                   text-overflow: ellipsis; }
-  .fb .kpi-val { font-size: 19px; font-weight: 700; margin-top: 3px; white-space: nowrap; }
-  .fb .kpi-sub { font-size: 11px; color: rgb(148 163 184); margin-top: 2px; white-space: nowrap; }
-  .fb .kpi--destacado { border-color: rgb(2 132 199); background: rgb(240 249 255); }
-  .fb .kpi--destacado .kpi-label { color: rgb(2 132 199); }
+  /* ── Cadena de stock total: Hilo + proc TC + TC + proc PT + PT = Total ── */
+  .fb .chain { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px;
+               padding: 14px; }
+  .fb .chain .item { background: white; border: 1px solid rgb(226 232 240);
+                     border-radius: 8px; padding: 9px 13px; min-width: 118px;
+                     display: block; text-decoration: none; }
+  .fb .chain a.item:hover { border-color: rgb(148 163 184); }
+  .fb .chain .item--proceso { background: rgb(248 250 252); border-style: dashed; }
+  .fb .chain .item--actual { border-color: rgb(2 132 199); border-style: solid;
+                             background: rgb(240 249 255); }
+  .fb .chain .item--actual .kpi-label { color: rgb(2 132 199); }
+  .fb .chain .item--total { background: rgb(15 23 42); border-color: rgb(15 23 42); }
+  .fb .chain .item--total .kpi-label { color: rgb(148 163 184); }
+  .fb .chain .item--total .kpi-val, .fb .chain .item--total .kpi-sub { color: white; }
+  .fb .chain .op { align-self: center; font-size: 17px; font-weight: 600;
+                   color: rgb(148 163 184); padding: 0 1px; }
+  .fb .kpi-label { color: rgb(100 116 139); font-size: 10.5px; text-transform: uppercase;
+                   letter-spacing: 0.04em; white-space: nowrap; }
+  .fb .kpi-val { font-size: 17px; font-weight: 700; margin-top: 2px; white-space: nowrap; }
+  .fb .kpi-sub { font-size: 10.5px; color: rgb(148 163 184); margin-top: 1px; white-space: nowrap; }
+  .fb .chain-foot { border-top: 1px solid rgb(241 245 249); padding: 8px 14px;
+                    font-size: 12px; color: rgb(100 116 139); }
 
   /* ── Tarjetas con tabla adentro ─────────────────────────────── */
   .fb .card { background: white; border: 1px solid rgb(226 232 240); border-radius: 10px;
@@ -76,26 +84,33 @@
     </div>
   {% endif %}
 
-  {# ── Totales de TODO el stock: Hilo → Tela Cruda → PT → en proceso → $ ── #}
-  <div class="kpis">
-    {% for t in totales_bodega %}
-      <a href="{{ url_for('stock_asinfo.lote', bodega=t.id_bodega) }}" class="kpi block hover:border-slate-400">
-        <div class="kpi-label">{{ t.bodega | replace('Bodega de ', '') | replace('Bodega ', '') }}</div>
-        <div class="kpi-val">{{ t.total_kg | num_es(0) }} <span class="text-xs text-slate-400 font-normal">kg</span></div>
-        <div class="kpi-sub">{{ t.lotes | num_es(0) }} lotes</div>
-      </a>
-    {% endfor %}
-    <div class="kpi kpi--destacado">
-      <div class="kpi-label">En proceso {{ proceso | upper }}</div>
-      <div class="kpi-val">{{ (resumen.saldo or 0) | num_es(0) }} <span class="text-xs text-slate-400 font-normal">kg</span></div>
-      <div class="kpi-sub">{{ resumen.n_ofts or 0 }} órdenes abiertas</div>
+  {# ── Stock total: la cadena completa del flujo, en kg ─────────── #}
+  <div class="card" style="margin-bottom: 20px;">
+    <div class="card-title">Stock total (kg) — hilo a producto terminado</div>
+    <div class="chain">
+      {% for c in cadena %}
+        {% if not loop.first %}<span class="op">+</span>{% endif %}
+        <a href="{{ c.url }}"
+           class="item {{ 'item--proceso' if 'proceso' in c.label | lower }} {{ 'item--actual' if c.actual }}">
+          <div class="kpi-label">{{ c.label }}</div>
+          <div class="kpi-val">{{ c.kg | num_es(0) }}</div>
+          <div class="kpi-sub">{{ c.sub }}</div>
+        </a>
+      {% endfor %}
+      <span class="op">=</span>
+      <span class="item item--total">
+        <div class="kpi-label">Total</div>
+        <div class="kpi-val">{{ total_kg | num_es(0) }}</div>
+        <div class="kpi-sub">kg</div>
+      </span>
     </div>
     {% if stock_programa.get('total') %}
-      <a href="{{ url_for('stock.lista') }}" class="kpi block hover:border-slate-400">
-        <div class="kpi-label">Valor stock</div>
-        <div class="kpi-val">$ {{ stock_programa['total']['us'] | num_es(0) }}</div>
-        <div class="kpi-sub">{{ stock_programa['total']['kg'] | num_es(0) }} kg</div>
-      </a>
+    <div class="chain-foot">
+      Valor del stock (programa):
+      <a class="underline" href="{{ url_for('stock.lista') }}">
+        $ {{ stock_programa['total']['us'] | num_es(0) }}</a>
+      · {{ stock_programa['total']['kg'] | num_es(0) }} kg
+    </div>
     {% endif %}
   </div>
 

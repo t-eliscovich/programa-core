@@ -77,8 +77,10 @@ def test_fabricacion_tc_renderiza_estructura_excel(app, fake_db):
     assert "Ing. fabricación".encode() in r.data
     assert "Órdenes de fabricación".encode() in r.data
     assert b"HILO" in r.data
-    # Totales de todo el stock arriba
-    assert b">Hilo<" in r.data and b">PT<" in r.data
+    # Cadena de stock total arriba (con los DOS saldos en proceso)
+    assert b"Stock total (kg)" in r.data
+    assert b">Hilo<" in r.data and b">En proceso TC<" in r.data
+    assert b">En proceso PT<" in r.data and b">Prod. Terminado<" in r.data
     # Detalle OFT
     assert b"OFT-000035309" in r.data
 
@@ -116,12 +118,21 @@ def test_fabricacion_fail_soft_sin_asinfo(app, fake_db):
     assert b"metabase down" in r.data
 
 
-def test_fabricacion_bodegas_en_orden_de_proceso(app, fake_db):
-    """Los KPIs van Hilo → Tela Cruda → PT, no por kg desc."""
+def test_fabricacion_cadena_en_orden_de_proceso(app, fake_db):
+    """La cadena va Hilo → En proc TC → Tela Cruda → En proc PT → PT → Total."""
     r = _render(app, fake_db, "tc", _DATA_TC)
     body = r.data.decode("utf-8", "ignore")
-    i_h, i_tc, i_pt = body.find(">Hilo<"), body.find(">Tela Cruda<"), body.find(">PT<")
-    assert -1 < i_h < i_tc < i_pt
+    idx = [body.find(s) for s in (">Hilo<", ">En proceso TC<", ">Tela Cruda<",
+                                  ">En proceso PT<", ">Prod. Terminado<", ">Total<")]
+    assert all(i > -1 for i in idx) and idx == sorted(idx)
+
+
+def test_fabricacion_total_suma_bodegas_mas_en_proceso(app, fake_db):
+    """Total kg = Hilo + saldo TC + Tela Cruda + saldo PT + PT."""
+    r = _render(app, fake_db, "tc", _DATA_TC)
+    body = r.data.decode("utf-8", "ignore")
+    # 50000 + 48060.62 + 255795.25 + 48060.62 (mismo mock p/ambos) + 310568 = 712484.49
+    assert "712.484" in body
 
 
 def test_fabricacion_service_totales_incluyen_negativos(monkeypatch):

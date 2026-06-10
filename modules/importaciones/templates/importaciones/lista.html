@@ -92,9 +92,10 @@
           <th style="width: 15%">Recepción</th>
           <th style="width: 16%">Proveedor</th>
           <th style="width: 7%">Código</th>
-          <th style="width: 18%" data-no-sort>Nota Asinfo</th>
-          <th class="text-right" style="width: 12%">Total Asinfo*</th>
-          <th class="text-right" style="width: 15%">Programa (US$)</th>
+          <th style="width: 15%" data-no-sort>Nota Asinfo</th>
+          <th class="text-right" style="width: 8%">Kg</th>
+          <th class="text-right" style="width: 11%">Total Asinfo*</th>
+          <th class="text-right" style="width: 14%">Programa (US$)</th>
         </tr>
       </thead>
       <tbody>
@@ -113,6 +114,7 @@
             <td>{{ r.proveedor or '—' }}</td>
             <td>{% if r.codigo %}<span class="code">{{ r.codigo }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
             <td class="nota">{{ r.nota or '—' }}</td>
+            <td class="num">{% if r.kg is not none %}{{ r.kg | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
             <td class="num muted">$ {{ r.total_asinfo | num_es(2) }}</td>
             <td class="num">
               {% if r.fuente == 'compra' %}
@@ -130,7 +132,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+          <tr><td colspan="9" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
           </td></tr>
         {% endfor %}

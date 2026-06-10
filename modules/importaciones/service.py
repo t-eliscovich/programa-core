@@ -140,6 +140,14 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     """
     rows = asinfo_service.importaciones_asinfo(limite=limite)
 
+    # Kg por importación (detalle Asinfo). Fail-soft: {} → columna vacía.
+    try:
+        kg_map = asinfo_service.importaciones_kg(limite=limite)
+    except Exception:  # noqa: BLE001
+        kg_map = {}
+    for r in rows:
+        r["kg"] = kg_map.get(str(r.get("im_numero") or "").strip())
+
     refs: set[tuple[str, int]] = set()
     for r in rows:
         code = parse_nota_importacion(r.get("nota"))

@@ -70,6 +70,7 @@ def lista():
                 "proveedor": r.get("proveedor") or "",
                 "codigo": r.get("codigo") or "",
                 "nota": r.get("nota") or "",
+                "kg": round(r["kg"], 2) if r.get("kg") is not None else "",
                 "total_asinfo": round(r.get("total_asinfo") or 0, 2),
                 "fuente": (r.get("fuente") or "").capitalize(),
                 "importe_programa": (
@@ -89,6 +90,7 @@ def lista():
                 ("proveedor", "Proveedor"),
                 ("codigo", "Código programa"),
                 ("nota", "Nota Asinfo"),
+                ("kg", "Kg"),
                 ("total_asinfo", "Total Asinfo (ref)"),
                 ("fuente", "Fuente programa"),
                 ("importe_programa", "Importe programa (US)"),
