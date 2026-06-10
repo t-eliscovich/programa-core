@@ -1,141 +1,123 @@
-"""Contract tests para el toggle UI 'Incluir Asinfo backfill' y la
-coherencia entre balance LIVE y listados de cartera (TOTF / TOTC).
+"""Contract tests post-revert toggle (TMT 2026-06-10).
 
-TMT 2026-06-10 — guard de regresión:
-    - El listado de facturas debe excluir filas `usuario_crea='asinfo-backfill'`
-      por default (toggle OFF) para coincidir con `informes.totf()`.
-    - El listado de cheques: mismo patrón, debe coincidir con `informes.totc()`.
-    - Cuando `incluir_backfill=True` se pasa, las queries deben devolver las
-      filas backfill también.
+Convención canónica:
+    - El balance es 100% live. Listado de facturas/cheques y balance suman
+      las MISMAS filas (sin filtros backfill).
+    - `usuario_crea='asinfo-backfill'` queda como marker informativo, NO
+      como filtro contable.
+    - El endpoint `/admin/health/cartera-coherence` valida que
+      `informes.totf() == facturas.contar_filtrado().total_saldo` (modulo
+      redondeo) y `informes.totc() == SUM` de cheques en cartera_total.
 
-Estos tests inspeccionan el source de las funciones (consistencia con la
-constante `NO_BACKFILL_WHERE`) — los tests integration que requieren DB
-viva quedan para CI cuando haya Postgres disponible.
+Estos tests inspeccionan el source (no requieren DB) y aseguran que NO
+vuelvan a aparecer filtros `asinfo-backfill` en queries del balance.
 """
 from __future__ import annotations
 
 import inspect
 
+
 # ---------------------------------------------------------------------------
-# /facturas/buscar respeta el toggle
+# Las queries del balance NO deben filtrar asinfo-backfill (convención live)
 # ---------------------------------------------------------------------------
 
 
-def test_facturas_buscar_acepta_param_incluir_backfill():
-    """`modules.facturas.queries.buscar()` debe tener un param
-    `incluir_backfill: bool = False`. Si lo borran, el listado vuelve a
-    sumar facturas backfill y la lista se desincroniza del balance.
+def test_totf_no_filtra_asinfo_backfill():
+    """`totf()` debe sumar TODAS las facturas vivas, incluyendo backfill.
+
+    Si alguien re-introduce el filtro, el balance subestima cartera por las
+    facturas Asinfo cargadas en el mes y no coincide con dBase.
     """
-    from modules.facturas import queries
-
-    sig = inspect.signature(queries.buscar)
-    assert "incluir_backfill" in sig.parameters, (
-        "queries.buscar() perdió el param 'incluir_backfill'. "
-        "Bug 2026-06-10 reabierto: el listado vuelve a incluir backfill por "
-        "default y se desincroniza del balance TOTF."
-    )
-    default = sig.parameters["incluir_backfill"].default
-    assert default is False, (
-        f"queries.buscar() incluir_backfill default = {default!r}. "
-        f"Debe ser False — convención canónica: por default OFF, lista "
-        f"coincide con balance."
+    from modules.informes import queries as iq
+    src = inspect.getsource(iq.totf)
+    assert "asinfo-backfill" not in src, (
+        "totf() introdujo filtro 'asinfo-backfill'. "
+        "Convención live (TMT 2026-06-10): facturas Asinfo cuentan SIEMPRE "
+        "en cartera live. El marker queda informativo, no de filtro."
     )
 
 
-def test_facturas_contar_filtrado_acepta_param_incluir_backfill():
-    """`contar_filtrado()` también necesita el param (para el header
-    'Mostrando X-Y de Z' coincida con balance)."""
-    from modules.facturas import queries
-
-    sig = inspect.signature(queries.contar_filtrado)
-    assert "incluir_backfill" in sig.parameters, (
-        "contar_filtrado() perdió 'incluir_backfill'."
+def test_totc_no_filtra_asinfo_backfill():
+    from modules.informes import queries as iq
+    src = inspect.getsource(iq.totc)
+    assert "asinfo-backfill" not in src, (
+        "totc() introdujo filtro 'asinfo-backfill'. Mismo motivo que totf()."
     )
 
 
-def test_facturas_buscar_filtra_backfill_en_sql():
-    """El source de buscar() debe incluir el filtro de backfill (gated por
-    el param). Si el filtro desaparece del SQL, el toggle no hace nada."""
-    from modules.facturas import queries
-
-    src = inspect.getsource(queries.buscar)
-    assert "asinfo-backfill" in src, (
-        "queries.buscar() perdió el filtro 'asinfo-backfill' en su SQL."
-    )
-    assert "incluir_backfill" in src, (
-        "queries.buscar() perdió la condición de toggle en su SQL."
+def test_anticipos_no_filtra_asinfo_backfill():
+    from modules.informes import queries as iq
+    src = inspect.getsource(iq.anticipos)
+    assert "asinfo-backfill" not in src, (
+        "anticipos() introdujo filtro 'asinfo-backfill'."
     )
 
 
-def test_facturas_contar_filtrado_filtra_backfill_en_sql():
-    from modules.facturas import queries
+def test_facturas_buscar_no_filtra_asinfo_backfill():
+    """`facturas.buscar()` ya no acepta el param `incluir_backfill`.
 
-    src = inspect.getsource(queries.contar_filtrado)
-    assert "asinfo-backfill" in src
-    assert "incluir_backfill" in src
+    Post revert toggle (TMT 2026-06-10): el balance es 100% live → lista y
+    balance siempre coinciden. Si alguien re-introduce el toggle, los
+    listados se desincronizan del balance.
+    """
+    from modules.facturas import queries as fq
+    sig = inspect.signature(fq.buscar)
+    assert "incluir_backfill" not in sig.parameters, (
+        "facturas.buscar() volvió a tener 'incluir_backfill'. "
+        "Toggle revertido — balance es live, lista debe coincidir sin filtros."
+    )
+    src = inspect.getsource(fq.buscar)
+    assert "asinfo-backfill" not in src, (
+        "facturas.buscar() tiene filtro asinfo-backfill — debe sumar todo."
+    )
+
+
+def test_facturas_contar_filtrado_no_filtra_asinfo_backfill():
+    from modules.facturas import queries as fq
+    sig = inspect.signature(fq.contar_filtrado)
+    assert "incluir_backfill" not in sig.parameters
+    src = inspect.getsource(fq.contar_filtrado)
+    assert "asinfo-backfill" not in src
+
+
+def test_cheques_buscar_no_filtra_asinfo_backfill():
+    from modules.cheques import queries as cq
+    sig = inspect.signature(cq.buscar)
+    assert "incluir_backfill" not in sig.parameters
+    src = inspect.getsource(cq.buscar)
+    assert "asinfo-backfill" not in src
 
 
 # ---------------------------------------------------------------------------
-# /cheques/buscar respeta el toggle (defensivo: aún si no hay endpoint Asinfo
-# de cheques hoy, el patrón queda en place para coherencia con TOTC)
-# ---------------------------------------------------------------------------
-
-
-def test_cheques_buscar_acepta_param_incluir_backfill():
-    from modules.cheques import queries
-
-    sig = inspect.signature(queries.buscar)
-    assert "incluir_backfill" in sig.parameters, (
-        "cheques.queries.buscar() perdió 'incluir_backfill'."
-    )
-    assert sig.parameters["incluir_backfill"].default is False
-
-
-def test_cheques_buscar_filtra_backfill_en_sql():
-    from modules.cheques import queries
-
-    src = inspect.getsource(queries.buscar)
-    assert "asinfo-backfill" in src
-    assert "incluir_backfill" in src
-
-
-# ---------------------------------------------------------------------------
-# Endpoint /admin/health/cartera-coherence existe
+# Endpoint cartera-coherence existe (Capa 4 de protección)
 # ---------------------------------------------------------------------------
 
 
 def test_endpoint_cartera_coherence_existe():
-    """El blueprint health_audit debe exponer la función cartera_coherence()."""
     from modules.admin_dbase import health_audit_view as hav
-
-    assert hasattr(hav, "cartera_coherence"), (
-        "Función cartera_coherence() falta en health_audit_view.py"
-    )
+    assert hasattr(hav, "cartera_coherence")
 
 
 def test_endpoint_health_all_incluye_cartera_coherence():
-    """`/admin/health/all` debe consolidar las tres auditorías."""
     from modules.admin_dbase import health_audit_view as hav
-
     src = inspect.getsource(hav.health_all)
-    assert "cartera_coherence" in src, (
-        "/admin/health/all no llama a cartera_coherence()."
-    )
+    assert "cartera_coherence" in src
 
 
 # ---------------------------------------------------------------------------
-# Smoke: la constante canónica del marker no cambió
+# Constante NO_BACKFILL_WHERE preservada (queda para compras_mes_corriente
+# y otras queries del MES en curso que SÍ filtran backfill — para no
+# double-contar el mes con los backfills históricos)
 # ---------------------------------------------------------------------------
 
 
 def test_marker_canonico_asinfo_backfill_unchanged():
-    """El marker canónico es 'asinfo-backfill' (con guión). Si alguien lo
-    renombra, todos los filtros + el endpoint marcar-asinfo-hoy + el trigger
-    DB + estos tests fallan en cascada.
+    """El marker canónico es 'asinfo-backfill'. Algunas queries SIGUEN
+    filtrándolo (ventas/compras del MES en curso, snapshot mensual) — eso
+    es correcto para no double-contar histórico vs movimientos del mes.
+    Solo TOTF/TOTC/anticipos/retiros LIVE no filtran (convención balance live).
     """
     from modules.informes import queries as iq
-
     assert "asinfo-backfill" in iq.NO_BACKFILL_WHERE, (
-        f"NO_BACKFILL_WHERE perdió el marker 'asinfo-backfill'. "
-        f"Valor actual: {iq.NO_BACKFILL_WHERE!r}"
+        "NO_BACKFILL_WHERE perdió 'asinfo-backfill'."
     )
