@@ -345,6 +345,90 @@ def compras_tipo_k_detalle():
 
 
 # ---------------------------------------------------------------------------
+# Cartera coherence: balance TOTF/TOTC == lista (sin toggle)
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/cartera-coherence", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cartera_coherence():
+    """Compara los totales de `/informes/balance` (totf/totc) contra el
+    listado UI sin toggle de backfill. Si difieren >$1, alerta.
+
+    TMT 2026-06-10 — capa de coherencia post-toggle. Sin el toggle, listado
+    debe matchear balance al centavo (modulo redondeo). Si difieren, algo
+    se desincronizó (ej. un endpoint nuevo se olvidó de aplicar el filtro).
+    """
+    alerts = []
+    stats = {}
+
+    try:
+        from modules.facturas import queries as fq
+        from modules.informes import queries as iq
+
+        # Balance values (con filtro backfill aplicado)
+        totf_balance = iq.totf()
+        totc_balance = iq.totc()
+
+        # Lista values con incluir_backfill=False (debe coincidir con balance)
+        totf_lista = fq.contar_filtrado(
+            vista="cartera", incluir_backfill=False,
+        ).get("total_saldo", 0.0)
+
+        # Para cheques: query directa (no hay un `contar_filtrado` en
+        # cheques pero podemos sumar manualmente vía sum SQL).
+        row_chq = db.fetch_one(
+            """
+            SELECT COALESCE(SUM(importe), 0) AS total
+              FROM scintela.cheque
+             WHERE stat IN ('Z','1','2','3','P','D')
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+            """,
+        )
+        totc_lista = float(row_chq["total"] or 0) if row_chq else 0.0
+
+        stats["totf_balance"] = totf_balance
+        stats["totf_lista"] = totf_lista
+        stats["totc_balance"] = totc_balance
+        stats["totc_lista"] = totc_lista
+        stats["delta_totf"] = totf_balance - totf_lista
+        stats["delta_totc"] = totc_balance - totc_lista
+
+        # Tolerancia $1 absoluto (redondeo SQL/Python).
+        if abs(stats["delta_totf"]) >= 1.0:
+            alerts.append({
+                "severity": "high",
+                "category": "totf_mismatch",
+                "msg": (
+                    f"TOTF balance ({totf_balance:.2f}) != lista filtrada "
+                    f"({totf_lista:.2f}). Δ = {stats['delta_totf']:+,.2f}. "
+                    f"Las queries del listado y del balance no están en "
+                    f"sintonía — buscar query que se olvidó del filtro "
+                    f"asinfo-backfill o quita filtros stat IN."
+                ),
+            })
+        if abs(stats["delta_totc"]) >= 1.0:
+            alerts.append({
+                "severity": "high",
+                "category": "totc_mismatch",
+                "msg": (
+                    f"TOTC balance ({totc_balance:.2f}) != lista filtrada "
+                    f"({totc_lista:.2f}). Δ = {stats['delta_totc']:+,.2f}."
+                ),
+            })
+    except Exception as e:
+        alerts.append({"severity": "error", "category": "query_failed",
+                       "msg": str(e)})
+
+    return jsonify({
+        "ok": len(alerts) == 0,
+        "alerts": alerts,
+        "stats": stats,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -353,15 +437,18 @@ def compras_tipo_k_detalle():
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def health_all():
-    """JSON consolidado de las dos auditorías."""
+    """JSON consolidado de las tres auditorías."""
     # Llamada interna sin redirect — usamos las funciones directamente.
     import json
     resp1 = usuario_crea_audit()
     resp2 = utilidad_watchdog()
+    resp3 = cartera_coherence()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
+    data3 = json.loads(resp3.get_data(as_text=True))
     return jsonify({
-        "ok": data1["ok"] and data2["ok"],
+        "ok": data1["ok"] and data2["ok"] and data3["ok"],
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
+        "cartera_coherence": data3,
     })
