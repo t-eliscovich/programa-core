@@ -931,7 +931,17 @@ def alias_borrar():
 
 
 
-def _resolver_cliente_asinfo(codigo_cli: str, usuario: str) -> tuple[str, bool]:
+class _CargaAsinfoSkip(Exception):
+    """La fila NO se carga (y no se crea cliente). El mensaje explica por qué
+    y queda en el flash de errores del caller."""
+
+
+def _resolver_cliente_asinfo(
+    codigo_cli: str,
+    usuario: str,
+    numero: str | None = None,
+    importe=None,
+) -> tuple[str, bool]:
     """Resuelve el codigo de cliente Asinfo -> PC para cargar facturas.
 
     TMT 2026-06-10 (3 facturas de ayer rebotaron con "cliente no existe en
@@ -945,13 +955,26 @@ def _resolver_cliente_asinfo(codigo_cli: str, usuario: str) -> tuple[str, bool]:
     Orden de resolucion:
       1. alias canonical (to_pc) existe en PC -> usarlo.
       2. codigo crudo existe en PC -> usarlo (facturas viejas bajo alias).
-      3. ninguno -> AUTO-CREAR cliente con ficha minima. La ficha real
+      3. GUARD anti-duplicados (TMT 2026-06-10 'fijate que no se repitan
+         clientes'): si la MISMA factura (numf) ya esta cargada en PC bajo
+         OTRO codigo de cliente:
+           - mismo importe (+-1 centavo) y UN solo dueno -> es el mismo
+             cliente con otro codigo: se AUTO-REGISTRA el alias
+             codigo_asinfo->dueno y la fila se saltea (ya estaba cargada).
+             NO se crea cliente duplicado.
+           - si no, se saltea con sugerencia de alias (caso ambiguo, lo
+             resuelve la duena en /facturas/desde-asinfo).
+      4. ninguno -> AUTO-CREAR cliente con ficha minima. La ficha real
          (nombre/RUC/direccion) la completa /admin/clientes-import despues,
          que es rellenar-solo e INSERT-si-falta.
 
+    Raises:
+        _CargaAsinfoSkip: la fila no debe cargarse (ya existe / ambigua).
+
     Returns:
-        (codigo_pc_a_usar, creado)
+        (codigo_pc_a_usar, cliente_creado)
     """
+    import re as _re
     from modules.asinfo import aliases as _aliases
     codigo_cli = (codigo_cli or "").strip().upper()
     cli_pc = _aliases.to_pc(codigo_cli)
@@ -960,6 +983,63 @@ def _resolver_cliente_asinfo(codigo_cli: str, usuario: str) -> tuple[str, bool]:
             "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s", (cand,)
         ):
             return cand, False
+
+    # ── Guard anti-duplicados: ¿esta factura YA esta en PC bajo otro cli? ──
+    numero = (numero or "").strip()
+    m = _re.findall(r"\d+", numero)
+    numf = int(m[-1]) if m else None
+    if numf is not None:
+        rows = db.fetch_all(
+            """
+            SELECT codigo_cli, importe FROM scintela.factura
+             WHERE numf = %s OR (%s <> '' AND numf_completo = %s)
+            """,
+            (numf, numero, numero),
+        ) or []
+        if rows:
+            try:
+                imp = float(importe) if importe is not None else None
+            except (TypeError, ValueError):
+                imp = None
+            duenos_mismo_importe = sorted({
+                (r.get("codigo_cli") or "").strip().upper()
+                for r in rows
+                if imp is not None
+                and abs(float(r.get("importe") or 0) - imp) <= 0.01
+            } - {""})
+            if duenos_mismo_importe == [codigo_cli]:
+                # Ya cargada bajo este mismo codigo (factura sin ficha de
+                # cliente). No duplicar la factura; crear la ficha abajo
+                # tampoco hace falta porque la factura ya esta.
+                raise _CargaAsinfoSkip(
+                    f"ya está cargada en PC bajo '{codigo_cli}' — no se duplicó"
+                )
+            if len(duenos_mismo_importe) == 1:
+                dueno = duenos_mismo_importe[0]
+                # Mismo numf + mismo importe + un solo dueno => mismo
+                # cliente con otro codigo. Mapear: alias automatico.
+                try:
+                    _aliases.agregar(
+                        codigo_cli, dueno,
+                        nota=f"auto: factura {numero or numf} ya cargada bajo {dueno}",
+                        usuario=(usuario or "asinfo"),
+                    )
+                except Exception:
+                    pass  # alias ya existia o fallo: el skip aplica igual
+                raise _CargaAsinfoSkip(
+                    f"ya está cargada bajo '{dueno}' — alias "
+                    f"{codigo_cli}→{dueno} registrado, no se duplicó"
+                )
+            otros = sorted({
+                (r.get("codigo_cli") or "").strip().upper() for r in rows
+            } - {"", codigo_cli, cli_pc})
+            if otros:
+                raise _CargaAsinfoSkip(
+                    f"numf {numf} ya existe en PC bajo {', '.join(otros)} "
+                    f"(importe distinto) — revisá si {codigo_cli} es alias "
+                    "antes de cargar"
+                )
+
     nuevo = (cli_pc or codigo_cli)[:5]
     db.execute(
         """
@@ -1010,7 +1090,9 @@ def cargar_desde_asinfo_bulk():
                 continue
             # Resolver alias Asinfo->PC; si el cliente no existe en PC
             # (alta nueva en dBase aun no importada), se auto-crea minimo.
-            cli_uso, creado = _resolver_cliente_asinfo(codigo_cli, usuario)
+            cli_uso, creado = _resolver_cliente_asinfo(
+                codigo_cli, usuario, numero=numf_completo, importe=importe,
+            )
             if creado:
                 clientes_creados.append(cli_uso)
             queries.crear(
@@ -1064,7 +1146,9 @@ def cargar_desde_asinfo():
             getattr(g, "user", {}).get("username")
             if hasattr(g, "user") and isinstance(g.user, dict) else "asinfo"
         )
-        cli_uso, creado = _resolver_cliente_asinfo(codigo_cli, usuario)
+        cli_uso, creado = _resolver_cliente_asinfo(
+            codigo_cli, usuario, numero=numf_completo, importe=importe,
+        )
         if creado:
             flash(
                 f"Cliente '{cli_uso}' no existía en PC — se creó automáticamente "
@@ -1082,6 +1166,8 @@ def cargar_desde_asinfo():
             usuario=usuario,
         )
         flash(f"Factura {numf_completo or '#'+str(res.get('numf'))} cargada desde Asinfo.", "ok")
+    except _CargaAsinfoSkip as e:
+        flash(f"No se cargó: {e}", "warn")
     except Exception as e:
         flash_exc("No se pudo cargar la factura", e)
     return redirect(url_for("facturas.desde_asinfo"))
