@@ -117,12 +117,23 @@ def totf() -> float:
 
     Verificado contra FACTURAS.DBF mayo 2026: SUM(saldo) Z+A sin filtro de
     signo = $4.916.202,77 (= lo que TMT veía en el dBase live).
+
+    TMT 2026-06-10 (bug hunt utilidad inflada): excluye `usuario_crea =
+    'asinfo-backfill'`. Las facturas backfilleadas de Asinfo son
+    HISTÓRICAS (ya están reflejadas en historia.patrimonio del último
+    cierre). Si las sumamos a TOTF (cartera live), inflan PATR → infla
+    utilidad (PATR − PATANT) en el monto del backfill que se haya cargado
+    en el mes. Ver auditoría: TOTF live $5.32M vs cartera-en-pantalla
+    (que SÍ filtra backfill) $893k — delta $4.43M de inflación pura.
+    Misma estrategia que ya aplica en informe_balance() en TODAS las
+    queries de mes en curso; faltaba en TOTF/TOTC (los cumulativos).
     """
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(saldo), 0) AS total
         FROM scintela.factura
-        WHERE stat IS NULL OR stat IN ('Z','A','',' ')
+        WHERE (stat IS NULL OR stat IN ('Z','A','',' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0)
@@ -151,12 +162,17 @@ def totc() -> float:
       V = legacy banco Internacional (ignorar)
       Y = anulado
       T = terminal (cancelada)
+
+    TMT 2026-06-10: excluye `usuario_crea = 'asinfo-backfill'` por
+    consistencia con TOTF. Hoy backfill de cheques no es común (sólo
+    facturas), pero el guard es barato y previene drift futuro.
     """
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(importe), 0) AS total
         FROM scintela.cheque
         WHERE stat IN ('Z','1','2','3','P','D')
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0)
@@ -422,11 +438,19 @@ def activos_totales() -> dict:
 
 
 def anticipos() -> float:
+    """Anticipos USD vivos de clientes/proveedores.
+
+    TMT 2026-06-10 (bug hunt utilidad inflada — mismo lote que TOTF/TOTC):
+    excluye `usuario_crea = 'asinfo-backfill'`. Si Asinfo backfillea
+    anticipos USD históricos, ya están reflejados en historia.patrimonio
+    del cierre → sumarlos en LIVE inflaría PATR.
+    """
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(importe), 0) AS total
         FROM scintela.dolares
-        WHERE st IS NULL OR st IN ('', ' ')
+        WHERE (st IS NULL OR st IN ('', ' '))
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -5079,23 +5103,27 @@ def retiros_del_anio_actual() -> list[dict]:
 
 
 def retiros_total_mes_actual() -> float:
+    # TMT 2026-06-10: filtro defensivo asinfo-backfill (consistencia con TOTF/TOTC).
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(ret), 0) AS total
         FROM scintela.retiros
         WHERE EXTRACT(YEAR FROM fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
           AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0) if row else 0.0
 
 
 def retiros_total_anual() -> float:
+    # TMT 2026-06-10: filtro defensivo asinfo-backfill (consistencia con TOTF/TOTC).
     row = db.fetch_one(
         """
         SELECT COALESCE(SUM(ret), 0) AS total
         FROM scintela.retiros
         WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     return float(row["total"] or 0) if row else 0.0
