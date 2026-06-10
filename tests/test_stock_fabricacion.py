@@ -80,10 +80,10 @@ def test_fabricacion_tc_renderiza_estructura_excel(app, fake_db):
     r = _render(app, fake_db, "tc", _DATA_TC)
     assert r.status_code == 200
     # Bloques del Excel
-    assert "Inventario Proceso".encode() in r.data
-    assert "Total OSM".encode() in r.data
-    assert "Total Ing. Fab.".encode() in r.data
-    assert "Órdenes de Fabricación".encode("utf-8") in r.data
+    assert b"Inventario Proceso" in r.data
+    assert b"Total OSM" in r.data
+    assert b"Total Ing. Fab." in r.data
+    assert "Órdenes de Fabricación".encode() in r.data
     assert b"HILO" in r.data
     # Totales de todo el stock arriba
     assert b"Bodega Hilo" in r.data and b"Bodega PT" in r.data
@@ -97,7 +97,7 @@ def test_fabricacion_pt_agrupa_por_tejido(app, fake_db):
     r = _render(app, fake_db, "pt", _DATA_PT)
     assert r.status_code == 200
     assert b"Fleece" in r.data and b"Jersey" in r.data
-    assert "Total general".encode() in r.data
+    assert b"Total general" in r.data
     assert b"TELA CRUDA" in r.data  # material del proceso
     # PT NO embebe importaciones
     assert b"IM-001" not in r.data
