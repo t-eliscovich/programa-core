@@ -3745,13 +3745,28 @@ def informe_balance() -> dict:
     # Días de cobranza: CART / VENTANUAL * 360 (PRG línea 441).
     cart_dias = _safe_div(cart * 360, venta_anual["uvent_anual"])
 
-    # Stock por etapa.
-    # HILADO / TEJIDO — del último snapshot (hoy coinciden con dBase).
-    h_hilado = float(hist.get("hilado") or 0) if "hilado" in hist else 0.0
-    h_tejido_kg = float(hist.get("tejido") or 0) if "tejido" in hist else 0.0
-    if h_hilado == 0 and h_tejido_kg == 0:
-        h_hilado = float(inic.get("hilado") or 0)
-        h_tejido_kg = float(inic.get("tejido") or 0)
+    # Stock por etapa — LIVE intra-mes (flujo de compras y producción).
+    # TMT 2026-06-10: antes leíamos hist.hilado/hist.tejido (snapshot del
+    # último cierre). El snapshot quedaba stale apenas hay compras o paso
+    # de producción intra-mes, y /informes/balance subestimaba el stock.
+    # Andrés en dBase ve la utilidad subir cuando se "pasa producción" —
+    # en PC NO subía porque hilado/tejido estaban congelados al cierre.
+    # Fix: usar la misma fórmula intra-mes que `/stock` (resumen_stock):
+    #   h_kg (hilado)    = opening + compras_H del mes
+    #   k_kg (tejido)    = opening + compras_K del mes − tinto_kg
+    # Esto unifica /informes/balance con /stock y refleja el flujo real.
+    try:
+        from modules.stock import queries as _stock_q
+        _stock_live = _stock_q.resumen_stock()
+        h_hilado = float(_stock_live.get("hilado", {}).get("kg") or 0)
+        h_tejido_kg = float(_stock_live.get("tejido", {}).get("kg") or 0)
+    except Exception:
+        # Fallback defensivo al snapshot stale si stock module no responde.
+        h_hilado = float(hist.get("hilado") or 0) if "hilado" in hist else 0.0
+        h_tejido_kg = float(hist.get("tejido") or 0) if "tejido" in hist else 0.0
+        if h_hilado == 0 and h_tejido_kg == 0:
+            h_hilado = float(inic.get("hilado") or 0)
+            h_tejido_kg = float(inic.get("tejido") or 0)
 
     # TERMINADO — réplica EXACTA del dBase (INFORMES.PRG L315/L320):
     #   PF = PF0 + KR − KV
