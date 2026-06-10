@@ -256,7 +256,9 @@ def index() -> Response:
                     """,
                     conn=conn,
                 )
-                # INSERT con valores conocidos del id=205 original
+                # INSERT con valores = HISTORIA.DBF 31/05 EXACTOS (verificado
+                # campo a campo 2026-06-10; retiro=0 como el dBase — antes
+                # tenía 241600 duplicado de usret, error de transcripción)
                 # (vistos en /informes/balance/utilidad-debug pre-regen)
                 res = db.execute_returning(
                     """
@@ -270,7 +272,7 @@ def index() -> Response:
                             2323544, 173823, 331207, 329103, 7689579,
                             232546, 295688, 2538201, 3074260, 472036,
                             253886, 297291, 255884, 807061,
-                            2600053, 7055192, 2150418, 241600,
+                            2600053, 7055192, 2150418, 0,
                             20469347, 1493681, 0,
                             1140800, 2407914, 241600, 595061,
                             CURRENT_TIMESTAMP, 'restore-original-205')
