@@ -45,8 +45,9 @@ def app_client(app, fake_db):
 # ---------------------------------------------------------------------------
 
 
-def test_cargar_desde_asinfo_single_marca_usuario_crea_como_backfill(app_client):
-    """El endpoint single debe llamar queries.crear con usuario='asinfo-backfill',
+def test_cargar_desde_asinfo_single_marca_usuario_crea_como_carga(app_client):
+    """Decisión dueña 2026-06-10 (criterio FINAL): el botón Cargar marca
+    usuario='asinfo-carga' — la factura CUENTA en cartera (a propósito).
     NO con el current user de la sesión."""
     captured = {}
 
@@ -74,9 +75,9 @@ def test_cargar_desde_asinfo_single_marca_usuario_crea_como_backfill(app_client)
         f"Esperaba redirect, vino {resp.status_code} body={resp.data[:200]!r}"
     )
     assert captured, "queries.crear no fue llamado"
-    assert captured.get("usuario") == "asinfo-backfill", (
+    assert captured.get("usuario") == "asinfo-carga", (
         f"REGRESIÓN del bug 2026-06-10: el endpoint /facturas/cargar-desde-asinfo "
-        f"debe pasar usuario='asinfo-backfill' pero pasó usuario={captured.get('usuario')!r}. "
+        f"debe pasar usuario='asinfo-carga' pero pasó usuario={captured.get('usuario')!r}. "
         f"Sin este marker, los filtros NO_BACKFILL_WHERE no excluyen estas filas y la "
         f"utilidad LIVE infla por el monto de las facturas cargadas."
     )
@@ -87,8 +88,8 @@ def test_cargar_desde_asinfo_single_marca_usuario_crea_como_backfill(app_client)
 # ---------------------------------------------------------------------------
 
 
-def test_cargar_desde_asinfo_bulk_marca_usuario_crea_como_backfill(app_client):
-    """El endpoint bulk debe llamar queries.crear con usuario='asinfo-backfill'
+def test_cargar_desde_asinfo_bulk_marca_usuario_crea_como_carga(app_client):
+    """Bulk ídem single: usuario='asinfo-carga' (cuenta en cartera).
     en CADA iteración del loop, NO con el current user."""
     import json
     captured_calls = []
@@ -119,9 +120,9 @@ def test_cargar_desde_asinfo_bulk_marca_usuario_crea_como_backfill(app_client):
         f"Esperaba 2 llamadas a crear, hubo {len(captured_calls)}"
     )
     for i, call in enumerate(captured_calls):
-        assert call.get("usuario") == "asinfo-backfill", (
+        assert call.get("usuario") == "asinfo-carga", (
             f"REGRESIÓN bulk[{i}]: usuario={call.get('usuario')!r} en vez de "
-            f"'asinfo-backfill'. Bug 2026-06-10 reabierto."
+            f"'asinfo-carga' (criterio dueña: lo cargado cuenta)."
         )
 
 
