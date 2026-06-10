@@ -12,6 +12,20 @@ from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 
+class ActivaRequerida(Exception):
+    """El movimiento es candidato a anticipo USD y falta contestar ACTIVA?.
+
+    Réplica del prompt `@22,0 SAY "ACTIVA? " GET DOL` de BANCOS.PRG (~216):
+    el dBase SIEMPRE pregunta antes de mandar a DOLARES. La vista atrapa
+    esta excepción, muestra la misma pregunta (S/N) y re-submitea con la
+    respuesta. Nada se graba hasta contestar (la tx hace rollback completo).
+    """
+
+    def __init__(self, cta: str):
+        self.cta = cta
+        super().__init__(f"ACTIVA? — candidato a anticipo USD cuenta {cta}")
+
+
 def _detectar_cta_usd(concepto: str, prov: str | None) -> tuple[str | None, str]:
     """Detecta si un ND manual es un anticipo USD — paridad dBase BANCOS.PRG.
 
@@ -51,14 +65,10 @@ def _detectar_cta_usd(concepto: str, prov: str | None) -> tuple[str | None, str]
     if m and (m.group(1) in cuentas or m.group(1) == "II"):
         return m.group(1), ((m.group(2) or "").strip() or c)[:50]
     # 2) dBase línea 212: (PROV='IN' AND LC2∈TOT+'II') OR (DOC='ND' AND LC2∈TOT).
-    #    OJO: en dBase este caso PREGUNTA "ACTIVA?" — acá no hay prompt, así
-    #    que solo auto-creamos cuando la intención es inequívoca: concepto
-    #    'XX.…' (convención punto = anticipo, CHEQUERA línea 621 la exige) o
-    #    prov='IN' explícito. 'XX SALDO' con espacio y sin prov NO crea nada
-    #    (en dBase la dueña contestaba N en esos casos — cuotas/préstamos).
-    if len(c) >= 4 and (
-        (c[2] == "." and lc2 in cuentas)
-        or (p == "IN" and c[2] in ". " and (lc2 in cuentas or lc2 == "II"))
+    #    Misma condición amplia que el PRG — la decisión final la toma la
+    #    pregunta ACTIVA? (S/N), exactamente como en el dBase.
+    if len(c) >= 4 and c[2] in ". " and (
+        lc2 in cuentas or (p == "IN" and lc2 == "II")
     ):
         return lc2, (c[3:18].strip() or c)[:50]
     return None, c
@@ -74,6 +84,7 @@ def _routear_mov_simple(
     prov: str | None,
     usuario: str,
     no_banco: int | None = None,
+    activa: bool | None = None,
 ) -> dict:
     """Side effects de un movimiento simple manual — IMITA el DO CASE de
     dBase BANCOS.PRG (líneas ~164-247), en el MISMO orden y con las mismas
@@ -168,10 +179,14 @@ def _routear_mov_simple(
                         f"(tipo {tipo_compra}, pagada por banco)")
         return out
 
-    # ── PRG ~212: DOLARES (anticipo USD) — solo ND.
+    # ── PRG ~212: DOLARES (anticipo USD) — solo ND. Igual que el dBase,
+    # SIEMPRE pregunta ACTIVA? (S/N): None → la vista pregunta (nada se
+    # graba todavía); False (N) → queda solo en banco; True (S) → crea.
     if documento == "ND":
         cta_usd, concepto_usd = _detectar_cta_usd(concepto_in, prov)
-        if cta_usd:
+        if cta_usd and activa is None:
+            raise ActivaRequerida(cta_usd)
+        if cta_usd and activa:
             row = db.execute_returning(
                 """
                 INSERT INTO scintela.dolares
@@ -187,6 +202,11 @@ def _routear_mov_simple(
             out.update(destino_table="dolares", destino_id=id_dol,
                        meta={"id_dolares": id_dol, "cta_usd": cta_usd},
                        side=f"Anticipo USD #{id_dol} creado en cuenta {cta_usd} (ver Anticipos)")
+            return out
+        if cta_usd:
+            # ACTIVA?=N — como en el dBase, el CASE ya consumió el match:
+            # queda solo en banco, no sigue a RR/CAJA/INOP.
+            out["side"] = f"ACTIVA?=N — sin anticipo (cuenta {cta_usd}), solo banco"
             return out
 
     # ── PRG ~222: RETIROS (ND saca, DE devuelve).
@@ -913,6 +933,7 @@ def crear_movimiento_simple(
     prov: str | None = None,
     usuario: str = "web",
     permitir_duplicado: bool = False,
+    activa: bool | None = None,
 ) -> dict:
     """Crea un movimiento bancario "simple" (DE / NC / ND).
 
@@ -1010,6 +1031,7 @@ def crear_movimiento_simple(
                         prov=prov,
                         usuario=usuario,
                         no_banco=no_banco,
+                        activa=activa,
                     )
                     if ruta_dd["destino_id"]:
                         import json as _json
@@ -1099,6 +1121,7 @@ def crear_movimiento_simple(
             prov=prov,
             usuario=usuario,
             no_banco=no_banco,
+            activa=activa,
         )
 
         # Auto-link: origen = la fila bancaria. Destino = la contraparte

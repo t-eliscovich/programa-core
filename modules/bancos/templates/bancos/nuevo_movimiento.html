@@ -40,12 +40,13 @@
           Importe <span class="text-red-500">*</span>
         </label>
         <input type="text" name="importe" required placeholder="0,00"
+               value="{{ form_vals.importe if form_vals else '' }}"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
       </div>
 
       <div>
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Fecha</label>
-        <input type="date" name="fecha" value="{{ hoy }}"
+        <input type="date" name="fecha" value="{{ (form_vals.fecha if form_vals and form_vals.fecha else hoy) }}"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
       </div>
 
@@ -56,6 +57,7 @@
         </label>
         <input type="text" name="beneficiario" maxlength="5"
                list="proveedores-list" autocomplete="off"
+               value="{{ form_vals.beneficiario if form_vals else '' }}"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 uppercase"
                oninput="this.value=this.value.toUpperCase()">
       </div>
@@ -64,9 +66,33 @@
       <div class="md:col-span-2">
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Concepto</label>
         <input type="text" name="concepto" maxlength="50" placeholder="Descripción corta del movimiento"
+               value="{{ form_vals.concepto if form_vals else '' }}"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
       </div>
     </div>
+
+    {% if pregunta_activa %}
+    {# Réplica del prompt "ACTIVA?" de dBase BANCOS.PRG (~216): el concepto
+       matchea una cuenta de anticipos USD. S = banco baja + anticipo se
+       crea a la vez; N = queda solo en el banco. Nada se grabó todavía. #}
+    <div class="rounded-lg border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 p-4">
+      <div class="font-mono font-semibold text-amber-800 dark:text-amber-300 mb-1">ACTIVA?</div>
+      <p class="text-sm text-amber-800 dark:text-amber-200 mb-3">
+        ¿Anticipo en dólares a la cuenta <strong class="font-mono">{{ pregunta_activa }}</strong>?
+        <span class="text-amber-700/80 dark:text-amber-300/80">S = banco baja y el anticipo se crea a la vez · N = solo banco.</span>
+      </p>
+      <div class="flex gap-3">
+        <button type="submit" name="activa" value="S"
+                class="text-sm px-5 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-semibold">
+          S — crear anticipo
+        </button>
+        <button type="submit" name="activa" value="N"
+                class="text-sm px-5 py-1.5 rounded bg-slate-600 text-white hover:bg-slate-700 font-semibold">
+          N — solo banco
+        </button>
+      </div>
+    </div>
+    {% endif %}
 
     {% if proveedores %}
       <datalist id="proveedores-list">

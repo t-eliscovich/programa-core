@@ -1061,6 +1061,8 @@ def nuevo_movimiento():
         bancos, _err = [], str(e)
         flash_exc("No pude listar bancos", e)
 
+    pregunta_activa = None  # cuenta USD pendiente de ACTIVA? (paridad dBase)
+
     if request.method == "POST":
         no_banco = parse_int(request.form.get("no_banco"))
         importe = parse_monto(request.form.get("importe"))
@@ -1070,6 +1072,11 @@ def nuevo_movimiento():
         usuario = (g.user or {}).get("username", "web")
         # TMT 2026-06-09: override del guard anti-duplicado (repetidos reales).
         permitir_dup = (request.form.get("permitir_duplicado") or "") == "1"
+        # ACTIVA? — réplica del prompt del dBase (BANCOS.PRG ~216). 'S'/'N'
+        # llega del segundo submit; sin respuesta = None → queries levanta
+        # ActivaRequerida y acá se re-pregunta.
+        activa_raw = (request.form.get("activa") or "").strip().upper()
+        activa = True if activa_raw == "S" else (False if activa_raw == "N" else None)
         try:
             r = queries.crear_movimiento_simple(
                 no_banco=no_banco,
@@ -1080,6 +1087,7 @@ def nuevo_movimiento():
                 prov=prov,
                 usuario=usuario,
                 permitir_duplicado=permitir_dup,
+                activa=activa,
             )
             if r.get("dedupe"):
                 # TMT 2026-06-09: dedupe silencioso — el mov ya estaba.
@@ -1095,6 +1103,10 @@ def nuevo_movimiento():
                 msg += f" {r['side_effect']}."
             flash(msg, "ok")
             return redirect(url_for("bancos.movimientos", no_banco=r["no_banco"]))
+        except queries.ActivaRequerida as e:
+            # Réplica del prompt dBase: nada se grabó — re-render con la
+            # pregunta y los valores tal como vinieron.
+            pregunta_activa = e.cta
         except ValueError as e:
             flash(str(e), "warn")
         except Exception as e:
@@ -1117,6 +1129,19 @@ def nuevo_movimiento():
                 no_banco_inicial = int(b["no_banco"])
                 break
 
+    # Si venimos de un POST (ACTIVA? o error), preservar lo tipeado.
+    form_vals = {}
+    if request.method == "POST":
+        form_vals = {
+            "no_banco": request.form.get("no_banco") or "",
+            "importe": request.form.get("importe") or "",
+            "fecha": request.form.get("fecha") or "",
+            "beneficiario": request.form.get("beneficiario") or "",
+            "concepto": request.form.get("concepto") or "",
+        }
+        if form_vals["no_banco"]:
+            no_banco_inicial = parse_int(form_vals["no_banco"]) or no_banco_inicial
+
     return render_template(
         "bancos/nuevo_movimiento.html",
         doc=doc,
@@ -1126,6 +1151,8 @@ def nuevo_movimiento():
         no_banco_inicial=no_banco_inicial,
         proveedores=proveedores,
         hoy=today_ec().isoformat(),
+        pregunta_activa=pregunta_activa,
+        form_vals=form_vals,
     )
 
 
