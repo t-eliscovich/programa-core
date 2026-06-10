@@ -2524,13 +2524,25 @@ def aplicar_a_factura(
                             f"factura {f['numf']} ({saldo_actual:.2f}) "
                             f"por más de $50."
                         )
-                else:  # imp < 0 → REVERSA de abono (abono mal cargado) o
-                    # absorción de un crédito a favor. TMT 2026-06-06 dueña:
-                    # antes esto se BLOQUEABA si la factura tenía saldo
-                    # POSITIVO, pero un negativo sirve justamente para
-                    # REVERTIR un abono (sube el saldo de vuelta). Única
-                    # regla: no se puede revertir más de lo que hay abonado.
-                    if abs(imp) > abono_actual + 0.01:
+                else:  # imp < 0 → dos casos distintos según el saldo:
+                    # (a) saldo NEGATIVO (nota de crédito / sobrepago a favor
+                    #     del cliente): el negativo ABSORBE el crédito. Tope =
+                    #     |saldo| (no el abono — la NC arranca con abono 0).
+                    #     TMT 2026-06-10: el fix del 06-06 trataba TODO
+                    #     negativo como reversa y bloqueaba absorber la NC
+                    #     ("excede el abono (0.00)") aunque el propio flujo
+                    #     de arriba te manda a aplicar negativo contra
+                    #     saldos negativos.
+                    # (b) saldo >= 0: REVERSA de abono (abono mal cargado).
+                    #     Tope = lo abonado. TMT 2026-06-06.
+                    if saldo_actual < -0.005:
+                        if abs(imp) > abs(saldo_actual) + 0.01:
+                            raise ValueError(
+                                f"El importe negativo ({abs(imp):.2f}) excede "
+                                f"el crédito a favor de la factura {f['numf']} "
+                                f"({abs(saldo_actual):.2f})."
+                            )
+                    elif abs(imp) > abono_actual + 0.01:
                         raise ValueError(
                             f"El importe negativo ({abs(imp):.2f}) excede el "
                             f"abono de la factura {f['numf']} "
