@@ -24,23 +24,20 @@ import pytest
 
 
 @pytest.fixture
-def app_client():
-    """Cliente Flask de testing con login fake como 'tamara'."""
-    import app as app_module
-    flask_app = app_module.create_app()
-    flask_app.config["TESTING"] = True
-    flask_app.config["WTF_CSRF_ENABLED"] = False
+def app_client(app, fake_db):
+    """Cliente Flask de testing logueado como 'tamara' (NO 'asinfo-backfill').
 
-    with flask_app.test_client() as client:
-        # Inyectar sesión de 'tamara' (NO 'asinfo-backfill') — el bug original
-        # era que el current user se propagaba como usuario_crea. El fix
-        # debe ignorar al current user y forzar el marker.
-        with client.session_transaction() as sess:
-            sess["user_id"] = 1
-            sess["username"] = "tamara"
-            # list, no set: la session de Flask se serializa a JSON
-            sess["permisos"] = ["facturas.crear", "facturas.ver"]
-        yield client
+    El bug original era que el current user se propagaba como usuario_crea;
+    el fix debe ignorar al current user y forzar el marker. Usa el patrón
+    canónico del conftest (app + fake_db) — la versión anterior creaba la
+    app real contra la DB real y rompía en CI.
+    """
+    rid = fake_db.add_role("Accionista", ["facturas.crear", "facturas.ver"])
+    uid = fake_db.add_user("tamara", b"$2b$12$fakehash", rid)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["user_id"] = uid
+    return client
 
 
 # ---------------------------------------------------------------------------
