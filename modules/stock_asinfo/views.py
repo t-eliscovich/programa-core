@@ -462,9 +462,11 @@ def _fabricacion_page(proceso: str):
         error = str(e)
 
     # Totales de TODO el stock (kg por bodega Asinfo) — arriba de la página.
+    # Sólo las 3 bodegas del flujo, en orden de proceso: Hilo → TC → PT.
     totales_bodega = []
     try:
-        totales_bodega = asinfo_service.stock_asinfo_lote_totales()
+        _tot = {t["id_bodega"]: t for t in asinfo_service.stock_asinfo_lote_totales()}
+        totales_bodega = [_tot[b] for b in (51, 52, 53) if b in _tot]
     except Exception:  # noqa: BLE001
         totales_bodega = []
 
@@ -504,19 +506,6 @@ def _fabricacion_page(proceso: str):
             filename=f"fabricacion_{proceso}.csv",
         )
 
-    # Sección Importaciones — sólo en TC (el hilo es lo que se importa).
-    importaciones_pend = []
-    if proceso == "tc":
-        try:
-            from modules.importaciones import service as imp_service
-
-            importaciones_pend = [
-                r for r in imp_service.importaciones_con_cruce()
-                if not r.get("recibida")
-            ][:15]
-        except Exception:  # noqa: BLE001
-            importaciones_pend = []
-
     return render_template(
         "stock_asinfo/fabricacion.html",
         proceso=proceso,
@@ -527,7 +516,6 @@ def _fabricacion_page(proceso: str):
         q=q,
         totales_bodega=totales_bodega,
         stock_programa=stock_programa,
-        importaciones_pend=importaciones_pend,
         error=error,
     )
 

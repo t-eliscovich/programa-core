@@ -65,14 +65,6 @@ def _render(app, fake_db, proceso, data, **extra_patches):
          patch.object(service, "stock_asinfo_lote_totales", return_value=_TOTALES), \
          patch.object(stock_queries, "resumen_stock",
                       return_value={"total": {"kg": 600000.0, "ukg": 0, "us": 1234567.0}}):
-        if proceso == "tc":
-            from modules.importaciones import service as imp_service
-
-            with patch.object(imp_service, "importaciones_con_cruce", return_value=[
-                {"im_numero": "IM-001", "fecha": "2026-06-01", "proveedor": "SKK",
-                 "nota": "HILO 24/1", "total_asinfo": 12345.0, "recibida": False},
-            ]):
-                return c.get(f"/stock/fabricacion-{proceso}", **extra_patches)
         return c.get(f"/stock/fabricacion-{proceso}", **extra_patches)
 
 
@@ -80,17 +72,15 @@ def test_fabricacion_tc_renderiza_estructura_excel(app, fake_db):
     r = _render(app, fake_db, "tc", _DATA_TC)
     assert r.status_code == 200
     # Bloques del Excel
-    assert b"Inventario Proceso" in r.data
-    assert b"Total OSM" in r.data
-    assert b"Total Ing. Fab." in r.data
-    assert "Órdenes de Fabricación".encode() in r.data
+    assert b"Inventario en proceso" in r.data
+    assert b"Despachado (OSM)" in r.data
+    assert "Ing. fabricación".encode() in r.data
+    assert "Órdenes de fabricación".encode() in r.data
     assert b"HILO" in r.data
     # Totales de todo el stock arriba
-    assert b"Bodega Hilo" in r.data and b"Bodega PT" in r.data
+    assert b">Hilo<" in r.data and b">PT<" in r.data
     # Detalle OFT
     assert b"OFT-000035309" in r.data
-    # Importaciones embebidas (solo TC)
-    assert b"IM-001" in r.data
 
 
 def test_fabricacion_pt_agrupa_por_tejido(app, fake_db):
@@ -99,8 +89,6 @@ def test_fabricacion_pt_agrupa_por_tejido(app, fake_db):
     assert b"Fleece" in r.data and b"Jersey" in r.data
     assert b"Total general" in r.data
     assert b"TELA CRUDA" in r.data  # material del proceso
-    # PT NO embebe importaciones
-    assert b"IM-001" not in r.data
 
 
 def test_fabricacion_csv_export(app, fake_db):
@@ -126,6 +114,14 @@ def test_fabricacion_fail_soft_sin_asinfo(app, fake_db):
         r = c.get("/stock/fabricacion-tc")
     assert r.status_code == 200
     assert b"metabase down" in r.data
+
+
+def test_fabricacion_bodegas_en_orden_de_proceso(app, fake_db):
+    """Los KPIs van Hilo → Tela Cruda → PT, no por kg desc."""
+    r = _render(app, fake_db, "tc", _DATA_TC)
+    body = r.data.decode("utf-8", "ignore")
+    i_h, i_tc, i_pt = body.find(">Hilo<"), body.find(">Tela Cruda<"), body.find(">PT<")
+    assert -1 < i_h < i_tc < i_pt
 
 
 def test_fabricacion_service_totales_incluyen_negativos(monkeypatch):
