@@ -528,6 +528,7 @@ def test_resolver_cliente_faltante_auto_crea(monkeypatch):
     assert len(inserts) == 1
     assert inserts[0][0] == "NUEVO"
     assert inserts[0][1] == "tam"
+    assert inserts[0][2] == "NUEVO"  # param del WHERE NOT EXISTS
 
 
 def test_resolver_cliente_normaliza_y_trunca(monkeypatch):

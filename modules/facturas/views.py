@@ -1041,13 +1041,19 @@ def _resolver_cliente_asinfo(
                 )
 
     nuevo = (cli_pc or codigo_cli)[:5]
+    # OJO: scintela.cliente en PROD no tiene UNIQUE(codigo_cli) (el fixture
+    # de tests si — drift), asi que ON CONFLICT explota con "no unique or
+    # exclusion constraint". WHERE NOT EXISTS logra el mismo no-duplicar
+    # sin depender del constraint. (probado en prod 2026-06-10)
     db.execute(
         """
         INSERT INTO scintela.cliente (codigo_cli, usuario_crea)
-        VALUES (%s, %s)
-        ON CONFLICT (codigo_cli) DO NOTHING
+        SELECT %s, %s
+         WHERE NOT EXISTS (
+               SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s
+         )
         """,
-        (nuevo, (usuario or "asinfo")[:50]),
+        (nuevo, (usuario or "asinfo")[:50], nuevo),
     )
     return nuevo, True
 
