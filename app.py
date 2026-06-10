@@ -402,6 +402,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(posdat_reconcile_bp)
 
+    # Reconciliador FACTURAS (dry-run) — TMT 2026-06-10. /admin/facturas-reconcile
+    # compara scintela.factura con FACTURAS.DBF y bucketé: pendiente de sync /
+    # backfill Asinfo / creadas en PC (el sync las borraría) / huérfanas / diffs
+    # de cobranza. SOLO LECTURA: el "apply" de facturas es el sync normal.
+    from modules.admin_dbase.facturas_reconcile_view import bp as facturas_reconcile_bp
+
+    app.register_blueprint(facturas_reconcile_bp)
+
     # Importador de fichas de clientes — TMT 2026-06-06. /admin/clientes-import
     # completa dirección/teléfono/RUC/provincia desde CLIENTES.DBF (que no entra
     # al sync normal) y agrega los clientes que falten. Dry-run por defecto.
