@@ -1258,6 +1258,35 @@ def ventas_mes_corriente_resultado() -> dict:
     }
 
 
+def ventas_mes_corriente_kg_fisico() -> float:
+    """Ventas del mes EN kg SIN filtro asinfo-backfill — para cálculo de stock físico.
+
+    TMT 2026-06-10: `ventas_mes_corriente_resultado()` filtra `usuario_crea
+    != 'asinfo-backfill'` para que las facturas Asinfo cargadas con marker
+    backfill NO inflen la cartera (TOTF) ni cuenten como ventas del mes en
+    Resultados. Eso es correcto para "no contar lo que se trajo de Asinfo
+    todavía". PERO esas facturas YA REPRESENTAN VENTAS FÍSICAS REALES — la
+    mercadería salió del depósito. El cálculo de stock terminado_kg/tejido_kg
+    debe descontar esas kg para que `vsto_display` (= kg × tarifas) refleje
+    el stock real, no el "stock virtual asumiendo que esas ventas no
+    ocurrieron". Sin este filtro, terminado_kg infla por las kg vendidas
+    backfill que no se descuentan → vsto sube → patr sube → utilidad infla.
+
+    Esta función NO filtra backfill. Solo se usa en el cálculo de stock_kg
+    para que terminado/tejido reflejen kg físicos reales.
+    """
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(kg), 0) AS kg
+          FROM scintela.factura
+         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+           AND (stat IS NULL OR stat <> 'X')
+        """,
+    )
+    return float(row.get("kg") or 0) if row else 0.0
+
+
 def compras_mes_corriente() -> dict:
     """Compras de MATERIA PRIMA (hilado) del mes en curso.
 
@@ -3752,7 +3781,16 @@ def informe_balance() -> dict:
         (_prev_y, _prev_m),
     ) or {}
     pf0_terminado = float(_prev_inic.get("terminado") or 0)
-    h_terminado_kg = max(0.0, pf0_terminado + float(KR or 0) - float(h_kvent or 0))
+    # TMT 2026-06-10 (bug hunt stock inflado): para descontar de terminado_kg
+    # usamos las kg vendidas FÍSICAMENTE — incluye las facturas marcadas como
+    # 'asinfo-backfill' porque ellas son ventas reales que sí salieron del
+    # depósito. Si usáramos `h_kvent` (que filtra backfill para que no infle
+    # Resultados/cartera), `h_terminado_kg` inflaría por las kg vendidas que
+    # no se descuentan → vsto sube → patr sube → utilidad infla. Bug detectado
+    # post-fix de utilidad de las facturas Asinfo (~$80k de inflación de
+    # stock terminado).
+    h_kvent_fisico = ventas_mes_corriente_kg_fisico()
+    h_terminado_kg = max(0.0, pf0_terminado + float(KR or 0) - float(h_kvent_fisico or 0))
 
     # ─── Tarifas del panel STOCK ───────────────────────────────────────
     # Reglas PRG (INFORMES.PRG líneas 303-345 + reglas TMT):
