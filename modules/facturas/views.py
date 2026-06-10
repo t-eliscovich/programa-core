@@ -1210,6 +1210,12 @@ def lista():
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
     solo_abiertas = request.args.get("abiertas") == "1"
+    # TMT 2026-06-10 — toggle "Incluir Asinfo backfill" (default OFF).
+    # OFF (default): el listado excluye usuario_crea='asinfo-backfill' →
+    # coincide con /informes/balance TOTF (que también excluye). Convención
+    # canónica: no contar facturas Asinfo en cartera live hasta el cierre
+    # mensual. ON: muestra todo (útil para auditar qué backfill cargó).
+    incluir_backfill = request.args.get("incluir_backfill") == "1"
     # TMT 2026-05-22 — modo auditoría: muestra solo las facturas que
     # PC tiene pero Asinfo NO matchea (excluyendo legacy y NC kg=0).
     # Sirve para encontrar discrepancias reales entre los sistemas.
@@ -1275,6 +1281,7 @@ def lista():
             cliente=cliente, monto_min=monto_min, monto_max=monto_max,
             estado=estado_filtro,
             estados=estados_filtro,
+            incluir_backfill=incluir_backfill,
         )
         conteos = queries.conteos_por_vista()
         # Total del universo filtrado (sin LIMIT/OFFSET) — para el contador.
@@ -1288,6 +1295,7 @@ def lista():
                 vista=vista, cliente=cliente,
                 monto_min=monto_min, monto_max=monto_max,
                 estado=estado_filtro, estados=estados_filtro,
+                incluir_backfill=incluir_backfill,
             )
         error = None
     except Exception as e:
@@ -1616,6 +1624,8 @@ def lista():
         total_filtrado_importe=total_filtrado.get("total_importe", 0.0),
         total_filtrado_saldo=total_filtrado.get("total_saldo", 0.0),
         paginado=not (is_export or solo_huerfanas),
+        # TMT 2026-06-10 — toggle "Incluir Asinfo backfill" (default OFF).
+        incluir_backfill=incluir_backfill,
     )
 
 
