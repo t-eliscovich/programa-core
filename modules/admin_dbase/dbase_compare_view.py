@@ -347,6 +347,46 @@ def reporte(dias_banco: int = 30):
         elif dias_t and dias_t[0].get("delta") is not None:
             yield line(f"  ⇒ el gap es CONSTANTE en toda la ventana ({dias_t[0]['delta']:+,.2f}) — "
                        "se origina antes: ampliá los días o revisar recompute de saldos")
+
+        # ── COSTURA DE APERTURA + ORIGEN (causa raíz, pedido dueña) ──
+        # El archivo mensual del dBase abre con el carry del cierre anterior.
+        # Acá mostramos esa costura y de DÓNDE salieron las filas de PC del
+        # mes (usuario_crea + cuándo se crearon) — si la apertura difiere,
+        # la causa está en la cola del mes anterior de PC o en un recompute.
+        import db as _db
+        pm = d.get("pich_movs") or []
+        if pm:
+            f0 = min(m["fecha"] for m in pm if m.get("fecha"))
+            primera = next(m for m in pm if m.get("fecha") == f0)
+            yield line(f"  COSTURA: dBase abre {f0} (1ra fila: {primera['doc']} "
+                       f"{primera['importe']:+,.2f} → saldo {primera['saldo']:,.2f})")
+            cola = _db.fetch_one(
+                """
+                SELECT t.fecha, t.saldo, COALESCE(t.usuario_crea,'NULL') AS uc,
+                       t.fecha_crea
+                  FROM scintela.transacciones_bancarias t
+                  JOIN scintela.banco b ON b.no_banco = t.no_banco
+                 WHERE UPPER(b.nombre) LIKE 'PICHINCH%%' AND t.fecha < %s
+                 ORDER BY t.fecha DESC, t.id_transaccion DESC LIMIT 1
+                """, (f0,),
+            )
+            if cola:
+                yield line(f"           PC cierra el mes anterior en {cola['fecha']} "
+                           f"saldo {_f(cola['saldo']):,.2f} "
+                           f"[{cola['uc']}, creada {cola['fecha_crea']}]")
+            origen = _db.fetch_all(
+                """
+                SELECT COALESCE(t.usuario_crea,'NULL') AS uc, COUNT(*) AS n,
+                       MIN(t.fecha_crea) AS desde_c, MAX(t.fecha_crea) AS hasta_c
+                  FROM scintela.transacciones_bancarias t
+                  JOIN scintela.banco b ON b.no_banco = t.no_banco
+                 WHERE UPPER(b.nombre) LIKE 'PICHINCH%%' AND t.fecha >= %s
+                 GROUP BY 1 ORDER BY 2 DESC
+                """, (f0,),
+            ) or []
+            yield line("  ORIGEN de las filas PC del mes (usuario_crea · n · creadas entre):")
+            for o in origen:
+                yield line(f"    {o['uc']:<18} {o['n']:>4}  {o['desde_c']} → {o['hasta_c']}")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [detalle movimientos no disponible: {exc!r}]")
     yield line()
