@@ -158,6 +158,25 @@ def _run(aplicar: bool):
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
 
+    yield from importar_desde_dbf(dbf_path, aplicar)
+
+
+def importar_desde_dbf(dbf_path: Path, aplicar: bool, verbose: bool = True):
+    """Core del import — generator de líneas de log.
+
+    Reutilizado por el endpoint standalone (/admin/clientes-import) y por el
+    hook post-sync de /admin/dbase-sync (TMT 2026-06-10: las altas nuevas de
+    clientes en el dBase no llegaban a PC porque CLIENTES.DBF no tiene mapper
+    en el sync — facturas de Asinfo rebotaban con "cliente no existe").
+
+    `verbose=False` omite los listados por-cliente (para no inflar el log del
+    sync); el PLAN y el resultado APLICADO se loguean siempre.
+    """
+    import db
+
+    def line(m=""):
+        return m.rstrip("\n") + "\n"
+
     dbf = _leer_dbf(dbf_path)
     pc = _leer_pc()
     dbf_codes = {d["codigo_cli"] for d in dbf}
@@ -165,10 +184,11 @@ def _run(aplicar: bool):
 
     yield line(f"DBF: {len(dbf)} clientes únicos  |  PC: {len(pc)} clientes")
     yield line(f"  PC que NO están en el DBF (quedan intactos, no se borran): {len(pc_only)}")
-    for c in sorted(pc_only):
-        cur = pc[c]
-        yield line(f"      solo-PC: [{c}] {_s(cur.get('nombre'))[:45]}  "
-                   f"tel={_s(cur.get('telefono'))[:14]} ruc={_s(cur.get('ruc'))[:14]}")
+    if verbose:
+        for c in sorted(pc_only):
+            cur = pc[c]
+            yield line(f"      solo-PC: [{c}] {_s(cur.get('nombre'))[:45]}  "
+                       f"tel={_s(cur.get('telefono'))[:14]} ruc={_s(cur.get('ruc'))[:14]}")
     yield line("")
 
     inserts = []
@@ -197,18 +217,22 @@ def _run(aplicar: bool):
     yield line(f"Después PC tendría: {len(pc) + len(inserts)} clientes "
                f"({len(dbf_codes)} del DBF + {len(pc_only)} solo-PC)")
     yield line("")
-    yield line("--- INSERT (faltan en PC) ---")
-    for d in inserts[:120]:
-        yield line(f"  {d['codigo_cli']:6} {d['nombre'][:34]:34} {d['direccion1'][:28]}")
-    if len(inserts) > 120:
-        yield line(f"  … +{len(inserts) - 120} más")
-    yield line("")
-    yield line("--- UPDATE (rellenan campos vacíos) — primeros 80 ---")
-    for cod, cambios in updates[:80]:
-        yield line(f"  {cod:6} {', '.join(cambios)}")
-    if len(updates) > 80:
-        yield line(f"  … +{len(updates) - 80} más")
-    yield line("")
+    if verbose:
+        yield line("--- INSERT (faltan en PC) ---")
+        for d in inserts[:120]:
+            yield line(f"  {d['codigo_cli']:6} {d['nombre'][:34]:34} {d['direccion1'][:28]}")
+        if len(inserts) > 120:
+            yield line(f"  … +{len(inserts) - 120} más")
+        yield line("")
+        yield line("--- UPDATE (rellenan campos vacíos) — primeros 80 ---")
+        for cod, cambios in updates[:80]:
+            yield line(f"  {cod:6} {', '.join(cambios)}")
+        if len(updates) > 80:
+            yield line(f"  … +{len(updates) - 80} más")
+        yield line("")
+    elif inserts:
+        yield line("  nuevos: " + ", ".join(d["codigo_cli"] for d in inserts[:40])
+                   + (f" … +{len(inserts)-40}" if len(inserts) > 40 else ""))
 
     if not aplicar:
         yield line("DRY-RUN: no se tocó nada. Marcá 'Aplicar' para ejecutar.")

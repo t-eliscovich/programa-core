@@ -249,6 +249,28 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         except Exception as exc:  # noqa: BLE001
             yield line(f"[WARN] reconcile POSDAT falló (no fatal): {exc!r}")
 
+    # TMT 2026-06-10: import de fichas de clientes en CADA sync. CLIENTES.DBF
+    # no tiene mapper en sync_dbase_actual.py, así que las altas nuevas del
+    # dBase nunca llegaban a PC → las facturas de Asinfo rebotaban con
+    # "cliente no existe en PC" (pasó con 3 facturas el 2026-06-09). El
+    # import es rellenar-solo + INSERT-si-falta: no pisa datos de PC.
+    if rc == 0:
+        try:
+            from modules.admin_dbase.clientes_import_view import importar_desde_dbf
+            cli_dbf = next(
+                (pth for pth in EXTRACT_DIR.iterdir()
+                 if pth.is_file() and pth.name.upper() == "CLIENTES.DBF"),
+                None,
+            )
+            yield line("")
+            yield line("[clientes-import post-sync]")
+            if cli_dbf is None:
+                yield line("  (el tarball no traía CLIENTES.DBF — se omite; las altas nuevas de clientes NO llegan)")
+            else:
+                yield from importar_desde_dbf(cli_dbf, aplicar=True, verbose=False)
+        except Exception as exc:  # noqa: BLE001
+            yield line(f"[WARN] clientes-import falló (no fatal): {exc!r}")
+
     if rc == 0:
         yield line("OK ✓")
     else:
