@@ -310,7 +310,10 @@ def lista():
     try:
         queries.persistir_acumulacion_yy()
     except Exception:  # noqa: BLE001
-        pass
+        import logging
+        logging.getLogger("programa_core.posdat").exception(
+            "persistir_acumulacion_yy FALLÓ — Pasivos YY van a driftear vs dBase"
+        )
     q = request.args.get("q", "").strip()
     prov = (request.args.get("prov") or "").strip().upper() or None
     # TMT 2026-05-20 v2 — vuelve default solo_abiertas=True (pedido

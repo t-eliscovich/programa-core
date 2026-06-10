@@ -31,10 +31,24 @@ def test_yy_repin_por_concepto():
         [_dbf("YY", 57000, "A,E,C AG,EN,CMB")],
         [_pc(132, "YY", 49300, "A,E,C AG,EN,CMB")],
     )
+    # TMT 2026-06-10: "que" ahora muestra la clave canónica (^prefijo PRG)
     assert plan["updates"][0] == {
         "id": 132, "importe": 57000.0, "concepto": "A,E,C AG,EN,CMB",
-        "yy": True, "que": "YY A,E,C AG,EN,CMB",
+        "yy": True, "que": "YY ^A,E,C",
     }
+
+
+def test_yy_concepto_editado_en_pc_sigue_matcheando():
+    """TMT 2026-06-10: la identidad YY es el PREFIJO del PRG (clave canónica),
+    no el concepto completo. Si la dueña edita el concepto en PC, el reconcile
+    NO debe anular + reinsertar (perdía id, baseline y links)."""
+    plan = reconciliar_posdat_plan(
+        [_dbf("YY", 57000, "A,E,C AG,EN,CMB")],
+        [_pc(132, "YY", 49300, "A,E,C aportes y encaje")],  # concepto editado
+    )
+    assert plan["deletes"] == [] and plan["inserts"] == []
+    assert plan["updates"][0]["id"] == 132
+    assert plan["updates"][0]["importe"] == 57000.0
 
 
 def test_mismo_importe_distinto_concepto_no_churn():

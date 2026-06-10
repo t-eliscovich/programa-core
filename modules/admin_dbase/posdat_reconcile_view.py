@@ -74,16 +74,45 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
         # RT (IVA) acumula display-time igual que YY → mismo tratamiento.
         return _norm(p) in ("YY", "RT")
 
-    # ── YY/RT: provisiones. Match por (prov, concepto). importe=dBase + baseline=hoy ──
+    # ── YY/RT: provisiones. Match por CLAVE CANÓNICA (prefijo MENU.PRG) ──
+    # TMT 2026-06-10: antes era (prov, concepto) exacto → si la dueña editaba
+    # el concepto en PC, la fila dejaba de matchear y el reconcile la ANULABA
+    # + re-insertaba la del dBase (id nuevo, links rotos). Con la clave por
+    # prefijo ("A,E,C...", "SUELDOS...", etc.) la identidad sobrevive
+    # ediciones cosméticas. Colisión de clave (2 filas mismo prefijo) cae al
+    # concepto exacto para esas filas.
+    from modules.posdat.queries import clave_canonica_yy
+
+    def _k_yy(r):
+        return clave_canonica_yy(r.get("prov"), r.get("concepto"))
+
+    # detectar claves ambiguas (aparecen 2+ veces en dbf o en pc)
+    from collections import Counter
+    _cnt = Counter()
+    for r in dbf_banc0:
+        if is_yy_like(r["prov"]):
+            _cnt[_k_yy(r)] += 1
+    for r in pc_banc0:
+        if is_yy_like(r["prov"]):
+            _cnt[_k_yy(r)] += 0  # solo dbf define ambigüedad de inserción
+    _pc_cnt = Counter(_k_yy(r) for r in pc_banc0 if is_yy_like(r["prov"]))
+    ambiguas = {k for k, n in _cnt.items() if n > 1} | {k for k, n in _pc_cnt.items() if n > 1}
+
+    def _key(r):
+        k = _k_yy(r)
+        if k in ambiguas:
+            return (_norm(r["prov"]), _norm(r["concepto"]))
+        return k
+
     dbf_yy: dict = {}
     for r in dbf_banc0:
         if is_yy_like(r["prov"]):
-            dbf_yy[(_norm(r["prov"]), _norm(r["concepto"]))] = r
+            dbf_yy[_key(r)] = r
     used: set = set()
     for r in pc_banc0:
         if not is_yy_like(r["prov"]):
             continue
-        k = (_norm(r["prov"]), _norm(r["concepto"]))
+        k = _key(r)
         if k in dbf_yy:
             used.add(k)
             d = dbf_yy[k]
@@ -256,8 +285,23 @@ def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False
     def line(m=""):
         return m.rstrip("\n") + "\n"
 
+    # TMT 2026-06-10: baseline = FECHA DEL SNAPSHOT (mtime del DBF), no
+    # "hoy". Si el tarball es de ayer y se aplica hoy, pinear con
+    # baseline=hoy perdía los días intermedios de cuota — el persist
+    # arrancaba desde hoy con el valor de ayer. Con la fecha real del
+    # archivo, el próximo persist acumula snapshot→hoy y queda alineado.
+    try:
+        snapshot_date = (datetime.utcfromtimestamp(dbf_path.stat().st_mtime)
+                         - timedelta(hours=5)).date()
+    except Exception:  # noqa: BLE001
+        snapshot_date = _hoy_ec()
+    if snapshot_date > _hoy_ec():
+        snapshot_date = _hoy_ec()
     dbf = _leer_dbf_banc0(dbf_path)
     pc = _leer_pc_banc0()
+    yield line(f"Snapshot DBF fechado {snapshot_date} (mtime) — baseline YY/RT se pinea a esa fecha")
+    if (_hoy_ec() - snapshot_date).days > 7:
+        yield line(f"  ⚠ snapshot de hace {(_hoy_ec() - snapshot_date).days} días — ¿tarball viejo? (CloudShell no sobreescribe: rm antes de subir)")
     yield line(f"DBF banc<>9: {len(dbf)} filas, suma {sum(x['importe'] for x in dbf):,.2f}")
     yield line(f"PC  banc=0 : {len(pc)} filas, suma {sum(x['importe'] for x in pc):,.2f}")
     yield line("")
@@ -308,7 +352,7 @@ def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False
         return
 
     # ── APLICAR en una transacción ──
-    hoy = _hoy_ec()
+    hoy = snapshot_date  # baseline de YY/RT = fecha del snapshot (ver arriba)
     n_up = n_del = n_ins = n_anul = 0
     motivo = ("reconcile-sync: no está en POSDAT.DBF"
               if soft_delete else
@@ -338,10 +382,19 @@ def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False
                     db.execute("DELETE FROM scintela.posdat WHERE id_posdat=%s", (d["id"],), conn=conn)
                     n_del += 1
             for i in ins:
-                db.execute(
-                    "INSERT INTO scintela.posdat (prov, importe, concepto, banc, usuario_crea) "
-                    "VALUES (%s, %s, %s, 0, %s)",
-                    (i["prov"], i["importe"], i["concepto"], "reconcile-dbf"), conn=conn)
+                # YY/RT nuevas nacen con baseline = snapshot, así el persist
+                # las acumula desde el día correcto y el cron legacy
+                # (baseline IS NULL) jamás las toca. TMT 2026-06-10.
+                if _norm(i["prov"]) in ("YY", "RT"):
+                    db.execute(
+                        "INSERT INTO scintela.posdat (prov, importe, concepto, banc, usuario_crea, baseline_date) "
+                        "VALUES (%s, %s, %s, 0, %s, %s)",
+                        (i["prov"], i["importe"], i["concepto"], "reconcile-dbf", hoy), conn=conn)
+                else:
+                    db.execute(
+                        "INSERT INTO scintela.posdat (prov, importe, concepto, banc, usuario_crea) "
+                        "VALUES (%s, %s, %s, 0, %s)",
+                        (i["prov"], i["importe"], i["concepto"], "reconcile-dbf"), conn=conn)
                 n_ins += 1
     except Exception as exc:  # noqa: BLE001
         yield line(f"[ERROR] rollback — {exc!r}")

@@ -116,42 +116,48 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
 
 def persistir_acumulacion_yy(hoy: date | None = None) -> int:
     """Persiste la acumulación YY/RT en el importe GUARDADO, igual que el dBase
-    (MENU.PRG: REPLACE IMPORTE + cuota DAILY, perpetuo). TMT 2026-06-05.
+    (MENU.PRG: REPLACE IMPORTE + cuota DAILY, perpetuo).
 
-    Antes la acumulación era sólo display-time (`base + cuota×offset` calculado
-    al render) y NO se persistía: el importe guardado quedaba congelado mientras
-    el dBase incrementaba el suyo a diario → PC siempre se desfasaba por debajo,
-    y cada edición reseteaba el baseline perdiendo lo acumulado.
-
-    Esta función hace, por cada YY/RT con baseline < hoy y cuota > 0:
-        importe  = importe + cuota_diaria × días_hábiles(baseline, hoy)
-        baseline = hoy
-    Es IDEMPOTENTE: si ya corrió hoy, baseline=hoy → offset 0 → no toca nada.
-    Una vez persistido, `_aplicar_display_time_yy` calcula offset 0, así que el
-    display sigue siendo el importe guardado (sin doble conteo). El KPI Pasivos,
-    que usa el importe persistido, queda = acumulado = dBase.
+    ÚNICO motor de escritura de la acumulación (TMT 2026-06-10):
+      - La cuota se resuelve con _resolver_cuotas() — LA MISMA que usa el
+        display. La versión anterior leía una columna posdat.cuota_diaria
+        que NUNCA existió (ninguna migración la creó): UndefinedColumn,
+        tragado por el except:pass de los callers → el persist no corría
+        desde su deploy (2026-06-05) y el Balance Pasivos quedaba congelado
+        en el último pin del reconcile, drifteando ~32.000/día hábil hasta
+        el próximo sync. Ese era el "se rompe cada vez".
+      - Idempotente: baseline=hoy → offset 0 → no toca nada.
+      - Tras persistir, _aplicar_display_time_yy calcula offset 0 → el
+        display = importe guardado (sin doble conteo) y el SUM(importe)
+        del Balance ve lo mismo que la pantalla.
     """
     if not _baseline_col_exists():
         return 0
     hoy = hoy or _hoy_ec()
     rows = db.fetch_all(
         f"""
-        SELECT id_posdat, importe, cuota_diaria, baseline_date
+        SELECT id_posdat, prov, concepto, importe, baseline_date
           FROM scintela.posdat
          WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
            AND baseline_date IS NOT NULL
            AND baseline_date < %s
-           AND COALESCE(cuota_diaria, 0) > 0
+           AND COALESCE(banc, 0) = 0
            AND {POSDAT_NO_ANULADA_WHERE}
         """,
         (hoy,),
     ) or []
+    if not rows:
+        return 0
+    _resolver_cuotas(rows)  # misma resolución que el display
     n = 0
     for r in rows:
+        cd = float(r.get("cuota_diaria") or 0)
+        if cd <= 0:
+            continue
         off = _dias_habiles_entre(r["baseline_date"], hoy)
         if off <= 0:
             continue
-        nuevo = float(r["importe"] or 0) + float(r["cuota_diaria"] or 0) * off
+        nuevo = float(r["importe"] or 0) + cd * off
         db.execute(
             "UPDATE scintela.posdat SET importe = %s, baseline_date = %s "
             "WHERE id_posdat = %s",
@@ -159,6 +165,37 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
         )
         n += 1
     return n
+
+# ---------------------------------------------------------------------------
+# Espejo de MENU.PRG L283-333 — los PREFIJOS con que el dBase identifica cada
+# provision YY al sumarle la cuota diaria (LOCA FOR LEFT(CONCEPTO,n)=...).
+# Se usan como IDENTIDAD CANONICA en el reconcile: si la duena edita el
+# concepto en PC ("A,E,C AG,EN,CMB" -> "A,E,C aportes"), la fila sigue
+# matcheando con el dBase mientras conserve el prefijo. TMT 2026-06-10.
+# ---------------------------------------------------------------------------
+YY_PREFIJOS_DBASE = ("A,E,C", "SUELDOS", "ALQUILER", "SR", "13", "14", "AB", "SS", "JP")
+YY_CONTIENE_DBASE = ("INCOB", "INTER")  # MENU.PRG usa $ (contains) para estos
+
+
+def clave_canonica_yy(prov: str | None, concepto: str | None) -> tuple[str, str]:
+    """Clave de identidad de una provision YY/RT para el reconcile.
+
+    RT es unico por prov. Para YY: el prefijo dBase si el concepto empieza
+    con uno (mas largo primero), sino contains, sino el concepto completo
+    normalizado.
+    """
+    pv = (prov or "").strip().upper()
+    cn = (concepto or "").strip().upper()
+    if pv == "RT":
+        return ("RT", "")
+    for pref in sorted(YY_PREFIJOS_DBASE, key=len, reverse=True):
+        if cn.startswith(pref):
+            return (pv, f"^{pref}")
+    for sub in YY_CONTIENE_DBASE:
+        if sub in cn:
+            return (pv, f"~{sub}")
+    return (pv, cn)
+
 
 # Filtro reutilizable de "no anuladas": toda query de listado/balance/saldo
 # tiene que excluir las filas soft-deleted (migración 0027). NULL = legacy
@@ -565,6 +602,80 @@ def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
     return rc
 
 
+def _resolver_cuotas(rows: list[dict]) -> None:
+    """Asigna cuota_diaria/cuota_mensual IN-PLACE a filas de posdat.
+
+    ÚNICA fuente de resolución de cuotas — la usan el display (buscar) y el
+    motor de persistencia (persistir_acumulacion_yy). TMT 2026-06-10: antes
+    persistir leía una columna scintela.posdat.cuota_diaria que NUNCA existió
+    (ninguna migración la creó) → UndefinedColumn silencioso → el persist no
+    corría y el Balance Pasivos quedaba congelado en el último pin del sync
+    (~32.000/día de drift). Compartir esta función garantiza que lo que se
+    muestra y lo que se persiste usan la misma cuota.
+    """
+    # TMT 2026-05-20 — match a scintela.provisiones HECHO EN PYTHON.
+    # Originalmente lo intenté con LEFT JOIN LATERAL, pero un comportamiento
+    # de psycopg2 con el escape de '%%' rompió en prod (500: error 61ea4d2e).
+    # En Python es más simple + defensivo: cargo todas las provisiones (son
+    # ~10-20 filas) UNA vez por request y matcheo en memoria. Si la tabla no
+    # existe o falla, los posdat siguen funcionando sin cuota_mensual.
+    provisiones_lookup: list[dict] = []
+    try:
+        provisiones_lookup = db.fetch_all(
+            "SELECT id_provisiones, concepto, importe, periodo_aplica "
+            "FROM scintela.provisiones"
+        ) or []
+    except Exception:  # noqa: BLE001
+        provisiones_lookup = []
+
+    # Ordenar por longitud DESC para que el "más específico" gane (igual
+    # que el ORDER BY LENGTH del LATERAL original).
+    provisiones_lookup.sort(
+        key=lambda p: len((p.get("concepto") or "").strip()), reverse=True,
+    )
+
+    def _match_provision(concepto_pd: str) -> dict | None:
+        """Devuelve la provisión que matchea por concepto (starts-with
+        bidireccional, case-insensitive, longitud ≥ 3)."""
+        cn = (concepto_pd or "").strip().upper()
+        if len(cn) < 3:
+            return None
+        for pr in provisiones_lookup:
+            cp = (pr.get("concepto") or "").strip().upper()
+            if len(cp) < 3:
+                continue
+            if cn.startswith(cp) or cp.startswith(cn):
+                return pr
+        return None
+
+    for r in rows:
+        match = _match_provision(r.get("concepto") or "")
+        if match:
+            # TMT 2026-05-28 dueña: 'en vez de mensual hagamos cuota diaria'
+            # La tabla scintela.provisiones.importe ahora guarda la cuota
+            # DIARIA directamente (antes era mensual). NO dividir por 30.
+            # cuota_mensual queda como estimación visual (× 30).
+            diaria = float(match.get("importe") or 0)
+            r["id_provisiones"]    = match.get("id_provisiones")
+            r["cuota_diaria"]      = diaria
+            r["cuota_mensual"]     = diaria  # legacy: el template/JS leen cuota_mensual; mantenemos el valor diario que la dueña ve y edita
+            r["provision_periodo"] = match.get("periodo_aplica")
+        else:
+            # TMT 2026-05-29 dueña: RT (IVA) suma 8400/día hábil según
+            # dBase MENU.PRG L333 (REPLA IMPORTE+8400). Hardcoded acá
+            # porque RT no está en scintela.provisiones. Otros posdat
+            # sin match en provisiones quedan sin cuota.
+            r["id_provisiones"]    = None
+            r["provision_periodo"] = None
+            r["cuota_diaria"]      = None
+            r["cuota_mensual"]     = None
+            prov_upper = (r.get("prov") or "").strip().upper()
+            if prov_upper == "RT":
+                r["cuota_diaria"]  = 8400.0
+                r["cuota_mensual"] = 8400.0
+
+
+
 def buscar(
     *,
     prov: str | None = None,
@@ -627,66 +738,7 @@ def buscar(
         },
     ) or []
 
-    # TMT 2026-05-20 — match a scintela.provisiones HECHO EN PYTHON.
-    # Originalmente lo intenté con LEFT JOIN LATERAL, pero un comportamiento
-    # de psycopg2 con el escape de '%%' rompió en prod (500: error 61ea4d2e).
-    # En Python es más simple + defensivo: cargo todas las provisiones (son
-    # ~10-20 filas) UNA vez por request y matcheo en memoria. Si la tabla no
-    # existe o falla, los posdat siguen funcionando sin cuota_mensual.
-    provisiones_lookup: list[dict] = []
-    try:
-        provisiones_lookup = db.fetch_all(
-            "SELECT id_provisiones, concepto, importe, periodo_aplica "
-            "FROM scintela.provisiones"
-        ) or []
-    except Exception:  # noqa: BLE001
-        provisiones_lookup = []
-
-    # Ordenar por longitud DESC para que el "más específico" gane (igual
-    # que el ORDER BY LENGTH del LATERAL original).
-    provisiones_lookup.sort(
-        key=lambda p: len((p.get("concepto") or "").strip()), reverse=True,
-    )
-
-    def _match_provision(concepto_pd: str) -> dict | None:
-        """Devuelve la provisión que matchea por concepto (starts-with
-        bidireccional, case-insensitive, longitud ≥ 3)."""
-        cn = (concepto_pd or "").strip().upper()
-        if len(cn) < 3:
-            return None
-        for pr in provisiones_lookup:
-            cp = (pr.get("concepto") or "").strip().upper()
-            if len(cp) < 3:
-                continue
-            if cn.startswith(cp) or cp.startswith(cn):
-                return pr
-        return None
-
-    for r in rows:
-        match = _match_provision(r.get("concepto") or "")
-        if match:
-            # TMT 2026-05-28 dueña: 'en vez de mensual hagamos cuota diaria'
-            # La tabla scintela.provisiones.importe ahora guarda la cuota
-            # DIARIA directamente (antes era mensual). NO dividir por 30.
-            # cuota_mensual queda como estimación visual (× 30).
-            diaria = float(match.get("importe") or 0)
-            r["id_provisiones"]    = match.get("id_provisiones")
-            r["cuota_diaria"]      = diaria
-            r["cuota_mensual"]     = diaria  # legacy: el template/JS leen cuota_mensual; mantenemos el valor diario que la dueña ve y edita
-            r["provision_periodo"] = match.get("periodo_aplica")
-        else:
-            # TMT 2026-05-29 dueña: RT (IVA) suma 8400/día hábil según
-            # dBase MENU.PRG L333 (REPLA IMPORTE+8400). Hardcoded acá
-            # porque RT no está en scintela.provisiones. Otros posdat
-            # sin match en provisiones quedan sin cuota.
-            r["id_provisiones"]    = None
-            r["provision_periodo"] = None
-            r["cuota_diaria"]      = None
-            r["cuota_mensual"]     = None
-            prov_upper = (r.get("prov") or "").strip().upper()
-            if prov_upper == "RT":
-                r["cuota_diaria"]  = 8400.0
-                r["cuota_mensual"] = 8400.0
+    _resolver_cuotas(rows)
 
     # TMT 2026-05-28 (migración 0061): aplicar la fórmula display-time
     # YY ANTES de calcular saldo_acumulado, así el acumulado refleja el

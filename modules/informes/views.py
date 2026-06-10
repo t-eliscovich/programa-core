@@ -49,7 +49,13 @@ def balance():
         from modules.posdat.queries import persistir_acumulacion_yy
         persistir_acumulacion_yy()
     except Exception:  # noqa: BLE001
-        pass
+        # NO silenciar del todo: el except:pass mudo escondió 5 días que el
+        # persist no corría (columna fantasma) y los Pasivos drifteaban
+        # 32k/día. Si esto loguea, hay que mirarlo YA. TMT 2026-06-10.
+        import logging
+        logging.getLogger("programa_core.posdat").exception(
+            "persistir_acumulacion_yy FALLÓ — Pasivos YY van a driftear vs dBase"
+        )
 
     forzar = request.args.get("forzar_provisiones") in ("1", "true", "yes")
     try:

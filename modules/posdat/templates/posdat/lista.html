@@ -210,10 +210,21 @@
               {{ _conc }}
             {% endif %}
             {% if es_ajuste %}
+              {% if (f.prov or '') | upper in ('YY', 'RT') %}
+              {# TMT 2026-06-10 dueña '¿cómo puede ser que tenemos valores
+                 negativos?': el dBase mismo se va a negativo cuando el pago
+                 real supera lo provisionado (verificado: A,E,C = -17.300 en
+                 POSDAT.DBF). La cuota diaria lo reconstruye solo. #}
+              <span class="ml-1 inline-block px-1 py-0 rounded bg-violet-100 text-violet-700 text-[9px] font-medium"
+                    title="Saldo negativo = se pagó más de lo provisionado hasta hoy (igual que en el dBase). La cuota diaria lo va reconstruyendo — no es un error.">
+                pagado por adelantado
+              </span>
+              {% else %}
               <span class="ml-1 inline-block px-1 py-0 rounded bg-violet-100 text-violet-700 text-[9px] font-medium"
                     title="Importe ≤ 0 — anticipo o ajuste contable (reduce el pasivo)">
                 ajuste
               </span>
+              {% endif %}
             {% endif %}
             {# TMT 2026-06-04 — badge "anual" cuando el saldo de la provisión
                acumula más de 50 días hábiles de cuota (2 ciclos mensuales).
