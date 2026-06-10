@@ -90,6 +90,7 @@ def lado_dbase() -> dict:
     d["salbanc2"] = _f(inter[-1].get("SALDO")) if inter else None
     d["pich_movs"] = [{"fecha": r.get("FECHA"), "doc": (r.get("DOC") or "").strip(),
                        "importe": round(_f(r.get("IMPORTE")), 2),
+                       "saldo": round(_f(r.get("SALDO")), 2),
                        "concepto": (r.get("CONCEPTO") or "").strip()} for r in pich]
     d["pich_mtime"] = None
     p = EXTRACT_DIR / "PICHINCH.DBF"
@@ -195,11 +196,12 @@ def _pc_movs_pichincha(desde: date) -> list[dict]:
     rows = db.fetch_all(
         """
         SELECT t.fecha, COALESCE(t.documento, '') AS doc, t.importe,
-               COALESCE(t.concepto, '') AS concepto
+               t.saldo, COALESCE(t.concepto, '') AS concepto
           FROM scintela.transacciones_bancarias t
           JOIN scintela.banco b ON b.no_banco = t.no_banco
          WHERE UPPER(b.nombre) LIKE 'PICHINCH%%'
            AND t.fecha >= %s
+         ORDER BY t.fecha, t.id_transaccion
         """,
         (desde,),
     ) or []
@@ -227,6 +229,37 @@ def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> d
         solo_pc.extend(b[n:])
     return {"solo_dbase": solo_db, "solo_pc": solo_pc}
 
+
+
+def saldos_fin_de_dia(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> list[dict]:
+    """Saldo de la ULTIMA fila de cada dia, dBase vs PC, con el delta.
+
+    Pedido duena 2026-06-10 ('ayer estabamos igual - inventos no'): en vez
+    de hipotesis sobre el gap de bancos, mostrar dia por dia donde se abre.
+    El dia en que delta CAMBIA respecto del dia anterior = ahi esta la causa
+    (movimiento faltante de un lado, o saldo re-derivado/pisado).
+    """
+    db_dia: dict = {}
+    for m in dbf_movs:
+        f = m.get("fecha")
+        if f and f >= desde:
+            db_dia[f] = m.get("saldo")  # file order: la ultima gana
+    pc_dia: dict = {}
+    for m in pc_movs:  # ya viene ORDER BY fecha, id
+        f = m.get("fecha")
+        if f and f >= desde:
+            pc_dia[f] = _f(m.get("saldo"))
+    out = []
+    prev_delta = None
+    for f in sorted(set(db_dia) | set(pc_dia)):
+        a, b = db_dia.get(f), pc_dia.get(f)
+        delta = (b - a) if (a is not None and b is not None) else None
+        salto = (delta is not None and prev_delta is not None
+                 and abs(delta - prev_delta) > 0.01)
+        out.append({"fecha": f, "dbase": a, "pc": b, "delta": delta, "salto": salto})
+        if delta is not None:
+            prev_delta = delta
+    return out
 
 # ───────────────── reporte ─────────────────
 
@@ -290,7 +323,8 @@ def reporte(dias_banco: int = 30):
         yield cmp_acum("Internacional", d.get("salbanc2"), pc_b2)
     desde = _hoy_ec() - timedelta(days=dias_banco)
     try:
-        movdiff = diff_movs_banco(d.get("pich_movs") or [], _pc_movs_pichincha(desde), desde)
+        pcm = _pc_movs_pichincha(desde)
+        movdiff = diff_movs_banco(d.get("pich_movs") or [], pcm, desde)
         yield line(f"  movimientos desde {desde} — SOLO dBASE (PC no los tiene): "
                    f"{len(movdiff['solo_dbase'])}")
         for m in sorted(movdiff["solo_dbase"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
@@ -300,6 +334,19 @@ def reporte(dias_banco: int = 30):
         for m in sorted(movdiff["solo_pc"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
             yield line(f"    {m['fecha']} {str(m['doc'])[:3]:3} {_f(m['importe']):>12,.2f}  "
                        f"{str(m['concepto'])[:34]}")
+        dias_t = saldos_fin_de_dia(d.get("pich_movs") or [], pcm, desde)
+        yield line("  saldo FIN DE DIA (dBase vs PC) — ► marca el dia donde el gap CAMBIA:")
+        for x in dias_t[-MAX_LISTADO:]:
+            a = f"{x['dbase']:>14,.2f}" if x["dbase"] is not None else f"{'—':>14}"
+            b = f"{x['pc']:>14,.2f}" if x["pc"] is not None else f"{'—':>14}"
+            dl = f"{x['delta']:>+12,.2f}" if x["delta"] is not None else f"{'—':>12}"
+            yield line(f"    {'►' if x['salto'] else ' '} {x['fecha']} dBase={a}  PC={b}  Δ={dl}")
+        saltos = [x for x in dias_t if x["salto"]]
+        if saltos:
+            yield line(f"  ⇒ el gap CAMBIA en: {', '.join(str(x['fecha']) for x in saltos)}")
+        elif dias_t and dias_t[0].get("delta") is not None:
+            yield line(f"  ⇒ el gap es CONSTANTE en toda la ventana ({dias_t[0]['delta']:+,.2f}) — "
+                       "se origina antes: ampliá los días o revisar recompute de saldos")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [detalle movimientos no disponible: {exc!r}]")
     yield line()
