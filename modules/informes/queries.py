@@ -1164,7 +1164,7 @@ def iniciales_mes_actual() -> dict | None:
     )
 
 
-_TARIFA_COLS_PREV = {"um", "uk", "uf", "uq", "pre"}
+_TARIFA_COLS_PREV = {"um", "uk", "uf", "uq", "pre", "hilado", "tejido", "terminado"}
 
 
 def tarifa_iniciales_mes_anterior(mesnum: int, yy: int, columna: str) -> float:
@@ -3642,7 +3642,13 @@ def informe_balance() -> dict:
     KK = float(tej.get("kg_total") or 0)
     KM = h_kcom
     VM = h_ucom
-    HI0 = float(inic.get("hilado") or 0)  # PRG línea 313: USE INICIALES; HI0 = HILADO
+    # PRG líneas 304-315: GO BOTT (mes en curso) + SKIP -1 → la fila del mes
+    # ANTERIOR. La fila del mes en curso NO es el inicio del mes: el dBase la
+    # REESCRIBE en cada corrida del informe (verificado 2026-06-10 contra
+    # HISTORIA.DBF: iniciales[jun] suma = STOCK del 09/06, iniciales[may]
+    # suma = STOCK del cierre 31/05). Usar la fila previa, como pf0.
+    HI0 = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "hilado") \
+        or float(inic.get("hilado") or 0)
     UM0 = um_anterior or float(inic.get("um") or 0)
     KH = KK / (1 - DESK_PCT / 100) if DESK_PCT < 100 else KK
     HI = HI0 + KM - KH
@@ -3747,21 +3753,33 @@ def informe_balance() -> dict:
     # Días de cobranza: CART / VENTANUAL * 360 (PRG línea 441).
     cart_dias = _safe_div(cart * 360, venta_anual["uvent_anual"])
 
-    # Stock por etapa.
-    # HILADO / TEJIDO — del último snapshot (hoy coinciden con dBase).
+    # Stock por etapa — fórmula VIVA del PRG (INFORMES.PRG L313-315):
+    #     HI = HI0 + KM − KH          (hilado: compras − salido a tejeduría)
+    #     TJ = TJ0 + KK − KT          (tejido: tejido − salido a tintura)
+    #     PF = PF0 + KR − KV          (terminado: tinturado − vendido)
+    # con HI0/TJ0/PF0 = fila del mes ANTERIOR de iniciales (cierre previo) y
+    # KT = compras_T_externas + KTINT − KSTI (PRG L264).
     #
-    # TMT 2026-06-10: probé unificar con `resumen_stock()` (flujo intra-mes)
-    # y se rompió la utilidad: PATR_live subía +$494k pero PATANT seguía
-    # subestimado por el snapshot stale del cierre. Resultado: utilidad
-    # saltó de $680k a $1.17M (drift fantasma). El comentario más abajo
-    # advertía exactamente esto: "la re-valuación de stock entre cierres
-    # NO es ganancia económica". Conservar SNAPSHOT acá hasta que PATANT
-    # también se regenere con stock live (decisión pendiente).
-    h_hilado = float(hist.get("hilado") or 0) if "hilado" in hist else 0.0
-    h_tejido_kg = float(hist.get("tejido") or 0) if "tejido" in hist else 0.0
-    if h_hilado == 0 and h_tejido_kg == 0:
-        h_hilado = float(inic.get("hilado") or 0)
-        h_tejido_kg = float(inic.get("tejido") or 0)
+    # TMT 2026-06-10 (pedido Andrés/dueña): en el dBase, tipear el paso de
+    # tejeduría/tintorería SUBE la utilidad (los kg se revalorizan +0,50/kg
+    # al pasar a tejido y +1,70/kg al pasar a terminado — margen de
+    # manufactura por etapa). PC tenía hilado/tejido CONGELADOS al caché de
+    # iniciales[mes corriente] (que es lo que el dBase escribió en su última
+    # corrida) → los pasos no movían nada y la utilidad no subía.
+    #
+    # NO confundir con el intento revertido de hoy (resumen_stock, 78fbff7):
+    # ese sumaba KK a tejido SIN restar KH de hilado ni KT a tintura (doble
+    # conteo → +$494k fantasma). Esta es la fórmula PRG exacta, conservando
+    # la identidad kg: cada kg está en UNA sola etapa. Al cierre (movimientos
+    # = 0) HI=HI0/TJ=TJ0 → continuidad con PATANT, igual que el dBase.
+    # Verificado contra HISTORIA.DBF 09/06: STOCK = may(2.323.544) + movs ✓.
+    _tj0_prev = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "tejido") \
+        or float(inic.get("tejido") or 0)
+    _kt_ext = compras_tipo_t_externos_mes()
+    _ksti = tinto_kg_servicios_mes()
+    KT_stock = float(_kt_ext.get("kg") or 0) + KTINT - float(_ksti or 0)
+    h_hilado = max(0.0, HI)  # HI vivo del bloque MAT.PR. (HI0 prev + KM − KH)
+    h_tejido_kg = max(0.0, _tj0_prev + KK - KT_stock)  # PRG: IIF(TJ<0,0,TJ)
 
     # TERMINADO — réplica EXACTA del dBase (INFORMES.PRG L315/L320):
     #   PF = PF0 + KR − KV
