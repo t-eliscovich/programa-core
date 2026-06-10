@@ -371,9 +371,10 @@ def cartera_coherence():
         totf_balance = iq.totf()
         totc_balance = iq.totc()
 
-        # Lista values con incluir_backfill=False (debe coincidir con balance)
+        # Lista values — debe coincidir con balance (sin filtros backfill,
+        # post-revert TMT 2026-06-10).
         totf_lista = fq.contar_filtrado(
-            vista="cartera", incluir_backfill=False,
+            vista="cartera",
         ).get("total_saldo", 0.0)
 
         # Para cheques: query directa (no hay un `contar_filtrado` en
@@ -383,7 +384,6 @@ def cartera_coherence():
             SELECT COALESCE(SUM(importe), 0) AS total
               FROM scintela.cheque
              WHERE stat IN ('Z','1','2','3','P','D')
-               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
             """,
         )
         totc_lista = float(row_chq["total"] or 0) if row_chq else 0.0
