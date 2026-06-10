@@ -163,27 +163,58 @@
                 <td class="num {{ 'neg' if t.por_producir < 0 }}">{{ t.por_producir | num_es(2) }}</td>
               </tr>
             {% endfor %}
+          {% else %}
+            <tr>
+              <td>{{ cfg.produce }} <span class="text-slate-400">({{ resumen.n_inic or 0 }} en curso)</span></td>
+              <td class="num">{{ (resumen.planif_inic or 0) | num_es(2) }}</td>
+              <td class="num">{{ (resumen.fab_inic or 0) | num_es(2) }}</td>
+              <td class="num {{ 'neg' if (resumen.por_producir_inic or 0) < 0 }}">{{ (resumen.por_producir_inic or 0) | num_es(2) }}</td>
+            </tr>
           {% endif %}
+          {% if proceso == 'pt' %}
           <tr class="total-row">
-            <td>{{ 'Total general' if proceso == 'pt' else cfg.produce }}</td>
+            <td>En curso ({{ resumen.n_inic or 0 }})</td>
+            <td class="num">{{ (resumen.planif_inic or 0) | num_es(2) }}</td>
+            <td class="num">{{ (resumen.fab_inic or 0) | num_es(2) }}</td>
+            <td class="num {{ 'neg' if (resumen.por_producir_inic or 0) < 0 }}">{{ (resumen.por_producir_inic or 0) | num_es(2) }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <td class="text-slate-400">Sin iniciar ({{ resumen.n_sin or 0 }})</td>
+            <td class="num text-slate-400">{{ (resumen.planif_sin or 0) | num_es(2) }}</td>
+            <td class="num text-slate-400">—</td>
+            <td class="num text-slate-400">{{ (resumen.planif_sin or 0) | num_es(2) }}</td>
+          </tr>
+          <tr class="total-row">
+            <td>Total general ({{ resumen.n_ofts or 0 }})</td>
             <td class="num">{{ (resumen.planif or 0) | num_es(2) }}</td>
             <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
             <td class="num {{ 'neg' if (resumen.por_producir or 0) < 0 }}">{{ (resumen.por_producir or 0) | num_es(2) }}</td>
           </tr>
         </tbody>
       </table>
+      <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
+        En curso = con material ya despachado (lo que cuenta el Excel). Sin iniciar = abiertas sin movimiento todavía.
+      </p>
     </div>
 
   </div>
 
   {# ── Detalle por OFT ───────────────────────────────────────────── #}
   <div class="flex items-center justify-between mb-2 no-print">
-    <form method="get" class="flex gap-2">
+    <form method="get" class="flex gap-2 items-center">
       <input type="text" name="q" value="{{ q }}" placeholder="Buscar OFT / producto…"
              class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64">
+      {% if estado %}<input type="hidden" name="estado" value="{{ estado }}">{% endif %}
       <button class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Filtrar</button>
+      <span class="flex gap-1 ml-2">
+        {% for val, lbl in [('', 'Todas'), ('curso', 'En curso'), ('sin', 'Sin iniciar')] %}
+          <a href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, q=q or None, estado=val or None) }}"
+             class="text-xs px-2.5 py-1 rounded-full {{ 'bg-slate-800 text-white' if estado == val else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">{{ lbl }}</a>
+        {% endfor %}
+      </span>
     </form>
-    <a href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, q=q, export='csv') }}"
+    <a href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, q=q or None, estado=estado or None, export='csv') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
   </div>
 

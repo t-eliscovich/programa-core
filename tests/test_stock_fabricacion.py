@@ -30,24 +30,33 @@ def _login_stock(app, fake_db):
 
 _DATA_TC = {
     "resumen": {"issued": 144647.75, "fab": 96587.13, "saldo": 48060.62,
-                "planif": 206328.15, "por_producir": 109741.02, "n_ofts": 64},
+                "planif": 523566.12, "por_producir": 426979.0, "n_ofts": 207,
+                "planif_inic": 206328.15, "fab_inic": 96587.13,
+                "por_producir_inic": 109741.02, "n_inic": 64,
+                "planif_sin": 317237.97, "n_sin": 143},
     "por_tejido": [{"tejido": "(s/categoría)", "planif": 206328.15, "fab": 96587.13,
                     "por_producir": 109741.02, "n_ofts": 64}],
     "ofts": [{"oft": "OFT-000035309", "producto": "TELA CRUDA JERSEY", "prod_codigo": "TCJ-01",
               "tejido": "", "planif": 4950.72, "fab": 3496.58, "issued": 4950.72,
-              "saldo": 1454.14, "por_producir": 1454.14}],
+              "saldo": 1454.14, "por_producir": 1454.14, "iniciada": True},
+             {"oft": "OFT-000099999", "producto": "TC PLANIF", "prod_codigo": "TCP-09",
+              "tejido": "", "planif": 1000.0, "fab": 0.0, "issued": 0.0,
+              "saldo": 0.0, "por_producir": 1000.0, "iniciada": False}],
 }
 
 _DATA_PT = {
     "resumen": {"issued": 83645.28, "fab": 42014.79, "saldo": 41630.49,
-                "planif": 131905.14, "por_producir": 88987.70, "n_ofts": 200},
+                "planif": 200000.0, "por_producir": 157085.21, "n_ofts": 300,
+                "planif_inic": 131905.14, "fab_inic": 42014.79,
+                "por_producir_inic": 88987.70, "n_inic": 200,
+                "planif_sin": 68094.86, "n_sin": 100},
     "por_tejido": [
         {"tejido": "Fleece", "planif": 55443.5, "fab": 15373.24, "por_producir": 40070.26, "n_ofts": 80},
         {"tejido": "Jersey", "planif": 28787.5, "fab": 12175.9, "por_producir": 16611.6, "n_ofts": 60},
     ],
     "ofts": [{"oft": "OFT-000033227.1", "producto": "FLEECE NEG", "prod_codigo": "FLN-02",
               "tejido": "Fleece", "planif": 135.0, "fab": 128.45, "issued": 135.0,
-              "saldo": 6.55, "por_producir": 6.55}],
+              "saldo": 6.55, "por_producir": 6.55, "iniciada": True}],
 }
 
 _TOTALES = [
@@ -156,3 +165,52 @@ def test_fabricacion_service_totales_incluyen_negativos(monkeypatch):
     assert abs(out["resumen"]["por_producir"] - 50.0) < 0.01   # 60 + (-10)
     tej = {t["tejido"]: t for t in out["por_tejido"]}
     assert abs(tej["Fleece"]["por_producir"] - (-10.0)) < 0.01
+
+
+def test_fabricacion_of_separa_en_curso_y_sin_iniciar(app, fake_db):
+    """Paridad Excel: Planificada del bloque OF = SOLO iniciadas; las sin
+    movimiento van aparte y el Total general suma todo."""
+    r = _render(app, fake_db, "tc", _DATA_TC)
+    body = r.data.decode("utf-8", "ignore")
+    assert "206.328,15" in body          # en curso (= Excel)
+    assert "317.237,97" in body          # sin iniciar
+    assert "523.566,12" in body          # total general
+    assert "Sin iniciar (143)" in body
+
+
+def test_fabricacion_filtro_estado_detalle(app, fake_db):
+    r = _render_con_estado(app, fake_db, "tc", _DATA_TC, "curso")
+    assert b"OFT-000035309" in r.data and b"OFT-000099999" not in r.data
+    r = _render_con_estado(app, fake_db, "tc", _DATA_TC, "sin")
+    assert b"OFT-000099999" in r.data and b"OFT-000035309" not in r.data
+
+
+def _render_con_estado(app, fake_db, proceso, data, estado):
+    c = _login_stock(app, fake_db)
+    from modules.stock import queries as stock_queries
+
+    with patch.object(service, "fabricacion_proceso", return_value=data), \
+         patch.object(service, "stock_asinfo_lote_totales", return_value=_TOTALES), \
+         patch.object(stock_queries, "resumen_stock", return_value={}):
+        return c.get(f"/stock/fabricacion-{proceso}?estado={estado}")
+
+
+def test_fabricacion_service_split_iniciadas(monkeypatch):
+    from modules.asinfo import service as svc
+
+    rows = [
+        {"oft": "OFT-1", "producto": "A", "prod_codigo": "A1", "tejido": "Jersey",
+         "planif": 100.0, "fab": 40.0, "issued": 90.0},   # iniciada
+        {"oft": "OFT-2", "producto": "B", "prod_codigo": "B1", "tejido": "Fleece",
+         "planif": 500.0, "fab": 0.0, "issued": 0.0},     # sin iniciar
+    ]
+    monkeypatch.setattr(svc.metabase_client, "fetch_dataset", lambda *a, **k: rows)
+    svc._FABRICACION_CACHE.clear()
+    out = svc.fabricacion_proceso(53)
+    res = out["resumen"]
+    assert res["n_inic"] == 1 and res["n_sin"] == 1
+    assert abs(res["planif_inic"] - 100.0) < 0.01
+    assert abs(res["planif_sin"] - 500.0) < 0.01
+    assert abs(res["planif"] - 600.0) < 0.01
+    # pivot por tejido = SOLO iniciadas (como el Excel)
+    assert [t["tejido"] for t in out["por_tejido"]] == ["Jersey"]

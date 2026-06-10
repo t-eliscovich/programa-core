@@ -518,6 +518,11 @@ def _fabricacion_page(proceso: str):
         stock_programa = {}
 
     ofts = data.get("ofts", [])
+    estado = (request.args.get("estado") or "").strip()  # "" | "curso" | "sin"
+    if estado == "curso":
+        ofts = [o for o in ofts if o.get("iniciada")]
+    elif estado == "sin":
+        ofts = [o for o in ofts if not o.get("iniciada")]
     q = (request.args.get("q") or "").strip().upper()
     if q:
         ofts = [
@@ -552,6 +557,7 @@ def _fabricacion_page(proceso: str):
         por_tejido=data.get("por_tejido", []),
         ofts=ofts,
         q=q,
+        estado=estado,
         totales_bodega=totales_bodega,
         cadena=cadena,
         total_kg=total_kg,

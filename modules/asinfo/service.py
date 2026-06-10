@@ -748,8 +748,16 @@ def fabricacion_proceso(id_bodega: int) -> dict:
          ORDER BY ISNULL(i.issued, 0) - o.fab DESC
     """
     rows = metabase_client.fetch_dataset(2, sql, max_results=20000)
+    # TMT 2026-06-10 v2 — paridad con el Excel: la tabla "Órdenes de
+    # Fabricación" del Excel sólo cuenta OFTs INICIADAS (con material
+    # despachado). Las abiertas sin movimiento se reportan aparte como
+    # "sin iniciar" para que Planificada no infle 2-3x. El bloque
+    # Inventario en Proceso (OSM/IngFab/Saldo) no cambia: las no
+    # iniciadas tienen issued=0 y fab=0, no aportan.
     resumen = {"issued": 0.0, "fab": 0.0, "saldo": 0.0,
-               "planif": 0.0, "por_producir": 0.0, "n_ofts": 0}
+               "planif": 0.0, "por_producir": 0.0, "n_ofts": 0,
+               "planif_inic": 0.0, "fab_inic": 0.0, "por_producir_inic": 0.0,
+               "n_inic": 0, "planif_sin": 0.0, "n_sin": 0}
     por_tejido: dict[str, dict] = {}
     ofts = []
     for r in rows:
@@ -761,6 +769,7 @@ def fabricacion_proceso(id_bodega: int) -> dict:
             continue
         saldo = issued - fab
         por_producir = planif - fab
+        iniciada = issued > 0.005 or fab > 0.005
         tejido = str(r.get("tejido") or "").strip() or "(s/categoría)"
         resumen["issued"] += issued
         resumen["fab"] += fab
@@ -768,12 +777,21 @@ def fabricacion_proceso(id_bodega: int) -> dict:
         resumen["planif"] += planif
         resumen["por_producir"] += por_producir
         resumen["n_ofts"] += 1
-        slot = por_tejido.setdefault(tejido, {"tejido": tejido, "planif": 0.0,
-                                              "fab": 0.0, "por_producir": 0.0, "n_ofts": 0})
-        slot["planif"] += planif
-        slot["fab"] += fab
-        slot["por_producir"] += por_producir
-        slot["n_ofts"] += 1
+        if iniciada:
+            resumen["planif_inic"] += planif
+            resumen["fab_inic"] += fab
+            resumen["por_producir_inic"] += por_producir
+            resumen["n_inic"] += 1
+            # El pivot por tejido replica el del Excel: sólo iniciadas.
+            slot = por_tejido.setdefault(tejido, {"tejido": tejido, "planif": 0.0,
+                                                  "fab": 0.0, "por_producir": 0.0, "n_ofts": 0})
+            slot["planif"] += planif
+            slot["fab"] += fab
+            slot["por_producir"] += por_producir
+            slot["n_ofts"] += 1
+        else:
+            resumen["planif_sin"] += planif
+            resumen["n_sin"] += 1
         ofts.append({
             "oft": str(r.get("oft") or "").strip(),
             "producto": str(r.get("producto") or "").strip(),
@@ -784,6 +802,7 @@ def fabricacion_proceso(id_bodega: int) -> dict:
             "issued": issued,
             "saldo": saldo,
             "por_producir": por_producir,
+            "iniciada": iniciada,
         })
     out = {
         "resumen": resumen,
