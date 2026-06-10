@@ -59,6 +59,24 @@ _PAGE = """\
     </button>
   </form>
 </div>
+
+<div style="background:#e7f5e8;border:1px solid #6c6;padding:8px;margin:8px 0;border-radius:4px">
+  <b>AJUSTAR snapshot 31/05 con backfill de mayo (opción A — utilidad PC == dBase)</b><br>
+  Suma al snapshot del 31/05 los saldos de facturas con
+  <code>usuario_crea='asinfo-backfill'</code> y <code>fecha &le; 2026-05-31</code>.
+  Esas son las facturas que en dBase ya estaban al cierre 31/05 pero PC
+  trajo después vía Asinfo manual. Sin este ajuste, PC infla utilidad
+  (~$500k) vs dBase. <b>Idempotente</b>: si lo corrés 2x, no suma 2 veces
+  (lee el cart actual y agrega solo el delta del backfill que aún no se
+  computa).
+  <form method=POST class=inline>
+    <input type=hidden name=ajustar_backfill_31_05 value=1>
+    <button type=submit style="background:#0a0;color:#fff"
+      onclick="return confirm('Ajustar snapshot 31/05 sumando backfill de mayo?');">
+      AJUSTAR 2026-05-31 con backfill de mayo
+    </button>
+  </form>
+</div>
 <p>Borra los snapshots del mes target en <code>scintela.historia</code> y
 crea uno nuevo con el código actual. Útil cuando cambian las queries del
 balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
@@ -142,10 +160,91 @@ def index() -> Response:
     patrimonio_nuevo = 0.0
     error: str | None = None
 
+    # Botón "ajustar_backfill_31_05" — TMT decisión 2026-06-10 opción A.
+    # Suma al cart/patrimonio del snapshot 31/05 los saldos de las facturas
+    # backfill que tienen fecha <= 31/05 (= ventas de mayo que en dBase ya
+    # estaban al cierre, pero PC trajo después vía Asinfo manual).
+    # IDEMPOTENTE: usa un marker en sistema_meta para no doble-aplicar.
+    if request.method == "POST" and request.form.get("ajustar_backfill_31_05") == "1":
+        try:
+            with db.tx() as conn:
+                # 1. Computar el saldo de backfill que pertenece a mayo.
+                row = db.fetch_one(
+                    """
+                    SELECT COALESCE(SUM(saldo), 0) AS s
+                      FROM scintela.factura
+                     WHERE COALESCE(usuario_crea, '') = 'asinfo-backfill'
+                       AND fecha <= '2026-05-31'::date
+                       AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                       AND COALESCE(saldo, 0) > 0
+                    """, conn=conn,
+                ) or {}
+                backfill_mayo_saldo = float(row.get("s") or 0)
+
+                # 2. Marker idempotente en sistema_meta.
+                meta_key = "snapshot_31_05_backfill_ajuste"
+                meta_row = db.fetch_one(
+                    "SELECT valor FROM scintela.sistema_meta WHERE clave = %s",
+                    (meta_key,), conn=conn,
+                )
+                ya_aplicado = float(meta_row["valor"]) if meta_row else 0.0
+                delta_a_sumar = backfill_mayo_saldo - ya_aplicado
+
+                # 3. Buscar el snapshot 31/05 más reciente.
+                snap_row = db.fetch_one(
+                    """
+                    SELECT id_historia, cart, patrimonio
+                      FROM scintela.historia
+                     WHERE fecha = '2026-05-31'::date
+                     ORDER BY id_historia DESC LIMIT 1
+                    """, conn=conn,
+                )
+                if not snap_row:
+                    error = "No hay snapshot 31/05 en scintela.historia"
+                else:
+                    target_id = int(snap_row["id_historia"])
+                    cart_actual = float(snap_row.get("cart") or 0)
+                    patr_actual = float(snap_row.get("patrimonio") or 0)
+
+                    # 4. UPDATE solo el delta (idempotente).
+                    if abs(delta_a_sumar) > 0.01:
+                        db.execute(
+                            """
+                            UPDATE scintela.historia
+                               SET cart = cart + %s,
+                                   patrimonio = patrimonio + %s
+                             WHERE id_historia = %s
+                            """,
+                            (delta_a_sumar, delta_a_sumar, target_id),
+                            conn=conn,
+                        )
+                    # 5. Actualizar marker.
+                    if meta_row:
+                        db.execute(
+                            "UPDATE scintela.sistema_meta SET valor = %s WHERE clave = %s",
+                            (str(backfill_mayo_saldo), meta_key),
+                            conn=conn,
+                        )
+                    else:
+                        db.execute(
+                            """
+                            INSERT INTO scintela.sistema_meta (clave, valor)
+                            VALUES (%s, %s)
+                            """,
+                            (meta_key, str(backfill_mayo_saldo)),
+                            conn=conn,
+                        )
+                    aplicado = True
+                    n_borrados = 0
+                    id_nuevo = target_id
+                    patrimonio_nuevo = patr_actual + delta_a_sumar
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+
     # Botón "restore_205" — restaura el snapshot 31/05 con valores hardcoded
     # del id=205 que se perdió cuando regen falló por balance_components_as_of
     # incompleto. TMT 2026-06-10 fix de emergencia.
-    if request.method == "POST" and request.form.get("restore_205") == "1":
+    elif request.method == "POST" and request.form.get("restore_205") == "1":
         try:
             with db.tx() as conn:
                 # Borrar TODOS los snapshots del 2026-05
