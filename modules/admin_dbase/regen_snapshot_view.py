@@ -52,6 +52,7 @@ _PAGE = """\
   fallido, este botón lo restaura con los valores conocidos del original
   (patrimonio=20469347).
   <form method=POST class=inline>
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
     <input type=hidden name=restore_205 value=1>
     <button class=restore type=submit
       onclick="return confirm('Restaurar snapshot 31/05 a valores del id=205?');">
@@ -70,6 +71,7 @@ _PAGE = """\
   (lee el cart actual y agrega solo el delta del backfill que aún no se
   computa).
   <form method=POST class=inline>
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
     <input type=hidden name=ajustar_backfill_31_05 value=1>
     <button type=submit style="background:#0a0;color:#fff"
       onclick="return confirm('Ajustar snapshot 31/05 sumando backfill de mayo?');">
@@ -114,6 +116,7 @@ balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
 {% endif %}
 
 <form method=POST style="margin-top:24px">
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
   <input type=hidden name=anio value="{{ anio }}">
   <input type=hidden name=mes value="{{ mes }}">
 
