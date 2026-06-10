@@ -1864,3 +1864,63 @@ Convención de la dueña 2026-06-10: "no contar Asinfo hasta el cierre". Las fac
 
 Si en el futuro la convención cambia y se quiere ver siempre todo, basta con cambiar el `incluir_backfill = request.args.get("incluir_backfill") == "1"` a `incluir_backfill = True` en views, sin tocar queries — los filtros siguen siendo robustos contra el bug original.
 
+
+## Lecciones del día 2026-06-10 (jornada larga de bug hunt)
+
+Resumen de los anti-patrones identificados y la convención final.
+
+### Anti-patrón #1: Filtros de exclusión al balance live
+
+**Lo que parecía**: las facturas Asinfo cargadas vía `/facturas/cargar-desde-asinfo*` "deberían esperar al cierre mensual" → filtrar `usuario_crea='asinfo-backfill'` de TOTF/TOTC/anticipos/retiros en `informe_balance()`.
+
+**Por qué está mal**: dBase calcula utilidad 100% live. Si PC filtra cartera live pero el snapshot PATANT incluye las facturas backfill (o viceversa), aparece drift fantasma de cientos de miles de USD en la utilidad. La convención "esperar al cierre" SOLO funciona si TODO el sistema espera consistentemente — lo cual nunca es el caso porque el sync dBase trae data a PC en cualquier momento.
+
+**Convención correcta**: **balance es 100% live**. TOTF/TOTC/anticipos/retiros suman TODAS las filas vivas, sin importar el marker `usuario_crea`. El marker queda como **información de auditoría** (para saber de dónde vino la fila), NO como filtro contable.
+
+**Tests que enforce este invariante**: `tests/test_cartera_coherence.py::test_totf_no_filtra_asinfo_backfill` y similares. Si alguien re-introduce el filtro en TOTF/TOTC/anticipos, CI falla.
+
+### Anti-patrón #2: Toggle UI que diverge del balance
+
+**Lo que parecía**: agregar un checkbox "Incluir Asinfo backfill" en `/facturas?vista=cartera` con default OFF que excluye las facturas backfill del listado para que coincida con el balance filtrado.
+
+**Por qué está mal**: doble fuente de verdad → confusión. Cuando se decidió que el balance es 100% live, el toggle ya no tiene sentido. Si la lista y el balance siempre cuentan lo mismo, no hay toggle que hacer.
+
+**Convención correcta**: ni toggle, ni param `incluir_backfill` en `queries.buscar()` / `contar_filtrado()`. Lista y balance siempre coinciden. El endpoint `/admin/health/cartera-coherence` lo enforce.
+
+### Anti-patrón #3: `balance_components_as_of` para regenerar snapshots históricos
+
+**Lo que parecía**: si PATANT está desincronizado (ej. cargué backfill después del cierre), regenerar el snapshot del 31/05 con el código actual via `crear_snapshot_historia(2026, 5)`.
+
+**Por qué está mal**: `balance_components_as_of()` está documentada en el código como "Implementado parcialmente". Devuelve componentes INCOMPLETOS para fechas pasadas → el snapshot regenerado quedó con patrimonio $15.3M (era $20.4M = error de $5M).
+
+**Mitigación temporal**: endpoint `/admin/regenerar-snapshot/` con botón **"RESTAURAR 2026-05-31 (id 205)"** que escribe los valores hardcoded del snapshot original. **Pendiente**: reimplementar `balance_components_as_of()` con queries raw `WHERE fecha <= as_of` para que el regen funcione bien (deuda técnica documentada).
+
+### Patrón canónico para reconciliar PC ↔ dBase
+
+Cuando una factura existe en dBase pero PC la trae después (via Asinfo manual), la convención es:
+1. La factura cuenta inmediatamente en el balance LIVE de PC.
+2. Si su `fecha` es <= último cierre mensual, también debería sumar al PATANT del cierre. Eso requiere ajustar el snapshot.
+3. El endpoint `/admin/regenerar-snapshot/` botón **"AJUSTAR 2026-05-31 con backfill de mayo"** hace ese ajuste de forma idempotente: suma al `cart` y `patrimonio` del snapshot el `SUM(saldo)` de las facturas backfill con `fecha <= 31/05`. Marker en `sistema_meta` evita doble aplicación.
+
+### Patrón canónico para evitar drift en listados vs balance
+
+LEFT JOIN simple a `scintela.cliente` puede generar fanout si un `codigo_cli` tiene más de una fila. Esto inflaba TOTF de la lista por $23k vs balance. Solución: **`LEFT JOIN LATERAL (SELECT ... LIMIT 1) c ON true`** — escalar por construcción, sin fanout. Mismo patrón ya se aplicó en `cheques/queries.py` (lección 2026-05-19 v8).
+
+### Deuda técnica documentada (TMT decisiones 2026-06-10)
+
+1. **`balance_components_as_of()` incompleto para fechas pasadas** — el snapshot regen no funciona automáticamente, requiere ajuste manual via endpoint hardcoded. Fix correcto: reimplementar la función con queries raw por tabla. ETA: 2-3 horas.
+2. **4 clientes huérfanos (AQN, FGJ, MNM, NAI)** creados con ficha mínima por `/facturas/cargar-desde-asinfo*` cuando no encuentra match exacto ni alias. Resuelto manualmente (Tamara identificó que estaban en carpeta STAND). Para evitarlo en el futuro: wizard pre-flight que detecta y mapea antes del INSERT.
+3. **Paso de tejeduría manual** se carga como `compra tipo=K kg>0 codigo_prov=KK`. NO descuenta hilado en `resumen_stock()` → stock inflado intra-mes por las kg producidas. Se resincroniza al cierre mensual via dBase. Fix posible: descontar de hilado en `resumen_stock()` (opción 2 documentada en sesión previa).
+4. **`balance_components_as_of` para snapshots históricos** — ver punto 1.
+5. **Ruff stats**: 49 E701, 44 I001, 24 E402, 22 F841 al cierre del día. Pasada masiva de cleanup pendiente.
+6. **CI failures** preexistentes en `test_cheques_anticipo.py` (stub mock desactualizado). Documentado en `KNOWN_FAILING_NODEIDS` de `conftest.py`.
+
+### Cómo verificar coherencia al deploy de cualquier cambio
+
+`GET /admin/health/all` devuelve JSON con 3 secciones:
+- `usuario_crea_audit`: filas huérfanas (deberían ser 0)
+- `utilidad_watchdog`: delta patrimonio vs último snapshot del mes (alerta si > $200k)
+- `cartera_coherence`: `totf_balance == totf_lista` (alerta si delta > $1)
+
+Si después de un cambio cualquiera de las 3 alerta, el cambio rompió algo. Endpoint canónico de salud del sistema.
+
