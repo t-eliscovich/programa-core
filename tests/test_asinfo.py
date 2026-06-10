@@ -450,3 +450,75 @@ def test_vista_lote_export_csv(app, fake_db):
     assert r.status_code == 200
     assert "text/csv" in r.headers["Content-Type"]
     assert b"TC-WAF" in r.data
+
+
+# ─── _resolver_cliente_asinfo (TMT 2026-06-10) ─────────────────────────────
+# Carga desde Asinfo: alias-aware + auto-crear cliente faltante.
+
+def _setup_resolver(monkeypatch, existentes, alias_map=None):
+    """Stubs: scintela.cliente contiene `existentes`; alias map dado."""
+    import db as _db
+    from modules.asinfo import aliases as _aliases
+    from modules.facturas import views as _views
+
+    inserts = []
+
+    def fake_fetch_one(sql, params=None, *a, **kw):
+        if "FROM scintela.cliente" in sql:
+            return {"?column?": 1} if params[0] in existentes else None
+        return None
+
+    def fake_execute(sql, params=None, *a, **kw):
+        if "INSERT INTO scintela.cliente" in sql:
+            inserts.append(params)
+        return 1
+
+    monkeypatch.setattr(_db, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(_db, "execute", fake_execute)
+    monkeypatch.setattr(_views.db, "fetch_one", fake_fetch_one, raising=False)
+    monkeypatch.setattr(_views.db, "execute", fake_execute, raising=False)
+    monkeypatch.setattr(_aliases, "to_pc",
+                        lambda c: (alias_map or {}).get((c or "").strip().upper(),
+                                                        (c or "").strip().upper()))
+    return _views, inserts
+
+
+def test_resolver_cliente_existente_directo(monkeypatch):
+    views, inserts = _setup_resolver(monkeypatch, existentes={"AJO"})
+    assert views._resolver_cliente_asinfo("AJO", "tam") == ("AJO", False)
+    assert inserts == []
+
+
+def test_resolver_cliente_via_alias(monkeypatch):
+    # Asinfo manda AJ2, PC tiene AJO, alias AJ2->AJO: debe usar AJO sin crear.
+    views, inserts = _setup_resolver(monkeypatch, existentes={"AJO"},
+                                     alias_map={"AJ2": "AJO"})
+    assert views._resolver_cliente_asinfo("AJ2", "tam") == ("AJO", False)
+    assert inserts == []
+
+
+def test_resolver_cliente_codigo_crudo_fallback(monkeypatch):
+    # Alias apunta a un canonical que NO esta, pero el crudo SI (facturas
+    # viejas cargadas bajo el alias): usar el crudo, no crear.
+    views, inserts = _setup_resolver(monkeypatch, existentes={"AJ2"},
+                                     alias_map={"AJ2": "AJO"})
+    assert views._resolver_cliente_asinfo("AJ2", "tam") == ("AJ2", False)
+    assert inserts == []
+
+
+def test_resolver_cliente_faltante_auto_crea(monkeypatch):
+    # Cliente nuevo del dBase que aun no paso por clientes-import: se crea.
+    views, inserts = _setup_resolver(monkeypatch, existentes=set())
+    cod, creado = views._resolver_cliente_asinfo("NUEVO", "tam")
+    assert (cod, creado) == ("NUEVO", True)
+    assert len(inserts) == 1
+    assert inserts[0][0] == "NUEVO"
+    assert inserts[0][1] == "tam"
+
+
+def test_resolver_cliente_normaliza_y_trunca(monkeypatch):
+    views, inserts = _setup_resolver(monkeypatch, existentes=set())
+    cod, creado = views._resolver_cliente_asinfo("  abcdef ", "u" * 80)
+    assert creado is True
+    assert cod == "ABCDE"  # upper + varchar(5)
+    assert len(inserts[0][1]) == 50  # usuario truncado a varchar(50)

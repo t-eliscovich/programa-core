@@ -930,6 +930,48 @@ def alias_borrar():
     return redirect(request.referrer or url_for("facturas.desde_asinfo"))
 
 
+
+def _resolver_cliente_asinfo(codigo_cli: str, usuario: str) -> tuple[str, bool]:
+    """Resuelve el codigo de cliente Asinfo -> PC para cargar facturas.
+
+    TMT 2026-06-10 (3 facturas de ayer rebotaron con "cliente no existe en
+    PC" aunque el dBase SI tiene los clientes). Dos causas:
+      1. La carga usaba el codigo Asinfo CRUDO, sin pasar por el alias map
+         (AJ2->AJO etc.) que la vista de huerfanas SI usa.
+      2. CLIENTES.DBF no entra en el sync normal (no tiene mapper), asi que
+         un cliente dado de alta en el dBase despues del ultimo
+         /admin/clientes-import no existe en PC todavia.
+
+    Orden de resolucion:
+      1. alias canonical (to_pc) existe en PC -> usarlo.
+      2. codigo crudo existe en PC -> usarlo (facturas viejas bajo alias).
+      3. ninguno -> AUTO-CREAR cliente con ficha minima. La ficha real
+         (nombre/RUC/direccion) la completa /admin/clientes-import despues,
+         que es rellenar-solo e INSERT-si-falta.
+
+    Returns:
+        (codigo_pc_a_usar, creado)
+    """
+    from modules.asinfo import aliases as _aliases
+    codigo_cli = (codigo_cli or "").strip().upper()
+    cli_pc = _aliases.to_pc(codigo_cli)
+    for cand in dict.fromkeys((cli_pc, codigo_cli)):
+        if cand and db.fetch_one(
+            "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s", (cand,)
+        ):
+            return cand, False
+    nuevo = (cli_pc or codigo_cli)[:5]
+    db.execute(
+        """
+        INSERT INTO scintela.cliente (codigo_cli, usuario_crea)
+        VALUES (%s, %s)
+        ON CONFLICT (codigo_cli) DO NOTHING
+        """,
+        (nuevo, (usuario or "asinfo")[:50]),
+    )
+    return nuevo, True
+
+
 @facturas_bp.route("/facturas/cargar-desde-asinfo-bulk", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.crear")
@@ -950,6 +992,7 @@ def cargar_desde_asinfo_bulk():
         return redirect(url_for("facturas.desde_asinfo"))
 
     ok, errs = 0, []
+    clientes_creados: list[str] = []
     usuario = (
         getattr(g, "user", {}).get("username") if hasattr(g, "user") and isinstance(g.user, dict)
         else "asinfo"
@@ -965,17 +1008,14 @@ def cargar_desde_asinfo_bulk():
             if not fecha or not codigo_cli or importe == 0:
                 errs.append(f"{numf_completo}: faltan datos")
                 continue
-            # Cliente debe existir
-            row_cli = db.fetch_one(
-                "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s",
-                (codigo_cli,),
-            )
-            if not row_cli:
-                errs.append(f"{numf_completo}: cliente '{codigo_cli}' no existe")
-                continue
+            # Resolver alias Asinfo->PC; si el cliente no existe en PC
+            # (alta nueva en dBase aun no importada), se auto-crea minimo.
+            cli_uso, creado = _resolver_cliente_asinfo(codigo_cli, usuario)
+            if creado:
+                clientes_creados.append(cli_uso)
             queries.crear(
                 fecha=fecha,
-                codigo_cli=codigo_cli,
+                codigo_cli=cli_uso,
                 kg=kg,
                 importe=importe,
                 numf_completo=numf_completo or None,
@@ -988,6 +1028,13 @@ def cargar_desde_asinfo_bulk():
 
     if ok:
         flash(f"Cargadas {ok} facturas desde Asinfo.", "ok")
+    if clientes_creados:
+        flash(
+            "Clientes creados automáticamente con ficha mínima: "
+            + ", ".join(sorted(set(clientes_creados)))
+            + ". Corré /admin/clientes-import para traer la ficha del dBase.",
+            "info",
+        )
     if errs:
         msg = f"{len(errs)} con error: " + "; ".join(errs[:5])
         if len(errs) > 5:
@@ -1011,22 +1058,28 @@ def cargar_desde_asinfo():
         if not fecha or not codigo_cli or importe == 0:
             flash("Faltan datos (fecha/cliente/importe).", "warn")
             return redirect(url_for("facturas.desde_asinfo"))
-        # Verificar que el cliente existe
-        row_cli = db.fetch_one(
-            "SELECT 1 FROM scintela.cliente WHERE codigo_cli = %s",
-            (codigo_cli,),
+        # Resolver alias Asinfo->PC; auto-crear si falta (alta nueva en
+        # dBase que todavia no paso por /admin/clientes-import).
+        usuario = (
+            getattr(g, "user", {}).get("username")
+            if hasattr(g, "user") and isinstance(g.user, dict) else "asinfo"
         )
-        if not row_cli:
-            flash(f"Cliente '{codigo_cli}' no existe en PC. Creá el cliente primero.", "warn")
-            return redirect(url_for("facturas.desde_asinfo"))
+        cli_uso, creado = _resolver_cliente_asinfo(codigo_cli, usuario)
+        if creado:
+            flash(
+                f"Cliente '{cli_uso}' no existía en PC — se creó automáticamente "
+                "con ficha mínima. Corré /admin/clientes-import para traer la "
+                "ficha del dBase.",
+                "info",
+            )
         res = queries.crear(
             fecha=fecha,
-            codigo_cli=codigo_cli,
+            codigo_cli=cli_uso,
             kg=kg,
             importe=importe,
             numf_completo=numf_completo or None,
             tipo=tipo_asinfo[:2],  # 'FA', 'NT'
-            usuario=getattr(g, "user", {}).get("username") if hasattr(g, "user") else "asinfo",
+            usuario=usuario,
         )
         flash(f"Factura {numf_completo or '#'+str(res.get('numf'))} cargada desde Asinfo.", "ok")
     except Exception as e:
