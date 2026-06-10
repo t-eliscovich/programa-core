@@ -903,6 +903,31 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             cur.execute(sql, [r[c] for c in cols])
             insertadas += 1
 
+        # Mismo criterio "dBase gana" para la TINTURA: la planilla se puede
+        # cargar a mano en PC (/informes/tinto-carga, usuario_crea='pc-carga')
+        # para no esperar el sync — pero cuando el DBF trae la misma partida
+        # (misma fecha + cod + kg bruto), la copia PC se absorbe. Evita el
+        # doble conteo de COL.QUI./KR/stock que advertía la pantalla de carga.
+        # TMT 2026-06-10 (pedido dueña: proceso tintorería = dBase).
+        if pg_table == "scintela.tinto":
+            cur.execute(
+                """
+                DELETE FROM scintela.tinto a
+                 WHERE a.usuario_crea = 'pc-carga'
+                   AND EXISTS (
+                        SELECT 1 FROM scintela.tinto b
+                         WHERE COALESCE(b.usuario_crea, 'dbf-import') <> 'pc-carga'
+                           AND b.fecha = a.fecha
+                           AND UPPER(TRIM(COALESCE(b.cod,''))) =
+                               UPPER(TRIM(COALESCE(a.cod,'')))
+                           AND ABS(COALESCE(b.kg,0) - COALESCE(a.kg,0)) < 0.01
+                   )
+                """
+            )
+            if cur.rowcount:
+                print(f"   [dBase gana] {cur.rowcount} partidas pc-carga absorbidas "
+                      f"(el DBF trae la misma tintura)")
+
         # TMT 2026-06-10 (decisión dueña): "una carga de dBase GANA por sobre
         # todo". Si el DBF trae una factura que también existe como copia
         # asinfo (cargada con el botón o backfill), la copia asinfo se

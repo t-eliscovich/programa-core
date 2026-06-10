@@ -54,3 +54,19 @@ def test_whitelist_tarifa_prev_tiene_columnas_stock():
     from modules.informes import queries as iq
     for col in ("hilado", "tejido", "terminado"):
         assert col in iq._TARIFA_COLS_PREV
+
+
+def test_sync_tinto_dbase_gana_absorbe_pc_carga():
+    """El sync absorbe partidas pc-carga que el DBF trae igual (fecha+cod+kg)
+    — permite cargar la planilla a mano sin doble conteo. TMT 2026-06-10."""
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "scripts" / "import_dbf.py"
+    spec = importlib.util.spec_from_file_location("_imp_dbf_tinto_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    src = inspect.getsource(mod.import_one)
+    assert "scintela.tinto" in src and "pc-carga" in src, (
+        "el sync perdió el dedupe dBase-gana de tinto — la planilla manual "
+        "se duplica con el próximo sync"
+    )
