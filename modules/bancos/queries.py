@@ -43,17 +43,24 @@ def _detectar_cta_usd(concepto: str, prov: str | None) -> tuple[str | None, str]
         cuentas = {r["cta"] for r in rows}
     except Exception:
         return None, c
+    # EXC del dBase (VARMEMO): RR/IN/PI/KK son marcadores, no cuentas.
+    cuentas -= {"RR", "IN", "PI", "KK"}
+    lc2 = c[:2]
     # 1) Prefijo explícito IN.XX / IN XX (mismo formato que emitir-cheque).
     m = re.match(r"^IN[. ]+([A-Z0-9]{2})(?:[. ]+(.*))?$", c)
     if m and (m.group(1) in cuentas or m.group(1) == "II"):
         return m.group(1), ((m.group(2) or "").strip() or c)[:50]
-    # 2) dBase ND: concepto "XX resto" con XX cuenta USD conocida.
-    m = re.match(r"^([A-Z0-9]{2})[. ]+(.+)$", c)
-    if m and m.group(1) in cuentas:
-        return m.group(1), m.group(2).strip()[:50]
-    # 3) prov del form = cuenta USD conocida.
-    if p and p in cuentas:
-        return p, (c or f"ANTICIPO {p}")[:50]
+    # 2) dBase línea 212: (PROV='IN' AND LC2∈TOT+'II') OR (DOC='ND' AND LC2∈TOT).
+    #    OJO: en dBase este caso PREGUNTA "ACTIVA?" — acá no hay prompt, así
+    #    que solo auto-creamos cuando la intención es inequívoca: concepto
+    #    'XX.…' (convención punto = anticipo, CHEQUERA línea 621 la exige) o
+    #    prov='IN' explícito. 'XX SALDO' con espacio y sin prov NO crea nada
+    #    (en dBase la dueña contestaba N en esos casos — cuotas/préstamos).
+    if len(c) >= 4 and (
+        (c[2] == "." and lc2 in cuentas)
+        or (p == "IN" and c[2] in ". " and (lc2 in cuentas or lc2 == "II"))
+    ):
+        return lc2, (c[3:18].strip() or c)[:50]
     return None, c
 
 
@@ -66,34 +73,102 @@ def _routear_mov_simple(
     concepto_in: str,
     prov: str | None,
     usuario: str,
+    no_banco: int | None = None,
 ) -> dict:
-    """Side effects de un movimiento simple manual — paridad dBase BANCOS.PRG.
+    """Side effects de un movimiento simple manual — IMITA el DO CASE de
+    dBase BANCOS.PRG (líneas ~164-247), en el MISMO orden y con las mismas
+    convenciones de prov/concepto. Todo corre en la misma transacción que el
+    insert bancario: el banco baja y la contraparte sube A LA VEZ.
 
-    El dBase, al cargar movimientos del banco, los RUTEA según prov/concepto
-    (mismo CASE, mismas convenciones). Acá replicamos los casos que la carga
-    manual de PC necesita, TODO en la misma transacción que el insert
-    bancario (banco baja y la contraparte sube A LA VEZ, pedido Tamara):
+      PRG ~164  PROV='IN' + concepto 'HB…'  → libros de HABITAT (otra
+                empresa): PC no los lleva — queda solo en banco, se avisa.
+      PRG ~195  PROV = proveedor activo, o ND/CH con 'KK' en concepto
+                → COMPRAS (pago directo: tipo H/T/Q/K del proveedor,
+                no_banco=1|2, fechad=fecha del mov).
+      PRG ~212  (PROV='IN' y LC2∈TOT+'II') o (ND y LC2∈TOT)
+                → DOLARES (anticipo): cta=LEFT(concepto,2),
+                concepto=SUBSTR(cc,4,15).
+      PRG ~222  PROV='RR' o concepto 'RR …' → RETIROS (ret=+imp si ND,
+                −imp si DE; de=SUBSTR(cc,4,2); concepto +' B.<cta>').
+      PRG ~233  concepto 'CAJA…' → CAJA entrada E ('<doc> CTA.<cta>').
+      PRG ~240  ND 'INOP…' → POSDAT nueva: fechad=hoy+120, importe=−imp,
+                prov=SUBSTR(cc,6,2), banc=0.
 
-      1. ND anticipo USD  (PRG ~212): concepto 'IN.XX …' / 'XX …' o prov=XX
-         con XX proveedor/cuenta USD → INSERT scintela.dolares (anticipo vivo).
-      2. ND/DE retiro RR  (PRG ~222): prov='RR' o concepto 'RR …' →
-         INSERT scintela.retiros (ret=+imp si ND, −imp si DE devolución;
-         de = iniciales en concepto pos 4-5, como SUBSTR(CC,4,2)).
-      3. ND a caja        (PRG ~233): concepto empieza 'CAJA' →
-         INSERT scintela.caja tipo 'E' (la plata pasa del banco a la caja).
-
-    Casos del PRG NO ruteados acá (siguen su flujo propio en PC): compras a
-    proveedor (case ~195 — wizard emitir-cheque), INOP→posdat (~240, viene
-    del sync), espejo posdatado ST='P' (reconcile POSDAT).
+    NO replicado: espejo posdatado ST='P' (el form manual no tiene fechad;
+    los posdatados van por emitir-cheque / sync POSDAT).
 
     Devuelve {destino_table, destino_id, meta, side} — side es el texto
-    para el flash; destino_* para linkear el mov_doble.
+    para el flash; destino_* linkea el mov_doble (y el reverso deshace).
     """
     out = {"destino_table": None, "destino_id": None, "meta": {}, "side": None}
     c = (concepto_in or "").strip().upper()
     p = (prov or "").strip().upper()
+    lc2 = c[:2]
+    # CTA del dBase: 1=Pichincha, 2=Internacional.
+    cta_banco = 1 if int(no_banco or 0) == 10 else 2
 
-    # 1) Anticipo USD (solo ND).
+    # ── PRG ~164: Habitat — PC no lleva esos libros. Solo banco + aviso.
+    if p == "IN" and lc2 == "HB":
+        out["side"] = (
+            "movimiento HABITAT: quedó solo en el banco (el Programa no "
+            "lleva los libros de Habitat — registralo allá)"
+        )
+        return out
+
+    # ── PRG ~195: COMPRAS (pago directo a proveedor desde el banco).
+    proveedores: set[str] = set()
+    tipos_prov: dict[str, str] = {}
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(TRIM(codigo_prov)) AS cod,
+                   UPPER(TRIM(COALESCE(tipo,''))) AS tipo
+              FROM scintela.proveedor
+             WHERE COALESCE(activo, '1') NOT IN ('0', 'N')
+               AND TRIM(COALESCE(codigo_prov,'')) <> ''
+            """,
+            conn=conn,
+        ) or []
+        proveedores = {r["cod"] for r in rows}
+        tipos_prov = {r["cod"]: r["tipo"] for r in rows}
+    except Exception:
+        pass
+
+    es_compra = (p and p in proveedores and p != "IN") or (
+        documento == "ND" and "KK" in c
+    )
+    if es_compra and documento in ("ND", "CH"):
+        # dBase: PROV de la compra = prov del banco; si DOC=ND lo pisa con
+        # LC2; si 'KK' en concepto → 'KK'.
+        prov_compra = p
+        if documento == "ND" and (lc2 in proveedores or lc2 == "KK"):
+            prov_compra = lc2
+        if "KK" in c:
+            prov_compra = "KK"
+        # TYP del dBase: H (hilos) / T (tintorería) / Q (químicos) / K resto.
+        t = (tipos_prov.get(prov_compra) or "")[:1]
+        tipo_compra = t if t in ("H", "T", "Q") else "K"
+        row = db.execute_returning(
+            """
+            INSERT INTO scintela.compra
+                (fecha, fechad, codigo_prov, tipo, importe, concepto,
+                 no_banco, usuario_crea)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id_compra
+            """,
+            (today_ec(), fecha, prov_compra[:3], tipo_compra, importe_f,
+             (concepto_in or f"PAGO {prov_compra}")[:200],
+             cta_banco, usuario[:50]),
+            conn=conn,
+        )
+        id_compra = (row or {}).get("id_compra")
+        out.update(destino_table="compra", destino_id=id_compra,
+                   meta={"id_compra": id_compra, "prov_compra": prov_compra},
+                   side=f"Compra #{id_compra} a {prov_compra} registrada "
+                        f"(tipo {tipo_compra}, pagada por banco)")
+        return out
+
+    # ── PRG ~212: DOLARES (anticipo USD) — solo ND.
     if documento == "ND":
         cta_usd, concepto_usd = _detectar_cta_usd(concepto_in, prov)
         if cta_usd:
@@ -114,9 +189,9 @@ def _routear_mov_simple(
                        side=f"Anticipo USD #{id_dol} creado en cuenta {cta_usd} (ver Anticipos)")
             return out
 
-    # 2) Retiro RR (ND saca, DE devuelve).
-    if documento in ("ND", "DE") and (p == "RR" or re.match(r"^RR[. ]", c)):
-        de_owner = c[3:5].strip() if c.startswith("RR") else (p if p != "RR" else "")
+    # ── PRG ~222: RETIROS (ND saca, DE devuelve).
+    if documento in ("ND", "DE") and (p == "RR" or lc2 == "RR"):
+        de_owner = c[3:5].strip() if lc2 == "RR" else (p if p != "RR" else "")
         ret = importe_f if documento == "ND" else -importe_f
         row = db.execute_returning(
             """
@@ -126,7 +201,7 @@ def _routear_mov_simple(
             RETURNING id_retiro
             """,
             (fecha, ret, (de_owner or None) and de_owner[:5],
-             (concepto_in or "RETIRO")[:100], usuario[:50]),
+             (f"{concepto_in or 'RETIRO'} B.{cta_banco}")[:100], usuario[:50]),
             conn=conn,
         )
         id_ret = (row or {}).get("id_retiro")
@@ -136,15 +211,16 @@ def _routear_mov_simple(
                         + f" #{id_ret} registrado (URET)")
         return out
 
-    # 3) Banco → caja (solo ND con concepto CAJA…).
+    # ── PRG ~233: CAJA (solo ND con concepto CAJA…).
     if documento == "ND" and c.startswith("CAJA"):
         import caja_helpers
+        resto = c[4:].strip(" .")
         mov_caja = caja_helpers.insert_movimiento_caja(
             conn,
             fecha=fecha,
             tipo="E",
             importe=importe_f,
-            concepto=(concepto_in or "ND BANCO")[:100],
+            concepto=(f"ND CTA.{cta_banco}" + (f" {resto}" if resto else ""))[:100],
             usuario=usuario,
         )
         id_caja = mov_caja.get("id_caja")
@@ -152,6 +228,28 @@ def _routear_mov_simple(
                    meta={"id_caja": id_caja},
                    side=f"Entrada a caja #{id_caja} "
                         f"(saldo caja $ {mov_caja.get('saldo_nuevo', 0):,.2f})")
+        return out
+
+    # ── PRG ~240: INOP → POSDAT nueva (negativa, fechad +120 días).
+    if documento == "ND" and c.startswith("INOP"):
+        from datetime import timedelta
+        row = db.execute_returning(
+            """
+            INSERT INTO scintela.posdat
+                (fecha, fechad, prov, importe, concepto, banc, usuario_crea)
+            VALUES (%s, %s, %s, %s, %s, 0, %s)
+            RETURNING id_posdat
+            """,
+            (today_ec(), today_ec() + timedelta(days=120),
+             (c[5:7].strip() or None), -importe_f,
+             (c[5:15].strip() or c)[:100], usuario[:50]),
+            conn=conn,
+        )
+        id_pd = (row or {}).get("id_posdat")
+        out.update(destino_table="posdat", destino_id=id_pd,
+                   meta={"id_posdat_inop": id_pd},
+                   side=f"Posdat #{id_pd} (INOP, −$ {importe_f:,.2f}, "
+                        f"vence +120 días) creada")
         return out
 
     return out
@@ -911,6 +1009,7 @@ def crear_movimiento_simple(
                         concepto_in=concepto_in,
                         prov=prov,
                         usuario=usuario,
+                        no_banco=no_banco,
                     )
                     if ruta_dd["destino_id"]:
                         import json as _json
@@ -999,6 +1098,7 @@ def crear_movimiento_simple(
             concepto_in=concepto_in,
             prov=prov,
             usuario=usuario,
+            no_banco=no_banco,
         )
 
         # Auto-link: origen = la fila bancaria. Destino = la contraparte
@@ -1175,6 +1275,30 @@ def reversar_movimiento_simple(
             db.execute(
                 "DELETE FROM scintela.retiros WHERE id_retiro = %s",
                 (id_ret,), conn=conn,
+            )
+
+        # Compra pagada directa → borrar la fila.
+        id_compra = meta.get("id_compra")
+        if id_compra:
+            db.execute(
+                "DELETE FROM scintela.compra WHERE id_compra = %s",
+                (id_compra,), conn=conn,
+            )
+
+        # Posdat INOP → anular (soft-delete, recuperable).
+        id_pd_inop = meta.get("id_posdat_inop")
+        if id_pd_inop:
+            db.execute(
+                """
+                UPDATE scintela.posdat
+                   SET anulada = TRUE,
+                       motivo_anulacion = %s,
+                       fecha_anulacion = CURRENT_TIMESTAMP,
+                       usuario_modifica = %s
+                 WHERE id_posdat = %s
+                """,
+                (f"Reverso ND INOP (mov_doble #{id_mov_doble})",
+                 usuario[:50], id_pd_inop), conn=conn,
             )
 
         # Caja → borrar la entrada + walk-forward de saldos de caja.
