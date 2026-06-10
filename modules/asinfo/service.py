@@ -656,24 +656,28 @@ def stock_en_proceso() -> dict:
             issued = float(r.get("issued") or 0)
             fab = float(r.get("fab") or 0)
             ep = float(r.get("en_proceso") or 0)
+            # Sólo cuentan las órdenes con material realmente EN PROCESO
+            # (despachado > producido). Las que produjeron más de lo despachado
+            # (yield/timing, ep<0) NO restan stock — se ignoran.
+            if ep <= 0.01:
+                continue
             slot = pasos.setdefault(b, {"id_bodega": b, "paso": _PASOS_PROCESO.get(b, f"Bodega {b}"),
                                         "issued": 0.0, "producido": 0.0, "en_proceso": 0.0, "n_ofts": 0})
             slot["issued"] += issued
             slot["producido"] += fab
             slot["en_proceso"] += ep
             slot["n_ofts"] += 1
-            if ep > 0.01:
-                ofts.append({
-                    "id_bodega": b,
-                    "paso": _PASOS_PROCESO.get(b, f"Bodega {b}"),
-                    "oft": str(r.get("oft") or "").strip(),
-                    "producto": str(r.get("producto") or "").strip(),
-                    "prod_codigo": str(r.get("prod_codigo") or "").strip(),
-                    "planif": float(r.get("planif") or 0),
-                    "fab": fab,
-                    "issued": issued,
-                    "en_proceso": ep,
-                })
+            ofts.append({
+                "id_bodega": b,
+                "paso": _PASOS_PROCESO.get(b, f"Bodega {b}"),
+                "oft": str(r.get("oft") or "").strip(),
+                "producto": str(r.get("producto") or "").strip(),
+                "prod_codigo": str(r.get("prod_codigo") or "").strip(),
+                "planif": float(r.get("planif") or 0),
+                "fab": fab,
+                "issued": issued,
+                "en_proceso": ep,
+            })
         except (TypeError, ValueError):
             continue
     out = {"pasos": sorted(pasos.values(), key=lambda x: x["id_bodega"]), "ofts": ofts}

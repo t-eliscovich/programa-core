@@ -252,12 +252,15 @@ def _reset_lote_caches():
 
 def test_stock_en_proceso_agrega_y_filtra():
     rows = [
-        # Tejeduría: en_proceso > 0 → entra al detalle
+        # Tejeduría: en_proceso > 0 → cuenta
         {"id_bodega": 52, "oft": "OFT-1", "producto": "TC A", "prod_codigo": "TCA",
          "planif": 100, "fab": 60, "issued": 100, "en_proceso": 40},
-        # Tintorería: en_proceso ~0 → NO entra al detalle pero sí suma al paso
+        # Tintorería: en_proceso > 0 → cuenta
+        {"id_bodega": 53, "oft": "OFT-3", "producto": "PT C", "prod_codigo": "PTC",
+         "planif": 30, "fab": 20, "issued": 30, "en_proceso": 10},
+        # en_proceso <= 0 (produjo más de lo despachado) → se ignora
         {"id_bodega": 53, "oft": "OFT-2", "producto": "PT B", "prod_codigo": "PTB",
-         "planif": 50, "fab": 50, "issued": 50, "en_proceso": 0},
+         "planif": 50, "fab": 60, "issued": 50, "en_proceso": -10},
         # fila corrupta → except, se saltea
         {"id_bodega": None, "oft": "X", "issued": 1, "fab": 0, "en_proceso": 1},
     ]
@@ -266,9 +269,10 @@ def test_stock_en_proceso_agrega_y_filtra():
     pasos = {p["id_bodega"]: p for p in out["pasos"]}
     assert pasos[52]["en_proceso"] == 40
     assert pasos[52]["n_ofts"] == 1
+    assert pasos[53]["en_proceso"] == 10
     assert pasos[53]["n_ofts"] == 1
-    # solo la OFT con en_proceso>0 está en el detalle
-    assert [o["oft"] for o in out["ofts"]] == ["OFT-1"]
+    # sólo las OFT con en_proceso>0 están en el detalle (no la negativa)
+    assert [o["oft"] for o in out["ofts"]] == ["OFT-1", "OFT-3"]
     assert "Tejedur" in pasos[52]["paso"]
 
 
