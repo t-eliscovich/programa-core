@@ -62,7 +62,15 @@
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}" class="hover:text-blue-600">{{ c.codigo_cli }}</a>
           </td>
           <td class="px-4 py-2">
+            {# TMT 2026-06-10 dueña '"None" es lo mismo que nada': nombre NULL
+               (cliente auto-creado al cargar factura Asinfo, ficha pendiente
+               del próximo CLIENTES.DBF) se renderizaba como "None" literal. #}
+            {% if c.nombre and c.nombre != 'None' %}
             <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}" class="hover:text-blue-600">{{ c.nombre }}</a>
+            {% else %}
+            <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}" class="hover:text-blue-600 text-slate-400 italic"
+               title="Cliente creado automáticamente al cargar su factura desde Asinfo — la ficha (nombre/RUC/dirección) llega sola con el próximo sync del dBase.">(ficha pendiente del dBase)</a>
+            {% endif %}
             {# Dirección (TMT 2026-06-06) como línea secundaria bajo el nombre. #}
             {% set _dir = ((c.direccion1 ~ ' ' ~ c.direccion2) if c.direccion2 else c.direccion1) | cleanstr %}
             {% if _dir and _dir | trim %}
@@ -71,7 +79,7 @@
           </td>
           <td class="px-4 py-2 text-xs text-slate-500" style="white-space: nowrap;">{{ c.ruc | cleanstr }}</td>
           <td class="px-4 py-2 text-xs text-slate-500">{{ c.telefono | cleanstr }}</td>
-          <td class="px-4 py-2 text-xs">{{ c.pago }}</td>
+          <td class="px-4 py-2 text-xs">{{ c.pago if c.pago and c.pago != 'None' else '' }}</td>
           {# TMT 2026-05-19 v8 — dueña: solo 6 vendedores oficiales cobran
              comisión (PPR/EDG/SEP/JQU/FL1/RMY). El resto son códigos
              legacy o sin vendedor — los mostramos vacíos para que
