@@ -1857,6 +1857,11 @@ def flujo_fondos():
     posdatados por pagar (fechad, banc=0, no anuladas — incluye provisiones
     YY/RT a su vencimiento). Saldo proyectado arranca de Bancos+Caja live.
     """
+    # TMT 2026-06-10 dueña 'no puede ser tan alta': el dBase NO proyecta los
+    # cobros de facturas (MENU.PRG L701 hardcodea FA=0) — su flujo es
+    # conservador: solo cheques en mano. Default igual que dBase; con
+    # ?incluir_facturas=1 se suman tambien los cobros de cartera.
+    incluir_fact = request.args.get("incluir_facturas") == "1"
     import db
     semanas = db.fetch_all(
         """
@@ -1902,12 +1907,14 @@ def flujo_fondos():
         arranque = 0.0
     acum = arranque
     for s in semanas:
-        for k in ("cobros_facturas", "cheques_deposito", "pagos_posdat", "neto"):
+        for k in ("cobros_facturas", "cheques_deposito", "pagos_posdat"):
             s[k] = float(s.get(k) or 0)
+        s["neto"] = round(s["cheques_deposito"] + s["pagos_posdat"]
+                          + (s["cobros_facturas"] if incluir_fact else 0), 2)
         acum += s["neto"]
         s["acumulado"] = round(acum, 2)
     return render_template(
         "informes/flujo_fondos.html",
-        semanas=semanas, arranque=arranque,
+        semanas=semanas, arranque=arranque, incluir_fact=incluir_fact,
         total_neto=round(sum(s["neto"] for s in semanas), 2),
     )

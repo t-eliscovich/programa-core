@@ -26,7 +26,7 @@
       <thead class="text-xs uppercase tracking-wide text-slate-500 bg-slate-50 dark:bg-slate-800">
         <tr>
           <th class="px-3 py-2 text-left">Semana (lunes)</th>
-          <th class="px-3 py-2 text-right" title="Facturas stat Z/A por vencimiento">+ Cobros facturas</th>
+          <th class="px-3 py-2 text-right" title="Facturas stat Z/A por vencimiento. El dBase NO las suma al flujo (MENU.PRG FA=0) — acá {{ 'SUMAN' if incluir_fact else 'NO suman (solo informativas, igual que dBase)' }}.">{{ '+' if incluir_fact else '·' }} Cobros facturas</th>
           <th class="px-3 py-2 text-right" title="Cheques en cartera (Z/1/2/3/P) por fecha de depósito">+ Cheques</th>
           <th class="px-3 py-2 text-right" title="Posdatados y provisiones por fecha de pago">− Pagos posdat</th>
           <th class="px-3 py-2 text-right">Neto</th>
@@ -49,6 +49,9 @@
       </tbody>
     </table>
   </div>
-  <p class="text-xs text-slate-400 mt-3">Los vencimientos pasados se agrupan en la semana actual (igual que el dBase corre FECHAD a hoy). Las provisiones YY/RT entran por su saldo actual a la fecha de vencimiento.</p>
+  <p class="text-xs text-slate-400 mt-3">
+    {% if incluir_fact %}Incluye cobros de facturas (el dBase no los proyecta — criterio optimista). <a class="underline" href="{{ url_for('informes.flujo_fondos') }}">Ver como dBase (sin facturas)</a>.
+    {% else %}Criterio dBase: los cobros de facturas NO suman al flujo (columna informativa). <a class="underline" href="{{ url_for('informes.flujo_fondos', incluir_facturas=1) }}">Incluir cobros de facturas</a>.{% endif %}
+    · Los vencimientos pasados se agrupan en la semana actual (igual que el dBase corre FECHAD a hoy). Las provisiones YY/RT entran por su saldo actual a la fecha de vencimiento.</p>
 </div>
 {% endblock %}
