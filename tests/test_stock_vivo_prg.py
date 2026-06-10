@@ -70,3 +70,33 @@ def test_sync_tinto_dbase_gana_absorbe_pc_carga():
         "el sync perdió el dedupe dBase-gana de tinto — la planilla manual "
         "se duplica con el próximo sync"
     )
+
+
+def test_sync_tinto_preserva_manual_kg_edit_mes_corriente():
+    """'Deberíamos contarlo, para eso lo creé' (dueña 2026-06-10): los
+    ajustes manual-kg-edit cuentan y el sync los preserva el mes corriente;
+    los absorbe solo cuando el DBF trae filas de la misma fecha."""
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "scripts" / "import_dbf.py"
+    spec = importlib.util.spec_from_file_location("_imp_dbf_kge_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    where_sql, _ = mod.TABLE_MAP["TINTO.DBF"]["delete_where"]
+    assert "manual-kg-edit" in where_sql, (
+        "el sync volvió a borrar los ajustes manual-kg-edit siempre"
+    )
+    src = inspect.getsource(mod.import_one)
+    assert "manual-kg-edit" in src, "falta el dBase-gana por fecha para los ajustes"
+
+
+def test_editar_kg_fetch_manda_csrf():
+    """El POST de editar-KG debe mandar X-CSRFToken (sin eso: 400 silencioso,
+    el ajuste nunca se guarda — bug encontrado 2026-06-10)."""
+    from pathlib import Path
+    tpl = (Path(__file__).resolve().parents[1] / "modules" / "comparativa_tintoreria"
+           / "templates" / "comparativa_tintoreria" / "index.html").read_text()
+    i = tpl.find("editar_kg_dbase")
+    assert i > 0 and "X-CSRFToken" in tpl[i:i+600], (
+        "el fetch de editar-kg no manda CSRF token"
+    )

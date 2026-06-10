@@ -666,10 +666,14 @@ TABLE_MAP: dict[str, dict] = {
         # PERO: scintela.tinto es "solo mes en curso" (el balance suma la
         # tabla ENTERA sin filtro de fecha, igual que el PRG) → las pc-carga
         # de meses anteriores SÍ se borran en cada sync, para no inflar el
-        # balance del mes nuevo. Las filas de ajuste 'manual-kg-edit'
-        # (editar KG en comparativa) son data de prueba: se borran siempre.
+        # balance del mes nuevo.
+        # TMT 2026-06-10 dueña: los ajustes 'manual-kg-edit' (editar KG en
+        # la comparativa) NO son data de prueba — "deberíamos contarlo,
+        # para eso lo creé". Se preservan el mes corriente y CUENTAN en el
+        # balance; cuando el DBF trae filas de esa misma fecha, dBase gana
+        # y el ajuste se absorbe (post-insert, abajo en import_one).
         "delete_where": (
-            "COALESCE(usuario_crea, '') <> %s "
+            "COALESCE(usuario_crea, '') NOT IN (%s, 'manual-kg-edit') "
             "OR fecha < date_trunc('month', CURRENT_DATE)",
             "_lookup_pc_carga_marker",
         ),
@@ -927,6 +931,24 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             if cur.rowcount:
                 print(f"   [dBase gana] {cur.rowcount} partidas pc-carga absorbidas "
                       f"(el DBF trae la misma tintura)")
+            # Ajustes manual-kg-edit: son un delta para que el TOTAL del día
+            # dé lo tipeado. Cuando el DBF trae filas reales de esa fecha,
+            # el ajuste queda obsoleto (sumaría doble) → dBase gana.
+            cur.execute(
+                """
+                DELETE FROM scintela.tinto a
+                 WHERE a.usuario_crea = 'manual-kg-edit'
+                   AND EXISTS (
+                        SELECT 1 FROM scintela.tinto b
+                         WHERE COALESCE(b.usuario_crea, 'dbf-import')
+                               NOT IN ('pc-carga', 'manual-kg-edit')
+                           AND b.fecha = a.fecha
+                   )
+                """
+            )
+            if cur.rowcount:
+                print(f"   [dBase gana] {cur.rowcount} ajustes manual-kg-edit absorbidos "
+                      f"(el DBF ya cubre esas fechas)")
 
         # TMT 2026-06-10 (decisión dueña): "una carga de dBase GANA por sobre
         # todo". Si el DBF trae una factura que también existe como copia

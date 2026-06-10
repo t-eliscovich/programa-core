@@ -376,7 +376,8 @@
       if (val === null || !val.trim()) return;
       fetch('{{ url_for("comparativa_tintoreria.editar_kg_dbase") }}', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json',
+                  'X-CSRFToken': '{{ csrf_token() }}'},
         body: JSON.stringify({fecha: fecha, kg: val.trim()})
       }).then(r => r.json()).then(j => {
         if (j.ok) { location.reload(); }

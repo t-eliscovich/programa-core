@@ -640,9 +640,9 @@ def editar_kg_dbase():
     Re-editar reemplaza el ajuste anterior; ingresar el total original
     lo elimina.
 
-    OJO: el sync dBase (/admin/dbase-sync) trunca scintela.tinto, así
-    que los ajustes se pierden en el próximo sync — intencional, es
-    data de prueba.
+    TMT 2026-06-10 dueña: los ajustes CUENTAN en el balance ("para eso
+    lo creé") — el sync los preserva el mes corriente y los absorbe
+    cuando el DBF trae filas de esa misma fecha (dBase gana).
 
     Acepta JSON o form: {fecha: 'YYYY-MM-DD', kg: '20.974,5' | '20974.5'}.
     """
