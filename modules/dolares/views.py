@@ -55,10 +55,11 @@ def lista():
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
     cta   = (request.args.get("cta") or "").strip() or None
+    q     = (request.args.get("q") or "").strip() or None
     solo_vivos = request.args.get("solo_vivos", "1") != "0"
     filas, error = _safe(
         lambda: queries.lista(
-            desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos,
+            desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos, q=q,
         ),
         [],
     )
@@ -83,7 +84,7 @@ def lista():
     return render_template(
         "dolares/lista.html",
         filas=filas, cuentas=cuentas, resumen=res,
-        desde=desde, hasta=hasta, cta=cta,
+        desde=desde, hasta=hasta, cta=cta, q=q,
         solo_vivos=solo_vivos, error=error,
     )
 

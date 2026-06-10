@@ -15,6 +15,7 @@ def lista(
     cta: str | None = None,
     solo_vivos: bool = True,
     limite: int = 1000,
+    q: str | None = None,
 ) -> list[dict]:
     """Movimientos en scintela.dolares (anticipos USD).
 
@@ -26,6 +27,9 @@ def lista(
         cualquier otra letra → aplicado/cancelado/convertido.
 
     `solo_vivos=True` filtra a los anticipos abiertos.
+
+    `q` (TMT 2026-06-09, pedido Tamara): filtro por CONCEPTO, substring
+    case-insensitive (ILIKE).
 
     Saldo acumulado (TMT 2026-05-12): running balance POR CUENTA, calculado
     sobre el universo filtrado. Si filtrás por cuenta, ves su corrida; si
@@ -39,6 +43,8 @@ def lista(
         WHERE (%(desde)s::date IS NULL OR d.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR d.fecha <= %(hasta)s::date)
           AND (%(cta)s IS NULL OR UPPER(d.cta) = UPPER(%(cta)s))
+          AND (%(q)s IS NULL
+               OR d.concepto ILIKE '%%' || %(q)s || '%%')
           AND (NOT %(solo_vivos)s
                OR d.st IS NULL OR d.st IN ('', ' '))
         ORDER BY d.fecha DESC, d.id_dolares DESC
@@ -47,6 +53,7 @@ def lista(
         {
             "desde": desde or None, "hasta": hasta or None,
             "cta": cta or None,
+            "q": (q or "").strip() or None,
             "solo_vivos": bool(solo_vivos),
             "limite": int(limite),
         },
