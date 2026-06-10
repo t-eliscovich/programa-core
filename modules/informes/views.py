@@ -1866,7 +1866,10 @@ def flujo_fondos():
     semanas = db.fetch_all(
         """
         WITH items AS (
-            SELECT date_trunc('week', COALESCE(vencimiento, CURRENT_DATE))::date AS sem,
+            -- dBase proyectaba el cobro a VENCIM+50 días (RF VENCIM+50) antes
+            -- de anularlo con FA=0. El toggle opcional usa ese mismo corrimiento.
+            SELECT date_trunc('week', COALESCE(vencimiento, CURRENT_DATE)
+                                      + INTERVAL '50 days')::date AS sem,
                    saldo AS imp, 'fact' AS tipo
               FROM scintela.factura
              WHERE stat IN ('Z', 'A') AND COALESCE(saldo, 0) <> 0
@@ -1876,10 +1879,13 @@ def flujo_fondos():
               FROM scintela.cheque
              WHERE stat IN ('Z', '1', '2', '3', 'P')
             UNION ALL
+            -- banc=0 (por pagar) Y banc=1/2 (cheques YA emitidos sin debitar):
+            -- el dBase suma banc=1/2 al arranque (S1=SALDO+P1) y los resta a
+            -- su fechad (MENU.PRG: REPLA POSDAT1 WITH -P1...). Igual acá.
             SELECT date_trunc('week', COALESCE(fechad, CURRENT_DATE))::date,
                    -importe, 'pos'
               FROM scintela.posdat
-             WHERE COALESCE(banc, 0) = 0
+             WHERE COALESCE(banc, 0) IN (0, 1, 2)
                AND (anulada IS NOT TRUE OR anulada IS NULL)
         )
         SELECT GREATEST(sem, date_trunc('week', CURRENT_DATE)::date) AS semana,
@@ -1899,7 +1905,11 @@ def flujo_fondos():
             SELECT COALESCE((SELECT saldo FROM scintela.transacciones_bancarias
                               WHERE no_banco = 10 ORDER BY id_transaccion DESC LIMIT 1), 0)
                  + COALESCE((SELECT saldo FROM scintela.caja
-                              ORDER BY id_caja DESC LIMIT 1), 0) AS arranque
+                              ORDER BY id_caja DESC LIMIT 1), 0)
+                 + COALESCE((SELECT SUM(importe) FROM scintela.posdat
+                              WHERE COALESCE(banc, 0) IN (1, 2)
+                                AND (anulada IS NOT TRUE OR anulada IS NULL)), 0)
+                   AS arranque
             """,
         )
         arranque = float((row_b or {}).get("arranque") or 0)
