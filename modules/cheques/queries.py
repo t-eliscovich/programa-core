@@ -96,6 +96,7 @@ def editar(
     importe: float | None = None,
     no_cheque: str | None = None,
     doc_banco: str | None = None,
+    no_banco: int | None = None,
     usuario: str = "web",
 ) -> dict:
     """Edición *blanda* de un cheque.
@@ -116,9 +117,14 @@ def editar(
         comprobante/depósito/transferencia que da el banco; se propaga a
         numreferencia al depositar. varchar(40). Permitido vacío.
 
-    Bloqueado siempre: codigo_cli, no_banco, cuenta. Para corregir esos
-    sigue siendo `anular_por_error_de_carga()` y crear uno nuevo (rompen
-    integridad con chequesxfact y tx_bancarias).
+    Bloqueado siempre: codigo_cli, cuenta. Para corregir esos sigue siendo
+    `anular_por_error_de_carga()` y crear uno nuevo (rompen integridad con
+    chequesxfact y tx_bancarias).
+      - `no_banco` (TMT 2026-06-11 dueña: 'dejame en cheques editar banco
+        emisor'): editable SOLO si el cheque no tiene movimientos de
+        banco/caja linkeados (sin chequextransaccion ni caja.id_cheque) —
+        típico cheque en cartera cargado con el código equivocado. Si ya
+        generó movimientos, anular+recargar.
 
     Bloqueado por stat:
       - stat ∈ {X, T, R, 3} → ValueError (terminales, no se editan).
@@ -134,7 +140,7 @@ def editar(
     # campo concepto del form, lo guardamos como parte de la observación
     # con prefix [C], preservando la intención sin agregar una columna.
     ch = db.fetch_one(
-        "SELECT id_cheque, no_cheque, stat, fechad, doc_banco FROM scintela.cheque WHERE id_cheque = %s",
+        "SELECT id_cheque, no_cheque, stat, fechad, doc_banco, no_banco FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
@@ -219,6 +225,43 @@ def editar(
         if db_v != actual_db:
             sql_set.append("doc_banco=%s")
             params.append(db_v or None)  # vacío → NULL
+    # TMT 2026-06-11 dueña: 'dejame en cheques editar banco emisor'.
+    # Corrección del código de banco emisor cargado mal. Guard duro: si el
+    # cheque ya generó movimientos (deposito → chequextransaccion, efectivo
+    # → caja), cambiar el banco acá los dejaría desincronizados — para esos
+    # el flujo sigue siendo anular por error de carga + recargar.
+    if no_banco is not None and int(no_banco) != int(ch.get("no_banco") or 0):
+        banco_row = db.fetch_one(
+            "SELECT no_banco, COALESCE(nombre,'') AS nombre FROM scintela.banco WHERE no_banco = %s",
+            (int(no_banco),),
+        )
+        if not banco_row:
+            raise ValueError(f"Banco {no_banco} no existe.")
+        tiene_mov = db.fetch_one(
+            """
+            SELECT 1 AS x FROM scintela.chequextransaccion WHERE id_cheque = %s
+            UNION ALL
+            SELECT 1 AS x FROM scintela.caja WHERE id_cheque = %s
+            LIMIT 1
+            """,
+            (id_cheque, id_cheque),
+        )
+        if tiene_mov:
+            raise ValueError(
+                "Este cheque ya tiene movimientos de banco/caja linkeados — "
+                "el banco emisor no se puede cambiar acá. Usá 'Anular por "
+                "error de carga' y recargalo con el banco correcto."
+            )
+        sql_set.append("no_banco=%s")
+        params.append(int(no_banco))
+        sql_set.append("banco=%s")
+        params.append((banco_row.get("nombre") or "")[:30] or None)
+        sql_set.append(
+            "observacion = COALESCE(observacion||' | ','')||%s"
+        )
+        params.append(
+            f"[E] banco emisor {ch.get('no_banco') or '—'} → {no_banco}"
+        )
     params.append(id_cheque)
 
     db.execute(

@@ -1614,6 +1614,8 @@ def detalle(id_cheque: int):
         depositos=depositos,
         total_aplicado=total_aplicado,
         hijos=hijos,
+        # TMT 2026-06-11 dueña: 'dejame en cheques editar banco emisor'.
+        bancos=_bancos(),
     )
 
 
@@ -1689,6 +1691,15 @@ def actualizar(id_cheque: int):
             if nc != actual:
                 no_cheque_nuevo = nc
 
+    # Banco emisor — TMT 2026-06-11 dueña: 'dejame en cheques editar banco
+    # emisor'. Solo si vino en el form y cambió. La validación dura (sin
+    # movimientos linkeados, banco existe) vive en queries.editar.
+    no_banco_nuevo = None
+    if "no_banco" in request.form:
+        nb_v = parse_int(request.form.get("no_banco"))
+        if nb_v and nb_v != (ch.get("no_banco") or 0):
+            no_banco_nuevo = nb_v
+
     # Doc. banco — TMT 2026-05-27 dueña: 'doc banco no es igual a cheque'.
     # Campo separado (varchar(40) N° comprobante/depósito). Vacío es válido
     # (NULL en DB). Solo se procesa si el form lo manda explícito.
@@ -1716,6 +1727,7 @@ def actualizar(id_cheque: int):
             importe=importe_nuevo,
             no_cheque=no_cheque_nuevo,
             doc_banco=doc_banco_nuevo if doc_banco_changed else None,
+            no_banco=no_banco_nuevo,
             usuario=usuario,
         )
         msg = "Cheque editado."

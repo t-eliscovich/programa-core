@@ -292,13 +292,24 @@
         {% endif %}
       </div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
       <div class="text-xs text-slate-500" title="Banco emisor — la entidad del cliente que firmó el cheque">Banco emisor</div>
       {# TMT 2026-06-11 dueña: '¿este qué código era?' — mostrar el código
-         numérico junto al nombre (99 · EFECTIVO), igual que el dropdown. #}
-      <div class="font-medium text-slate-900 dark:text-slate-100">
+         numérico junto al nombre (99 · EFECTIVO), igual que el dropdown.
+         TMT 2026-06-11 dueña: 'dejame en cheques editar banco emisor' —
+         select editable inline. El backend solo lo acepta si el cheque NO
+         tiene movimientos de banco/caja linkeados (sino, anular y recargar). #}
+      <div class="font-medium text-slate-900 dark:text-slate-100 ch-readonly">
         {% if ch.no_banco %}<span class="font-mono">{{ ch.no_banco }}</span> · {% endif %}{{ ch.banco or ch.nombre_banco or '—' }}
       </div>
+      <select name="no_banco" form="ch-edit-form"
+              class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-sm">
+        {% for b in bancos %}
+          <option value="{{ b.no_banco }}" {% if ch.no_banco|string == b.no_banco|string %}selected{% endif %}>
+            {{ b.no_banco }} · {{ b.nombre }}
+          </option>
+        {% endfor %}
+      </select>
     </div>
     {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que numero
        de cheque!! doc banco no es igual a cheque'. Card separado para
@@ -325,8 +336,9 @@
            placeholder="ej: la dueña dijo que el cliente le mostró el cheque correcto"
            class="w-full rounded border border-amber-300 px-2 py-1 text-sm bg-white">
     <p class="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
-      Cliente, banco emisor y cuenta NO se editan acá — para eso usá "Anular por error de carga"
-      en el menú "Cambiar estado".
+      Cliente y cuenta NO se editan acá — para eso usá "Anular por error de carga" en el menú
+      "Cambiar estado". Banco emisor sí se puede corregir mientras el cheque no tenga
+      movimientos de banco/caja generados.
     </p>
   </div>
 
