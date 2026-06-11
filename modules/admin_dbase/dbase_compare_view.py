@@ -178,6 +178,17 @@ def lado_dbase() -> dict:
              and (r.get("TIPO") or "").strip() != "S")
     d.update(KM=KM, VM=VM, KK=KK, KTINT=KTINT, KR=KR, KSTI=KSTI, ITIN=ITIN,
              KV=KV, VQQ=VQQ, KT_c=KT_c)
+    d["compras_mes_rows"] = [
+        {"fecha": r.get("FECHA"), "tipo": (str(r.get("TIPO") or "")).strip().upper(),
+         "prov": (str(r.get("PROV") or "")).strip().upper(),
+         "kg": round(_f(r.get("KG")), 2), "importe": round(_f(r.get("IMPORTE")), 2)}
+        for r in comp]
+    d["tinto_rows"] = [
+        {"fecha": r.get("FECHA"), "cod": (str(r.get("COD") or "")).strip().upper(),
+         "kg": round(_f(r.get("KG")), 2), "kgn": round(_f(r.get("KGN")), 2),
+         "importe": round(_f(r.get("IMPORTE")), 2),
+         "stat": (str(r.get("STAT") or "")).strip().upper()}
+        for r in tin]
 
     # ── stock por etapa (PRG L304-345) — fila ANTERIOR de INICIALE ──
     ini = _leer("INICIALE.DBF")
@@ -194,7 +205,8 @@ def lado_dbase() -> dict:
         UKK, UFF = UMX + .5, UMX + 2.2
         d.update(HI=HI, TJ=TJ, PF=PF, UMX=UMX, UKK=UKK, UFF=UFF,
                  VSTO=HI * UMX + TJ * UKK + PF * UFF,
-                 VQX=VQ0 + VQQ - ITIN, HI0=HI0, TJ0=TJ0, PF0=PF0)
+                 VQX=VQ0 + VQQ - ITIN, HI0=HI0, TJ0=TJ0, PF0=PF0,
+                 UM0=UM0, VQ0=VQ0)
 
     # ── PATANT: HISTORIA fila del mes anterior (PRG L281-284) ──
     mm = 12 if mes == 1 else mes - 1
@@ -477,6 +489,50 @@ def _pc_posdat_yy_con_cuotas() -> list[dict]:
 
 # ───────────────── reporte ─────────────────
 
+def _pc_tinto_mes() -> list[dict]:
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT fecha, UPPER(TRIM(COALESCE(cod,''))) AS cod,
+               COALESCE(kg,0) AS kg, COALESCE(kgn,0) AS kgn,
+               COALESCE(importe,0) AS importe,
+               UPPER(TRIM(COALESCE(stat,''))) AS stat,
+               COALESCE(usuario_crea,'') AS usuario
+          FROM scintela.tinto
+         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        """) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_compras_mes() -> list[dict]:
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT fecha, UPPER(TRIM(COALESCE(tipo,''))) AS tipo,
+               UPPER(TRIM(COALESCE(codigo_prov,''))) AS prov,
+               COALESCE(kg,0) AS kg, COALESCE(importe,0) AS importe,
+               UPPER(TRIM(COALESCE(stat,''))) AS stat,
+               COALESCE(usuario_crea,'') AS usuario
+          FROM scintela.compra
+         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        """) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_iniciales_prev() -> dict:
+    import db
+    hoy = _hoy_ec()
+    mm = 12 if hoy.month == 1 else hoy.month - 1
+    yy = hoy.year - 1 if hoy.month == 1 else hoy.year
+    row = db.fetch_one(
+        "SELECT hilado, tejido, terminado, um, vq FROM scintela.iniciales "
+        "WHERE yy = %s AND mesnum = %s ORDER BY id_iniciales DESC LIMIT 1",
+        (yy, mm)) or {}
+    return {k: _f(row.get(k)) for k in ("hilado", "tejido", "terminado", "um", "vq")}
+
+
 def _linea_cmp(label: str, db_v, pc_v, tol: float = 0.01) -> str:
     if db_v is None:
         return f"{label:24} dBase=?            PC={pc_v:>14,.2f}   [sin DBF]\n"
@@ -756,16 +812,118 @@ def reporte(dias_banco: int = 30):
     yield line("   o cargas PC (planilla/ajuste) que el dBase aún no tiene)")
     yield line()
 
+    try:
+        yield line("── [9b] TINTO del mes POR CÓDIGO (dBase | PC) — 1 a 1 ──")
+        pc_tin = _pc_tinto_mes()
+        db_tin = d.get("tinto_rows") or []
+
+        def _agg_tin(rows):
+            acc: dict = {}
+            for r in rows:
+                a = acc.setdefault(r["cod"], [0.0, 0.0, 0.0, 0])
+                a[0] += _f(r["kg"]); a[1] += _f(r["kgn"])
+                a[2] += _f(r["importe"]); a[3] += 1
+            return acc
+        A, B = _agg_tin(db_tin), _agg_tin(pc_tin)
+        itin_db = sum(v[2] for v in A.values())
+        itin_pc = sum(v[2] for v in B.values())
+        yield line(f"  ITIN dBase={itin_db:,.2f} ({sum(v[3] for v in A.values())} filas)  "
+                   f"PC={itin_pc:,.2f} ({sum(v[3] for v in B.values())} filas)  "
+                   f"Δ={itin_pc - itin_db:+,.2f}")
+        difs = []
+        for c in sorted(set(A) | set(B)):
+            a = A.get(c, [0.0, 0.0, 0.0, 0]); b = B.get(c, [0.0, 0.0, 0.0, 0])
+            if any(abs(a[i] - b[i]) > 0.01 for i in (0, 1, 2)):
+                difs.append((c, a, b))
+        yield line(f"  códigos con diferencia: {len(difs)} (kg dBase|PC, kgn, U$, Δ U$)")
+        for c, a, b in difs[:90]:
+            yield line(f"    {c:5} kg {a[0]:>8,.0f}|{b[0]:>8,.0f}  kgn {a[1]:>8,.0f}|{b[1]:>8,.0f}  "
+                       f"U$ {a[2]:>9,.2f}|{b[2]:>9,.2f}  ΔU$={b[2] - a[2]:>+10,.2f}  (n {a[3]}|{b[3]})")
+        por_u: dict = {}
+        for r in pc_tin:
+            u = r.get("usuario") or "dbf-import"
+            x = por_u.setdefault(u, [0.0, 0.0, 0])
+            x[0] += _f(r["kg"]); x[1] += _f(r["importe"]); x[2] += 1
+        yield line("  PC por usuario_crea: " + " ; ".join(
+            f"{u or 'dbf-import'}: kg={v[0]:,.0f} U$={v[1]:,.2f} ({v[2]}f)"
+            for u, v in sorted(por_u.items())))
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle tinto no disponible: {exc!r}]")
+    yield line()
+
+    try:
+        yield line("── [9c] COMPRAS del mes 1 a 1 (fecha+tipo+prov+kg+importe) ──")
+        pc_comp = _pc_compras_mes()
+        db_comp = d.get("compras_mes_rows") or []
+
+        def _tot_tipo(rows):
+            t: dict = {}
+            for r in rows:
+                x = t.setdefault(r["tipo"], [0.0, 0.0, 0])
+                x[0] += _f(r["kg"]); x[1] += _f(r["importe"]); x[2] += 1
+            return t
+        TA, TB = _tot_tipo(db_comp), _tot_tipo(pc_comp)
+        for tp in sorted(set(TA) | set(TB)):
+            a = TA.get(tp, [0.0, 0.0, 0]); b = TB.get(tp, [0.0, 0.0, 0])
+            yield line(f"  tipo {tp or '?':2} kg {a[0]:>11,.2f}|{b[0]:>11,.2f} Δ{b[0] - a[0]:>+10,.2f}   "
+                       f"U$ {a[1]:>11,.2f}|{b[1]:>11,.2f} Δ{b[1] - a[1]:>+10,.2f}  (n {a[2]}|{b[2]})")
+        cdiff = _diff_multiset(
+            db_comp, pc_comp,
+            lambda r: (str(r.get("fecha") or ""), r.get("tipo"), r.get("prov"),
+                       round(_f(r.get("kg")), 2), round(_f(r.get("importe")), 2)))
+        yield line(f"  SOLO dBASE: {len(cdiff['solo_dbase'])}")
+        for r in sorted(cdiff["solo_dbase"], key=lambda x: str(x.get("fecha")))[:MAX_LISTADO]:
+            yield line(f"    {str(r.get('fecha') or ''):10} {r['tipo']:2} {r['prov']:4} "
+                       f"kg={_f(r['kg']):>10,.2f} U$={_f(r['importe']):>10,.2f}")
+        yield line(f"  SOLO PC: {len(cdiff['solo_pc'])}")
+        for r in sorted(cdiff["solo_pc"], key=lambda x: str(x.get("fecha")))[:MAX_LISTADO]:
+            yield line(f"    {str(r.get('fecha') or ''):10} {r['tipo']:2} {r['prov']:4} "
+                       f"kg={_f(r['kg']):>10,.2f} U$={_f(r['importe']):>10,.2f} "
+                       f"stat={r.get('stat') or ''} u={r.get('usuario') or ''}")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle compras no disponible: {exc!r}]")
+    yield line()
+
     stock = (res.get("stock") or {})
     yield line("── [10] STOCK POR ETAPA (PRG L313-345) ──")
     yield _linea_cmp("Hilado kg", d.get("HI"), _f((stock.get("hilado") or {}).get("kg")), tol=1)
     yield _linea_cmp("Tejido kg", d.get("TJ"), _f((stock.get("tejido") or {}).get("kg")), tol=1)
     yield _linea_cmp("Terminado kg", d.get("PF"), _f((stock.get("terminado") or {}).get("kg")), tol=1)
     yield cmp_acum("VSTO U$", d.get("VSTO"), _f(pc.get("vsto")))
+    try:
+        ip = _pc_iniciales_prev()
+        yield line("  insumos de la fórmula (dBase | PC):")
+        yield "  " + _linea_cmp("HI0 inic hilado kg", d.get("HI0"), ip["hilado"], tol=1)
+        yield "  " + _linea_cmp("TJ0 inic tejido kg", d.get("TJ0"), ip["tejido"], tol=1)
+        yield "  " + _linea_cmp("PF0 inic termin kg", d.get("PF0"), ip["terminado"], tol=1)
+        yield "  " + _linea_cmp("UM0 tarifa prev", d.get("UM0"), ip["um"], tol=0.001)
+        yield "  " + _linea_cmp("UMX tarifa live", d.get("UMX"),
+                                _f((stock.get("hilado") or {}).get("ukg")), tol=0.001)
+        kv_fis = iq.ventas_mes_corriente_kg_fisico()
+        yield "  " + _linea_cmp("KV vendidos kg", d.get("KV"), _f(kv_fis), tol=1)
+        yield "  " + _linea_cmp("KSTI servicios kg", d.get("KSTI"),
+                                _f(iq.tinto_kg_servicios_mes()), tol=1)
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [insumos VSTO no disponibles: {exc!r}]")
     yield line()
 
     yield line("── [11] STOCK QUÍMICOS — VQX = VQ0+VQQ−ITIN (PRG L322) ──")
     yield cmp_acum("Stock Quí (VQX)", d.get("VQX"), _f(pc.get("vqx")))
+    try:
+        ip = ip if isinstance(ip, dict) else _pc_iniciales_prev()
+    except NameError:
+        ip = _pc_iniciales_prev()
+    try:
+        yield "  " + _linea_cmp("VQ0 inic químicos", d.get("VQ0"), ip.get("vq", 0.0))
+        vqq_pc = sum(_f(r["importe"]) for r in (pc_comp if isinstance(pc_comp, list) else [])
+                     if r.get("tipo") == "Q" and r.get("stat") not in ("X", "Y")
+                     and r.get("usuario") != "asinfo-backfill")
+        yield "  " + _linea_cmp("VQQ compras Q mes", d.get("VQQ"), vqq_pc)
+        itin_pc2 = sum(_f(r["importe"]) for r in (pc_tin if isinstance(pc_tin, list) else []))
+        yield "  " + _linea_cmp("ITIN tinto mes", d.get("ITIN"), itin_pc2)
+        yield line("  (Δ VQX = ΔVQ0 + ΔVQQ − ΔITIN — el detalle por código está en [9b])")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [insumos VQX no disponibles: {exc!r}]")
     yield line()
 
     yield line("── [12] PATANT — HISTORIA mes anterior (PRG L281-284) ──")
