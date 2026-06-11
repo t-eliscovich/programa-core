@@ -74,6 +74,34 @@ def run():
         """, max_results=400)
         return _json({"ok": True, "tabla": meta, "columnas": rows})
 
+    # --- Modo tablas: descubrir nombres de tabla ------------------------
+    tablas = (request.args.get("tablas") or "").strip()
+    if tablas:
+        if not _IDENT_RE.match(tablas):
+            return _json({"ok": False, "error": "patron invalido"}, 400)
+        rows = mc.fetch_dataset(2, f"""
+            SELECT TABLE_NAME, TABLE_TYPE
+              FROM INFORMATION_SCHEMA.TABLES
+             WHERE TABLE_NAME LIKE '%{tablas}%'
+             ORDER BY TABLE_NAME
+        """, max_results=400)
+        return _json({"ok": True, "patron": tablas, "tablas": rows})
+
+    # --- Modo like: facturas cuyo numero contiene el patron -------------
+    like = (request.args.get("like") or "").strip()
+    if like:
+        pats = sorted({p.strip() for p in like.split(",") if p.strip()})
+        if not pats or not all(re.fullmatch(r"[0-9\-]{3,20}", p) for p in pats):
+            return _json({"ok": False, "error": "like invalido"}, 400)
+        conds = " OR ".join(f"fc.numero LIKE '%{p}%'" for p in pats)
+        rows = mc.fetch_dataset(2, f"""
+            SELECT TOP 100 fc.*
+              FROM dbo.factura_cliente fc
+             WHERE {conds}
+             ORDER BY fc.numero
+        """, max_results=100)
+        return _json({"ok": True, "like": pats, "n": len(rows), "facturas": rows})
+
     # --- Modo numeros: fc.* por sufijo de numero SRI --------------------
     numeros = (request.args.get("numeros") or "").strip()
     if numeros:
@@ -94,11 +122,17 @@ def run():
     if dia:
         if not _DATE_RE.match(dia):
             return _json({"ok": False, "error": "dia invalido (YYYY-MM-DD)"}, 400)
+        doc = (request.args.get("doc") or "").strip()
+        filtro_doc = ""
+        if doc:
+            if not re.fullmatch(r"\d{1,6}", doc):
+                return _json({"ok": False, "error": "doc invalido"}, 400)
+            filtro_doc = f" AND fc.id_documento = {int(doc)}"
         rows = mc.fetch_dataset(2, f"""
             SELECT TOP 200 fc.*
               FROM dbo.factura_cliente fc
-             WHERE CONVERT(date, fc.fecha) = '{dia}'
-             ORDER BY fc.numero
+             WHERE CONVERT(date, fc.fecha) = '{dia}'{filtro_doc}
+             ORDER BY fc.numero DESC
         """, max_results=200)
         return _json({"ok": True, "dia": dia, "n": len(rows), "facturas": rows})
 
