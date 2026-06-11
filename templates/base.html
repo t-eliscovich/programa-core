@@ -715,6 +715,9 @@
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
+        {# TMT 2026-06-11 dueña: anticipos (DOLARES) se cargan directo en PC
+           sin sync — alta + cancelación en /anticipos/ (pendiente de f9b94ab). #}
+        {% if tiene_permiso('facturas.ver') %}{{ nav_link('anticipos.lista', 'Anticipos', 'money') }}{% endif %}
         {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
            (pedido dueña: "no debe estar colgada de informes"). #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}

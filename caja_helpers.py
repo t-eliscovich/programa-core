@@ -35,19 +35,35 @@ def saldo_actual(conn=None) -> float:
     return float(row["saldo"]) if row else 0.0
 
 
-def _saldo_previo(conn, *, fecha: date, excluir_id: int | None = None) -> float:
-    """Saldo anterior al movimiento que se está por insertar."""
+def _saldo_previo(
+    conn, *, fecha: date, excluir_id: int | None = None,
+    solo_dias_anteriores: bool = False,
+) -> float:
+    """Saldo anterior al movimiento que se está por insertar.
+
+    `solo_dias_anteriores=True` ancla ESTRICTO en `fecha < ancla` (cierre del
+    día anterior) — lo necesita recompute_saldos_desde(ancla_fecha=...) porque
+    el walk re-aplica todas las filas de la fecha ancla. Mismo bug/fix que
+    bank_helpers TMT 2026-06-11 (backdated recompute).
+    """
+    if solo_dias_anteriores:
+        cond_fecha = "(fecha < %s)"
+        params_fecha: tuple = (fecha,)
+    else:
+        cond_fecha = (
+            "((fecha < %s) OR (fecha = %s AND (%s::int IS NULL "
+            "OR id_caja < %s::int)))"
+        )
+        params_fecha = (fecha, fecha, excluir_id, excluir_id)
     row = db.fetch_one(
-        """
+        f"""
         SELECT COALESCE(saldo, 0) AS saldo
           FROM scintela.caja
-         WHERE ((fecha < %s)
-                OR (fecha = %s AND (%s::int IS NULL
-                                    OR id_caja < %s::int)))
+         WHERE {cond_fecha}
          ORDER BY fecha DESC, id_caja DESC
          LIMIT 1
         """,
-        (fecha, fecha, excluir_id, excluir_id),
+        params_fecha,
         conn=conn,
     )
     return float(row["saldo"]) if row else 0.0
@@ -149,7 +165,9 @@ def recompute_saldos_desde(
         cond_inicio = "id_caja >= %s"
         params_inicio: tuple = (ancla_id,)
     else:  # ancla_fecha
-        saldo = _saldo_previo(conn, fecha=ancla_fecha)
+        # TMT 2026-06-11: ancla = cierre del día ANTERIOR (estricto), el walk
+        # re-aplica todas las filas de la fecha ancla. Ver bank_helpers.
+        saldo = _saldo_previo(conn, fecha=ancla_fecha, solo_dias_anteriores=True)
         cond_inicio = "fecha >= %s::date"
         params_inicio = (ancla_fecha,)
 

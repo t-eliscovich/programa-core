@@ -18,7 +18,7 @@ bp = Blueprint("anticipos", __name__, url_prefix="/anticipos")
 
 TPL = """
 {% extends 'base.html' %}
-{% block contenido %}
+{% block content %}
 <div class="max-w-4xl mx-auto px-4 py-6">
   <h1 class="text-xl font-bold mb-1">Anticipos</h1>
   <p class="text-sm text-slate-500 mb-4">Vivos (ST en blanco) — suman a ANTICIPOS

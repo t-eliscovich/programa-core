@@ -51,6 +51,30 @@ class _FakeBankDB:
             candidatos = [f for f in self.filas if f["no_banco"] == no_banco]
             candidatos.sort(key=lambda f: (f["fecha"], f["id_transaccion"]), reverse=True)
             return {"saldo": candidatos[0]["saldo"]} if candidatos else None
+        # later_row check de insert_movimiento_bancario — "SELECT 1 ... LIMIT 1"
+        if s.startswith("select 1 from scintela.transacciones_bancarias"):
+            no_banco, _, _, fecha, _, tx_id = params
+            for f in self.filas:
+                if f["no_banco"] == no_banco and (
+                    f["fecha"] > fecha
+                    or (f["fecha"] == fecha and f["id_transaccion"] > tx_id)
+                ):
+                    return {"?column?": 1}
+            return None
+        # _saldo_previo estricto (solo_dias_anteriores=True) — 4 params,
+        # ancla en el cierre del día ANTERIOR (fix backdated 2026-06-11)
+        if (
+            "from scintela.transacciones_bancarias" in s
+            and "order by fecha desc, id_transaccion desc" in s
+            and len(params) == 4
+        ):
+            no_banco, _, _, fecha = params
+            candidatos = [
+                f for f in self.filas
+                if f["no_banco"] == no_banco and f["fecha"] < fecha
+            ]
+            candidatos.sort(key=lambda f: (f["fecha"], f["id_transaccion"]), reverse=True)
+            return {"saldo": candidatos[0]["saldo"]} if candidatos else None
         # _saldo_previo principal — 7 params
         if (
             "from scintela.transacciones_bancarias" in s
@@ -346,6 +370,80 @@ def test_recompute_saldos_desde_anla_id(monkeypatch):
     assert n == 1
     fila3 = next(f for f in fake.filas if f["id_transaccion"] == 3)
     assert fila3["saldo"] == 120.0  # 70 + 50
+
+
+def test_insert_backdated_recompute_ancla_dia_anterior(monkeypatch):
+    """Bug TMT 2026-06-11: insert BACKDATED con filas posteriores existentes.
+
+    insert_movimiento_bancario detecta later_row y llama
+    recompute_saldos_desde(ancla_fecha=fecha). El ancla del walk debe ser el
+    saldo al CIERRE del día ANTERIOR a la fecha ancla — antes del fix,
+    _saldo_previo(excluir_id=None) incluía las filas de la propia fecha
+    ancla (incluida la recién insertada) y el walk re-aplicaba todo el día
+    encima: la cadena corría un día-neto por insert (hero Pichincha llegó
+    a 462.916,76 hasta que la mig 0093 lo recompuso).
+    """
+    import bank_helpers as bh
+    import db as db_mod
+
+    fake = _FakeBankDB(filas_pre=[
+        {"id_transaccion": 1, "fecha": date(2026, 6, 1),
+         "documento": "DE", "importe": 1000, "saldo": 1000,
+         "no_banco": 10, "no_cta": None, "usuario_crea": "web"},
+        {"id_transaccion": 2, "fecha": date(2026, 6, 5),
+         "documento": "CH", "importe": 200, "saldo": 800,
+         "no_banco": 10, "no_cta": None, "usuario_crea": "web"},
+        {"id_transaccion": 3, "fecha": date(2026, 6, 8),
+         "documento": "DE", "importe": 500, "saldo": 1300,
+         "no_banco": 10, "no_cta": None, "usuario_crea": "web"},
+    ])
+    fake.apply_to(monkeypatch, db_mod)
+
+    # Insert backdated al 05/06 (hay filas el 05/06 y el 08/06 después).
+    bh.insert_movimiento_bancario(
+        conn=object(), no_banco=10, no_cta=None,
+        fecha=date(2026, 6, 5),
+        documento="DE", importe=100.0,
+        concepto="dep backdated", usuario="tmt",
+    )
+
+    por_id = {f["id_transaccion"]: f for f in fake.filas}
+    # Cadena correcta: 1000 → -200 → +100 → +500
+    assert por_id[2]["saldo"] == 800.0    # 1000 - 200
+    assert por_id[4]["saldo"] == 900.0    # 800 + 100 (la backdated)
+    assert por_id[3]["saldo"] == 1400.0   # 900 + 500
+    # El saldo final NO corre un día-neto (bug daba 1300: ancla=900 en vez de 1000)
+    assert bh.saldo_actual(no_banco=10) == 1400.0
+
+
+def test_recompute_ancla_fecha_no_duplica_dia_ancla(monkeypatch):
+    """recompute_saldos_desde(ancla_fecha=X) directo: el ancla es el cierre
+    del día ANTERIOR a X aunque las filas de X tengan saldos ya escritos."""
+    import bank_helpers as bh
+    import db as db_mod
+
+    fake = _FakeBankDB(filas_pre=[
+        {"id_transaccion": 1, "fecha": date(2026, 6, 1),
+         "documento": "DE", "importe": 1000, "saldo": 1000,
+         "no_banco": 10, "no_cta": None, "usuario_crea": "web"},
+        # saldo corrupto a propósito: si el recompute ancla acá, propaga basura
+        {"id_transaccion": 2, "fecha": date(2026, 6, 5),
+         "documento": "CH", "importe": 200, "saldo": 9999,
+         "no_banco": 10, "no_cta": None, "usuario_crea": "web"},
+        {"id_transaccion": 3, "fecha": date(2026, 6, 8),
+         "documento": "DE", "importe": 500, "saldo": 9999,
+         "no_banco": 10, "no_cta": None, "usuario_crea": "web"},
+    ])
+    fake.apply_to(monkeypatch, db_mod)
+
+    n = bh.recompute_saldos_desde(
+        conn=object(), no_banco=10, no_cta=None,
+        ancla_fecha=date(2026, 6, 5),
+    )
+    assert n == 2
+    por_id = {f["id_transaccion"]: f for f in fake.filas}
+    assert por_id[2]["saldo"] == 800.0   # ancla 1000 (cierre 01/06), no 9999
+    assert por_id[3]["saldo"] == 1300.0
 
 
 def test_saldo_actual_devuelve_ultimo(monkeypatch):

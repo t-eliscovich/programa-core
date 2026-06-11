@@ -100,6 +100,7 @@ def _saldo_previo(
     no_cta: str | None,
     fecha: date,
     excluir_id: int | None = None,
+    solo_dias_anteriores: bool = False,
 ) -> float:
     """Saldo anterior al movimiento que se está por insertar.
 
@@ -115,26 +116,37 @@ def _saldo_previo(
     fallback a SUM firmado por documento (mismo criterio que `saldo_bancos`
     en `informes/queries.py`). Así los depósitos nuevos quedan ancla­dos al
     saldo real aunque haya filas viejas mal escritas.
+
+    Bug TMT 2026-06-11 (backdated recompute): con `excluir_id=None` la
+    condición incluía TODAS las filas de la propia `fecha` — si la llamaba
+    `recompute_saldos_desde(ancla_fecha=...)` después de un insert backdated,
+    el ancla terminaba siendo la fila recién insertada y la cadena corría un
+    día-neto por insert (hero Pichincha llegó a 462.916,76). Fix:
+    `solo_dias_anteriores=True` ancla ESTRICTO en `fecha < ancla` (cierre del
+    día anterior), que es lo que el walk-forward necesita porque después
+    re-aplica todas las filas de la fecha ancla con `_signed_delta`.
     """
+    if solo_dias_anteriores:
+        cond_fecha = "(fecha < %s)"
+        params_fecha: tuple = (fecha,)
+    else:
+        cond_fecha = (
+            "((fecha < %s) OR (fecha = %s AND (%s::int IS NULL "
+            "OR id_transaccion < %s::int)))"
+        )
+        params_fecha = (fecha, fecha, excluir_id, excluir_id)
     row = db.fetch_one(
-        """
+        f"""
         SELECT saldo
           FROM scintela.transacciones_bancarias
          WHERE no_banco = %s
            AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
            AND saldo IS NOT NULL
-           AND ((fecha < %s)
-                OR (fecha = %s AND (%s::int IS NULL
-                                    OR id_transaccion < %s::int)))
+           AND {cond_fecha}
          ORDER BY fecha DESC, id_transaccion DESC
          LIMIT 1
         """,
-        (
-            no_banco,
-            no_cta, no_cta,
-            fecha,
-            fecha, excluir_id, excluir_id,
-        ),
+        (no_banco, no_cta, no_cta, *params_fecha),
         conn=conn,
     )
     if row and row.get("saldo") is not None:
@@ -144,7 +156,7 @@ def _saldo_previo(
     # con SUM firmado por documento de TODAS las filas anteriores
     # (replica el fallback de `saldo_bancos`).
     fallback = db.fetch_one(
-        """
+        f"""
         SELECT COALESCE(SUM(
                  CASE WHEN UPPER(TRIM(documento)) IN ('CH','ND','RE','GS','PA')
                       THEN -importe
@@ -154,16 +166,9 @@ def _saldo_previo(
           FROM scintela.transacciones_bancarias
          WHERE no_banco = %s
            AND ((%s)::text IS NULL OR no_cta = (%s)::text OR no_cta IS NULL)
-           AND ((fecha < %s)
-                OR (fecha = %s AND (%s::int IS NULL
-                                    OR id_transaccion < %s::int)))
+           AND {cond_fecha}
         """,
-        (
-            no_banco,
-            no_cta, no_cta,
-            fecha,
-            fecha, excluir_id, excluir_id,
-        ),
+        (no_banco, no_cta, no_cta, *params_fecha),
         conn=conn,
     )
     return float(fallback["saldo"]) if fallback else 0.0
@@ -390,8 +395,17 @@ def recompute_saldos_desde(
         cond_inicio = "id_transaccion >= %s"
         params_inicio: tuple = (ancla_id,)
     elif ancla_fecha is not None:
+        # TMT 2026-06-11 fix: el ancla es el saldo al CIERRE del día ANTERIOR
+        # a ancla_fecha (fecha < ancla, ESTRICTO), porque el walk de abajo
+        # re-aplica TODAS las filas con fecha >= ancla_fecha. Antes esto
+        # llamaba _saldo_previo sin excluir la fecha ancla (excluir_id=None
+        # ⇒ sin filtro de id en la misma fecha): después de un insert
+        # backdated, el ancla era la fila recién insertada y la cadena
+        # entera corría un día-neto por insert (hero Pichincha mostró
+        # 462.916,76 hasta la mig 0093). Misma convención que _signed_delta.
         saldo = _saldo_previo(
             conn, no_banco=no_banco, no_cta=no_cta, fecha=ancla_fecha,
+            solo_dias_anteriores=True,
         )
         cond_inicio = "fecha >= %s::date"
         params_inicio = (ancla_fecha,)
