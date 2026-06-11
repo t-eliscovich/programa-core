@@ -420,6 +420,12 @@ def create_app() -> Flask:
 
     app.register_blueprint(dbase_compare_bp)
 
+    # Anticipos (scintela.dolares) — TMT 2026-06-11 dueña: sin sync, los
+    # anticipos se cargan directo en PC. Alta + cancelación, suma a ANTIC.
+    from modules.anticipos.views import bp as anticipos_bp
+
+    app.register_blueprint(anticipos_bp)
+
     # Importador de fichas de clientes — TMT 2026-06-06. /admin/clientes-import
     # completa dirección/teléfono/RUC/provincia desde CLIENTES.DBF (que no entra
     # al sync normal) y agrega los clientes que falten. Dry-run por defecto.
