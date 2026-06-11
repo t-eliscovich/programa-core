@@ -180,6 +180,19 @@ def facturas_periodo(desde, hasta) -> list[dict]:
         },
     ]
     rows = fetch_card_from_env("ASINFO_CARD_FACTURAS", params=params)
+    # TMT 2026-06-11 — filtro defensivo "facturas fantasma" (estado=0):
+    # en Asinfo, fc.estado=0 = emision NO autorizada por el SRI que se
+    # re-emitio despues con otro numero (TJC 177714/177712/177711 →
+    # 176534/176658/176659; AFC 177710 y CTE 177709 nunca autorizadas).
+    # El dBase tipeo la version corregida; importar las dos duplica kg.
+    # La card 199 ya excluye estado 0 en su WHERE (fix 2026-06-11 via
+    # /admin/debug-asinfo-facturas/card-estado) — esto es la red de
+    # seguridad por si la card se re-edita. Si la columna `estado` no
+    # viene en la card, es no-op.
+    rows = [
+        r for r in rows
+        if str(r.get("estado", "")).strip() not in ("0", "0.0")
+    ]
     # Solo cacheamos si trajo algo — si fue [] por error de red, no fijamos
     # el resultado vacío 5 min (mejor reintentar al próximo request).
     if rows:

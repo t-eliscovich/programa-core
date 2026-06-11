@@ -36,6 +36,7 @@ bp = Blueprint("health_audit", __name__, url_prefix="/admin/health")
 _USUARIOS_CONOCIDOS = {
     "asinfo-backfill",
     "asinfo-carga",
+    "asinfo-fantasma",  # mig 0097: estado=0 Asinfo anuladas (stat X)
     "dbf-import",
     "web",
     "tamara",
@@ -72,7 +73,8 @@ def usuario_crea_audit():
              WHERE fecha_crea >= (CURRENT_DATE - INTERVAL '7 days')
                AND numf_completo ~ '{_REGEX_NUMF_ASINFO}'
                AND COALESCE(usuario_crea, '') NOT IN
-                   ('asinfo-backfill', 'asinfo-carga', 'dbf-import')
+                   ('asinfo-backfill', 'asinfo-carga', 'asinfo-fantasma',
+                    'dbf-import')
             """
         ) or {}
         n = int(row.get("n") or 0)

@@ -164,3 +164,141 @@ def run():
             "?tabla=empresa&col=id_empresa&vals=1,2": "lookup generico",
         },
     })
+
+
+# ---------------------------------------------------------------------------
+# /card-estado — ver y corregir el filtro fc.estado de la card de facturas
+# ---------------------------------------------------------------------------
+# TMT 2026-06-11 "facturas fantasma": la card ASINFO_CARD_FACTURAS (199)
+# incluia fc.estado = 0 en su WHERE. En Asinfo estado=0 = emision NO
+# autorizada por el SRI que se re-emitio con otro numero — el dBase tipea
+# la version corregida, PC importaba LAS DOS → doble conteo de kg.
+# GET  /card-estado      → muestra la lista actual de estados (read-only).
+# POST /card-estado/fix  → saca el 0 de `fc.estado IN (...)` via
+#                          PUT /api/card/<id> y resetea el cache del bridge.
+# Solo toca ese fragmento del SQL; cualquier otra cosa de la card queda igual.
+
+_ESTADO_IN_RE = re.compile(
+    r"(fc\.estado\s+IN\s*\(\s*)([0-9,\s]+)(\s*\))", re.IGNORECASE
+)
+
+
+def _card_facturas_get():
+    """Baja la card ASINFO_CARD_FACTURAS por API. → (card, sql, path, err)."""
+    import os
+
+    import requests
+
+    from modules._lib import metabase_client as mc
+
+    url = (os.environ.get("METABASE_URL") or "").strip().rstrip("/")
+    card_id = (os.environ.get("ASINFO_CARD_FACTURAS") or "199").strip()
+    token = mc._session_token or mc._login(requests)
+    if not (url and token):
+        return None, None, None, "Metabase no configurado o login fallo"
+    r = requests.get(
+        f"{url}/api/card/{card_id}",
+        headers={"X-Metabase-Session": token},
+        timeout=20,
+    )
+    if r.status_code >= 400:
+        return None, None, None, f"GET card {card_id} -> HTTP {r.status_code}"
+    card = r.json()
+    dq = card.get("dataset_query") or {}
+    nat = dq.get("native") or {}
+    if isinstance(nat, dict) and nat.get("query"):
+        return card, nat["query"], "native.query", None
+    stages = dq.get("stages") or []
+    if stages and isinstance((stages[0] or {}).get("native"), str):
+        return card, stages[0]["native"], "stages[0].native", None
+    return card, None, None, "no encontre SQL nativo en la card"
+
+
+@bp.route("/card-estado", methods=["GET"])
+@requiere_login
+@requiere_permiso("admin_dbase.ver")
+def card_estado():
+    card, sql, path, err = _card_facturas_get()
+    if err:
+        return _json({"ok": False, "error": err})
+    m = _ESTADO_IN_RE.search(sql or "")
+    lista = re.findall(r"\d+", m.group(2)) if m else None
+    return _json({
+        "ok": True,
+        "card_id": (card or {}).get("id"),
+        "card_name": (card or {}).get("name"),
+        "sql_path": path,
+        "estado_in": lista,
+        "incluye_estado_0": bool(lista and "0" in lista),
+        "fragmento": m.group(0) if m else "(fc.estado IN no encontrado)",
+        "sql": sql,
+    })
+
+
+@bp.route("/card-estado/fix", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def card_estado_fix():
+    import os
+
+    import requests
+
+    from modules._lib import metabase_client as mc
+
+    card, sql, path, err = _card_facturas_get()
+    if err:
+        return _json({"ok": False, "error": err}, 502)
+    m = _ESTADO_IN_RE.search(sql or "")
+    if not m:
+        return _json({"ok": False, "error": "fc.estado IN (...) no encontrado",
+                      "sql": sql}, 422)
+    lista = re.findall(r"\d+", m.group(2))
+    if "0" not in lista:
+        return _json({"ok": True, "noop": True,
+                      "msg": "la card ya NO incluye estado 0",
+                      "estado_in": lista})
+    nueva = [x for x in lista if x != "0"]
+    frag_nuevo = "fc.estado IN (" + ", ".join(nueva) + ")"
+    sql_new = _ESTADO_IN_RE.sub(lambda _mm: frag_nuevo, sql, count=1)
+
+    dq = card.get("dataset_query") or {}
+    if path == "native.query":
+        dq["native"]["query"] = sql_new
+    else:
+        dq["stages"][0]["native"] = sql_new
+
+    url = (os.environ.get("METABASE_URL") or "").strip().rstrip("/")
+    card_id = (os.environ.get("ASINFO_CARD_FACTURAS") or "199").strip()
+    token = mc._session_token or mc._login(requests)
+    body = {
+        "name": card.get("name"),
+        "dataset_query": dq,
+        "display": card.get("display"),
+        "description": card.get("description"),
+        "visualization_settings": card.get("visualization_settings") or {},
+    }
+    r = requests.put(
+        f"{url}/api/card/{card_id}",
+        json=body,
+        headers={"X-Metabase-Session": token, "Content-Type": "application/json"},
+        timeout=20,
+    )
+    if r.status_code >= 400:
+        return _json({"ok": False, "error": f"PUT -> HTTP {r.status_code}",
+                      "body": r.text[:500]}, 502)
+
+    # invalidar cache del bridge para que /facturas/desde-asinfo lo vea ya
+    from modules.asinfo import service as asinfo_service
+    asinfo_service.reset_facturas_cache()
+
+    # verificar re-leyendo la card
+    _, sql_check, _, _ = _card_facturas_get()
+    m2 = _ESTADO_IN_RE.search(sql_check or "")
+    lista_check = re.findall(r"\d+", m2.group(2)) if m2 else None
+    return _json({
+        "ok": True,
+        "antes": "fc.estado IN (" + ", ".join(lista) + ")",
+        "despues": frag_nuevo,
+        "verificado_en_card": lista_check,
+        "cache_facturas_reseteado": True,
+    })

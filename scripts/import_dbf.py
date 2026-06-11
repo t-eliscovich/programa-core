@@ -564,7 +564,12 @@ TABLE_MAP: dict[str, dict] = {
         # en cada sync — son intocables. Sólo borramos las filas que vinieron
         # del DBF mismo (usuario_crea IS NULL o 'dbf-import' o cualquier
         # otro valor distinto al marcador 'asinfo-backfill').
-        "delete_where": ("COALESCE(usuario_crea, '') NOT IN (%s, 'asinfo-carga')", "_lookup_asinfo_backfill_marker"),
+        # TMT 2026-06-11: 'asinfo-fantasma' = facturas estado=0 en Asinfo
+        # (emisiones no autorizadas re-emitidas con otro numero) que PC
+        # importo por error y la mig 0097 anulo (stat='X'). El sync NO debe
+        # borrarlas: dejan rastro auditable y el marker evita que se
+        # re-ofrezcan en /facturas/desde-asinfo.
+        "delete_where": ("COALESCE(usuario_crea, '') NOT IN (%s, 'asinfo-carga', 'asinfo-fantasma')", "_lookup_asinfo_backfill_marker"),
     },
     "CHEQUES.DBF": {
         "pg_table": "scintela.cheque",
@@ -576,7 +581,12 @@ TABLE_MAP: dict[str, dict] = {
         # DBF los preserva. Por ahora no hay backfill de cheques, pero la
         # cláusula es no-op (no hay filas con ese marker) y deja la puerta
         # abierta sin tener que tocar el code path en el futuro.
-        "delete_where": ("COALESCE(usuario_crea, '') NOT IN (%s, 'asinfo-carga')", "_lookup_asinfo_backfill_marker"),
+        # TMT 2026-06-11: 'asinfo-fantasma' = facturas estado=0 en Asinfo
+        # (emisiones no autorizadas re-emitidas con otro numero) que PC
+        # importo por error y la mig 0097 anulo (stat='X'). El sync NO debe
+        # borrarlas: dejan rastro auditable y el marker evita que se
+        # re-ofrezcan en /facturas/desde-asinfo.
+        "delete_where": ("COALESCE(usuario_crea, '') NOT IN (%s, 'asinfo-carga', 'asinfo-fantasma')", "_lookup_asinfo_backfill_marker"),
     },
     "POSDAT.DBF": {
         "pg_table": "scintela.posdat",
