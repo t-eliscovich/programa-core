@@ -26,6 +26,12 @@ DBF = [('2026-06-01', 'LAV', 'LAVADO MAQ', 0.0, 1500.0, 956.0, 'L'), ('2026-06-0
 
 def run(conn):
     cur = conn.cursor()
+    # Guard de existencia: scintela.tinto la crea el sync dBase, no las
+    # migraciones. En una DB de test/CI recien migrada no existe -> no-op.
+    cur.execute("SELECT to_regclass('scintela.tinto')")
+    if cur.fetchone()[0] is None:
+        print("  0094 no-op: scintela.tinto no existe en esta DB (test/CI)")
+        return
     cur.execute(
         """
         SELECT id_tinto, fecha::text, UPPER(TRIM(COALESCE(cod,''))) AS cod,
