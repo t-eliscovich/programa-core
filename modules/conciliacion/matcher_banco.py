@@ -447,14 +447,13 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
                                 AND cxt.id_transaccion = tb.id_transaccion)
                      OR
                      (
-                       -- TMT 2026-06-11 duena: 'toda la cobranza ingrese con el
-                       -- numero de documento, pero no aparece al conciliar'.
-                       -- Los depositos directos de Nueva Cobranza (banco 90/91,
-                       -- auto stat B) NO crean chequextransaccion y su fechad se
-                       -- fuerza a HOY. Aceptamos tambien ch.fecha (fecha de la
-                       -- cobranza) como ancla contra la fecha del mov banco.
-                       tb.fecha IN (ch.fechad, ch.fecha)
-                       AND ABS(ch.importe - tb.importe) < 0.01
+                       -- TMT 2026-06-11 duena: 'quiero que solo lea referencia
+                       -- no fecha, puede haber sido cargado en sistema en
+                       -- distinta fecha'. Los depositos directos de Nueva
+                       -- Cobranza (banco 90/91, auto stat B) NO crean
+                       -- chequextransaccion. Ancla: importe exacto, SIN fecha
+                       -- (la referencia es la regla #1; la valida PASS 0).
+                       ABS(ch.importe - tb.importe) < 0.01
                        AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2
                                         WHERE cxt2.id_cheque = ch.id_cheque)
                      )
@@ -561,9 +560,10 @@ def _mapa_doc_banco_a_bancsis(no_banco: int, refs: set[str]) -> dict[str, list[i
               END                                       AS ref_norm,
               tb.id_transaccion                         AS id_transaccion
               FROM scintela.cheque ch
+              -- TMT 2026-06-11 duena: solo referencia, NO fecha (la cobranza
+              -- puede cargarse en sistema en distinta fecha que el mov banco).
               JOIN scintela.transacciones_bancarias tb
-                ON tb.fecha IN (ch.fechad, ch.fecha)
-               AND ABS(ch.importe - tb.importe) < 0.01
+                ON ABS(ch.importe - tb.importe) < 0.01
              WHERE tb.no_banco = %s
                AND NULLIF(TRIM(ch.doc_banco), '') IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2

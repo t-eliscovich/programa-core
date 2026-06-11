@@ -665,8 +665,9 @@ def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
                                     AND cxt.id_transaccion = tb.id_transaccion)
                          OR
                          (
-                           tb.fecha IN (ch.fechad, ch.fecha)
-                           AND ABS(ch.importe - tb.importe) < 0.01
+                           -- TMT 2026-06-11 duena: solo referencia, NO fecha
+                           -- (cargado en sistema en distinta fecha).
+                           ABS(ch.importe - tb.importe) < 0.01
                            AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2
                                             WHERE cxt2.id_cheque = ch.id_cheque)
                          )
