@@ -73,6 +73,14 @@
         <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
         <input type="hidden" name="importe[]" value="{{ c.importe }}">
         <input type="hidden" name="fechad[]" value="{{ c.fechad.isoformat() if c.fechad else '' }}">
+        {# TMT 2026-06-11 dueña: 'toda la cobranza ingresé con el numero de
+           documento' y quedó vacío — el form EJECUTAR no re-enviaba estos
+           tres campos por cheque (el de editar sí). doc_banco se perdía,
+           stat volvía a Z y no_banco caía al de cabecera (¡primer cheque
+           pisaba el banco de todos en multi-banco!). #}
+        <input type="hidden" name="stat[]" value="{{ c.stat or 'Z' }}">
+        <input type="hidden" name="doc_banco[]" value="{{ c.doc_banco or '' }}">
+        <input type="hidden" name="no_banco[]" value="{{ c.no_banco or no_banco or '' }}">
       {% endfor %}
       {% for ap in aplicaciones_pre %}
         <input type="hidden" name="aplicar[{{ ap.id_fact }}]" value="{{ ap.importe }}">
