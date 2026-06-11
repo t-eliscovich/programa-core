@@ -1,6 +1,7 @@
 ---
 name: software-engineer
 description: "Plan-driven Programa Core implementation. Use to execute an approved plan with quality-first engineering, backend-staff-reviewer lens for touched surfaces, comprehensive validation, PR creation, and full CI sign-off."
+user-invocable: true
 subagent-type: general-purpose
 ---
 

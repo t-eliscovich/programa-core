@@ -1,6 +1,7 @@
 ---
 name: software-architect
 description: Architect-led Programa Core planning. Use to turn product or engineering requests into decision-complete plans before coding, resolve ownership/route/schema/workflow/boundary decisions, name affected surfaces, assess parallel subagent slices, and hand off to software-engineer with required reviewer lenses and PR creation.
+user-invocable: true
 subagent-type: general-purpose
 ---
 

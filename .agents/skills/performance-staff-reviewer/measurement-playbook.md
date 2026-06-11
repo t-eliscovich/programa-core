@@ -58,14 +58,14 @@ SELECT ...;
 ```
 
 ```bash
-# psql shortcut for the dev DB
-psql -d intela -c "\timing" -c "SELECT ..."
+# psql shortcut for the dev DB (use the DB name from DATABASE_URL or .env)
+psql -d "$DB_NAME" -c "\timing" -c "SELECT ..."
 
 # Check what queries are running right now
-psql -d intela -c "
+psql -d "$DB_NAME" -c "
   SELECT pid, now() - query_start AS duration, state, query
   FROM pg_stat_activity
-  WHERE datname='intela' AND state != 'idle'
+  WHERE datname=current_database() AND state != 'idle'
   ORDER BY duration DESC;"
 ```
 
@@ -131,10 +131,10 @@ WHERE c.contype = 'f'
 
 ```bash
 # Check active connections by state
-psql -d intela -c "
+psql -d "$DB_NAME" -c "
   SELECT count(*), state
   FROM pg_stat_activity
-  WHERE datname='intela'
+  WHERE datname=current_database()
   GROUP BY state;"
 
 # Check pool configuration in db.py
@@ -151,4 +151,4 @@ grep -E "pool|minconn|maxconn" db.py
 - If a query plan changes between runs (different row estimates), run `ANALYZE
   <tablename>` first to update statistics, then re-measure.
 - Do not measure on the production DB unless there is no other option. Use the
-  test DB with a realistic data snapshot (e.g., restored from `intela12042026.sql`).
+  test DB with a realistic data snapshot restored locally.
