@@ -26,7 +26,7 @@ Migración 0013 remapea las filas legacy `stat='D'` (depositado genérico)
 a `stat='B'`. Después de esa migración, 'D' es unambiguamente Daniela.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import db
 from filters import today_ec
@@ -51,6 +51,31 @@ STATS_DEPOSITADO = ("B", "V", "W", "I", "J", "K", "A")
 # Stats terminales — no se puede editar nada. 'E' = endosado (cheque ya
 # salió de nuestra cartera, no nos pertenece más).
 STATS_TERMINALES_EDIT = ("X", "T", "R", "3", "E")
+
+
+def _banco_real_para_deposito(virtual: int, conn=None) -> int:
+    """Banco REAL destino de un deposito directo de cobranza.
+
+    Paridad ALTAS.PRG L171: BASE = IIF(NB=90,'PICHINCHA','INTER'). Los
+    codigos 90/91 del dropdown son "virtuales" (DEP.PICH / DEP.INTER); el
+    movimiento bancario tiene que caer en el banco real. Lookup por nombre
+    (excluyendo los virtuales >=90); fallback a los no_banco conocidos de
+    la data 2026 (Pichincha=10, Internacional=32).
+    """
+    patron = "%PICHIN%" if virtual == 90 else "%INTER%"
+    try:
+        row = db.fetch_one(
+            "SELECT no_banco FROM scintela.banco "
+            "WHERE no_banco < 90 AND nombre ILIKE %s "
+            "ORDER BY no_banco LIMIT 1",
+            (patron,),
+            conn=conn,
+        )
+        if row and row.get("no_banco") is not None:
+            return int(row["no_banco"])
+    except Exception:  # noqa: BLE001 — fallback duro abajo
+        pass
+    return 10 if virtual == 90 else 32
 
 
 def _domingo_a_lunes(f: date) -> date:
@@ -1306,7 +1331,7 @@ def depositos(id_cheque: int) -> list[dict]:
 #     Reversiones nuevas escriben '1' o '3' según el caso.
 STATS = {
     "cartera": ("Z",),  # ingresado, sin movimiento
-    "depositados": ("B", "A"),  # B nuevo + A legacy
+    "depositados": ("B", "A", "C"),  # B nuevo + A legacy + C efectivo (99, paridad dBase)
     "devueltos": ("1", "2", "3", "R"),  # rebotes (3=segundo rebote)
     "daniela": ("D",),  # gestión Daniela
     "postergados": ("P",),  # postergados con fecha nueva
@@ -1566,8 +1591,20 @@ def crear(
     # y el de caja tienen gate importe>0) → se tragaba el negativo en
     # silencio y el saldo bancario/caja quedaba inflado. Dejándolo en 'Z'
     # (cartera) el negativo queda VISIBLE como nota de crédito y consistente.
-    if no_banco in (90, 91, 99) and (stat or "").upper() == "Z" and float(importe or 0) > 0:
+    #
+    # TMT 2026-06-11 paridad ALTAS.PRG (pedido dueña: "fijate que hace el
+    # dbase y hagamos lo mismo, con todos los codigos"):
+    #   90/91 → stat 'B' + APPEND inmediato del movimiento bancario DOC='DE'
+    #           en el banco REAL (PICHINCHA/INTER), concepto "1 ch.CLI",
+    #           con numreferencia=doc_banco → conciliable por referencia.
+    #           (ALTAS.PRG L170-186; antes PC solo flipeaba a B sin mov.)
+    #   99    → stat 'C' (cobrado en caja, PASOCAJA L870-893) + entrada en
+    #           CAJA "CH.CLI". Antes PC usaba 'B', que no es lo que tipea
+    #           el dBase en CHEQUES.DBF (C) y los escondía de la vista.
+    if no_banco in (90, 91) and (stat or "").upper() == "Z" and float(importe or 0) > 0:
         stat = "B"
+    if no_banco == 99 and (stat or "").upper() in ("Z", "B") and float(importe or 0) > 0:
+        stat = "C"
 
     importe_principal = float(importe or 0)
 
@@ -1601,7 +1638,7 @@ def crear(
                  banco, stat, fechaing, prov, clave, doc_banco, usuario_crea)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, NULL, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s)
             RETURNING id_cheque, no_cheque
             """,
                 (
@@ -1614,6 +1651,9 @@ def crear(
                     no_banco,
                     (banco_texto or None),
                     stat,
+                    # TMT 2026-06-11 paridad dBase: depósito directo (90/91,
+                    # stat B) lleva fechaing = fecha de paso por banco.
+                    (fecha if (no_banco in (90, 91) and (stat or "").upper() == "B") else None),
                     (prov or None),
                     (clave or None) and clave[:5],
                     (doc_banco or None),
@@ -1650,6 +1690,83 @@ def crear(
                 batch_id=batch_id,
             )
 
+        # TMT 2026-06-11 paridad ALTAS.PRG L170-186 — banco 90/91 (DEP.PICH /
+        # DEP.INTER): el dBase appendea el movimiento bancario DOC='DE' en el
+        # banco REAL al momento de la cobranza (no espera al deposito).
+        # numreferencia = doc_banco (regla #1 del matcher de conciliacion) →
+        # el deposito directo aparece en el panel Programa y matchea por
+        # referencia. chequextransaccion linkea cheque ↔ movimiento.
+        if (
+            no_banco in (90, 91)
+            and (stat or "").upper() == "B"
+            and row.get("id_cheque")
+            and importe_principal > 0
+        ):
+            import bank_helpers
+
+            banco_real = _banco_real_para_deposito(no_banco, conn=conn)
+            num_ref = (doc_banco or "").strip() or str(row["id_cheque"])
+            cli_u = codigo_cli.upper().strip()
+            mov_dep = bank_helpers.insert_movimiento_bancario(
+                conn,
+                no_banco=banco_real,
+                no_cta=None,
+                fecha=fecha,
+                documento="DE",
+                # Concepto paridad dBase: "1 ch.CLI" (el extractor de prov
+                # de conciliacion ya parsea este formato).
+                concepto=f"1 ch.{cli_u}"[:50],
+                prov=cli_u[:5],
+                numreferencia=num_ref,
+                usuario=usuario,
+            )
+            if mov_dep.get("id_transaccion"):
+                db.execute(
+                    """
+                    INSERT INTO scintela.chequextransaccion
+                        (id_cheque, id_transaccion, fecha, stat_ch, usuario_crea)
+                    VALUES (%s, %s, %s, 'D', %s)
+                    """,
+                    (row["id_cheque"], mov_dep["id_transaccion"], fecha, usuario),
+                    conn=conn,
+                )
+                row["id_transaccion_deposito"] = mov_dep["id_transaccion"]
+
+        # TMT 2026-06-11 paridad ALTAS.PRG NB=95 (CANCELA ANTIC.): el dBase
+        # busca el espejo del anticipo (importe negativo, NB=98) del mismo
+        # cliente y marca AMBOS con stat 'X' (anulados entre si). Si no lo
+        # encuentra, el cheque queda 'Z' y se avisa (dBase: "NO SE ENCUENTRA
+        # EL ANTICIPO") — la duena lo resuelve a mano.
+        if no_banco == 95 and row.get("id_cheque") and importe_principal > 0:
+            espejo_95 = db.fetch_one(
+                """
+                SELECT id_cheque FROM scintela.cheque
+                 WHERE codigo_cli = %s
+                   AND importe = %s
+                   AND no_banco IN (97, 98)
+                   AND TRIM(COALESCE(stat, '')) = 'Z'
+                 ORDER BY id_cheque
+                 LIMIT 1
+                """,
+                (codigo_cli.upper().strip(), -importe_principal),
+                conn=conn,
+            )
+            if espejo_95:
+                db.execute(
+                    "UPDATE scintela.cheque "
+                    "SET stat='X', fechaout=%s, fechad=%s, "
+                    "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                    "WHERE id_cheque IN (%s, %s)",
+                    (fecha, fecha, usuario, row["id_cheque"], espejo_95["id_cheque"]),
+                    conn=conn,
+                )
+                row["id_cheque_anticipo_cancelado"] = espejo_95["id_cheque"]
+            else:
+                row["warning"] = (
+                    f"No se encontró el anticipo de {codigo_cli.upper().strip()} "
+                    f"por -{importe_principal:.2f} — el cheque 95 quedó en cartera (Z)."
+                )
+
         # TMT 2026-05-19 v8 — banco=99 EFECTIVO: insert en scintela.caja
         # (tipo='E') para que la plata entre realmente al saldo de caja.
         # Saldo running: pasamos NULL, el trigger
@@ -1657,7 +1774,8 @@ def crear(
         # NO usamos caja.queries.crear() acá para evitar la cascada de
         # side-effects basados en concepto_parser (riesgo de match falso).
         if no_banco == 99 and row.get("id_cheque") and importe_principal > 0:
-            concepto_caja = f"99 {codigo_cli.upper().strip()} ch {(no_cheque or '').strip()}"[:80]
+            # Concepto paridad PASOCAJA: "CH."+cliente (antes "99 CLI ch N").
+            concepto_caja = f"CH.{codigo_cli.upper().strip()}"[:80]
             caja_row = (
                 db.execute_returning(
                     """
@@ -1722,12 +1840,14 @@ def crear(
                     (
                         (no_cheque or "").strip()[:10],
                         fecha,
-                        fechad,
+                        # TMT 2026-06-11 paridad ALTAS.PRG L156: espejo de
+                        # anticipo con FECHAD+30, NB=98 y BANCO='ANTICIPO'.
+                        (fechad or fecha) + timedelta(days=30),
                         fecha_recibido,
                         codigo_cli.upper().strip(),
                         -importe_principal,  # espejo negativo
-                        no_banco,
-                        (banco_texto or None),
+                        98,
+                        "ANTICIPO",
                         (prov or None),
                         (clave or None) and clave[:5],
                         usuario,
@@ -2455,7 +2575,9 @@ def aplicar_a_factura(
         # aceptaba B/A/E/etc, generando aplicaciones contra cheques ya
         # depositados/endosados/eliminados.
         stat_ch = (ch.get("stat") or "").upper()
-        stats_ok = STATS_APLICABLES + (("B",) if permitir_depositado else ())
+        # TMT 2026-06-11: el flujo de creacion tambien aplica cheques 'C'
+        # (efectivo 99, paridad dBase PASOCAJA) en la misma tx.
+        stats_ok = STATS_APLICABLES + (("B", "C") if permitir_depositado else ())
         if stat_ch not in stats_ok:
             raise ValueError(
                 f"Cheque {id_cheque} en stat='{stat_ch}' no se puede aplicar a "

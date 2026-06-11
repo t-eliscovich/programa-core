@@ -658,6 +658,11 @@ def nuevo():
         ch = cheques_creados[0]  # primero — usado abajo para redirect
 
         # Mensajes según cantidad creada
+        # TMT 2026-06-11 paridad dBase NB=95: si queries.crear no encontro el
+        # anticipo a cancelar, devuelve un warning (el cheque quedo en Z).
+        for _c in cheques_creados:
+            if isinstance(_c, dict) and _c.get("warning"):
+                flash(_c["warning"], "error")
         if len(cheques_creados) > 1:
             total_creado = sum(float(c.get("importe") or 0) for c in cheques_creados)
             nums = ", ".join(f"N° {c.get('no_cheque')}" for c in cheques_creados)
