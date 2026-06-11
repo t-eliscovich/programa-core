@@ -87,6 +87,142 @@ def _domingo_a_lunes(f: date) -> date:
     return f
 
 
+def _migrar_deposito_directo(*, ch: dict, nuevo_nb: int, banco_nombre: str, usuario: str) -> None:
+    """Cambia el banco emisor de un cheque de depósito directo (90/91/99)
+    MIGRANDO sus movimientos, en una sola transacción.
+
+    TMT 2026-06-11 dueña: cheque cargado como 99 EFECTIVO que en realidad
+    era DEP.PICH (o viceversa). No alcanza con cambiar la etiqueta: el alta
+    generó side-effects (99 → entrada en caja; 90/91 → mov banco DE + link).
+
+    Pasos:
+      - viejo 99: compensa la entrada de caja con una salida 'S' (CORR).
+      - viejo 90/91: compensa cada mov banco linkeado con 'ND' (CORR) y
+        borra los links chequextransaccion.
+      - nuevo 90/91: crea el mov 'DE' en el banco REAL + link + stat 'B'.
+      - nuevo 99: crea la entrada de caja 'E' (CH.CLI) + stat 'C'.
+      - actualiza no_banco/banco/stat del cheque + observación [E].
+    """
+    import bank_helpers
+    import caja_helpers
+
+    id_cheque = int(ch["id_cheque"])
+    viejo_nb = int(ch.get("no_banco") or 0)
+    cli = (ch.get("codigo_cli") or "").upper().strip()
+    imp = float(ch.get("importe") or 0)
+    fecha_mov = ch.get("fecha") or today_ec()
+    doc = (ch.get("doc_banco") or "").strip()
+
+    with db.tx() as conn:
+        # ── compensar lo viejo ──────────────────────────────────────
+        if viejo_nb == 99:
+            caja_alta = db.fetch_one(
+                "SELECT id_caja FROM scintela.caja "
+                "WHERE id_cheque = %s AND tipo = 'E' AND ABS(importe - %s) < 0.01 "
+                "ORDER BY id_caja LIMIT 1",
+                (id_cheque, imp),
+                conn=conn,
+            )
+            if caja_alta:
+                caja_helpers.insert_movimiento_caja(
+                    conn,
+                    fecha=fecha_mov,
+                    tipo="S",
+                    importe=imp,
+                    concepto=f"CORR ch{ch.get('no_cheque') or id_cheque} 99->{nuevo_nb}"[:80],
+                    id_cheque=id_cheque,
+                    usuario=usuario,
+                )
+        elif viejo_nb in (90, 91):
+            movs = db.fetch_all(
+                """
+                SELECT DISTINCT tb.id_transaccion, tb.no_banco, tb.importe
+                  FROM scintela.chequextransaccion cxt
+                  JOIN scintela.transacciones_bancarias tb
+                    ON tb.id_transaccion = cxt.id_transaccion
+                 WHERE cxt.id_cheque = %s
+                """,
+                (id_cheque,),
+                conn=conn,
+            ) or []
+            for m in movs:
+                bank_helpers.insert_movimiento_bancario(
+                    conn,
+                    no_banco=int(m["no_banco"]),
+                    no_cta=None,
+                    fecha=fecha_mov,
+                    documento="ND",
+                    importe=abs(float(m.get("importe") or imp)),
+                    concepto=f"CORR ch{ch.get('no_cheque') or id_cheque} {viejo_nb}->{nuevo_nb}"[:50],
+                    prov=cli[:5] or None,
+                    numreferencia=id_cheque,
+                    usuario=usuario,
+                )
+            db.execute(
+                "DELETE FROM scintela.chequextransaccion WHERE id_cheque = %s",
+                (id_cheque,),
+                conn=conn,
+            )
+
+        # ── crear lo nuevo ──────────────────────────────────────────
+        stat_nuevo = "B"
+        if nuevo_nb in (90, 91):
+            banco_real = _banco_real_para_deposito(nuevo_nb, conn=conn)
+            mov = bank_helpers.insert_movimiento_bancario(
+                conn,
+                no_banco=banco_real,
+                no_cta=None,
+                fecha=fecha_mov,
+                documento="DE",
+                concepto=f"1 ch.{cli}"[:50],
+                prov=cli[:5] or None,
+                numreferencia=doc or str(id_cheque),
+                usuario=usuario,
+            )
+            if mov.get("id_transaccion"):
+                db.execute(
+                    """
+                    INSERT INTO scintela.chequextransaccion
+                        (id_cheque, id_transaccion, fecha, stat_ch, usuario_crea)
+                    VALUES (%s, %s, %s, 'D', %s)
+                    """,
+                    (id_cheque, mov["id_transaccion"], fecha_mov, usuario),
+                    conn=conn,
+                )
+        else:  # nuevo_nb == 99
+            stat_nuevo = "C"
+            caja_helpers.insert_movimiento_caja(
+                conn,
+                fecha=fecha_mov,
+                tipo="E",
+                importe=imp,
+                concepto=f"CH.{cli}"[:80],
+                id_cheque=id_cheque,
+                usuario=usuario,
+            )
+
+        # ── actualizar el cheque ────────────────────────────────────
+        db.execute(
+            "UPDATE scintela.cheque "
+            "SET no_banco=%s, banco=%s, stat=%s, "
+            "    fechaing=%s, fechaout=%s, "
+            "    observacion = COALESCE(observacion||' | ','')||%s, "
+            "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+            "WHERE id_cheque=%s",
+            (
+                nuevo_nb,
+                banco_nombre or None,
+                stat_nuevo,
+                fecha_mov if stat_nuevo == "B" else None,
+                fecha_mov if stat_nuevo == "C" else None,
+                f"[E] banco emisor {viejo_nb} -> {nuevo_nb} (movs migrados)",
+                usuario,
+                id_cheque,
+            ),
+            conn=conn,
+        )
+
+
 def editar(
     id_cheque: int,
     *,
@@ -140,7 +276,8 @@ def editar(
     # campo concepto del form, lo guardamos como parte de la observación
     # con prefix [C], preservando la intención sin agregar una columna.
     ch = db.fetch_one(
-        "SELECT id_cheque, no_cheque, stat, fechad, doc_banco, no_banco FROM scintela.cheque WHERE id_cheque = %s",
+        "SELECT id_cheque, no_cheque, stat, fechad, doc_banco, no_banco, "
+        "codigo_cli, importe, fecha FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
@@ -237,6 +374,8 @@ def editar(
         )
         if not banco_row:
             raise ValueError(f"Banco {no_banco} no existe.")
+        viejo_nb = int(ch.get("no_banco") or 0)
+        nuevo_nb = int(no_banco)
         tiene_mov = db.fetch_one(
             """
             SELECT 1 AS x FROM scintela.chequextransaccion WHERE id_cheque = %s
@@ -247,21 +386,40 @@ def editar(
             (id_cheque, id_cheque),
         )
         if tiene_mov:
-            raise ValueError(
-                "Este cheque ya tiene movimientos de banco/caja linkeados — "
-                "el banco emisor no se puede cambiar acá. Usá 'Anular por "
-                "error de carga' y recargalo con el banco correcto."
+            # TMT 2026-06-11 dueña: 'este tendría que ser editable o no? era
+            # un depósito' (cheque 99 EFECTIVO que en realidad fue DEP.PICH).
+            # Entre códigos de depósito directo (90/91/99) SÍ se puede: la
+            # migración compensa el movimiento viejo (caja S / banco ND) y
+            # crea el nuevo (banco DE / caja E) en una sola tx. Para
+            # cualquier otro caso con movimientos, sigue el flujo de anular.
+            if (
+                {viejo_nb, nuevo_nb} <= {90, 91, 99}
+                and stat in ("B", "C")
+                and float(ch.get("importe") or 0) > 0
+            ):
+                _migrar_deposito_directo(
+                    ch=ch, nuevo_nb=nuevo_nb,
+                    banco_nombre=(banco_row.get("nombre") or "")[:30],
+                    usuario=usuario,
+                )
+                # El helper ya actualizó no_banco/banco/stat/obs del cheque.
+            else:
+                raise ValueError(
+                    "Este cheque ya tiene movimientos de banco/caja linkeados — "
+                    "el banco emisor no se puede cambiar acá. Usá 'Anular por "
+                    "error de carga' y recargalo con el banco correcto."
+                )
+        else:
+            sql_set.append("no_banco=%s")
+            params.append(nuevo_nb)
+            sql_set.append("banco=%s")
+            params.append((banco_row.get("nombre") or "")[:30] or None)
+            sql_set.append(
+                "observacion = COALESCE(observacion||' | ','')||%s"
             )
-        sql_set.append("no_banco=%s")
-        params.append(int(no_banco))
-        sql_set.append("banco=%s")
-        params.append((banco_row.get("nombre") or "")[:30] or None)
-        sql_set.append(
-            "observacion = COALESCE(observacion||' | ','')||%s"
-        )
-        params.append(
-            f"[E] banco emisor {ch.get('no_banco') or '—'} → {no_banco}"
-        )
+            params.append(
+                f"[E] banco emisor {viejo_nb or '—'} → {nuevo_nb}"
+            )
     params.append(id_cheque)
 
     db.execute(

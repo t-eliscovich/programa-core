@@ -166,3 +166,95 @@ def test_95_sin_anticipo_warning_y_queda_z(env):
     )
     assert "No se encontró el anticipo" in (r.get("warning") or "")
     assert not any("set stat='x'" in s for s, _ in stub.executes)
+
+
+# ── Cambio de banco emisor con migración de movimientos (TMT 2026-06-11) ──
+# Dueña: 'este tendría que ser editable o no? era un depósito' — cheque 99
+# EFECTIVO que en realidad fue DEP.PICH. editar(no_banco=90) compensa la
+# caja y crea el mov banco + link.
+
+class _DBStubEdit(_DBStub):
+    """fetch_one por tabla para el flujo editar() + _migrar_deposito_directo."""
+
+    def __init__(self, ch_row, caja_alta=True, cxt_movs=None):
+        super().__init__()
+        self.ch_row = ch_row
+        self.caja_alta = caja_alta
+        self.cxt_movs = cxt_movs or []
+
+    def fetch_one(self, sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.cheque where id_cheque" in s:
+            return dict(self.ch_row)
+        if "from scintela.banco where no_banco" in s:
+            nb = params[0]
+            return {"no_banco": nb, "nombre": {90: "DEP.PICH.", 99: "EFECTIVO", 10: "PICHINCHA"}.get(nb, f"B{nb}")}
+        if "from scintela.banco where no_banco < 90" in s.replace("  ", " "):
+            return {"no_banco": 10}
+        if "from scintela.caja" in s and "id_caja" in s:
+            return {"id_caja": 77} if self.caja_alta else None
+        if "select 1 as x from scintela.chequextransaccion" in s:
+            return {"x": 1}  # tiene movimientos
+        return None
+
+    def fetch_all(self, sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.chequextransaccion cxt" in s:
+            return list(self.cxt_movs)
+        return []
+
+
+def _env_edit(monkeypatch, ch_row, **kw):
+    from modules.cheques import queries as cq
+    import mov_doble, bank_helpers, caja_helpers
+
+    stub = _DBStubEdit(ch_row, **kw)
+    monkeypatch.setattr(cq, "db", stub)
+    monkeypatch.setattr(cq, "asegurar_fecha_abierta", lambda *a, **k: None)
+    monkeypatch.setattr(mov_doble, "registrar", lambda **k: None)
+    bank_calls, caja_calls = [], []
+    monkeypatch.setattr(bank_helpers, "insert_movimiento_bancario",
+                        lambda conn, **k: bank_calls.append(k) or {"id_transaccion": 901})
+    monkeypatch.setattr(caja_helpers, "insert_movimiento_caja",
+                        lambda conn, **k: caja_calls.append(k) or {"id_caja": 902})
+    return cq, stub, bank_calls, caja_calls
+
+
+def test_editar_99_a_90_compensa_caja_y_crea_mov_banco(monkeypatch):
+    ch = {"id_cheque": 59626, "no_cheque": "", "stat": "B", "fechad": date(2026, 6, 11),
+          "doc_banco": "", "no_banco": 99, "codigo_cli": "GPU", "importe": 350.0,
+          "fecha": date(2026, 6, 11)}
+    cq, stub, bank_calls, caja_calls = _env_edit(monkeypatch, ch)
+    cq.editar(59626, no_banco=90, usuario="tamara")
+    # compensó la caja con S y creó la entrada DE en el banco real
+    assert any(c["tipo"] == "S" for c in caja_calls)
+    assert len(bank_calls) == 1 and bank_calls[0]["documento"] == "DE"
+    assert bank_calls[0]["no_banco"] == 10
+    # link nuevo + update del cheque a no_banco 90 stat B
+    assert any("insert into scintela.chequextransaccion" in s for s, _ in stub.executes)
+    upd = [pa for s, pa in stub.executes if "update scintela.cheque" in s and "no_banco=" in s]
+    assert upd and 90 in upd[0] and "B" in upd[0]
+
+
+def test_editar_90_a_99_compensa_banco_y_crea_caja(monkeypatch):
+    ch = {"id_cheque": 1, "no_cheque": "", "stat": "B", "fechad": date(2026, 6, 11),
+          "doc_banco": "", "no_banco": 90, "codigo_cli": "LMS", "importe": 200.0,
+          "fecha": date(2026, 6, 11)}
+    cq, stub, bank_calls, caja_calls = _env_edit(
+        monkeypatch, ch, cxt_movs=[{"id_transaccion": 55, "no_banco": 10, "importe": 200.0}])
+    cq.editar(1, no_banco=99, usuario="tamara")
+    # ND compensatorio en el banco viejo + caja E nueva + stat C
+    assert any(b["documento"] == "ND" for b in bank_calls)
+    assert any(c["tipo"] == "E" and c["concepto"].startswith("CH.LMS") for c in caja_calls)
+    assert any("delete from scintela.chequextransaccion" in s for s, _ in stub.executes)
+    upd = [pa for s, pa in stub.executes if "update scintela.cheque" in s and "no_banco=" in s]
+    assert upd and 99 in upd[0] and "C" in upd[0]
+
+
+def test_editar_a_banco_normal_con_movs_sigue_bloqueado(monkeypatch):
+    ch = {"id_cheque": 2, "no_cheque": "", "stat": "B", "fechad": date(2026, 6, 11),
+          "doc_banco": "", "no_banco": 99, "codigo_cli": "GPU", "importe": 350.0,
+          "fecha": date(2026, 6, 11)}
+    cq, _, _, _ = _env_edit(monkeypatch, ch)
+    with pytest.raises(ValueError, match="movimientos de banco/caja"):
+        cq.editar(2, no_banco=66, usuario="tamara")
