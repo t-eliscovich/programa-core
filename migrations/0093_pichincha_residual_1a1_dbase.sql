@@ -64,7 +64,7 @@ BEGIN
            fecha_modifica = CURRENT_TIMESTAMP
      WHERE id_transaccion = v_id;
     UPDATE scintela.mov_doble
-       SET fecha = DATE '2026-06-09'
+       SET fecha_operacion = DATE '2026-06-09'
      WHERE origen_table = 'transacciones_bancarias'
        AND origen_id = v_id;
     RAISE NOTICE 'ND 100,92: fecha 08/06 -> 09/06 (id_transaccion %)', v_id;
