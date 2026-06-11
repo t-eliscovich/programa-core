@@ -172,10 +172,19 @@ def lado_dbase() -> dict:
     KR = sum(_f(r.get("KGN")) for r in tin if not _lav(r) and _f(r.get("KG")) > 0)
     KSTI = sum(_f(r.get("KG")) for r in tin if (r.get("STAT") or "").strip() == "S")
     ITIN = sum(_f(r.get("IMPORTE")) for r in tin)
-    KV = sum(_f(r.get("KG")) for r in _leer("FACTURAS.DBF")
-             if r.get("FECHA") and r["FECHA"].year == anio and r["FECHA"].month == mes
-             and (r.get("STAT") or "").strip() in ("Z", "A", "T", "P")
+    fact_mes = [r for r in _leer("FACTURAS.DBF")
+                if r.get("FECHA") and r["FECHA"].year == anio and r["FECHA"].month == mes]
+    KV = sum(_f(r.get("KG")) for r in fact_mes
+             if (r.get("STAT") or "").strip() in ("Z", "A", "T", "P")
              and (r.get("TIPO") or "").strip() != "S")
+    d["fact_kv_rows"] = [
+        {"fecha": r.get("FECHA"), "numf": int(r.get("NUMF") or 0),
+         "cli": (str(r.get("CLIENTE") or "")).strip().upper(),
+         "stat": (str(r.get("STAT") or "")).strip().upper(),
+         "kg": round(_f(r.get("KG")), 2)}
+        for r in fact_mes
+        if (r.get("STAT") or "").strip() in ("Z", "A", "T", "P")
+        and (r.get("TIPO") or "").strip() != "S" and _f(r.get("KG")) != 0]
     d.update(KM=KM, VM=VM, KK=KK, KTINT=KTINT, KR=KR, KSTI=KSTI, ITIN=ITIN,
              KV=KV, VQQ=VQQ, KT_c=KT_c)
     d["compras_mes_rows"] = [
@@ -517,6 +526,24 @@ def _pc_compras_mes() -> list[dict]:
           FROM scintela.compra
          WHERE fecha >= date_trunc('month', CURRENT_DATE)
            AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        """) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_facturas_kg_mes() -> list[dict]:
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT fecha, COALESCE(numf, 0) AS numf,
+               UPPER(TRIM(COALESCE(codigo_cli,''))) AS cli,
+               UPPER(TRIM(COALESCE(stat,''))) AS stat,
+               COALESCE(kg,0) AS kg,
+               COALESCE(usuario_crea,'') AS usuario
+          FROM scintela.factura
+         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+           AND (stat IS NULL OR stat <> 'X')
+           AND COALESCE(kg, 0) <> 0
         """) or []
     return [dict(r) for r in rows]
 
@@ -905,6 +932,28 @@ def reporte(dias_banco: int = 30):
                                 _f(iq.tinto_kg_servicios_mes()), tol=1)
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [insumos VSTO no disponibles: {exc!r}]")
+    yield line()
+
+    try:
+        yield line("── [10b] KV kg vendidos del mes — factura x factura (fecha+kg) ──")
+        pc_kv = _pc_facturas_kg_mes()
+        db_kv = d.get("fact_kv_rows") or []
+        kv_db = round(sum(_f(r["kg"]) for r in db_kv), 2)
+        kv_pc = round(sum(_f(r["kg"]) for r in pc_kv), 2)
+        yield line(f"  kg dBase={kv_db:,.2f} ({len(db_kv)}f)  PC={kv_pc:,.2f} ({len(pc_kv)}f)  "
+                   f"Δ={kv_pc - kv_db:+,.2f}")
+        kdiff = _diff_multiset(db_kv, pc_kv,
+                               lambda r: (str(r.get("fecha") or ""), round(_f(r.get("kg")), 2)))
+        yield line(f"  SOLO dBASE: {len(kdiff['solo_dbase'])}")
+        for r in sorted(kdiff["solo_dbase"], key=lambda x: str(x.get("fecha")))[:MAX_LISTADO_FACT]:
+            yield line(f"    {str(r.get('fecha') or ''):10} numf={r['numf']:<7} {r['cli']:4} "
+                       f"stat={r['stat']:2} kg={_f(r['kg']):>10,.2f}")
+        yield line(f"  SOLO PC: {len(kdiff['solo_pc'])}")
+        for r in sorted(kdiff["solo_pc"], key=lambda x: str(x.get("fecha")))[:MAX_LISTADO_FACT]:
+            yield line(f"    {str(r.get('fecha') or ''):10} numf={r['numf']:<7} {r['cli']:4} "
+                       f"stat={r['stat']:2} kg={_f(r['kg']):>10,.2f}  u={r.get('usuario') or ''}")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle KV no disponible: {exc!r}]")
     yield line()
 
     yield line("── [11] STOCK QUÍMICOS — VQX = VQ0+VQQ−ITIN (PRG L322) ──")
