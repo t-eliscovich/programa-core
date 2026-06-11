@@ -116,6 +116,7 @@ def test_editar_kg_estima_desperdicio_e_importe():
     """El ajuste manual imita la planilla del dBase: kgn con rinde promedio
     (no kgn=kg) e importe con $/kg promedio (resta químicos de Stock Quí)."""
     import inspect as _i
+
     from modules.comparativa_tintoreria import views as v
     src = _i.getsource(v.editar_kg_dbase)
     assert "rinde" in src and "imp_est" in src and "kgn_est" in src
@@ -126,6 +127,7 @@ def test_dbase_compare_existe_y_es_solo_lectura():
     """Comparador sistemático (pedido dueña 2026-06-10): 13 checks PRG vs PC
     + identidad de utilidad. NUNCA escribe (no INSERT/UPDATE/DELETE/tx)."""
     import inspect as _i
+
     from modules.admin_dbase import dbase_compare_view as dcv
     src = _i.getsource(dcv)
     for kw in ("INSERT INTO", "UPDATE scintela", "DELETE FROM", "db.tx("):
@@ -134,3 +136,92 @@ def test_dbase_compare_existe_y_es_solo_lectura():
                     "PASIVOS", "ACTIVOS", "RETIROS", "PRODUCCIÓN", "STOCK",
                     "QUÍMICOS", "PATANT", "UTILIDAD", "RESIDUO"):
         assert seccion in src, f"falta la sección {seccion}"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# dBase-compare 1 a 1 — "tenemos que ver 1 a 1 los MOVIMIENTOS, no los
+# totales" (dueña 2026-06-11). Diffs multiset puros + wiring del reporte.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_dbase_compare_caja_linea_por_linea():
+    """Caja reusa el patrón de bancos: multiset (fecha, |importe|) +
+    saldo fin de día con ► donde el gap cambia."""
+    import inspect as _i
+
+    from modules.admin_dbase import dbase_compare_view as dcv
+    src = _i.getsource(dcv)
+    assert "caja_movs" in src and "_pc_movs_caja" in src
+    assert 'saldos_fin_de_dia(d.get("caja_movs")' in src, (
+        "el saldo fin de día de CAJA no usa el patrón de bancos"
+    )
+
+
+def test_dbase_compare_diff_cheques_flip_de_stat():
+    """Multiset (cliente, importe, grupo VIVO Z123PD / NO-VIVO): un flip de
+    stat (vivo en dBase, depositado en PC) aparece en AMBAS listas."""
+    from modules.admin_dbase import dbase_compare_view as dcv
+    db_rows = [{"cliente": "AAA", "importe": 100.0, "stat": "Z"},
+               {"cliente": "BBB", "importe": 50.0, "stat": "B"}]
+    pc_rows = [{"cliente": "AAA", "importe": 100.0, "stat": "B"},
+               {"cliente": "BBB", "importe": 50.0, "stat": "B"}]
+    r = dcv.diff_cheques(db_rows, pc_rows)
+    assert [c["cliente"] for c in r["solo_dbase"]] == ["AAA"]
+    assert [c["cliente"] for c in r["solo_pc"]] == ["AAA"]
+    assert dcv._grupo_stat_cheque("Z") == "VIVO"
+    assert dcv._grupo_stat_cheque("B") == "NO-VIVO"
+    # match exacto no lista nada
+    r2 = dcv.diff_cheques([{"cliente": "C", "importe": 1.0, "stat": "P"}],
+                          [{"cliente": "C", "importe": 1.0, "stat": "D"}])
+    assert not r2["solo_dbase"] and not r2["solo_pc"]  # P y D = mismo grupo VIVO
+
+
+def test_dbase_compare_diff_anticipos_cta_importe():
+    from modules.admin_dbase import dbase_compare_view as dcv
+    r = dcv.diff_anticipos([{"cta": "AC", "importe": 10.0}],
+                           [{"cta": "AC", "importe": 10.0}])
+    assert not r["solo_dbase"] and not r["solo_pc"]
+    r = dcv.diff_anticipos([{"cta": "AC", "importe": 10.0}],
+                           [{"cta": "AC", "importe": 11.0}])
+    assert len(r["solo_dbase"]) == 1 and len(r["solo_pc"]) == 1
+
+
+def test_dbase_compare_facturas_pareo_por_numf_sri():
+    """Vivas dBase (STAT $ 'ZA', NUMF>0) vs vivas PC que CUENTAN (sin
+    asinfo-backfill), apareadas por N° SRI = últimos dígitos de
+    numf_completo. Las NUMF=0 del dBase van aparte (no apareables)."""
+    from modules.admin_dbase import dbase_compare_view as dcv
+    assert dcv._numf_sri_pc({"numf_completo": "001-002-000174007"}) == 174007
+    assert dcv._numf_sri_pc({"numf_completo": None, "numf": 55}) == 55
+    dbf = [{"numf": 174007, "stat": "Z", "saldo": 100.0},
+           {"numf": 0, "stat": "Z", "saldo": 7.0},        # sin numerar
+           {"numf": 174010, "stat": "T", "saldo": 0.0}]    # no viva
+    pc = [{"numf_completo": "001-002-000174007", "stat": "A",
+           "usuario_crea": "asinfo-carga", "saldo": 100.0},
+          {"numf_completo": "001-002-000174008", "stat": "Z",
+           "usuario_crea": "asinfo-backfill", "saldo": 9.0},   # NO cuenta
+          {"numf_completo": "001-002-000174009", "stat": "Z",
+           "usuario_crea": "asinfo-carga", "saldo": 5.0}]
+    r = dcv.diff_facturas_sri(dbf, pc)
+    assert not r["solo_dbase"], "174007 debería aparear dBase↔PC por N° SRI"
+    assert [dcv._numf_sri_pc(x) for x in r["solo_pc"]] == [174009]
+    assert len(r["dbase_sin_numf"]) == 1
+
+
+def test_dbase_compare_yy_asof_fecha_tarball():
+    """Pasivos: el TOTP del DBF es de anoche y PC ya persistió las cuotas
+    YY/RT de hoy → falso +32k. El reporte muestra TAMBIÉN el TOTP de PC
+    as-of el mtime de POSDAT.DBF (mismas cuotas que el motor de posdat)."""
+    from datetime import date
+
+    from modules.admin_dbase import dbase_compare_view as dcv
+    # 2026-06-08 = lunes, 10 = miércoles, 11 = jueves (días hábiles)
+    rows = [{"cuota_diaria": 100.0, "baseline_date": date(2026, 6, 11)}]
+    assert dcv.ajuste_yy_a_fecha(rows, date(2026, 6, 10)) == -100.0  # PC adelantado
+    assert dcv.ajuste_yy_a_fecha(rows, date(2026, 6, 11)) == 0.0
+    rows = [{"cuota_diaria": 100.0, "baseline_date": date(2026, 6, 8)}]
+    assert dcv.ajuste_yy_a_fecha(rows, date(2026, 6, 10)) == 200.0   # persist atrasado
+    import inspect as _i
+    src = _i.getsource(dcv)
+    assert "posdat_mtime" in src and "_resolver_cuotas" in src, (
+        "el as-of tarball debe usar el MISMO motor de cuotas que posdat"
+    )

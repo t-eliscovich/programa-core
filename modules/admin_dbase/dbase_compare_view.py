@@ -10,15 +10,26 @@ reporte calcula cada valor del lado dBase con la regla EXACTA del PRG
 (INFORMES.PRG, citada por línea — todas validadas contra pantalla/HISTORIA
 el 2026-06-10) y lo compara con el balance live de PC (informe_balance()).
 
+Pedido dueña 2026-06-11: "tenemos que ver 1 a 1 los MOVIMIENTOS, no los
+totales" → caja línea por línea, cheques cheque por cheque, anticipos partida
+por partida, facturas apareadas por N° SRI, y TOTP as-of la fecha del tarball
+(el DBF es de anoche; PC ya acumuló las cuotas YY de hoy → falso +32k).
+
 Secciones:
   [1] Caja            CAJA.DBF último saldo            vs salcaj
+      + LÍNEA POR LÍNEA (fecha+|importe| multiset) + saldo fin de día ►
   [2] Bancos          PICHINCH/INTER último saldo      vs saldo PC
       + DETALLE por movimiento (fecha+|importe| multiset): qué movs tiene
       el dBase que PC no (p.ej. los pagos AI del 09/06) y viceversa.
   [3] Cheques  TOTC   STAT $ 'Z123PD' (L24)            vs totc
+      + CHEQUE POR CHEQUE (cliente+importe+grupo vivo/no-vivo) con stat
   [4] Facturas TOTF   STAT $ 'ZA' (L27) + buckets del facturas-reconcile
+      + pareo por N° SRI (numf_completo de PC vs NUMF del DBF), vivas
   [5] Anticipos       DOLARES ST=' ' (L58)             vs antic
+      + PARTIDA POR PARTIDA (cta+importe multiset), solo vivas
   [6] Pasivos  TOTP   POSDAT BANC#9 (L55)              vs totp
+      + TOTP de PC AS-OF el mtime de POSDAT.DBF (sin las cuotas YY/RT
+        que PC acumuló después del tarball) — ambas cifras a la vista
   [7] Activos         TIPO='I' / TIPO$'MCK' (L47-48)   vs uact/umaq (+sin tipo)
   [8] Retiros         RETIROS mes / año (L37-38)       vs uret/uret_anio
   [9] Producción      KM/VM/KK/KTINT/KR/ITIN/KV del mes vs panel COSTOS
@@ -55,6 +66,7 @@ DBFS = ["CAJA.DBF", "PICHINCH.DBF", "INTER.DBF", "CHEQUES.DBF", "FACTURAS.DBF",
         "DOLARES.DBF", "POSDAT.DBF", "ACTIVOS.DBF", "RETIROS.DBF",
         "COMPRAS.DBF", "TINTO.DBF", "INICIALE.DBF", "HISTORIA.DBF"]
 MAX_LISTADO = 30
+MAX_LISTADO_FACT = 40  # facturas por N° SRI: máx 40 líneas por lado
 
 
 def _f(x) -> float:
@@ -83,6 +95,10 @@ def lado_dbase() -> dict:
 
     caja = _leer("CAJA.DBF")
     d["salcaj"] = _f(caja[-1].get("SALDO")) if caja else None
+    d["caja_movs"] = [{"fecha": r.get("FECHA"), "tipo": (r.get("TIPO") or "").strip(),
+                       "importe": round(_f(r.get("IMPORTE")), 2),
+                       "saldo": round(_f(r.get("SALDO")), 2),
+                       "concepto": (str(r.get("CONCEPTO") or "")).strip()} for r in caja]
 
     pich = _leer("PICHINCH.DBF")
     inter = _leer("INTER.DBF")
@@ -97,14 +113,29 @@ def lado_dbase() -> dict:
     if p.exists():
         d["pich_mtime"] = datetime.utcfromtimestamp(p.stat().st_mtime) - timedelta(hours=5)
 
-    d["totc"] = sum(_f(r.get("IMPORTE")) for r in _leer("CHEQUES.DBF")
+    chq = _leer("CHEQUES.DBF")
+    d["totc"] = sum(_f(r.get("IMPORTE")) for r in chq
                     if (r.get("STAT") or "").strip() in ("Z", "1", "2", "3", "P", "D"))
+    d["cheq_rows"] = [{"cliente": (str(r.get("CLIENTE") or "")).strip().upper(),
+                       "importe": round(_f(r.get("IMPORTE")), 2),
+                       "stat": (str(r.get("STAT") or "")).strip().upper(),
+                       "fechad": r.get("FECHAD"), "fechout": r.get("FECHOUT")}
+                      for r in chq]
 
-    d["antic"] = sum(_f(r.get("IMPORTE")) for r in _leer("DOLARES.DBF")
+    dol = _leer("DOLARES.DBF")
+    d["antic"] = sum(_f(r.get("IMPORTE")) for r in dol
                      if (r.get("ST") or " ").strip() == "")
+    d["dol_vivos"] = [{"cta": (str(r.get("CTA") or "")).strip().upper(),
+                       "importe": round(_f(r.get("IMPORTE")), 2),
+                       "fecha": r.get("FECHA"),
+                       "concepto": (str(r.get("CONCEPTO") or "")).strip()}
+                      for r in dol if (r.get("ST") or " ").strip() == ""]
 
     d["totp"] = sum(_f(r.get("IMPORTE")) for r in _leer("POSDAT.DBF")
                     if int(r.get("BANC") or 0) != 9)
+    pp = EXTRACT_DIR / "POSDAT.DBF"
+    d["posdat_mtime"] = (datetime.utcfromtimestamp(pp.stat().st_mtime)
+                         - timedelta(hours=5)) if pp.exists() else None
 
     act = _leer("ACTIVOS.DBF")
     d["uact"] = sum(_f(r.get("VALOR")) for r in act if (r.get("TIPO") or "").strip() == "I")
@@ -261,6 +292,189 @@ def saldos_fin_de_dia(dbf_movs: list[dict], pc_movs: list[dict], desde: date) ->
             prev_delta = delta
     return out
 
+# ───────────────── diffs 1 a 1 (pedido dueña 2026-06-11) ─────────────────
+# "Tenemos que ver 1 a 1 los MOVIMIENTOS, no los totales."
+# Todos multiset SOLO LECTURA: cancelan 1 a 1 por clave y listan sobrantes.
+
+def _diff_multiset(dbase_rows: list[dict], pc_rows: list[dict], key) -> dict:
+    """Multiset genérico: cancela 1 a 1 por `key`; devuelve los sobrantes."""
+    a_n, b_n = defaultdict(list), defaultdict(list)
+    for r in dbase_rows:
+        a_n[key(r)].append(r)
+    for r in pc_rows:
+        b_n[key(r)].append(r)
+    solo_db, solo_pc = [], []
+    for k in set(a_n) | set(b_n):
+        a, b = a_n.get(k, []), b_n.get(k, [])
+        n = min(len(a), len(b))
+        solo_db.extend(a[n:])
+        solo_pc.extend(b[n:])
+    return {"solo_dbase": solo_db, "solo_pc": solo_pc}
+
+
+_STATS_VIVOS_CHEQUE = ("Z", "1", "2", "3", "P", "D")
+
+
+def _grupo_stat_cheque(stat) -> str:
+    """Grupo del multiset: VIVO (TOTC, PRG L24: STAT $ 'Z123PD') o NO-VIVO."""
+    return "VIVO" if (stat or "").strip().upper() in _STATS_VIVOS_CHEQUE else "NO-VIVO"
+
+
+def diff_cheques(dbf_rows: list[dict], pc_rows: list[dict]) -> dict:
+    """Cheque x cheque: multiset por (cliente, importe, grupo vivo/no-vivo).
+
+    Un cheque vivo en dBase pero depositado en PC (o viceversa) aparece en
+    AMBAS listas con su stat de cada lado — ese flip es lo que hay que mirar.
+    """
+    def key(r):
+        return ((r.get("cliente") or "").strip().upper(),
+                round(_f(r.get("importe")), 2),
+                _grupo_stat_cheque(r.get("stat")))
+    return _diff_multiset(dbf_rows, pc_rows, key)
+
+
+def diff_anticipos(dbf_rows: list[dict], pc_rows: list[dict]) -> dict:
+    """Partida x partida de anticipos VIVOS: multiset por (cta, importe)."""
+    def key(r):
+        return ((r.get("cta") or "").strip().upper(),
+                round(_f(r.get("importe")), 2))
+    return _diff_multiset(dbf_rows, pc_rows, key)
+
+
+def _numf_sri_pc(r) -> int:
+    """N° SRI de una factura PC: últimos dígitos de numf_completo
+    ('001-002-000174007' → 174007). Sin numf_completo cae a numf —
+    también sirve como clave de las filas DBF (NUMF ya es el N° SRI)."""
+    import re
+    m = re.search(r"(\d+)$", (r.get("numf_completo") or "").strip())
+    if m:
+        return int(m.group(1))
+    return int(r.get("numf") or 0)
+
+
+def diff_facturas_sri(dbf_rows: list[dict], pc_rows: list[dict]) -> dict:
+    """Facturas VIVAS apareadas por N° SRI (multiset por numf).
+
+    dBase: STAT $ 'ZA' (PRG L27) y NUMF>0. PC: vivas QUE CUENTAN
+    (usuario_crea <> 'asinfo-backfill' — criterio dueña: solo lo cargado).
+    Las NUMF=0 del dBase (entradas sin numerar) no se pueden aparear por
+    SRI: van aparte en `dbase_sin_numf`.
+    """
+    def _viva_f(stat):
+        return (stat or "").strip().upper() in ("", "Z", "A")
+    db_vivas = [r for r in dbf_rows if _viva_f(r.get("stat"))]
+    db_con_numf = [r for r in db_vivas if int(r.get("numf") or 0) > 0]
+    pc_vivas = [r for r in pc_rows if _viva_f(r.get("stat"))
+                and (r.get("usuario_crea") or "").strip() != "asinfo-backfill"
+                and _numf_sri_pc(r) > 0]
+    res = _diff_multiset(db_con_numf, pc_vivas, _numf_sri_pc)
+    res["dbase_sin_numf"] = [r for r in db_vivas if int(r.get("numf") or 0) <= 0]
+    return res
+
+
+def ajuste_yy_a_fecha(rows: list[dict], fecha_corte: date) -> float:
+    """Δ a sumar al TOTP de PC para expresarlo AS-OF `fecha_corte`.
+
+    `rows` ya pasaron por _resolver_cuotas (traen cuota_diaria) y su
+    baseline_date es la fecha hasta la cual el importe persistido acumuló
+    cuotas. baseline > corte → restar las cuotas de los días hábiles
+    posteriores al corte (PC adelantado, el caso del falso +32k);
+    baseline < corte → sumarlas (persist atrasado).
+    """
+    from modules.posdat.queries import _dias_habiles_entre
+    tot = 0.0
+    for r in rows:
+        cd = float(r.get("cuota_diaria") or 0)
+        b = r.get("baseline_date")
+        if cd <= 0 or not b:
+            continue
+        if b > fecha_corte:
+            tot -= cd * _dias_habiles_entre(fecha_corte, b)
+        elif b < fecha_corte:
+            tot += cd * _dias_habiles_entre(b, fecha_corte)
+    return round(tot, 2)
+
+
+# ───────────────── lado PC de los diffs 1 a 1 (SELECTs, solo lectura) ─────────────────
+
+def _pc_movs_caja(desde: date) -> list[dict]:
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT fecha, COALESCE(tipo, '') AS tipo, importe, saldo,
+               COALESCE(concepto, '') AS concepto
+          FROM scintela.caja
+         WHERE fecha >= %s
+         ORDER BY fecha, id_caja
+        """,
+        (desde,),
+    ) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_cheques() -> list[dict]:
+    """Todos los cheques PC menos asinfo-backfill (mismo universo que totc)."""
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT COALESCE(codigo_cli, '') AS cliente, importe,
+               COALESCE(stat, '') AS stat, fechad, fechaout AS fechout,
+               COALESCE(usuario_crea, '') AS usuario_crea
+          FROM scintela.cheque
+         WHERE COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+        """
+    ) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_anticipos_vivos() -> list[dict]:
+    """Anticipos vivos PC (st NULL/''/' '), mismo universo que anticipos()."""
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT COALESCE(cta, '') AS cta, importe, fecha,
+               COALESCE(concepto, '') AS concepto
+          FROM scintela.dolares
+         WHERE (st IS NULL OR st IN ('', ' '))
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+        """
+    ) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_facturas_sri() -> list[dict]:
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT numf, numf_completo, codigo_cli, fecha, importe, saldo,
+               COALESCE(stat, '') AS stat,
+               COALESCE(usuario_crea, '') AS usuario_crea
+          FROM scintela.factura
+        """
+    ) or []
+    return [dict(r) for r in rows]
+
+
+def _pc_posdat_yy_con_cuotas() -> list[dict]:
+    """Filas YY/RT vivas de PC con cuota_diaria resuelta por el MISMO motor
+    que el display y el persist (modules.posdat.queries._resolver_cuotas)."""
+    import db
+    from modules.posdat.queries import POSDAT_NO_ANULADA_WHERE, _resolver_cuotas
+    rows = db.fetch_all(
+        f"""
+        SELECT id_posdat, prov, concepto, importe, baseline_date
+          FROM scintela.posdat
+         WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
+           AND baseline_date IS NOT NULL
+           AND COALESCE(banc, 0) = 0
+           AND {POSDAT_NO_ANULADA_WHERE}
+        """
+    ) or []
+    rows = [dict(r) for r in rows]
+    _resolver_cuotas(rows)
+    return rows
+
+
 # ───────────────── reporte ─────────────────
 
 def _linea_cmp(label: str, db_v, pc_v, tol: float = 0.01) -> str:
@@ -302,6 +516,7 @@ def reporte(dias_banco: int = 30):
     from modules.informes import queries as iq
     pc = iq.informe_balance()
     deltas: list[tuple[str, float]] = []
+    desde = _hoy_ec() - timedelta(days=dias_banco)
 
     def cmp_acum(label, db_v, pc_v, activo=True):
         nonlocal deltas
@@ -311,6 +526,30 @@ def reporte(dias_banco: int = 30):
 
     yield line("── [1] CAJA (CAJA.DBF último saldo) ──")
     yield cmp_acum("Caja", d.get("salcaj"), _f(pc.get("salcaj")))
+    try:
+        pc_caja = _pc_movs_caja(desde)
+        cdiff = diff_movs_banco(d.get("caja_movs") or [], pc_caja, desde)
+        yield line(f"  línea por línea desde {desde} — SOLO dBASE (PC no las tiene): "
+                   f"{len(cdiff['solo_dbase'])}")
+        for m in sorted(cdiff["solo_dbase"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            yield line(f"    {m['fecha']} {m['tipo']:2} {m['importe']:>12,.2f}  {m['concepto'][:34]}")
+        yield line(f"  línea por línea desde {desde} — SOLO PC (dBase no las tiene): "
+                   f"{len(cdiff['solo_pc'])}")
+        for m in sorted(cdiff["solo_pc"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            yield line(f"    {m['fecha']} {str(m['tipo'])[:2]:2} {_f(m['importe']):>12,.2f}  "
+                       f"{str(m['concepto'])[:34]}")
+        dias_c = saldos_fin_de_dia(d.get("caja_movs") or [], pc_caja, desde)
+        yield line("  saldo CAJA fin de día (dBase vs PC) — ► marca el día donde el gap CAMBIA:")
+        for x in dias_c[-MAX_LISTADO:]:
+            a = f"{x['dbase']:>14,.2f}" if x["dbase"] is not None else f"{'—':>14}"
+            b = f"{x['pc']:>14,.2f}" if x["pc"] is not None else f"{'—':>14}"
+            dl = f"{x['delta']:>+12,.2f}" if x["delta"] is not None else f"{'—':>12}"
+            yield line(f"    {'►' if x['salto'] else ' '} {x['fecha']} dBase={a}  PC={b}  Δ={dl}")
+        saltos_c = [x for x in dias_c if x["salto"]]
+        if saltos_c:
+            yield line(f"  ⇒ el gap de caja CAMBIA en: {', '.join(str(x['fecha']) for x in saltos_c)}")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle caja no disponible: {exc!r}]")
     yield line()
 
     yield line("── [2] BANCOS (último saldo del DBF vs PC) ──")
@@ -321,7 +560,6 @@ def reporte(dias_banco: int = 30):
         pc_b2 = next((_f(b.get("saldo")) for b in pc.get("bancos_todos") or []
                       if "INTER" in str(b.get("nombre") or "").upper()), 0.0)
         yield cmp_acum("Internacional", d.get("salbanc2"), pc_b2)
-    desde = _hoy_ec() - timedelta(days=dias_banco)
     try:
         pcm = _pc_movs_pichincha(desde)
         movdiff = diff_movs_banco(d.get("pich_movs") or [], pcm, desde)
@@ -393,6 +631,24 @@ def reporte(dias_banco: int = 30):
 
     yield line("── [3] CHEQUES — TOTC = STAT $ 'Z123PD' (PRG L24) ──")
     yield cmp_acum("Cheques (TOTC)", d.get("totc"), _f(pc.get("totc")))
+    try:
+        chd = diff_cheques(d.get("cheq_rows") or [], _pc_cheques())
+        yield line("  cheque x cheque (cliente+importe+grupo VIVO 'Z123PD'/NO-VIVO):")
+        yield line(f"  SOLO dBASE (PC no tiene ese cheque en ese grupo): {len(chd['solo_dbase'])}")
+        for c in sorted(chd["solo_dbase"], key=lambda x: str(x.get("fechad")))[-MAX_LISTADO:]:
+            yield line(f"    fd={str(c.get('fechad') or ''):10} {c['cliente']:5} "
+                       f"{_f(c['importe']):>11,.2f} stat={(c.get('stat') or '·'):2} "
+                       f"[{_grupo_stat_cheque(c.get('stat'))}]")
+        yield line(f"  SOLO PC (dBase no lo tiene en ese grupo): {len(chd['solo_pc'])}")
+        for c in sorted(chd["solo_pc"], key=lambda x: str(x.get("fechad")))[-MAX_LISTADO:]:
+            yield line(f"    fd={str(c.get('fechad') or ''):10} {c['cliente']:5} "
+                       f"{_f(c['importe']):>11,.2f} stat={(c.get('stat') or '·'):2} "
+                       f"[{_grupo_stat_cheque(c.get('stat'))}] "
+                       f"[{(c.get('usuario_crea') or 'NULL')[:14]}]")
+        yield line("  (mismo cheque en ambas listas = FLIP de stat: vivo de un lado,")
+        yield line("   depositado/terminal del otro — ahí está la diferencia de TOTC)")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle cheques no disponible: {exc!r}]")
     yield line()
 
     yield line("── [4] FACTURAS — TOTF = STAT $ 'ZA' (PRG L27) ──")
@@ -410,14 +666,65 @@ def reporte(dias_banco: int = 30):
                    f"huérfanas {len(plan['solo_pc_dbf_huerfana'])} ({s['solo_pc_dbf_huerfana']:,.2f}) · "
                    f"Δcobranza {len(plan['diffs'])} ({dz:,.2f})")
         yield line("  (detalle completo: /admin/facturas-reconcile)")
+        try:
+            sri = diff_facturas_sri(fact_dbf, _pc_facturas_sri())
+            s_db = round(sum(_saldo_za(r) for r in sri["solo_dbase"]), 2)
+            s_pc = round(sum(_saldo_za(r) for r in sri["solo_pc"]), 2)
+            yield line("  pareo por N° SRI (vivas, NUMF dBase vs numf_completo PC):")
+            yield line(f"  vivas dBASE sin par en PC: {len(sri['solo_dbase'])} ({s_db:,.2f})")
+            for r in sorted(sri["solo_dbase"],
+                            key=lambda x: int(x.get("numf") or 0))[-MAX_LISTADO_FACT:]:
+                yield line(f"    {str(r.get('fecha') or ''):10} numf={int(r.get('numf') or 0):<7} "
+                           f"{(r.get('codigo_cli') or '').strip():5} "
+                           f"stat={(r.get('stat') or '').strip() or '·':2} "
+                           f"saldo={_f(r.get('saldo')):>11,.2f}")
+            yield line(f"  vivas PC (que cuentan, sin backfill) sin par en dBase: "
+                       f"{len(sri['solo_pc'])} ({s_pc:,.2f})")
+            for r in sorted(sri["solo_pc"], key=_numf_sri_pc)[-MAX_LISTADO_FACT:]:
+                yield line(f"    {str(r.get('fecha') or ''):10} numf={_numf_sri_pc(r):<7} "
+                           f"{(r.get('codigo_cli') or '').strip():5} "
+                           f"stat={(r.get('stat') or '').strip() or '·':2} "
+                           f"saldo={_f(r.get('saldo')):>11,.2f}  "
+                           f"[{(r.get('usuario_crea') or 'NULL')[:16]}]")
+            if sri["dbase_sin_numf"]:
+                s0 = round(sum(_saldo_za(r) for r in sri["dbase_sin_numf"]), 2)
+                yield line(f"  (+{len(sri['dbase_sin_numf'])} vivas dBase con NUMF=0 — sin N° SRI, "
+                           f"no apareables por numf; saldo {s0:,.2f})")
+        except Exception as exc:  # noqa: BLE001
+            yield line(f"  [pareo SRI no disponible: {exc!r}]")
     yield line()
 
     yield line("── [5] ANTICIPOS — DOLARES ST=' ' (PRG L58) ──")
     yield cmp_acum("Anticipos", d.get("antic"), _f(pc.get("antic")))
+    try:
+        ad = diff_anticipos(d.get("dol_vivos") or [], _pc_anticipos_vivos())
+        yield line("  partida x partida VIVAS (cta+importe multiset):")
+        yield line(f"  SOLO dBASE (PC no la tiene viva): {len(ad['solo_dbase'])}")
+        for a in sorted(ad["solo_dbase"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            yield line(f"    {str(a.get('fecha') or ''):10} {a['cta']:3} "
+                       f"{_f(a['importe']):>12,.2f}  {str(a.get('concepto') or '')[:30]}")
+        yield line(f"  SOLO PC (dBase no la tiene viva): {len(ad['solo_pc'])}")
+        for a in sorted(ad["solo_pc"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            yield line(f"    {str(a.get('fecha') or ''):10} {a['cta']:3} "
+                       f"{_f(a['importe']):>12,.2f}  {str(a.get('concepto') or '')[:30]}")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle anticipos no disponible: {exc!r}]")
     yield line()
 
     yield line("── [6] PASIVOS — TOTP = POSDAT BANC#9 (PRG L55) ──")
     yield cmp_acum("Pasivos (TOTP)", d.get("totp"), _f(pc.get("totp")), activo=False)
+    try:
+        if d.get("posdat_mtime") and d.get("totp") is not None:
+            fcorte = d["posdat_mtime"].date()
+            adj = ajuste_yy_a_fecha(_pc_posdat_yy_con_cuotas(), fcorte)
+            totp_pc_asof = round(_f(pc.get("totp")) + adj, 2)
+            yield line(f"  POSDAT.DBF fechado {d['posdat_mtime']:%Y-%m-%d %H:%M} (hora EC) — "
+                       f"cuotas YY/RT que PC acumuló DESPUÉS del tarball: {-adj:,.2f}")
+            yield _linea_cmp(f"Pasivos as-of {fcorte}", d.get("totp"), totp_pc_asof)
+            yield line("  (la línea de arriba compara HOY — el dBase del tarball no tiene las")
+            yield line("   cuotas YY de hoy; as-of tarball es la comparación justa. Ambas a la vista.)")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [as-of tarball no disponible: {exc!r}]")
     yield line()
 
     yield line("── [7] ACTIVOS FIJOS (PRG L47-48) ──")
