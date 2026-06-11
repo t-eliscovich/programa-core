@@ -420,15 +420,15 @@
         return `  • ${noCh.padEnd(8)}  ${cli.padEnd(28).slice(0,28)}  ${fmtMoney(imp)}`;
       }).join('\n');
 
+      // TMT 2026-06-11 dueña: el TOTAL y la CANTIDAD van ARRIBA DE TODO
+      // (con muchos cheques el detalle empuja el total fuera de la vista).
       const ok = window.confirm(
-        `Confirmar depósito\n` +
-        `─────────────────────────\n` +
+        `DEPOSITAR ${fmtMoney(total)} — ${sel.length} cheque${sel.length === 1 ? '' : 's'}\n` +
+        `═════════════════════════\n` +
         `Banco:  ${nbNombre}\n` +
         `Fecha:  ${fechaES}\n` +
         `─────────────────────────\n` +
-        lineas + '\n' +
-        `─────────────────────────\n` +
-        `Total ${sel.length} cheque${sel.length === 1 ? '' : 's'}:  ${fmtMoney(total)}\n\n` +
+        lineas + '\n\n' +
         `¿Mandar al banco?`
       );
       if (ok) {
