@@ -30,10 +30,11 @@ if _REPO_ROOT not in sys.path:
 
 def test_timeout_por_rol_mapeado():
     from auth import timeout_for_role
-    assert timeout_for_role("Contabilidad") == timedelta(hours=4)
-    assert timeout_for_role("Gerente") == timedelta(hours=8)
-    assert timeout_for_role("Lectura") == timedelta(hours=24)
-    assert timeout_for_role("Bodega") == timedelta(hours=12)
+    # TMT 2026-06-11 (dueña): todos los roles a 31 días.
+    assert timeout_for_role("Contabilidad") == timedelta(days=31)
+    assert timeout_for_role("Gerente") == timedelta(days=31)
+    assert timeout_for_role("Lectura") == timedelta(days=31)
+    assert timeout_for_role("Bodega") == timedelta(days=31)
 
 
 def test_timeout_rol_desconocido_cae_al_default():

@@ -83,7 +83,9 @@ def create_app() -> Flask:
 
     app.config.update(
         SECRET_KEY=_load_secret_key(),
-        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+        # TMT 2026-06-11 (dueña): sesiones de 31 días (sliding — Flask refresca
+        # la cookie en cada request). El timeout fino por rol vive en auth.py.
+        PERMANENT_SESSION_LIFETIME=timedelta(days=31),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=cookie_secure,

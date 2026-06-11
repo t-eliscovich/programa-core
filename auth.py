@@ -47,29 +47,27 @@ auth_bp = Blueprint("auth", __name__, template_folder="modules/auth/templates")
 # noche).
 #
 # Valores elegidos:
-#   - Roles transaccionales → 4h   (mueven plata; queremos re-auth temprano)
-#   - Roles administrativos → 8h   (jornada completa normal)
-#   - Roles de piso         → 12h  (bodega/QC, turnos largos, bajo riesgo)
-#   - Roles de lectura      → 24h  (sin writes, molestar menos)
-# Si aparece un rol nuevo sin entrada, cae al default (4h) — seguro por
-# omisión.
+#   TMT 2026-06-11 (dueña): "que las sesiones no se cierren, que quede
+#   conectada por lo menos un mes". Todos los roles pasan a 31 días con
+#   ventana deslizante — mientras la persona use el sistema al menos una
+#   vez al mes, no se desloguea. El 2FA se sigue pidiendo en cada login
+#   nuevo, y el acceso está limitado por IP allowlist, así que el riesgo
+#   de una terminal olvidada está acotado. (Valores anteriores: 4-24h
+#   según rol — ver git blame si hay que volver.)
 SESSION_TIMEOUT_BY_ROLE: dict[str, timedelta] = {
-    # TMT 2026-05-19 v8 — "Dueño" renombrado a "Accionista" (pedido dueña).
-    # Dejamos los dos para compatibilidad transitoria mientras se corre la
-    # migración 0035; cualquiera de los dos resuelve al mismo timeout.
-    "Accionista": timedelta(hours=8),
-    "Dueño": timedelta(hours=8),
-    "Administrador": timedelta(hours=8),
-    "Gerente": timedelta(hours=8),
-    "Contabilidad": timedelta(hours=4),
-    "Compras": timedelta(hours=4),
-    "Cobranzas": timedelta(hours=4),
-    "Ventas": timedelta(hours=4),
-    "Bodega": timedelta(hours=12),
-    "QC": timedelta(hours=12),
-    "Lectura": timedelta(hours=24),
+    "Accionista": timedelta(days=31),
+    "Dueño": timedelta(days=31),
+    "Administrador": timedelta(days=31),
+    "Gerente": timedelta(days=31),
+    "Contabilidad": timedelta(days=31),
+    "Compras": timedelta(days=31),
+    "Cobranzas": timedelta(days=31),
+    "Ventas": timedelta(days=31),
+    "Bodega": timedelta(days=31),
+    "QC": timedelta(days=31),
+    "Lectura": timedelta(days=31),
 }
-SESSION_TIMEOUT_DEFAULT = timedelta(hours=4)
+SESSION_TIMEOUT_DEFAULT = timedelta(days=31)
 
 
 def timeout_for_role(nombre_rol: str | None) -> timedelta:
