@@ -1091,6 +1091,36 @@ def _resolver_cliente_asinfo(
     return nuevo, True
 
 
+
+
+def _flip_backfill_si_existe(numf_completo: str) -> str | None:
+    """Si la factura ya esta en PC por numf_completo: 'flip' si era
+    asinfo-backfill y la convirtio a asinfo-carga (ahora CUENTA — decision
+    duena 2026-06-10: apretar Cargar sobre una oculta la activa), 'ya' si
+    ya estaba cargada/contando. None si no existe.
+
+    TMT 2026-06-11: el flip del guard de _resolver_cliente_asinfo casi
+    nunca corria (el resolver retorna apenas el cliente existe) → el bulk
+    tiro 296 'duplicate key uq_factura_numf_completo'. El chequeo va aca,
+    ANTES del INSERT."""
+    if not numf_completo:
+        return None
+    row = db.fetch_one(
+        "SELECT id_factura, COALESCE(usuario_crea,'') AS uc "
+        "FROM scintela.factura WHERE numf_completo = %s LIMIT 1",
+        (numf_completo,),
+    )
+    if not row:
+        return None
+    if row["uc"] == "asinfo-backfill":
+        db.execute(
+            "UPDATE scintela.factura SET usuario_crea = 'asinfo-carga' "
+            "WHERE id_factura = %s",
+            (row["id_factura"],),
+        )
+        return "flip"
+    return "ya"
+
 @facturas_bp.route("/facturas/cargar-desde-asinfo-bulk", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.crear")
@@ -1111,6 +1141,7 @@ def cargar_desde_asinfo_bulk():
         return redirect(url_for("facturas.desde_asinfo"))
 
     ok, errs = 0, []
+    flipped = 0
     clientes_creados: list[str] = []
     usuario = (
         getattr(g, "user", {}).get("username") if hasattr(g, "user") and isinstance(g.user, dict)
@@ -1129,6 +1160,14 @@ def cargar_desde_asinfo_bulk():
                 continue
             # Resolver alias Asinfo->PC; si el cliente no existe en PC
             # (alta nueva en dBase aun no importada), se auto-crea minimo.
+            estado = _flip_backfill_si_existe(numf_completo)
+            if estado == "flip":
+                flipped += 1
+                ok += 1
+                continue
+            if estado == "ya":
+                errs.append(f"{numf_completo}: ya estaba cargada")
+                continue
             cli_uso, creado = _resolver_cliente_asinfo(
                 codigo_cli, usuario, numero=numf_completo, importe=importe,
             )
@@ -1148,7 +1187,10 @@ def cargar_desde_asinfo_bulk():
             errs.append(f"{r.get('numero','?')}: {e}")
 
     if ok:
-        flash(f"Cargadas {ok} facturas desde Asinfo.", "ok")
+        msg = f"Cargadas {ok} facturas desde Asinfo."
+        if flipped:
+            msg += f" ({flipped} estaban ocultas como backfill — ahora CUENTAN)"
+        flash(msg, "ok")
     if clientes_creados:
         flash(
             "Clientes creados automáticamente con ficha mínima: "
@@ -1185,6 +1227,13 @@ def cargar_desde_asinfo():
             getattr(g, "user", {}).get("username")
             if hasattr(g, "user") and isinstance(g.user, dict) else "asinfo"
         )
+        estado = _flip_backfill_si_existe(numf_completo)
+        if estado == "flip":
+            flash(f"Factura {numf_completo} estaba como backfill — ahora CUENTA en cartera.", "ok")
+            return redirect(url_for("facturas.desde_asinfo"))
+        if estado == "ya":
+            flash(f"Factura {numf_completo} ya estaba cargada.", "warn")
+            return redirect(url_for("facturas.desde_asinfo"))
         cli_uso, creado = _resolver_cliente_asinfo(
             codigo_cli, usuario, numero=numf_completo, importe=importe,
         )
