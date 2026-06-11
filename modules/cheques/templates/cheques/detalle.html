@@ -294,8 +294,10 @@
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-xs text-slate-500" title="Banco emisor — la entidad del cliente que firmó el cheque">Banco emisor</div>
+      {# TMT 2026-06-11 dueña: '¿este qué código era?' — mostrar el código
+         numérico junto al nombre (99 · EFECTIVO), igual que el dropdown. #}
       <div class="font-medium text-slate-900 dark:text-slate-100">
-        {{ ch.banco or ch.nombre_banco or '—' }}
+        {% if ch.no_banco %}<span class="font-mono">{{ ch.no_banco }}</span> · {% endif %}{{ ch.banco or ch.nombre_banco or '—' }}
       </div>
     </div>
     {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que numero
