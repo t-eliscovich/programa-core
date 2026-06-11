@@ -420,6 +420,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(dbase_compare_bp)
 
+    # TOTF 1 a 1 — TMT 2026-06-11. /admin/totf-1a1: pareo completo factura
+    # por factura (N° SRI) PC vs FACTURAS.DBF, sin truncar, con cross-check
+    # de backfill/stat del otro lado. SOLO LECTURA.
+    from modules.admin_dbase.totf_1a1_view import bp as totf_1a1_bp
+
+    app.register_blueprint(totf_1a1_bp)
+
     # Anticipos (scintela.dolares) — TMT 2026-06-11 dueña: sin sync, los
     # anticipos se cargan directo en PC. Alta + cancelación, suma a ANTIC.
     from modules.anticipos.views import bp as anticipos_bp
