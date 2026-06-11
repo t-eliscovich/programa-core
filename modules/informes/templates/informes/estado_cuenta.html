@@ -144,10 +144,10 @@
         </tr>
       </thead>
       <tbody>
-        {# Saldo acumulado: corre top-down. La lista viene DESC por fecha,
-           así que la fila 1 es la más nueva. El acum suma esta fila + todas
-           las anteriores ya mostradas → el total al final de la lista
-           cuadra con el TOTAL del tfoot. TMT 2026-05-11. #}
+        {# Saldo acumulado: corre top-down. La lista viene ASC por fecha
+           (TMT 2026-06-11, dueña: de la más antigua a la más actual), así la
+           fila 1 es la más vieja y el ACUM corre como libro mayor → la última
+           fila cuadra con el saldo de hoy. Las T (totalizadas) no se listan. #}
         {% set acum = namespace(s=0) %}
         {% for f in data.facturas %}
         {% set acum.s = acum.s + (f.saldo or 0) %}

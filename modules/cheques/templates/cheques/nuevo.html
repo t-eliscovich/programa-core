@@ -53,29 +53,26 @@
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm" required>
         </label>
 
-        <label class="flex flex-col">
+        <label class="flex flex-col relative">
           <span class="text-xs text-slate-600">Cliente <span class="text-red-500">*</span></span>
-          {# TMT 2026-05-15: el datalist HTML nativo filtra sólo por value.
-             Cambiamos el value a "CODE — NOMBRE" así filtra por código
-             O por nombre (tipea "AND" y aparece "AND — ANDRES BUCHELI").
-             Un JS al blur extrae sólo el código para mandar al backend. #}
+          {# TMT 2026-06-11 (dueña): el datalist nativo matcheaba código Y
+             nombre y arrojaba demasiadas coincidencias. Dropdown propio:
+             tipear busca SOLO en el código (prefijo); con "%" adelante
+             (ej. "%bedon") busca dentro del nombre. #}
           {# TMT 2026-05-19 — item 1: al focusear, seleccionamos todo el texto
-             para que la dueña pueda re-elegir sin tener que borrar primero.
-             Un click extra (focus+click) abre el datalist con todas las
-             opciones porque el value queda seleccionado y la primera tecla
-             lo reemplaza. #}
+             para que la dueña pueda re-elegir sin tener que borrar primero. #}
           <input type="text" name="codigo_cli" id="codigo-cli-input"
                  value="{{ form.codigo_cli or '' }}"
-                 list="clientes-list" autocomplete="off"
-                 placeholder="Tipeá código o nombre…"
+                 autocomplete="off"
+                 placeholder="Código… (%nombre busca por nombre)"
                  onfocus="this.select()"
                  onclick="this.select()"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm" maxlength="60"
                  required>
+          <div id="clientes-dd"
+               class="hidden absolute left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto rounded border border-slate-300 bg-white shadow-lg z-50 text-sm dark:bg-slate-900 dark:border-slate-700"></div>
           {% if clientes_datalist %}
-            <datalist id="clientes-list">
-              {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }} — {{ c.nombre }}"></option>{% endfor %}
-            </datalist>
+            <script id="clientes-data" type="application/json">{{ clientes_datalist | tojson }}</script>
           {% endif %}
         </label>
 
@@ -714,6 +711,9 @@
 
   async function cargarFacturas() {
     const codigo = (codigoInput.value || '').trim().toUpperCase();
+    // TMT 2026-06-11: "%texto" es búsqueda por nombre en el dropdown,
+    // no un código — no consultar facturas hasta que elija un cliente.
+    if (codigo.startsWith('%')) return;
     if (!codigo || codigo.length < 1) {
       facturas = [];
       panel.classList.add('hidden');
@@ -797,19 +797,23 @@
     // TMT 2026-05-15: cada bloque ya tiene un <div.bloque-header> hidden.
     // Sólo lo mostramos para bloques 2+ con el número y el botón quitar.
     const bloques = chequesList.querySelectorAll('.cheque-bloque');
+    const total = bloques.length;
     bloques.forEach((b, i) => {
       const header = b.querySelector('.bloque-header');
       if (!header) return;
-      if (i === 0) {
-        // primer bloque sin header (es el "principal")
+      if (total === 1) {
+        // un solo bloque: sin header (es el "principal")
         header.classList.add('hidden');
         header.innerHTML = '';
         return;
       }
+      // TMT 2026-06-11 (dueña): el bloque nuevo entra ARRIBA, así que con
+      // multi-cheque TODOS llevan header + quitar. Numeración de abajo
+      // hacia arriba: el primero que cargó queda como #1.
       header.classList.remove('hidden');
       header.innerHTML = '';
       const span = document.createElement('span');
-      span.textContent = `Cheque #${i + 1}`;
+      span.textContent = `Cheque #${total - i}`;
       header.appendChild(span);
       const btnRemove = document.createElement('button');
       btnRemove.type = 'button';
@@ -831,7 +835,7 @@
       // TMT 2026-05-15: el panel de aplicaciones SÍ queda visible con
       // multi-cheque — el backend distribuye FIFO entre los cheques al
       // guardar (cheque #1 cubre lo primero hasta agotarse, después #2, etc).
-      multiHint.innerHTML = `<strong>${n} cheques</strong> se van a crear. El total disponible para aplicar es la <strong>suma</strong> de los importes; al guardar se distribuye FIFO entre cheques.`;
+      multiHint.innerHTML = `<strong>${n} cheques</strong> se van a crear. El total disponible para aplicar es la <strong>suma</strong> de los importes; al guardar se distribuye entre los cheques.`;
       multiHint.classList.add('text-amber-700');
     } else {
       multiHint.innerHTML = 'Cliente y banco son los mismos para todos los cheques. Al agregar otro, el importe se preautocompleta con el del anterior.';
@@ -864,7 +868,10 @@
   if (btnAddCheque) {
     btnAddCheque.addEventListener('click', () => {
       const bloques = chequesList.querySelectorAll('.cheque-bloque');
-      const ultimo = bloques[bloques.length - 1];
+      // TMT 2026-06-11 (dueña): el bloque nuevo se agrega HACIA ARRIBA.
+      // El "anterior" (de donde se hereda importe/fechad) es el de arriba,
+      // que es el último que se cargó.
+      const ultimo = bloques[0];
       const ultimoImp = ultimo.querySelector('.cheque-imp').value;
       const ultimoFechad = ultimo.querySelector('.cheque-fechad')?.value || '';
       const nuevo = ultimo.cloneNode(true);
@@ -883,7 +890,7 @@
       // limpiar select.
       const bancoSelNuevo = nuevo.querySelector('.cheque-banco');
       if (bancoSelNuevo) bancoSelNuevo.value = '';
-      chequesList.appendChild(nuevo);
+      chequesList.insertBefore(nuevo, chequesList.firstElementChild);
       renumerarBloques();
       // focus en el N° del nuevo bloque
       const numInp = nuevo.querySelector('.cheque-num');
@@ -966,6 +973,100 @@
       cargarFacturas();
     }, 300);
   });
+
+  // ── Dropdown propio de clientes ─────────────────────────────────────
+  // TMT 2026-06-11 (dueña): tipear busca SOLO en el código (prefijo);
+  // "%texto" busca dentro del nombre. El datalist nativo matcheaba todo
+  // el value ("CODE — NOMBRE") y arrojaba demasiadas coincidencias.
+  const clientesDD = document.getElementById('clientes-dd');
+  let CLIENTES_ALL = [];
+  try {
+    const _cd = document.getElementById('clientes-data');
+    if (_cd) CLIENTES_ALL = JSON.parse(_cd.textContent) || [];
+  } catch (e) { CLIENTES_ALL = []; }
+  let ddIdx = -1;
+  let ddItems = [];
+
+  function ddCerrar() {
+    if (!clientesDD) return;
+    clientesDD.classList.add('hidden');
+    clientesDD.innerHTML = '';
+    ddIdx = -1; ddItems = [];
+  }
+
+  function ddElegir(c) {
+    if (!c) return;
+    codigoInput.value = c.codigo_cli;
+    ddCerrar();
+    cargarFacturas();
+  }
+
+  function ddResaltar() {
+    if (!clientesDD) return;
+    const els = clientesDD.querySelectorAll('.dd-item');
+    els.forEach((el, i) => el.classList.toggle('bg-sky-100', i === ddIdx));
+    if (els[ddIdx]) els[ddIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  function ddRender() {
+    if (!clientesDD || CLIENTES_ALL.length === 0) return;
+    const raw = (codigoInput.value || '').trim();
+    let matches;
+    if (raw.startsWith('%')) {
+      const t = raw.slice(1).toLowerCase();
+      matches = t
+        ? CLIENTES_ALL.filter(c => (c.nombre || '').toLowerCase().includes(t))
+        : CLIENTES_ALL;
+    } else {
+      const t = raw.toLowerCase();
+      matches = t
+        ? CLIENTES_ALL.filter(c => (c.codigo_cli || '').toLowerCase().startsWith(t))
+        : CLIENTES_ALL;
+    }
+    ddItems = matches.slice(0, 60);
+    ddIdx = -1;
+    if (ddItems.length === 0) { ddCerrar(); return; }
+    clientesDD.innerHTML = '';
+    ddItems.forEach((c) => {
+      const div = document.createElement('div');
+      div.className = 'dd-item px-2 py-1 cursor-pointer hover:bg-sky-50 dark:hover:bg-slate-800';
+      const code = document.createElement('span');
+      code.className = 'font-mono font-semibold';
+      code.textContent = c.codigo_cli;
+      const nom = document.createElement('span');
+      nom.className = 'text-slate-500';
+      nom.textContent = ' — ' + (c.nombre || '');
+      div.appendChild(code);
+      div.appendChild(nom);
+      // mousedown (no click): dispara ANTES del blur del input.
+      div.addEventListener('mousedown', (ev) => { ev.preventDefault(); ddElegir(c); });
+      clientesDD.appendChild(div);
+    });
+    clientesDD.classList.remove('hidden');
+  }
+
+  codigoInput.addEventListener('input', ddRender);
+  codigoInput.addEventListener('focus', ddRender);
+  codigoInput.addEventListener('keydown', (e) => {
+    if (!clientesDD || clientesDD.classList.contains('hidden')) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      ddIdx = Math.min(ddIdx + 1, ddItems.length - 1);
+      ddResaltar();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      ddIdx = Math.max(ddIdx - 1, 0);
+      ddResaltar();
+    } else if (e.key === 'Enter') {
+      // Enter elige cliente, NO submitea el form.
+      e.preventDefault();
+      ddElegir(ddItems[ddIdx >= 0 ? ddIdx : 0]);
+    } else if (e.key === 'Escape') {
+      ddCerrar();
+    }
+  });
+  // Cerrar al salir del campo (delay para que el mousedown llegue primero).
+  codigoInput.addEventListener('blur', () => setTimeout(ddCerrar, 150));
   // TMT 2026-05-15: cuando la usuaria tipea el importe, marcamos
   // userEdited=1 para que updateSummary() NO lo sobreescriba con la suma
   // de facturas tildadas. Para destrabar (volver a auto-completar) basta

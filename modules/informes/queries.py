@@ -5508,13 +5508,13 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                kg, importe, abono, saldo, stat, condic, tipo
         FROM scintela.factura
         WHERE codigo_cli = %s
-        -- TMT 2026-05-17: cuando hay facturas con la misma fecha, las
-        -- ABONADAS van primero (abono > 0). Acelera la lectura: lo que
-        -- está cobrándose se ve arriba, lo virgen abajo. Tie-break por
-        -- numf DESC dentro de cada grupo.
-        ORDER BY fecha DESC,
-                 CASE WHEN COALESCE(abono, 0) > 0 THEN 0 ELSE 1 END,
-                 numf DESC
+          -- TMT 2026-06-11 (dueña): las totalizadas (stat T) ya no se muestran
+          -- en el estado de cuenta. Los totales de arriba SÍ las incluyen.
+          AND COALESCE(stat, '') <> 'T'
+        -- TMT 2026-06-11 (dueña): de la más antigua a la más actual —
+        -- el ACUM corre como un libro mayor y la última fila = saldo hoy.
+        -- (Reemplaza el orden DESC del 2026-05-17.)
+        ORDER BY fecha ASC, numf ASC
         """,
         (codigo_cli,),
     )

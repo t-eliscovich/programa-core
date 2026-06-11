@@ -562,7 +562,19 @@ def nuevo():
                     {"id_cheque": int(c["id_cheque"]), "restante": float(c.get("importe") or 0)}
                     for c in cheques_creados
                 ]
-                for ap in aplicaciones_pre:
+                # TMT 2026-06-11 (dueña: "debería dejarme totalizar toda la
+                # cuenta"): los CRÉDITOS (NC / saldos negativos) se procesan
+                # PRIMERO — devuelven plata al cheque (suben su restante) y
+                # recién después las positivas consumen FIFO. Antes, si una
+                # factura positiva grande venía antes que las NC, el cheque
+                # se agotaba y tiraba "los cheques no alcanzan" aunque la
+                # cuenta completa cerrara. Sort estable: dentro de cada grupo
+                # se conserva el orden original.
+                aplicaciones_orden = sorted(
+                    aplicaciones_pre,
+                    key=lambda ap: 0 if float(ap["importe"]) < 0 else 1,
+                )
+                for ap in aplicaciones_orden:
                     rest_factura = float(ap["importe"])
                     if abs(rest_factura) < 0.005:
                         continue

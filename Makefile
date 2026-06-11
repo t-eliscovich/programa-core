@@ -2,7 +2,7 @@
 #
 # Uso: `make <target>`. Compatible con macOS, Linux, y WSL.
 
-.PHONY: help setup migrate seed run test test-unit test-db restore-test-db test-coverage ci lint fmt sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
+.PHONY: help setup migrate seed run test test-unit test-db restore-test-db test-coverage ci lint fmt test-uv sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
 
 PYTHON ?= python3
 VENV   ?= .venv
@@ -17,6 +17,7 @@ help:
 	@echo "  seed           - crear primer admin interactivamente"
 	@echo "  run            - correr el app localmente (launcher.sh)"
 	@echo "  test           - correr unit coverage"
+	@echo "  test-uv        - bootstrap uv+py3.11 y correr pytest (sandbox/py<3.11)"
 	@echo "  test-unit      - correr pytest sin @db con coverage"
 	@echo "  test-db        - correr pytest @db contra Postgres con dump legacy"
 	@echo "  restore-test-db - resetear DB test con dump legacy sanitizado"
@@ -36,7 +37,7 @@ help:
 	@echo "  clean          - borrar caches, __pycache__, .pyc"
 
 setup:
-	$(PYTHON) -c "import sys; sys.exit('Python 3.10+ requerido; corré make setup PYTHON=python3.14 o PYTHON=python3.11') if sys.version_info < (3, 10) else None"
+	$(PYTHON) -c "import sys; sys.exit('Python 3.11+ requerido (filters.py usa datetime.UTC); corré make setup PYTHON=python3.11') if sys.version_info < (3, 11) else None"
 	$(PYTHON) -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
@@ -51,6 +52,14 @@ run:
 	./launcher.sh
 
 test: test-unit
+
+# TMT 2026-06-11 — entornos con Python <3.11 (ej. sandbox de Claude trae 3.10
+# y filters.py usa datetime.UTC que es 3.11+): bootstrapea un venv 3.11 con uv
+# y corre la suite ahí. Es el camino estándar para correr tests en sandbox.
+test-uv:
+	uv venv --python 3.11 /tmp/v311 || true
+	uv pip install -q -p /tmp/v311/bin/python -r requirements.txt pytest
+	/tmp/v311/bin/python -m pytest tests -q
 
 test-unit:
 	$(PY) -m pytest -q -m "not db" --cov --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=$(COVERAGE_FAIL_UNDER)
