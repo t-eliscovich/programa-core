@@ -5530,7 +5530,9 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         FROM scintela.cheque c
         LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco
         WHERE c.codigo_cli = %s
-        ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) DESC, c.id_cheque DESC
+        -- TMT 2026-06-11 (dueña): mismo criterio que facturas — del más
+        -- antiguo al más actual.
+        ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) ASC, c.id_cheque ASC
         """,
         (codigo_cli,),
     )
