@@ -120,5 +120,5 @@ def run(conn):
             """,
             (id_cheque, id_t, DIA),
         )
-        print(f"  cheque #{id_cheque} {cli} ${imp:,.2f} → {accion} (tb #{id_t})")
-    print(f"  0100 listo: {len(cheques)} cheques · {n_link} linkeados · {n_ins} movs creados")
+        print(f"  cheque #{id_cheque} {cli} ${imp:,.2f} -> {accion} (tb #{id_t})")
+    print(f"  0100 listo: {len(cheques)} cheques / {n_link} linkeados / {n_ins} movs creados")
