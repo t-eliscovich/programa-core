@@ -448,6 +448,14 @@ def create_app() -> Flask:
 
     app.register_blueprint(marcar_asinfo_bp)
 
+    # Debug READ-ONLY de facturas en Asinfo (via Metabase DB 2) — TMT
+    # 2026-06-12. /admin/debug-asinfo-facturas: investigar atributos de
+    # facturas del ERP (vendedor, serie SRI, usuario, estado, forma de
+    # pago) sin tocar datos. SOLO LECTURA.
+    from modules.admin_dbase.debug_asinfo_facturas_view import bp as debug_asinfo_fact_bp
+
+    app.register_blueprint(debug_asinfo_fact_bp)
+
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
     from modules.admin_dbase.health_audit_view import bp as health_audit_bp
