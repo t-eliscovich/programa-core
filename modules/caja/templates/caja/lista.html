@@ -5,13 +5,19 @@
 
 {% block content %}
 <div class="max-w-full">
-  {% set saldo_actual = (resumen.saldo_ultimo | float) if resumen else 0 %}
+  {# TMT 2026-06-11 fix hero: el saldo se calcula desde COMPONENTES
+     (saldo inicial + Σ entradas − Σ salidas), NO desde el running balance
+     de la última fila (resumen.saldo_ultimo). Una fila recreada/backdated
+     deja stale el running de todas las posteriores y el hero mostraba un
+     saldo viejo (caso 2026-06-11: 17.862,97 vs 20.323,96 reales — ver
+     mig 0091). saldo_ultimo queda sólo para el warning de auditoría. #}
+  {% set saldo_ultimo = (resumen.saldo_ultimo | float) if resumen else 0 %}
   {% set ingresos = (resumen.ingresos | float) if resumen else 0 %}
   {% set egresos_abs = ((resumen.egresos | float) | abs) if resumen else 0 %}
   {% set neto = ingresos - egresos_abs %}
   {% set opening = ((resumen.opening or 0) | float) if resumen else 0 %}
-  {% set saldo_esperado = opening + neto %}
-  {% set drift = saldo_actual - saldo_esperado %}
+  {% set saldo_actual = opening + neto %}
+  {% set drift = saldo_ultimo - saldo_actual %}
   {% set _n_movs = resumen.n_movimientos if (resumen and resumen.n_movimientos) else (filas | length) %}
   {% set _extra_caja = '· ' ~ (_n_movs | string) ~ ' movimientos' %}
 
@@ -67,11 +73,11 @@
         ⚠ Diferencia de auditoría: $ {{ drift | num_es(2) }}
       </summary>
       <div class="mt-2 px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100 max-w-xl">
-        El saldo registrado es <strong>$ {{ saldo_actual | num_es(2) }}</strong> (running balance de la última fila),
+        El running balance de la última fila es <strong>$ {{ saldo_ultimo | num_es(2) }}</strong>,
         pero <strong>$ {{ opening | num_es(2) }}</strong> (saldo inicial) +
         <strong>$ {{ ingresos | num_es(2) }}</strong> (entradas) −
         <strong>$ {{ egresos_abs | num_es(2) }}</strong> (salidas) =
-        <strong>$ {{ saldo_esperado | num_es(2) }}</strong>.
+        <strong>$ {{ saldo_actual | num_es(2) }}</strong> (lo que muestra el hero).
         La diferencia de <strong>$ {{ drift | num_es(2) }}</strong> sugiere que hay
         alguna fila con `saldo` recalculable (running balance editado a mano sin
         recomputar las posteriores).
