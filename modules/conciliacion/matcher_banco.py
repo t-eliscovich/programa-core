@@ -447,7 +447,13 @@ def cargar_bancsis(no_banco: int, desde: date, hasta: date) -> list[MovBancsis]:
                                 AND cxt.id_transaccion = tb.id_transaccion)
                      OR
                      (
-                       ch.fechad = tb.fecha
+                       -- TMT 2026-06-11 duena: 'toda la cobranza ingrese con el
+                       -- numero de documento, pero no aparece al conciliar'.
+                       -- Los depositos directos de Nueva Cobranza (banco 90/91,
+                       -- auto stat B) NO crean chequextransaccion y su fechad se
+                       -- fuerza a HOY. Aceptamos tambien ch.fecha (fecha de la
+                       -- cobranza) como ancla contra la fecha del mov banco.
+                       tb.fecha IN (ch.fechad, ch.fecha)
                        AND ABS(ch.importe - tb.importe) < 0.01
                        AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2
                                         WHERE cxt2.id_cheque = ch.id_cheque)
@@ -541,8 +547,34 @@ def _mapa_doc_banco_a_bancsis(no_banco: int, refs: set[str]) -> dict[str, list[i
                  TRIM(ch.doc_banco) = ANY(%s::text[])
                  OR REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', '') = ANY(%s::text[])
                )
+            UNION
+            -- TMT 2026-06-11: cheques HUERFANOS (sin chequextransaccion) --
+            -- tipico de Nueva Cobranza con banco deposito (90/91, auto 'B'),
+            -- que no crea el link. Anclamos por fecha (fechad o fecha de
+            -- cobranza) + importe exacto contra el mov banco. Sin esto, el
+            -- doc_banco que la duena cargo en cobranza no matcheaba nunca.
+            SELECT
+              CASE
+                WHEN NULLIF(REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', ''), '') IS NULL
+                  THEN TRIM(ch.doc_banco)
+                ELSE REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', '')
+              END                                       AS ref_norm,
+              tb.id_transaccion                         AS id_transaccion
+              FROM scintela.cheque ch
+              JOIN scintela.transacciones_bancarias tb
+                ON tb.fecha IN (ch.fechad, ch.fecha)
+               AND ABS(ch.importe - tb.importe) < 0.01
+             WHERE tb.no_banco = %s
+               AND NULLIF(TRIM(ch.doc_banco), '') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2
+                                WHERE cxt2.id_cheque = ch.id_cheque)
+               AND (
+                 TRIM(ch.doc_banco) = ANY(%s::text[])
+                 OR REGEXP_REPLACE(TRIM(ch.doc_banco), '^0+', '') = ANY(%s::text[])
+               )
             """,
-            (int(no_banco), refs_clean, refs_clean),
+            (int(no_banco), refs_clean, refs_clean,
+             int(no_banco), refs_clean, refs_clean),
         ) or []
     except Exception as e:
         _LOG.warning("_mapa_doc_banco_a_bancsis falló: %s", e)

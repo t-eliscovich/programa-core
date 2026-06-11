@@ -1175,6 +1175,34 @@
   document.querySelectorAll('.cheque-bloque').forEach(wireBloqueListener);
   // Expose para que el clonado de bloque (en JS de "+ Otro cheque") wire-uppee también
   window.__wireBloqueListener = wireBloqueListener;
+
+  // TMT 2026-06-11 dueña: 'al digitar 99 (efectivo) le detecta 91'. El
+  // type-ahead nativo del <select> cicla por la PRIMERA letra ('9','9' →
+  // 90 → 91...) en vez de buscar el código completo. Reemplazo: buffer de
+  // dígitos con timeout — '99' selecciona exactamente la opción cuyo
+  // value es 99. Delegado en document para cubrir bloques clonados.
+  (function () {
+    let buf = '', timer = null;
+    document.addEventListener('keydown', function (e) {
+      const sel = e.target;
+      if (!sel || !sel.classList || !sel.classList.contains('cheque-banco')) return;
+      if (e.key.length !== 1 || e.key < '0' || e.key > '9') {
+        if (e.key === 'Backspace') { buf = ''; }
+        return; // letras/navegación: comportamiento nativo
+      }
+      e.preventDefault(); // matar el type-ahead nativo que cicla por '9'
+      buf += e.key;
+      clearTimeout(timer);
+      timer = setTimeout(() => { buf = ''; }, 1200);
+      const ops = Array.from(sel.options);
+      // 1) match EXACTO por código; 2) fallback: empieza-con.
+      let op = ops.find(o => o.value === buf) || ops.find(o => o.value.startsWith(buf));
+      if (op) {
+        sel.value = op.value;
+        sel.dispatchEvent(new Event('change'));
+      }
+    }, true);
+  })();
   // Stub para compat con código viejo
   const bancoSelEl = null;
   function actualizarHintBanco() { /* deprecated — per-bloque ahora */ }

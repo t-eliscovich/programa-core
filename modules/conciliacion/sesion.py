@@ -648,8 +648,30 @@ def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
         rows_pc = db.fetch_all(
             """
             SELECT tb.id_transaccion, tb.fecha, tb.documento, tb.concepto,
-                   tb.importe, tb.numreferencia, tb.no_banco, tb.saldo,
-                   tb.prov, tb.fecha_crea
+                   tb.importe, tb.no_banco, tb.saldo,
+                   tb.prov, tb.fecha_crea,
+                   -- TMT 2026-06-11: misma resolucion de DOC que cargar_bancsis.
+                   -- Antes esta query leia tb.numreferencia crudo -> la columna
+                   -- DOC del panel Programa salia vacia aunque la duena hubiera
+                   -- cargado el N. de documento en la cobranza (vive en
+                   -- cheque.doc_banco) o lo hubiera editado inline (manual).
+                   COALESCE(NULLIF(TRIM(tb.numreferencia_manual), ''), tb.numreferencia::TEXT) AS numreferencia,
+                   (SELECT STRING_AGG(DISTINCT NULLIF(TRIM(ch.doc_banco), ''), ',')
+                      FROM scintela.cheque ch
+                     WHERE NULLIF(TRIM(ch.doc_banco), '') IS NOT NULL
+                       AND (
+                         EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt
+                                  WHERE cxt.id_cheque = ch.id_cheque
+                                    AND cxt.id_transaccion = tb.id_transaccion)
+                         OR
+                         (
+                           tb.fecha IN (ch.fechad, ch.fecha)
+                           AND ABS(ch.importe - tb.importe) < 0.01
+                           AND NOT EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt2
+                                            WHERE cxt2.id_cheque = ch.id_cheque)
+                         )
+                       )
+                   ) AS doc_banco_rel
               FROM scintela.transacciones_bancarias tb
              WHERE tb.no_banco = %s
                AND TRIM(COALESCE(tb.stat, '')) <> '*'
@@ -696,6 +718,7 @@ def _cargar_programa_pendiente(no_banco: int) -> list[dict]:
                 saldo=float(r["saldo"]) if r.get("saldo") is not None else None,
                 prov=prov,
                 prov_nombre=nombres.get(prov, ""),
+                doc_banco_rel=str(r.get("doc_banco_rel") or "").strip(),
                 fecha_crea=r.get("fecha_crea"),
             )
             out.append({"mov": bk, "cat": None, "idx": i})
