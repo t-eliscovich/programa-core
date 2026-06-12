@@ -848,10 +848,13 @@ def reporte(dias_banco: int = 30):
             cu = _pc_cuotas_activos()
             yield line(f"  ACTIVOS.DBF fechado {f_act} — amortización diaria que PC corrió "
                        f"DESPUÉS del tarball: I {dcoef * cu['i']:,.2f} · M/C/K {dcoef * cu['mck']:,.2f}")
+            # tol $5: el dBase redondea el AMORTIMES de CADA fila a dólar
+            # entero; PC computa coef*cuota sin redondear → residuo sub-$1
+            # por fila amortizando (hoy ~13 filas). No es diferencia real.
             yield _linea_cmp(f"UACT as-of {f_act}", d.get("uact"),
-                             round(_f(pc.get("uact")) + dcoef * cu["i"], 2))
+                             round(_f(pc.get("uact")) + dcoef * cu["i"], 2), tol=5.0)
             yield _linea_cmp(f"UMAQ as-of {f_act}", d.get("umaq"),
-                             round(_f(pc.get("umaq")) + dcoef * cu["mck"], 2))
+                             round(_f(pc.get("umaq")) + dcoef * cu["mck"], 2), tol=5.0)
             yield line("  (misma regla MENU.PRG L275: VALOR baja COEF×CUOTA por día calendario;")
             yield line("   as-of tarball es la comparación justa — el dBase aún no corrió hoy.)")
     except Exception as exc:  # noqa: BLE001
