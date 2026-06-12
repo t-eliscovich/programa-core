@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero, volver_a_resultados %}
+{% block title %}Balance al {{ as_of | fecha_es }}{% endblock %}
+{% block breadcrumb %}Informes / <a href="{{ url_for('informes.balance') }}">Resultados</a> / <strong>Foto al {{ as_of | fecha_es }}</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-06-12 — pedido dueña: "ver el balance como estaba ayer".
+   Foto histórica SOLO LECTURA con balance_components_as_of() (la misma
+   cuenta de los snapshots de historia y de /fuentes-y-usos). NO corre
+   provisiones / persist YY / auto-cierre. #}
+<div class="max-w-3xl asof-page" style="font-feature-settings:'tnum' 1;font-variant-numeric:tabular-nums">
+  <style>
+    .asof-page table td, .asof-page table th { font-size: 14px; padding: 3px 12px; line-height: 1.25; }
+    .asof-page td.n { text-align: right; white-space: nowrap; }
+    .asof-page tr.sec th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; text-align: left; padding-top: 12px; opacity: .7; }
+    .asof-page tr.tot td { font-weight: 700; border-top: 1px solid currentColor; }
+    .asof-page tr.big td { font-weight: 700; font-size: 16px; }
+  </style>
+
+  <div class="flex items-start justify-between mb-4 gap-4 flex-wrap">
+    {{ page_hero('Balance al ' ~ (as_of | fecha_es), 'Foto histórica solo lectura — misma cuenta que los snapshots de Historial y Fuentes y Usos.') }}
+    <div class="no-print flex items-center gap-2">{{ volver_a_resultados() }}</div>
+  </div>
+
+  <form method="get" class="no-print mb-4 flex items-center gap-2">
+    <label for="as_of" class="text-sm">Fecha:</label>
+    <input type="date" id="as_of" name="as_of" value="{{ as_of.isoformat() }}" max="{{ hoy.isoformat() }}"
+           class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-transparent">
+    <button class="text-sm px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Ver</button>
+    <a class="text-sm underline ml-2" href="{{ url_for('informes.balance') }}">Balance de hoy (live)</a>
+  </form>
+
+  {% if error %}
+    <p class="text-sm text-red-600">No pude calcular la foto: {{ error }}</p>
+  {% else %}
+  <table class="w-full">
+    <tr class="sec"><th colspan="2">Activo</th></tr>
+    <tr><td>Caja</td><td class="n">{{ c.salcaj | num_es }}</td></tr>
+    <tr><td>Bancos (incl. cheques propios no cobrados)</td><td class="n">{{ (c.salbanc - c.salcaj) | num_es }}</td></tr>
+    <tr><td>Facturas por cobrar (TOTF)</td><td class="n">{{ c.totf | num_es }}</td></tr>
+    <tr><td>Cheques en cartera (TOTC)</td><td class="n">{{ c.totc | num_es }}</td></tr>
+    <tr><td>Anticipos</td><td class="n">{{ c.antic | num_es }}</td></tr>
+    <tr><td>Stock (VSTO, cierre anterior)</td><td class="n">{{ c.vsto | num_es }}</td></tr>
+    <tr><td>Stock químicos (VQX, cierre anterior)</td><td class="n">{{ c.vqx | num_es }}</td></tr>
+    <tr><td>Maquinaria y equipos</td><td class="n">{{ c.umaq | num_es }}</td></tr>
+    <tr><td>Terrenos y edificios</td><td class="n">{{ c.uact | num_es }}</td></tr>
+    <tr class="tot"><td>TOTAL ACTIVO (TOTL)</td><td class="n">{{ c.totl | num_es }}</td></tr>
+
+    <tr class="sec"><th colspan="2">Pasivo</th></tr>
+    <tr class="tot"><td>Pasivos (TOTP — posdat vivos)</td><td class="n">{{ c.totp | num_es }}</td></tr>
+
+    <tr class="sec"><th colspan="2">Patrimonio</th></tr>
+    <tr class="big"><td>PATRIMONIO NETO (PATR)</td><td class="n">{{ c.patr | num_es }}</td></tr>
+    <tr><td>Patrimonio último cierre (PATANT)</td><td class="n">{{ c.patant | num_es }}</td></tr>
+    <tr><td>Retiros del mes</td><td class="n">{{ c.usret | num_es }}</td></tr>
+    <tr class="big"><td>UTILIDAD (Δ patrimonio + retiros)</td><td class="n">{{ c.utilidad | num_es }}</td></tr>
+
+    <tr class="sec"><th colspan="2">Mes de {{ as_of.strftime('%m/%Y') }} hasta el {{ as_of | fecha_es }}</th></tr>
+    <tr><td>Compras kg / U$</td><td class="n">{{ c.kcom | kg_es }} / {{ c.ucom | num_es }}</td></tr>
+    <tr><td>Ventas kg / U$</td><td class="n">{{ c.kvent | kg_es }} / {{ c.uvent | num_es }}</td></tr>
+    <tr><td>Gastos U$</td><td class="n">{{ c.gasto | num_es }}</td></tr>
+  </table>
+
+  <p class="text-xs mt-4" style="opacity:.7">
+    Aproximaciones de la foto: las facturas usan su saldo <em>actual</em> (no
+    rebobina abonos posteriores a la fecha) y stock/activos/anticipos vienen
+    del último cierre mensual anterior a la fecha — igual que los snapshots
+    de Historial. Para fechas recientes (ayer, esta semana) es exacta en
+    caja/bancos/cheques/pasivos y muy cercana en cartera.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

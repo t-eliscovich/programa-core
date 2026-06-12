@@ -33,6 +33,34 @@ def _safe(fn, default):
 @requiere_login
 @requiere_permiso("informes.ver")
 def balance():
+    # ?as_of=AAAA-MM-DD → foto histórica SOLO LECTURA del balance (pedido
+    # dueña 2026-06-12: "ver el balance como estaba ayer"). Usa
+    # balance_components_as_of() — la misma cuenta de los snapshots y de
+    # /fuentes-y-usos, con sus aproximaciones (saldo de factura ACTUAL,
+    # stock/activos del último cierre mensual anterior). Importante:
+    # mirar el pasado NO escribe nada — se saltea provisiones diarias,
+    # persist YY y auto-cierre, que sí corren en el balance live.
+    as_of_raw = (request.args.get("as_of") or "").strip()
+    if as_of_raw:
+        from datetime import date as _date
+
+        try:
+            as_of = _date.fromisoformat(as_of_raw)
+        except ValueError:
+            flash(f"Fecha inválida: {as_of_raw} — uso AAAA-MM-DD.", "warning")
+            return redirect(url_for("informes.balance"))
+        if as_of >= today_ec():
+            # Hoy o futuro → balance live normal.
+            return redirect(url_for("informes.balance"))
+        comp, error = _safe(lambda: queries.balance_components_as_of(as_of), {})
+        return render_template(
+            "informes/balance_as_of.html",
+            c=comp,
+            as_of=as_of,
+            hoy=today_ec(),
+            error=error,
+        )
+
     # Provisiones diarias automáticas (replica MENU.PRG L282-333).
     # Idempotente — sólo aplica si HOY > última fecha guardada y no es
     # domingo. Si falla, no rompe el balance — la migración de la tabla
