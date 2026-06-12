@@ -127,7 +127,8 @@ def dia():
         """
         SELECT fecha, COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg
           FROM scintela.compra
-         WHERE tipo = 'K' AND COALESCE(stat, '') NOT IN ('X', 'Y')
+         WHERE tipo = 'K' AND fecha IS NOT NULL
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
          GROUP BY fecha ORDER BY fecha DESC LIMIT 1
         """
     ) or {}
@@ -153,6 +154,7 @@ def dia():
         """
         SELECT fecha, COUNT(*) AS n, COALESCE(SUM(importe), 0) AS usd
           FROM scintela.tinto
+         WHERE fecha IS NOT NULL
          GROUP BY fecha ORDER BY fecha DESC LIMIT 1
         """
     ) or {}
