@@ -70,15 +70,36 @@ def run():
     except (TypeError, ValueError):
         bodegas = [52, 53]
 
+    # ?desde=YYYY-MM-DD — filtra ordenes por o.fecha >= desde (para encontrar
+    # el corte que usa el reporte nube). ?por=anio|mes (con &anio=YYYY) —
+    # agrupa por anio/mes de o.fecha en vez de estado.
+    desde = (request.args.get("desde") or "").strip()
+    if desde and not re.match(r"^\d{4}-\d{2}-\d{2}$", desde):
+        desde = ""
+    por = (request.args.get("por") or "").strip()
+    try:
+        anio = int(request.args.get("anio") or 0)
+    except (TypeError, ValueError):
+        anio = 0
+
+    grp = "o.estado_produccion"
+    grp_alias = "estado"
+    extra_where = f" AND fecha >= '{desde}'" if desde else ""
+    if por == "anio":
+        grp, grp_alias = "YEAR(o.fecha)", "anio"
+    elif por == "mes" and anio:
+        grp, grp_alias = "MONTH(o.fecha)", "mes"
+        extra_where += f" AND YEAR(fecha) = {anio}"
+
     out = {}
     for b in bodegas:
         sql = f"""
             WITH ofs AS (
-                SELECT id_orden_fabricacion, estado_produccion,
+                SELECT id_orden_fabricacion, estado_produccion, fecha,
                        ISNULL(cantidad, 0) AS planif,
                        ISNULL(cantidad_fabricada, 0) AS fab
                   FROM orden_fabricacion
-                 WHERE id_bodega = {int(b)}
+                 WHERE id_bodega = {int(b)}{extra_where}
             ),
             issued AS (
                 SELECT j.id_orden_fabricacion,
@@ -89,7 +110,7 @@ def run():
                  WHERE j.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM ofs)
                  GROUP BY j.id_orden_fabricacion
             )
-            SELECT o.estado_produccion                       AS estado,
+            SELECT {grp}                                     AS {grp_alias},
                    COUNT(*)                                  AS n_ofts,
                    SUM(CASE WHEN ISNULL(i.issued,0) > 0.005 OR o.fab > 0.005
                             THEN 1 ELSE 0 END)               AS n_con_mov,
@@ -99,8 +120,8 @@ def run():
                    SUM(ISNULL(i.issued, 0) - o.fab)          AS saldo
               FROM ofs o
               LEFT JOIN issued i ON i.id_orden_fabricacion = o.id_orden_fabricacion
-             GROUP BY o.estado_produccion
-             ORDER BY o.estado_produccion
+             GROUP BY {grp}
+             ORDER BY {grp}
         """
         rows = mc.fetch_dataset(2, sql, max_results=100)
         tot = {"issued": 0.0, "fab": 0.0, "saldo": 0.0}
@@ -109,10 +130,10 @@ def run():
             for k in ("issued", "fab", "saldo"):
                 v = float(r.get(k) or 0)
                 tot[k] += v
-                if int(r.get("estado") or 0) != 5:
+                if grp_alias == "estado" and int(r.get("estado") or 0) != 5:
                     tot_sin5[k] += v
         out[f"bodega_{b}"] = {
-            "por_estado": rows,
+            f"por_{grp_alias}": rows,
             "total_todos_estados": tot,
             "total_sin_estado_5_(actual_vista)": tot_sin5,
         }
