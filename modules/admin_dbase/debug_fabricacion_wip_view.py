@@ -70,6 +70,24 @@ def run():
     except (TypeError, ValueError):
         bodegas = [52, 53]
 
+    # ?sql=<SELECT ...> — query libre SOLO LECTURA contra Asinfo para
+    # diagnostico (mismo nivel de confianza que el lookup generico de
+    # debug-asinfo-facturas). Guard: un solo statement, empieza con
+    # SELECT/WITH, sin keywords de escritura.
+    q = (request.args.get("sql") or "").strip()
+    if q:
+        qu = q.upper()
+        prohibidas = ("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "EXEC",
+                      "MERGE", "TRUNCATE", "CREATE", "GRANT", ";")
+        if not (qu.startswith("SELECT") or qu.startswith("WITH")):
+            return _json({"error": "solo SELECT/WITH"}, 400)
+        if any(k in qu for k in prohibidas):
+            return _json({"error": "keyword prohibida"}, 400)
+        try:
+            return _json({"rows": mc.fetch_dataset(2, q, max_results=500)})
+        except Exception as e:  # noqa: BLE001
+            return _json({"error": str(e)[:500]}, 500)
+
     # ?v=ing — ingresos REALES de fabricacion via kardex:
     # movimiento_inventario (id_orden_fabricacion NOT NULL, bodega_destino=b)
     # + detalle. Devuelve ingresos por anio y el WIP global Excel-style:
