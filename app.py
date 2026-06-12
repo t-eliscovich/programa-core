@@ -303,9 +303,13 @@ def create_app() -> Flask:
 
     app.register_blueprint(historial_bp)
 
+    from modules.checklist.views import checklist_bp
     from modules.cobranzas.views import cobranzas_bp
 
     app.register_blueprint(cobranzas_bp)
+    # Checklist del día — qué falta cargar en PC vs la operación de ayer
+    # (pedido dueña 2026-06-12, transición dBase→PC). TMT.
+    app.register_blueprint(checklist_bp)
 
     from modules.comisiones.views import comisiones_bp
 

@@ -703,6 +703,7 @@
 
       <details class="sidebar-section" data-key="ingreso" open>
         <summary>Ingresos</summary>
+        {% if tiene_permiso('cheques.ver') %}{{ nav_link('checklist.dia', 'Checklist del día', 'check') }}{% endif %}
         {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
         {% if tiene_permiso('facturas.crear') %}{{ nav_link('facturas.nueva', 'Ventas (factura)', 'file') }}{% endif %}
         {% if tiene_permiso('compras.crear') %}{{ nav_link('compras.nueva', 'Nueva Compra', 'shopping') }}{% endif %}

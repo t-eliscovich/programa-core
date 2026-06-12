@@ -1130,14 +1130,49 @@
     // en las otras opciones'. Antes era opcional + readonly — ahora ocultamos
     // los dos inputs por completo para depósitos.
     // N° cheque: oculto + opcional para depósitos.
+    //
+    // TMT 2026-06-12 dueña ("quiero la mejor experiencia posible"): la
+    // fuente n°1 de errores del 11/06 fue elegir 99·EFECTIVO teniendo un
+    // CHEQUE físico en la mano (12+ correcciones CORR + migs 0100-0102).
+    // El momento exacto del error es ESTE: había un N° tipeado y el
+    // cambio a banco virtual lo borraba en silencio. Ahora: (a) lo
+    // guardamos y lo restauramos si vuelve a un banco real, (b) mostramos
+    // un aviso ámbar bien visible explicando qué elegir.
     if (numInp) {
       numInp.required = !esDeposito;
-      // Limpiamos el valor cuando ocultamos para que no quede colgado un valor
-      // de un cambio de banco previo (si vinía un N° y la dueña cambia a 90).
+      if (esDeposito && numInp.value) {
+        bloque.dataset.numGuardado = numInp.value;  // no perder lo tipeado
+      }
       if (esDeposito) numInp.value = '';
+      if (!esDeposito && !numInp.value && bloque.dataset.numGuardado) {
+        numInp.value = bloque.dataset.numGuardado;  // restaurar al volver
+        delete bloque.dataset.numGuardado;
+      }
       if (numReqStar) numReqStar.classList.toggle('hidden', esDeposito);
     }
     if (numWrap) numWrap.classList.toggle('hidden', esDeposito);
+    // Aviso de banco virtual (creado on-demand, uno por bloque).
+    let warnDiv = bloque.querySelector('.cheque-virtual-warn');
+    if (esDeposito && v !== '97' && v !== '95') {
+      if (!warnDiv) {
+        warnDiv = document.createElement('div');
+        warnDiv.className = 'cheque-virtual-warn mt-2 text-[12px] rounded border border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3 py-2';
+        bloque.appendChild(warnDiv);
+      }
+      const opt = bancoSel.options[bancoSel.selectedIndex];
+      const etiqueta = opt ? opt.textContent.trim() : v;
+      const guardado = bloque.dataset.numGuardado;
+      warnDiv.innerHTML = guardado
+        ? ('⚠️ <strong>Tipeaste el N° de cheque ' + guardado + '</strong> y elegiste <strong>'
+           + etiqueta + '</strong> (sin cheque físico). Si el cliente pagó con un '
+           + 'CHEQUE, elegí el banco <strong>EMISOR</strong> del cheque (10 · PICHINCHA, '
+           + '66 · BANECUADOR, etc.) — el N° se restaura solo al cambiar.')
+        : (etiqueta + ' = <strong>sin cheque físico</strong> (efectivo / depósito directo). '
+           + 'Si tenés un cheque en la mano, elegí el banco emisor del cheque.');
+      warnDiv.classList.remove('hidden');
+    } else if (warnDiv) {
+      warnDiv.classList.add('hidden');
+    }
     // Fecha A depositar: forzar HOY y ocultar para depósitos.
     if (fechadInp) {
       if (esDeposito) {

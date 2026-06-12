@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Checklist del día{% endblock %}
+{% block breadcrumb %}<strong>Checklist del día</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-06-12 — pedido dueña: mientras conviven dBase y PC, mostrar
+   cada mañana qué quedó sin replicar en PC, con link directo a la carga. #}
+<div class="max-w-3xl">
+  <div class="mb-5">
+    {{ page_hero('Checklist del día — ' ~ (hoy | fecha_es),
+                 ('Todo al día ✓' if pendientes == 0 else (pendientes ~ ' pendiente' ~ ('s' if pendientes != 1 else '') ~ ' de carga')) ~ ' · día operativo anterior: ' ~ (ayer | fecha_es)) }}
+  </div>
+
+  <div class="space-y-2">
+    {% for it in items %}
+    <div class="flex items-center justify-between gap-3 rounded-lg border px-4 py-3
+                {% if it.estado == 'falta' %}border-amber-400 bg-amber-50 dark:bg-amber-950/30
+                {% elif it.estado == 'ok' %}border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20
+                {% else %}border-slate-200 dark:border-slate-700{% endif %}">
+      <div class="min-w-0">
+        <div class="text-sm font-semibold flex items-center gap-2">
+          {% if it.estado == 'falta' %}<span title="pendiente">⚠️</span>
+          {% elif it.estado == 'ok' %}<span title="al día">✅</span>
+          {% else %}<span>ℹ️</span>{% endif %}
+          {{ it.titulo }}
+        </div>
+        <div class="text-[13px] text-slate-600 dark:text-slate-400 mt-0.5">{{ it.detalle }}</div>
+      </div>
+      <a href="{{ url_for(it.endpoint) }}"
+         class="shrink-0 text-sm px-3 py-1.5 rounded border
+                {% if it.estado == 'falta' %}border-amber-500 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 font-semibold
+                {% else %}border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+        {{ it.accion }} →
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="text-xs text-slate-500 mt-5">
+    Solo lectura — compara lo cargado en PC (y lo visible en Asinfo) con la
+    operación del día anterior. El conteo de facturas es aproximado por N° SRI;
+    el detalle fino con aliases está en «Cargar desde Asinfo».
+  </p>
+</div>
+{% endblock %}
