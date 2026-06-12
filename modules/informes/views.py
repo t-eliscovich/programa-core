@@ -39,9 +39,11 @@ def _asof_dia_overrides(comp: dict, as_of) -> None:
     (TMT 2026-06-12: daba 33k contra 2,18M reales). Acá:
 
       · TOTC = cheques que EXISTÍAN al as_of (fecha_crea/fecha_recibido) y
-        que o siguen vivos hoy (Z,1,2,3,P,D) o fueron depositados DESPUÉS
-        (fechaing > as_of). Lo no recuperable: cobros en efectivo (stat C)
-        y anulaciones posteriores al as_of — no tienen timestamp.
+        que o siguen vivos hoy (Z,1,2,3,P,D), o fueron depositados DESPUÉS
+        (fechaing > as_of), o salieron de cartera DESPUÉS por cobro en
+        efectivo / endoso / terminal (fechaout > as_of). Anulados X/Y no
+        se resucitan a propósito: son typos corregidos, el pasado que
+        queremos mostrar es el corregido.
       · TOTF = fórmula canónica de totf() (saldo NETO, sin filtro de signo,
         sin asinfo-backfill) + fecha <= as_of + creada antes del as_of.
         Aproximación: usa el saldo ACTUAL (no rebobina abonos).
@@ -57,9 +59,10 @@ def _asof_dia_overrides(comp: dict, as_of) -> None:
          WHERE (fecha_crea IS NULL OR fecha_crea::date <= %s)
            AND (fecha_recibido IS NULL OR fecha_recibido <= %s)
            AND ( stat IN ('Z','1','2','3','P','D')
-                 OR (stat IN ('B','A') AND fechaing IS NOT NULL AND fechaing > %s) )
+                 OR (stat IN ('B','A') AND fechaing IS NOT NULL AND fechaing > %s)
+                 OR (stat IN ('C','9','E','T') AND fechaout IS NOT NULL AND fechaout > %s) )
         """,
-        (as_of, as_of, as_of),
+        (as_of, as_of, as_of, as_of),
     ) or {}
     totf_row = db.fetch_one(
         """
