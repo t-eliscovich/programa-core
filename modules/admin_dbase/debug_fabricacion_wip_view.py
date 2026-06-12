@@ -70,6 +70,48 @@ def run():
     except (TypeError, ValueError):
         bodegas = [52, 53]
 
+    # ?v=ing — ingresos REALES de fabricacion via kardex:
+    # movimiento_inventario (id_orden_fabricacion NOT NULL, bodega_destino=b)
+    # + detalle. Devuelve ingresos por anio y el WIP global Excel-style:
+    # issued(OSM todas las ordenes) - ingresos(kardex).
+    if (request.args.get("v") or "") == "ing":
+        out = {}
+        for b in bodegas:
+            sql_ing = f"""
+                SELECT YEAR(m.fecha) AS anio, COUNT(DISTINCT m.id_movimiento_inventario) AS n_movs,
+                       SUM(ISNULL(d.cantidad, 0)) AS kg
+                  FROM movimiento_inventario m
+                  JOIN detalle_movimiento_inventario d
+                    ON d.id_movimiento_inventario = m.id_movimiento_inventario
+                  JOIN orden_fabricacion o
+                    ON o.id_orden_fabricacion = m.id_orden_fabricacion
+                 WHERE o.id_bodega = {int(b)}
+                   AND m.id_bodega_destino = {int(b)}
+                 GROUP BY YEAR(m.fecha)
+                 ORDER BY YEAR(m.fecha)
+            """
+            ing = mc.fetch_dataset(2, sql_ing, max_results=100)
+            sql_osm = f"""
+                SELECT YEAR(m2.fecha_creacion) AS anio,
+                       SUM(ISNULL(d.cantidad_despachada, 0)) AS kg
+                  FROM detalle_orden_salida_material_orden_fabricacion j
+                  JOIN detalle_orden_salida_material d
+                    ON d.id_detalle_orden_salida_material = j.id_detalle_orden_salida_material
+                  JOIN orden_fabricacion o
+                    ON o.id_orden_fabricacion = j.id_orden_fabricacion
+                  LEFT JOIN orden_salida_material m2
+                    ON m2.id_orden_salida_material = d.id_orden_salida_material
+                 WHERE o.id_bodega = {int(b)}
+                 GROUP BY YEAR(m2.fecha_creacion)
+                 ORDER BY YEAR(m2.fecha_creacion)
+            """
+            try:
+                osm = mc.fetch_dataset(2, sql_osm, max_results=100)
+            except Exception as e:  # noqa: BLE001
+                osm = [{"error": str(e)[:300]}]
+            out[f"bodega_{b}"] = {"ingresos_kardex_por_anio": ing, "osm_por_anio": osm}
+        return _json(out)
+
     # ?v=mov — explora movimiento_fabricacion (candidato a "Ingresos de
     # Fabricacion" del Excel): totales por operacion x anio por bodega, y
     # WIP global = issued(OSM, todas las ordenes) - ingresos(mov).
