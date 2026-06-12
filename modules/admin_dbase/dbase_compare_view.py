@@ -138,6 +138,9 @@ def lado_dbase() -> dict:
                          - timedelta(hours=5)) if pp.exists() else None
 
     act = _leer("ACTIVOS.DBF")
+    pa = EXTRACT_DIR / "ACTIVOS.DBF"
+    d["act_mtime"] = (datetime.utcfromtimestamp(pa.stat().st_mtime)
+                      - timedelta(hours=5)) if pa.exists() else None
     d["uact"] = sum(_f(r.get("VALOR")) for r in act if (r.get("TIPO") or "").strip() == "I")
     d["umaq"] = sum(_f(r.get("VALOR")) for r in act
                     if (r.get("TIPO") or "").strip() in ("M", "C", "K"))
@@ -560,6 +563,29 @@ def _pc_iniciales_prev() -> dict:
     return {k: _f(row.get(k)) for k in ("hilado", "tejido", "terminado", "um", "vq")}
 
 
+def _pc_cuotas_activos() -> dict:
+    """Suma de CUOTA mensual de activos que siguen amortizando, por grupo.
+
+    Para el as-of de [7]: PC computa VALOR live con COEF=min(día,30)/30
+    (activos_totales) — la diferencia entre hoy y el día del tarball es
+    (Δcoef × ΣCUOTA) por grupo. Solo filas con cuota>0 y valor en libros
+    todavía positivo (las totalmente amortizadas ya no bajan).
+    """
+    import db
+
+    row = db.fetch_one(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN tipo = 'I' THEN cuota ELSE 0 END), 0) AS ci,
+          COALESCE(SUM(CASE WHEN tipo IN ('M','C','K') THEN cuota ELSE 0 END), 0) AS cmck
+          FROM scintela.activos
+         WHERE COALESCE(cuota, 0) > 0
+           AND COALESCE(inicial, 0) - COALESCE(amortizac, 0) > 0
+        """
+    ) or {}
+    return {"i": float(row.get("ci") or 0), "mck": float(row.get("cmck") or 0)}
+
+
 def _linea_cmp(label: str, db_v, pc_v, tol: float = 0.01) -> str:
     if db_v is None:
         return f"{label:24} dBase=?            PC={pc_v:>14,.2f}   [sin DBF]\n"
@@ -813,6 +839,23 @@ def reporte(dias_banco: int = 30):
     yield line("── [7] ACTIVOS FIJOS (PRG L47-48) ──")
     yield cmp_acum("Terr/Edif (UACT)", d.get("uact"), _f(pc.get("uact")))
     yield cmp_acum("Maq/Equip (UMAQ)", d.get("umaq"), _f(pc.get("umaq")))
+    try:
+        hoy_act = _hoy_ec()
+        f_act = d["act_mtime"].date() if d.get("act_mtime") else None
+        if (f_act and f_act < hoy_act
+                and (f_act.year, f_act.month) == (hoy_act.year, hoy_act.month)):
+            dcoef = (min(hoy_act.day, 30) - min(f_act.day, 30)) / 30.0
+            cu = _pc_cuotas_activos()
+            yield line(f"  ACTIVOS.DBF fechado {f_act} — amortización diaria que PC corrió "
+                       f"DESPUÉS del tarball: I {dcoef * cu['i']:,.2f} · M/C/K {dcoef * cu['mck']:,.2f}")
+            yield _linea_cmp(f"UACT as-of {f_act}", d.get("uact"),
+                             round(_f(pc.get("uact")) + dcoef * cu["i"], 2))
+            yield _linea_cmp(f"UMAQ as-of {f_act}", d.get("umaq"),
+                             round(_f(pc.get("umaq")) + dcoef * cu["mck"], 2))
+            yield line("  (misma regla MENU.PRG L275: VALOR baja COEF×CUOTA por día calendario;")
+            yield line("   as-of tarball es la comparación justa — el dBase aún no corrió hoy.)")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [as-of activos no disponible: {exc!r}]")
     if d.get("act_sin_tipo"):
         yield line(f"  ⚠ activos SIN TIPO en dBase por {d['act_sin_tipo']:,.0f} — "
                    "ningún sistema los suma (pendiente decisión)")

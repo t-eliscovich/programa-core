@@ -64,16 +64,32 @@ def _asof_dia_overrides(comp: dict, as_of) -> None:
         """,
         (as_of, as_of, as_of, as_of),
     ) or {}
+    # TOTF con rewind de abonos PC: cada aplicación hecha POR EL PROGRAMA
+    # queda fechada en scintela.chequesxfact (fechaing) — se re-suman las
+    # posteriores al as_of, y eso también resucita facturas que pasaron a
+    # T (canceladas) DESPUÉS de la fecha. Los abonos que llegaron por sync
+    # del dBase no traen historia → para esos vale el saldo actual. Con
+    # operación 100% en PC la foto es exacta hacia adelante.
     totf_row = db.fetch_one(
         """
-        SELECT COALESCE(SUM(saldo), 0) AS total
-          FROM scintela.factura
-         WHERE (stat IS NULL OR stat IN ('Z','A','',' '))
-           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-           AND fecha <= %s
-           AND (fecha_crea IS NULL OR fecha_crea::date <= %s)
+        SELECT COALESCE(SUM(
+                 CASE WHEN (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                      THEN COALESCE(f.saldo, 0) ELSE 0 END
+                 + COALESCE(ab.post, 0)
+               ), 0) AS total
+          FROM scintela.factura f
+          LEFT JOIN (
+                SELECT id_fact, SUM(COALESCE(importe, 0)) AS post
+                  FROM scintela.chequesxfact
+                 WHERE fechaing > %s
+                 GROUP BY id_fact
+               ) ab ON ab.id_fact = f.id_factura
+         WHERE COALESCE(f.stat, '') NOT IN ('X','Y')
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+           AND f.fecha <= %s
+           AND (f.fecha_crea IS NULL OR f.fecha_crea::date <= %s)
         """,
-        (as_of, as_of),
+        (as_of, as_of, as_of),
     ) or {}
     comp["totc"] = float(totc_row.get("total") or 0)
     comp["totf"] = float(totf_row.get("total") or 0)
