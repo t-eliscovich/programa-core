@@ -168,15 +168,22 @@ def _migrar_deposito_directo(*, ch: dict, nuevo_nb: int, banco_nombre: str, usua
         stat_nuevo = "B"
         if nuevo_nb in (90, 91):
             banco_real = _banco_real_para_deposito(nuevo_nb, conn=conn)
+            num_ref = (doc or str(id_cheque)).strip()
             mov = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=banco_real,
                 no_cta=None,
                 fecha=fecha_mov,
                 documento="DE",
+                # TMT 2026-06-12 audit: faltaba importe= (mismo TypeError que
+                # el hotfix 202bcbf, segundo lugar).
+                importe=imp,
                 concepto=f"1 ch.{cli}"[:50],
                 prov=cli[:5] or None,
-                numreferencia=doc or str(id_cheque),
+                # numreferencia es INTEGER en DB — doc no-numerico va NULL
+                # (la referencia textual vive en cheque.doc_banco, regla #1
+                # del matcher).
+                numreferencia=int(num_ref) if num_ref.isdigit() else None,
                 usuario=usuario,
             )
             if mov.get("id_transaccion"):
@@ -1906,7 +1913,11 @@ def crear(
             import bank_helpers
 
             banco_real = _banco_real_para_deposito(no_banco, conn=conn)
-            num_ref = (doc_banco or "").strip() or str(row["id_cheque"])
+            # TMT 2026-06-12 audit: numreferencia es INTEGER en DB. Un doc
+            # no-numerico ("TRF 123") reventaba TODA la cobranza con
+            # InvalidTextRepresentation. Texto libre queda en cheque.doc_banco.
+            _nr = (doc_banco or "").strip() or str(row["id_cheque"])
+            num_ref = int(_nr) if _nr.isdigit() else None
             cli_u = codigo_cli.upper().strip()
             mov_dep = bank_helpers.insert_movimiento_bancario(
                 conn,

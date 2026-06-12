@@ -109,7 +109,7 @@ def test_90_crea_mov_banco_de_con_referencia_y_link(env):
     mv = bank_calls[0]
     assert mv["documento"] == "DE"
     assert mv["no_banco"] == 10  # real (lookup), no el virtual 90
-    assert mv["numreferencia"] == "155032144"
+    assert mv["numreferencia"] == 155032144  # int: la columna es INTEGER
     assert abs(mv["importe"] - 4000) < 0.01
     assert mv["concepto"].startswith("1 ch.GPU")
     # link chequextransaccion
@@ -221,10 +221,24 @@ def _env_edit(monkeypatch, ch_row, **kw):
     monkeypatch.setattr(cq, "asegurar_fecha_abierta", lambda *a, **k: None)
     monkeypatch.setattr(mov_doble, "registrar", lambda **k: None)
     bank_calls, caja_calls = [], []
-    monkeypatch.setattr(bank_helpers, "insert_movimiento_bancario",
-                        lambda conn, **k: bank_calls.append(k) or {"id_transaccion": 901})
-    monkeypatch.setattr(caja_helpers, "insert_movimiento_caja",
-                        lambda conn, **k: caja_calls.append(k) or {"id_caja": 902})
+    # TMT 2026-06-12: stubs ESTRICTOS — validan contra la firma real para
+    # que un kwarg faltante (como importe=) no llegue a prod nunca mas.
+    import inspect as _inspect
+    _f_bank = _inspect.signature(bank_helpers.insert_movimiento_bancario)
+    _f_caja = _inspect.signature(caja_helpers.insert_movimiento_caja)
+
+    def _fake_bank(conn, **k):
+        _f_bank.bind(conn, **k)
+        bank_calls.append(k)
+        return {"id_transaccion": 901}
+
+    def _fake_caja(conn, **k):
+        _f_caja.bind(conn, **k)
+        caja_calls.append(k)
+        return {"id_caja": 902}
+
+    monkeypatch.setattr(bank_helpers, "insert_movimiento_bancario", _fake_bank)
+    monkeypatch.setattr(caja_helpers, "insert_movimiento_caja", _fake_caja)
     return cq, stub, bank_calls, caja_calls
 
 
