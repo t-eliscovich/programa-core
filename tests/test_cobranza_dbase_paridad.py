@@ -75,7 +75,14 @@ def env(monkeypatch):
         monkeypatch.setattr(mov_doble, "registrar", lambda **kw: None)
         bank_calls = []
 
+        import inspect as _inspect
+        _firma_real = _inspect.signature(bank_helpers.insert_movimiento_bancario)
+
         def _fake_insert_mov(conn, **kw):
+            # TMT 2026-06-12: validar contra la firma REAL — un stub que
+            # acepta cualquier kwarg dejo pasar un TypeError a prod
+            # (faltaba importe= en el insert de crear 90/91).
+            _firma_real.bind(conn, **kw)
             bank_calls.append(kw)
             return {"id_transaccion": 555, "saldo_nuevo": 0.0}
 
@@ -103,6 +110,7 @@ def test_90_crea_mov_banco_de_con_referencia_y_link(env):
     assert mv["documento"] == "DE"
     assert mv["no_banco"] == 10  # real (lookup), no el virtual 90
     assert mv["numreferencia"] == "155032144"
+    assert abs(mv["importe"] - 4000) < 0.01
     assert mv["concepto"].startswith("1 ch.GPU")
     # link chequextransaccion
     assert any("insert into scintela.chequextransaccion" in s for s, _ in stub.executes)

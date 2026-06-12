@@ -1914,6 +1914,9 @@ def crear(
                 no_cta=None,
                 fecha=fecha,
                 documento="DE",
+                # TMT 2026-06-12 hotfix: faltaba importe= (TypeError en prod
+                # al cargar cobranza 90/91 — el stub del test lo tapaba).
+                importe=importe_principal,
                 # Concepto paridad dBase: "1 ch.CLI" (el extractor de prov
                 # de conciliacion ya parsea este formato).
                 concepto=f"1 ch.{cli_u}"[:50],
