@@ -63,11 +63,11 @@
 
   <p class="text-xs mt-4" style="opacity:.7">
     Aproximaciones de la foto: caja, bancos y pasivos son exactos al día.
-    Cheques y facturas reconstruyen la cartera del día (lo que no se puede
-    rebobinar: cobros en efectivo y anulaciones posteriores a la fecha, y
-    las facturas usan su saldo <em>actual</em>, sin rebobinar abonos).
-    Stock, activos y anticipos vienen del último cierre mensual anterior —
-    igual que los snapshots de Historial.
+    Cheques se reconstruyen con sus fechas reales (recibido, depósito,
+    cobro/endoso); anulados por error no se resucitan. Facturas usan su
+    saldo <em>actual</em> (los abonos del dBase no traen historia para
+    rebobinar). Stock, activos y anticipos vienen del último cierre
+    mensual anterior — igual que los snapshots de Historial.
   </p>
   {% endif %}
 </div>
