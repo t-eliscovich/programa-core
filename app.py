@@ -457,8 +457,10 @@ def create_app() -> Flask:
     # facturas del ERP (vendedor, serie SRI, usuario, estado, forma de
     # pago) sin tocar datos. SOLO LECTURA.
     from modules.admin_dbase.debug_asinfo_facturas_view import bp as debug_asinfo_fact_bp
+    from modules.admin_dbase.debug_fabricacion_wip_view import bp as debug_fab_wip_bp
 
     app.register_blueprint(debug_asinfo_fact_bp)
+    app.register_blueprint(debug_fab_wip_bp)
 
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
