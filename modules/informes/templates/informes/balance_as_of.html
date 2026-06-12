@@ -62,11 +62,12 @@
   </table>
 
   <p class="text-xs mt-4" style="opacity:.7">
-    Aproximaciones de la foto: las facturas usan su saldo <em>actual</em> (no
-    rebobina abonos posteriores a la fecha) y stock/activos/anticipos vienen
-    del último cierre mensual anterior a la fecha — igual que los snapshots
-    de Historial. Para fechas recientes (ayer, esta semana) es exacta en
-    caja/bancos/cheques/pasivos y muy cercana en cartera.
+    Aproximaciones de la foto: caja, bancos y pasivos son exactos al día.
+    Cheques y facturas reconstruyen la cartera del día (lo que no se puede
+    rebobinar: cobros en efectivo y anulaciones posteriores a la fecha, y
+    las facturas usan su saldo <em>actual</em>, sin rebobinar abonos).
+    Stock, activos y anticipos vienen del último cierre mensual anterior —
+    igual que los snapshots de Historial.
   </p>
   {% endif %}
 </div>

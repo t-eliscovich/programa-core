@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
+import db
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
@@ -27,6 +28,59 @@ def _safe(fn, default):
         return fn(), None
     except Exception as e:
         return default, str(e)
+
+
+def _asof_dia_overrides(comp: dict, as_of) -> None:
+    """Afina TOTC/TOTF de balance_components_as_of() para fotos DÍA a día.
+
+    balance_components_as_of() fue pensada para cierres de mes y su TOTC usa
+    COALESCE(fecha_recibido, fecha) — pero `fecha` en cheques es la fecha de
+    COBRO (posfechada, futura) → para "ayer" excluía casi toda la cartera
+    (TMT 2026-06-12: daba 33k contra 2,18M reales). Acá:
+
+      · TOTC = cheques que EXISTÍAN al as_of (fecha_crea/fecha_recibido) y
+        que o siguen vivos hoy (Z,1,2,3,P,D) o fueron depositados DESPUÉS
+        (fechaing > as_of). Lo no recuperable: cobros en efectivo (stat C)
+        y anulaciones posteriores al as_of — no tienen timestamp.
+      · TOTF = fórmula canónica de totf() (saldo NETO, sin filtro de signo,
+        sin asinfo-backfill) + fecha <= as_of + creada antes del as_of.
+        Aproximación: usa el saldo ACTUAL (no rebobina abonos).
+
+    Recalcula cart/subt/totl/patr/utilidad con los valores afinados.
+    NO toca queries.balance_components_as_of — la usan los snapshots de
+    historia y /fuentes-y-usos (coordinar con Federico antes de cambiarla).
+    """
+    totc_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS total
+          FROM scintela.cheque
+         WHERE (fecha_crea IS NULL OR fecha_crea::date <= %s)
+           AND (fecha_recibido IS NULL OR fecha_recibido <= %s)
+           AND ( stat IN ('Z','1','2','3','P','D')
+                 OR (stat IN ('B','A') AND fechaing IS NOT NULL AND fechaing > %s) )
+        """,
+        (as_of, as_of, as_of),
+    ) or {}
+    totf_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(saldo), 0) AS total
+          FROM scintela.factura
+         WHERE (stat IS NULL OR stat IN ('Z','A','',' '))
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+           AND fecha <= %s
+           AND (fecha_crea IS NULL OR fecha_crea::date <= %s)
+        """,
+        (as_of, as_of),
+    ) or {}
+    comp["totc"] = float(totc_row.get("total") or 0)
+    comp["totf"] = float(totf_row.get("total") or 0)
+    comp["cart"] = comp["totc"] + comp["totf"]
+    # banco (= bancos + caja) ya viene all-in de balance_components_as_of.
+    comp["subt"] = comp["banco"] + comp["cart"]
+    comp["totl"] = (comp["subt"] + comp["vsto"] + comp["vqx"]
+                    + comp["umaq"] + comp["uact"] + comp["antic"])
+    comp["patr"] = comp["patrimonio"] = comp["totl"] - comp["totp"]
+    comp["utilidad"] = comp["usuti"] = (comp["patr"] - comp["patant"]) + comp["usret"]
 
 
 @informes_bp.route("/balance")
@@ -53,6 +107,8 @@ def balance():
             # Hoy o futuro → balance live normal.
             return redirect(url_for("informes.balance"))
         comp, error = _safe(lambda: queries.balance_components_as_of(as_of), {})
+        if not error:
+            _asof_dia_overrides(comp, as_of)
         return render_template(
             "informes/balance_as_of.html",
             c=comp,
