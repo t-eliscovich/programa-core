@@ -65,7 +65,7 @@ def _facturas_asinfo_sin_cargar(ayer, hoy) -> dict:
         if n:
             asinfo[n] = float(r.get("usd") or 0)
     if not asinfo:
-        return {"count": 0, "usd": 0.0}
+        return {"count": 0, "usd": 0.0, "total_asinfo": 0}
     pc_rows = db.fetch_all(
         """
         SELECT numf_completo, numf FROM scintela.factura
@@ -80,7 +80,8 @@ def _facturas_asinfo_sin_cargar(ayer, hoy) -> dict:
             if n:
                 en_pc.add(n)
     faltan = {n: usd for n, usd in asinfo.items() if n not in en_pc}
-    return {"count": len(faltan), "usd": sum(faltan.values())}
+    return {"count": len(faltan), "usd": sum(faltan.values()),
+            "total_asinfo": len(asinfo)}
 
 
 @checklist_bp.route("/checklist-dia")
@@ -96,9 +97,9 @@ def dia():
         fa = _facturas_asinfo_sin_cargar(ayer, hoy)
         items.append({
             "titulo": "Facturas Asinfo sin cargar",
-            "detalle": (f"{fa['count']} facturas (~$ {fa['usd']:,.2f}) de {ayer:%d/%m} y hoy "
-                        "están en Asinfo y no en PC" if fa["count"]
-                        else "Todas las facturas de Asinfo de ayer y hoy ya están en PC"),
+            "detalle": (f"{fa['count']} de {fa['total_asinfo']} facturas de Asinfo "
+                        f"({ayer:%d/%m} y hoy) faltan en PC — ~$ {fa['usd']:,.2f}" if fa["count"]
+                        else f"Las {fa['total_asinfo']} facturas de Asinfo de ayer y hoy ya están en PC"),
             "estado": "falta" if fa["count"] else "ok",
             "endpoint": "facturas.desde_asinfo",
             "accion": "Cargar desde Asinfo",
@@ -122,11 +123,21 @@ def dia():
         """,
         (ayer,),
     ) or {}
+    k_ult = db.fetch_one(
+        """
+        SELECT fecha, COUNT(*) AS n, COALESCE(SUM(kg), 0) AS kg
+          FROM scintela.compra
+         WHERE tipo = 'K' AND COALESCE(stat, '') NOT IN ('X', 'Y')
+         GROUP BY fecha ORDER BY fecha DESC LIMIT 1
+        """
+    ) or {}
+    guia_k = (f" · último cargado: {k_ult['fecha']:%d/%m} "
+              f"({float(k_ult.get('kg') or 0):,.0f} kg)" if k_ult.get("fecha") else "")
     items.append({
         "titulo": f"Parte de tejido K del {ayer:%d/%m}",
-        "detalle": (f"{float(k.get('kg') or 0):,.2f} kg cargados ({k.get('n')} partes)"
+        "detalle": (f"{float(k.get('kg') or 0):,.2f} kg cargados ({k.get('n')} partes)" + guia_k
                     if (k.get("n") or 0) else
-                    "Sin parte K cargado — el dBase lo tipea todos los días"),
+                    "Sin parte K cargado — suele ser 1 parte de ~9.000-10.000 kg por día" + guia_k),
         "estado": "ok" if (k.get("n") or 0) else "falta",
         "endpoint": "compras.nueva",
         "accion": "Cargar compra K",
@@ -138,10 +149,20 @@ def dia():
         "FROM scintela.tinto WHERE fecha = %s",
         (ayer,),
     ) or {}
+    t_ult = db.fetch_one(
+        """
+        SELECT fecha, COUNT(*) AS n, COALESCE(SUM(importe), 0) AS usd
+          FROM scintela.tinto
+         GROUP BY fecha ORDER BY fecha DESC LIMIT 1
+        """
+    ) or {}
+    guia_t = (f" · última cargada: {t_ult['fecha']:%d/%m} "
+              f"({t_ult.get('n')} líneas, $ {float(t_ult.get('usd') or 0):,.0f})"
+              if t_ult.get("fecha") else "")
     items.append({
         "titulo": f"Planilla de tintura del {ayer:%d/%m}",
-        "detalle": (f"{t.get('n')} líneas / $ {float(t.get('usd') or 0):,.2f}"
-                    if (t.get("n") or 0) else "Sin planilla cargada para ese día"),
+        "detalle": (f"{t.get('n')} líneas / $ {float(t.get('usd') or 0):,.2f}" + guia_t
+                    if (t.get("n") or 0) else "Sin planilla cargada para ese día" + guia_t),
         "estado": "ok" if (t.get("n") or 0) else "falta",
         "endpoint": "comparativa_tintoreria.tinto_carga",
         "accion": "Cargar planilla",
@@ -150,7 +171,8 @@ def dia():
     # 4. Cheques con fecha "a depositar" ya vencida y todavía en cartera.
     ch = db.fetch_one(
         """
-        SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
+        SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total,
+               MIN(fechad) AS vieja
           FROM scintela.cheque
          WHERE stat = 'Z' AND fechad IS NOT NULL AND fechad <= %s
         """,
@@ -159,7 +181,8 @@ def dia():
     items.append({
         "titulo": "Depósitos pendientes de registrar",
         "detalle": (f"{ch.get('n')} cheques en cartera con fecha a depositar vencida "
-                    f"($ {float(ch.get('total') or 0):,.2f}) — si ya fueron al banco, registrá el depósito"
+                    f"($ {float(ch.get('total') or 0):,.2f}, el más viejo del "
+                    f"{ch['vieja']:%d/%m}) — si ya fueron al banco, registrá el depósito"
                     if (ch.get("n") or 0) else "Ningún cheque con depósito vencido"),
         "estado": "falta" if (ch.get("n") or 0) else "ok",
         "endpoint": "cheques.lista",
@@ -167,16 +190,24 @@ def dia():
     })
 
     # 5/6. Caja y banco de ayer — informativo (¿se replicó el día?).
-    cj = db.fetch_one("SELECT COUNT(*) AS n FROM scintela.caja WHERE fecha = %s", (ayer,)) or {}
+    cj = db.fetch_one(
+        "SELECT COUNT(*) FILTER (WHERE fecha = %s) AS ayer_n, "
+        "COUNT(*) FILTER (WHERE fecha = %s) AS hoy_n FROM scintela.caja "
+        "WHERE fecha IN (%s, %s)",
+        (ayer, hoy, ayer, hoy),
+    ) or {}
     bk = db.fetch_one(
-        "SELECT COUNT(*) AS n FROM scintela.transacciones_bancarias WHERE fecha = %s",
-        (ayer,),
+        "SELECT COUNT(*) FILTER (WHERE fecha = %s) AS ayer_n, "
+        "COUNT(*) FILTER (WHERE fecha = %s) AS hoy_n "
+        "FROM scintela.transacciones_bancarias WHERE fecha IN (%s, %s)",
+        (ayer, hoy, ayer, hoy),
     ) or {}
     items.append({
-        "titulo": f"Movimientos del {ayer:%d/%m} ya en PC",
-        "detalle": f"Caja: {cj.get('n') or 0} movimientos · Banco: {bk.get('n') or 0} movimientos",
+        "titulo": "Movimientos ya en PC (guía)",
+        "detalle": (f"Caja — {ayer:%d/%m}: {cj.get('ayer_n') or 0} · hoy: {cj.get('hoy_n') or 0}   |   "
+                    f"Banco — {ayer:%d/%m}: {bk.get('ayer_n') or 0} · hoy: {bk.get('hoy_n') or 0}"),
         "estado": "info",
-        "endpoint": "caja.lista" , "accion": "Ver caja",
+        "endpoint": "caja.lista", "accion": "Ver caja",
     })
 
     pendientes = sum(1 for i in items if i["estado"] == "falta")
