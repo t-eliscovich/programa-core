@@ -70,6 +70,23 @@ def run():
     except (TypeError, ValueError):
         bodegas = [52, 53]
 
+    # ?v=mov — explora movimiento_fabricacion (candidato a "Ingresos de
+    # Fabricacion" del Excel): totales por operacion x anio por bodega, y
+    # WIP global = issued(OSM, todas las ordenes) - ingresos(mov).
+    if (request.args.get("v") or "") == "mov":
+        out = {}
+        for b in bodegas:
+            sql = f"""
+                SELECT operacion, YEAR(fecha_creacion) AS anio,
+                       COUNT(*) AS n, SUM(ISNULL(cantidad,0)) AS kg
+                  FROM movimiento_fabricacion
+                 WHERE id_bodega = {int(b)}
+                 GROUP BY operacion, YEAR(fecha_creacion)
+                 ORDER BY operacion, anio
+            """
+            out[f"bodega_{b}_mov_por_operacion_anio"] = mc.fetch_dataset(2, sql, max_results=200)
+        return _json(out)
+
     # ?desde=YYYY-MM-DD — filtra ordenes por o.fecha >= desde (para encontrar
     # el corte que usa el reporte nube). ?por=anio|mes (con &anio=YYYY) —
     # agrupa por anio/mes de o.fecha en vez de estado.
