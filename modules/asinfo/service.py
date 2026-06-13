@@ -714,6 +714,11 @@ def stock_en_proceso() -> dict:
 _FABRICACION_TTL_SECS = 600
 _FABRICACION_CACHE: dict = {}
 
+# Material de ENTRADA por bodega (el que se transforma): el bloque "Inventario
+# en Proceso" del Excel cuenta solo este material (TELA CRUDA / HILO), no los
+# auxiliares ni colorantes que tambien se despachan a la OFT.
+_MATERIAL_PROCESO = {52: "HILO", 53: "TELA CRUDA"}
+
 
 def fabricacion_proceso(id_bodega: int) -> dict:
     """Proceso de fabricación de una bodega (52 TC / 53 PT). Fail-soft.
@@ -730,21 +735,37 @@ def fabricacion_proceso(id_bodega: int) -> dict:
     if cached and (now - cached[0]) < _FABRICACION_TTL_SECS:
         return cached[1]
 
+    mat_proc = _MATERIAL_PROCESO.get(int(id_bodega), "TELA CRUDA")
     sql = f"""
-        WITH ofs AS (
-            SELECT id_orden_fabricacion, numero, id_producto,
-                   ISNULL(cantidad, 0) AS planif, ISNULL(cantidad_fabricada, 0) AS fab
-              FROM orden_fabricacion
-             WHERE id_bodega = {int(id_bodega)} AND estado_produccion <> 5
+        WITH leaf AS (
+            -- Replica EXACTA del Power Query del Excel "Saldos Inventarios
+            -- Proceso Produccion Nube" (Sql.Database as2): OFTs HOJA (no
+            -- padres) con estado_produccion = 2.
+            SELECT ofr.id_orden_fabricacion, ofr.numero, ofr.id_producto,
+                   ISNULL(ofr.cantidad, 0) AS planif,
+                   ISNULL(ofr.cantidad_fabricada, 0) AS fab
+              FROM orden_fabricacion ofr
+             WHERE ofr.id_bodega = {int(id_bodega)} AND ofr.estado_produccion = 2
+               AND ofr.id_orden_fabricacion NOT IN (
+                   SELECT id_orden_fabricacion_padre FROM orden_fabricacion
+                    WHERE id_orden_fabricacion_padre IS NOT NULL)
         ),
         issued AS (
-            SELECT j.id_orden_fabricacion,
-                   SUM(ISNULL(d.cantidad_despachada, 0)) AS issued
-              FROM detalle_orden_salida_material_orden_fabricacion j
-              JOIN detalle_orden_salida_material d
-                ON d.id_detalle_orden_salida_material = j.id_detalle_orden_salida_material
-             WHERE j.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM ofs)
-             GROUP BY j.id_orden_fabricacion
+            -- Despacho del MATERIAL DE ENTRADA ({mat_proc}) por el junction
+            -- orden_fabricacion_orden_salida_material (el del Excel — NO el
+            -- detalle-junction). Filtrado por categoria para excluir auxiliares
+            -- y colorantes, igual que el bloque "Inventario en Proceso" del Excel.
+            SELECT ofosm.id_orden_fabricacion,
+                   SUM(ISNULL(dosm.cantidad_despachada, 0)) AS issued
+              FROM orden_salida_material osm
+              JOIN detalle_orden_salida_material dosm
+                ON dosm.id_orden_salida_material = osm.id_orden_salida_material
+              JOIN orden_fabricacion_orden_salida_material ofosm
+                ON ofosm.id_orden_salida_material = osm.id_orden_salida_material
+              JOIN producto prm ON prm.id_producto = dosm.id_producto
+             WHERE ofosm.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM leaf)
+               AND prm.nombre_categoria_producto = '{mat_proc}'
+             GROUP BY ofosm.id_orden_fabricacion
         )
         SELECT o.numero                                         AS oft,
                COALESCE(NULLIF(p.descripcion,''), p.nombre, p.codigo) AS producto,
@@ -753,7 +774,7 @@ def fabricacion_proceso(id_bodega: int) -> dict:
                o.planif                                         AS planif,
                o.fab                                            AS fab,
                ISNULL(i.issued, 0)                              AS issued
-          FROM ofs o
+          FROM leaf o
           LEFT JOIN issued i ON i.id_orden_fabricacion = o.id_orden_fabricacion
           LEFT JOIN producto p ON p.id_producto = o.id_producto
           LEFT JOIN categoria_producto cp
