@@ -270,6 +270,60 @@ def _pc_movs_pichincha(desde: date) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def conciliados_dbase() -> dict:
+    """Conciliados/pendientes en el dBase: PICHINCH.DBF STAT='*' = conciliado.
+
+    Convención del PRG/dBase: la marca '*' en STAT significa que el
+    movimiento ya fue conciliado contra el extracto del banco; en blanco
+    = pendiente de conciliar. (Idéntica a la marca stat='*' que PC usa en
+    scintela.transacciones_bancarias al conciliar.)
+    """
+    if not (EXTRACT_DIR / "PICHINCH.DBF").exists():
+        return {"conc_n": None, "conc_sum": None, "pend_n": None, "pend_sum": None}
+    pich = _leer("PICHINCH.DBF")
+    conc_n = conc_sum = pend_n = pend_sum = 0
+    for r in pich:
+        st = (str(r.get("STAT") or "")).strip()
+        imp = _f(r.get("IMPORTE"))
+        if st == "*":
+            conc_n += 1
+            conc_sum += imp
+        else:
+            pend_n += 1
+            pend_sum += imp
+    return {"conc_n": conc_n, "conc_sum": round(conc_sum, 2),
+            "pend_n": pend_n, "pend_sum": round(pend_sum, 2)}
+
+
+def _pc_conciliados_pichincha() -> dict:
+    """Conciliados/pendientes en PC: transacciones_bancarias.stat='*' (Pichincha).
+
+    Mismo flag '*' que el dBase. Lo setea la conciliación (banco_v2_view) al
+    parear un movimiento contra el extracto, y lo limpia al deshacer.
+    """
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT TRIM(COALESCE(t.stat, '')) = '*' AS conc,
+               COUNT(*) AS n, COALESCE(SUM(t.importe), 0) AS suma
+          FROM scintela.transacciones_bancarias t
+          JOIN scintela.banco b ON b.no_banco = t.no_banco
+         WHERE UPPER(b.nombre) LIKE 'PICHINCH%%'
+         GROUP BY 1
+        """
+    ) or []
+    out = {"conc_n": 0, "conc_sum": 0.0, "pend_n": 0, "pend_sum": 0.0}
+    for r in rows:
+        rd = dict(r)
+        if rd.get("conc"):
+            out["conc_n"] = int(rd.get("n") or 0)
+            out["conc_sum"] = round(_f(rd.get("suma")), 2)
+        else:
+            out["pend_n"] = int(rd.get("n") or 0)
+            out["pend_sum"] = round(_f(rd.get("suma")), 2)
+    return out
+
+
 # ───────────────── comparación de movimientos de banco ─────────────────
 
 def diff_movs_banco(dbf_movs: list[dict], pc_movs: list[dict], desde: date) -> dict:
@@ -1099,6 +1153,28 @@ def reporte(dias_banco: int = 30):
         yield line(f"  {'Δ utilidad':24} {util_pc - util_db:>+14,.2f}")
         ok = abs(residuo) <= 1.0
         yield line(f"  RESIDUO NO EXPLICADO: {residuo:,.2f}  {'✓ (todo explicado)' if ok else '✗✗ INVESTIGAR'}")
+    yield line()
+    yield line("── [14] CONCILIADOS — banco Pichincha (STAT='*' = conciliado) ──")
+    try:
+        cdb = conciliados_dbase()
+        cpc = _pc_conciliados_pichincha()
+        yield line("  dBase: PICHINCH.DBF STAT='*'  ·  PC: transacciones_bancarias.stat='*' (Pichincha)")
+        if cdb.get("conc_n") is None:
+            yield line("  [sin PICHINCH.DBF en el tarball — no se puede comparar conciliados]")
+        else:
+            yield _linea_cmp("Conciliados $", cdb["conc_sum"], cpc["conc_sum"])
+            yield line(f"  {'Conciliados (#movs)':24} dBase={cdb['conc_n']:>14,}  "
+                       f"PC={cpc['conc_n']:>14,}  Δ={cpc['conc_n'] - cdb['conc_n']:>+12,}  "
+                       f"{'✓' if cpc['conc_n'] == cdb['conc_n'] else '✗'}")
+            yield _linea_cmp("Pendientes $", cdb["pend_sum"], cpc["pend_sum"])
+            yield line(f"  {'Pendientes (#movs)':24} dBase={cdb['pend_n']:>14,}  "
+                       f"PC={cpc['pend_n']:>14,}  Δ={cpc['pend_n'] - cdb['pend_n']:>+12,}  "
+                       f"{'✓' if cpc['pend_n'] == cdb['pend_n'] else '✗'}")
+            yield line("  (Δ#movs ≠ 0 esperable mientras PC tenga movs posteriores al DBF "
+                       "o falte conciliar lo cargado por la app.)")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [conciliados no disponible: {exc!r}]")
+
     yield line()
     yield line("Fin — ningún dato fue modificado.")
 
