@@ -293,8 +293,8 @@
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mt-4">
     <details>
       <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 select-none hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center gap-2">
-        <span>Ya en PC como backfill ({{ en_pc_backfill|length }})</span>
-        <span class="text-xs font-normal text-slate-400">$ {{ '{:,.2f}'.format(suma_usd_bf) }} · {{ '{:,.2f}'.format(suma_kg_bf) }} kg — no cuentan en cartera, podés activarlas</span>
+        <span>Ya están en PC (todavía no suman a cartera) — {{ en_pc_backfill|length }}</span>
+        <span class="text-xs font-normal text-slate-400">$ {{ '{:,.2f}'.format(suma_usd_bf) }} · {{ '{:,.2f}'.format(suma_kg_bf) }} kg — estas facturas ya fueron cargadas antes pero no se están contando en la cartera. Tocá 'Contar en cartera' para que cuenten.</span>
       </summary>
       <div class="border-t border-slate-100 dark:border-slate-800 overflow-auto">
         <table class="w-full text-sm">
@@ -336,7 +336,7 @@
                   <input type="hidden" name="codigo_cli" value="{{ h.cliente_codigo }}">
                   <input type="hidden" name="kg" value="{{ h.kg }}">
                   <input type="hidden" name="usd" value="{{ h.usd }}">
-                  <button class="px-2 py-0.5 rounded border border-sky-600 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-xs">Activar</button>
+                  <button class="px-2 py-0.5 rounded border border-sky-600 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-xs">Contar en cartera</button>
                 </form>
               </td>
             </tr>
