@@ -131,8 +131,15 @@ def lado_dbase() -> dict:
                        "concepto": (str(r.get("CONCEPTO") or "")).strip()}
                       for r in dol if (r.get("ST") or " ").strip() == ""]
 
-    d["totp"] = sum(_f(r.get("IMPORTE")) for r in _leer("POSDAT.DBF")
+    _posdat = _leer("POSDAT.DBF")
+    d["totp"] = sum(_f(r.get("IMPORTE")) for r in _posdat
                     if int(r.get("BANC") or 0) != 9)
+    d["posdat_rows"] = [{"prov": (str(r.get("PROV") or "")).strip().upper(),
+                         "importe": round(_f(r.get("IMPORTE")), 2),
+                         "concepto": (str(r.get("CONCEPTO") or "")).strip(),
+                         "banc": int(r.get("BANC") or 0),
+                         "fecha": r.get("FECHA")}
+                        for r in _posdat if int(r.get("BANC") or 0) != 9]
     pp = EXTRACT_DIR / "POSDAT.DBF"
     d["posdat_mtime"] = (datetime.utcfromtimestamp(pp.stat().st_mtime)
                          - timedelta(hours=5)) if pp.exists() else None
@@ -365,6 +372,19 @@ def diff_anticipos(dbf_rows: list[dict], pc_rows: list[dict]) -> dict:
     return _diff_multiset(dbf_rows, pc_rows, key)
 
 
+def diff_posdat(dbf_rows: list[dict], pc_rows: list[dict]) -> dict:
+    """Partida x partida de PASIVOS vivos (banc<>9): multiset por (prov, importe).
+
+    Mismo universo en los dos lados: dBase POSDAT con BANC<>9 (que aquí ==
+    banc=0, no hay banc 1/2 en el DBF) vs scintela.posdat banc=0 no anulada
+    (el TOTP del balance). Sobrantes = de dónde sale el Δ Pasivos.
+    """
+    def key(r):
+        return ((r.get("prov") or "").strip().upper(),
+                round(_f(r.get("importe")), 2))
+    return _diff_multiset(dbf_rows, pc_rows, key)
+
+
 def _numf_sri_pc(r) -> int:
     """N° SRI de una factura PC: últimos dígitos de numf_completo
     ('001-002-000174007' → 174007). Sin numf_completo cae a numf —
@@ -477,6 +497,23 @@ def _pc_facturas_sri() -> list[dict]:
         """
     ) or []
     return [dict(r) for r in rows]
+
+
+def _pc_posdat_vivos() -> list[dict]:
+    """Pasivos vivos PC: banc=0 no anulada — mismo universo que el TOTP del balance."""
+    import db
+    rows = db.fetch_all(
+        """
+        SELECT fecha, prov, importe, concepto
+          FROM scintela.posdat
+         WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+           AND COALESCE(banc, 0) = 0
+        """
+    ) or []
+    return [{"prov": (str(r["prov"] or "")).strip().upper(),
+             "importe": round(float(r["importe"] or 0), 2),
+             "concepto": (str(r["concepto"] or "")).strip(),
+             "fecha": r["fecha"]} for r in rows]
 
 
 def _pc_posdat_yy_con_cuotas() -> list[dict]:
@@ -834,6 +871,20 @@ def reporte(dias_banco: int = 30):
             yield line("   cuotas YY de hoy; as-of tarball es la comparación justa. Ambas a la vista.)")
     except Exception as exc:  # noqa: BLE001
         yield line(f"  [as-of tarball no disponible: {exc!r}]")
+    try:
+        dp = diff_posdat(d.get("posdat_rows") or [], _pc_posdat_vivos())
+        yield line("  partida x partida VIVAS (prov+importe multiset, banc<>9):")
+        yield line(f"  SOLO dBASE (PC no lo tiene vivo): {len(dp['solo_dbase'])}")
+        for a in sorted(dp["solo_dbase"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            yield line(f"    {str(a.get('fecha') or ''):10} {a['prov']:3} "
+                       f"{_f(a['importe']):>13,.2f}  {str(a.get('concepto') or '')[:30]}")
+        yield line(f"  SOLO PC (dBase no lo tiene vivo): {len(dp['solo_pc'])}")
+        for a in sorted(dp["solo_pc"], key=lambda x: str(x.get("fecha")))[-MAX_LISTADO:]:
+            yield line(f"    {str(a.get('fecha') or ''):10} {a['prov']:3} "
+                       f"{_f(a['importe']):>13,.2f}  {str(a.get('concepto') or '')[:30]}")
+        yield line("  (mismo prov+importe en ambas = ok; sobrantes = el Δ Pasivos real)")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"  [detalle pasivos no disponible: {exc!r}]")
     yield line()
 
     yield line("── [7] ACTIVOS FIJOS (PRG L47-48) ──")
