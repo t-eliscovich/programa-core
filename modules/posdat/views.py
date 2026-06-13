@@ -88,8 +88,8 @@ def nueva():
             )
             return redirect(url_for("proveedores.nuevo", codigo=prov, next=next_url))
         errores.append(f"El proveedor {prov!r} no existe.")
-    if importe is None or importe <= 0:
-        errores.append("Importe debe ser mayor que cero.")
+    if importe is None or importe == 0:
+        errores.append("Importe no puede ser cero.")
     if not concepto:
         errores.append("Concepto requerido.")
 
@@ -183,8 +183,8 @@ def editar(id_posdat: int):
 
     if not concepto:
         errores.append("Concepto requerido.")
-    if importe is not None and importe <= 0:
-        errores.append("Importe debe ser mayor que cero.")
+    if importe is not None and importe == 0:
+        errores.append("Importe no puede ser cero.")
     if errores:
         form = {"id_posdat": id_posdat, **request.form}
         return render_template("posdat/form.html", form=form, errores=errores, modo="editar"), 400
@@ -538,8 +538,8 @@ def api_editar(id_posdat: int):
     concepto_raw = data.get("concepto") if concepto_provided else None
     concepto = (concepto_raw or "").strip() if concepto_provided else None
 
-    if importe is not None and importe <= 0:
-        return jsonify({"ok": False, "error": "Importe debe ser > 0."}), 400
+    if importe is not None and importe == 0:
+        return jsonify({"ok": False, "error": "Importe no puede ser cero."}), 400
     if concepto_provided and not concepto:
         return jsonify({"ok": False, "error": "Concepto vacío."}), 400
     try:
@@ -631,8 +631,8 @@ def api_nuevo():
     es_yy = prov == "YY"
     if importe is None:
         importe = 0.0 if es_yy else None
-    if not es_yy and (importe is None or importe <= 0):
-        return jsonify({"ok": False, "error": "Importe debe ser > 0."}), 400
+    if not es_yy and (importe is None or importe == 0):
+        return jsonify({"ok": False, "error": "Importe no puede ser cero."}), 400
     if not concepto and not es_yy:
         return jsonify({"ok": False, "error": "Concepto requerido."}), 400
     try:
