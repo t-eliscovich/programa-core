@@ -755,16 +755,19 @@ def fabricacion_proceso(id_bodega: int) -> dict:
             -- orden_fabricacion_orden_salida_material (el del Excel — NO el
             -- detalle-junction). Filtrado por categoria para excluir auxiliares
             -- y colorantes, igual que el bloque "Inventario en Proceso" del Excel.
+            -- IMPORTANTE: se ARRANCA desde `leaf` (pocas filas) y se baja a las
+            -- tablas grandes de OSM por JOIN — con IN (SELECT ... FROM leaf) el
+            -- planner escaneaba todo el OSM y la tab TC tardaba 21s (>20s timeout
+            -- de fetch_dataset -> devolvia [] y cacheaba 0). Asi: ~1,3s.
             SELECT ofosm.id_orden_fabricacion,
                    SUM(ISNULL(dosm.cantidad_despachada, 0)) AS issued
-              FROM orden_salida_material osm
-              JOIN detalle_orden_salida_material dosm
-                ON dosm.id_orden_salida_material = osm.id_orden_salida_material
+              FROM leaf l
               JOIN orden_fabricacion_orden_salida_material ofosm
-                ON ofosm.id_orden_salida_material = osm.id_orden_salida_material
+                ON ofosm.id_orden_fabricacion = l.id_orden_fabricacion
+              JOIN detalle_orden_salida_material dosm
+                ON dosm.id_orden_salida_material = ofosm.id_orden_salida_material
               JOIN producto prm ON prm.id_producto = dosm.id_producto
-             WHERE ofosm.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM leaf)
-               AND prm.nombre_categoria_producto = '{mat_proc}'
+             WHERE prm.nombre_categoria_producto = '{mat_proc}'
              GROUP BY ofosm.id_orden_fabricacion
         )
         SELECT o.numero                                         AS oft,
