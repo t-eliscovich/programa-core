@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Cargar movimientos de caja{% endblock %}
+{% block content %}
+{# TMT 2026-06-13 — carga multi-línea de caja. Mismo patrón que
+   /informes/tinto-carga: N líneas + un solo botón Cargar, all-or-nothing
+   en el backend. Es el ADD simple del dBase: fecha/tipo/importe/concepto,
+   sin atajos de concepto ni clasificación V1..V9 (eso vive en /caja/nuevo). #}
+<div class="max-w-4xl" style="font-variant-numeric: tabular-nums;">
+  <div class="flex items-start justify-between mb-4 gap-4 flex-wrap">
+    {{ page_hero('Cargar movimientos de caja') }}
+    <a href="{{ url_for('caja.nuevo') }}"
+       class="text-sm text-sky-600 hover:text-sky-700 self-center">
+      Movimiento único →
+    </a>
+  </div>
+
+  <div class="bg-slate-50 border rounded p-3 mb-4 text-sm">
+    Saldo actual en caja:
+    <span class="font-mono font-semibold">{{ '%.2f' % (saldo_actual or 0) }}</span>
+    <span class="text-slate-400 ml-2 text-xs">
+      Carga simple (sin atajos PICH/PR/RR ni gastos V1..V9). El signo lo
+      lleva el tipo: Entrada suma, Salida resta.
+    </span>
+  </div>
+
+  <form method="post" action="{{ url_for('caja.cargar_agregar') }}"
+        class="bg-white border rounded-lg p-4 shadow-sm" id="carga-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <datalist id="conceptos-caja">
+      {% for c in conceptos %}
+        <option value="{{ c.concepto }}"></option>
+      {% endfor %}
+    </datalist>
+
+    <div class="hidden md:flex items-center gap-3 text-xs text-slate-500 mb-2">
+      <span style="width:150px">Fecha</span>
+      <span class="w-32">Tipo</span>
+      <span class="w-32 text-right">Importe</span>
+      <span class="flex-1">Concepto</span>
+      <span class="w-6"></span>
+    </div>
+
+    <div id="carga-lineas">
+      <div class="carga-linea flex items-center gap-3 flex-wrap md:flex-nowrap mb-2">
+        <input type="date" name="fecha" value="{{ hoy }}" style="width:150px"
+               class="border rounded px-2 py-1 text-sm">
+        <select name="tipo" class="carga-tipo w-32 border rounded px-2 py-1 text-sm">
+          {# Convención legacy dBase: E=entrada (ingreso), S=salida (egreso). #}
+          <option value="E">Entrada</option>
+          <option value="S">Salida</option>
+        </select>
+        <input type="text" name="importe" inputmode="decimal" placeholder="1.234,56"
+               class="carga-importe w-32 border rounded px-2 py-1 text-sm text-right">
+        <input type="text" name="concepto" list="conceptos-caja" maxlength="80"
+               autocomplete="off" placeholder="Concepto"
+               class="carga-concepto flex-1 min-w-[10rem] border rounded px-2 py-1 text-sm">
+        <button type="button" class="carga-quitar text-rose-700 text-sm hover:bg-rose-50 rounded px-1.5"
+                title="Quitar línea">✕</button>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 mt-3 pt-3 border-t flex-wrap">
+      <button type="button" id="carga-mas"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">
+        + línea
+      </button>
+      <button type="submit" id="carga-submit"
+              class="text-sm px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white font-medium">
+        Cargar
+      </button>
+      <span class="text-sm text-slate-500" id="carga-total"></span>
+      <a href="{{ url_for('caja.lista') }}" class="text-slate-500 hover:text-slate-700 text-sm ml-auto">
+        Ver caja
+      </a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function() {
+  // Carga multi-línea de caja: + línea / quitar + total en vivo
+  // (entradas suman, salidas restan). El backend es all-or-nothing.
+  var cont = document.getElementById('carga-lineas');
+  var btnMas = document.getElementById('carga-mas');
+  var lblTotal = document.getElementById('carga-total');
+  var form = document.getElementById('carga-form');
+  if (!cont || !btnMas || !form) return;
+
+  function parseMonto(s) {
+    s = (s || '').trim();
+    if (!s) return NaN;
+    var lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
+    if (lc > -1 && ld > -1) {
+      if (lc > ld) s = s.replace(/\./g, '').replace(',', '.');
+      else s = s.replace(/,/g, '');
+    } else if (lc > -1) {
+      s = s.replace(',', '.');
+    }
+    return parseFloat(s);
+  }
+
+  function updTotal() {
+    var n = 0, neto = 0;
+    cont.querySelectorAll('.carga-linea').forEach(function(l) {
+      var imp = parseMonto(l.querySelector('.carga-importe').value);
+      var concepto = (l.querySelector('.carga-concepto').value || '').trim();
+      if (imp > 0 && concepto) {
+        n++;
+        var tipo = (l.querySelector('.carga-tipo').value || 'E').toUpperCase();
+        neto += (tipo === 'S' ? -imp : imp);
+      }
+    });
+    lblTotal.textContent = n
+      ? n + ' línea' + (n > 1 ? 's' : '') + ' — neto $ ' + neto.toFixed(2)
+      : '';
+  }
+
+  function wire(linea) {
+    linea.querySelectorAll('input, select').forEach(function(el) {
+      el.addEventListener('input', updTotal);
+      el.addEventListener('change', updTotal);
+    });
+    linea.querySelector('.carga-quitar').addEventListener('click', function() {
+      if (cont.querySelectorAll('.carga-linea').length > 1) {
+        linea.remove();
+      } else {
+        linea.querySelectorAll('input').forEach(function(i) {
+          if (i.type !== 'date') i.value = '';
+        });
+        linea.querySelector('.carga-tipo').value = 'E';
+      }
+      updTotal();
+    });
+  }
+
+  btnMas.addEventListener('click', function() {
+    var lineas = cont.querySelectorAll('.carga-linea');
+    var ultima = lineas[lineas.length - 1];
+    var nueva = ultima.cloneNode(true);
+    // Mantener fecha y tipo de la última línea; limpiar importe/concepto.
+    var fecha = ultima.querySelector('input[name="fecha"]').value;
+    var tipo = ultima.querySelector('select[name="tipo"]').value;
+    nueva.querySelectorAll('input').forEach(function(i) {
+      if (i.type !== 'date' && i.type !== 'hidden') i.value = '';
+    });
+    nueva.querySelector('input[name="fecha"]').value = fecha;
+    nueva.querySelector('select[name="tipo"]').value = tipo;
+    cont.appendChild(nueva);
+    wire(nueva);
+    nueva.querySelector('.carga-importe').focus();
+  });
+
+  // Validación client-side: importe/concepto/fecha por línea con datos.
+  form.addEventListener('submit', function(e) {
+    var errs = [], n = 0;
+    cont.querySelectorAll('.carga-linea').forEach(function(l, idx) {
+      var impRaw = (l.querySelector('.carga-importe').value || '').trim();
+      var concepto = (l.querySelector('.carga-concepto').value || '').trim();
+      if (!impRaw && !concepto) return; // vacía — el backend la ignora
+      n++;
+      var imp = parseMonto(impRaw);
+      if (!l.querySelector('input[name="fecha"]').value) {
+        errs.push('línea ' + (idx + 1) + ': falta fecha');
+      } else if (!(imp > 0)) {
+        errs.push('línea ' + (idx + 1) + ': importe debe ser mayor que cero');
+      } else if (!concepto) {
+        errs.push('línea ' + (idx + 1) + ': falta concepto');
+      }
+    });
+    if (!n) errs.push('no hay líneas con datos');
+    if (errs.length) {
+      e.preventDefault();
+      alert('No se cargó nada:\n' + errs.join('\n'));
+    }
+  });
+
+  cont.querySelectorAll('.carga-linea').forEach(wire);
+  updTotal();
+})();
+</script>
+{% endblock %}

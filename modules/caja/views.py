@@ -286,3 +286,152 @@ def lista():
         ids_sin_clasif=ids_sin_clasif,
         n_sin_clasif=len(ids_sin_clasif),
     )
+
+
+# ---------------------------------------------------------------------------
+# CARGA MULTI-LÍNEA — alta masiva de movimientos de caja (réplica dBase ADD)
+# ---------------------------------------------------------------------------
+# TMT 2026-06-13 dueña: "dejame cargar varios movimientos de caja de una".
+# Mismo patrón que /informes/tinto-carga: N líneas + un solo botón Cargar,
+# all-or-nothing en el backend (si alguna línea con datos falla, no se
+# carga NADA). A diferencia de /caja/nuevo, esta pantalla es el ADD SIMPLE
+# del dBase: sólo fecha/tipo/importe/concepto, SIN side-effects de concepto
+# (PICH/INTER/PR/RR), SIN clasificación V1..V9. Cada línea se inserta con
+# caja_helpers.insert_movimiento_caja (saldo running correcto, E=+, S=−) y
+# al final se recalculan los saldos desde la fecha más antigua cargada para
+# que el running balance quede consistente aunque se carguen fechas mezcladas.
+
+
+@caja_bp.route("/caja/cargar", methods=["GET"])
+@requiere_login
+@requiere_permiso("caja.crear")
+def cargar():
+    """Planilla de alta masiva — N líneas fecha/tipo/importe/concepto."""
+    try:
+        conceptos = queries.conceptos_frecuentes(limite=50)
+    except Exception:
+        conceptos = []
+    try:
+        saldo_actual = queries.saldo_actual()
+    except Exception:
+        saldo_actual = 0.0
+    return render_template(
+        "caja/cargar.html",
+        hoy=today_ec().isoformat(),
+        saldo_actual=saldo_actual,
+        conceptos=conceptos,
+    )
+
+
+@caja_bp.route("/caja/cargar/agregar", methods=["POST"])
+@requiere_login
+@requiere_permiso("caja.crear")
+def cargar_agregar():
+    """Alta de N movimientos de caja en un solo POST (all-or-nothing).
+
+    Acepta inputs repetidos fecha/tipo/importe/concepto. Las líneas
+    totalmente vacías se ignoran. Si CUALQUIER línea con datos tiene un
+    error, no se carga NADA (así no quedan cargas a medias).
+
+    Es el ADD simple del dBase: fecha/tipo/importe/concepto, sin
+    side-effects de concepto ni clasificación de gasto. El signo lo
+    lleva el `tipo` (E=entrada/+, S=salida/−); el importe siempre va
+    positivo (lo normaliza caja_helpers).
+    """
+    import caja_helpers
+    import db
+
+    fechas = request.form.getlist("fecha")
+    tipos = request.form.getlist("tipo")
+    importes = request.form.getlist("importe")
+    conceptos = request.form.getlist("concepto")
+    n = max(len(fechas), len(tipos), len(importes), len(conceptos))
+
+    def _at(lst, i):
+        return lst[i] if i < len(lst) else ""
+
+    filas: list[dict] = []
+    errores: list[str] = []
+    for i in range(n):
+        f_raw = str(_at(fechas, i) or "").strip()
+        tipo = (_at(tipos, i) or "").strip().upper()
+        imp_raw = str(_at(importes, i) or "").strip()
+        concepto = (_at(conceptos, i) or "").strip()
+        # Línea vacía (sin importe ni concepto) → ignorar.
+        if not imp_raw and not concepto:
+            continue
+        rotulo = f"línea {len(filas) + len(errores) + 1}"
+        fecha = parse_date(f_raw)
+        if fecha is None:
+            errores.append(f"{rotulo}: fecha inválida")
+            continue
+        if tipo not in ("E", "S"):
+            errores.append(f"{rotulo}: tipo debe ser E (entrada) o S (salida)")
+            continue
+        importe = parse_monto(imp_raw)
+        if importe is None or float(importe) <= 0:
+            errores.append(f"{rotulo}: importe debe ser mayor que cero")
+            continue
+        if not concepto:
+            errores.append(f"{rotulo}: concepto requerido")
+            continue
+        filas.append({
+            "fecha": fecha,
+            "tipo": tipo,
+            "importe": float(importe),
+            "concepto": concepto,
+        })
+
+    if not filas and not errores:
+        flash("No hay líneas para cargar.", "warn")
+        return redirect(url_for("caja.cargar"))
+
+    if errores:
+        flash("No se cargó nada. " + " | ".join(errores), "warn")
+        return redirect(url_for("caja.cargar"))
+
+    usuario = (g.user or {}).get("username", "web")
+    clave = (g.user or {}).get("clave") or usuario[:3].upper()
+
+    # Insertar en orden cronológico para que el saldo running encadene
+    # bien línea a línea dentro de la misma tx. Al final recomputamos
+    # los saldos desde la fecha más antigua cargada por si quedó alguna
+    # fila histórica intercalada (fecha < última fila previa).
+    filas_ordenadas = sorted(filas, key=lambda f: f["fecha"])
+    fecha_min = filas_ordenadas[0]["fecha"]
+    tot_e = tot_s = 0.0
+    try:
+        with db.tx() as conn:
+            for f in filas_ordenadas:
+                caja_helpers.insert_movimiento_caja(
+                    conn,
+                    fecha=f["fecha"],
+                    tipo=f["tipo"],
+                    importe=f["importe"],
+                    concepto=f["concepto"],
+                    clave=clave,
+                    usuario=usuario,
+                )
+                if f["tipo"] == "E":
+                    tot_e += f["importe"]
+                else:
+                    tot_s += f["importe"]
+            # Reencadenar saldos desde la fecha más antigua cargada — así el
+            # running balance queda consistente aunque se hayan cargado
+            # fechas mezcladas o backdated.
+            caja_helpers.recompute_saldos_desde(conn, ancla_fecha=fecha_min)
+    except ValueError as e:
+        flash(f"No se cargó nada: {e}", "warn")
+        return redirect(url_for("caja.cargar"))
+    except Exception as e:
+        flash(f"No pude cargar: {e}", "warn")
+        return redirect(url_for("caja.cargar"))
+
+    n_filas = len(filas_ordenadas)
+    flash(
+        f"Cargada{'s' if n_filas != 1 else ''} {n_filas} línea"
+        f"{'s' if n_filas != 1 else ''}: "
+        f"entradas $ {tot_e:,.2f} · salidas $ {tot_s:,.2f}.",
+        "ok",
+    )
+    return redirect(url_for("caja.cargar"))
