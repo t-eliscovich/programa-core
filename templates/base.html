@@ -727,9 +727,7 @@
       <details class="sidebar-section" data-key="bancos" open>
         <summary>Bancos</summary>
         {% if tiene_permiso('bancos.ver') %}{{ nav_link('bancos.lista', 'Bancos', 'bank') }}{% endif %}
-        {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('bancos.cargar', 'Carga banco (varias)', 'bank') }}{% endif %}
         {% if tiene_permiso('caja.ver') %}{{ nav_link('caja.lista', 'Caja', 'cash') }}{% endif %}
-        {% if tiene_permiso('caja.crear') %}{{ nav_link('caja.cargar', 'Carga caja (varias)', 'cash') }}{% endif %}
         {% if tiene_permiso('bancos.conciliar') %}{{ nav_link('conciliacion.hub', 'Conciliar con banco', 'check') }}{% endif %}
       </details>
 

@@ -87,6 +87,11 @@
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 7h13"/><path d="m12 3 4 4-4 4"/><path d="M21 17H8"/><path d="m12 21-4-4 4-4"/></svg>
       Transferir entre bancos
     </a>
+    <a href="{{ url_for('bancos.cargar') }}"
+       class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      Cargar varias
+    </a>
   </div>
   {% endif %}
   {% endif %}{# fin banco_actual #}
