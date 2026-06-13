@@ -85,8 +85,14 @@
     </div>
 
     <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-      <a href="{{ url_for('compras.lista') }}"
-         class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
+      <div class="flex items-center gap-4">
+        <a href="{{ url_for('compras.lista') }}"
+           class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Cancelar</a>
+        <a href="{{ url_for('compras.confirmar_anulacion', id_compra=compra.id_compra) }}"
+           class="text-sm px-3 py-2 rounded border border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30">
+          Anular compra
+        </a>
+      </div>
       <button type="submit"
               class="px-4 py-2 rounded bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium">
         Guardar cambios
