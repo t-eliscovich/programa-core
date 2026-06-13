@@ -283,5 +283,70 @@
   </div>
   {% endif %}
 
+  {# ───── Ya en PC como backfill ─────
+     TMT 2026-06-13 dueña "no puede haber 151": estas facturas viejas YA
+     existen físicamente en PC, pero como fantasmas usuario_crea=
+     'asinfo-backfill' — NO cuentan en cartera. NO son "faltan cargar".
+     Se muestran aparte, colapsadas. Apretar Cargar las convierte en
+     'asinfo-carga' (cuentan) sin duplicar. #}
+  {% if en_pc_backfill %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mt-4">
+    <details>
+      <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 select-none hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center gap-2">
+        <span>Ya en PC como backfill ({{ en_pc_backfill|length }})</span>
+        <span class="text-xs font-normal text-slate-400">$ {{ '{:,.2f}'.format(suma_usd_bf) }} · {{ '{:,.2f}'.format(suma_kg_bf) }} kg — no cuentan en cartera, podés activarlas</span>
+      </summary>
+      <div class="border-t border-slate-100 dark:border-slate-800 overflow-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left">Fecha</th>
+              <th class="px-3 py-2 text-left">Tipo</th>
+              <th class="px-3 py-2 text-left">Número</th>
+              <th class="px-3 py-2 text-left">Cliente</th>
+              <th class="px-3 py-2 text-right">Kg</th>
+              <th class="px-3 py-2 text-right">USD</th>
+              <th class="px-3 py-2 text-right">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in en_pc_backfill %}
+            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <td class="px-3 py-2 tabular-nums whitespace-nowrap">{{ h.fecha }}</td>
+              <td class="px-3 py-2">
+                <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold
+                  {% if h.tipo == 'FACTURA' %}bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200
+                  {% else %}bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200{% endif %}">
+                  {{ h.tipo }}
+                </span>
+              </td>
+              <td class="px-3 py-2 font-mono text-xs">{{ h.numero }}</td>
+              <td class="px-3 py-2">
+                <span class="text-slate-900 dark:text-slate-100 font-medium">{{ h.cliente_codigo }}</span>
+                {% if h.vendedor %}<span class="text-slate-400 text-xs ml-1">· {{ h.vendedor }}</span>{% endif %}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ '{:,.2f}'.format(h.kg) }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">$ {{ '{:,.2f}'.format(h.usd) }}</td>
+              <td class="px-3 py-2 text-right">
+                <form method="POST" action="{{ url_for('facturas.cargar_desde_asinfo') }}" class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="fecha" value="{{ h.fecha }}">
+                  <input type="hidden" name="numero" value="{{ h.numero }}">
+                  <input type="hidden" name="tipo" value="{{ h.tipo }}">
+                  <input type="hidden" name="codigo_cli" value="{{ h.cliente_codigo }}">
+                  <input type="hidden" name="kg" value="{{ h.kg }}">
+                  <input type="hidden" name="usd" value="{{ h.usd }}">
+                  <button class="px-2 py-0.5 rounded border border-sky-600 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-xs">Activar</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+
 </div>
 {% endblock %}

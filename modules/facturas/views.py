@@ -753,6 +753,70 @@ def desde_asinfo():
         except Exception:
             pass
 
+    # ── TMT 2026-06-13 dueña "no puede haber 151, no tiene sentido": las
+    # ~150 que sobraban son facturas viejas (mayo) que SÍ existen en PC pero
+    # como fantasmas usuario_crea='asinfo-backfill' (el query de arriba las
+    # excluye a propósito porque NO cuentan en cartera). Marcarlas como
+    # "faltan cargar" (rojo) es engañoso: físicamente YA están. Acá traemos
+    # un segundo lookup que INCLUYE backfill, con las MISMAS claves de match,
+    # para poder separar "ya en PC como backfill" de "falta de verdad".
+    pc_bf_rows = db.fetch_all(
+        """
+        SELECT numf_completo, numf, codigo_cli, importe, fecha
+          FROM scintela.factura
+         WHERE fecha BETWEEN %s AND %s
+           AND COALESCE(usuario_crea, '') = 'asinfo-backfill'
+        """,
+        (desde, hasta),
+    ) or []
+    # Mismas estructuras de match que las non-backfill, pero solo backfill.
+    pc_bf_numfs_str: set[str] = {(r.get("numf_completo") or "").strip()
+                                 for r in pc_bf_rows if r.get("numf_completo")}
+    pc_bf_by_numf_cli: set[tuple[int, str]] = set()
+    pc_bf_by_cli_fecha_importe: set[tuple[str, str, int]] = set()
+    for r in pc_bf_rows:
+        cli_raw = (r.get("codigo_cli") or "").strip().upper()
+        cli_pc_canonical = _aliases.to_pc(cli_raw) if cli_raw else ""
+        cli_keys = {cli_raw, cli_pc_canonical} if cli_pc_canonical else {cli_raw}
+        cli_keys.discard("")
+        numf = r.get("numf")
+        n = None
+        if numf:
+            try:
+                n = int(numf)
+            except (TypeError, ValueError):
+                n = None
+        n_completo = _extract_numf_local(r.get("numf_completo") or "")
+        for cand in (n, n_completo):
+            if cand is not None:
+                for cli_k in cli_keys:
+                    pc_bf_by_numf_cli.add((cand, cli_k))
+        try:
+            f_ = r.get("fecha")
+            f_iso = f_.isoformat() if hasattr(f_, "isoformat") else (str(f_)[:10] if f_ else None)
+            imp = float(r.get("importe") or 0)
+            if f_iso:
+                for cli_k in cli_keys:
+                    pc_bf_by_cli_fecha_importe.add((cli_k, f_iso, int(round(imp * 100))))
+        except Exception:
+            pass
+
+    def _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a):
+        """¿Esta factura Asinfo existe en PC SOLO como backfill?
+        Mismo orden de matches que el filtro principal (1/2/3)."""
+        if numero and numero in pc_bf_numfs_str:
+            return True
+        if numf and (numf, cli_pc_esperado) in pc_bf_by_numf_cli:
+            return True
+        if fecha and cli_pc_esperado and usd_a:
+            f_iso = fecha.isoformat()
+            cents = int(round(usd_a * 100))
+            if ((cli_pc_esperado, f_iso, cents) in pc_bf_by_cli_fecha_importe
+                or (cli_pc_esperado, f_iso, cents - 1) in pc_bf_by_cli_fecha_importe
+                or (cli_pc_esperado, f_iso, cents + 1) in pc_bf_by_cli_fecha_importe):
+                return True
+        return False
+
     def _extract_numf(numero: str) -> int | None:
         if not numero:
             return None
@@ -767,6 +831,10 @@ def desde_asinfo():
     # Filtrar Asinfo que NO está en PC (huérfanas-asinfo) — alias-aware.
     # Solo FACTURA y NTEN — las DEVOLUCION/NC son negativas y rara vez se cargan
     huerfanas = []
+    # TMT 2026-06-13: facturas que YA existen en PC pero solo como
+    # backfill (no cuentan en cartera). NO son "faltan cargar" — van a
+    # un grupo aparte, colapsado.
+    en_pc_backfill = []
     for r in asinfo_rows:
         tipo = (r.get("tipo") or "").upper()
         if tipo not in ("FACTURA", "NTEN"):
@@ -804,7 +872,7 @@ def desde_asinfo():
         if numf:
             otros_clis_pc = sorted(c for c in pc_by_numf.get(numf, set())
                                    if c and c != cli_pc_esperado)
-        huerfanas.append({
+        item = {
             "numero": numero,
             "numf": numf,
             "fecha": fecha,
@@ -814,8 +882,16 @@ def desde_asinfo():
             "kg": float(r.get("kg") or 0),
             "usd": float(r.get("usd") or 0),
             "pc_existe_bajo_cli": otros_clis_pc,  # sugerencia alias
-        })
+        }
+        # ¿Existe físicamente en PC, pero solo como fantasma backfill? Entonces
+        # NO falta cargar — va al grupo separado. Cargar la convierte en
+        # 'asinfo-carga' (cuenta en cartera) sin duplicar.
+        if _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a):
+            en_pc_backfill.append(item)
+        else:
+            huerfanas.append(item)
     huerfanas.sort(key=lambda r: (r["fecha"] or _date.min, r["numero"]), reverse=True)
+    en_pc_backfill.sort(key=lambda r: (r["fecha"] or _date.min, r["numero"]), reverse=True)
 
     # ─── Agregado por cliente Asinfo + detección de alias candidatos ──
     # Para cada cliente_codigo de Asinfo con huerfanas, contar cuántas
@@ -877,6 +953,9 @@ def desde_asinfo():
         huerfanas=huerfanas,
         suma_kg=sum(h["kg"] for h in huerfanas),
         suma_usd=sum(h["usd"] for h in huerfanas),
+        en_pc_backfill=en_pc_backfill,
+        suma_kg_bf=sum(h["kg"] for h in en_pc_backfill),
+        suma_usd_bf=sum(h["usd"] for h in en_pc_backfill),
         # Nuevo TMT 2026-05-26
         cutoff_reciente=cutoff_reciente.isoformat(),
         incluir_recientes=incluir_recientes,
