@@ -1349,3 +1349,142 @@ def toggle_conciliado(no_banco: int, id_transaccion: int):
             doc_num=request.args.get("doc_num") or request.form.get("doc_num") or None,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Carga multi-línea (bulk) — TMT 2026-06-13 (pedido dueña: "dejame cargar
+# varios movimientos del banco de una, no uno por uno"). Réplica del patrón
+# de /tinto-carga: N filas en un solo POST (inputs repetidos vía getlist),
+# all-or-nothing en el backend (si UNA fila con datos falla, no se carga
+# NADA). Solo Pichincha (no_banco=10 hidden, sin selector de banco). Cada
+# fila reusa queries.crear_movimiento_simple() — el mismo helper que el alta
+# de a uno — así el saldo y el mov_doble quedan exactos (no se reinventa la
+# lógica de saldo).
+# ---------------------------------------------------------------------------
+_BANCO_PICHINCHA = 10  # Intela solo opera Pichincha (convención "solo Pichincha").
+_DOCS_CARGA = ("DE", "ND")  # DE = depósito (entra), ND = nota de débito (sale).
+
+
+@bancos_bp.route("/bancos/cargar")
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def cargar():
+    """Pantalla de carga multi-línea de movimientos de Pichincha."""
+    return render_template(
+        "bancos/cargar.html",
+        hoy=today_ec().isoformat(),
+        no_banco=_BANCO_PICHINCHA,
+    )
+
+
+@bancos_bp.route("/bancos/cargar/agregar", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def cargar_agregar():
+    """Alta de N movimientos de Pichincha en un solo POST.
+
+    Inputs repetidos fecha/tipo/importe/concepto/doc_banco vía getlist.
+    Filas totalmente vacías se ignoran. Si CUALQUIER fila con datos tiene
+    error, no se carga NADA (all-or-nothing, igual que /tinto-carga). Cada
+    línea pasa por queries.crear_movimiento_simple() (mismo helper que el
+    alta de a uno) → saldo + mov_doble correctos.
+    """
+    fechas = request.form.getlist("fecha")
+    tipos = request.form.getlist("tipo")
+    importes = request.form.getlist("importe")
+    conceptos = request.form.getlist("concepto")
+    docs = request.form.getlist("doc_banco")
+    n = max(len(fechas), len(tipos), len(importes), len(conceptos), len(docs))
+
+    def _at(lst, i):
+        return lst[i] if i < len(lst) else ""
+
+    filas: list[dict] = []
+    errores: list[str] = []
+    for i in range(n):
+        f_raw = str(_at(fechas, i) or "").strip()
+        tipo = (_at(tipos, i) or "").upper().strip()
+        imp_raw = str(_at(importes, i) or "").strip()
+        concepto = (_at(conceptos, i) or "").strip()
+        doc_banco = (_at(docs, i) or "").strip()
+        if not imp_raw and not concepto and not doc_banco:
+            continue  # línea vacía — ignorar
+        rotulo = f"línea {len(filas) + len(errores) + 1}"
+        fecha = parse_date(f_raw) or today_ec()
+        if tipo not in _DOCS_CARGA:
+            errores.append(f"{rotulo}: tipo inválido (debe ser DE o ND)")
+            continue
+        importe = parse_monto(imp_raw)
+        if importe is None or float(importe or 0) <= 0:
+            errores.append(f"{rotulo}: importe inválido")
+            continue
+        filas.append({
+            "fecha": fecha,
+            "tipo": tipo,
+            "importe": float(importe),
+            "concepto": concepto,
+            "doc_banco": doc_banco or None,
+        })
+
+    if not filas and not errores:
+        flash("No hay líneas para cargar.", "warn")
+        return redirect(url_for("bancos.cargar"))
+    if errores:
+        flash("No se cargó nada. " + " | ".join(errores), "warn")
+        return redirect(url_for("bancos.cargar"))
+
+    usuario = (g.user or {}).get("username", "web")
+    creados = 0
+    tot_entra = 0.0
+    tot_sale = 0.0
+    try:
+        for f in filas:
+            # concepto: si el usuario puso doc_banco pero no concepto, el
+            # doc viaja como concepto (es el comprobante del banco). Si puso
+            # ambos, se concatena para no perder ninguno.
+            concepto = f["concepto"]
+            if f["doc_banco"]:
+                concepto = (f"{concepto} {f['doc_banco']}").strip() if concepto else f["doc_banco"]
+            # activa=False: un ND que parezca anticipo USD NO dispara el
+            # prompt ACTIVA? (queda solo en el banco). En carga bulk no hay
+            # modo de contestar S/N por fila, y el flujo de anticipos va por
+            # su pantalla; acá es carga llana de movimientos del banco.
+            r = queries.crear_movimiento_simple(
+                no_banco=_BANCO_PICHINCHA,
+                documento=f["tipo"],
+                importe=f["importe"],
+                fecha=f["fecha"],
+                concepto=concepto,
+                usuario=usuario,
+                activa=False,
+            )
+            if not r.get("dedupe"):
+                creados += 1
+                if f["tipo"] == "DE":
+                    tot_entra += f["importe"]
+                else:
+                    tot_sale += f["importe"]
+    except queries.ActivaRequerida as e:
+        # No debería ocurrir (activa=False), pero por las dudas: cortar y
+        # avisar en vez de dejar una carga a medias.
+        flash(
+            f"Una línea es candidata a anticipo USD (cuenta {e.cta}). "
+            "Cargá los anticipos por su pantalla y dejá acá solo movimientos "
+            "simples del banco.",
+            "warn",
+        )
+        return redirect(url_for("bancos.cargar"))
+    except ValueError as e:
+        flash(f"No se cargó todo: {e}", "warn")
+        return redirect(url_for("bancos.cargar"))
+    except Exception as e:
+        flash_exc("No pude cargar los movimientos", e)
+        return redirect(url_for("bancos.cargar"))
+
+    partes = [f"Cargados {creados} movimiento{'s' if creados != 1 else ''}"]
+    if tot_entra:
+        partes.append(f"entran $ {tot_entra:,.2f}")
+    if tot_sale:
+        partes.append(f"salen $ {tot_sale:,.2f}")
+    flash(" · ".join(partes) + ".", "ok")
+    return redirect(url_for("bancos.cargar"))

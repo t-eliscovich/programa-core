@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Cargar movimientos · Pichincha{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
+  <strong>Cargar</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl" style="font-variant-numeric: tabular-nums;">
+
+  <div class="mb-4">
+    <h1 class="text-xl font-semibold">Cargar movimientos — Pichincha</h1>
+    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+      Varios movimientos del banco de una sola vez. Tipo
+      <strong>DE</strong> = depósito (entra plata),
+      <strong>ND</strong> = nota de débito (sale plata). El saldo del banco
+      se actualiza igual que cargando de a uno. Si una línea con datos falla,
+      <strong>no se carga ninguna</strong>.
+    </p>
+  </div>
+
+  {# ── Alta multi-línea — mismo patrón que /tinto-carga ─────────────── #}
+  <form method="post" action="{{ url_for('bancos.cargar_agregar') }}"
+        class="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 mb-4"
+        id="alta-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {# Solo Pichincha — sin selector de banco. #}
+    <input type="hidden" name="no_banco" value="{{ no_banco }}">
+
+    <div class="flex items-center gap-3 flex-wrap text-xs text-slate-500 dark:text-slate-400 mb-1">
+      <span style="width:150px">Fecha</span>
+      <span class="w-24">Tipo</span>
+      <span class="w-32 text-right">Importe</span>
+      <span class="w-64">Concepto</span>
+      <span class="w-40">Doc. banco</span>
+    </div>
+
+    <div id="alta-lineas">
+      <div class="alta-linea flex items-center gap-3 flex-wrap mb-2">
+        <input type="date" name="fecha" value="{{ hoy }}" style="width:150px"
+               class="rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 px-2 py-1 text-sm">
+        <select name="tipo"
+                class="alta-tipo w-24 rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 px-2 py-1 text-sm">
+          <option value="DE">DE (entra)</option>
+          <option value="ND">ND (sale)</option>
+        </select>
+        <input type="text" name="importe" inputmode="decimal" placeholder="1.250,00"
+               class="alta-importe w-32 rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 px-2 py-1 text-sm text-right">
+        <input type="text" name="concepto" maxlength="50" placeholder="Concepto"
+               class="w-64 rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 px-2 py-1 text-sm">
+        <input type="text" name="doc_banco" maxlength="40" placeholder="opcional"
+               class="w-40 rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 px-2 py-1 text-sm">
+        <button type="button" class="alta-quitar text-rose-700 dark:text-rose-400 text-sm hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded px-1" title="Quitar línea">✕</button>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 mt-2 flex-wrap">
+      <button type="button" id="alta-mas"
+              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+        + línea
+      </button>
+      <button type="submit" id="alta-submit"
+              class="text-sm px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
+        Cargar
+      </button>
+      <span class="text-sm text-slate-500 dark:text-slate-400" id="alta-total"></span>
+    </div>
+  </form>
+
+  <p class="text-xs text-slate-500 dark:text-slate-400">
+    <strong>Notas:</strong> solo Pichincha. El importe va siempre positivo —
+    el tipo (DE/ND) decide si suma o resta del saldo. El <em>Doc. banco</em>
+    es el comprobante del banco (opcional). Las líneas vacías se ignoran.
+  </p>
+</div>
+
+<script>
+(function() {
+  // Carga multi-línea: + línea / quitar / total en vivo. El backend es
+  // all-or-nothing (igual que /tinto-carga).
+  var cont = document.getElementById('alta-lineas');
+  var btnMas = document.getElementById('alta-mas');
+  var lblTotal = document.getElementById('alta-total');
+  var form = document.getElementById('alta-form');
+  if (!cont || !btnMas || !form) return;
+
+  function parseImp(s) {
+    s = (s || '').trim();
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    return parseFloat(s);
+  }
+
+  function updTotal() {
+    var n = 0, entra = 0, sale = 0;
+    cont.querySelectorAll('.alta-linea').forEach(function(l) {
+      var tipo = (l.querySelector('.alta-tipo').value || '').toUpperCase();
+      var imp = parseImp(l.querySelector('.alta-importe').value);
+      if (imp > 0) {
+        n++;
+        if (tipo === 'DE') entra += imp; else sale += imp;
+      }
+    });
+    var partes = [];
+    if (n) partes.push(n + ' línea' + (n > 1 ? 's' : ''));
+    if (entra) partes.push('entran $ ' + entra.toLocaleString('es', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+    if (sale) partes.push('salen $ ' + sale.toLocaleString('es', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+    lblTotal.textContent = partes.join(' · ');
+  }
+
+  function wire(linea) {
+    linea.querySelector('.alta-tipo').addEventListener('change', updTotal);
+    linea.querySelector('.alta-importe').addEventListener('input', updTotal);
+    linea.querySelector('.alta-quitar').addEventListener('click', function() {
+      if (cont.querySelectorAll('.alta-linea').length > 1) { linea.remove(); }
+      else {
+        linea.querySelectorAll('input').forEach(function(i) { if (i.type !== 'date') i.value = ''; });
+      }
+      updTotal();
+    });
+  }
+
+  btnMas.addEventListener('click', function() {
+    var lineas = cont.querySelectorAll('.alta-linea');
+    var ultima = lineas[lineas.length - 1];
+    var nueva = ultima.cloneNode(true);
+    // Mantener la fecha de la última línea; limpiar el resto.
+    var fecha = ultima.querySelector('input[name="fecha"]').value;
+    nueva.querySelectorAll('input').forEach(function(i) { if (i.type !== 'date') i.value = ''; });
+    nueva.querySelector('input[name="fecha"]').value = fecha;
+    cont.appendChild(nueva);
+    wire(nueva);
+    nueva.querySelector('.alta-importe').focus();
+    updTotal();
+  });
+
+  // Validación client-side: al menos una línea con importe > 0.
+  form.addEventListener('submit', function(e) {
+    var errs = [], n = 0;
+    cont.querySelectorAll('.alta-linea').forEach(function(l, idx) {
+      var imp = (l.querySelector('.alta-importe').value || '').trim();
+      var concepto = (l.querySelector('input[name="concepto"]').value || '').trim();
+      var doc = (l.querySelector('input[name="doc_banco"]').value || '').trim();
+      if (!imp && !concepto && !doc) return; // vacía — el backend la ignora
+      n++;
+      var v = parseImp(imp);
+      if (!v || v <= 0) errs.push('línea ' + (idx + 1) + ': importe inválido');
+    });
+    if (!n) { errs.push('no hay líneas con datos'); }
+    if (errs.length) { e.preventDefault(); alert('No se cargó nada:\n' + errs.join('\n')); }
+  });
+
+  cont.querySelectorAll('.alta-linea').forEach(wire);
+})();
+</script>
+{% endblock %}
