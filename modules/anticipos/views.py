@@ -23,7 +23,7 @@ TPL = """
   <h1 class="text-xl font-bold mb-1">Anticipos</h1>
   <p class="text-sm text-slate-500 mb-4">Vivos (ST en blanco) — suman a ANTICIPOS
   del balance, igual que DOLARES del dBase. Total vivo:
-  <b>$ {{ '%.2f' % total }}</b> · {{ filas|length }} partidas</p>
+  <b>$ {{ total | money_es }}</b> · {{ filas|length }} partidas</p>
 
   <form method="post" action="{{ url_for('anticipos.nuevo') }}"
         class="mb-6 flex flex-wrap gap-2 items-end text-sm">
@@ -46,7 +46,7 @@ TPL = """
         <td class="py-1 pr-3">{{ r.fecha or '—' }}</td>
         <td class="pr-3 font-mono">{{ r.cta }}</td>
         <td class="pr-3">{{ (r.concepto or '')[:50] }}</td>
-        <td class="pr-3 text-right font-semibold">{{ '%.2f' % (r.importe or 0) }}</td>
+        <td class="pr-3 text-right font-semibold">{{ (r.importe or 0) | money_es }}</td>
         <td class="pr-3 text-slate-400 text-xs">{{ r.usuario_crea or '—' }}</td>
         <td>
           <form method="post" action="{{ url_for('anticipos.cancelar', id_dolares=r.id_dolares) }}"
