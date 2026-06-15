@@ -198,6 +198,16 @@
       {# Marca si la dueña usó el botón T en alguna fila — el backend
          relaja la tolerancia de rounding cuando ve "1" acá. TMT 2026-05-16. #}
       <input type="hidden" name="aplicar_t_used" id="aplic-t-used" value="">
+      {# TMT 2026-06-15: aprobar diferencia (flete/retención) — cierra la
+         factura con el faltante y lo registra en la observación. #}
+      <label class="flex items-center gap-2 mb-1 text-sm text-slate-700">
+        <input type="checkbox" name="aprobar_diferencia" id="aprobar-diferencia" value="1">
+        Aprobar diferencia (flete / retención) — cierra la factura y registra el faltante
+      </label>
+      <input type="text" name="motivo_diferencia" id="motivo-diferencia" maxlength="60"
+             placeholder="Motivo (ej: FLETE BED, RT IVA)"
+             class="w-full border rounded px-2 py-1 text-sm mb-2 hidden">
+      <script>(function(){var c=document.getElementById("aprobar-diferencia"),m=document.getElementById("motivo-diferencia");if(c&&m){c.addEventListener("change",function(){m.classList.toggle("hidden",!c.checked);});}})();</script>
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas</h3>
         <div class="text-xs text-slate-500" id="aplic-summary">

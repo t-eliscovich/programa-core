@@ -369,6 +369,12 @@ def nuevo():
     # TMT 2026-05-15: en modo multi-cheque también aceptamos aplicaciones
     # — el backend distribuye FIFO entre los cheques creados (cubrir
     # primero con el cheque #1 hasta agotarlo, después #2, etc.).
+    # TMT 2026-06-15 (dueña): aprobar una diferencia (flete/retención)
+    # cuando el cheque queda corto vs las facturas. Tildado → cierra las
+    # facturas con el faltante como diferencia (registrada en la
+    # observación) y saltea el tope de $50. Sin tildar = flujo actual.
+    aprobar_dif = (request.form.get("aprobar_diferencia") or "").strip() in ("1", "true", "on")
+    motivo_dif = (request.form.get("motivo_diferencia") or "").strip()[:60]
     aplicaciones_pre: list[dict] = []
     if not es_anticipo:
         for k, v in request.form.items():
@@ -407,7 +413,7 @@ def nuevo():
     if aplicaciones_pre:
         total_a_aplicar = sum(a["importe"] for a in aplicaciones_pre)
         total_cheques = sum(float(c.get("importe") or 0) for c in cheques_in)
-        if total_a_aplicar > total_cheques + 50.00:
+        if total_a_aplicar > total_cheques + 50.00 and not aprobar_dif:
             errores.append(
                 f"La suma de las aplicaciones ({total_a_aplicar:.2f}) "
                 f"supera el total de cheques ({total_cheques:.2f}) por más de $50."
@@ -570,6 +576,7 @@ def nuevo():
                 # se agotaba y tiraba "los cheques no alcanzan" aunque la
                 # cuenta completa cerrara. Sort estable: dentro de cada grupo
                 # se conserva el orden original.
+                diferencias_por_fact: dict[int, float] = {}
                 aplicaciones_orden = sorted(
                     aplicaciones_pre,
                     key=lambda ap: 0 if float(ap["importe"]) < 0 else 1,
@@ -610,12 +617,33 @@ def nuevo():
                     #     en el último FIFO. La dueña pidió no preocuparse por
                     #     los centavos cuando usó T.
                     t_used = (request.form.get("aplicar_t_used") or "").strip() == "1"
-                    TOLERANCIA_ROUNDING = 1e9 if t_used else 1.00
+                    TOLERANCIA_ROUNDING = 1e9 if (t_used or aprobar_dif) else 1.00
                     if abs(rest_factura) > TOLERANCIA_ROUNDING:
                         raise ValueError(
                             f"No pude distribuir {rest_factura:.2f} de la "
                             f"factura {ap['id_fact']} — los cheques no alcanzan."
                         )
+                    elif aprobar_dif and rest_factura > 0.005:
+                        # TMT 2026-06-15: cheque CORTO por flete/retención y la
+                        # dueña aprobó la diferencia. NO sobre-aplicamos el
+                        # cheque (eso chocaba con 'excede el importe del cheque')
+                        # — cerramos la factura (forzar_stat='T') con el faltante
+                        # como diferencia y lo registramos. La suma aplicada =
+                        # importe del cheque → cartera coherente.
+                        for c in reversed(cheques_restantes):
+                            ult = next(
+                                (x for x in por_cheque.get(c["id_cheque"], [])
+                                 if x["id_fact"] == ap["id_fact"]),
+                                None,
+                            )
+                            if ult is not None:
+                                ult["forzar_stat"] = "T"
+                                diferencias_por_fact[ap["id_fact"]] = (
+                                    diferencias_por_fact.get(ap["id_fact"], 0.0)
+                                    + rest_factura
+                                )
+                                rest_factura = 0
+                                break
                     elif abs(rest_factura) > 0.005:
                         # Absorber el delta en la ÚLTIMA aplicación FIFO de
                         # esta factura (la del último cheque que entró). El
@@ -654,6 +682,22 @@ def nuevo():
                         permitir_depositado=True,
                     )
                     n_aplicaciones += int(r.get("n") or 0)
+
+                # TMT 2026-06-15: diferencia aprobada → registrar en la
+                # observación de cada factura cerrada con faltante (queda
+                # en historia; la bitácora ya loguea el POST).
+                if aprobar_dif and diferencias_por_fact:
+                    for _idf, _dif in diferencias_por_fact.items():
+                        if abs(_dif) < 0.005:
+                            continue
+                        db.execute(
+                            "UPDATE scintela.factura "
+                            "SET observacion = COALESCE(observacion || ' | ', '') || %s "
+                            "WHERE id_factura = %s",
+                            ((f"DIFERENCIA APROBADA ${_dif:.2f} - "
+                              f"{(motivo_dif or 'flete/retencion')} ({usuario})")[:200], _idf),
+                            conn=conn,
+                        )
 
         ch = cheques_creados[0]  # primero — usado abajo para redirect
 
