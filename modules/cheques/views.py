@@ -39,6 +39,17 @@ def _bancos() -> list[dict]:
 # pantalla ni handler extra.
 
 
+@cheques_bp.route("/cobranza/nueva")
+@cheques_bp.route("/cobranza")
+@requiere_login
+@requiere_permiso("cheques.crear")
+def cobranza_redirect():
+    """TMT 2026-06-15: 'Cobranza' es como la dueña nombra esta pantalla; la
+    ruta real es /cheques/nuevo. Redirect para que un link/bookmark a
+    /cobranza/nueva no tire 404. Preserva query params (ej. ?codigo_cli=)."""
+    return redirect(url_for("cheques.nuevo", **request.args.to_dict()))
+
+
 @cheques_bp.route("/cheques/nuevo", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("cheques.crear")
