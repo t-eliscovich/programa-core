@@ -986,6 +986,40 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                 print(f"   [dBase gana] {cur.rowcount} copias asinfo absorbidas "
                       f"(el DBF trae la misma factura)")
 
+            # TMT 2026-06-15: las copias asinfo-carga se cargaban con
+            # numf=MAX+1 (bug: no se parseaba el numf_completo), asi que el
+            # match por numf de arriba NO las veia y quedaban DUPLICADAS
+            # contra la fila dbf-import (mismo cliente+fecha+importe+kg,
+            # distinto numero) inflando TOTF. Segunda pasada: absorber por
+            # CONTENIDO. Acotado SOLO a 'asinfo-carga' (las que CUENTAN) —
+            # las 'asinfo-backfill' (historicas, no cuentan) NO se tocan.
+            # GUARDAS: nunca borrar una con abono>0 ni con cobros aplicados
+            # (chequesxfact) — esa queda para /admin/facturas-reconcile.
+            cur.execute(
+                """
+                DELETE FROM scintela.factura a
+                 WHERE a.usuario_crea = 'asinfo-carga'
+                   AND COALESCE(a.abono, 0) = 0
+                   AND NOT EXISTS (
+                        SELECT 1 FROM scintela.chequesxfact x
+                         WHERE x.id_fact = a.id_factura
+                   )
+                   AND EXISTS (
+                        SELECT 1 FROM scintela.factura b
+                         WHERE b.usuario_crea = 'dbf-import'
+                           AND b.id_factura <> a.id_factura
+                           AND UPPER(TRIM(COALESCE(b.codigo_cli,''))) =
+                               UPPER(TRIM(COALESCE(a.codigo_cli,'')))
+                           AND b.fecha = a.fecha
+                           AND ABS(COALESCE(b.importe,0) - COALESCE(a.importe,0)) < 0.01
+                           AND ABS(COALESCE(b.kg,0)      - COALESCE(a.kg,0))      < 0.001
+                   )
+                """
+            )
+            if cur.rowcount:
+                print(f"   [dBase gana] {cur.rowcount} copias asinfo-carga absorbidas "
+                      f"por contenido (mismo cli+fecha+importe+kg, distinto numero)")
+
         # Restaurar las ediciones PC de gastos proyectados (ver snapshot arriba).
         if pg_table == "scintela.iniciales" and _ini_overrides:
             for yy, mesnum, pretot, kprog, gprog, usr in _ini_overrides:

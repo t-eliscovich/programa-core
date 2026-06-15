@@ -1172,6 +1172,25 @@ def _resolver_cliente_asinfo(
 
 
 
+def _numf_de_numero(numero: str | None) -> int | None:
+    """Extrae el numero de factura (sufijo entero) de un numf_completo de
+    Asinfo (ej '001-099-000177335' -> 177335). Convencion del proyecto:
+    numf = sufijo numerico de numf_completo. Asi la copia asinfo y la del
+    DBF quedan con el MISMO numero y el sync las dedupea. Sin esto, crear()
+    autoasigna numf=MAX+1 e infla cartera con duplicados (TMT 2026-06-15).
+    """
+    if not numero:
+        return None
+    import re as _re_local
+    m = _re_local.findall(r"\d+", str(numero))
+    if not m:
+        return None
+    try:
+        return int(m[-1])
+    except (ValueError, TypeError):
+        return None
+
+
 def _flip_backfill_si_existe(numf_completo: str) -> str | None:
     """Si la factura ya esta en PC por numf_completo: 'flip' si era
     asinfo-backfill y la convirtio a asinfo-carga (ahora CUENTA — decision
@@ -1257,6 +1276,7 @@ def cargar_desde_asinfo_bulk():
                 codigo_cli=cli_uso,
                 kg=kg,
                 importe=importe,
+                numf=_numf_de_numero(numf_completo),  # numero REAL, no MAX+1
                 numf_completo=numf_completo or None,
                 tipo=tipo_asinfo[:2],
                 usuario='asinfo-carga',  # botón Cargar = a propósito → CUENTA (mig 0087)
@@ -1328,6 +1348,7 @@ def cargar_desde_asinfo():
             codigo_cli=cli_uso,
             kg=kg,
             importe=importe,
+            numf=_numf_de_numero(numf_completo),  # numero REAL, no MAX+1
             numf_completo=numf_completo or None,
             tipo=tipo_asinfo[:2],  # 'FA', 'NT'
             usuario='asinfo-carga',  # botón Cargar = a propósito → CUENTA (mig 0087)
