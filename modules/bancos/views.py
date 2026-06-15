@@ -1077,6 +1077,8 @@ def nuevo_movimiento():
         # ActivaRequerida y acá se re-pregunta.
         activa_raw = (request.form.get("activa") or "").strip().upper()
         activa = True if activa_raw == "S" else (False if activa_raw == "N" else None)
+        # TMT 2026-06-15: anticipo de proveedor EXPLÍCITO (select del form, solo ND).
+        anticipo_prov = (request.form.get("anticipo_prov") or "").strip().upper() or None
         try:
             r = queries.crear_movimiento_simple(
                 no_banco=no_banco,
@@ -1088,6 +1090,7 @@ def nuevo_movimiento():
                 usuario=usuario,
                 permitir_duplicado=permitir_dup,
                 activa=activa,
+                anticipo_prov=anticipo_prov,
             )
             if r.get("dedupe"):
                 # TMT 2026-06-09: dedupe silencioso — el mov ya estaba.
@@ -1138,6 +1141,7 @@ def nuevo_movimiento():
             "fecha": request.form.get("fecha") or "",
             "beneficiario": request.form.get("beneficiario") or "",
             "concepto": request.form.get("concepto") or "",
+            "anticipo_prov": request.form.get("anticipo_prov") or "",
         }
         if form_vals["no_banco"]:
             no_banco_inicial = parse_int(form_vals["no_banco"]) or no_banco_inicial

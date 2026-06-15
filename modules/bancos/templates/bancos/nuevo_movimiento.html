@@ -63,6 +63,29 @@
       </div>
       {% endif %}
 
+      {% if doc == 'ND' %}
+      {# TMT 2026-06-15: anticipo de proveedor EXPLÍCITO. Si se elige un
+         proveedor, el backend crea la fila en scintela.dolares (anticipo
+         vivo) además del movimiento de banco — sin depender de tipear el
+         concepto en formato "AC 92". Paridad dBase DOC='ND' + PROV→DOL. #}
+      <div class="md:col-span-2">
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+          ¿Es anticipo de proveedor?
+          <span class="ml-1 text-slate-400 normal-case tracking-normal">(crea el anticipo automáticamente — sube ANTICIPOS, no baja utilidad)</span>
+        </label>
+        <select name="anticipo_prov"
+                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+          <option value="">— No, movimiento normal —</option>
+          {% for p in proveedores %}
+            <option value="{{ p.codigo_prov }}"
+              {% if form_vals and form_vals.anticipo_prov and form_vals.anticipo_prov|upper == p.codigo_prov|upper %}selected{% endif %}>
+              {{ p.codigo_prov }} — {{ p.nombre }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
       <div class="md:col-span-2">
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Concepto</label>
         <input type="text" name="concepto" maxlength="50" placeholder="Descripción corta del movimiento"

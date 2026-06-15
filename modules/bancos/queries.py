@@ -85,6 +85,7 @@ def _routear_mov_simple(
     usuario: str,
     no_banco: int | None = None,
     activa: bool | None = None,
+    anticipo_prov: str | None = None,
 ) -> dict:
     """Side effects de un movimiento simple manual — IMITA el DO CASE de
     dBase BANCOS.PRG (líneas ~164-247), en el MISMO orden y con las mismas
@@ -124,6 +125,30 @@ def _routear_mov_simple(
             "movimiento HABITAT: quedó solo en el banco (el Programa no "
             "lleva los libros de Habitat — registralo allá)"
         )
+        return out
+
+    # ── TMT 2026-06-15: anticipo de proveedor EXPLÍCITO (select del form
+    # "¿Es anticipo de proveedor?"). NO depende de tipear el concepto en
+    # formato mágico "AC 92" ni de la pregunta ACTIVA?. Solo ND. Fuerza la
+    # fila en DOLARES (anticipo VIVO = st en blanco), mismo destino que el
+    # dBase con DOC='ND' + PROV→DOL. El mov_doble lo linkea el caller.
+    if documento == "ND" and (anticipo_prov or "").strip():
+        cta_av = (anticipo_prov or "").strip().upper()[:2]
+        row = db.execute_returning(
+            """
+            INSERT INTO scintela.dolares
+                (fecha, cta, importe, concepto, usuario_crea)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id_dolares
+            """,
+            (fecha, cta_av, importe_f,
+             (concepto_in or f"ANTICIPO {cta_av}")[:50], usuario[:50]),
+            conn=conn,
+        )
+        id_dol = (row or {}).get("id_dolares")
+        out.update(destino_table="dolares", destino_id=id_dol,
+                   meta={"id_dolares": id_dol, "cta_usd": cta_av},
+                   side=f"Anticipo USD #{id_dol} creado en cuenta {cta_av} (ver Anticipos)")
         return out
 
     # ── PRG ~195: COMPRAS (pago directo a proveedor desde el banco).
@@ -934,6 +959,7 @@ def crear_movimiento_simple(
     usuario: str = "web",
     permitir_duplicado: bool = False,
     activa: bool | None = None,
+    anticipo_prov: str | None = None,
 ) -> dict:
     """Crea un movimiento bancario "simple" (DE / NC / ND).
 
@@ -1032,6 +1058,7 @@ def crear_movimiento_simple(
                         usuario=usuario,
                         no_banco=no_banco,
                         activa=activa,
+                        anticipo_prov=anticipo_prov,
                     )
                     if ruta_dd["destino_id"]:
                         import json as _json
@@ -1122,6 +1149,7 @@ def crear_movimiento_simple(
             usuario=usuario,
             no_banco=no_banco,
             activa=activa,
+            anticipo_prov=anticipo_prov,
         )
 
         # Auto-link: origen = la fila bancaria. Destino = la contraparte
