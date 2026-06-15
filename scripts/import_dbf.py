@@ -993,17 +993,19 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             # distinto numero) inflando TOTF. Segunda pasada: absorber por
             # CONTENIDO. Acotado SOLO a 'asinfo-carga' (las que CUENTAN) —
             # las 'asinfo-backfill' (historicas, no cuentan) NO se tocan.
-            # GUARDAS: nunca borrar una con abono>0 ni con cobros aplicados
-            # (chequesxfact) — esa queda para /admin/facturas-reconcile.
+            # duena 2026-06-15: "que el dBase mande y ya". Absorber TODAS las
+            # copias asinfo-carga con gemela en el DBF, INCLUSO con cobro
+            # aplicado (stat A) o anuladas (X) — el saldo/estado real lo da el
+            # DBF. Primero soltamos el link chequesxfact (sin tocar el cheque,
+            # que viene de CHEQUES.DBF y mantiene su stat -> TOTC no se mueve).
+            # Match: cliente igual, alias (AJO/AJ2, VPM/VP1, BED/EBD), numero
+            # real (sufijo numf_completo) o NUMF=0 en el DBF (recien emitida).
             cur.execute(
                 """
-                DELETE FROM scintela.factura a
-                 WHERE a.usuario_crea = 'asinfo-carga'
-                   AND COALESCE(a.abono, 0) = 0
-                   AND NOT EXISTS (
-                        SELECT 1 FROM scintela.chequesxfact x
-                         WHERE x.id_fact = a.id_factura
-                   )
+                DELETE FROM scintela.chequesxfact x
+                 USING scintela.factura a
+                 WHERE x.id_fact = a.id_factura
+                   AND a.usuario_crea = 'asinfo-carga'
                    AND EXISTS (
                         SELECT 1 FROM scintela.factura b
                          WHERE b.usuario_crea = 'dbf-import'
@@ -1011,11 +1013,37 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                            AND b.fecha = a.fecha
                            AND ABS(COALESCE(b.importe,0) - COALESCE(a.importe,0)) < 0.01
                            AND ABS(COALESCE(b.kg,0)      - COALESCE(a.kg,0))      < 0.001
-                           -- cliente igual, o por ALIAS (asinfo usa otro
-                           -- codigo: AJO/AJ2, VPM/VP1, BED/EBD), o el numero
-                           -- REAL (sufijo de numf_completo) coincide con el
-                           -- numf del DBF, o el DBF aun no le puso N° SRI
-                           -- (NUMF=0) y entonces confiamos en fecha+importe+kg.
+                           AND (
+                                 UPPER(TRIM(COALESCE(b.codigo_cli,''))) =
+                                 UPPER(TRIM(COALESCE(a.codigo_cli,'')))
+                              OR (TRIM(COALESCE(a.numf_completo,'')) ~ '\d$'
+                                  AND b.numf = substring(TRIM(a.numf_completo) from '(\d+)$')::int)
+                              OR COALESCE(b.numf, 0) = 0
+                              OR EXISTS (
+                                   SELECT 1 FROM scintela.cliente_alias al
+                                    WHERE (UPPER(al.codigo_asinfo) = UPPER(TRIM(COALESCE(a.codigo_cli,'')))
+                                           AND UPPER(al.codigo_pc) = UPPER(TRIM(COALESCE(b.codigo_cli,''))))
+                                       OR (UPPER(al.codigo_asinfo) = UPPER(TRIM(COALESCE(b.codigo_cli,'')))
+                                           AND UPPER(al.codigo_pc) = UPPER(TRIM(COALESCE(a.codigo_cli,''))))
+                                 )
+                           )
+                   )
+                """
+            )
+            if cur.rowcount:
+                print(f"   [dBase gana] {cur.rowcount} links chequesxfact soltados "
+                      f"de copias asinfo-carga duplicadas")
+            cur.execute(
+                """
+                DELETE FROM scintela.factura a
+                 WHERE a.usuario_crea = 'asinfo-carga'
+                   AND EXISTS (
+                        SELECT 1 FROM scintela.factura b
+                         WHERE b.usuario_crea = 'dbf-import'
+                           AND b.id_factura <> a.id_factura
+                           AND b.fecha = a.fecha
+                           AND ABS(COALESCE(b.importe,0) - COALESCE(a.importe,0)) < 0.01
+                           AND ABS(COALESCE(b.kg,0)      - COALESCE(a.kg,0))      < 0.001
                            AND (
                                  UPPER(TRIM(COALESCE(b.codigo_cli,''))) =
                                  UPPER(TRIM(COALESCE(a.codigo_cli,'')))
