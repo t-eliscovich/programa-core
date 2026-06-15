@@ -266,95 +266,51 @@ def resumen_stock() -> dict:
           "snapshot_fecha": "YYYY-MM" o None,
         }
     """
+    # TMT decision 2026-06-15: /stock (resumen_stock) usaba como "opening"
+    # iniciales[mes ACTUAL], que es el cache que el dBase REESCRIBE con el
+    # stock ya FLUIDO del mes, y ademas le sumaba el flujo intra-mes otra vez
+    # => doble conteo (hilado salia +compras_H; total +$667k vs dBase). El
+    # balance (informe_balance) ya calcula hilado/tejido/terminado con la
+    # formula PRG exacta (opening = cierre mes ANTERIOR, hilado consumido por
+    # tejeduria KK + 0,5%, KT_stock, KV vivo) y matchea dBase 1-a-1. Delegamos
+    # en el para que /stock = balance = dBase. NO replicamos la formula: eso
+    # ya fallo el 2026-06-15 en 78fbff7 con +$494k fantasma.
+    from modules.informes import queries as _inf
+    bal = _inf.informe_balance()
+    res = (bal.get("resultados") or {})
+    st = (res.get("stock") or {})
+
+    def _etapa(k):
+        d = st.get(k) or {}
+        kg = float(d.get("kg") or 0.0)
+        ukg = float(d.get("ukg") or 0.0)
+        us = float(d.get("us") if d.get("us") is not None else kg * ukg)
+        return {"kg": kg, "ukg": ukg, "us": us}
+
+    h = _etapa("hilado")
+    k = _etapa("tejido")
+    t = _etapa("terminado")
+
+    # Quimicos: el balance da VQX vivo en US$ (bal["vqx"]); el kg se deriva
+    # con la tarifa uq de iniciales si esta disponible.
+    us_quim = float(bal.get("vqx") or res.get("vqx") or 0.0)
     hoy = today_ec()
-    ano, mes = hoy.year, hoy.month
-
-    # TMT 2026-05-18 v2 — Opening del MES en curso + delta INTRA-MES.
-    # Antes usábamos opening de enero + delta YTD. Problema: scintela.tinto
-    # sólo tiene data del mes actual cargada (los meses históricos están
-    # vacíos — el tracking de tintura se hace fuera). Entonces el delta YTD
-    # daba terminado negativo → clipped a 0. El opening del mes ya tiene
-    # incorporado el rollforward de meses anteriores via cerrar_mes_auto.
-    opening = _opening_mes_actual(ano, mes)
-    comp_mes = _compras_mes_actual_por_tipo(ano, mes)
-    tarifas = _tarifas_mes_actual(ano, mes)
-    fact_kg = _facturas_kg_mes_actual(ano, mes)
-    tinto_kg = _tinto_kg_mes_actual(ano, mes)
-
-    # Flujo intra-mes:
-    h_kg = opening["hilado"]    + comp_mes.get("H", {}).get("kg", 0.0)
-    # Tejido: opening + compras K - tinturado (sale a tintura)
-    k_kg = opening["tejido"]    + comp_mes.get("K", {}).get("kg", 0.0) - tinto_kg
-    # Terminado: opening + compras T externas + tinturado − facturas
-    t_kg = opening["terminado"] + comp_mes.get("T", {}).get("kg", 0.0) + tinto_kg - fact_kg
-
-    # TMT 2026-05-18 v3 — Tarifas U$/kg canónicas de scintela.iniciales
-    # (legacy um/uk/uf/uq). Antes usábamos weighted avg de compras YTD por
-    # tipo, lo que daba: (a) Tejido 0.51 U$/kg porque compras K incluyen
-    # producción (mucho kg, poco $); (b) Terminado 0 U$/kg porque no hay
-    # compras T (no se compra terminado externamente, se produce).
-    # Estas tarifas vienen del cierre anterior y reflejan el costo ponderado
-    # correcto para valuar el stock actual.
-    h_ukg = tarifas["um"]
-    k_ukg = tarifas["uk"]
-    t_ukg = tarifas["uf"]
-    # Fallback defensivo: si la tarifa de terminado está en 0 pero hay
-    # tarifa de tejido, usar la del tejido (el terminado nunca debería
-    # valer menos que la materia prima de la que sale).
-    if t_ukg <= 0 and k_ukg > 0:
-        t_ukg = k_ukg
-
-    # Químicos: valuación US$ del cierre del mes anterior (= scintela.iniciales.vq).
-    # Si vq está en 0, fallback al último snapshot de scintela.historia.uqui.
-    us_quim = 0.0
-    row_vq = db.fetch_one(
-        """
-        SELECT COALESCE(vq, 0)::float AS vq
-          FROM scintela.iniciales
-         WHERE yy = %s AND mesnum = %s
-         LIMIT 1
-        """,
-        (ano, mes),
-    )
-    if row_vq and row_vq["vq"]:
-        us_quim = float(row_vq["vq"])
-    else:
-        try:
-            from modules.informes import queries as inf
-            hist_live = inf.historia_ultimo_snapshot() or {}
-            us_quim = float(hist_live.get("uqui") or 0)
-        except Exception:
-            us_quim = 0.0
-
-    # TMT 2026-05-18 — Kg de químicos derivado: el sistema legacy guarda
-    # químicos sólo en US$ (vq), pero podemos derivar kg si tenemos la
-    # tarifa uq de iniciales. Sino, sumamos kg de compras tipo Q del año.
-    q_ukg = float(tarifas.get("uq") or 0)
-    q_kg = 0.0
-    if q_ukg > 0 and us_quim > 0:
-        q_kg = us_quim / q_ukg
-    else:
-        # Fallback: kg de compras Q YTD si están cargadas
-        comp_ytd = _compras_ytd_por_tipo(ano)
-        q_kg = comp_ytd.get("Q", {}).get("kg", 0.0)
-        if q_kg > 0 and us_quim > 0:
-            q_ukg = us_quim / q_kg
+    tarifas = _tarifas_mes_actual(hoy.year, hoy.month)
+    q_ukg = float(tarifas.get("uq") or 0.0)
+    q_kg = (us_quim / q_ukg) if (q_ukg > 0 and us_quim) else 0.0
 
     stock = {
-        "hilado":    {"kg": max(0.0, h_kg), "ukg": h_ukg, "us": max(0.0, h_kg) * h_ukg},
-        "tejido":    {"kg": max(0.0, k_kg), "ukg": k_ukg, "us": max(0.0, k_kg) * k_ukg},
-        "terminado": {"kg": max(0.0, t_kg), "ukg": t_ukg, "us": max(0.0, t_kg) * t_ukg},
-        "quimicos":  {"kg": max(0.0, q_kg), "ukg": q_ukg, "us": us_quim},
+        "hilado":    {"kg": max(0.0, h["kg"]), "ukg": h["ukg"], "us": max(0.0, h["us"])},
+        "tejido":    {"kg": max(0.0, k["kg"]), "ukg": k["ukg"], "us": max(0.0, k["us"])},
+        "terminado": {"kg": max(0.0, t["kg"]), "ukg": t["ukg"], "us": max(0.0, t["us"])},
+        "quimicos":  {"kg": max(0.0, q_kg), "ukg": q_ukg, "us": max(0.0, us_quim)},
     }
     total_kg = stock["hilado"]["kg"] + stock["tejido"]["kg"] + stock["terminado"]["kg"]
     total_us = stock["hilado"]["us"] + stock["tejido"]["us"] + stock["terminado"]["us"]
-    stock["total"] = {
-        "kg":  total_kg,
-        "us":  total_us,
-        "ukg": (total_us / total_kg) if total_kg > 0 else 0.0,
-    }
+    stock["total"] = {"kg": total_kg, "us": total_us,
+                      "ukg": (total_us / total_kg) if total_kg > 0 else 0.0}
     stock["total_con_quimicos"] = total_us + us_quim
-    stock["snapshot_fecha"] = f"opening {ano}-{mes:02d} + flujo intra-mes"
+    stock["snapshot_fecha"] = "= balance (informe_balance), formula PRG igual que dBase"
     return stock
 
 
