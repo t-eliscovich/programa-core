@@ -729,6 +729,56 @@ def nuevo():
                             conn=conn,
                         )
 
+                # TMT 2026-06-15: SOBRANTE aprobado (cheques > facturas) →
+                # anticipo del cliente como espejo negativo NB=98 (igual que
+                # es_anticipo; paridad dBase ALTAS.PRG 154-157). NO toca
+                # scintela.dolares (eso es solo proveedores). El sobrante = lo
+                # que quedó sin aplicar de los cheques (restante > 0). Requiere
+                # el checkbox (conservador: no se crean anticipos por error).
+                if aprobar_dif and not es_anticipo:
+                    _sobrante = round(
+                        sum(c["restante"] for c in cheques_restantes
+                            if c["restante"] > 0.005), 2)
+                    if _sobrante > 0.005:
+                        import mov_doble as _md_esp
+                        from datetime import timedelta as _td_esp
+                        _chp = cheques_creados[0]
+                        _esp = db.execute_returning(
+                            """
+                            INSERT INTO scintela.cheque
+                                (no_cheque, fecha, fechad, fecha_recibido,
+                                 codigo_cli, importe, no_banco, banco, stat,
+                                 fechaing, usuario_crea, id_cheque_padre)
+                            VALUES (%s, %s, %s, %s, %s, %s, 98, 'ANTICIPO',
+                                    'Z', CURRENT_DATE, %s, %s)
+                            RETURNING id_cheque
+                            """,
+                            ((_chp.get("no_cheque") or "").strip()[:10], fecha,
+                             (fechad or fecha) + _td_esp(days=30), fecha_recibido,
+                             codigo_cli.upper().strip(), -_sobrante, usuario,
+                             _chp.get("id_cheque")),
+                            conn=conn,
+                        ) or {}
+                        if _esp.get("id_cheque"):
+                            _md_esp.registrar(
+                                conn=conn, tipo="cheque_anticipo_espejo",
+                                origen_table="cheque",
+                                origen_id=_chp.get("id_cheque"),
+                                destino_table="cheque",
+                                destino_id=_esp["id_cheque"],
+                                importe=-_sobrante, fecha=fecha,
+                                concepto=(f"ANTICIPO CLIENTE ${_sobrante:.2f} "
+                                          f"(sobrante de cobranza) "
+                                          f"{codigo_cli.upper().strip()}")[:200],
+                                usuario=usuario,
+                                metadata={"codigo_cli": codigo_cli.upper().strip(),
+                                          "sobrante": _sobrante,
+                                          "id_cheque_padre": _chp.get("id_cheque")},
+                            )
+                            flash(f"Sobrante $ {_sobrante:,.2f} guardado como "
+                                  f"anticipo del cliente {codigo_cli.upper().strip()} "
+                                  f"(espejo NB=98, aplica a futuras facturas).", "ok")
+
         ch = cheques_creados[0]  # primero — usado abajo para redirect
 
         # Mensajes según cantidad creada
