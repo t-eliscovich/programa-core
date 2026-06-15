@@ -1008,11 +1008,28 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
                         SELECT 1 FROM scintela.factura b
                          WHERE b.usuario_crea = 'dbf-import'
                            AND b.id_factura <> a.id_factura
-                           AND UPPER(TRIM(COALESCE(b.codigo_cli,''))) =
-                               UPPER(TRIM(COALESCE(a.codigo_cli,'')))
                            AND b.fecha = a.fecha
                            AND ABS(COALESCE(b.importe,0) - COALESCE(a.importe,0)) < 0.01
                            AND ABS(COALESCE(b.kg,0)      - COALESCE(a.kg,0))      < 0.001
+                           -- cliente igual, o por ALIAS (asinfo usa otro
+                           -- codigo: AJO/AJ2, VPM/VP1, BED/EBD), o el numero
+                           -- REAL (sufijo de numf_completo) coincide con el
+                           -- numf del DBF, o el DBF aun no le puso N° SRI
+                           -- (NUMF=0) y entonces confiamos en fecha+importe+kg.
+                           AND (
+                                 UPPER(TRIM(COALESCE(b.codigo_cli,''))) =
+                                 UPPER(TRIM(COALESCE(a.codigo_cli,'')))
+                              OR (TRIM(COALESCE(a.numf_completo,'')) ~ '\d$'
+                                  AND b.numf = substring(TRIM(a.numf_completo) from '(\d+)$')::int)
+                              OR COALESCE(b.numf, 0) = 0
+                              OR EXISTS (
+                                   SELECT 1 FROM scintela.cliente_alias al
+                                    WHERE (UPPER(al.codigo_asinfo) = UPPER(TRIM(COALESCE(a.codigo_cli,'')))
+                                           AND UPPER(al.codigo_pc) = UPPER(TRIM(COALESCE(b.codigo_cli,''))))
+                                       OR (UPPER(al.codigo_asinfo) = UPPER(TRIM(COALESCE(b.codigo_cli,'')))
+                                           AND UPPER(al.codigo_pc) = UPPER(TRIM(COALESCE(a.codigo_cli,''))))
+                                 )
+                           )
                    )
                 """
             )
