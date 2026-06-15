@@ -595,8 +595,21 @@ def nuevo():
                                 continue
                             aplicar = min(rest_factura, c["restante"])
                         else:
-                            # Crédito: absorbemos entero en el cheque actual.
-                            aplicar = rest_factura
+                            # Crédito (factura con saldo negativo). TMT 2026-06-15:
+                            #   - cheque NEGATIVO (reverso/espejo) con capacidad →
+                            #     consumir respetando su capacidad (repartir entre
+                            #     N reversos, no apilar todo en el #1 → eso daba
+                            #     'excede el importe del espejo');
+                            #   - cheque POSITIVO (cobranza + NC a favor) → absorber
+                            #     entero (el crédito devuelve plata, no tocar);
+                            #   - cheque negativo agotado (~0) → saltar al siguiente.
+                            if c["restante"] < -0.005:
+                                aplicar = max(rest_factura, c["restante"])
+                            elif c["restante"] > 0.005:
+                                aplicar = rest_factura
+                            else:
+                                i += 1
+                                continue
                         por_cheque[c["id_cheque"]].append(
                             {
                                 "id_fact": ap["id_fact"],
@@ -607,6 +620,9 @@ def nuevo():
                         c["restante"] -= aplicar
                         rest_factura -= aplicar
                         if rest_factura > 0 and c["restante"] <= 0.005:
+                            i += 1
+                        elif rest_factura < -0.005 and c["restante"] >= -0.005:
+                            # Cheque negativo agotado y aún queda crédito → siguiente.
                             i += 1
                     # Tolerancia de rounding: data legacy del DBF deja sub-pesos
                     # raros (0.55 típicos por conversiones COP→USD del Clipper).
