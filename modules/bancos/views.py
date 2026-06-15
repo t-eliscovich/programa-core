@@ -1079,6 +1079,25 @@ def nuevo_movimiento():
         activa = True if activa_raw == "S" else (False if activa_raw == "N" else None)
         # TMT 2026-06-15: anticipo de proveedor EXPLÍCITO (select del form, solo ND).
         anticipo_prov = (request.form.get("anticipo_prov") or "").strip().upper() or None
+        # TMT 2026-06-15: destino especial EXPLÍCITO (retiro/caja/posdato) via
+        # select del form, en vez de tipear el concepto en formato mágico. Si se
+        # elige uno, reescribimos el concepto al formato que _routear_mov_simple
+        # ya maneja (RR/CAJA/INOP) y limpiamos beneficiario para que no caiga en
+        # COMPRAS. Retrocompat: sin selección, el tipeo viejo sigue andando.
+        mov_destino = (request.form.get("mov_destino") or "").strip().lower()
+        mov_param = (request.form.get("mov_destino_param") or "").strip().upper()[:2]
+        if doc == "ND" and not anticipo_prov and mov_destino in ("retiro", "caja", "posdat"):
+            _desc = concepto
+            # El código de 2 letras va en posición FIJA (de=c[3:5] para RR,
+            # prov=c[5:7] para INOP); ljust(2) lo mantiene aunque venga corto.
+            _p2 = (mov_param or "").ljust(2)
+            if mov_destino == "retiro":
+                concepto = ("RR " + _p2 + " " + _desc).strip()
+            elif mov_destino == "caja":
+                concepto = ("CAJA " + _desc).strip()
+            elif mov_destino == "posdat":
+                concepto = ("INOP " + _p2 + " " + _desc).strip()
+            prov = None
         try:
             r = queries.crear_movimiento_simple(
                 no_banco=no_banco,
@@ -1142,6 +1161,8 @@ def nuevo_movimiento():
             "beneficiario": request.form.get("beneficiario") or "",
             "concepto": request.form.get("concepto") or "",
             "anticipo_prov": request.form.get("anticipo_prov") or "",
+            "mov_destino": request.form.get("mov_destino") or "",
+            "mov_destino_param": request.form.get("mov_destino_param") or "",
         }
         if form_vals["no_banco"]:
             no_banco_inicial = parse_int(form_vals["no_banco"]) or no_banco_inicial

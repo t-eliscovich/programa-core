@@ -86,6 +86,32 @@
       </div>
       {% endif %}
 
+      {% if doc == 'ND' %}
+      {# TMT 2026-06-15: destino especial explícito (retiro/caja/posdato) en vez
+         del concepto mágico. Si se elige, el backend rutea ahí (RR/CAJA/INOP). #}
+      <div class="md:col-span-2">
+        <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
+          ¿Movimiento especial?
+          <span class="ml-1 text-slate-400 normal-case tracking-normal">(retiro de socio / entrada a caja / posdato INOP)</span>
+        </label>
+        <div class="flex gap-2">
+          <select name="mov_destino" id="mov-destino"
+                  class="px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
+            <option value="">— No, movimiento normal —</option>
+            <option value="retiro" {% if form_vals and form_vals.mov_destino == 'retiro' %}selected{% endif %}>Retiro (RR)</option>
+            <option value="caja" {% if form_vals and form_vals.mov_destino == 'caja' %}selected{% endif %}>Entrada a Caja</option>
+            <option value="posdat" {% if form_vals and form_vals.mov_destino == 'posdat' %}selected{% endif %}>Posdato (INOP)</option>
+          </select>
+          <input type="text" name="mov_destino_param" id="mov-destino-param" maxlength="2"
+                 placeholder="cuenta (2 letras)"
+                 value="{{ form_vals.mov_destino_param if form_vals else '' }}"
+                 class="px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 uppercase hidden"
+                 oninput="this.value=this.value.toUpperCase()">
+        </div>
+      </div>
+      <script>(function(){var s=document.getElementById('mov-destino'),p=document.getElementById('mov-destino-param');if(s&&p){function t(){p.classList.toggle('hidden',!(s.value==='retiro'||s.value==='posdat'));}s.addEventListener('change',t);t();}})();</script>
+      {% endif %}
+
       <div class="md:col-span-2">
         <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Concepto</label>
         <input type="text" name="concepto" maxlength="50" placeholder="Descripción corta del movimiento"
