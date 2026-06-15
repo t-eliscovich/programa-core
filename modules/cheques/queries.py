@@ -2974,12 +2974,15 @@ def aplicar_a_factura(
             if abs(total_aplicado) > abs(restante_cheque) + 0.01:
                 raise ValueError(
                     f"Total aplicado ({abs(total_aplicado):.2f}) excede el "
-                    f"importe del espejo ({abs(restante_cheque):.2f})."
+                    f"importe del espejo ({abs(restante_cheque):.2f}). "
+                    f"Agregá otro cheque negativo para repartir el reverso, "
+                    f"o ajustá los importes a aplicar."
                 )
         else:
             if total_aplicado > restante_cheque + 0.01:
                 raise ValueError(
-                    f"Total aplicado ({total_aplicado:.2f}) excede el importe del cheque ({restante_cheque:.2f})."
+                    f"Total aplicado ({total_aplicado:.2f}) excede el importe del cheque "
+                    f"({restante_cheque:.2f}). Agregá otro cheque o revisá los importes aplicados."
                 )
 
     return {"id_cheque": id_cheque, "total_aplicado": total_aplicado, "n": len(aplicaciones)}

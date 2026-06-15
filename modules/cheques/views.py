@@ -416,7 +416,8 @@ def nuevo():
         if total_a_aplicar > total_cheques + 50.00 and not aprobar_dif:
             errores.append(
                 f"La suma de las aplicaciones ({total_a_aplicar:.2f}) "
-                f"supera el total de cheques ({total_cheques:.2f}) por más de $50."
+                f"supera el total de cheques ({total_cheques:.2f}) por más de $50. "
+                f"Si el cliente dedujo flete/retención, tildá 'Aprobar diferencia'."
             )
             return render_template(
                 "cheques/nuevo.html",
@@ -637,7 +638,9 @@ def nuevo():
                     if abs(rest_factura) > TOLERANCIA_ROUNDING:
                         raise ValueError(
                             f"No pude distribuir {rest_factura:.2f} de la "
-                            f"factura {ap['id_fact']} — los cheques no alcanzan."
+                            f"factura {ap['id_fact']} — los cheques no alcanzan. "
+                            f"Agregá otro cheque (+ Otro cheque) o tildá 'Aprobar "
+                            f"diferencia' si el cliente dedujo flete/retención."
                         )
                     elif aprobar_dif and rest_factura > 0.005:
                         # TMT 2026-06-15: cheque CORTO por flete/retención y la
