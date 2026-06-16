@@ -429,11 +429,43 @@ def nuevo():
         total_a_aplicar = sum(a["importe"] for a in aplicaciones_pre)
         total_cheques = sum(float(c.get("importe") or 0) for c in cheques_in)
         if total_a_aplicar > total_cheques + 50.00 and not aprobar_dif:
-            errores.append(
-                f"La suma de las aplicaciones ({total_a_aplicar:.2f}) "
-                f"supera el total de cheques ({total_cheques:.2f}) por más de $50. "
-                f"Si el cliente dedujo flete/retención, tildá 'Aprobar diferencia'."
-            )
+            # TMT 2026-06-16 (dueña: "al tomar una NC no permite pagar
+            # facturas"): la diferencia NO siempre es flete/retención — muchas
+            # veces el cliente tiene una NOTA DE CRÉDITO (factura con saldo
+            # negativo) que cubre el faltante. Para "usarla" hay que tildar esa
+            # fila (aplica el monto negativo, netea el cheque). Antes el mensaje
+            # mandaba a "Aprobar diferencia" (flete) aunque la salida correcta
+            # era tildar la NC. Ahora detectamos el crédito disponible sin usar
+            # y guiamos a la NC. Solo lectura (no auto-aplica: la dueña tilda).
+            falta = total_a_aplicar - total_cheques
+            _aplicadas = {int(a["id_fact"]) for a in aplicaciones_pre}
+            _ncs = db.fetch_all(
+                "SELECT id_factura, numf, saldo FROM scintela.factura "
+                "WHERE codigo_cli = %s AND saldo < -0.005",
+                (codigo_cli,),
+            ) or []
+            _nc_libres = [r for r in _ncs if int(r["id_factura"]) not in _aplicadas]
+            _nc_total = sum(abs(float(r["saldo"] or 0)) for r in _nc_libres)
+            if _nc_total >= falta - 0.01 and _nc_libres:
+                _detalle = ", ".join(
+                    f"#{r.get('numf') or r['id_factura']} (${abs(float(r['saldo'] or 0)):,.2f})"
+                    for r in sorted(_nc_libres,
+                                    key=lambda r: abs(float(r["saldo"] or 0)),
+                                    reverse=True)[:6]
+                )
+                errores.append(
+                    f"Estás aplicando ${total_a_aplicar:,.2f} y los cheques suman "
+                    f"${total_cheques:,.2f} (faltan ${falta:,.2f}). Este cliente tiene "
+                    f"${_nc_total:,.2f} en notas de crédito sin usar — tildá esas filas "
+                    f"(saldo en rojo / ⚠ crédito) para descontarlas y cerrar estas "
+                    f"facturas. NC disponibles: {_detalle}."
+                )
+            else:
+                errores.append(
+                    f"La suma de las aplicaciones ({total_a_aplicar:.2f}) "
+                    f"supera el total de cheques ({total_cheques:.2f}) por más de $50. "
+                    f"Si el cliente dedujo flete/retención, tildá 'Aprobar diferencia'."
+                )
             return render_template(
                 "cheques/nuevo.html",
                 form=form,
