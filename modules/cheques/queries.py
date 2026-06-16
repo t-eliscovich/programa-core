@@ -2856,10 +2856,15 @@ def aplicar_a_factura(
                     # submit para diferencias chicas. dBase legacy preguntaba
                     # "Faltan X dólares, OK?".
                     if imp > saldo_actual + 50.00:
+                        # TMT 2026-06-16: numf puede ser 0 (facturas asinfo) —
+                        # usar el identificador real para que el mensaje sirva.
+                        _ref = f.get("numf") or f"id {id_fact}"
                         raise ValueError(
-                            f"Aplicación ({imp:.2f}) excede el saldo de "
-                            f"factura {f['numf']} ({saldo_actual:.2f}) "
-                            f"por más de $50."
+                            f"Aplicación (${imp:,.2f}) a la factura {_ref} supera "
+                            f"su saldo (${saldo_actual:,.2f}) por "
+                            f"${imp - saldo_actual:,.2f}. Aplicá solo su saldo y "
+                            f"dejá el resto como anticipo del cliente, o tildá otra "
+                            f"factura para distribuir el resto."
                         )
                 else:  # imp < 0 → dos casos distintos según el saldo:
                     # (a) saldo NEGATIVO (nota de crédito / sobrepago a favor

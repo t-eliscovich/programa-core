@@ -420,6 +420,31 @@ def nuevo():
                 }
             )
 
+    # TMT 2026-06-16 (dueña, caso BED): si una aplicación POSITIVA supera el
+    # saldo real de su factura, NO es un error — la dueña está cobrando de más
+    # y el excedente va como ANTICIPO del cliente. Capamos la aplicación al
+    # saldo de la factura; el excedente queda sin aplicar en el cheque y dispara
+    # el flujo sobrante→anticipo (banner ámbar, fix #5). Sin esto,
+    # aplicar_a_factura cortaba con "excede el saldo de factura X por más de
+    # $50" ANTES de poder ofrecer el anticipo. (Negativas/NC no se tocan; las
+    # que entran dentro del saldo + $50 de gracia tampoco.)
+    if aplicaciones_pre:
+        _ids_pos = [a["id_fact"] for a in aplicaciones_pre if a["importe"] > 0]
+        if _ids_pos:
+            _saldos_cap = {
+                int(r["id_factura"]): float(r["saldo"] or 0)
+                for r in (db.fetch_all(
+                    "SELECT id_factura, saldo FROM scintela.factura "
+                    "WHERE id_factura = ANY(%s)",
+                    (_ids_pos,),
+                ) or [])
+            }
+            for a in aplicaciones_pre:
+                _s = _saldos_cap.get(int(a["id_fact"]))
+                if (a["importe"] > 0 and _s is not None and _s > 0.005
+                        and a["importe"] > _s + 50.00):
+                    a["importe"] = round(_s, 2)  # excedente → sobrante→anticipo
+
     # Sobre-aplicación: si la suma > TOTAL de cheques, error. Con multi-cheque,
     # el total disponible es la suma de todos los importes.
     # TMT 2026-05-15: tolerancia de $50 — el JS pregunta al submit para
