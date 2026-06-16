@@ -1050,13 +1050,29 @@
        menu, empujando el body height → toda la pagina tenia scroll
        vertical aunque el contenido entrara en pantalla. #}
     <main class="flex-1 p-6" style="overflow: auto;">
+      {# TMT 2026-06-16 dueña: el mensaje antes era un banner ARRIBA del
+         contenido — al editar inline una fila bien abajo (ej. postergar), el
+         aviso quedaba fuera de pantalla ("solo borra y ya"). Ahora flota fijo
+         arriba a la derecha, siempre visible, con cierre por click y
+         auto-cierre (errores/avisos duran más). #}
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          <div class="mb-4 space-y-2">
+          <div id="flash-toasts" class="fixed top-3 right-3 z-50 space-y-2 max-w-sm no-print">
             {% for cat, msg in messages %}
-              <div class="px-4 py-2 rounded text-sm {% if cat == 'error' %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200{% else %}bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200{% endif %}">{{ msg }}</div>
+              <div class="flash-toast px-4 py-2 rounded text-sm shadow-lg cursor-pointer border {% if cat in ('error', 'warn', 'warning') %}bg-red-50 text-red-800 border-red-300 dark:bg-red-900/50 dark:text-red-100{% elif cat == 'ok' %}bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-100{% else %}bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-900/50 dark:text-blue-100{% endif %}"
+                   data-cat="{{ cat }}" title="Click para cerrar"
+                   onclick="this.remove()">{{ msg }}</div>
             {% endfor %}
           </div>
+          <script>(function(){
+            var box=document.getElementById('flash-toasts'); if(!box) return;
+            box.querySelectorAll('.flash-toast').forEach(function(el){
+              // errores/avisos: 12s; ok/info: 6s.
+              var cat=(el.getAttribute('data-cat')||'');
+              var ms=(cat==='error'||cat==='warn'||cat==='warning')?12000:6000;
+              setTimeout(function(){el.style.transition='opacity .4s';el.style.opacity='0';setTimeout(function(){el.remove();},400);}, ms);
+            });
+          })();</script>
         {% endif %}
       {% endwith %}
       {% block content %}{% endblock %}

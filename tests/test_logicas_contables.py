@@ -18,6 +18,8 @@ import os
 import sys
 from datetime import date, timedelta
 
+from filters import today_ec
+
 import pytest
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,7 +134,7 @@ def test_postergar_primera_vez_setea_fechad_original(stub):
         "id_cheque": 100, "no_cheque": "001", "stat": "Z",
         "codigo_cli": "CLI1", "fechad": date(2026, 5, 1), "importe": 1000.0,
     }]
-    nueva = date(2026, 6, 15)
+    nueva = today_ec() + timedelta(days=30)
     r = q.postergar(id_cheque=100, nueva_fechad=nueva, usuario="test")
     assert r["stat_previo"] == "Z"
     assert r["stat_nuevo"] == "P"
@@ -149,7 +151,7 @@ def test_postergar_segunda_vez_preserva_fechad_original(stub):
         "id_cheque": 100, "no_cheque": "001", "stat": "P",
         "codigo_cli": "CLI1", "fechad": date(2026, 6, 15), "importe": 1000.0,
     }]
-    nueva = date(2026, 8, 30)
+    nueva = today_ec() + timedelta(days=75)
     r = q.postergar(id_cheque=100, nueva_fechad=nueva, usuario="test")
     assert r["stat_previo"] == "P"
     # Mismo COALESCE — la segunda vez deja el original que ya existía.
@@ -157,26 +159,29 @@ def test_postergar_segunda_vez_preserva_fechad_original(stub):
     assert "coalesce(fechad_original, fechad)" in txt
 
 
-def test_postergar_a_fecha_anterior_rechaza(stub):
-    """nueva_fechad <= fechad actual → ValueError."""
+def test_postergar_fecha_muy_pasada_rechaza(stub):
+    """nueva_fechad > 3 días antes de hoy → ValueError (TMT 2026-06-16)."""
     from modules.cheques import queries as q
     stub.fetch_one_responses = [{
         "id_cheque": 100, "stat": "Z", "codigo_cli": "CLI",
         "fechad": date(2026, 6, 1), "importe": 1000.0, "no_cheque": "001",
     }]
-    with pytest.raises(ValueError, match="posterior"):
-        q.postergar(id_cheque=100, nueva_fechad=date(2026, 5, 31))
+    with pytest.raises(ValueError, match="3 días|anterior a hoy"):
+        q.postergar(id_cheque=100, nueva_fechad=today_ec() - timedelta(days=10))
 
 
-def test_postergar_misma_fechad_rechaza(stub):
-    """nueva_fechad == fechad actual → ValueError (no es posterior)."""
+def test_postergar_a_fecha_futura_distinta_ok(stub):
+    """TMT 2026-06-16 dueña: re-postergar a otra fecha (>= hoy-3) se permite,
+    aunque sea anterior a la fechad ya postergada (antes exigía estrictamente
+    posterior)."""
     from modules.cheques import queries as q
     stub.fetch_one_responses = [{
-        "id_cheque": 100, "stat": "Z", "codigo_cli": "CLI",
-        "fechad": date(2026, 6, 1), "importe": 1000.0, "no_cheque": "001",
+        "id_cheque": 100, "stat": "P", "codigo_cli": "CLI",
+        "fechad": today_ec() + timedelta(days=20), "importe": 1000.0, "no_cheque": "001",
     }]
-    with pytest.raises(ValueError, match="posterior"):
-        q.postergar(id_cheque=100, nueva_fechad=date(2026, 6, 1))
+    # nueva fecha futura PERO antes que la postergada actual → debe permitir.
+    r = q.postergar(id_cheque=100, nueva_fechad=today_ec() + timedelta(days=5), usuario="test")
+    assert r["stat_nuevo"] == "P"
 
 
 def test_postergar_desde_stat_B_rechaza(stub):
@@ -190,15 +195,15 @@ def test_postergar_desde_stat_B_rechaza(stub):
         q.postergar(id_cheque=100, nueva_fechad=date(2026, 7, 1))
 
 
-def test_postergar_desde_stat_D_rechaza(stub):
-    """D (Daniela) NO está en la lista de postergables."""
+def test_postergar_desde_stat_X_rechaza(stub):
+    """X (eliminado) NO es postergable (D/1/2 ahora sí — TMT 2026-06-16)."""
     from modules.cheques import queries as q
     stub.fetch_one_responses = [{
-        "id_cheque": 100, "stat": "D", "codigo_cli": "CLI",
+        "id_cheque": 100, "stat": "X", "codigo_cli": "CLI",
         "fechad": date(2026, 6, 1), "importe": 1000.0, "no_cheque": "001",
     }]
     with pytest.raises(ValueError):
-        q.postergar(id_cheque=100, nueva_fechad=date(2026, 7, 1))
+        q.postergar(id_cheque=100, nueva_fechad=today_ec() + timedelta(days=15))
 
 
 def test_postergar_cheque_inexistente_rechaza(stub):

@@ -2149,8 +2149,13 @@ def postergar(
         # fecha >= hoy (antes exigía estrictamente > fechad actual, así que no dejaba
         # cambiar a una fecha futura ANTERIOR a la ya postergada). Solo bloqueamos el
         # pasado.
-        if not nueva_fechad or nueva_fechad < today_ec():
-            raise ValueError("La nueva fecha no puede ser anterior a hoy.")
+        # TMT 2026-06-16 dueña: "dejame postergar -3 días a hoy también". Permitir
+        # hasta 3 días antes de hoy (gracia para back-date operativo); solo se
+        # bloquea más atrás que eso.
+        if not nueva_fechad or nueva_fechad < (today_ec() - timedelta(days=3)):
+            raise ValueError(
+                "La nueva fecha no puede ser más de 3 días anterior a hoy."
+            )
 
         db.execute(
             "UPDATE scintela.cheque "
