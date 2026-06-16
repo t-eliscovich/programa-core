@@ -270,6 +270,62 @@ def test_crear_anticipo_dolares_proveedor_no_hil_no_inserta(monkeypatch):
     assert "insert into scintela.dolares" not in sqls
 
 
+def test_crear_compra_negativa_op_genera_posdat_negativa(monkeypatch):
+    """Over-price (OP): una compra NEGATIVA no pagada crea su posdat banc=0
+    con importe negativo → cuenta como pasivo negativo (imita COMPRAS.DBF
+    BANC#9 del dBase). TMT 2026-06-16.
+
+    Antes esto fallaba por dos guards: (1) el chequeo 'pago_parcial excede
+    importe' (0 > -14535) y (2) posdat sólo se creaba si saldo > 0.
+    """
+    import db as db_mod
+    from modules.compras import queries
+
+    fake = _CompraDB(proveedor={"id_proveedor": 9, "tipo_prov": "C"})
+    fake.apply_to(monkeypatch, db_mod)
+
+    # No debe levantar ValueError ("excede") por ser negativa.
+    queries.crear(
+        fecha=date(2026, 1, 13),
+        codigo_prov="OP",
+        importe=-14535.0,
+        concepto="MH 56",
+        pagada=False,
+        usuario="tmt",
+    )
+
+    # La posdat se inserta vía execute_returning con importe negativo.
+    posdat_ins = [
+        params for sql, params in fake.execute_returnings
+        if "insert into scintela.posdat" in " ".join((sql or "").split()).lower()
+    ]
+    assert posdat_ins, "no se creó posdat para la compra negativa OP"
+    importe_posdat = posdat_ins[0][4]  # 5º param = importe (saldo_posdat)
+    assert importe_posdat < 0, f"posdat debería ser negativa, fue {importe_posdat}"
+    assert abs(importe_posdat + 14535.0) < 0.01
+
+
+def test_crear_compra_negativa_sin_pago_parcial_no_falla(monkeypatch):
+    """El guard 'pago_parcial excede importe' NO debe dispararse cuando no
+    hay pago parcial real, aunque el importe sea negativo. TMT 2026-06-16."""
+    import db as db_mod
+    from modules.compras import queries
+
+    fake = _CompraDB()
+    fake.apply_to(monkeypatch, db_mod)
+
+    # No debe levantar.
+    queries.crear(
+        fecha=date(2026, 1, 13),
+        codigo_prov="OP",
+        importe=-7029.0,
+        concepto="MH 58",
+        usuario="tmt",
+    )
+    rets = _returnings_sql(fake.execute_returnings)
+    assert "insert into scintela.compra" in rets
+
+
 def test_crear_pagada_cuenta_invalida_falla(monkeypatch):
     import db as db_mod
     from modules.compras import queries

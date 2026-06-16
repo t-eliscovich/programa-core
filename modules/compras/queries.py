@@ -147,7 +147,10 @@ def crear(
     pago_parcial_f = float(pago_parcial or 0) if pago_parcial else 0.0
     if pago_parcial_f < 0:
         raise ValueError("El pago parcial no puede ser negativo.")
-    if pago_parcial_f > importe_f + 0.01:
+    # TMT 2026-06-16 (OP/over-price): el chequeo "excede" sólo aplica si hay
+    # un pago parcial REAL (>0). Antes se disparaba con cualquier importe
+    # negativo (0 > -14535) y bloqueaba el alta del pasivo negativo a "OP".
+    if pago_parcial_f > 0.01 and pago_parcial_f > importe_f + 0.01:
         raise ValueError(
             f"El pago parcial ({pago_parcial_f:.2f}) excede el importe de la compra ({importe_f:.2f})."
         )
@@ -360,10 +363,14 @@ def crear(
                     },
                 )
         # Contrapartida en posdat:
-        #   - pagada total → nada (no hay deuda).
+        #   - pagada total → nada (no hay deuda → saldo_posdat ≈ 0).
         #   - no pagada    → posdat por importe completo (deuda original).
         #   - pago parcial → posdat por saldo_posdat (importe - parcial).
-        if saldo_posdat > 0.01:
+        # TMT 2026-06-16 (OP/over-price): usamos abs() para que una compra
+        # NEGATIVA (sobreprecio "OP") también genere su posdat banc=0 con
+        # importe negativo. Así cuenta como pasivo negativo en posdat_totales
+        # (TOTP = SUM(importe) banc=0), imitando COMPRAS.DBF BANC#9 del dBase.
+        if abs(saldo_posdat) > 0.01:
             concepto_posdat = concepto or comprobante or None
             if es_pago_parcial:
                 concepto_posdat = (f"saldo {codigo_prov} #{numero} (pagué {importe_pago_inmediato:.0f})")[:50]
