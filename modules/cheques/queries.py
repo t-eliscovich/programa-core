@@ -2137,13 +2137,20 @@ def postergar(
         # Permitimos postergar desde Z (primer postergación) y desde P
         # (postergaciones encadenadas — "ya está postergado, pero el
         # cliente pide más tiempo de nuevo").
-        if stat_prev not in (*STATS_POSTERGABLES, "P"):
+        # TMT 2026-06-16 dueña: también re-postergar cheques DEVUELTOS (1/2)
+        # y de Daniela (D) — el cliente pide nueva fecha aunque el cheque haya
+        # rebotado. Coincide con los estados que el template ya deja editar.
+        if stat_prev not in (*STATS_POSTERGABLES, "P", "1", "2", "D"):
             raise ValueError(
-                f"Sólo cheques en cartera (Z) o ya postergados (P) se pueden "
-                f"postergar. Este está en stat='{stat_prev}'."
+                f"Sólo cheques en cartera (Z), postergados (P), devueltos (1/2) "
+                f"o de Daniela (D) se pueden postergar. Está en stat='{stat_prev}'."
             )
-        if not nueva_fechad or nueva_fechad <= (ch["fechad"] or today_ec()):
-            raise ValueError("La nueva fecha debe ser posterior a la fecha actual del cheque.")
+        # TMT 2026-06-16 dueña: "quiero poner otra postergada" — permitir CUALQUIER
+        # fecha >= hoy (antes exigía estrictamente > fechad actual, así que no dejaba
+        # cambiar a una fecha futura ANTERIOR a la ya postergada). Solo bloqueamos el
+        # pasado.
+        if not nueva_fechad or nueva_fechad < today_ec():
+            raise ValueError("La nueva fecha no puede ser anterior a hoy.")
 
         db.execute(
             "UPDATE scintela.cheque "
@@ -3363,6 +3370,7 @@ def buscar(
     monto_max: float | None = None,
     ver_eliminados: bool = False,
     offset: int = 0,
+    orden: str = "",
 ) -> list[dict]:
     """Filtros (mismas reglas que /facturas):
     cliente        — 3 chars alfanum → match EXACTO sobre codigo_cli.
@@ -3472,9 +3480,20 @@ def buscar(
           AND (%(stats)s::text[] IS NULL OR c.stat = ANY(%(stats)s::text[]))
           -- Excluir eliminados (stat='X') cuando el filtro es "todos".
           AND (NOT %(excluir_eliminados)s OR COALESCE(c.stat, '') <> 'X')
-        ORDER BY c.fecha ASC, c.id_cheque ASC
+        __ORDER_BY__
         LIMIT %(limite)s OFFSET %(offset)s
         """
+    # TMT 2026-06-16 dueña: ordenar por IMPORTE de mayor a menor (server-side,
+    # sobre TODO el universo, no solo la página visible). orden es un enum
+    # controlado (no entra texto del usuario al SQL).
+    _orden = (orden or "").lower()
+    if _orden == "importe_desc":
+        _order_sql = "ORDER BY c.importe DESC NULLS LAST, c.id_cheque DESC"
+    elif _orden == "importe_asc":
+        _order_sql = "ORDER BY c.importe ASC NULLS LAST, c.id_cheque ASC"
+    else:
+        _order_sql = "ORDER BY c.fecha ASC, c.id_cheque ASC"
+    sql_buscar_cheques = sql_buscar_cheques.replace("__ORDER_BY__", _order_sql)
     sql_buscar_cheques = sql_buscar_cheques.replace("__FECHA_COL__", fecha_col)
     rows = (
         db.fetch_all(
@@ -3497,14 +3516,20 @@ def buscar(
         )
         or []
     )
-    # Running total cronológico. Listado en orden ASC.
+    # Running total. Por importe (dueña) o cronológico (default).
     from datetime import date as _date
 
-    rows_asc = sorted(
-        rows, key=lambda r: (r.get("fechad") or r.get("fecha") or _date.min, r.get("id_cheque") or 0)
-    )
+    if _orden in ("importe_desc", "importe_asc"):
+        rows_out = sorted(
+            rows, key=lambda r: float(r.get("importe") or 0),
+            reverse=(_orden == "importe_desc"),
+        )
+    else:
+        rows_out = sorted(
+            rows, key=lambda r: (r.get("fechad") or r.get("fecha") or _date.min, r.get("id_cheque") or 0)
+        )
     acum = 0.0
-    for r in rows_asc:
+    for r in rows_out:
         acum += float(r.get("importe") or 0)
         r["saldo_acumulado"] = acum
-    return rows_asc
+    return rows_out

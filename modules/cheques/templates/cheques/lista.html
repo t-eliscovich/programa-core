@@ -329,7 +329,18 @@
              numero de cheque!!'. Columna nueva para N° de comprobante /
              depósito que da el banco (doc_banco). Editable inline. #}
           <th class="px-2 py-1 text-left font-medium" title="N° comprobante/depósito/transferencia (lo que da el banco)">Doc. banco</th>
-          <th class="px-2 py-1 text-right font-medium" data-sort-type="number">Importe</th>
+          {# TMT 2026-06-16 dueña: ordenar por importe de mayor a menor SOBRE TODO el
+             listado (server-side, no solo la página visible). data-no-sort apaga el
+             sort client-side en esta columna; el link togglea desc/asc y preserva los
+             filtros actuales. #}
+          {% set _ord_args = request.args.to_dict() %}
+          {% set _ord_cur = request.args.get('orden') %}
+          {% set _ord_next = 'importe_asc' if _ord_cur == 'importe_desc' else 'importe_desc' %}
+          {% set _ = _ord_args.update({'orden': _ord_next, 'page': '1'}) %}
+          <th class="px-2 py-1 text-right font-medium" data-no-sort>
+            <a href="{{ url_for('cheques.lista', **_ord_args) }}" class="hover:underline"
+               title="Ordenar por importe en todo el listado (mayor↓ / menor↑)">Importe{% if _ord_cur == 'importe_desc' %} ↓{% elif _ord_cur == 'importe_asc' %} ↑{% endif %}</a>
+          </th>
           <th class="px-1 py-1 text-center font-medium" data-no-sort style="width:50px;">Estado</th>
           <th class="px-2 py-1 text-right font-medium no-print" data-no-sort>Acc.</th>
         </tr>

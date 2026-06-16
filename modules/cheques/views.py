@@ -2436,6 +2436,7 @@ def lista():
             monto_max=monto_max,
             ver_eliminados=ver_eliminados,
             offset=page_offset,
+            orden=(request.args.get("orden") or ""),
         )
         error = None
     except Exception as e:
