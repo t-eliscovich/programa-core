@@ -2043,6 +2043,11 @@ def transicionar(id_cheque: int):
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("Error al transicionar", e)
+    # TMT 2026-06-16 dueña: si vino de la lista (next local) volver ahí, NO al
+    # detalle/edición del cheque.
+    _next = (request.form.get("next") or "").strip()
+    if _next.startswith("/") and not _next.startswith("//") and "://" not in _next:
+        return redirect(_next)
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 

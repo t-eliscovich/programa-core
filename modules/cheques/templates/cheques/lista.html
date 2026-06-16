@@ -426,16 +426,20 @@
           <td class="px-1.5 py-1.5" data-stop="1" style="white-space: nowrap;">
             {% set _stat_post = (c.stat or '').upper() %}
             {% if _stat_post in ('Z', 'P', '1', '2', 'D') %}
-              {% set _fechad_iso = (c.fechad or c.fecha).strftime('%Y-%m-%d') if (c.fechad or c.fecha) else '' %}
+              {# TMT 2026-06-16 dueña: input de TEXTO dd/mm/aaaa (el <input type=date>
+                 nativo mostraba mm/dd según el locale del navegador). parse_date
+                 acepta dd/mm/aaaa. #}
+              {% set _fechad_es = (c.fechad or c.fecha) | fecha_es if (c.fechad or c.fecha) else '' %}
               <form method="post" action="{{ url_for('cheques.postergar', id_cheque=c.id_cheque) }}"
                     class="inline gf-post-form" style="margin:0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="next" value="{{ request.full_path }}">
-                <input type="date" name="nueva_fechad" value="{{ _fechad_iso }}"
+                <input type="text" name="nueva_fechad" value="{{ _fechad_es }}"
+                       inputmode="numeric" placeholder="dd/mm/aaaa"
                        onchange="this.form.submit()"
                        class="border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0.5 font-mono text-xs bg-transparent hover:bg-white focus:bg-white"
-                       style="width: 108px;"
-                       title="Editar para postergar fecha">
+                       style="width: 96px;"
+                       title="Editar para postergar fecha (dd/mm/aaaa)">
               </form>
               {% if c.fechad_original and c.fechad and c.fechad != c.fechad_original %}
                 <span class="text-[10px] text-amber-600 ml-0.5" title="Postergado el {{ c.fecha_postergacion | fecha_es if c.fecha_postergacion else '?' }}">⚠</span>
@@ -520,6 +524,7 @@
             <form method="post" action="{{ url_for('cheques.transicionar', id_cheque=c.id_cheque) }}"
                   class="inline ch-trans-form" style="margin:0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
               {# TMT 2026-05-20 — dropdown compacto: solo letras en las
                  options (no labels largos). Ancho ~36px en vez de ~140px.
                  El title del select muestra el label completo del stat
