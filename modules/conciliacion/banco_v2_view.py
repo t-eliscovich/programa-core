@@ -1763,6 +1763,52 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     total_calc = round(saldo_sistema + ajuste, 2)
     diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
 
+    # ── Sección EXTRACTO NUEVO SIN CRUZAR ─────────────────────────────
+    # TMT 2026-06-16 (dueña: "me faltan los movimientos del 15"): el resumen
+    # listaba SOLO banco_historicos_pendientes (la hoja ya consolidada, que
+    # llegaba al 12/06) y dejaba afuera el extracto recién subido a la sesión
+    # (los "N del extracto a cruzar" que se ven en pantalla, ej. 13-16/06).
+    # El docstring de banco_resumen_xlsx ya prometía "histos sin conciliar +
+    # extracto no matcheado"; el cambio del 2026-06-04 lo había sacado de más.
+    # Lo re-agregamos como sección INFORMATIVA aparte — NO entra en el AJUSTE
+    # ni en el resumen contable (eso sigue saliendo solo de balance/histos,
+    # para no inflar). Solo lectura.
+    try:
+        _buckets_xt = _sesion.estado_sesion(sesion, no_banco)
+        _extracto_xt = [
+            it for it in (_buckets_xt.get("manual_banco") or [])
+            if not it.get("es_historico") and it.get("mov") is not None
+        ]
+    except Exception as _e_xt:
+        _LOG.warning("resumen: no pude cargar extracto sin cruzar: %s", _e_xt)
+        _extracto_xt = []
+    if _extracto_xt:
+        r += 1
+        _hx = ws.cell(row=r, column=1,
+                      value=(f"EXTRACTO NUEVO SIN CRUZAR ({len(_extracto_xt)}) "
+                             "— informativo, aún no migrado a pendientes"))
+        _hx.font = bold
+        _hx.fill = header_fill
+        ws.merge_cells(f"A{r}:E{r}")
+        r += 1
+        def _mv_fecha(mv):
+            fx = getattr(mv, "fecha", None)
+            return fx.strftime("%d/%m/%Y") if fx and hasattr(fx, "strftime") else ""
+        for it in sorted(
+            _extracto_xt,
+            key=lambda it: (getattr(it["mov"], "fecha", None) or date.min),
+        ):
+            mv = it["mov"]
+            tipo = (getattr(mv, "tipo", "C") or "C").upper()
+            monto = float(getattr(mv, "monto", 0) or 0)
+            valor = monto if tipo == "C" else -monto
+            ws.cell(row=r, column=1, value=_mv_fecha(mv))
+            ws.cell(row=r, column=2, value=_safe_cell(getattr(mv, "concepto", ""))[:100])
+            ws.cell(row=r, column=3, value=_safe_cell(getattr(mv, "documento", ""))[:30])
+            ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
+            ws.cell(row=r, column=5, value=_safe_cell(getattr(mv, "oficina", ""))[:30])
+            r += 1
+
     label_col = 3
     val_col = 4
 
