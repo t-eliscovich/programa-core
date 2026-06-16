@@ -3278,6 +3278,13 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
                importe, abono, saldo, stat
         FROM scintela.factura
         WHERE codigo_cli = %s
+          -- TMT 2026-06-17 (dueña, caso NJL/Bedon): excluir asinfo-backfill.
+          -- Son facturas históricas de Asinfo que dBase ya no tiene abiertas
+          -- (no están en el DBF) y NO cuentan en cartera/TOTF — pero se colaban
+          -- en la lista de cobranza mostrándose como pendientes. Mismo criterio
+          -- que informes (NO_BACKFILL_WHERE). Las cargadas con el botón
+          -- (asinfo-carga) SÍ siguen apareciendo.
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
           AND COALESCE(saldo, 0) <> 0
           AND (
             -- vivas (positivo): stat válido
