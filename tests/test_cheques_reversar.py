@@ -28,6 +28,8 @@ from datetime import date
 
 import pytest
 
+from filters import today_ec
+
 # --- helpers ---------------------------------------------------------------
 
 
@@ -445,4 +447,4 @@ def test_reversar_fecha_de_hoy(monkeypatch):
 
     queries.reversar(id_cheque=52, motivo="x", usuario="tmt")
 
-    assert captured["fecha"] == date.today()
+    assert captured["fecha"] == today_ec()
