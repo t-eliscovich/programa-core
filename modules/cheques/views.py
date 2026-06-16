@@ -2327,10 +2327,17 @@ def depositar_lote():
     try:
         cheques_cartera = queries.buscar(q="", estado="cartera", desde=None, hasta=None, limite=10000)
         cheques_posterg = queries.buscar(q="", estado="postergados", desde=None, hasta=None, limite=10000)
+        # TMT 2026-06-16 dueña: re-depositar cheques DEVUELTOS (rebotados). El
+        # cliente avisa que ya hay fondos y se re-presentan al banco. Solo 1/2
+        # (rebote 1°/2°); 3/R son terminales y NO se re-depositan.
+        cheques_devueltos = [
+            c for c in queries.buscar(q="", estado="devueltos", desde=None, hasta=None, limite=10000)
+            if (c.get("stat") or "").upper() in ("1", "2")
+        ]
         # Unir y deduplicar por id_cheque (defensivo).
         seen = set()
         cheques_lote: list = []
-        for c in list(cheques_cartera) + list(cheques_posterg):
+        for c in list(cheques_cartera) + list(cheques_posterg) + list(cheques_devueltos):
             cid = c.get("id_cheque")
             if cid in seen:
                 continue

@@ -1699,7 +1699,7 @@ def transiciones_para(stat: str) -> list[dict]:
 # típico. P (postdatado/postergado) también es válido cuando llega la fecha
 # de depósito — operacionalmente el cobranzador deposita directo sin pasar
 # por Z. Cualquier otro stat origen es un bug en la UI.
-STATS_DEPOSITABLES = ("Z", "P")
+STATS_DEPOSITABLES = ("Z", "P", "1", "2")  # TMT 2026-06-16 dueña: re-depositar cheques DEVUELTOS (1/2)
 
 # Stats desde los que se puede postergar (Z, ver invariante 4 del addendum).
 STATS_POSTERGABLES = ("Z",)

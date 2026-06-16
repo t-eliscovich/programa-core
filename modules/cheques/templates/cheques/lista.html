@@ -353,7 +353,7 @@
              depositar algo ya depositado o anulado. #}
           {% if tiene_permiso('cheques.aplicar') %}
             <td class="px-2 py-2 text-center no-print" data-stop="1">
-              {% if stat_u in ('Z', 'P') %}
+              {% if stat_u in ('Z', 'P', '1', '2') %}
                 <input type="checkbox" class="cheque-pick" value="{{ c.id_cheque }}"
                        data-importe="{{ c.importe or 0 }}"
                        data-no="{{ c.no_cheque or '' }}"
