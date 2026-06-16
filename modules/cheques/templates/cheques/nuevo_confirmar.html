@@ -86,6 +86,29 @@
         <input type="hidden" name="aplicar[{{ ap.id_fact }}]" value="{{ ap.importe }}">
       {% endfor %}
 
+      {# TMT 2026-06-15: sobrante de cobranza (cheques > facturas) — preguntar
+         ACTIVAMENTE si va como anticipo del cliente. >= $1 muestra la pregunta
+         (default Sí); < $1 (centavos) se absorbe sin crear anticipo. #}
+      {% if sobrante is defined and sobrante >= 1.0 %}
+      <div class="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 mb-4">
+        <p class="text-sm text-amber-800 dark:text-amber-200 mb-2">
+          Hay un <strong>sobrante de $ {{ '%.2f'|format(sobrante) }}</strong>
+          (los cheques superan lo aplicado a facturas).
+        </p>
+        <label class="flex items-center gap-2 text-sm font-medium text-amber-900 dark:text-amber-100">
+          <input type="checkbox" name="confirmar_anticipo" value="1" checked>
+          Sí, dejarlo como <strong>anticipo del cliente</strong> (aplica a futuras facturas)
+        </label>
+        <p class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-1">
+          Si no querés generar el anticipo, destildá y usá "Volver" para ajustar las aplicaciones.
+        </p>
+      </div>
+      {% elif sobrante is defined and sobrante > 0.005 %}
+      <p class="text-xs text-slate-500 mb-3">
+        Sobrante de $ {{ '%.2f'|format(sobrante) }} (centavos) — se absorbe, sin crear anticipo.
+      </p>
+      {% endif %}
+
       <h2 class="text-base font-semibold mb-2">Facturas afectadas ({{ impacto_facturas | length }})</h2>
       <div class="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4 shadow-sm">
         <table class="w-full text-sm">

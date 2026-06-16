@@ -385,6 +385,10 @@ def nuevo():
     # facturas con el faltante como diferencia (registrada en la
     # observación) y saltea el tope de $50. Sin tildar = flujo actual.
     aprobar_dif = (request.form.get("aprobar_diferencia") or "").strip() in ("1", "true", "on")
+    # TMT 2026-06-15: confirmación ACTIVA del sobrante (viene de la pantalla
+    # de confirmación, checkbox default Sí). Equivale a aprobar_dif para el
+    # lado del exceso.
+    confirmar_anticipo = (request.form.get("confirmar_anticipo") or "").strip() in ("1", "true", "on")
     motivo_dif = (request.form.get("motivo_diferencia") or "").strip()[:60]
     aplicaciones_pre: list[dict] = []
     if not es_anticipo:
@@ -513,6 +517,9 @@ def nuevo():
             aplicaciones_pre=aplicaciones_pre,
             impacto_facturas=impacto_facturas,
             total_cheques=sum(float(c.get("importe") or 0) for c in cheques_in),
+            sobrante=(round(sum(float(c.get("importe") or 0) for c in cheques_in)
+                            - sum(a["importe"] for a in aplicaciones_pre), 2)
+                      if aplicaciones_pre else 0.0),
         )
 
     try:
@@ -735,11 +742,13 @@ def nuevo():
                 # scintela.dolares (eso es solo proveedores). El sobrante = lo
                 # que quedó sin aplicar de los cheques (restante > 0). Requiere
                 # el checkbox (conservador: no se crean anticipos por error).
-                if aprobar_dif and not es_anticipo:
+                if (aprobar_dif or confirmar_anticipo) and not es_anticipo:
                     _sobrante = round(
                         sum(c["restante"] for c in cheques_restantes
                             if c["restante"] > 0.005), 2)
-                    if _sobrante > 0.005:
+                    # TMT 2026-06-15: < $1 = centavos -> absorber (no anticipo);
+                    # >= $1 -> espejo (anticipo del cliente).
+                    if _sobrante >= 1.00:
                         import mov_doble as _md_esp
                         from datetime import timedelta as _td_esp
                         _chp = cheques_creados[0]
