@@ -520,6 +520,14 @@ def nuevo():
             sobrante=(round(sum(float(c.get("importe") or 0) for c in cheques_in)
                             - sum(a["importe"] for a in aplicaciones_pre), 2)
                       if aplicaciones_pre else 0.0),
+            # TMT 2026-06-16 (audit cobranza): el form de confirmacion debe
+            # RE-ENVIAR aprobar_diferencia/motivo/t_used, sino se pierden entre
+            # el paso 1 y el 2 -> la cobranza con flete/retencion (cheque corto)
+            # rebotaba "supera por mas de $50 / no pude distribuir" aunque la
+            # duena ya habia tildado "Aprobar diferencia".
+            aprobar_dif=aprobar_dif,
+            motivo_dif=motivo_dif,
+            aplicar_t_used=((request.form.get("aplicar_t_used") or "").strip() == "1"),
         )
 
     try:
@@ -853,7 +861,12 @@ def nuevo():
         import logging
 
         logging.getLogger(__name__).exception("cheques.nuevo falló")
-        errores.append(f"[DEBUG] {type(e).__name__}: {e}")
+        # TMT 2026-06-16 (audit cobranza): se mostraba el detalle crudo
+        # (`[DEBUG] TipoError: ...`) al usuario. Volvemos a humanize() —
+        # mensaje en castellano contable; el stack queda en el log con el
+        # request_id para diagnosticar.
+        from error_messages import humanize as _humanize_exc
+        errores.append(_humanize_exc(e))
         return render_template(
             "cheques/nuevo.html",
             form=form,

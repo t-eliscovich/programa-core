@@ -86,6 +86,14 @@
         <input type="hidden" name="aplicar[{{ ap.id_fact }}]" value="{{ ap.importe }}">
       {% endfor %}
 
+      {# TMT 2026-06-16 (audit cobranza): re-enviar la aprobacion de diferencia
+         (flete/retencion) y el flag T. Sin esto, el POST de "Confirmar y
+         guardar" perdia aprobar_diferencia y la cobranza con cheque corto
+         rebotaba "supera por mas de $50 / no pude distribuir". #}
+      {% if aprobar_dif %}<input type="hidden" name="aprobar_diferencia" value="1">{% endif %}
+      {% if motivo_dif %}<input type="hidden" name="motivo_diferencia" value="{{ motivo_dif }}">{% endif %}
+      {% if aplicar_t_used %}<input type="hidden" name="aplicar_t_used" value="1">{% endif %}
+
       {# TMT 2026-06-15: sobrante de cobranza (cheques > facturas) — preguntar
          ACTIVAMENTE si va como anticipo del cliente. >= $1 muestra la pregunta
          (default Sí); < $1 (centavos) se absorbe sin crear anticipo. #}
