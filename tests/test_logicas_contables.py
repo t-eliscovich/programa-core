@@ -184,6 +184,30 @@ def test_postergar_a_fecha_futura_distinta_ok(stub):
     assert r["stat_nuevo"] == "P"
 
 
+def test_postergar_devuelto_conserva_estado(stub):
+    """TMT 2026-06-16 dueña: postergar un cheque DEVUELTO (1) cambia SOLO la
+    fecha, NO el estado (antes lo flipeaba a 'P')."""
+    from modules.cheques import queries as q
+    stub.fetch_one_responses = [{
+        "id_cheque": 100, "stat": "1", "codigo_cli": "LOY",
+        "fechad": date(2026, 6, 20), "importe": 525.0, "no_cheque": "67537",
+    }]
+    r = q.postergar(id_cheque=100, nueva_fechad=today_ec() + timedelta(days=10), usuario="test")
+    assert r["stat_previo"] == "1"
+    assert r["stat_nuevo"] == "1"  # se mantiene devuelto
+
+
+def test_postergar_cartera_z_pasa_a_p(stub):
+    """Z (cartera) SÍ pasa a 'P' al postergar (ese es el sentido)."""
+    from modules.cheques import queries as q
+    stub.fetch_one_responses = [{
+        "id_cheque": 100, "stat": "Z", "codigo_cli": "CLI",
+        "fechad": date(2026, 6, 1), "importe": 1000.0, "no_cheque": "001",
+    }]
+    r = q.postergar(id_cheque=100, nueva_fechad=today_ec() + timedelta(days=10), usuario="test")
+    assert r["stat_nuevo"] == "P"
+
+
 def test_postergar_desde_stat_B_rechaza(stub):
     """B (depositado) NO se puede postergar — ya está en banco."""
     from modules.cheques import queries as q

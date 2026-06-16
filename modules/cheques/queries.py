@@ -2157,15 +2157,20 @@ def postergar(
                 "La nueva fecha no puede ser más de 3 días anterior a hoy."
             )
 
+        # TMT 2026-06-16 dueña: postergar un cheque DEVUELTO (1/2) o de Daniela (D)
+        # debe cambiar SOLO la fecha, NO el estado (antes lo flipeaba a 'P').
+        # 'Z' (cartera) sí pasa a 'P' (postdatado) — ese es el sentido de
+        # postergar un cheque en cartera. 'P' queda 'P'.
+        nuevo_stat = "P" if stat_prev == "Z" else stat_prev
         db.execute(
             "UPDATE scintela.cheque "
-            "SET stat='P', fechad=%s, "
+            "SET stat=%s, fechad=%s, "
             "    fecha_postergacion = CURRENT_DATE, "
             "    fechad_original = COALESCE(fechad_original, fechad), "
             "    usuario_modifica=%s, "
             "    fecha_modifica=CURRENT_TIMESTAMP "
             "WHERE id_cheque=%s",
-            (nueva_fechad, usuario, id_cheque),
+            (nuevo_stat, nueva_fechad, usuario, id_cheque),
             conn=conn,
         )
         # Sincroniza posdat: upsert manual.
@@ -2198,7 +2203,7 @@ def postergar(
     return {
         "id_cheque": id_cheque,
         "stat_previo": stat_prev,
-        "stat_nuevo": "P",
+        "stat_nuevo": nuevo_stat,
         "nueva_fechad": nueva_fechad,
         "motivo": motivo,
     }
