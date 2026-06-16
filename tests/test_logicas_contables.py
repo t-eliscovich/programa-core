@@ -504,3 +504,16 @@ def test_pasada1_resumen_meta():
     tests = [name for name in dir(mod) if name.startswith("test_")
              and name != "test_pasada1_resumen_meta"]
     assert len(tests) >= 18, f"Esperaba ≥18 tests, encontré {len(tests)}"
+
+
+def test_transicion_postergado_a_devuelto_permitida():
+    """TMT 2026-06-16 dueña: desde Postergado (P) se puede marcar DEVUELTO (1/2)
+    — antes la matriz lo rechazaba y el dropdown no lo ofrecía."""
+    from modules.cheques import queries as q
+    assert "1" in q.TRANSICIONES_VALIDAS["P"]
+    assert "2" in q.TRANSICIONES_VALIDAS["P"]
+    # y el dropdown de P ahora incluye "Devuelto".
+    destinos = [t["stat_destino"] for t in q.transiciones_para("P")]
+    assert "1" in destinos
+    # Z (que ya ofrecía Devuelto en el UI) ahora también lo permite en backend.
+    assert "1" in q.TRANSICIONES_VALIDAS["Z"]

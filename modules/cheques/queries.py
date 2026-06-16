@@ -456,7 +456,7 @@ def editar(
 # levanta ValueError abajo. Filas históricas con stat='V' se respetan,
 # pero no se generan nuevas.
 TRANSICIONES_VALIDAS = {
-    "Z": {"B", "C", "9", "X", "P", "D", "I"},
+    "Z": {"B", "C", "9", "X", "P", "D", "I", "1", "2"},  # TMT 2026-06-16: marcar devuelto (el dropdown ya lo ofrecía)
     # TMT 2026-05-19 v4 audit — agregadas D/P como salida desde
     # rebotados (1/2) y desde D/P entre sí. El UI dropdown
     # (TRANSICIONES_LEGALES) ya las ofrecía pero el backend rechazaba.
@@ -465,7 +465,7 @@ TRANSICIONES_VALIDAS = {
     #   1 → P: el cheque rebotó y postergamos a otra fecha.
     #   D → P: Daniela trajo el cheque, queremos posdatarlo.
     #   P → D: el postergado lo manda a Daniela.
-    "P": {"B", "C", "X", "I", "D"},
+    "P": {"B", "C", "X", "I", "D", "1", "2"},  # TMT 2026-06-16 dueña: desde postergado poder marcar DEVUELTO
     "D": {"B", "C", "X", "I", "P"},
     "B": {"9", "X"},
     "I": {"9", "X"},
@@ -1670,7 +1670,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "endpoint": "cheques.postergar",
         },
     ],
-    # P = postergado. Volver a cartera (Z), Daniela, o re-postergar.
+    # P = postergado. Daniela, re-postergar, o marcar devuelto (dueña 2026-06-16).
     "P": [
         {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
@@ -1679,6 +1679,8 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "kind": "POSTERGAR",
             "endpoint": "cheques.postergar",
         },
+        {"stat_destino": "1", "label": "Devuelto", "kind": "POST", "endpoint": "cheques.transicionar"},
+        {"stat_destino": "2", "label": "Devuelto (2°)", "kind": "POST", "endpoint": "cheques.transicionar"},
     ],
     # Estados terminales — sin transiciones disponibles.
     "3": [],  # 2do rebote terminal
