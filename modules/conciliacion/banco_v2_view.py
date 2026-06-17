@@ -1702,6 +1702,36 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
             _r = dict(_it["_row"])
             _r["_solo_visualizacion"] = True  # NO cuentan, ya están en pendientes
             _xt_cargos_extra.append(_r)
+
+        # TMT decisión 2026-06-17 (Tamara, sesión #40 — 2do reporte): la
+        # PANTALLA muestra gastos/comisiones/SENAE en el tab Impuestos
+        # pero el XLSX no los ve. Causa: estado_sesion() separa los movs
+        # del extracto en dos buckets:
+        #   - manual_banco: real_only NO comision
+        #   - impuestos:    real_only categorizados COMISION (SENAE, IVA,
+        #                   comisiones bancarias por parser_concepto)
+        # Hasta hoy el xlsx solo iteraba manual_banco. Los impuestos del
+        # extracto sin cruzar se PERDÍAN en el download. Ahora los
+        # agregamos directo a la sección CARGOS DEL BANCO (no a reales)
+        # — son cargos del banco que la dueña tiene que asentar.
+        for _it in (_bk_xt.get("impuestos") or []):
+            if _it.get("es_historico") or _it.get("mov") is None:
+                continue
+            _mv = _it["mov"]
+            _tp = (getattr(_mv, "tipo", "C") or "C").upper()
+            _mo = float(getattr(_mv, "monto", 0) or 0)
+            _row_imp = {
+                "fecha": getattr(_mv, "fecha", None),
+                "concepto": getattr(_mv, "concepto", "") or "",
+                "documento": getattr(_mv, "documento", "") or "",
+                "monto": _mo,
+                "tipo": _tp,
+                "oficina": getattr(_mv, "oficina", "") or "",
+                "detalle": getattr(_mv, "oficina", "") or "",
+                "_es_impuesto_extracto": True,  # marca para sufijo en col E
+            }
+            rows_cargos.append(_row_imp)
+
         rows_reales.sort(key=lambda rr: (rr.get("fecha") or date.min, str(rr.get("documento") or "")))
     except Exception as _e_xt:
         _LOG.warning("resumen: no pude fusionar extracto sin cruzar: %s", _e_xt)
@@ -1795,12 +1825,16 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
             monto = float(row.get("monto") or 0)
             valor = monto if tipo == "C" else -monto
             fecha = row.get("fecha")
-            # TMT 2026-06-17: si el cargo viene del extracto sin cruzar (no
-            # de histos), ya está contado en el AJUSTE — lo marcamos para
-            # que la dueña no piense que tiene que asentarlo aparte.
+            # TMT 2026-06-17: marcadores en col E para que la dueña
+            # distinga el origen del cargo:
+            #   (en pend.)  → mov del extracto sin cruzar, ya contado en AJUSTE
+            #   (extracto)  → impuesto del bucket "impuestos" del extracto,
+            #                  AHORA aparece en el xlsx (antes se perdía)
             det_xtra = row.get("detalle") or row.get("oficina") or ""
             if row.get("_solo_visualizacion"):
                 det_xtra = (det_xtra + " (en pend.)").strip()
+            elif row.get("_es_impuesto_extracto"):
+                det_xtra = (det_xtra + " (extracto)").strip()
             ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
             ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
             ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
