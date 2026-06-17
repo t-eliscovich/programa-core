@@ -100,11 +100,20 @@ def parse_banco_xlsx(raw: bytes) -> list[MovBanco]:
     bio = io.BytesIO(raw)
     wb = load_workbook(bio, data_only=True, read_only=True)
     salida: list[MovBanco] = []
+    descartadas = 0  # filas con monto != 0 que igual no se pudieron parsear
 
     for nombre_hoja in wb.sheetnames:
         ws = wb[nombre_hoja]
         headers: list[str] = []
         col_idx: dict[str, int] = {}
+        # TMT 2026-06-17 (dueña): el extracto del Pichincha imprime la FECHA
+        # sólo en la 1ra fila de cada día; las siguientes vienen en blanco.
+        # ANTES esas filas se descartaban enteras (fecha is None) y se perdían
+        # movimientos del extracto, mientras su importe SÍ seguía en el saldo
+        # running del banco → descuadre exacto en la conciliación (ej. -319,55
+        # que aparecía ya antes de cruzar nada). Ahora arrastramos la última
+        # fecha vista para no perderlas. Se resetea por hoja.
+        last_fecha: date | None = None
 
         for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
             row_list = list(row)
@@ -145,11 +154,6 @@ def parse_banco_xlsx(raw: bytes) -> list[MovBanco]:
                 tipo = tipo_raw[:1] if tipo_raw else ""
             except IndexError:
                 continue
-            if fecha is None or monto == 0:
-                continue
-            if tipo not in ("C", "D"):
-                _LOG.debug("Hoja %s fila %d: tipo %r desconocido", nombre_hoja, i, tipo_raw)
-                continue
 
             def _g(key: str, default: str = "") -> str:
                 j = col_idx.get(key)
@@ -167,6 +171,34 @@ def parse_banco_xlsx(raw: bytes) -> list[MovBanco]:
                     s = s[:-2]
                 return s
 
+            # Carry-forward de fecha: filas sin fecha pero con movimiento real
+            # heredan la última fecha vista (mismo día del extracto).
+            if fecha is not None:
+                last_fecha = fecha
+            elif monto != 0 and tipo in ("C", "D"):
+                fecha = last_fecha
+            if monto == 0:
+                continue
+            if fecha is None:
+                # monto != 0 pero no hay fecha ni fecha previa de la cual
+                # heredar (fila huérfana al inicio de la hoja). No la perdemos
+                # en silencio: avisamos para que la dueña la vea.
+                descartadas += 1
+                _LOG.warning(
+                    "parser_banco: hoja %s fila %d sin fecha (ni previa) — "
+                    "descartada. monto=%s tipo=%r concepto=%r",
+                    nombre_hoja, i, monto, tipo_raw, _g("concepto"),
+                )
+                continue
+            if tipo not in ("C", "D"):
+                descartadas += 1
+                _LOG.warning(
+                    "parser_banco: hoja %s fila %d tipo %r desconocido — "
+                    "descartada. monto=%s concepto=%r",
+                    nombre_hoja, i, tipo_raw, monto, _g("concepto"),
+                )
+                continue
+
             saldo = _parse_decimal(row_list[col_idx["saldo"]]) if "saldo" in col_idx else Decimal(0)
 
             salida.append(
@@ -183,4 +215,10 @@ def parse_banco_xlsx(raw: bytes) -> list[MovBanco]:
             )
 
     wb.close()
+    if descartadas:
+        _LOG.warning(
+            "parser_banco: %d fila(s) con monto se descartaron (sin fecha "
+            "heredable o tipo inválido) — pueden causar descuadre en la "
+            "conciliación. Revisar el extracto.", descartadas,
+        )
     return salida
