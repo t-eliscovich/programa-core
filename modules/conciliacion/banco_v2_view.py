@@ -1647,15 +1647,30 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # que no se cuenta doble.
     _xt_cred = 0.0
     _xt_deb = 0.0
+    # TMT decisión 2026-06-17 (Tamara, sesión #40 = mov-06-16 → xlsx mostraba
+    # 0 gastos/comisiones a pesar de tener ISD-PAG en el extracto). ANTES
+    # los movs del extracto sin cruzar iban DIRECTOS a rows_reales sin
+    # pasar por clasificar_cargos(), entonces ISD-PAG/IMPUESTO/INTERES no
+    # aparecían en la sección "CARGOS DEL BANCO" del xlsx.
+    #
+    # AHORA clasificamos el extracto sin cruzar. Los CARGOS van a una
+    # sección separada para que la dueña los vea — PERO siguen sumando
+    # al AJUSTE (créditos/débitos pendientes) igual que antes, para NO
+    # romper el cierre contable. La sección CARGOS es informativa
+    # ("estos son los gastos que vas a tener que asentar como gasto en
+    # PC para cerrar el ciclo"); el AJUSTE refleja la conciliación
+    # real entre extracto y libros como hasta ahora.
+    _xt_cargos_extra = []  # solo para visualización en la sección CARGOS
     try:
         _bk_xt = _sesion.estado_sesion(sesion, no_banco)
+        _xt_items_cls = []
         for _it in (_bk_xt.get("manual_banco") or []):
             if _it.get("es_historico") or _it.get("mov") is None:
                 continue
             _mv = _it["mov"]
             _tp = (getattr(_mv, "tipo", "C") or "C").upper()
             _mo = float(getattr(_mv, "monto", 0) or 0)
-            rows_reales.append({
+            _row_ext = {
                 "fecha": getattr(_mv, "fecha", None),
                 "concepto": getattr(_mv, "concepto", "") or "",
                 "documento": getattr(_mv, "documento", "") or "",
@@ -1663,14 +1678,40 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
                 "tipo": _tp,
                 "oficina": getattr(_mv, "oficina", "") or "",
                 "detalle": getattr(_mv, "oficina", "") or "",
-            })
+            }
+            rows_reales.append(_row_ext)
             if _tp == "C":
                 _xt_cred += _mo
             else:
                 _xt_deb += _mo
+            # Clasificación paralela: ¿este mov también es un "cargo del
+            # banco" que conviene mostrar aparte para auditoría?
+            _signed = _mo if _tp == "C" else -_mo
+            _xt_items_cls.append({
+                "documento": _row_ext["documento"],
+                "concepto": _row_ext["concepto"],
+                "monto": _signed,
+                "_row": _row_ext,
+            })
+        _, _xt_cargos_it = _cb.clasificar_cargos(_xt_items_cls)
+        # Marcar los rows ya identificados como cargos. Los agregamos a
+        # rows_cargos con un flag para que la sección CARGOS del xlsx
+        # los renderice (no se duplican porque rows_reales ya los tiene
+        # y el render del xlsx itera por separado).
+        for _it in _xt_cargos_it:
+            _r = dict(_it["_row"])
+            _r["_solo_visualizacion"] = True  # NO cuentan, ya están en pendientes
+            _xt_cargos_extra.append(_r)
         rows_reales.sort(key=lambda rr: (rr.get("fecha") or date.min, str(rr.get("documento") or "")))
     except Exception as _e_xt:
         _LOG.warning("resumen: no pude fusionar extracto sin cruzar: %s", _e_xt)
+    # Mezclar cargos del extracto (solo visualización) con cargos histos
+    # para mostrarlos juntos en la sección CARGOS DEL BANCO. Marcamos los
+    # del extracto con el flag _solo_visualizacion=True para que el render
+    # los distinga.
+    if _xt_cargos_extra:
+        rows_cargos = list(rows_cargos) + _xt_cargos_extra
+        rows_cargos.sort(key=lambda rr: (rr.get("fecha") or date.min, str(rr.get("documento") or "")))
     _xt_cred = round(_xt_cred, 2)
     _xt_deb = round(_xt_deb, 2)
 
@@ -1716,17 +1757,26 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # (convención contable) usando el number_format '#,##0.00;(#,##0.00)'.
     r = 5
     total = 0.0
+    n_no_identif = 0
     for row in rows_reales:
         tipo = (row.get("tipo") or "C").upper()
         monto = float(row.get("monto") or 0)
         valor = monto if tipo == "C" else -monto  # negativos para débitos
         total += valor
         fecha = row.get("fecha")
+        concepto = row.get("concepto") or ""
+        # TMT 2026-06-17: badge "⚠ NO IDENT." en la columna E para filas
+        # con "DEPOSITO NO IDENTIFICADO" — Tamara los identificó como
+        # parte de la diferencia y quiere distinguirlos a simple vista.
+        det_extra = row.get("detalle") or row.get("oficina") or ""
+        if "NO IDENTIFICADO" in concepto.upper():
+            det_extra = (det_extra + " ⚠ NO IDENT.").strip()
+            n_no_identif += 1
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
-        ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
+        ws.cell(row=r, column=2, value=_safe_cell(concepto)[:100])
         ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
         ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
-        ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
+        ws.cell(row=r, column=5, value=_safe_cell(det_extra)[:30])
         r += 1
 
     # ── Sección CARGOS DEL BANCO (a asentar = la diferencia) ──────────
@@ -1745,11 +1795,17 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
             monto = float(row.get("monto") or 0)
             valor = monto if tipo == "C" else -monto
             fecha = row.get("fecha")
+            # TMT 2026-06-17: si el cargo viene del extracto sin cruzar (no
+            # de histos), ya está contado en el AJUSTE — lo marcamos para
+            # que la dueña no piense que tiene que asentarlo aparte.
+            det_xtra = row.get("detalle") or row.get("oficina") or ""
+            if row.get("_solo_visualizacion"):
+                det_xtra = (det_xtra + " (en pend.)").strip()
             ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
             ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
             ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
             ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
-            ws.cell(row=r, column=5, value=_safe_cell(row.get("detalle") or row.get("oficina"))[:30])
+            ws.cell(row=r, column=5, value=_safe_cell(det_xtra)[:30])
             r += 1
 
     # ── Resumen contable al pie ───────────────────────────────────────
