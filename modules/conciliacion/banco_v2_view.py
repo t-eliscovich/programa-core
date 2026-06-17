@@ -1897,7 +1897,17 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         _LOG.warning("no pude leer movs sesion: %s", e)
 
     ajuste = round(pendientes_banco_cred - pendientes_banco_deb, 2)
-    total_calc = round(saldo_sistema + ajuste, 2)
+    # TMT 2026-06-17 fix: el TOTAL debe incluir CARGOS DEL BANCO. Antes
+    # los cargos (histos clasificados por _cb.resumen) se mostraban como
+    # línea separada al pie PERO NO entraban al cálculo del TOTAL. Al
+    # mismo tiempo se RESTABAN del pend_deb (porque _cb separa reales vs
+    # cargos). Resultado: AJUSTE sube por la cantidad de cargos, TOTAL
+    # sube por la misma cantidad, DIFERENCIA explota en esa misma
+    # cantidad. Fix: TOTAL = sistema + AJUSTE + cargos_neto → la
+    # DIFERENCIA refleja solo lo NO IDENTIFICADO (cierra a ~0 si todos
+    # los cargos están clasificados).
+    _cargos_neto = float(balance.get("cargos_neto") or 0)
+    total_calc = round(saldo_sistema + ajuste + _cargos_neto, 2)
     diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
 
     label_col = 3
@@ -1907,7 +1917,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # TMT 2026-05-29 dueña: 'puedes separar en ajuste los positivos y los
     # negativos?'. Ajuste = banco_cred − banco_deb; mostramos las dos
     # componentes y el neto antes del SISTEMA.
-    _cargos_neto = float(balance.get("cargos_neto") or 0)
     rows_resumen = [
         ("+ Pendientes banco créditos", pendientes_banco_cred),
         ("− Pendientes banco débitos", -pendientes_banco_deb),
