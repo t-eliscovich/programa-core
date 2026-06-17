@@ -1731,6 +1731,15 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
                 "_es_impuesto_extracto": True,  # marca para sufijo en col E
             }
             rows_cargos.append(_row_imp)
+            # TMT 2026-06-17 fix 1b: que los impuestos del extracto también
+            # cuenten al AJUSTE (no solo visualmente). Sin esto, los gastos
+            # APARECÍAN en la sección CARGOS pero el AJUSTE / DIFERENCIA
+            # no los reflejaba. Ahora suman como cualquier otro pendiente
+            # del extracto sin cruzar.
+            if _tp == "C":
+                _xt_cred += _mo
+            else:
+                _xt_deb += _mo
 
         rows_reales.sort(key=lambda rr: (rr.get("fecha") or date.min, str(rr.get("documento") or "")))
     except Exception as _e_xt:
