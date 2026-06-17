@@ -103,6 +103,7 @@
             <option value="posdat" {% if form_vals and form_vals.mov_destino == 'posdat' %}selected{% endif %}>Posdato (INOP)</option>
           </select>
           <input type="text" name="mov_destino_param" id="mov-destino-param" maxlength="2"
+                 list="op-accounts-list"
                  placeholder="cuenta (2 letras)"
                  value="{{ form_vals.mov_destino_param if form_vals else '' }}"
                  class="px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 uppercase hidden"
@@ -110,6 +111,11 @@
         </div>
       </div>
       <script>(function(){var s=document.getElementById('mov-destino'),p=document.getElementById('mov-destino-param');if(s&&p){function t(){p.classList.toggle('hidden',!(s.value==='retiro'||s.value==='posdat'));}s.addEventListener('change',t);t();}})();</script>
+      {% if cuentas_op %}
+      <datalist id="op-accounts-list">
+        {% for c in cuentas_op %}<option value="{{ c.codigo_prov }}">{{ c.codigo_prov }} · {{ c.nombre }} — saldo {{ '{:+,.2f}'.format(c.saldo_op|float) }}</option>{% endfor %}
+      </datalist>
+      {% endif %}
       {% endif %}
 
       <div class="md:col-span-2">

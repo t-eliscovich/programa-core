@@ -948,6 +948,37 @@ def proveedores_activos(limite: int = 500) -> list[dict]:
     ) or []
 
 
+def proveedores_op_saldos(limite: int = 500) -> list[dict]:
+    """Proveedores con saldo de anticipo/OP (posdat banc=0) — para el datalist
+    del destino 'Posdato (INOP)' en la N/D (pedido Andres 2026-06-18: poder
+    ESCOGER la cuenta OP por proveedor en vez de tipear el codigo de memoria).
+
+    saldo_op = SUM(posdat.importe) de las posdat NO bancarias vivas del prov
+    (el mismo bucket de los 'IN OP'). Solo devuelve proveedores con saldo != 0.
+    """
+    return db.fetch_all(
+        """
+        SELECT pr.codigo_prov,
+               COALESCE(NULLIF(TRIM(pr.nombre), ''), pr.codigo_prov) AS nombre,
+               op.saldo_op AS saldo_op
+          FROM scintela.proveedor pr
+          JOIN (
+              SELECT UPPER(TRIM(prov)) AS prov,
+                     ROUND(SUM(importe)::numeric, 2) AS saldo_op
+                FROM scintela.posdat
+               WHERE COALESCE(banc, 0) = 0
+                 AND (anulada IS NOT TRUE OR anulada IS NULL)
+               GROUP BY UPPER(TRIM(prov))
+              HAVING ABS(ROUND(SUM(importe)::numeric, 2)) > 0.005
+          ) op ON op.prov = UPPER(TRIM(pr.codigo_prov))
+         WHERE COALESCE(pr.activo, '1') NOT IN ('0', 'N')
+         ORDER BY ABS(op.saldo_op) DESC, pr.codigo_prov
+         LIMIT %s
+        """,
+        (limite,),
+    ) or []
+
+
 def crear_movimiento_simple(
     *,
     no_banco: int,

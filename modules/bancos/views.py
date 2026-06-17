@@ -1141,6 +1141,13 @@ def nuevo_movimiento():
     with _ctx.suppress(Exception):
         proveedores = queries.proveedores_activos(limite=500)
 
+    # Andres 2026-06-18: cuentas OP (anticipo por proveedor) con saldo, para el
+    # datalist del destino 'Posdato (INOP)'. Solo aplica a ND.
+    cuentas_op = []
+    if doc == "ND":
+        with _ctx.suppress(Exception):
+            cuentas_op = queries.proveedores_op_saldos(limite=500)
+
     # TMT 2026-05-19 v2 — banco pre-seleccionado vía ?no_banco= (default
     # Pichincha cuando se entra desde /bancos).
     # TMT 2026-05-19 v7 — si no viene ?no_banco=, default = Pichincha.
@@ -1175,6 +1182,7 @@ def nuevo_movimiento():
         bancos=bancos,
         no_banco_inicial=no_banco_inicial,
         proveedores=proveedores,
+        cuentas_op=cuentas_op,
         hoy=today_ec().isoformat(),
         pregunta_activa=pregunta_activa,
         form_vals=form_vals,
