@@ -54,12 +54,19 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
         # Pendientes históricos banco
         row_pend = _db.fetch_one(
             """
+            -- TMT decisión 2026-06-17 (Tamara): el depósito no identificado
+            -- aparece en el xlsx pero NO sumaba al AJUSTE porque tiene
+            -- tipo=NULL en banco_historicos_pendientes. El render del xlsx
+            -- defaultea tipo=NULL → 'C' (crédito); espejamos lo mismo en
+            -- SQL via COALESCE(tipo, 'C'). Sin esto:
+            --   - sum_cred no contaba el depósito ($322,72 perdido)
+            --   - neto_pend lo RESTABA en lugar de sumar (caía al ELSE)
             SELECT
-              COALESCE(SUM(CASE WHEN tipo = 'C' THEN monto ELSE -monto END), 0) AS neto_pend,
-              COALESCE(SUM(CASE WHEN tipo = 'C' THEN monto ELSE 0 END), 0) AS sum_cred,
-              COALESCE(SUM(CASE WHEN tipo = 'D' THEN monto ELSE 0 END), 0) AS sum_deb,
-              COALESCE(SUM(CASE WHEN tipo = 'C' THEN 1 ELSE 0 END), 0) AS n_cred,
-              COALESCE(SUM(CASE WHEN tipo = 'D' THEN 1 ELSE 0 END), 0) AS n_deb,
+              COALESCE(SUM(CASE WHEN COALESCE(tipo, 'C') = 'C' THEN monto ELSE -monto END), 0) AS neto_pend,
+              COALESCE(SUM(CASE WHEN COALESCE(tipo, 'C') = 'C' THEN monto ELSE 0 END), 0) AS sum_cred,
+              COALESCE(SUM(CASE WHEN COALESCE(tipo, 'C') = 'D' THEN monto ELSE 0 END), 0) AS sum_deb,
+              COALESCE(SUM(CASE WHEN COALESCE(tipo, 'C') = 'C' THEN 1 ELSE 0 END), 0) AS n_cred,
+              COALESCE(SUM(CASE WHEN COALESCE(tipo, 'C') = 'D' THEN 1 ELSE 0 END), 0) AS n_deb,
               COUNT(*) AS n_pend
               FROM scintela.banco_historicos_pendientes
              WHERE no_banco = %(no_banco)s
