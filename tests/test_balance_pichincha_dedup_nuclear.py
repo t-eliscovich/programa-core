@@ -250,6 +250,26 @@ def test_extracto_fuera_de_libros_no_infla_balance():
     )
 
 
+# ─── TMT 2026-06-17: anti-regresión para Fix Bug 2 ─────────────────────
+# Caso: DEPOSITO NO IDENTIFICADO con tipo=NULL aparece en el xlsx pero
+# no sumaba al sum_cred del balance porque CASE WHEN tipo='C' no lo
+# pescaba. Fix usa COALESCE(tipo, 'C') en SQL.
+
+
+def test_query_sql_usa_coalesce_tipo_default_C():
+    """Verifica que la query de pendientes históricos defaultea tipo=NULL
+    a 'C' (matchea el comportamiento del render del xlsx)."""
+    import inspect
+
+    from modules.conciliacion import balance_pichincha as bp
+    src = inspect.getsource(bp.calcular)
+    # Debe estar COALESCE(tipo, 'C') en SQL para no perder filas tipo=NULL
+    assert "COALESCE(tipo, 'C')" in src, (
+        "balance_pichincha.calcular() debe usar COALESCE(tipo, 'C') en SQL "
+        "para sumar filas sin tipo (caso DEPOSITO NO IDENTIFICADO sin fecha)."
+    )
+
+
 @pytest.mark.parametrize("n_extra_extracto", [0, 1, 4, 10])
 def test_drift_balance_acotado(n_extra_extracto):
     """Para varios tamaños del extracto (todas filas que existen en tx),
