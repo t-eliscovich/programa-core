@@ -22,8 +22,26 @@ import re
 # Conceptos que son SIEMPRE cargos del banco (nunca depósito/cheque en tránsito).
 # OJO: "COST CHEQUE DEVUELTO" es fee; "CHEQUE DEVUELTO" (sin COST) es un evento
 # real → NO se clasifica como cargo.
+# TMT decisión 2026-06-17: ampliar regex para capturar conceptos del Pichincha
+# que la dueña (Tamara) reportó como "gastos y comisiones del banco" que no
+# aparecían en el xlsx de pendientes. ANTES solo COMISION/IVA/COST CHEQUE/
+# GASTO/MANTEN entraban. AHORA también:
+#   ISD-PAG / ISD : Impuesto Salida Divisas (cargo del banco al pagar al exterior)
+#   IMPUESTO     : cualquier impuesto explícito (anti-ruido: palabra completa)
+#   INTER[EÉ]S(ES) : intereses cobrados (no devengados)
+#   COSTO TRANSFER : costo de transferencia
+#   COBRO SERVICIO : cobro de servicio bancario
+#   DEBITO AUTOMA(TICO) : débito automático
+# Conservador: usa límites de palabra (\b) para no matchear sustrings ruidosos.
 _RE_FEE = re.compile(
-    r"COMISI[OÓ]N|\bIVA\b|COST(?:O)?\s+CHEQUE|GASTO|MANTEN", re.I
+    r"COMISI[OÓ]N|\bIVA\b|COST(?:O)?\s+CHEQUE|GASTO|MANTEN|"
+    r"\bISD[-\s]?PAG\b|\bISD\b|"
+    r"\bIMPUESTO\b|"
+    r"\bINTER[EÉ]S(?:ES)?\b|"
+    r"COSTO\s+TRANSFER|"
+    r"COBRO\s+SERVICIO|"
+    r"D[EÉ]BITO\s+AUTOM",
+    re.I,
 )
 _RE_SENAE = re.compile(r"PAGO\s+SENAE", re.I)
 
