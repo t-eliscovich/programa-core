@@ -1626,17 +1626,13 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # (banco_historicos_pendientes); el extracto se usa para cruzar en pantalla.
     rows.sort(key=lambda r: (r.get("fecha") or date.min, str(r.get("documento") or "")))
 
-    # Separar PENDIENTES REALES vs CARGOS DEL BANCO. Los cargos (comisiones,
-    # IVA, costos de cheque, par SENAE/acreditación de aduana) van abajo como
-    # DIFERENCIA —como los pone Alex— en vez de mezclarse con los pendientes.
-    from modules.conciliacion import cargos_banco as _cb
-    _cls_items = []
-    for _r in rows:
-        _ms = float(_r.get("monto") or 0) * (1 if (_r.get("tipo") or "C").strip().upper().startswith("C") else -1)
-        _cls_items.append({"documento": _r.get("documento"), "concepto": _r.get("concepto"), "monto": _ms, "_row": _r})
-    _reales_it, _cargos_it = _cb.clasificar_cargos(_cls_items)
-    rows_reales = [it["_row"] for it in _reales_it]
-    rows_cargos = [it["_row"] for it in _cargos_it]
+    # TMT 2026-06-17 (dueña Tamara): se RETIRA la separación "CARGOS DEL BANCO".
+    # TODO pendiente del banco (incluidos ISD-PAG, comisiones, SENAE) va en UNA
+    # sola lista de pendientes y la diferencia se muestra como un solo número.
+    # La separación anterior mezclaba el ISD (impuesto de un pago al exterior,
+    # apareado con su principal INTELACI-EXT) con fees y, al restarlo del AJUSTE
+    # y re-sumarlo como línea aparte, era NEUTRA en la diferencia: solo ruido.
+    rows_reales = list(rows)
 
     # TMT 2026-06-16 (dueña: "deberia sumarse a pendientes, no en dos secciones
     # ... la diferencia deberia llegar a casi 0"): el extracto nuevo sin cruzar
@@ -1647,110 +1643,38 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # que no se cuenta doble.
     _xt_cred = 0.0
     _xt_deb = 0.0
-    # TMT decisión 2026-06-17 (Tamara, sesión #40 = mov-06-16 → xlsx mostraba
-    # 0 gastos/comisiones a pesar de tener ISD-PAG en el extracto). ANTES
-    # los movs del extracto sin cruzar iban DIRECTOS a rows_reales sin
-    # pasar por clasificar_cargos(), entonces ISD-PAG/IMPUESTO/INTERES no
-    # aparecían en la sección "CARGOS DEL BANCO" del xlsx.
-    #
-    # AHORA clasificamos el extracto sin cruzar. Los CARGOS van a una
-    # sección separada para que la dueña los vea — PERO siguen sumando
-    # al AJUSTE (créditos/débitos pendientes) igual que antes, para NO
-    # romper el cierre contable. La sección CARGOS es informativa
-    # ("estos son los gastos que vas a tener que asentar como gasto en
-    # PC para cerrar el ciclo"); el AJUSTE refleja la conciliación
-    # real entre extracto y libros como hasta ahora.
-    _xt_cargos_extra = []  # solo para visualización en la sección CARGOS
+    # TMT 2026-06-17: el extracto sin cruzar (manual_banco + impuestos) se fusiona
+    # COMPLETO en la lista única de pendientes y suma al AJUSTE. Antes los
+    # "impuestos" (SENAE, IVA, comisiones, ISD-PAG) iban a una sección CARGOS
+    # aparte; ahora van en la misma lista para que la dueña los vea como un
+    # pendiente más y la diferencia quede en un solo número.
     try:
         _bk_xt = _sesion.estado_sesion(sesion, no_banco)
-        _xt_items_cls = []
-        for _it in (_bk_xt.get("manual_banco") or []):
-            if _it.get("es_historico") or _it.get("mov") is None:
-                continue
-            _mv = _it["mov"]
-            _tp = (getattr(_mv, "tipo", "C") or "C").upper()
-            _mo = float(getattr(_mv, "monto", 0) or 0)
-            _row_ext = {
-                "fecha": getattr(_mv, "fecha", None),
-                "concepto": getattr(_mv, "concepto", "") or "",
-                "documento": getattr(_mv, "documento", "") or "",
-                "monto": _mo,
-                "tipo": _tp,
-                "oficina": getattr(_mv, "oficina", "") or "",
-                "detalle": getattr(_mv, "oficina", "") or "",
-            }
-            rows_reales.append(_row_ext)
-            if _tp == "C":
-                _xt_cred += _mo
-            else:
-                _xt_deb += _mo
-            # Clasificación paralela: ¿este mov también es un "cargo del
-            # banco" que conviene mostrar aparte para auditoría?
-            _signed = _mo if _tp == "C" else -_mo
-            _xt_items_cls.append({
-                "documento": _row_ext["documento"],
-                "concepto": _row_ext["concepto"],
-                "monto": _signed,
-                "_row": _row_ext,
-            })
-        _, _xt_cargos_it = _cb.clasificar_cargos(_xt_items_cls)
-        # Marcar los rows ya identificados como cargos. Los agregamos a
-        # rows_cargos con un flag para que la sección CARGOS del xlsx
-        # los renderice (no se duplican porque rows_reales ya los tiene
-        # y el render del xlsx itera por separado).
-        for _it in _xt_cargos_it:
-            _r = dict(_it["_row"])
-            _r["_solo_visualizacion"] = True  # NO cuentan, ya están en pendientes
-            _xt_cargos_extra.append(_r)
-
-        # TMT decisión 2026-06-17 (Tamara, sesión #40 — 2do reporte): la
-        # PANTALLA muestra gastos/comisiones/SENAE en el tab Impuestos
-        # pero el XLSX no los ve. Causa: estado_sesion() separa los movs
-        # del extracto en dos buckets:
-        #   - manual_banco: real_only NO comision
-        #   - impuestos:    real_only categorizados COMISION (SENAE, IVA,
-        #                   comisiones bancarias por parser_concepto)
-        # Hasta hoy el xlsx solo iteraba manual_banco. Los impuestos del
-        # extracto sin cruzar se PERDÍAN en el download. Ahora los
-        # agregamos directo a la sección CARGOS DEL BANCO (no a reales)
-        # — son cargos del banco que la dueña tiene que asentar.
-        for _it in (_bk_xt.get("impuestos") or []):
-            if _it.get("es_historico") or _it.get("mov") is None:
-                continue
-            _mv = _it["mov"]
-            _tp = (getattr(_mv, "tipo", "C") or "C").upper()
-            _mo = float(getattr(_mv, "monto", 0) or 0)
-            _row_imp = {
-                "fecha": getattr(_mv, "fecha", None),
-                "concepto": getattr(_mv, "concepto", "") or "",
-                "documento": getattr(_mv, "documento", "") or "",
-                "monto": _mo,
-                "tipo": _tp,
-                "oficina": getattr(_mv, "oficina", "") or "",
-                "detalle": getattr(_mv, "oficina", "") or "",
-                "_es_impuesto_extracto": True,  # marca para sufijo en col E
-            }
-            rows_cargos.append(_row_imp)
-            # TMT 2026-06-17 fix 1b: que los impuestos del extracto también
-            # cuenten al AJUSTE (no solo visualmente). Sin esto, los gastos
-            # APARECÍAN en la sección CARGOS pero el AJUSTE / DIFERENCIA
-            # no los reflejaba. Ahora suman como cualquier otro pendiente
-            # del extracto sin cruzar.
-            if _tp == "C":
-                _xt_cred += _mo
-            else:
-                _xt_deb += _mo
+        for _bucket in ("manual_banco", "impuestos"):
+            for _it in (_bk_xt.get(_bucket) or []):
+                if _it.get("es_historico") or _it.get("mov") is None:
+                    continue
+                _mv = _it["mov"]
+                _tp = (getattr(_mv, "tipo", "C") or "C").upper()
+                _mo = float(getattr(_mv, "monto", 0) or 0)
+                _row_ext = {
+                    "fecha": getattr(_mv, "fecha", None),
+                    "concepto": getattr(_mv, "concepto", "") or "",
+                    "documento": getattr(_mv, "documento", "") or "",
+                    "monto": _mo,
+                    "tipo": _tp,
+                    "oficina": getattr(_mv, "oficina", "") or "",
+                    "detalle": getattr(_mv, "oficina", "") or "",
+                }
+                rows_reales.append(_row_ext)
+                if _tp == "C":
+                    _xt_cred += _mo
+                else:
+                    _xt_deb += _mo
 
         rows_reales.sort(key=lambda rr: (rr.get("fecha") or date.min, str(rr.get("documento") or "")))
     except Exception as _e_xt:
         _LOG.warning("resumen: no pude fusionar extracto sin cruzar: %s", _e_xt)
-    # Mezclar cargos del extracto (solo visualización) con cargos histos
-    # para mostrarlos juntos en la sección CARGOS DEL BANCO. Marcamos los
-    # del extracto con el flag _solo_visualizacion=True para que el render
-    # los distinga.
-    if _xt_cargos_extra:
-        rows_cargos = list(rows_cargos) + _xt_cargos_extra
-        rows_cargos.sort(key=lambda rr: (rr.get("fecha") or date.min, str(rr.get("documento") or "")))
     _xt_cred = round(_xt_cred, 2)
     _xt_deb = round(_xt_deb, 2)
 
@@ -1770,7 +1694,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     ws["A2"] = (
         f"Pichincha · Sesión #{sesion['id']} · "
         f"{_hora_ec_str(datetime.now(), '%Y-%m-%d %H:%M')} · "
-        f"{len(rows_reales) + len(rows_cargos)} movs"
+        f"{len(rows_reales)} movs"
     )
     ws.merge_cells("A2:E2")
 
@@ -1818,39 +1742,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         ws.cell(row=r, column=5, value=_safe_cell(det_extra)[:30])
         r += 1
 
-    # ── Sección CARGOS DEL BANCO (a asentar = la diferencia) ──────────
-    # TMT 2026-06-04: los cargos del banco no son pendientes; van acá abajo
-    # y su neto es la DIFERENCIA. Así la hoja del sistema sale igual a la
-    # que arma Alex a mano.
-    if rows_cargos:
-        r += 1
-        _h = ws.cell(row=r, column=1, value="CARGOS DEL BANCO (a asentar — no son pendientes)")
-        _h.font = bold
-        _h.fill = header_fill
-        ws.merge_cells(f"A{r}:E{r}")
-        r += 1
-        for row in rows_cargos:
-            tipo = (row.get("tipo") or "C").upper()
-            monto = float(row.get("monto") or 0)
-            valor = monto if tipo == "C" else -monto
-            fecha = row.get("fecha")
-            # TMT 2026-06-17: marcadores en col E para que la dueña
-            # distinga el origen del cargo:
-            #   (en pend.)  → mov del extracto sin cruzar, ya contado en AJUSTE
-            #   (extracto)  → impuesto del bucket "impuestos" del extracto,
-            #                  AHORA aparece en el xlsx (antes se perdía)
-            det_xtra = row.get("detalle") or row.get("oficina") or ""
-            if row.get("_solo_visualizacion"):
-                det_xtra = (det_xtra + " (en pend.)").strip()
-            elif row.get("_es_impuesto_extracto"):
-                det_xtra = (det_xtra + " (extracto)").strip()
-            ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
-            ws.cell(row=r, column=2, value=_safe_cell(row.get("concepto"))[:100])
-            ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
-            ws.cell(row=r, column=4, value=valor).number_format = "+#,##0.00;-#,##0.00;0.00"
-            ws.cell(row=r, column=5, value=_safe_cell(det_xtra)[:30])
-            r += 1
-
     # ── Resumen contable al pie ───────────────────────────────────────
     # TMT 2026-05-29 dueña — decisión final: layout viejo de 5 filas con
     # DIFERENCIA explícita. Razones:
@@ -1897,17 +1788,10 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         _LOG.warning("no pude leer movs sesion: %s", e)
 
     ajuste = round(pendientes_banco_cred - pendientes_banco_deb, 2)
-    # TMT 2026-06-17 fix: el TOTAL debe incluir CARGOS DEL BANCO. Antes
-    # los cargos (histos clasificados por _cb.resumen) se mostraban como
-    # línea separada al pie PERO NO entraban al cálculo del TOTAL. Al
-    # mismo tiempo se RESTABAN del pend_deb (porque _cb separa reales vs
-    # cargos). Resultado: AJUSTE sube por la cantidad de cargos, TOTAL
-    # sube por la misma cantidad, DIFERENCIA explota en esa misma
-    # cantidad. Fix: TOTAL = sistema + AJUSTE + cargos_neto → la
-    # DIFERENCIA refleja solo lo NO IDENTIFICADO (cierra a ~0 si todos
-    # los cargos están clasificados).
-    _cargos_neto = float(balance.get("cargos_neto") or 0)
-    total_calc = round(saldo_sistema + ajuste + _cargos_neto, 2)
+    # TMT 2026-06-17: TODO pendiente (hoja + extracto sin cruzar, incl. ISD/
+    # comisiones/SENAE) está en AJUSTE. TOTAL = SISTEMA + AJUSTE y la
+    # DIFERENCIA = SALDO BANCO − TOTAL es el único número a cerrar.
+    total_calc = round(saldo_sistema + ajuste, 2)
     diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
 
     label_col = 3
@@ -1920,14 +1804,12 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     rows_resumen = [
         ("+ Pendientes banco créditos", pendientes_banco_cred),
         ("− Pendientes banco débitos", -pendientes_banco_deb),
-        ("AJUSTE (pendientes reales)", ajuste),
+        ("AJUSTE", ajuste),
         ("SALDO SISTEMA (conciliado)", saldo_sistema),
         ("TOTAL", total_calc),
     ]
     if saldo_banco_real is not None:
         rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
-        if abs(_cargos_neto) > 0.005:
-            rows_resumen.append(("CARGOS DEL BANCO (a asentar)", _cargos_neto))
         rows_resumen.append(("DIFERENCIA", diferencia))
 
     for label, val in rows_resumen:

@@ -73,14 +73,15 @@ def test_sin_cargos_no_rompe():
     assert len(cargos) == 0 and len(reales) == 2
 
 
-# ─── TMT decisión 2026-06-17: nuevos patterns reportados por Tamara ─────
-# Caso: sesion #40 (mov-06-16). El xlsx no mostraba gastos/comisiones a
-# pesar de tener ISD-PAG, IMPUESTO, etc. en el extracto.
+# ─── TMT decisión 2026-06-17: ISD-PAG NO es cargo ──────────────────────
+# La separación "CARGOS DEL BANCO" se retiró del flujo de conciliación. El
+# ISD-PAG (Impuesto Salida Divisas) es el impuesto de un pago REAL al exterior,
+# apareado con su principal INTELACI-EXT → es un pendiente real, NO un fee.
 
 
-def test_isd_pag_se_clasifica_como_cargo():
-    """ISD-PAG = Impuesto Salida Divisas. Cobrado por el banco al pagar
-    al exterior. Es un cargo del banco/gobierno, no un pendiente real."""
+def test_isd_pag_NO_se_clasifica_como_cargo():
+    """ISD-PAG va apareado con su principal (pago al exterior). Es pendiente
+    real, no un fee — debe quedar en 'reales'."""
     from modules.conciliacion.cargos_banco import clasificar_cargos
     items = [
         {"documento": "24264183", "concepto": "2606090CZZOR-ISD-PAG-ACPI 6763", "monto": -356.68},
@@ -89,60 +90,12 @@ def test_isd_pag_se_clasifica_como_cargo():
         {"documento": "1234", "concepto": "DEPOSITO", "monto": 100.0},
     ]
     reales, cargos = clasificar_cargos(items)
-    docs_cargo = {c["documento"] for c in cargos}
-    assert "24264183" in docs_cargo, "ISD-PAG corto debe ir a cargos"
-    assert "24264386" in docs_cargo, "ISD-PAG larguito debe ir a cargos"
-    assert "45686796" in docs_cargo, "ISD-PAG con varios refs debe ir a cargos"
     docs_real = {r["documento"] for r in reales}
-    assert "1234" in docs_real, "DEPOSITO sigue siendo real"
-
-
-def test_impuesto_palabra_completa_se_clasifica_como_cargo():
-    from modules.conciliacion.cargos_banco import clasificar_cargos
-    items = [
-        {"documento": "i1", "concepto": "IMPUESTO RETENCION FUENTE", "monto": -50.0},
-    ]
-    reales, cargos = clasificar_cargos(items)
-    docs_cargo = {c["documento"] for c in cargos}
-    assert "i1" in docs_cargo
-
-
-def test_interes_se_clasifica_como_cargo():
-    from modules.conciliacion.cargos_banco import clasificar_cargos
-    items = [
-        {"documento": "int1", "concepto": "INTERES POR SOBREGIRO", "monto": -25.0},
-        {"documento": "int2", "concepto": "INTERESES COBRADOS", "monto": -50.0},
-        {"documento": "int3", "concepto": "INTERÉS BANCARIO", "monto": -10.0},
-    ]
-    reales, cargos = clasificar_cargos(items)
-    docs_cargo = {c["documento"] for c in cargos}
-    assert "int1" in docs_cargo
-    assert "int2" in docs_cargo
-    assert "int3" in docs_cargo
-
-
-def test_debito_automatico_se_clasifica_como_cargo():
-    from modules.conciliacion.cargos_banco import clasificar_cargos
-    items = [
-        {"documento": "da1", "concepto": "DEBITO AUTOMATICO POR SERVICIO", "monto": -30.0},
-        {"documento": "da2", "concepto": "DÉBITO AUTOMÁTICO", "monto": -15.0},
-    ]
-    reales, cargos = clasificar_cargos(items)
-    docs_cargo = {c["documento"] for c in cargos}
-    assert "da1" in docs_cargo
-    assert "da2" in docs_cargo
-
-
-def test_costo_transfer_y_cobro_servicio():
-    from modules.conciliacion.cargos_banco import clasificar_cargos
-    items = [
-        {"documento": "ct1", "concepto": "COSTO TRANSFERENCIA INTERBANCARIA", "monto": -2.0},
-        {"documento": "cs1", "concepto": "COBRO SERVICIO PRODUCTO BANCARIO", "monto": -5.0},
-    ]
-    reales, cargos = clasificar_cargos(items)
-    docs_cargo = {c["documento"] for c in cargos}
-    assert "ct1" in docs_cargo
-    assert "cs1" in docs_cargo
+    assert "24264183" in docs_real
+    assert "24264386" in docs_real
+    assert "45686796" in docs_real
+    assert "1234" in docs_real
+    assert len(cargos) == 0
 
 
 def test_no_falsos_positivos_en_conceptos_legitimos():

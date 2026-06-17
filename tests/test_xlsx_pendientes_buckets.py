@@ -9,9 +9,13 @@ Causa: estado_sesion() separa los movs del extracto en buckets:
 El código del xlsx solo iteraba "manual_banco" y perdía los del bucket
 "impuestos". Este test es anti-regresión: garantiza que el código que
 arma el xlsx procese AMBOS buckets.
+
+TMT 2026-06-17 (decisión final): se RETIRÓ la sección "CARGOS DEL BANCO".
+Ahora AMBOS buckets (manual_banco + impuestos) se fusionan en la lista
+ÚNICA de pendientes (rows_reales) y suman al AJUSTE — la diferencia se
+muestra como un solo número. Los impuestos NO van a una sección aparte.
 """
 from __future__ import annotations
-import inspect
 import sys
 from pathlib import Path
 
@@ -21,37 +25,28 @@ if str(ROOT) not in sys.path:
 
 
 def test_xlsx_itera_bucket_impuestos():
-    """El generador de xlsx debe leer también el bucket 'impuestos' del
+    """El generador de xlsx debe procesar también el bucket 'impuestos' del
     estado_sesion — no solo 'manual_banco' — sino se pierden los
     gastos/comisiones del extracto en el download."""
-    # Leo el source del módulo directamente para no requerir db real.
     bv = (ROOT / "modules/conciliacion/banco_v2_view.py").read_text()
-    # El fix introduce un loop sobre _bk_xt.get("impuestos") dentro de
-    # la función que arma el xlsx. Anti-regresión: ese loop debe existir.
-    assert '_bk_xt.get("impuestos")' in bv, (
-        "_generar_xlsx_pendientes debe iterar el bucket 'impuestos' del "
+    assert '"impuestos"' in bv, (
+        "_generar_xlsx_pendientes debe procesar el bucket 'impuestos' del "
         "estado_sesion para incluir gastos/comisiones del extracto."
     )
-    # Y debe agregarlos a rows_cargos (no a rows_reales) — son cargos
-    # del banco que la dueña asienta como gasto, no pendientes que cruzan.
-    # Verificamos que cerca del get("impuestos") se hace rows_cargos.append.
-    idx = bv.find('_bk_xt.get("impuestos")')
-    snippet = bv[idx:idx + 1500]
-    assert "rows_cargos.append" in snippet, (
-        "Los items del bucket 'impuestos' deben ir a rows_cargos "
-        "(sección CARGOS DEL BANCO), no a rows_reales (pendientes)."
-    )
+    assert '"manual_banco"' in bv, "Falta el bucket 'manual_banco'."
 
 
-def test_no_regreso_a_solo_manual_banco():
-    """Anti-regresión paranoide: si alguien borra el loop de impuestos
-    sin querer, este test falla."""
+def test_impuestos_van_a_pendientes_no_a_cargos():
+    """Anti-regresión: la sección 'CARGOS DEL BANCO' se retiró. Los
+    impuestos del extracto van a la lista única de pendientes
+    (rows_reales), NO a una sección separada rows_cargos."""
     bv = (ROOT / "modules/conciliacion/banco_v2_view.py").read_text()
-    # Cuenta los loops sobre buckets del extracto
-    n_manual = bv.count('_bk_xt.get("manual_banco")')
-    n_impuestos = bv.count('_bk_xt.get("impuestos")')
-    assert n_impuestos >= 1, "Falta el loop sobre 'impuestos'"
-    assert n_manual >= n_impuestos, (
-        "Se esperan al menos tantos loops manual_banco como impuestos "
-        "(suelen ir juntos)."
+    assert "rows_cargos" not in bv, (
+        "La sección CARGOS DEL BANCO se retiró: no debe quedar la variable "
+        "rows_cargos en el código."
+    )
+    # El bucket impuestos debe terminar en rows_reales (lista única).
+    assert "rows_reales.append" in bv, (
+        "Los movs del extracto (manual_banco + impuestos) deben sumarse a "
+        "rows_reales (la lista única de pendientes)."
     )

@@ -81,45 +81,18 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
         saldo_pc_actual["n_pendientes_banco_cred"] = int(row_pend.get("n_cred") or 0)
         saldo_pc_actual["n_pendientes_banco_deb"] = int(row_pend.get("n_deb") or 0)
 
-        # ── Separar PENDIENTES REALES vs CARGOS DEL BANCO ──────────────
-        # TMT 2026-06-04 dueña: los cargos del banco (comisiones, IVA, costos
-        # de cheque, neto del par SENAE/acreditación de aduana) NO son
-        # pendientes reales — no cruzan nunca, hay que asentarlos. Van a una
-        # línea "Cargos del banco (a asentar)" = la diferencia, fuera de
-        # pendientes. Si la clasificación no encuentra cargos, todo queda como
-        # antes (fallback seguro). Ver modules/conciliacion/cargos_banco.py.
+        # ── CARGOS DEL BANCO: separación RETIRADA 2026-06-17 (dueña Tamara) ──
+        # La separación "cargos del banco a asentar" (commit 9c77558) se quitó:
+        # mezclaba conceptos reales (ISD-PAG = impuesto de un pago al exterior,
+        # que va apareado con su principal INTELACI-EXT) con fees, y como
+        # restaba de AJUSTE y lo re-sumaba en una línea aparte era NEUTRA en la
+        # diferencia — solo agregaba ruido. Ahora TODO pendiente cuenta como
+        # pendiente y la diferencia se muestra como un solo número honesto.
+        # Mantenemos las claves en 0 por compatibilidad con el template/export.
         saldo_pc_actual["cargos_creditos"] = 0.0
         saldo_pc_actual["cargos_debitos"] = 0.0
         saldo_pc_actual["cargos_neto"] = 0.0
         saldo_pc_actual["n_cargos"] = 0
-        try:
-            _hrows = _db.fetch_all(
-                """
-                SELECT documento, concepto, monto, tipo
-                  FROM scintela.banco_historicos_pendientes
-                 WHERE no_banco = %(no_banco)s AND conciliado_en IS NULL
-                """,
-                {"no_banco": no_banco},
-            ) or []
-            from modules.conciliacion import cargos_banco as _cb
-            _items = [
-                {"documento": r.get("documento"), "concepto": r.get("concepto"),
-                 "monto": float(r.get("monto") or 0) * (1 if (r.get("tipo") or "C").strip().upper().startswith("C") else -1)}
-                for r in _hrows
-            ]
-            _res = _cb.resumen(_items)
-            if _res["cargos"]["n"] > 0:
-                _r = _res["reales"]; _c = _res["cargos"]
-                saldo_pc_actual["pendientes_banco_creditos"] = _r["creditos"]
-                saldo_pc_actual["pendientes_banco_debitos"] = _r["debitos"]
-                saldo_pc_actual["neto_pendientes"] = _r["neto"]
-                saldo_pc_actual["n_pendientes"] = _r["n"]
-                saldo_pc_actual["cargos_creditos"] = _c["creditos"]
-                saldo_pc_actual["cargos_debitos"] = _c["debitos"]
-                saldo_pc_actual["cargos_neto"] = _c["neto"]
-                saldo_pc_actual["n_cargos"] = _c["n"]
-        except Exception as _e:
-            _LOG.warning("clasificar cargos banco falló: %s", _e)
 
         # Pendientes PC
         row_pend_hoy = _db.fetch_one(

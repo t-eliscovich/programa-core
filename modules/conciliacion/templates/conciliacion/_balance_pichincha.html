@@ -101,14 +101,6 @@
         {% endif %}
       </div>
 
-      {% if balance.n_cargos and balance.n_cargos > 0 %}
-      <div class="{{ _row }}" style="{{ _cols }}">
-        <span class="text-amber-700 dark:text-amber-400">Cargos del banco <span class="text-slate-400">({{ balance.n_cargos }})</span> <span class="text-[9px] text-slate-400">a asentar</span></span>
-        <span></span><span></span>
-        <span class="text-right font-mono text-amber-700 dark:text-amber-400">{{ '{:+,.2f}'.format(balance.cargos_neto) }}</span>
-      </div>
-      {% endif %}
-
       <div class="{{ _row }} bg-slate-50/60 dark:bg-slate-800/30" style="{{ _cols }}">
         <span class="text-slate-700 dark:text-slate-200 font-medium">= Saldo banco esperado</span>
         <span></span><span></span>
@@ -217,15 +209,6 @@
        positivo es contable correcto pero contraintuitivo. La math cierra
        sin esas filas: Conciliado + Pendientes banco neto = Esperado.
        Excel sí mantiene el desglose chato (4 filas separadas). #}
-
-    {% if balance.n_cargos and balance.n_cargos > 0 %}
-    <div class="{{ _row }}" style="{{ _cols }}">
-      <div class="text-amber-700 dark:text-amber-400">Cargos del banco a asentar ({{ balance.n_cargos }})
-        <span class="block text-[10px] font-normal text-slate-400">comisiones/costos del banco que faltan en el programa = la diferencia</span>
-      </div>
-      <div class="text-right font-mono text-amber-700 dark:text-amber-400">{{ '{:+,.2f}'.format(balance.cargos_neto) }}</div>
-    </div>
-    {% endif %}
 
     <div class="{{ _row }} bg-emerald-50/40 dark:bg-emerald-900/10" style="{{ _cols }}">
       <div class="text-slate-800 dark:text-slate-100 font-semibold">= Saldo banco esperado</div>
