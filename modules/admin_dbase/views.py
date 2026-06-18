@@ -53,6 +53,26 @@ NEVER_EXTRACT = {"POSDAT.DBF"}
 MAX_TARBALL_BYTES = 10 * 1024 * 1024
 
 
+def _sesiones_conciliacion_abiertas() -> list:
+    """Sesiones de conciliación abiertas (cerrada_en IS NULL). Sincronizar con
+    una abierta DESCUADRA la sesión: el sync mueve el ledger (libros +
+    conciliados) por debajo, los pendientes-programa colapsan, el lado banco
+    queda viejo → la diferencia explota. TMT 2026-06-18: pasó con sesión #40.
+    """
+    try:
+        import db
+        return db.fetch_all(
+            """
+            SELECT id, no_banco, COALESCE(usuario, '') AS usuario, abierta_en
+              FROM scintela.banco_conciliacion_sesion
+             WHERE cerrada_en IS NULL
+             ORDER BY abierta_en DESC
+            """
+        ) or []
+    except Exception:
+        return []
+
+
 @bp.route("/", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -62,6 +82,7 @@ def form():
         "admin_dbase/sync.html",
         never_extract=sorted(NEVER_EXTRACT),
         target_dir=str(EXTRACT_DIR),
+        sesiones_abiertas=_sesiones_conciliacion_abiertas(),
     )
 
 
@@ -113,6 +134,18 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         return msg.rstrip("\n") + "\n"
 
     yield line(f"[1/4] tarball recibido: {original_name} ({tarball_bytes:,} bytes)")
+
+    _abiertas = _sesiones_conciliacion_abiertas()
+    if _abiertas:
+        yield line("")
+        yield line("⚠⚠⚠ OJO: hay una sesión de CONCILIACIÓN ABIERTA ⚠⚠⚠")
+        for _s in _abiertas:
+            yield line(f"   · sesión #{_s.get('id')} (banco {_s.get('no_banco')}, {_s.get('usuario')})")
+        yield line("   Sincronizar MUEVE el ledger por debajo de la sesión y la descuadra")
+        yield line("   (los pendientes-programa colapsan, el lado banco queda viejo → la")
+        yield line("    diferencia explota). Lo ideal: CERRAR la sesión ANTES de sincronizar.")
+        yield line("   (El sync continúa igual — esto es solo un aviso.)")
+        yield line("")
 
     # Limpiar el directorio destino antes de extraer.
     try:
