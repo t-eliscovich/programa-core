@@ -1830,7 +1830,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     r = 5
     total = 0.0
     n_no_identif = 0
-    _no_ident_total = 0.0  # suma firmada de los depósitos NO IDENTIFICADO
     for row in rows_reales:
         tipo = (row.get("tipo") or "C").upper()
         monto = float(row.get("monto") or 0)
@@ -1845,7 +1844,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         if "NO IDENTIFICADO" in concepto.upper():
             det_extra = (det_extra + " ⚠ NO IDENT.").strip()
             n_no_identif += 1
-            _no_ident_total += valor
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
         ws.cell(row=r, column=2, value=_safe_cell(concepto)[:100])
         ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
@@ -1903,17 +1901,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # comisiones/SENAE) está en AJUSTE. TOTAL = SISTEMA + AJUSTE y la
     # DIFERENCIA = SALDO BANCO − TOTAL es el único número a cerrar.
     total_calc = round(saldo_sistema + ajuste, 2)
-    # TMT 2026-06-19 (dueña): los "DEPOSITO NO IDENTIFICADO" ya cuentan como
-    # pendiente banco (van dentro de créditos → TOTAL), pero el saldo del
-    # extracto NO los incluye. Eso dejaba la DIFERENCIA = exactamente el monto
-    # no identificado. Se suman al lado del banco ("como el resto" de los
-    # depósitos) para que la diferencia cierre.
-    _no_ident_total = round(_no_ident_total, 2)
-    saldo_banco_ajustado = (
-        round(saldo_banco_real + _no_ident_total, 2)
-        if saldo_banco_real is not None else None
-    )
-    diferencia = round(saldo_banco_ajustado - total_calc, 2) if saldo_banco_ajustado is not None else None
+    diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
 
     label_col = 3
     val_col = 4
@@ -1931,9 +1919,6 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     ]
     if saldo_banco_real is not None:
         rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
-        if abs(_no_ident_total) > 0.005:
-            rows_resumen.append(("+ Depósitos no identificados", _no_ident_total))
-            rows_resumen.append(("SALDO BANCO (ajustado)", saldo_banco_ajustado))
         rows_resumen.append(("DIFERENCIA", diferencia))
 
     for label, val in rows_resumen:
