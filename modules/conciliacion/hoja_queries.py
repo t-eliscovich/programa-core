@@ -49,8 +49,47 @@ def _fmt(v) -> float:
 def saldo_pc_anterior(no_banco: int, antes_de: date) -> float:
     """Saldo PC libros al cierre del día anterior a `antes_de`.
 
-    Es el saldo running del último mov con fecha < antes_de.
+    TMT 2026-06-19 (dueña: "el doc de conciliación tiene una diferencia enorme"):
+    el lookup directo de `t.saldo` (running) devolvía 0 cuando NO hay filas antes
+    de `antes_de` (banco apertura-junio) o cuando esa fila tiene saldo 0/NULL —
+    así la hoja arrancaba en $0 y el saldo final salía ~$2M corto. Ahora
+    ANCLAMOS en el último saldo running CONFIABLE (el mismo que muestra la
+    pantalla / balance_pichincha) y le restamos el neto firmado de los
+    movimientos desde `antes_de` en adelante:
+        saldo(antes_de - 1) = saldo_actual − Σ signed(fecha >= antes_de)
+    Mismo criterio de signo que balance_pichincha (débitos CH/ND/DB/GS/PA restan,
+    el resto suma). Es exacto por definición de saldo running y NO depende de la
+    confiabilidad fila-a-fila de t.saldo. Fallback al lookup directo si falla.
     """
+    try:
+        row_last = _db.fetch_one(
+            """
+            SELECT t.saldo
+              FROM scintela.transacciones_bancarias t
+             WHERE t.no_banco = %(no_banco)s AND t.saldo IS NOT NULL
+             ORDER BY t.fecha DESC, t.id_transaccion DESC
+             LIMIT 1
+            """,
+            {"no_banco": no_banco},
+        )
+        saldo_actual = _fmt(row_last.get("saldo") if row_last else 0)
+        row_net = _db.fetch_one(
+            """
+            SELECT COALESCE(SUM(
+                     CASE WHEN UPPER(TRIM(COALESCE(t.documento, '')))
+                               IN ('CH','ND','DB','GS','PA')
+                          THEN -t.importe ELSE t.importe END), 0) AS net
+              FROM scintela.transacciones_bancarias t
+             WHERE t.no_banco = %(no_banco)s
+               AND t.fecha >= %(antes_de)s
+            """,
+            {"no_banco": no_banco, "antes_de": antes_de},
+        )
+        net = _fmt(row_net.get("net") if row_net else 0)
+        return round(saldo_actual - net, 2)
+    except Exception:
+        pass
+    # Fallback: lookup directo del saldo running (comportamiento viejo).
     row = _db.fetch_one(
         """
         SELECT t.saldo
