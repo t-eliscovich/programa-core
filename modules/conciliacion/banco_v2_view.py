@@ -2584,7 +2584,8 @@ def banco_cruzar_pendientes():
         elif any(abs(s["monto"] - it["monto"]) <= 0.01 for s in sis):
             coinciden.append(it)
         else:
-            monto_distinto.append({**it, "sistema_monto": sis[0]["monto"]})
+            monto_distinto.append({**it, "sistema_monto": sis[0]["monto"],
+                                   "sistema_id": sis[0]["id"]})
     sobran = []
     for doc, rows in sis_por_doc.items():
         if doc not in file_docs:
@@ -2627,11 +2628,24 @@ def banco_cruzar_pendientes():
                     saltados.append(it)
             for it in monto_distinto:
                 tipo = "C" if it["monto"] >= 0 else "D"
-                n_upd += _db.execute(
-                    "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
-                    "WHERE documento = %s AND no_banco = %s AND conciliado_en IS NULL",
-                    (abs(it["monto"]), tipo, it["doc"], _BANCO_PICHINCHA), conn=conn,
-                ) or 0
+                # 2026-06-19 fix: actualizar la fila ESPECÍFICA por id, NO por
+                # documento (documento NO es único: el índice es
+                # fecha+doc+monto+tipo). El UPDATE por documento pisaba TODAS
+                # las filas pendientes con ese doc → corrupción si un doc se
+                # repite en distintas fechas/montos.
+                _sid = it.get("sistema_id")
+                if _sid:
+                    n_upd += _db.execute(
+                        "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
+                        "WHERE id = %s AND no_banco = %s AND conciliado_en IS NULL",
+                        (abs(it["monto"]), tipo, _sid, _BANCO_PICHINCHA), conn=conn,
+                    ) or 0
+                else:
+                    n_upd += _db.execute(
+                        "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
+                        "WHERE documento = %s AND no_banco = %s AND conciliado_en IS NULL",
+                        (abs(it["monto"]), tipo, it["doc"], _BANCO_PICHINCHA), conn=conn,
+                    ) or 0
     except Exception as e:
         _LOG.exception("aplicar cruce fallo: %s", e)
         flash(f"Error al aplicar el cruce: {e}", "error")
