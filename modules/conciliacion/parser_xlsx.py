@@ -87,6 +87,7 @@ def _parse_valor(v) -> Decimal:
     try:
         return Decimal(s)
     except InvalidOperation:
+        _LOG.warning("VALOR no parseable %r → 0 (revisar celda)", v)
         return Decimal(0)
 
 

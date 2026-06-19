@@ -52,50 +52,35 @@ def _parse_fecha(v) -> date | None:
 
 
 def _to_float(v) -> float | None:
-    """Parsea un VALOR a float, tolerando formato US y EU.
+    """Parsea un VALOR a float asumiendo formato ECUADOR/EU (punto = miles,
+    coma = decimal), igual que `parsers.py` y el resto del proyecto.
 
-    BUG histórico (2026-06-19): la versión vieja hacía
-    ``str(v).replace(",", "")`` asumiendo SIEMPRE formato US (coma=miles,
-    punto=decimal). Con un importe EU escrito como TEXTO — p.ej. el depósito
-    de 967.608,22 — eso daba "967.608.22", que ``float()`` rechaza → la fila
-    se descartaba en silencio y "no cargaba como las demás". Importes EU
-    chicos como "557,58" se convertían en 55758 (inflados x100). Ahora
-    detectamos el separador decimal por la posición del último separador y,
-    para el caso de una sola coma, por la cantidad de decimales (Ecuador usa
-    siempre 2). Si igual no parsea, devolvemos None y el llamador lo SURFACEA
-    (no lo tira en silencio).
+    NO auto-detectamos US: en Ecuador la numeración es EU (1.234,56). Aceptar
+    "cualquier formato" lleva a interpretar mal (TMT 2026-06-19). Si una celda
+    es numérica (openpyxl ya devuelve float) se usa tal cual. Si viene como
+    TEXTO mal formado y no parsea, devolvemos None y el llamador lo SURFACEA
+    (no se descarta en silencio).
     """
     if v is None or v == "":
         return None
     if isinstance(v, (int, float)):
         return float(v)
-    s = str(v).strip().replace("$", "").replace(" ", "").replace(" ", "")
+    s = str(v).strip().replace("$", "").replace(" ", "").replace("\u00a0", "")
     if not s:
         return None
-    # paréntesis o signo = negativo (formato contable)
     neg = False
-    if s.startswith("(") and s.endswith(")"):
+    if s.startswith("(") and s.endswith(")"):   # contable: (135,51) = negativo
         neg = True
         s = s[1:-1]
     if s.startswith("-"):
         neg = True
         s = s[1:]
-    has_dot, has_comma = "." in s, "," in s
-    if has_dot and has_comma:
-        # El ÚLTIMO separador es el decimal.
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")   # EU: 967.608,22
-        else:
-            s = s.replace(",", "")                       # US: 967,608.22
-    elif has_comma:
-        # Sólo coma: decimal si quedan exactamente 2 dígitos detrás
-        # (Ecuador siempre usa 2); si no, es separador de miles.
-        partes = s.split(",")
-        if len(partes) == 2 and len(partes[1]) == 2:
-            s = s.replace(",", ".")                      # 557,58 → 557.58
-        else:
-            s = s.replace(",", "")                       # 1,068 → 1068
-    # sólo punto o sin separador: float() lo maneja tal cual.
+    # Formato EU/Ecuador: punto = miles, coma = decimal.
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")   # 967.608,22 → 967608.22
+    elif "," in s:
+        s = s.replace(",", ".")                     # 557,58 → 557.58
+    # sólo punto o sin separador → float directo (decimal ISO, ej. 3.75)
     try:
         val = float(s)
     except ValueError:

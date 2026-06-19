@@ -78,6 +78,7 @@ def _parse_decimal(v) -> Decimal:
     try:
         return Decimal(s)
     except InvalidOperation:
+        _LOG.warning("importe/saldo no parseable %r → 0 (revisar fila extracto)", v)
         return Decimal(0)
 
 

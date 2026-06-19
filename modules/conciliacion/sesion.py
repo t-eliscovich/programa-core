@@ -621,10 +621,15 @@ def _cargar_historicos_pendientes(no_banco: int) -> list[dict]:
              WHERE no_banco = %s
                AND conciliado_en IS NULL
              ORDER BY ABS(monto) DESC
-             LIMIT 500
+             LIMIT 2000
             """,
             (int(no_banco),),
         ) or []
+        if len(rows) >= 2000:
+            _LOG.warning(
+                "_cargar_historicos_pendientes: tope 2000 alcanzado (no_banco=%s) "
+                "— hay pendientes ocultos; subir el límite o paginar.", no_banco,
+            )
         return rows
     except Exception as e:
         _LOG.warning("_cargar_historicos_pendientes falló: %s", e)

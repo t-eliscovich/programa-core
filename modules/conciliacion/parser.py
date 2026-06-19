@@ -84,6 +84,7 @@ def _parse_monto(s: str) -> Decimal:
     try:
         return Decimal(s)
     except InvalidOperation:
+        _LOG.warning("monto no parseable %r → 0 (revisar celda)", s)
         return Decimal(0)
 
 
