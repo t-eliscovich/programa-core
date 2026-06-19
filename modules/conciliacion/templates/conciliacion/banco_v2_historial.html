@@ -85,36 +85,17 @@
       y devuelve los pendientes a su estado original. <strong>Conserva</strong> los
       conciliados que vienen del dBase (stat='*'). No se puede deshacer.
     </p>
-    <form method="POST" action="{{ url_for('conciliacion.banco_reset_all') }}" class="inline m-0"
-          onsubmit="return resetAllConfirm(this);">
+    <form method="POST" action="{{ url_for('conciliacion.banco_reset_all') }}"
+          class="flex items-center gap-2 flex-wrap"
+          onsubmit="return this.confirm_text.value === 'BORRAR TODO';">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="confirm_text" id="reset_all_confirm_text" value="">
+      <input type="text" name="confirm_text" autocomplete="off" placeholder="Escribí: BORRAR TODO"
+             class="text-xs px-2 py-2 rounded border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 w-48 font-mono">
       <button class="text-xs px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium">
         💣 Empezar de cero (borrar TODO)
       </button>
+      <span class="text-[11px] text-rose-700/70 dark:text-rose-300/70">Tenés que escribir <strong>BORRAR TODO</strong> para habilitar.</span>
     </form>
   </div>
-
-  <script>
-    function resetAllConfirm(form) {
-      var pasos = [
-        "PASO 1/5 — Esto borra TODAS las sesiones de conciliación de Pichincha. ¿Seguir?",
-        "PASO 2/5 — Se borran todos los matches y snapshots (no se puede deshacer). ¿Seguir?",
-        "PASO 3/5 — Los pendientes vuelven a su estado original. Los conciliados del dBase (stat='*') se conservan. ¿Seguir?",
-        "PASO 4/5 — Después vas a tener que volver a subir el extracto y conciliar de nuevo. ¿Seguir?",
-        "PASO 5/5 — Última oportunidad de cancelar. ¿Empezar de cero?"
-      ];
-      for (var i = 0; i < pasos.length; i++) {
-        if (!window.confirm(pasos[i])) return false;
-      }
-      var txt = window.prompt("Para confirmar, escribí exactamente:  BORRAR TODO");
-      if (txt !== "BORRAR TODO") {
-        window.alert("Cancelado — el texto no coincide.");
-        return false;
-      }
-      document.getElementById("reset_all_confirm_text").value = txt;
-      return true;
-    }
-  </script>
 </div>
 {% endblock %}
