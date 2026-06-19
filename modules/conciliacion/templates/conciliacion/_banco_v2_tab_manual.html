@@ -140,6 +140,14 @@
       <div class="text-xs text-slate-500 flex items-baseline gap-3">
         <span>Sel: <span data-count="programa" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono tabular-nums">$ 0.00</span></span>
+        {# Conciliar interno: mov de programa sin contraparte de banco (ej.
+           corrección de un negativo / asiento OP interno que netea). #}
+        <button type="button" id="interno-programa-btn" disabled
+                onclick="descartarProgramaSeleccionados()"
+                title="Conciliar los movs de programa seleccionados como internos (sin contraparte de banco). Para correcciones / asientos OP que no tocan el banco."
+                class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
+          Conciliar interno
+        </button>
       </div>
     </header>
 
@@ -227,6 +235,53 @@
     if (dbtn){
       dbtn.disabled = (b.count === 0);
     }
+    // 2026-06-19: "Conciliar interno" (programa sin contraparte banco) se
+    // habilita con movs SOLO del lado programa y NINGUNO del banco — si hay
+    // banco seleccionado, lo que querés es un match normal, no interno.
+    var ibtn = document.getElementById('interno-programa-btn');
+    if (ibtn){
+      ibtn.disabled = !(p.count > 0 && b.count === 0);
+    }
+  };
+
+  // 2026-06-19 (pedido Tamara / caso Alex): conciliar movs de PROGRAMA como
+  // internos, sin contraparte de banco. Espejo de descartarBancoSeleccionados.
+  // Caso típico: corrección de un negativo / asiento OP interno (INOP) que
+  // netea y no toca el banco.
+  window.descartarProgramaSeleccionados = function(){
+    var p = read('programa');
+    if (!p.count){ alert('No marcaste ningún mov del programa.'); return; }
+    var motivo = prompt(
+      '¿Por qué conciliar como INTERNO estos ' + p.count + ' mov(s) de programa?\n\n' +
+      'Ejemplos:\n' +
+      '  • correccion-negativo\n' +
+      '  • interno-OP\n' +
+      '  • ya-conciliado-dbase\n\n' +
+      'Quedan conciliados SIN contraparte de banco (no tocan el saldo).',
+      'correccion-negativo'
+    );
+    if (motivo === null) return;  // cancelado
+    motivo = (motivo || 'interno').trim().slice(0, 40);
+    if (!confirm(
+      'Vas a conciliar ' + p.count + ' mov(s) de programa como INTERNO.\n' +
+      'Motivo: ' + motivo + '\n\n' +
+      'Quedan marcados como conciliados sin contraparte de banco.\n' +
+      'Reversible desde "Deshacer conciliados".\n\n¿Continuar?'
+    )) return;
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/conciliacion/banco-v2/descartar-programa';
+    function add(name, value){
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = name; i.value = value;
+      form.appendChild(i);
+    }
+    add('csrf_token', document.querySelector('input[name=csrf_token]').value);
+    add('sesion_id', document.querySelector('input[name=sesion_id]').value);
+    add('bancsis_ids', p.ids.join(','));
+    add('motivo', motivo);
+    document.body.appendChild(form);
+    form.submit();
   };
 
   // TMT 2026-06-02 dueña: descartar movs banco que no necesitan conciliarse.

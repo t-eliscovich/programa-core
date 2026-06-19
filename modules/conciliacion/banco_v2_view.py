@@ -1009,6 +1009,111 @@ def banco_descartar():
     return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
 
 
+@conciliacion_bp.route("/banco-v2/descartar-programa", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_descartar_programa():
+    """Concilia movs del lado PROGRAMA como INTERNOS, sin contraparte de banco.
+
+    Espejo de /descartar-banco para el lado programa (pedido Tamara
+    2026-06-19, caso de Alex). Caso típico: la **corrección de un negativo**
+    — un asiento OP interno (concepto INOP / 'IN OP') que netea contra su par
+    y NO toca el saldo real del banco (BANC=0 en el dBase), así que el
+    extracto no tiene una línea para aparearlo. Antes la pantalla NO dejaba
+    conciliarlo porque `banco_manual_confirmar` exige un mov de banco; quedaba
+    trabado con Δ=importe.
+
+    Marca cada bancsis_id con stat='*' y crea un banco_conciliacion_match
+    (estado='matched', metodo='interno') → auditable y REVERSIBLE desde
+    'Deshacer conciliados', igual que un match normal.
+    """
+    sesion_id = int(request.form.get("sesion_id") or 0)
+    sesion = _sesion.sesion_por_id(sesion_id) if sesion_id else None
+    if not sesion or sesion.get("cerrada_en"):
+        flash("Sesión inválida o cerrada.", "error")
+        return redirect(url_for("conciliacion.hub"))
+
+    bancsis_ids_csv = (request.form.get("bancsis_ids") or "").strip()
+    motivo = (request.form.get("motivo") or "interno")[:50]
+    try:
+        bancsis_ids = [int(x) for x in bancsis_ids_csv.split(",") if x.strip()]
+    except ValueError:
+        bancsis_ids = []
+    if not bancsis_ids:
+        flash("No marcaste ningún mov del programa para conciliar como interno.", "warn")
+        return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+    usuario = _usuario_actual()
+    no_banco = _BANCO_PICHINCHA
+    import uuid as _uuid
+    batch_id = _uuid.uuid4().hex
+
+    tiene_metodo = False
+    try:
+        tiene_metodo = bool(_db.fetch_one(
+            """
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema='scintela'
+               AND table_name='banco_conciliacion_match'
+               AND column_name='metodo'
+            """,
+        ))
+    except Exception:
+        pass
+
+    n_ok = 0
+    err_msg = None
+    metodo = f"interno:{motivo}"[:40]
+    for bk_id in bancsis_ids:
+        try:
+            if tiene_metodo:
+                _db.execute(
+                    """
+                    INSERT INTO scintela.banco_conciliacion_match (
+                        no_banco, estado, metodo,
+                        id_transaccion, tx_firma, confirm_batch_id, usuario
+                    ) VALUES (%s, 'matched', %s, %s,
+                              scintela.compute_tx_firma(%s), %s, %s)
+                    """,
+                    (no_banco, metodo, bk_id, bk_id, batch_id, usuario),
+                )
+            else:
+                _db.execute(
+                    """
+                    INSERT INTO scintela.banco_conciliacion_match (
+                        no_banco, estado, id_transaccion, tx_firma, confirm_batch_id, usuario
+                    ) VALUES (%s, 'matched', %s,
+                              scintela.compute_tx_firma(%s), %s, %s)
+                    """,
+                    (no_banco, bk_id, bk_id, batch_id, usuario),
+                )
+            _db.execute(
+                """
+                UPDATE scintela.transacciones_bancarias
+                   SET stat = '*'
+                 WHERE id_transaccion = %s AND no_banco = %s
+                """,
+                (bk_id, no_banco),
+            )
+            n_ok += 1
+        except Exception as e:
+            _LOG.warning("descartar programa %s falló: %s", bk_id, e)
+            if err_msg is None:
+                err_msg = str(e)
+
+    if n_ok:
+        _sesion.incrementar_matches(sesion_id, n_ok)
+        flash(
+            f"{n_ok} mov(s) de programa conciliado(s) como INTERNO (sin "
+            f"contraparte de banco). Motivo: {motivo}. Reversible desde "
+            f"'Deshacer conciliados'.",
+            "ok",
+        )
+    else:
+        flash(f"No pude conciliar como interno. {err_msg or ''}".strip(), "error")
+    return redirect(url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id))
+
+
 # ─── Endpoint Tab Manual: confirmar pares marcados ────────────────────
 
 
@@ -2426,7 +2531,7 @@ def banco_cruzar_pendientes():
         return redirect(url_for("conciliacion.hub"))
     try:
         from modules.conciliacion.parser_xlsx import parse_pendientes_cruce
-        hoja, items = parse_pendientes_cruce(raw)
+        hoja, items, dropped = parse_pendientes_cruce(raw, return_dropped=True)
     except Exception as e:
         _LOG.exception("parse cruce fallo: %s", e)
         flash(f"No pude leer el archivo: {e}", "error")
@@ -2434,6 +2539,20 @@ def banco_cruzar_pendientes():
     if not items:
         flash("El archivo no trajo pendientes reconocibles (revisa la hoja FEB2023).", "warn")
         return redirect(url_for("conciliacion.hub"))
+    # 2026-06-19: filas con VALOR que NO se pudo parsear ya NO se tiran en
+    # silencio. Las avisamos por fila para que se corrija el archivo (era la
+    # causa de "no carga el mov del 17 / la acreditación de 967K").
+    if dropped:
+        detalle = "; ".join(
+            f"fila {d['fila']}: {d['concepto'][:30]} = «{d['valor_raw']}»"
+            for d in dropped[:8]
+        )
+        mas = f" (+{len(dropped) - 8} más)" if len(dropped) > 8 else ""
+        flash(
+            f"⚠ {len(dropped)} fila(s) del archivo NO se cargaron porque no pude "
+            f"leer su VALOR — revisalas en el Excel: {detalle}{mas}",
+            "error",
+        )
 
     sis_rows = _db.fetch_all(
         """
@@ -2486,17 +2605,26 @@ def banco_cruzar_pendientes():
                     "WHERE id = ANY(%s) AND no_banco = %s AND conciliado_en IS NULL",
                     (sobran_ids, _BANCO_PICHINCHA), conn=conn,
                 ) or 0
+            saltados = []
             for it in faltan:
                 tipo = "C" if it["monto"] >= 0 else "D"
-                _db.execute(
+                # ON CONFLICT DO NOTHING choca contra ux_bhp_firma
+                # (no_banco, fecha, documento, monto, tipo). Antes hacíamos
+                # n_add+=1 igual → un mov que NO entró se reportaba "agregado"
+                # y desaparecía sin aviso (ej. una acreditación cuya firma ya
+                # existía). Ahora contamos lo REAL y avisamos lo saltado.
+                ins = _db.execute(
                     "INSERT INTO scintela.banco_historicos_pendientes "
                     "(no_banco, fecha, concepto, documento, monto, tipo, fuente, creado_en) "
                     "VALUES (%s, %s, %s, %s, %s, %s, 'cruce-feb2023', CURRENT_TIMESTAMP) "
                     "ON CONFLICT DO NOTHING",
                     (_BANCO_PICHINCHA, it.get("fecha"), (it.get("detalle") or "")[:200],
                      it["doc"], abs(it["monto"]), tipo), conn=conn,
-                )
-                n_add += 1
+                ) or 0
+                if ins:
+                    n_add += 1
+                else:
+                    saltados.append(it)
             for it in monto_distinto:
                 tipo = "C" if it["monto"] >= 0 else "D"
                 n_upd += _db.execute(
@@ -2513,6 +2641,30 @@ def banco_cruzar_pendientes():
         f"Pendientes actualizados desde {hoja}: {n_del} borrado(s), {n_add} agregado(s), "
         f"{n_upd} corregido(s). El backlog ahora coincide con tu archivo ({len(items)} items).",
         "ok",
+    )
+    # Avisar lo que el archivo traía como NUEVO pero NO entró (firma ya
+    # existente). Para una acreditación que "no refleja como las demás" esto
+    # apunta exactamente a la fila culpable.
+    if saltados:
+        det = "; ".join(
+            f"{(s.get('detalle') or '')[:24]} {s['monto']:+,.2f} doc {s['doc'] or '—'}"
+            for s in saltados[:6]
+        )
+        mas = f" (+{len(saltados) - 6} más)" if len(saltados) > 6 else ""
+        flash(
+            f"⚠ {len(saltados)} mov(s) del archivo NO se agregaron: ya existía una "
+            f"fila con la misma firma (fecha+doc+monto+tipo). Si esperabas verlos, "
+            f"revisá si están duplicados o ya conciliados: {det}{mas}",
+            "warn",
+        )
+    # Control de cuadre: Σ neto de lo parseado vs lo que el archivo declara.
+    # Si no coinciden, algo se dejó de leer (otra forma de "encontrar más").
+    neto_parseado = round(sum(it["monto"] for it in items), 2)
+    _LOG.info(
+        "cruce hoja=%s items=%d neto_parseado=%.2f faltan=%d saltados=%d "
+        "monto_distinto=%d sobran=%d",
+        hoja, len(items), neto_parseado, len(faltan), len(saltados),
+        len(monto_distinto), len(sobran),
     )
     return redirect(url_for("conciliacion.hub"))
 

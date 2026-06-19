@@ -52,20 +52,55 @@ def _parse_fecha(v) -> date | None:
 
 
 def _to_float(v) -> float | None:
+    """Parsea un VALOR a float, tolerando formato US y EU.
+
+    BUG histórico (2026-06-19): la versión vieja hacía
+    ``str(v).replace(",", "")`` asumiendo SIEMPRE formato US (coma=miles,
+    punto=decimal). Con un importe EU escrito como TEXTO — p.ej. el depósito
+    de 967.608,22 — eso daba "967.608.22", que ``float()`` rechaza → la fila
+    se descartaba en silencio y "no cargaba como las demás". Importes EU
+    chicos como "557,58" se convertían en 55758 (inflados x100). Ahora
+    detectamos el separador decimal por la posición del último separador y,
+    para el caso de una sola coma, por la cantidad de decimales (Ecuador usa
+    siempre 2). Si igual no parsea, devolvemos None y el llamador lo SURFACEA
+    (no lo tira en silencio).
+    """
     if v is None or v == "":
         return None
     if isinstance(v, (int, float)):
         return float(v)
-    s = str(v).strip().replace("$", "").replace(",", "")
+    s = str(v).strip().replace("$", "").replace(" ", "").replace(" ", "")
     if not s:
         return None
-    # paréntesis = negativo (formato contable)
+    # paréntesis o signo = negativo (formato contable)
+    neg = False
     if s.startswith("(") and s.endswith(")"):
-        s = "-" + s[1:-1]
+        neg = True
+        s = s[1:-1]
+    if s.startswith("-"):
+        neg = True
+        s = s[1:]
+    has_dot, has_comma = "." in s, "," in s
+    if has_dot and has_comma:
+        # El ÚLTIMO separador es el decimal.
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")   # EU: 967.608,22
+        else:
+            s = s.replace(",", "")                       # US: 967,608.22
+    elif has_comma:
+        # Sólo coma: decimal si quedan exactamente 2 dígitos detrás
+        # (Ecuador siempre usa 2); si no, es separador de miles.
+        partes = s.split(",")
+        if len(partes) == 2 and len(partes[1]) == 2:
+            s = s.replace(",", ".")                      # 557,58 → 557.58
+        else:
+            s = s.replace(",", "")                       # 1,068 → 1068
+    # sólo punto o sin separador: float() lo maneja tal cual.
     try:
-        return float(s)
+        val = float(s)
     except ValueError:
         return None
+    return -val if neg else val
 
 
 def _elegir_hoja(wb, sheet: str | None):
@@ -124,16 +159,22 @@ def _localizar_columnas(ws) -> tuple[int, dict]:
     return 2, {"fecha": 0, "concepto": 1, "documento": 2, "valor": 3}
 
 
-def parse_hoja_pendientes(source, sheet: str | None = None) -> list[dict]:
+def parse_hoja_pendientes(
+    source, sheet: str | None = None, *, return_dropped: bool = False,
+):
     """Parsea la hoja y devuelve la lista de pendientes de banco.
 
     Args:
         source: path (str) o bytes del .xlsx.
         sheet:  nombre de la pestaña (ej. "FEB2023"). Si None, auto-detecta.
+        return_dropped: si True, devuelve ``(rows, dropped)`` donde `dropped`
+            son las filas con concepto+VALOR que NO se pudieron parsear (antes
+            se descartaban en silencio → un mov "no cargaba como las demás" y
+            nadie se enteraba). Default False = comportamiento histórico.
 
     Returns:
-        list[{fecha: date|None, concepto: str, documento: str,
-              monto: float (>0), tipo: 'C'|'D', fila: int}]
+        list[{fecha, concepto, documento, monto (>0), tipo: 'C'|'D', fila}]
+        o (rows, dropped) si return_dropped.
     """
     import openpyxl
 
@@ -150,18 +191,34 @@ def parse_hoja_pendientes(source, sheet: str | None = None) -> list[dict]:
     c_valor = cols["valor"]
 
     out: list[dict] = []
+    dropped: list[dict] = []
     for i, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), header_row + 1):
         def _cell(idx):
             return row[idx] if idx is not None and idx < len(row) else None
 
         concepto_raw = _cell(c_concepto)
         concepto = str(concepto_raw).strip() if concepto_raw is not None else ""
-        # Fila de cierre (TOTAL / SALDO / DIFERENCIA) → detener parse.
+        # Fila de cierre (TOTAL / SALDO / DIFERENCIA) → no es pendiente.
         if concepto.upper() in _FILAS_CIERRE:
             continue
 
-        valor = _to_float(_cell(c_valor))
+        valor_raw = _cell(c_valor)
+        valor = _to_float(valor_raw)
         if valor is None or valor == 0:
+            # SOLO es "drop sospechoso" si la celda VALOR tenía contenido que
+            # no pudimos parsear (texto raro, formato roto) Y hay concepto.
+            # Las filas en blanco (sin concepto ni valor) se ignoran como antes.
+            tiene_valor = valor_raw is not None and str(valor_raw).strip() != ""
+            if concepto and tiene_valor and valor is None:
+                _LOG.warning(
+                    "hoja fila %d: no pude parsear VALOR %r (concepto=%r)",
+                    i, valor_raw, concepto[:60],
+                )
+                dropped.append({
+                    "fila": i, "concepto": concepto[:120],
+                    "valor_raw": str(valor_raw)[:40],
+                    "documento": str(_cell(c_doc) or "").strip()[:40],
+                })
             continue
 
         doc_raw = _cell(c_doc)
@@ -182,6 +239,9 @@ def parse_hoja_pendientes(source, sheet: str | None = None) -> list[dict]:
             "tipo": tipo,
             "fila": i,
         })
+    if return_dropped:
+        return out, dropped
+    return out
 
     return out
 

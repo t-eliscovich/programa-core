@@ -275,7 +275,7 @@ def parse_xlsx(raw: bytes) -> list[DepositoPendiente]:
 # ─── Cruce hoja FEB2023 → items para banco_cruzar_pendientes ──────────
 
 
-def parse_pendientes_cruce(raw: bytes):
+def parse_pendientes_cruce(raw: bytes, *, return_dropped: bool = False):
     """Parsea la hoja de pendientes para el cruce 'la hoja prevalece'.
 
     TMT 2026-06-04 dueña: 'quiero que los -15.835,60 prevalezcan aunque no
@@ -300,7 +300,7 @@ def parse_pendientes_cruce(raw: bytes):
     finally:
         _wb.close()
 
-    rows = _hp.parse_hoja_pendientes(raw, sheet=hoja)
+    rows, dropped = _hp.parse_hoja_pendientes(raw, sheet=hoja, return_dropped=True)
     items = []
     for r in rows:
         signed = r["monto"] if (r.get("tipo") or "C") == "C" else -r["monto"]
@@ -310,4 +310,6 @@ def parse_pendientes_cruce(raw: bytes):
             "fecha": r.get("fecha"),          # None = sin fecha (se suma igual)
             "detalle": r.get("concepto") or "",
         })
+    if return_dropped:
+        return hoja, items, dropped
     return hoja, items
