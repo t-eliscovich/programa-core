@@ -60,6 +60,7 @@
      — N líneas + un solo botón Cargar (all-or-nothing en el backend). #}
   <form method="post" action="{{ url_for('comparativa_tintoreria.tinto_carga_agregar') }}"
         class="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-4" id="alta-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <datalist id="catalogo-cods">
       {% for c in catalogo %}
         <option value="{{ c.cod }}">{{ c.color }} — $ {{ '%.4f' % c.costo }}/kg</option>
@@ -138,6 +139,7 @@
             {% if r.usuario_crea == marker and tiene_permiso('tintura.registrar') %}
             <form method="post" style="display:inline"
                   action="{{ url_for('comparativa_tintoreria.tinto_carga_borrar', id_tinto=r.id_tinto) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="text-rose-700 text-xs hover:underline">borrar</button>
             </form>
             {% endif %}
@@ -159,6 +161,7 @@
       {% if tiene_permiso('tintura.registrar') %}
       <form method="post" action="{{ url_for('comparativa_tintoreria.tinto_carga_costo') }}"
             class="flex items-end gap-3 flex-wrap mb-3 pb-3 border-b border-slate-100">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
           <label class="block text-xs text-slate-500 mb-1">Código</label>
           <input type="text" name="cod" required maxlength="5" placeholder="ROJ"
