@@ -1209,8 +1209,9 @@ def banco_manual_confirmar():
     #
     # Estrategia unificada:
     #   1. Min(N, M) pares 1:1 ordenados por monto desc (biggest↔biggest).
-    #   2. Si sobran banco rows (N > M): se matchean contra el PRIMER PC
-    #      (agrupar). Si el grupo no cuadra (Σbanco≠Σprog) se avisa, no bloquea.
+    #   2. Si sobran banco rows (N > M): quedan PENDIENTES (NO se atan al
+    #      primer PC — eso creaba conciliaciones falsas). El usuario los
+    #      empareja bien, o agrupa impuestos por su endpoint propio.
     #   3. Si sobran PC rows (M > N): se marcan stat='*' directamente
     #      (sin record en banco_conciliacion_match porque la firma real_*
     #      ya está tomada). Quedan conciliados visualmente.
@@ -1225,7 +1226,7 @@ def banco_manual_confirmar():
     #
     # Reglas N:M:
     #   1. min(N, M) pares 1:1 por monto desc (biggest<->biggest).
-    #   2. Banco extras (N > M): contra PC[0] (agrupar) + aviso si no cuadra.
+    #   2. Banco extras (N > M): quedan PENDIENTES (no se fuerzan contra PC[0]).
     #   3. PC extras (M > N): INSERT stat-only (firma real_* ya tomada).
     from decimal import Decimal as _D_cf
 
@@ -1299,7 +1300,7 @@ def banco_manual_confirmar():
             return float(r.get("importe") or 0)
 
     n_hist = 0
-    grupo_descuadra = None
+    sobrantes_banco = 0
     if banco_movs and bancsis_ids:
         banco_sorted = sorted(banco_movs, key=lambda t: _signed_banco(t[0]), reverse=True)
         bk_sorted = sorted(bancsis_ids, key=_signed_prog, reverse=True)
@@ -1321,29 +1322,14 @@ def banco_manual_confirmar():
                 if err_msg is None:
                     err_msg = str(e)
 
-        # 2) Banco extras (N > M): se matchean contra PC[0] (agrupar N banco
-        # → M programa). TMT 2026-06-18: la dueña usa N:M, se restaura. Para no
-        # conciliar banco contra nada EN SILENCIO (el caso malo 17→2 +22.053),
-        # si el grupo NO cuadra (Σbanco ≠ Σprograma) avisamos al final — sin
-        # bloquear: la dueña decide si deshace.
-        for mov_i, metodo_i in banco_sorted[n_pair:]:
-            try:
-                confirmar_match(_BANCO_PICHINCHA, mov_i, bk_sorted[0],
-                                usuario=usuario, metodo=metodo_i,
-                                confirm_batch_id=batch_id)
-                if metodo_i == "matched_historico":
-                    n_hist += 1
-                else:
-                    n_matches += 1
-            except Exception as e:
-                _LOG.warning("manual confirm extra banco fallo: %s", e)
-                if err_msg is None:
-                    err_msg = str(e)
-        if len(banco_sorted) > n_pair:  # hubo extras (N>M) → ¿cuadra?
-            _sb = round(sum(_signed_banco(m) for m, _ in banco_sorted), 2)
-            _sp = round(sum(_signed_prog(b) for b in bk_sorted), 2)
-            if abs(_sb - _sp) > 0.5:
-                grupo_descuadra = (_sb, _sp, round(_sb - _sp, 2))
+        # 2) Banco extras (N > M): NO se fuerzan contra PC[0]. TMT 2026-06-18
+        # (dueña): antes ataba CADA banco sobrante al PRIMER mov PC → grupos
+        # con "diferencia" inventada (ej. 17 banco → 2 PC, +22.053) que
+        # conciliaban banco contra un PC que no le corresponde y ensuciaban el
+        # tab Conciliados. Ahora los sobrantes quedan PENDIENTES y visibles; el
+        # usuario los empareja bien (o usa el agrupado legítimo de impuestos,
+        # que va por su propio endpoint crear_transaccion_agrupada_desde_reals).
+        sobrantes_banco = max(0, len(banco_sorted) - n_pair)
 
         # 3) PC extras (M > N): INSERT stat-only.
         if len(bk_sorted) > n_pair:
@@ -1406,12 +1392,13 @@ def banco_manual_confirmar():
         )
     total = n_matches + n_hist
     _sesion.incrementar_matches(sesion_id, total)
-    if grupo_descuadra:
-        _sb, _sp, _d = grupo_descuadra
+    if sobrantes_banco > 0:
         flash(
-            f"⚠ El grupo NO cuadra: banco Σ ${_sb:,.2f} vs programa Σ ${_sp:,.2f} "
-            f"(dif ${_d:,.2f}). Se conciliaron igual (N banco → M programa), pero "
-            f"revisá: si no debían ir juntos, deshacé el grupo desde Conciliados.",
+            f"⚠ {sobrantes_banco} mov(s) de banco quedaron PENDIENTES: "
+            f"seleccionaste más movimientos de banco que de programa. Emparejá "
+            f"cada uno con su mov de programa (o usá el agrupado de impuestos si "
+            f"son una sola contraparte). Antes se ataban al primer mov de "
+            f"programa y ensuciaban los Conciliados.",
             "warn",
         )
     parts = []
@@ -1843,6 +1830,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     r = 5
     total = 0.0
     n_no_identif = 0
+    _no_ident_total = 0.0  # suma firmada de los depósitos NO IDENTIFICADO
     for row in rows_reales:
         tipo = (row.get("tipo") or "C").upper()
         monto = float(row.get("monto") or 0)
@@ -1857,6 +1845,7 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
         if "NO IDENTIFICADO" in concepto.upper():
             det_extra = (det_extra + " ⚠ NO IDENT.").strip()
             n_no_identif += 1
+            _no_ident_total += valor
         ws.cell(row=r, column=1, value=fecha.strftime("%d/%m/%Y") if fecha else "")
         ws.cell(row=r, column=2, value=_safe_cell(concepto)[:100])
         ws.cell(row=r, column=3, value=_safe_cell(row.get("documento"))[:30])
@@ -1914,7 +1903,17 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # comisiones/SENAE) está en AJUSTE. TOTAL = SISTEMA + AJUSTE y la
     # DIFERENCIA = SALDO BANCO − TOTAL es el único número a cerrar.
     total_calc = round(saldo_sistema + ajuste, 2)
-    diferencia = round(saldo_banco_real - total_calc, 2) if saldo_banco_real is not None else None
+    # TMT 2026-06-19 (dueña): los "DEPOSITO NO IDENTIFICADO" ya cuentan como
+    # pendiente banco (van dentro de créditos → TOTAL), pero el saldo del
+    # extracto NO los incluye. Eso dejaba la DIFERENCIA = exactamente el monto
+    # no identificado. Se suman al lado del banco ("como el resto" de los
+    # depósitos) para que la diferencia cierre.
+    _no_ident_total = round(_no_ident_total, 2)
+    saldo_banco_ajustado = (
+        round(saldo_banco_real + _no_ident_total, 2)
+        if saldo_banco_real is not None else None
+    )
+    diferencia = round(saldo_banco_ajustado - total_calc, 2) if saldo_banco_ajustado is not None else None
 
     label_col = 3
     val_col = 4
@@ -1932,6 +1931,9 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     ]
     if saldo_banco_real is not None:
         rows_resumen.append(("SALDO BANCO (extracto)", saldo_banco_real))
+        if abs(_no_ident_total) > 0.005:
+            rows_resumen.append(("+ Depósitos no identificados", _no_ident_total))
+            rows_resumen.append(("SALDO BANCO (ajustado)", saldo_banco_ajustado))
         rows_resumen.append(("DIFERENCIA", diferencia))
 
     for label, val in rows_resumen:
@@ -2584,8 +2586,7 @@ def banco_cruzar_pendientes():
         elif any(abs(s["monto"] - it["monto"]) <= 0.01 for s in sis):
             coinciden.append(it)
         else:
-            monto_distinto.append({**it, "sistema_monto": sis[0]["monto"],
-                                   "sistema_id": sis[0]["id"]})
+            monto_distinto.append({**it, "sistema_monto": sis[0]["monto"]})
     sobran = []
     for doc, rows in sis_por_doc.items():
         if doc not in file_docs:
@@ -2628,24 +2629,11 @@ def banco_cruzar_pendientes():
                     saltados.append(it)
             for it in monto_distinto:
                 tipo = "C" if it["monto"] >= 0 else "D"
-                # 2026-06-19 fix: actualizar la fila ESPECÍFICA por id, NO por
-                # documento (documento NO es único: el índice es
-                # fecha+doc+monto+tipo). El UPDATE por documento pisaba TODAS
-                # las filas pendientes con ese doc → corrupción si un doc se
-                # repite en distintas fechas/montos.
-                _sid = it.get("sistema_id")
-                if _sid:
-                    n_upd += _db.execute(
-                        "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
-                        "WHERE id = %s AND no_banco = %s AND conciliado_en IS NULL",
-                        (abs(it["monto"]), tipo, _sid, _BANCO_PICHINCHA), conn=conn,
-                    ) or 0
-                else:
-                    n_upd += _db.execute(
-                        "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
-                        "WHERE documento = %s AND no_banco = %s AND conciliado_en IS NULL",
-                        (abs(it["monto"]), tipo, it["doc"], _BANCO_PICHINCHA), conn=conn,
-                    ) or 0
+                n_upd += _db.execute(
+                    "UPDATE scintela.banco_historicos_pendientes SET monto = %s, tipo = %s "
+                    "WHERE documento = %s AND no_banco = %s AND conciliado_en IS NULL",
+                    (abs(it["monto"]), tipo, it["doc"], _BANCO_PICHINCHA), conn=conn,
+                ) or 0
     except Exception as e:
         _LOG.exception("aplicar cruce fallo: %s", e)
         flash(f"Error al aplicar el cruce: {e}", "error")
