@@ -300,9 +300,14 @@
               {% endif %}
             </td>
             <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ m.fechad | fecha_es if m.fechad else '' }}</td>
-            <td class="px-3 py-2 text-right text-mono {% if m.mov_estado in ('reverso','reversado') %}line-through text-slate-400{% elif es_egreso %}text-red-600{% elif es_ingreso %}text-emerald-700{% endif %}">
+            {# TMT 2026-06-19 dueña: el color/signo seguía SOLO el tipo de doc
+               (DE→verde) e ignoraba el signo del importe. Un DE con importe
+               negativo (corrección/anulación) salía verde +. Ahora: negativo
+               si es egreso O el importe es < 0 → rojo y −. #}
+            {% set _neg = es_egreso or (m.importe is not none and m.importe < 0) %}
+            <td class="px-3 py-2 text-right text-mono {% if m.mov_estado in ('reverso','reversado') %}line-through text-slate-400{% elif _neg %}text-red-600{% elif es_ingreso %}text-emerald-700{% endif %}">
               {% set imp_abs = m.importe if m.importe is none or m.importe >= 0 else -m.importe %}
-              {% if es_egreso %}-{% endif %}{{ imp_abs | money_es }}
+              {% if _neg %}-{% endif %}{{ imp_abs | money_es }}
             </td>
             <td class="px-3 py-2 text-right text-mono text-slate-500">{{ m.saldo | money_es if m.saldo is not none else '' }}</td>
             <td class="px-3 py-2 text-center" style="white-space: nowrap;">
