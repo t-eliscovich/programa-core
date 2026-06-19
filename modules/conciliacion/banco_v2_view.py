@@ -2656,6 +2656,78 @@ def banco_cruzar_pendientes():
     return redirect(url_for("conciliacion.hub"))
 
 
+@conciliacion_bp.route("/banco-v2/eliminar-pendiente", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_eliminar_pendiente():
+    """Borra UNA fila del backlog de pendientes del banco (hard delete).
+
+    TMT 2026-06-19 (dueña): 'no podemos tener filas fantasmas que se
+    agreguen'. El "DEPOSITO NO IDENTIFICADO" (322,72) vivía solo en
+    banco_historicos_pendientes, sin documento, y "Hacer prevalecer" NO lo
+    podía sacar (el cruce ignora filas sin documento). Esto da una forma
+    quirúrgica, por pantalla, de eliminar UN pendiente fantasma sin tocar
+    el resto. Solo borra filas no conciliadas del banco Pichincha.
+    """
+    try:
+        hist_id = int(request.form.get("hist_id") or 0)
+    except (TypeError, ValueError):
+        hist_id = 0
+    try:
+        sesion_id = int(request.form.get("sesion_id") or 0)
+    except (TypeError, ValueError):
+        sesion_id = 0
+    _back = (
+        url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id)
+        if sesion_id else url_for("conciliacion.banco_post_procesar")
+    )
+    if hist_id <= 0:
+        flash("No identifiqué el pendiente a eliminar.", "error")
+        return redirect(_back)
+
+    # Traer la fila primero para el mensaje (y para no borrar a ciegas).
+    row = _db.fetch_one(
+        """
+        SELECT concepto, documento, monto, tipo
+          FROM scintela.banco_historicos_pendientes
+         WHERE id = %s AND no_banco = %s AND conciliado_en IS NULL
+        """,
+        (hist_id, _BANCO_PICHINCHA),
+    )
+    if not row:
+        flash("Ese pendiente ya no existe o ya está conciliado.", "warn")
+        return redirect(_back)
+
+    n = _db.execute(
+        """
+        DELETE FROM scintela.banco_historicos_pendientes
+         WHERE id = %s AND no_banco = %s AND conciliado_en IS NULL
+        """,
+        (hist_id, _BANCO_PICHINCHA),
+    ) or 0
+    if n:
+        _LOG.warning(
+            "ELIMINAR pendiente #%s por %s: %s %s %.2f",
+            hist_id, _usuario_actual(), row.get("concepto"),
+            row.get("documento") or "—", float(row.get("monto") or 0),
+        )
+        flash(
+            f"Pendiente eliminado: {(row.get('concepto') or '')[:40]} "
+            f"${float(row.get('monto') or 0):,.2f}.",
+            "ok",
+        )
+        try:
+            from modules.conciliacion import saldo_snapshot as _ss
+            _ss.snapshot(_BANCO_PICHINCHA, "pendiente_eliminado",
+                         evento_ref=hist_id, usuario=_usuario_actual(),
+                         descripcion=f"eliminar pendiente #{hist_id}")
+        except Exception:
+            pass
+    else:
+        flash("No pude eliminar el pendiente.", "error")
+    return redirect(_back)
+
+
 @conciliacion_bp.route("/banco-v2/historial", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
