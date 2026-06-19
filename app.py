@@ -83,9 +83,7 @@ def create_app() -> Flask:
 
     app.config.update(
         SECRET_KEY=_load_secret_key(),
-        # TMT 2026-06-11 (dueña): sesiones de 31 días (sliding — Flask refresca
-        # la cookie en cada request). El timeout fino por rol vive en auth.py.
-        PERMANENT_SESSION_LIFETIME=timedelta(days=31),
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=cookie_secure,
@@ -303,13 +301,9 @@ def create_app() -> Flask:
 
     app.register_blueprint(historial_bp)
 
-    from modules.checklist.views import checklist_bp
     from modules.cobranzas.views import cobranzas_bp
 
     app.register_blueprint(cobranzas_bp)
-    # Checklist del día — qué falta cargar en PC vs la operación de ayer
-    # (pedido dueña 2026-06-12, transición dBase→PC). TMT.
-    app.register_blueprint(checklist_bp)
 
     from modules.comisiones.views import comisiones_bp
 
@@ -408,35 +402,6 @@ def create_app() -> Flask:
 
     app.register_blueprint(posdat_reconcile_bp)
 
-    # Reconciliador FACTURAS (dry-run) — TMT 2026-06-10. /admin/facturas-reconcile
-    # compara scintela.factura con FACTURAS.DBF y bucketé: pendiente de sync /
-    # backfill Asinfo / creadas en PC (el sync las borraría) / huérfanas / diffs
-    # de cobranza. SOLO LECTURA: el "apply" de facturas es el sync normal.
-    from modules.admin_dbase.facturas_reconcile_view import bp as facturas_reconcile_bp
-
-    app.register_blueprint(facturas_reconcile_bp)
-
-    # Comparador sistemático PC vs dBase — TMT 2026-06-10 (pedido dueña:
-    # "quiero poder comparar exacto sin sync, se están usando los dos
-    # programas"). /admin/dbase-compare: tarball DBFs → 13 checks con reglas
-    # PRG + identidad de utilidad (residuo 0 = todo explicado). SOLO LECTURA.
-    from modules.admin_dbase.dbase_compare_view import bp as dbase_compare_bp
-
-    app.register_blueprint(dbase_compare_bp)
-
-    # TOTF 1 a 1 — TMT 2026-06-11. /admin/totf-1a1: pareo completo factura
-    # por factura (N° SRI) PC vs FACTURAS.DBF, sin truncar, con cross-check
-    # de backfill/stat del otro lado. SOLO LECTURA.
-    from modules.admin_dbase.totf_1a1_view import bp as totf_1a1_bp
-
-    app.register_blueprint(totf_1a1_bp)
-
-    # Anticipos (scintela.dolares) — TMT 2026-06-11 dueña: sin sync, los
-    # anticipos se cargan directo en PC. Alta + cancelación, suma a ANTIC.
-    from modules.anticipos.views import bp as anticipos_bp
-
-    app.register_blueprint(anticipos_bp)
-
     # Importador de fichas de clientes — TMT 2026-06-06. /admin/clientes-import
     # completa dirección/teléfono/RUC/provincia desde CLIENTES.DBF (que no entra
     # al sync normal) y agrega los clientes que falten. Dry-run por defecto.
@@ -446,21 +411,18 @@ def create_app() -> Flask:
     app.register_blueprint(clientes_import_bp)
     app.register_blueprint(ficha_asinfo_bp)
 
+    # Importador de proveedores desde FABRICA.DBF — TMT 2026-06-19.
+    # /admin/proveedores-import crea los proveedores que faltan (BP, AC, AQ…)
+    # con nombre/RUC/retenciones del maestro FABRICA. Dry-run por defecto.
+    from modules.admin_dbase.proveedores_import_view import bp as proveedores_import_bp
+
+    app.register_blueprint(proveedores_import_bp)
+
     # Cleanup one-off — marcar facturas Asinfo retroactivas como
     # usuario_crea='asinfo-backfill'. TMT 2026-06-10.
     from modules.admin_dbase.marcar_asinfo_view import bp as marcar_asinfo_bp
 
     app.register_blueprint(marcar_asinfo_bp)
-
-    # Debug READ-ONLY de facturas en Asinfo (via Metabase DB 2) — TMT
-    # 2026-06-12. /admin/debug-asinfo-facturas: investigar atributos de
-    # facturas del ERP (vendedor, serie SRI, usuario, estado, forma de
-    # pago) sin tocar datos. SOLO LECTURA.
-    from modules.admin_dbase.debug_asinfo_facturas_view import bp as debug_asinfo_fact_bp
-    from modules.admin_dbase.debug_fabricacion_wip_view import bp as debug_fab_wip_bp
-
-    app.register_blueprint(debug_asinfo_fact_bp)
-    app.register_blueprint(debug_fab_wip_bp)
 
     # Health audit endpoints (Capas 3+4) — usuario_crea audit + utilidad
     # watchdog. JSON-only, para cron / curl manual. TMT 2026-06-10.
