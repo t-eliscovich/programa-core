@@ -66,6 +66,18 @@
       <div class="text-xs text-slate-500 flex items-baseline gap-3">
         <span>Sel: <span data-count="banco" class="font-bold tabular-nums">0</span></span>
         <span>Σ <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">$ 0.00</span></span>
+        {# TMT 2026-06-19 (dueña): faltaba el botón del lado BANCO para marcar
+           un mov ya conciliado sin contraparte PC (espejo de "Conciliar interno"
+           del programa). La función JS descartarBancoSeleccionados() ya existía
+           pero el botón no se renderizaba → no había forma por la UI de resolver
+           p.ej. un préstamo que ya está en libros (IN BP) y aparece doble como
+           pendiente del extracto (BPPCA). #}
+        <button type="button" id="descartar-banco-btn" disabled
+                onclick="descartarBancoSeleccionados()"
+                title="Marcar los movs del banco seleccionados como conciliados SIN contraparte PC (ej. ya están en libros, o entrada+devolución que netea). Reversible desde 'Deshacer conciliados'."
+                class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-[11px] rounded px-2 py-0.5 font-medium">
+          Conciliar s/ contraparte
+        </button>
       </div>
     </header>
 
