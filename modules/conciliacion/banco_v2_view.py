@@ -203,6 +203,43 @@ def banco_post_procesar():
 
     buckets = _sesion.estado_sesion(sesion, no_banco)
     balance = _bp.calcular(no_banco)
+
+    # TMT 2026-06-21 (dueña: "¿por qué dice 131k si la diferencia es 0?").
+    # El "Saldo banco esperado" de la pantalla contaba como Pendientes banco
+    # SOLO la hoja (decisión 2026-06-04) e IGNORABA el extracto de la sesión
+    # sin cruzar — pero el resumen descargado SÍ lo cuenta (fix 2026-06-16/17).
+    # Resultado: el resumen cerraba en 0 y la pantalla mostraba justo el neto
+    # del extracto sin cruzar como "diferencia". Acá sumamos ese neto (mismos
+    # buckets que _generar_xlsx_pendientes) a los totales `*_total` que el
+    # template ya sabe mostrar, para que pantalla == resumen y la diferencia
+    # cierre. estado_sesion ya deduplica el extracto contra la hoja.
+    _xt_cred = _xt_deb = 0.0
+    _xt_n = 0
+    for _bucket in ("manual_banco", "impuestos"):
+        for _it in (buckets.get(_bucket) or []):
+            if _it.get("es_historico") or _it.get("mov") is None:
+                continue
+            _mv = _it["mov"]
+            _tp = (getattr(_mv, "tipo", "C") or "C").upper()
+            _mo = float(getattr(_mv, "monto", 0) or 0)
+            if _tp == "C":
+                _xt_cred += _mo
+            else:
+                _xt_deb += _mo
+            _xt_n += 1
+    if _xt_n:
+        _xt_cred = round(_xt_cred, 2)
+        _xt_deb = round(_xt_deb, 2)
+        balance["pendientes_banco_total_creditos"] = round(
+            float(balance.get("pendientes_banco_creditos") or 0) + _xt_cred, 2)
+        balance["pendientes_banco_total_debitos"] = round(
+            float(balance.get("pendientes_banco_debitos") or 0) + _xt_deb, 2)
+        balance["neto_pendientes_total"] = round(
+            float(balance.get("neto_pendientes") or 0) + _xt_cred - _xt_deb, 2)
+        balance["n_pendientes_banco_total"] = int(balance.get("n_pendientes") or 0) + _xt_n
+        balance["saldo_banco_esperado"] = round(
+            float(balance.get("saldo_si_concilio_todo") or balance.get("saldo") or 0)
+            + balance["neto_pendientes_total"], 2)
     # TMT 2026-06-02 dueña: 'si en el extracto tenemos 5k de diferencia'.
     # TMT 2026-06-03: balance_pichincha.calcular() ya incluye el extracto de
     # sesión en neto_pendientes_total. No re-enriquecemos acá — un solo lugar
