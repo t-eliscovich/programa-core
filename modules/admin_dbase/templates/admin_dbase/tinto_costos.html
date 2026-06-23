@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titulo %}Refrescar catálogo de tintura{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 mb-1">
+    Refrescar catálogo de tintura (colores + $/kg)
+  </h1>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+    Sube el <code class="px-1 rounded bg-slate-100 dark:bg-slate-800">dbf-fresh.tar.gz</code>
+    (o directamente <code>TINTO.DBF</code> / <code>COSTOS.DBF</code>) y completa los
+    códigos que faltan en <code>scintela.tinto_costos</code> — los que la planilla
+    <a href="{{ url_for('comparativa_tintoreria.tinto_carga') }}" class="text-sky-700 hover:underline">Carga Tintura</a>
+    rechaza con “no está en el catálogo” (LIF, AZU, MEN, RPA, GRC…).
+  </p>
+  <ul class="text-xs text-slate-500 dark:text-slate-400 mb-4 list-disc pl-5 space-y-1">
+    <li>Si viene <b>COSTOS.DBF</b> (maestro del dBase): pisa color y $/kg.</li>
+    <li>Si no, usa <b>TINTO.DBF</b> completo: inserta los códigos faltantes
+        (costo = Σimporte ÷ Σkg) y rellena el color si está vacío — <b>NO</b> pisa
+        costos que ya editaste a mano.</li>
+    <li>NO toca bancos, facturas ni el balance. Probá primero en <b>DRY-RUN</b>.</li>
+  </ul>
+
+  <form id="tcForm"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4"
+        enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="block">
+      <span class="text-xs text-slate-500">Archivo .tar.gz / .tgz / .DBF</span>
+      <input type="file" name="archivo" accept=".tar.gz,.tgz,.dbf,.DBF" required
+             class="mt-1 block text-sm text-slate-700 dark:text-slate-300">
+    </label>
+
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="aplicar" value="1">
+      <span>Aplicar (si lo dejás destildado = DRY-RUN, solo muestra qué haría)</span>
+    </label>
+
+    <button type="submit"
+            class="text-sm px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white">
+      Refrescar catálogo
+    </button>
+  </form>
+
+  <pre id="output"
+       class="mt-4 hidden whitespace-pre-wrap text-xs bg-slate-900 text-emerald-200 p-4 rounded h-96 overflow-auto"></pre>
+
+  <script>
+    document.getElementById('tcForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const pre = document.getElementById('output');
+      pre.classList.remove('hidden');
+      pre.textContent = 'Subiendo y procesando…\n';
+      const fd = new FormData(form);
+      const resp = await fetch("{{ url_for('admin_dbase.tinto_costos_run') }}", {
+        method: 'POST',
+        body: fd,
+        headers: {'X-CSRFToken': fd.get('csrf_token')},
+      });
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        pre.textContent += dec.decode(value);
+        pre.scrollTop = pre.scrollHeight;
+      }
+    });
+  </script>
+</div>
+{% endblock %}

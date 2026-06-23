@@ -304,10 +304,97 @@ def _run_pipeline(tarball_bytes: int, original_name: str):
         except Exception as exc:  # noqa: BLE001
             yield line(f"[WARN] clientes-import falló (no fatal): {exc!r}")
 
+    # TMT 2026-06-23 (dueña): refrescar el catálogo de tintura (tinto_costos) en
+    # CADA sync. El catálogo se sembró una sola vez (mig 0083) desde el mes en
+    # curso → códigos viejos (LIF/AZU/MEN/RPA/GRC…) faltaban y la planilla
+    # /informes/tinto-carga los rechazaba. Usa COSTOS.DBF si vino en el tarball
+    # (maestro, pisa color+costo); si no, reconstruye desde TINTO.DBF completo
+    # (costo = Σimporte/Σkg) sin pisar costos editados a mano. "Sync completo
+    # directo actualiza los colores", como pidió la dueña.
+    if rc == 0:
+        try:
+            from modules.admin_dbase.tinto_costos_sync import refresh_from_dir
+            yield line("")
+            yield line("[catálogo tintura post-sync]")
+            yield from refresh_from_dir(EXTRACT_DIR, aplicar=True)
+        except Exception as exc:  # noqa: BLE001
+            yield line(f"[WARN] refresh catálogo tintura falló (no fatal): {exc!r}")
+
     if rc == 0:
         yield line("OK ✓")
     else:
         yield line("FALLO ✗ — revisar el log de arriba.")
+
+
+# ---------------------------------------------------------------------------
+# Refresco SOLO del catálogo de tintura (sin sync completo) — TMT 2026-06-23.
+# La dueña: faltan colores (LIF/AZU/MEN/RPA/GRC…) en /informes/tinto-carga.
+# Esta pantalla sube un tarball (o un .DBF) con TINTO.DBF/COSTOS.DBF y refresca
+# scintela.tinto_costos SIN tocar bancos/facturas/balance — para arreglar los
+# colores sin el riesgo de un sync completo. Reproducible 100% por la UI.
+# ---------------------------------------------------------------------------
+@bp.route("/tinto-costos", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def tinto_costos_form():
+    return render_template("admin_dbase/tinto_costos.html")
+
+
+@bp.route("/tinto-costos/run", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def tinto_costos_run():
+    f = request.files.get("archivo")
+    if not f or not f.filename:
+        return Response("ERROR: falta el archivo.\n", mimetype="text/plain", status=400)
+    aplicar = (request.form.get("aplicar") or "").lower() in ("1", "true", "on", "si", "sí")
+    fname = f.filename
+    low = fname.lower()
+    if not low.endswith((".tar.gz", ".tgz", ".dbf")):
+        return Response(
+            f"ERROR: extensión inesperada ({fname!r}). Esperaba .tar.gz / .tgz / .DBF.\n",
+            mimetype="text/plain", status=400,
+        )
+
+    work = EXTRACT_DIR.parent / "_tinto_costos_refresh"
+    try:
+        if work.exists():
+            shutil.rmtree(work)
+        work.mkdir(parents=True)
+    except OSError as exc:
+        return Response(f"ERROR: no pude preparar {work}: {exc}\n", mimetype="text/plain", status=500)
+
+    if low.endswith(".dbf"):
+        f.save(work / Path(fname).name)
+    else:
+        tmp_tar = work / "_upload.tar.gz"
+        f.save(tmp_tar)
+        try:
+            with tarfile.open(tmp_tar, "r:gz") as tar:
+                for m in tar.getmembers():
+                    if not m.isfile():
+                        continue
+                    name = Path(m.name).name
+                    if name.upper() in ("TINTO.DBF", "COSTOS.DBF"):
+                        m.name = name
+                        tar.extract(m, work)
+        except (tarfile.TarError, OSError) as exc:
+            return Response(f"ERROR: no pude extraer el tarball: {exc}\n", mimetype="text/plain", status=400)
+        tmp_tar.unlink(missing_ok=True)
+
+    def _stream():
+        from modules.admin_dbase.tinto_costos_sync import refresh_from_dir
+        yield f"[catálogo tintura] {'APLICAR' if aplicar else 'DRY-RUN'} desde {fname}\n\n"
+        try:
+            for ln in refresh_from_dir(work, aplicar=aplicar):
+                yield ln.rstrip("\n") + "\n"
+            yield "\nOK ✓\n" if aplicar else "\nDRY-RUN ✓ (no se escribió nada — tildá 'aplicar' para guardar)\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"\n[ERROR] {exc!r}\n"
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    return Response(stream_with_context(_stream()), mimetype="text/plain")
 
 
 # ---------------------------------------------------------------------------
