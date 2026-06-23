@@ -6,8 +6,16 @@
 
   <div class="flex items-baseline justify-between mb-3">
     <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Historial de conciliaciones</h1>
-    <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Volver al upload</a>
+    <div class="flex items-center gap-3">
+      <a href="{{ url_for('conciliacion.banco_movimientos') }}" class="text-xs text-sky-600 hover:underline">Ver TODOS los movimientos del banco →</a>
+      <a href="{{ url_for('conciliacion.hub') }}" class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Volver al upload</a>
+    </div>
   </div>
+  <p class="text-xs text-slate-500 mb-3">
+    Esta lista muestra solo lo <b>conciliado</b>. Para ver movimientos que todavía
+    no se conciliaron (ej. transferencias sin cruzar), usá
+    <a href="{{ url_for('conciliacion.banco_movimientos') }}" class="text-sky-600 hover:underline">Todos los movimientos del banco</a>.
+  </p>
 
   {# TMT 2026-05-27 dueña: 'borremos estos conciliados. que los que importen
      sean las de dbase'. Bulk deshacer: limpia toda la tabla PC (soft-delete)

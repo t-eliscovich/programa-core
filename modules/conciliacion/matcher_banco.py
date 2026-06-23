@@ -1941,11 +1941,15 @@ def historial(
         where.append("bcm.no_banco = %s")
         params.append(int(no_banco))
     if desde is not None:
-        where.append("(bcm.real_fecha >= %s OR bcm.creado_en::date >= %s)")
-        params.extend([desde, desde])
+        # TMT 2026-06-23: incluir tb.fecha (la fecha del movimiento bancario).
+        # Las filas bancsis_only tienen real_fecha NULL → antes caían al filtro
+        # por creado_en (la fecha en que se concilió, no la del movimiento) y
+        # un mov del 18/06 conciliado otro día quedaba fuera del rango.
+        where.append("(bcm.real_fecha >= %s OR tb.fecha >= %s OR bcm.creado_en::date >= %s)")
+        params.extend([desde, desde, desde])
     if hasta is not None:
-        where.append("(bcm.real_fecha <= %s OR bcm.creado_en::date <= %s)")
-        params.extend([hasta, hasta])
+        where.append("(bcm.real_fecha <= %s OR tb.fecha <= %s OR bcm.creado_en::date <= %s)")
+        params.extend([hasta, hasta, hasta])
     tiene_47 = _tiene_migration_47()
     if not incluir_deshechos and tiene_47:
         where.append("bcm.deshecho_en IS NULL")
@@ -1980,6 +1984,70 @@ def historial(
             ON tb.id_transaccion = bcm.id_transaccion
          WHERE {" AND ".join(where)}
          ORDER BY bcm.creado_en DESC, bcm.id DESC
+         LIMIT %s
+        """,
+        tuple(params),
+    ) or []
+    return [dict(r) for r in rows]
+
+
+def movimientos_banco(
+    no_banco: int | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    estado: str = "todos",
+    limit: int = 500,
+) -> list[dict]:
+    """TODOS los movimientos del banco (transacciones_bancarias) con su estado
+    conciliado/pendiente — TMT 2026-06-23 (dueña).
+
+    El `historial` clásico solo muestra lo YA conciliado (lee
+    banco_conciliacion_match). Los movimientos del banco que nunca se
+    conciliaron (ej. transferencias del 18/06) no aparecían en NINGÚN lado
+    histórico. Esta vista parte de la VERDAD del banco (el extracto importado)
+    y marca cada fila como conciliada o pendiente. Es read-only.
+
+    `estado`: 'todos' | 'pendientes' | 'conciliados'.
+    """
+    ya_excluido = "AND bcm.deshecho_en IS NULL" if _tiene_migration_47() else ""
+    conciliado_expr = (
+        "EXISTS (SELECT 1 FROM scintela.banco_conciliacion_match bcm "
+        f"          WHERE bcm.id_transaccion = tb.id_transaccion {ya_excluido})"
+    )
+    where = ["1=1"]
+    params: list = []
+    if no_banco is not None:
+        where.append("tb.no_banco = %s")
+        params.append(int(no_banco))
+    if desde is not None:
+        where.append("tb.fecha >= %s")
+        params.append(desde)
+    if hasta is not None:
+        where.append("tb.fecha <= %s")
+        params.append(hasta)
+    if estado == "pendientes":
+        where.append(f"NOT {conciliado_expr}")
+    elif estado == "conciliados":
+        where.append(conciliado_expr)
+    params.append(int(limit))
+
+    rows = db.fetch_all(
+        f"""
+        SELECT tb.id_transaccion,
+               tb.no_banco,
+               tb.fecha,
+               tb.documento,
+               tb.concepto,
+               tb.importe,
+               tb.numreferencia,
+               tb.prov,
+               c.nombre AS prov_nombre,
+               {conciliado_expr} AS conciliado
+          FROM scintela.transacciones_bancarias tb
+          LEFT JOIN scintela.cliente c
+            ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(tb.prov))
+         WHERE {" AND ".join(where)}
+         ORDER BY tb.fecha DESC, tb.id_transaccion DESC
          LIMIT %s
         """,
         tuple(params),

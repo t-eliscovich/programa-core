@@ -40,6 +40,9 @@ from modules.conciliacion.matcher_banco import (
 from modules.conciliacion.matcher_banco import (
     historial as historial_matches,
 )
+from modules.conciliacion.matcher_banco import (
+    movimientos_banco as movimientos_banco_q,
+)
 from modules.conciliacion.matcher_depositos import (
     matchear_depositos,
     transacciones_en_rango,
@@ -2653,6 +2656,60 @@ def banco_historial():
         desde=desde or "",
         hasta=hasta or "",
         incluir_deshechos=incluir_deshechos,
+    )
+
+
+@conciliacion_bp.route("/banco/movimientos", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def banco_movimientos():
+    """TODOS los movimientos del banco (el extracto importado) con su estado
+    conciliado/pendiente. A diferencia del historial (solo lo conciliado), acá
+    aparecen también los movimientos que nunca se conciliaron — ej. las
+    transferencias del 18/06 que la dueña no encontraba. TMT 2026-06-23.
+    """
+    from datetime import date as _date
+    bancos = queries.bancos_disponibles()
+    no_banco_arg = request.args.get("no_banco")
+    no_banco = None
+    if no_banco_arg:
+        try:
+            no_banco = int(no_banco_arg)
+        except (TypeError, ValueError):
+            no_banco = None
+    if no_banco is None:
+        no_banco = 10  # Pichincha por defecto (Intela solo opera con Pichincha)
+    desde = request.args.get("desde")
+    hasta = request.args.get("hasta")
+    try:
+        desde_d = _date.fromisoformat(desde) if desde else None
+    except ValueError:
+        desde_d = None
+    try:
+        hasta_d = _date.fromisoformat(hasta) if hasta else None
+    except ValueError:
+        hasta_d = None
+    estado = request.args.get("estado") or "todos"
+    if estado not in ("todos", "pendientes", "conciliados"):
+        estado = "todos"
+    rows = movimientos_banco_q(
+        no_banco=no_banco,
+        desde=desde_d,
+        hasta=hasta_d,
+        estado=estado,
+        limit=1000,
+    )
+    n_pend = sum(1 for r in rows if not r.get("conciliado"))
+    return render_template(
+        "conciliacion/banco_movimientos.html",
+        rows=rows,
+        bancos=bancos,
+        no_banco=no_banco,
+        desde=desde or "",
+        hasta=hasta or "",
+        estado=estado,
+        n_pend=n_pend,
+        n_total=len(rows),
     )
 
 
