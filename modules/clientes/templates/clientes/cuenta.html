@@ -90,6 +90,9 @@
         <input type="checkbox" class="tipo-filter" value="ABO" checked> Abonos
       </label>
       <label class="flex items-center gap-1 cursor-pointer">
+        <input type="checkbox" class="tipo-filter" value="ANT" checked> Anticipos
+      </label>
+      <label class="flex items-center gap-1 cursor-pointer">
         <input type="checkbox" class="tipo-filter" value="RET" checked> Retenciones
       </label>
       <label class="flex items-center gap-1 cursor-pointer">
@@ -121,6 +124,7 @@
               'FAC':  'bg-white',
               'DEV':  'bg-amber-50',
               'ABO':  'bg-emerald-50/40',
+              'ANT':  'bg-emerald-50/60',
               'RET':  'bg-sky-50/40',
               'ANUL': 'bg-slate-100 line-through opacity-60',
             }.get(m.tipo, 'bg-white') %}
@@ -133,6 +137,7 @@
                   {% if m.tipo == 'FAC'  %}bg-slate-200 text-slate-700
                   {% elif m.tipo == 'DEV'  %}bg-amber-200 text-amber-900
                   {% elif m.tipo == 'ABO'  %}bg-emerald-200 text-emerald-900
+                  {% elif m.tipo == 'ANT'  %}bg-emerald-300 text-emerald-900
                   {% elif m.tipo == 'RET'  %}bg-sky-200 text-sky-900
                   {% elif m.tipo == 'ANUL' %}bg-rose-200 text-rose-900
                   {% else %}bg-slate-200 text-slate-700{% endif %}">
@@ -143,7 +148,7 @@
                 {% if m.tipo in ['FAC','DEV','ANUL'] and m.ref_id %}
                   <a href="{{ url_for('facturas.detalle', id_factura=m.ref_id) }}"
                      class="text-sky-700 hover:underline">{{ m.doc }}</a>
-                {% elif m.tipo == 'ABO' and m.ref_id %}
+                {% elif m.tipo in ['ABO','ANT'] and m.ref_id %}
                   <a href="{{ url_for('cheques.detalle', id_cheque=m.ref_id) }}"
                      class="text-sky-700 hover:underline">{{ m.doc }}</a>
                 {% else %}

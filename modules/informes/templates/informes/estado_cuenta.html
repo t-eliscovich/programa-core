@@ -66,13 +66,21 @@
        cliente vea una sola fuente de verdad, mostramos el NETO
        (saldo total, mismo que último ACUM) como número grande y
        agregamos un detalle pequeño con el desglose. #}
-    {% set _saldo_neto = t.saldo %}
-    {% set _sobrepagos = (t.saldo_vivo or 0) - _saldo_neto %}
+    {# TMT 2026-06-23 (dueña): el SALDO grande netea el saldo a favor (anticipos
+       NB=98). Antes el espejo de anticipo quedaba escondido entre los cheques y
+       el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
+    {% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+    {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
     <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if _saldo_neto > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
       <div class="text-xs uppercase tracking-wider text-slate-500">Saldo cliente</div>
       <div class="mt-1 text-3xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if _saldo_neto > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
         {{ _saldo_neto | money_es }}
       </div>
+      {% if (t.saldo_a_favor or 0) > 0.005 %}
+        <div class="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
+          Saldo facturas {{ t.saldo | money_es }} − saldo a favor {{ t.saldo_a_favor | money_es }}
+        </div>
+      {% endif %}
       {% if _sobrepagos > 0.005 %}
         <div class="mt-1 text-xs text-slate-500">
           Facturas vivas {{ t.saldo_vivo | money_es }} − sobrepagos {{ _sobrepagos | money_es }}
@@ -263,5 +271,52 @@
       </div>
     {% endif %}
   </div>
+
+  {# TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
+     Los espejos NB=98 que genera la cobranza cuando un cheque excede las
+     facturas. Antes quedaban escondidos entre los cheques y no se veían;
+     ahora se listan acá y netean el saldo de arriba. #}
+  {% if data.anticipos %}
+  <h2 class="text-lg font-semibold mb-2 mt-8">Saldo a favor / anticipos</h2>
+  <div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-emerald-50 dark:bg-emerald-900/20 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Anticipo</th>
+          <th class="px-4 py-3 text-left font-medium">Origen (cheque)</th>
+          <th class="px-4 py-3 text-left font-medium">Fecha</th>
+          <th class="px-4 py-3 text-right font-medium">Importe</th>
+          <th class="px-4 py-3 text-left font-medium">Stat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in data.anticipos %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-4 py-2 font-mono text-xs">
+            <a href="{{ url_for('cheques.detalle', id_cheque=a.id_cheque) }}" class="text-sky-700 hover:underline">#{{ a.id_cheque }}</a>
+            <span class="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[10px] uppercase tracking-wide">Anticipo</span>
+          </td>
+          <td class="px-4 py-2 font-mono text-xs text-slate-500">
+            {% if a.id_cheque_padre %}<a href="{{ url_for('cheques.detalle', id_cheque=a.id_cheque_padre) }}" class="text-sky-700 hover:underline">#{{ a.id_cheque_padre }}</a>{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-2" style="white-space: nowrap;">{{ (a.fecha_crea or a.fecha) | fecha_es }}</td>
+          <td class="px-4 py-2 text-right text-mono text-emerald-700 dark:text-emerald-400">{{ a.importe | money_es }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ a.stat }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="bg-emerald-50 dark:bg-emerald-900/20 border-t-2 border-emerald-200 dark:border-emerald-800">
+        <tr class="font-semibold">
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="3">Saldo a favor ({{ data.anticipos | length }})</td>
+          <td class="px-4 py-3 text-right text-mono text-emerald-700 dark:text-emerald-400">{{ t.saldo_a_favor | money_es }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    <div class="px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500">
+      El saldo a favor se aplica automáticamente a futuras facturas y ya está descontado del “Saldo cliente” de arriba.
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

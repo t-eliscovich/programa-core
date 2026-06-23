@@ -431,6 +431,29 @@ def cuenta_corriente(codigo_cli: str) -> dict:
           LEFT JOIN scintela.cheque  c ON c.id_cheque  = cf.id_cheque
           LEFT JOIN scintela.factura f ON f.id_factura = cf.id_fact
          WHERE cf.codigo_cli = %(codigo)s
+           -- TMT 2026-06-23: las aplicaciones del espejo de anticipo (NB=98) NO
+           -- se cuentan como abono nuevo — el crédito ya entró como evento ANT
+           -- al crearse. Contarlas acá las duplicaría.
+           AND COALESCE(c.no_banco, 0) <> 98
+
+        UNION ALL
+
+        -- TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
+        -- El espejo negativo NB=98 que genera la cobranza cuando un cheque
+        -- excede las facturas. Entra como HABER (reduce el saldo del cliente),
+        -- igual que en el dBase. importe es negativo → haber = -importe.
+        SELECT COALESCE(c.fecha_crea::date, c.fecha)        AS fecha,
+               'ANT'                                        AS tipo,
+               COALESCE(c.no_cheque, '#' || c.id_cheque::text) AS doc,
+               0                                            AS debe,
+               -COALESCE(c.importe, 0)                      AS haber,
+               'Anticipo / saldo a favor (sobrante de cobranza)' AS concepto,
+               c.id_cheque                                  AS ref_id,
+               c.stat                                       AS stat
+          FROM scintela.cheque c
+         WHERE c.codigo_cli = %(codigo)s
+           AND COALESCE(c.no_banco, 0) = 98
+           AND COALESCE(c.stat, '') <> 'X'
 
         UNION ALL
 
@@ -466,6 +489,8 @@ def cuenta_corriente(codigo_cli: str) -> dict:
             tot_fac -= haber  # devolución reduce facturado
         if ev["tipo"] == "ABO":
             tot_cob += haber
+        if ev["tipo"] == "ANT":
+            tot_cob += haber  # el anticipo es plata recibida del cliente
         if ev["tipo"] == "RET":
             tot_ret += haber
         movimientos.append({

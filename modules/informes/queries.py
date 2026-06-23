@@ -5487,6 +5487,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
             "cliente": None,
             "facturas": [],
             "cheques": [],
+            "anticipos": [],
             "totales": {
                 "kg": 0.0,
                 "importe": 0.0,
@@ -5500,6 +5501,9 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                 "cheques_depositados": 0.0,
                 "cheques_acreditados": 0.0,
                 "cheques_rebotados": 0.0,
+                "saldo_a_favor": 0.0,
+                "saldo_neto": 0.0,
+                "n_anticipos": 0,
             },
         }
     facturas = db.fetch_all(
@@ -5530,9 +5534,33 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         FROM scintela.cheque c
         LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco
         WHERE c.codigo_cli = %s
+          -- TMT 2026-06-23 (dueña): los espejos de anticipo NB=98 NO son
+          -- cheques reales en cartera — son saldo a favor del cliente. Se
+          -- listan aparte (ver `anticipos` abajo) para no ensuciar la grilla
+          -- de cheques ni el tile "Cheques en cartera".
+          AND COALESCE(c.no_banco, 0) <> 98
         -- TMT 2026-06-11 (dueña): mismo criterio que facturas — del más
         -- antiguo al más actual.
         ORDER BY COALESCE(c.fechaing, c.fechad, c.fecha) ASC, c.id_cheque ASC
+        """,
+        (codigo_cli,),
+    )
+
+    # TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
+    # En cobranza, cuando un cheque excede las facturas, el sobrante se guarda
+    # como un cheque-espejo NEGATIVO NB=98 'ANTICIPO' (paridad dBase ALTAS.PRG).
+    # Antes ese espejo quedaba "escondido" entre los cheques y NO bajaba el
+    # saldo del cliente → la dueña no lo veía. Ahora lo levantamos aparte y lo
+    # neteamos contra el saldo (ver `saldo_neto` / `saldo_a_favor` en totales).
+    anticipos = db.fetch_all(
+        """
+        SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fecha_crea,
+               c.importe, c.stat, c.id_cheque_padre
+        FROM scintela.cheque c
+        WHERE c.codigo_cli = %s
+          AND COALESCE(c.no_banco, 0) = 98
+          AND COALESCE(c.stat, '') <> 'X'
+        ORDER BY COALESCE(c.fecha_crea, c.fecha) ASC, c.id_cheque ASC
         """,
         (codigo_cli,),
     )
@@ -5586,11 +5614,34 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         FROM scintela.cheque
         WHERE codigo_cli = %s
           AND COALESCE(stat,'') <> 'X'
+          -- TMT 2026-06-23: excluir espejos de anticipo NB=98 de los totales
+          -- de cheques reales (se contabilizan en `saldo_a_favor`).
+          AND COALESCE(no_banco, 0) <> 98
         """,
             (codigo_cli,),
         )
         or {}
     )
+
+    # TMT 2026-06-23: saldo a favor del cliente = -Σ(importe espejos NB=98).
+    # `importe` es negativo en los espejos, así que el saldo a favor (positivo)
+    # = -SUM. `saldo_neto` = saldo de facturas + Σ(importe NB=98) (lo reduce).
+    tot_ant = (
+        db.fetch_one(
+            """
+        SELECT COALESCE(SUM(importe), 0) AS anticipo_raw,
+               COUNT(*)                  AS n_anticipos
+        FROM scintela.cheque
+        WHERE codigo_cli = %s
+          AND COALESCE(no_banco, 0) = 98
+          AND COALESCE(stat, '') <> 'X'
+        """,
+            (codigo_cli,),
+        )
+        or {}
+    )
+    _anticipo_raw = float(tot_ant.get("anticipo_raw") or 0)  # negativo
+    _saldo_fac = float(tot_fac.get("saldo") or 0)
 
     totales = {
         "kg": float(tot_fac.get("kg") or 0),
@@ -5606,8 +5657,18 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         "cheques_rebotados": float(tot_che.get("rebotados") or 0),
         "cheques_endosados": float(tot_che.get("endosados") or 0),
         "cheques_daniela": float(tot_che.get("daniela") or 0),
+        # TMT 2026-06-23: saldo a favor (positivo) y saldo neteado.
+        "saldo_a_favor": -_anticipo_raw,
+        "saldo_neto": round(_saldo_fac + _anticipo_raw, 2),
+        "n_anticipos": int(tot_ant.get("n_anticipos") or 0),
     }
-    return {"cliente": cliente, "facturas": facturas, "cheques": cheques, "totales": totales}
+    return {
+        "cliente": cliente,
+        "facturas": facturas,
+        "cheques": cheques,
+        "anticipos": anticipos,
+        "totales": totales,
+    }
 
 
 # ---------------------------------------------------------------------------
