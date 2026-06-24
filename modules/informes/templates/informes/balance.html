@@ -212,6 +212,9 @@
             <th class="col-header" style="text-align:right">Kg</th>
             <th class="col-header" style="text-align:right">U$/kg</th>
             <th class="col-header" style="text-align:right">U$</th>
+            {# TMT 2026-06-23 (dueña): columna Proyectado = presupuesto de gastos
+               de Iniciales (GS.PROY del dBase), al lado del gasto real (U$). #}
+            <th class="col-header" style="text-align:right">Proyectado</th>
           </tr>
         </thead>
         <tbody>
@@ -221,7 +224,7 @@
           {% for row in r.tabla %}
             {% if row.clase == 'seccion' %}
           <tr>
-            <th class="seccion-header" style="text-align:left" colspan="4">{{ row.label }}</th>
+            <th class="seccion-header" style="text-align:left" colspan="5">{{ row.label }}</th>
           </tr>
             {% else %}
           <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
@@ -229,13 +232,14 @@
             <td class="num-cell">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
+            <td class="num-cell" style="color:#64748b">{% if row.proy is not none %}{{ row.proy | num_es(0) }}{% endif %}</td>
           </tr>
             {% endif %}
           {% endfor %}
 
           {# ─── STOCK ─── link al dashboard de flujo de producción. #}
           <tr>
-            <th class="seccion-header" colspan="4" style="text-align:left">
+            <th class="seccion-header" colspan="5" style="text-align:left">
               <a href="{{ url_for('informes.flujo_produccion') }}" class="hover:text-blue-600 hover:underline">STOCK</a>
             </th>
           </tr>
@@ -246,6 +250,7 @@
             <td class="num-cell">{{ s.kg | num_es(0) }}</td>
             <td class="num-cell">{{ s.ukg | num_es(3) }}</td>
             <td class="num-cell">{{ s.us | num_es(0) }}</td>
+            <td class="num-cell"></td>
           </tr>
           {% endfor %}
           <tr class="fila-total">
@@ -253,6 +258,7 @@
             <td class="num-cell">{{ r.stock.total.kg | num_es(0) }}</td>
             <td class="num-cell">{{ r.stock.total.ukg | num_es(3) }}</td>
             <td class="num-cell">{{ r.stock.total.us | num_es(0) }}</td>
+            <td class="num-cell"></td>
           </tr>
         </tbody>
       </table>

@@ -3158,6 +3158,11 @@ def resultados_costos_tabla(
     # Defaults conservadores → callers viejos no rompen (UT.PROY cae a 0).
     kgpro: float = 0.0,
     pretot: float = 0.0,
+    # TMT 2026-06-23 (dueña): presupuesto de gastos POR ÁREA (dBase XPRETEJ/
+    # XPRETIN/XPREADM de INICIALES) → columna "Proyectado" GS.PROY vs GS.ACT.
+    pretej: float = 0.0,
+    pretin: float = 0.0,
+    preadm: float = 0.0,
     factor_desperdicio: float = 1.0,
     provision_pendiente: float = 0.0,
     utilidad_econ: float = 0.0,
@@ -3290,11 +3295,11 @@ def resultados_costos_tabla(
          "ayuda": ("Costo unitario del hilado consumido — sale del cuadro "
                    "Flujo de produccion (HILADO, egresos $/kg).")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
-         "clase": "dato",
+         "proy": (float(pretej or 0) or None), "clase": "dato",
          "ayuda": ("Costo total = V1+V2+V3 + depreciacion de tejeduria. "
                    "U$/kg = costo total / kg tejidos.")},
         {"label": "Tintorería", "kg": ktint, "ukg": tin_ukg, "us": tin_us,
-         "clase": "dato",
+         "proy": (float(pretin or 0) or None), "clase": "dato",
          "ayuda": ("Proceso de tintoreria = V4+V5+V6 + depreciacion de "
                    "tintoreria. U$/kg = costo total / KTINT.")},
         {"label": "Colorantes/Quím.", "kg": col_kg, "ukg": col_ukg,
@@ -3306,11 +3311,11 @@ def resultados_costos_tabla(
          "ayuda": ("1.045 * (Materia Prima + Tejeduria + Tintoreria + "
                    "Colorantes).")},
         {"label": "Administración", "kg": None, "ukg": adm_ukg, "us": adm_us,
-         "clase": "dato",
+         "proy": (float(preadm or 0) or None), "clase": "dato",
          "ayuda": ("Costo total = V7+V8+V9 + depreciacion de administracion. "
                    "U$/kg = costo total / kg vendidos.")},
         {"label": "Costo Total", "kg": None, "ukg": ct_ukg, "us": ct_us,
-         "clase": "total",
+         "proy": (float(pretot or 0) or None), "clase": "total",
          "ayuda": ("Subtotal +4.5% + Administracion. "
                    "U$ = kg vendidos * Costo Total.")},
         {"label": "Utilidad Real", "kg": None, "ukg": ur_ukg, "us": ur_us,
@@ -3995,6 +4000,10 @@ def informe_balance() -> dict:
         # UT.PROY estilo dBase — gastos proyectados de scintela.iniciales.
         kgpro=kgpro,
         pretot=pretot,
+        # Presupuesto por área (columna Proyectado GS.PROY) — TMT 2026-06-23.
+        pretej=pretej,
+        pretin=pretin,
+        preadm=preadm,
         factor_desperdicio=_factor_desp,
         provision_pendiente=provision_pendiente_us,
         utilidad_econ=float(utilidad or 0),
