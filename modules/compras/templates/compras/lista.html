@@ -71,7 +71,9 @@
               {% if incluir_anuladas %}Ocultar anuladas{% else %}Ver anuladas{% endif %}
             </div>
           </a>
-          <a href="{{ url_for(endpoint_actual, q=q, desde=desde, hasta=hasta, export='csv') }}"
+          {# TMT 2026-06-23: arrastra todos los filtros activos (antes el CSV no
+             respetaba "ver anuladas" ni el resto). #}
+          <a href="{{ url_for(endpoint_actual, export='csv', **request.args.to_dict()) }}"
              class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
             <div class="font-medium">Exportar CSV</div>
           </a>

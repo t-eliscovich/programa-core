@@ -131,7 +131,9 @@
        en views.py ahora es False = todas. Si alguien necesita el
        filtro legacy, puede pasar ?abiertas=1 a mano. #}
     <button type="submit" class="bg-slate-700 text-white px-3 py-1 rounded text-sm">Buscar</button>
-    <a href="{{ url_for('posdat.lista', q=q, prov=prov, desde=desde, hasta=hasta, export='csv') }}"
+    {# TMT 2026-06-23: arrastra todos los filtros (incluida la pestaña `tab`,
+       que antes se perdía → el CSV exportaba 'posdatados' aunque estuvieras en YY). #}
+    <a href="{{ url_for('posdat.lista', export='csv', **request.args.to_dict()) }}"
        class="text-sm text-slate-500 hover:underline ml-auto">CSV</a>
   </form>
 

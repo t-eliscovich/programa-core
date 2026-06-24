@@ -864,7 +864,14 @@ def buscar(
     # Tanto en el campo `q` legacy como en el campo `cliente` nuevo:
     # si tiene 3 chars alfanum, match EXACTO sobre codigo_cli (no fuzzy).
     q_upper = q.upper() if q else ""
-    es_q_codigo_exacto = bool(q_upper) and len(q_upper) == 3 and q_upper.replace("_", "").isalnum()
+    # TMT 2026-06-23 (dueña): "código es código" — BED → Bedón exacto, sin buscar
+    # nombres (se mantiene para q de 3 LETRAS). PERO si q es puramente numérico
+    # (ej. "588") NO es código: cae a búsqueda por número de factura.
+    es_q_codigo_exacto = (
+        bool(q_upper) and len(q_upper) == 3
+        and q_upper.replace("_", "").isalnum()
+        and not q_upper.isdigit()
+    )
     es_cli_codigo_exacto = bool(cliente) and len(cliente) == 3 and cliente.replace("_", "").isalnum()
     cliente_like = f"%{cliente}%" if cliente else None
     rows = db.fetch_all(
@@ -1017,7 +1024,14 @@ def contar_filtrado(
     estados_para_in = [s for s in estados_lista if s != "Z"] or [""]
     cliente = (cliente or "").strip().upper()
     q_upper = q.upper() if q else ""
-    es_q_codigo_exacto = bool(q_upper) and len(q_upper) == 3 and q_upper.replace("_", "").isalnum()
+    # TMT 2026-06-23 (dueña): "código es código" — BED → Bedón exacto, sin buscar
+    # nombres (se mantiene para q de 3 LETRAS). PERO si q es puramente numérico
+    # (ej. "588") NO es código: cae a búsqueda por número de factura.
+    es_q_codigo_exacto = (
+        bool(q_upper) and len(q_upper) == 3
+        and q_upper.replace("_", "").isalnum()
+        and not q_upper.isdigit()
+    )
     es_cli_codigo_exacto = bool(cliente) and len(cliente) == 3 and cliente.replace("_", "").isalnum()
     cliente_like = f"%{cliente}%" if cliente else None
     row = db.fetch_one(

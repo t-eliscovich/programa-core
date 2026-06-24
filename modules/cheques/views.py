@@ -2393,12 +2393,11 @@ def lista():
     ver_eliminados = True if q else ver_eliminados_arg
 
     def _parse_num(s: str | None) -> float | None:
-        if not s:
-            return None
-        try:
-            return float(str(s).replace(",", "."))
-        except ValueError:
-            return None
+        # TMT 2026-06-23: parser de montos compartido (EU/EC) en vez de
+        # replace(",","."), que rompía "1.000" (→1,0).
+        from parsers import parse_monto
+        m = parse_monto(s)
+        return float(m) if m is not None else None
 
     monto_min = _parse_num(request.args.get("monto_min"))
     monto_max = _parse_num(request.args.get("monto_max"))
