@@ -1711,6 +1711,18 @@ def banco_transferencias_confirmar():
                 usuario=usuario,
                 metodo="matched_auto",
             )
+            # TMT 2026-06-23: si el par vino de un pendiente histórico (doc-match
+            # del backlog), marcarlo conciliado para que salga del backlog.
+            _id_hist = getattr(m.real, "id_historico", None)
+            if _id_hist:
+                _db.execute(
+                    """
+                    UPDATE scintela.banco_historicos_pendientes
+                       SET conciliado_en = CURRENT_TIMESTAMP, conciliado_por = %s
+                     WHERE id = %s AND no_banco = %s AND conciliado_en IS NULL
+                    """,
+                    (usuario[:50], int(_id_hist), _BANCO_PICHINCHA),
+                )
             n_done += 1
         except Exception as e:
             _LOG.warning("transferencia confirm falló: %s", e)

@@ -765,6 +765,7 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
             "impuestos": [], "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
+        _cruzar_historicos_por_doc(ret)  # TMT 2026-06-23: doc-match del backlog histórico
         _reordenar_por_match_monto(ret)
         return ret
     try:
@@ -818,6 +819,7 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
     buckets["matcher_extracto_desde"] = res.extracto_desde
     buckets["matcher_extracto_hasta"] = res.extracto_hasta
     buckets["n_historicos_pendientes"] = len(historicos)
+    _cruzar_historicos_por_doc(buckets)  # TMT 2026-06-23: doc-match del backlog histórico
     _reordenar_por_match_monto(buckets)
     return buckets
 
@@ -901,4 +903,119 @@ def _hist_to_mov_like(h: dict):
     except (TypeError, ValueError):
         m.monto = 0
     m.tipo = (h.get("tipo") or "C").upper()
+    # TMT 2026-06-23: confirmar_match lee real.codigo/real.oficina; los
+    # históricos no siempre los traen → default vacío para no romper.
+    m.codigo = ""
+    m.oficina = str(h.get("oficina") or "")
     return m
+
+
+def _norm_doc_simple(s: str) -> str:
+    """Normaliza un N° de documento igual que el PASS 0 del matcher: trim,
+    upper, sin ceros a la izquierda; '0'/'' → vacío."""
+    s = (s or "").strip().upper()
+    if s in ("", "0", "00", "000", "0000"):
+        return ""
+    try:
+        return str(int(s))
+    except ValueError:
+        return s
+
+
+def _cruzar_historicos_por_doc(buckets: dict) -> None:
+    """TMT 2026-06-23 (dueña): el match por N° de documento (PASS 0) corría
+    SOLO sobre el extracto subido, no sobre el backlog de pendientes históricos.
+    Por eso un depósito histórico y un mov del programa con el MISMO N° de
+    comprobante (ej. doc 107616664) no aparecían juntos en 'Transferencias por
+    documento' — había que buscarlos a mano.
+
+    Acá cruzamos los pendientes HISTÓRICOS contra el programa pendiente por
+    documento y los movemos al tab de transferencias. Conservador: exige mismo
+    documento, mismo signo y MONTO IGUAL (≤1ct) — los que matchean por doc pero
+    con monto distinto quedan en Manual para revisar a mano (no se auto-concilian
+    desigual, que fue lo que rompió antes)."""
+    banco = buckets.get("manual_banco") or []
+    programa = buckets.get("manual_programa") or []
+    transferencias = buckets.get("transferencias") or []
+
+    # No re-usar programa ya pareado por el extracto.
+    prog_usados = {
+        getattr(getattr(m, "bancsis", None), "id_transaccion", None)
+        for m in transferencias
+    }
+    prog_usados.discard(None)
+
+    # Índice doc → items de programa disponibles (numreferencia + documento +
+    # N° de cheques ligados + doc_banco editado inline — los 4 lugares).
+    doc_a_prog: dict[str, list[dict]] = {}
+    for it in programa:
+        mv = it.get("mov")
+        if mv is None or getattr(mv, "id_transaccion", None) in prog_usados:
+            continue
+        refs = set()
+        for raw in (
+            getattr(mv, "numreferencia", "") or "",
+            getattr(mv, "documento", "") or "",
+            getattr(mv, "no_cheque_rel", "") or "",
+            getattr(mv, "doc_banco_rel", "") or "",
+        ):
+            for part in str(raw).split(","):
+                d = _norm_doc_simple(part)
+                if d:
+                    refs.add(d)
+        for d in refs:
+            doc_a_prog.setdefault(d, []).append(it)
+
+    if not doc_a_prog:
+        return
+
+    hist_usados: set = set()
+    prog_nuevos_usados: set = set()
+    nuevos: list = []
+    import types as _types
+    for it in banco:
+        if not it.get("es_historico"):
+            continue
+        mv = it.get("mov")
+        if mv is None:
+            continue
+        d = _norm_doc_simple(getattr(mv, "documento", "") or "")
+        if not d:
+            continue
+        cands = doc_a_prog.get(d)
+        if not cands:
+            continue
+        sign_h = _signed_banco(it)
+        if sign_h == 0:
+            continue
+        elegido = None
+        for cit in cands:
+            cid = getattr(cit.get("mov"), "id_transaccion", None)
+            if cid in prog_nuevos_usados:
+                continue
+            if abs(sign_h - _signed_programa(cit)) <= 0.01:  # mismo signo + monto igual
+                elegido = cit
+                break
+        if elegido is None:
+            continue
+        prog_mv = elegido.get("mov")
+        real_mv = mv
+        try:
+            real_mv.id_historico = int(it.get("id_historico"))
+        except (TypeError, ValueError):
+            real_mv.id_historico = None
+        nuevos.append(_types.SimpleNamespace(
+            real=real_mv, bancsis=prog_mv, score=0.0,
+            razon=f"P0·doc {d} · histórico #{it.get('id_historico')}",
+        ))
+        hist_usados.add(id(it))
+        prog_nuevos_usados.add(getattr(prog_mv, "id_transaccion", None))
+
+    if not nuevos:
+        return
+    buckets["manual_banco"] = [it for it in banco if id(it) not in hist_usados]
+    buckets["manual_programa"] = [
+        it for it in programa
+        if getattr(it.get("mov"), "id_transaccion", None) not in prog_nuevos_usados
+    ]
+    buckets["transferencias"] = transferencias + nuevos
