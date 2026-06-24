@@ -232,7 +232,7 @@
             <td class="num-cell">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>
             <td class="num-cell">{% if row.ukg is not none %}{{ row.ukg | num_es(3) }}{% endif %}</td>
             <td class="num-cell">{% if row.us is not none %}{{ row.us | num_es(0) }}{% endif %}</td>
-            <td class="num-cell" style="color:#64748b">{% if row.proy is not none %}{{ row.proy | num_es(0) }}{% endif %}</td>
+            <td class="num-cell" style="color:#64748b">{% if row.proy %}{{ row.proy | num_es(0) }}{% endif %}</td>
           </tr>
             {% endif %}
           {% endfor %}
