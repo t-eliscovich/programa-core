@@ -286,7 +286,7 @@
     <div class="self-end">
       <button type="button" id="filtro-hoy-btn"
               class="text-xs px-3 py-1.5 rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium"
-              title="Filtrar cheques cuya fecha a depositar es hoy">
+              title="Cheques a depositar HASTA hoy (incluye atrasados en cartera)">
         Hoy
       </button>
     </div>
@@ -701,10 +701,13 @@
         btnHoy.addEventListener('click', () => {
           const form = btnHoy.closest('form');
           if (!form) return;
+          // TMT 2026-06-23 (dueña): "Hoy" = a depositar HASTA hoy (incluye los
+          // atrasados que siguen en cartera), no solo los de fecha == hoy.
+          // Por eso limpiamos `desde` y dejamos solo `hasta = hoy`.
           const hoy = new Date().toISOString().slice(0, 10);
           const desde = form.querySelector('input[name="desde"]');
           const hasta = form.querySelector('input[name="hasta"]');
-          if (desde) desde.value = hoy;
+          if (desde) desde.value = '';
           if (hasta) hasta.value = hoy;
           form.submit();
         });
