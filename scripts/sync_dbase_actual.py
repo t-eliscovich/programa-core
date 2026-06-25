@@ -446,16 +446,21 @@ def _resumen_dbf_banco(dbf_path: Path) -> dict | None:
     saldos: set[float] = set()
     fechas = []
     last_saldo = None
+    hoy = date.today()
     for r in rows:
+        f = r.get("FECHA")
         s = r.get("SALDO")
         if s is not None:
             try:
                 sv = round(float(s), 2)
                 saldos.add(sv)
-                last_saldo = sv
+                # TMT 2026-06-25 (Alex/Tamara): last_saldo SOLO de filas con
+                # fecha <= hoy — excluir movimientos POSTDATADOS (fecha futura)
+                # con saldo viejo, que desfasaban el saldo (caso 30/06 -51.788,80).
+                if not isinstance(f, date) or f <= hoy:
+                    last_saldo = sv
             except (TypeError, ValueError):
                 pass
-        f = r.get("FECHA")
         if f:
             fechas.append(str(f))
     return {
@@ -480,8 +485,10 @@ def _resumen_pc_banco(no_banco: int) -> dict | None:
         if n == 0:
             return {"n": 0, "max_fecha": None, "last_saldo": None, "saldos": set()}
         last = _db.fetch_one(
+            # TMT 2026-06-25: saldo actual = última fila con fecha <= hoy
+            # (excluir postdatadas), consistente con el lector DBF y la app.
             "SELECT saldo FROM scintela.transacciones_bancarias "
-            "WHERE no_banco = %s AND saldo IS NOT NULL "
+            "WHERE no_banco = %s AND saldo IS NOT NULL AND fecha <= CURRENT_DATE "
             "ORDER BY fecha DESC, id_transaccion DESC LIMIT 1",
             (no_banco,),
         ) or {}

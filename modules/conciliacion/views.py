@@ -781,6 +781,10 @@ def hub():
                   FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = %(no_banco)s
                    AND t.saldo IS NOT NULL
+                   -- TMT 2026-06-25 (Alex/Tamara: dif 51.788,80 vs dBase): el
+                   -- saldo actual no debe salir de una fila POSTDATADA (fecha
+                   -- futura) con saldo viejo. Última fila con fecha <= hoy.
+                   AND t.fecha <= CURRENT_DATE
                  ORDER BY t.fecha DESC, t.id_transaccion DESC
                  LIMIT 1
                 """,
