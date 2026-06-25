@@ -323,6 +323,10 @@ def lista_bancos() -> list[dict]:
                COALESCE((
                  SELECT t.saldo FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
+                   -- TMT 2026-06-25: saldo ACTUAL = última fila con fecha <= hoy.
+                   -- Excluye movimientos postdatados (fecha futura) con saldo viejo
+                   -- que desfasaban el saldo (caso DEP/GS 30/06 → -51.788,80 vs dBase).
+                   AND t.fecha <= CURRENT_DATE
                  ORDER BY t.fecha DESC, t.id_transaccion DESC
                  LIMIT 1
                ), 0) AS saldo_stored,
@@ -370,6 +374,10 @@ def bancos_operativos() -> list[dict]:
                COALESCE((
                  SELECT t.saldo FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
+                   -- TMT 2026-06-25: saldo ACTUAL = última fila con fecha <= hoy.
+                   -- Excluye movimientos postdatados (fecha futura) con saldo viejo
+                   -- que desfasaban el saldo (caso DEP/GS 30/06 → -51.788,80 vs dBase).
+                   AND t.fecha <= CURRENT_DATE
                  ORDER BY t.fecha DESC, t.id_transaccion DESC
                  LIMIT 1
                ), 0) AS saldo
@@ -528,6 +536,10 @@ def banco_info(no_banco: int) -> dict | None:
                COALESCE((
                  SELECT t.saldo FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
+                   -- TMT 2026-06-25: saldo ACTUAL = última fila con fecha <= hoy.
+                   -- Excluye movimientos postdatados (fecha futura) con saldo viejo
+                   -- que desfasaban el saldo (caso DEP/GS 30/06 → -51.788,80 vs dBase).
+                   AND t.fecha <= CURRENT_DATE
                  ORDER BY t.fecha DESC, t.id_transaccion DESC
                  LIMIT 1
                ), 0) AS saldo_stored

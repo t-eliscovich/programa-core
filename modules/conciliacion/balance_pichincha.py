@@ -28,6 +28,12 @@ def calcular(no_banco: int = _BANCO_PICHINCHA) -> dict:
               FROM scintela.transacciones_bancarias t
              WHERE t.no_banco = %(no_banco)s
                AND t.saldo IS NOT NULL
+               -- TMT 2026-06-25 (dueña/Alex: diferencia 51.788,80 con el dBase):
+               -- el saldo ACTUAL no debe salir de una fila POSTDATADA (fecha
+               -- futura) con saldo viejo. Tomamos la última fila con fecha <= hoy.
+               -- Un cheque/gasto postdatado al 30/06 con saldo desfasado hacía
+               -- que PC mostrara 2.622.491 en vez del real 2.674.280 → 51.788,80.
+               AND t.fecha <= CURRENT_DATE
              ORDER BY t.fecha DESC, t.id_transaccion DESC
              LIMIT 1
             """,
