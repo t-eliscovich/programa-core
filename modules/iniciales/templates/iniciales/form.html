@@ -52,18 +52,12 @@
     </div>
 
     <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2 mt-4">Metas principales</h3>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
       <div>
         <label class="block text-xs text-slate-500 mb-1">Kg programados</label>
         <input type="text" name="kprog" value="{{ form.kprog or '' }}" placeholder="0,00"
                class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
         <p class="text-xs text-slate-400 mt-1">Meta de producción del mes</p>
-      </div>
-      <div>
-        <label class="block text-xs text-slate-500 mb-1">Presupuesto ($)</label>
-        <input type="text" name="pretot" value="{{ form.pretot or '' }}" placeholder="0,00"
-               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
-        <p class="text-xs text-slate-400 mt-1">Presupuesto de gasto fijo (tej + tin + adm). Alimenta la Utilidad Proyectada.</p>
       </div>
       <div>
         <label class="block text-xs text-slate-500 mb-1">Gastos programados ($)</label>
@@ -72,6 +66,44 @@
         <p class="text-xs text-slate-400 mt-1">Tope de gastos generales</p>
       </div>
     </div>
+
+    {# TMT 2026-06-23 (dueña, "PC es el futuro"): presupuesto de gastos POR ÁREA.
+       Antes solo se cargaba el total (pretot); ahora se cargan los 3 (tej/tin/adm)
+       y el total se calcula solo. Es lo que alimenta la columna "Proyectado" y la
+       Utilidad Proyectada. #}
+    <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2 mt-4">Presupuesto de gastos (proyección)</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Tejeduría ($)</label>
+        <input type="text" name="pretej" value="{{ form.pretej or '' }}" placeholder="0,00"
+               class="pre-area w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Tintorería ($)</label>
+        <input type="text" name="pretin" value="{{ form.pretin or '' }}" placeholder="0,00"
+               class="pre-area w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Administración ($)</label>
+        <input type="text" name="preadm" value="{{ form.preadm or '' }}" placeholder="0,00"
+               class="pre-area w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-right tabular-nums">
+      </div>
+    </div>
+    <p class="text-xs text-slate-500 mb-6">
+      Presupuesto total (tej + tin + adm): <span id="pretot-calc" class="font-semibold tabular-nums">—</span>
+      <span class="text-slate-400">— se calcula solo y alimenta la Utilidad Proyectada.</span>
+    </p>
+    <script>
+      (function() {
+        function parseNum(s){ s=(s||'').toString().trim().replace(/\./g,'').replace(',', '.'); var n=parseFloat(s); return isFinite(n)?n:0; }
+        function recalc(){
+          var t=0; document.querySelectorAll('.pre-area').forEach(function(i){ t+=parseNum(i.value); });
+          document.getElementById('pretot-calc').textContent = t.toLocaleString('es-EC', {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+        document.querySelectorAll('.pre-area').forEach(function(i){ i.addEventListener('input', recalc); });
+        recalc();
+      })();
+    </script>
 
     <h3 class="text-sm uppercase tracking-wider text-slate-500 mb-2 mt-4">Stocks objetivo (opcional)</h3>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

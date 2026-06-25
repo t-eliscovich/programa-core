@@ -158,9 +158,14 @@ def anios_disponibles() -> list[int]:
 
 
 def crear(*, mesnum: int, yy: int, kprog=None, gprog=None, pretot=None,
+          pretej=None, pretin=None, preadm=None,
           hilado=None, tejido=None, terminado=None,
           usuario: str = "web") -> dict:
-    """Crear meta de un mes. mesnom se setea desde MESES_ES por consistencia."""
+    """Crear meta de un mes. mesnom se setea desde MESES_ES por consistencia.
+
+    TMT 2026-06-23 (dueña, "PC es el futuro"): el presupuesto se carga por área
+    (pretej/pretin/preadm) y pretot = su suma (igual que el dBase, INFORMES.PRG
+    L12: PRETOT = PRETEJ+PRETIN+PREADM)."""
     if not (1 <= int(mesnum) <= 12):
         raise ValueError("mesnum debe estar entre 1 y 12")
     if int(yy) < 2000 or int(yy) > 2100:
@@ -174,22 +179,26 @@ def crear(*, mesnum: int, yy: int, kprog=None, gprog=None, pretot=None,
         """
         INSERT INTO scintela.iniciales
             (mesnum, mesnom, yy, kprog, gprog, pretot,
+             pretej, pretin, preadm,
              hilado, tejido, terminado, usuario_crea)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id_iniciales, mesnum, yy
         """,
         (mesnum, mesnom, yy, kprog, gprog, pretot,
+         pretej, pretin, preadm,
          hilado, tejido, terminado, usuario),
     ) or {}
 
 
 def editar(id_iniciales: int, *, kprog=None, gprog=None, pretot=None,
+           pretej=None, pretin=None, preadm=None,
            hilado=None, tejido=None, terminado=None,
            usuario: str = "web") -> int:
     campos = []
     params: list = []
     for col, val in [
         ("kprog", kprog), ("gprog", gprog), ("pretot", pretot),
+        ("pretej", pretej), ("pretin", pretin), ("preadm", preadm),
         ("hilado", hilado), ("tejido", tejido), ("terminado", terminado),
     ]:
         if val is not None:

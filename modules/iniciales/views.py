@@ -10,6 +10,14 @@ from . import queries
 iniciales_bp = Blueprint("iniciales", __name__, template_folder="templates")
 
 
+def _suma_presupuesto(pretej, pretin, preadm):
+    """pretot = pretej + pretin + preadm (dBase INFORMES.PRG L12). None→0.
+    Devuelve None si los tres vienen vacíos (no pisar con 0)."""
+    if pretej is None and pretin is None and preadm is None:
+        return None
+    return (pretej or 0) + (pretin or 0) + (preadm or 0)
+
+
 @iniciales_bp.route("/iniciales")
 @requiere_login
 @requiere_permiso("iniciales.ver")
@@ -82,6 +90,7 @@ def nueva():
         form = {
             "mesnum": mes_default, "yy": yy_default,
             "kprog": "", "gprog": "", "pretot": "",
+            "pretej": "", "pretin": "", "preadm": "",
             "hilado": "", "tejido": "", "terminado": "",
         }
         return render_template(
@@ -94,7 +103,11 @@ def nueva():
     yy = parse_int(request.form.get("yy"))
     kprog = parse_monto(request.form.get("kprog"))
     gprog = parse_monto(request.form.get("gprog"))
-    pretot = parse_monto(request.form.get("pretot"))
+    # TMT 2026-06-23 (dueña): presupuesto por área; pretot = suma (dBase L12).
+    pretej = parse_monto(request.form.get("pretej"))
+    pretin = parse_monto(request.form.get("pretin"))
+    preadm = parse_monto(request.form.get("preadm"))
+    pretot = _suma_presupuesto(pretej, pretin, preadm)
     hilado = parse_monto(request.form.get("hilado"))
     tejido = parse_monto(request.form.get("tejido"))
     terminado = parse_monto(request.form.get("terminado"))
@@ -107,7 +120,8 @@ def nueva():
     form = {
         "mesnum": mesnum or mes_default, "yy": yy or yy_default,
         "kprog": request.form.get("kprog"), "gprog": request.form.get("gprog"),
-        "pretot": request.form.get("pretot"),
+        "pretej": request.form.get("pretej"), "pretin": request.form.get("pretin"),
+        "preadm": request.form.get("preadm"), "pretot": pretot,
         "hilado": request.form.get("hilado"), "tejido": request.form.get("tejido"),
         "terminado": request.form.get("terminado"),
     }
@@ -123,6 +137,7 @@ def nueva():
         queries.crear(
             mesnum=mesnum, yy=yy,
             kprog=kprog, gprog=gprog, pretot=pretot,
+            pretej=pretej, pretin=pretin, preadm=preadm,
             hilado=hilado, tejido=tejido, terminado=terminado,
             usuario=usuario,
         )
@@ -157,6 +172,8 @@ def editar(id_iniciales: int):
             "mesnum": fila.get("mesnum"), "yy": fila.get("yy"),
             "kprog": fila.get("kprog") or "", "gprog": fila.get("gprog") or "",
             "pretot": fila.get("pretot") or "",
+            "pretej": fila.get("pretej") or "", "pretin": fila.get("pretin") or "",
+            "preadm": fila.get("preadm") or "",
             "hilado": fila.get("hilado") or "", "tejido": fila.get("tejido") or "",
             "terminado": fila.get("terminado") or "",
         }
@@ -167,7 +184,11 @@ def editar(id_iniciales: int):
 
     kprog = parse_monto(request.form.get("kprog"))
     gprog = parse_monto(request.form.get("gprog"))
-    pretot = parse_monto(request.form.get("pretot"))
+    # TMT 2026-06-23 (dueña): presupuesto por área; pretot = suma (dBase L12).
+    pretej = parse_monto(request.form.get("pretej"))
+    pretin = parse_monto(request.form.get("pretin"))
+    preadm = parse_monto(request.form.get("preadm"))
+    pretot = _suma_presupuesto(pretej, pretin, preadm)
     hilado = parse_monto(request.form.get("hilado"))
     tejido = parse_monto(request.form.get("tejido"))
     terminado = parse_monto(request.form.get("terminado"))
@@ -177,6 +198,7 @@ def editar(id_iniciales: int):
         queries.editar(
             id_iniciales,
             kprog=kprog, gprog=gprog, pretot=pretot,
+            pretej=pretej, pretin=pretin, preadm=preadm,
             hilado=hilado, tejido=tejido, terminado=terminado,
             usuario=usuario,
         )
@@ -188,7 +210,8 @@ def editar(id_iniciales: int):
             "id_iniciales": id_iniciales,
             "mesnum": fila.get("mesnum"), "yy": fila.get("yy"),
             "kprog": request.form.get("kprog"), "gprog": request.form.get("gprog"),
-            "pretot": request.form.get("pretot"),
+            "pretej": request.form.get("pretej"), "pretin": request.form.get("pretin"),
+            "preadm": request.form.get("preadm"), "pretot": pretot,
             "hilado": request.form.get("hilado"), "tejido": request.form.get("tejido"),
             "terminado": request.form.get("terminado"),
         }
