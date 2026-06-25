@@ -33,16 +33,29 @@ def lista():
     except Exception as e:
         filas_all, error = [], str(e)
 
+    # TMT 2026-06-25 (dueña): la lista de CUENTAS no debe incluir los
+    # bancos-concepto/espejo (DEP.PICH 90, DEP.INTER 91, CANCELA ANTICIPO 95,
+    # ANTICIPO 97, UKN 98, EFECTIVO 99) — son rubros contables internos de la
+    # cobranza, no cuentas bancarias. Los reales son no_banco < 90. Antes
+    # DEP.PICH se colaba al resumen con un residuo (ej. -455,89). El filtro
+    # _es_operativo ya los excluía, pero solo se usaba para "Cambiar banco".
+    def _es_cuenta_real(b):
+        try:
+            return int(b.get("no_banco") or 0) < 90
+        except (TypeError, ValueError):
+            return True
+
+    filas_reales = [b for b in filas_all if _es_cuenta_real(b)]
     if mostrar_todos:
-        filas = filas_all
+        filas = filas_reales
     else:
         filas = [
             b
-            for b in filas_all
+            for b in filas_reales
             if round(float(b["saldo_stored"] or 0), 2) != 0.0
             or round(float(b["saldo_derivado"] or 0), 2) != 0.0
         ]
-    ocultos = len(filas_all) - len(filas)
+    ocultos = len(filas_reales) - len(filas)
 
     # --- Resolver el banco "actual" del hub ----------------------------
     # Prioridad: ?banco=<no_banco_int o nombre> → fallback PICHINCHA.
