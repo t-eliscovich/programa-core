@@ -793,7 +793,18 @@ def anular_por_error_de_carga(
         if stat_prev in ("B", "V", "W", "I", "J", "K", "A"):
             import bank_helpers
 
-            banco = ch.get("no_banco") or (1 if stat_prev == "B" else 2)
+            banco = ch.get("no_banco") or (10 if stat_prev == "B" else 32)
+            # TMT 2026-06-25 (dueña: "no debería pasar nunca"): la compensación
+            # NUNCA debe caer en un banco-concepto/espejo (DEP.PICH 90, DEP.INTER
+            # 91, etc.) — esos no llevan asiento propio (depositar a 90 no crea
+            # mov en 90), así que la ND quedaba como residuo (ej. -455,89 en
+            # DEP.PICH). Resolvemos al banco REAL de destino del depósito.
+            _CONCEPTO_A_REAL = {90: 10, 91: 32, 95: 10, 97: 10, 98: 10, 99: 10}
+            try:
+                if int(banco) >= 90:
+                    banco = _CONCEPTO_A_REAL.get(int(banco), 10)
+            except (TypeError, ValueError):
+                banco = 10
             res = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=banco,
