@@ -454,3 +454,113 @@ def convertir_a_compra(
         "ids_anticipos": ids_unique,
         "tipo_compra":   tipo_norm,
     }
+
+
+def reversar_conversion(id_mov_doble: int, *, motivo: str = "", usuario: str = "web") -> dict:
+    """Deshace una conversión BAP (anticipo USD → compra). Inverso EXACTO de
+    convertir_a_compra():
+
+      1. Restaura los anticipos consumidos a "vivo" (st='B' → st='').
+      2. Elimina la compra BAP que se había creado.
+      3. Registra el reverso en mov_doble y marca el original como reversado.
+
+    Lee los ids de los anticipos y la compra desde el mov_doble original
+    (tipo='bap_anticipo_a_compra'). Atómico. Idempotente-seguro: si la compra
+    ya no existe (p. ej. un sync la borró) avisa con ValueError claro.
+    """
+    import json as _json
+
+    md = db.fetch_one(
+        "SELECT id_mov_doble, tipo, destino_id, estado, metadata "
+        "FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not md:
+        raise ValueError("Movimiento no encontrado.")
+    if (md.get("tipo") or "") != "bap_anticipo_a_compra":
+        raise ValueError(
+            f"Este movimiento no es una conversión BAP (tipo={md.get('tipo')!r})."
+        )
+    if (md.get("estado") or "") in ("reverso", "reversado"):
+        raise ValueError("Esta conversión ya está reversada.")
+
+    meta = md.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            meta = {}
+    ids = [int(x) for x in (meta.get("ids_anticipos") or []) if x]
+    id_compra = md.get("destino_id")
+    if not id_compra:
+        raise ValueError("No encuentro la compra creada por la conversión.")
+
+    with db.tx() as conn:
+        compra = db.fetch_one(
+            "SELECT id_compra, comprobante, importe, codigo_prov "
+            "FROM scintela.compra WHERE id_compra = %s FOR UPDATE",
+            (id_compra,), conn=conn,
+        )
+        if not compra:
+            raise ValueError(
+                f"La compra #{id_compra} ya no existe (¿la borró un sync, o ya "
+                f"se deshizo?). No hay nada que reversar."
+            )
+        # Guard: si la compra dejó de ser BAP (fue editada a otro comprobante),
+        # no la tocamos automáticamente.
+        if not str(compra.get("comprobante") or "").upper().startswith("BAP"):
+            raise ValueError(
+                f"La compra #{id_compra} ya no es BAP (comprobante "
+                f"{compra.get('comprobante')!r}) — revisala a mano."
+            )
+
+        # 1) Restaurar anticipos a vivo (solo los que siguen consumidos 'B').
+        restaurados = 0
+        if ids:
+            ph = ", ".join(["%s"] * len(ids))
+            restaurados = db.execute(
+                f"UPDATE scintela.dolares "
+                f"   SET st = '', usuario_modifica = %s, "
+                f"       fecha_modifica = CURRENT_TIMESTAMP "
+                f" WHERE id_dolares IN ({ph}) AND COALESCE(st, '') = 'B'",
+                (usuario[:50], *ids), conn=conn,
+            )
+
+        # 2) Borrar la compra creada por la conversión.
+        db.execute(
+            "DELETE FROM scintela.compra WHERE id_compra = %s",
+            (id_compra,), conn=conn,
+        )
+
+        # 3) mov_doble reverso (marca el original como reversado).
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="bap_anticipo_a_compra_reverso",
+            origen_table="compra",
+            origen_id=id_compra,
+            destino_table="dolares",
+            destino_id=(ids[0] if ids else id_compra),
+            importe=float(compra.get("importe") or 0),
+            fecha=today_ec(),
+            concepto=(
+                f"REVERSO BAP {compra.get('codigo_prov') or ''}: compra "
+                f"#{id_compra} ({compra.get('comprobante')}) → "
+                f"{restaurados} anticipo(s) restaurados"
+                + (f" — {motivo}" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_compra": id_compra,
+                "ids_anticipos": ids,
+                "restaurados": restaurados,
+                "motivo": motivo or "",
+            },
+            id_original=id_mov_doble,
+        )
+
+    return {
+        "id_compra": id_compra,
+        "comprobante": compra.get("comprobante"),
+        "restaurados": restaurados,
+    }

@@ -474,6 +474,12 @@ _REVERSO_DISPATCH = {
     # Transferencia banco↔banco — wizard nuevo, NC en origen + CH en
     # destino, atómico. TMT 2026-05-13.
     "transfer_banco_banco": ("bancos.reversar_transferencia", lambda r: {"id_mov_doble": r["id_mov_doble"]}),
+    # Conversión BAP anticipo USD → compra — wizard que restaura los anticipos
+    # a vivos + borra la compra creada, atómico. TMT 2026-06-26.
+    "bap_anticipo_a_compra": (
+        "dolares.reversar_conversion",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
     # Capital aporte/retiro — wizards nuevos atómicos. TMT 2026-05-13.
     "aporte_capital_a_caja": ("capital.reversar_aporte", lambda r: {"id_capital": r["origen_id"]}),
     "aporte_capital_a_pichincha": ("capital.reversar_aporte", lambda r: {"id_capital": r["origen_id"]}),

@@ -191,3 +191,45 @@ def convertir_lote():
         nombres=nombres,
         hoy=today_ec().isoformat(),
     )
+
+
+@dolares_bp.route("/dolares/reversar-conversion/<int:id_mov_doble>",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def reversar_conversion(id_mov_doble: int):
+    """Deshace una conversión BAP (anticipo→compra) desde /historial.
+
+    GET: pantalla de confirmación. POST: ejecuta queries.reversar_conversion()
+    (restaura los anticipos a vivos + borra la compra BAP, atómico).
+    """
+    if request.method == "GET":
+        return render_template(
+            "_confirmar_accion.html",
+            titulo="Deshacer conversión a compra (BAP)",
+            mensaje=(
+                "Vas a deshacer esta conversión: se ELIMINA la compra creada y "
+                "los anticipos vuelven a estar vivos (sin consumir). Queda "
+                "registrado en /historial."
+            ),
+            accion_url=url_for("dolares.reversar_conversion",
+                               id_mov_doble=id_mov_doble),
+            volver_url=url_for("historial.lista"),
+            motivo_requerido=False,
+            motivo_obligatorio=False,
+            confirm_label="Deshacer conversión",
+        )
+    motivo = (request.form.get("motivo") or "").strip()
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.reversar_conversion(id_mov_doble, motivo=motivo, usuario=usuario)
+        flash(
+            f"Conversión deshecha: compra {r['comprobante']} eliminada, "
+            f"{r['restaurados']} anticipo(s) restaurados a vivos.",
+            "ok",
+        )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude deshacer la conversión", e)
+    return redirect(url_for("historial.lista"))
