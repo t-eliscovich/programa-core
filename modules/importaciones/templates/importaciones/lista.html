@@ -178,6 +178,23 @@
                     <button class="text-[11px] px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">✓ Contabilizar</button>
                   </form>
                 {% endif %}
+              {% elif r.fuente == 'anticipo' %}
+                <div class="text-[11px] text-slate-500 mb-1">Anticipo USD (prepagado)</div>
+                {% if tiene_permiso('compras.crear') %}
+                  <a href="{{ url_for('dolares.convertir_lote', prov=r.prov) }}"
+                     class="inline-block text-[11px] px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700">
+                    Convertir a compra →
+                  </a>
+                {% endif %}
+              {% elif r.codigo %}
+                {% if tiene_permiso('compras.crear') %}
+                  <a href="{{ url_for('compras.nueva', codigo_prov=r.prov, concepto=r.numero, kg=(r.kg or '')) }}"
+                     class="inline-block text-[11px] px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700">
+                    Cargar compra →
+                  </a>
+                {% else %}
+                  <span class="text-slate-300">—</span>
+                {% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
