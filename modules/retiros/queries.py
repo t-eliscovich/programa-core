@@ -11,17 +11,21 @@ USUARIO_RETIRO_OP = "pc-retiro-op"
 
 
 def saldo_op() -> dict:
-    """Saldo OP = crédito (over-price/aporte) menos lo retirado a accionistas.
+    """Saldo OP (over-price/aporte) que se ve en posdatados + contexto de retiros.
 
     Mecánica dBase (verificada en COMPRAS/POSDAT/RETIROS):
-      - El crédito OP entra como compra/posdat NEGATIVA a prov='OP'.
-      - El pago a accionistas es un RETIRO con de='OP'.
-      - El "saldo OP" es derivado: Σ(posdat OP neg) + Σ(retiros OP pos).
+      - El crédito OP entra como compra/posdat NEGATIVA a prov='OP' (un pasivo
+        negativo). El "saldo OP" que la dueña mira en posdatados = ese crédito
+        ABIERTO (posdat banc=0). Es un STOCK (lo vigente ahora).
+      - El pago a accionistas es un RETIRO con de='OP' (un FLUJO; se acumula en
+        /retiros). NO netear el flujo histórico contra el stock vigente: los
+        retiros OP arrastran años (>6M) y el crédito abierto es chico → un neto
+        ingenuo da un número sin sentido.
 
-    Devuelve montos POSITIVOS legibles:
-      credito    = |Σ posdat OP|  (lo aportado/over-price disponible)
-      retirado   = Σ retiros OP
-      disponible = credito − retirado  (lo que falta retirar; baja con cada retiro)
+    Devuelve POSITIVOS legibles:
+      credito        = |Σ posdat OP abierto|  → el "Saldo OP" de posdatados.
+      retirado_anio  = Σ retiros OP del año en curso (contexto).
+      retirado_total = Σ retiros OP histórico (referencia).
     """
     pos = db.fetch_one(
         """
@@ -32,18 +36,21 @@ def saldo_op() -> dict:
            AND (anulada IS NOT TRUE OR anulada IS NULL)
         """
     ) or {"s": 0}
-    ret = db.fetch_one(
+    ret_anio = db.fetch_one(
+        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+        "WHERE UPPER(TRIM(de)) = 'OP' "
+        "  AND EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)"
+    ) or {"s": 0}
+    ret_total = db.fetch_one(
         "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
         "WHERE UPPER(TRIM(de)) = 'OP'"
     ) or {"s": 0}
     posdat_op = float(pos["s"] or 0)        # negativo (crédito)
-    retiros_op = float(ret["s"] or 0)       # positivo
-    credito = round(-posdat_op, 2)          # |crédito| en positivo
     return {
         "posdat_op": round(posdat_op, 2),
-        "credito": credito,
-        "retirado": round(retiros_op, 2),
-        "disponible": round(credito - retiros_op, 2),
+        "credito": round(-posdat_op, 2),    # |crédito| abierto = Saldo OP
+        "retirado_anio": round(float(ret_anio["s"] or 0), 2),
+        "retirado_total": round(float(ret_total["s"] or 0), 2),
     }
 
 

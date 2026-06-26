@@ -59,15 +59,17 @@ def lista():
         rows = [r for r in rows if r.get("recibida")]
     elif recep == "pendiente":
         rows = [r for r in rows if not r.get("recibida")]
-    # Filtro por estado de pago/contabilización (sólo aplica a las cruzadas).
+    # Filtro por estado de pago/contabilización. Aplica a las que tienen COMPRA
+    # en el programa (las que traen kilos reales a TC/PT). Las de fuente
+    # 'anticipo' todavía no son compra → no entran al circuito pendiente/kilos.
     if pago == "pendiente":
-        rows = [r for r in rows if r.get("fuente") and not r.get("contabilizada")]
+        rows = [r for r in rows if r.get("fuente") == "compra" and not r.get("contabilizada")]
     elif pago == "contabilizada":
-        rows = [r for r in rows if r.get("fuente") and r.get("contabilizada")]
+        rows = [r for r in rows if r.get("fuente") == "compra" and r.get("contabilizada")]
 
     # KPIs de pago (sobre el conjunto YA filtrado, como el resto de contadores).
-    pend_pago = sum(1 for r in rows if r.get("fuente") and not r.get("contabilizada"))
-    contab = sum(1 for r in rows if r.get("fuente") and r.get("contabilizada"))
+    pend_pago = sum(1 for r in rows if r.get("fuente") == "compra" and not r.get("contabilizada"))
+    contab = sum(1 for r in rows if r.get("fuente") == "compra" and r.get("contabilizada"))
     kg_pend_pago = sum(
         float(r.get("kg") or 0)
         for r in rows
