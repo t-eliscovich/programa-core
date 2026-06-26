@@ -11,46 +11,49 @@ USUARIO_RETIRO_OP = "pc-retiro-op"
 
 
 def saldo_op() -> dict:
-    """Saldo OP (over-price/aporte) que se ve en posdatados + contexto de retiros.
+    """Saldo OP (over-price/aporte): crédito de las COMPRAS OP menos lo retirado.
 
-    Mecánica dBase (verificada en COMPRAS/POSDAT/RETIROS):
-      - El crédito OP entra como compra/posdat NEGATIVA a prov='OP' (un pasivo
-        negativo). El "saldo OP" que la dueña mira en posdatados = ese crédito
-        ABIERTO (posdat banc=0). Es un STOCK (lo vigente ahora).
-      - El pago a accionistas es un RETIRO con de='OP' (un FLUJO; se acumula en
-        /retiros). NO netear el flujo histórico contra el stock vigente: los
-        retiros OP arrastran años (>6M) y el crédito abierto es chico → un neto
-        ingenuo da un número sin sentido.
+    Mecánica verificada en el dBase real (COMPRAS/RETIROS, 2026-06-26): NO se
+    baja nada a mano (0 compras OP positivas, 0 ediciones). El saldo OP se
+    NETEA solo: el crédito entra como compra NEGATIVA a prov='OP' y el pago a
+    accionistas como RETIRO de='OP'; el saldo = Σ(compras OP) + Σ(retiros OP)
+    del MISMO período. Cada retiro sube el lado positivo → el saldo baja solo.
+
+    Scope correcto: las compras OP retenidas (scintela.compra mirrorea el DBF,
+    que purga las viejas) + los retiros OP DESDE la primera compra retenida
+    (los retiros anteriores cancelaban créditos ya purgados). Así el neto es
+    el crédito que TODAVÍA falta retirar. Es sólo un display: no toca el
+    balance (las compras ya están en TOTP y los retiros en URET).
 
     Devuelve POSITIVOS legibles:
-      credito        = |Σ posdat OP abierto|  → el "Saldo OP" de posdatados.
-      retirado_anio  = Σ retiros OP del año en curso (contexto).
-      retirado_total = Σ retiros OP histórico (referencia).
+      credito    = |Σ compras OP|                         (crédito cargado)
+      retirado   = Σ retiros OP desde la 1ª compra OP      (lo ya pagado)
+      disponible = credito − retirado                      (lo que falta retirar; BAJA con cada retiro)
     """
-    pos = db.fetch_one(
+    comp = db.fetch_one(
         """
-        SELECT COALESCE(SUM(importe), 0) AS s
-          FROM scintela.posdat
-         WHERE UPPER(TRIM(prov)) = 'OP'
-           AND COALESCE(banc, 0) = 0
-           AND (anulada IS NOT TRUE OR anulada IS NULL)
+        SELECT COALESCE(SUM(importe), 0) AS s, MIN(fecha) AS d
+          FROM scintela.compra
+         WHERE UPPER(TRIM(codigo_prov)) = 'OP'
+           AND COALESCE(stat, '') <> 'Y'
         """
-    ) or {"s": 0}
-    ret_anio = db.fetch_one(
-        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
-        "WHERE UPPER(TRIM(de)) = 'OP' "
-        "  AND EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)"
-    ) or {"s": 0}
-    ret_total = db.fetch_one(
-        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
-        "WHERE UPPER(TRIM(de)) = 'OP'"
-    ) or {"s": 0}
-    posdat_op = float(pos["s"] or 0)        # negativo (crédito)
+    ) or {"s": 0, "d": None}
+    credito = -float(comp["s"] or 0)          # |crédito| en positivo
+    desde = comp.get("d")
+    if desde is not None:
+        ret = db.fetch_one(
+            "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+            "WHERE UPPER(TRIM(de)) = 'OP' AND fecha >= %s",
+            (desde,),
+        ) or {"s": 0}
+    else:
+        ret = {"s": 0}
+    retirado = float(ret["s"] or 0)
     return {
-        "posdat_op": round(posdat_op, 2),
-        "credito": round(-posdat_op, 2),    # |crédito| abierto = Saldo OP
-        "retirado_anio": round(float(ret_anio["s"] or 0), 2),
-        "retirado_total": round(float(ret_total["s"] or 0), 2),
+        "credito": round(credito, 2),
+        "retirado": round(retirado, 2),
+        "disponible": round(credito - retirado, 2),
+        "desde": desde,
     }
 
 

@@ -77,12 +77,16 @@
     <div class="flex flex-wrap items-center gap-x-8 gap-y-2 justify-between">
       <div class="flex flex-wrap items-center gap-x-8 gap-y-1">
         <div>
-          <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo OP (crédito en posdatados)</div>
+          <div class="text-[11px] uppercase tracking-wider text-slate-500">Crédito OP (compras)</div>
           <div class="text-lg font-semibold text-mono">{{ saldo_op.credito | money_es }}</div>
         </div>
         <div>
-          <div class="text-[11px] uppercase tracking-wider text-slate-500">Retiros OP este año</div>
-          <div class="text-lg font-semibold text-mono">{{ saldo_op.retirado_anio | money_es }}</div>
+          <div class="text-[11px] uppercase tracking-wider text-slate-500">Retirado a accionistas</div>
+          <div class="text-lg font-semibold text-mono">{{ saldo_op.retirado | money_es }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo OP (falta retirar)</div>
+          <div class="text-lg font-semibold text-mono {{ 'text-amber-600' if saldo_op.disponible < 0 }}">{{ saldo_op.disponible | money_es }}</div>
         </div>
       </div>
       {% if tiene_permiso('posdat.editar') %}
