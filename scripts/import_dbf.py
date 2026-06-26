@@ -895,20 +895,23 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             )
             _ini_overrides = cur.fetchall()
 
-        # TMT 2026-06-26: preservar los retiros de ORIGEN PC que NO viven en el
-        # DBF — caso "retiro OP banco USA" (el pago a accionistas sale de un
-        # banco en USA que no está en el programa, así que no está en RETIROS.DBF
-        # y el TRUNCATE+INSERT los borraría). Snapshot de las filas con
-        # usuario_crea propio de PC ANTES del truncate; se restauran después
-        # SOLO si el DBF no trajo una gemela (mismo fecha+de+ret) — guard
-        # anti-duplicado por si alguna vez también se cargan en dBase.
+        # TMT 2026-06-26: preservar SOLO los retiros "retiro OP banco USA"
+        # (usuario_crea='pc-retiro-op'). Son los únicos que viven en PC y NO en
+        # RETIROS.DBF (el pago a accionistas sale de un banco en USA fuera del
+        # programa), así que el TRUNCATE+INSERT los borraría. Scope acotado: NO
+        # tocamos los retiros que PC crea por bancos/capital — esos SÍ están en
+        # el dBase y deben venir del DBF (preservarlos doblaría).
+        # Snapshot ANTES del truncate; se restauran después SOLO si el DBF no
+        # trajo una gemela (mismo fecha+de+ret) — guard anti-duplicado para el
+        # caso en que ALGUIEN ADEMÁS lo cargue a mano en dBase con igual
+        # fecha+valor (pedido dueña 2026-06-26): así no queda doble.
         _retiros_pc = []
         if pg_table == "scintela.retiros":
             cur.execute(
                 "SELECT fecha, nb, ret, de, concepto, clave, "
                 "       id_transaccion_bancaria, usuario_crea "
                 "  FROM scintela.retiros "
-                " WHERE COALESCE(usuario_crea, '') NOT IN ('dbf-import', '')"
+                " WHERE COALESCE(usuario_crea, '') = 'pc-retiro-op'"
             )
             _retiros_pc = cur.fetchall()
 
