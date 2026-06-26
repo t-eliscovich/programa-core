@@ -322,13 +322,15 @@ def retiro_op():
         return redirect(url_for("posdat.lista"))
     try:
         usuario = (g.user or {}).get("username", "web")
-        # Aviso (no bloqueo, criterio "PC no bloquea"): si supera el disponible.
+        # Aviso (no bloqueo, criterio "PC no bloquea"): si supera el crédito OP
+        # abierto en posdatados.
         try:
             saldo = _ret.saldo_op()
-            if monto > (saldo.get("disponible") or 0) + 0.01:
+            credito = saldo.get("credito") or 0
+            if monto > credito + 0.01:
                 flash(
-                    f"Ojo: el retiro (${monto:,.2f}) supera el saldo OP disponible "
-                    f"(${(saldo.get('disponible') or 0):,.2f}). Se registró igual.",
+                    f"Ojo: el retiro (${monto:,.2f}) supera el crédito OP en "
+                    f"posdatados (${credito:,.2f}). Se registró igual.",
                     "warn",
                 )
         except Exception:  # noqa: BLE001
@@ -336,7 +338,7 @@ def retiro_op():
         r = _ret.crear_op(monto=monto, de=de, fecha=fecha, concepto=concepto, usuario=usuario)
         flash(
             f"Retiro OP registrado: {r['de']} $ {r['monto']:,.2f} ({r['concepto']}). "
-            f"Bajó el saldo OP.",
+            f"Quedó en /retiros (igual que dBase).",
             "ok",
         )
     except ValueError as e:

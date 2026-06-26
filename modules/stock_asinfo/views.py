@@ -508,6 +508,12 @@ def _fabricacion_page(proceso: str):
     ]
     total_kg = sum(c["kg"] for c in cadena)
 
+    # Métricas combinadas pedidas por la dueña (2026-06-26):
+    #   Hilo total  = Hilo (bodega 51) + En proceso TC (hilo despachado a tejer)
+    #   Cruda total = Tela Cruda (bodega 52) + En proceso PT (TC despachada a tinturar)
+    hilo_total = _kg(51) + float(saldo_tc.get("saldo") or 0)
+    cruda_total = _kg(52) + float(saldo_pt.get("saldo") or 0)
+
     # ── Kilos pendientes de pago (importaciones NO contabilizadas) ──────────
     # Por defecto se CUENTAN (pend=1): el almacén físico ya los tiene, así que
     # el total no cambia y se mantiene la paridad con dBase ("libera todo").
@@ -579,6 +585,8 @@ def _fabricacion_page(proceso: str):
         totales_bodega=totales_bodega,
         cadena=cadena,
         total_kg=total_kg,
+        hilo_total=hilo_total,
+        cruda_total=cruda_total,
         total_kg_mostrado=total_kg_mostrado,
         pendiente_kg=pendiente_kg,
         pendiente_n=pendiente_n,

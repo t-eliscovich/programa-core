@@ -105,6 +105,20 @@
       </span>
     </div>
 
+    {# ── Totales combinados (TMT 2026-06-26 dueña) ──────────────────────── #}
+    <div class="chain-foot" style="display:flex; flex-wrap:wrap; gap:24px; align-items:center;">
+      <span>
+        <span class="kpi-label">Hilo total</span>
+        <strong class="text-mono" style="font-size:15px; margin-left:6px;">{{ hilo_total | num_es(0) }} kg</strong>
+        <span class="text-slate-400">(Hilo + En proceso TC)</span>
+      </span>
+      <span>
+        <span class="kpi-label">Cruda total</span>
+        <strong class="text-mono" style="font-size:15px; margin-left:6px;">{{ cruda_total | num_es(0) }} kg</strong>
+        <span class="text-slate-400">(Tela Cruda + En proceso PT)</span>
+      </span>
+    </div>
+
     {# ── Pendientes de pago + check de contar/no contar (TMT 2026-06-26) ── #}
     <div class="chain-foot no-print" style="display:flex; flex-wrap:wrap; align-items:center; gap:14px;">
       <span>

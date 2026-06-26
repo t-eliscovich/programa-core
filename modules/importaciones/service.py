@@ -221,7 +221,7 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         if r.get("fuente"):
             r["estado_pago"] = "contabilizada" if r["contabilizada"] else "pendiente"
             base = float(r.get("importe_programa") or 0)
-            r["pendiente_pago"] = round(base - r["monto_pagado"], 2)
+            r["pendiente_pago"] = max(0.0, round(base - r["monto_pagado"], 2))
     return rows
 
 
