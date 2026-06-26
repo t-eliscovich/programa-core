@@ -895,6 +895,23 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             )
             _ini_overrides = cur.fetchall()
 
+        # TMT 2026-06-26: preservar los retiros de ORIGEN PC que NO viven en el
+        # DBF — caso "retiro OP banco USA" (el pago a accionistas sale de un
+        # banco en USA que no está en el programa, así que no está en RETIROS.DBF
+        # y el TRUNCATE+INSERT los borraría). Snapshot de las filas con
+        # usuario_crea propio de PC ANTES del truncate; se restauran después
+        # SOLO si el DBF no trajo una gemela (mismo fecha+de+ret) — guard
+        # anti-duplicado por si alguna vez también se cargan en dBase.
+        _retiros_pc = []
+        if pg_table == "scintela.retiros":
+            cur.execute(
+                "SELECT fecha, nb, ret, de, concepto, clave, "
+                "       id_transaccion_bancaria, usuario_crea "
+                "  FROM scintela.retiros "
+                " WHERE COALESCE(usuario_crea, '') NOT IN ('dbf-import', '')"
+            )
+            _retiros_pc = cur.fetchall()
+
         # Estrategia de limpieza pre-load:
         # - Default: TRUNCATE total (tabla 1:1 con DBF).
         # - delete_where: tabla compartida entre múltiples DBFs (caso
@@ -1064,6 +1081,34 @@ def import_one(dbf_name: str, dbf_path: Path, dry_run: bool = False) -> dict:
             if cur.rowcount:
                 print(f"   [dBase gana] {cur.rowcount} copias asinfo-carga absorbidas "
                       f"por contenido (mismo cli+fecha+importe+kg, distinto numero)")
+
+        # Restaurar los retiros de origen PC (ver snapshot arriba). Sólo los
+        # que el DBF no trajo (anti-duplicado por fecha+de+ret contra dbf-import).
+        if pg_table == "scintela.retiros" and _retiros_pc:
+            restaurados = 0
+            for fecha, nb, ret, de, concepto, clave, idtx, usr in _retiros_pc:
+                cur.execute(
+                    "SELECT 1 FROM scintela.retiros "
+                    " WHERE COALESCE(usuario_crea,'') = 'dbf-import' "
+                    "   AND fecha IS NOT DISTINCT FROM %s "
+                    "   AND UPPER(TRIM(COALESCE(de,''))) = UPPER(TRIM(COALESCE(%s,''))) "
+                    "   AND ABS(COALESCE(ret,0) - %s) < 0.01 "
+                    " LIMIT 1",
+                    (fecha, de, float(ret or 0)),
+                )
+                if cur.fetchone():
+                    continue  # el DBF ya lo trae → no duplicar
+                cur.execute(
+                    "INSERT INTO scintela.retiros "
+                    "(fecha, nb, ret, de, concepto, clave, "
+                    " id_transaccion_bancaria, usuario_crea) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (fecha, nb, ret, de, concepto, clave, idtx, usr),
+                )
+                restaurados += 1
+            if restaurados:
+                print(f"   [PC gana] {restaurados} retiros de origen PC restaurados "
+                      f"(no están en el DBF, ej. retiro OP banco USA)")
 
         # Restaurar las ediciones PC de gastos proyectados (ver snapshot arriba).
         if pg_table == "scintela.iniciales" and _ini_overrides:

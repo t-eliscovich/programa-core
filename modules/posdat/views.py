@@ -301,6 +301,51 @@ def anular(id_posdat: int):
     return redirect(url_for("posdat.lista"))
 
 
+@posdat_bp.route("/posdat/retiro-op", methods=["POST"])
+@requiere_login
+@requiere_permiso("posdat.editar")
+def retiro_op():
+    """Registra un retiro a accionistas contra el saldo OP ("banco USA").
+
+    Espejo del retiro OP del dBase (RETIROS de='OP'), pero sin movimiento de
+    banco: la plata sale de un banco en USA que no está en el programa. Baja
+    el saldo OP y queda en /retiros. Por pantalla y reproducible.
+    """
+    from modules.retiros import queries as _ret
+
+    monto = parse_monto(request.form.get("monto"))
+    de = (request.form.get("de") or "OP").strip().upper() or "OP"
+    fecha = parse_date(request.form.get("fecha")) or today_ec()
+    concepto = (request.form.get("concepto") or "").strip() or None
+    if monto is None or monto <= 0:
+        flash("El monto del retiro debe ser mayor que cero.", "warn")
+        return redirect(url_for("posdat.lista"))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        # Aviso (no bloqueo, criterio "PC no bloquea"): si supera el disponible.
+        try:
+            saldo = _ret.saldo_op()
+            if monto > (saldo.get("disponible") or 0) + 0.01:
+                flash(
+                    f"Ojo: el retiro (${monto:,.2f}) supera el saldo OP disponible "
+                    f"(${(saldo.get('disponible') or 0):,.2f}). Se registró igual.",
+                    "warn",
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        r = _ret.crear_op(monto=monto, de=de, fecha=fecha, concepto=concepto, usuario=usuario)
+        flash(
+            f"Retiro OP registrado: {r['de']} $ {r['monto']:,.2f} ({r['concepto']}). "
+            f"Bajó el saldo OP.",
+            "ok",
+        )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude registrar el retiro OP", e)
+    return redirect(url_for("posdat.lista"))
+
+
 @posdat_bp.route("/posdat")
 @requiere_login
 @requiere_permiso("posdat.ver")
@@ -422,6 +467,16 @@ def lista():
     delta_dia_hoy = round(total_cuota_diaria, 2)
     acum_mes_hasta_hoy = round(total_cuota_diaria * 25, 2)
 
+    # Saldo OP (over-price/aporte) para el panel + botón de retiro a accionistas.
+    # Sólo se muestra en el tab posdatados. Best-effort: si falla, no rompe.
+    saldo_op = None
+    if tab == "posdatados":
+        try:
+            from modules.retiros import queries as _ret
+            saldo_op = _ret.saldo_op()
+        except Exception:  # noqa: BLE001
+            saldo_op = None
+
     # TMT 2026-05-29: no-store para forzar a que el browser/Caddy NO cacheen
     # la respuesta — el display-time depende de _hoy_ec() y cambia día a día.
     # Sin esto, F5 muestra valores cacheados aunque el server calcule bien.
@@ -444,6 +499,8 @@ def lista():
         delta_dia_hoy=delta_dia_hoy,
         acum_mes_hasta_hoy=acum_mes_hasta_hoy,
         dia_del_mes=_dia_hoy,
+        saldo_op=saldo_op,
+        today_iso=today_ec().isoformat(),
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"] = "no-cache"

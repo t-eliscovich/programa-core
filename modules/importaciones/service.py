@@ -192,4 +192,62 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             }
             r["fuente"] = "anticipo"
             r["importe_programa"] = r["anticipo"]["importe_total"]
+
+    # ── Estado de pago / contabilización (PC-only, migración 0104) ──────────
+    # Keyed por (PROV, número primario de la Nota). Una importación es
+    # "pendiente" mientras NO esté contabilizada. El monto pagado es
+    # informativo (parcial permitido); la liberación de kilos es por la marca
+    # manual "contabilizar". Anticipos USD ya aplicados netean el pendiente.
+    from modules.importaciones import pago as _pago
+
+    refs2: set[tuple[str, int]] = {
+        ((r["prov"] or "").upper(), int(r["numero"]))
+        for r in rows
+        if r.get("prov") and r.get("numero") is not None
+    }
+    estados = _pago.estados_por_refs(refs2)
+    for r in rows:
+        r["contabilizada"] = False
+        r["monto_pagado"] = 0.0
+        r["estado_pago"] = None
+        r["pendiente_pago"] = None
+        if not (r.get("prov") and r.get("numero") is not None):
+            continue
+        st = estados.get(((r["prov"] or "").upper(), int(r["numero"])))
+        if st:
+            r["contabilizada"] = bool(st["contabilizada"])
+            r["monto_pagado"] = float(st["monto_pagado"] or 0)
+        # Sólo tiene sentido el estado para importaciones con cruce al programa.
+        if r.get("fuente"):
+            r["estado_pago"] = "contabilizada" if r["contabilizada"] else "pendiente"
+            base = float(r.get("importe_programa") or 0)
+            r["pendiente_pago"] = round(base - r["monto_pagado"], 2)
     return rows
+
+
+def kilos_pendientes_importaciones(limite: int = 400) -> dict:
+    """Kilos de importaciones NO contabilizadas — para TC/PT.
+
+    "Pendiente" = importación con cruce a una COMPRA del programa (tiene kilos
+    reales en stock) que la dueña todavía NO marcó como contabilizada. Sólo
+    contamos fuente='compra' (las que son sólo anticipo no trajeron kilos de
+    compra aún). Los kg salen del detalle de Asinfo (igual que la lista).
+
+    Devuelve {"kg": float, "n": int, "detalle": [filas]}. Fail-soft: kg 0.
+    """
+    try:
+        rows = importaciones_con_cruce(limite=limite)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("kilos_pendientes_importaciones falló: %s", e)
+        return {"kg": 0.0, "n": 0, "detalle": []}
+    pend = [
+        r for r in rows
+        if r.get("fuente") == "compra"
+        and not r.get("contabilizada")
+        and (r.get("kg") or 0) > 0
+    ]
+    return {
+        "kg": round(sum(float(r.get("kg") or 0) for r in pend), 2),
+        "n": len(pend),
+        "detalle": pend,
+    }

@@ -1,8 +1,104 @@
 """Queries de retiros del dueño (scintela.retiros)."""
-from datetime import timedelta
+from datetime import date, timedelta
 
 import db
 from filters import today_ec
+
+# Marcador de origen PC para los retiros que NO viven en el dBase (caso
+# "retiro OP banco USA"). El sync (import_dbf) preserva estas filas al
+# re-cargar RETIROS.DBF en vez de pisarlas. TMT 2026-06-26.
+USUARIO_RETIRO_OP = "pc-retiro-op"
+
+
+def saldo_op() -> dict:
+    """Saldo OP = crédito (over-price/aporte) menos lo retirado a accionistas.
+
+    Mecánica dBase (verificada en COMPRAS/POSDAT/RETIROS):
+      - El crédito OP entra como compra/posdat NEGATIVA a prov='OP'.
+      - El pago a accionistas es un RETIRO con de='OP'.
+      - El "saldo OP" es derivado: Σ(posdat OP neg) + Σ(retiros OP pos).
+
+    Devuelve montos POSITIVOS legibles:
+      credito    = |Σ posdat OP|  (lo aportado/over-price disponible)
+      retirado   = Σ retiros OP
+      disponible = credito − retirado  (lo que falta retirar; baja con cada retiro)
+    """
+    pos = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS s
+          FROM scintela.posdat
+         WHERE UPPER(TRIM(prov)) = 'OP'
+           AND COALESCE(banc, 0) = 0
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+        """
+    ) or {"s": 0}
+    ret = db.fetch_one(
+        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+        "WHERE UPPER(TRIM(de)) = 'OP'"
+    ) or {"s": 0}
+    posdat_op = float(pos["s"] or 0)        # negativo (crédito)
+    retiros_op = float(ret["s"] or 0)       # positivo
+    credito = round(-posdat_op, 2)          # |crédito| en positivo
+    return {
+        "posdat_op": round(posdat_op, 2),
+        "credito": credito,
+        "retirado": round(retiros_op, 2),
+        "disponible": round(credito - retiros_op, 2),
+    }
+
+
+def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
+             concepto: str | None = None, usuario: str = "web") -> dict:
+    """Registra un retiro a accionistas contra el saldo OP ("banco USA").
+
+    Espejo del retiro OP del dBase (RETIROS DE='OP', concepto 'RR OP … B.1'),
+    pero el dinero sale de un banco en USA que NO está en el programa: por eso
+    NO se crea movimiento bancario (nb=NULL) y la leyenda 'banco USA' es sólo
+    un comentario. Baja el saldo OP (vía el neteo de saldo_op) y queda en
+    /retiros como retiro de accionista. Auditado en mov_doble. Reversible
+    anulando/borrando el retiro.
+    """
+    monto = round(float(monto or 0), 2)
+    if monto <= 0:
+        raise ValueError("El monto del retiro debe ser mayor que cero.")
+    de = (de or "OP").strip().upper()[:5] or "OP"
+    fecha = fecha or today_ec()
+    if not concepto:
+        concepto = f"RR {de} banco USA" if de != "OP" else "RR OP banco USA"
+    concepto = concepto[:100]
+
+    with db.tx() as conn:
+        row = db.execute_returning(
+            """
+            INSERT INTO scintela.retiros
+                (fecha, nb, ret, de, concepto, clave, usuario_crea)
+            VALUES (%s, NULL, %s, %s, %s, NULL, %s)
+            RETURNING id_retiro
+            """,
+            (fecha, monto, de, concepto, USUARIO_RETIRO_OP),
+            conn=conn,
+        ) or {}
+        id_retiro = int(row.get("id_retiro") or 0)
+        try:
+            import mov_doble as _md
+            _md.registrar(
+                conn=conn,
+                tipo="retiro_op",
+                origen_table="retiros",
+                origen_id=id_retiro,
+                destino_table="retiros",
+                destino_id=id_retiro,
+                importe=monto,
+                fecha=fecha,
+                concepto=f"Retiro OP a accionistas (banco USA) — {de} $ {monto:.2f}"[:200],
+                usuario=usuario,
+                metadata={"de": de, "concepto": concepto, "origen": "retiro_op_banco_usa"},
+            )
+        except Exception:
+            # El retiro necesita huella en /historial; si mov_doble explota por
+            # algo inesperado, abortamos para no dejar el retiro sin auditar.
+            raise
+    return {"id_retiro": id_retiro, "monto": monto, "de": de, "concepto": concepto}
 
 
 def buscar(
