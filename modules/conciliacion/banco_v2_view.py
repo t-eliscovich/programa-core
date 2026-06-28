@@ -1927,23 +1927,35 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # Incluir real_only de la sesión actual (movs del extracto sin matchear)
     # para que el AJUSTE refleje TODO lo que cierra contra banco.
     saldo_banco_real = None
-    try:
-        movs_sesion = _sesion.cargar_movs(sesion)
-        if movs_sesion:
-            # TMT 2026-06-04: ya no sumamos el extracto a pendientes (AJUSTE =
-            # solo histos reales, vía balance). Solo leemos el saldo objetivo.
-            con_fecha = [
-                m for m in movs_sesion
-                if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
-            ]
-            if con_fecha:
-                ult = max(con_fecha, key=lambda m: m.fecha)
-                saldo_banco_real = float(ult.saldo)
-            else:
-                ult = movs_sesion[-1]
-                saldo_banco_real = float(getattr(ult, "saldo", None) or 0) or None
-    except Exception as e:
-        _LOG.warning("no pude leer movs sesion: %s", e)
+    # TMT 2026-06-26 (dueña: "el saldo que cambio a mano no se mantiene al
+    # descargar el excel"). El resumen ignoraba el saldo_banco_objetivo manual
+    # y siempre auto-detectaba por max(fecha) — distinto de la pantalla, que
+    # prioriza el valor que la dueña escribe. Espejamos esa prioridad: 1ro el
+    # manual de la sesión, 2do el auto-detect.
+    saldo_manual = sesion.get("saldo_banco_objetivo")
+    if saldo_manual is not None:
+        try:
+            saldo_banco_real = float(saldo_manual)
+        except (TypeError, ValueError):
+            saldo_banco_real = None
+    if saldo_banco_real is None:
+        try:
+            movs_sesion = _sesion.cargar_movs(sesion)
+            if movs_sesion:
+                # TMT 2026-06-04: ya no sumamos el extracto a pendientes (AJUSTE =
+                # solo histos reales, vía balance). Solo leemos el saldo objetivo.
+                con_fecha = [
+                    m for m in movs_sesion
+                    if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None
+                ]
+                if con_fecha:
+                    ult = max(con_fecha, key=lambda m: m.fecha)
+                    saldo_banco_real = float(ult.saldo)
+                else:
+                    ult = movs_sesion[-1]
+                    saldo_banco_real = float(getattr(ult, "saldo", None) or 0) or None
+        except Exception as e:
+            _LOG.warning("no pude leer movs sesion: %s", e)
 
     ajuste = round(pendientes_banco_cred - pendientes_banco_deb, 2)
     # TMT 2026-06-17: TODO pendiente (hoja + extracto sin cruzar, incl. ISD/
