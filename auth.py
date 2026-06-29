@@ -112,28 +112,16 @@ def load_logged_in_user() -> None:
     user_id = session.get("user_id")
     if not user_id:
         return
-    try:
-        row = db.fetch_one(
-            """
-            SELECT u.id_usuario, u.username, u.id_rol, u.activo, r.nombre_rol
-            FROM seguridad.usuario u
-            JOIN seguridad.rol r USING (id_rol)
-            WHERE u.id_usuario = %s AND u.activo = TRUE
-            """,
-            (user_id,),
-        )
-    except Exception as e:  # noqa: BLE001 — diag temporal 2026-06-29
-        _AUTH_DEBUG["last_clear"] = {
-            "reason": "lookup_raised", "user_id": user_id, "err": repr(e)[:200],
-            "path": request.path, "ts": _now_utc().isoformat(),
-        }
-        raise
+    row = db.fetch_one(
+        """
+        SELECT u.id_usuario, u.username, u.id_rol, u.activo, r.nombre_rol
+        FROM seguridad.usuario u
+        JOIN seguridad.rol r USING (id_rol)
+        WHERE u.id_usuario = %s AND u.activo = TRUE
+        """,
+        (user_id,),
+    )
     if not row:
-        _AUTH_DEBUG["last_clear"] = {
-            "reason": "not_row", "user_id": user_id,
-            "path": request.path, "method": request.method,
-            "ts": _now_utc().isoformat(),
-        }
         session.clear()
         return
 
@@ -142,12 +130,6 @@ def load_logged_in_user() -> None:
     last_activity = _parse_last_activity(session.get("last_activity"))
     now = _now_utc()
     if last_activity is not None and (now - last_activity) > timeout:
-        _AUTH_DEBUG["last_clear"] = {
-            "reason": "timeout", "user_id": user_id,
-            "last_activity": str(last_activity), "now": str(now),
-            "timeout_s": timeout.total_seconds(),
-            "path": request.path, "ts": _now_utc().isoformat(),
-        }
         # Expiró. Vaciamos todo y marcamos g.user=None para que redirija
         # al login. Flasheamos un mensaje suave — no un error, es normal.
         session.clear()
@@ -194,34 +176,11 @@ def _is_keepalive_path(path: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-# TMT 2026-06-29 (dueña: 'se cierra la sesión al guardar'). Diagnóstico temporal:
-# registra por qué un request quedó sin sesión (¿llegó la cookie?, tamaño,
-# claves, user_id) y el tamaño máx de cookie de sesión seteada. Se expone en
-# /healthz/authdebug (sin auth). Quitar cuando esté diagnosticado.
-_AUTH_DEBUG: dict = {"last_fail": None, "max_session_cookie_len": 0, "max_cookie_path": None}
-
-
-def _record_auth_fail(where: str) -> None:
-    try:
-        _AUTH_DEBUG["last_fail"] = {
-            "ts": _now_utc().isoformat(),
-            "where": where,
-            "path": request.path,
-            "method": request.method,
-            "has_session_cookie": "session" in request.cookies,
-            "session_cookie_len": len(request.cookies.get("session", "")),
-            "session_keys": sorted(session.keys()),
-            "has_user_id": bool(session.get("user_id")),
-        }
-    except Exception:
-        pass
-
 
 def requiere_login(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not g.get("user"):
-            _record_auth_fail("requiere_login")
             return redirect(url_for("auth.login", next=request.path))
         return view(*args, **kwargs)
 
@@ -233,7 +192,6 @@ def requiere_permiso(nombre_opcion: str):
         @wraps(view)
         def wrapped(*args, **kwargs):
             if not g.get("user"):
-                _record_auth_fail("requiere_permiso")
                 return redirect(url_for("auth.login", next=request.path))
             if nombre_opcion not in g.permisos and "*" not in g.permisos:
                 # TMT 2026-05-22 dueña: si el usuario no tiene el permiso,

@@ -559,22 +559,6 @@ def create_app() -> Flask:
     # blueprints so any of them can be the audited target.
     app.after_request(registrar_bitacora_after_request)
 
-    # TMT 2026-06-29 diagnóstico temporal: tamaño de la cookie de sesión que
-    # seteamos (si supera ~4KB el navegador la descarta → logout). Ver
-    # /healthz/authdebug. Quitar cuando esté diagnosticado.
-    @app.after_request
-    def _capturar_tamano_cookie(resp):
-        try:
-            import auth as _auth
-            for h in resp.headers.getlist("Set-Cookie"):
-                if h.startswith("session="):
-                    ln = len(h)
-                    if ln > _auth._AUTH_DEBUG.get("max_session_cookie_len", 0):
-                        _auth._AUTH_DEBUG["max_session_cookie_len"] = ln
-                        _auth._AUTH_DEBUG["max_cookie_path"] = request.path
-        except Exception:
-            pass
-        return resp
 
     # `g.now` — datetime local de inicio del request, accesible desde
     # cualquier template (saludo del dashboard, etc).
