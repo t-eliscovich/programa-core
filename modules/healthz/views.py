@@ -52,6 +52,20 @@ def liveness():
     ), 200
 
 
+@healthz_bp.route("/authdebug", methods=["GET"])
+def authdebug():
+    """Diagnóstico temporal del cierre de sesión (TMT 2026-06-29). Sin auth.
+
+    Devuelve el último request que quedó sin sesión (motivo) + el tamaño máx de
+    la cookie de sesión seteada. Quitar cuando esté diagnosticado.
+    """
+    try:
+        import auth
+        return jsonify(auth._AUTH_DEBUG), 200
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)}), 200
+
+
 @healthz_bp.route("/ready", methods=["GET"])
 def readiness():
     """Readiness probe — puede servir tráfico real.
