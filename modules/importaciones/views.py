@@ -66,14 +66,11 @@ def lista():
         rows = [r for r in rows if r.get("estado_flujo") == "faltan_pagar"]
     elif pago == "pagada":
         rows = [r for r in rows if r.get("estado_flujo") == "pagada"]
-    elif pago == "en_transito":
-        rows = [r for r in rows if r.get("estado_flujo") == "en_transito"]
 
     # KPIs del flujo (sobre el conjunto YA filtrado, como el resto de contadores).
     # Partición que SUMA al total: en tránsito + faltan pagar + pagadas = total.
     # El estado se deriva de lo que el programa ya sabe (posdat/anticipo), salvo
     # que la dueña lo haya marcado a mano. Ver service.importaciones_con_cruce.
-    en_transito = sum(1 for r in rows if r.get("estado_flujo") == "en_transito")
     pend_pago = sum(1 for r in rows if r.get("estado_flujo") == "faltan_pagar")
     pagadas = sum(1 for r in rows if r.get("estado_flujo") == "pagada")
     kg_pend_pago = sum(
@@ -146,7 +143,6 @@ def lista():
         recibidas=recibidas,
         pendientes=pendientes,
         importe_programa=importe_programa,
-        en_transito=en_transito,
         pend_pago=pend_pago,
         pagadas=pagadas,
         kg_pend_pago=kg_pend_pago,

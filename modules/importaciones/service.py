@@ -303,7 +303,7 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         r["necesita_costo_manual"] = False
         r["costo_ventana"] = None
         r["kg_sin_precio_hist"] = 0.0
-        r["estado_flujo"] = "en_transito"
+        r["estado_flujo"] = "pagada"
         r["deuda_efectiva"] = 0.0
         r["origen_estado"] = "programa"
         r["tiene_pc"] = False
@@ -375,7 +375,8 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
                 else:
                     r["estado_flujo"] = "pagada"
             else:
-                r["estado_flujo"] = "en_transito"
+                # Sin cruce a compra/anticipo y sin deuda viva → nada pendiente.
+                r["estado_flujo"] = "pagada"
     return rows
 
 
