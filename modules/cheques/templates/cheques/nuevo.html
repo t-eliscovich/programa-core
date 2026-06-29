@@ -1257,7 +1257,10 @@
     if (numWrap) numWrap.classList.toggle('hidden', esDeposito);
     // Aviso de banco virtual (creado on-demand, uno por bloque).
     let warnDiv = bloque.querySelector('.cheque-virtual-warn');
-    if (esDeposito && v !== '97' && v !== '95') {
+    // TMT 2026-06-29 (dueña): en el flujo de ANTICIPO no mostrar el aviso
+    // 'sin cheque físico / elegí el banco emisor' — el medio ya se eligió a
+    // propósito (depósito/efectivo/cheque). El aviso es solo para cobro normal.
+    if (esDeposito && v !== '97' && v !== '95' && !esAnticipo97) {
       if (!warnDiv) {
         warnDiv = document.createElement('div');
         warnDiv.className = 'cheque-virtual-warn mt-2 text-[12px] rounded border border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3 py-2';
