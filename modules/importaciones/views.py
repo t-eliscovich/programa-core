@@ -63,17 +63,25 @@ def lista():
     # en el programa (las que traen kilos reales a TC/PT). Las de fuente
     # 'anticipo' todavía no son compra → no entran al circuito pendiente/kilos.
     if pago == "pendiente":
-        rows = [r for r in rows if r.get("fuente") == "compra" and not r.get("contabilizada")]
-    elif pago == "contabilizada":
-        rows = [r for r in rows if r.get("fuente") == "compra" and r.get("contabilizada")]
+        rows = [r for r in rows if r.get("recibido_pc") and not r.get("pagada")]
+    elif pago == "pagada":
+        rows = [r for r in rows if r.get("pagada")]
+    elif pago == "en_transito":
+        rows = [r for r in rows if not r.get("recibido_pc")]
 
-    # KPIs de pago (sobre el conjunto YA filtrado, como el resto de contadores).
-    pend_pago = sum(1 for r in rows if r.get("fuente") == "compra" and not r.get("contabilizada"))
-    contab = sum(1 for r in rows if r.get("fuente") == "compra" and r.get("contabilizada"))
+    # KPIs del flujo (sobre el conjunto YA filtrado, como el resto de contadores).
+    recibidas_pc = sum(1 for r in rows if r.get("recibido_pc"))
+    pend_pago = sum(1 for r in rows if r.get("recibido_pc") and not r.get("pagada"))
+    pagadas = sum(1 for r in rows if r.get("pagada"))
     kg_pend_pago = sum(
-        float(r.get("kg") or 0)
+        float(r.get("kg_recibidos") or r.get("kg") or 0)
         for r in rows
-        if r.get("fuente") == "compra" and not r.get("contabilizada")
+        if r.get("recibido_pc") and not r.get("pagada")
+    )
+    deuda_pend = sum(
+        float(r.get("deuda") or 0)
+        for r in rows
+        if r.get("recibido_pc") and not r.get("pagada")
     )
 
     total = len(rows)
@@ -135,9 +143,11 @@ def lista():
         recibidas=recibidas,
         pendientes=pendientes,
         importe_programa=importe_programa,
+        recibidas_pc=recibidas_pc,
         pend_pago=pend_pago,
-        contab=contab,
+        pagadas=pagadas,
         kg_pend_pago=kg_pend_pago,
+        deuda_pend=deuda_pend,
         q=q,
         estado=estado,
         recep=recep,
@@ -156,57 +166,112 @@ def _volver():
     return redirect(url_for("importaciones.lista", **args))
 
 
-@importaciones_bp.route("/importaciones/contabilizar", methods=["POST"])
+def _prov_num():
+    prov = (request.form.get("prov") or "").strip().upper()
+    numero = parse_int(request.form.get("numero"))
+    return prov, numero
+
+
+@importaciones_bp.route("/importaciones/recibir", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.editar")
-def contabilizar():
-    """Marca/desmarca una importación como contabilizada (libera/retiene kilos).
+def recibir():
+    """Recibe el hilo con costo estimado → genera la deuda. Los kg entran al stock.
 
-    Por pantalla y reproducible: form con prov + numero + valor. La marca es
-    lo que libera los kilos en TC/PT (todo-o-nada), aunque el pago sea parcial.
+    Por pantalla y reproducible: prov + numero + kg + costo_estimado (prefill =
+    promedio histórico, editable) + anticipo aplicado (neteo de la deuda).
     """
     from modules.importaciones import pago as _pago
 
-    prov = (request.form.get("prov") or "").strip().upper()
-    numero = parse_int(request.form.get("numero"))
-    quiere = (request.form.get("contabilizada") or "").strip() in ("1", "true", "on", "si")
+    prov, numero = _prov_num()
+    kg = parse_monto(request.form.get("kg"))
+    costo = parse_monto(request.form.get("costo_estimado"))
+    anticipo = parse_monto(request.form.get("anticipo")) or 0
     if not prov or numero is None:
         flash("Importación inválida (faltan proveedor o número).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.set_contabilizada(prov, numero, quiere, usuario=usuario)
+        _pago.set_recepcion(prov, numero, kg=kg, costo_estimado=costo,
+                            anticipo=anticipo, usuario=usuario)
+        deuda = max(0.0, round(float(costo or 0) - float(anticipo or 0), 2))
         flash(
-            f"Importación {prov} {numero} "
-            + ("contabilizada (kilos liberados)." if quiere else "marcada pendiente (kilos retenidos)."),
+            f"Importación {prov} {numero} recibida: {kg or 0:,.0f} kg al stock · "
+            f"costo estimado $ {costo or 0:,.2f} · deuda $ {deuda:,.2f}.",
             "ok",
         )
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
-        flash_exc("No pude actualizar la contabilización", e)
+        flash_exc("No pude registrar la recepción", e)
     return _volver()
 
 
-@importaciones_bp.route("/importaciones/monto-pagado", methods=["POST"])
+@importaciones_bp.route("/importaciones/pagar", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.editar")
-def monto_pagado():
-    """Guarda el monto pagado de una importación (informativo, parcial OK)."""
+def pagar():
+    """Paga la importación: el monto real sobrescribe la deuda y la marca pagada."""
     from modules.importaciones import pago as _pago
 
-    prov = (request.form.get("prov") or "").strip().upper()
-    numero = parse_int(request.form.get("numero"))
-    monto = parse_monto(request.form.get("monto"))
+    prov, numero = _prov_num()
+    monto = parse_monto(request.form.get("monto_real"))
+    anticipo = parse_monto(request.form.get("anticipo")) or 0
     if not prov or numero is None:
         flash("Importación inválida (faltan proveedor o número).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.set_monto_pagado(prov, numero, monto or 0, usuario=usuario)
-        flash(f"Monto pagado de {prov} {numero} guardado: $ {monto or 0:,.2f}.", "ok")
+        _pago.set_pago(prov, numero, monto_real=monto, anticipo=anticipo, usuario=usuario)
+        deuda = max(0.0, round(float(monto or 0) - float(anticipo or 0), 2))
+        flash(
+            f"Importación {prov} {numero} pagada: monto real $ {monto or 0:,.2f} "
+            f"(deuda ajustada a $ {deuda:,.2f}).",
+            "ok",
+        )
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
-        flash_exc("No pude guardar el monto pagado", e)
+        flash_exc("No pude registrar el pago", e)
+    return _volver()
+
+
+@importaciones_bp.route("/importaciones/deshacer-recepcion", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def deshacer_recepcion():
+    """Revierte la recepción (vuelve a 'en tránsito', saca los kg del stock)."""
+    from modules.importaciones import pago as _pago
+
+    prov, numero = _prov_num()
+    if not prov or numero is None:
+        flash("Importación inválida.", "warn")
+        return _volver()
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        _pago.deshacer_recepcion(prov, numero, usuario=usuario)
+        flash(f"Recepción de {prov} {numero} deshecha (vuelve a en tránsito).", "ok")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude deshacer la recepción", e)
+    return _volver()
+
+
+@importaciones_bp.route("/importaciones/deshacer-pago", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def deshacer_pago():
+    """Revierte solo el pago: vuelve a 'recibida, pendiente de pago'."""
+    from modules.importaciones import pago as _pago
+
+    prov, numero = _prov_num()
+    anticipo = parse_monto(request.form.get("anticipo")) or 0
+    if not prov or numero is None:
+        flash("Importación inválida.", "warn")
+        return _volver()
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        _pago.deshacer_pago(prov, numero, anticipo=anticipo, usuario=usuario)
+        flash(f"Pago de {prov} {numero} deshecho (queda pendiente de pago).", "ok")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude deshacer el pago", e)
     return _volver()

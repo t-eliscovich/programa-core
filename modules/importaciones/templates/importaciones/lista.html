@@ -46,13 +46,12 @@
     </div>
   {% endif %}
 
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="kpi"><div class="kpi-label">Importaciones</div><div class="kpi-val">{{ total }}</div></div>
-    <div class="kpi"><div class="kpi-label">Recibidas</div><div class="kpi-val ok">{{ recibidas }}</div></div>
-    <div class="kpi"><div class="kpi-label">Pendientes (en tránsito)</div><div class="kpi-val no">{{ pendientes }}</div></div>
-    <div class="kpi"><div class="kpi-label">Pend. de pago</div><div class="kpi-val no">{{ pend_pago }}</div>
-      <div class="text-[11px] text-slate-500 mt-0.5">{{ kg_pend_pago | num_es(0) }} kg</div></div>
-    <div class="kpi"><div class="kpi-label">Contabilizadas</div><div class="kpi-val ok">{{ contab }}</div></div>
+    <div class="kpi"><div class="kpi-label">Recibidas (en stock)</div><div class="kpi-val ok">{{ recibidas_pc }}</div></div>
+    <div class="kpi"><div class="kpi-label">Pendientes de pago</div><div class="kpi-val no">{{ pend_pago }}</div>
+      <div class="text-[11px] text-slate-500 mt-0.5">{{ kg_pend_pago | num_es(0) }} kg · deuda $ {{ deuda_pend | num_es(0) }}</div></div>
+    <div class="kpi"><div class="kpi-label">Pagadas</div><div class="kpi-val ok">{{ pagadas }}</div></div>
   </div>
 
   <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
@@ -82,8 +81,9 @@
       <label class="block text-xs text-slate-500 mb-1">Pago</label>
       <select name="pago" class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
         <option value="" {% if not pago %}selected{% endif %}>Todas</option>
-        <option value="pendiente" {% if pago == 'pendiente' %}selected{% endif %}>Pendientes de pago</option>
-        <option value="contabilizada" {% if pago == 'contabilizada' %}selected{% endif %}>Contabilizadas</option>
+        <option value="en_transito" {% if pago == 'en_transito' %}selected{% endif %}>En tránsito (sin recibir)</option>
+        <option value="pendiente" {% if pago == 'pendiente' %}selected{% endif %}>Recibidas, pendientes de pago</option>
+        <option value="pagada" {% if pago == 'pagada' %}selected{% endif %}>Pagadas</option>
       </select>
     </div>
     <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
@@ -105,7 +105,7 @@
           <th class="text-right" style="width: 8%">Kg</th>
           <th class="text-right" style="width: 11%">Total Asinfo*</th>
           <th class="text-right" style="width: 12%">Programa (US$)</th>
-          <th style="width: 18%" data-no-sort>Pago / Contabilización</th>
+          <th style="width: 22%" data-no-sort>Recepción · Deuda · Pago</th>
         </tr>
       </thead>
       <tbody>
@@ -141,59 +141,69 @@
               {% endif %}
             </td>
             <td>
-              {% if r.fuente == 'compra' %}
-                {% if r.contabilizada %}
-                  <span class="recep recep-ok">✓ Contabilizada</span>
-                  <form method="post" action="{{ url_for('importaciones.contabilizar') }}" class="mt-1">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}">
-                    <input type="hidden" name="numero" value="{{ r.numero }}">
-                    <input type="hidden" name="contabilizada" value="0">
-                    <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
-                    <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
-                    <button class="text-[11px] text-slate-500 hover:underline">↺ marcar pendiente</button>
-                  </form>
-                {% else %}
-                  <span class="recep recep-no">⏳ Pendiente</span>
-                  <div class="text-[11px] text-slate-500 mt-0.5">
-                    pendiente $ {{ (r.pendiente_pago or 0) | num_es(2) }}
+              {% if r.codigo %}
+                {% set ant = r.anticipo_disponible or 0 %}
+                {% if r.pagada %}
+                  <span class="recep recep-ok">✓ Pagada</span>
+                  <div class="text-[11px] text-slate-600 mt-0.5">
+                    monto real $ {{ r.monto_real | num_es(2) }}
+                    {% if ant %}<br>anticipo $ {{ ant | num_es(2) }}{% endif %}
                   </div>
-                  <form method="post" action="{{ url_for('importaciones.monto_pagado') }}" class="mt-1 flex items-center gap-1">
+                  {% if tiene_permiso('compras.editar') %}
+                  <form method="post" action="{{ url_for('importaciones.deshacer_pago') }}" class="mt-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}">
-                    <input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="anticipo" value="{{ ant }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
-                    <input type="text" name="monto" value="{{ r.monto_pagado or '' }}" placeholder="monto pagado"
+                    <button class="text-[11px] text-slate-500 hover:underline">↺ deshacer pago</button>
+                  </form>
+                  {% endif %}
+                {% elif r.recibido_pc %}
+                  <span class="recep recep-ok">✓ Recibida (en stock)</span>
+                  <div class="text-[11px] text-slate-600 mt-0.5">
+                    {{ (r.kg_recibidos or 0) | num_es(0) }} kg · costo est. $ {{ r.costo_estimado | num_es(2) }}<br>
+                    <span class="no">deuda $ {{ (r.deuda or 0) | num_es(2) }}</span>{% if ant %} · anticipo $ {{ ant | num_es(2) }}{% endif %}
+                  </div>
+                  {% if tiene_permiso('compras.editar') %}
+                  <form method="post" action="{{ url_for('importaciones.pagar') }}" class="mt-1 flex items-center gap-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="anticipo" value="{{ ant }}">
+                    <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
+                    <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
+                    <input type="text" name="monto_real" value="{{ r.costo_estimado or '' }}" placeholder="monto real"
                            class="w-24 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right">
-                    <button class="text-[11px] px-1.5 py-0.5 rounded border border-slate-300 hover:bg-slate-50">$</button>
+                    <button class="text-[11px] px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Pagar →</button>
                   </form>
-                  <form method="post" action="{{ url_for('importaciones.contabilizar') }}" class="mt-1">
+                  <form method="post" action="{{ url_for('importaciones.deshacer_recepcion') }}" class="mt-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}">
-                    <input type="hidden" name="numero" value="{{ r.numero }}">
-                    <input type="hidden" name="contabilizada" value="1">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
-                    <button class="text-[11px] px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">✓ Contabilizar</button>
+                    <button class="text-[11px] text-slate-500 hover:underline">↺ deshacer recepción</button>
                   </form>
-                {% endif %}
-              {% elif r.fuente == 'anticipo' %}
-                <div class="text-[11px] text-slate-500 mb-1">Anticipo USD (prepagado)</div>
-                {% if tiene_permiso('compras.crear') %}
-                  <a href="{{ url_for('dolares.convertir_lote', prov=r.prov) }}"
-                     class="inline-block text-[11px] px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700">
-                    Convertir a compra →
-                  </a>
-                {% endif %}
-              {% elif r.codigo %}
-                {% if tiene_permiso('compras.crear') %}
-                  <a href="{{ url_for('compras.nueva', codigo_prov=r.prov, concepto=r.numero, kg=(r.kg or '')) }}"
-                     class="inline-block text-[11px] px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700">
-                    Cargar compra →
-                  </a>
+                  {% endif %}
                 {% else %}
-                  <span class="text-slate-300">—</span>
+                  <span class="recep recep-no">⏳ En tránsito</span>
+                  {% if tiene_permiso('compras.editar') %}
+                  <form method="post" action="{{ url_for('importaciones.recibir') }}" class="mt-1 space-y-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="anticipo" value="{{ ant }}">
+                    <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
+                    <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
+                    <div class="flex items-center gap-1">
+                      <input type="text" name="kg" value="{{ r.kg | num_es(0) if r.kg else '' }}" placeholder="kg"
+                             class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right" title="kg recibidos">
+                      <input type="text" name="costo_estimado" value="{{ r.costo_estimado_sugerido or '' }}" placeholder="costo est."
+                             class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right"
+                             title="costo estimado{% if r.promedio_usd_kg %} (promedio $ {{ r.promedio_usd_kg }}/kg){% endif %}">
+                      <button class="text-[11px] px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700">Recibir</button>
+                    </div>
+                    {% if r.promedio_usd_kg %}<div class="text-[10px] text-slate-400">prom. $ {{ r.promedio_usd_kg }}/kg{% if ant %} · anticipo $ {{ ant | num_es(0) }}{% endif %}</div>{% endif %}
+                  </form>
+                  {% endif %}
                 {% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>

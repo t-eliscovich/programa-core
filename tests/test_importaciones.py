@@ -93,7 +93,7 @@ def test_cruce_usa_anticipo_cuando_no_hay_compra():
     # 1ª llamada a db = _buscar_compras (vacío), 2ª = _buscar_anticipos (match).
     with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
          patch.object(service.db, "fetch_all",
-                      side_effect=[[], [{"cta": "AC", "ref_num": 36, "importe": 55871.19, "n": 3}]]):
+                      side_effect=[[], [{"cta": "AC", "ref_num": 36, "importe": 55871.19, "n": 3}], [], []]):
         rows = service.importaciones_con_cruce()
     r = rows[0]
     assert r["compra"] is None
@@ -109,6 +109,7 @@ def test_cruce_compra_tiene_prioridad_sobre_anticipo():
                       side_effect=[
                           [{"id_compra": 7, "codigo_prov": "AC", "ref_num": 36, "importe": 100.0, "concepto": "36"}],
                           [{"cta": "AC", "ref_num": 36, "importe": 999.0, "n": 2}],
+                          [], [],
                       ]):
         rows = service.importaciones_con_cruce()
     assert rows[0]["fuente"] == "compra"

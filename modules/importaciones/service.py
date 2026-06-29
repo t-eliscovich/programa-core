@@ -126,6 +126,37 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]
     }
 
 
+def promedios_usd_por_kg(provs: set[str]) -> dict[str, float]:
+    """{PROV: promedio US$/kg} = Σimporte/Σkg de las compras previas del proveedor
+    (kg>0). Para sugerir el costo estimado al recibir. Fail-soft: {} si la DB falla.
+    """
+    provs = sorted({(p or "").upper() for p in provs if p})
+    if not provs:
+        return {}
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(codigo_prov) AS prov,
+                   SUM(importe) AS imp, SUM(kg) AS kg
+              FROM scintela.compra
+             WHERE UPPER(codigo_prov) = ANY(%s)
+               AND COALESCE(kg, 0) > 0
+               AND COALESCE(importe, 0) > 0
+             GROUP BY UPPER(codigo_prov)
+            """,
+            (provs,),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("promedios_usd_por_kg falló: %s", e)
+        return {}
+    out: dict[str, float] = {}
+    for r in rows:
+        kg = float(r.get("kg") or 0)
+        if kg > 0:
+            out[str(r["prov"]).strip().upper()] = round(float(r.get("imp") or 0) / kg, 4)
+    return out
+
+
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     """Importaciones de Asinfo enriquecidas con el código parseado y el cruce
     contra el programa: primero compra (`scintela.compra`), si no hay, anticipo
@@ -193,11 +224,10 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             r["fuente"] = "anticipo"
             r["importe_programa"] = r["anticipo"]["importe_total"]
 
-    # ── Estado de pago / contabilización (PC-only, migración 0104) ──────────
-    # Keyed por (PROV, número primario de la Nota). Una importación es
-    # "pendiente" mientras NO esté contabilizada. El monto pagado es
-    # informativo (parcial permitido); la liberación de kilos es por la marca
-    # manual "contabilizar". Anticipos USD ya aplicados netean el pendiente.
+    # ── Recepción / deuda / pago (PC-only, migraciones 0104+0107) ───────────
+    # Keyed por (PROV, número primario). Flujo nuevo: RECIBIR (costo estimado →
+    # deuda, kg al stock) → PAGAR (monto real sobrescribe deuda). El anticipo USD
+    # aplicado netea la deuda. Ver modules/importaciones/pago.py.
     from modules.importaciones import pago as _pago
 
     refs2: set[tuple[str, int]] = {
@@ -206,32 +236,57 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         if r.get("prov") and r.get("numero") is not None
     }
     estados = _pago.estados_por_refs(refs2)
+    promedios = promedios_usd_por_kg({r.get("prov") for r in rows})
+
     for r in rows:
-        r["contabilizada"] = False
-        r["monto_pagado"] = 0.0
-        r["estado_pago"] = None
-        r["pendiente_pago"] = None
+        r["recibido_pc"] = False
+        r["kg_recibidos"] = None
+        r["costo_estimado"] = None
+        r["deuda"] = None
+        r["pagada"] = False
+        r["monto_real"] = None
+        r["fecha_recepcion_pc"] = None
+        r["fecha_pago"] = None
+        r["anticipo_aplicado"] = 0.0
+        # Anticipo USD disponible para netear (si la importación tiene uno cruzado).
+        r["anticipo_disponible"] = (
+            float(r["anticipo"]["importe_total"]) if r.get("anticipo") else 0.0
+        )
+        # Sugerencia de costo estimado = promedio US$/kg del prov × kg de Asinfo.
+        prom = promedios.get((r.get("prov") or "").upper())
+        r["promedio_usd_kg"] = prom
+        r["costo_estimado_sugerido"] = (
+            round(prom * float(r["kg"]), 2) if prom and r.get("kg") else None
+        )
         if not (r.get("prov") and r.get("numero") is not None):
             continue
         st = estados.get(((r["prov"] or "").upper(), int(r["numero"])))
         if st:
-            r["contabilizada"] = bool(st["contabilizada"])
-            r["monto_pagado"] = float(st["monto_pagado"] or 0)
-        # Sólo tiene sentido el estado para importaciones con cruce al programa.
-        if r.get("fuente"):
-            r["estado_pago"] = "contabilizada" if r["contabilizada"] else "pendiente"
-            base = float(r.get("importe_programa") or 0)
-            r["pendiente_pago"] = max(0.0, round(base - r["monto_pagado"], 2))
+            r["recibido_pc"] = bool(st["recibido_pc"])
+            r["kg_recibidos"] = st["kg_recibidos"]
+            r["costo_estimado"] = st["costo_estimado"]
+            r["deuda"] = st["deuda"]
+            r["pagada"] = bool(st["pagada"])
+            r["monto_real"] = st["monto_real"]
+            r["fecha_recepcion_pc"] = st["fecha_recepcion_pc"]
+            r["fecha_pago"] = st["fecha_pago"]
+            r["anticipo_aplicado"] = st["anticipo_aplicado"]
+        # Estado legible del flujo nuevo.
+        if r["pagada"]:
+            r["estado_flujo"] = "pagada"
+        elif r["recibido_pc"]:
+            r["estado_flujo"] = "recibida"   # recibida, deuda pendiente
+        else:
+            r["estado_flujo"] = "en_transito"
     return rows
 
 
 def kilos_pendientes_importaciones(limite: int = 400) -> dict:
     """Kilos de importaciones NO contabilizadas — para TC/PT.
 
-    "Pendiente" = importación con cruce a una COMPRA del programa (tiene kilos
-    reales en stock) que la dueña todavía NO marcó como contabilizada. Sólo
-    contamos fuente='compra' (las que son sólo anticipo no trajeron kilos de
-    compra aún). Los kg salen del detalle de Asinfo (igual que la lista).
+    "Pendiente" = importación RECIBIDA (kg ya en stock) cuya DEUDA todavía no se
+    pagó (recibido_pc y NOT pagada). Los kg salen de kg_recibidos (o el detalle
+    de Asinfo como fallback).
 
     Devuelve {"kg": float, "n": int, "detalle": [filas]}. Fail-soft: kg 0.
     """
@@ -242,12 +297,12 @@ def kilos_pendientes_importaciones(limite: int = 400) -> dict:
         return {"kg": 0.0, "n": 0, "detalle": []}
     pend = [
         r for r in rows
-        if r.get("fuente") == "compra"
-        and not r.get("contabilizada")
-        and (r.get("kg") or 0) > 0
+        if r.get("recibido_pc")
+        and not r.get("pagada")
+        and (r.get("kg_recibidos") or r.get("kg") or 0) > 0
     ]
     return {
-        "kg": round(sum(float(r.get("kg") or 0) for r in pend), 2),
+        "kg": round(sum(float(r.get("kg_recibidos") or r.get("kg") or 0) for r in pend), 2),
         "n": len(pend),
         "detalle": pend,
     }
