@@ -70,9 +70,11 @@ def lista():
         rows = [r for r in rows if not r.get("recibido_pc")]
 
     # KPIs del flujo (sobre el conjunto YA filtrado, como el resto de contadores).
+    # Partición que SUMA al total: en tránsito + faltan pagar + pagadas = total.
     recibidas_pc = sum(1 for r in rows if r.get("recibido_pc"))
     pend_pago = sum(1 for r in rows if r.get("recibido_pc") and not r.get("pagada"))
     pagadas = sum(1 for r in rows if r.get("pagada"))
+    en_transito = sum(1 for r in rows if not r.get("recibido_pc"))
     kg_pend_pago = sum(
         float(r.get("kg_recibidos") or r.get("kg") or 0)
         for r in rows
@@ -144,6 +146,7 @@ def lista():
         pendientes=pendientes,
         importe_programa=importe_programa,
         recibidas_pc=recibidas_pc,
+        en_transito=en_transito,
         pend_pago=pend_pago,
         pagadas=pagadas,
         kg_pend_pago=kg_pend_pago,
