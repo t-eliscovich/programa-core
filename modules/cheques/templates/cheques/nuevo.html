@@ -142,6 +142,7 @@
                       {% endif %}
                     {% endfor %}
                   </select>
+                  <span class="text-[11px] text-slate-500 mt-0.5">Si no aplicás a ninguna factura abajo, queda como <strong>anticipo</strong> (saldo a favor).</span>
                 </label>
                 <label class="flex flex-col cheque-num-wrap">
                   <span class="text-xs text-slate-600 cheque-num-label">N° cheque <span class="text-red-500 cheque-num-req">*</span></span>
@@ -228,7 +229,9 @@
              class="w-full border rounded px-2 py-1 text-sm mb-2 hidden">
       <script>(function(){var c=document.getElementById("aprobar-diferencia"),m=document.getElementById("motivo-diferencia");if(c&&m){c.addEventListener("change",function(){m.classList.toggle("hidden",!c.checked);});}})();</script>
       <div class="flex items-baseline justify-between mb-2">
-        <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas</h3>
+        <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas
+          <button type="button" id="aplic-todas" class="ml-2 align-middle text-xs px-2 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/30">TODAS</button>
+        </h3>
         <div class="text-xs text-slate-500" id="aplic-summary">
           Total cheques: <strong id="aplic-imp">—</strong> ·
           Aplicado: <strong id="aplic-asignado">$ 0</strong> ·
@@ -1126,6 +1129,17 @@
       });
     });
   }
+  // TMT 2026-06-29 (dueña, paridad TODAS<10000>): botón que cancela TODAS las
+  // facturas abiertas (tilda todas las filas = aplica el saldo completo).
+  const btnTodas = document.getElementById('aplic-todas');
+  if (btnTodas) {
+    btnTodas.addEventListener('click', () => {
+      tbody.querySelectorAll('input.aplic-cancel').forEach(chk => {
+        if (!chk.checked) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
+      });
+      if (toggleAll) toggleAll.checked = true;
+    });
+  }
   if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
 
   // TMT 2026-05-27 dueña: banco emisor ahora es POR-CHEQUE. Cada bloque
@@ -1229,8 +1243,12 @@
       }
     }
     // Auto-tick es_anticipo cuando se elige 97 (paridad con el view).
-    if (esAnticipo97 && anticipoChk && !anticipoChk.checked) {
-      anticipoChk.checked = true;
+    // TMT 2026-06-29 (dueña): paridad CANCELA T/A/N — el anticipo PUEDE
+    // aplicarse a factura(s). Por eso al elegir 97 NO escondemos el panel de
+    // facturas: si aplica a factura(s) es cobro; si no aplica a ninguna, el
+    // backend lo deja como anticipo (saldo a favor, espejo NB=98).
+    if (esAnticipo97 && anticipoChk && anticipoChk.checked) {
+      anticipoChk.checked = false;
       anticipoChk.dispatchEvent(new Event('change'));
     }
   }

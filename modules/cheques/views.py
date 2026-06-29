@@ -622,9 +622,12 @@ def nuevo():
             for ch_in in cheques_in:
                 # TMT 2026-05-27 — banco por cheque (no_banco from ch_in)
                 _ch_no_banco = ch_in.get("no_banco") if ch_in.get("no_banco") is not None else no_banco
+                # TMT 2026-06-29 (dueña, paridad CANCELA): un cheque marcado
+                # anticipo SOLO genera el espejo (saldo a favor) si NO se aplica
+                # a facturas. Si la dueña aplicó a factura(s), es un cobro normal.
                 _ch_es_anticipo = (
                     ch_in.get("es_anticipo") or es_anticipo or (_ch_no_banco == 97)
-                )
+                ) and not aplicaciones_pre
                 ch = queries.crear(
                     fecha=fecha,
                     fechad=ch_in.get("fechad") or fechad,  # por cheque
