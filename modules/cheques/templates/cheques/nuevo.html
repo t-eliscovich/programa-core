@@ -387,7 +387,12 @@
   function poblarHasta() {
     const sel = document.getElementById('aplic-hasta');
     if (!sel) return;
-    if (sel.options.length === facturas.length + 1) return;
+    // TMT 2026-06-29 (fix): repoblar cuando cambia el cliente o la cantidad
+    // (antes solo miraba la cantidad → dos clientes con N facturas dejaban el
+    // dropdown con las del cliente anterior).
+    const sig = codigoActual + ':' + facturas.length;
+    if (sel.dataset.sig === sig) return;
+    sel.dataset.sig = sig;
     sel.innerHTML = '<option value="">—</option>';
     facturas.forEach(f => {
       const o = document.createElement('option');
@@ -419,7 +424,14 @@
     // Antes había un FIFO que distribuía automáticamente recorriendo todas
     // las facturas en orden cronológico — quitado a pedido explícito.
     const distribucion = {};  // id_factura → monto_a_aplicar
-    if (importeCheque > 0) {
+    // TMT 2026-06-29 (dueña, fix bug): si es ANTICIPO (algún banco=97), NO
+    // auto-preseleccionar la factura de match exacto — un anticipo de $X con
+    // una factura de saldo $X se auto-aplicaba en silencio y perdía el espejo
+    // (saldo a favor). En anticipo, default = NO aplicado; la dueña tildea /
+    // usa TODAS / HASTA si quiere aplicarlo.
+    const _hayAnticipo = [...document.querySelectorAll('.cheque-banco')]
+      .some(s => s.value === '97');
+    if (importeCheque > 0 && !_hayAnticipo) {
       const exact = facturas.find(f =>
         f.saldo > 0 && Math.abs(f.saldo - importeCheque) < 0.01,
       );
