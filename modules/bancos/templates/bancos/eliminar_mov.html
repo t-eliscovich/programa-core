@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_info, wizard_footer %}
+{% block title %}Eliminar movimiento{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('bancos.lista') }}" class="hover:underline">Bancos</a> /
+  <a href="{{ url_for('bancos.movimientos', no_banco=tx.no_banco) }}" class="hover:underline">{{ tx.banco_nombre }}</a> /
+  <strong>Eliminar movimiento</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  {% set ico %}<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>{% endset %}
+  {{ wizard_hero('rose', 'Eliminar movimiento cargado en PC',
+                 'Este movimiento se cargó en PC (no viene del dBase) y no tiene reverso automático. Eliminarlo lo saca del banco y recalcula los saldos. El dBase no se toca.',
+                 ico) }}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-5 shadow-sm">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-3 font-semibold">Movimiento a eliminar</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div><div class="text-xs text-slate-500">N° transacción</div><div class="font-mono font-semibold mt-0.5">#{{ tx.id_transaccion }}</div></div>
+      <div><div class="text-xs text-slate-500">Banco</div><div class="mt-0.5">{{ tx.banco_nombre }}</div></div>
+      <div><div class="text-xs text-slate-500">Importe</div><div class="font-mono font-semibold text-rose-700 mt-0.5">{{ tx.importe | money_es }}</div></div>
+      <div><div class="text-xs text-slate-500">Fecha</div><div class="font-mono mt-0.5">{{ tx.fecha | fecha_es }}</div></div>
+    </div>
+    <div class="mt-3 text-xs text-slate-600 dark:text-slate-400">
+      <span class="text-slate-500 uppercase tracking-wider font-semibold">Concepto:</span> {{ tx.concepto or '—' }}
+      <span class="ml-3 text-slate-500 uppercase tracking-wider font-semibold">Cargado por:</span> <span class="font-mono">{{ tx.usuario_crea }}</span>
+    </div>
+  </div>
+
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% set info %}
+      Esto va a ejecutar en una sola transacción:
+      <ul class="list-disc list-inside mt-1 text-[13px] space-y-0.5">
+        <li>DELETE del movimiento <strong>#{{ tx.id_transaccion }}</strong> en {{ tx.banco_nombre }}</li>
+        <li>Recalcular el saldo corrido del banco</li>
+      </ul>
+      Solo se permite para movimientos cargados en PC, sin conciliar, sin reverso propio y sin cheques enganchados.
+    {% endset %}
+    {{ wizard_info('rose', info) }}
+    {{ wizard_footer(url_for('bancos.movimientos', no_banco=tx.no_banco), 'Eliminar movimiento →', 'rose') }}
+  </form>
+</div>
+{% endblock %}

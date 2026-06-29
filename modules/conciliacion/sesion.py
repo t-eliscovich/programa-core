@@ -105,7 +105,8 @@ def _sesion_select_cols() -> str:
     """
     return """id, no_banco, usuario, abierta_en, cerrada_en, cerrada_por,
               extracto_hash, extracto_nombre, extracto_payload,
-              matches_hechos, pdf_path, saldo_banco_objetivo"""
+              matches_hechos, pdf_path, saldo_banco_objetivo,
+              saldo_banco_detectado"""
 
 
 def _sesion_select_cols_legacy() -> str:

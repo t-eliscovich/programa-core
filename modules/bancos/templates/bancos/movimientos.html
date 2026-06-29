@@ -346,6 +346,17 @@
                    title="Reversar este cheque emitido y deshacer su side effect">
                   ↺ reversar
                 </a>
+              {# TMT 2026-06-26: eliminar movimientos cargados en PC (no del
+                 dBase), sin conciliar. El route revalida todos los guards. #}
+              {% elif tiene_permiso('bancos.conciliar')
+                      and (m.usuario_crea or '') != ''
+                      and (m.usuario_crea or '')|lower not in ['dbf-import', 'asinfo-carga', 'asinfo-backfill']
+                      and not m.conciliacion_id %}
+                <a href="{{ url_for('bancos.eliminar_movimiento_pc', no_banco=m.no_banco, id_transaccion=m.id_transaccion) }}"
+                   class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                   title="Eliminar este movimiento cargado en PC (no viene del dBase)">
+                  🗑 eliminar
+                </a>
               {% endif %}
             </td>
           </tr>

@@ -248,12 +248,21 @@ def banco_post_procesar():
     # TMT 2026-06-02 dueña: 'lo deberia implementar el usuario no? porque
     # por el excel no sabemos cual es el ultimo valor'. Prioridad:
     #   1. sesion.saldo_banco_objetivo (manual, escrito por la dueña).
-    #   2. Auto-detect = max(fecha).saldo del payload (fallback frágil).
+    #   2. sesion.saldo_banco_detectado (saldo real del extracto, capturado al
+    #      subir, robusto al dedup). TMT 2026-06-26.
+    #   3. Auto-detect = max(fecha).saldo del payload (fallback frágil).
     saldo_manual = sesion.get("saldo_banco_objetivo")
+    saldo_detectado = sesion.get("saldo_banco_detectado")
     if saldo_manual is not None:
         try:
             balance["saldo_banco_real"] = float(saldo_manual)
             balance["saldo_banco_real_origen"] = "manual"
+        except (TypeError, ValueError):
+            balance["saldo_banco_real"] = None
+    elif saldo_detectado is not None:
+        try:
+            balance["saldo_banco_real"] = float(saldo_detectado)
+            balance["saldo_banco_real_origen"] = "detectado"
         except (TypeError, ValueError):
             balance["saldo_banco_real"] = None
     else:
@@ -404,6 +413,27 @@ def banco_crear_sesion():
         extracto_hash=None,  # ya no se usa para dedupe
         extracto_nombre=f.filename,
     )
+
+    # TMT 2026-06-26 (dueña: el saldo objetivo tomaba un valor del medio del
+    # día / de un día viejo). Capturamos el saldo REAL del extracto = saldo de
+    # la fila MÁS NUEVA, calculado del archivo COMPLETO (antes del dedup, que
+    # saca de la sesión los movs ya conocidos y por eso perdía el 26/06). Se
+    # guarda en la sesión y el auto-detect lo prioriza. El extracto Pichincha
+    # viene newest-first, así que entre varios del día máximo tomamos el 1ro.
+    try:
+        _con_saldo = [m for m in movs
+                      if getattr(m, "fecha", None) and getattr(m, "saldo", None) is not None]
+        if _con_saldo:
+            _max_f = max(m.fecha for m in _con_saldo)
+            _detectado = next((float(m.saldo) for m in _con_saldo if m.fecha == _max_f), None)
+            if _detectado is not None:
+                _db.execute(
+                    "UPDATE scintela.banco_conciliacion_sesion "
+                    "SET saldo_banco_detectado = %s WHERE id = %s",
+                    (_detectado, sesion_id),
+                )
+    except Exception as e:
+        _LOG.warning("no pude detectar saldo del extracto: %s", e)
     if n_added and n_skipped:
         msg = f"Sesión #{sesion_id}: agregadas {n_added} filas nuevas, omitidas {n_skipped} duplicadas."
         cat = "ok"
@@ -1933,9 +1963,16 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     # prioriza el valor que la dueña escribe. Espejamos esa prioridad: 1ro el
     # manual de la sesión, 2do el auto-detect.
     saldo_manual = sesion.get("saldo_banco_objetivo")
+    saldo_detectado = sesion.get("saldo_banco_detectado")
     if saldo_manual is not None:
         try:
             saldo_banco_real = float(saldo_manual)
+        except (TypeError, ValueError):
+            saldo_banco_real = None
+    # 2do: saldo real del extracto capturado al subir (robusto al dedup).
+    if saldo_banco_real is None and saldo_detectado is not None:
+        try:
+            saldo_banco_real = float(saldo_detectado)
         except (TypeError, ValueError):
             saldo_banco_real = None
     if saldo_banco_real is None:

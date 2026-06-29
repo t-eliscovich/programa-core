@@ -1041,6 +1041,112 @@ def recompute_saldos():
     return redirect(url_for("bancos.lista"))
 
 
+# Usuarios "del sync" — sus filas vienen del dBase y NUNCA se borran acá.
+_USUARIOS_SYNC = ("dbf-import", "asinfo-carga", "asinfo-backfill")
+
+
+@bancos_bp.route("/bancos/<int:no_banco>/tx/<int:id_transaccion>/eliminar",
+                 methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
+    """Elimina un movimiento de banco CARGADO EN PC que no tiene reverso
+    automático (sin mov_doble) ni cheques enganchados.
+
+    TMT 2026-06-26 (dueña): un depósito que alex cargó a mano en INTERNACI
+    ($500, "1 ch.TOM") que el dBase no tiene, y la pantalla no tenía cómo
+    sacarlo. Guards (todos deben cumplirse): solo movs PC (usuario_crea no es
+    del sync), sin conciliar, sin mov_doble activo y sin cheques enganchados.
+    El dBase no se toca; si el mov viene del dBase se corrige allá y se
+    re-sincroniza.
+    """
+    import db as _db
+    import bank_helpers
+
+    tx = _db.fetch_one(
+        """
+        SELECT t.id_transaccion, t.no_banco, t.fecha, t.documento, t.importe,
+               t.concepto, t.usuario_crea,
+               COALESCE(b.nombre, '') AS banco_nombre
+          FROM scintela.transacciones_bancarias t
+          LEFT JOIN scintela.banco b ON b.no_banco = t.no_banco
+         WHERE t.id_transaccion = %s AND t.no_banco = %s
+        """,
+        (id_transaccion, no_banco),
+    )
+    if not tx:
+        abort(404)
+
+    usuario_crea = (tx.get("usuario_crea") or "").strip().lower()
+    if (not usuario_crea) or usuario_crea in _USUARIOS_SYNC:
+        flash("Este movimiento viene del dBase (sync) — no se borra desde acá. "
+              "Corregilo en el dBase y re-sincronizá.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    conc = _db.fetch_one(
+        "SELECT 1 FROM scintela.banco_conciliacion_match "
+        "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+        (id_transaccion,),
+    )
+    if conc:
+        flash("Este movimiento está conciliado — desconciliá primero.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    md = _db.fetch_one(
+        "SELECT id_mov_doble FROM scintela.mov_doble "
+        "WHERE destino_table = 'transacciones_bancarias' AND destino_id = %s "
+        "  AND estado = 'activo' LIMIT 1",
+        (id_transaccion,),
+    )
+    if md:
+        flash("Este movimiento tiene reverso propio (mov_doble) — reversalo "
+              "desde /historial, no se borra a mano.", "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    cxt = _db.fetch_one(
+        "SELECT 1 FROM scintela.chequextransaccion WHERE id_transaccion = %s LIMIT 1",
+        (id_transaccion,),
+    )
+    if cxt:
+        flash("Este movimiento tiene cheques enganchados — reversá el depósito "
+              "por la pantalla de Cheques para que el cheque vuelva a cartera.",
+              "warn")
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    if request.method == "POST":
+        try:
+            with _db.tx() as conn:
+                _db.execute(
+                    "DELETE FROM scintela.transacciones_bancarias "
+                    "WHERE id_transaccion = %s AND no_banco = %s",
+                    (id_transaccion, no_banco), conn=conn,
+                )
+                # Recompute del running saldo (ancla = 2da fila más vieja, igual
+                # que /bancos/recompute-saldos). Si queda 0/1 fila, no hay walk.
+                anc = _db.fetch_one(
+                    "SELECT id_transaccion AS ancla "
+                    "  FROM scintela.transacciones_bancarias "
+                    " WHERE no_banco = %s "
+                    " ORDER BY fecha ASC, id_transaccion ASC OFFSET 1 LIMIT 1",
+                    (no_banco,), conn=conn,
+                )
+                if anc and anc.get("ancla"):
+                    bank_helpers.recompute_saldos_desde(
+                        conn, no_banco=no_banco, no_cta=None,
+                        ancla_id=int(anc["ancla"]),
+                    )
+            flash(
+                f"Movimiento #{id_transaccion} eliminado "
+                f"({tx.get('concepto') or ''} {float(tx.get('importe') or 0):,.2f}).",
+                "ok",
+            )
+        except Exception as e:
+            flash_exc("No pude eliminar el movimiento", e)
+        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+
+    return render_template("bancos/eliminar_mov.html", tx=tx)
+
+
 # ---------------------------------------------------------------------------
 # Nuevo movimiento simple (DE / NC / ND) — TMT 2026-05-19 (pedido dueña).
 # Una vista genérica con un parámetro `doc` que decide el tipo. Reutiliza
