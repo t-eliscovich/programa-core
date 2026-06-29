@@ -21,9 +21,7 @@ Sin auth. No registra en bitácora (son paths de skip). Devuelve JSON.
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import os
 import time
 from datetime import datetime, timezone
 
@@ -34,7 +32,6 @@ from modules._lib import formulas_db, metabase_client
 
 _LOG = logging.getLogger("programa_core.healthz")
 _UTC = timezone.utc  # noqa: UP017
-_BOOT_TS = datetime.now(_UTC).isoformat()  # import del módulo ~ arranque del proceso
 
 healthz_bp = Blueprint("healthz", __name__, url_prefix="/healthz")
 
@@ -50,27 +47,6 @@ def liveness():
     return jsonify(
         {
             "status": "ok",
-            "ts": datetime.now(_UTC).isoformat(),
-        }
-    ), 200
-
-
-@healthz_bp.route("/diag", methods=["GET"])
-def diag():
-    """Diagnóstico de estabilidad de sesión (TMT 2026-06-29).
-
-    NO expone la SECRET_KEY — solo una huella (sha256 truncada). Si `secret_fp`
-    cambia entre llamadas = la clave rotó (cookies de login invalidadas). Si
-    `pid`/`boot` cambian = el proceso reinició. Sin auth, sin DB.
-    """
-    from flask import current_app
-    sk = current_app.config.get("SECRET_KEY") or ""
-    fp = hashlib.sha256(("fp:" + str(sk)).encode("utf-8")).hexdigest()[:12]
-    return jsonify(
-        {
-            "secret_fp": fp,
-            "pid": os.getpid(),
-            "boot": _BOOT_TS,
             "ts": datetime.now(_UTC).isoformat(),
         }
     ), 200
