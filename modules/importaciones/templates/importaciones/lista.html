@@ -5,27 +5,77 @@
 {% block head_extra %}
 <style>
   .imp { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+
+  /* ── Encabezado ─────────────────────────────────────────────── */
+  .imp .page-title { font-size: 22px; font-weight: 800; color: rgb(15 23 42); letter-spacing: -0.01em; }
+  .dark .imp .page-title { color: rgb(241 245 249); }
+
+  /* ── KPI cards con acento de color ──────────────────────────── */
+  .imp .kpi { background: #fff; border: 1px solid rgb(226 232 240); border-left: 4px solid rgb(203 213 225);
+              border-radius: 12px; padding: 13px 16px; transition: box-shadow .15s ease, transform .15s ease; }
+  .imp .kpi:hover { box-shadow: 0 6px 18px -8px rgb(15 23 42 / .18); transform: translateY(-1px); }
+  .imp .kpi-label { color: rgb(100 116 139); font-size: 10.5px; text-transform: uppercase;
+                    letter-spacing: .06em; font-weight: 700; }
+  .imp .kpi-val { font-size: 25px; font-weight: 800; margin-top: 2px; color: rgb(15 23 42); line-height: 1.05; }
+  .imp .kpi--total { border-left-color: rgb(100 116 139); }
+  .imp .kpi--recib { border-left-color: rgb(16 185 129); }
+  .imp .kpi--recib .kpi-val { color: rgb(5 150 105); }
+  .imp .kpi--falta { border-left-color: rgb(245 158 11); background: rgb(255 251 235); }
+  .imp .kpi--falta .kpi-val { color: rgb(180 83 9); }
+  .imp .kpi--pag { border-left-color: rgb(2 132 199); }
+  .imp .kpi--pag .kpi-val { color: rgb(2 132 199); }
+  .dark .imp .kpi { background: rgb(15 23 42); border-color: rgb(51 65 85); }
+  .dark .imp .kpi-val { color: rgb(241 245 249); }
+
+  /* ── Pestañas ───────────────────────────────────────────────── */
+  .imp .tab { padding: 7px 16px; border-radius: 9999px; font-size: 13px; font-weight: 600;
+              border: 1px solid rgb(226 232 240); color: rgb(71 85 105); background: #fff;
+              transition: all .12s ease; text-decoration: none; display: inline-block; }
+  .imp .tab:hover { border-color: rgb(148 163 184); background: rgb(248 250 252); }
+  .imp .tab--active { background: rgb(15 23 42); color: #fff; border-color: rgb(15 23 42); }
+
+  /* ── Tabla ──────────────────────────────────────────────────── */
+  .imp .tabla-card { border: 1px solid rgb(226 232 240); border-radius: 14px; overflow: hidden;
+                     background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / .05); }
+  .dark .imp .tabla-card { background: rgb(15 23 42); border-color: rgb(51 65 85); }
   .imp table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  .imp th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
-            font-weight: 600; font-size: 11px; text-transform: uppercase;
-            color: rgb(71 85 105); letter-spacing: 0.03em;
-            border-bottom: 1px solid rgb(203 213 225); }
-  .imp td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); vertical-align: top; }
+  .imp th { background: rgb(248 250 252); text-align: left; padding: 10px 12px; font-weight: 700;
+            font-size: 10px; text-transform: uppercase; color: rgb(100 116 139); letter-spacing: .05em;
+            border-bottom: 1px solid rgb(226 232 240); }
+  .dark .imp th { background: rgb(30 41 59); color: rgb(148 163 184); border-color: rgb(51 65 85); }
+  .imp tbody tr { transition: background .1s ease; }
+  .imp tbody tr:nth-child(even) { background: rgb(249 250 251); }
+  .imp tbody tr:hover { background: rgb(239 246 255); }
+  .dark .imp tbody tr:nth-child(even) { background: rgb(30 41 59 / .35); }
+  .dark .imp tbody tr:hover { background: rgb(30 58 95 / .5); }
+  .imp td { padding: 9px 12px; border-bottom: 1px solid rgb(241 245 249); vertical-align: top; }
+  .dark .imp td { border-color: rgb(51 65 85 / .6); color: rgb(226 232 240); }
   .imp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
   .imp td.muted { color: rgb(148 163 184); }
-  .imp .kpi { background: white; border: 1px solid rgb(226 232 240); border-radius: 8px; padding: 12px 16px; }
-  .imp .kpi-label { color: rgb(100 116 139); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .imp .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+
+  /* ── Chips / estados ────────────────────────────────────────── */
   .imp .code { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px;
                font-weight: 700; font-family: ui-monospace, Menlo, monospace;
-               background: rgb(238 242 255); color: rgb(55 48 163); }
-  .imp .nota { color: rgb(100 116 139); font-size: 11px; max-width: 320px; }
-  .imp .ok { color: rgb(22 101 52); font-weight: 600; }
-  .imp .no { color: rgb(180 83 9); font-weight: 600; }
-  .imp .recep { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; }
-  .imp .recep-ok { background: rgb(220 252 231); color: rgb(22 101 52); }
+               background: rgb(238 242 255); color: rgb(67 56 202); }
+  .imp .nota { color: rgb(100 116 139); font-size: 11px; max-width: 300px; }
+  .imp .ok { color: rgb(5 150 105); font-weight: 700; }
+  .imp .no { color: rgb(217 119 6); font-weight: 700; }
+  .imp .recep { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px;
+                border-radius: 9999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+  .imp .recep-ok { background: rgb(209 250 229); color: rgb(4 120 87); }
   .imp .recep-no { background: rgb(254 243 199); color: rgb(146 64 14); }
   .imp .recep-compra { background: rgb(219 234 254); color: rgb(30 64 175); }
+
+  /* ── Celda Recibir · Pagar ──────────────────────────────────── */
+  .imp .acc-cell .recep { margin-bottom: 2px; }
+  .imp .acc-cell form { margin-top: 5px; }
+  .imp .acc-cell input[type=text] { border: 1px solid rgb(203 213 225); border-radius: 7px;
+                padding: 4px 8px; font-size: 11px; text-align: right; background: #fff;
+                transition: border-color .1s, box-shadow .1s; }
+  .imp .acc-cell input[type=text]:focus { outline: none; border-color: rgb(56 189 248);
+                box-shadow: 0 0 0 3px rgb(125 211 252 / .4); }
+  .imp .acc-cell button { border-radius: 7px; font-weight: 600; transition: background .12s; }
+  .dark .imp .acc-cell input[type=text] { background: rgb(15 23 42); border-color: rgb(71 85 105); color: #fff; }
 </style>
 {% endblock %}
 
@@ -33,7 +83,7 @@
 <div class="page-shell page-shell--full imp">
 
   <div class="mb-4 no-print">
-    <h1 class="text-xl font-semibold">Importaciones</h1>
+    <h1 class="page-title">Importaciones</h1>
     <p class="text-xs text-slate-500">
       Cruzadas con la compra/anticipo del programa por el código de la <em>Nota</em>
       (ej. <code>AC 36</code> = proveedor AC, concepto 36). Dólares del programa; el total de Asinfo es referencial.
@@ -51,16 +101,16 @@
     {% set _tabs = [('', 'Todas'), ('en_transito', 'En tránsito'), ('pendiente', 'Faltan pagar'), ('pagada', 'Pagadas')] %}
     {% for val, lbl in _tabs %}
       <a href="{{ url_for('importaciones.lista', pago=val, q=q, estado=estado, recep=recep) }}"
-         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if pago == val else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">{{ lbl }}</a>
+         class="tab {{ 'tab--active' if pago == val else '' }}">{{ lbl }}</a>
     {% endfor %}
   </div>
 
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-    <div class="kpi"><div class="kpi-label">Importaciones</div><div class="kpi-val">{{ total }}</div></div>
-    <div class="kpi"><div class="kpi-label">Recibidas (en stock)</div><div class="kpi-val ok">{{ recibidas_pc }}</div></div>
-    <div class="kpi"><div class="kpi-label">Pendientes de pago</div><div class="kpi-val no">{{ pend_pago }}</div>
+    <div class="kpi kpi--total"><div class="kpi-label">Importaciones</div><div class="kpi-val">{{ total }}</div></div>
+    <div class="kpi kpi--recib"><div class="kpi-label">Recibidas (en stock)</div><div class="kpi-val ok">{{ recibidas_pc }}</div></div>
+    <div class="kpi kpi--falta"><div class="kpi-label">Pendientes de pago</div><div class="kpi-val no">{{ pend_pago }}</div>
       <div class="text-[11px] text-slate-500 mt-0.5">{{ kg_pend_pago | num_es(0) }} kg · deuda $ {{ deuda_pend | num_es(0) }}</div></div>
-    <div class="kpi"><div class="kpi-label">Pagadas</div><div class="kpi-val ok">{{ pagadas }}</div></div>
+    <div class="kpi kpi--pag"><div class="kpi-label">Pagadas</div><div class="kpi-val ok">{{ pagadas }}</div></div>
   </div>
 
   <form method="get" class="no-print flex flex-wrap items-end gap-3 mb-4 p-4 bg-white border border-slate-200 rounded">
@@ -101,7 +151,7 @@
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
   </form>
 
-  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+  <div class="tabla-card">
     <table class="sortable">
       <thead>
         <tr>
@@ -147,7 +197,7 @@
                 <span class="text-slate-300">—</span>
               {% endif %}
             </td>
-            <td>
+            <td class="acc-cell">
               {% if r.codigo %}
                 {% set ant = r.anticipo_disponible or 0 %}
                 {% if r.pagada %}
