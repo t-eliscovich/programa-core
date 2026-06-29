@@ -92,3 +92,34 @@ def test_kilos_pendientes_usa_recibido_no_pagado():
         res = service.kilos_pendientes_importaciones()
     assert res["n"] == 1
     assert res["kg"] == 800.0
+
+
+def test_costo_estimado_por_hilado_y_preguntar():
+    """El prefill usa el estimado por tipo de hilado (Asinfo); si faltan kg sin
+    histórico, marca necesita_costo_manual (que pregunte)."""
+    imp = [_imp()]
+    ch = {"IM-1": {"costo": 71234.50, "kg": 24494.0, "usd_kg": 2.9082,
+                   "kg_sin_precio": 0.0, "ventana": "3m"}}
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=imp), \
+         patch.object(service.asinfo_service, "importaciones_kg", return_value={"IM-1": 24494.0}), \
+         patch.object(service.asinfo_service, "importaciones_costo_estimado", return_value=ch), \
+         patch.object(service.db, "fetch_all", return_value=[]), \
+         patch.object(service, "promedios_usd_por_kg", return_value={}), \
+         patch.object(pago, "estados_por_refs", return_value={}):
+        rows = service.importaciones_con_cruce()
+    r = rows[0]
+    assert r["costo_estimado_sugerido"] == 71234.50
+    assert r["costo_ventana"] == "3m"
+    assert r["necesita_costo_manual"] is False
+
+    # Caso sin histórico 3/6m → kg_sin_precio>0 → preguntar
+    ch2 = {"IM-1": {"costo": 0.0, "kg": 24494.0, "usd_kg": None,
+                    "kg_sin_precio": 24494.0, "ventana": "parcial"}}
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=imp), \
+         patch.object(service.asinfo_service, "importaciones_kg", return_value={"IM-1": 24494.0}), \
+         patch.object(service.asinfo_service, "importaciones_costo_estimado", return_value=ch2), \
+         patch.object(service.db, "fetch_all", return_value=[]), \
+         patch.object(service, "promedios_usd_por_kg", return_value={}), \
+         patch.object(pago, "estados_por_refs", return_value={}):
+        rows = service.importaciones_con_cruce()
+    assert rows[0]["necesita_costo_manual"] is True

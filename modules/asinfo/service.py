@@ -873,6 +873,7 @@ _IMPORT_CACHE: dict = {}
 _IMPORT_KG_TTL_SECS = 600
 _IMPORT_KG_CACHE: dict = {}
 _IMPORT_KG_DETALLE: dict = {}  # {"tabla": ..., "col": ...} descubierto
+_IMPORT_COSTO_HILADO_CACHE: dict = {}  # {im_numero: {costo,kg,usd_kg}} (promedio por tipo de hilado)
 
 
 def _descubrir_detalle_fp() -> dict | None:
@@ -932,6 +933,103 @@ def importaciones_kg(limite: int = 400) -> dict[str, float]:
         except (TypeError, ValueError):
             continue
     _IMPORT_KG_CACHE["all"] = (now, out)
+    return out
+
+
+def importaciones_costo_estimado(limite: int = 400) -> dict[str, dict]:
+    """{im_numero: {"costo","kg","usd_kg","kg_sin_precio","ventana"}} — costo
+    ESTIMADO de cada importación armado por TIPO DE HILADO.
+
+    Para cada importación, costo estimado = Σ(promedio US$/kg del producto × kg
+    de ese producto en la importación). El promedio por producto (= tipo de
+    hilado) usa una ventana temporal (decisión dueña 2026-06-29):
+      1. Primero los últimos 3 meses.
+      2. Si ese producto no tuvo importaciones en 3 meses → últimos 6 meses.
+      3. Si tampoco hay en 6 meses → ese tipo de hilado queda SIN precio
+         (kg_sin_precio) y la UI debe pedir el costo a mano (no se inventa).
+
+    Campos por importación:
+        costo         — Σ(precio_ventana × kg) sólo de los hilados CON histórico
+        kg            — kg totales de la importación
+        usd_kg        — costo / kg_con_precio
+        kg_sin_precio — kg cuyos hilados no tienen histórico 3m/6m (→ preguntar)
+        ventana       — '3m' si todo salió de 3 meses, '6m' si algún hilado
+                        necesitó la ventana de 6 meses, 'parcial' si falta precio
+
+    Es un ESTIMADO editable; los dólares de Asinfo no son la fuente contable.
+    Fail-soft: {} si Metabase no responde o no hay detalle.
+    """
+    import time as _time
+    now = _time.time()
+    cached = _IMPORT_COSTO_HILADO_CACHE.get("all")
+    if cached and (now - cached[0]) < _IMPORT_KG_TTL_SECS:
+        return cached[1]
+    det = _descubrir_detalle_fp()
+    if not det:
+        return {}
+    qty = det["col"]
+    tabla = det["tabla"]
+    sql = f"""
+        WITH px AS (
+            SELECT d.id_producto,
+                   SUM(CASE WHEN fp.fecha >= DATEADD(month, -3, GETDATE())
+                            THEN d.precio * d.{qty} END)
+                     / NULLIF(SUM(CASE WHEN fp.fecha >= DATEADD(month, -3, GETDATE())
+                            THEN d.{qty} END), 0) AS p3,
+                   SUM(CASE WHEN fp.fecha >= DATEADD(month, -6, GETDATE())
+                            THEN d.precio * d.{qty} END)
+                     / NULLIF(SUM(CASE WHEN fp.fecha >= DATEADD(month, -6, GETDATE())
+                            THEN d.{qty} END), 0) AS p6
+              FROM {tabla} d
+              JOIN factura_proveedor fp ON fp.id_factura_proveedor = d.id_factura_proveedor
+             WHERE d.{qty} > 0 AND d.precio > 0
+             GROUP BY d.id_producto
+        )
+        SELECT TOP {int(limite)}
+               fp.numero AS im_numero,
+               SUM(COALESCE(px.p3, px.p6) * d.{qty})                          AS costo,
+               SUM(d.{qty})                                                   AS kg,
+               SUM(CASE WHEN COALESCE(px.p3, px.p6) IS NULL THEN d.{qty} ELSE 0 END) AS kg_sin_precio,
+               SUM(CASE WHEN px.p3 IS NULL AND px.p6 IS NOT NULL THEN d.{qty} ELSE 0 END) AS kg_solo_6m
+          FROM {tabla} d
+          JOIN factura_proveedor_importacion fpi ON fpi.id_factura_proveedor = d.id_factura_proveedor
+          JOIN factura_proveedor fp ON fp.id_factura_proveedor = d.id_factura_proveedor
+          LEFT JOIN px ON px.id_producto = d.id_producto
+         WHERE d.{qty} > 0
+         GROUP BY fp.numero, fpi.id_factura_proveedor
+         ORDER BY fpi.id_factura_proveedor DESC
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[str, dict] = {}
+    for r in rows or []:
+        try:
+            im = str(r.get("im_numero") or "").strip()
+            if not im:
+                continue
+            costo = float(r.get("costo") or 0)
+            kg = float(r.get("kg") or 0)
+            kg_sin = float(r.get("kg_sin_precio") or 0)
+            kg_6m = float(r.get("kg_solo_6m") or 0)
+            kg_con = max(0.0, kg - kg_sin)
+            if kg_sin > 0:
+                ventana = "parcial"
+            elif kg_6m > 0:
+                ventana = "6m"
+            else:
+                ventana = "3m"
+            out[im] = {
+                "costo": round(costo, 2),
+                "kg": round(kg, 2),
+                "usd_kg": round(costo / kg_con, 4) if kg_con > 0 else None,
+                "kg_sin_precio": round(kg_sin, 2),
+                "ventana": ventana,
+            }
+        except (TypeError, ValueError):
+            continue
+    _IMPORT_COSTO_HILADO_CACHE["all"] = (now, out)
     return out
 
 

@@ -201,7 +201,11 @@
                              title="costo estimado{% if r.promedio_usd_kg %} (promedio $ {{ r.promedio_usd_kg }}/kg){% endif %}">
                       <button class="text-[11px] px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700">Recibir</button>
                     </div>
-                    {% if r.promedio_usd_kg %}<div class="text-[10px] text-slate-400">prom. $ {{ r.promedio_usd_kg }}/kg{% if ant %} · anticipo $ {{ ant | num_es(0) }}{% endif %}</div>{% endif %}
+                    {% if r.necesita_costo_manual %}
+                      <div class="text-[10px] text-amber-700">⚠ sin histórico 3/6m{% if r.kg_sin_precio_hist %} ({{ r.kg_sin_precio_hist | num_es(0) }} kg){% endif %} — ingresá el costo a mano</div>
+                    {% elif r.promedio_usd_kg %}
+                      <div class="text-[10px] text-slate-400">prom. $ {{ r.promedio_usd_kg }}/kg{% if r.costo_ventana %} · {{ r.costo_ventana }}{% endif %}{% if ant %} · anticipo $ {{ ant | num_es(0) }}{% endif %}</div>
+                    {% endif %}
                   </form>
                   {% endif %}
                 {% endif %}

@@ -176,8 +176,15 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         kg_map = asinfo_service.importaciones_kg(limite=limite)
     except Exception:  # noqa: BLE001
         kg_map = {}
+    # Costo estimado por TIPO DE HILADO (Σ promedio US$/kg del producto × kg).
+    try:
+        costo_hilado = asinfo_service.importaciones_costo_estimado(limite=limite)
+    except Exception:  # noqa: BLE001
+        costo_hilado = {}
     for r in rows:
-        r["kg"] = kg_map.get(str(r.get("im_numero") or "").strip())
+        im = str(r.get("im_numero") or "").strip()
+        r["kg"] = kg_map.get(im)
+        r["_costo_hilado"] = costo_hilado.get(im)
 
     refs: set[tuple[str, int]] = set()
     for r in rows:
@@ -248,16 +255,35 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         r["fecha_recepcion_pc"] = None
         r["fecha_pago"] = None
         r["anticipo_aplicado"] = 0.0
+        r["necesita_costo_manual"] = False
+        r["costo_ventana"] = None
+        r["kg_sin_precio_hist"] = 0.0
         # Anticipo USD disponible para netear (si la importación tiene uno cruzado).
         r["anticipo_disponible"] = (
             float(r["anticipo"]["importe_total"]) if r.get("anticipo") else 0.0
         )
-        # Sugerencia de costo estimado = promedio US$/kg del prov × kg de Asinfo.
-        prom = promedios.get((r.get("prov") or "").upper())
-        r["promedio_usd_kg"] = prom
-        r["costo_estimado_sugerido"] = (
-            round(prom * float(r["kg"]), 2) if prom and r.get("kg") else None
-        )
+        # Sugerencia de costo estimado = Σ(promedio US$/kg por tipo de hilado × kg
+        # de ese hilado en la importación). Fuente: detalle Asinfo. Si no hay
+        # estimado por hilado, cae al promedio del proveedor como respaldo.
+        ch = r.get("_costo_hilado")
+        r["costo_ventana"] = None
+        r["kg_sin_precio_hist"] = 0.0
+        if ch and ch.get("costo"):
+            r["costo_estimado_sugerido"] = round(float(ch["costo"]), 2)
+            r["promedio_usd_kg"] = ch.get("usd_kg")
+            r["costo_ventana"] = ch.get("ventana")
+            r["kg_sin_precio_hist"] = float(ch.get("kg_sin_precio") or 0)
+            # "que pregunte": si parte de los kg no tienen histórico 3m/6m,
+            # marcamos que falta ingresar el costo a mano para esos hilados.
+            r["necesita_costo_manual"] = (r["kg_sin_precio_hist"] or 0) > 0
+        else:
+            prom = promedios.get((r.get("prov") or "").upper())
+            r["promedio_usd_kg"] = prom
+            r["costo_estimado_sugerido"] = (
+                round(prom * float(r["kg"]), 2) if prom and r.get("kg") else None
+            )
+            # Sin estimado por hilado ni promedio de proveedor → preguntar.
+            r["necesita_costo_manual"] = r["costo_estimado_sugerido"] is None
         if not (r.get("prov") and r.get("numero") is not None):
             continue
         st = estados.get(((r["prov"] or "").upper(), int(r["numero"])))
