@@ -539,6 +539,12 @@
                           window.location.href = v.slice(7);
                           return;
                         }
+                        // TMT 2026-06-29 (dueña): depositar (→B) crea un mov de
+                        // banco — pedimos 1 confirmación antes de mandarlo.
+                        if (v === 'B' && !confirm('¿Depositar este cheque en Pichincha con fecha de hoy?')) {
+                          sel.value = '';
+                          return;
+                        }
                         sel.form.submit();
                       })(this)"
                       class="font-mono text-xs border border-slate-300 rounded px-0.5 py-0 bg-white hover:bg-slate-50 cursor-pointer w-10"

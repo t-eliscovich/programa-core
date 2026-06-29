@@ -1595,10 +1595,14 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # cheque como devuelto directo sin pasar por deposito + reverso.
     "Z": [
         {
+            # TMT 2026-06-29 (dueña): el →B del dropdown debe DEPOSITAR el cheque
+            # directo (Pichincha, hoy) con 1 confirmación, no mandar al wizard de
+            # lote con 0 seleccionados (parecía que "no dejaba cambiar el estado").
+            # El botón "Depositar lote" sigue para depósitos en lote con fecha.
             "stat_destino": "B",
-            "label": "Depositar (al banco)",
-            "kind": "WIZARD",
-            "endpoint": "cheques.depositar_lote",
+            "label": "Depositar en Pichincha (hoy)",
+            "kind": "POST",
+            "endpoint": "cheques.transicionar",
         },
         {
             "stat_destino": "P",
