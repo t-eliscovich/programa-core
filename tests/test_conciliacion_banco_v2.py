@@ -461,3 +461,21 @@ def test_cargar_movs_acepta_lista_o_string_json():
 
 def test_cargar_movs_json_invalido_devuelve_vacio():
     assert _sesion.cargar_movs({"extracto_payload": "not valid json {"}) == []
+
+
+def test_historico_iva_comision_va_a_impuestos():
+    """TMT 2026-06-29 (dueña: 'IVA sigue apareciendo en banco'): los históricos
+    ahora se categorizan; comisiones/impuestos van al tab Impuestos, no a Banco."""
+    from modules.conciliacion.sesion import _cat_hist, _es_comision
+
+    class _M:
+        def __init__(self, concepto, tipo):
+            self.concepto = concepto
+            self.tipo = tipo
+
+    for c in ("REV IVA+COMIS B10 # 2 16062026", "IVA CAUSADO SERVICIO",
+              "COST CHEQUE DEVUELTO"):
+        for t in ("C", "D"):  # crédito Y débito
+            assert _es_comision(_cat_hist(_M(c, t))), f"{c}/{t} debería ser COMISION"
+    # un cobro normal NO debe ir a impuestos
+    assert not _es_comision(_cat_hist(_M("TRANSFERENCIA DIRECTA DE JUAN PEREZ", "C")))

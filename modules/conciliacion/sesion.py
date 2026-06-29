@@ -526,6 +526,21 @@ def _es_comision(cat) -> bool:
     return (getattr(cat, "grupo", "") or "").upper() == "COMISION"
 
 
+
+
+def _cat_hist(mov):
+    """Categoriza un movimiento histórico (mov-like) con la heurística regex.
+    TMT 2026-06-29 (dueña: 'IVA sigue apareciendo en banco'): los históricos
+    iban TODOS a manual_banco con cat=None — nunca se categorizaban, así que
+    comisiones/impuestos históricos nunca llegaban al tab Impuestos.
+    """
+    try:
+        from modules.conciliacion.categorizar import categorizar
+        return categorizar(getattr(mov, "concepto", "") or "", getattr(mov, "tipo", "") or "")
+    except Exception:
+        return None
+
+
 def bucketizar(res: ConciliacionBanco) -> dict:
     """Toma el resultado del matcher y lo divide en 3 buckets para los 3 tabs.
 
@@ -746,11 +761,14 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
     historicos = _cargar_historicos_pendientes(no_banco)
     if not movs:
         # Sin extracto en sesión, pero puede haber históricos para conciliar.
-        manual_banco_hist = [
-            {"mov": _hist_to_mov_like(h), "cat": None, "idx": -1,
-             "es_historico": True, "id_historico": int(h["id"])}
-            for h in historicos
-        ]
+        manual_banco_hist = []
+        impuestos_hist = []
+        for h in historicos:
+            _mv = _hist_to_mov_like(h)
+            _cat = _cat_hist(_mv)
+            _item = {"mov": _mv, "cat": _cat, "idx": -1,
+                     "es_historico": True, "id_historico": int(h["id"])}
+            (impuestos_hist if _es_comision(_cat) else manual_banco_hist).append(_item)
         # TMT 2026-05-29 dueña: 'sin movimientos del programa' — bug.
         # Cuando se abre sesión sin extracto, manual_programa quedaba
         # vacío. Fix: cargar BANCSIS pendientes con el MISMO filtro que
@@ -763,7 +781,7 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
         ret = {
             "manual_banco": manual_banco_hist,
             "manual_programa": manual_programa,
-            "impuestos": [], "transferencias": [], "sugerencias": [],
+            "impuestos": impuestos_hist, "transferencias": [], "sugerencias": [],
             "matcher_extracto_desde": None, "matcher_extracto_hasta": None,
         }
         _cruzar_historicos_por_doc(ret)  # TMT 2026-06-23: doc-match del backlog histórico
@@ -783,11 +801,14 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
     # (no solo la ventana del matcher). Ver _cargar_programa_pendiente.
     buckets["manual_programa"] = _cargar_programa_pendiente(no_banco)
     # Mezclar los históricos al inicio del panel Banco (más viejos arriba).
-    hist_items = [
-        {"mov": _hist_to_mov_like(h), "cat": None, "idx": -1,
-         "es_historico": True, "id_historico": int(h["id"])}
-        for h in historicos
-    ]
+    hist_items = []
+    hist_impuestos = []
+    for h in historicos:
+        _mv = _hist_to_mov_like(h)
+        _cat = _cat_hist(_mv)
+        _item = {"mov": _mv, "cat": _cat, "idx": -1,
+                 "es_historico": True, "id_historico": int(h["id"])}
+        (hist_impuestos if _es_comision(_cat) else hist_items).append(_item)
     # TMT 2026-06-03 dueña: '223 esta mal'. Bug: histos + extracto concat sin
     # dedup, mismo mov aparece dos veces (uno como histo, otro como extracto).
     # Fix: si la firma (fecha+doc+monto+tipo) del item del extracto coincide con
@@ -817,6 +838,10 @@ def estado_sesion(sesion: dict, no_banco: int) -> dict:
             continue  # ya está como histo — no duplicar
         extracto_unicos.append(it)
     buckets["manual_banco"] = hist_items + extracto_unicos
+    if hist_impuestos:
+        buckets["impuestos"] = hist_impuestos + (buckets.get("impuestos") or [])
+        buckets["impuestos"].sort(
+            key=lambda x: float(getattr(x["mov"], "monto", 0) or 0), reverse=True)
     buckets["matcher_extracto_desde"] = res.extracto_desde
     buckets["matcher_extracto_hasta"] = res.extracto_hasta
     buckets["n_historicos_pendientes"] = len(historicos)
