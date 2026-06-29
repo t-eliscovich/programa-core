@@ -37,3 +37,4 @@ secrets/
 # Auto-push para Claude (scripts/claude_push.py)
 .gh_pat
 .claude_push.json
+.secret_key

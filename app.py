@@ -49,23 +49,65 @@ def _is_uuid_like(value: str) -> bool:
 
 
 def _load_secret_key() -> str:
-    """Get SECRET_KEY from env. Fail fast in prod, tolerate a dev fallback."""
-    key = os.environ.get("SECRET_KEY")
+    """Devuelve la SECRET_KEY, PERSISTIDA en disco para que sea estable.
+
+    TMT 2026-06-29 (dueña: 'por qué se cierra la sesión'): la cookie de login
+    se firma con SECRET_KEY. Si el entorno la regenera en CADA arranque (cada
+    deploy mata python y reinicia), todas las cookies dejan de valer y TODOS
+    quedan deslogueados. Solución: persistir la clave en un archivo (que NO
+    viaja en el tarball del deploy, así sobrevive) y preferir SIEMPRE esa.
+
+    Orden: (1) archivo persistido → (2) SECRET_KEY del env (y se persiste)
+    → (3) prod: generar una estable y persistirla. Nunca rota sola.
+    """
+    import secrets as _secrets
+
     env = (os.environ.get("FLASK_ENV") or os.environ.get("ENV") or "development").lower()
-    if not key:
-        if env in ("production", "prod"):
-            raise RuntimeError(
-                "SECRET_KEY no está configurada. En producción es obligatoria. "
-                "Generá una con: python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+    es_prod = env in ("production", "prod")
+    env_key = os.environ.get("SECRET_KEY")
+    _log = logging.getLogger("programa_core")
+
+    key_file = os.environ.get("SECRET_KEY_FILE") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), ".secret_key"
+    )
+
+    # (1) Clave persistida → manda (estable entre reinicios/deploys).
+    try:
+        if os.path.exists(key_file):
+            persisted = open(key_file, encoding="utf-8").read().strip()
+            if len(persisted) >= 32:
+                return persisted
+    except Exception as e:  # noqa: BLE001
+        _log.warning("No pude leer SECRET_KEY persistida (%s): %s", key_file, e)
+
+    # (2) Env válida → usarla y persistirla para la próxima.
+    if env_key and (len(env_key) >= 32 or not es_prod):
+        try:
+            with open(key_file, "w", encoding="utf-8") as f:
+                f.write(env_key)
+        except Exception as e:  # noqa: BLE001
+            _log.warning("No pude persistir SECRET_KEY del env: %s", e)
+        return env_key
+
+    # (3) Prod sin clave válida → generar una ESTABLE y persistirla (mejor que
+    #     rotar en cada boot, que es justo lo que deslogueaba a todos).
+    if es_prod:
+        gen = _secrets.token_urlsafe(64)
+        try:
+            with open(key_file, "w", encoding="utf-8") as f:
+                f.write(gen)
+            _log.warning(
+                "SECRET_KEY no estaba en env; generé y persistí una estable en %s",
+                key_file,
             )
-        # Dev fallback — warn loudly so nobody ships this.
-        logging.getLogger("programa_core").warning(
-            "SECRET_KEY no definida; usando fallback de desarrollo. NO DEPLOYES CON ESTO."
-        )
-        return "dev-only-replace-me"
-    if len(key) < 32 and env in ("production", "prod"):
-        raise RuntimeError("SECRET_KEY demasiado corta (mínimo 32 caracteres en prod).")
-    return key
+        except Exception as e:  # noqa: BLE001
+            _log.error("No pude persistir SECRET_KEY generada (%s) — será efímera "
+                       "hasta el próximo arranque: %s", key_file, e)
+        return gen
+
+    # Dev fallback — warn loudly so nobody ships this.
+    _log.warning("SECRET_KEY no definida; usando fallback de desarrollo. NO DEPLOYES CON ESTO.")
+    return "dev-only-replace-me"
 
 
 def create_app() -> Flask:
