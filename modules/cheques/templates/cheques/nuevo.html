@@ -231,6 +231,11 @@
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas
           <button type="button" id="aplic-todas" class="ml-2 align-middle text-xs px-2 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/30">TODAS</button>
+          <label class="ml-2 align-middle text-xs text-slate-500">Hasta:
+            <select id="aplic-hasta" class="ml-1 border rounded px-1 py-0.5 text-xs">
+              <option value="">—</option>
+            </select>
+          </label>
         </h3>
         <div class="text-xs text-slate-500" id="aplic-summary">
           Total cheques: <strong id="aplic-imp">—</strong> ·
@@ -376,7 +381,25 @@
     return isNaN(v) ? 0 : v;
   }
 
+  // TMT 2026-06-29 (dueña, paridad <H>HASTA): pobla el dropdown "Hasta:" con
+  // las facturas abiertas (en orden, más vieja primero). Solo repuebla si el
+  // set cambió, para no resetear la selección en cada tecla.
+  function poblarHasta() {
+    const sel = document.getElementById('aplic-hasta');
+    if (!sel) return;
+    if (sel.options.length === facturas.length + 1) return;
+    sel.innerHTML = '<option value="">—</option>';
+    facturas.forEach(f => {
+      const o = document.createElement('option');
+      o.value = String(f.id_factura);
+      const num = f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : ('#' + f.id_factura));
+      o.textContent = num + ' · $' + fmt(f.saldo);
+      sel.appendChild(o);
+    });
+  }
+
   function render(filtro = "") {
+    poblarHasta();
     // TMT 2026-05-15: usar la SUMA de todos los cheques (no sólo el primero)
     // para que el FIFO y el match exacto funcionen con multi-cheque.
     const importeCheque = sumaImporteCheques();
@@ -1138,6 +1161,25 @@
         if (!chk.checked) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
       });
       if (toggleAll) toggleAll.checked = true;
+    });
+  }
+  // TMT 2026-06-29 (dueña, paridad <H>HASTA): tilda TODAS las facturas desde la
+  // más vieja hasta la elegida (inclusive); destilda las posteriores. Limpia el
+  // filtro de búsqueda para operar sobre todas.
+  const selHasta = document.getElementById('aplic-hasta');
+  if (selHasta) {
+    selHasta.addEventListener('change', () => {
+      const id = parseInt(selHasta.value, 10);
+      if (!id) return;
+      if (buscar.value) { buscar.value = ''; render(''); }
+      const idx = facturas.findIndex(f => f.id_factura === id);
+      if (idx < 0) return;
+      facturas.forEach((f, i) => {
+        const chk = tbody.querySelector(`input.aplic-cancel[data-id="${f.id_factura}"]`);
+        if (!chk) return;
+        const want = (i <= idx);
+        if (chk.checked !== want) { chk.checked = want; chk.dispatchEvent(new Event('change')); }
+      });
     });
   }
   if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
