@@ -1892,6 +1892,17 @@ def _generar_xlsx_pendientes(sesion: dict, balance: dict) -> str | None:
     _xt_cred = round(_xt_cred, 2)
     _xt_deb = round(_xt_deb, 2)
 
+    # TMT 2026-06-29 dueña: en el resumen descargado, PRIMERO los POSITIVOS
+    # (créditos, tipo C) ordenados de fecha más antigua a más actual, y al
+    # FINAL todos los NEGATIVOS (débitos, tipo D), también por fecha asc.
+    # tipo C → grupo 0 (arriba); cualquier otro (D) → grupo 1 (abajo).
+    def _orden_resumen(rr: dict):
+        es_credito = (rr.get("tipo") or "C").upper() == "C"
+        return (0 if es_credito else 1,
+                rr.get("fecha") or date.min,
+                str(rr.get("documento") or ""))
+    rows_reales.sort(key=_orden_resumen)
+
     _PDF_DIR.mkdir(parents=True, exist_ok=True)
     xlsx_path = _PDF_DIR / f"sesion_{sesion['id']}.xlsx"
 

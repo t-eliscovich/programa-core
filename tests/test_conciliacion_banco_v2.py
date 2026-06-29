@@ -159,6 +159,38 @@ def test_bucketizar_manual_programa_orden_por_monto_desc():
     assert montos == [900.0, 500.0, 100.0]
 
 
+def test_conceptos_iva_comision_van_a_impuestos():
+    """TMT 2026-06-29 dueña: estos conceptos del extracto deben caer SIEMPRE
+    en el bucket Impuestos/comisiones (grupo COMISION), no en Manual.
+    Robusto: case-insensitive y con números/fecha pegados.
+    """
+    from modules.conciliacion.categorizar import categorizar
+
+    casos = [
+        "COST CHEQUE DEVUELTO",
+        "REV IVA+COMIS B10 # 2 16062026",
+        "IVA CAUSADO SERVICIO",
+        "cost cheque devuelto",          # minúsculas
+        "rev iva + comis algo 010203",   # con espacios alrededor del +
+    ]
+    for concepto in casos:
+        cat = categorizar(concepto, "D")
+        assert (cat.grupo or "").upper() == "COMISION", (
+            f"{concepto!r} debería ser COMISION, fue {cat.grupo!r}"
+        )
+
+    # Y de punta a punta: vía bucketizar caen en 'impuestos'.
+    res = ConciliacionBanco()
+    res.real_only = [_mov(monto="1", concepto=c, tipo="D") for c in casos]
+    res.real_only_cats = [categorizar(c, "D") for c in casos]
+    res.bancsis_only = []
+    res.bancsis_only_cats = []
+    res.matches = []
+    b = _sesion.bucketizar(res)
+    assert len(b["impuestos"]) == len(casos)
+    assert b["manual_banco"] == []
+
+
 def test_bucketizar_resultado_vacio_devuelve_buckets_vacios():
     res = ConciliacionBanco()
     b = _sesion.bucketizar(res)

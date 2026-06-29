@@ -105,6 +105,13 @@ _REGLAS: list[tuple[re.Pattern, str | None, str]] = [
     # COMISIONES / IMPUESTOS (alta prioridad — son chicos)
     (re.compile(r"\b(comision|comisi[oó]n|cargo\s+por|servicio\s+banco)\b", re.I), None, "COMISION_BANCARIA"),
     (re.compile(r"\b(iva|retenci[oó]n|impuesto|isr|sri)\b|^rr[\s-]", re.I), None, "IMPUESTO"),
+    # TMT 2026-06-29 dueña: conceptos del extracto que deben ir SIEMPRE al
+    # bucket "Impuestos y comisiones" (no a Manual). Match por substring,
+    # case-insensitive y tolerante a números/fechas pegados (ej.
+    # "REV IVA+COMIS B10 # 2 16062026").
+    (re.compile(r"cost\s+cheque\s+devuelto", re.I), None, "COMISION_BANCARIA"),
+    (re.compile(r"rev\s+iva\s*\+?\s*comis", re.I), None, "IMPUESTO"),
+    (re.compile(r"iva\s+causado\s+servicio", re.I), None, "IMPUESTO"),
 
     # ENTRADAS
     (re.compile(r"transferencia\s+(directa|interbancaria|interna)?\s*(de|recibida)", re.I), "C", "ENTRADA_COBRO_TRANSFERENCIA"),
