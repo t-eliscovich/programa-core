@@ -112,16 +112,28 @@ def load_logged_in_user() -> None:
     user_id = session.get("user_id")
     if not user_id:
         return
-    row = db.fetch_one(
-        """
-        SELECT u.id_usuario, u.username, u.id_rol, u.activo, r.nombre_rol
-        FROM seguridad.usuario u
-        JOIN seguridad.rol r USING (id_rol)
-        WHERE u.id_usuario = %s AND u.activo = TRUE
-        """,
-        (user_id,),
-    )
+    try:
+        row = db.fetch_one(
+            """
+            SELECT u.id_usuario, u.username, u.id_rol, u.activo, r.nombre_rol
+            FROM seguridad.usuario u
+            JOIN seguridad.rol r USING (id_rol)
+            WHERE u.id_usuario = %s AND u.activo = TRUE
+            """,
+            (user_id,),
+        )
+    except Exception as e:  # noqa: BLE001 — diag temporal 2026-06-29
+        _AUTH_DEBUG["last_clear"] = {
+            "reason": "lookup_raised", "user_id": user_id, "err": repr(e)[:200],
+            "path": request.path, "ts": _now_utc().isoformat(),
+        }
+        raise
     if not row:
+        _AUTH_DEBUG["last_clear"] = {
+            "reason": "not_row", "user_id": user_id,
+            "path": request.path, "method": request.method,
+            "ts": _now_utc().isoformat(),
+        }
         session.clear()
         return
 
@@ -130,6 +142,12 @@ def load_logged_in_user() -> None:
     last_activity = _parse_last_activity(session.get("last_activity"))
     now = _now_utc()
     if last_activity is not None and (now - last_activity) > timeout:
+        _AUTH_DEBUG["last_clear"] = {
+            "reason": "timeout", "user_id": user_id,
+            "last_activity": str(last_activity), "now": str(now),
+            "timeout_s": timeout.total_seconds(),
+            "path": request.path, "ts": _now_utc().isoformat(),
+        }
         # Expiró. Vaciamos todo y marcamos g.user=None para que redirija
         # al login. Flasheamos un mensaje suave — no un error, es normal.
         session.clear()
