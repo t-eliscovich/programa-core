@@ -1399,6 +1399,13 @@
   const TOLERANCIA_USD = 50.00;
   if (form) {
     form.addEventListener('submit', (e) => {
+      // TMT 2026-06-29 (dueña): en ANTICIPO el "sin asignar" es saldo a favor a
+      // propósito → NO mostrar el confirm 'quedan en cartera' (mensaje del cobro
+      // normal). Detectamos por banco=97 (antes dependía del checkbox oculto,
+      // que ahora dejamos destildado para mostrar el panel de facturas).
+      const hayAnticipo = [...document.querySelectorAll('.cheque-banco')]
+        .some(sel => sel.value === '97');
+      if (hayAnticipo) return;
       if (anticipoChk && anticipoChk.checked) return;  // anticipos no aplican
       const totalCheques = sumaImporteCheques();
       let totalAplicado = 0;
