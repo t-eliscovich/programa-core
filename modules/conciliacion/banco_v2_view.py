@@ -1389,14 +1389,40 @@ def banco_manual_confirmar():
                 if err_msg is None:
                     err_msg = str(e)
 
-        # 2) Banco extras (N > M): NO se fuerzan contra PC[0]. TMT 2026-06-18
-        # (dueña): antes ataba CADA banco sobrante al PRIMER mov PC → grupos
-        # con "diferencia" inventada (ej. 17 banco → 2 PC, +22.053) que
-        # conciliaban banco contra un PC que no le corresponde y ensuciaban el
-        # tab Conciliados. Ahora los sobrantes quedan PENDIENTES y visibles; el
-        # usuario los empareja bien (o usa el agrupado legítimo de impuestos,
-        # que va por su propio endpoint crear_transaccion_agrupada_desde_reals).
-        sobrantes_banco = max(0, len(banco_sorted) - n_pair)
+        # 2) Banco extras (N > M). TMT 2026-06-18 (dueña): antes ataba CADA
+        # banco sobrante al PRIMER mov PC → grupos con "diferencia" inventada
+        # (ej. 17 banco → 2 PC, +22.053) que ensuciaban Conciliados. Por eso,
+        # con VARIOS PC seleccionados, los sobrantes quedan PENDIENTES.
+        #
+        # TMT 2026-06-29 (dueña): PERO el caso N banco → 1 PC es legítimo y
+        # frecuente: un depósito que el banco parte en N créditos (ej.
+        # "dep.30 ch." = 30 líneas en el extracto) contra UN solo mov de
+        # programa. Si hay EXACTAMENTE 1 PC seleccionado y la SUMA firmada de
+        # TODO el banco cuadra con el PC (Δ≈0), atamos TODOS los movs de banco
+        # a ese PC (mismo batch_id → N:1 legítimo, lo permite confirmar_match).
+        # Si no cuadra, quedan pendientes como antes (la dueña ve el faltante).
+        sobrantes = banco_sorted[n_pair:]
+        sobrantes_banco = len(sobrantes)
+        if sobrantes and len(bk_sorted) == 1:
+            pc_id = bk_sorted[0]
+            suma_banco = sum(_signed_banco(t[0]) for t in banco_sorted)
+            target = _signed_prog(pc_id)
+            if abs(suma_banco - target) <= 0.50:
+                # Depósito agrupado N:1 — atar los sobrantes al único PC.
+                for mov_i, metodo_i in sobrantes:
+                    try:
+                        confirmar_match(_BANCO_PICHINCHA, mov_i, pc_id,
+                                        usuario=usuario, metodo=metodo_i,
+                                        confirm_batch_id=batch_id)
+                        if metodo_i == "matched_historico":
+                            n_hist += 1
+                        else:
+                            n_matches += 1
+                    except Exception as e:
+                        _LOG.warning("manual confirm N:1 sobrante fallo: %s", e)
+                        if err_msg is None:
+                            err_msg = str(e)
+                sobrantes_banco = 0
 
         # 3) PC extras (M > N): INSERT stat-only.
         if len(bk_sorted) > n_pair:
