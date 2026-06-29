@@ -106,15 +106,14 @@
       <thead>
         <tr>
           <th style="width: 9%">Importación</th>
-          <th style="width: 8%">Fecha</th>
-          <th style="width: 15%">Recepción</th>
-          <th style="width: 16%">Proveedor</th>
-          <th style="width: 7%">Código</th>
-          <th style="width: 15%" data-no-sort>Nota Asinfo</th>
-          <th class="text-right" style="width: 8%">Kg</th>
-          <th class="text-right" style="width: 11%">Total Asinfo*</th>
-          <th class="text-right" style="width: 12%">Programa (US$)</th>
-          <th style="width: 22%" data-no-sort>Recepción · Deuda · Pago</th>
+          <th style="width: 7%">Fecha</th>
+          <th style="width: 11%">Recepción</th>
+          <th style="width: 15%">Proveedor</th>
+          <th style="width: 6%">Código</th>
+          <th style="width: 13%" data-no-sort>Nota Asinfo</th>
+          <th class="text-right" style="width: 7%">Kg</th>
+          <th class="text-right" style="width: 10%">Programa (US$)</th>
+          <th style="width: 22%" data-no-sort>Recibir · Pagar</th>
         </tr>
       </thead>
       <tbody>
@@ -134,7 +133,6 @@
             <td>{% if r.codigo %}<span class="code">{{ r.codigo }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
             <td class="nota">{{ r.nota or '—' }}</td>
             <td class="num">{% if r.kg is not none %}{{ r.kg | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
-            <td class="num muted">$ {{ r.total_asinfo | num_es(2) }}</td>
             <td class="num">
               {% if r.fuente == 'compra' %}
                 <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">$ {{ r.importe_programa | num_es(2) }}</a>
@@ -224,7 +222,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="10" class="text-center py-8 text-slate-500">
+          <tr><td colspan="9" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
           </td></tr>
         {% endfor %}
@@ -233,9 +231,9 @@
   </div>
 
   <p class="text-xs text-slate-500 mt-3">
-    * Total de Asinfo referencial (dólares no confiables). El importe confiable es el de
-    la compra/anticipo del programa, enlazada por <code>codigo_prov</code> + <code>concepto</code>.
-    Las que figuran "sin cruce" todavía no tienen una compra cargada en el programa.
+    El importe confiable es el de la compra/anticipo del programa, enlazada por
+    <code>codigo_prov</code> + <code>concepto</code>. Las que figuran "sin cruce"
+    todavía no tienen una compra cargada en el programa.
   </p>
 </div>
 {% endblock %}
