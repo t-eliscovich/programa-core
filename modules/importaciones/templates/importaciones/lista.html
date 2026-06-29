@@ -152,7 +152,7 @@
                   {% if tiene_permiso('compras.editar') %}
                   <form method="post" action="{{ url_for('importaciones.deshacer_pago') }}" class="mt-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
                     <input type="hidden" name="anticipo" value="{{ ant }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
@@ -168,7 +168,7 @@
                   {% if tiene_permiso('compras.editar') %}
                   <form method="post" action="{{ url_for('importaciones.pagar') }}" class="mt-1 flex items-center gap-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
                     <input type="hidden" name="anticipo" value="{{ ant }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
@@ -178,7 +178,7 @@
                   </form>
                   <form method="post" action="{{ url_for('importaciones.deshacer_recepcion') }}" class="mt-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
                     <button class="text-[11px] text-slate-500 hover:underline">↺ deshacer recepción</button>
@@ -189,7 +189,7 @@
                   {% if tiene_permiso('compras.editar') %}
                   <form method="post" action="{{ url_for('importaciones.recibir') }}" class="mt-1 space-y-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}">
+                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
                     <input type="hidden" name="anticipo" value="{{ ant }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">

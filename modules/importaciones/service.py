@@ -237,12 +237,14 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     # aplicado netea la deuda. Ver modules/importaciones/pago.py.
     from modules.importaciones import pago as _pago
 
-    refs2: set[tuple[str, int]] = {
-        ((r["prov"] or "").upper(), int(r["numero"]))
+    # Sólo las importaciones con código (prov+nº) pueden recibirse/pagarse →
+    # sólo de ésas pedimos estado (las sin código ni siquiera tienen botón).
+    ims: set[str] = {
+        str(r.get("im_numero") or "").strip()
         for r in rows
-        if r.get("prov") and r.get("numero") is not None
+        if r.get("im_numero") and r.get("prov") and r.get("numero") is not None
     }
-    estados = _pago.estados_por_refs(refs2)
+    estados = _pago.estados_por_im(ims)
     promedios = promedios_usd_por_kg({r.get("prov") for r in rows})
 
     for r in rows:
@@ -286,7 +288,7 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             r["necesita_costo_manual"] = r["costo_estimado_sugerido"] is None
         if not (r.get("prov") and r.get("numero") is not None):
             continue
-        st = estados.get(((r["prov"] or "").upper(), int(r["numero"])))
+        st = estados.get(str(r.get("im_numero") or "").strip())
         if st:
             r["recibido_pc"] = bool(st["recibido_pc"])
             r["kg_recibidos"] = st["kg_recibidos"]

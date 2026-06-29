@@ -172,6 +172,10 @@ def _prov_num():
     return prov, numero
 
 
+def _im():
+    return (request.form.get("im_numero") or "").strip()
+
+
 @importaciones_bp.route("/importaciones/recibir", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.editar")
@@ -184,19 +188,20 @@ def recibir():
     from modules.importaciones import pago as _pago
 
     prov, numero = _prov_num()
+    im = _im()
     kg = parse_monto(request.form.get("kg"))
     costo = parse_monto(request.form.get("costo_estimado"))
     anticipo = parse_monto(request.form.get("anticipo")) or 0
-    if not prov or numero is None:
-        flash("Importación inválida (faltan proveedor o número).", "warn")
+    if not im:
+        flash("Importación inválida (falta el número IM-).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.set_recepcion(prov, numero, kg=kg, costo_estimado=costo,
+        _pago.set_recepcion(im, prov, numero, kg=kg, costo_estimado=costo,
                             anticipo=anticipo, usuario=usuario)
         deuda = max(0.0, round(float(costo or 0) - float(anticipo or 0), 2))
         flash(
-            f"Importación {prov} {numero} recibida: {kg or 0:,.0f} kg al stock · "
+            f"Importación {im} recibida: {kg or 0:,.0f} kg al stock · "
             f"costo estimado $ {costo or 0:,.2f} · deuda $ {deuda:,.2f}.",
             "ok",
         )
@@ -215,17 +220,18 @@ def pagar():
     from modules.importaciones import pago as _pago
 
     prov, numero = _prov_num()
+    im = _im()
     monto = parse_monto(request.form.get("monto_real"))
     anticipo = parse_monto(request.form.get("anticipo")) or 0
-    if not prov or numero is None:
-        flash("Importación inválida (faltan proveedor o número).", "warn")
+    if not im:
+        flash("Importación inválida (falta el número IM-).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.set_pago(prov, numero, monto_real=monto, anticipo=anticipo, usuario=usuario)
+        _pago.set_pago(im, prov, numero, monto_real=monto, anticipo=anticipo, usuario=usuario)
         deuda = max(0.0, round(float(monto or 0) - float(anticipo or 0), 2))
         flash(
-            f"Importación {prov} {numero} pagada: monto real $ {monto or 0:,.2f} "
+            f"Importación {im} pagada: monto real $ {monto or 0:,.2f} "
             f"(deuda ajustada a $ {deuda:,.2f}).",
             "ok",
         )
@@ -244,13 +250,14 @@ def deshacer_recepcion():
     from modules.importaciones import pago as _pago
 
     prov, numero = _prov_num()
-    if not prov or numero is None:
-        flash("Importación inválida.", "warn")
+    im = _im()
+    if not im:
+        flash("Importación inválida (falta el número IM-).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.deshacer_recepcion(prov, numero, usuario=usuario)
-        flash(f"Recepción de {prov} {numero} deshecha (vuelve a en tránsito).", "ok")
+        _pago.deshacer_recepcion(im, prov, numero, usuario=usuario)
+        flash(f"Recepción de {im} deshecha (vuelve a en tránsito).", "ok")
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude deshacer la recepción", e)
     return _volver()
@@ -264,14 +271,15 @@ def deshacer_pago():
     from modules.importaciones import pago as _pago
 
     prov, numero = _prov_num()
+    im = _im()
     anticipo = parse_monto(request.form.get("anticipo")) or 0
-    if not prov or numero is None:
-        flash("Importación inválida.", "warn")
+    if not im:
+        flash("Importación inválida (falta el número IM-).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.deshacer_pago(prov, numero, anticipo=anticipo, usuario=usuario)
-        flash(f"Pago de {prov} {numero} deshecho (queda pendiente de pago).", "ok")
+        _pago.deshacer_pago(im, prov, numero, anticipo=anticipo, usuario=usuario)
+        flash(f"Pago de {im} deshecho (queda pendiente de pago).", "ok")
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude deshacer el pago", e)
     return _volver()
