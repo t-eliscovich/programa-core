@@ -59,11 +59,18 @@ def authdebug():
     Devuelve el último request que quedó sin sesión (motivo) + el tamaño máx de
     la cookie de sesión seteada. Quitar cuando esté diagnosticado.
     """
+    import hashlib
+    import os as _os
+    from flask import current_app
+    sk = current_app.config.get("SECRET_KEY") or ""
+    fp = hashlib.sha256(("fp:" + str(sk)).encode("utf-8")).hexdigest()[:12]
+    out = {"pid": _os.getpid(), "secret_fp": fp}
     try:
         import auth
-        return jsonify(auth._AUTH_DEBUG), 200
+        out["debug"] = auth._AUTH_DEBUG
     except Exception as e:  # noqa: BLE001
-        return jsonify({"error": str(e)}), 200
+        out["debug_error"] = str(e)
+    return jsonify(out), 200
 
 
 @healthz_bp.route("/ready", methods=["GET"])
