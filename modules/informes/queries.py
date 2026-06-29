@@ -238,6 +238,13 @@ def saldo_bancos() -> list[dict]:
                  WHERE t.no_banco = b.no_banco
                    AND t.saldo IS NOT NULL
                    AND ABS(t.saldo) > 0.5
+                   -- TMT 2026-06-26 (dueña: "la utilidad está muy baja"). El
+                   -- balance tomaba el saldo de una fila POSTDATADA (fecha
+                   -- futura, ej. cheque al 30/06) → Pichincha entraba 90.261
+                   -- más bajo y la utilidad caía igual. Espejamos el resto del
+                   -- sistema (bancos/conciliación/sync): saldo = última fila
+                   -- con fecha <= hoy.
+                   AND t.fecha <= CURRENT_DATE
                  ORDER BY t.fecha DESC, t.id_transaccion DESC
                  LIMIT 1
                ), 0) AS saldo_stored,
@@ -250,11 +257,13 @@ def saldo_bancos() -> list[dict]:
                  )
                  FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
+                   AND t.fecha <= CURRENT_DATE
                ), 0) AS saldo_signed,
                COALESCE((
                  SELECT SUM(t.importe)
                  FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
+                   AND t.fecha <= CURRENT_DATE
                ), 0) AS saldo_raw,
                (
                  SELECT COUNT(*)
