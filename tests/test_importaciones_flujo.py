@@ -73,7 +73,7 @@ def test_cruce_surface_estado_recibido_y_deuda():
     assert r["recibido_pc"] is True
     assert r["deuda"] == 30000.0
     assert r["pagada"] is False
-    assert r["estado_flujo"] == "recibida"
+    assert r["estado_flujo"] == "faltan_pagar"
     # sugerencia de costo = promedio 25/kg × kg (kg viene de Asinfo; sin kg → None ok)
 
 

@@ -157,6 +157,48 @@ def promedios_usd_por_kg(provs: set[str]) -> dict[str, float]:
     return out
 
 
+def _buscar_posdat_abierto(refs: set[tuple[str, int]]) -> dict[tuple[str, int], float]:
+    """{(codigo_prov, ref_num): deuda viva} desde scintela.posdat (banc=0).
+
+    La deuda viva del programa (igual que TOTP/PASIVOS) son las posdat con
+    COALESCE(banc,0)=0. Para las compras de importación el `concepto` es el
+    número de la importación (mismo criterio que `_buscar_compras`), así que
+    matcheamos por (prov, dígitos del concepto). Sirve para DERIVAR el estado:
+    si la importación-compra tiene posdat abierto → falta pagar; si no → pagada.
+
+    Fail-soft: {} si no hay refs o la DB falla.
+    """
+    if not refs:
+        return {}
+    provs = sorted({p for p, _ in refs})
+    numeros = sorted({n for _, n in refs})
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(prov) AS prov,
+                   NULLIF(regexp_replace(COALESCE(concepto, ''), '[^0-9]', '', 'g'), '')::int
+                       AS ref_num,
+                   SUM(importe) AS deuda
+              FROM scintela.posdat
+             WHERE UPPER(prov) = ANY(%s)
+               AND COALESCE(banc, 0) = 0
+               AND NULLIF(regexp_replace(COALESCE(concepto, ''), '[^0-9]', '', 'g'), '')::int
+                   = ANY(%s)
+             GROUP BY UPPER(prov), ref_num
+            """,
+            (provs, numeros),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("buscar_posdat_abierto falló: %s", e)
+        return {}
+    out: dict[tuple[str, int], float] = {}
+    for r in rows:
+        if r.get("ref_num") is None or r.get("prov") is None:
+            continue
+        out[(str(r["prov"]).strip().upper(), int(r["ref_num"]))] = float(r.get("deuda") or 0)
+    return out
+
+
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     """Importaciones de Asinfo enriquecidas con el código parseado y el cruce
     contra el programa: primero compra (`scintela.compra`), si no hay, anticipo
@@ -199,6 +241,7 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
 
     compras = _buscar_compras(refs)
     anticipos = _buscar_anticipos(refs)
+    posdat_abierto = _buscar_posdat_abierto(refs)
 
     for r in rows:
         r["compra"] = None
@@ -260,6 +303,10 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         r["necesita_costo_manual"] = False
         r["costo_ventana"] = None
         r["kg_sin_precio_hist"] = 0.0
+        r["estado_flujo"] = "en_transito"
+        r["deuda_efectiva"] = 0.0
+        r["origen_estado"] = "programa"
+        r["tiene_pc"] = False
         # Anticipo USD disponible para netear (si la importación tiene uno cruzado).
         r["anticipo_disponible"] = (
             float(r["anticipo"]["importe_total"]) if r.get("anticipo") else 0.0
@@ -299,13 +346,36 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             r["fecha_recepcion_pc"] = st["fecha_recepcion_pc"]
             r["fecha_pago"] = st["fecha_pago"]
             r["anticipo_aplicado"] = st["anticipo_aplicado"]
-        # Estado legible del flujo nuevo.
-        if r["pagada"]:
-            r["estado_flujo"] = "pagada"
-        elif r["recibido_pc"]:
-            r["estado_flujo"] = "recibida"   # recibida, deuda pendiente
+        # ── Estado EFECTIVO ────────────────────────────────────────────────
+        # 1) Si la dueña tocó el flujo manual (recibió/pagó) → manda eso.
+        # 2) Si no, se DERIVA de lo que el programa ya sabe:
+        #      - cruza a anticipo USD            → pagada (prepagada)
+        #      - cruza a compra con posdat abierto → falta pagar (deuda = posdat)
+        #      - cruza a compra sin posdat        → pagada
+        #      - sin cruce                        → en tránsito
+        manual = bool(st and (st["recibido_pc"] or st["pagada"]))
+        r["tiene_pc"] = manual
+        key = ((r["prov"] or "").upper(), int(r["numero"]))
+        if manual:
+            r["origen_estado"] = "pc"
+            if r["pagada"]:
+                r["estado_flujo"] = "pagada"
+                r["deuda_efectiva"] = 0.0
+            else:
+                r["estado_flujo"] = "faltan_pagar"
+                r["deuda_efectiva"] = float(r["deuda"] or 0)
         else:
-            r["estado_flujo"] = "en_transito"
+            r["origen_estado"] = "programa"
+            if r.get("fuente") == "anticipo":
+                r["estado_flujo"] = "pagada"
+            elif r.get("fuente") == "compra":
+                if key in posdat_abierto:
+                    r["estado_flujo"] = "faltan_pagar"
+                    r["deuda_efectiva"] = posdat_abierto[key]
+                else:
+                    r["estado_flujo"] = "pagada"
+            else:
+                r["estado_flujo"] = "en_transito"
     return rows
 
 
@@ -325,8 +395,7 @@ def kilos_pendientes_importaciones(limite: int = 400) -> dict:
         return {"kg": 0.0, "n": 0, "detalle": []}
     pend = [
         r for r in rows
-        if r.get("recibido_pc")
-        and not r.get("pagada")
+        if r.get("estado_flujo") == "faltan_pagar"
         and (r.get("kg_recibidos") or r.get("kg") or 0) > 0
     ]
     return {

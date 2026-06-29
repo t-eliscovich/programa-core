@@ -63,27 +63,28 @@ def lista():
     # en el programa (las que traen kilos reales a TC/PT). Las de fuente
     # 'anticipo' todavía no son compra → no entran al circuito pendiente/kilos.
     if pago == "pendiente":
-        rows = [r for r in rows if r.get("recibido_pc") and not r.get("pagada")]
+        rows = [r for r in rows if r.get("estado_flujo") == "faltan_pagar"]
     elif pago == "pagada":
-        rows = [r for r in rows if r.get("pagada")]
+        rows = [r for r in rows if r.get("estado_flujo") == "pagada"]
     elif pago == "en_transito":
-        rows = [r for r in rows if not r.get("recibido_pc")]
+        rows = [r for r in rows if r.get("estado_flujo") == "en_transito"]
 
     # KPIs del flujo (sobre el conjunto YA filtrado, como el resto de contadores).
     # Partición que SUMA al total: en tránsito + faltan pagar + pagadas = total.
-    recibidas_pc = sum(1 for r in rows if r.get("recibido_pc"))
-    pend_pago = sum(1 for r in rows if r.get("recibido_pc") and not r.get("pagada"))
-    pagadas = sum(1 for r in rows if r.get("pagada"))
-    en_transito = sum(1 for r in rows if not r.get("recibido_pc"))
+    # El estado se deriva de lo que el programa ya sabe (posdat/anticipo), salvo
+    # que la dueña lo haya marcado a mano. Ver service.importaciones_con_cruce.
+    en_transito = sum(1 for r in rows if r.get("estado_flujo") == "en_transito")
+    pend_pago = sum(1 for r in rows if r.get("estado_flujo") == "faltan_pagar")
+    pagadas = sum(1 for r in rows if r.get("estado_flujo") == "pagada")
     kg_pend_pago = sum(
         float(r.get("kg_recibidos") or r.get("kg") or 0)
         for r in rows
-        if r.get("recibido_pc") and not r.get("pagada")
+        if r.get("estado_flujo") == "faltan_pagar"
     )
     deuda_pend = sum(
-        float(r.get("deuda") or 0)
+        float(r.get("deuda_efectiva") or 0)
         for r in rows
-        if r.get("recibido_pc") and not r.get("pagada")
+        if r.get("estado_flujo") == "faltan_pagar"
     )
 
     total = len(rows)
@@ -145,7 +146,6 @@ def lista():
         recibidas=recibidas,
         pendientes=pendientes,
         importe_programa=importe_programa,
-        recibidas_pc=recibidas_pc,
         en_transito=en_transito,
         pend_pago=pend_pago,
         pagadas=pagadas,
