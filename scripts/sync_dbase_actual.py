@@ -769,6 +769,36 @@ def main():
         if not ok:
             print("  ⚠ continuando sin backup — abortá manualmente si querés rollback")
 
+    # ─── CLIENTES (altas nuevas + fichas) ────────────────────────────────
+    # TMT 2026-06-29 (dueña: 'traer clientes nuevos en cada sync'). El flujo web
+    # (/admin/dbase-sync) ya importaba CLIENTES.DBF, pero ESTE script (CloudShell/
+    # SSM) no → los clientes nuevos del dBase no llegaban y quedaban cheques/
+    # facturas huérfanos. Lo importamos ANTES del import principal para que los
+    # FK de cheque/factura encuentren al cliente. Idempotente (INSERT faltantes,
+    # rellena ficha; no pisa ediciones del PC). CLIENTES.DBF no tiene mapper en
+    # el sync normal, así que esto NO trunca scintela.cliente.
+    print()
+    print("─── CLIENTES (altas + fichas) ─────────────────────────────────")
+    try:
+        cli_dbf = None
+        for p in src.iterdir():
+            if p.is_file() and p.name.upper() == "CLIENTES.DBF":
+                cli_dbf = p
+                break
+        if cli_dbf is None:
+            print("  ⚠ no se encontró CLIENTES.DBF en el source — se omite "
+                  "(las altas nuevas de clientes NO llegan)")
+        else:
+            import db as _db_cli
+            _db_cli.init_pool()  # idempotente
+            from modules.admin_dbase.clientes_import_view import importar_desde_dbf
+            for ln in importar_desde_dbf(cli_dbf, aplicar=not args.dry_run, verbose=False):
+                print("  " + ln)
+    except Exception as e:
+        # No abortamos el sync por esto — los clientes se pueden traer aparte
+        # por /admin/clientes-import. Pero avisamos fuerte.
+        print(f"  ⚠ import de clientes falló (NO aborta el sync): {e}")
+
     # ─── IMPORT ──────────────────────────────────────────────────────────
     print()
     print("─── IMPORT ────────────────────────────────────────────────────")
