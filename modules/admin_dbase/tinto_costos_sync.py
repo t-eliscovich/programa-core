@@ -189,3 +189,111 @@ def refresh_from_dir(extract_dir, aplicar: bool = True):
     yield (f"  [{modo}] catálogo: +{nuevos} nuevos, "
            f"{actualizados} actualizados, {color_rellenos} colores rellenados "
            f"(total previo {len(existentes)})")
+
+
+# ---------------------------------------------------------------------------
+# Importar TODOS los colores desde formulas_app (la app de tintorería).
+# TMT 2026-06-29 (dueña): "que estén TODOS los colores de la app de tintura".
+# El catálogo scintela.tinto_costos solo tenía ~118 códigos (COSTOS.DBF) y
+# faltaban colores. formulas_app (formulas_db, read-only) es el maestro vivo
+# de fórmulas/colores: tabla public.formulas (cod PK, color, categoria, grupo).
+# Traemos TODA la lista y la upserteamos al catálogo, CONSERVADOR:
+#   - inserta los códigos faltantes (costo = 0; formulas_app no tiene $/kg de
+#     tela, el costo se carga después por COSTOS.DBF / a mano);
+#   - rellena el color si en el catálogo está vacío;
+#   - NUNCA pisa el costo ni un color ya cargado (no destruye ediciones del PC).
+# El `cod` se normaliza a UPPER y se trunca a 5 chars, igual que la validación
+# de /informes/tinto-carga (cod[:5].upper()) y la columna varchar(5), así el
+# lookup de la planilla matchea exacto.
+# ---------------------------------------------------------------------------
+
+def _catalogo_desde_formulas_app() -> dict[str, dict]:
+    """Lee public.formulas de formulas_app (bridge read-only) y arma el dict
+    cod -> {color, costo}. Devuelve {} si el bridge no está disponible o falla
+    (fail-soft: el host nunca se rompe por culpa del bridge)."""
+    from modules._lib import formulas_db
+
+    if not formulas_db.disponible():
+        return {}
+    rows = formulas_db.fetch_all(
+        """
+        SELECT cod,
+               COALESCE(color, '')     AS color,
+               COALESCE(categoria, '') AS categoria
+          FROM formulas
+         ORDER BY cod
+        """
+    )
+    out: dict[str, dict] = {}
+    for r in rows or []:
+        cod = (str(r.get("cod") or "")).strip().upper()[:5]
+        if not cod or cod == "MAN":
+            continue
+        color = (str(r.get("color") or "")).strip()
+        categoria = (str(r.get("categoria") or "")).strip()
+        # Si hay lugar, anexamos la categoría al color para dar contexto
+        # (ej. "AZUL MARINO · Color Fuerte"), respetando el límite de 30.
+        if color and categoria and len(color) + 3 + len(categoria) <= 30:
+            color = f"{color} · {categoria}"
+        color = color[:30]
+        # formulas_app puede repetir cod tras el truncado a 5 — gana el primero
+        # con color no vacío.
+        if cod in out and not (color and not out[cod]["color"]):
+            continue
+        out[cod] = {"color": color, "costo": 0.0}
+    return out
+
+
+def refresh_from_formulas_app(aplicar: bool = True):
+    """Generador que importa TODOS los colores de formulas_app al catálogo
+    scintela.tinto_costos. Conservador: inserta faltantes (costo 0), rellena
+    color vacío; NO pisa costos ni colores ya cargados. Idempotente."""
+    import db
+
+    catalogo = _catalogo_desde_formulas_app()
+    if not catalogo:
+        yield ("  (bridge formulas_app no disponible o sin fórmulas — "
+               "verificá FORMULAS_DATABASE_URL en el server; no se importó nada)")
+        return
+
+    yield f"  fuente: formulas_app (public.formulas) — {len(catalogo)} códigos"
+
+    if db.fetch_one("SELECT to_regclass('scintela.tinto_costos') AS t").get("t") is None:
+        yield "  scintela.tinto_costos no existe (correr mig 0083 en /admin/migraciones) — se omite"
+        return
+
+    existentes = {
+        r["cod"]: r
+        for r in (db.fetch_all(
+            "SELECT cod, COALESCE(color,'') AS color, COALESCE(costo,0) AS costo "
+            "FROM scintela.tinto_costos"
+        ) or [])
+    }
+
+    nuevos, color_rellenos = 0, 0
+    for cod, info in sorted(catalogo.items()):
+        ex = existentes.get(cod)
+        if ex is None:
+            nuevos += 1
+            if aplicar:
+                db.execute(
+                    "INSERT INTO scintela.tinto_costos (cod, color, costo, usuario_crea) "
+                    "VALUES (%s, %s, %s, 'formulas-app') ON CONFLICT (cod) DO NOTHING",
+                    (cod, info["color"], info["costo"]),
+                )
+        elif not (ex["color"] or "").strip() and info["color"]:
+            # Conservador: solo rellenar color si en el catálogo está vacío.
+            color_rellenos += 1
+            if aplicar:
+                db.execute(
+                    "UPDATE scintela.tinto_costos "
+                    "SET color=%s, fecha_modifica=CURRENT_TIMESTAMP, "
+                    "    usuario_modifica='formulas-app' WHERE cod=%s",
+                    (info["color"], cod),
+                )
+
+    modo = "APLICADO" if aplicar else "DRY-RUN"
+    yield (f"  [{modo}] catálogo: +{nuevos} nuevos, "
+           f"{color_rellenos} colores rellenados "
+           f"(total previo {len(existentes)}). "
+           f"Costo queda en 0 para los nuevos — cargalo por COSTOS.DBF o a mano.")

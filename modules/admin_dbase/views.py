@@ -398,6 +398,34 @@ def tinto_costos_run():
 
 
 # ---------------------------------------------------------------------------
+# Importar TODOS los colores desde formulas_app — TMT 2026-06-29 (dueña).
+# El catálogo scintela.tinto_costos solo tenía ~118 códigos (COSTOS.DBF) y
+# faltaban colores. formulas_app (la app de tintorería, bridge read-only
+# formulas_db) es el maestro vivo de fórmulas/colores. Este botón los trae
+# TODOS y los upsertea al catálogo (conservador: inserta faltantes con costo 0,
+# rellena color vacío, NO pisa costos/colores ya cargados). Sin tarball: lee
+# directo de formulas_app por el pool read-only. Reproducible 100% por la UI.
+# ---------------------------------------------------------------------------
+@bp.route("/tinto-costos/from-formulas", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def tinto_costos_from_formulas():
+    aplicar = (request.form.get("aplicar") or "").lower() in ("1", "true", "on", "si", "s\u00ed")
+
+    def _stream():
+        from modules.admin_dbase.tinto_costos_sync import refresh_from_formulas_app
+        yield f"[cat\u00e1logo tintura \u2190 formulas_app] {'APLICAR' if aplicar else 'DRY-RUN'}\n\n"
+        try:
+            for ln in refresh_from_formulas_app(aplicar=aplicar):
+                yield ln.rstrip("\n") + "\n"
+            yield "\nOK \u2713\n" if aplicar else "\nDRY-RUN \u2713 (no se escribi\u00f3 nada \u2014 tild\u00e1 'aplicar' para guardar)\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"\n[ERROR] {exc!r}\n"
+
+    return Response(stream_with_context(_stream()), mimetype="text/plain")
+
+
+# ---------------------------------------------------------------------------
 # Sync STAT desde xlsx exportado del DBF — TMT 2026-05-28 (dueña).
 # Pedido: 'make sure these are the only conciliated movements — the *'.
 # Cuando entre syncs DBF→PC, alguien marcó conciliados en PC (vía

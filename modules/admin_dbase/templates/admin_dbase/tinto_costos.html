@@ -43,6 +43,36 @@
     </button>
   </form>
 
+  <div class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+    <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-1">
+      Traer TODOS los colores desde la app de tintura (formulas_app)
+    </h2>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">
+      Importa <b>todas</b> las f\u00f3rmulas/colores de
+      <code class="px-1 rounded bg-slate-100 dark:bg-slate-800">formulas_app</code>
+      (la app de tinturado) al cat\u00e1logo, para que la planilla
+      <a href="{{ url_for('comparativa_tintoreria.tinto_carga') }}" class="text-sky-700 hover:underline">Carga Tintura</a>
+      los acepte. No hace falta subir nada \u2014 lee directo por el puente read-only.
+    </p>
+    <ul class="text-xs text-slate-500 dark:text-slate-400 mb-4 list-disc pl-5 space-y-1">
+      <li>Inserta los c\u00f3digos faltantes con <b>costo 0</b> (formulas_app no tiene $/kg de tela \u2014 carg\u00e1 el costo despu\u00e9s por COSTOS.DBF o a mano).</li>
+      <li>Rellena el color si en el cat\u00e1logo est\u00e1 vac\u00edo. <b>NO</b> pisa costos ni colores ya cargados.</li>
+      <li>Prob\u00e1 primero en <b>DRY-RUN</b>.</li>
+    </ul>
+
+    <form id="faForm" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="aplicar" value="1">
+        <span>Aplicar (si lo dej\u00e1s destildado = DRY-RUN, solo muestra qu\u00e9 har\u00eda)</span>
+      </label>
+      <button type="submit"
+              class="text-sm px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white">
+        Importar colores de formulas_app
+      </button>
+    </form>
+  </div>
+
   <pre id="output"
        class="mt-4 hidden whitespace-pre-wrap text-xs bg-slate-900 text-emerald-200 p-4 rounded h-96 overflow-auto"></pre>
 
@@ -55,6 +85,30 @@
       pre.textContent = 'Subiendo y procesando…\n';
       const fd = new FormData(form);
       const resp = await fetch("{{ url_for('admin_dbase.tinto_costos_run') }}", {
+        method: 'POST',
+        body: fd,
+        headers: {'X-CSRFToken': fd.get('csrf_token')},
+      });
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        pre.textContent += dec.decode(value);
+        pre.scrollTop = pre.scrollHeight;
+      }
+    });
+  </script>
+
+  <script>
+    document.getElementById('faForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const pre = document.getElementById('output');
+      pre.classList.remove('hidden');
+      pre.textContent = 'Importando desde formulas_app\u2026\n';
+      const fd = new FormData(form);
+      const resp = await fetch("{{ url_for('admin_dbase.tinto_costos_from_formulas') }}", {
         method: 'POST',
         body: fd,
         headers: {'X-CSRFToken': fd.get('csrf_token')},
