@@ -93,6 +93,11 @@
   .imp .btn-undo:hover { text-decoration: underline; }
   .imp .acc-hint { font-size: 10px; color: rgb(148 163 184); margin-top: 4px; }
   .imp .acc-hint.warn { color: rgb(180 83 9); font-weight: 600; }
+  .imp .acc-edit { margin-top: 5px; }
+  .imp .acc-edit > summary { cursor: pointer; font-size: 10.5px; color: rgb(2 132 199);
+                             font-weight: 600; list-style: none; user-select: none; }
+  .imp .acc-edit > summary::-webkit-details-marker { display: none; }
+  .imp .acc-edit[open] > summary { margin-bottom: 5px; }
   .dark .imp .acc-cell input[type=text] { background: rgb(15 23 42); border-color: rgb(71 85 105); color: #fff; }
 </style>
 {% endblock %}
@@ -193,6 +198,70 @@
                 <span class="recep recep-no" title="Anticipo USD — todavía no convertido a compra">anticipo</span>
               {% elif r.codigo %}
                 <span class="no" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
+              {% else %}
+                <span class="text-slate-300">—</span>
+              {% endif %}
+            </td>
+            <td class="acc-cell">
+              {% if r.codigo %}
+                {% set ant = r.anticipo_disponible or 0 %}
+                {% set pago_prefill = (r.monto_real if r.tiene_pc else r.importe_programa) or r.deuda_efectiva %}
+                {% set ant_prefill = (r.anticipo_aplicado if r.tiene_pc else ant) %}
+                {% if r.estado_flujo == 'pagada' %}
+                  <span class="recep recep-ok">✓ Pagada</span>
+                  <div class="acc-info">Pagado <b>$ {{ (r.monto_real if r.tiene_pc else r.importe_programa) | num_es(2) }}</b>
+                    {% if r.fuente == 'anticipo' %}<span class="acc-hint">· anticipo</span>{% elif not r.tiene_pc %}<span class="acc-hint">· programa</span>{% endif %}
+                    {% if r.tiene_pc and r.anticipo_aplicado %}<br>Anticipo $ {{ r.anticipo_aplicado | num_es(2) }}{% endif %}
+                  </div>
+                  {% if tiene_permiso('compras.editar') %}
+                  <details class="acc-edit"><summary>✎ editar / pagar a mano</summary>
+                    <form method="post" action="{{ url_for('importaciones.pagar') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
+                      <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
+                      <div class="acc-row"><label>Anticipo</label>
+                        <input type="text" name="anticipo" value="{{ (ant_prefill | round(2)) if ant_prefill else '' }}"></div>
+                      <div class="acc-row"><label>Pago total</label>
+                        <input type="text" name="monto_real" value="{{ (pago_prefill | round(2)) if pago_prefill else '' }}"></div>
+                      <button class="btn-acc btn-pagar">Pagar →</button>
+                    </form>
+                    {% if r.tiene_pc %}
+                    <form method="post" action="{{ url_for('importaciones.deshacer_pago') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
+                      <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
+                      <input type="hidden" name="anticipo" value="{{ r.anticipo_aplicado or ant }}">
+                      <button class="btn-undo">↺ deshacer pago</button>
+                    </form>
+                    {% endif %}
+                  </details>
+                  {% endif %}
+
+                {% elif r.estado_flujo == 'faltan_pagar' %}
+                  <span class="recep recep-no">⏳ Falta pagar</span>
+                  <div class="acc-info"><span class="no">deuda $ {{ r.deuda_efectiva | num_es(2) }}</span></div>
+                  {% if tiene_permiso('compras.editar') %}
+                    <form method="post" action="{{ url_for('importaciones.pagar') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
+                      <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
+                      <div class="acc-row"><label>Anticipo</label>
+                        <input type="text" name="anticipo" value="{{ (ant_prefill | round(2)) if ant_prefill else '' }}"></div>
+                      <div class="acc-row"><label>Pago total</label>
+                        <input type="text" name="monto_real" value="{{ (pago_prefill | round(2)) if pago_prefill else '' }}"></div>
+                      <button class="btn-acc btn-pagar">Pagar →</button>
+                    </form>
+                    {% if r.tiene_pc %}
+                    <form method="post" action="{{ url_for('importaciones.deshacer_recepcion') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
+                      <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
+                      <button class="btn-undo">↺ deshacer recepción</button>
+                    </form>
+                    {% endif %}
+                  {% endif %}
+
+                {% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
