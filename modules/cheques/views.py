@@ -222,6 +222,8 @@ def nuevo():
         # real (cheque/depósito/efectivo) lo da medio_anticipo[]. Lo usamos como
         # no_banco efectivo y marcamos el cheque como anticipo (espejo NB=98).
         _ch_anticipo = (nb_clean == 97)
+        _nb_form = nb_clean   # banco tal cual lo eligió la dueña (97 si anticipo)
+        _medio = None
         if nb_clean == 97:
             _medio = parse_int(medios_anticipo_raw[i]) if i < len(medios_anticipo_raw) else None
             if _medio:
@@ -252,6 +254,8 @@ def nuevo():
                 "no_banco": nb_clean,
                 "es_deposito": es_deposito,
                 "es_anticipo": _ch_anticipo,
+                "no_banco_form": _nb_form,
+                "medio_anticipo": _medio,
             }
         )
     # `fechad` general (compat con resto del view + restore-on-error).

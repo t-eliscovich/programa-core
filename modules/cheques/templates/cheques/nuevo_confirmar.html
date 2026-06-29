@@ -80,7 +80,8 @@
            pisaba el banco de todos en multi-banco!). #}
         <input type="hidden" name="stat[]" value="{{ c.stat or 'Z' }}">
         <input type="hidden" name="doc_banco[]" value="{{ c.doc_banco or '' }}">
-        <input type="hidden" name="no_banco[]" value="{{ c.no_banco or no_banco or '' }}">
+        <input type="hidden" name="no_banco[]" value="{{ c.no_banco_form or c.no_banco or no_banco or '' }}">
+        <input type="hidden" name="medio_anticipo[]" value="{{ c.medio_anticipo or '' }}">
       {% endfor %}
       {% for ap in aplicaciones_pre %}
         <input type="hidden" name="aplicar[{{ ap.id_fact }}]" value="{{ ap.importe }}">
@@ -209,7 +210,8 @@
         <input type="hidden" name="fechad[]" value="{{ c.fechad.isoformat() if c.fechad else '' }}">
         <input type="hidden" name="stat[]" value="{{ c.stat or 'Z' }}">
         <input type="hidden" name="doc_banco[]" value="{{ c.doc_banco or '' }}">
-        <input type="hidden" name="no_banco[]" value="{{ c.no_banco or no_banco or '' }}">
+        <input type="hidden" name="no_banco[]" value="{{ c.no_banco_form or c.no_banco or no_banco or '' }}">
+        <input type="hidden" name="medio_anticipo[]" value="{{ c.medio_anticipo or '' }}">
       {% endfor %}
     </form>
 
@@ -237,6 +239,10 @@
         <input type="hidden" name="no_cheque[]" value="{{ c.no_cheque }}">
         <input type="hidden" name="importe[]" value="{{ c.importe }}">
         <input type="hidden" name="fechad[]" value="{{ c.fechad.isoformat() if c.fechad else '' }}">
+        <input type="hidden" name="stat[]" value="{{ c.stat or 'Z' }}">
+        <input type="hidden" name="doc_banco[]" value="{{ c.doc_banco or '' }}">
+        <input type="hidden" name="no_banco[]" value="{{ c.no_banco_form or c.no_banco or no_banco or '' }}">
+        <input type="hidden" name="medio_anticipo[]" value="{{ c.medio_anticipo or '' }}">
       {% endfor %}
       <div class="bg-slate-50 border border-slate-200 rounded p-4 mb-4 text-sm">
         Sin facturas seleccionadas — el(los) cheque(s) van a quedar en cartera.
