@@ -201,6 +201,8 @@ def nuevo():
     # Bancos depósito directo: 90 DEP.PICH, 91 DEP.INTER, 95 CANCELA ANT,
     # 97 ANTICIPO, 99 EFECTIVO. La dueña pidió que para estos: fecha hoy
     # obligatoria, no_cheque no requerido.
+    # TMT 2026-06-29 (dueña, paridad dBase): medio real del anticipo (97).
+    medios_anticipo_raw = request.form.getlist("medio_anticipo[]")
     _BANCOS_DEPOSITO = {90, 91, 95, 97, 99}
     # Limpiar y alinear las listas — cada cheque puede tener su propia
     # fecha de depósito Y su propio banco emisor.
@@ -216,6 +218,14 @@ def nuevo():
         # banco por cheque — fallback al primero/legacy si index out of range.
         nb_raw = nos_banco_raw[i] if i < len(nos_banco_raw) else (nos_banco_raw[0] if nos_banco_raw else None)
         nb_clean = parse_int(nb_raw)
+        # TMT 2026-06-29 (dueña, paridad dBase): banco=97 (anticipo) → el medio
+        # real (cheque/depósito/efectivo) lo da medio_anticipo[]. Lo usamos como
+        # no_banco efectivo y marcamos el cheque como anticipo (espejo NB=98).
+        _ch_anticipo = (nb_clean == 97)
+        if nb_clean == 97:
+            _medio = parse_int(medios_anticipo_raw[i]) if i < len(medios_anticipo_raw) else None
+            if _medio:
+                nb_clean = _medio
         # Para bancos depósito: si N° cheque vacío, lo dejamos vacío (no req).
         # Pero si NO es depósito, el N° cheque queda como vino.
         es_deposito = (nb_clean in _BANCOS_DEPOSITO)
@@ -241,6 +251,7 @@ def nuevo():
                 "raw_importe": i_clean,
                 "no_banco": nb_clean,
                 "es_deposito": es_deposito,
+                "es_anticipo": _ch_anticipo,
             }
         )
     # `fechad` general (compat con resto del view + restore-on-error).
@@ -611,7 +622,9 @@ def nuevo():
             for ch_in in cheques_in:
                 # TMT 2026-05-27 — banco por cheque (no_banco from ch_in)
                 _ch_no_banco = ch_in.get("no_banco") if ch_in.get("no_banco") is not None else no_banco
-                _ch_es_anticipo = es_anticipo or (_ch_no_banco == 97)
+                _ch_es_anticipo = (
+                    ch_in.get("es_anticipo") or es_anticipo or (_ch_no_banco == 97)
+                )
                 ch = queries.crear(
                     fecha=fecha,
                     fechad=ch_in.get("fechad") or fechad,  # por cheque
@@ -626,7 +639,7 @@ def nuevo():
                     # (Z/P/D/B/X/1/2). queries.crear lo respeta si !=Z.
                     stat=ch_in.get("stat") or "Z",
                     clave=clave,
-                    es_anticipo=es_anticipo,
+                    es_anticipo=_ch_es_anticipo,
                     # TMT 2026-05-26 — doc_banco por cheque (N° comprobante/depósito).
                     doc_banco=ch_in.get("doc_banco"),
                     usuario=usuario,

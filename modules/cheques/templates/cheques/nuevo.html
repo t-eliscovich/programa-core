@@ -124,6 +124,25 @@
                     {% endfor %}
                   </select>
                 </label>
+                {# TMT 2026-06-29 (dueña, paridad dBase): al elegir 97·ANTICIPO el
+                   dBase vuelve a preguntar el BANCO (el medio real). Mostramos
+                   este "Medio del anticipo" SOLO cuando banco=97: efectivo /
+                   depósito / cheque (con su banco emisor). El backend lo usa
+                   como no_banco real y marca es_anticipo. #}
+                <label class="flex flex-col col-span-2 cheque-medio-wrap hidden">
+                  <span class="text-xs text-slate-600">Medio del anticipo <span class="text-red-500">*</span></span>
+                  <select name="medio_anticipo[]" class="cheque-medio border rounded px-2 py-1 mt-0.5 text-sm">
+                    <option value="">— cómo entró —</option>
+                    <option value="99">Efectivo</option>
+                    <option value="90">Depósito Pichincha</option>
+                    <option value="91">Depósito Internacional</option>
+                    {% for b in bancos %}
+                      {% if b.no_banco|int < 90 %}
+                      <option value="{{ b.no_banco }}">Cheque · {{ b.no_banco }} · {{ b.nombre }}</option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                </label>
                 <label class="flex flex-col cheque-num-wrap">
                   <span class="text-xs text-slate-600 cheque-num-label">N° cheque <span class="text-red-500 cheque-num-req">*</span></span>
                   <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
@@ -1133,7 +1152,14 @@
     const fechadWrap = bloque.querySelector('.cheque-fechad-wrap');
     const statSel = bloque.querySelector('.cheque-stat');
     if (!bancoSel) return;
-    const v = bancoSel.value;
+    // TMT 2026-06-29 paridad dBase: banco=97 (anticipo) re-pregunta el medio.
+    // Las reglas de N°/fecha se rigen por el medio elegido, no por el 97.
+    const medioSel  = bloque.querySelector('.cheque-medio');
+    const medioWrap = bloque.querySelector('.cheque-medio-wrap');
+    const esAnticipo97 = (bancoSel.value === '97');
+    if (medioWrap) medioWrap.classList.toggle('hidden', !esAnticipo97);
+    if (medioSel) medioSel.required = esAnticipo97;
+    const v = esAnticipo97 ? ((medioSel && medioSel.value) || '97') : bancoSel.value;
     const esDeposito = DEPOSITO_BANCOS.includes(v);
     // TMT 2026-05-28 dueña: 'Si es un deposito (90/91/95/97/99) obligatoriamente
     // fecha de hoy y no necesita numero de cheque. Solo abrir N° cheque y fecha
@@ -1203,7 +1229,7 @@
       }
     }
     // Auto-tick es_anticipo cuando se elige 97 (paridad con el view).
-    if (v === '97' && anticipoChk && !anticipoChk.checked) {
+    if (esAnticipo97 && anticipoChk && !anticipoChk.checked) {
       anticipoChk.checked = true;
       anticipoChk.dispatchEvent(new Event('change'));
     }
@@ -1216,6 +1242,8 @@
       sel.addEventListener('change', () => configurarBloque(bloque));
       configurarBloque(bloque); // init
     }
+    const medioSel = bloque.querySelector('.cheque-medio');
+    if (medioSel) medioSel.addEventListener('change', () => configurarBloque(bloque));
   }
   document.querySelectorAll('.cheque-bloque').forEach(wireBloqueListener);
   // Expose para que el clonado de bloque (en JS de "+ Otro cheque") wire-uppee también
