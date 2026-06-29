@@ -26,7 +26,7 @@ def _t(sql: str, params, started: float) -> None:
         one_line = " ".join(sql.split())[:180]
         _log.warning("slow %.0fms  %s", ms, one_line)
 
-_pool: pool.SimpleConnectionPool | None = None
+_pool: pool.ThreadedConnectionPool | None = None
 
 
 def init_pool() -> None:
@@ -34,7 +34,12 @@ def init_pool() -> None:
     global _pool
     if _pool is not None:
         return
-    _pool = pool.SimpleConnectionPool(
+    # TMT 2026-06-29 (dueña: 'se cierra la sesión al guardar'). CAUSA RAÍZ:
+    # SimpleConnectionPool NO es thread-safe; Waitress sirve en varios hilos
+    # → dos requests concurrentes (ej. guardar cobranza + llamadas paralelas)
+    # agarraban la MISMA conexión, el lookup de usuario devolvía vacío y
+    # auth hacía session.clear() (logout). ThreadedConnectionPool usa lock.
+    _pool = pool.ThreadedConnectionPool(
         minconn=int(os.environ.get("DB_POOL_MIN", "1")),
         maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
         host=os.environ["DB_HOST"],
