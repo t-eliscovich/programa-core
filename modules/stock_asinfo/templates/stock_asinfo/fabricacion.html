@@ -135,23 +135,18 @@
       </div>
     </div>
 
-    {# ── Pendientes de pago + check de contar/no contar (TMT 2026-06-26) ── #}
+    {# ── Importaciones recibidas que faltan pagar (TMT 2026-06-29) ──────────
+       Los kg recibidos YA están contados en el stock de arriba (todo junto).
+       Acá sólo se muestran las que faltan pagar, con link a la pestaña. #}
     <div class="chain-foot no-print" style="display:flex; flex-wrap:wrap; align-items:center; gap:14px;">
       <span>
-        Pendiente de pago (importaciones sin contabilizar):
+        Recibidas, <strong>falta pagar</strong>:
         <strong class="{{ 'text-amber-700' if pendiente_kg else 'text-slate-500' }}">{{ pendiente_kg | num_es(0) }} kg</strong>
         {% if pendiente_n %}<span class="text-slate-400">· {{ pendiente_n }} importac.</span>{% endif %}
-        <a class="underline ml-1" href="{{ url_for('importaciones.lista', pago='pendiente') }}">ver</a>
+        <span class="text-slate-400">(ya contadas en el stock)</span>
       </span>
-      <span>
-        {% if contar_pendientes %}
-          <a class="px-2 py-0.5 rounded border border-slate-300 hover:bg-slate-50"
-             href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, pend='0') }}">Contar pendientes: <strong>SÍ</strong> → no contar</a>
-        {% else %}
-          <a class="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100"
-             href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso) }}">Contar pendientes: <strong>NO</strong> → contar</a>
-        {% endif %}
-      </span>
+      <a class="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100"
+         href="{{ url_for('importaciones.lista', pago='pendiente') }}">Ver las que faltan pagar →</a>
     </div>
 
     {% if stock_programa.get('total') %}

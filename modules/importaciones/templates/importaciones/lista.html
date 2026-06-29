@@ -46,6 +46,15 @@
     </div>
   {% endif %}
 
+  {# ── Pestañas rápidas por estado de pago (TMT 2026-06-29) ────────────── #}
+  <div class="no-print flex flex-wrap gap-1 mb-4">
+    {% set _tabs = [('', 'Todas'), ('en_transito', 'En tránsito'), ('pendiente', 'Faltan pagar'), ('pagada', 'Pagadas')] %}
+    {% for val, lbl in _tabs %}
+      <a href="{{ url_for('importaciones.lista', pago=val, q=q, estado=estado, recep=recep) }}"
+         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if pago == val else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">{{ lbl }}</a>
+    {% endfor %}
+  </div>
+
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="kpi"><div class="kpi-label">Importaciones</div><div class="kpi-val">{{ total }}</div></div>
     <div class="kpi"><div class="kpi-label">Recibidas (en stock)</div><div class="kpi-val ok">{{ recibidas_pc }}</div></div>

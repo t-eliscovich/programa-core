@@ -146,6 +146,16 @@
   .informe-balance > details.mt-6 { margin-top: 4px !important; }
   /* Compactar también el sub-padding del frame principal y la barra footer */
   .informe-balance .px-5.py-3 { padding-top: 4px !important; padding-bottom: 4px !important; }
+
+  /* TMT 2026-06-29 — fix layout superpuesto: la tabla RESULTADOS (5 columnas)
+     desbordaba sobre el panel ACTIVO. Le damos más ancho a la izquierda, y
+     min-width:0 + overflow-x:auto como backstop para que NUNCA se pisen. */
+  @media (min-width: 1024px) {
+    .informe-balance .balance-grid {
+      grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) !important;
+    }
+  }
+  .informe-balance .balance-col { min-width: 0; overflow-x: auto; }
 </style>
 {% endblock %}
 
@@ -186,7 +196,7 @@
   {# Frame único, plano. Sin gradientes ni "TV ochentosa". #}
   <div class="border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 overflow-hidden">
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 balance-grid">
     {# -------- I N F O R M E   D E   R E S U L T A D O S  (mes / proyección) --------
        Mismo font-mono text-sm que el panel ACTIVO/PASIVO de la derecha.
        Misma estructura de header rosa (dBase aesthetic). #}
@@ -202,7 +212,7 @@
       'Proyección':          url_for('iniciales.lista'),
       'Utilidad Proyectada': url_for('iniciales.lista'),
     } %}
-    <div class="border-r border-slate-200 dark:border-slate-800">
+    <div class="border-r border-slate-200 dark:border-slate-800 balance-col">
       <table class="balance-table">
         <thead>
           {# Tabla RESULTADOS rediseñada — Federico 2026-05-21.
@@ -269,7 +279,7 @@
 
     {# Col derecha: Balance + Detalle bancos apilados — wrapper para que ambos
        compartan la columna 2 del grid. #}
-    <div>
+    <div class="balance-col">
 
     {# -------- B A L A N C E (col derecha) — layout idéntico al dBase --------
        Una sola tabla densa: ACTIVO en rojo, filas, SUBTOTAL/TOTAL destacados,
