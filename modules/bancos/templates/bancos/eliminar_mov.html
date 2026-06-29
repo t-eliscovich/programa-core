@@ -33,10 +33,17 @@
     {% set info %}
       Esto va a ejecutar en una sola transacción:
       <ul class="list-disc list-inside mt-1 text-[13px] space-y-0.5">
+        {% if cheques_vivos %}
+        <li><strong>{{ cheques_vivos|length }} cheque(s) vuelve(n) a cartera</strong>
+            (stat → Z): {{ cheques_vivos | map(attribute='no_cheque') | join(', ') }}</li>
+        {% elif n_links %}
+        <li>Se limpia(n) {{ n_links }} enlace(s) cheque↔transacción huérfano(s)
+            (el cheque real ya está correcto desde el dBase)</li>
+        {% endif %}
         <li>DELETE del movimiento <strong>#{{ tx.id_transaccion }}</strong> en {{ tx.banco_nombre }}</li>
         <li>Recalcular el saldo corrido del banco</li>
       </ul>
-      Solo se permite para movimientos cargados en PC, sin conciliar, sin reverso propio y sin cheques enganchados.
+      Solo para movimientos cargados en PC, sin conciliar y sin reverso propio (mov_doble).
     {% endset %}
     {{ wizard_info('rose', info) }}
     {{ wizard_footer(url_for('bancos.movimientos', no_banco=tx.no_banco), 'Eliminar movimiento →', 'rose') }}

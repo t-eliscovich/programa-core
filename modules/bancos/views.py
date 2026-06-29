@@ -1103,26 +1103,50 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
               "desde /historial, no se borra a mano.", "warn")
         return redirect(url_for("bancos.movimientos", no_banco=no_banco))
 
-    cxt = _db.fetch_one(
-        "SELECT 1 FROM scintela.chequextransaccion WHERE id_transaccion = %s LIMIT 1",
+    # Cheques enganchados: NO abortamos. Hacemos la reversa COMPLETA del
+    # depósito (TMT 2026-06-26 dueña: alex depositó un cheque TOM en INTERNACI
+    # por error). Un cheque "vivo" todavía depositado (stat B/I) vuelve a
+    # cartera (Z); si el enlace quedó HUÉRFANO (el sync de CHEQUES.DBF recargó
+    # los cheques con ids nuevos), solo se limpia el enlace. En ambos casos se
+    # borra el mov de banco y se recalcula el saldo.
+    links = _db.fetch_all(
+        "SELECT id_cheque FROM scintela.chequextransaccion WHERE id_transaccion = %s",
         (id_transaccion,),
-    )
-    if cxt:
-        flash("Este movimiento tiene cheques enganchados — reversá el depósito "
-              "por la pantalla de Cheques para que el cheque vuelva a cartera.",
-              "warn")
-        return redirect(url_for("bancos.movimientos", no_banco=no_banco))
+    ) or []
+    cheques_vivos = []
+    for lk in links:
+        ch = _db.fetch_one(
+            "SELECT id_cheque, no_cheque, stat FROM scintela.cheque WHERE id_cheque = %s",
+            (lk.get("id_cheque"),),
+        )
+        if ch and (ch.get("stat") or "").upper() in ("B", "I"):
+            cheques_vivos.append(ch)
 
     if request.method == "POST":
+        usuario = (g.user or {}).get("username", "web")
         try:
             with _db.tx() as conn:
+                # 1) Cheques vivos depositados → vuelven a cartera (Z).
+                for ch in cheques_vivos:
+                    _db.execute(
+                        "UPDATE scintela.cheque "
+                        "   SET stat = 'Z', fechaing = NULL, "
+                        "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
+                        " WHERE id_cheque = %s",
+                        (usuario, ch.get("id_cheque")), conn=conn,
+                    )
+                # 2) Borrar los enlaces cheque↔transacción (vivos y huérfanos).
+                _db.execute(
+                    "DELETE FROM scintela.chequextransaccion WHERE id_transaccion = %s",
+                    (id_transaccion,), conn=conn,
+                )
+                # 3) Borrar el mov de banco.
                 _db.execute(
                     "DELETE FROM scintela.transacciones_bancarias "
                     "WHERE id_transaccion = %s AND no_banco = %s",
                     (id_transaccion, no_banco), conn=conn,
                 )
-                # Recompute del running saldo (ancla = 2da fila más vieja, igual
-                # que /bancos/recompute-saldos). Si queda 0/1 fila, no hay walk.
+                # 4) Recompute del running saldo (ancla = 2da fila más vieja).
                 anc = _db.fetch_one(
                     "SELECT id_transaccion AS ancla "
                     "  FROM scintela.transacciones_bancarias "
@@ -1135,16 +1159,24 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
                         conn, no_banco=no_banco, no_cta=None,
                         ancla_id=int(anc["ancla"]),
                     )
+            extra = (f" {len(cheques_vivos)} cheque(s) devuelto(s) a cartera."
+                     if cheques_vivos else "")
             flash(
                 f"Movimiento #{id_transaccion} eliminado "
-                f"({tx.get('concepto') or ''} {float(tx.get('importe') or 0):,.2f}).",
+                f"({tx.get('concepto') or ''} {float(tx.get('importe') or 0):,.2f})."
+                + extra,
                 "ok",
             )
         except Exception as e:
             flash_exc("No pude eliminar el movimiento", e)
         return redirect(url_for("bancos.movimientos", no_banco=no_banco))
 
-    return render_template("bancos/eliminar_mov.html", tx=tx)
+    return render_template(
+        "bancos/eliminar_mov.html",
+        tx=tx,
+        cheques_vivos=cheques_vivos,
+        n_links=len(links),
+    )
 
 
 # ---------------------------------------------------------------------------
