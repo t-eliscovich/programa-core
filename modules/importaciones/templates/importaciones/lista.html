@@ -194,7 +194,7 @@
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
                     <div class="flex items-center gap-1">
-                      <input type="text" name="kg" value="{{ r.kg | num_es(0) if r.kg else '' }}" placeholder="kg"
+                      <input type="text" name="kg" value="{{ (r.kg | round(0) | int) if r.kg else '' }}" placeholder="kg"
                              class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right" title="kg recibidos">
                       <input type="text" name="costo_estimado" value="{{ r.costo_estimado_sugerido or '' }}" placeholder="costo est."
                              class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right"
