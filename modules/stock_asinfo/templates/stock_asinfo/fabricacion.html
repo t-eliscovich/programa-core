@@ -31,6 +31,22 @@
   .fb .chain-foot { border-top: 1px solid rgb(241 245 249); padding: 8px 14px;
                     font-size: 12px; color: rgb(100 116 139); }
 
+  /* ── Totales combinados (Hilo total / Cruda total) ─────────────── */
+  .fb .combos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+                padding: 14px; border-top: 1px solid rgb(241 245 249); }
+  @media (max-width: 640px) { .fb .combos { grid-template-columns: 1fr; } }
+  .fb .combo { border: 1px solid rgb(226 232 240); border-left-width: 4px;
+               border-radius: 10px; padding: 11px 16px; background: rgb(248 250 252);
+               border-left-color: rgb(148 163 184); }
+  .fb .combo--hilo  { border-left-color: rgb(217 119 6);  background: rgb(255 251 235); }
+  .fb .combo--cruda { border-left-color: rgb(2 132 199);  background: rgb(240 249 255); }
+  .fb .combo-label { font-size: 11px; font-weight: 600; text-transform: uppercase;
+                     letter-spacing: 0.05em; color: rgb(100 116 139); }
+  .fb .combo-val { font-size: 24px; font-weight: 700; color: rgb(15 23 42);
+                   margin-top: 2px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .fb .combo-unit { font-size: 13px; font-weight: 600; color: rgb(100 116 139); }
+  .fb .combo-sub { font-size: 11px; color: rgb(148 163 184); margin-top: 3px; }
+
   /* ── Tarjetas con tabla adentro ─────────────────────────────── */
   .fb .card { background: white; border: 1px solid rgb(226 232 240); border-radius: 10px;
               overflow: hidden; }
@@ -106,17 +122,17 @@
     </div>
 
     {# ── Totales combinados (TMT 2026-06-26 dueña) ──────────────────────── #}
-    <div class="chain-foot" style="display:flex; flex-wrap:wrap; gap:24px; align-items:center;">
-      <span>
-        <span class="kpi-label">Hilo total</span>
-        <strong class="text-mono" style="font-size:15px; margin-left:6px;">{{ hilo_total | num_es(0) }} kg</strong>
-        <span class="text-slate-400">(Hilo + En proceso TC)</span>
-      </span>
-      <span>
-        <span class="kpi-label">Cruda total</span>
-        <strong class="text-mono" style="font-size:15px; margin-left:6px;">{{ cruda_total | num_es(0) }} kg</strong>
-        <span class="text-slate-400">(Tela Cruda + En proceso PT)</span>
-      </span>
+    <div class="combos">
+      <div class="combo combo--hilo">
+        <div class="combo-label">Hilo total</div>
+        <div class="combo-val">{{ hilo_total | num_es(0) }} <span class="combo-unit">kg</span></div>
+        <div class="combo-sub">Hilo + En proceso TC</div>
+      </div>
+      <div class="combo combo--cruda">
+        <div class="combo-label">Cruda total</div>
+        <div class="combo-val">{{ cruda_total | num_es(0) }} <span class="combo-unit">kg</span></div>
+        <div class="combo-sub">Tela Cruda + En proceso PT</div>
+      </div>
     </div>
 
     {# ── Pendientes de pago + check de contar/no contar (TMT 2026-06-26) ── #}
