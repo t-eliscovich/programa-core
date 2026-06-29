@@ -108,12 +108,12 @@
           <th style="width: 9%">Importación</th>
           <th style="width: 7%">Fecha</th>
           <th style="width: 11%">Recepción</th>
-          <th style="width: 15%">Proveedor</th>
+          <th style="width: 14%">Proveedor</th>
           <th style="width: 6%">Código</th>
-          <th style="width: 13%" data-no-sort>Nota Asinfo</th>
+          <th style="width: 12%" data-no-sort>Nota Asinfo</th>
           <th class="text-right" style="width: 7%">Kg</th>
           <th class="text-right" style="width: 10%">Programa (US$)</th>
-          <th style="width: 22%" data-no-sort>Recibir · Pagar</th>
+          <th style="width: 24%" data-no-sort>Recibir · Pagar</th>
         </tr>
       </thead>
       <tbody>
@@ -173,14 +173,14 @@
                     <span class="no">deuda $ {{ (r.deuda or 0) | num_es(2) }}</span>{% if ant %} · anticipo $ {{ ant | num_es(2) }}{% endif %}
                   </div>
                   {% if tiene_permiso('compras.editar') %}
-                  <form method="post" action="{{ url_for('importaciones.pagar') }}" class="mt-1 flex items-center gap-1">
+                  <form method="post" action="{{ url_for('importaciones.pagar') }}" class="mt-1 flex flex-wrap items-center gap-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
                     <input type="hidden" name="anticipo" value="{{ ant }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
-                    <input type="text" name="monto_real" value="{{ r.costo_estimado or '' }}" placeholder="monto real"
-                           class="w-24 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right">
+                    <input type="text" name="monto_real" value="{{ r.costo_estimado or '' }}" placeholder="costo real"
+                           class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right">
                     <button class="text-[11px] px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Pagar →</button>
                   </form>
                   <form method="post" action="{{ url_for('importaciones.deshacer_recepcion') }}" class="mt-1">
@@ -200,9 +200,9 @@
                     <input type="hidden" name="anticipo" value="{{ ant }}">
                     <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}">
                     <input type="hidden" name="recep" value="{{ recep }}"><input type="hidden" name="pago" value="{{ pago }}">
-                    <div class="flex items-center gap-1">
+                    <div class="flex flex-wrap items-center gap-1">
                       <input type="text" name="kg" value="{{ (r.kg | round(0) | int) if r.kg else '' }}" placeholder="kg"
-                             class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right" title="kg recibidos">
+                             class="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right" title="kg recibidos">
                       <input type="text" name="costo_estimado" value="{{ r.costo_estimado_sugerido or '' }}" placeholder="costo est."
                              class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right"
                              title="costo estimado{% if r.promedio_usd_kg %} (promedio $ {{ r.promedio_usd_kg }}/kg){% endif %}">
