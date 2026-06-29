@@ -1342,73 +1342,71 @@ def depositar_lote(
         # columna saldo queda NULL y el balance lee 0 en bancos (bug TMT
         # 2026-05-11: "deposité un cheque y no se sumó a bancos"). dBase
         # paridad: el running saldo es la fuente de verdad del saldo banco.
-        for r in rows:
-            imp = float(r.get("importe") or 0)
-            if imp <= 0:
-                # Cheque con importe 0 o negativo — no genera movimiento
-                # bancario (en cartera puede ser un cheque rebotado mal cargado).
-                continue
-            # TMT 2026-05-26 dueña: numreferencia = doc_banco (N° comprobante
-            # del banco que la dueña carga al ingresar el cheque) si existe.
-            # Es la rule #1 del matcher de conciliación. Fallback: id_cheque.
-            num_ref = (r.get("doc_banco") or "").strip() or str(r.get("id_cheque") or "")
+        # 2) UN movimiento bancario CONSOLIDADO por el TOTAL del lote
+        # (paridad dBase "dep.N ch.") + N links chequextransaccion al MISMO mov.
+        # TMT 2026-06-29 (dueña): "cuando es un lote a depositar, agrupar en un
+        # total" → conciliás contra un monto grande; el cruce N→1 contra las N
+        # líneas que el banco genera ya lo soporta la conciliación. (Antes se
+        # creaba un movimiento por cheque.) El rebote/anulado de un cheque del
+        # grupo compensa por el importe del CHEQUE (no del mov), así que el
+        # consolidado no se rompe.
+        import mov_doble as _md
+
+        positivos = [r for r in rows if float(r.get("importe") or 0) > 0]
+        total_pos = round(sum(float(r.get("importe") or 0) for r in positivos), 2)
+        if positivos:
+            n_pos = len(positivos)
+            concepto_dep = (concepto or f"dep.{n_pos} ch.").strip()[:50]
             mov = bank_helpers.insert_movimiento_bancario(
                 conn,
                 no_banco=no_banco,
                 no_cta=None,
                 fecha=fecha_deposito,
                 documento="DE",
-                importe=imp,
-                concepto=(
-                    concepto or f"Dep. cheque {r.get('no_cheque') or ''} {r.get('codigo_cli') or ''}"
-                ).strip()[:50],
-                prov=(r.get("codigo_cli") or "")[:5],
-                numreferencia=num_ref,
+                importe=total_pos,
+                concepto=concepto_dep,
+                prov=None,
+                numreferencia=None,
                 stat="A",
                 usuario=usuario,
             )
             id_t = mov.get("id_transaccion")
             if id_t:
-                id_transacciones.append(int(id_t))
-                # stat_ch en chequextransaccion histórico era 'D' (depositado).
-                # Mantenemos el código histórico 'D' — esta tabla traza el
-                # evento del depósito, no el estado del cheque. El cheque
-                # mismo está en stat='B'.
-                cur.execute(
-                    """
-                    INSERT INTO scintela.chequextransaccion
-                        (id_cheque, id_transaccion, fecha, stat_ch, usuario_crea)
-                    VALUES (%s, %s, %s, 'D', %s)
-                    """,
-                    (r["id_cheque"], id_t, fecha_deposito, usuario[:50]),
-                )
-                # mov_doble — para que /historial muestre el depósito como
-                # cheque → banco (no "banco mov #X → banco mov #X"). TMT
-                # 2026-05-16. El tipo `cheque_depositado` ya está mapeado en
-                # _REVERSO_DISPATCH para reversar Z→B con compensación banco.
-                import mov_doble as _md
-
-                _md.registrar(
-                    conn=conn,
-                    tipo="cheque_depositado",
-                    origen_table="cheque",
-                    origen_id=int(r["id_cheque"]),
-                    destino_table="transacciones_bancarias",
-                    destino_id=int(id_t),
-                    importe=imp,
-                    fecha=fecha_deposito,
-                    concepto=(
-                        f"Dep. cheque {r.get('no_cheque') or '#' + str(r['id_cheque'])} "
-                        f"{r.get('codigo_cli') or ''}"
-                    ).strip()[:200],
-                    usuario=usuario,
-                    metadata={
-                        "id_cheque": int(r["id_cheque"]),
-                        "id_transaccion": int(id_t),
-                        "no_banco": no_banco,
-                        "banco_nombre": banco_nombre,
-                    },
-                )
+                id_t = int(id_t)
+                id_transacciones.append(id_t)
+                for r in positivos:
+                    imp = float(r.get("importe") or 0)
+                    cur.execute(
+                        """
+                        INSERT INTO scintela.chequextransaccion
+                            (id_cheque, id_transaccion, fecha, stat_ch, usuario_crea)
+                        VALUES (%s, %s, %s, 'D', %s)
+                        """,
+                        (r["id_cheque"], id_t, fecha_deposito, usuario[:50]),
+                    )
+                    _md.registrar(
+                        conn=conn,
+                        tipo="cheque_depositado",
+                        origen_table="cheque",
+                        origen_id=int(r["id_cheque"]),
+                        destino_table="transacciones_bancarias",
+                        destino_id=id_t,
+                        importe=imp,
+                        fecha=fecha_deposito,
+                        concepto=(
+                            f"Dep. cheque {r.get('no_cheque') or '#' + str(r['id_cheque'])} "
+                            f"{r.get('codigo_cli') or ''}"
+                        ).strip()[:200],
+                        usuario=usuario,
+                        metadata={
+                            "id_cheque": int(r["id_cheque"]),
+                            "id_transaccion": id_t,
+                            "no_banco": no_banco,
+                            "banco_nombre": banco_nombre,
+                            "consolidado": True,
+                            "n_grupo": n_pos,
+                        },
+                    )
 
     return {
         "n_depositados": len(rows),
