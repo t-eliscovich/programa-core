@@ -49,6 +49,13 @@
   @media (max-width: 900px) { .fp .grid2 { grid-template-columns: 1fr; } }
   /* Header de movimientos: tabla muy densa, 1 col label + 6 cols data. */
   .fp .mov-table th, .fp .mov-table td { white-space: nowrap; }
+  /* Federico 2026-06-30 — COMPRAS HILADO y PRODUCCIÓN TEJIDO comparten la
+     MISMA grilla fija de 7 columnas que MOVIMIENTOS, para que KG / $/KG / $
+     caigan exactamente bajo las columnas de arriba. Por eso van apiladas a
+     ancho completo (no lado a lado) y las 3 columnas de la derecha quedan
+     vacías en esas dos tablas. */
+  .fp .mov-table, .fp .hil-table { table-layout: fixed; }
+  .fp .hil-table th, .fp .hil-table td { white-space: nowrap; }
 </style>
 {% endblock %}
 
@@ -100,6 +107,9 @@
       {# TMT 2026-05-19 v8 — replica TINT.BAT: HILADO con KG+$/KG+$,
          CRUDO y TERM sólo KG (con % en ingresos), COLOR sólo $. #}
       <table class="mov-table">
+        <colgroup>
+          <col style="width:14%"><col style="width:16%"><col style="width:11%"><col style="width:16%"><col style="width:15%"><col style="width:14%"><col style="width:14%">
+        </colgroup>
         <thead>
           <tr>
             <th class="lbl"></th>
@@ -159,10 +169,13 @@
     </div>
 
     {# ─── COMPRAS HILADO + PRODUCCIÓN TEJIDO ──────────────────── #}
-    <div class="grid2 mb-2">
-      <div class="blk">
+    <div class="mb-2">
+      <div class="blk mb-2">
         <div class="blk-title">Compras hilado</div>
-        <table>
+        <table class="hil-table">
+          <colgroup>
+            <col style="width:14%"><col style="width:16%"><col style="width:11%"><col style="width:16%"><col style="width:15%"><col style="width:14%"><col style="width:14%">
+          </colgroup>
           <thead><tr><th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th></tr></thead>
           <tbody>
             {% for r in data.compras_hilado %}
@@ -189,7 +202,10 @@
       </div>
       <div class="blk">
         <div class="blk-title">Producción tejido</div>
-        <table>
+        <table class="hil-table">
+          <colgroup>
+            <col style="width:14%"><col style="width:16%"><col style="width:11%"><col style="width:16%"><col style="width:15%"><col style="width:14%"><col style="width:14%">
+          </colgroup>
           <thead><tr><th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th></tr></thead>
           <tbody>
             {% for r in data.produc_tejido %}
