@@ -203,6 +203,23 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
 
 
 
+def imputaciones_de_linea(line_key: str) -> list[dict]:
+    """Retiros OP imputados a una linea (line_key), con su id para deshacer.
+    Tabla PC-only: puede no existir hasta correr la migracion 0109 -> [] defensivo."""
+    try:
+        rows = db.fetch_all(
+            "SELECT id_op_retiro_linea AS id, fecha, monto "
+            "FROM scintela.op_retiro_linea WHERE line_key = %s "
+            "ORDER BY fecha, id_op_retiro_linea",
+            (line_key,),
+        ) or []
+    except Exception:  # noqa: BLE001
+        return []
+    return [{"id": r["id"], "fecha": r.get("fecha"),
+             "monto": round(float(r.get("monto") or 0), 2)} for r in rows]
+
+
+
 def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
     """Deshace un retiro OP imputado a una linea.
 
@@ -221,11 +238,32 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
         monto = round(float(row.get("monto") or 0), 2)
         id_retiro = row.get("id_retiro")
         line_key = row.get("line_key")
-        # Borrar el retiro (revierte el balance) si todavia existe.
+        # Borrar el retiro (revierte el balance). Robusto al Sync dBase, que
+        # REASIGNA id_retiro a los retiros pc-retiro-op: primero validamos que
+        # el id siga apuntando a un retiro OP del mismo monto; si no, buscamos
+        # por (de=OP, ret, fecha, usuario_crea) para NO borrar otro retiro.
+        target_id = None
         if id_retiro:
+            _ok = db.fetch_one(
+                "SELECT id_retiro FROM scintela.retiros "
+                "WHERE id_retiro = %s AND UPPER(TRIM(de)) = 'OP' "
+                "AND ROUND(ret, 2) = %s",
+                (id_retiro, monto), conn=conn,
+            )
+            target_id = _ok.get("id_retiro") if _ok else None
+        if not target_id:
+            _alt = db.fetch_one(
+                "SELECT id_retiro FROM scintela.retiros "
+                "WHERE UPPER(TRIM(de)) = 'OP' AND ROUND(ret, 2) = %s "
+                "AND fecha = %s AND usuario_crea = %s "
+                "ORDER BY id_retiro DESC LIMIT 1",
+                (monto, row.get("fecha"), USUARIO_RETIRO_OP), conn=conn,
+            )
+            target_id = _alt.get("id_retiro") if _alt else None
+        if target_id:
             db.execute(
                 "DELETE FROM scintela.retiros WHERE id_retiro = %s",
-                (id_retiro,), conn=conn,
+                (target_id,), conn=conn,
             )
         # Borrar la imputacion (restaura el restante de la linea).
         db.execute(

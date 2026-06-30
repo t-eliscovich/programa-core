@@ -72,139 +72,6 @@
      TMT 2026-06-26 dueña. Saldo OP = |crédito posdat OP| − retiros OP.
      El retiro NO mueve ningún banco del programa (sale de un banco en USA):
      "banco USA" es sólo el comentario. Baja el saldo OP y queda en /retiros. #}
-  {% if tab == 'posdatados' and saldo_op %}
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 mb-6 no-print">
-    <div class="flex flex-wrap items-center gap-x-8 gap-y-2 justify-between">
-      <div class="flex flex-wrap items-center gap-x-8 gap-y-1">
-        <div>
-          <div class="text-[11px] uppercase tracking-wider text-slate-500">Crédito OP (compras)</div>
-          <div class="text-lg font-semibold text-mono">{{ saldo_op.credito | money_es }}</div>
-        </div>
-        <div>
-          <div class="text-[11px] uppercase tracking-wider text-slate-500">Retirado a accionistas</div>
-          <div class="text-lg font-semibold text-mono">{{ saldo_op.retirado | money_es }}</div>
-        </div>
-        <div>
-          <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo OP (falta retirar)</div>
-          <div class="text-lg font-semibold text-mono {{ 'text-amber-600' if saldo_op.disponible < 0 }}">{{ saldo_op.disponible | money_es }}</div>
-        </div>
-      </div>
-    </div>
-
-    {# ── Líneas OP: el retiro a accionistas sale DESDE una fila concreta ──
-       TMT 2026-06-30 dueña. Cada crédito OP registrado (compra OP de
-       importación + fila OP de posdatados) es una línea con su botón Retirar.
-       Al retirar, el "Restante" de ESA línea baja. El balance se cuenta UNA
-       sola vez: el retiro va a /retiros (de=OP); esta imputación es sólo
-       display (no toca el balance). #}
-    {% if tiene_permiso('posdat.editar') %}
-      {% if lineas_op %}
-      <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
-          Líneas OP — retirá a accionistas desde una fila concreta
-        </div>
-        <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-left text-[11px] uppercase tracking-wider text-slate-500">
-              <th class="py-1 pr-3">Origen</th>
-              <th class="py-1 pr-3">Concepto</th>
-              <th class="py-1 pr-3 text-right">Crédito</th>
-              <th class="py-1 pr-3 text-right">Retirado</th>
-              <th class="py-1 pr-3 text-right">Restante</th>
-              <th class="py-1 pl-3">Retirar de esta línea</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for L in lineas_op %}
-            <tr class="border-t border-slate-100 dark:border-slate-800">
-              <td class="py-1.5 pr-3 text-slate-500">{{ 'Importación' if L.origen == 'compra' else 'Posdatado' }}</td>
-              <td class="py-1.5 pr-3">{{ L.concepto or '—' }}</td>
-              <td class="py-1.5 pr-3 text-right text-mono">{{ L.credito | money_es }}</td>
-              <td class="py-1.5 pr-3 text-right text-mono text-slate-500">{{ L.retirado | money_es }}</td>
-              <td class="py-1.5 pr-3 text-right text-mono font-semibold {{ 'text-amber-600' if L.restante < 0 }}">{{ L.restante | money_es }}</td>
-              <td class="py-1.5 pl-3">
-                <form method="post" action="{{ url_for('posdat.retiro_op') }}" class="flex items-center gap-2">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="line_key" value="{{ L.line_key }}">
-                  <input type="hidden" name="line_concepto" value="{{ L.concepto }}">
-                  <input type="hidden" name="de" value="OP">
-                  <input type="hidden" name="fecha" value="{{ today_iso }}">
-                  <input type="text" name="monto" required placeholder="0,00"
-                         class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">
-                  <button type="submit"
-                          style="background:#059669;color:#ffffff;"
-                          class="text-sm px-3 py-1.5 rounded-lg font-medium whitespace-nowrap">
-                    Retirar
-                  </button>
-                </form>
-                {% if L.imputaciones %}
-                <div class="mt-1.5 flex flex-wrap gap-1">
-                  {% for imp in L.imputaciones %}
-                  <form method="post" action="{{ url_for('posdat.deshacer_retiro_op') }}" class="inline">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="id_op_retiro_linea" value="{{ imp.id }}">
-                    <button type="submit" title="Deshacer este retiro (la línea vuelve a subir)"
-                            class="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 hover:bg-rose-100 hover:text-rose-700">
-                      ✕ {{ imp.monto | money_es }}
-                    </button>
-                  </form>
-                  {% endfor %}
-                </div>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        </div>
-        <p class="text-[11px] text-slate-500 mt-2">
-          No mueve ningún banco del programa — la plata sale de un banco en USA. El retiro queda en
-          <a class="underline" href="{{ url_for('retiros.lista', de='OP') }}">/retiros</a> (igual que dBase)
-          y el "Restante" de esa línea baja. El balance se cuenta una sola vez.
-        </p>
-      </div>
-      {% endif %}
-
-      {# Fallback: retiro OP libre (sin línea), poco común — antes era el único.
-         Estilo inline porque bg-slate-800 no compila en el CSS de la app. #}
-      <details class="mt-3">
-        <summary style="background:#1e293b;color:#ffffff;"
-                 class="cursor-pointer inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg font-medium">
-          Otro retiro OP sin línea (poco común)
-        </summary>
-        <form method="post" action="{{ url_for('posdat.retiro_op') }}"
-              class="mt-3 flex flex-wrap items-end gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div>
-            <label class="block text-[11px] text-slate-500 mb-1">Monto</label>
-            <input type="text" name="monto" required placeholder="0,00"
-                   class="w-32 rounded border border-slate-300 px-2 py-1 text-sm text-right">
-          </div>
-          <div>
-            <label class="block text-[11px] text-slate-500 mb-1">Socio (de)</label>
-            <input type="text" name="de" value="OP" maxlength="5"
-                   class="w-20 rounded border border-slate-300 px-2 py-1 text-sm uppercase">
-          </div>
-          <div>
-            <label class="block text-[11px] text-slate-500 mb-1">Fecha</label>
-            <input type="date" name="fecha" value="{{ today_iso }}"
-                   class="rounded border border-slate-300 px-2 py-1 text-sm">
-          </div>
-          <div class="flex-1 min-w-[180px]">
-            <label class="block text-[11px] text-slate-500 mb-1">Concepto (banco USA)</label>
-            <input type="text" name="concepto" placeholder="RR OP banco USA" maxlength="100"
-                   class="w-full rounded border border-slate-300 px-2 py-1 text-sm">
-          </div>
-          <button type="submit" style="background:#059669;color:#ffffff;"
-                  class="text-sm px-4 py-2 rounded-lg font-medium">
-            Registrar retiro
-          </button>
-        </form>
-      </details>
-    {% endif %}
-  </div>
-  {% endif %}
 
   {# TMT 2026-05-27 dueña: 'mostrame cuanto subiste de ayer a hoy o algo
      para poder llevar la cuenta'. Solo aparece en tab=yy donde hay
@@ -378,6 +245,37 @@
                     title="Provisión con ciclo anual — su saldo se acumula durante el año hasta el pago único (ej. Décimo 13/14, Jubilación Patronal, Provisión Incobrable). No está atrasada, es así por diseño.">
                 anual
               </span>
+            {% endif %}
+            {# TMT 2026-06-30 dueña: el retiro a accionistas (OP) se carga AQUÍ,
+               en la propia fila OP. Restante = crédito − Σ retirado de esta
+               línea; baja al retirar. El balance pega una sola vez (el retiro
+               va a /retiros). El ✕ deshace (revierte balance + sube la fila). #}
+            {% if f.op_line_key %}
+            <div class="mt-1 flex flex-wrap items-center gap-1.5 no-print" data-stop="1">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400">Retiro OP · restante</span>
+              <span class="text-[11px] font-mono font-semibold {{ 'text-amber-600' if f.op_restante < 0 }}">{{ f.op_restante | money_es }}</span>
+              {% if tiene_permiso('posdat.editar') %}
+              <form method="post" action="{{ url_for('posdat.retiro_op') }}" class="inline-flex items-center gap-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="line_key" value="{{ f.op_line_key }}">
+                <input type="hidden" name="line_concepto" value="{{ f.concepto or '' }}">
+                <input type="hidden" name="de" value="OP">
+                <input type="hidden" name="fecha" value="{{ today_iso }}">
+                <input type="text" name="monto" required placeholder="0,00"
+                       class="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-right">
+                <button type="submit" style="background:#059669;color:#ffffff;"
+                        class="text-[11px] px-2 py-0.5 rounded font-medium">Retirar</button>
+              </form>
+              {% for imp in f.op_imputaciones %}
+              <form method="post" action="{{ url_for('posdat.deshacer_retiro_op') }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="id_op_retiro_linea" value="{{ imp.id }}">
+                <button type="submit" title="Deshacer este retiro (la línea vuelve a subir)"
+                        class="text-[10px] px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 hover:bg-rose-100 hover:text-rose-700">✕ {{ imp.monto | money_es }}</button>
+              </form>
+              {% endfor %}
+              {% endif %}
+            </div>
             {% endif %}
           </td>
           <td class="px-2 py-1 text-right font-mono tabular-nums {% if es_ajuste %}text-violet-700{% endif %}">

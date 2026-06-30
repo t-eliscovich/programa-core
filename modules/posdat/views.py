@@ -509,18 +509,31 @@ def lista():
     # Saldo OP (over-price/aporte) para el panel + botón de retiro a accionistas.
     # Sólo se muestra en el tab posdatados. Best-effort: si falla, no rompe.
     saldo_op = None
-    lineas_op = []
     if tab == "posdatados":
         try:
             from modules.retiros import queries as _ret
             saldo_op = _ret.saldo_op()
         except Exception:  # noqa: BLE001
             saldo_op = None
+        # TMT 2026-06-30 dueña: el retiro OP va EN la fila OP de la tabla de
+        # Posdatados (no en una tabla aparte). Adjuntamos a cada fila OP su
+        # line_key + restante (crédito − Σ imputado) + las imputaciones (con id
+        # para deshacer). Restante baja al retirar; el balance pega una sola vez.
         try:
             from modules.retiros import queries as _ret
-            lineas_op = _ret.lineas_op()
+            for _f in filas:
+                if (_f.get("prov") or "").strip().upper() == "OP":
+                    _lk = f"P|{int(_f.get('num') or 0)}|{(_f.get('concepto') or '')}"
+                    _imps = _ret.imputaciones_de_linea(_lk)
+                    _cred = round(-float(_f.get("importe") or 0), 2)
+                    _ret_sum = round(sum(i["monto"] for i in _imps), 2)
+                    _f["op_line_key"] = _lk
+                    _f["op_credito"] = _cred
+                    _f["op_retirado"] = _ret_sum
+                    _f["op_restante"] = round(_cred - _ret_sum, 2)
+                    _f["op_imputaciones"] = _imps
         except Exception:  # noqa: BLE001
-            lineas_op = []
+            pass
 
     # TMT 2026-05-29: no-store para forzar a que el browser/Caddy NO cacheen
     # la respuesta — el display-time depende de _hoy_ec() y cambia día a día.
@@ -545,7 +558,6 @@ def lista():
         acum_mes_hasta_hoy=acum_mes_hasta_hoy,
         dia_del_mes=_dia_hoy,
         saldo_op=saldo_op,
-        lineas_op=lineas_op,
         today_iso=today_ec().isoformat(),
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
