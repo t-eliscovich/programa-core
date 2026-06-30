@@ -312,7 +312,7 @@ def editar_campo(id_factura: int):
     """
     campo = (request.form.get("campo") or "").strip().lower()
     valor = (request.form.get("valor") or "").strip()
-    if campo not in ("importe", "kg", "fecha", "numf"):
+    if campo not in ("importe", "kg", "fecha", "numf", "codigo_cli"):
         return jsonify(ok=False, error=f"Campo no soportado: {campo}"), 400
     if not valor:
         return jsonify(ok=False, error="Valor vacío."), 400

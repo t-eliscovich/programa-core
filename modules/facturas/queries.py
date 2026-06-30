@@ -437,7 +437,7 @@ def editar_campo(
 
     Devuelve dict con los valores actualizados.
     """
-    if campo not in ("numf", "importe", "kg", "fecha"):
+    if campo not in ("numf", "importe", "kg", "fecha", "codigo_cli"):
         raise ValueError(f"Campo no soportado: {campo}")
 
     if campo == "numf":
@@ -528,6 +528,30 @@ def editar_campo(
             "id_factura": id_factura,
             "campo": "fecha",
             "valor_nuevo": nueva_fecha.isoformat(),
+        }
+
+    if campo == "codigo_cli":
+        # Dueña 2026-06-30: "dejame editar cliente". Corrección de typo del
+        # código de cliente desde el listado. No bloqueamos si el cliente no
+        # existe (los flujos asinfo/cobranza auto-crean) pero devolvemos el
+        # nombre si lo encontramos para feedback. "PC es el futuro": editable.
+        nuevo = (str(valor or "").strip().upper())[:10]
+        if not nuevo:
+            raise ValueError("Código de cliente vacío.")
+        nom = db.fetch_one(
+            "SELECT nombre FROM scintela.cliente WHERE UPPER(TRIM(codigo_cli)) = %s",
+            (nuevo,),
+        )
+        db.execute(
+            "UPDATE scintela.factura SET codigo_cli = %s, usuario_modifica = %s "
+            "WHERE id_factura = %s",
+            (nuevo, usuario, id_factura),
+        )
+        return {
+            "id_factura": id_factura,
+            "campo": "codigo_cli",
+            "valor_nuevo": nuevo,
+            "nombre": (nom or {}).get("nombre"),
         }
 
 
