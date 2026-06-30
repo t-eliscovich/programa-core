@@ -56,6 +56,9 @@
      vacías en esas dos tablas. */
   .fp .mov-table, .fp .hil-table { table-layout: fixed; }
   .fp .hil-table th, .fp .hil-table td { white-space: nowrap; }
+  /* dos titulos lado a lado: el 2do arranca en la col 5 (~49%) */
+  .fp .hil-titles { display: flex; }
+  .fp .hil-titles > .blk-title:first-child { width: 49%; }
 </style>
 {% endblock %}
 
@@ -108,7 +111,7 @@
          CRUDO y TERM sólo KG (con % en ingresos), COLOR sólo $. #}
       <table class="mov-table">
         <colgroup>
-          <col style="width:14%"><col style="width:16%"><col style="width:11%"><col style="width:16%"><col style="width:15%"><col style="width:14%"><col style="width:14%">
+          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
         </colgroup>
         <thead>
           <tr>
@@ -116,6 +119,7 @@
             <th>HILADO KG</th>
             <th>$/KG</th>
             <th>$</th>
+            <th></th>
             <th>CRUDO KG</th>
             <th>TERM. KG</th>
             <th>COLOR. $</th>
@@ -127,6 +131,7 @@
             <td class="num">{{ hl.get('stock_inic_kg') | num_es(0) if hl.get('stock_inic_kg') else '—' }}</td>
             <td class="num">{{ '%.3f' % (hl.get('stock_inic_ukg') or 0) if hl.get('stock_inic_ukg') else '—' }}</td>
             <td class="num">{{ hl.get('stock_inic_us') | num_es(0) if hl.get('stock_inic_us') else '—' }}</td>
+            <td></td>
             <td class="num">{{ tj.get('stock_inic_kg') | num_es(0) if tj.get('stock_inic_kg') else '—' }}</td>
             <td class="num">{{ te.get('stock_inic_kg') | num_es(0) if te.get('stock_inic_kg') else '—' }}</td>
             <td class="num">{{ co.get('stock_inic_us') | num_es(0) if co.get('stock_inic_us') else '—' }}</td>
@@ -136,6 +141,7 @@
             <td class="num">{{ hl.get('ingresos_kg') | num_es(0) if hl.get('ingresos_kg') else '—' }}</td>
             <td class="num">{{ '%.3f' % (hl.get('ingresos_ukg') or 0) if hl.get('ingresos_ukg') else '—' }}</td>
             <td class="num">{{ hl.get('ingresos_us') | num_es(0) if hl.get('ingresos_us') else '—' }}</td>
+            <td></td>
             <td class="num">
               {{ tj.get('ingresos_kg') | num_es(0) if tj.get('ingresos_kg') else '—' }}
               {% if tj.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % tj.ingresos_pct }}%</span>{% endif %}
@@ -151,6 +157,7 @@
             <td class="num">{{ hl.get('egresos_kg') | num_es(0) if hl.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ '%.3f' % (hl.get('egresos_ukg') or 0) if hl.get('egresos_ukg') else '—' }}</td>
             <td class="num">{{ hl.get('egresos_us') | num_es(0) if hl.get('egresos_us') else '—' }}</td>
+            <td></td>
             <td class="num">{{ tj.get('egresos_kg') | num_es(0) if tj.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ te.get('egresos_kg') | num_es(0) if te.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ co.get('egresos_us') | num_es(0) if co.get('egresos_us') else '—' }}</td>
@@ -160,6 +167,7 @@
             <td class="num">{{ hl.get('stock_act_kg') | num_es(0) if hl.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ '%.3f' % (hl.get('stock_act_ukg') or 0) if hl.get('stock_act_ukg') else '—' }}</td>
             <td class="num">{{ hl.get('stock_act_us') | num_es(0) if hl.get('stock_act_us') else '—' }}</td>
+            <td></td>
             <td class="num">{{ tj.get('stock_act_kg') | num_es(0) if tj.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ te.get('stock_act_kg') | num_es(0) if te.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ co.get('stock_act_us') | num_es(0) if co.get('stock_act_us') else '—' }}</td>
@@ -168,68 +176,58 @@
       </table>
     </div>
 
-    {# ─── COMPRAS HILADO + PRODUCCIÓN TEJIDO ──────────────────── #}
-    <div class="mb-2">
-      <div class="blk mb-2">
-        <div class="blk-title">Compras hilado</div>
-        <table class="hil-table">
-          <colgroup>
-            <col style="width:14%"><col style="width:16%"><col style="width:11%"><col style="width:16%"><col style="width:15%"><col style="width:14%"><col style="width:14%">
-          </colgroup>
-          <thead><tr><th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th></tr></thead>
-          <tbody>
-            {% for r in data.compras_hilado %}
-              <tr>
+    {# ─── COMPRAS HILADO + PRODUCCIÓN TEJIDO — lado a lado en UNA grilla
+         de 8 columnas compartida con MOVIMIENTOS: COMPRAS bajo HILADO
+         (cols 1-4), PRODUCCIÓN bajo CRUDO/TERM/COLOR (cols 6-8); la col 5
+         es el separador y aloja el PROV de producción. Federico 2026-06-30 #}
+    <div class="blk mb-2">
+      <div class="hil-titles"><span class="blk-title">Compras hilado</span><span class="blk-title">Producción tejido</span></div>
+      <table class="hil-table">
+        <colgroup>
+          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
+            <th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ch = data.compras_hilado or [] %}
+          {% set pt = data.produc_tejido or [] %}
+          {% set nrows = [ch|length, pt|length]|max %}
+          {% for i in range(nrows) %}
+            <tr>
+              {% if i < ch|length %}{% set r = ch[i] %}
                 <td class="prov">{{ r.prov }}</td>
                 <td class="num">{{ r.kg | num_es(0) }}</td>
                 <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
                 <td class="num">{{ r.importe | num_es(0) }}</td>
-              </tr>
-            {% else %}
-              <tr><td colspan="4" class="nd" style="text-align:center;padding:6px">—</td></tr>
-            {% endfor %}
-            {% if data.compras_hilado %}
-              {% set tot = data.compras_hilado_total %}
-              <tr class="total">
-                <td class="lbl">TOTAL</td>
-                <td class="num">{{ tot.kg | num_es(0) }}</td>
-                <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
-                <td class="num">{{ tot.importe | num_es(0) }}</td>
-              </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-      <div class="blk">
-        <div class="blk-title">Producción tejido</div>
-        <table class="hil-table">
-          <colgroup>
-            <col style="width:14%"><col style="width:16%"><col style="width:11%"><col style="width:16%"><col style="width:15%"><col style="width:14%"><col style="width:14%">
-          </colgroup>
-          <thead><tr><th class="lbl">Prov</th><th>Kg</th><th>$/Kg</th><th>$</th></tr></thead>
-          <tbody>
-            {% for r in data.produc_tejido %}
-              <tr>
+              {% else %}<td></td><td></td><td></td><td></td>{% endif %}
+              {% if i < pt|length %}{% set r = pt[i] %}
                 <td class="prov">{{ 'INTELA' if r.prov == 'KK' else r.prov }}</td>
                 <td class="num">{{ r.kg | num_es(0) }}</td>
                 <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
                 <td class="num">{{ r.importe | num_es(0) }}</td>
-              </tr>
-            {% else %}
-              <tr><td colspan="4" class="nd" style="text-align:center;padding:6px">—</td></tr>
-            {% endfor %}
-            {% if data.produc_tejido %}
-              {% set tot = data.produc_tejido_total %}
-              <tr class="total">
-                <td class="lbl">TOTAL</td>
-                <td class="num">{{ tot.kg | num_es(0) }}</td>
-                <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
-                <td class="num">{{ tot.importe | num_es(0) }}</td>
-              </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
+              {% else %}<td></td><td></td><td></td><td></td>{% endif %}
+            </tr>
+          {% endfor %}
+          <tr class="total">
+            {% if data.compras_hilado %}{% set tot = data.compras_hilado_total %}
+              <td class="lbl">TOTAL</td>
+              <td class="num">{{ tot.kg | num_es(0) }}</td>
+              <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
+              <td class="num">{{ tot.importe | num_es(0) }}</td>
+            {% else %}<td class="lbl">TOTAL</td><td></td><td></td><td></td>{% endif %}
+            {% if data.produc_tejido %}{% set tot = data.produc_tejido_total %}
+              <td class="lbl">TOTAL</td>
+              <td class="num">{{ tot.kg | num_es(0) }}</td>
+              <td class="num">{{ '%.3f' % (tot.importe / tot.kg if tot.kg else 0) }}</td>
+              <td class="num">{{ tot.importe | num_es(0) }}</td>
+            {% else %}<td class="lbl">TOTAL</td><td></td><td></td><td></td>{% endif %}
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
