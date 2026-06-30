@@ -671,7 +671,7 @@ def desde_asinfo():
     # lógica de la factura — match más fuerte que solo numf_completo string.
     pc_rows = db.fetch_all(
         """
-        SELECT numf_completo, numf, codigo_cli, importe, fecha
+        SELECT numf_completo, numf, codigo_cli, importe, fecha, kg
           FROM scintela.factura
          WHERE fecha BETWEEN %s AND %s
            -- TMT 2026-06-10 decisión dueña: las backfill automáticas NO
@@ -714,6 +714,11 @@ def desde_asinfo():
     pc_by_numf: dict[int, set[str]] = {}
     # Map (cli_pc, fecha_iso, importe_cents) → True para Match 3 fallback.
     pc_by_cli_fecha_importe: set[tuple[str, str, int]] = set()
+    # Match 4 (date-agnostic): cli + importe + kg. Cubre facturas cargadas en
+    # PC sin numero y con fecha corrida vs Asinfo (ej. BED: misma venta, mismo
+    # kg e importe, pero 2 dias de diferencia y sin N) — el match por fecha
+    # exacta fallaba. importe+kg identicos para el mismo cliente = misma venta.
+    pc_by_cli_importe_kg: set[tuple[str, int, int]] = set()
     for r in pc_rows:
         cli_raw = (r.get("codigo_cli") or "").strip().upper()
         # TMT 2026-05-29 dueña 'sigue habiendo facturas sin match': PC tiene
@@ -752,6 +757,17 @@ def desde_asinfo():
                     pc_by_cli_fecha_importe.add((cli_k, f_iso, int(round(imp * 100))))
         except Exception:
             pass
+        # Match 4: indexar por (cli, importe_cents, kg_cents) — sin fecha.
+        try:
+            kg_pc = float(r.get("kg") or 0)
+            imp_pc = float(r.get("importe") or 0)
+            if kg_pc and imp_pc:
+                for cli_k in cli_keys:
+                    pc_by_cli_importe_kg.add(
+                        (cli_k, int(round(imp_pc * 100)), int(round(kg_pc * 100)))
+                    )
+        except Exception:
+            pass
 
     # ── TMT 2026-06-13 dueña "no puede haber 151, no tiene sentido": las
     # ~150 que sobraban son facturas viejas (mayo) que SÍ existen en PC pero
@@ -762,7 +778,7 @@ def desde_asinfo():
     # para poder separar "ya en PC como backfill" de "falta de verdad".
     pc_bf_rows = db.fetch_all(
         """
-        SELECT numf_completo, numf, codigo_cli, importe, fecha
+        SELECT numf_completo, numf, codigo_cli, importe, fecha, kg
           FROM scintela.factura
          WHERE fecha BETWEEN %s AND %s
            AND COALESCE(usuario_crea, '') = 'asinfo-backfill'
@@ -774,6 +790,7 @@ def desde_asinfo():
                                  for r in pc_bf_rows if r.get("numf_completo")}
     pc_bf_by_numf_cli: set[tuple[int, str]] = set()
     pc_bf_by_cli_fecha_importe: set[tuple[str, str, int]] = set()
+    pc_bf_by_cli_importe_kg: set[tuple[str, int, int]] = set()
     for r in pc_bf_rows:
         cli_raw = (r.get("codigo_cli") or "").strip().upper()
         cli_pc_canonical = _aliases.to_pc(cli_raw) if cli_raw else ""
@@ -800,10 +817,20 @@ def desde_asinfo():
                     pc_bf_by_cli_fecha_importe.add((cli_k, f_iso, int(round(imp * 100))))
         except Exception:
             pass
+        try:
+            kg_pc = float(r.get("kg") or 0)
+            imp_pc = float(r.get("importe") or 0)
+            if kg_pc and imp_pc:
+                for cli_k in cli_keys:
+                    pc_bf_by_cli_importe_kg.add(
+                        (cli_k, int(round(imp_pc * 100)), int(round(kg_pc * 100)))
+                    )
+        except Exception:
+            pass
 
-    def _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a):
+    def _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a, kg_a=0.0):
         """¿Esta factura Asinfo existe en PC SOLO como backfill?
-        Mismo orden de matches que el filtro principal (1/2/3)."""
+        Mismo orden de matches que el filtro principal (1/2/3/4)."""
         if numero and numero in pc_bf_numfs_str:
             return True
         if numf and (numf, cli_pc_esperado) in pc_bf_by_numf_cli:
@@ -814,6 +841,13 @@ def desde_asinfo():
             if ((cli_pc_esperado, f_iso, cents) in pc_bf_by_cli_fecha_importe
                 or (cli_pc_esperado, f_iso, cents - 1) in pc_bf_by_cli_fecha_importe
                 or (cli_pc_esperado, f_iso, cents + 1) in pc_bf_by_cli_fecha_importe):
+                return True
+        # Match 4 (sin fecha): cli + importe + kg.
+        if cli_pc_esperado and usd_a and kg_a:
+            cents = int(round(usd_a * 100))
+            kgc = int(round(kg_a * 100))
+            if any((cli_pc_esperado, cents + d, kgc) in pc_bf_by_cli_importe_kg
+                   for d in (-1, 0, 1)):
                 return True
         return False
 
@@ -867,6 +901,19 @@ def desde_asinfo():
                 or (cli_pc_esperado, f_iso, cents - 1) in pc_by_cli_fecha_importe
                 or (cli_pc_esperado, f_iso, cents + 1) in pc_by_cli_fecha_importe):
                 continue
+        # Match 4 (sin fecha): cli + importe + kg. Para facturas cargadas en PC
+        # sin N° y con la fecha corrida vs Asinfo (mismo cliente, mismo kg y
+        # mismo importe = misma venta, aunque el día y el número no coincidan).
+        try:
+            kg_a = float(r.get("kg") or 0)
+        except (TypeError, ValueError):
+            kg_a = 0.0
+        if cli_pc_esperado and usd_a and kg_a:
+            cents = int(round(usd_a * 100))
+            kgc = int(round(kg_a * 100))
+            if any((cli_pc_esperado, cents + d, kgc) in pc_by_cli_importe_kg
+                   for d in (-1, 0, 1)):
+                continue
         # Calcular hint de "está en PC bajo OTRO cli" — sugerencia de alias.
         otros_clis_pc = []
         if numf:
@@ -886,7 +933,7 @@ def desde_asinfo():
         # ¿Existe físicamente en PC, pero solo como fantasma backfill? Entonces
         # NO falta cargar — va al grupo separado. Cargar la convierte en
         # 'asinfo-carga' (cuenta en cartera) sin duplicar.
-        if _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a):
+        if _en_pc_backfill(numero, numf, cli_pc_esperado, fecha, usd_a, kg_a):
             en_pc_backfill.append(item)
         else:
             huerfanas.append(item)
