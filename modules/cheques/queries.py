@@ -629,6 +629,38 @@ def transicionar_stat(
                     usuario=usuario,
                 )
 
+                # TMT 2026-06-29 (dueña: 'sacarlo del grupo'): si el cheque era
+                # parte de un depósito CONSOLIDADO (dep.N ch. — varios cheques
+                # al mismo mov DE), lo sacamos del grupo desvinculando SU link
+                # chequextransaccion a ese mov. El mov consolidado y su saldo
+                # quedan INTACTOS (el banco muestra el depósito completo; el
+                # rebote ya se compensó con el ND de arriba, que matchea el
+                # débito 'ch.prot.' del banco). En depósitos de 1 cheque NO se
+                # desvincula (preserva la historia del depósito).
+                try:
+                    _shared = db.fetch_all(
+                        """
+                        SELECT cxt.id_transaccion
+                          FROM scintela.chequextransaccion cxt
+                          JOIN scintela.transacciones_bancarias tb
+                            ON tb.id_transaccion = cxt.id_transaccion
+                         WHERE cxt.id_cheque = %s
+                           AND UPPER(COALESCE(tb.documento,'')) = 'DE'
+                           AND (SELECT COUNT(*) FROM scintela.chequextransaccion c2
+                                 WHERE c2.id_transaccion = cxt.id_transaccion) > 1
+                        """,
+                        (id_cheque,), conn=conn,
+                    ) or []
+                    for _sh in _shared:
+                        db.execute(
+                            "DELETE FROM scintela.chequextransaccion "
+                            "WHERE id_cheque = %s AND id_transaccion = %s",
+                            (id_cheque, _sh["id_transaccion"]), conn=conn,
+                        )
+                except Exception as _e_desagr:
+                    # No abortar el rebote por la desagrupación (best-effort).
+                    pass
+
             # INSERT posdat banc=0 (cheque protestado) + stop al cliente.
             db.execute(
                 """
