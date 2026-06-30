@@ -1295,14 +1295,19 @@
       const opt = bancoSel.options[bancoSel.selectedIndex];
       const etiqueta = opt ? opt.textContent.trim() : v;
       const guardado = bloque.dataset.numGuardado;
-      warnDiv.innerHTML = guardado
-        ? ('⚠️ <strong>Tipeaste el N° de cheque ' + guardado + '</strong> y elegiste <strong>'
-           + etiqueta + '</strong> (sin cheque físico). Si el cliente pagó con un '
-           + 'CHEQUE, elegí el banco <strong>EMISOR</strong> del cheque (10 · PICHINCHA, '
-           + '66 · BANECUADOR, etc.) — el N° se restaura solo al cambiar.')
-        : (etiqueta + ' = <strong>sin cheque físico</strong> (efectivo / depósito directo). '
-           + 'Si tenés un cheque en la mano, elegí el banco emisor del cheque.');
-      warnDiv.classList.remove('hidden');
+      // TMT 2026-06-30 dueña: sacar el cartel informativo "= sin cheque físico
+      // (efectivo / depósito directo)". Solo dejamos el ⚠️ cuando tipeó un N°
+      // de cheque y eligió un medio sin cheque (mismatch real).
+      if (guardado) {
+        warnDiv.innerHTML = '⚠️ <strong>Tipeaste el N° de cheque ' + guardado
+           + '</strong> y elegiste <strong>' + etiqueta + '</strong> (sin cheque '
+           + 'físico). Si el cliente pagó con un CHEQUE, elegí el banco '
+           + '<strong>EMISOR</strong> del cheque (10 · PICHINCHA, 66 · BANECUADOR, '
+           + 'etc.) — el N° se restaura solo al cambiar.';
+        warnDiv.classList.remove('hidden');
+      } else {
+        warnDiv.classList.add('hidden');
+      }
     } else if (warnDiv) {
       warnDiv.classList.add('hidden');
     }
