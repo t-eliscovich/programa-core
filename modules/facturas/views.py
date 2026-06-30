@@ -646,6 +646,14 @@ def desde_asinfo():
     incluir_recientes = not excluir_hoy
     desde = _parse_date(desde_s) or (hoy - _td(days=30))
     hasta = _parse_date(hasta_s) or hoy
+    # TMT 2026-06-30 dueña: "ya no importan las de mayo, dejá de hacer el match
+    # para atrás de junio". Piso fijo: nunca comparamos antes del 2026-06-01
+    # (el backlog abril-mayo se deja como está, no es match-able). Si el usuario
+    # pide una fecha anterior, se sube al piso.
+    _piso_match = _date(2026, 6, 1)
+    if desde < _piso_match:
+        desde = _piso_match
+        desde_s = _piso_match.isoformat()
 
     def _fecha_a_date(x):
         """Asinfo a veces devuelve la fecha como ISO string. Normalizar."""
