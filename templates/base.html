@@ -701,6 +701,33 @@
          menú el 2026-05-20: la cuota mensual se edita inline en
          /posdat — columna "Cuota mensual"). #}
 
+      {# TMT 2026-05-22 dueña: si el rol no tiene `informes.ver`, ocultar
+         la sección entera del menú (antes mostraba "Informes" vacío
+         para Alex). #}
+      {% if tiene_permiso('informes.ver') %}
+      <details class="sidebar-section" data-key="informes" open>
+        <summary>Informes</summary>
+        {{ nav_link('informes.balance', 'Resultados', 'report') }}
+        {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
+        {# TMT 2026-05-20 PASADA 6 (Federico #9): "Check totales" sacado
+           del menú principal. Accesible vía URL /informes/check-totales y
+           desde el footer (link "Admin").
+           PASADA 6 (Federico #12): "Ver anticipos USD" eliminado del menú
+           — ya se accede desde Resultados (panel anticipos clickable).
+           PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
+           menú — su contenido se mergea con /posdat (decisión Tamara). #}
+        {{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}
+        {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
+           (pedido dueña: "para retiros tenemos demasiadas pantallas.
+           Este borralo: /capital"). Los dividendos se ven desde
+           /informes/balance → click 'Dividendos del mes'/'Dividendos
+           del año' que llevan a /informes/retiros con tabs.
+           TMT 2026-05-20 v2 — "Historial movimientos" se movió debajo
+           de Recientes (pedido dueña: "La tab historial de moviemientos
+           podemos ponerlo debajo de recientes?"). #}
+      </details>
+      {% endif %}
+
       <details class="sidebar-section" data-key="ingreso" open>
         <summary>Ingresos</summary>
         {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
@@ -761,32 +788,6 @@
       </details>
       {% endif %}
 
-      {# TMT 2026-05-22 dueña: si el rol no tiene `informes.ver`, ocultar
-         la sección entera del menú (antes mostraba "Informes" vacío
-         para Alex). #}
-      {% if tiene_permiso('informes.ver') %}
-      <details class="sidebar-section" data-key="informes" open>
-        <summary>Informes</summary>
-        {{ nav_link('informes.balance', 'Resultados', 'report') }}
-        {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
-        {# TMT 2026-05-20 PASADA 6 (Federico #9): "Check totales" sacado
-           del menú principal. Accesible vía URL /informes/check-totales y
-           desde el footer (link "Admin").
-           PASADA 6 (Federico #12): "Ver anticipos USD" eliminado del menú
-           — ya se accede desde Resultados (panel anticipos clickable).
-           PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
-           menú — su contenido se mergea con /posdat (decisión Tamara). #}
-        {{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}
-        {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
-           (pedido dueña: "para retiros tenemos demasiadas pantallas.
-           Este borralo: /capital"). Los dividendos se ven desde
-           /informes/balance → click 'Dividendos del mes'/'Dividendos
-           del año' que llevan a /informes/retiros con tabs.
-           TMT 2026-05-20 v2 — "Historial movimientos" se movió debajo
-           de Recientes (pedido dueña: "La tab historial de moviemientos
-           podemos ponerlo debajo de recientes?"). #}
-      </details>
-      {% endif %}
 
       <details class="sidebar-section" data-key="datos">
         <summary>Datos base</summary>
