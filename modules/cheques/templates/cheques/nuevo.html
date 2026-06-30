@@ -347,6 +347,16 @@
   function fmt(n) {
     return (n || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
   }
+  // TMT 2026-06-30 (dueña): N° corto y uniforme — el numf real (sufijo de
+  // numf_completo sin ceros, ej '001-099-000175145' -> '175145'); si no hay
+  // numf_completo usa numf. Igual criterio que el estado de cuenta.
+  function shortNum(f) {
+    if (f.numf_completo) {
+      const tail = String(f.numf_completo).split('-').pop().replace(/^0+/, '');
+      if (tail) return tail;
+    }
+    return (f.numf && f.numf !== 0) ? f.numf : ('#' + f.id_factura);
+  }
   function parseMonto(s) {
     // TMT 2026-05-15: el parser anterior asumía SIEMPRE formato ES
     // (puntos como miles, coma decimal). Pero cuando JS setea el value
@@ -394,7 +404,7 @@
     facturas.forEach(f => {
       const o = document.createElement('option');
       o.value = String(f.id_factura);
-      const num = f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : ('#' + f.id_factura));
+      const num = shortNum(f);
       o.textContent = num + ' · $' + fmt(f.saldo);
       sel.appendChild(o);
     });
@@ -523,7 +533,7 @@
                      data-saldo="${f.saldo}" ${cancelaEntera ? 'checked' : ''}
                      title="Cancela la factura entera (aplica el saldo completo)">
             </td>
-            <td class="px-2 py-1 font-mono text-xs whitespace-nowrap">${f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : `<span class="text-slate-400">#${f.id_factura}</span>`)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
+            <td class="px-2 py-1 font-mono text-xs whitespace-nowrap">${shortNum(f)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
             <td class="px-2 py-1 text-xs text-slate-600 whitespace-nowrap">${fmtFecha(f.vencimiento)}</td>
             <td class="px-2 py-1 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
             <td class="px-2 py-1 text-right">
@@ -825,11 +835,11 @@
         return;
       }
       const data = await resp.json();
-      // TMT 2026-06-30 (dueña, fix #1): NO mostrar facturas en CRÉDITO (saldo
-      // negativo / notas de crédito) en la cobranza — sólo facturas vivas con
-      // saldo > 0. Las amarillas "⚠ crédito" se sacaron por completo de esta
-      // pantalla. Si hay que netear una NC, se hace desde otra pantalla.
-      facturas = (data.facturas || []).filter(f => (parseFloat(f.saldo) || 0) > 0.005);
+      // TMT 2026-06-30 (dueña, REVERTIDO): volver a mostrar las facturas en
+      // CRÉDITO (saldo negativo: devoluciones/ND/NC) para poder netearlas en la
+      // cobranza. Caso MYU/ND 10861 (-159,26): la dueña las quiere ver. Se
+      // pintan amber "⚠ crédito"; el render y el POST ya soportan negativos.
+      facturas = (data.facturas || []).filter(f => Math.abs(parseFloat(f.saldo) || 0) > 0.005);
       // TMT 2026-05-15: pre-cargar banco más usado por este cliente. Sólo
       // si la usuaria todavía no eligió uno explícitamente (select vacío).
       const bancoSel = document.querySelector('select[name="no_banco"]');

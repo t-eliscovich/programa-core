@@ -141,6 +141,7 @@
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-4 py-3 text-left font-medium">N°</th>
+          <th class="px-4 py-3 text-left font-medium">Tipo</th>
           <th class="px-4 py-3 text-left font-medium">Fecha</th>
           <th class="px-4 py-3 text-left font-medium">Vence</th>
           <th class="px-4 py-3 text-right font-medium">Kg</th>
@@ -160,7 +161,9 @@
         {% for f in data.facturas %}
         {% set acum.s = acum.s + (f.saldo or 0) %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ f.numf_completo or f.numf }}</td>
+          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
+          {% set _tlbl = {'F':'Factura','D':'Devolución','N':'N. Entrega','NC':'N. Crédito','NCNT':'NCNT'} %}
+          <td class="px-4 py-2 text-xs whitespace-nowrap {{ 'text-amber-700 font-medium' if (f.tipo or 'F')|upper != 'F' }}">{{ _tlbl.get((f.tipo or 'F')|upper, f.tipo or 'Factura') }}</td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.vencimiento | fecha_es }}</td>
           <td class="px-4 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
@@ -171,7 +174,7 @@
           <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
         </tr>
         {% else %}
-        {{ empty_row(9, 'Sin facturas para este cliente.') }}
+        {{ empty_row(10, 'Sin facturas para este cliente.') }}
         {% endfor %}
       </tbody>
       {% if data.facturas %}
