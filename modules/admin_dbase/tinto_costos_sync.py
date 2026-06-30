@@ -244,6 +244,43 @@ def _catalogo_desde_formulas_app() -> dict[str, dict]:
     return out
 
 
+def _costos_por_cod_desde_materias():
+    """Costo $/kg por código de color, reusando la pregunta canónica de Metabase
+    'Detalle de Órdenes (costo materias)' (card 165 por defecto) — el MISMO costo
+    que formulas_app calcula (receta x precios x relación de baño). Promedio
+    PONDERADO por kg sobre las órdenes que devuelve. Devuelve {cod: costo_kg}.
+    Fail-soft: {} si Metabase no está disponible. TMT 2026-06-29 (dueña: 'trae el
+    costo tmbn, no costo 0')."""
+    import os
+    try:
+        from modules._lib import metabase_client
+    except Exception:
+        return {}
+    if not metabase_client.disponible():
+        return {}
+    card = os.environ.get("METABASE_CARD_COSTOS_MATERIAS", "165")
+    try:
+        rows = metabase_client.fetch_card(card)
+    except Exception:
+        return {}
+    agg: dict[str, list] = {}
+    for r in rows or []:
+        cod = (str(r.get("Cod") or r.get("cod") or "")).strip().upper()[:5]
+        if not cod:
+            continue
+        try:
+            kg = float(r.get("Kg") or r.get("kg") or 0)
+            ckg = float(r.get("u$/kg") or r.get("costo_kg") or 0)
+        except (TypeError, ValueError):
+            continue
+        if kg <= 0 or ckg <= 0:
+            continue
+        a = agg.setdefault(cod, [0.0, 0.0])
+        a[0] += kg
+        a[1] += kg * ckg
+    return {cod: round(c / kg, 4) for cod, (kg, c) in agg.items() if kg > 0}
+
+
 def refresh_from_formulas_app(aplicar: bool = True):
     """Generador que importa TODOS los colores de formulas_app al catálogo
     scintela.tinto_costos. Conservador: inserta faltantes (costo 0), rellena
@@ -270,8 +307,15 @@ def refresh_from_formulas_app(aplicar: bool = True):
         ) or [])
     }
 
-    nuevos, color_rellenos = 0, 0
+    costos_cod = _costos_por_cod_desde_materias()
+    yield (f"  costos canónicos (Metabase 'costo materias'): {len(costos_cod)} códigos"
+           if costos_cod else
+           "  ⚠ no pude traer costos de Metabase (METABASE_* en el server) — "
+           "los nuevos quedan en costo 0; cargalo por COSTOS.DBF o a mano")
+
+    nuevos, color_rellenos, costo_rellenos = 0, 0, 0
     for cod, info in sorted(catalogo.items()):
+        costo = float(costos_cod.get(cod, 0) or 0)
         ex = existentes.get(cod)
         if ex is None:
             nuevos += 1
@@ -279,21 +323,27 @@ def refresh_from_formulas_app(aplicar: bool = True):
                 db.execute(
                     "INSERT INTO scintela.tinto_costos (cod, color, costo, usuario_crea) "
                     "VALUES (%s, %s, %s, 'formulas-app') ON CONFLICT (cod) DO NOTHING",
-                    (cod, info["color"], info["costo"]),
+                    (cod, info["color"], costo),
                 )
-        elif not (ex["color"] or "").strip() and info["color"]:
-            # Conservador: solo rellenar color si en el catálogo está vacío.
-            color_rellenos += 1
-            if aplicar:
+        else:
+            # Conservador: rellenar color si está vacío y costo SOLO si está en 0
+            # (no pisa costos ya cargados a mano / por COSTOS.DBF).
+            sets, params = [], []
+            if not (ex["color"] or "").strip() and info["color"]:
+                sets.append("color=%s"); params.append(info["color"]); color_rellenos += 1
+            if float(ex["costo"] or 0) == 0 and costo > 0:
+                sets.append("costo=%s"); params.append(costo); costo_rellenos += 1
+            if sets and aplicar:
+                params.append(cod)
                 db.execute(
-                    "UPDATE scintela.tinto_costos "
-                    "SET color=%s, fecha_modifica=CURRENT_TIMESTAMP, "
-                    "    usuario_modifica='formulas-app' WHERE cod=%s",
-                    (info["color"], cod),
+                    f"UPDATE scintela.tinto_costos SET {', '.join(sets)}, "
+                    "fecha_modifica=CURRENT_TIMESTAMP, usuario_modifica='formulas-app' "
+                    "WHERE cod=%s",
+                    tuple(params),
                 )
 
     modo = "APLICADO" if aplicar else "DRY-RUN"
     yield (f"  [{modo}] catálogo: +{nuevos} nuevos, "
-           f"{color_rellenos} colores rellenados "
-           f"(total previo {len(existentes)}). "
-           f"Costo queda en 0 para los nuevos — cargalo por COSTOS.DBF o a mano.")
+           f"{color_rellenos} colores rellenados, {costo_rellenos} costos rellenados "
+           f"(total previo {len(existentes)}). Costo = promedio $/kg ponderado de "
+           f"las órdenes (formulas_app); los que no tienen órdenes quedan en 0.")
