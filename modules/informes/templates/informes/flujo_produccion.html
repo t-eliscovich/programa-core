@@ -30,6 +30,10 @@
   .fp th.lbl { text-align: left; }
   .fp td { padding: 1px 6px; font-size: 10.5px; line-height: 1.2; }
   .fp td.lbl { font-weight: 600; color: rgb(15 23 42); }
+  /* Federico 2026-06-30 — réplica TINT.BAT: los códigos de proveedor van
+     alineados a la derecha (como en el programa viejo); la fila TOTAL
+     mantiene su etiqueta a la izquierda con .lbl. */
+  .fp td.prov { text-align: right; font-weight: 600; color: rgb(15 23 42); }
   .fp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
   .fp tr.total td { border-top: 1px solid rgb(148 163 184); font-weight: 700;
                     color: rgb(30 64 175); padding-top: 2px; }
@@ -163,7 +167,7 @@
           <tbody>
             {% for r in data.compras_hilado %}
               <tr>
-                <td class="lbl">{{ r.prov }}</td>
+                <td class="prov">{{ r.prov }}</td>
                 <td class="num">{{ r.kg | num_es(0) }}</td>
                 <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
                 <td class="num">{{ r.importe | num_es(0) }}</td>
@@ -190,7 +194,7 @@
           <tbody>
             {% for r in data.produc_tejido %}
               <tr>
-                <td class="lbl">{{ 'INTELA' if r.prov == 'KK' else r.prov }}</td>
+                <td class="prov">{{ 'INTELA' if r.prov == 'KK' else r.prov }}</td>
                 <td class="num">{{ r.kg | num_es(0) }}</td>
                 <td class="num">{{ '%.3f' % (r.ukg or 0) }}</td>
                 <td class="num">{{ r.importe | num_es(0) }}</td>
