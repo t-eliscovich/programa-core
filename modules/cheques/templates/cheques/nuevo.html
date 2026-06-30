@@ -263,30 +263,43 @@
           <table class="w-full text-sm">
             <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
               <tr>
-                <th class="px-2 py-1.5 text-center font-medium w-8" title="Tickear cancela la factura entera (aplica el saldo completo).">
+                <th class="px-2 py-2 text-center font-medium w-10" title="Tickear cancela la factura entera (aplica el saldo completo).">
                   <input type="checkbox" id="aplic-toggle-all" title="Seleccionar/deseleccionar todas">
                 </th>
-                <th class="px-2 py-1.5 text-left font-medium">N°</th>
-                <th class="px-2 py-1.5 text-left font-medium">Vence</th>
-                <th class="px-2 py-1.5 text-right font-medium" title="Saldo vivo = lo que queda por cobrar.">Saldo</th>
-                <th class="px-2 py-1.5 text-right font-medium w-32">A aplicar</th>
-                <th class="px-2 py-1.5 text-right font-medium w-28" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
+                <th class="px-3 py-2 text-left font-medium">N°</th>
+                <th class="px-3 py-2 text-left font-medium">Fecha</th>
+                <th class="px-3 py-2 text-left font-medium">Vence</th>
+                {# TMT 2026-05-17 — saldo de la factura en 3 columnas separadas (pedido cobranza):
+                   TOTAL = importe original; ABONADO = lo ya cobrado antes; SALDO = lo que queda vivo.
+                   TMT 2026-05-19 — agregada columna "Acum. saldo" (item 4): running total
+                   de saldos para que la dueña vea de un vistazo si X facturas acumulan
+                   el monto que está cobrando. #}
+                <th class="px-3 py-2 text-right font-medium" title="Importe total de la factura (cara).">Total</th>
+                <th class="px-3 py-2 text-right font-medium" title="Lo que ya se cobró antes de esta operación.">Abonado</th>
+                <th class="px-3 py-2 text-right font-medium" title="Saldo vivo = total − abonado. Lo que queda por cobrar.">Saldo</th>
+                <th class="px-3 py-2 text-right font-medium" title="Saldo acumulado corrido de arriba hasta esta fila (suma de saldos de todas las facturas anteriores + esta).">Acum. saldo</th>
+                <th class="px-3 py-2 text-right font-medium w-32">A aplicar</th>
+                <th class="px-3 py-2 text-right font-medium w-32" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
               </tr>
             </thead>
             <tbody id="aplic-tbody">
-              <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 text-xs">
+              <tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">
                 Tipeá el código del cliente arriba para ver sus facturas abiertas.
               </td></tr>
             </tbody>
             <tfoot id="aplic-tfoot" class="bg-slate-50 border-t-2 border-slate-300 font-medium hidden">
               <tr>
-                <td class="px-2 py-1.5 text-center text-xs text-slate-500" id="aplic-foot-n">0</td>
-                <td class="px-2 py-1.5 text-xs text-slate-500" colspan="2">
+                <td class="px-2 py-2 text-center text-xs text-slate-500" id="aplic-foot-n">0</td>
+                <td class="px-3 py-2 text-xs text-slate-500" colspan="3">
                   facturas seleccionadas
                 </td>
-                <td class="px-2 py-1.5 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
-                <td class="px-2 py-1.5 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
-                <td class="px-2 py-1.5 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
+                {# 3 totales — Total/Abonado/Saldo de las facturas seleccionadas. TMT 2026-05-17. #}
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-total">—</td>
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-abonado">—</td>
+                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
+                <td></td>{# col Acum. saldo — vacía en footer #}
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
               </tr>
             </tfoot>
           </table>
@@ -418,7 +431,7 @@
     const q = filtro.trim().toLowerCase();
 
     if (!facturas.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
       updateSummary(0, importeCheque);
       return;
     }
@@ -528,15 +541,23 @@
           : '';
         return `
           <tr class="border-t ${rowClass}">
-            <td class="px-2 py-1 text-center">
+            <td class="px-2 py-1.5 text-center">
               <input type="checkbox" class="aplic-cancel" data-id="${f.id_factura}"
                      data-saldo="${f.saldo}" ${cancelaEntera ? 'checked' : ''}
-                     title="Cancela la factura entera (aplica el saldo completo)">
+                     title="${esCredito
+                              ? 'Tildear absorbe el crédito (aplica monto negativo al cheque)'
+                              : 'Cancela la factura entera (aplica el saldo completo)'}">
             </td>
-            <td class="px-2 py-1 font-mono text-xs whitespace-nowrap">${shortNum(f)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
-            <td class="px-2 py-1 text-xs text-slate-600 whitespace-nowrap">${fmtFecha(f.vencimiento)}</td>
-            <td class="px-2 py-1 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
-            <td class="px-2 py-1 text-right">
+            <td class="px-3 py-1.5 font-mono text-xs">${shortNum(f)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
+            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.fecha)}</td>
+            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.vencimiento)}</td>
+            {# TMT 2026-05-17 — 3 columnas separadas: Total / Abonado / Saldo. #}
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(f.importe)}</td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${f.abono && Math.abs(f.abono) > 0.005 ? fmt(f.abono) : '—'}</td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
+            {# TMT 2026-05-19 — Acum. saldo (item 4): running total de saldos. #}
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(acumPorFactura[f.id_factura] || 0)}</td>
+            <td class="px-3 py-1.5 text-right">
               <div class="inline-flex items-center gap-1 justify-end">
                 <input type="text" inputmode="decimal" name="aplicar[${f.id_factura}]"
                        data-id="${f.id_factura}" data-saldo="${f.saldo}"
@@ -551,12 +572,12 @@
                 </button>
               </div>
             </td>
-            <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-600 acum-cell" data-id="${f.id_factura}">—</td>
+            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 acum-cell" data-id="${f.id_factura}">—</td>
           </tr>
         `;
       }).join('');
 
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
 
     // Wire-up para tracking de "usuario editó" (input de monto)
     tbody.querySelectorAll('input.aplic-input').forEach(inp => {
