@@ -162,8 +162,10 @@
         {% set acum.s = acum.s + (f.saldo or 0) %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
           <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
-          {% set _tlbl = {'F':'Factura','D':'Devolución','N':'N. Entrega','NC':'N. Crédito','NCNT':'NCNT'} %}
-          <td class="px-4 py-2 text-xs whitespace-nowrap {{ 'text-amber-700 font-medium' if (f.tipo or 'F')|upper != 'F' }}">{{ _tlbl.get((f.tipo or 'F')|upper, f.tipo or 'Factura') }}</td>
+          {# Tipo por SIGNO del importe — f.tipo de la tabla es inconsistente
+             ('FA'/'F') y no marca la devolución. Negativo = Devolución (crédito
+             a favor / la "ND" de la dueña); positivo = Factura. #}
+          <td class="px-4 py-2 text-xs whitespace-nowrap {{ 'text-amber-700 font-medium' if (f.importe or 0) < 0 }}">{{ 'Devolución' if (f.importe or 0) < 0 else 'Factura' }}</td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.vencimiento | fecha_es }}</td>
           <td class="px-4 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
