@@ -89,95 +89,101 @@
               + Otro cheque
             </button>
           </div>
-          <div id="cheques-list" class="space-y-2">
-            <div class="cheque-bloque border border-slate-200 rounded p-2 bg-slate-50/50">
-              {# header del bloque — JS lo rellena con "Cheque #N · × quitar"
-                 cuando hay más de un bloque. Vacío en el primero. #}
-              <div class="bloque-header hidden mb-1 text-[10px] text-slate-500 flex items-center justify-between"></div>
-              {# TMT 2026-05-19 — orden Importe → N° cheque → A depositar
-                 (pedido dueña item 3: ver importe primero).
-                 TMT 2026-05-20 — agregado dropdown "Estado" con
-                 Z/P/D/B/X/1/2. La fecha "A depositar" sólo se habilita
-                 cuando estado=P (postdatado). En los otros estados la
-                 fecha queda lockeada a la fecha de recibido. #}
-              <div class="grid grid-cols-7 gap-2 items-end">
-                <label class="flex flex-col">
-                  <span class="text-xs text-slate-600">Importe <span class="text-red-500">*</span></span>
-                  <input type="text" name="importe[]" value="{{ form.importe or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 text-right font-mono text-sm cheque-imp" required
-                         placeholder="0,00">
-                </label>
-                {# TMT 2026-05-27 dueña: 'banco emisor está después de importe y
-                   entonces si elijo otro cheque, me deja elegir otro banco emisor'.
-                   Banco por cheque (no_banco[] array). 90/91/95/97/99 = depósitos
-                   directos al banco (no hay cheque físico): JS los detecta y
-                   relaja N° cheque + fuerza fecha hoy. #}
-                <label class="flex flex-col col-span-2">
-                  <span class="text-xs text-slate-600">Banco emisor <span class="text-red-500">*</span></span>
-                  <select name="no_banco[]" class="cheque-banco border rounded px-2 py-1 mt-0.5 text-sm" required>
-                    <option value="">— banco —</option>
-                    {% for b in bancos %}
-                      <option value="{{ b.no_banco }}"
-                              {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
-                        {{ b.no_banco }} · {{ b.nombre }}
-                      </option>
-                    {% endfor %}
-                  </select>
-                </label>
-                {# TMT 2026-06-29 (dueña, paridad dBase): al elegir 97·ANTICIPO el
-                   dBase vuelve a preguntar el BANCO (el medio real). Mostramos
-                   este "Medio del anticipo" SOLO cuando banco=97: efectivo /
-                   depósito / cheque (con su banco emisor). El backend lo usa
-                   como no_banco real y marca es_anticipo. #}
-                <label class="flex flex-col col-span-2 cheque-medio-wrap hidden">
-                  <span class="text-xs text-slate-600">Medio del anticipo <span class="text-red-500">*</span></span>
-                  <select name="medio_anticipo[]" class="cheque-medio border rounded px-2 py-1 mt-0.5 text-sm">
-                    <option value="">— cómo entró —</option>
-                    <option value="99">Efectivo</option>
-                    <option value="90">Depósito Pichincha</option>
-                    <option value="91">Depósito Internacional</option>
-                    {% for b in bancos %}
-                      {% if b.no_banco|int < 90 %}
-                      <option value="{{ b.no_banco }}">Cheque · {{ b.no_banco }} · {{ b.nombre }}</option>
-                      {% endif %}
-                    {% endfor %}
-                  </select>
-                  <span class="text-[11px] text-slate-500 mt-0.5">Si no aplicás a ninguna factura abajo, queda como <strong>anticipo</strong> (saldo a favor).</span>
-                </label>
-                <label class="flex flex-col cheque-num-wrap">
-                  <span class="text-xs text-slate-600 cheque-num-label">N° cheque <span class="text-red-500 cheque-num-req">*</span></span>
+          {# TMT 2026-06-30 (dueña, fix #4 — formato planilla Excel): encabezado
+             de columnas UNA sola vez; cada cheque es una FILA compacta. Uso CSS
+             custom (.cobranza-chq-*) porque el tailwind.css del repo es un build
+             JIT congelado y NO trae grid-cols-12 / col-span-3 (igual que el resto
+             del codebase, ver memoria "Variantes Tailwind NO compilan → CSS custom"). #}
+          <style>
+            .cobranza-chq-head, .cobranza-chq-row{
+              display:grid;
+              grid-template-columns:7rem minmax(8rem,1.6fr) 6.5rem 8.5rem 3.75rem minmax(7.5rem,1.3fr);
+              gap:.5rem; align-items:center;
+            }
+            .cobranza-chq-head{ padding:0 .25rem .25rem; font-size:10px; line-height:1.3;
+              text-transform:uppercase; letter-spacing:.04em; }
+            .cobranza-chq-row > .chq-full{ grid-column:1 / -1; }
+            .cobranza-fact-scroll{ max-height:30rem; overflow-y:auto; }
+            @media (max-width:640px){
+              .cobranza-chq-head{ display:none; }
+              .cobranza-chq-row{ grid-template-columns:1fr 1fr; }
+            }
+          </style>
+          <div class="cobranza-chq-head text-slate-500">
+            <span style="text-align:right">Importe</span>
+            <span>Banco emisor</span>
+            <span>N° cheque</span>
+            <span>A depositar</span>
+            <span>Estado</span>
+            <span>Doc. banco</span>
+          </div>
+          <div id="cheques-list" class="space-y-1">
+            <div class="cheque-bloque rounded border border-slate-200 px-1.5 py-1 bg-slate-50/40">
+              {# header del bloque — JS lo rellena con "#N · × quitar" cuando hay
+                 más de un cheque. Vacío en el primero. #}
+              <div class="bloque-header hidden mb-1 text-[10px] text-slate-500 flex items-center justify-end gap-2"></div>
+              <div class="cobranza-chq-row">
+                {# Importe #}
+                <input type="text" name="importe[]" value="{{ form.importe or '' }}"
+                       class="w-full border rounded px-2 py-1 text-right font-mono text-sm cheque-imp" required
+                       placeholder="0,00" aria-label="Importe">
+                {# Banco emisor (por cheque). 90/91/95/97/99 = depósitos/efectivo/anticipo. #}
+                <select name="no_banco[]" class="cheque-banco w-full border rounded px-2 py-1 text-sm" required aria-label="Banco emisor">
+                  <option value="">— banco —</option>
+                  {% for b in bancos %}
+                    <option value="{{ b.no_banco }}"
+                            {% if form.no_banco and form.no_banco|string == b.no_banco|string %}selected{% endif %}>
+                      {{ b.no_banco }} · {{ b.nombre }}
+                    </option>
+                  {% endfor %}
+                </select>
+                {# N° cheque — celda SIEMPRE presente (visibility) para no desalinear. #}
+                <div class="cheque-num-wrap">
                   <input type="text" name="no_cheque[]" value="{{ form.no_cheque or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-num" maxlength="10" required>
-                </label>
-                <label class="flex flex-col">
-                  <span class="text-xs text-slate-600">Estado</span>
-                  <select name="stat[]" class="border rounded px-2 py-1 mt-0.5 text-sm cheque-stat">
-                    <option value="Z" {% if not form.stat or form.stat == 'Z' %}selected{% endif %}>Z · En cartera</option>
-                    <option value="P" {% if form.stat == 'P' %}selected{% endif %}>P · Postdatado</option>
-                    <option value="D" {% if form.stat == 'D' %}selected{% endif %}>D · Daniela</option>
-                    <option value="B" {% if form.stat == 'B' %}selected{% endif %}>B · Depositado</option>
-                    <option value="X" {% if form.stat == 'X' %}selected{% endif %}>X · Anulado</option>
-                    <option value="1" {% if form.stat == '1' %}selected{% endif %}>1 · Devuelto</option>
-                    <option value="2" {% if form.stat == '2' %}selected{% endif %}>2 · Devuelto (2°)</option>
-                  </select>
-                </label>
-                <label class="flex flex-col cheque-fechad-wrap">
-                  <span class="text-xs text-slate-600">A depositar
-                    <span class="cheque-fechad-req text-red-500 hidden">*</span>
-                  </span>
-                  {# TMT 2026-05-26 dueña: fecha A depositar SIEMPRE editable.
-                     Antes estaba `disabled` salvo stat=P (postdatado). #}
+                         class="w-full border rounded px-2 py-1 font-mono text-sm cheque-num" maxlength="10" required
+                         placeholder="N°" aria-label="N° cheque">
+                  <span class="cheque-num-req hidden"></span>
+                </div>
+                {# A depositar #}
+                <div class="cheque-fechad-wrap">
                   <input type="date" name="fechad[]" value="{{ form.fechad_iso or form.fechad or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 text-sm cheque-fechad">
-                </label>
-                {# TMT 2026-05-26 dueña: "agregar en cobranza documento del banco".
-                   Campo libre — N° de comprobante / depósito / transferencia. #}
-                <label class="flex flex-col">
-                  <span class="text-xs text-slate-600">Doc. banco</span>
-                  <input type="text" name="doc_banco[]" value="{{ form.doc_banco or '' }}"
-                         class="border rounded px-2 py-1 mt-0.5 font-mono text-sm cheque-docbanco"
-                         maxlength="40" placeholder="N° depósito/transf.">
-                </label>
+                         class="w-full border rounded px-2 py-1 text-sm cheque-fechad" aria-label="A depositar">
+                  <span class="cheque-fechad-req hidden"></span>
+                </div>
+                {# Estado (códigos cortos para entrar en la columna angosta). #}
+                <select name="stat[]" class="w-full border rounded px-1 py-1 text-sm cheque-stat" aria-label="Estado"
+                        title="Z=En cartera · P=Postdatado · D=Daniela · B=Depositado · X=Anulado · 1/2=Devuelto">
+                  <option value="Z" {% if not form.stat or form.stat == 'Z' %}selected{% endif %}>Z</option>
+                  <option value="P" {% if form.stat == 'P' %}selected{% endif %}>P</option>
+                  <option value="D" {% if form.stat == 'D' %}selected{% endif %}>D</option>
+                  <option value="B" {% if form.stat == 'B' %}selected{% endif %}>B</option>
+                  <option value="X" {% if form.stat == 'X' %}selected{% endif %}>X</option>
+                  <option value="1" {% if form.stat == '1' %}selected{% endif %}>1</option>
+                  <option value="2" {% if form.stat == '2' %}selected{% endif %}>2</option>
+                </select>
+                {# Doc. banco — N° de depósito/transferencia. Para depósito/efectivo
+                   es el campo que importa (la dueña: "que pase directo al doc banco"). #}
+                <input type="text" name="doc_banco[]" value="{{ form.doc_banco or '' }}"
+                       class="w-full border rounded px-2 py-1 font-mono text-sm cheque-docbanco"
+                       maxlength="40" placeholder="N° depósito/transf." aria-label="Doc. banco">
+                {# Medio del anticipo (sólo banco=97) — fila full-width debajo. #}
+                <div class="chq-full cheque-medio-wrap hidden">
+                  <label class="flex flex-col">
+                    <span class="text-xs text-slate-600">Medio del anticipo <span class="text-red-500">*</span></span>
+                    <select name="medio_anticipo[]" class="cheque-medio border rounded px-2 py-1 mt-0.5 text-sm">
+                      <option value="">— cómo entró —</option>
+                      <option value="99">Efectivo</option>
+                      <option value="90">Depósito Pichincha</option>
+                      <option value="91">Depósito Internacional</option>
+                      {% for b in bancos %}
+                        {% if b.no_banco|int < 90 %}
+                        <option value="{{ b.no_banco }}">Cheque · {{ b.no_banco }} · {{ b.nombre }}</option>
+                        {% endif %}
+                      {% endfor %}
+                    </select>
+                    <span class="text-[11px] text-slate-500 mt-0.5">Si no aplicás a ninguna factura abajo, queda como <strong>anticipo</strong> (saldo a favor).</span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -249,47 +255,38 @@
                class="w-full border rounded px-2 py-1 text-sm">
       </div>
       <div class="border rounded overflow-hidden">
-        <div class="max-h-72 overflow-y-auto">
+        {# TMT 2026-06-30 (dueña, fix #4): tabla más compacta y más ALTA — la
+           dueña pidió "no hace falta tanto espacio para todo". Sacamos Fecha,
+           Total, Abonado y Acum. saldo; quedan N°, Vence, Saldo, A aplicar y
+           Resta. Filas finas + contenedor alto para ver más facturas. #}
+        <div class="cobranza-fact-scroll">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
               <tr>
-                <th class="px-2 py-2 text-center font-medium w-10" title="Tickear cancela la factura entera (aplica el saldo completo).">
+                <th class="px-2 py-1.5 text-center font-medium w-8" title="Tickear cancela la factura entera (aplica el saldo completo).">
                   <input type="checkbox" id="aplic-toggle-all" title="Seleccionar/deseleccionar todas">
                 </th>
-                <th class="px-3 py-2 text-left font-medium">N°</th>
-                <th class="px-3 py-2 text-left font-medium">Fecha</th>
-                <th class="px-3 py-2 text-left font-medium">Vence</th>
-                {# TMT 2026-05-17 — saldo de la factura en 3 columnas separadas (pedido cobranza):
-                   TOTAL = importe original; ABONADO = lo ya cobrado antes; SALDO = lo que queda vivo.
-                   TMT 2026-05-19 — agregada columna "Acum. saldo" (item 4): running total
-                   de saldos para que la dueña vea de un vistazo si X facturas acumulan
-                   el monto que está cobrando. #}
-                <th class="px-3 py-2 text-right font-medium" title="Importe total de la factura (cara).">Total</th>
-                <th class="px-3 py-2 text-right font-medium" title="Lo que ya se cobró antes de esta operación.">Abonado</th>
-                <th class="px-3 py-2 text-right font-medium" title="Saldo vivo = total − abonado. Lo que queda por cobrar.">Saldo</th>
-                <th class="px-3 py-2 text-right font-medium" title="Saldo acumulado corrido de arriba hasta esta fila (suma de saldos de todas las facturas anteriores + esta).">Acum. saldo</th>
-                <th class="px-3 py-2 text-right font-medium w-32">A aplicar</th>
-                <th class="px-3 py-2 text-right font-medium w-32" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
+                <th class="px-2 py-1.5 text-left font-medium">N°</th>
+                <th class="px-2 py-1.5 text-left font-medium">Vence</th>
+                <th class="px-2 py-1.5 text-right font-medium" title="Saldo vivo = lo que queda por cobrar.">Saldo</th>
+                <th class="px-2 py-1.5 text-right font-medium w-32">A aplicar</th>
+                <th class="px-2 py-1.5 text-right font-medium w-28" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
               </tr>
             </thead>
             <tbody id="aplic-tbody">
-              <tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">
+              <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 text-xs">
                 Tipeá el código del cliente arriba para ver sus facturas abiertas.
               </td></tr>
             </tbody>
             <tfoot id="aplic-tfoot" class="bg-slate-50 border-t-2 border-slate-300 font-medium hidden">
               <tr>
-                <td class="px-2 py-2 text-center text-xs text-slate-500" id="aplic-foot-n">0</td>
-                <td class="px-3 py-2 text-xs text-slate-500" colspan="3">
+                <td class="px-2 py-1.5 text-center text-xs text-slate-500" id="aplic-foot-n">0</td>
+                <td class="px-2 py-1.5 text-xs text-slate-500" colspan="2">
                   facturas seleccionadas
                 </td>
-                {# 3 totales — Total/Abonado/Saldo de las facturas seleccionadas. TMT 2026-05-17. #}
-                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-total">—</td>
-                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-abonado">—</td>
-                <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
-                <td></td>{# col Acum. saldo — vacía en footer #}
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
+                <td class="px-2 py-1.5 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
+                <td class="px-2 py-1.5 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
+                <td class="px-2 py-1.5 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
               </tr>
             </tfoot>
           </table>
@@ -411,7 +408,7 @@
     const q = filtro.trim().toLowerCase();
 
     if (!facturas.length) {
-      tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
       updateSummary(0, importeCheque);
       return;
     }
@@ -424,21 +421,49 @@
     // Antes había un FIFO que distribuía automáticamente recorriendo todas
     // las facturas en orden cronológico — quitado a pedido explícito.
     const distribucion = {};  // id_factura → monto_a_aplicar
-    // TMT 2026-06-29 (dueña, fix bug): si es ANTICIPO (algún banco=97), NO
-    // auto-preseleccionar la factura de match exacto — un anticipo de $X con
-    // una factura de saldo $X se auto-aplicaba en silencio y perdía el espejo
-    // (saldo a favor). En anticipo, default = NO aplicado; la dueña tildea /
-    // usa TODAS / HASTA si quiere aplicarlo.
+    const exactSet = new Set();  // facturas con match EXACTO por cheque
+    // TMT 2026-06-29 (dueña): si es ANTICIPO (algún banco=97) NO auto-asignar —
+    // un anticipo de $X con una factura de saldo $X se auto-aplicaba en silencio
+    // y perdía el espejo (saldo a favor). En anticipo la dueña tildea a mano.
     const _hayAnticipo = [...document.querySelectorAll('.cheque-banco')]
       .some(s => s.value === '97');
-    if (importeCheque > 0 && !_hayAnticipo) {
-      const exact = facturas.find(f =>
-        f.saldo > 0 && Math.abs(f.saldo - importeCheque) < 0.01,
-      );
-      if (exact) {
-        distribucion[exact.id_factura] = importeCheque;
+    // TMT 2026-06-30 (dueña, fix #2/#3): auto-asignación "exacto y si no, FIFO".
+    //   1) Cada cheque busca una factura con saldo == su importe (1 cheque →
+    //      1 factura) y la marca entera; acumula varias.
+    //   2) Lo que sobra (cheques sin match exacto, sumados) se aplica FIFO a las
+    //      facturas restantes (más vieja primero), dejando la última ABONADA
+    //      (parcial) si el cheque no alcanza a cancelarla — eso es el caso
+    //      "varios cheques en una misma factura para dejar abonado".
+    // Es sólo SUGERENCIA: la dueña puede editar/destildar (se respeta vía
+    // userValues más abajo).
+    if (!_hayAnticipo) {
+      const pos = facturas.filter(f => (parseFloat(f.saldo) || 0) > 0.005);
+      const asignadas = new Set();
+      const chequeImps = [...document.querySelectorAll('.cheque-imp')]
+        .map(i => parseMonto(i.value)).filter(v => v > 0.005);
+      const libres = [];
+      // 1) match EXACTO por cheque (cada cheque → su factura)
+      chequeImps.forEach(imp => {
+        const f = pos.find(x => !asignadas.has(x.id_factura)
+                                && Math.abs(x.saldo - imp) < 0.01);
+        if (f) {
+          distribucion[f.id_factura] = f.saldo;
+          asignadas.add(f.id_factura);
+          exactSet.add(f.id_factura);
+        } else {
+          libres.push(imp);
+        }
+      });
+      // 2) FIFO con lo que sobró (cheques sin match exacto)
+      let pool = libres.reduce((a, b) => a + b, 0);
+      for (const f of pos) {
+        if (pool <= 0.005) break;
+        if (asignadas.has(f.id_factura)) continue;
+        const ap = Math.min(f.saldo, pool);
+        distribucion[f.id_factura] = ap;
+        asignadas.add(f.id_factura);
+        pool -= ap;
       }
-      // Sin match exacto: distribucion queda vacío, la dueña tildea a mano.
     }
 
     // Preservar valores que el usuario haya editado manualmente
@@ -475,7 +500,7 @@
           ? userValues[f.id_factura]
           : (distribucion[f.id_factura] || 0);
         const fmtFecha = (s) => s ? s.split('-').reverse().join('/') : '';
-        const isExact = importeCheque > 0 && Math.abs(f.saldo - importeCheque) < 0.01;
+        const isExact = exactSet.has(f.id_factura);
         // TMT 2026-05-15: saldo < 0 = devolución / sobre-aplicación = crédito a
         // favor del cliente. La usuaria puede tildar la fila para "absorber"
         // ese crédito (aplica un monto negativo al cheque, neteándolo). Las
@@ -493,23 +518,15 @@
           : '';
         return `
           <tr class="border-t ${rowClass}">
-            <td class="px-2 py-1.5 text-center">
+            <td class="px-2 py-1 text-center">
               <input type="checkbox" class="aplic-cancel" data-id="${f.id_factura}"
                      data-saldo="${f.saldo}" ${cancelaEntera ? 'checked' : ''}
-                     title="${esCredito
-                              ? 'Tildear absorbe el crédito (aplica monto negativo al cheque)'
-                              : 'Cancela la factura entera (aplica el saldo completo)'}">
+                     title="Cancela la factura entera (aplica el saldo completo)">
             </td>
-            <td class="px-3 py-1.5 font-mono text-xs">${f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : `<span class="text-slate-400">#${f.id_factura}</span>`)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
-            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.fecha)}</td>
-            <td class="px-3 py-1.5 text-xs text-slate-600">${fmtFecha(f.vencimiento)}</td>
-            {# TMT 2026-05-17 — 3 columnas separadas: Total / Abonado / Saldo. #}
-            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(f.importe)}</td>
-            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${f.abono && Math.abs(f.abono) > 0.005 ? fmt(f.abono) : '—'}</td>
-            <td class="px-3 py-1.5 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
-            {# TMT 2026-05-19 — Acum. saldo (item 4): running total de saldos. #}
-            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500">${fmt(acumPorFactura[f.id_factura] || 0)}</td>
-            <td class="px-3 py-1.5 text-right">
+            <td class="px-2 py-1 font-mono text-xs whitespace-nowrap">${f.numf_completo || (f.numf && f.numf !== 0 ? f.numf : `<span class="text-slate-400">#${f.id_factura}</span>`)}${isExact ? ' <span class="text-emerald-700 text-[10px]">⮕ MATCH</span>' : ''}${credBadge}</td>
+            <td class="px-2 py-1 text-xs text-slate-600 whitespace-nowrap">${fmtFecha(f.vencimiento)}</td>
+            <td class="px-2 py-1 text-right font-mono tabular-nums font-medium ${saldoClass}">${fmt(f.saldo)}</td>
+            <td class="px-2 py-1 text-right">
               <div class="inline-flex items-center gap-1 justify-end">
                 <input type="text" inputmode="decimal" name="aplicar[${f.id_factura}]"
                        data-id="${f.id_factura}" data-saldo="${f.saldo}"
@@ -524,12 +541,12 @@
                 </button>
               </div>
             </td>
-            <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 acum-cell" data-id="${f.id_factura}">—</td>
+            <td class="px-2 py-1 text-right font-mono tabular-nums text-slate-600 acum-cell" data-id="${f.id_factura}">—</td>
           </tr>
         `;
       }).join('');
 
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
 
     // Wire-up para tracking de "usuario editó" (input de monto)
     tbody.querySelectorAll('input.aplic-input').forEach(inp => {
@@ -765,8 +782,10 @@
     if (nSel > 0) {
       tfoot.classList.remove('hidden');
       footN.textContent = nSel;
-      footTotal.textContent   = fmt(totalSel);
-      footAbonado.textContent = Math.abs(abonadoSel) > 0.005 ? fmt(abonadoSel) : '—';
+      // TMT 2026-06-30 (fix #4): columnas Total/Abonado del footer removidas;
+      // guardamos por si los elementos no existen.
+      if (footTotal)   footTotal.textContent   = fmt(totalSel);
+      if (footAbonado) footAbonado.textContent = Math.abs(abonadoSel) > 0.005 ? fmt(abonadoSel) : '—';
       footSaldo.textContent   = fmt(saldoSel);
       footAplicado.textContent = '$ ' + fmt(asignado);
       const restaTotal = saldoSel - asignado;
@@ -806,7 +825,11 @@
         return;
       }
       const data = await resp.json();
-      facturas = data.facturas || [];
+      // TMT 2026-06-30 (dueña, fix #1): NO mostrar facturas en CRÉDITO (saldo
+      // negativo / notas de crédito) en la cobranza — sólo facturas vivas con
+      // saldo > 0. Las amarillas "⚠ crédito" se sacaron por completo de esta
+      // pantalla. Si hay que netear una NC, se hace desde otra pantalla.
+      facturas = (data.facturas || []).filter(f => (parseFloat(f.saldo) || 0) > 0.005);
       // TMT 2026-05-15: pre-cargar banco más usado por este cliente. Sólo
       // si la usuaria todavía no eligió uno explícitamente (select vacío).
       const bancoSel = document.querySelector('select[name="no_banco"]');
@@ -1211,7 +1234,7 @@
   const HOY_ISO = new Date().toISOString().slice(0, 10);
   const DEPOSITO_BANCOS = ['90', '91', '95', '97', '99'];
 
-  function configurarBloque(bloque) {
+  function configurarBloque(bloque, fromUser) {
     const bancoSel = bloque.querySelector('.cheque-banco');
     const numInp = bloque.querySelector('.cheque-num');
     const numReqStar = bloque.querySelector('.cheque-num-req');
@@ -1254,7 +1277,10 @@
       }
       if (numReqStar) numReqStar.classList.toggle('hidden', esDeposito);
     }
-    if (numWrap) numWrap.classList.toggle('hidden', esDeposito);
+    // TMT 2026-06-30 (fix #4): en la grilla compacta ocultamos con
+    // visibility (NO display) para que la celda mantenga su lugar y la fila
+    // no se desalinee del encabezado de columnas.
+    if (numWrap) numWrap.style.visibility = esDeposito ? 'hidden' : 'visible';
     // Aviso de banco virtual (creado on-demand, uno por bloque).
     let warnDiv = bloque.querySelector('.cheque-virtual-warn');
     // TMT 2026-06-29 (dueña): en el flujo de ANTICIPO no mostrar el aviso
@@ -1290,7 +1316,7 @@
       }
     }
     if (fechadWrap) {
-      fechadWrap.classList.toggle('hidden', esDeposito);
+      fechadWrap.style.visibility = esDeposito ? 'hidden' : 'visible';
     }
     // Estado: para 90/91/99 → B (cobrado); para 97 → Z (anticipo); resto deja
     if (statSel && (v === '90' || v === '91' || v === '99')) {
@@ -1308,17 +1334,24 @@
       anticipoChk.checked = false;
       anticipoChk.dispatchEvent(new Event('change'));
     }
+    // TMT 2026-06-30 (dueña): en depósito/efectivo los campos N°/fecha son
+    // irrelevantes — al elegir el banco saltamos directo al Doc. banco para
+    // tipear el N° de depósito/transferencia sin pasar por campos vacíos.
+    if (fromUser && esDeposito && !esAnticipo97) {
+      const docInp = bloque.querySelector('.cheque-docbanco');
+      if (docInp) docInp.focus();
+    }
   }
 
   // Wire-up: cada select banco re-configura su bloque al cambiar.
   function wireBloqueListener(bloque) {
     const sel = bloque.querySelector('.cheque-banco');
     if (sel) {
-      sel.addEventListener('change', () => configurarBloque(bloque));
+      sel.addEventListener('change', () => configurarBloque(bloque, true));
       configurarBloque(bloque); // init
     }
     const medioSel = bloque.querySelector('.cheque-medio');
-    if (medioSel) medioSel.addEventListener('change', () => configurarBloque(bloque));
+    if (medioSel) medioSel.addEventListener('change', () => configurarBloque(bloque, true));
   }
   document.querySelectorAll('.cheque-bloque').forEach(wireBloqueListener);
   // Expose para que el clonado de bloque (en JS de "+ Otro cheque") wire-uppee también
