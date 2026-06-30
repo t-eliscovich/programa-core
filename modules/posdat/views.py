@@ -317,6 +317,10 @@ def retiro_op():
     de = (request.form.get("de") or "OP").strip().upper() or "OP"
     fecha = parse_date(request.form.get("fecha")) or today_ec()
     concepto = (request.form.get("concepto") or "").strip() or None
+    # Retiro desde una LÍNEA OP concreta (compra/posdat OP). line_key identifica
+    # la línea; el retiro se imputa a ella para mostrar su saldo restante.
+    line_key = (request.form.get("line_key") or "").strip() or None
+    line_concepto = (request.form.get("line_concepto") or "").strip() or None
     if monto is None or monto <= 0:
         flash("El monto del retiro debe ser mayor que cero.", "warn")
         return redirect(url_for("posdat.lista"))
@@ -335,7 +339,10 @@ def retiro_op():
                 )
         except Exception:  # noqa: BLE001
             pass
-        r = _ret.crear_op(monto=monto, de=de, fecha=fecha, concepto=concepto, usuario=usuario)
+        r = _ret.crear_op(
+            monto=monto, de=de, fecha=fecha, concepto=concepto, usuario=usuario,
+            line_key=line_key, line_concepto=line_concepto,
+        )
         flash(
             f"Retiro OP registrado: {r['de']} $ {r['monto']:,.2f} ({r['concepto']}). "
             f"Quedó en /retiros (igual que dBase).",
@@ -472,12 +479,18 @@ def lista():
     # Saldo OP (over-price/aporte) para el panel + botón de retiro a accionistas.
     # Sólo se muestra en el tab posdatados. Best-effort: si falla, no rompe.
     saldo_op = None
+    lineas_op = []
     if tab == "posdatados":
         try:
             from modules.retiros import queries as _ret
             saldo_op = _ret.saldo_op()
         except Exception:  # noqa: BLE001
             saldo_op = None
+        try:
+            from modules.retiros import queries as _ret
+            lineas_op = _ret.lineas_op()
+        except Exception:  # noqa: BLE001
+            lineas_op = []
 
     # TMT 2026-05-29: no-store para forzar a que el browser/Caddy NO cacheen
     # la respuesta — el display-time depende de _hoy_ec() y cambia día a día.
@@ -502,6 +515,7 @@ def lista():
         acum_mes_hasta_hoy=acum_mes_hasta_hoy,
         dia_del_mes=_dia_hoy,
         saldo_op=saldo_op,
+        lineas_op=lineas_op,
         today_iso=today_ec().isoformat(),
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

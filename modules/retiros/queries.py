@@ -57,8 +57,72 @@ def saldo_op() -> dict:
     }
 
 
+def lineas_op() -> list[dict]:
+    """Lineas OP registradas (creditos) con su saldo restante por linea.
+
+    Une las DOS fuentes de credito OP:
+      - compras OP (scintela.compra, codigo_prov='OP', importe negativo): el
+        over-price de cada importacion (lo que forma el Saldo OP del panel).
+      - la(s) fila(s) OP de posdatados (scintela.posdat, prov='OP').
+    Por linea:
+      credito  = |importe|  (positivo)
+      retirado = Sum op_retiro_linea imputado a esa linea (SOLO display, no balance)
+      restante = credito - retirado   (BAJA al retirar desde esa linea)
+    line_key estable a traves del Sync dBase (numero/num + concepto del DBF).
+    """
+    rows = db.fetch_all(
+        """
+        SELECT 'C|' || COALESCE(numero, 0) || '|' || COALESCE(concepto, '') AS line_key,
+               'compra'                AS origen,
+               fecha,
+               COALESCE(concepto, '')  AS concepto,
+               -COALESCE(importe, 0)   AS credito
+          FROM scintela.compra
+         WHERE UPPER(TRIM(codigo_prov)) = 'OP'
+           AND COALESCE(stat, '') <> 'Y'
+        UNION ALL
+        SELECT 'P|' || COALESCE(num, 0) || '|' || COALESCE(concepto, '') AS line_key,
+               'posdat'                AS origen,
+               fecha,
+               COALESCE(concepto, '')  AS concepto,
+               -COALESCE(importe, 0)   AS credito
+          FROM scintela.posdat
+         WHERE UPPER(TRIM(prov)) = 'OP'
+        ORDER BY fecha NULLS LAST, concepto
+        """
+    ) or []
+
+    # Imputaciones por linea. Tabla PC-only: puede no existir hasta correr la
+    # migracion 0109 -> defensivo (retirado=0).
+    alloc: dict[str, float] = {}
+    try:
+        for a in (db.fetch_all(
+            "SELECT line_key, COALESCE(SUM(monto), 0) AS retirado "
+            "FROM scintela.op_retiro_linea GROUP BY line_key"
+        ) or []):
+            alloc[a["line_key"]] = float(a.get("retirado") or 0)
+    except Exception:  # noqa: BLE001
+        alloc = {}
+
+    out: list[dict] = []
+    for r in rows:
+        credito = round(float(r.get("credito") or 0), 2)
+        retirado = round(float(alloc.get(r.get("line_key"), 0)), 2)
+        out.append({
+            "line_key": r.get("line_key"),
+            "origen": r.get("origen"),
+            "fecha": r.get("fecha"),
+            "concepto": r.get("concepto") or "",
+            "credito": credito,
+            "retirado": retirado,
+            "restante": round(credito - retirado, 2),
+        })
+    return out
+
+
 def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
-             concepto: str | None = None, usuario: str = "web") -> dict:
+             concepto: str | None = None, usuario: str = "web",
+             line_key: str | None = None, line_concepto: str | None = None) -> dict:
     """Registra un retiro a accionistas contra el saldo OP ("banco USA").
 
     Espejo del retiro OP del dBase (RETIROS DE='OP', concepto 'RR OP … B.1'),
@@ -89,6 +153,26 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
             conn=conn,
         ) or {}
         id_retiro = int(row.get("id_retiro") or 0)
+        # Imputación a la línea OP concreta (display, NO balance): registra
+        # a qué crédito OP se descontó este retiro para mostrar el saldo
+        # restante por línea. Tabla PC-only (sobrevive el sync). Si todavía
+        # no existe (migración 0109 sin correr) se saltea: el retiro igual
+        # queda registrado y pega el balance una sola vez.
+        if line_key:
+            _reg = db.fetch_one(
+                "SELECT to_regclass('scintela.op_retiro_linea') AS t", conn=conn
+            ) or {}
+            if _reg.get("t"):
+                db.execute(
+                    """
+                    INSERT INTO scintela.op_retiro_linea
+                        (line_key, fecha, monto, id_retiro, concepto, usuario_crea)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (line_key[:200], fecha, monto, id_retiro,
+                     (line_concepto or "")[:120], USUARIO_RETIRO_OP),
+                    conn=conn,
+                )
         try:
             import mov_doble as _md
             _md.registrar(
