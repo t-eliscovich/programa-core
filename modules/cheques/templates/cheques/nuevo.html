@@ -1347,11 +1347,17 @@
   function wireBloqueListener(bloque) {
     const sel = bloque.querySelector('.cheque-banco');
     if (sel) {
-      sel.addEventListener('change', () => configurarBloque(bloque, true));
+      // TMT 2026-06-30: pasamos ev.isTrusted como fromUser. Así el salto de
+      // foco a Doc. banco SOLO ocurre cuando la dueña elige el banco con el
+      // MOUSE (evento real). El type-ahead de teclado dispara un change
+      // SINTÉTICO (isTrusted=false) por cada dígito → no roba el foco a mitad
+      // de tipear "99" (todos los depósitos empiezan con 9). El salto por
+      // teclado lo hace el handler del buffer cuando termina de tipear.
+      sel.addEventListener('change', (ev) => configurarBloque(bloque, !!(ev && ev.isTrusted)));
       configurarBloque(bloque); // init
     }
     const medioSel = bloque.querySelector('.cheque-medio');
-    if (medioSel) medioSel.addEventListener('change', () => configurarBloque(bloque, true));
+    if (medioSel) medioSel.addEventListener('change', (ev) => configurarBloque(bloque, !!(ev && ev.isTrusted)));
   }
   document.querySelectorAll('.cheque-bloque').forEach(wireBloqueListener);
   // Expose para que el clonado de bloque (en JS de "+ Otro cheque") wire-uppee también
@@ -1363,7 +1369,7 @@
   // dígitos con timeout — '99' selecciona exactamente la opción cuyo
   // value es 99. Delegado en document para cubrir bloques clonados.
   (function () {
-    let buf = '', timer = null;
+    let buf = '', timer = null, lastSel = null;
     document.addEventListener('keydown', function (e) {
       const sel = e.target;
       if (!sel || !sel.classList || !sel.classList.contains('cheque-banco')) return;
@@ -1373,8 +1379,21 @@
       }
       e.preventDefault(); // matar el type-ahead nativo que cicla por '9'
       buf += e.key;
+      lastSel = sel;
       clearTimeout(timer);
-      timer = setTimeout(() => { buf = ''; }, 1200);
+      // TMT 2026-06-30: al terminar de tipear el código (settle), si quedó un
+      // depósito directo (90/91/99) saltar el foco al Doc. banco (pedido dueña).
+      // Lo hacemos ACÁ y no en el change para no robar el foco mientras se
+      // tipea "99" (si no, el primer "9" elegía 90 y movía el foco).
+      timer = setTimeout(() => {
+        buf = '';
+        if (lastSel && ['90', '91', '99'].includes(lastSel.value)) {
+          const bq = lastSel.closest('.cheque-bloque');
+          const doc = bq && bq.querySelector('.cheque-docbanco');
+          if (doc && doc.offsetParent !== null) doc.focus();
+        }
+        lastSel = null;
+      }, 700);
       const ops = Array.from(sel.options);
       // 1) match EXACTO por código; 2) fallback: empieza-con.
       let op = ops.find(o => o.value === buf) || ops.find(o => o.value.startsWith(buf));
