@@ -92,22 +92,28 @@ def lineas_op() -> list[dict]:
         """
     ) or []
 
-    # Imputaciones por linea. Tabla PC-only: puede no existir hasta correr la
-    # migracion 0109 -> defensivo (retirado=0).
-    alloc: dict[str, float] = {}
+    # Imputaciones por linea (cada retiro imputado a esa linea, con su id para
+    # poder DESHACER). Tabla PC-only: puede no existir hasta correr la migracion
+    # 0109 -> defensivo (sin imputaciones).
+    alloc_rows: dict[str, list[dict]] = {}
     try:
         for a in (db.fetch_all(
-            "SELECT line_key, COALESCE(SUM(monto), 0) AS retirado "
-            "FROM scintela.op_retiro_linea GROUP BY line_key"
+            "SELECT id_op_retiro_linea, line_key, fecha, monto "
+            "FROM scintela.op_retiro_linea ORDER BY fecha, id_op_retiro_linea"
         ) or []):
-            alloc[a["line_key"]] = float(a.get("retirado") or 0)
+            alloc_rows.setdefault(a["line_key"], []).append({
+                "id": a["id_op_retiro_linea"],
+                "fecha": a.get("fecha"),
+                "monto": round(float(a.get("monto") or 0), 2),
+            })
     except Exception:  # noqa: BLE001
-        alloc = {}
+        alloc_rows = {}
 
     out: list[dict] = []
     for r in rows:
         credito = round(float(r.get("credito") or 0), 2)
-        retirado = round(float(alloc.get(r.get("line_key"), 0)), 2)
+        imps = alloc_rows.get(r.get("line_key"), [])
+        retirado = round(sum(i["monto"] for i in imps), 2)
         out.append({
             "line_key": r.get("line_key"),
             "origen": r.get("origen"),
@@ -116,6 +122,7 @@ def lineas_op() -> list[dict]:
             "credito": credito,
             "retirado": retirado,
             "restante": round(credito - retirado, 2),
+            "imputaciones": imps,
         })
     return out
 
@@ -193,6 +200,56 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
             # algo inesperado, abortamos para no dejar el retiro sin auditar.
             raise
     return {"id_retiro": id_retiro, "monto": monto, "de": de, "concepto": concepto}
+
+
+
+def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
+    """Deshace un retiro OP imputado a una linea.
+
+    Borra el retiro de scintela.retiros (REVIERTE el balance, una sola vez) +
+    borra la imputacion de scintela.op_retiro_linea (la linea vuelve a SUBIR su
+    restante). Auditado con un mov_doble de reverso. Atomico.
+    """
+    with db.tx() as conn:
+        row = db.fetch_one(
+            "SELECT id_op_retiro_linea, line_key, monto, id_retiro, fecha, concepto "
+            "FROM scintela.op_retiro_linea WHERE id_op_retiro_linea = %s",
+            (id_op_retiro_linea,), conn=conn,
+        )
+        if not row:
+            raise ValueError("No encuentro esa imputacion de retiro OP.")
+        monto = round(float(row.get("monto") or 0), 2)
+        id_retiro = row.get("id_retiro")
+        line_key = row.get("line_key")
+        # Borrar el retiro (revierte el balance) si todavia existe.
+        if id_retiro:
+            db.execute(
+                "DELETE FROM scintela.retiros WHERE id_retiro = %s",
+                (id_retiro,), conn=conn,
+            )
+        # Borrar la imputacion (restaura el restante de la linea).
+        db.execute(
+            "DELETE FROM scintela.op_retiro_linea WHERE id_op_retiro_linea = %s",
+            (id_op_retiro_linea,), conn=conn,
+        )
+        try:
+            import mov_doble as _md
+            _md.registrar(
+                conn=conn,
+                tipo="reverso_retiro_op",
+                origen_table="retiros",
+                origen_id=int(id_retiro or 0),
+                destino_table="retiros",
+                destino_id=int(id_retiro or 0),
+                importe=monto,
+                fecha=row.get("fecha") or today_ec(),
+                concepto=f"Reverso retiro OP (linea {line_key}) $ {monto:.2f}"[:200],
+                usuario=usuario,
+                metadata={"origen": "deshacer_retiro_op", "line_key": line_key},
+            )
+        except Exception:
+            raise
+    return {"monto": monto, "line_key": line_key}
 
 
 def buscar(

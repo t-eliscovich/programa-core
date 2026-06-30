@@ -355,6 +355,36 @@ def retiro_op():
     return redirect(url_for("posdat.lista"))
 
 
+@posdat_bp.route("/posdat/deshacer-retiro-op", methods=["POST"])
+@requiere_login
+@requiere_permiso("posdat.editar")
+def deshacer_retiro_op():
+    """Deshace un retiro OP imputado a una línea: borra el retiro (revierte el
+    balance) y la imputación (la línea vuelve a subir). Por pantalla."""
+    from modules.retiros import queries as _ret
+
+    try:
+        rid = int(request.form.get("id_op_retiro_linea") or 0)
+    except (TypeError, ValueError):
+        rid = 0
+    if not rid:
+        flash("Falta la imputación a deshacer.", "warn")
+        return redirect(url_for("posdat.lista"))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = _ret.deshacer_op(rid, usuario=usuario)
+        flash(
+            f"Retiro OP deshecho: ${r['monto']:,.2f}. La línea volvió a subir y "
+            f"se revirtió el balance.",
+            "ok",
+        )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude deshacer el retiro OP", e)
+    return redirect(url_for("posdat.lista"))
+
+
 @posdat_bp.route("/posdat")
 @requiere_login
 @requiere_permiso("posdat.ver")
