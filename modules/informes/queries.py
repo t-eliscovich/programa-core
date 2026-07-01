@@ -3396,6 +3396,16 @@ def informe_balance() -> dict:
     _ventas_anio = ventas_anio_en_curso()
     hist = historia_ultimo_mes() or {}
     inic = iniciales_mes_actual() or {}
+    # ¿Faltan las INICIALES del mes en curso? (inic resolvió a otro mes: la
+    # fila del mes no está cargada o quedó corrupta). Cuando falta, los
+    # rubros derivados del "mes anterior" (VQ0 químicos, tarifas) apuntan a
+    # un mes equivocado y hay que anclar al CIERRE real, no a una fila vieja.
+    # Bug 2026-07-01. [[iniciales_mes_actual]]
+    _hoy_ec_bal = today_ec()
+    _iniciales_del_mes_falta = bool(inic) and (
+        int(inic.get("mesnum") or 0) != _hoy_ec_bal.month
+        or int(inic.get("yy") or 0) != _hoy_ec_bal.year
+    )
     venta_anual = venta_anual_kg_y_us()
     # Mes EN CURSO (live, no del cierre histórico) — replica el dBase.
     vent_mes = ventas_mes_corriente_resultado()
@@ -3510,13 +3520,12 @@ def informe_balance() -> dict:
     # terminado y las tarifas se calculan desde el cierre anterior — el número
     # sigue siendo razonable gracias al fallback, pero conviene cargar la fila.
     # Bug 2026-07-01: faltaba Julio y el stock cayó 2M. [[iniciales_mes_actual]]
-    _hoy_ec = today_ec()
-    if inic and (int(inic.get("mesnum") or 0) != _hoy_ec.month
-                 or int(inic.get("yy") or 0) != _hoy_ec.year):
+    if _iniciales_del_mes_falta:
         advertencias.append(
-            f"Faltan las INICIALES del mes en curso ({_hoy_ec.month:02d}/{_hoy_ec.year}). "
-            f"El balance está usando la fila {int(inic.get('mesnum') or 0):02d}/{int(inic.get('yy') or 0)} "
-            "como base de stock/tarifas. Cargá la fila del mes para valuación exacta."
+            f"Faltan las INICIALES del mes en curso ({_hoy_ec_bal.month:02d}/{_hoy_ec_bal.year}). "
+            f"El balance ancla el stock al último cierre y usa la fila "
+            f"{int(inic.get('mesnum') or 0):02d}/{int(inic.get('yy') or 0)} como referencia. "
+            "La utilidad del mes es PROVISIONAL hasta cargar la fila del mes."
         )
     if dias_snapshot is None:
         advertencias.append(
@@ -3958,9 +3967,16 @@ def informe_balance() -> dict:
            AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     ) or {}
-    if _vq0_prev:
+    if _vq0_prev and not _iniciales_del_mes_falta:
         vqx = round(_vq0_prev + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
-    # si no hay iniciales del mes anterior, queda el fallback del snapshot
+    elif _iniciales_del_mes_falta:
+        # Faltan las iniciales del mes: VQ0 no tiene un "mes anterior" confiable
+        # (arrastraría el vq de 2 meses atrás e infla ~80k). Anclar el stock
+        # químico de apertura al ÚLTIMO CIERRE (historia.uqui) + compras Q del
+        # mes − tintura del mes. Bug 2026-07-01. [[iniciales_mes_actual]]
+        _vq0_cierre = float(hist.get("uqui") or 0)
+        vqx = round(_vq0_cierre + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
+    # si no, queda el fallback del snapshot (historia_ultimo_snapshot.uqui)
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
