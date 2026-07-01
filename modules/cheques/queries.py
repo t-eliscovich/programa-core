@@ -2919,7 +2919,12 @@ def aplicar_a_factura(
                     # NEGATIVO"), impidiendo repartir el cheque a una NC.
                     # TMT 2026-05-15: tolerancia de $50 — solo aplica a facturas
                     # con saldo POSITIVO. dBase legacy preguntaba "Faltan X, OK?".
-                    if saldo_actual >= -0.005 and imp > saldo_actual + 50.00:
+                    # TMT 2026-07-01 (duena): si la duena eligio "dejar el
+                    # sobrante como saldo a favor en ESTA factura", la sobre-
+                    # aplicacion es intencional -> saltar el tope +$50.
+                    _permitir_sobre = bool(a.get("permitir_sobre_saldo"))
+                    if (not _permitir_sobre
+                            and saldo_actual >= -0.005 and imp > saldo_actual + 50.00):
                         # TMT 2026-06-16: numf puede ser 0 (facturas asinfo) —
                         # usar el identificador real para que el mensaje sirva.
                         _ref = f.get("numf") or f"id {id_fact}"
@@ -2966,9 +2971,13 @@ def aplicar_a_factura(
             #   saldo > $0.50 con abono → 'A' (abonada parcial)
             #   abono = 0 → preserva el stat actual o 'Z'
             forzar_stat = (a.get("forzar_stat") or "").upper().strip()
+            # TMT 2026-07-01 (duena): saldo NEGATIVO (over-pago = credito) queda
+            # como 'A' (saldo a favor vivo), NO 'T'. Solo el saldo ~0 (|saldo|
+            # <=$0.50) totaliza. Antes `nuevo_saldo <= 0.01` mandaba el credito
+            # -42,08 a 'T' y desaparecia de cartera.
             if forzar_stat in ("T", "A"):
                 nuevo_stat = forzar_stat
-            elif nuevo_saldo <= 0.01 or abs(nuevo_saldo) <= 0.50:
+            elif abs(nuevo_saldo) <= 0.50:
                 nuevo_stat = "T"
             elif nuevo_abono > 0.01:
                 nuevo_stat = "A"

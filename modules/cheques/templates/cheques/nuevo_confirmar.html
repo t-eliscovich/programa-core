@@ -102,8 +102,23 @@
       <div class="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 mb-4">
         <p class="text-sm text-amber-800 dark:text-amber-200 mb-2">
           Hay un <strong>sobrante de $ {{ '%.2f'|format(sobrante) }}</strong>
-          (los cheques superan lo aplicado a facturas).
+          (los cheques superan lo aplicado a facturas). ¿Qué hacemos con él?
         </p>
+        {% if factura_unica_id %}
+        {# Hay UNA sola factura afectada -> se puede dejar el sobrante como
+           saldo a favor (nota de credito) en esa misma factura. TMT 2026-07-01. #}
+        <input type="hidden" name="sobrante_a_factura" value="{{ factura_unica_id }}">
+        <label class="flex items-start gap-2 text-sm font-medium text-amber-900 dark:text-amber-100 mb-1">
+          <input type="radio" name="sobrante_modo" value="factura" id="sobrante-modo-factura" class="mt-0.5" checked>
+          <span>Saldo a favor en la factura <strong>#{{ factura_unica_numf or factura_unica_id }}</strong>
+            (nota de crédito) — la factura queda con saldo
+            <strong>$ {{ '%.2f'|format((factura_unica_saldo|float) - sobrante) }}</strong>.</span>
+        </label>
+        <label class="flex items-start gap-2 text-sm font-medium text-amber-900 dark:text-amber-100">
+          <input type="radio" name="sobrante_modo" value="anticipo" id="sobrante-modo-anticipo" class="mt-0.5">
+          <span>Anticipo del cliente (aplica a <strong>futuras</strong> facturas).</span>
+        </label>
+        {% else %}
         <label class="flex items-center gap-2 text-sm font-medium text-amber-900 dark:text-amber-100">
           <input type="checkbox" name="confirmar_anticipo" value="1" checked>
           Sí, dejarlo como <strong>anticipo del cliente</strong> (aplica a futuras facturas)
@@ -111,6 +126,7 @@
         <p class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-1">
           Si no querés generar el anticipo, destildá y usá "Volver" para ajustar las aplicaciones.
         </p>
+        {% endif %}
       </div>
       {% elif sobrante is defined and sobrante > 0.005 %}
       <p class="text-xs text-slate-500 mb-3">
@@ -138,9 +154,9 @@
                 <td class="px-3 py-2 font-mono text-xs">{{ f.numf or f.id_factura }}</td>
                 <td class="px-3 py-2 text-xs">{{ f.vencimiento | fecha_es if f.vencimiento else '—' }}</td>
                 <td class="px-3 py-2 text-right font-mono tabular-nums">{{ f.saldo_antes | num_es }}</td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums {% if f.aplicacion < 0 %}text-amber-700{% endif %}">{{ f.aplicacion | num_es }}</td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums">{{ f.saldo_despues | num_es }}</td>
-                <td class="px-3 py-2 text-center">
+                <td class="px-3 py-2 text-right font-mono tabular-nums {% if f.aplicacion < 0 %}text-amber-700{% endif %}"{% if factura_unica_id and f.id_factura == factura_unica_id %} id="imp-aplicacion"{% endif %}>{{ f.aplicacion | num_es }}</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums"{% if factura_unica_id and f.id_factura == factura_unica_id %} id="imp-saldo-despues"{% endif %}>{{ f.saldo_despues | num_es }}</td>
+                <td class="px-3 py-2 text-center"{% if factura_unica_id and f.id_factura == factura_unica_id %} id="imp-quedara"{% endif %}>
                   {% if f.decidible %}
                     {# Radio T/A — la dueña puede cambiar en cualquier
                        dirección. Default = stat_sugerido del sistema:
@@ -259,4 +275,49 @@
     </form>
   {% endif %}
 </div>
+
+{% if factura_unica_id and sobrante is defined and sobrante >= 1.0 %}
+<script>
+// TMT 2026-07-01 (duena): al elegir "saldo a favor en la factura", la fila de
+// la factura afectada refleja la aplicacion completa (incluye el sobrante) y el
+// saldo negativo = credito. Al elegir "anticipo", vuelve a los numeros del
+// servidor (el sobrante va como anticipo aparte).
+(function () {
+  var sobrante = {{ sobrante | float }};
+  var baseAplic = {{ factura_unica_aplicacion | float }};
+  var baseSaldo = {{ factura_unica_saldo | float }};
+  var radios = document.querySelectorAll('input[name="sobrante_modo"]');
+  if (!radios.length) return;
+  var elAp = document.getElementById('imp-aplicacion');
+  var elSaldo = document.getElementById('imp-saldo-despues');
+  var elQ = document.getElementById('imp-quedara');
+  var origAp = elAp ? elAp.textContent : '';
+  var origSaldo = elSaldo ? elSaldo.textContent : '';
+  var origQ = elQ ? elQ.innerHTML : '';
+  function fmt(n) {
+    var s = Math.abs(n).toFixed(2).split('.');
+    var i = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return (n < -0.005 ? '-' : '') + i + ',' + s[1];
+  }
+  function apply(mode) {
+    if (mode === 'factura') {
+      var ap = baseAplic + sobrante;
+      var saldo = baseSaldo - sobrante;
+      if (elAp) elAp.textContent = fmt(ap);
+      if (elSaldo) elSaldo.textContent = fmt(saldo);
+      if (elQ) elQ.innerHTML =
+        '<span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-medium">A — saldo a favor</span>' +
+        '<div class="text-[10px] text-slate-500">Queda $ ' + fmt(saldo) + ' a favor (nota de crédito)</div>';
+    } else {
+      if (elAp) elAp.textContent = origAp;
+      if (elSaldo) elSaldo.textContent = origSaldo;
+      if (elQ) elQ.innerHTML = origQ;
+    }
+  }
+  radios.forEach(function (r) { r.addEventListener('change', function () { apply(r.value); }); });
+  var checked = document.querySelector('input[name="sobrante_modo"]:checked');
+  apply(checked ? checked.value : 'factura');
+})();
+</script>
+{% endif %}
 {% endblock %}

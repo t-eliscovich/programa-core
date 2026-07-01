@@ -403,7 +403,24 @@ def nuevo():
     # TMT 2026-06-15: confirmación ACTIVA del sobrante (viene de la pantalla
     # de confirmación, checkbox default Sí). Equivale a aprobar_dif para el
     # lado del exceso.
-    confirmar_anticipo = (request.form.get("confirmar_anticipo") or "").strip() in ("1", "true", "on")
+    # TMT 2026-07-01 (duena): el sobrante (cheques > facturas) se resuelve por
+    # radio `sobrante_modo`: "anticipo" (default, futuras facturas) o "factura"
+    # (dejarlo como SALDO A FAVOR / nota de credito en la MISMA factura). El
+    # checkbox legacy `confirmar_anticipo` sigue valiendo como "anticipo".
+    sobrante_modo = (request.form.get("sobrante_modo") or "").strip().lower()
+    confirmar_anticipo = (
+        (request.form.get("confirmar_anticipo") or "").strip() in ("1", "true", "on")
+        or sobrante_modo == "anticipo"
+    )
+    # Si eligio "factura", el sobrante se suma a esa factura (queda con saldo
+    # negativo = credito) y NO se crea anticipo.
+    if sobrante_modo == "factura":
+        try:
+            sobrante_a_factura = int((request.form.get("sobrante_a_factura") or "").strip())
+        except ValueError:
+            sobrante_a_factura = 0
+    else:
+        sobrante_a_factura = 0
     motivo_dif = (request.form.get("motivo_diferencia") or "").strip()[:60]
     aplicaciones_pre: list[dict] = []
     if not es_anticipo:
@@ -459,6 +476,28 @@ def nuevo():
                 if (a["importe"] > 0 and _s is not None and _s > 0.005
                         and a["importe"] > _s + 50.00):
                     a["importe"] = round(_s, 2)  # excedente → sobrante→anticipo
+
+    # TMT 2026-07-01 (duena): sobrante -> saldo a favor en la MISMA factura.
+    # Si la duena eligio esta opcion en la confirmacion, el sobrante (cheques -
+    # aplicado) se SUMA a esa factura para que quede con saldo negativo (nota de
+    # credito) en vez de generar un anticipo. Se inyecta DESPUES del cap +$50
+    # para que la sobre-aplicacion intencional no se recorte, y se fuerza el
+    # stat 'A' (mantener el credito vivo, no totalizar).
+    if sobrante_a_factura and aplicaciones_pre:
+        _tot_ch = sum(float(c.get("importe") or 0) for c in cheques_in)
+        _tot_ap = sum(a["importe"] for a in aplicaciones_pre)
+        _sobra = round(_tot_ch - _tot_ap, 2)
+        if _sobra >= 1.00:
+            for a in aplicaciones_pre:
+                if int(a["id_fact"]) == sobrante_a_factura:
+                    a["importe"] = round(a["importe"] + _sobra, 2)
+                    a["forzar_stat"] = "A"
+                    # sobre-aplicacion intencional -> bypass del tope +$50 en
+                    # aplicar_a_factura (la duena eligio dejar el credito aca).
+                    a["permitir_sobre_saldo"] = True
+                    break
+        # con el sobrante ya absorbido por la factura, no crear anticipo.
+        confirmar_anticipo = False
 
     # Sobre-aplicación: si la suma > TOTAL de cheques, error. Con multi-cheque,
     # el total disponible es la suma de todos los importes.
@@ -542,7 +581,13 @@ def nuevo():
             #   saldo ≤ 0 o |saldo| ≤ $0.50 → T
             #   saldo > $0.50 con abono → A
             #   sin abono → preserva
-            auto_t = abs(nuevo_saldo) <= 0.50 or nuevo_saldo <= 0.01
+            # TMT 2026-07-01 (duena): un saldo NEGATIVO real (over-pago =
+            # credito / nota de credito) NO es "totalizada" — se mantiene como
+            # 'A' (abonada con saldo a favor) para que el credito quede vivo en
+            # la factura. Solo el saldo ~0 (|saldo|<=$0.50) o cubierto exacto se
+            # sugiere T. Antes `nuevo_saldo <= 0.01` mandaba los negativos a T y
+            # el credito -42,08 se perdia como "olvidar saldo".
+            auto_t = abs(nuevo_saldo) <= 0.50
             if auto_t:
                 stat_sugerido = "T"
             elif nuevo_abono > 0.01:
@@ -600,6 +645,17 @@ def nuevo():
             aprobar_dif=aprobar_dif,
             motivo_dif=motivo_dif,
             aplicar_t_used=((request.form.get("aplicar_t_used") or "").strip() == "1"),
+            # TMT 2026-07-01 (duena): si el sobrante se puede imputar a UNA sola
+            # factura, la pantalla ofrece "dejarlo como saldo a favor en esa
+            # factura (nota de credito)" ademas del anticipo. numf para el label.
+            factura_unica_id=(impacto_facturas[0]["id_factura"]
+                              if len(impacto_facturas) == 1 else 0),
+            factura_unica_numf=(impacto_facturas[0].get("numf")
+                                if len(impacto_facturas) == 1 else None),
+            factura_unica_saldo=(impacto_facturas[0]["saldo_despues"]
+                                 if len(impacto_facturas) == 1 else 0.0),
+            factura_unica_aplicacion=(impacto_facturas[0]["aplicacion"]
+                                      if len(impacto_facturas) == 1 else 0.0),
         )
 
     try:
@@ -719,6 +775,7 @@ def nuevo():
                                 "id_fact": ap["id_fact"],
                                 "importe": aplicar,
                                 "forzar_stat": ap.get("forzar_stat") or "",
+                                "permitir_sobre_saldo": ap.get("permitir_sobre_saldo", False),
                             }
                         )
                         c["restante"] -= aplicar
