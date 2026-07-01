@@ -1022,6 +1022,10 @@
       aplicarToggleFechad(nuevo);
       // TMT 2026-05-27 — wire-up del listener de banco emisor para el nuevo bloque.
       if (window.__wireBloqueListener) window.__wireBloqueListener(nuevo);
+      // TMT 2026-07-01 (dueña 'no suma el nuevo cheque cuando se pone +'):
+      // el clon setea .value directo (sin evento 'input'), así que la seccion
+      // de aplicar no recalculaba. Forzar el re-render del total/FIFO.
+      if (facturas.length > 0) render(buscar.value);
     });
   }
 
