@@ -1147,14 +1147,42 @@ def iniciales_mes_actual() -> dict | None:
     if row and (float(row.get("kprog") or 0) > 0 or float(row.get("hilado") or 0) > 0):
         return row
 
-    # 2. La más reciente con datos reales (algún campo > 0)
+    # 2. La más reciente con datos reales (algún campo > 0), pero NUNCA de un
+    #    mes FUTURO. Si falta la fila del mes en curso (p.ej. el rollover del
+    #    dBase todavía no la escribió, o quedó corrupta con yy/mesnum NULL),
+    #    caemos al ÚLTIMO cierre disponible (mes <= el corriente), jamás a una
+    #    proyección adelantada: si `inic.mesnum` apunta al mes SIGUIENTE, el
+    #    stock de terminado se calcula contra un mes previo inexistente y cae a
+    #    0, hundiendo el patrimonio ~2M. Bug 2026-07-01: iniciales tenía la fila
+    #    de Agosto pero no la de Julio -> stock -2M y utilidad -1,69M fantasma.
     row = db.fetch_one(
         """
         SELECT *
         FROM scintela.iniciales
-        WHERE COALESCE(kprog, 0) > 0
-           OR COALESCE(hilado, 0) > 0
-           OR COALESCE(pretot, 0) > 0
+        WHERE (COALESCE(kprog, 0) > 0
+               OR COALESCE(hilado, 0) > 0
+               OR COALESCE(pretot, 0) > 0)
+          AND yy IS NOT NULL AND mesnum IS NOT NULL
+          AND (yy < %s OR (yy = %s AND mesnum <= %s))
+        ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
+        LIMIT 1
+        """,
+        (hoy.year, hoy.year, hoy.month),
+    )
+    if row:
+        return row
+
+    # 2b. Recién si NO hay ningún mes <= el corriente con datos (base recién
+    #     inicializada) aceptamos el más reciente aunque sea futuro — mejor
+    #     algo que nada, pero seguimos excluyendo filas corruptas (yy NULL).
+    row = db.fetch_one(
+        """
+        SELECT *
+        FROM scintela.iniciales
+        WHERE (COALESCE(kprog, 0) > 0
+               OR COALESCE(hilado, 0) > 0
+               OR COALESCE(pretot, 0) > 0)
+          AND yy IS NOT NULL AND mesnum IS NOT NULL
         ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
         LIMIT 1
         """
@@ -1162,11 +1190,14 @@ def iniciales_mes_actual() -> dict | None:
     if row:
         return row
 
-    # 3. Fallback final: la más reciente sin importar
+    # 3. Fallback final: la más reciente sin importar (excluye filas con
+    #    yy/mesnum NULL para no devolver la fila basura primero — en Postgres
+    #    `ORDER BY yy DESC` pone los NULL adelante).
     return db.fetch_one(
         """
         SELECT *
         FROM scintela.iniciales
+        WHERE yy IS NOT NULL AND mesnum IS NOT NULL
         ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
         LIMIT 1
         """
@@ -3474,6 +3505,19 @@ def informe_balance() -> dict:
     n_activos = int(activos_count_row.get("n") or 0)
 
     advertencias = []
+    # Borde de mes: alertar si las iniciales del mes EN CURSO no están cargadas
+    # (inic resolvió a otro mes). Sin la fila del mes corriente el stock de
+    # terminado y las tarifas se calculan desde el cierre anterior — el número
+    # sigue siendo razonable gracias al fallback, pero conviene cargar la fila.
+    # Bug 2026-07-01: faltaba Julio y el stock cayó 2M. [[iniciales_mes_actual]]
+    _hoy_ec = today_ec()
+    if inic and (int(inic.get("mesnum") or 0) != _hoy_ec.month
+                 or int(inic.get("yy") or 0) != _hoy_ec.year):
+        advertencias.append(
+            f"Faltan las INICIALES del mes en curso ({_hoy_ec.month:02d}/{_hoy_ec.year}). "
+            f"El balance está usando la fila {int(inic.get('mesnum') or 0):02d}/{int(inic.get('yy') or 0)} "
+            "como base de stock/tarifas. Cargá la fila del mes para valuación exacta."
+        )
     if dias_snapshot is None:
         advertencias.append(
             "No hay snapshot mensual en `historia`. VSTO/VQX/PATANT salen en 0 y la utilidad no se puede calcular."
@@ -3816,6 +3860,25 @@ def informe_balance() -> dict:
         (_prev_y, _prev_m),
     ) or {}
     pf0_terminado = float(_prev_inic.get("terminado") or 0)
+    if pf0_terminado <= 0:
+        # Borde de mes: la fila del mes ANTERIOR falta o vino en 0 (p.ej. las
+        # iniciales del mes en curso no se cargaron y `inic` resolvió a otro
+        # mes). Arrastrar el ULTIMO terminado real conocido (<= mes anterior)
+        # en vez de asumir 0 — si no, el stock de producto terminado colapsa a
+        # 0 y hunde el patrimonio ~2M. Bug 2026-07-01. [[iniciales_mes_actual]]
+        _pf0_fallback = db.fetch_one(
+            """
+            SELECT terminado
+            FROM scintela.iniciales
+            WHERE COALESCE(terminado, 0) > 0
+              AND yy IS NOT NULL AND mesnum IS NOT NULL
+              AND (yy < %s OR (yy = %s AND mesnum <= %s))
+            ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
+            LIMIT 1
+            """,
+            (_prev_y, _prev_y, _prev_m),
+        ) or {}
+        pf0_terminado = float(_pf0_fallback.get("terminado") or 0)
     # TMT 2026-06-10 (bug hunt stock inflado): para descontar de terminado_kg
     # usamos las kg vendidas FÍSICAMENTE — incluye las facturas marcadas como
     # 'asinfo-backfill' porque ellas son ventas reales que sí salieron del
