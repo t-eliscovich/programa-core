@@ -3656,8 +3656,15 @@ def informe_balance() -> dict:
     # historia.ustock proporcionalmente (sin caer en cálculo circular).
     # Tejido y Terminado del panel STOCK NO leen iniciales.uk/uf — se
     # derivan de h_um con offsets fijos (uk = um+0,5, uf = uk+1,7).
-    mesnum_actual = int(inic.get("mesnum") or 0)
-    yy_actual = int(inic.get("yy") or 0)
+    # OPENING del stock = mes ANTERIOR al mes CALENDARIO en curso — réplica de
+    # `GO BOTT; SKIP -1` del PRG, que es POSICIONAL. NO usar inic.mesnum: si
+    # falta la fila del mes en curso (p.ej. no se cargó Julio), inic cae al mes
+    # previo y el "mes anterior" se corre un mes (arranca de Mayo en vez de
+    # Junio) → HI0/TJ0/PF0/VQ0/UM0 salen de un mes de más → stock sobrevaluado
+    # ~278k y utilidad inflada. El dBase valúa contra el mes calendario
+    # anterior sí o sí. Bug 2026-07-01. [[iniciales_mes_actual]]
+    mesnum_actual = _hoy_ec_bal.month
+    yy_actual = _hoy_ec_bal.year
     um_anterior = tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "um")
     tarifa_iniciales_mes_anterior(mesnum_actual, yy_actual, "uf")
 
@@ -3858,8 +3865,10 @@ def informe_balance() -> dict:
     # write-back (PC mostraba 349.782 vs dBase 340.151). Recompute en vivo —
     # KV ya incluye las facturas creadas en PC, así que no hace falta el ajuste
     # kg_facturas_pc_no_sincronizadas() de antes. TMT 2026-06-05.
-    _cur_m = int(inic.get("mesnum") or today_ec().month)
-    _cur_y = int(inic.get("yy") or today_ec().year)
+    # Mes en curso = CALENDARIO (no inic.mesnum, que se corre si falta la fila
+    # del mes) → _prev_m es el mes de apertura correcto. Bug 2026-07-01.
+    _cur_m = _hoy_ec_bal.month
+    _cur_y = _hoy_ec_bal.year
     _prev_m = 12 if _cur_m == 1 else _cur_m - 1
     _prev_y = _cur_y - 1 if _cur_m == 1 else _cur_y
     _prev_inic = db.fetch_one(
@@ -3967,16 +3976,9 @@ def informe_balance() -> dict:
            AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """
     ) or {}
-    if _vq0_prev and not _iniciales_del_mes_falta:
+    if _vq0_prev:
         vqx = round(_vq0_prev + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
-    elif _iniciales_del_mes_falta:
-        # Faltan las iniciales del mes: VQ0 no tiene un "mes anterior" confiable
-        # (arrastraría el vq de 2 meses atrás e infla ~80k). Anclar el stock
-        # químico de apertura al ÚLTIMO CIERRE (historia.uqui) + compras Q del
-        # mes − tintura del mes. Bug 2026-07-01. [[iniciales_mes_actual]]
-        _vq0_cierre = float(hist.get("uqui") or 0)
-        vqx = round(_vq0_cierre + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
-    # si no, queda el fallback del snapshot (historia_ultimo_snapshot.uqui)
+    # si no hay iniciales del mes anterior, queda el fallback del snapshot
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
