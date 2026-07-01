@@ -2909,17 +2909,16 @@ def aplicar_a_factura(
                 # TMT 2026-05-15: para absorción de crédito (imp<0 contra
                 # saldo<0), el signo debe matchear y |imp| <= |saldo|.
                 if imp > 0:
-                    if saldo_actual < -0.005:
-                        raise ValueError(
-                            f"Factura {f['numf']} tiene saldo NEGATIVO "
-                            f"({saldo_actual:.2f}) — aplicá un importe NEGATIVO "
-                            f"para absorber el crédito, o sacá esta factura de "
-                            f"la lista."
-                        )
-                    # TMT 2026-05-15: tolerancia de $50 — el JS pregunta al
-                    # submit para diferencias chicas. dBase legacy preguntaba
-                    # "Faltan X dólares, OK?".
-                    if imp > saldo_actual + 50.00:
+                    # TMT 2026-06-30 (dueña, caso NOF / NC 10846): permitir aplicar
+                    # un ABONO POSITIVO sobre una nota de crédito (saldo<0), IGUAL
+                    # que el dBase — la NC acumula el abono y su saldo se hace más
+                    # negativo (saldo = importe − abono). NO es "absorber": es un
+                    # abono real en la línea. Sin tope de saldo (el saldo es
+                    # negativo). Antes esto se rechazaba ("aplicá un importe
+                    # NEGATIVO"), impidiendo repartir el cheque a una NC.
+                    # TMT 2026-05-15: tolerancia de $50 — solo aplica a facturas
+                    # con saldo POSITIVO. dBase legacy preguntaba "Faltan X, OK?".
+                    if saldo_actual >= -0.005 and imp > saldo_actual + 50.00:
                         # TMT 2026-06-16: numf puede ser 0 (facturas asinfo) —
                         # usar el identificador real para que el mensaje sirva.
                         _ref = f.get("numf") or f"id {id_fact}"
