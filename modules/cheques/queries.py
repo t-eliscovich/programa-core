@@ -3599,3 +3599,92 @@ def buscar(
         acum += float(r.get("importe") or 0)
         r["saldo_acumulado"] = acum
     return rows_out
+
+
+def resumen_cobranza_dia(fecha) -> dict:
+    """Resumen de la cobranza recibida en una fecha — réplica de FINAL (ALTAS.PRG).
+
+    El dBase, al cerrar una sesión de cobranza, imprime: cuántos CHEQUES,
+    DEPÓSITOS y EFECTIVO entraron, sus totales, y el detalle de cada uno con
+    el cliente, concepto y las facturas que cancela. Como PC no tiene
+    "sesión", agrupamos por fecha de cobranza (`cheque.fecha`).
+
+    Buckets (paridad FINAL: CH = NB<90 ó NB=98; DE = NB 90/91; EF = NB=99):
+      - cheques    → cheque real en cartera / depositado (banco emisor < 90)
+      - depositos  → depósito directo (no_banco 90/91)
+      - efectivo   → efectivo (no_banco 99)
+
+    Devuelve dict con las 3 listas, sus totales y contadores + total general.
+    Solo lectura.
+    """
+    rows = (
+        db.fetch_all(
+            """
+            SELECT c.id_cheque, c.no_cheque, c.importe, c.fecha, c.fechad,
+                   c.no_banco, c.stat,
+                   COALESCE(c.banco, '') AS banco_emisor,
+                   c.codigo_cli,
+                   COALESCE(cl.nombre, '') AS cliente
+              FROM scintela.cheque c
+              LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
+             WHERE c.fecha = %s
+               AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+             ORDER BY c.no_banco, c.id_cheque
+            """,
+            (fecha,),
+        )
+        or []
+    )
+
+    # Facturas que cada cheque cancela/abona (una sola query para todos).
+    ids = [r["id_cheque"] for r in rows]
+    aplic_por_cheque: dict[int, list[dict]] = {}
+    if ids:
+        placeholders = ",".join(["%s"] * len(ids))
+        aplics = (
+            db.fetch_all(
+                f"""
+                SELECT cxf.id_cheque, cxf.importe AS aplicado, cxf.tipo,
+                       f.numf, f.numf_completo, f.saldo AS fact_saldo
+                  FROM scintela.chequesxfact cxf
+                  LEFT JOIN scintela.factura f ON f.id_factura = cxf.id_fact
+                 WHERE cxf.id_cheque IN ({placeholders})
+                 ORDER BY cxf.id_chequexfact
+                """,
+                tuple(ids),
+            )
+            or []
+        )
+        for a in aplics:
+            aplic_por_cheque.setdefault(a["id_cheque"], []).append(a)
+
+    cheques: list[dict] = []
+    depositos: list[dict] = []
+    efectivo: list[dict] = []
+    for r in rows:
+        r["aplicaciones"] = aplic_por_cheque.get(r["id_cheque"], [])
+        nb = r.get("no_banco") or 0
+        if nb == 99:
+            efectivo.append(r)
+        elif nb in (90, 91):
+            depositos.append(r)
+        else:  # NB<90 (banco real) o 98 (anticipo) o resto → bucket cheques
+            cheques.append(r)
+
+    def _tot(lst):
+        return round(sum(float(x.get("importe") or 0) for x in lst), 2)
+
+    tot_ch, tot_de, tot_ef = _tot(cheques), _tot(depositos), _tot(efectivo)
+    return {
+        "fecha": fecha,
+        "cheques": cheques,
+        "depositos": depositos,
+        "efectivo": efectivo,
+        "n_cheques": len(cheques),
+        "n_depositos": len(depositos),
+        "n_efectivo": len(efectivo),
+        "total_cheques": tot_ch,
+        "total_depositos": tot_de,
+        "total_efectivo": tot_ef,
+        "total_general": round(tot_ch + tot_de + tot_ef, 2),
+    }

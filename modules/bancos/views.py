@@ -1672,3 +1672,80 @@ def cargar_agregar():
         partes.append(f"salen $ {tot_sale:,.2f}")
     flash(" · ".join(partes) + ".", "ok")
     return redirect(url_for("bancos.cargar"))
+
+
+@bancos_bp.route("/bancos/cheque-imprimible")
+@requiere_login
+@requiere_permiso("bancos.ver")
+def cheque_imprimible():
+    """Impresión del cheque con monto EN LETRAS — réplica de IMPCHEQ (MODIFICA.PRG).
+
+    El dBase imprime sobre el cheque físico pre-impreso: nombre del
+    beneficiario + monto en números, el monto en letras con guiones de
+    relleno, y "QUITO, <fecha>". Esta pantalla reproduce ese layout en una
+    página imprimible; las posiciones son calibrables con `?offx=`/`?offy=`
+    (milímetros) para alinear con el cheque de cada banco.
+
+    Fuentes de datos (en orden):
+      - `?id_transaccion=N`  → levanta un cheque emitido (documento='CH').
+      - params sueltos: `?importe=&beneficiario=&fecha=&no_cheque=&ciudad=`
+
+    Solo lectura: no toca la base.
+    """
+    from datetime import datetime as _dt
+
+    from .letras import numero_a_letras
+
+    beneficiario = (request.args.get("beneficiario") or "").strip().upper()
+    no_cheque = (request.args.get("no_cheque") or "").strip()
+    ciudad = (request.args.get("ciudad") or "QUITO").strip().upper()
+    importe = parse_monto(request.args.get("importe"))
+    fecha_str = (request.args.get("fecha") or "").strip()
+    try:
+        fecha = _dt.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else today_ec()
+    except ValueError:
+        fecha = today_ec()
+
+    # Si viene una transacción, la usamos como fuente autoritativa.
+    id_transaccion = parse_int(request.args.get("id_transaccion"))
+    if id_transaccion:
+        import contextlib as _ctx
+
+        import db as _db
+
+        with _ctx.suppress(Exception):
+            row = _db.fetch_one(
+                """
+                SELECT t.importe, t.fecha, t.numreferencia, t.concepto, t.prov,
+                       COALESCE(p.nombre, '') AS proveedor_nombre
+                  FROM scintela.transacciones_bancarias t
+                  LEFT JOIN scintela.proveedor p ON p.codigo_prov = t.prov
+                 WHERE t.id_transaccion = %s
+                """,
+                (id_transaccion,),
+            )
+            if row:
+                importe = abs(float(row.get("importe") or 0))
+                fecha = row.get("fecha") or fecha
+                if row.get("numreferencia"):
+                    no_cheque = str(row["numreferencia"])
+                if not beneficiario:
+                    beneficiario = (row.get("proveedor_nombre") or row.get("concepto") or "").strip().upper()
+
+    # Calibración de posición (mm) para el cheque físico.
+    offx = parse_int(request.args.get("offx")) or 0
+    offy = parse_int(request.args.get("offy")) or 0
+
+    letras = numero_a_letras(importe or 0)
+
+    return render_template(
+        "bancos/cheque_imprimible.html",
+        beneficiario=beneficiario,
+        no_cheque=no_cheque,
+        ciudad=ciudad,
+        importe=float(importe or 0),
+        fecha=fecha,
+        letras=letras,
+        offx=offx,
+        offy=offy,
+    )

@@ -2643,3 +2643,31 @@ def cargar_csv():
             cols=CHEQUES_CSV_COLS,
         )
     return render_template("cheques/cargar_csv.html", cols=CHEQUES_CSV_COLS)
+
+
+@cheques_bp.route("/cheques/resumen-dia")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def resumen_dia():
+    """Resumen imprimible de la cobranza de una fecha — réplica de FINAL (ALTAS.PRG).
+
+    Lista cheques / depósitos / efectivo recibidos ese día, con totales y las
+    facturas que cada cobro cancela. Query param `?fecha=YYYY-MM-DD`
+    (default: hoy). Solo lectura.
+    """
+    from datetime import datetime as _dt
+
+    fecha_str = (request.args.get("fecha") or "").strip()
+    try:
+        fecha = _dt.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else today_ec()
+    except ValueError:
+        fecha = today_ec()
+
+    try:
+        resumen = queries.resumen_cobranza_dia(fecha)
+        error = None
+    except Exception as e:  # noqa: BLE001
+        resumen = None
+        error = f"Error inesperado: {e}"
+
+    return render_template("cheques/resumen_dia.html", resumen=resumen, fecha=fecha, error=error)

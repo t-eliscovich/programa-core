@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Imprimir cheque{% if no_cheque %} N° {{ no_cheque }}{% endif %}{% endblock %}
+
+{% block content %}
+<style>
+  /* Cheque físico: layout absoluto en mm. offx/offy calibran la posición
+     para alinear con el cheque pre-impreso de cada banco. */
+  .cheque-lienzo {
+    position: relative;
+    width: 175mm;
+    height: 80mm;
+    margin: 1rem auto;
+    background: #fff;
+    color: #000;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 12pt;
+  }
+  .cheque-lienzo.preview {
+    border: 1px dashed #94a3b8;
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    background:
+      linear-gradient(#f1f5f9 1px, transparent 1px) 0 0 / 100% 10mm,
+      #fff;
+  }
+  .campo { position: absolute; white-space: nowrap; }
+  .relleno { letter-spacing: 1px; }
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff !important; }
+    .cheque-lienzo { border: none !important; box-shadow: none !important; background: #fff !important; margin: 0 !important; }
+    @page { size: 175mm 80mm; margin: 0; }
+  }
+</style>
+
+<div class="no-print bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 max-w-4xl">
+  <form method="get" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Beneficiario</label>
+      <input type="text" name="beneficiario" value="{{ beneficiario }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm w-64">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Importe</label>
+      <input type="text" name="importe" value="{{ '%.2f'|format(importe) }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm w-32">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Fecha</label>
+      <input type="date" name="fecha" value="{{ fecha.isoformat() }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">N° cheque</label>
+      <input type="text" name="no_cheque" value="{{ no_cheque }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm w-28">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Ajuste ← → (mm)</label>
+      <input type="number" name="offx" value="{{ offx }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm w-20">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Ajuste ↑ ↓ (mm)</label>
+      <input type="number" name="offy" value="{{ offy }}"
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm w-20">
+    </div>
+    <button type="submit" class="px-3 py-1.5 bg-slate-900 text-white text-sm rounded hover:bg-slate-700">Ver</button>
+    <button type="button" onclick="window.print()"
+            class="px-3 py-1.5 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">Imprimir cheque</button>
+  </form>
+  <p class="text-xs text-slate-500 mt-2">
+    Cargá el cheque físico en la impresora y ajustá ← → / ↑ ↓ (en mm) hasta que el texto caiga en su lugar.
+    El recuadro punteado es solo guía en pantalla; no se imprime.
+  </p>
+</div>
+
+{% set bx = offx %}
+{% set by = offy %}
+<div class="cheque-lienzo preview">
+  {# Fecha (arriba a la derecha) — QUITO, AAAA/MM/DD como IMPCHEQ (SET DATE GERMAN) #}
+  <div class="campo" style="left: {{ 120 + bx }}mm; top: {{ 10 + by }}mm;">
+    {{ ciudad }}, {{ '%04d/%02d/%02d'|format(fecha.year, fecha.month, fecha.day) }}
+  </div>
+  {# Beneficiario (páguese a la orden de) #}
+  <div class="campo" style="left: {{ 22 + bx }}mm; top: {{ 22 + by }}mm;">
+    {{ beneficiario or '—' }}
+  </div>
+  {# Monto en números (recuadro derecho) #}
+  <div class="campo" style="left: {{ 138 + bx }}mm; top: {{ 22 + by }}mm;">
+    **{{ letras.en_numeros }}
+  </div>
+  {# Monto en letras, con guiones de relleno (réplica REPLI(CHR(45)) de IMPCHEQ) #}
+  <div class="campo relleno" style="left: {{ 14 + bx }}mm; top: {{ 31 + by }}mm;">
+    {{ letras.texto }} {{ '-' * (60 - letras.texto|length if letras.texto|length < 60 else 3) }}
+  </div>
+</div>
+
+<div class="no-print max-w-4xl mt-4 text-sm text-slate-600">
+  <div class="font-semibold text-slate-800 mb-1">Monto en letras</div>
+  <div class="font-mono">{{ letras.texto }}</div>
+</div>
+{% endblock %}
