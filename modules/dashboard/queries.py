@@ -276,7 +276,7 @@ def saldo_mes_en_curso() -> dict:
         """
         SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
           FROM scintela.factura
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
            AND (stat IS NULL OR stat IN ('Z','A','T','P','',' '))
         """
     ) or {}
@@ -284,7 +284,7 @@ def saldo_mes_en_curso() -> dict:
         """
         SELECT COUNT(*) AS n, COALESCE(SUM(importe), 0) AS total
           FROM scintela.cheque
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
            AND stat IN ('Z','1','2','3','A','D','P')
         """
     ) or {}

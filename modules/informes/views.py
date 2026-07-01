@@ -419,7 +419,7 @@ def utilidad_debug():
             """
         SELECT *
         FROM scintela.historia
-        WHERE fecha < date_trunc('month', CURRENT_DATE)::date
+        WHERE fecha < date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::date
         ORDER BY fecha DESC
         LIMIT 1
         """

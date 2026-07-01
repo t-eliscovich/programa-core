@@ -422,7 +422,7 @@ def activos_totales() -> dict:
     row = db.fetch_one(
         """
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM CURRENT_DATE)::numeric, 30) / 30.0 AS c
+          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         ),
         v AS (
           SELECT
@@ -481,8 +481,8 @@ def uret_mes_corriente() -> float:
         """
         SELECT COALESCE(SUM(ret), 0) AS total
         FROM scintela.retiros
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -1063,7 +1063,7 @@ def historia_ultimo_mes() -> dict | None:
         """
         SELECT *
         FROM scintela.historia
-        WHERE fecha < date_trunc('month', CURRENT_DATE)::date
+        WHERE fecha < date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::date
         ORDER BY fecha DESC
         LIMIT 1
         """
@@ -1237,8 +1237,8 @@ def ventas_mes_corriente_resultado() -> dict:
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.factura
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND (stat IS NULL OR stat <> 'X')
           AND {NO_BACKFILL_WHERE}  -- ver constante arriba
         """
@@ -1283,8 +1283,8 @@ def ventas_mes_corriente_kg_fisico() -> float:
         """
         SELECT COALESCE(SUM(kg), 0) AS kg
           FROM scintela.factura  -- kg-fisico-incluye-todo (a propósito)
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
-           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
            AND (stat IS NULL OR stat <> 'X')
         """,
     )
@@ -1310,8 +1310,8 @@ def compras_mes_corriente() -> dict:
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.compra
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'H'
           -- Excluir anuladas (stat 'X' o 'Y'). Sin este filtro, compras
           -- reversadas seguían inflando MAT.PR. y U$/kg ponderado.
@@ -1669,7 +1669,7 @@ def amortizaciones_mensuales() -> dict:
         db.fetch_all(
             """
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM CURRENT_DATE)::numeric, 30) / 30.0 AS c
+          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         )
         SELECT UPPER(TRIM(tipo)) AS tipo,
                COALESCE(SUM((SELECT c FROM coef) * COALESCE(cuota, 0)), 0) AS total
@@ -1778,8 +1778,8 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         return {"num": n, "label": "(categoría inválida)", "grupos": [], "total": 0.0, "n_filas": 0}
 
     where_fecha = (
-        "AND fecha >= date_trunc('month', CURRENT_DATE) "
-        "AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
+        "AND fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) "
+        "AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'"
         if mes_actual
         else ""
     )
@@ -1800,8 +1800,8 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
     # a este num según la cascada del dBase (`_SQL_COMPRA_NUM_CASE`). Antes
     # filtraba sólo por tipo; ahora respeta SU/EEQ/AGUA/etc.
     where_fecha_c = (
-        "AND c.fecha >= date_trunc('month', CURRENT_DATE) "
-        "AND c.fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'"
+        "AND c.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) "
+        "AND c.fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'"
         if mes_actual
         else ""
     )
@@ -2014,8 +2014,8 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         SELECT COALESCE(num, 0) AS num,
                COALESCE(SUM(importe), 0) AS total
         FROM scintela.xgast
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY 1
@@ -2032,8 +2032,8 @@ def gastos_xgast_v1_a_v9_mes() -> dict:
         SELECT ({_SQL_COMPRA_NUM_CASE}) AS num,
                COALESCE(SUM(c.importe), 0) AS total
           FROM scintela.compra c
-         WHERE c.fecha >= date_trunc('month', CURRENT_DATE)
-           AND c.fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE c.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND c.fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
            AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
            AND COALESCE(c.usuario_crea, '') <> 'asinfo-backfill'
          GROUP BY 1
@@ -2093,8 +2093,8 @@ def tinto_mes_corriente_resultado() -> dict:
                                   AND COALESCE(kg, 0) > 0
                                  THEN kgn ELSE 0 END), 0)                    AS kr
         FROM scintela.tinto
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
         """
         )
         or {}
@@ -2119,8 +2119,8 @@ def compras_iprovk_mes() -> dict:
         SELECT COALESCE(SUM(kg),      0) AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.compra
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'K'
           AND COALESCE(UPPER(TRIM(codigo_prov)), '') <> 'KK'
           AND COALESCE(kg, 0) > 0
@@ -2149,8 +2149,8 @@ def compras_tipo_t_externos_mes() -> dict:
         SELECT COALESCE(SUM(kg),      0) AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.compra
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'T'
           AND COALESCE(UPPER(TRIM(codigo_prov)), '') <> 'KK'
           AND COALESCE(kg, 0) > 0
@@ -2178,8 +2178,8 @@ def tinto_kg_servicios_mes() -> float:
             """
         SELECT COALESCE(SUM(kg), 0) AS kg
         FROM scintela.tinto
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND UPPER(TRIM(stat)) = 'S'
         """
         )
@@ -2228,8 +2228,8 @@ def tejido_mes_componentes() -> dict:
             COALESCE(SUM(CASE WHEN COALESCE(kg, 0) > 0 THEN importe ELSE 0 END), 0) AS us_con_kg,
             COALESCE(SUM(CASE WHEN COALESCE(kg, 0) = 0 THEN importe ELSE 0 END), 0) AS us_sin_kg
         FROM scintela.compra
-        WHERE fecha >= date_trunc('month', CURRENT_DATE)
-          AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'K'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
@@ -3888,8 +3888,8 @@ def informe_balance() -> dict:
         """
         SELECT COALESCE(SUM(importe), 0) AS importe
           FROM scintela.compra
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
-           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
            AND UPPER(COALESCE(tipo, '')) = 'Q'
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
            AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
@@ -5145,7 +5145,7 @@ def gastos_mes_corriente() -> list[dict]:
         FROM scintela.transacciones_bancarias tb
         LEFT JOIN scintela.proveedor p ON p.codigo_prov = tb.prov
         LEFT JOIN scintela.banco     b ON b.no_banco   = tb.no_banco
-        WHERE tb.fecha >= date_trunc('month', CURRENT_DATE)
+        WHERE tb.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND tb.documento IN ('CH','ND')
         ORDER BY tb.fecha DESC, tb.id_transaccion DESC
         """

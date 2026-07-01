@@ -697,7 +697,7 @@ def editar_kg_dbase():
                            COALESCE(SUM(kg), 0)  AS kt,
                            COALESCE(SUM(importe), 0) AS itin
                       FROM scintela.tinto
-                     WHERE fecha >= date_trunc('month', CURRENT_DATE)
+                     WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
                        AND UPPER(TRIM(COALESCE(color,''))) NOT LIKE 'LAV%%'
                        AND COALESCE(usuario_crea, '') <> %s
                     """,

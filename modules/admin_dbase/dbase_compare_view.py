@@ -602,8 +602,8 @@ def _pc_tinto_mes() -> list[dict]:
                UPPER(TRIM(COALESCE(stat,''))) AS stat,
                COALESCE(usuario_crea,'') AS usuario
           FROM scintela.tinto
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
-           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
         """) or []
     return [dict(r) for r in rows]
 
@@ -618,8 +618,8 @@ def _pc_compras_mes() -> list[dict]:
                UPPER(TRIM(COALESCE(stat,''))) AS stat,
                COALESCE(usuario_crea,'') AS usuario
           FROM scintela.compra
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
-           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
         """) or []
     return [dict(r) for r in rows]
 
@@ -634,8 +634,8 @@ def _pc_facturas_kg_mes() -> list[dict]:
                COALESCE(kg,0) AS kg,
                COALESCE(usuario_crea,'') AS usuario
           FROM scintela.factura
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
-           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
            AND (stat IS NULL OR stat <> 'X')
            AND COALESCE(kg, 0) <> 0
         """) or []

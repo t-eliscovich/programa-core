@@ -168,8 +168,8 @@ def utilidad_watchdog():
         SELECT fecha, fecha_crea, patrimonio, banco, cart, ustock,
                deuda, anticipos
           FROM scintela.historia
-         WHERE fecha >= date_trunc('month', CURRENT_DATE)
-           AND fecha <  date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
          ORDER BY fecha_crea DESC
          LIMIT 1
         """
@@ -294,7 +294,7 @@ def compras_tipo_k_detalle():
               FROM scintela.compra
              WHERE UPPER(TRIM(COALESCE(tipo, ''))) = 'K'
                AND COALESCE(kg, 0) > 0
-               AND fecha >= date_trunc('month', CURRENT_DATE)
+               AND fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
                                      - INTERVAL '1 month'
              ORDER BY fecha_crea DESC, id_compra DESC
              LIMIT 200

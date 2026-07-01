@@ -145,11 +145,11 @@ _WHERE_FACTURA = """
 # y NO se marcan automáticamente como asinfo-backfill (forward fix solo
 # aplicó a facturas).
 _WHERE_COMPRA = """
-    fecha_crea >= date_trunc('month', CURRENT_DATE)
+    fecha_crea >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
     AND COALESCE(usuario_crea, '') NOT IN ('asinfo-backfill', 'dbf-import')
 """
 _WHERE_DOLARES = """
-    fecha_crea >= date_trunc('month', CURRENT_DATE)
+    fecha_crea >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
     AND COALESCE(usuario_crea, '') NOT IN ('asinfo-backfill', 'dbf-import')
 """
 

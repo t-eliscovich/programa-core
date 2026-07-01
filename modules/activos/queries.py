@@ -153,7 +153,7 @@ def buscar(
         orden_manual_order_by = ""
     sql = f"""
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM CURRENT_DATE)::numeric, 30) / 30.0 AS c
+          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         )
         SELECT a.id_activos,
                a.fecha,
@@ -254,7 +254,7 @@ def resumen() -> dict:
     row = db.fetch_one(
         """
         WITH coef AS (
-          SELECT LEAST(EXTRACT(DAY FROM CURRENT_DATE)::numeric, 30) / 30.0 AS c
+          SELECT LEAST(EXTRACT(DAY FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::numeric, 30) / 30.0 AS c
         )
         SELECT COUNT(*)                                            AS n,
                COALESCE(SUM(inicial), 0)                           AS inicial,

@@ -412,7 +412,7 @@ def caja_egresos_sin_clasificar(limite: int = 200) -> list[dict]:
         SELECT c.id_caja, c.fecha, c.importe, c.concepto, c.clave
           FROM scintela.caja c
          WHERE c.tipo = 'S'
-           AND c.fecha >= date_trunc('month', CURRENT_DATE)
+           AND c.fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
            AND NOT EXISTS (
              SELECT 1 FROM scintela.mov_doble md
               WHERE md.origen_table='caja' AND md.origen_id=c.id_caja
