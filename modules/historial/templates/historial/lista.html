@@ -271,11 +271,28 @@
               </td>
               <td class="px-2 py-0.5 text-right no-print">
                 {% if r.estado == 'activo' %}
-                  <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
-                     class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
-                     title="Reversar este movimiento (te lleva al wizard correspondiente con motivo)">
-                    ↺ reversar
-                  </a>
+                  {% if r.tipo in tipos_inline %}
+                    {# TMT 2026-07-01 (dueña): reverso INLINE — POST directo, sin
+                       ir a otra pantalla. Confirmación con confirm() y vuelve acá. #}
+                    <form method="POST"
+                          action="{{ url_for('historial.reversar_mov_inline', id_mov_doble=r.id_mov_doble) }}"
+                          class="inline"
+                          onsubmit="return confirm('¿Reversar este movimiento?\n\n{{ (r.concepto or '')|replace("'", "") }}');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="next" value="{{ request.full_path }}">
+                      <button type="submit"
+                              class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                              title="Reversar acá mismo (no te lleva a otra pantalla)">
+                        ↺ reversar
+                      </button>
+                    </form>
+                  {% else %}
+                    <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
+                       class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                       title="Reversar este movimiento (te lleva al wizard correspondiente con motivo)">
+                      ↺ reversar
+                    </a>
+                  {% endif %}
                 {% else %}
                   <span class="text-xs text-slate-300">—</span>
                 {% endif %}

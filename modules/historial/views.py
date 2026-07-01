@@ -12,7 +12,7 @@ from flask import (
 )
 
 import db
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 
@@ -364,6 +364,8 @@ def lista():
         q=q or "",
         error=error,
         limite=limite,
+        # TMT 2026-07-01: tipos que reversan INLINE (POST directo, sin wizard).
+        tipos_inline=list(_PERMISO_REVERSO_INLINE.keys()),
     )
 
 
@@ -526,9 +528,14 @@ _REVERSO_DISPATCH = {
 _REVERSO_BLOQUEADO = {}
 
 
+# TMT 2026-07-01 (dueña): el reverso ya NO exige informes.ver. Es un
+# dispatcher que redirige al wizard de cada tipo, y ESE wizard tiene su
+# propio @requiere_permiso (cheques.aplicar, compras.anular, etc.). Pedir
+# informes.ver acá bloqueaba a Alex (que puede aplicar/anular cheques pero
+# NO tiene informes.ver) de reversar sus propias cobranzas. Ahora el gate
+# real es el permiso de la OPERACIÓN, no el de Informes.
 @historial_bp.route("/historial/<int:id_mov_doble>/reverso", methods=["GET"])
 @requiere_login
-@requiere_permiso("informes.ver")
 def reversar_mov(id_mov_doble: int):
     """Dispatcher central: route al wizard de reverso correspondiente.
 
@@ -580,6 +587,85 @@ def reversar_mov(id_mov_doble: int):
     except Exception as e:
         flash_exc("No pude armar el reverso", e)
         return redirect(url_for("historial.lista"))
+
+
+# =====================================================================
+# Reverso INLINE (sin ir a otra pantalla) — TMT 2026-07-01 (dueña).
+# La dueña: "cuando pongo reversa no me lleves a otra pantalla". Para los
+# tipos con un reverso atómico simple, el botón "↺ reversar" del historial
+# hace un POST directo acá, ejecuta el reverso y vuelve a la MISMA lista
+# (referrer). El permiso se chequea por la OPERACIÓN, no por informes.ver,
+# así Alex (cheques.aplicar) puede reversar sus cobranzas sin ver Informes.
+# =====================================================================
+
+# tipo → permiso de la operación (el que se necesita para reversarla inline).
+_PERMISO_REVERSO_INLINE = {
+    "cheque_aplicado_a_factura": "cheques.aplicar",
+}
+
+
+def _next_seguro() -> str:
+    """URL de retorno tras el reverso: el `next` del form si es interno,
+    sino el referrer del historial, sino la lista."""
+    nxt = (request.form.get("next") or "").strip()
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return nxt
+    ref = request.referrer or ""
+    if "/historial" in ref:
+        return ref
+    return url_for("historial.lista")
+
+
+@historial_bp.route("/historial/<int:id_mov_doble>/reverso-inline", methods=["POST"])
+@requiere_login
+def reversar_mov_inline(id_mov_doble: int):
+    """Reverso directo (sin wizard) para tipos atómicos simples.
+
+    Hoy: cheque_aplicado_a_factura → desaplicar_factura. Para cualquier otro
+    tipo, cae al dispatcher de wizard (reversar_mov). El permiso lo da la
+    operación (no informes.ver).
+    """
+    r = _row_md(id_mov_doble)
+    if not r:
+        abort(404)
+    if r["estado"] in ("reverso", "reversado"):
+        flash(
+            f"Este movimiento ya está {r['estado']} — no se puede volver a reversar.",
+            "warn",
+        )
+        return redirect(_next_seguro())
+
+    tipo = r.get("tipo") or ""
+    permiso = _PERMISO_REVERSO_INLINE.get(tipo)
+    if not permiso:
+        # Sin handler inline — mandamos al dispatcher de wizard de siempre.
+        return redirect(url_for("historial.reversar_mov", id_mov_doble=id_mov_doble))
+
+    # Gate por la OPERACIÓN (mismo criterio "404 si no tenés permiso").
+    if not tiene_permiso(permiso):
+        return render_template("404.html"), 404
+
+    usuario = (g.user or {}).get("username", "web")
+    from modules.cheques import queries as _ch_q
+
+    try:
+        with db.tx() as conn:
+            if tipo == "cheque_aplicado_a_factura":
+                res = _ch_q.desaplicar_factura(
+                    id_cheque=int(r["origen_id"]),
+                    id_factura=int(r["destino_id"]),
+                    usuario=usuario,
+                    motivo="reverso inline desde historial",
+                    conn=conn,
+                )
+        flash(
+            f"Movimiento reversado: {r.get('concepto') or ('#' + str(id_mov_doble))}.",
+            "ok",
+        )
+    except Exception as e:
+        flash_exc("No pude reversar el movimiento (rollback total)", e)
+
+    return redirect(_next_seguro())
 
 
 # =====================================================================
