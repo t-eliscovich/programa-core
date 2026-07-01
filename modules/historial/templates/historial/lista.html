@@ -270,7 +270,12 @@
                 {{ r.usuario or '—' }}
               </td>
               <td class="px-2 py-0.5 text-right no-print">
-                {% if r.estado == 'activo' %}
+                {# TMT 2026-07-01 (dueña): las filas de caja/banco LEGACY (dbf-import)
+                   se listan con id_mov_doble sintético NEGATIVO y sin fila real en
+                   mov_doble → el reverso abortaba 404 (Alex lo reportó). Solo ofrecemos
+                   "reversar" cuando hay un mov_doble real (id positivo). Los depósitos
+                   legacy se reversan desde la ficha del cheque o "reversar todo el batch". #}
+                {% if r.estado == 'activo' and r.id_mov_doble and r.id_mov_doble > 0 %}
                   {% if r.tipo in tipos_inline %}
                     {# TMT 2026-07-01 (dueña): reverso INLINE — POST directo, sin
                        ir a otra pantalla. Confirmación con confirm() y vuelve acá. #}

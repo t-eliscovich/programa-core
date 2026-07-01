@@ -543,6 +543,15 @@ def reversar_mov(id_mov_doble: int):
     Si no hay handler para ese tipo, muestra un aviso explicando dónde
     hacerlo manualmente.
     """
+    if id_mov_doble <= 0:
+        # Fila legacy de caja/banco (id sintético negativo, sin mov_doble):
+        # el reverso unificado no la maneja. Guiar en vez de 404.
+        flash(
+            "Ese movimiento es un depósito/caja antiguo que no se reversa desde "
+            "el historial. Reversalo desde la ficha del cheque o desde el banco.",
+            "warn",
+        )
+        return redirect(request.referrer or url_for("historial.lista"))
     r = _row_md(id_mov_doble)
     if not r:
         abort(404)
@@ -625,6 +634,13 @@ def reversar_mov_inline(id_mov_doble: int):
     tipo, cae al dispatcher de wizard (reversar_mov). El permiso lo da la
     operación (no informes.ver).
     """
+    if id_mov_doble <= 0:
+        flash(
+            "Ese movimiento es un depósito/caja antiguo que no se reversa desde "
+            "el historial. Reversalo desde la ficha del cheque o desde el banco.",
+            "warn",
+        )
+        return redirect(_next_seguro())
     r = _row_md(id_mov_doble)
     if not r:
         abort(404)
