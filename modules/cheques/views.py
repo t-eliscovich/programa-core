@@ -2023,7 +2023,7 @@ def transicionar(id_cheque: int):
     # (legacy: B/I tenían 1/2 hardcodeados pero la DB del usuario tiene
     # no_banco distintos — Pichincha=10 en data 2026). TMT 2026-05-11.
     # Match en Python — el LIKE de Postgres se comportaba raro acá.
-    if stat_destino in ("B", "I", "V"):
+    if stat_destino in ("B", "I"):
         needle = "PICHINC" if stat_destino == "B" else "INTER"
         all_b = (
             db.fetch_all(
@@ -2051,7 +2051,7 @@ def transicionar(id_cheque: int):
         nombres = {
             "B": "Depositado en Pichincha",
             "I": "Depositado en Internacional",
-            "V": "Depositado en Internacional (legacy)",
+            "V": "Protestado vuelto a depositar",
             "C": "Cobrado en caja",
             "9": "Marcado como rebotado",
             "X": "Anulado",

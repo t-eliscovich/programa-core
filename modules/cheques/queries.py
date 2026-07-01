@@ -469,7 +469,7 @@ TRANSICIONES_VALIDAS = {
     "D": {"B", "C", "X", "I", "P"},
     "B": {"9", "X"},
     "I": {"9", "X"},
-    "1": {"9", "X", "P", "D"},
+    "1": {"9", "X", "P", "D", "V"},  # V = protestado vuelto a depositar (dueña 2026-06-30)
     "2": {"9", "X", "P", "D"},
     "A": {"9", "X"},
 }
@@ -507,11 +507,11 @@ def transicionar_stat(
     stat_destino = (stat_destino or "").upper().strip()
     if not stat_destino:
         raise ValueError("stat_destino requerido.")
-    # 'V' (banco Internacional legacy) deprecado como destino. TMT 2026-05-14 (#17).
-    if stat_destino == "V":
-        raise ValueError(
-            "stat='V' (banco Internacional legacy) está deprecado. Usá 'B' (Pichincha) o 'I' al depositar."
-        )
+    # TMT 2026-06-30 (dueña): 'V' = "protestado vuelto a depositar". Es un cambio
+    # de ESTADO simple (sin mov de banco — el depósito real llega por el sync de
+    # PICHINCH.DBF, igual que el dBase). Solo se ofrece desde el estado '1'
+    # (protestado); cae al UPDATE plano de abajo (SET stat='V'). Las 'V' históricas
+    # (banco Internacional legacy) se respetan; no se crean nuevas por ese camino.
 
     with db.tx() as conn:
         # TMT 2026-05-26: incluimos doc_banco — al depositar individual lo
@@ -1677,6 +1677,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     ],
     # 1 / 2 = rebote en gestión.
     "1": [
+        {"stat_destino": "V", "label": "Protestado vuelto a depositar", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             "stat_destino": "P",
             "label": "Postergar fecha",
