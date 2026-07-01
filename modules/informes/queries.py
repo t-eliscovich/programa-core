@@ -6759,11 +6759,91 @@ def balance_components_as_of(as_of) -> dict:
         )
         or {}
     )
-    vsto = float(hist_prev.get("ustock") or 0)
-    vqx = float(hist_prev.get("uqui") or 0)
-    umaq = float(hist_prev.get("maquinaria") or 0)
-    uact = float(hist_prev.get("realty") or 0)
-    antic = float(hist_prev.get("anticipos") or 0)
+    # ─── Stock / VQX / activos / anticipos AS-OF — SELF-SUFICIENTE ───────
+    # Antes copiaba vsto/vqx/umaq/uact/antic del snapshot del mes ANTERIOR
+    # (hist_prev) → cadena frágil que arrastraba errores y ataba PC a los
+    # snapshots sembrados por el dBase. Bug 2026-07-01: el cierre de junio
+    # quedó mal y ningún recompute lo corregía. Ahora cada componente se
+    # calcula desde los datos crudos de PC:
+    #   · VSTO = INICIALE[mes de as_of] × tarifas. El stock de CIERRE queda
+    #     escrito en esa fila (write-back del PRG L517) y SOBREVIVE al purge
+    #     de TINTO (que es solo-mes-en-curso). Recomputar desde movimientos NO
+    #     es posible para meses pasados (los movimientos ya no están).
+    #   · VQX = INICIALE[mes].vq
+    #   · activos = ACTIVOS as_of (coef por día) · anticipos = DOLARES as_of.
+    # PATANT sigue siendo el patrimonio del cierre ANTERIOR (hist_prev) —
+    # eso SÍ es el mes previo por definición. [[iniciales_mes_actual]]
+    _inic_asof = (
+        db.fetch_one(
+            """
+            SELECT hilado, tejido, terminado, um, uk, uf, vq
+              FROM scintela.iniciales
+             WHERE yy = EXTRACT(YEAR FROM %s::date)::int
+               AND mesnum = EXTRACT(MONTH FROM %s::date)::int
+             ORDER BY id_iniciales DESC
+             LIMIT 1
+            """,
+            (as_of, as_of),
+        )
+        or {}
+    )
+    if _inic_asof and float(_inic_asof.get("hilado") or 0) > 0:
+        _hi = float(_inic_asof.get("hilado") or 0)
+        _tj = float(_inic_asof.get("tejido") or 0)
+        _pf = float(_inic_asof.get("terminado") or 0)
+        vsto = _hi * float(_inic_asof.get("um") or 0) \
+            + _tj * float(_inic_asof.get("uk") or 0) \
+            + _pf * float(_inic_asof.get("uf") or 0)
+        vqx = float(_inic_asof.get("vq") or 0)
+    else:
+        # Fallback defensivo: sin fila de iniciales del mes, usar el snapshot
+        # anterior (comportamiento previo).
+        vsto = float(hist_prev.get("ustock") or 0)
+        vqx = float(hist_prev.get("uqui") or 0)
+
+    _act = (
+        db.fetch_one(
+            """
+            WITH coef AS (
+              SELECT LEAST(EXTRACT(DAY FROM %s::date)::numeric, 30) / 30.0 AS c
+            ),
+            v AS (
+              SELECT tipo,
+                     COALESCE(inicial, 0) - COALESCE(amortizac, 0)
+                       - (SELECT c FROM coef) * COALESCE(cuota, 0) AS valor_calc
+                FROM scintela.activos
+            )
+            SELECT
+              COALESCE(SUM(CASE WHEN tipo IN ('M','C','K') THEN GREATEST(valor_calc,0) ELSE 0 END),0) AS umaq,
+              COALESCE(SUM(CASE WHEN tipo = 'I'           THEN GREATEST(valor_calc,0) ELSE 0 END),0) AS uact
+            FROM v
+            """,
+            (as_of,),
+        )
+        or {}
+    )
+    umaq = float(_act.get("umaq") or 0) or float(hist_prev.get("maquinaria") or 0)
+    uact = float(_act.get("uact") or 0) or float(hist_prev.get("realty") or 0)
+
+    # Anticipos as_of. OJO: DOLARES guarda estado ACTUAL — para cierres
+    # RECIENTES (el mes que se acaba de cerrar) los anticipos abiertos siguen
+    # abiertos y da exacto; para meses MUY viejos algunos ya se aplicaron y no
+    # se pueden reconstruir → por eso el cierre hay que fotografiarlo a tiempo.
+    _ant = (
+        db.fetch_one(
+            """
+            SELECT COALESCE(SUM(importe), 0) AS total
+              FROM scintela.dolares
+             WHERE (st IS NULL OR st IN ('', ' '))
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+               AND (fecha IS NULL OR fecha <= %s)
+            """,
+            (as_of,),
+        )
+        or {}
+    )
+    antic = float(_ant.get("total") or 0)
+
     patant = float(hist_prev.get("patrimonio") or 0)
 
     # --- Flujos del mes (mes que contiene as_of) ---
