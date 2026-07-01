@@ -692,9 +692,19 @@ _TIPOS_BATCH_REVERSABLES = {
 }
 
 
+# TMT 2026-07-01 (dueña, review accesos Alex): el reverso de batch tampoco es
+# "Informes" — reversa cobranzas multi-cheque (operaciones de cheques). Antes
+# pedía informes.ver y frenaba a Alex. Ahora gatea por el permiso de CADA
+# operación del batch (cheques.aplicar / cheques.anular), que Alex sí tiene.
+_PERMISO_REVERSO_BATCH = {
+    "cheque_aplicado_a_factura": "cheques.aplicar",
+    "cheque_creado": "cheques.anular",
+    "cheque_anticipo_espejo": "cheques.anular",
+}
+
+
 @historial_bp.route("/historial/batch/<batch_id>/reverso", methods=["GET", "POST"])
 @requiere_login
-@requiere_permiso("informes.ver")
 def reversar_batch(batch_id: str):
     """Reverso atómico de TODAS las filas de un batch_id.
 
@@ -720,6 +730,14 @@ def reversar_batch(batch_id: str):
             "warn",
         )
         return redirect(url_for("historial.lista"))
+
+    # Gate por la OPERACIÓN: el usuario tiene que tener el permiso de cada tipo
+    # del batch (no informes.ver). Mismo criterio "404 si no tenés permiso".
+    _perms_necesarios = {
+        _PERMISO_REVERSO_BATCH.get(t) for t in tipos_en_batch
+    } - {None}
+    if any(not tiene_permiso(pm) for pm in _perms_necesarios):
+        return render_template("404.html"), 404
 
     if request.method == "GET":
         return render_template(

@@ -1,7 +1,7 @@
 """Views de iniciales/metas mensuales."""
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from parsers import parse_int, parse_monto
 
@@ -18,10 +18,19 @@ def _suma_presupuesto(pretej, pretin, preadm):
     return (pretej or 0) + (pretin or 0) + (preadm or 0)
 
 
+# TMT 2026-07-01 (dueña, review accesos Alex): quien puede EDITAR iniciales
+# (iniciales.editar, ej. Alex, para actualizar saldos de bancos/caja) tiene que
+# poder VER la lista — no se puede editar lo que no se puede listar. Antes la
+# lista pedía iniciales.ver y dejaba a Alex sin pantalla (tenía editar, no ver).
+def _puede_ver_iniciales() -> bool:
+    return tiene_permiso("iniciales.ver") or tiene_permiso("iniciales.editar")
+
+
 @iniciales_bp.route("/iniciales")
 @requiere_login
-@requiere_permiso("iniciales.ver")
 def lista():
+    if not _puede_ver_iniciales():
+        abort(404)
     yy = parse_int(request.args.get("yy")) or queries.anio_actual()
     try:
         filas = queries.lista_anio(yy)
@@ -48,8 +57,9 @@ def lista():
 
 @iniciales_bp.route("/iniciales/comparativo")
 @requiere_login
-@requiere_permiso("iniciales.ver")
 def comparativo():
+    if not _puede_ver_iniciales():
+        abort(404)
     yy = parse_int(request.args.get("yy")) or queries.anio_actual()
     try:
         filas = queries.comparativo_anio(yy)

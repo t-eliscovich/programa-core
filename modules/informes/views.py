@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
 import db
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
@@ -717,10 +717,16 @@ def check_totales():
     )
 
 
+# TMT 2026-07-01 (dueña, review accesos Alex): el informe de Deudas a
+# proveedores lo puede ver quien tenga `deudas.ver` (Alex, Compras, Gerente,
+# Contabilidad) además de informes.ver — antes exigía informes.ver y dejaba
+# afuera a Alex, que tiene deudas.ver pero no el módulo Informes completo.
 @informes_bp.route("/deudas")
 @requiere_login
-@requiere_permiso("informes.ver")
 def deudas():
+    if not (tiene_permiso("informes.ver") or tiene_permiso("deudas.ver")):
+        from flask import abort
+        abort(404)
     filas, error = _safe(queries.deudas_por_proveedor, [])
     if request.args.get("export") == "csv":
         return csv_response(

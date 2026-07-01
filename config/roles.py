@@ -252,6 +252,9 @@ ROLES: list[tuple[str, list[str]]] = [
             "cheques.anular",
             "bancos.ver",
             "bancos.conciliar",
+            # TMT 2026-07-01 (dueña, review accesos): recalcular la cadena de
+            # saldos de un banco (mantenimiento). Antes solo conciliaba.
+            "bancos.editar",
             "cartera.ver",
             "posdat.ver",
             "posdat.crear",
@@ -301,9 +304,17 @@ ROLES: list[tuple[str, list[str]]] = [
             "comisiones.ver",
             "ventas.ver",
             "gastos.ver",
+            # TMT 2026-07-01 (dueña, review accesos): Alex también OPERA gastos
+            # (clasificar caja→gasto, crear, editar, anular), no solo verlos.
+            "gastos.crear",
+            "gastos.editar",
+            "gastos.anular",
             # TMT 2026-05-26 dueña: agregar Tintorería para Alex (comparativa
             # PC vs formulas_app + stock químicos).
             "tintura.ver",
+            # TMT 2026-07-01 (dueña, review accesos): también CARGA/edita
+            # tintorería (tinto-carga: agregar/editar/borrar/costo).
+            "tintura.registrar",
             # NO incluidos a propósito (todo "Informes" general y todo lo que
             # solo se accede desde ahí sin permiso granular): informes.ver,
             # flujo.ver, retiros.ver, historia.ver, iniciales.ver, capital.ver,
