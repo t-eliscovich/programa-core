@@ -3336,9 +3336,12 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
             (COALESCE(saldo, 0) > 0
              AND (stat IS NULL OR stat IN ('A','Z','',' ')))
             OR
-            -- crédito a favor (negativo): cualquier stat, queremos verlas
-            -- aunque la factura esté formalmente cerrada (T).
-            COALESCE(saldo, 0) < 0
+            -- crédito a favor (negativo): SOLO si sigue ABIERTO. TMT 2026-06-30
+            -- dueña: si el estado es T (cerrada/totalizada) se oculta igual que
+            -- el dBase — una devolución/crédito ya consumido no debe reaparecer
+            -- en la cobranza. Las abiertas (Z/A) sí se ven para netear.
+            (COALESCE(saldo, 0) < 0
+             AND (stat IS NULL OR stat IN ('A','Z','',' ')))
           )
         -- TMT 2026-05-15: orden cronológico puro (positivas y negativas
         -- mezcladas por fecha de emisión / vencimiento). La separación
