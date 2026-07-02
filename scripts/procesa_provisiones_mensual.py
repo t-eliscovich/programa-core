@@ -212,37 +212,6 @@ def correr(
     resultados: list[tuple[str, str, str]] = []
     hubo_error = False
 
-    # ── Tareas DIARIAS (NO trackeadas por período — corren en CADA invocación
-    #    del cron, no una vez por mes). Son idempotentes: el rollover crea la
-    #    fila de INICIALES del mes nuevo solo si falta; el write-back actualiza
-    #    el stock de cierre del mes; la foto pisa la fila del día. Esto es lo que
-    #    independiza a PC del dBase en el fin de mes (crear la apertura del mes
-    #    nuevo = cierre anterior, sin depender de que el dBase abra el 1°).
-    #    Envuelto en try/except para NO romper provisiones si algo falla. ──
-    try:
-        from modules.informes.queries import (
-            crear_snapshot_diario,
-            rollover_y_writeback_iniciales,
-        )
-        _roll = rollover_y_writeback_iniciales()
-        log.info("rollover/writeback iniciales -> %s", _roll)
-        _snap = crear_snapshot_diario()
-        log.info(
-            "foto diaria -> aplicado=%s patrimonio=%s usuti=%s",
-            _snap.get("aplicado"), _snap.get("patrimonio"), _snap.get("usuti"),
-        )
-        _msg = "ok"
-        if _roll.get("rollover"):
-            _msg = f"ROLLOVER: creó INICIALES del mes (cierre {_roll.get('rollover_desde')})"
-        resultados.append(("rollover_writeback_foto_diaria", "O", _msg))
-    except Exception as _exc:  # noqa: BLE001
-        log.exception("tareas diarias (rollover/writeback/foto) fallaron")
-        resultados.append(
-            ("rollover_writeback_foto_diaria", "E", f"{type(_exc).__name__}: {_exc}")
-        )
-        # NO marcamos hubo_error — no queremos que esto cambie el exit del cron
-        # de provisiones. El health check aparte ya alerta si algo se desvía.
-
     for tarea, sql_call in TAREAS:
         id_ejec = _intentar_reservar(tarea, periodo, host)
 
@@ -352,6 +321,30 @@ def main(argv: list[str] | None = None) -> int:
     db.init_pool()
 
     exit_code, resultados = correr(periodo=periodo, fecha=fecha, force=args.force)
+
+    # ── Tareas DIARIAS del cierre (fuera de `correr`, que se trackea por mes).
+    #    Corren en CADA invocación del cron, son idempotentes, y NO afectan el
+    #    exit code de provisiones. Independizan a PC del dBase en fin de mes:
+    #    rollover (crea la fila de INICIALES del mes nuevo = cierre anterior) +
+    #    write-back del stock de cierre + foto diaria del balance. ──
+    try:
+        from modules.informes.queries import (
+            crear_snapshot_diario,
+            rollover_y_writeback_iniciales,
+        )
+        _roll = rollover_y_writeback_iniciales()
+        log.info("rollover/writeback iniciales -> %s", _roll)
+        _snap = crear_snapshot_diario()
+        log.info(
+            "foto diaria -> aplicado=%s patrimonio=%s usuti=%s",
+            _snap.get("aplicado"), _snap.get("patrimonio"), _snap.get("usuti"),
+        )
+        if _roll.get("rollover"):
+            print(f"  [OK]  ROLLOVER: creó INICIALES del mes (cierre {_roll.get('rollover_desde')})")
+        print(f"  [OK]  foto diaria + write-back (patrimonio={_snap.get('patrimonio')})")
+    except Exception as _exc:  # noqa: BLE001
+        log.exception("tareas diarias (rollover/writeback/foto) fallaron")
+        print(f"  [ER]  tareas diarias (rollover/foto): {type(_exc).__name__}: {_exc}")
 
     # Resumen legible en stdout para el log del scheduler.
     print()
