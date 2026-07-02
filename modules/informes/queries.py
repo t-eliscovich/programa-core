@@ -7201,7 +7201,7 @@ _NUM_MES_EN = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
                7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
 
 
-def rollover_y_writeback_iniciales(fecha=None) -> dict:
+def rollover_y_writeback_iniciales(fecha=None, dry_run: bool = False) -> dict:
     """Replica el rollover automático del dBase (MENU.PRG/SETEO 246-262) + el
     write-back de stock (INFORMES.PRG 549-550), para que PC NO dependa de que
     el dBase abra el 1° de mes ni de un sync a tiempo.
@@ -7237,19 +7237,7 @@ def rollover_y_writeback_iniciales(fecha=None) -> dict:
             (prev_m, prev_y),
         )
         if prev:
-            db.execute(
-                """
-                INSERT INTO scintela.iniciales
-                    (mesnum, mesnom, yy, hilado, tejido, terminado, vq,
-                     um, uk, uf, uq, pre, kprog, gprog, numnot, dificil,
-                     pretej, pretin, preadm, pretot, usuario_crea)
-                VALUES (%(mesnum)s, %(mesnom)s, %(yy)s, %(hilado)s, %(tejido)s,
-                        %(terminado)s, %(vq)s, %(um)s, %(uk)s, %(uf)s, %(uq)s,
-                        %(pre)s, %(kprog)s, %(gprog)s, %(numnot)s, %(dificil)s,
-                        %(pretej)s, %(pretin)s, %(preadm)s, %(pretot)s,
-                        'rollover-pc')
-                """,
-                {
+            _row_new = {
                     "mesnum": m, "mesnom": _NUM_MES_EN.get(m, str(m)), "yy": y,
                     "hilado": prev.get("hilado"), "tejido": prev.get("tejido"),
                     "terminado": prev.get("terminado"), "vq": prev.get("vq"),
@@ -7259,10 +7247,28 @@ def rollover_y_writeback_iniciales(fecha=None) -> dict:
                     "numnot": prev.get("numnot"), "dificil": prev.get("dificil"),
                     "pretej": prev.get("pretej"), "pretin": prev.get("pretin"),
                     "preadm": prev.get("preadm"), "pretot": prev.get("pretot"),
-                },
-            )
+            }
             out["rollover"] = True
             out["rollover_desde"] = f"{prev_m:02d}/{prev_y}"
+            out["fila_nueva"] = {"mesnum": m, "mesnom": _NUM_MES_EN.get(m, str(m)),
+                                 "yy": y, "hilado": _row_new["hilado"],
+                                 "tejido": _row_new["tejido"],
+                                 "terminado": _row_new["terminado"], "vq": _row_new["vq"]}
+            if not dry_run:
+                db.execute(
+                    """
+                    INSERT INTO scintela.iniciales
+                        (mesnum, mesnom, yy, hilado, tejido, terminado, vq,
+                         um, uk, uf, uq, pre, kprog, gprog, numnot, dificil,
+                         pretej, pretin, preadm, pretot, usuario_crea)
+                    VALUES (%(mesnum)s, %(mesnom)s, %(yy)s, %(hilado)s, %(tejido)s,
+                            %(terminado)s, %(vq)s, %(um)s, %(uk)s, %(uf)s, %(uq)s,
+                            %(pre)s, %(kprog)s, %(gprog)s, %(numnot)s, %(dificil)s,
+                            %(pretej)s, %(pretin)s, %(preadm)s, %(pretot)s,
+                            'rollover-pc')
+                    """,
+                    _row_new,
+                )
         else:
             out["rollover_error"] = f"no hay fila del mes anterior {prev_m:02d}/{prev_y} para copiar"
 
@@ -7280,19 +7286,20 @@ def rollover_y_writeback_iniciales(fecha=None) -> dict:
     pf_kg = float(pf.get("kg") or 0)
     # Guarda: NO pisar con stock roto (hilado o terminado en 0).
     if hi_kg > 0 and pf_kg > 0:
-        db.execute(
-            """
-            UPDATE scintela.iniciales
-               SET hilado=%s, tejido=%s, terminado=%s, vq=%s,
-                   um=%s, uk=%s, uf=%s
-             WHERE mesnum=%s AND yy=%s
-            """,
-            (
-                hi_kg, float(tj.get("kg") or 0), pf_kg, float(comp.get("vqx") or 0),
-                float(hi.get("ukg") or 0), float(tj.get("ukg") or 0),
-                float(pf.get("ukg") or 0), m, y,
-            ),
-        )
+        if not dry_run:
+            db.execute(
+                """
+                UPDATE scintela.iniciales
+                   SET hilado=%s, tejido=%s, terminado=%s, vq=%s,
+                       um=%s, uk=%s, uf=%s
+                 WHERE mesnum=%s AND yy=%s
+                """,
+                (
+                    hi_kg, float(tj.get("kg") or 0), pf_kg, float(comp.get("vqx") or 0),
+                    float(hi.get("ukg") or 0), float(tj.get("ukg") or 0),
+                    float(pf.get("ukg") or 0), m, y,
+                ),
+            )
         out["writeback"] = True
         out["stock"] = {"hilado": hi_kg, "tejido": float(tj.get("kg") or 0),
                         "terminado": pf_kg}

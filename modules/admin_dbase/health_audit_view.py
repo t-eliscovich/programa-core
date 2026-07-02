@@ -18,7 +18,7 @@ TMT 2026-06-10.
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 import db
 from auth import requiere_login, requiere_permiso
@@ -522,6 +522,65 @@ def snapshot_diario_health():
         stats["ayer"] = None
 
     return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
+
+
+@bp.route("/simulacro-cierre", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def simulacro_cierre():
+    """SIMULACRO de fin de mes — SOLO LECTURA, no escribe nada.
+
+    Pone el reloj en una fecha simulada (default 01/08) y corre el código REAL:
+    (1) el rollover en dry-run → muestra la fila de INICIALES del mes nuevo que
+        crearía (apertura = cierre del mes anterior); (2) el HI0/TJ0/PF0 de
+        apertura que usaría el balance ese día. Prueba el evento del cierre sobre
+        datos reales sin tocar producción. Uso: /admin/health/simulacro-cierre?fecha=2026-08-01
+    """
+    from datetime import date as _date
+
+    from filters import reset_today_override, set_today_override, today_ec
+    from modules.informes.queries import (
+        rollover_y_writeback_iniciales,
+        tarifa_iniciales_mes_anterior,
+    )
+
+    fstr = request.args.get("fecha", "2026-08-01")
+    try:
+        yy, mm, dd = (int(x) for x in fstr.split("-"))
+        fsim = _date(yy, mm, dd)
+    except Exception:
+        return jsonify({"ok": False, "error": f"fecha inválida: {fstr} (usar YYYY-MM-DD)"})
+
+    token = set_today_override(fsim)
+    try:
+        visto = str(today_ec())
+        roll = rollover_y_writeback_iniciales(dry_run=True)
+        # Apertura que usaría el balance ese día (mes calendario anterior)
+        hi0 = tarifa_iniciales_mes_anterior(mm, yy, "hilado")
+        tj0 = tarifa_iniciales_mes_anterior(mm, yy, "tejido")
+        pf0 = tarifa_iniciales_mes_anterior(mm, yy, "terminado")
+        vq0 = tarifa_iniciales_mes_anterior(mm, yy, "vq")
+        um0 = tarifa_iniciales_mes_anterior(mm, yy, "um")
+    finally:
+        reset_today_override(token)
+
+    apertura_ok = bool(hi0 and pf0)  # hay stock de apertura (no 0)
+    return jsonify({
+        "ok": apertura_ok and (roll.get("rollover") or roll.get("writeback")),
+        "simulando_fecha": fstr,
+        "today_ec_visto_por_el_codigo": visto,
+        "rollover_dry_run": roll,
+        "apertura_que_usaria_el_balance": {
+            "hilado": hi0, "tejido": tj0, "terminado": pf0, "vq": vq0, "um": um0,
+            "nota": "= cierre del mes anterior (mesnum-1). Si es 0, se rompería.",
+        },
+        "veredicto": (
+            "OK — la fila del mes nuevo se crearía con el cierre anterior y el "
+            "balance arrancaría de un stock válido."
+            if apertura_ok else
+            "OJO — la apertura da 0: faltaría el cierre del mes anterior."
+        ),
+    })
 
 
 # Endpoint combinado: /admin/health/all (para un único curl del cron)

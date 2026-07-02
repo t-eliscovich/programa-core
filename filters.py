@@ -1,8 +1,25 @@
 """Jinja filters. Spanish/Ecuadorian number formatting to match formulas_app."""
+import contextvars as _contextvars
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from error_messages import humanize as _humanize
+
+# Override ACOTADO del "hoy" — SOLO para simulacros/tests de cierre de mes
+# (endpoint /admin/health/simulacro-cierre). Es un contextvar: aplica solo al
+# request/tarea actual, nunca al resto de la app ni a otros usuarios.
+_TODAY_OVERRIDE: "_contextvars.ContextVar[date | None]" = _contextvars.ContextVar(
+    "today_ec_override", default=None
+)
+
+
+def set_today_override(d):
+    """Setea el 'hoy' simulado (solo simulacros). Devuelve un token para reset."""
+    return _TODAY_OVERRIDE.set(d)
+
+
+def reset_today_override(token):
+    _TODAY_OVERRIDE.reset(token)
 
 
 def today_ec() -> date:
@@ -14,6 +31,9 @@ def today_ec() -> date:
     bancos) con el día de MAÑANA y rompe cálculos de fin de mes. Para fechar
     o comparar fechas de negocio, usar today_ec() en lugar de date.today().
     """
+    _ov = _TODAY_OVERRIDE.get()
+    if _ov is not None:
+        return _ov
     return (datetime.now(UTC) - timedelta(hours=5)).date()
 
 
