@@ -69,6 +69,7 @@ _PAGE = """\
     EXACTOS del dBase (patrimonio=20.785.914). De acá en más las fotos diarias
     lo evitan.
     <form method="post" style="margin-top:6px" onsubmit="return confirm('Anclar 30/06 a 20.785.914 (borra los snapshots de junio y crea el correcto)?');">
+      <input type=hidden name=csrf_token value="{{ csrf_token() }}">
       <input type="hidden" name="restore_junio_dbase" value="1">
       <button type="submit" style="background:#2563eb;color:#fff;padding:6px 12px;border:0;border-radius:4px;font-weight:bold">
         ANCLAR 2026-06-30 al dBase (20.785.914)
