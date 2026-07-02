@@ -485,12 +485,6 @@
       // Las filas editadas a mano quedan afuera del FIFO (userValues manda).
       const _editada = f => userValues[String(f.id_factura)] != null;
       const pos = facturas.filter(f => (parseFloat(f.saldo) || 0) > 0.005 && !_editada(f));
-      // TMT 2026-07-02 (Alex, caso RRV): las NOTAS DE CRÉDITO (saldo < 0)
-      // también entran a la auto-asignación — igual que el backend, los
-      // créditos van PRIMERO (devuelven plata al pool) y después las
-      // positivas consumen FIFO. Antes el FIFO las ignoraba y había que
-      // tildarlas a mano, y lo liberado no se redistribuía.
-      const creds = facturas.filter(f => (parseFloat(f.saldo) || 0) < -0.005 && !_editada(f));
       const asignadas = new Set();
       const chequeImps = [...document.querySelectorAll('.cheque-imp')]
         .map(i => parseMonto(i.value)).filter(v => v > 0.005);
@@ -509,21 +503,13 @@
       });
       // 2) pool = cheques sin match exacto − lo ya fijado a mano por el
       //    usuario (una NC tildada a mano es negativa → AGRANDA el pool).
+      //    TMT 2026-07-02 tarde (Alex): las NC NO se auto-tildan — "sin hacer
+      //    nada se seleccionan estas notas de crédito existiendo facturas
+      //    antiguas". Quedan 100% manuales; al tildarlas, la redistribución
+      //    (fixedNet) hace que lo liberado cubra más facturas.
       const fixedNet = Object.values(userValues).reduce((a, b) => a + (b || 0), 0);
       let pool = libres.reduce((a, b) => a + b, 0) - fixedNet;
-      // 3) NCs automáticas: solo si lo pendiente positivo SUPERA el pool
-      //    (las NC ayudan a cubrir más facturas). Si los cheques ya cubren
-      //    todo, no metemos las NC solas (dejarían sobrante artificial).
-      const pendientePos = pos.reduce((a, f) => a + (parseFloat(f.saldo) || 0), 0)
-        - [...asignadas].reduce((a, id) => a + (distribucion[id] || 0), 0);
-      if (pool > 0.005 && pendientePos > pool + 0.005) {
-        creds.forEach(f => {
-          const sc = parseFloat(f.saldo) || 0;
-          distribucion[f.id_factura] = sc;
-          pool += Math.abs(sc);
-        });
-      }
-      // 4) FIFO con el pool (cheques + NCs − fijado a mano)
+      // 3) FIFO con el pool (cheques − fijado a mano; NC manual lo agranda)
       for (const f of pos) {
         if (pool <= 0.005) break;
         if (asignadas.has(f.id_factura)) continue;
