@@ -524,6 +524,54 @@ def snapshot_diario_health():
     return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
 
 
+@bp.route("/cron-status", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cron_status():
+    """Huella del cron diario (procesa_provisiones_mensual) en la DB — para saber
+    si corre, sin acceso al Task Scheduler del EC2. Muestra: las corridas
+    registradas en ejecuciones_tareas (cuándo corrió cada tarea) + las fotos
+    diarias creadas (una por día si el cron corre) + los rollover-pc."""
+    tareas = db.fetch_all(
+        """
+        SELECT tarea, periodo, estado, iniciado_en, terminado_en, host
+          FROM scintela.ejecuciones_tareas
+         ORDER BY COALESCE(terminado_en, iniciado_en) DESC NULLS LAST
+         LIMIT 15
+        """
+    ) or []
+    fotos = db.fetch_all(
+        """
+        SELECT fecha, fecha_crea
+          FROM scintela.historia
+         WHERE usuario_crea = 'snapshot-diario'
+         ORDER BY fecha_crea DESC
+         LIMIT 10
+        """
+    ) or []
+    rollovers = db.fetch_all(
+        """
+        SELECT mesnom, yy, mesnum
+          FROM scintela.iniciales
+         WHERE usuario_crea = 'rollover-pc'
+         ORDER BY id_iniciales DESC LIMIT 5
+        """
+    ) or []
+
+    def _clean(rows):
+        return [{k: str(v) for k, v in r.items()} for r in rows]
+
+    return jsonify({
+        "ejecuciones_tareas": _clean(tareas),
+        "fotos_diarias_snapshot_diario": _clean(fotos),
+        "rollovers_pc": _clean(rollovers),
+        "nota": ("ejecuciones_tareas se trackea por MES (1 fila/tarea/período), "
+                 "así que muestra cuándo corrió el cron ese mes, no cada día. "
+                 "Las fotos_diarias sí son 1 por día — si el cron corre mi tarea "
+                 "diaria, van a ir apareciendo con fecha_crea a la hora del cron."),
+    })
+
+
 @bp.route("/simulacro-cierre", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
