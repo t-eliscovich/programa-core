@@ -414,6 +414,13 @@ def cuenta_corriente(codigo_cli: str) -> dict:
                f.stat
           FROM scintela.factura f
          WHERE f.codigo_cli = %(codigo)s
+           -- TMT 2026-07-02 (bug NJL, whatsapp NUEVO SISTEMA 01-jul):
+           -- excluir asinfo-backfill. Son facturas históricas Asinfo que
+           -- dBase ya cerró/borró y NO cuentan en TOTF/cartera. El fix
+           -- gemelo vive en cartera/queries.py y cheques/queries.py
+           -- (facturas_pendientes). Antes, /clientes/<cod>/cuenta las
+           -- listaba y sumaba $565,93 de saldo fantasma p.ej. a NJL.
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
 
         UNION ALL
 
@@ -435,6 +442,11 @@ def cuenta_corriente(codigo_cli: str) -> dict:
            -- se cuentan como abono nuevo — el crédito ya entró como evento ANT
            -- al crearse. Contarlas acá las duplicaría.
            AND COALESCE(c.no_banco, 0) <> 98
+           -- TMT 2026-07-02 (bug NJL): si el cheque se aplicó a una factura
+           -- asinfo-backfill (que arriba se excluye del listado), NO mostrar
+           -- el ABO tampoco — sino el saldo queda negativo (fábrica debe al
+           -- cliente). Cheques aplicados a facturas reales pasan igual.
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
 
         UNION ALL
 

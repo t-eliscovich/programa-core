@@ -7,6 +7,7 @@ ubica en algún bucket en lugar de perderlas del reporte.
 Filtro canónico de "factura viva":
     COALESCE(saldo, 0) <> 0
     AND (stat IS NULL OR stat IN ('Z','A','',' '))
+    AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
 
 Es el mismo que usan `dashboard.queries.kpis_dueno`, `informes.queries.totf`
 y `clientes.queries.buscar`. No divergir.
@@ -14,6 +15,15 @@ y `clientes.queries.buscar`. No divergir.
 TMT 2026-06-03 audit fix: antes era `> 0` estricto, escondía clientes con
 sobrepago (saldo<0). Memoria project_cartera_signo dice "sobrepagos negativos
 netean".
+
+TMT 2026-07-02 (bug NJL reportado por Alex Velastegui 01-jul en el whatsapp
+NUEVO SISTEMA): sumar el filtro backfill que ya usaba `cheques.queries.
+facturas_pendientes` desde el 17-jun. Sin él, /cartera/aging, /clientes/<cod>/
+cuenta y /cartera/grupos mostraban 113 clientes con $356.157,95 de saldo
+"fantasma" (facturas históricas Asinfo que dBase ya cerró/borró — NO cuentan
+en TOTF/cartera pero se colaban en el display). Caso NJL: $565,93 aparecen
+en aging aunque el DBF fresco de 01-jul no tiene NINGUNA factura de NJL.
+Ver /admin/facturas-reconcile/pc-por-cliente para el ranking completo.
 """
 from datetime import date
 
@@ -25,6 +35,11 @@ from filters import today_ec
 # Los anticipos negativos (CONCEPTO=9999 espejo) ya tienen importe negativo,
 # así que SUM contabiliza el signo correcto.
 CHEQUES_EN_CARTERA_STATS = ("Z", "1", "2", "3", "P", "D", "A")
+
+# Snippet SQL que excluye facturas de asinfo-backfill (ver docstring de módulo).
+# Insertar como AND {NO_BACKFILL} después del filtro de stat. El alias `f`
+# es convención de las queries de este módulo.
+NO_BACKFILL_F = "COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'"
 
 
 def aging_buckets() -> list[dict]:
@@ -80,6 +95,7 @@ def aging_buckets() -> list[dict]:
                    MAX(CURRENT_DATE - COALESCE(f.vencimiento, f.fecha)) AS dias_mora_max
             FROM scintela.factura f
             WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+              AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
             GROUP BY f.codigo_cli
         ),
         -- Union de clientes que tienen facturas vivas Y/O cheques en cartera.
@@ -159,6 +175,7 @@ def aging_totales() -> dict:
               FROM scintela.factura
              WHERE COALESCE(saldo, 0) < 0
                AND (stat IS NULL OR stat IN ('Z','A','',' '))
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         )
         SELECT
             -- Buckets por aging de facturas (sin filtro de signo — los
@@ -188,6 +205,7 @@ def aging_totales() -> dict:
             COUNT(DISTINCT f.codigo_cli) FILTER (WHERE COALESCE(f.saldo, 0) <> 0) AS n_clientes
         FROM scintela.factura f
         WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+          AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
         """
     )
     if not row:
@@ -238,6 +256,7 @@ def clientes_con_vencido(umbral_dias: int = 90) -> list[dict]:
         JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
         WHERE COALESCE(f.saldo, 0) <> 0
           AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+          AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
           AND CURRENT_DATE - COALESCE(f.vencimiento, f.fecha) > %s
           AND COALESCE(c.stop, 'N') != 'S'
         GROUP BY c.codigo_cli, c.nombre
@@ -268,6 +287,7 @@ def aging_por_grupo() -> list[dict]:
             LEFT JOIN scintela.grupo_cliente g ON g.codigo_hijo = f.codigo_cli
             WHERE COALESCE(f.saldo, 0) <> 0
               AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+              AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
             GROUP BY f.codigo_cli, COALESCE(g.codigo_padre, f.codigo_cli)
         )
         SELECT b.codigo_grupo,
@@ -325,6 +345,7 @@ def tomar_snapshot(fecha: date | None = None) -> dict:
             FROM scintela.factura f
             WHERE COALESCE(f.saldo, 0) <> 0
               AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+              AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
             GROUP BY f.codigo_cli
             """,
             conn=conn,
@@ -416,6 +437,7 @@ def comparar_contra_snapshot(fecha_snapshot=None) -> dict:
               FROM scintela.factura f
              WHERE COALESCE(f.saldo, 0) <> 0
                AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+               AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
              GROUP BY f.codigo_cli
         ),
         snap AS (
@@ -544,6 +566,7 @@ def cartera_por_cliente_y_color(meses_atras: int = 3) -> dict:
           LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
          WHERE COALESCE(f.saldo, 0) <> 0
            AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
          GROUP BY f.codigo_cli, c.nombre
          ORDER BY saldo_total DESC
         """
