@@ -432,6 +432,74 @@ def cartera_coherence():
 
 
 # ---------------------------------------------------------------------------
+@bp.route("/snapshot-diario", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def snapshot_diario_health():
+    """Toma la FOTO DIARIA del balance vivo y la valida contra el día anterior.
+
+    Esto es lo que independiza a PC del dBase: capturar cada día en vivo (cuando
+    cartera/anticipos/stock están frescos) para que el cierre de mes sea, sin
+    reconstruir nada, la foto del último día. Corre por el cron del health.
+
+    Alerta si:
+      - el patrimonio pega un salto > $500k día a día (posible bug de cálculo)
+      - el stock (USTOCK) salta > 5% día a día
+      - el stock de TERMINADO/USTOCK sale en 0 (bug de iniciales/mes)
+      - el patrimonio sale <= 0
+    """
+    from modules.informes.queries import crear_snapshot_diario
+
+    alerts = []
+    stats = {}
+    try:
+        snap = crear_snapshot_diario()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "alerts": [f"snapshot diario falló: {e}"], "stats": {}})
+
+    stats["hoy"] = snap
+    hoy_patr = float(snap.get("patrimonio") or 0)
+    hoy_ustock = float(snap.get("ustock") or 0)
+
+    # Guardas absolutas sobre la foto de hoy
+    if hoy_patr <= 0:
+        alerts.append(f"Patrimonio de hoy <= 0 ({hoy_patr:,.0f}) — cálculo roto.")
+    if hoy_ustock <= 0:
+        alerts.append("Stock (USTOCK) de hoy en 0 — probable iniciales del mes sin cargar.")
+
+    # Comparar contra la foto DIARIA anterior (día previo con snapshot-diario)
+    prev = db.fetch_one(
+        """
+        SELECT fecha, patrimonio, ustock
+          FROM scintela.historia
+         WHERE usuario_crea = 'snapshot-diario'
+           AND fecha < %s
+         ORDER BY fecha DESC
+         LIMIT 1
+        """,
+        (snap.get("fecha"),),
+    )
+    if prev:
+        p_patr = float(prev.get("patrimonio") or 0)
+        p_ustock = float(prev.get("ustock") or 0)
+        d_patr = hoy_patr - p_patr
+        stats["ayer"] = {"fecha": str(prev.get("fecha")), "patrimonio": p_patr, "ustock": p_ustock}
+        stats["delta_patrimonio"] = d_patr
+        if abs(d_patr) > 500_000:
+            alerts.append(
+                f"Patrimonio saltó {d_patr:+,.0f} vs {prev.get('fecha')} — revisar (umbral $500k)."
+            )
+        if p_ustock > 0 and abs(hoy_ustock - p_ustock) / p_ustock > 0.05:
+            alerts.append(
+                f"Stock saltó {hoy_ustock - p_ustock:+,.0f} ({100*(hoy_ustock-p_ustock)/p_ustock:+.1f}%) "
+                f"vs {prev.get('fecha')} — revisar (umbral 5%)."
+            )
+    else:
+        stats["ayer"] = None
+
+    return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
+
+
 # Endpoint combinado: /admin/health/all (para un único curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -446,12 +514,15 @@ def health_all():
     resp1 = usuario_crea_audit()
     resp2 = utilidad_watchdog()
     resp3 = cartera_coherence()
+    resp4 = snapshot_diario_health()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
+    data4 = json.loads(resp4.get_data(as_text=True))
     return jsonify({
-        "ok": data1["ok"] and data2["ok"] and data3["ok"],
+        "ok": data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"],
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
+        "snapshot_diario": data4,
     })

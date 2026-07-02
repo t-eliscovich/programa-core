@@ -7191,6 +7191,107 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
     }
 
 
+def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
+    """Fotografía el balance VIVO de HOY en scintela.historia (fecha = hoy).
+
+    La foto diaria resuelve el problema de fondo: como se captura EN VIVO
+    (cartera, anticipos, stock, tinto del día están frescos), no hay que
+    reconstruir nada tarde. El cierre de mes pasa a ser, simplemente, la foto
+    del último día del mes — ya validada por el health durante todo el mes.
+
+    Idempotente: pisa la fila `snapshot-diario` del día en cada corrida (así se
+    asienta a medida que entra el movimiento del día). NO toca filas de otro
+    origen (dbf-import, andres, regen) del mismo día.
+
+    Usa `informe_balance()` (vivo, con el fix del stock) — NO `informe_balance_as_of`,
+    que para el stock leería el caché INICIALE del dBase en vez del stock live.
+    """
+    from filters import today_ec
+
+    hoy = fecha or today_ec()
+    bal = informe_balance()
+    if not bal or bal.get("error"):
+        return {"aplicado": False, "fecha": str(hoy),
+                "razon": f"balance falló: {bal.get('error') if bal else 'sin data'}"}
+
+    comp = (bal.get("diagnostico") or {}).get("componentes") or {}
+    kg = bal.get("kg") or {}
+
+    def _c(k, default=0.0):
+        return float(comp.get(k) or default)
+
+    banco = _c("salbanc_total") + _c("salcaj")  # bancos + caja
+    row = {
+        "fecha": hoy,
+        "stock": float(kg.get("stock_kg") or 0),
+        "kcom": float(kg.get("kcom") or 0),
+        "ktej": float(kg.get("ktej") or 0),
+        "ktin": float(kg.get("ktin") or 0),
+        "ustock": float(bal.get("vsto") or _c("vsto")),
+        "uqui": _c("vqx"),
+        "kvent": float(kg.get("kvent") or 0),
+        "uvent": float(kg.get("uvent") or 0),
+        "costo": float(kg.get("costo_mes") or 0),
+        "ucom": float(kg.get("ucom") or 0),
+        "utej": float(kg.get("utej") or 0),
+        "utin": float(kg.get("utin") or 0),
+        "gasto": float(comp.get("gasto") or 0),
+        "gstotal": float(comp.get("gstotal") or comp.get("gasto") or 0),
+        "banco": banco,
+        "cart": _c("cart"),
+        "deuda": _c("totp"),
+        "retiro": _c("uret"),
+        "patrimonio": float(bal.get("patr") or _c("patr")),
+        "anticipos": _c("antic"),
+        "dolar": 0.0,
+        "maquinaria": _c("umaq"),
+        "realty": _c("uact"),
+        "usret": _c("uret"),
+        "usuti": float(bal.get("utilidad") or _c("utilidad")),
+        "usuario": usuario[:50],
+    }
+
+    with db.tx() as conn:
+        db.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('snapshot_diario'))", conn=conn
+        )
+        # Pisar SOLO la foto diaria del día (no dbf-import/andres/regen del mismo día).
+        db.execute(
+            "DELETE FROM scintela.historia WHERE fecha = %(fecha)s "
+            "AND usuario_crea = %(usuario)s",
+            {"fecha": hoy, "usuario": usuario[:50]}, conn=conn,
+        )
+        res = db.execute_returning(
+            """
+            INSERT INTO scintela.historia
+                (fecha, stock, kcom, ktej, ktin, ustock, uqui, kvent,
+                 uvent, costo, ucom, utej, utin, gasto, gstotal,
+                 banco, cart, deuda, retiro, patrimonio, anticipos,
+                 dolar, maquinaria, realty, usret, usuti,
+                 fecha_crea, usuario_crea)
+            VALUES (%(fecha)s,
+                    %(stock)s, %(kcom)s, %(ktej)s, %(ktin)s, %(ustock)s,
+                    %(uqui)s, %(kvent)s, %(uvent)s, %(costo)s, %(ucom)s,
+                    %(utej)s, %(utin)s, %(gasto)s, %(gstotal)s,
+                    %(banco)s, %(cart)s, %(deuda)s, %(retiro)s, %(patrimonio)s,
+                    %(anticipos)s, %(dolar)s, %(maquinaria)s, %(realty)s,
+                    %(usret)s, %(usuti)s, CURRENT_TIMESTAMP, %(usuario)s)
+            RETURNING id_historia
+            """,
+            row, conn=conn,
+        )
+    return {
+        "aplicado": True,
+        "fecha": str(hoy),
+        "id_historia": (res or {}).get("id_historia"),
+        "patrimonio": row["patrimonio"],
+        "ustock": row["ustock"],
+        "cart": row["cart"],
+        "usuti": row["usuti"],
+        "razon": f"Foto diaria creada para {hoy}.",
+    }
+
+
 def fuentes_y_usos(
     *,
     desde_anio: int | None = None,

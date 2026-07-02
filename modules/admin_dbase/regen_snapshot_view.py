@@ -62,6 +62,20 @@ _PAGE = """\
 </div>
 
 <div style="background:#e7f5e8;border:1px solid #6c6;padding:8px;margin:8px 0;border-radius:4px">
+  <div style="border:2px solid #2563eb;background:#eff6ff;padding:12px;margin:10px 0;border-radius:6px">
+    <b>ANCLAR cierre 30/06 a los valores del dBase (PATANT correcto)</b><br>
+    Junio es un cierre histórico: su cartera ya no se puede reconstruir desde PC
+    (las facturas se cobraron después). Este botón fija el 30/06 a los valores
+    EXACTOS del dBase (patrimonio=20.785.914). De acá en más las fotos diarias
+    lo evitan.
+    <form method="post" style="margin-top:6px" onsubmit="return confirm('Anclar 30/06 a 20.785.914 (borra los snapshots de junio y crea el correcto)?');">
+      <input type="hidden" name="restore_junio_dbase" value="1">
+      <button type="submit" style="background:#2563eb;color:#fff;padding:6px 12px;border:0;border-radius:4px;font-weight:bold">
+        ANCLAR 2026-06-30 al dBase (20.785.914)
+      </button>
+    </form>
+  </div>
+
   <b>AJUSTAR snapshot 31/05 con backfill de mayo (opción A — utilidad PC == dBase)</b><br>
   Suma al snapshot del 31/05 los saldos de facturas con
   <code>usuario_crea='asinfo-backfill'</code> y <code>fecha &le; 2026-05-31</code>.
@@ -285,6 +299,47 @@ def index() -> Response:
                 )
                 id_nuevo = int(res["id_historia"]) if res else None
                 patrimonio_nuevo = 20469347.0
+                aplicado = True
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+
+    # Botón "restore_junio_dbase" — ancla el cierre 30/06 a los valores EXACTOS
+    # del HISTORIA.DBF del dBase (verificado campo a campo 2026-07-01, tarball
+    # 20:44). Junio es histórico: su cartera ya no se puede reconstruir desde PC
+    # (las facturas se cobraron después), así que el único cierre correcto es el
+    # que el dBase capturó a tiempo. De acá en más las FOTOS DIARIAS
+    # (crear_snapshot_diario) evitan tener que hacer esto.
+    elif request.method == "POST" and request.form.get("restore_junio_dbase") == "1":
+        try:
+            with db.tx() as conn:
+                db.execute(
+                    """
+                    DELETE FROM scintela.historia
+                     WHERE EXTRACT(YEAR FROM fecha) = 2026
+                       AND EXTRACT(MONTH FROM fecha) = 6
+                    """,
+                    conn=conn,
+                )
+                res = db.execute_returning(
+                    """
+                    INSERT INTO scintela.historia
+                        (fecha, stock, kcom, ktej, ktin, ustock, uqui, kvent,
+                         uvent, costo, ucom, utej, utin, gasto, gstotal,
+                         banco, cart, deuda, retiro, patrimonio, anticipos,
+                         dolar, maquinaria, realty, usret, usuti,
+                         fecha_crea, usuario_crea)
+                    VALUES ('2026-06-30'::date,
+                            2231673, 259866, 306315, 341884, 7410428, 144637,
+                            335700, 2858932, 3491906, 772762, 119940, 360290,
+                            294944, 775174, 3083974, 7249666, 3137367, 0,
+                            20785914, 2535063, 0, 1106050, 2393464, 320578,
+                            637145, CURRENT_TIMESTAMP, 'ancla-dbase-30-06')
+                    RETURNING id_historia
+                    """,
+                    conn=conn,
+                )
+                id_nuevo = int(res["id_historia"]) if res else None
+                patrimonio_nuevo = 20785914.0
                 aplicado = True
         except Exception as e:
             error = f"{type(e).__name__}: {e}"
