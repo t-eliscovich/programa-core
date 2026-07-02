@@ -448,14 +448,38 @@ def snapshot_diario_health():
       - el stock de TERMINADO/USTOCK sale en 0 (bug de iniciales/mes)
       - el patrimonio sale <= 0
     """
-    from modules.informes.queries import crear_snapshot_diario
+    from modules.informes.queries import (
+        crear_snapshot_diario,
+        rollover_y_writeback_iniciales,
+    )
 
     alerts = []
     stats = {}
+
+    # 1) ROLLOVER + WRITE-BACK de INICIALES (replica el cierre de mes del dBase):
+    #    crea la fila del mes si falta y escribe el stock de cierre vivo, para
+    #    que PC no dependa de que el dBase abra el 1° de mes.
+    try:
+        roll = rollover_y_writeback_iniciales()
+        stats["rollover"] = roll
+        if roll.get("rollover"):
+            alerts.append(
+                f"ROLLOVER: se creó la fila de INICIALES del mes {roll.get('fecha')} "
+                f"copiando el cierre de {roll.get('rollover_desde')} (era el paso "
+                "que el dBase hace al abrir el 1° de mes)."
+            )
+        if roll.get("rollover_error"):
+            alerts.append(f"ROLLOVER no pudo crear la fila del mes: {roll['rollover_error']}")
+        if roll.get("writeback_error"):
+            alerts.append(f"WRITE-BACK falló: {roll['writeback_error']}")
+    except Exception as e:  # noqa: BLE001
+        alerts.append(f"rollover/writeback iniciales falló: {e}")
+
+    # 2) FOTO DIARIA
     try:
         snap = crear_snapshot_diario()
     except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "alerts": [f"snapshot diario falló: {e}"], "stats": {}})
+        return jsonify({"ok": False, "alerts": alerts + [f"snapshot diario falló: {e}"], "stats": stats})
 
     stats["hoy"] = snap
     hoy_patr = float(snap.get("patrimonio") or 0)

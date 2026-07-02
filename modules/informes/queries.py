@@ -565,7 +565,10 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     except Exception:
         inic = {}
 
-    # Fallback: si no hay iniciales del mes anterior, agarrar la más reciente.
+    # Fallback: si no hay iniciales del mes anterior, agarrar la más reciente
+    # PERO nunca de un mes FUTURO al pedido (mismo riesgo que el bug del balance
+    # 2026-07-01: sin la fila del mes, agarraba Agosto). Constraint <= (yy_ant,
+    # mm_ant). [[iniciales_mes_actual]]
     if not inic or not (float(inic.get("hilado") or 0)):
         try:
             inic = (
@@ -574,9 +577,12 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
                 SELECT hilado, tejido, terminado, vq, um, uk, uf, uq
                   FROM scintela.iniciales
                  WHERE COALESCE(hilado, 0) > 0
+                   AND yy IS NOT NULL AND mesnum IS NOT NULL
+                   AND (yy < %s OR (yy = %s AND mesnum <= %s))
                  ORDER BY yy DESC, mesnum DESC, id_iniciales DESC
                  LIMIT 1
                 """,
+                    (yy_ant, yy_ant, mm_ant),
                 )
                 or {}
             )
@@ -7189,6 +7195,110 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto") -> dict:
         "id_historia": (res or {}).get("id_historia"),
         "razon": f"Snapshot creado para {periodo_clave}.",
     }
+
+
+_NUM_MES_EN = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+               7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
+
+
+def rollover_y_writeback_iniciales(fecha=None) -> dict:
+    """Replica el rollover automático del dBase (MENU.PRG/SETEO 246-262) + el
+    write-back de stock (INFORMES.PRG 549-550), para que PC NO dependa de que
+    el dBase abra el 1° de mes ni de un sync a tiempo.
+
+    (1) ROLLOVER: si falta la fila de INICIALES del mes EN CURSO, la crea
+        copiando el CIERRE del mes anterior (apertura = cierre anterior). Es lo
+        que faltó el 01/07 (sin fila del mes → terminado 0 → utilidad rota).
+    (2) WRITE-BACK: escribe el stock de cierre VIVO (hilado/tejido/terminado/vq
+        + tarifas) en la fila del mes en curso, para que el mes que viene el
+        rollover tome el cierre CORRECTO. HISTORIA solo guarda el stock TOTAL —
+        el desglose por etapa vive solo en INICIALES, por eso hay que escribirlo.
+
+    Idempotente. Corre en el cron diario ANTES de la foto. NO toca campos de
+    presupuesto (kprog/gprog/pretot) — solo stock y tarifas.
+    """
+    from filters import today_ec
+
+    hoy = fecha or today_ec()
+    m, y = hoy.month, hoy.year
+    prev_m = 12 if m == 1 else m - 1
+    prev_y = y - 1 if m == 1 else y
+    out = {"fecha": str(hoy), "rollover": False, "writeback": False}
+
+    # (1) ROLLOVER — crear la fila del mes en curso si falta
+    existe = db.fetch_one(
+        "SELECT id_iniciales FROM scintela.iniciales WHERE mesnum=%s AND yy=%s LIMIT 1",
+        (m, y),
+    )
+    if not existe:
+        prev = db.fetch_one(
+            "SELECT * FROM scintela.iniciales WHERE mesnum=%s AND yy=%s "
+            "ORDER BY id_iniciales DESC LIMIT 1",
+            (prev_m, prev_y),
+        )
+        if prev:
+            db.execute(
+                """
+                INSERT INTO scintela.iniciales
+                    (mesnum, mesnom, yy, hilado, tejido, terminado, vq,
+                     um, uk, uf, uq, pre, kprog, gprog, numnot, dificil,
+                     pretej, pretin, preadm, pretot, usuario_crea)
+                VALUES (%(mesnum)s, %(mesnom)s, %(yy)s, %(hilado)s, %(tejido)s,
+                        %(terminado)s, %(vq)s, %(um)s, %(uk)s, %(uf)s, %(uq)s,
+                        %(pre)s, %(kprog)s, %(gprog)s, %(numnot)s, %(dificil)s,
+                        %(pretej)s, %(pretin)s, %(preadm)s, %(pretot)s,
+                        'rollover-pc')
+                """,
+                {
+                    "mesnum": m, "mesnom": _NUM_MES_EN.get(m, str(m)), "yy": y,
+                    "hilado": prev.get("hilado"), "tejido": prev.get("tejido"),
+                    "terminado": prev.get("terminado"), "vq": prev.get("vq"),
+                    "um": prev.get("um"), "uk": prev.get("uk"), "uf": prev.get("uf"),
+                    "uq": prev.get("uq"), "pre": prev.get("pre"),
+                    "kprog": prev.get("kprog"), "gprog": prev.get("gprog"),
+                    "numnot": prev.get("numnot"), "dificil": prev.get("dificil"),
+                    "pretej": prev.get("pretej"), "pretin": prev.get("pretin"),
+                    "preadm": prev.get("preadm"), "pretot": prev.get("pretot"),
+                },
+            )
+            out["rollover"] = True
+            out["rollover_desde"] = f"{prev_m:02d}/{prev_y}"
+        else:
+            out["rollover_error"] = f"no hay fila del mes anterior {prev_m:02d}/{prev_y} para copiar"
+
+    # (2) WRITE-BACK — stock de cierre vivo a la fila del mes en curso
+    bal = informe_balance()
+    if not bal or bal.get("error"):
+        out["writeback_error"] = (bal or {}).get("error") or "sin balance"
+        return out
+    stock = bal.get("stock") or {}
+    hi = stock.get("hilado") or {}
+    tj = stock.get("tejido") or {}
+    pf = stock.get("terminado") or {}
+    comp = (bal.get("diagnostico") or {}).get("componentes") or {}
+    hi_kg = float(hi.get("kg") or 0)
+    pf_kg = float(pf.get("kg") or 0)
+    # Guarda: NO pisar con stock roto (hilado o terminado en 0).
+    if hi_kg > 0 and pf_kg > 0:
+        db.execute(
+            """
+            UPDATE scintela.iniciales
+               SET hilado=%s, tejido=%s, terminado=%s, vq=%s,
+                   um=%s, uk=%s, uf=%s
+             WHERE mesnum=%s AND yy=%s
+            """,
+            (
+                hi_kg, float(tj.get("kg") or 0), pf_kg, float(comp.get("vqx") or 0),
+                float(hi.get("ukg") or 0), float(tj.get("ukg") or 0),
+                float(pf.get("ukg") or 0), m, y,
+            ),
+        )
+        out["writeback"] = True
+        out["stock"] = {"hilado": hi_kg, "tejido": float(tj.get("kg") or 0),
+                        "terminado": pf_kg}
+    else:
+        out["writeback_skip"] = "stock hilado/terminado en 0 — no piso"
+    return out
 
 
 def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
