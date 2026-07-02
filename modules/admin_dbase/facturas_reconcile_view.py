@@ -364,3 +364,135 @@ def _run():
         yield from reporte_desde_dbf(miembro)
     except Exception as exc:  # noqa: BLE001
         yield line(f"[ERROR] {exc!r}")
+
+
+# ─────────────────────── diag por cliente (sin tarball) ───────────────────────
+#
+# Reporte que solo lee scintela.factura y agrupa por (codigo_cli, usuario_crea).
+# Sirve para responder "por qué el cliente X aparece con saldo en /cartera si
+# el dBase ya no tiene facturas suyas" sin tener que correr el reconcile pesado
+# ni subir el tarball. La regla de saldo/ZA es idéntica al reconciliador.
+
+
+@bp.route("/pc-por-cliente", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def pc_por_cliente():
+    """Diag: top clientes con saldo pendiente en PC clasificado por usuario_crea.
+
+    Sin filtro → top 30 por saldo pendiente vivo. Con `?codigo_cli=NJL` →
+    detalle fila-por-fila del cliente pedido. Puramente lectura.
+    """
+    import db
+
+    filtro = (request.args.get("codigo_cli") or "").strip().upper()
+
+    def gen():
+        yield "=== Facturas por cliente (PC, solo lectura) ===\n"
+        if filtro:
+            yield f"Filtro: codigo_cli = {filtro!r}\n\n"
+            rows = db.fetch_all(
+                """
+                SELECT id_factura, numf, numf_completo, fecha,
+                       importe, abono, saldo, stat,
+                       COALESCE(usuario_crea, '') AS usuario_crea
+                  FROM scintela.factura
+                 WHERE codigo_cli = %s
+                 ORDER BY fecha, numf
+                """,
+                (filtro,),
+            ) or []
+            if not rows:
+                yield "(sin facturas en PC para este cliente)\n"
+                return
+            yield f"{len(rows)} facturas en PC.\n\n"
+            # Desglose por usuario_crea
+            por_origen = defaultdict(lambda: {"n": 0, "saldo_za": 0.0, "saldo_tot": 0.0})
+            for r in rows:
+                o = por_origen[r["usuario_crea"] or "(vacío)"]
+                o["n"] += 1
+                o["saldo_tot"] += _r2(r.get("saldo"))
+                o["saldo_za"] += _saldo_za(r)
+            yield "Por origen (usuario_crea):\n"
+            for k, v in sorted(por_origen.items(), key=lambda kv: -abs(kv[1]["saldo_za"])):
+                yield (f"  {k:20} · {v['n']:4} filas · "
+                       f"saldo ZA = {v['saldo_za']:>13,.2f} · "
+                       f"saldo total = {v['saldo_tot']:>13,.2f}\n")
+            yield "\nDetalle:\n"
+            for r in rows:
+                yield (f"  {str(r.get('fecha') or ''):10} "
+                       f"numf={int(r.get('numf') or 0):<7} "
+                       f"stat={_norm_stat(r.get('stat')) or '·':2} "
+                       f"imp={_r2(r.get('importe')):>11,.2f} "
+                       f"saldo={_r2(r.get('saldo')):>11,.2f}  "
+                       f"[{r['usuario_crea'] or '(vacío)'}]\n")
+            return
+
+        # Sin filtro — top 30 por saldo pendiente ZA, con desglose backfill vs no-backfill.
+        yield "Sin filtro → top clientes con SALDO PENDIENTE que viene SOLO de backfill Asinfo.\n"
+        yield "(saldo_backfill_za = suma de saldos con stat en ZA y usuario_crea='asinfo-backfill')\n\n"
+        rows = db.fetch_all(
+            """
+            SELECT codigo_cli,
+                   COUNT(*) FILTER (
+                       WHERE COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                         AND COALESCE(saldo,0) <> 0
+                         AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                   ) AS n_backfill_vivas,
+                   COALESCE(SUM(CASE
+                       WHEN COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                        AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                       THEN saldo ELSE 0 END), 0) AS saldo_backfill_za,
+                   COALESCE(SUM(CASE
+                       WHEN COALESCE(usuario_crea,'') <> 'asinfo-backfill'
+                        AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                       THEN saldo ELSE 0 END), 0) AS saldo_no_backfill_za
+              FROM scintela.factura
+             GROUP BY codigo_cli
+            HAVING COALESCE(SUM(CASE
+                       WHEN COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                        AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                       THEN saldo ELSE 0 END), 0) <> 0
+             ORDER BY ABS(SUM(CASE
+                       WHEN COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                        AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                       THEN saldo ELSE 0 END)) DESC
+             LIMIT 30
+            """
+        ) or []
+        if not rows:
+            yield "(no hay clientes con saldo backfill vivo — ¡nada que limpiar!)\n"
+            return
+        # Total agregado
+        totales = db.fetch_one(
+            """
+            SELECT COUNT(*) FILTER (
+                       WHERE COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                         AND COALESCE(saldo,0) <> 0
+                         AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                   ) AS n_backfill_vivas_total,
+                   COUNT(DISTINCT codigo_cli) FILTER (
+                       WHERE COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                         AND COALESCE(saldo,0) <> 0
+                         AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                   ) AS n_clientes_afectados,
+                   COALESCE(SUM(CASE
+                       WHEN COALESCE(usuario_crea,'') = 'asinfo-backfill'
+                        AND (stat IS NULL OR stat IN ('Z','A','',' '))
+                       THEN saldo ELSE 0 END), 0) AS saldo_backfill_total
+              FROM scintela.factura
+            """
+        ) or {}
+        yield (f"TOTALES: {totales.get('n_backfill_vivas_total', 0)} facturas backfill 'vivas' "
+               f"en {totales.get('n_clientes_afectados', 0)} clientes · "
+               f"saldo ZA total = {_r2(totales.get('saldo_backfill_total', 0)):,.2f}\n\n")
+        yield f"{'CLI':5} {'N_BFvivas':>9} {'saldo_BF_ZA':>13} {'saldo_no_BF_ZA':>15}\n"
+        yield "-" * 50 + "\n"
+        for r in rows:
+            yield (f"{(r.get('codigo_cli') or '')[:5]:5} "
+                   f"{r.get('n_backfill_vivas', 0):>9} "
+                   f"{_r2(r.get('saldo_backfill_za', 0)):>13,.2f} "
+                   f"{_r2(r.get('saldo_no_backfill_za', 0)):>15,.2f}\n")
+        yield "\nPara ver el detalle de un cliente: ?codigo_cli=NJL\n"
+
+    return Response(stream_with_context(gen()), mimetype="text/plain")
