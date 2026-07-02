@@ -446,6 +446,11 @@ def cuenta_corriente(codigo_cli: str) -> dict:
            -- asinfo-backfill (que arriba se excluye del listado), NO mostrar
            -- el ABO tampoco — sino el saldo queda negativo (fábrica debe al
            -- cliente). Cheques aplicados a facturas reales pasan igual.
+           -- Nota: caso NJL cxf#1092 → id_fact=198938 (borrada) y
+           -- id_cheque huérfano (chq=None). Chequesxfact huérfano de una
+           -- factura backfill que se purgó dejó $384,22 flotando. Excluimos
+           -- ambos: sin factura real (f.id_factura IS NULL) O backfill.
+           AND f.id_factura IS NOT NULL
            AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
 
         UNION ALL
