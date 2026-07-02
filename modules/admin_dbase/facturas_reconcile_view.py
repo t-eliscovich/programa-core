@@ -426,6 +426,28 @@ def pc_por_cliente():
                        f"imp={_r2(r.get('importe')):>11,.2f} "
                        f"saldo={_r2(r.get('saldo')):>11,.2f}  "
                        f"[{r['usuario_crea'] or '(vacío)'}]\n")
+            # Bonus — chequesxfact del cliente y con qué factura linkean
+            cxf = db.fetch_all(
+                """
+                SELECT cf.id_chequexfact, cf.id_cheque, cf.id_fact,
+                       cf.importe, cf.fechaing,
+                       c.no_cheque, COALESCE(c.no_banco, 0) AS no_banco,
+                       f.numf, f.stat AS fact_stat,
+                       COALESCE(f.usuario_crea, '(fila borrada / null)') AS fact_origen
+                  FROM scintela.chequesxfact cf
+                  LEFT JOIN scintela.cheque  c ON c.id_cheque  = cf.id_cheque
+                  LEFT JOIN scintela.factura f ON f.id_factura = cf.id_fact
+                 WHERE cf.codigo_cli = %s
+                 ORDER BY cf.fechaing, cf.id_chequexfact
+                """,
+                (filtro,),
+            ) or []
+            yield f"\nChequesxfact del cliente: {len(cxf)}\n"
+            for r in cxf:
+                yield (f"  cxf#{r['id_chequexfact']} chq={r['no_cheque']} nb={r['no_banco']} "
+                       f"imp={_r2(r.get('importe')):>10,.2f} "
+                       f"→ id_fact={r['id_fact']} numf={r.get('numf') or '-'} "
+                       f"stat={r.get('fact_stat') or '-'} [{r['fact_origen']}]\n")
             return
 
         # Sin filtro — top 30 por saldo pendiente ZA, con desglose backfill vs no-backfill.
