@@ -7271,7 +7271,7 @@ def rollover_y_writeback_iniciales(fecha=None) -> dict:
     if not bal or bal.get("error"):
         out["writeback_error"] = (bal or {}).get("error") or "sin balance"
         return out
-    stock = bal.get("stock") or {}
+    stock = (bal.get("resultados") or {}).get("stock") or {}
     hi = stock.get("hilado") or {}
     tj = stock.get("tejido") or {}
     pf = stock.get("terminado") or {}
