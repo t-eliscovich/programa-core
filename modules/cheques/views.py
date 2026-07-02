@@ -126,6 +126,7 @@ def nuevo():
         sts = request.form.getlist("stat[]")
         dbs = request.form.getlist("doc_banco[]")
         nbs = request.form.getlist("no_banco[]")
+        mas = request.form.getlist("medio_anticipo[]")
         n = max(len(nos), len(imps), len(fchs), len(sts), len(dbs), len(nbs))
         for i in range(n):
             form_back["cheques"].append({
@@ -135,6 +136,7 @@ def nuevo():
                 "stat": sts[i] if i < len(sts) else "Z",
                 "doc_banco": dbs[i] if i < len(dbs) else "",
                 "no_banco": nbs[i] if i < len(nbs) else "",
+                "medio_anticipo": mas[i] if i < len(mas) else "",
             })
         # Compat: el template usa form.importe/no_cheque/fechad/no_banco
         # (scalars del primer bloque) para precarga. Llenamos del primero.
@@ -363,6 +365,24 @@ def nuevo():
     primer_no_raw = nos_cheque_raw[0] if nos_cheque_raw else ""
     primer_imp_raw = importes_raw[0] if importes_raw else ""
     primer_fechad_raw = fechads_raw[0] if fechads_raw else ""
+    # TMT 2026-07-02 (Alex): al re-renderizar el form (error de validacion o
+    # "Volver"), se restauraba SOLO el primer cheque y los demas bloques
+    # desaparecian ("eran 6 cheques y deja solo 1"). Pasamos TODOS los bloques
+    # crudos; el template los re-arma via JSON + JS (id=cheques-restore).
+    _form_cheques: list[dict] = []
+    _n_bloques = max(len(nos_cheque_raw), len(importes_raw), len(fechads_raw),
+                     len(stats_raw), len(docs_banco_raw), len(nos_banco_raw))
+    for _i in range(_n_bloques):
+        _form_cheques.append({
+            "no_cheque": nos_cheque_raw[_i] if _i < len(nos_cheque_raw) else "",
+            "importe": importes_raw[_i] if _i < len(importes_raw) else "",
+            "fechad": fechads_raw[_i] if _i < len(fechads_raw) else "",
+            "stat": (stats_raw[_i] if _i < len(stats_raw) else "") or "Z",
+            "doc_banco": docs_banco_raw[_i] if _i < len(docs_banco_raw) else "",
+            "no_banco": nos_banco_raw[_i] if _i < len(nos_banco_raw) else "",
+            "medio_anticipo": (medios_anticipo_raw[_i]
+                               if _i < len(medios_anticipo_raw) else ""),
+        })
     form.update(
         {
             "fecha": request.form.get("fecha_recibido"),  # alias para compat
@@ -376,6 +396,7 @@ def nuevo():
             "banco_texto": banco_texto or "",
             "prov": prov or "",
             "es_anticipo": es_anticipo,
+            "cheques": _form_cheques,
         }
     )
 

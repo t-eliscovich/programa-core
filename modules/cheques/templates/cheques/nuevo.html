@@ -208,6 +208,14 @@
            detalle del cheque. #}
       </div>
 
+      {# TMT 2026-07-02 (Alex): al volver de la confirmación o en un error de
+         validación, el template solo renderiza el PRIMER bloque (scalars).
+         Serializamos TODOS los cheques para que el JS re-arme los bloques
+         2..N al cargar — antes "eran 6 cheques y deja solo 1". #}
+      {% if form.cheques and form.cheques|length > 1 %}
+        <script id="cheques-restore" type="application/json">{{ form.cheques | tojson }}</script>
+      {% endif %}
+
       {# Checkbox oculto: el JS sigue tildándolo cuando se elige banco 97
          (anticipo). Mantenemos la lógica intacta sin contaminar la UI. #}
       <input type="checkbox" name="es_anticipo" value="1" id="es-anticipo-chk"
@@ -445,6 +453,20 @@
     // las facturas en orden cronológico — quitado a pedido explícito.
     const distribucion = {};  // id_factura → monto_a_aplicar
     const exactSet = new Set();  // facturas con match EXACTO por cheque
+
+    // Preservar valores que el usuario haya editado manualmente. Se
+    // recolectan ANTES de la distribución para que el FIFO automático
+    // los respete (TMT 2026-07-02, Alex): una fila fijada a mano queda
+    // FUERA de la auto-asignación y su monto se descuenta del pool (o lo
+    // AGRANDA si es una NC: monto negativo = plata que vuelve).
+    const existing = tbody.querySelectorAll('input[data-id]');
+    const userValues = {};
+    existing.forEach(inp => {
+      const wasUserEdited = inp.dataset.userEdited === '1';
+      if (wasUserEdited) {
+        userValues[inp.dataset.id] = parseMonto(inp.value);
+      }
+    });
     // TMT 2026-06-29 (dueña): si es ANTICIPO (algún banco=97) NO auto-asignar —
     // un anticipo de $X con una factura de saldo $X se auto-aplicaba en silencio
     // y perdía el espejo (saldo a favor). En anticipo la dueña tildea a mano.
@@ -460,7 +482,15 @@
     // Es sólo SUGERENCIA: la dueña puede editar/destildar (se respeta vía
     // userValues más abajo).
     if (!_hayAnticipo) {
-      const pos = facturas.filter(f => (parseFloat(f.saldo) || 0) > 0.005);
+      // Las filas editadas a mano quedan afuera del FIFO (userValues manda).
+      const _editada = f => userValues[String(f.id_factura)] != null;
+      const pos = facturas.filter(f => (parseFloat(f.saldo) || 0) > 0.005 && !_editada(f));
+      // TMT 2026-07-02 (Alex, caso RRV): las NOTAS DE CRÉDITO (saldo < 0)
+      // también entran a la auto-asignación — igual que el backend, los
+      // créditos van PRIMERO (devuelven plata al pool) y después las
+      // positivas consumen FIFO. Antes el FIFO las ignoraba y había que
+      // tildarlas a mano, y lo liberado no se redistribuía.
+      const creds = facturas.filter(f => (parseFloat(f.saldo) || 0) < -0.005 && !_editada(f));
       const asignadas = new Set();
       const chequeImps = [...document.querySelectorAll('.cheque-imp')]
         .map(i => parseMonto(i.value)).filter(v => v > 0.005);
@@ -477,8 +507,23 @@
           libres.push(imp);
         }
       });
-      // 2) FIFO con lo que sobró (cheques sin match exacto)
-      let pool = libres.reduce((a, b) => a + b, 0);
+      // 2) pool = cheques sin match exacto − lo ya fijado a mano por el
+      //    usuario (una NC tildada a mano es negativa → AGRANDA el pool).
+      const fixedNet = Object.values(userValues).reduce((a, b) => a + (b || 0), 0);
+      let pool = libres.reduce((a, b) => a + b, 0) - fixedNet;
+      // 3) NCs automáticas: solo si lo pendiente positivo SUPERA el pool
+      //    (las NC ayudan a cubrir más facturas). Si los cheques ya cubren
+      //    todo, no metemos las NC solas (dejarían sobrante artificial).
+      const pendientePos = pos.reduce((a, f) => a + (parseFloat(f.saldo) || 0), 0)
+        - [...asignadas].reduce((a, id) => a + (distribucion[id] || 0), 0);
+      if (pool > 0.005 && pendientePos > pool + 0.005) {
+        creds.forEach(f => {
+          const sc = parseFloat(f.saldo) || 0;
+          distribucion[f.id_factura] = sc;
+          pool += Math.abs(sc);
+        });
+      }
+      // 4) FIFO con el pool (cheques + NCs − fijado a mano)
       for (const f of pos) {
         if (pool <= 0.005) break;
         if (asignadas.has(f.id_factura)) continue;
@@ -488,16 +533,6 @@
         pool -= ap;
       }
     }
-
-    // Preservar valores que el usuario haya editado manualmente
-    const existing = tbody.querySelectorAll('input[data-id]');
-    const userValues = {};
-    existing.forEach(inp => {
-      const wasUserEdited = inp.dataset.userEdited === '1';
-      if (wasUserEdited) {
-        userValues[inp.dataset.id] = parseMonto(inp.value);
-      }
-    });
 
     // TMT 2026-05-19 — item 4: running total de saldos a lo largo del orden
     // visual (facturas ya vienen ordenadas por fecha asc desde el backend).
@@ -611,8 +646,10 @@
           inp.value = '';
         }
         inp.dataset.userEdited = '1';
-        recalcAcum();
-        updateSummary();
+        // TMT 2026-07-02 (Alex): tildar/destildar redistribuye la sugerencia
+        // FIFO del resto de las filas (las editadas a mano no se tocan).
+        // Caso típico: tildo una NC → la plata liberada cubre más facturas.
+        render(buscar.value);
       });
     });
 
@@ -1476,6 +1513,49 @@
   if (form) {
     form.addEventListener('submit', extraerCodigoCli, true);
   }
+
+  // TMT 2026-07-02 (Alex): restaurar TODOS los bloques de cheques cuando el
+  // backend nos devolvió el form (paso=editar desde la confirmación, o error
+  // de validación). El template renderiza solo el primer bloque; acá clonamos
+  // y rellenamos los N−1 restantes en el MISMO orden en que estaban.
+  (function restaurarCheques() {
+    const dataEl = document.getElementById('cheques-restore');
+    if (!dataEl) return;
+    let lista;
+    try { lista = JSON.parse(dataEl.textContent) || []; } catch (e) { return; }
+    if (!Array.isArray(lista) || lista.length <= 1) return;
+    const base = chequesList.querySelector('.cheque-bloque');
+    if (!base) return;
+    const setVals = (bloque, c) => {
+      const set = (css, v) => {
+        const el = bloque.querySelector(css);
+        if (el) el.value = (v == null ? '' : String(v));
+      };
+      set('.cheque-imp', c.importe);
+      set('.cheque-banco', c.no_banco);
+      set('.cheque-num', c.no_cheque);
+      set('.cheque-fechad', String(c.fechad || '').slice(0, 10));
+      set('.cheque-stat', c.stat || 'Z');
+      set('.cheque-docbanco', c.doc_banco);
+      set('.cheque-medio', c.medio_anticipo);
+    };
+    // El primer item ya vino precargado en el bloque del template (scalars),
+    // pero lo re-seteamos por consistencia (fechad ISO, stat, etc.).
+    setVals(base, lista[0]);
+    // Los siguientes van DEBAJO, preservando el orden posteado (índice 0 =
+    // bloque de más arriba). appendChild mantiene ese orden visual.
+    for (let i = 1; i < lista.length; i++) {
+      const nuevo = base.cloneNode(true);
+      setVals(nuevo, lista[i]);
+      chequesList.appendChild(nuevo);
+      aplicarToggleFechad(nuevo);
+      if (window.__wireBloqueListener) window.__wireBloqueListener(nuevo);
+    }
+    aplicarToggleFechad(base);
+    renumerarBloques();
+    actualizarVisibilidad();
+    actualizarMultiHint();
+  })();
 
   // Carga inicial si ya hay código (re-render por error de validación)
   if (codigoInput.value && codigoInput.value.trim().length > 0) {
