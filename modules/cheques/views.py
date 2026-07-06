@@ -953,6 +953,40 @@ def nuevo():
 
         ch = cheques_creados[0]  # primero — usado abajo para redirect
 
+        # TMT 2026-07-06 (dueña): "el mensaje verde aparece incompleto — no
+        # dice num cheque y no dice facturas". Muchos cheques van SIN N°
+        # (depósitos/efectivo) y el flash quedaba "Cheque N°  creado...".
+        # Ahora siempre muestra el importe (+ N° si hay) y la LISTA de
+        # facturas aplicadas con su monto.
+        def _desc_ch(c):
+            _num = (str(c.get("no_cheque") or "")).strip()
+            _imp = float(c.get("importe") or 0)
+            return (f"N° {_num} " if _num else "") + f"($ {_imp:,.2f})"
+
+        _facts_txt = ""
+        try:
+            _ids_ap = [int(a["id_fact"]) for a in (aplicaciones_pre or [])]
+            if _ids_ap:
+                _rows_f = db.fetch_all(
+                    "SELECT id_factura, numf, numf_completo "
+                    "FROM scintela.factura WHERE id_factura = ANY(%s)",
+                    (_ids_ap,),
+                ) or []
+                _by_id = {int(r["id_factura"]): r for r in _rows_f}
+                _nums_f = []
+                for _a in aplicaciones_pre:
+                    _r = _by_id.get(int(_a["id_fact"])) or {}
+                    _n = _r.get("numf")
+                    if not _n and _r.get("numf_completo"):
+                        _n = str(_r["numf_completo"]).split("-")[-1].lstrip("0")
+                    _nums_f.append(
+                        f"{_n or ('#' + str(_a['id_fact']))} ($ {float(_a['importe']):,.2f})"
+                    )
+                if _nums_f:
+                    _facts_txt = " Facturas: " + ", ".join(_nums_f) + "."
+        except Exception:
+            _facts_txt = ""
+
         # Mensajes según cantidad creada
         # TMT 2026-06-11 paridad dBase NB=95: si queries.crear no encontro el
         # anticipo a cancelar, devuelve un warning (el cheque quedo en Z).
@@ -961,7 +995,7 @@ def nuevo():
                 flash(_c["warning"], "error")
         if len(cheques_creados) > 1:
             total_creado = sum(float(c.get("importe") or 0) for c in cheques_creados)
-            nums = ", ".join(f"N° {c.get('no_cheque')}" for c in cheques_creados)
+            nums = ", ".join(_desc_ch(c) for c in cheques_creados)
             sufijo = ""
             if es_anticipo:
                 # Multi-cheque + anticipo: cada cheque generó su propio espejo.
@@ -981,7 +1015,7 @@ def nuevo():
                 sufijo = f" Se distribuyeron {n_aplicaciones} aplicación(es) FIFO entre los cheques."
             flash(
                 f"{len(cheques_creados)} cheques creados en cartera "
-                f"(total $ {total_creado:,.2f}): {nums}.{sufijo}",
+                f"(total $ {total_creado:,.2f}): {nums}.{sufijo}{_facts_txt}",
                 "ok",
             )
             # TMT 2026-07-06 (dueña): al terminar una cobranza QUEDARSE en la
@@ -990,18 +1024,19 @@ def nuevo():
             return redirect(url_for("cheques.nuevo"))
         if es_anticipo and ch.get("id_cheque_anticipo"):
             flash(
-                f"Cheque N° {ch.get('no_cheque')} creado como ANTICIPO. Se generó "
+                f"Cheque {_desc_ch(ch)} creado como ANTICIPO. Se generó "
                 f"un espejo negativo (id #{ch['id_cheque_anticipo']}) que se aplicará "
                 "a futuras facturas del cliente.",
                 "ok",
             )
         elif n_aplicaciones > 0:
             flash(
-                f"Cheque N° {ch.get('no_cheque')} creado y aplicado a {n_aplicaciones} factura(s).",
+                f"Cheque {_desc_ch(ch)} creado y aplicado a "
+                f"{n_aplicaciones} factura(s).{_facts_txt}",
                 "ok",
             )
         else:
-            flash(f"Cheque N° {ch.get('no_cheque')} creado en cartera.", "ok")
+            flash(f"Cheque {_desc_ch(ch)} creado en cartera.", "ok")
         # TMT 2026-07-06 (dueña): idem multi-cheque — quedarse en cobranza
         # (antes iba a la ficha del cheque).
         return redirect(url_for("cheques.nuevo"))
