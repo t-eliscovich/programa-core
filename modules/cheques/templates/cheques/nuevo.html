@@ -298,10 +298,13 @@
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="text-sm font-semibold text-slate-700">Aplicar a facturas abiertas
           <button type="button" id="aplic-todas" class="ml-2 align-middle text-xs px-2 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/30">TODAS</button>
-          <label class="ml-2 align-middle text-xs text-slate-500">Hasta:
-            <select id="aplic-hasta" class="ml-1 border rounded px-1 py-0.5 text-xs">
-              <option value="">—</option>
-            </select>
+          {# TMT 2026-07-06 (dueña): rango por teclado estilo dBase —
+             "registro1Hregistro2" + Enter tilda todo el rango. Reemplaza el
+             dropdown Hasta (poblarHasta/selHasta quedan como no-op). #}
+          <label class="ml-2 align-middle text-xs text-slate-500"
+                 title="Tipeá desdeHhasta (ej: 173491H174601) y Enter: tilda todas las facturas del rango y destilda el resto. H174601 solo = desde la primera hasta esa.">Rango:
+            <input type="text" id="aplic-rango" placeholder="desdeHhasta ↵"
+                   class="ml-1 border rounded px-1 py-0.5 text-xs w-32 font-mono">
           </label>
         </h3>
         <div class="text-xs text-slate-500" id="aplic-summary">
@@ -1495,6 +1498,46 @@
   // TMT 2026-06-29 (dueña, paridad <H>HASTA): tilda TODAS las facturas desde la
   // más vieja hasta la elegida (inclusive); destilda las posteriores. Limpia el
   // filtro de búsqueda para operar sobre todas.
+  // TMT 2026-07-06 (dueña): "dejemos poner desde y hasta con el teclado y se
+  // hace registro1Hregistro2" — parsea NUM1 H NUM2, tilda el rango (inclusive,
+  // por orden de fecha) y destilda el resto. NUM matchea el N° como se ve en
+  // la tabla (numf / cola del numf_completo sin ceros / id).
+  const rangoInput = document.getElementById('aplic-rango');
+  function _matchFacturaIdx(tok) {
+    tok = (tok || '').trim().toLowerCase().replace(/^0+/, '');
+    if (!tok) return -1;
+    return facturas.findIndex(f => {
+      const cands = [String(f.numf || ''), String(f.id_factura)];
+      if (f.numf_completo) {
+        cands.push(String(f.numf_completo));
+        const tail = String(f.numf_completo).split('-').pop();
+        if (tail) cands.push(tail);
+      }
+      return cands.some(c => c && c.toLowerCase().replace(/^0+/, '') === tok);
+    });
+  }
+  if (rangoInput) {
+    rangoInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const m = rangoInput.value.trim().match(/^(.*?)[hH](.+)$/);
+      if (!m) return;
+      let i1 = m[1].trim() ? _matchFacturaIdx(m[1]) : 0;  // sin "desde" = 1ra
+      let i2 = _matchFacturaIdx(m[2]);
+      if (i1 < 0 || i2 < 0) {
+        rangoInput.classList.add('border-rose-500');
+        setTimeout(() => rangoInput.classList.remove('border-rose-500'), 1200);
+        return;
+      }
+      if (i1 > i2) { const t = i1; i1 = i2; i2 = t; }
+      facturas.forEach((f, i) => {
+        manualValues[f.id_factura] = (i >= i1 && i <= i2) ? (parseFloat(f.saldo) || 0) : 0;
+      });
+      render(buscar.value);
+      rangoInput.select();
+    });
+  }
+
   const selHasta = document.getElementById('aplic-hasta');
   if (selHasta) {
     selHasta.addEventListener('change', () => {
