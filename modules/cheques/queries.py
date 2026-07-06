@@ -970,6 +970,181 @@ def anular_por_error_de_carga(
     }
 
 
+def distribuir_espejos_anticipo(
+    importes_anticipo: list[float], suma_cancelada: float
+) -> list[float]:
+    """Distribuye la suma de cheques cancelados contra los cheques-anticipo
+    (97) del form, FIFO, y devuelve el importe de ESPEJO (= sobrante) que le
+    corresponde a cada uno.
+
+    TMT 2026-07-06 (dueña): "si el anticipo era 3000 y había 3 cheques de
+    1000, tengo que cancelar todos esos cheques. Si me dio 10.000, cancelo
+    los 3 de 1000 y además sumo una nota de crédito por 7000". El espejo
+    NB=98 se crea SOLO por el sobrante (crear() lo saltea si < $1).
+
+    Valida el tope: la suma cancelada NO puede superar el anticipo + $0.01.
+    """
+    total = round(sum(float(i or 0) for i in importes_anticipo), 2)
+    suma = round(float(suma_cancelada or 0), 2)
+    if suma < -0.005:
+        raise ValueError("La suma de cheques a cancelar no puede ser negativa.")
+    if suma > total + 0.01:
+        raise ValueError(
+            f"Los cheques a cancelar suman ${suma:,.2f} y el anticipo es de "
+            f"${total:,.2f} — no se puede cancelar más que el anticipo. "
+            f"Destildá algún cheque o subí el importe del anticipo."
+        )
+    espejos: list[float] = []
+    restante = suma
+    for imp in importes_anticipo:
+        imp_f = float(imp or 0)
+        consumo = min(restante, imp_f) if restante > 0 else 0.0
+        restante = round(restante - consumo, 2)
+        espejos.append(round(imp_f - consumo, 2))
+    return espejos
+
+
+def cancelar_por_anticipo(
+    *,
+    id_cheque: int,
+    codigo_cli: str,
+    id_cheque_anticipo: int | None = None,
+    monto_anticipo: float = 0.0,
+    usuario: str = "web",
+    conn=None,
+) -> dict:
+    """Cancela (stat='X') un cheque VIVO del cliente, cubierto por un ANTICIPO.
+
+    TMT 2026-07-06 (dueña): "esto va a ser un anticipo que se lo aplicamos a
+    los cheques... tengo que cancelar (X) todos esos cheques". Flujo 97 de
+    /cheques/nuevo: cada cheque tildado en el panel de cartera pasa a 'X' y
+    el espejo NB=98 se crea SOLO por el sobrante (ver crear()).
+
+    Validaciones (todas con error claro; ValueError → rollback total):
+      - el cheque existe y es DEL cliente del anticipo;
+      - está VIVO (stat en Z/1/2/3/P/D — grupo TOTC "Z123PD");
+      - importe > 0 (los espejos NB=98 / NC no se cancelan por acá);
+      - SIN aplicaciones a facturas (chequesxfact): cancelarlo reabriría las
+        facturas sin compensación del anticipo → desaplicar primero desde la
+        ficha del cheque y reintentar (automatizarlo queda fuera de alcance).
+
+    Side-effects (mismo patrón que anular_por_error_de_carga, sin
+    compensación bancaria — un cheque vivo no tiene mov de banco propio):
+      - DELETE de la fila posdat hermana (cheques postdatados);
+      - UPDATE stat='X' + fechaout + tag "[X] cancelado por anticipo ...";
+      - mov_doble tipo='cheque_cancelado_por_anticipo' POR CHEQUE, sin
+        batch_id → reversible individualmente (el reverso manual = volver a
+        'Z' + ajustar el espejo; NO automatizado a propósito, queda el
+        registro en /historial).
+
+    Corre dentro de la tx del caller (conn) — si algo falla, rollback total.
+    """
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+    codigo_cli = (codigo_cli or "").upper().strip()
+
+    import contextlib as _ctx
+
+    _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
+    with _tx as conn:
+        ch = db.fetch_one(
+            "SELECT id_cheque, no_cheque, stat, codigo_cli, importe, fechad "
+            "FROM scintela.cheque WHERE id_cheque = %s",
+            (id_cheque,),
+            conn=conn,
+        )
+        if not ch:
+            raise ValueError(f"Cheque #{id_cheque} no existe.")
+        if (ch.get("codigo_cli") or "").upper().strip() != codigo_cli:
+            raise ValueError(
+                f"El cheque #{id_cheque} es de "
+                f"{(ch.get('codigo_cli') or '?').strip()}, no de {codigo_cli} "
+                "— no se puede cancelar con este anticipo."
+            )
+        stat_prev = (ch.get("stat") or "").strip().upper()
+        if stat_prev not in STATS_VIVOS:
+            raise ValueError(
+                f"El cheque #{id_cheque} está en stat='{stat_prev}' — sólo se "
+                f"cancelan por anticipo cheques vivos "
+                f"({'/'.join(STATS_VIVOS)})."
+            )
+        importe = float(ch.get("importe") or 0)
+        if importe <= 0.005:
+            raise ValueError(
+                f"El cheque #{id_cheque} tiene importe {importe:.2f} — las "
+                "notas de crédito / espejos no se cancelan por anticipo."
+            )
+        aplic = db.fetch_all(
+            "SELECT id_chequexfact FROM scintela.chequesxfact WHERE id_cheque = %s",
+            (id_cheque,),
+            conn=conn,
+        ) or []
+        if aplic:
+            raise ValueError(
+                f"El cheque #{id_cheque} ya está aplicado a factura(s) — "
+                "desaplicalo desde su ficha y volvé a intentar (cancelarlo "
+                "acá reabriría las facturas sin compensación del anticipo)."
+            )
+
+        # posdat hermana (cheques postdatados viven también en el flujo posdat)
+        db.execute(
+            "DELETE FROM scintela.posdat WHERE COALESCE(banc, 0) = 0 AND num=%s AND prov=%s",
+            (id_cheque, codigo_cli),
+            conn=conn,
+        )
+
+        marca = (
+            "[X] cancelado por anticipo"
+            + (f" #{id_cheque_anticipo}" if id_cheque_anticipo else "")
+            + f" ${float(monto_anticipo or 0):,.2f}"
+        )
+        db.execute(
+            "UPDATE scintela.cheque "
+            "SET stat='X', fechaout=%s, "
+            "    observacion = RIGHT("
+            "        COALESCE(observacion || ' | ', '') || %s, 200), "
+            "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+            "WHERE id_cheque=%s",
+            (fecha, marca, usuario, id_cheque),
+            conn=conn,
+        )
+
+        import mov_doble as _md
+
+        _md.registrar(
+            conn=conn,
+            tipo="cheque_cancelado_por_anticipo",
+            origen_table="cheque",
+            origen_id=id_cheque,
+            destino_table="cheque",
+            destino_id=id_cheque_anticipo or id_cheque,
+            importe=importe or 1.0,
+            fecha=fecha,
+            concepto=(
+                "CANCELADO por anticipo"
+                + (f" #{id_cheque_anticipo}" if id_cheque_anticipo else "")
+                + f" ${float(monto_anticipo or 0):,.2f} — ch "
+                + f"{(ch.get('no_cheque') or '').strip() or id_cheque} "
+                + f"{codigo_cli} {stat_prev}→X"
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_cheque": id_cheque,
+                "stat_previo": stat_prev,
+                "id_cheque_anticipo": id_cheque_anticipo,
+                "monto_anticipo": float(monto_anticipo or 0),
+                "codigo_cli": codigo_cli,
+            },
+        )
+
+    return {
+        "id_cheque": id_cheque,
+        "stat_previo": stat_prev,
+        "stat_nuevo": "X",
+        "importe": importe,
+    }
+
+
 def reemplazar(
     *,
     id_cheque_viejo: int,
@@ -1855,6 +2030,10 @@ def crear(
     doc_banco: str | None = None,
     usuario: str = "web",
     batch_id: str | None = None,
+    # TMT 2026-07-06 (dueña): anticipo aplicado a cheques en cartera — el
+    # espejo NB=98 se crea SOLO por el SOBRANTE (anticipo − Σ cancelados).
+    # None = flujo clásico (espejo por el importe total del cheque).
+    anticipo_espejo_importe: float | None = None,
     conn=None,
 ) -> dict:
     """Alta de cheque nuevo.
@@ -2158,8 +2337,23 @@ def crear(
                     batch_id=batch_id,
                 )
 
-        # Espejo de anticipo (importe negativo) — sólo si flag activo y >0
-        if es_anticipo and importe_principal > 0:
+        # Espejo de anticipo (importe negativo) — sólo si flag activo y >0.
+        # TMT 2026-07-06 (dueña): si el anticipo se usó para CANCELAR cheques
+        # en cartera (flujo 97 de /cheques/nuevo), el espejo/NC se crea SOLO
+        # por el SOBRANTE = anticipo − Σ cheques cancelados
+        # (`anticipo_espejo_importe`, lo calcula el view con
+        # distribuir_espejos_anticipo). Sobrante < $1 = centavos → SIN espejo
+        # (mismo umbral que el sobrante de cobranza). None = flujo clásico.
+        _imp_espejo = (
+            importe_principal
+            if anticipo_espejo_importe is None
+            else round(float(anticipo_espejo_importe), 2)
+        )
+        # El umbral $1 aplica SOLO al flujo con cancelados (override); el
+        # flujo clásico (None) mantiene el comportamiento histórico.
+        if es_anticipo and importe_principal > 0 and (
+            anticipo_espejo_importe is None or _imp_espejo >= 1.00
+        ):
             espejo = (
                 db.execute_returning(
                     """
@@ -2181,7 +2375,7 @@ def crear(
                         (fechad or fecha) + timedelta(days=30),
                         fecha_recibido,
                         codigo_cli.upper().strip(),
-                        -importe_principal,  # espejo negativo
+                        -_imp_espejo,  # espejo negativo (sobrante si hubo cancelados)
                         98,
                         "ANTICIPO",
                         (prov or None),
@@ -2204,7 +2398,7 @@ def crear(
                     origen_id=row["id_cheque"],
                     destino_table="cheque",
                     destino_id=espejo["id_cheque"],
-                    importe=-importe_principal,  # espejo es negativo
+                    importe=-_imp_espejo,  # espejo es negativo
                     fecha=fecha,
                     concepto=(
                         f"Espejo de anticipo ch{(no_cheque or '').strip()} de {codigo_cli.upper().strip()}"
@@ -2377,6 +2571,10 @@ STATS_ENDOSABLES = ("Z", "P", "D")
 # Cualquier otro (B/A depositados, 1/2/3 rebotados, E endosado, X eliminado,
 # R terminal) → ValueError. TMT 2026-05-14 (#26).
 STATS_APLICABLES = ("Z", "P", "D")
+
+# TMT 2026-07-06 (dueña): grupo "vivo" de cartera — fórmula canónica TOTC
+# (PRG L24: STAT $ "Z123PD"). Son los cheques cancelables por un anticipo 97.
+STATS_VIVOS = ("Z", "1", "2", "3", "P", "D")
 
 
 def endosar(
@@ -3430,6 +3628,30 @@ def facturas_pendientes(codigo_cli: str, limite: int = 200) -> list[dict]:
         -- previa por signo confundía visualmente al aplicar.
         ORDER BY fecha, vencimiento NULLS LAST, numf
         LIMIT %s
+        """,
+        (codigo_cli, limite),
+    )
+
+
+def cheques_vivos(codigo_cli: str, limite: int = 200) -> list[dict]:
+    """Cheques VIVOS (stat en Z/1/2/3/P/D, importe > 0) de un cliente.
+
+    TMT 2026-07-06 (dueña): alimenta el panel "anticipo (97) → cancelar
+    cheques en cartera" de /cheques/nuevo. Mismo grupo que TOTC
+    (STAT $ "Z123PD"). Los importes NEGATIVOS (espejos NB=98 / NC) quedan
+    afuera — no son cheques físicos cancelables. Orden FIFO por fecha de
+    depósito (el más próximo a depositarse se cancela primero).
+    """
+    return db.fetch_all(
+        """
+        SELECT id_cheque, no_cheque, fecha, fechad, importe, no_banco,
+               COALESCE(banco, '') AS banco, stat
+          FROM scintela.cheque
+         WHERE codigo_cli = %s
+           AND TRIM(COALESCE(stat, '')) IN ('Z','1','2','3','P','D')
+           AND COALESCE(importe, 0) > 0
+         ORDER BY fechad NULLS LAST, fecha, id_cheque
+         LIMIT %s
         """,
         (codigo_cli, limite),
     )

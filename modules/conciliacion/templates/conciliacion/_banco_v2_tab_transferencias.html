@@ -30,7 +30,7 @@
           <th class="px-2 py-1.5 text-left w-6">
             <input type="checkbox" data-toggle-all="transferencias" class="accent-sky-600" checked>
           </th>
-          <th class="px-2 py-1.5 text-left" colspan="4">BANCO</th>
+          <th class="px-2 py-1.5 text-left" colspan="5">BANCO</th>
           <th class="px-2 py-1.5 text-center w-5">↔</th>
           <th class="px-2 py-1.5 text-left" colspan="4">PROGRAMA</th>
         </tr>
@@ -40,6 +40,8 @@
           <th class="px-2 py-1 text-right w-24">Monto</th>
           <th class="px-2 py-1 text-left w-24">Doc</th>
           <th class="px-2 py-1 text-left">Concepto</th>
+          {# TMT 2026-07-06 (dueña): columna Oficina del extracto #}
+          <th class="px-2 py-1 text-left w-20">Oficina</th>
           <th></th>
           <th class="px-2 py-1 text-left w-20">Fecha</th>
           <th class="px-2 py-1 text-right w-24">Monto</th>
@@ -61,6 +63,8 @@
             <td class="px-2 py-1 text-right font-mono font-semibold {% if r.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(r.monto|float) }}</td>
             <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (r.documento or '')|string|truncate(12,True,'') }}</td>
             <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate" title="{{ r.concepto }}">{{ (r.concepto or '')[:30] }}</td>
+            {# TMT 2026-07-06 (dueña): Oficina del extracto — vacía si el archivo no la trae #}
+            <td class="px-2 py-1 text-slate-500 text-[10px] truncate" title="{{ r.oficina or '' }}">{{ (r.oficina or '')|truncate(14, True, '') }}</td>
             <td class="px-2 py-1 text-center text-emerald-600 font-bold">↔</td>
             <td class="px-2 py-1 text-slate-500">{{ b.fecha.strftime('%m-%d') if b.fecha else '—' }}</td>
             <td class="px-2 py-1 text-right font-mono font-semibold">{{ '{:,.2f}'.format(b.importe|float) }}</td>
@@ -72,7 +76,7 @@
           </tr>
         {% endfor %}
         {% if not _matches %}
-        <tr><td colspan="10" class="px-3 py-4 text-center text-xs text-slate-400 italic">— no se encontraron matches automáticos por N° de documento —</td></tr>
+        <tr><td colspan="11" class="px-3 py-4 text-center text-xs text-slate-400 italic">— no se encontraron matches automáticos por N° de documento —</td></tr>
         {% endif %}
       </tbody>
     </table>

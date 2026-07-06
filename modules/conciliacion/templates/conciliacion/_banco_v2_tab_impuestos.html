@@ -40,6 +40,8 @@
           <th class="px-2 py-1.5 text-right w-24">Monto</th>
           <th class="px-2 py-1.5 text-left w-24">Doc</th>
           <th class="px-2 py-1.5 text-left">Concepto</th>
+          {# TMT 2026-07-06 (dueña): columna Oficina del extracto #}
+          <th class="px-2 py-1.5 text-left w-24">Oficina</th>
         </tr>
       </thead>
       <tbody>
@@ -61,10 +63,12 @@
             <td class="px-2 py-1 text-right font-mono font-semibold {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ '{:,.2f}'.format(m.monto|float) }}</td>
             <td class="px-2 py-1 text-slate-500 font-mono text-[10px]">{{ (m.documento or '')|string|truncate(12,True,'') }}</td>
             <td class="px-2 py-1 text-slate-600 dark:text-slate-300 truncate" title="{{ m.concepto }}">{{ (m.concepto or '')[:60] }}</td>
+            {# TMT 2026-07-06 (dueña): Oficina del extracto — vacía si el archivo no la trae #}
+            <td class="px-2 py-1 text-slate-500 text-[10px] truncate" title="{{ m.oficina or '' }}">{{ (m.oficina or '')|truncate(18, True, '') }}</td>
           </tr>
         {% endfor %}
         {% if not _items %}
-        <tr><td colspan="6" class="px-3 py-4 text-center text-xs text-slate-400 italic">— el extracto no trajo impuestos ni comisiones detectables —</td></tr>
+        <tr><td colspan="7" class="px-3 py-4 text-center text-xs text-slate-400 italic">— el extracto no trajo impuestos ni comisiones detectables —</td></tr>
         {% endif %}
       </tbody>
     </table>

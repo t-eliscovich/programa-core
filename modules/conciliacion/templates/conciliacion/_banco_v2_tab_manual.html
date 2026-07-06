@@ -17,6 +17,28 @@
     <input type="text" id="manual-filtro" placeholder="Filtrar por concepto, cliente, doc o monto..."
            class="flex-1 text-sm border-0 focus:ring-0 focus:outline-none bg-transparent placeholder-slate-400">
   </div>
+  {# TMT 2026-07-06 (dueña): 'traer la columna Oficina del archivo del extracto
+     del banco, así se puede filtrar de esa manera también'. Select con las
+     oficinas presentes en el panel Banco (extracto + históricos). Filtra
+     client-side SOLO el panel Banco — el lado Programa no tiene oficina.
+     Si el extracto no trae Oficina, el select no aparece (lista vacía). #}
+  {% set _oficinas = [] %}
+  {% for item in _banco %}
+    {% set _of = (item.mov.oficina or '')|trim %}
+    {% if _of and _of not in _oficinas %}{% set _ = _oficinas.append(_of) %}{% endif %}
+  {% endfor %}
+  {% if _oficinas %}
+  <label class="flex items-center gap-1.5 text-xs text-slate-500">
+    Oficina
+    <select id="manual-oficina"
+            class="text-xs px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+      <option value="">todas</option>
+      {% for _of in _oficinas|sort %}
+      <option value="{{ _of }}">{{ _of }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
   <div class="flex items-center gap-4 text-xs tabular-nums">
     <div>Banco: <span data-total="banco" class="font-bold text-emerald-700 dark:text-emerald-300 font-mono">$ 0.00</span> <span class="text-slate-400">(<span data-count="banco">0</span>)</span></div>
     <div>Programa: <span data-total="programa" class="font-bold text-sky-700 dark:text-sky-300 font-mono">$ 0.00</span> <span class="text-slate-400">(<span data-count="programa">0</span>)</span></div>
@@ -81,6 +103,8 @@
             <th class="px-1 py-0.5 text-right w-24">Monto</th>
             <th class="px-1 py-0.5 text-left w-20">Doc</th>
             <th class="px-1 py-0.5 text-left">Concepto</th>
+            {# TMT 2026-07-06 (dueña): columna Oficina del extracto #}
+            <th class="px-1 py-0.5 text-left w-16">Oficina</th>
             <th class="px-1 py-0.5 text-center w-6" title="Eliminar pendiente fantasma"></th>
           </tr>
         </thead>
@@ -93,7 +117,7 @@
             {# valor efectivo del banco = signo del tipo × monto. Monto
                negativo (corrección/reverso) manda → rojo y −. #}
             {% set _vb = (m.monto|float) * (1 if m.tipo == 'C' else -1) %}
-            <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 leading-tight">
+            <tr data-oficina="{{ (m.oficina or '')|trim }}" class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 leading-tight">
               <td class="px-1 py-0">
                 {% if _hist %}
                   <input type="checkbox" name="hist_id" value="{{ item.id_historico }}"
@@ -121,6 +145,8 @@
                 {% if _hist %}<span class="inline-flex w-3 h-3 items-center justify-center rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200 text-[8px] font-bold mr-0.5" title="histórico">H</span>{% endif %}
                 {{ m.concepto or '' }}
               </td>
+              {# TMT 2026-07-06 (dueña): Oficina del extracto — vacía si el archivo no la trae #}
+              <td class="px-1 py-0 text-slate-500 text-[9px] truncate" title="{{ m.oficina or '' }}">{{ (m.oficina or '')|truncate(14, True, '') }}</td>
               <td class="px-1 py-0 text-center">
                 {% if _hist %}
                 <form method="POST" action="{{ url_for('conciliacion.banco_eliminar_pendiente') }}" class="inline m-0">
@@ -135,7 +161,7 @@
             </tr>
           {% endfor %}
           {% if not _banco %}
-          <tr><td colspan="7" class="px-3 py-4 text-center text-xs text-slate-400 italic">— sin movimientos del banco para parear —</td></tr>
+          <tr><td colspan="8" class="px-3 py-4 text-center text-xs text-slate-400 italic">— sin movimientos del banco para parear —</td></tr>
           {% endif %}
         </tbody>
       </table>
@@ -389,16 +415,25 @@
       .replace(/\s+/g,' ').trim();
   }
   var filtroEl = document.getElementById('manual-filtro');
-  if (filtroEl){
-    filtroEl.addEventListener('input', function(){
-      var q = norm(filtroEl.value);
-      document.querySelectorAll('[data-panel="banco"] tbody tr, [data-panel="programa"] tbody tr').forEach(function(tr){
-        if (!q){ tr.style.display = ''; return; }
-        var txt = norm(tr.textContent);
-        tr.style.display = txt.indexOf(q) >= 0 ? '' : 'none';
-      });
+  // TMT 2026-07-06 (dueña): filtro por Oficina del extracto, combinable con
+  // el filtro de texto. Solo aplica al panel Banco (Programa no tiene oficina).
+  var oficinaEl = document.getElementById('manual-oficina');
+  function aplicarFiltros(){
+    var q = norm(filtroEl ? filtroEl.value : '');
+    var of = oficinaEl ? (oficinaEl.value || '').trim() : '';
+    document.querySelectorAll('[data-panel="banco"] tbody tr, [data-panel="programa"] tbody tr').forEach(function(tr){
+      var visible = true;
+      if (q){
+        visible = norm(tr.textContent).indexOf(q) >= 0;
+      }
+      if (visible && of && tr.closest('[data-panel="banco"]')){
+        visible = ((tr.dataset.oficina || '').trim() === of);
+      }
+      tr.style.display = visible ? '' : 'none';
     });
   }
+  if (filtroEl){ filtroEl.addEventListener('input', aplicarFiltros); }
+  if (oficinaEl){ oficinaEl.addEventListener('change', aplicarFiltros); }
 
   // 2026-06-19 (dueña): eliminar pendiente fantasma. Confirmación INLINE en
   // dos clics (sin window.confirm, que el navegador auto-descarta): el ✕

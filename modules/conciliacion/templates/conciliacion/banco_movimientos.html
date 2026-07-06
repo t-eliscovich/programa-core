@@ -53,6 +53,18 @@
       <input type="date" name="hasta" value="{{ hasta }}"
              class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
     </label>
+    {# TMT 2026-07-06 (dueña): filtro por Oficina del extracto del banco #}
+    {% if oficinas %}
+    <label>
+      <span class="block text-xs text-slate-500">Oficina</span>
+      <select name="oficina" class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+        <option value="">Todas</option>
+        {% for of in oficinas %}
+          <option value="{{ of }}" {% if oficina == of %}selected{% endif %}>{{ of }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
     <label>
       <span class="block text-xs text-slate-500">Estado</span>
       <select name="estado" class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
@@ -74,6 +86,8 @@
           <th class="px-2 py-1.5">Concepto</th>
           <th class="px-2 py-1.5 text-right">Importe</th>
           <th class="px-2 py-1.5">Cliente</th>
+          {# TMT 2026-07-06 (dueña): Oficina del extracto (del match activo) #}
+          <th class="px-2 py-1.5">Oficina</th>
           <th class="px-2 py-1.5">Estado</th>
         </tr>
       </thead>
@@ -86,6 +100,7 @@
           <td class="px-2 py-1.5 truncate max-w-md" title="{{ r.concepto or '' }}">{{ (r.concepto or '')[:70] }}</td>
           <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap {{ 'text-red-600 dark:text-red-400' if _imp < 0 else '' }}">{{ '{:,.2f}'.format(_imp) }}</td>
           <td class="px-2 py-1.5">{{ (r.prov_nombre or r.prov or '')|trim }}</td>
+          <td class="px-2 py-1.5 text-slate-500 whitespace-nowrap">{{ (r.oficina or '')|trim }}</td>
           <td class="px-2 py-1.5">
             {% if r.conciliado %}
               <span class="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">conciliado</span>
@@ -95,7 +110,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin movimientos para los filtros elegidos.</td></tr>
+        <tr><td colspan="7" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin movimientos para los filtros elegidos.</td></tr>
         {% endfor %}
       </tbody>
     </table>

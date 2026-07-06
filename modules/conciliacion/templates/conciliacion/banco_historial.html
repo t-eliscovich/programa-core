@@ -56,6 +56,18 @@
       <input type="date" name="hasta" value="{{ hasta }}"
              class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
     </label>
+    {# TMT 2026-07-06 (dueña): filtro por Oficina del extracto del banco #}
+    {% if oficinas %}
+    <label>
+      <span class="block text-xs text-slate-500">Oficina</span>
+      <select name="oficina" class="text-sm px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+        <option value="">Todas</option>
+        {% for of in oficinas %}
+          <option value="{{ of }}" {% if oficina == of %}selected{% endif %}>{{ of }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
     <label class="text-xs text-slate-600 dark:text-slate-400 inline-flex items-center gap-1.5">
       <input type="checkbox" name="deshechos" value="1" {% if incluir_deshechos %}checked{% endif %}>
       Mostrar deshechos
@@ -80,6 +92,8 @@
           <th class="px-2 py-1.5 text-right">Δ</th>
           <th class="px-2 py-1.5">Tipo</th>
           <th class="px-2 py-1.5">Concepto</th>
+          {# TMT 2026-07-06 (dueña): Oficina del extracto #}
+          <th class="px-2 py-1.5">Oficina</th>
           <th class="px-2 py-1.5 text-right">Programa ID</th>
           <th class="px-2 py-1.5">Cliente</th>
           <th class="px-2 py-1.5">Usuario</th>
@@ -110,6 +124,7 @@
           <td class="px-2 py-1.5 truncate max-w-xs" title="{{ r.real_concepto or r.bancsis_concepto or '' }}">
             {{ (r.real_concepto or r.bancsis_concepto or '')[:60] }}
           </td>
+          <td class="px-2 py-1.5 text-slate-500 whitespace-nowrap">{{ (r.real_oficina or '')|trim }}</td>
           <td class="px-2 py-1.5 text-right font-mono">
             {% if r.id_transaccion %}
               <a href="{{ url_for('bancos.movimientos', no_banco=r.no_banco) }}#tx-{{ r.id_transaccion }}" class="text-sky-600 hover:underline">{{ r.id_transaccion }}</a>
@@ -130,7 +145,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="12" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
+        <tr><td colspan="13" class="px-3 py-6 text-center text-sm text-slate-500 italic">Sin conciliaciones para los filtros elegidos.</td></tr>
         {% endfor %}
       </tbody>
     </table>

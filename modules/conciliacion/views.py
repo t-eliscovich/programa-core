@@ -43,6 +43,9 @@ from modules.conciliacion.matcher_banco import (
 from modules.conciliacion.matcher_banco import (
     movimientos_banco as movimientos_banco_q,
 )
+from modules.conciliacion.matcher_banco import (
+    oficinas_extracto as oficinas_extracto_q,
+)
 from modules.conciliacion.matcher_depositos import (
     matchear_depositos,
     transacciones_en_rango,
@@ -2645,12 +2648,15 @@ def banco_historial():
     except ValueError:
         hasta_d = None
     incluir_deshechos = request.args.get("deshechos") == "1"
+    # TMT 2026-07-06 (dueña): filtro por Oficina del extracto del banco.
+    oficina = (request.args.get("oficina") or "").strip()
     rows = historial_matches(
         no_banco=no_banco,
         desde=desde_d,
         hasta=hasta_d,
         incluir_deshechos=incluir_deshechos,
         limit=300,
+        oficina=oficina or None,
     )
     return render_template(
         "conciliacion/banco_historial.html",
@@ -2660,6 +2666,8 @@ def banco_historial():
         desde=desde or "",
         hasta=hasta or "",
         incluir_deshechos=incluir_deshechos,
+        oficina=oficina,
+        oficinas=oficinas_extracto_q(no_banco),
     )
 
 
@@ -2696,12 +2704,15 @@ def banco_movimientos():
     estado = request.args.get("estado") or "todos"
     if estado not in ("todos", "pendientes", "conciliados"):
         estado = "todos"
+    # TMT 2026-07-06 (dueña): filtro por Oficina del extracto del banco.
+    oficina = (request.args.get("oficina") or "").strip()
     rows = movimientos_banco_q(
         no_banco=no_banco,
         desde=desde_d,
         hasta=hasta_d,
         estado=estado,
         limit=1000,
+        oficina=oficina or None,
     )
     n_pend = sum(1 for r in rows if not r.get("conciliado"))
     return render_template(
@@ -2714,6 +2725,8 @@ def banco_movimientos():
         estado=estado,
         n_pend=n_pend,
         n_total=len(rows),
+        oficina=oficina,
+        oficinas=oficinas_extracto_q(no_banco),
     )
 
 

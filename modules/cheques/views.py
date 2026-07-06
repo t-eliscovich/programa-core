@@ -473,6 +473,48 @@ def nuevo():
                 }
             )
 
+    # TMT 2026-07-06 (dueña): ANTICIPO (97) aplicado a CHEQUES EN CARTERA —
+    # "esto va a ser un anticipo que se lo aplicamos a los cheques... si el
+    # anticipo era 3000 y había 3 cheques de 1000, tengo que cancelar (X)
+    # todos esos cheques; si me dio 10.000, cancelo los 3 y sumo una nota de
+    # crédito por 7000". El form manda cheques_cancelar[] (ids de cheques
+    # vivos del cliente, pre-tildados FIFO en la UI, editables). Acá solo
+    # parseamos + guards de combinación; la validación autoritativa (dueño
+    # del cheque, stat vivo, sin aplicaciones, tope vs anticipo) corre dentro
+    # de la tx (queries.cancelar_por_anticipo / distribuir_espejos_anticipo).
+    cheques_cancelar_ids: list[int] = []
+    for _v in request.form.getlist("cheques_cancelar[]"):
+        try:
+            _idc = int(str(_v).strip())
+        except (TypeError, ValueError):
+            continue
+        if _idc > 0 and _idc not in cheques_cancelar_ids:
+            cheques_cancelar_ids.append(_idc)
+    if cheques_cancelar_ids:
+        _errs_canc: list[str] = []
+        if not any(c.get("es_anticipo") for c in cheques_in):
+            _errs_canc.append(
+                "Tildaste cheques en cartera para cancelar pero ningún cheque "
+                "del form es un ANTICIPO (banco 97). Elegí 97 · ANTICIPO o "
+                "destildá los cheques."
+            )
+        if aplicaciones_pre:
+            # Mezclar consumiría el mismo anticipo dos veces (facturas +
+            # cheques cancelados). Decisión conservadora: una cosa por vez.
+            _errs_canc.append(
+                "No se puede aplicar el anticipo a facturas Y cancelar "
+                "cheques en cartera en la misma operación — elegí una de "
+                "las dos (destildá las facturas o los cheques)."
+            )
+        if _errs_canc:
+            return render_template(
+                "cheques/nuevo.html",
+                form=form,
+                errores=_errs_canc,
+                bancos=_bancos(),
+                clientes_datalist=clientes_datalist,
+            ), 400
+
     # TMT 2026-06-16 (dueña, caso BED): si una aplicación POSITIVA supera el
     # saldo real de su factura, NO es un error — la dueña está cobrando de más
     # y el excedente va como ANTICIPO del cliente. Capamos la aplicación al
@@ -717,7 +759,43 @@ def nuevo():
         cheques_creados: list[dict] = []
         n_aplicaciones = 0
 
+        # TMT 2026-07-06 (dueña): anticipo → cancelar cheques en cartera.
+        # Importes REALES de los cheques tildados (de la DB, no del form) y
+        # cálculo del SOBRANTE por cheque-anticipo (FIFO). El tope
+        # (suma cancelada ≤ anticipo + $0.01) lo valida
+        # distribuir_espejos_anticipo con error claro (ValueError → 400).
+        espejos_anticipo: list[float] | None = None
+        suma_cancelada = 0.0
+        total_anticipo_97 = 0.0
+        if cheques_cancelar_ids:
+            _rows_canc = db.fetch_all(
+                "SELECT id_cheque, importe FROM scintela.cheque "
+                "WHERE id_cheque = ANY(%s)",
+                (cheques_cancelar_ids,),
+            ) or []
+            _imp_canc = {
+                int(r["id_cheque"]): float(r["importe"] or 0) for r in _rows_canc
+            }
+            _faltan = [i for i in cheques_cancelar_ids if i not in _imp_canc]
+            if _faltan:
+                raise ValueError(
+                    f"Cheque(s) a cancelar inexistente(s): "
+                    f"{', '.join('#' + str(i) for i in _faltan)}. "
+                    "Recargá la pantalla y volvé a tildar."
+                )
+            suma_cancelada = round(sum(_imp_canc.values()), 2)
+            _imps_97 = [
+                float(c.get("importe") or 0)
+                for c in cheques_in
+                if c.get("es_anticipo")
+            ]
+            total_anticipo_97 = round(sum(_imps_97), 2)
+            espejos_anticipo = queries.distribuir_espejos_anticipo(
+                _imps_97, suma_cancelada
+            )
+
         with db.tx() as conn:
+            _idx_esp_97 = 0
             for ch_in in cheques_in:
                 # TMT 2026-05-27 — banco por cheque (no_banco from ch_in)
                 _ch_no_banco = ch_in.get("no_banco") if ch_in.get("no_banco") is not None else no_banco
@@ -727,6 +805,18 @@ def nuevo():
                 _ch_es_anticipo = (
                     ch_in.get("es_anticipo") or es_anticipo or (_ch_no_banco == 97)
                 ) and not aplicaciones_pre
+                # TMT 2026-07-06 (dueña): si se cancelan cheques en cartera,
+                # el espejo NB=98 de este cheque-anticipo se acota a SU
+                # sobrante (FIFO, ver distribuir_espejos_anticipo). crear()
+                # lo saltea si queda < $1.
+                _esp_override = None
+                if espejos_anticipo is not None and ch_in.get("es_anticipo"):
+                    _esp_override = (
+                        espejos_anticipo[_idx_esp_97]
+                        if _idx_esp_97 < len(espejos_anticipo)
+                        else 0.0
+                    )
+                    _idx_esp_97 += 1
                 ch = queries.crear(
                     fecha=fecha,
                     fechad=ch_in.get("fechad") or fechad,  # por cheque
@@ -746,6 +836,7 @@ def nuevo():
                     doc_banco=ch_in.get("doc_banco"),
                     usuario=usuario,
                     batch_id=batch_id,
+                    anticipo_espejo_importe=_esp_override,
                     conn=conn,
                 )
                 # TMT 2026-05-15: queries.crear devuelve {id_cheque, no_cheque}
@@ -754,6 +845,31 @@ def nuevo():
                 if isinstance(ch, dict):
                     ch["importe"] = float(ch_in["importe"] or 0)
                 cheques_creados.append(ch)
+
+            # TMT 2026-07-06 (dueña): cancelar (✗ → stat X) los cheques en
+            # cartera tildados, cubiertos por el anticipo recién creado.
+            # Cada uno con su propio mov_doble
+            # ('cheque_cancelado_por_anticipo', reversible individualmente).
+            # MISMA tx: si uno falla (stat cambió, otro cliente, aplicado a
+            # factura), rollback TOTAL — el anticipo tampoco se crea.
+            if cheques_cancelar_ids:
+                _id_ant = next(
+                    (
+                        c.get("id_cheque")
+                        for c in cheques_creados
+                        if isinstance(c, dict) and c.get("id_cheque")
+                    ),
+                    None,
+                )
+                for _idc in cheques_cancelar_ids:
+                    queries.cancelar_por_anticipo(
+                        id_cheque=_idc,
+                        codigo_cli=codigo_cli,
+                        id_cheque_anticipo=_id_ant,
+                        monto_anticipo=total_anticipo_97,
+                        usuario=usuario,
+                        conn=conn,
+                    )
 
             # Aplicar a facturas si hubo distribución inline.
             # TMT 2026-05-15: con multi-cheque distribuimos FIFO — el primer
@@ -1000,6 +1116,22 @@ def nuevo():
 
         ch = cheques_creados[0]  # primero — usado abajo para redirect
 
+        # TMT 2026-07-06 (dueña): resumen del anticipo→cheques cancelados.
+        if cheques_cancelar_ids:
+            _sobr = round(total_anticipo_97 - suma_cancelada, 2)
+            _msg = (
+                f"{len(cheques_cancelar_ids)} cheque(s) en cartera "
+                f"cancelados (✗) por el anticipo: $ {suma_cancelada:,.2f}."
+            )
+            if _sobr >= 1.00:
+                _msg += (
+                    f" Sobrante $ {_sobr:,.2f} queda como nota de crédito "
+                    f"(NB=98) de {codigo_cli.upper().strip()}."
+                )
+            else:
+                _msg += " Sin sobrante — no se generó nota de crédito."
+            flash(_msg, "ok")
+
         # TMT 2026-07-06 (dueña): "el mensaje verde aparece incompleto — no
         # dice num cheque y no dice facturas". Muchos cheques van SIN N°
         # (depósitos/efectivo) y el flash quedaba "Cheque N°  creado...".
@@ -1139,6 +1271,39 @@ def api_facturas_pendientes(codigo_cli: str):
                 "abono": float(r.get("abono") or 0),
                 "saldo": float(r.get("saldo") or 0),
                 "stat": r.get("stat") or "",
+            }
+            for r in rows
+        ],
+    }
+
+
+@cheques_bp.route("/cheques/_api/cheques-vivos/<codigo_cli>")
+@requiere_login
+@requiere_permiso("cheques.ver")
+def api_cheques_vivos(codigo_cli: str):
+    """JSON con los cheques VIVOS (Z/1/2/3/P/D, importe > 0) del cliente.
+
+    TMT 2026-07-06 (dueña): alimenta el panel "anticipo (97) → cancelar
+    cheques en cartera" del form de cobranza: "esto va a ser un anticipo
+    que se lo aplicamos a los cheques. Entonces nos muestra los cheques".
+    Mismo patrón que api_facturas_pendientes.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    if not codigo_cli:
+        return {"cheques": []}, 400
+    rows = queries.cheques_vivos(codigo_cli, limite=500)
+    return {
+        "codigo_cli": codigo_cli,
+        "cheques": [
+            {
+                "id_cheque": int(r["id_cheque"]),
+                "no_cheque": (r.get("no_cheque") or "").strip(),
+                "fecha": r["fecha"].isoformat() if r.get("fecha") else None,
+                "fechad": r["fechad"].isoformat() if r.get("fechad") else None,
+                "importe": float(r.get("importe") or 0),
+                "no_banco": r.get("no_banco"),
+                "banco": (r.get("banco") or "").strip(),
+                "stat": (r.get("stat") or "").strip(),
             }
             for r in rows
         ],

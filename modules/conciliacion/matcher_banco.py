@@ -1933,6 +1933,7 @@ def historial(
     hasta: date | None = None,
     incluir_deshechos: bool = False,
     limit: int = 200,
+    oficina: str | None = None,
 ) -> list[dict]:
     """Lista conciliaciones (matches + aceptaciones) para la vista de historial."""
     where = ["1=1"]
@@ -1940,6 +1941,11 @@ def historial(
     if no_banco is not None:
         where.append("bcm.no_banco = %s")
         params.append(int(no_banco))
+    if oficina:
+        # TMT 2026-07-06 (dueña): 'traer la columna Oficina del archivo del
+        # extracto del banco, así se puede filtrar de esa manera también'.
+        where.append("UPPER(TRIM(COALESCE(bcm.real_oficina, ''))) = UPPER(TRIM(%s))")
+        params.append(oficina)
     if desde is not None:
         # TMT 2026-06-23: incluir tb.fecha (la fecha del movimiento bancario).
         # Las filas bancsis_only tienen real_fecha NULL → antes caían al filtro
@@ -1971,6 +1977,7 @@ def historial(
                bcm.real_documento,
                bcm.real_monto,
                bcm.real_tipo,
+               bcm.real_oficina,
                bcm.id_transaccion,
                bcm.usuario,
                bcm.creado_en,
@@ -1997,6 +2004,7 @@ def movimientos_banco(
     hasta: date | None = None,
     estado: str = "todos",
     limit: int = 500,
+    oficina: str | None = None,
 ) -> list[dict]:
     """TODOS los movimientos del banco (transacciones_bancarias) con su estado
     conciliado/pendiente — TMT 2026-06-23 (dueña).
@@ -2014,6 +2022,18 @@ def movimientos_banco(
         "EXISTS (SELECT 1 FROM scintela.banco_conciliacion_match bcm "
         f"          WHERE bcm.id_transaccion = tb.id_transaccion {ya_excluido})"
     )
+    # TMT 2026-07-06 (dueña): 'traer la columna Oficina del archivo del
+    # extracto del banco, así se puede filtrar de esa manera también'.
+    # La oficina es un dato del EXTRACTO (no de la tx PC) — se toma del match
+    # activo (real_oficina). Los pendientes (sin match) no tienen oficina
+    # todavía → columna vacía, nunca falla.
+    ya_excluido2 = ya_excluido.replace("bcm.", "bcm2.")
+    oficina_expr = (
+        "(SELECT bcm2.real_oficina FROM scintela.banco_conciliacion_match bcm2 "
+        f"  WHERE bcm2.id_transaccion = tb.id_transaccion {ya_excluido2} "
+        "    AND NULLIF(TRIM(bcm2.real_oficina), '') IS NOT NULL "
+        "  ORDER BY bcm2.creado_en DESC LIMIT 1)"
+    )
     where = ["1=1"]
     params: list = []
     if no_banco is not None:
@@ -2029,6 +2049,9 @@ def movimientos_banco(
         where.append(f"NOT {conciliado_expr}")
     elif estado == "conciliados":
         where.append(conciliado_expr)
+    if oficina:
+        where.append(f"UPPER(TRIM(COALESCE({oficina_expr}, ''))) = UPPER(TRIM(%s))")
+        params.append(oficina)
     params.append(int(limit))
 
     rows = db.fetch_all(
@@ -2042,6 +2065,7 @@ def movimientos_banco(
                tb.numreferencia,
                tb.prov,
                c.nombre AS prov_nombre,
+               {oficina_expr} AS oficina,
                {conciliado_expr} AS conciliado
           FROM scintela.transacciones_bancarias tb
           LEFT JOIN scintela.cliente c
@@ -2053,6 +2077,42 @@ def movimientos_banco(
         tuple(params),
     ) or []
     return [dict(r) for r in rows]
+
+
+def oficinas_extracto(no_banco: int | None = None) -> list[str]:
+    """Oficinas distintas vistas en el extracto del banco — TMT 2026-07-06
+    (dueña): 'traer la columna Oficina del archivo del extracto del banco,
+    así se puede filtrar de esa manera también'.
+
+    Junta las oficinas de los matches confirmados
+    (banco_conciliacion_match.real_oficina) y del backlog histórico
+    (banco_historicos_pendientes.oficina). Sirve para poblar los <select>
+    de filtro. Nunca falla: ante error devuelve [].
+    """
+    try:
+        cond = "no_banco = %s" if no_banco is not None else "1=1"
+        params: tuple = (int(no_banco), int(no_banco)) if no_banco is not None else ()
+        rows = db.fetch_all(
+            f"""
+            SELECT DISTINCT TRIM(oficina) AS oficina
+              FROM (
+                    SELECT real_oficina AS oficina
+                      FROM scintela.banco_conciliacion_match
+                     WHERE {cond}
+                    UNION ALL
+                    SELECT oficina
+                      FROM scintela.banco_historicos_pendientes
+                     WHERE {cond}
+                   ) t
+             WHERE NULLIF(TRIM(oficina), '') IS NOT NULL
+             ORDER BY 1
+            """,
+            params,
+        ) or []
+        return [r["oficina"] for r in rows if (r.get("oficina") or "").strip()]
+    except Exception as e:
+        _LOG.warning("oficinas_extracto falló: %s", e)
+        return []
 
 
 def candidatos_match_manual(

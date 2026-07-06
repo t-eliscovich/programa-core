@@ -188,11 +188,15 @@
                 <div class="chq-full cheque-medio-wrap hidden">
                   <label class="flex flex-col">
                     <span class="text-xs text-slate-600">Medio del anticipo <span class="text-red-500">*</span></span>
+                    {# TMT 2026-07-06 (dueña): "al medio de pago le faltan los
+                       códigos numéricos" — etiquetas con el no_banco real que
+                       usa el backend (99/90/91) y type-ahead numérico (mismo
+                       buffer de dígitos que el select de banco emisor). #}
                     <select name="medio_anticipo[]" class="cheque-medio border rounded px-2 py-1 mt-0.5 text-sm">
                       <option value="">— cómo entró —</option>
-                      <option value="99">Efectivo</option>
-                      <option value="90">Depósito Pichincha</option>
-                      <option value="91">Depósito Internacional</option>
+                      <option value="99">99 · Efectivo</option>
+                      <option value="90">90 · Depósito Pichincha</option>
+                      <option value="91">91 · Depósito Internacional</option>
                       {% for b in bancos %}
                         {% if b.no_banco|int < 90 %}
                         <option value="{{ b.no_banco }}">Cheque · {{ b.no_banco }} · {{ b.nombre }}</option>
@@ -363,6 +367,52 @@
       {# TMT 2026-05-18 — instrucciones largas movidas a tooltips de los
          headers de columna (Regla 3). #}
     </div>
+
+    {# ─── ANTICIPO (97) → CANCELAR CHEQUES EN CARTERA ─────────────────
+       TMT 2026-07-06 (dueña): "esto va a ser un anticipo que se lo
+       aplicamos a los cheques. Entonces nos muestra los cheques: si el
+       anticipo era 3000 y había 3 cheques de 1000, tengo que cancelar (X)
+       todos esos cheques. Si me dio 10.000, cancelo los 3 de 1000 y además
+       sumo una nota de crédito por 7000. Que ya aparezca como que sería una
+       cruz esos cheques pero que se pueda editar."
+       Visible solo cuando algún cheque del form tiene banco 97 y el cliente
+       tiene cheques vivos (Z/1/2/3/P/D, /_api/cheques-vivos). Pre-tilde
+       FIFO por fecha hasta cubrir el anticipo; editable — las decisiones
+       manuales viven en manualCancel (patrón manualValues) y PERSISTEN
+       entre renders. Los checkboxes tildados viajan como cheques_cancelar[]. #}
+    <div id="anticipo-cheques" class="mt-6 hidden">
+      <div class="flex items-baseline justify-between mb-2">
+        <h3 class="text-sm font-semibold text-slate-700">Anticipo → cancelar cheques en cartera</h3>
+        <div class="text-xs text-slate-500" id="antchq-summary">
+          Anticipo: <strong id="antchq-anticipo">—</strong> ·
+          Cancela: <strong id="antchq-cancela">$ 0,00</strong> ·
+          NC sobrante: <strong id="antchq-sobrante">—</strong>
+        </div>
+      </div>
+      <div class="border rounded overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-2 py-2 text-center font-medium w-10" title="Tildado = el cheque se CANCELA (✗, pasa a X) cubierto por el anticipo.">✗</th>
+              <th class="px-3 py-2 text-left font-medium">N° cheque</th>
+              <th class="px-3 py-2 text-left font-medium">Banco</th>
+              <th class="px-3 py-2 text-left font-medium">Fecha</th>
+              <th class="px-3 py-2 text-left font-medium">A depositar</th>
+              <th class="px-3 py-2 text-center font-medium w-12" title="Estado actual (Z=cartera · P=postdatado · D=Daniela · 1/2=devuelto).">Stat</th>
+              <th class="px-3 py-2 text-right font-medium">Importe</th>
+              <th class="px-3 py-2 text-center font-medium w-32">Queda</th>
+            </tr>
+          </thead>
+          <tbody id="antchq-tbody"></tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-1">
+        Pre-tildados FIFO por fecha hasta cubrir el anticipo — destildá / tildá otros si hace falta.
+        Al guardar, los tildados pasan a <strong>✗ cancelado</strong>; si el anticipo supera lo cancelado,
+        el resto queda como <strong>nota de crédito</strong> (NB=98) del cliente. Sobrante &lt; $1 no genera NC.
+      </p>
+      <p class="hidden text-[12px] rounded border border-rose-400 bg-rose-50 text-rose-800 px-3 py-2 mt-1" id="antchq-error"></p>
+    </div>
     </div>{# /cobranza-split #}
 
     <div class="flex items-center justify-between mt-6 pt-4 border-t">
@@ -424,6 +474,17 @@
     for (const k in manualStat) delete manualStat[k];
   };
   let codigoActual = "";
+
+  // ── ANTICIPO (97) → cancelar cheques en cartera. TMT 2026-07-06 (dueña):
+  // "nos muestra los cheques... que ya aparezca como que sería una cruz esos
+  // cheques pero que se pueda editar". Estado del panel #anticipo-cheques.
+  const CHV_URL_BASE = "{{ url_for('cheques.api_cheques_vivos', codigo_cli='__CODIGO__') }}";
+  let chequesVivos = [];
+  let chvCodigo = "";
+  // Decisiones manuales por cheque (id → true/false). Mismo patrón que
+  // manualValues: viven ACÁ y no en el DOM, así destildar PERSISTE cuando
+  // render re-arma la tabla (el FIFO no re-tilda una fila decidida a mano).
+  const manualCancel = Object.create(null);
 
   function fmt(n) {
     return (n || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -909,6 +970,131 @@
     });
   })();
 
+  // ── Panel "Anticipo → cancelar cheques en cartera". TMT 2026-07-06. ──
+  function montoAnticipo97() {
+    // Suma de los importes de los bloques con banco emisor = 97.
+    let s = 0;
+    document.querySelectorAll('.cheque-bloque').forEach(b => {
+      const sel = b.querySelector('.cheque-banco');
+      if (sel && sel.value === '97') {
+        s += parseMonto((b.querySelector('.cheque-imp') || {}).value);
+      }
+    });
+    return s;
+  }
+
+  function renderAnticipoCheques() {
+    const antPanel = document.getElementById('anticipo-cheques');
+    const antTbody = document.getElementById('antchq-tbody');
+    if (!antPanel || !antTbody) return;
+    const hay97 = [...document.querySelectorAll('.cheque-banco')].some(s => s.value === '97');
+    if (!hay97 || !chequesVivos.length) {
+      antPanel.classList.add('hidden');
+      antTbody.innerHTML = '';  // sin inputs → cheques_cancelar[] no viaja
+      return;
+    }
+    antPanel.classList.remove('hidden');
+    const anticipo = montoAnticipo97();
+    // Pre-tilde FIFO por fecha (orden del backend: fechad asc) hasta cubrir
+    // el anticipo. Las filas decididas a mano (manualCancel) quedan FUERA
+    // del FIFO: primero consumen (o liberan) su parte del pool.
+    const marcado = {};
+    let pool = anticipo;
+    chequesVivos.forEach(c => {
+      if (manualCancel[c.id_cheque] === true) {
+        marcado[c.id_cheque] = true;
+        pool -= c.importe;
+      } else if (manualCancel[c.id_cheque] === false) {
+        marcado[c.id_cheque] = false;
+      }
+    });
+    chequesVivos.forEach(c => {
+      if (manualCancel[c.id_cheque] !== undefined) return;
+      if (pool > 0.005 && c.importe > 0.005 && c.importe <= pool + 0.01) {
+        marcado[c.id_cheque] = true;
+        pool -= c.importe;
+      } else {
+        marcado[c.id_cheque] = false;
+      }
+    });
+    const fmtF = s => s ? s.split('-').reverse().join('/') : '';
+    antTbody.innerHTML = chequesVivos.map(c => {
+      const on = !!marcado[c.id_cheque];
+      return `
+        <tr class="border-t ${on ? 'bg-rose-50' : ''}">
+          <td class="px-2 py-1.5 text-center">
+            <input type="checkbox" class="antchq-cancel" name="cheques_cancelar[]"
+                   value="${c.id_cheque}" data-id="${c.id_cheque}" ${on ? 'checked' : ''}
+                   title="Tildado = se cancela (✗) cubierto por el anticipo">
+          </td>
+          <td class="px-3 py-1.5 font-mono text-xs">${c.no_cheque || ('#' + c.id_cheque)}</td>
+          <td class="px-3 py-1.5 text-xs text-slate-600">${(c.no_banco != null ? c.no_banco + ' · ' : '') + (c.banco || '')}</td>
+          <td class="px-3 py-1.5 text-xs text-slate-600">${fmtF(c.fecha)}</td>
+          <td class="px-3 py-1.5 text-xs text-slate-600">${fmtF(c.fechad)}</td>
+          <td class="px-3 py-1.5 text-center font-mono text-xs text-slate-500">${c.stat || ''}</td>
+          <td class="px-3 py-1.5 text-right font-mono tabular-nums">${fmt(c.importe)}</td>
+          <td class="px-3 py-1.5 text-center text-xs">${on
+            ? '<span class="text-rose-700 font-bold">✗ se cancela</span>'
+            : '<span class="text-slate-400">queda en cartera</span>'}</td>
+        </tr>`;
+    }).join('');
+    // Wire de los checkboxes: persistir la decisión + re-FIFO del resto
+    // (igual que el panel de facturas: destildar libera pool para otras).
+    antTbody.querySelectorAll('input.antchq-cancel').forEach(chk => {
+      chk.addEventListener('change', e => {
+        manualCancel[e.target.dataset.id] = e.target.checked;
+        renderAnticipoCheques();
+      });
+    });
+    // Summary + tope (el server valida igual: suma ≤ anticipo + $0.01).
+    let cancela = 0;
+    chequesVivos.forEach(c => { if (marcado[c.id_cheque]) cancela += c.importe; });
+    const sobrante = anticipo - cancela;
+    document.getElementById('antchq-anticipo').textContent = '$ ' + fmt(anticipo);
+    document.getElementById('antchq-cancela').textContent = '$ ' + fmt(cancela);
+    document.getElementById('antchq-sobrante').textContent =
+      sobrante >= 1.0 ? ('$ ' + fmt(sobrante)) : '— (sin NC)';
+    const errEl = document.getElementById('antchq-error');
+    const excede = cancela > anticipo + 0.01;
+    errEl.classList.toggle('hidden', !excede);
+    if (excede) {
+      errEl.textContent = 'Los cheques tildados suman $ ' + fmt(cancela)
+        + ' y el anticipo es de $ ' + fmt(anticipo)
+        + ' — no se puede cancelar más que el anticipo. Destildá alguno o subí el importe.';
+    }
+  }
+
+  async function cargarChequesVivos() {
+    const codigo = (codigoInput.value || '').trim().toUpperCase();
+    if (!codigo || codigo.startsWith('%')) return;
+    const hay97 = [...document.querySelectorAll('.cheque-banco')].some(s => s.value === '97');
+    if (!hay97) { renderAnticipoCheques(); return; }
+    if (codigo === chvCodigo) { renderAnticipoCheques(); return; }
+    try {
+      const resp = await fetch(CHV_URL_BASE.replace('__CODIGO__', encodeURIComponent(codigo)));
+      if (!resp.ok) { chequesVivos = []; renderAnticipoCheques(); return; }
+      const data = await resp.json();
+      chvCodigo = codigo;
+      for (const k in manualCancel) delete manualCancel[k];  // cliente nuevo = de cero
+      chequesVivos = data.cheques || [];
+      renderAnticipoCheques();
+    } catch (e) {
+      console.error('Error cargando cheques vivos:', e);
+      chequesVivos = [];
+      renderAnticipoCheques();
+    }
+  }
+
+  // Elegir/cambiar banco emisor o medio del anticipo → refrescar el panel
+  // (delegado en document para cubrir bloques clonados con "+ Otro cheque").
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t && t.classList
+        && (t.classList.contains('cheque-banco') || t.classList.contains('cheque-medio'))) {
+      cargarChequesVivos();
+    }
+  });
+
   function updateSummary(asignadoOverride, importeOverride) {
     // TMT 2026-05-15: recolectar info por fila (n facturas con monto != 0,
     // suma de saldos seleccionados, suma aplicada, fechas) para footer +
@@ -1038,6 +1224,7 @@
         panel.classList.remove('hidden');
       }
       render(buscar.value);
+      cargarChequesVivos();  // TMT 2026-07-06: panel anticipo→cheques
       return;
     }
     codigoActual = codigo;
@@ -1073,6 +1260,7 @@
         panel.classList.remove('hidden');
       }
       render(buscar.value);
+      cargarChequesVivos();  // TMT 2026-07-06: panel anticipo→cheques
     } catch (e) {
       console.error('Error cargando facturas:', e);
       facturas = [];
@@ -1140,6 +1328,7 @@
         renumerarBloques();
         actualizarVisibilidad();
         actualizarMultiHint();
+        renderAnticipoCheques();  // TMT 2026-07-06: pudo irse el bloque 97
       });
       header.appendChild(btnRemove);
     });
@@ -1178,6 +1367,9 @@
       actualizarTotalCheques();
       // Re-renderizar facturas para que el FIFO use la suma actualizada.
       if (facturas.length > 0) render(buscar.value);
+      // TMT 2026-07-06 (dueña): el panel de cheques en cartera re-FIFOa con
+      // el nuevo importe del anticipo.
+      renderAnticipoCheques();
     }
   });
 
@@ -1784,7 +1976,11 @@
     let buf = '', timer = null, lastSel = null;
     document.addEventListener('keydown', function (e) {
       const sel = e.target;
-      if (!sel || !sel.classList || !sel.classList.contains('cheque-banco')) return;
+      // TMT 2026-07-06 (dueña): "no se puede elegir tipeando el código" — el
+      // buffer de dígitos también aplica al select del MEDIO del anticipo
+      // (.cheque-medio), con los mismos códigos (99/90/91/banco emisor).
+      if (!sel || !sel.classList
+          || !(sel.classList.contains('cheque-banco') || sel.classList.contains('cheque-medio'))) return;
       if (e.key.length !== 1 || e.key < '0' || e.key > '9') {
         if (e.key === 'Backspace') { buf = ''; }
         return; // letras/navegación: comportamiento nativo
@@ -1799,7 +1995,9 @@
       // tipea "99" (si no, el primer "9" elegía 90 y movía el foco).
       timer = setTimeout(() => {
         buf = '';
-        if (lastSel && lastSel.value === '90') {
+        // TMT 2026-07-06: el salto de foco al Doc. banco es solo del select
+        // de banco emisor (no del medio del anticipo).
+        if (lastSel && lastSel.classList.contains('cheque-banco') && lastSel.value === '90') {
           const bq = lastSel.closest('.cheque-bloque');
           const doc = bq && bq.querySelector('.cheque-docbanco');
           if (doc && doc.offsetParent !== null) doc.focus();

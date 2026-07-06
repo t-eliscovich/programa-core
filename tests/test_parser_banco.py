@@ -71,3 +71,62 @@ def test_carry_forward_resetea_por_dia_correctamente():
     movs = parse_banco_xlsx(raw)
     fechas = [str(m.fecha) for m in movs]
     assert fechas == ["2026-06-12", "2026-06-12", "2026-06-15", "2026-06-15"]
+
+
+# ─── Oficina — TMT 2026-07-06 (dueña): 'traer la columna Oficina del archivo
+#     del extracto del banco, así se puede filtrar de esa manera también' ───
+
+
+def test_oficina_se_lee_del_extracto():
+    """La columna Oficina del xlsx del Pichincha (formato real: Fecha,
+    Concepto, Documento, Monto, Saldo, Codigo, Tipo, Oficina) llega al
+    MovBanco tal cual — se usa para filtrar en las pantallas de conciliación."""
+    from modules.conciliacion.parser_banco import parse_banco_xlsx
+    raw = _xlsx([
+        ["26/06/2026", "TRANSFERENCIA DIRECTA DE PANT", "6538617", 185.75,
+         "2822126.77", "001045", "C", "AG. NORTE"],
+        ["25/06/2026", "IVA COBRADO", "43189839", 0.37,
+         "2815880.26", "098450", "D", "GONZALEZ SUAREZ"],
+        ["25/06/2026", "DEPOSITO", "39381790", 5901.45,
+         "2817614.67", "001010", "C", "MERCADO CENTRAL"],
+    ])
+    movs = parse_banco_xlsx(raw)
+    assert len(movs) == 3
+    assert [m.oficina for m in movs] == ["AG. NORTE", "GONZALEZ SUAREZ", "MERCADO CENTRAL"]
+    # el código de oficina también viaja
+    assert movs[0].codigo == "001045"
+
+
+def test_extracto_sin_columna_oficina_no_falla():
+    """Si el archivo NO trae la columna Oficina (extractos viejos u otro
+    formato), el parser NO debe fallar: oficina queda vacía y el resto
+    de la fila se carga normal."""
+    import io as _io
+
+    import openpyxl
+
+    from modules.conciliacion.parser_banco import parse_banco_xlsx
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Fecha", "Concepto", "Documento", "Monto", "Saldo", "Codigo", "Tipo"])
+    ws.append(["12/06/2026", "DEPOSITO", "111", 1000, "1000", "001", "C"])
+    ws.append(["12/06/2026", "PAGO", "222", 50, "950", "001", "D"])
+    bio = _io.BytesIO()
+    wb.save(bio)
+    movs = parse_banco_xlsx(bio.getvalue())
+    assert len(movs) == 2
+    assert all(m.oficina == "" for m in movs), "sin columna Oficina → oficina vacía, nunca falla"
+    assert float(movs[0].monto) == 1000
+
+
+def test_oficina_vacia_en_algunas_filas_no_falla():
+    """Filas con la celda Oficina vacía (None) tampoco rompen: queda ''."""
+    from modules.conciliacion.parser_banco import parse_banco_xlsx
+    raw = _xlsx([
+        ["12/06/2026", "DEPOSITO", "111", 1000, "1000", "001", "C", "AG. NORTE"],
+        ["12/06/2026", "PAGO", "222", 50, "950", "001", "D", None],
+    ])
+    movs = parse_banco_xlsx(raw)
+    assert len(movs) == 2
+    assert movs[0].oficina == "AG. NORTE"
+    assert movs[1].oficina == ""
