@@ -129,9 +129,12 @@
                  campos compactos; tabla de facturas con paddings/fuente
                  reducidos para que entre completa sin scroll horizontal. */
               .cobranza-chq-head, .cobranza-chq-row{
-                grid-template-columns:5.5rem minmax(6rem,1.2fr) 4.5rem 7rem 3rem minmax(5rem,1fr);
-                gap:.375rem;
+                grid-template-columns:5rem minmax(4.5rem,1.1fr) 4rem 6.8rem 2.8rem minmax(4.5rem,1fr);
+                gap:.3rem;
               }
+              /* min-width:0 = los campos SÍ pueden achicarse dentro del grid
+                 (sin esto el min-content los hacía desbordar sobre la tabla) */
+              .cobranza-chq-row > *, .cobranza-chq-head > span{ min-width:0; }
               .cobranza-chq-row input, .cobranza-chq-row select{
                 padding:.2rem .3rem; font-size:12px;
               }
@@ -146,17 +149,14 @@
                  Abonado y Acum. saldo (las mismas que la dueña pidió sacar
                  el 30/06) — quedan N°, Vence, Saldo, A aplicar, Resta, Queda */
               .cobranza-split .cobranza-fact-scroll{ overflow-x:auto; }
-              .cobranza-split #aplicacion-facturas th:nth-child(3),
               .cobranza-split #aplicacion-facturas th:nth-child(4),
               .cobranza-split #aplicacion-facturas th:nth-child(5),
               .cobranza-split #aplicacion-facturas th:nth-child(6),
               .cobranza-split #aplicacion-facturas th:nth-child(8),
-              .cobranza-split #aplicacion-facturas tbody td:nth-child(3),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(4),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(5),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(6),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(8),
-              .cobranza-split #aplicacion-facturas tfoot td:nth-child(3),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(4),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(5),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(6),
