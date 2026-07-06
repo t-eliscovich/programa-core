@@ -363,6 +363,13 @@
   const FACT_URL_BASE = "{{ url_for('cheques.api_facturas_pendientes', codigo_cli='__CODIGO__') }}";
 
   let facturas = [];
+  // TMT 2026-07-06 (dueña): las ediciones manuales (tildar/destildar/monto/Max)
+  // viven ACÁ y no en el DOM. Antes la marca userEdited estaba en los inputs
+  // que render() reconstruye — al tocar la 2da fila, la 1ra perdía su marca y
+  // el FIFO la re-tildaba ("no me deja deseleccionar"). id_factura → monto
+  // fijado a mano (0 = fila destildada/vaciada: queda FUERA del FIFO).
+  const manualValues = Object.create(null);
+  const limpiarManuales = () => { for (const k in manualValues) delete manualValues[k]; };
   let codigoActual = "";
 
   function fmt(n) {
@@ -454,19 +461,12 @@
     const distribucion = {};  // id_factura → monto_a_aplicar
     const exactSet = new Set();  // facturas con match EXACTO por cheque
 
-    // Preservar valores que el usuario haya editado manualmente. Se
-    // recolectan ANTES de la distribución para que el FIFO automático
-    // los respete (TMT 2026-07-02, Alex): una fila fijada a mano queda
-    // FUERA de la auto-asignación y su monto se descuenta del pool (o lo
-    // AGRANDA si es una NC: monto negativo = plata que vuelve).
-    const existing = tbody.querySelectorAll('input[data-id]');
+    // Preservar valores que el usuario haya editado manualmente: una fila
+    // fijada a mano queda FUERA de la auto-asignación y su monto se descuenta
+    // del pool (o lo AGRANDA si es una NC: monto negativo = plata que vuelve).
+    // TMT 2026-07-06: se leen de manualValues (persistente entre renders).
     const userValues = {};
-    existing.forEach(inp => {
-      const wasUserEdited = inp.dataset.userEdited === '1';
-      if (wasUserEdited) {
-        userValues[inp.dataset.id] = parseMonto(inp.value);
-      }
-    });
+    for (const k in manualValues) userValues[k] = manualValues[k];
     // TMT 2026-06-29 (dueña): si es ANTICIPO (algún banco=97) NO auto-asignar —
     // un anticipo de $X con una factura de saldo $X se auto-aplicaba en silencio
     // y perdía el espejo (saldo a favor). En anticipo la dueña tildea a mano.
@@ -485,6 +485,9 @@
       // Las filas editadas a mano quedan afuera del FIFO (userValues manda).
       const _editada = f => userValues[String(f.id_factura)] != null;
       const pos = facturas.filter(f => (parseFloat(f.saldo) || 0) > 0.005 && !_editada(f));
+      // TMT 2026-07-06 (dueña): el FIFO recorre facturas Y notas de crédito
+      // POR FECHA (orden del backend), "sin importar si es factura o NC".
+      const porFecha = facturas.filter(f => Math.abs(parseFloat(f.saldo) || 0) > 0.005 && !_editada(f));
       const asignadas = new Set();
       const chequeImps = [...document.querySelectorAll('.cheque-imp')]
         .map(i => parseMonto(i.value)).filter(v => v > 0.005);
@@ -503,20 +506,20 @@
       });
       // 2) pool = cheques sin match exacto − lo ya fijado a mano por el
       //    usuario (una NC tildada a mano es negativa → AGRANDA el pool).
-      //    TMT 2026-07-02 tarde (Alex): las NC NO se auto-tildan — "sin hacer
-      //    nada se seleccionan estas notas de crédito existiendo facturas
-      //    antiguas". Quedan 100% manuales; al tildarlas, la redistribución
-      //    (fixedNet) hace que lo liberado cubra más facturas.
       const fixedNet = Object.values(userValues).reduce((a, b) => a + (b || 0), 0);
       let pool = libres.reduce((a, b) => a + b, 0) - fixedNet;
-      // 3) FIFO con el pool (cheques − fijado a mano; NC manual lo agranda)
-      for (const f of pos) {
+      // 3) FIFO POR FECHA con el pool. TMT 2026-07-06 (dueña): las NC vuelven
+      //    al recorrido (revierte el "NC 100% manuales" del 02/07): una NC en
+      //    el camino se absorbe entera — monto negativo agranda el pool y
+      //    cubre más facturas. Destildar/editar queda respetado (userValues).
+      for (const f of porFecha) {
         if (pool <= 0.005) break;
         if (asignadas.has(f.id_factura)) continue;
-        const ap = Math.min(f.saldo, pool);
+        const s = parseFloat(f.saldo) || 0;
+        const ap = s < 0 ? s : Math.min(s, pool);
         distribucion[f.id_factura] = ap;
         asignadas.add(f.id_factura);
-        pool -= ap;
+        pool -= ap;  // NC: ap<0 → el pool CRECE
       }
     }
 
@@ -610,6 +613,7 @@
         const id = e.target.dataset.id;
         const saldo = parseFloat(e.target.dataset.saldo || 0);
         const valor = parseMonto(e.target.value);
+        manualValues[id] = valor;  // TMT 2026-07-06: persistir entre renders
         const chk = tbody.querySelector(`input.aplic-cancel[data-id="${id}"]`);
         if (chk) chk.checked = Math.abs(valor - saldo) < 0.01 && Math.abs(saldo) > 0.005;
         recalcAcum();
@@ -632,6 +636,9 @@
           inp.value = '';
         }
         inp.dataset.userEdited = '1';
+        // TMT 2026-07-06: persistir la decisión (0 = destildada, queda fuera
+        // del FIFO en los próximos renders — antes se re-tildaba sola).
+        manualValues[id] = e.target.checked ? saldo : 0;
         // TMT 2026-07-02 (Alex): tildar/destildar redistribuye la sugerencia
         // FIFO del resto de las filas (las editadas a mano no se tocan).
         // Caso típico: tildo una NC → la plata liberada cubre más facturas.
@@ -666,6 +673,7 @@
         inp.value = toApply.toFixed(2);
         inp.dataset.userEdited = '1';
         inp.dataset.appliedTotal = '1';
+        manualValues[id] = toApply;  // TMT 2026-07-06: persistir entre renders
         const tUsed = document.getElementById('aplic-t-used');
         if (tUsed) tUsed.value = '1';
         const chk = tbody.querySelector(`input.aplic-cancel[data-id="${id}"]`);
@@ -870,6 +878,7 @@
       return;
     }
     codigoActual = codigo;
+    limpiarManuales();  // TMT 2026-07-06: cliente nuevo = ediciones de cero
     try {
       const url = FACT_URL_BASE.replace('__CODIGO__', encodeURIComponent(codigo));
       const resp = await fetch(url);
@@ -1251,13 +1260,14 @@
   const toggleAll = document.getElementById('aplic-toggle-all');
   if (toggleAll) {
     toggleAll.addEventListener('change', (e) => {
+      // TMT 2026-07-06: fijar TODAS las filas de una en manualValues y UN solo
+      // render. Antes disparaba 'change' por checkbox y cada uno re-renderizaba
+      // el tbody a mitad del loop → el "destildar todas" quedaba roto.
       const wantChecked = e.target.checked;
-      tbody.querySelectorAll('input.aplic-cancel').forEach(chk => {
-        if (chk.checked !== wantChecked) {
-          chk.checked = wantChecked;
-          chk.dispatchEvent(new Event('change'));
-        }
+      facturas.forEach(f => {
+        manualValues[f.id_factura] = wantChecked ? (parseFloat(f.saldo) || 0) : 0;
       });
+      render(buscar.value);
     });
   }
   // TMT 2026-06-29 (dueña, paridad TODAS<10000>): botón que cancela TODAS las
@@ -1265,10 +1275,9 @@
   const btnTodas = document.getElementById('aplic-todas');
   if (btnTodas) {
     btnTodas.addEventListener('click', () => {
-      tbody.querySelectorAll('input.aplic-cancel').forEach(chk => {
-        if (!chk.checked) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
-      });
-      if (toggleAll) toggleAll.checked = true;
+      // TMT 2026-07-06: vía manualValues + un solo render (ver toggle-all).
+      facturas.forEach(f => { manualValues[f.id_factura] = parseFloat(f.saldo) || 0; });
+      render(buscar.value);
     });
   }
   // TMT 2026-06-29 (dueña, paridad <H>HASTA): tilda TODAS las facturas desde la
@@ -1282,12 +1291,11 @@
       if (buscar.value) { buscar.value = ''; render(''); }
       const idx = facturas.findIndex(f => f.id_factura === id);
       if (idx < 0) return;
+      // TMT 2026-07-06: vía manualValues + un solo render (ver toggle-all).
       facturas.forEach((f, i) => {
-        const chk = tbody.querySelector(`input.aplic-cancel[data-id="${f.id_factura}"]`);
-        if (!chk) return;
-        const want = (i <= idx);
-        if (chk.checked !== want) { chk.checked = want; chk.dispatchEvent(new Event('change')); }
+        manualValues[f.id_factura] = (i <= idx) ? (parseFloat(f.saldo) || 0) : 0;
       });
+      render(buscar.value);
     });
   }
   if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
