@@ -1073,7 +1073,15 @@
     e.preventDefault();
     const imp = parseMonto((bloque.querySelector('.cheque-imp') || {}).value || '');
     const banco = ((bloque.querySelector('.cheque-banco') || {}).value || '').trim();
-    if (imp > 0 && banco && btnAddCheque) btnAddCheque.click();
+    if (imp > 0 && banco && btnAddCheque) {
+      btnAddCheque.click();
+      // TMT 2026-07-06 (dueña): tras el Enter, el cursor va al MONTO del
+      // bloque nuevo (viene heredado y capaz hay que cambiarlo) — "empezamos
+      // desde el primer campo". select() para que tipear lo reemplace.
+      // (El botón "+ Otro cheque" a mano sigue enfocando el N°.)
+      const nuevoImp = chequesList.querySelector('.cheque-bloque .cheque-imp');
+      if (nuevoImp) { nuevoImp.focus(); nuevoImp.select(); }
+    }
   });
 
   // Cuando cambia cualquier fechad de cualquier bloque, recalcular plazo
