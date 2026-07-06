@@ -36,6 +36,28 @@ _UTC = timezone.utc  # noqa: UP017
 healthz_bp = Blueprint("healthz", __name__, url_prefix="/healthz")
 
 
+_BOOT_TS = datetime.now(_UTC).isoformat()
+
+
+def _secret_fp() -> str:
+    """Huella (8 hex) de la SECRET_KEY activa — NO expone la clave.
+
+    TMT 2026-07-06 (dueña: "¿por qué se sale de mi sesión?"): las sesiones
+    volvieron a morir coincidiendo con deploys, como el 2026-06-29 (clave
+    rotando). Esta huella permite comparar antes/después de un deploy: si
+    cambia, la clave rotó y ahí está el deslogueo. Ver app._load_secret_key.
+    """
+    import hashlib
+
+    from flask import current_app
+
+    try:
+        key = current_app.config.get("SECRET_KEY") or ""
+        return hashlib.sha256(str(key).encode()).hexdigest()[:8]
+    except Exception:  # noqa: BLE001
+        return "?"
+
+
 @healthz_bp.route("", methods=["GET"])
 @healthz_bp.route("/", methods=["GET"])
 def liveness():
@@ -48,6 +70,10 @@ def liveness():
         {
             "status": "ok",
             "ts": datetime.now(_UTC).isoformat(),
+            # huella de la clave de sesión + hora de arranque del proceso —
+            # para diagnosticar deslogueos post-deploy (ver _secret_fp).
+            "secret_fp": _secret_fp(),
+            "boot_ts": _BOOT_TS,
         }
     ), 200
 

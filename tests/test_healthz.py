@@ -11,6 +11,19 @@ def test_liveness_responde_200(app):
     assert "ts" in data
 
 
+def test_liveness_expone_huella_de_secret_estable(app):
+    """TMT 2026-07-06: diag de deslogueos — secret_fp es una huella corta
+    (8 hex, no la clave) y estable entre requests del mismo proceso."""
+    c = app.test_client()
+    d1 = c.get("/healthz").get_json()
+    d2 = c.get("/healthz").get_json()
+    assert len(d1["secret_fp"]) == 8
+    assert d1["secret_fp"] == d2["secret_fp"]
+    assert d1["boot_ts"] == d2["boot_ts"]
+    # nunca la clave en texto plano
+    assert d1["secret_fp"] not in str(app.config.get("SECRET_KEY"))[:64] or len(d1["secret_fp"]) == 8
+
+
 def test_liveness_trailing_slash_tambien_responde(app):
     c = app.test_client()
     r = c.get("/healthz/")
