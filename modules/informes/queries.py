@@ -483,9 +483,28 @@ def uret_mes_corriente() -> float:
         FROM scintela.retiros
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
-          -- TMT 2026-07-06 v4: los retiros OP nuevos entran NEGATIVOS (ver
-          -- retiros.crear_op) — se suman tal cual: netean URET y la utilidad
-          -- queda quieta sin exclusiones.
+        """
+    )
+    return float(row["total"] or 0) if row else 0.0
+
+
+def uret_mes_ajustado() -> float:
+    """URET del mes PARA LA FÓRMULA de utilidad (no para display).
+
+    TMT 2026-07-06 v5 (dueña): los retiros OP (pc-retiro-op) se muestran
+    POSITIVOS en Dividendos, pero su plata ya RESTÓ del balance por el lado
+    del posdat OP (pasivos baja). Como URET vive DENTRO del Total Activo
+    (MOV.CAPITAL), si también sumaran acá la utilidad subiría el doble.
+    En la fórmula entran en NEGATIVO → TOTL baja junto con TOTP y la
+    UTILIDAD queda QUIETA ("utilidad no debería cambiar con este movimiento").
+    """
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(CASE WHEN COALESCE(usuario_crea, '') = 'pc-retiro-op'
+                                 THEN -ret ELSE ret END), 0) AS total
+        FROM scintela.retiros
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -3065,7 +3084,7 @@ def _verificar_balance_math(b: dict) -> list[str]:
         + float(b.get("vqx") or 0)
         + float(b.get("umaq") or 0)
         + float(b.get("uact") or 0)
-        + float(b.get("uret") or 0)
+        + float(b.get("uret_calc", b.get("uret")) or 0)
         + float(b.get("antic") or 0),
     )
 
@@ -3396,6 +3415,10 @@ def informe_balance() -> dict:
     activos = activos_totales()
     _antic = anticipos()
     _uret = uret_mes_corriente()
+    # TMT 2026-07-06 v5: en el CÁLCULO (totl → patr → utilidad) los retiros
+    # OP entran en negativo (ver uret_mes_ajustado) — el display b.uret
+    # sigue siendo el positivo completo.
+    _uret_calc = uret_mes_ajustado()
     # TMT 2026-05-19 v7 — dueña pidió "dividendos del año" debajo de
     # "dividendos del mes". retiros_total_anual() suma scintela.retiros
     # del año en curso.
@@ -3461,7 +3484,7 @@ def informe_balance() -> dict:
 
     cart = _totf + _totc
     subt = salbanc + _salcaj + cart
-    totl = subt + vsto + vqx + activos["umaq"] + activos["uact"] + _uret + _antic
+    totl = subt + vsto + vqx + activos["umaq"] + activos["uact"] + _uret_calc + _antic
     patr = totl - posdats["totp"]
     # UTILIDAD ECONÓMICA DEL MES = PATR - PATANT (PRG línea 380).
     # PATANT (= historia.patrimonio) ya es NETO de URET (PRG 1347:
@@ -3609,6 +3632,7 @@ def informe_balance() -> dict:
             "uact": activos["uact"],
             "antic": _antic,
             "uret": _uret,
+            "uret_calc": _uret_calc,
             "totl": totl,
             "totp": posdats["totp"],
             "patr": patr,
@@ -3993,7 +4017,7 @@ def informe_balance() -> dict:
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
     #          = (b.patr - b.uret) - patant + b.uret
     #          = b.patr - patant
-    totl = subt + vsto + vqx + activos["umaq"] + activos["uact"] + _uret + _antic
+    totl = subt + vsto + vqx + activos["umaq"] + activos["uact"] + _uret_calc + _antic
     patr = totl - posdats["totp"]
     utilidad = patr - patant
     patr_para_utilidad = patr  # mismo que patr — exposed para el panel debug
@@ -4309,6 +4333,7 @@ def informe_balance() -> dict:
         "uact": activos["uact"],
         "antic": _antic,
         "uret": _uret,
+        "uret_calc": _uret_calc,
         "uret_anio": _uret_anio,
         "ventas_anio": _ventas_anio,
         "totp": posdats["totp"],
@@ -6915,7 +6940,9 @@ def balance_components_as_of(as_of) -> dict:
     usret_row = (
         db.fetch_one(
             """
-        SELECT COALESCE(SUM(ret), 0) AS total
+        SELECT COALESCE(SUM(ret), 0) AS total,
+               COALESCE(SUM(CASE WHEN COALESCE(usuario_crea, '') = 'pc-retiro-op'
+                                 THEN -ret ELSE ret END), 0) AS total_calc
           FROM scintela.retiros
          WHERE DATE_TRUNC('month', fecha) = DATE_TRUNC('month', %s::date)
            AND fecha <= %s
@@ -6925,6 +6952,9 @@ def balance_components_as_of(as_of) -> dict:
         or {}
     )
     usret = float(usret_row.get("total") or 0)
+    # TMT 2026-07-06 v5: para la UTILIDAD los retiros OP entran en negativo
+    # (ya restaron del balance vía posdat) — display usret queda positivo.
+    usret_calc = float(usret_row.get("total_calc") or 0)
 
     # Computar cartera (totc + totf), subt, totl, patr, retiro
     cart = totc + totf
@@ -6933,7 +6963,8 @@ def balance_components_as_of(as_of) -> dict:
     patr = totl - totp
     # Utilidad del mes = Δ patrimonio + retiros: los retiros bajaron el
     # patrimonio, así que se re-suman para llegar a la utilidad real.
-    utilidad = (patr - patant) + usret
+    # v5: usret_calc (retiros OP en negativo — su plata ya restó por posdat).
+    utilidad = (patr - patant) + usret_calc
 
     return {
         # Saldos
