@@ -7392,7 +7392,13 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
         "cart": _c("cart"),
         "deuda": _c("totp"),
         "retiro": _c("uret"),
-        "patrimonio": float(bal.get("patr") or _c("patr")),
+        # TMT 2026-07-06: patrimonio NETO de retiros (dBase REPLA PATRIMONIO
+        # WITH PATR-URET; mismo criterio que calcular_kpis y fuentes_y_usos).
+        # Guardar el bruto inflaba PATANT cuando la foto diaria del último
+        # día queda como cierre → la utilidad del mes siguiente arrancaba
+        # subestimada por el monto de los retiros.
+        "patrimonio": float(bal.get("patr") or _c("patr"))
+                      - float(bal.get("uret") or _c("uret") or 0),
         "anticipos": _c("antic"),
         "dolar": 0.0,
         "maquinaria": _c("umaq"),

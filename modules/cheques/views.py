@@ -844,14 +844,43 @@ def nuevo():
                                 )
                                 rest_factura = 0
                                 break
+                    elif 0.005 < rest_factura <= 1.00:
+                        # TMT 2026-07-06 (bug MSS, "Restante -0,00"): los
+                        # cheques quedaron CORTOS por CENTAVOS (<= $1). Antes
+                        # se "absorbía" INFLANDO la última aplicación
+                        # (ult.importe += rest), pero eso hace que el batch
+                        # del último cheque supere su propio importe y
+                        # aplicar_a_factura lo rechaza (tope +$0.01,
+                        # "Total aplicado excede el importe del cheque") →
+                        # la cobranza entera moría por 2 centavos. No se
+                        # puede aplicar plata que el cheque no tiene:
+                        # cerramos la factura como T (los centavos quedan
+                        # olvidados, mismo criterio que el auto-T de
+                        # |saldo|<=0.50) SIN tocar el importe aplicado.
+                        # Si la dueña eligió 'A' explícito (stat_final), se
+                        # respeta y la factura queda A con los centavos.
+                        for c in reversed(cheques_restantes):
+                            ult = next(
+                                (
+                                    x
+                                    for x in por_cheque.get(c["id_cheque"], [])
+                                    if x["id_fact"] == ap["id_fact"]
+                                ),
+                                None,
+                            )
+                            if ult is not None:
+                                if not ult.get("forzar_stat"):
+                                    ult["forzar_stat"] = "T"
+                                rest_factura = 0
+                                break
                     elif abs(rest_factura) > 0.005:
                         # Absorber el delta en la ÚLTIMA aplicación FIFO de
-                        # esta factura (la del último cheque que entró). El
-                        # signo del ajuste sigue el signo del rest_factura:
-                        # rest>0 (shortage) → bajamos el saldo de la factura,
-                        # rest<0 (excess) → idem pero al revés. En la práctica
-                        # significa "el último cheque cubre los 0.55 que
-                        # faltaban / restamos los 0.55 que sobraban".
+                        # esta factura (la del último cheque que entró).
+                        # rest<0 (sobró crédito) → restar de la última
+                        # aplicación es seguro (BAJA el total del cheque).
+                        # rest>1.00 (solo posible con t_used/aprobar_dif):
+                        # comportamiento histórico — se infla la última
+                        # aplicación y el guard del cheque decide.
                         for c in reversed(cheques_restantes):
                             ult = next(
                                 (
@@ -963,29 +992,6 @@ def nuevo():
             _imp = float(c.get("importe") or 0)
             return (f"N° {_num} " if _num else "") + f"($ {_imp:,.2f})"
 
-        _facts_txt = ""
-        try:
-            _ids_ap = [int(a["id_fact"]) for a in (aplicaciones_pre or [])]
-            if _ids_ap:
-                _rows_f = db.fetch_all(
-                    "SELECT id_factura, numf, numf_completo "
-                    "FROM scintela.factura WHERE id_factura = ANY(%s)",
-                    (_ids_ap,),
-                ) or []
-                _by_id = {int(r["id_factura"]): r for r in _rows_f}
-                _nums_f = []
-                for _a in aplicaciones_pre:
-                    _r = _by_id.get(int(_a["id_fact"])) or {}
-                    _n = _r.get("numf")
-                    if not _n and _r.get("numf_completo"):
-                        _n = str(_r["numf_completo"]).split("-")[-1].lstrip("0")
-                    _nums_f.append(
-                        f"{_n or ('#' + str(_a['id_fact']))} ($ {float(_a['importe']):,.2f})"
-                    )
-                if _nums_f:
-                    _facts_txt = " Facturas: " + ", ".join(_nums_f) + "."
-        except Exception:
-            _facts_txt = ""
 
         # Mensajes según cantidad creada
         # TMT 2026-06-11 paridad dBase NB=95: si queries.crear no encontro el
@@ -1013,11 +1019,9 @@ def nuevo():
                 # y no mencionaba las aplicaciones, dejando dudas de si se
                 # habían aplicado o no.
                 sufijo = f" Se distribuyeron {n_aplicaciones} aplicación(es) FIFO entre los cheques."
-            flash(
-                f"{len(cheques_creados)} cheques creados en cartera "
-                f"(total $ {total_creado:,.2f}): {nums}.{sufijo}{_facts_txt}",
-                "ok",
-            )
+            # TMT 2026-07-06 (dueña): "quitar mensaje en verde de la
+            # cobranza, es muy chico y no se entiende" — sin flash de éxito.
+            _ = (total_creado, nums, sufijo)  # (armados arriba; sin flash)
             # TMT 2026-07-06 (dueña): al terminar una cobranza QUEDARSE en la
             # pantalla de cobranza (form limpio para la siguiente), no ir a la
             # lista de cheques. El flash de arriba confirma lo creado.
@@ -1030,13 +1034,9 @@ def nuevo():
                 "ok",
             )
         elif n_aplicaciones > 0:
-            flash(
-                f"Cheque {_desc_ch(ch)} creado y aplicado a "
-                f"{n_aplicaciones} factura(s).{_facts_txt}",
-                "ok",
-            )
+            pass  # sin flash de éxito (pedido dueña 2026-07-06)
         else:
-            flash(f"Cheque {_desc_ch(ch)} creado en cartera.", "ok")
+            pass  # sin flash de éxito (pedido dueña 2026-07-06)
         # TMT 2026-07-06 (dueña): idem multi-cheque — quedarse en cobranza
         # (antes iba a la ficha del cheque).
         return redirect(url_for("cheques.nuevo"))
