@@ -3415,10 +3415,11 @@ def informe_balance() -> dict:
     activos = activos_totales()
     _antic = anticipos()
     _uret = uret_mes_corriente()
-    # TMT 2026-07-06 v5: en el CÁLCULO (totl → patr → utilidad) los retiros
-    # OP entran en negativo (ver uret_mes_ajustado) — el display b.uret
-    # sigue siendo el positivo completo.
-    _uret_calc = uret_mes_ajustado()
+    # TMT 2026-07-06 v6: SIN ajuste — el crédito OP se consume (pasivos sube)
+    # y el dividendo positivo en URET (dentro del activo) lo compensa solo:
+    # utilidad quieta con la aritmética normal. uret_mes_ajustado quedó sin
+    # uso (historia del día, no reusar sin leer la memoria).
+    _uret_calc = _uret
     # TMT 2026-05-19 v7 — dueña pidió "dividendos del año" debajo de
     # "dividendos del mes". retiros_total_anual() suma scintela.retiros
     # del año en curso.
@@ -6952,9 +6953,9 @@ def balance_components_as_of(as_of) -> dict:
         or {}
     )
     usret = float(usret_row.get("total") or 0)
-    # TMT 2026-07-06 v5: para la UTILIDAD los retiros OP entran en negativo
-    # (ya restaron del balance vía posdat) — display usret queda positivo.
-    usret_calc = float(usret_row.get("total_calc") or 0)
+    # TMT 2026-07-06 v6: sin ajuste (el crédito OP se consume y el dividendo
+    # compensa solo) — usret_calc = usret.
+    usret_calc = usret
 
     # Computar cartera (totc + totf), subt, totl, patr, retiro
     cart = totc + totf

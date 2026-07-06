@@ -122,12 +122,9 @@ def lineas_op() -> list[dict]:
         credito = round(float(r.get("credito") or 0), 2)
         imps = alloc_rows.get(r.get("line_key"), [])
         retirado = round(sum(i["monto"] for i in imps), 2)
-        # TMT 2026-07-06 v3: las imputaciones nuevas (bajo_posdat) hicieron
-        # CRECER el crédito en negativo (importe -= monto) → el crédito
-        # ORIGINAL = crédito actual − Σnuevas; restante por retirar =
-        # original − Σtodas = crédito actual − 2·Σnuevas − Σviejas.
-        _ret_nuevo = round(sum(i["monto"] for i in imps
-                               if i.get("bajo_posdat")), 2)
+        # TMT 2026-07-06 v6: las imputaciones nuevas (bajo_posdat) YA se
+        # consumieron del crédito (importe += monto) — restar solo las
+        # viejas display-only.
         _ret_viejo = round(sum(i["monto"] for i in imps
                                if not i.get("bajo_posdat")), 2)
         out.append({
@@ -137,7 +134,7 @@ def lineas_op() -> list[dict]:
             "concepto": r.get("concepto") or "",
             "credito": credito,
             "retirado": retirado,
-            "restante": round(credito - 2 * _ret_nuevo - _ret_viejo, 2),
+            "restante": round(credito - _ret_viejo, 2),
             "imputaciones": imps,
         })
     return out
@@ -224,12 +221,15 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
                 "SELECT to_regclass('scintela.op_retiro_linea') AS t", conn=conn
             ) or {}
             if _reg.get("t"):
-                # TMT 2026-07-06 v3 (dueña): "el retiro tenía que RESTAR 51k
-                # de Pasivos, no sumar". La fila OP crece en NEGATIVO
-                # (importe -= monto: −115.207 → −166.573) → TOTP BAJA el monto
-                # del retiro. Estos retiros NO cuentan en URET/dividendos
-                # (usuario pc-retiro-op excluido en informes) para no duplicar
-                # en "Ut. Real". posdat es PC-owned → el sync no lo pisa.
+                # TMT 2026-07-06 v6 DEFINITIVO (dueña, tras 5 iteraciones):
+                # el crédito OP se CONSUME — importe += monto (−115.207 →
+                # −63.841, "es un pasivo negativo, saco retiros, se hace
+                # menos negativo"). Consecuencia aceptada: el TOTAL de
+                # Pasivos SUBE el monto (menos crédito descontando). La
+                # utilidad queda QUIETA sola: el retiro POSITIVO en
+                # dividendos (URET, que vive dentro del Total Activo)
+                # compensa exactamente la suba de pasivos. Sin ajustes
+                # especiales en informes. posdat es PC-owned (sync no pisa).
                 # Requiere mig 0111 (bajo_posdat); sin la columna cae al
                 # comportamiento viejo (display-only) para no romper.
                 _con_col = _col_bajo_posdat(conn=conn)
@@ -239,7 +239,7 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
                     if _pd:
                         db.execute(
                             "UPDATE scintela.posdat "
-                            "SET importe = ROUND(COALESCE(importe, 0) - %s, 2) "
+                            "SET importe = ROUND(COALESCE(importe, 0) + %s, 2) "
                             "WHERE id_posdat = %s",
                             (monto, _pd["id_posdat"]), conn=conn,
                         )
@@ -364,9 +364,9 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
                 "DELETE FROM scintela.retiros WHERE id_retiro = %s",
                 (target_id,), conn=conn,
             )
-        # TMT 2026-07-06 v3: si el retiro RESTÓ del posdat (importe -= monto,
-        # la fila OP creció en negativo), el deshacer lo devuelve
-        # (importe += monto). Las imputaciones viejas display-only no tocan.
+        # TMT 2026-07-06 v6: el retiro CONSUMIÓ crédito (importe += monto) —
+        # el deshacer lo devuelve (importe -= monto, la fila vuelve a bajar).
+        # Las imputaciones viejas display-only no tocan posdat.
         if row.get("bajo_posdat"):
             _pd = _posdat_de_line_key(line_key, conn=conn)
             if not _pd:
@@ -377,7 +377,7 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
                 )
             db.execute(
                 "UPDATE scintela.posdat "
-                "SET importe = ROUND(COALESCE(importe, 0) + %s, 2) "
+                "SET importe = ROUND(COALESCE(importe, 0) - %s, 2) "
                 "WHERE id_posdat = %s",
                 (monto, _pd["id_posdat"]), conn=conn,
             )
