@@ -20,6 +20,12 @@
 
   <form method="post" id="cheque-form" class="page-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {# TMT 2026-07-06 (dueña): "todo lo de la 2da pantalla de confirmación que
+       pase a la primera, es menos tiempo". Con paso=ejecutar el backend guarda
+       DIRECTO (la pantalla nuevo_confirmar.html queda en el código pero ya no
+       se muestra en el flujo normal): el stat T/A por factura ahora se elige
+       en la columna QUEDA y el sobrante en el recuadro ámbar de abajo. #}
+    <input type="hidden" name="paso" value="ejecutar">
 
     {# TMT 2026-05-19 v8 — la dueña aclaró: "YA ESTABA AHI EL COBRO DE
        EFECTIVO, NO HACIA FALTA PANTALLA EXTRA". El cobro en efectivo se
@@ -115,12 +121,27 @@
                anchas. La col izquierda queda angosta → cada cheque pasa a
                2 renglones de 3 campos (importe·banco·N° / depositar·estado·doc). */
             @media (min-width:1280px){
-              .cobranza-page{ max-width:96rem; }
-              .cobranza-split{ display:grid; grid-template-columns:minmax(23rem,2fr) minmax(0,3fr); gap:1.5rem; align-items:start; }
+              .cobranza-page{ max-width:110rem; }
+              .cobranza-split{ display:grid; grid-template-columns:minmax(32rem,2fr) minmax(0,3fr); gap:1.25rem; align-items:start; }
               .cobranza-split > #aplicacion-facturas{ margin-top:0; }
-              .cobranza-chq-head, .cobranza-chq-row{ grid-template-columns:7rem minmax(7rem,1.4fr) minmax(5.5rem,1fr); }
-              .cobranza-chq-head span:nth-child(n+4){ display:none; }
-              .cobranza-fact-scroll{ overflow-x:auto; }
+              /* TMT 2026-07-06 (dueña): "achica los campos, el cheque una sola
+                 línea, y las facturas sin scroll". Cheque = 1 renglón de 6
+                 campos compactos; tabla de facturas con paddings/fuente
+                 reducidos para que entre completa sin scroll horizontal. */
+              .cobranza-chq-head, .cobranza-chq-row{
+                grid-template-columns:5.5rem minmax(6rem,1.2fr) 4.5rem 7rem 3rem minmax(5rem,1fr);
+                gap:.375rem;
+              }
+              .cobranza-chq-row input, .cobranza-chq-row select{
+                padding:.2rem .3rem; font-size:12px;
+              }
+              .cobranza-split #aplicacion-facturas table{ font-size:11.5px; }
+              .cobranza-split #aplicacion-facturas th,
+              .cobranza-split #aplicacion-facturas td{
+                padding-left:.4rem; padding-right:.4rem;
+              }
+              .cobranza-split .aplic-input{ width:4.6rem; }
+              .cobranza-split button.aplic-total{ padding:.1rem .3rem; }
             }
             /* cursor de teclado en la tabla de facturas (↑↓/Espacio/T/H) */
             .cobranza-fact-cursor > td{ box-shadow:inset 0 0 0 9999px rgb(2 132 199 / .08); }
@@ -306,10 +327,13 @@
                 <th class="px-3 py-2 text-right font-medium" title="Saldo acumulado corrido de arriba hasta esta fila (suma de saldos de todas las facturas anteriores + esta).">Acum. saldo</th>
                 <th class="px-3 py-2 text-right font-medium w-32">A aplicar</th>
                 <th class="px-3 py-2 text-right font-medium w-32" title="Saldo de DEUDA que queda en esa factura DESPUÉS de aplicar el cheque (saldo − a aplicar).">Resta</th>
+                {# TMT 2026-07-06 (dueña): la decisión T/A que antes pedía la
+                   pantalla de confirmación, ahora acá. #}
+                <th class="px-2 py-2 text-center font-medium w-20" title="Cómo queda la factura: T = totalizada (cancelada) · A = abonada (queda con saldo). Sugerido automático; se puede cambiar.">Queda</th>
               </tr>
             </thead>
             <tbody id="aplic-tbody">
-              <tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">
+              <tr><td colspan="11" class="px-3 py-6 text-center text-slate-400 text-xs">
                 Tipeá el código del cliente arriba para ver sus facturas abiertas.
               </td></tr>
             </tbody>
@@ -326,11 +350,32 @@
                 <td></td>{# col Acum. saldo — vacía en footer #}
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
+                <td></td>{# col Queda — vacía en footer #}
               </tr>
             </tfoot>
           </table>
         </div>
       </div>
+      {# TMT 2026-07-06 (dueña): decisión del SOBRANTE inline (ex-pantalla de
+         confirmación). Aparece cuando cheques − aplicado ≥ $1. El checkbox
+         confirmar_anticipo se mantiene (pedido: "no lo elimines todavía"). #}
+      <div id="sobrante-box" class="hidden mt-2 border border-amber-300 bg-amber-50 rounded p-2 text-sm text-slate-700 space-y-1">
+        <p>Sobrante de <strong id="sobrante-monto">$ 0,00</strong> (cheques − aplicado). ¿Qué hacemos?</p>
+        <label class="flex items-start gap-2 hidden" id="sobrante-op-factura">
+          <input type="radio" name="sobrante_modo" value="factura" id="sobrante-radio-factura" class="mt-0.5" disabled>
+          <span>Dejarlo como <strong>saldo a favor (NC) en la factura <span id="sobrante-numf">—</span></strong> (queda con saldo negativo).</span>
+        </label>
+        <label class="flex items-start gap-2">
+          <input type="radio" name="sobrante_modo" value="anticipo" id="sobrante-radio-anticipo" class="mt-0.5" disabled>
+          <span>Dejarlo como <strong>anticipo del cliente</strong> (espejo NB=98, aplica a futuras facturas).</span>
+        </label>
+        <label class="flex items-center gap-2 text-xs">
+          <input type="checkbox" name="confirmar_anticipo" id="sobrante-chk-anticipo" value="1" disabled>
+          Confirmar anticipo — destildá si NO querés generar el anticipo (el sobrante queda en el cheque, en cartera).
+        </label>
+        <input type="hidden" name="sobrante_a_factura" id="sobrante-a-factura" value="" disabled>
+      </div>
+
       {# TMT 2026-05-18 — instrucciones largas movidas a tooltips de los
          headers de columna (Regla 3). #}
     </div>
@@ -388,7 +433,12 @@
   // el FIFO la re-tildaba ("no me deja deseleccionar"). id_factura → monto
   // fijado a mano (0 = fila destildada/vaciada: queda FUERA del FIFO).
   const manualValues = Object.create(null);
-  const limpiarManuales = () => { for (const k in manualValues) delete manualValues[k]; };
+  // TMT 2026-07-06: override T/A por factura (columna QUEDA, ex-confirmación).
+  const manualStat = Object.create(null);
+  const limpiarManuales = () => {
+    for (const k in manualValues) delete manualValues[k];
+    for (const k in manualStat) delete manualStat[k];
+  };
   let codigoActual = "";
 
   function fmt(n) {
@@ -465,7 +515,7 @@
     const q = filtro.trim().toLowerCase();
 
     if (!facturas.length) {
-      tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas abiertas para este cliente.</td></tr>';
       updateSummary(0, importeCheque);
       return;
     }
@@ -616,11 +666,12 @@
               </div>
             </td>
             <td class="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 acum-cell" data-id="${f.id_factura}">—</td>
+            <td class="px-2 py-1.5 text-center queda-cell" data-id="${f.id_factura}">—</td>
           </tr>
         `;
       }).join('');
 
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="10" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
+    tbody.innerHTML = rowsHtml || '<tr><td colspan="11" class="px-3 py-6 text-center text-slate-400 text-xs">Sin facturas que coincidan con la búsqueda.</td></tr>';
 
     // Wire-up para tracking de "usuario editó" (input de monto)
     tbody.querySelectorAll('input.aplic-input').forEach(inp => {
@@ -764,8 +815,108 @@
       inp.title = !invalida ? '' : (v < 0
         ? `No podés revertir ${fmt(Math.abs(v))}: esta factura tiene sólo ${fmt(abono)} abonado.`
         : `Excede el saldo (${fmt(saldo)}) por más de $50.`);
+
+      // ── Columna QUEDA (TMT 2026-07-06, ex-pantalla de confirmación) ──
+      // Misma regla que el backend: |nuevo_saldo| ≤ $0.50 → T; con abono → A.
+      // Si hay decisión real (|nuevo_saldo| > 0.005) se muestran los radios
+      // T/A (name=stat_final[id], el backend ya los entiende); si no, badge.
+      const qcell = tr.querySelector('.queda-cell');
+      if (qcell) {
+        const id = inp.dataset.id;
+        if (Math.abs(v) < 0.005) {
+          qcell.innerHTML = '<span class="text-slate-300">—</span>';
+        } else {
+          const nuevoSaldo = saldo - v;
+          const sug = Math.abs(nuevoSaldo) <= 0.50 ? 'T'
+                    : ((abono + v) > 0.01 ? 'A' : '');
+          if (!sug) {
+            qcell.innerHTML = '<span class="text-slate-300">—</span>';
+          } else if (Math.abs(nuevoSaldo) <= 0.005) {
+            qcell.innerHTML = '<span class="inline-block px-1.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800" title="Cancelada exacta — T automática">T</span>';
+          } else {
+            const elegido = (manualStat[id] === 'T' || manualStat[id] === 'A')
+              ? manualStat[id] : sug;
+            qcell.innerHTML = ['T', 'A'].map(st => `
+              <label class="inline-flex items-center gap-0.5 text-[11px] font-bold ${st === 'T' ? 'text-emerald-700' : 'text-amber-700'} cursor-pointer" title="${st === 'T' ? 'T = totalizada (cancelada, olvida el saldo restante)' : 'A = abonada (el saldo restante queda vivo)'}">
+                <input type="radio" class="stat-final-radio" data-id="${id}"
+                       name="stat_final[${id}]" value="${st}"
+                       ${elegido === st ? 'checked' : ''}>${st}
+              </label>`).join(' ');
+          }
+        }
+      }
     });
   }
+
+  // ── Recuadro de SOBRANTE (TMT 2026-07-06, ex-pantalla de confirmación) ──
+  // Visible cuando cheques − aplicado ≥ $1 (cobro normal, no anticipo 97).
+  // Los inputs viven disabled mientras el recuadro está oculto para que NO
+  // viajen en el POST (el backend crea anticipos si ve confirmar_anticipo).
+  let sobranteTocado = false;  // la usuaria ya eligió a mano → no pisar
+  function actualizarSobranteBox(importeCheque, asignado) {
+    const box = document.getElementById('sobrante-box');
+    if (!box) return;
+    const restante = importeCheque - asignado;
+    const hayAnticipo97 = [...document.querySelectorAll('.cheque-banco')].some(sel => sel.value === '97');
+    const inputs = box.querySelectorAll('input');
+    const visible = restante >= 1.0 && !hayAnticipo97
+                    && !panel.classList.contains('hidden')
+                    && tbody.querySelectorAll('input.aplic-input').length > 0;
+    if (!visible) {
+      box.classList.add('hidden');
+      inputs.forEach(i => { i.disabled = true; });
+      return;
+    }
+    box.classList.remove('hidden');
+    inputs.forEach(i => { i.disabled = false; });
+    document.getElementById('sobrante-monto').textContent = '$ ' + fmt(restante);
+    // Opción "NC en la factura" solo si hay UNA sola factura aplicada
+    // (paridad con la pantalla de confirmación).
+    const aplicadas = [...tbody.querySelectorAll('input.aplic-input')]
+      .filter(i => Math.abs(parseMonto(i.value)) > 0.005);
+    const opFact  = document.getElementById('sobrante-op-factura');
+    const rFact   = document.getElementById('sobrante-radio-factura');
+    const rAnt    = document.getElementById('sobrante-radio-anticipo');
+    const chkAnt  = document.getElementById('sobrante-chk-anticipo');
+    const hidFact = document.getElementById('sobrante-a-factura');
+    const unica = aplicadas.length === 1 ? aplicadas[0] : null;
+    if (unica) {
+      const f = facturas.find(x => String(x.id_factura) === String(unica.dataset.id));
+      opFact.classList.remove('hidden');
+      hidFact.value = unica.dataset.id;
+      document.getElementById('sobrante-numf').textContent =
+        f ? (f.numf_completo || f.numf || ('#' + f.id_factura)) : ('#' + unica.dataset.id);
+    } else {
+      opFact.classList.add('hidden');
+      rFact.checked = false;
+      rFact.disabled = true;
+      hidFact.value = '';
+      hidFact.disabled = true;
+    }
+    if (!sobranteTocado) {
+      // Defaults de la confirmación: única factura → NC en ESA factura
+      // (radio factura); si no → anticipo. Checkbox tildado en ambos.
+      if (unica) { rFact.checked = true; }
+      else { rAnt.checked = true; }
+      chkAnt.checked = true;
+    }
+  }
+  (function () {
+    const box = document.getElementById('sobrante-box');
+    if (!box) return;
+    box.addEventListener('change', (e) => {
+      sobranteTocado = true;
+      const rAnt   = document.getElementById('sobrante-radio-anticipo');
+      const chkAnt = document.getElementById('sobrante-chk-anticipo');
+      // El backend crea anticipo si (checkbox OR modo=anticipo): mantener
+      // los dos coherentes para que "destildar" realmente lo apague.
+      if (e.target === chkAnt && !chkAnt.checked) {
+        if (rAnt.checked) rAnt.checked = false;  // queda en cartera
+      } else if (e.target === rAnt && rAnt.checked) {
+        chkAnt.checked = true;
+      }
+    });
+  })();
 
   function updateSummary(asignadoOverride, importeOverride) {
     // TMT 2026-05-15: recolectar info por fila (n facturas con monto != 0,
@@ -828,6 +979,7 @@
     asignadoSpan.textContent = '$ ' + fmt(asignado);
     restanteSpan.textContent = '$ ' + fmt(restante);
     restanteSpan.className = restante < -0.005 ? 'text-red-600' : (restante > 0.005 ? 'text-amber-700' : 'text-emerald-700');
+    actualizarSobranteBox(importeCheque, asignado);
 
     // Plazo en días = F. depósito cheque − promedio PONDERADO(fecha
     // facturas, por monto aplicado). Una factura de $10K a 60 días pesa
@@ -1408,6 +1560,12 @@
       }
       else if (e.key === 'Enter') { e.preventDefault(); }  // nunca submit acá
     });
+    // recordar la elección T/A de la columna Queda entre re-renders
+    tbody.addEventListener('change', (e) => {
+      if (e.target.classList && e.target.classList.contains('stat-final-radio')) {
+        manualStat[e.target.dataset.id] = e.target.value;
+      }
+    });
     // click en una fila también posiciona el cursor
     tbody.addEventListener('click', (e) => {
       const tr = e.target.closest && e.target.closest('tr');
@@ -1699,6 +1857,12 @@
   // Inicializar el contador "Total cheques" al cargar la página.
   actualizarTotalCheques();
 
+  // TMT 2026-07-06 (dueña): al entrar (o al VOLVER de guardar una cobranza)
+  // el cursor arranca en Cliente — la fecha ya viene con hoy.
+  if (codigoInput && !codigoInput.value.trim()) {
+    setTimeout(() => { codigoInput.focus(); }, 0);
+  }
+
   // TMT 2026-05-15: en submit, si hay diferencia chica entre Aplicado y
   // Total cheques (≤ $50), preguntar antes de bloquear (matchea el flow
   // dBase legacy: "Faltan X centavos, OK?"). Si la diferencia es grande
@@ -1732,6 +1896,10 @@
       }
       // Si aplicaron MENOS, mostrar aviso también (queda en cartera):
       else if (diff < -0.005 && diff >= -TOLERANCIA_USD) {
+        // TMT 2026-07-06: si el recuadro de sobrante está visible, la
+        // decisión ya es explícita (radios NC/anticipo) — no preguntar.
+        const sbox = document.getElementById('sobrante-box');
+        if (sbox && !sbox.classList.contains('hidden')) return;
         const restante = -diff;
         const ok = confirm(
           `Quedan $ ${restante.toFixed(2)} sin asignar de los cheques.\n\n` +
