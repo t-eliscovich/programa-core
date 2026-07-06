@@ -1052,6 +1052,21 @@
     });
   }
 
+  // TMT 2026-07-06 (dueña): 'una vez completada la línea, si aprieto Enter
+  // que empiece el 2do cheque'. Enter dentro de la grilla de cheques NUNCA
+  // submitea el form (evita guardar por accidente); si el bloque está
+  // completo (importe > 0 y banco emisor elegido) equivale a "+ Otro cheque".
+  // Delegado en chequesList para cubrir también los bloques clonados.
+  chequesList.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const bloque = e.target.closest ? e.target.closest('.cheque-bloque') : null;
+    if (!bloque) return;
+    e.preventDefault();
+    const imp = parseMonto((bloque.querySelector('.cheque-imp') || {}).value || '');
+    const banco = ((bloque.querySelector('.cheque-banco') || {}).value || '').trim();
+    if (imp > 0 && banco && btnAddCheque) btnAddCheque.click();
+  });
+
   // Cuando cambia cualquier fechad de cualquier bloque, recalcular plazo
   // (que usa la fechad del PRIMER cheque).
   chequesList.addEventListener('change', (e) => {
