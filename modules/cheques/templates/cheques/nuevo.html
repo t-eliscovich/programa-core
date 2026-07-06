@@ -122,7 +122,9 @@
                2 renglones de 3 campos (importe·banco·N° / depositar·estado·doc). */
             @media (min-width:1280px){
               .cobranza-page{ max-width:110rem; }
-              .cobranza-split{ display:grid; grid-template-columns:minmax(32rem,2fr) minmax(0,3fr); gap:1.25rem; align-items:start; }
+              /* TMT 2026-07-06 (dueña): "menos espacio entre los campos" — la
+                 col de cheques cede todo lo posible a la tabla de facturas. */
+              .cobranza-split{ display:grid; grid-template-columns:minmax(27rem,1fr) minmax(0,2.2fr); gap:.75rem; align-items:start; }
               .cobranza-split > #aplicacion-facturas{ margin-top:0; }
               /* TMT 2026-07-06 (dueña): "achica los campos, el cheque una sola
                  línea, y las facturas sin scroll". Cheque = 1 renglón de 6
@@ -138,13 +140,15 @@
               .cobranza-chq-row input, .cobranza-chq-row select{
                 padding:.2rem .3rem; font-size:12px;
               }
-              .cobranza-split #aplicacion-facturas table{ font-size:11.5px; }
+              .cobranza-split #aplicacion-facturas table{ font-size:11px; }
               .cobranza-split #aplicacion-facturas th,
               .cobranza-split #aplicacion-facturas td{
-                padding-left:.4rem; padding-right:.4rem;
+                padding-left:.2rem; padding-right:.2rem;
               }
-              .cobranza-split .aplic-input{ width:4.6rem; }
-              .cobranza-split button.aplic-total{ padding:.1rem .3rem; }
+              .cobranza-split #aplicacion-facturas th{ font-size:9.5px; letter-spacing:0; }
+              .cobranza-split .aplic-input{ width:4rem; padding:.15rem .25rem; }
+              .cobranza-split button.aplic-total{ padding:.1rem .2rem; font-size:10px; }
+              .cobranza-split #aplicacion-facturas th:first-child{ width:1.6rem; }
               /* TMT 2026-07-06 (dueña): "tienen que estar todos estos campos,
                  sacá solo VENCE". Se oculta ÚNICAMENTE la col 4 (Vence); si en
                  una pantalla no entra, scrollea la tabla, no la página. */
