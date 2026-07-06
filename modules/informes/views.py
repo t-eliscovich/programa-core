@@ -5,7 +5,19 @@ import io
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    flash,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 import db
 from auth import requiere_login, requiere_permiso, tiene_permiso
@@ -1807,7 +1819,59 @@ def estado_cuenta(codigo_cli):
         )
     except Exception:
         pass
-    return render_template("informes/estado_cuenta.html", data=data, error=error)
+    return render_template(
+        "informes/estado_cuenta.html",
+        data=data,
+        error=error,
+        # TMT 2026-07-06 (dueña): banner de éxito del TOTALIZAR (one-shot,
+        # patrón cobranza_ok) + botón imprimir el resultado.
+        totalizar_ok=session.pop("totalizar_ok", None),
+    )
+
+
+@informes_bp.route("/estado-cuenta/<codigo_cli>/totalizar", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def estado_cuenta_totalizar(codigo_cli):
+    """TOTALIZAR estado de cuenta — re-liquidación FIFO (CUENTA.PRG rama 'Y').
+
+    TMT 2026-07-06 (dueña): junta todos los abonos de las facturas vivas del
+    cliente y los redistribuye de la más vieja a la más nueva. GET = pantalla
+    de confirmación (preview de lo que va a quedar, estilo dBase, imprimible);
+    POST = ejecuta (IRREVERSIBLE — se pierden los vínculos cheque↔factura) y
+    vuelve al estado de cuenta con banner de éxito.
+
+    Mismo permiso que el estado de cuenta (decisión dueña #4): lo usan todos
+    los que ven la cuenta.
+    """
+    codigo_up = codigo_cli.upper()
+    if request.method == "POST":
+        usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+        try:
+            res = queries.totalizar_estado_cuenta_ejecutar(codigo_up, usuario=usuario)
+        except ValueError as e:
+            flash(str(e), "warn")
+            return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+        except Exception as e:
+            flash_exc("No pude totalizar la cuenta", e)
+            return redirect(url_for("informes.estado_cuenta_totalizar", codigo_cli=codigo_up))
+        session["totalizar_ok"] = {
+            "codigo_cli": res["codigo_cli"],
+            "n_facturas": res["n_facturas"],
+            "pool": res["pool"],
+            "n_T": res["n_T"],
+            "n_A": res["n_A"],
+            "n_Z": res["n_Z"],
+            "n_links_borrados": res["n_links_borrados"],
+        }
+        return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+
+    data, error = _safe(lambda: queries.totalizar_estado_cuenta_preview(codigo_up), {})
+    if not data or not data.get("cliente"):
+        abort(404)
+    return render_template(
+        "informes/totalizar_preview.html", data=data, error=error, hoy=today_ec()
+    )
 
 
 # ---------------------------------------------------------------------------

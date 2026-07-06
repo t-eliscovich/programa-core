@@ -12,6 +12,23 @@
 {% set _dir = ((data.cliente.direccion1 ~ ' ' ~ data.cliente.direccion2) if data.cliente.direccion2 else data.cliente.direccion1) | cleanstr %}
 {% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% endset %}
 <div class="max-w-6xl">
+  {# TMT 2026-07-06 (dueña): banner grande de éxito del TOTALIZAR (one-shot,
+     via session — patrón cobranza_ok) + imprimir el resultado. #}
+  {% if totalizar_ok %}
+  <div class="no-print mb-5 rounded-lg border-2 border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 flex items-start justify-between gap-4 flex-wrap">
+    <div>
+      <div class="text-emerald-800 dark:text-emerald-300 font-semibold text-lg">✓ Cuenta totalizada</div>
+      <div class="text-sm text-emerald-900 dark:text-emerald-200 mt-1">
+        {{ totalizar_ok.n_facturas }} facturas re-liquidadas FIFO con {{ totalizar_ok.pool | money_es }} de abonos —
+        quedaron {{ totalizar_ok.n_T }} totalizadas (T) · {{ totalizar_ok.n_A }} parcial{{ '' if totalizar_ok.n_A == 1 else 'es' }} (A) · {{ totalizar_ok.n_Z }} impagas (Z).
+        {% if totalizar_ok.n_links_borrados %}Se borraron {{ totalizar_ok.n_links_borrados }} vínculo{{ '' if totalizar_ok.n_links_borrados == 1 else 's' }} cheque↔factura.{% endif %}
+        Las T ya no se listan abajo.
+      </div>
+    </div>
+    <button onclick="window.print()"
+            class="shrink-0 text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Imprimir resultado</button>
+  </div>
+  {% endif %}
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
     <div class="no-print flex items-center gap-2">
@@ -22,6 +39,16 @@
         ← Volver a Cartera
       </a>
       <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
+      {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
+         (réplica mejorada del dBase CUENTA.PRG rama 'Y'). El GET es solo la
+         pantalla de confirmación; ahí se ve lo que va a quedar. #}
+      {% if data.facturas %}
+      <a href="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}"
+         class="text-sm px-3 py-1.5 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+         title="Re-liquidar la cuenta FIFO: junta todos los abonos y los redistribuye de la factura más vieja a la más nueva. Abre una pantalla de confirmación.">
+        Totalizar (re-liquidar FIFO)
+      </a>
+      {% endif %}
     </div>
   </div>
 

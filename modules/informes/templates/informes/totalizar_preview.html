@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{# TMT 2026-07-06 (dueña): confirmación del TOTALIZAR estado de cuenta —
+   réplica mejorada del dBase CUENTA.PRG rama 'Y'. Muestra EXACTAMENTE lo que
+   va a quedar (estilo dBase) antes de ejecutar. Imprimible (patrón
+   resumen_dia.html). #}
+{% block title %}Totalizar — {{ data.cliente.codigo_cli }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
+  <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}" class="hover:underline">{{ data.cliente.codigo_cli }}</a> /
+  <strong>Totalizar</strong>
+{% endblock %}
+
+{% block content %}
+<style>
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important; max-width: none !important; }
+    @page { margin: 1.5cm; size: auto; }
+  }
+  .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
+          padding:1.5rem 1.75rem; margin:1rem auto; max-width:980px; border-radius:4px; }
+  .hoja h1 { font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#0f172a; }
+  .hoja table { width:100%; border-collapse:collapse; }
+  .hoja th { border-bottom:2px solid #1e293b; padding:6px 4px; text-align:left; font-size:10px;
+             text-transform:uppercase; letter-spacing:.04em; color:#475569; }
+  .hoja td { padding:5px 4px; border-bottom:1px solid #e2e8f0; font-size:12px; vertical-align:top; }
+  .hoja td.num { text-align:right; font-family:ui-monospace,monospace; white-space:nowrap; }
+  .hoja th.num { text-align:right; }
+  .hoja tfoot td { border-top:2px solid #1e293b; font-weight:600; font-size:13px; padding-top:8px; }
+  .kpis { display:flex; gap:24px; flex-wrap:wrap; margin:10px 0 4px; }
+  .kpi { font-size:12px; color:#475569; }
+  .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; color:#0f172a; }
+  .stat-pill { display:inline-block; min-width:1.6rem; text-align:center; padding:1px 6px;
+               border-radius:9999px; font-size:10px; font-weight:700; font-family:ui-monospace,monospace; }
+  .stat-T { background:#d1fae5; color:#047857; }   /* T = totalizada (verde) */
+  .stat-A { background:#fef3c7; color:#b45309; }   /* A = abonada parcial (ámbar) */
+  .stat-Z { background:#e2e8f0; color:#475569; }   /* Z = impaga (gris) */
+  .fila-nc td { background:#fffbeb; }              /* NC en amber, como cobranza */
+  .flecha { color:#94a3b8; font-size:14px; }
+  .sep-despues { border-left:2px solid #cbd5e1; }
+</style>
+
+{% macro stat_badge(st) -%}
+  <span class="stat-pill stat-{{ st if st in ('T','A','Z') else 'Z' }}">{{ st or '—' }}</span>
+{%- endmacro %}
+
+{% if error %}
+  <div class="no-print mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">{{ error }}</div>
+{% endif %}
+
+<div class="no-print max-w-5xl mx-auto mt-2 flex items-center justify-between gap-3 flex-wrap">
+  <h1 class="text-xl font-semibold">Totalizar estado de cuenta <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">← Volver al estado de cuenta</a>
+    <button type="button" onclick="window.print()"
+            class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Imprimir</button>
+  </div>
+</div>
+
+{% if data.nada_que_hacer %}
+  <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-sky-50 border border-sky-300 text-sky-900 px-4 py-3">
+    Nada que totalizar: los abonos de las facturas vivas suman <strong>0,00</strong> y no hay notas de crédito para redistribuir.
+  </div>
+{% elif data.filas %}
+  {# ─── Warning IRREVERSIBLE — solo pantalla ─── #}
+  <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-amber-50 border-2 border-amber-400 text-amber-900 px-4 py-3">
+    <div class="font-semibold mb-1">⚠ Esta operación no tiene deshacer.</div>
+    <ul class="text-sm list-disc ml-5 space-y-0.5">
+      <li>Se juntan <strong>todos los abonos</strong> ({{ data.pool | money_es }}) de las {{ data.filas | length }} facturas vivas y se redistribuyen de la más vieja a la más nueva (FIFO). El total adeudado <strong>no cambia</strong>.</li>
+      <li>Se pierden <strong>{{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura</strong>: después no se va a poder ver qué cheque pagó qué factura (los cheques quedan intactos).</li>
+      {% if data.hay_nc %}<li>Las notas de crédito / devoluciones <strong>entran</strong> a la redistribución (mejora sobre el dBase): su crédito cubre facturas siguientes.</li>{% endif %}
+    </ul>
+  </div>
+
+  <div class="hoja">
+    {# Encabezado imprimible #}
+    <h1>Totalización estado de cuenta — {{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }}) — {{ hoy | fecha_es }}</h1>
+    <div class="kpis">
+      <div class="kpi">Σ Importe <b>{{ data.sum_importe | money_es }}</b></div>
+      <div class="kpi">Σ Abonos (pool) <b>{{ data.pool | money_es }}</b></div>
+      <div class="kpi">Σ Saldo (no cambia) <b>{{ data.sum_saldo_antes | money_es }}</b></div>
+      <div class="kpi">Queda <b>{{ data.n_T }} T · {{ data.n_A }} A · {{ data.n_Z }} Z</b></div>
+    </div>
+
+    <table class="mt-2">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>N°</th>
+          <th class="num">Importe</th>
+          <th class="num">Abono</th>
+          <th class="num">Saldo</th>
+          <th style="text-align:center">Stat</th>
+          <th class="sep-despues"></th>
+          <th class="num">Abono →</th>
+          <th class="num">Saldo →</th>
+          <th style="text-align:center">Stat →</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in data.filas %}
+        <tr class="{{ 'fila-nc' if f.importe < 0 }}">
+          <td style="white-space:nowrap">{{ f.fecha | fecha_es }}</td>
+          <td class="font-mono" style="font-size:11px; white-space:nowrap">
+            {{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}
+            {% if f.importe < 0 %}<span style="color:#b45309; font-weight:600">NC</span>{% endif %}
+          </td>
+          <td class="num">{{ f.importe | money_es }}</td>
+          <td class="num" style="color:#64748b">{{ f.abono_actual | money_es }}</td>
+          <td class="num" style="color:#64748b">{{ f.saldo_actual | money_es }}</td>
+          <td style="text-align:center">{{ stat_badge(f.stat_actual) }}</td>
+          <td class="sep-despues flecha" style="text-align:center">{{ '→' if f.cambia else '=' }}</td>
+          <td class="num" style="font-weight:600">{{ f.abono_nuevo | money_es }}</td>
+          <td class="num" style="font-weight:600; {{ 'color:#047857' if f.saldo_nuevo < -0.005 else ('color:#b91c1c' if f.saldo_nuevo > 0.005 else '') }}">{{ f.saldo_nuevo | money_es }}</td>
+          <td style="text-align:center">{{ stat_badge(f.stat_nuevo) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2">Totales ({{ data.filas | length }} factura{{ '' if data.filas|length == 1 else 's' }})</td>
+          <td class="num">{{ data.sum_importe | money_es }}</td>
+          <td class="num">{{ data.pool | money_es }}</td>
+          <td class="num">{{ data.sum_saldo_antes | money_es }}</td>
+          <td></td>
+          <td class="sep-despues"></td>
+          <td class="num">{{ data.sum_abono_despues | money_es }}</td>
+          <td class="num">{{ data.sum_saldo_despues | money_es }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    <div style="margin-top:8px; font-size:11px; color:#64748b">
+      Las T (totalizadas) dejan de mostrarse en el estado de cuenta. El saldo total del cliente no cambia:
+      {{ data.sum_saldo_antes | money_es }} antes = {{ data.sum_saldo_despues | money_es }} después.
+      {% if (data.sum_saldo_despues - data.sum_saldo_antes) | abs > 0.01 %}<strong style="color:#b91c1c">⚠ No cuadra — no confirmar, avisar.</strong>{% endif %}
+    </div>
+  </div>
+
+  {# ─── Confirmar / Cancelar — sin confirm() nativo (congela Chrome):
+        checkbox que arma el botón = confirmación de 2 clicks en pantalla. #}
+  <div class="no-print max-w-5xl mx-auto mt-2 mb-8 bg-white border border-slate-200 rounded-lg p-4">
+    <form method="post" action="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="flex items-start gap-2 text-sm text-slate-700 cursor-pointer select-none">
+        <input type="checkbox" id="chk-entiendo" class="mt-0.5">
+        <span>Entiendo que se pierden {{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura y que <strong>esta operación no tiene deshacer</strong>.</span>
+      </label>
+      <div class="mt-3 flex items-center gap-2">
+        <button type="submit" id="btn-totalizar" disabled
+                class="px-4 py-2 rounded text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed">
+          Confirmar totalización
+        </button>
+        <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}"
+           class="px-4 py-2 rounded text-sm border border-slate-300 text-slate-700 hover:bg-slate-100">Cancelar</a>
+      </div>
+    </form>
+  </div>
+  <script>
+    (function () {
+      var chk = document.getElementById('chk-entiendo');
+      var btn = document.getElementById('btn-totalizar');
+      if (chk && btn) {
+        chk.addEventListener('change', function () { btn.disabled = !chk.checked; });
+        // Anti doble-submit: al confirmar, deshabilitar y avisar.
+        btn.closest('form').addEventListener('submit', function () {
+          btn.disabled = true;
+          btn.textContent = 'Totalizando…';
+        });
+      }
+    })();
+  </script>
+{% else %}
+  <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-sky-50 border border-sky-300 text-sky-900 px-4 py-3">
+    Este cliente no tiene facturas vivas (Z/A) — nada que totalizar.
+  </div>
+{% endif %}
+{% endblock %}

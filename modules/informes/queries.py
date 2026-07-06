@@ -8176,3 +8176,269 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
         "total_monto": total_monto,
         "n_clientes": len(filas),
     }
+
+
+# ---------------------------------------------------------------------------
+# TOTALIZAR estado de cuenta — re-liquidación FIFO de la cuenta de un cliente
+# ---------------------------------------------------------------------------
+# TMT 2026-07-06 (dueña): réplica mejorada del dBase CUENTA.PRG (rama oculta
+# 'Y'). Junta TODOS los abonos de las facturas vivas del cliente y los
+# redistribuye de la más vieja a la más nueva. No cambia el total adeudado;
+# deja la cuenta "limpia": T…T + una A parcial + Z…Z.
+#
+# Decisiones cerradas de la dueña (2026-07-06):
+#   1. Se ACEPTA perder los vínculos cheque↔factura (chequesxfact) de las
+#      facturas del cliente — previa pantalla de confirmación que muestra lo
+#      que va a quedar. IRREVERSIBLE.
+#   2. Las NC / importes negativos ENTRAN a la redistribución (era limitación
+#      del dBase, se arregla): su crédito vuelve al pool y extiende cobertura.
+#      Si al final SOBRA pool, el excedente queda como saldo NEGATIVO
+#      (crédito) en la ÚLTIMA factura viva, stat 'A' (saldo<0 nunca
+#      totaliza — regla 2026-07-01).
+#   3. SOLO el cliente en pantalla (sin grupos EDU/FBA).
+#
+# Las T salen NORMALIZADAS (abono=importe, saldo=0) — NO se replica el quirk
+# del dBase que dejaba T con saldo=importe.
+
+_SQL_FACTURAS_TOTALIZAR = """
+    SELECT id_factura, numf, numf_completo, fecha, importe, abono, saldo, stat
+      FROM scintela.factura
+     WHERE codigo_cli = %s
+       -- vivas: Z (impaga) y A (abonada parcial). T/X/… quedan afuera.
+       AND COALESCE(stat, '') IN ('Z', 'A')
+       -- criterio canónico de cartera (fix NJL 2026-06-17): el backfill
+       -- histórico de Asinfo no participa de la cobranza.
+       AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+     ORDER BY fecha ASC, id_factura ASC
+"""
+
+
+def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
+    """Núcleo puro del TOTALIZAR: redistribuye `pool` sobre `importes` (FIFO).
+
+    Devuelve, por factura y en el mismo orden, {"stat", "abono", "saldo"}.
+
+    Implementado con `restante` (pool que queda) en vez del ACUM del PRG —
+    es la MISMA aritmética cuando los importes son positivos (acum<=pool ↔
+    restante>=imp), pero con NCs en el medio preserva SIEMPRE el invariante
+    Σabono==pool / Σsaldo constante: el crédito de la NC vuelve al pool y se
+    aplica hacia ADELANTE (FIFO — nunca reabre una factura ya recorrida).
+
+      · imp < 0 (NC/devolución) → stat 'T', abono=imp, saldo=0; el crédito
+        |imp| se suma al restante (decisión dueña #2 — el dBase las salteaba).
+      · restante cubre imp      → stat 'T', abono=imp, saldo=0.
+      · restante parcial        → stat 'A', abono=restante, saldo=resto.
+      · restante agotado        → stat 'Z', abono=0, saldo=imp.
+
+    Si al final sobra pool (Σabonos > Σimportes cubiertos) el excedente se
+    vuelca a la ÚLTIMA factura del recorrido: abono += sobrante, saldo
+    negativo, stat 'A' (saldo<0 nunca totaliza — regla 2026-07-01).
+
+    Tolerancia de redondeo: medio centavo (0.005), igual que cobranza.
+    """
+    pool = round(float(pool or 0), 2)
+    restante = pool
+    out: list[dict] = []
+    for imp_raw in importes:
+        imp = round(float(imp_raw or 0), 2)
+        if imp < 0:
+            # NC / devolución: entra a la redistribución. Se "totaliza" con
+            # saldo=0 (no viola la regla saldo<0 → A: su saldo queda en 0,
+            # el crédito viaja en el pool hacia las siguientes).
+            out.append({"stat": "T", "abono": imp, "saldo": 0.0})
+            restante = round(restante - imp, 2)  # −imp > 0 → el pool crece
+        elif restante >= imp - 0.005:
+            out.append({"stat": "T", "abono": imp, "saldo": 0.0})
+            restante = round(restante - imp, 2)
+        elif restante > 0.005:
+            ab = round(restante, 2)
+            out.append({"stat": "A", "abono": ab, "saldo": round(imp - ab, 2)})
+            restante = 0.0
+        else:
+            out.append({"stat": "Z", "abono": 0.0, "saldo": imp})
+    # Sobró pool → crédito (saldo negativo) en la ÚLTIMA factura viva.
+    # abs(): si el pool vino NEGATIVO (data patológica) también se vuelca,
+    # así el invariante Σabono==pool se sostiene siempre.
+    if out and abs(restante) > 0.005:
+        imp_last = round(float(importes[-1] or 0), 2)
+        last = out[-1]
+        last["abono"] = round(last["abono"] + restante, 2)
+        last["saldo"] = round(imp_last - last["abono"], 2)
+        last["stat"] = "A"
+    return out
+
+
+def _totalizar_armar(facturas: list[dict]) -> dict:
+    """Común a preview y ejecutar: pool, redistribución y contadores."""
+    importes = [float(f["importe"] or 0) for f in facturas]
+    pool = round(sum(float(f["abono"] or 0) for f in facturas), 2)
+    hay_nc = any(i < 0 for i in importes)
+    nuevos = totalizar_redistribuir_fifo(importes, pool)
+    return {
+        "pool": pool,
+        "hay_nc": hay_nc,
+        "nada_que_hacer": abs(pool) < 0.005 and not hay_nc,
+        "nuevos": nuevos,
+        "n_T": sum(1 for n in nuevos if n["stat"] == "T"),
+        "n_A": sum(1 for n in nuevos if n["stat"] == "A"),
+        "n_Z": sum(1 for n in nuevos if n["stat"] == "Z"),
+        "sum_importe": round(sum(importes), 2),
+        "sum_saldo_antes": round(sum(float(f["saldo"] or 0) for f in facturas), 2),
+        "sum_abono_despues": round(sum(n["abono"] for n in nuevos), 2),
+        "sum_saldo_despues": round(sum(n["saldo"] for n in nuevos), 2),
+    }
+
+
+def totalizar_estado_cuenta_preview(codigo_cli: str) -> dict:
+    """Datos para la pantalla de confirmación del TOTALIZAR (solo lectura).
+
+    Devuelve cliente + filas [actual → después] + totales + n_links (los
+    vínculos cheque↔factura que se van a borrar).
+    """
+    cliente = db.fetch_one(
+        "SELECT codigo_cli, nombre FROM scintela.cliente WHERE codigo_cli = %s",
+        (codigo_cli,),
+    )
+    if not cliente:
+        return {"cliente": None}
+    facturas = db.fetch_all(_SQL_FACTURAS_TOTALIZAR, (codigo_cli,))
+    n_links = 0
+    if facturas:
+        row = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.chequesxfact WHERE id_fact = ANY(%s)",
+            ([f["id_factura"] for f in facturas],),
+        )
+        n_links = int((row or {}).get("n") or 0)
+    calc = _totalizar_armar(facturas)
+    filas = []
+    for f, n in zip(facturas, calc["nuevos"], strict=True):
+        filas.append({
+            "id_factura": f["id_factura"],
+            "numf": f["numf"],
+            "numf_completo": f["numf_completo"],
+            "fecha": f["fecha"],
+            "importe": round(float(f["importe"] or 0), 2),
+            "abono_actual": round(float(f["abono"] or 0), 2),
+            "saldo_actual": round(float(f["saldo"] or 0), 2),
+            "stat_actual": (f["stat"] or "").strip(),
+            "abono_nuevo": n["abono"],
+            "saldo_nuevo": n["saldo"],
+            "stat_nuevo": n["stat"],
+            "cambia": (
+                (f["stat"] or "").strip() != n["stat"]
+                or abs(round(float(f["abono"] or 0), 2) - n["abono"]) > 0.005
+                or abs(round(float(f["saldo"] or 0), 2) - n["saldo"]) > 0.005
+            ),
+        })
+    return {
+        "cliente": cliente,
+        "filas": filas,
+        "n_links": n_links,
+        **{k: calc[k] for k in (
+            "pool", "hay_nc", "nada_que_hacer", "n_T", "n_A", "n_Z",
+            "sum_importe", "sum_saldo_antes", "sum_abono_despues",
+            "sum_saldo_despues",
+        )},
+    }
+
+
+def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web") -> dict:
+    """Ejecuta el TOTALIZAR en UNA transacción. IRREVERSIBLE.
+
+    1. Lockea las facturas vivas del cliente (FOR UPDATE) y recalcula la
+       redistribución adentro de la tx (no confía en la preview: si alguien
+       cobró en el medio, se recalcula con lo fresco).
+    2. Verifica el invariante Σsaldo/Σabono ANTES==DESPUÉS (±0.01) — si no
+       cierra, aborta TODO (ValueError → rollback).
+    3. UPDATE por factura (abono/saldo/stat + usuario_modifica).
+    4. DELETE de scintela.chequesxfact de esas facturas (decisión dueña #1).
+    5. UN mov_doble 'totalizar_estado_cuenta' con la metadata del resumen.
+
+    Devuelve el resumen {n_facturas, pool, n_T, n_A, n_Z, n_links_borrados}.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    with db.tx() as conn:
+        facturas = db.fetch_all(
+            _SQL_FACTURAS_TOTALIZAR + " FOR UPDATE", (codigo_cli,), conn=conn
+        )
+        if not facturas:
+            raise ValueError(
+                f"{codigo_cli}: sin facturas vivas (Z/A) — nada que totalizar."
+            )
+        calc = _totalizar_armar(facturas)
+        if calc["nada_que_hacer"]:
+            raise ValueError(
+                f"{codigo_cli}: los abonos suman 0,00 y no hay notas de "
+                "crédito — nada que redistribuir."
+            )
+        # Invariante: totalizar REDISTRIBUYE, no crea ni borra plata.
+        if (abs(calc["sum_saldo_antes"] - calc["sum_saldo_despues"]) > 0.01
+                or abs(calc["pool"] - calc["sum_abono_despues"]) > 0.01):
+            raise ValueError(
+                f"{codigo_cli}: invariante roto — Σsaldo "
+                f"{calc['sum_saldo_antes']:.2f}→{calc['sum_saldo_despues']:.2f}, "
+                f"Σabono {calc['pool']:.2f}→{calc['sum_abono_despues']:.2f}. "
+                "Abortado: no se cambió nada (¿saldo≠importe−abono en alguna "
+                "factura? Revisar la cuenta antes de totalizar)."
+            )
+        n_upd = 0
+        for f, n in zip(facturas, calc["nuevos"], strict=True):
+            stat_act = (f["stat"] or "").strip()
+            if (stat_act == n["stat"]
+                    and abs(round(float(f["abono"] or 0), 2) - n["abono"]) <= 0.005
+                    and abs(round(float(f["saldo"] or 0), 2) - n["saldo"]) <= 0.005):
+                continue  # sin cambios — no ensuciar usuario_modifica
+            db.execute(
+                "UPDATE scintela.factura "
+                "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+                " WHERE id_factura = %s",
+                (n["abono"], n["saldo"], n["stat"], usuario, f["id_factura"]),
+                conn=conn,
+            )
+            n_upd += 1
+        # Vínculos cheque↔factura: se PIERDEN (aceptado por la dueña, la
+        # confirmación lo avisa). El abono redistribuido ya no mapea 1-a-1
+        # con los cheques originales, dejar los links sería mentir.
+        ids = [f["id_factura"] for f in facturas]
+        n_links = db.execute(
+            "DELETE FROM scintela.chequesxfact WHERE id_fact = ANY(%s)",
+            (ids,), conn=conn,
+        ) or 0
+        # Huella única en el historial. Si el pool es 0 (solo NCs), el
+        # importe del mov es el crédito NC redistribuido — registrar()
+        # ignora importe 0.
+        importe_md = calc["pool"]
+        if abs(importe_md) < 0.005:
+            importe_md = round(
+                sum(-float(f["importe"] or 0) for f in facturas
+                    if float(f["importe"] or 0) < 0), 2)
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="totalizar_estado_cuenta",
+            origen_table="factura", origen_id=facturas[0]["id_factura"],
+            destino_table="factura", destino_id=facturas[-1]["id_factura"],
+            importe=importe_md,
+            fecha=today_ec(),
+            concepto=(
+                f"TOTALIZAR estado de cuenta {codigo_cli} — "
+                f"{len(facturas)} fact., pool {calc['pool']:.2f}"
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "codigo_cli": codigo_cli,
+                "n_facturas": len(facturas),
+                "pool": calc["pool"],
+                "n_T": calc["n_T"], "n_A": calc["n_A"], "n_Z": calc["n_Z"],
+                "n_links_borrados": n_links,
+            },
+        )
+        return {
+            "codigo_cli": codigo_cli,
+            "n_facturas": len(facturas),
+            "n_actualizadas": n_upd,
+            "pool": calc["pool"],
+            "n_T": calc["n_T"], "n_A": calc["n_A"], "n_Z": calc["n_Z"],
+            "n_links_borrados": n_links,
+            "saldo": calc["sum_saldo_despues"],
+        }
