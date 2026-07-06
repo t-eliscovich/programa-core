@@ -11,6 +11,18 @@
     <h1 class="page-title">Nueva Cobranza</h1>
   </header>
 
+  {# TMT 2026-07-06 (dueña): confirmación GRANDE post-guardado — "el
+     mensaje antes era bajo pero ahora no sé si se hizo o hubo un error". #}
+  {% if cobranza_ok %}
+    <div class="mb-4 rounded-lg border-2 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-5 py-4 flex items-start gap-3">
+      <span class="text-3xl leading-none text-emerald-600">✔</span>
+      <div>
+        <p class="text-lg font-bold text-emerald-800 dark:text-emerald-300">Cobranza guardada</p>
+        <p class="text-sm text-emerald-900 dark:text-emerald-200 mt-0.5">{{ cobranza_ok }}</p>
+      </div>
+    </div>
+  {% endif %}
+
   {% if errores %}
     <div class="page-error">
       <p>Revisá estos datos:</p>
@@ -340,7 +352,8 @@
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-saldo">—</td>
                 <td></td>{# col Acum. saldo — vacía en footer #}
                 <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-aplicado">—</td>
-                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum">—</td>
+                <td class="px-3 py-2 text-right font-mono tabular-nums text-sm" id="aplic-foot-acum"
+                    title="Suma de la columna Resta de las facturas seleccionadas. Si es NEGATIVO, es el crédito (NC) que va a quedar a favor del cliente.">—</td>
                 <td></td>{# col Queda — vacía en footer #}
               </tr>
             </tfoot>
@@ -748,6 +761,20 @@
         const saldo = parseFloat(e.target.dataset.saldo || 0);
         const inp = tbody.querySelector(`input.aplic-input[data-id="${id}"]`);
         if (!inp) return;
+        // TMT 2026-07-06 (dueña): "deseleccioné una factura pero el monto no
+        // se borró". Una fila con monto PARCIAL muestra el checkbox en
+        // estado intermedio (rayita); clickearlo BORRA el monto (deselección),
+        // no lo sube al saldo entero.
+        if (e.target.dataset.wasPartial === '1') {
+          delete e.target.dataset.wasPartial;
+          e.target.checked = false;
+          e.target.indeterminate = false;
+          inp.value = '';
+          inp.dataset.userEdited = '1';
+          manualValues[id] = 0;
+          render(buscar.value);
+          return;
+        }
         if (e.target.checked) {
           inp.value = saldo.toFixed(2);
         } else {
@@ -870,6 +897,16 @@
         : (esNC
             ? `Supera el saldo (${fmt(saldo)}): la factura queda con ${fmt(v - saldo)} a favor del cliente (nota de crédito).`
             : '');
+
+      // Checkbox en estado INTERMEDIO cuando la fila tiene monto parcial
+      // (ni vacía ni saldo entero) — clickearlo borra el monto (ver handler).
+      const _chkP = tr.querySelector('input.aplic-cancel');
+      if (_chkP) {
+        const _esParcial = Math.abs(v) > 0.005 && Math.abs(v - saldo) >= 0.01;
+        _chkP.indeterminate = _esParcial;
+        if (_esParcial) _chkP.dataset.wasPartial = '1';
+        else delete _chkP.dataset.wasPartial;
+      }
 
       // ── Columna QUEDA (TMT 2026-07-06, ex-pantalla de confirmación) ──
       // Misma regla que el backend: |nuevo_saldo| ≤ $0.50 → T; con abono → A.

@@ -96,12 +96,17 @@ def nuevo():
                 form[k] = request.args.get(k)
         if request.args.get("es_anticipo"):
             form["es_anticipo"] = request.args.get("es_anticipo") in ("1", "true", "True", "on")
+        # TMT 2026-07-06 (dueña): "no apareció nada... no sé si se hizo o
+        # hubo un error". El flash chico se quitó a pedido; el resumen del
+        # guardado viaja por sesión y se muestra como banner GRANDE.
+        from flask import session as _sess
         return render_template(
             "cheques/nuevo.html",
             form=form,
             errores=errores,
             bancos=_bancos(),
             clientes_datalist=clientes_datalist,
+            cobranza_ok=_sess.pop("cobranza_ok", None),
         )
 
     # TMT 2026-05-27 dueña: 'Cuando pongo volver para atrás no me borres
@@ -1143,6 +1148,31 @@ def nuevo():
             return (f"N° {_num} " if _num else "") + f"($ {_imp:,.2f})"
 
 
+        # Detalle de facturas aplicadas para el banner de éxito.
+        _facts_txt = ""
+        try:
+            _ids_ap = [int(a["id_fact"]) for a in (aplicaciones_pre or [])]
+            if _ids_ap:
+                _rows_f = db.fetch_all(
+                    "SELECT id_factura, numf, numf_completo "
+                    "FROM scintela.factura WHERE id_factura = ANY(%s)",
+                    (_ids_ap,),
+                ) or []
+                _by_id = {int(r["id_factura"]): r for r in _rows_f}
+                _nums_f = []
+                for _a in aplicaciones_pre:
+                    _r = _by_id.get(int(_a["id_fact"])) or {}
+                    _n = _r.get("numf")
+                    if not _n and _r.get("numf_completo"):
+                        _n = str(_r["numf_completo"]).split("-")[-1].lstrip("0")
+                    _nums_f.append(
+                        f"{_n or ('#' + str(_a['id_fact']))} ($ {float(_a['importe']):,.2f})"
+                    )
+                if _nums_f:
+                    _facts_txt = " Facturas: " + ", ".join(_nums_f) + "."
+        except Exception:  # noqa: BLE001
+            _facts_txt = ""
+
         # Mensajes según cantidad creada
         # TMT 2026-06-11 paridad dBase NB=95: si queries.crear no encontro el
         # anticipo a cancelar, devuelve un warning (el cheque quedo en Z).
@@ -1169,9 +1199,13 @@ def nuevo():
                 # y no mencionaba las aplicaciones, dejando dudas de si se
                 # habían aplicado o no.
                 sufijo = f" Se distribuyeron {n_aplicaciones} aplicación(es) FIFO entre los cheques."
-            # TMT 2026-07-06 (dueña): "quitar mensaje en verde de la
-            # cobranza, es muy chico y no se entiende" — sin flash de éxito.
-            _ = (total_creado, nums, sufijo)  # (armados arriba; sin flash)
+            # TMT 2026-07-06 v2 (dueña): "no sé si se hizo o hubo un error"
+            # — resumen a banner GRANDE en la próxima pantalla (session).
+            from flask import session as _sess
+            _sess["cobranza_ok"] = (
+                f"{len(cheques_creados)} cheques creados "
+                f"(total $ {total_creado:,.2f}): {nums}.{sufijo}{_facts_txt}"
+            )
             # TMT 2026-07-06 (dueña): al terminar una cobranza QUEDARSE en la
             # pantalla de cobranza (form limpio para la siguiente), no ir a la
             # lista de cheques. El flash de arriba confirma lo creado.
@@ -1184,9 +1218,16 @@ def nuevo():
                 "ok",
             )
         elif n_aplicaciones > 0:
-            pass  # sin flash de éxito (pedido dueña 2026-07-06)
+            from flask import session as _sess
+            _sess["cobranza_ok"] = (
+                f"Cheque {_desc_ch(ch)} creado y aplicado a "
+                f"{n_aplicaciones} factura(s).{_facts_txt}"
+            )
         else:
-            pass  # sin flash de éxito (pedido dueña 2026-07-06)
+            from flask import session as _sess
+            _sess["cobranza_ok"] = (
+                f"Cheque {_desc_ch(ch)} creado en cartera." + _facts_txt
+            )
         # TMT 2026-07-06 (dueña): idem multi-cheque — quedarse en cobranza
         # (antes iba a la ficha del cheque).
         return redirect(url_for("cheques.nuevo"))
