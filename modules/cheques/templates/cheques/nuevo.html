@@ -145,15 +145,19 @@
               /* sin scroll horizontal: en el split se ocultan Fecha, Total,
                  Abonado y Acum. saldo (las mismas que la dueña pidió sacar
                  el 30/06) — quedan N°, Vence, Saldo, A aplicar, Resta, Queda */
+              .cobranza-split .cobranza-fact-scroll{ overflow-x:auto; }
               .cobranza-split #aplicacion-facturas th:nth-child(3),
+              .cobranza-split #aplicacion-facturas th:nth-child(4),
               .cobranza-split #aplicacion-facturas th:nth-child(5),
               .cobranza-split #aplicacion-facturas th:nth-child(6),
               .cobranza-split #aplicacion-facturas th:nth-child(8),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(3),
+              .cobranza-split #aplicacion-facturas tbody td:nth-child(4),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(5),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(6),
               .cobranza-split #aplicacion-facturas tbody td:nth-child(8),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(3),
+              .cobranza-split #aplicacion-facturas tfoot td:nth-child(4),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(5),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(6),
               .cobranza-split #aplicacion-facturas tfoot td:nth-child(8){ display:none; }
@@ -1705,6 +1709,17 @@
     if (fechadWrap) {
       fechadWrap.style.visibility = esDeposito ? 'hidden' : 'visible';
     }
+    // TMT 2026-07-06 (dueña): el N° de depósito aparece SOLO con banco 90
+    // (DEP.PICH.) — "las demás opciones no tienen número de depósito".
+    // Al ocultarlo se limpia para que no viaje un doc viejo en el POST.
+    {
+      const docVis = bloque.querySelector('.cheque-docbanco');
+      if (docVis) {
+        const conDoc = (v === '90');
+        docVis.style.visibility = conDoc ? 'visible' : 'hidden';
+        if (!conDoc && docVis.value) docVis.value = '';
+      }
+    }
     // Estado: para 90/91/99 → B (cobrado); para 97 → Z (anticipo); resto deja
     if (statSel && (v === '90' || v === '91' || v === '99')) {
       if ((statSel.value || 'Z').toUpperCase() === 'Z') {
@@ -1724,7 +1739,7 @@
     // TMT 2026-06-30 (dueña): en depósito/efectivo los campos N°/fecha son
     // irrelevantes — al elegir el banco saltamos directo al Doc. banco para
     // tipear el N° de depósito/transferencia sin pasar por campos vacíos.
-    if (fromUser && esDeposito && !esAnticipo97) {
+    if (fromUser && v === '90') {
       const docInp = bloque.querySelector('.cheque-docbanco');
       if (docInp) docInp.focus();
     }
@@ -1774,7 +1789,7 @@
       // tipea "99" (si no, el primer "9" elegía 90 y movía el foco).
       timer = setTimeout(() => {
         buf = '';
-        if (lastSel && ['90', '91', '99'].includes(lastSel.value)) {
+        if (lastSel && lastSel.value === '90') {
           const bq = lastSel.closest('.cheque-bloque');
           const doc = bq && bq.querySelector('.cheque-docbanco');
           if (doc && doc.offsetParent !== null) doc.focus();
