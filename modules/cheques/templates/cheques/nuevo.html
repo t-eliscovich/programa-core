@@ -991,6 +991,23 @@
     const antTbody = document.getElementById('antchq-tbody');
     if (!antPanel || !antTbody) return;
     const hay97 = [...document.querySelectorAll('.cheque-banco')].some(s => s.value === '97');
+    // TMT 2026-07-06 (dueña): "cuando pongo anticipo solo mostrar cheques,
+    // no facturas" — con 97 se esconde el panel de facturas y se vacían sus
+    // montos (ningún aplicar[] viaja: el anticipo cancela cheques, no paga
+    // facturas). Al salir de 97 el panel vuelve si el cliente tiene facturas.
+    if (panel) {
+      if (hay97) {
+        let _dirty = false;
+        tbody.querySelectorAll('input.aplic-input').forEach(i => {
+          if (i.value) { i.value = ''; _dirty = true; }
+        });
+        tbody.querySelectorAll('input.aplic-cancel').forEach(c => { c.checked = false; });
+        if (_dirty) { for (const k in manualValues) delete manualValues[k]; updateSummary(); }
+        panel.classList.add('hidden');
+      } else if (facturas.length && !(anticipoChk && anticipoChk.checked)) {
+        panel.classList.remove('hidden');
+      }
+    }
     if (!hay97 || !chequesVivos.length) {
       antPanel.classList.add('hidden');
       antTbody.innerHTML = '';  // sin inputs → cheques_cancelar[] no viaja
