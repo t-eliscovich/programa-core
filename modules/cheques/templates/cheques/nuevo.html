@@ -142,6 +142,21 @@
               }
               .cobranza-split .aplic-input{ width:4.6rem; }
               .cobranza-split button.aplic-total{ padding:.1rem .3rem; }
+              /* sin scroll horizontal: en el split se ocultan Fecha, Total,
+                 Abonado y Acum. saldo (las mismas que la dueña pidió sacar
+                 el 30/06) — quedan N°, Vence, Saldo, A aplicar, Resta, Queda */
+              .cobranza-split #aplicacion-facturas th:nth-child(3),
+              .cobranza-split #aplicacion-facturas th:nth-child(5),
+              .cobranza-split #aplicacion-facturas th:nth-child(6),
+              .cobranza-split #aplicacion-facturas th:nth-child(8),
+              .cobranza-split #aplicacion-facturas tbody td:nth-child(3),
+              .cobranza-split #aplicacion-facturas tbody td:nth-child(5),
+              .cobranza-split #aplicacion-facturas tbody td:nth-child(6),
+              .cobranza-split #aplicacion-facturas tbody td:nth-child(8),
+              .cobranza-split #aplicacion-facturas tfoot td:nth-child(3),
+              .cobranza-split #aplicacion-facturas tfoot td:nth-child(5),
+              .cobranza-split #aplicacion-facturas tfoot td:nth-child(6),
+              .cobranza-split #aplicacion-facturas tfoot td:nth-child(8){ display:none; }
             }
             /* cursor de teclado en la tabla de facturas (↑↓/Espacio/T/H) */
             .cobranza-fact-cursor > td{ box-shadow:inset 0 0 0 9999px rgb(2 132 199 / .08); }
@@ -340,9 +355,11 @@
             <tfoot id="aplic-tfoot" class="bg-slate-50 border-t-2 border-slate-300 font-medium hidden">
               <tr>
                 <td class="px-2 py-2 text-center text-xs text-slate-500" id="aplic-foot-n">0</td>
-                <td class="px-3 py-2 text-xs text-slate-500" colspan="3">
-                  facturas seleccionadas
-                </td>
+                {# TMT 2026-07-06: sin colspan — el split oculta columnas por
+                   nth-child y el colspan las desalineaba. #}
+                <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">facturas selecc.</td>
+                <td></td>{# col Fecha #}
+                <td></td>{# col Vence #}
                 {# 3 totales — Total/Abonado/Saldo de las facturas seleccionadas. TMT 2026-05-17. #}
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-total">—</td>
                 <td class="px-3 py-2 text-right text-xs text-slate-500 font-mono tabular-nums" id="aplic-foot-abonado">—</td>
