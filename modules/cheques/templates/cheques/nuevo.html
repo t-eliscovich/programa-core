@@ -1028,13 +1028,22 @@
         marcado[c.id_cheque] = false;
       }
     });
+    // TMT 2026-07-06 (dueña: "¿por qué elige uno al azar?"): NO es azar —
+    // recorre por fecha y SALTEA los que no entran ENTEROS en lo que queda
+    // del anticipo (cancelar es todo o nada). razon[] guarda por qué quedó
+    // afuera para mostrarlo en la fila.
+    const razon = {};
     chequesVivos.forEach(c => {
-      if (manualCancel[c.id_cheque] !== undefined) return;
+      if (manualCancel[c.id_cheque] !== undefined) {
+        if (manualCancel[c.id_cheque] === false) razon[c.id_cheque] = 'manual';
+        return;
+      }
       if (pool > 0.005 && c.importe > 0.005 && c.importe <= pool + 0.01) {
         marcado[c.id_cheque] = true;
         pool -= c.importe;
       } else {
         marcado[c.id_cheque] = false;
+        if (c.importe > pool + 0.01) razon[c.id_cheque] = 'no-cabe';
       }
     });
     const fmtF = s => s ? s.split('-').reverse().join('/') : '';
@@ -1055,7 +1064,11 @@
           <td class="px-3 py-1.5 text-right font-mono tabular-nums">${fmt(c.importe)}</td>
           <td class="px-3 py-1.5 text-center text-xs">${on
             ? '<span class="text-rose-700 font-bold">✗ se cancela</span>'
-            : '<span class="text-slate-400">queda en cartera</span>'}</td>
+            : (razon[c.id_cheque] === 'no-cabe'
+               ? '<span class="text-amber-600" title="El cheque es más grande que lo que queda del anticipo — cancelar es todo o nada. Destildá otro o subí el anticipo para incluirlo.">no entra en el anticipo</span>'
+               : (razon[c.id_cheque] === 'manual'
+                  ? '<span class="text-slate-400" title="Lo destildaste vos — el FIFO no lo vuelve a tocar.">queda en cartera (vos)</span>'
+                  : '<span class="text-slate-400">queda en cartera</span>'))}</td>
         </tr>`;
     }).join('');
     // Wire de los checkboxes: persistir la decisión + re-FIFO del resto
