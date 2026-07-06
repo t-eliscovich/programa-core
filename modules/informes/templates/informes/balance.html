@@ -213,7 +213,7 @@
       'Utilidad Proyectada': url_for('iniciales.lista'),
     } %}
     <div class="border-r border-slate-200 dark:border-slate-800 balance-col">
-      <table class="balance-table">
+      <table data-no-sort-table class="balance-table">
         <thead>
           {# Tabla RESULTADOS rediseñada — Federico 2026-05-21.
              Columnas: RESULTADOS (label) | Kg | U$/kg | U$. #}
@@ -285,7 +285,7 @@
        Una sola tabla densa: ACTIVO en rojo, filas, SUBTOTAL/TOTAL destacados,
        PASIVO en rojo, PASIVOS/PATRIM.NETO/DIVID. Igual que la foto. #}
     <div>
-      <table class="balance-table">
+      <table data-no-sort-table class="balance-table">
         <thead>
           <tr>
             <th class="seccion-header" style="text-align:left">ACTIVO</th>
@@ -386,7 +386,7 @@
        Antes estaba debajo del grid en el lado izquierdo, dejaba un
        hueco grande a la derecha. Ahora cuelga al pie de la col 2
        y los dos paneles terminan en líneas cercanas. #}
-    <table class="balance-table mt-2">
+    <table data-no-sort-table class="balance-table mt-2">
       <thead>
         <tr>
           <th class="seccion-header" style="text-align:left">MOVIMIENTOS DEL AÑO</th>
@@ -438,7 +438,7 @@
     </summary>
 
     <div class="overflow-x-auto">
-      <table class="w-full text-sm font-mono">
+      <table data-no-sort-table class="w-full text-sm font-mono">
         <thead class="bg-slate-50 dark:bg-slate-800/40 text-xs uppercase tracking-wider text-slate-500 font-sans">
           <tr>
             <th class="px-4 py-2 text-left font-medium">Concepto</th>
@@ -510,7 +510,7 @@
       {# Componentes que entran al ACTIVO #}
       <div class="border-r border-slate-100 dark:border-slate-800">
         <div class="px-5 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100 dark:border-slate-800">Componentes del Activo (TOTL)</div>
-        <table class="w-full text-sm">
+        <table data-no-sort-table class="w-full text-sm">
           <tbody>
             <tr class="border-b border-slate-50 dark:border-slate-800/60">
               <td class="px-5 py-1.5">Caja (SALCAJ)</td>
@@ -595,7 +595,7 @@
       {# Cheques desglose por stat — para confirmar que TOTC=Z+1+2+3+P+D coincide #}
       <div>
         <div class="px-5 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100 dark:border-slate-800">Cheques por estado</div>
-        <table class="w-full text-sm">
+        <table data-no-sort-table class="w-full text-sm">
           <thead class="text-xs uppercase text-slate-500">
             <tr>
               <th class="px-5 py-1 text-left font-medium">Stat</th>

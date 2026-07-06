@@ -266,6 +266,10 @@
     // toda tabla con thead+tbody+ ≥2 filas, sin requerir class="sortable"
     // explícitamente. Para opt-out, agregar data-no-sort al <table>.
     document.querySelectorAll('table').forEach(t => {
+    // TMT 2026-07-06 (dueña): tablas de INFORME con orden fijo (balance,
+    // resultados) NO se ordenan — opt-out con data-no-sort-table en la
+    // tabla o en cualquier ancestro.
+    if (t.hasAttribute('data-no-sort-table') || t.closest('[data-no-sort-table]')) return;
       if (t.dataset.noSort != null) return;  // opt-out explícito
       if (t.classList.contains('sortable')) return makeSortable(t);  // backcompat
       if (!t.tHead || !t.tBodies || t.tBodies.length === 0) return;

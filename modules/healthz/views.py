@@ -54,7 +54,7 @@ def _secret_fp() -> str:
     try:
         key = current_app.config.get("SECRET_KEY") or ""
         return hashlib.sha256(str(key).encode()).hexdigest()[:8]
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001  # pragma: no cover — defensivo
         return "?"
 
 
