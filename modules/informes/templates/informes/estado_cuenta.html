@@ -214,6 +214,11 @@
         </tr>
       </thead>
       <tbody>
+        {# TMT 2026-07-06 (dueña, caso EDU cheque N°51): los X (anulados) se
+           LISTAN pero tachados en gris y NO cuentan ni en el total (el SQL ya
+           los excluía) ni en el contador — antes decía "3 cheques" sumando
+           solo el B vivo. #}
+        {% set nch = namespace(activos=0) %}
         {% for c in data.cheques %}
         {# N° de cheque — si no_cheque está NULL (data legacy o anticipo),
            cae a #id_cheque para que la dueña pueda identificarlo. TMT 2026-05-16. #}
@@ -223,9 +228,11 @@
            rebotó (1/2/3/R). En cartera/postergado (Z/P) el legacy DBF la
            setea con la fecha de ingreso al sistema — no es fecha de depósito.
            TMT 2026-05-16. #}
-        {% set stat_u = (c.stat or '').upper() %}
+        {% set stat_u = (c.stat or '').strip().upper() %}
         {% set fechaing_real = c.fechaing if stat_u in ('B','A','1','2','3','R') else None %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        {% set anulado = stat_u == 'X' %}
+        {% if not anulado %}{% set nch.activos = nch.activos + 1 %}{% endif %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40{{ ' opacity-60' if anulado }}">
           <td class="px-4 py-2 font-mono text-xs">
             <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
                class="text-sky-700 hover:underline">
@@ -250,8 +257,10 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-slate-500">{{ c.nombre_banco or c.banco }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ c.importe | money_es }}</td>
-          <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ c.stat }}</td>
+          <td class="px-4 py-2 text-right text-mono{{ ' line-through text-slate-400' if anulado }}">{{ c.importe | money_es }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-slate-500">
+            {{ c.stat }}{% if anulado %} <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] uppercase tracking-wide" title="Cheque anulado — no suma al total ni al contador">anulado</span>{% endif %}
+          </td>
         </tr>
         {% else %}
         <tr><td class="px-5 py-6 text-center text-slate-500" colspan="8">Sin cheques.</td></tr>
@@ -260,7 +269,11 @@
       {% if data.cheques %}
       <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
-          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="6">Total ({{ data.cheques | length }} cheque{{ '' if data.cheques|length == 1 else 's' }})</td>
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="6">
+            Total ({{ nch.activos }} cheque{{ '' if nch.activos == 1 else 's' }})
+            {%- set n_anulados = data.cheques | length - nch.activos %}
+            {%- if n_anulados > 0 %} <span class="normal-case tracking-normal text-slate-400 font-normal">· {{ n_anulados }} anulado{{ '' if n_anulados == 1 else 's' }} sin sumar</span>{% endif %}
+          </td>
           <td class="px-4 py-3 text-right text-mono">{{ t.cheques_total | money_es }}</td>
           <td></td>
         </tr>

@@ -288,6 +288,7 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
     """
     q = (q or "").strip()
     like = f"%{q}%" if q else None
+    pref = f"{q}%" if q else None
     return db.fetch_all(
         """
         SELECT c.id_cliente, c.codigo_cli, c.nombre, c.telefono, c.ruc, c.stop, c.cupo,
@@ -306,8 +307,12 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
                    SUM(saldo)  AS saldo_total,
                    COUNT(*)    AS n_abiertas
             FROM scintela.factura
-            WHERE COALESCE(saldo, 0) > 0
+            -- TMT 2026-07-06 (audit estado de cuenta): cartera NETA — los
+            -- saldos NEGATIVOS (NC/sobrepagos) netean, y el backfill de
+            -- Asinfo no cuenta (mismo criterio que cartera/queries y TOTF).
+            WHERE COALESCE(saldo, 0) <> 0
               AND (stat IS NULL OR stat IN ('Z','A','',' '))
+              AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
             GROUP BY codigo_cli
         ) s ON s.codigo_cli = c.codigo_cli
         WHERE (%(incluir_inactivos)s OR COALESCE(c.activo, TRUE) = TRUE)
@@ -316,13 +321,29 @@ def buscar(q: str = "", limite: int = 200, incluir_inactivos: bool = False,
                OR UPPER(c.nombre)     LIKE UPPER(%(like)s)
                OR c.ruc LIKE %(like)s)
         -- TMT 2026-05-20 v2 — pedido dueña: "Clientes idem, sortear
-        -- por codigo". Antes ordenaba por saldo DESC (= columna que
-        -- ya se eliminó del listado).
-        ORDER BY c.codigo_cli ASC
+        -- por codigo" → sin término de búsqueda se mantiene código ASC.
+        -- TMT 2026-07-06 — queja dueña: buscar "edu" listaba EDUARDOs por
+        -- NOMBRE y el cliente con CÓDIGO "EDU" ni aparecía en la 1ra página.
+        -- Con término ranqueamos como la búsqueda global (Ctrl/Cmd+K →
+        -- informes.buscar_clientes): (0) código exacto, (1) código que
+        -- EMPIEZA con el término, (2) resto (nombre/RUC contienen);
+        -- dentro de cada grupo saldo pendiente DESC y luego nombre.
+        ORDER BY
+          CASE
+            WHEN %(q)s IS NULL                            THEN 3
+            WHEN UPPER(c.codigo_cli) = UPPER(%(q)s)       THEN 0
+            WHEN UPPER(c.codigo_cli) LIKE UPPER(%(pref)s) THEN 1
+            ELSE 2
+          END ASC,
+          CASE WHEN %(q)s IS NULL THEN NULL
+               ELSE COALESCE(s.saldo_total, 0) END DESC NULLS LAST,
+          CASE WHEN %(q)s IS NULL THEN NULL
+               ELSE c.nombre END ASC NULLS FIRST,
+          c.codigo_cli ASC
         LIMIT %(limite)s OFFSET %(offset)s
         """,
         {
-            "q": q or None, "like": like, "limite": limite,
+            "q": q or None, "like": like, "pref": pref, "limite": limite,
             "incluir_inactivos": bool(incluir_inactivos),
             "offset": int(offset or 0),
         },

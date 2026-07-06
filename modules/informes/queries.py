@@ -4427,6 +4427,10 @@ def cartera_por_cliente() -> list[dict]:
         -- neteen (memoria project_cartera_signo).
         WHERE COALESCE(f.saldo, 0) <> 0
           AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+          -- TMT 2026-07-06: mismo filtro canónico que totf()/cartera aging
+          -- (precedente NJL 2026-07-02) — sin él, el top-10 deudores mostraba
+          -- saldo fantasma de facturas históricas Asinfo nunca cargadas.
+          AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY f.codigo_cli, c.nombre
         """
         )
@@ -5585,8 +5589,15 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
                  SELECT SUM(f.saldo)
                  FROM scintela.factura f
                  WHERE f.codigo_cli = c.codigo_cli
-                   AND COALESCE(f.saldo, 0) > 0
+                   -- TMT 2026-07-06 (dueña "totales muy mal" EDU): era `> 0`,
+                   -- que ESCONDÍA los saldos negativos (NC / sobrepagos) y el
+                   -- buscador mostraba 278.036,86 mientras el top-10 y el
+                   -- estado de cuenta decían 241.781,01. Criterio canónico de
+                   -- cartera (modules/cartera/queries.py): saldo <> 0 netea +
+                   -- excluir asinfo-backfill. No divergir.
+                   AND COALESCE(f.saldo, 0) <> 0
                    AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                   AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
                ), 0) AS saldo
         FROM scintela.cliente c
         WHERE c.codigo_cli ILIKE %s OR c.nombre ILIKE %s
@@ -5647,8 +5658,12 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         FROM scintela.factura
         WHERE codigo_cli = %s
           -- TMT 2026-06-11 (dueña): las totalizadas (stat T) ya no se muestran
-          -- en el estado de cuenta. Los totales de arriba SÍ las incluyen.
+          -- en el estado de cuenta.
           AND COALESCE(stat, '') <> 'T'
+          -- TMT 2026-07-06: excluir asinfo-backfill también acá (criterio
+          -- canónico de cartera; ya lo hacía la cuenta corriente hermana en
+          -- clientes.cuenta_corriente desde el fix NJL 2026-07-02).
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         -- TMT 2026-06-11 (dueña): de la más antigua a la más actual —
         -- el ACUM corre como un libro mayor y la última fila = saldo hoy.
         -- (Reemplaza el orden DESC del 2026-05-17.)
@@ -5724,6 +5739,16 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
             THEN 1 END)                                               AS n_vencidas
         FROM scintela.factura
         WHERE codigo_cli = %s
+          -- TMT 2026-07-06 (dueña "los totales muy mal están", caso EDU): el
+          -- pie de la tabla dice "Totales (N facturas)" con N = filas
+          -- LISTADAS (sin T, sin backfill), pero estas sumas iban sobre TODAS
+          -- las facturas históricas del cliente (T incluidas) → kg/importe/
+          -- abonado del pie no correspondían a la tabla de arriba (EDU:
+          -- 161.092 kg / 1.431.257,37 de importe eran el HISTÓRICO completo,
+          -- no las 66 facturas listadas). Mismo filtro que la lista, así el
+          -- pie == Σ(filas visibles) y el último ACUM == saldo del pie.
+          AND COALESCE(stat, '') <> 'T'
+          AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         """,
             (codigo_cli,),
         )
