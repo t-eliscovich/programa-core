@@ -193,13 +193,16 @@
                        usa el backend (99/90/91) y type-ahead numérico (mismo
                        buffer de dígitos que el select de banco emisor). #}
                     <select name="medio_anticipo[]" class="cheque-medio border rounded px-2 py-1 mt-0.5 text-sm">
+                      {# TMT 2026-07-06 (dueña: "está feo este formato") — mismo
+                         formato que el select de banco emisor: "código · NOMBRE".
+                         Los <90 son cheques de ese banco (sin prefijo "Cheque ·"). #}
                       <option value="">— cómo entró —</option>
-                      <option value="99">99 · Efectivo</option>
-                      <option value="90">90 · Depósito Pichincha</option>
-                      <option value="91">91 · Depósito Internacional</option>
+                      <option value="99">99 · EFECTIVO</option>
+                      <option value="90">90 · DEP.PICH.</option>
+                      <option value="91">91 · DEP. INTER.</option>
                       {% for b in bancos %}
                         {% if b.no_banco|int < 90 %}
-                        <option value="{{ b.no_banco }}">Cheque · {{ b.no_banco }} · {{ b.nombre }}</option>
+                        <option value="{{ b.no_banco }}">{{ b.no_banco }} · {{ b.nombre }}</option>
                         {% endif %}
                       {% endfor %}
                     </select>
