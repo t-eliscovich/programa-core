@@ -117,46 +117,11 @@
               .cobranza-chq-head{ display:none; }
               .cobranza-chq-row{ grid-template-columns:1fr 1fr; }
             }
-            /* TMT 2026-07-06 (dueña): split cheques|facturas en pantallas
-               anchas. La col izquierda queda angosta → cada cheque pasa a
-               2 renglones de 3 campos (importe·banco·N° / depositar·estado·doc). */
-            @media (min-width:1280px){
-              .cobranza-page{ max-width:110rem; }
-              /* TMT 2026-07-06 (dueña): "menos espacio entre los campos" — la
-                 col de cheques cede todo lo posible a la tabla de facturas. */
-              .cobranza-split{ display:grid; grid-template-columns:minmax(27rem,1fr) minmax(0,2.2fr); gap:.75rem; align-items:start; }
-              .cobranza-split > #aplicacion-facturas{ margin-top:0; }
-              /* TMT 2026-07-06 (dueña): "achica los campos, el cheque una sola
-                 línea, y las facturas sin scroll". Cheque = 1 renglón de 6
-                 campos compactos; tabla de facturas con paddings/fuente
-                 reducidos para que entre completa sin scroll horizontal. */
-              .cobranza-chq-head, .cobranza-chq-row{
-                grid-template-columns:5rem minmax(4.5rem,1.1fr) 4rem 6.8rem 2.8rem minmax(4.5rem,1fr);
-                gap:.3rem;
-              }
-              /* min-width:0 = los campos SÍ pueden achicarse dentro del grid
-                 (sin esto el min-content los hacía desbordar sobre la tabla) */
-              .cobranza-chq-row > *, .cobranza-chq-head > span{ min-width:0; }
-              .cobranza-chq-row input, .cobranza-chq-row select{
-                padding:.2rem .3rem; font-size:12px;
-              }
-              .cobranza-split #aplicacion-facturas table{ font-size:11px; }
-              .cobranza-split #aplicacion-facturas th,
-              .cobranza-split #aplicacion-facturas td{
-                padding-left:.1rem; padding-right:.1rem;
-              }
-              .cobranza-split #aplicacion-facturas th{ font-size:9.5px; letter-spacing:0; }
-              .cobranza-split .aplic-input{ width:4rem; padding:.15rem .25rem; }
-              .cobranza-split button.aplic-total{ padding:.1rem .2rem; font-size:10px; }
-              .cobranza-split #aplicacion-facturas th:first-child{ width:1.6rem; }
-              /* TMT 2026-07-06 (dueña): "tienen que estar todos estos campos,
-                 sacá solo VENCE". Se oculta ÚNICAMENTE la col 4 (Vence); si en
-                 una pantalla no entra, scrollea la tabla, no la página. */
-              .cobranza-split .cobranza-fact-scroll{ overflow-x:auto; }
-              .cobranza-split #aplicacion-facturas th:nth-child(4),
-              .cobranza-split #aplicacion-facturas tbody td:nth-child(4),
-              .cobranza-split #aplicacion-facturas tfoot td:nth-child(4){ display:none; }
-            }
+            /* TMT 2026-07-06 (dueña, tarde): probamos el split cheques|facturas
+               lado a lado y lo REVIRTIÓ — "volvamos a cheques arriba y facturas
+               abajo, funcionaba mejor". El wrapper .cobranza-split queda como
+               div común (sin grid). El teclado, la columna Queda, el sobrante
+               inline y el rango H se mantienen. */
             /* cursor de teclado en la tabla de facturas (↑↓/Espacio/T/H) */
             .cobranza-fact-cursor > td{ box-shadow:inset 0 0 0 9999px rgb(2 132 199 / .08); }
             .cobranza-fact-cursor > td:first-child{ border-left:3px solid rgb(2 132 199); }
