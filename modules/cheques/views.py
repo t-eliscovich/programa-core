@@ -492,11 +492,29 @@ def nuevo():
                     (_ids_pos,),
                 ) or [])
             }
+            # TMT 2026-07-06 (dueña, caso EDU: cheque 20.000 vs factura
+            # 1.841,56): si el monto de la fila lo TIPEÓ el usuario
+            # (aplicar_manual[id]=1 — el JS lo manda para las filas editadas
+            # a mano en A APLICAR), la sobre-aplicación es INTENCIONAL:
+            # NO se recorta — pasa `permitir_sobre_saldo` y la factura queda
+            # con saldo NEGATIVO (nota de crédito, stat 'A', acumulado en
+            # negativo). El recorte al saldo queda SOLO para los montos
+            # sugeridos automáticamente (FIFO / tilde), que nadie tipeó.
+            _manual_ids: set[int] = set()
+            for _k in request.form:
+                if _k.startswith("aplicar_manual[") and _k.endswith("]"):
+                    try:
+                        _manual_ids.add(int(_k[len("aplicar_manual[") : -1]))
+                    except ValueError:
+                        continue
             for a in aplicaciones_pre:
                 _s = _saldos_cap.get(int(a["id_fact"]))
-                if (a["importe"] > 0 and _s is not None and _s > 0.005
+                if (a["importe"] > 0 and _s is not None
                         and a["importe"] > _s + 50.00):
-                    a["importe"] = round(_s, 2)  # excedente → sobrante→anticipo
+                    if int(a["id_fact"]) in _manual_ids:
+                        a["permitir_sobre_saldo"] = True  # tipeado → NC
+                    elif _s > 0.005:
+                        a["importe"] = round(_s, 2)  # excedente → sobrante→anticipo
 
     # TMT 2026-07-01 (duena): sobrante -> saldo a favor en la MISMA factura.
     # Si la duena eligio esta opcion en la confirmacion, el sobrante (cheques -

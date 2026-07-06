@@ -821,6 +821,19 @@ def anular_por_error_de_carga(
                 conn=conn,
             )
 
+        # --- Borrar las chequesxfact del cheque anulado (paridad Bug G
+        # de reversar(), TMT 2026-05-16): factura.abono es DERIVADA de
+        # chequesxfact — ya restamos el abono arriba; si las filas quedan
+        # vivas apuntando a un cheque stat='X', el detalle de la factura
+        # muestra aplicaciones fantasma y el abono deja de cuadrar con la
+        # tabla. BUG 2026-07-06 (caso EDU/alex). ---
+        if aplic:
+            db.execute(
+                "DELETE FROM scintela.chequesxfact WHERE id_cheque=%s",
+                (id_cheque,),
+                conn=conn,
+            )
+
         # --- Compensación bancaria/caja según stat actual ---
         if stat_prev in ("B", "V", "W", "I", "J", "K", "A"):
             import bank_helpers
@@ -883,6 +896,66 @@ def anular_por_error_de_carga(
             "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
             "WHERE id_cheque=%s",
             (fecha, marca, usuario, id_cheque),
+            conn=conn,
+        )
+
+        # --- Historial unificado: registrar el reverso y marcar los
+        # mov_doble originales como 'reversado'. BUG 2026-07-06 (dueña,
+        # caso EDU/alex): este flujo anulaba el cheque y reabría las
+        # facturas pero NO tocaba scintela.mov_doble → en /historial las
+        # filas "Cheque: alta" y "Cheque → Factura aplicada" seguían
+        # 'activo', con el botón "↺ reversar" ofrecido de nuevo (re-
+        # reversar duplicaba el reverso). Mismo mecanismo que reversar():
+        # el registrar() con id_original marca el alta como 'reversado'
+        # + id_reverso; las aplicaciones se marcan con el UPDATE de abajo.
+        import mov_doble as _md
+
+        md_orig_cheque = db.fetch_one(
+            """
+            SELECT id_mov_doble FROM scintela.mov_doble
+             WHERE origen_table='cheque' AND origen_id=%s
+               AND tipo='cheque_creado' AND estado='activo'
+             ORDER BY id_mov_doble DESC LIMIT 1
+            """,
+            (id_cheque,),
+            conn=conn,
+        )
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_cheque_administrativo",
+            origen_table="cheque",
+            origen_id=id_cheque,
+            destino_table="cheque",
+            destino_id=id_cheque,
+            # registrar() ignora importe 0 — mismo truco `or 1.0` que reversar().
+            importe=importe or 1.0,
+            fecha=fecha,
+            concepto=(
+                f"ANULADO error de carga ch {ch.get('no_cheque') or id_cheque} "
+                f"{stat_prev}→X" + (f" — {motivo}" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_cheque": id_cheque,
+                "stat_previo": stat_prev,
+                "id_reemplazo": id_reemplazo,
+                "n_aplicaciones_reversadas": len(aplic),
+                "compensacion": compensacion,
+                "motivo": motivo or "",
+            },
+            id_original=md_orig_cheque["id_mov_doble"] if md_orig_cheque else None,
+        )
+        # También marcar como reversadas las aplicaciones del cheque
+        # (`cheque_aplicado_a_factura`) que seguían 'activo' — igual que
+        # hace reversar().
+        db.execute(
+            """
+            UPDATE scintela.mov_doble
+               SET estado='reversado'
+             WHERE origen_table='cheque' AND origen_id=%s
+               AND tipo='cheque_aplicado_a_factura' AND estado='activo'
+            """,
+            (id_cheque,),
             conn=conn,
         )
 

@@ -778,27 +778,34 @@
       // Resta = saldo de la factura − lo que se aplica.
       // Si v=0, resta = saldo (toda la deuda sigue viva).
       // Si v=saldo, resta = 0 (cancelada).
-      // ACOTADA a [0, importe]: una factura nunca puede deber más que su
-      // importe ni menos que 0.
+      // TMT 2026-07-06 (dueña, caso EDU): si se aplica MÁS que el saldo a
+      // propósito, la factura queda con saldo NEGATIVO (nota de crédito) —
+      // lo mostramos tal cual (antes se acotaba a 0 y "parecía" cancelada).
+      // Solo acotamos por arriba (nunca deber más que el importe).
       let resta = saldo - v;
-      if (importe > 0) resta = Math.max(0, Math.min(importe, resta));
+      if (importe > 0) resta = Math.min(importe, resta);
       cell.textContent = Math.abs(resta) > 0.005 ? fmt(resta) : '—';
 
-      // TMT 2026-06-07: validar el RANGO aplicable y marcar inválido.
-      // El rango válido es [-abono, saldo+$50]: un POSITIVO no puede pasar
-      // el saldo (tolerancia $50 como el backend); un NEGATIVO (reversa)
-      // no puede revertir más que lo ABONADO. Fuera de rango el backend
-      // lo rechaza → lo marcamos rojo ACÁ para que se vea antes de guardar.
-      // (Antes esto se "escondía" acotando la resta y parecía válido.)
-      const invalidaPos = v > saldo + 50 + 0.005;
+      // TMT 2026-06-07 / 2026-07-06: validar el RANGO aplicable.
+      // Un NEGATIVO (reversa) no puede revertir más que lo ABONADO → rojo
+      // (el backend lo rechaza). Un POSITIVO que pasa el saldo YA NO es
+      // inválido: es sobre-aplicación intencional → la factura queda con
+      // saldo a favor (NC). Se marca en ÁMBAR informativo.
+      const sobreSaldo = v > saldo + 50 + 0.005;
       const invalidaNeg = v < 0 && Math.abs(v) > abono + 0.01;
-      const invalida = Math.abs(v) > 0.005 && (invalidaPos || invalidaNeg);
+      const invalida = Math.abs(v) > 0.005 && invalidaNeg;
       inp.classList.toggle('border-rose-500', invalida);
       inp.classList.toggle('bg-rose-50', invalida);
       cell.classList.toggle('text-rose-600', invalida);
-      inp.title = !invalida ? '' : (v < 0
+      const esNC = !invalida && Math.abs(v) > 0.005 && sobreSaldo;
+      inp.classList.toggle('border-amber-500', esNC);
+      inp.classList.toggle('bg-amber-50', esNC);
+      cell.classList.toggle('text-amber-700', esNC);
+      inp.title = invalida
         ? `No podés revertir ${fmt(Math.abs(v))}: esta factura tiene sólo ${fmt(abono)} abonado.`
-        : `Excede el saldo (${fmt(saldo)}) por más de $50.`);
+        : (esNC
+            ? `Supera el saldo (${fmt(saldo)}): la factura queda con ${fmt(v - saldo)} a favor del cliente (nota de crédito).`
+            : '');
 
       // ── Columna QUEDA (TMT 2026-07-06, ex-pantalla de confirmación) ──
       // Misma regla que el backend: |nuevo_saldo| ≤ $0.50 → T; con abono → A.
@@ -1905,6 +1912,20 @@
   const TOLERANCIA_USD = 50.00;
   if (form) {
     form.addEventListener('submit', (e) => {
+      // TMT 2026-07-06 (dueña, caso EDU): marcar qué filas de A APLICAR se
+      // editaron A MANO (viven en manualValues, que persiste entre renders).
+      // El backend NO recorta esas al saldo: si tipeaste más que el saldo,
+      // es intencional → la factura queda con saldo negativo (NC).
+      form.querySelectorAll('input[data-aplicar-manual]').forEach(h => h.remove());
+      Object.keys(manualValues).forEach(id => {
+        if (Math.abs(manualValues[id] || 0) < 0.005) return;
+        const h = document.createElement('input');
+        h.type = 'hidden';
+        h.name = 'aplicar_manual[' + id + ']';
+        h.value = '1';
+        h.setAttribute('data-aplicar-manual', '1');
+        form.appendChild(h);
+      });
       // TMT 2026-06-29 (dueña): en ANTICIPO el "sin asignar" es saldo a favor a
       // propósito → NO mostrar el confirm 'quedan en cartera' (mensaje del cobro
       // normal). Detectamos por banco=97 (antes dependía del checkbox oculto,
