@@ -42,7 +42,10 @@ def saldo_op() -> dict:
     desde = comp.get("d")
     if desde is not None:
         ret = db.fetch_one(
-            "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+            # v4: los retiros OP nuevos (pc-retiro-op) se guardan NEGATIVOS —
+            # normalizar el signo para que 'retirado' siga siendo positivo.
+            "SELECT COALESCE(SUM(CASE WHEN COALESCE(usuario_crea,'') = 'pc-retiro-op' "
+            "THEN -ret ELSE ret END), 0) AS s FROM scintela.retiros "
             "WHERE UPPER(TRIM(de)) = 'OP' AND fecha >= %s",
             (desde,),
         ) or {"s": 0}
@@ -196,6 +199,12 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
     concepto = concepto[:100]
 
     with db.tx() as conn:
+        # TMT 2026-07-06 v4 (dueña: "es negativo Y negativo"): el retiro OP
+        # entra NEGATIVO en retiros, espejo de la compra OP negativa. En el
+        # balance URET vive DENTRO del Total Activo (MOV.CAPITAL del dBase),
+        # así que: URET baja 51k (activo baja) + posdat OP baja 51k (pasivo
+        # baja) → patrimonio y UTILIDAD QUIETOS, y Pasivos RESTA el monto.
+        # Dividendos del mes lo muestra en negativo (neteando los positivos).
         row = db.execute_returning(
             """
             INSERT INTO scintela.retiros
@@ -203,7 +212,7 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
             VALUES (%s, NULL, %s, %s, %s, NULL, %s)
             RETURNING id_retiro
             """,
-            (fecha, monto, de, concepto, USUARIO_RETIRO_OP),
+            (fecha, -monto, de, concepto, USUARIO_RETIRO_OP),
             conn=conn,
         ) or {}
         id_retiro = int(row.get("id_retiro") or 0)
@@ -340,7 +349,7 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
                 "SELECT id_retiro FROM scintela.retiros "
                 "WHERE id_retiro = %s AND UPPER(TRIM(de)) = 'OP' "
                 "AND ROUND(ret, 2) = %s",
-                (id_retiro, monto), conn=conn,
+                (id_retiro, -monto), conn=conn,  # v4: ret guardado en negativo
             )
             target_id = _ok.get("id_retiro") if _ok else None
         if not target_id:
@@ -349,7 +358,7 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
                 "WHERE UPPER(TRIM(de)) = 'OP' AND ROUND(ret, 2) = %s "
                 "AND fecha = %s AND usuario_crea = %s "
                 "ORDER BY id_retiro DESC LIMIT 1",
-                (monto, row.get("fecha"), USUARIO_RETIRO_OP), conn=conn,
+                (-monto, row.get("fecha"), USUARIO_RETIRO_OP), conn=conn,
             )
             target_id = _alt.get("id_retiro") if _alt else None
         if target_id:

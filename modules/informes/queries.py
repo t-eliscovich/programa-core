@@ -483,11 +483,9 @@ def uret_mes_corriente() -> float:
         FROM scintela.retiros
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
-          -- TMT 2026-07-06 v3: los retiros OP nuevos (pc-retiro-op) YA restan
-          -- de Pasivos (bajan el posdat OP) — si además sumaran a URET, "Ut.
-          -- Real" (ΔPATR + URET) los contaría DOBLE. Los viejos del dBase
-          -- (dbf-import) siguen contando como siempre.
-          AND COALESCE(usuario_crea, '') <> 'pc-retiro-op'
+          -- TMT 2026-07-06 v4: los retiros OP nuevos entran NEGATIVOS (ver
+          -- retiros.crear_op) — se suman tal cual: netean URET y la utilidad
+          -- queda quieta sin exclusiones.
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -5306,7 +5304,6 @@ def retiros_total_mes_actual() -> float:
         WHERE EXTRACT(YEAR FROM fecha)  = EXTRACT(YEAR FROM CURRENT_DATE)
           AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM CURRENT_DATE)
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-          AND COALESCE(usuario_crea, '') <> 'pc-retiro-op'  -- v. uret_mes_corriente
         """
     )
     return float(row["total"] or 0) if row else 0.0
@@ -5319,7 +5316,6 @@ def retiros_total_anual() -> float:
         FROM scintela.retiros
         WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM CURRENT_DATE)
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-          AND COALESCE(usuario_crea, '') <> 'pc-retiro-op'  -- v. uret_mes_corriente
         """
     )
     return float(row["total"] or 0) if row else 0.0
