@@ -53,7 +53,7 @@ def _mk_conn() -> sqlite3.Connection:
     conn.execute(
         """
         CREATE TABLE scintela.factura (
-            codigo_cli TEXT, saldo REAL, stat TEXT
+            codigo_cli TEXT, saldo REAL, stat TEXT, usuario_crea TEXT
         )
         """
     )
@@ -90,7 +90,7 @@ def _seed(conn: sqlite3.Connection) -> None:
         ("AAJ", 0.0, "Z"),        # saldo 0
     ]
     conn.executemany(
-        "INSERT INTO scintela.factura (codigo_cli, saldo, stat) VALUES (?, ?, ?)",
+        "INSERT INTO scintela.factura (codigo_cli, saldo, stat, usuario_crea) VALUES (?, ?, ?, '')",
         facturas,
     )
 
