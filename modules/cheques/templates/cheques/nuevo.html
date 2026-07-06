@@ -14,11 +14,14 @@
   {# TMT 2026-07-06 (dueña): confirmación GRANDE post-guardado — "el
      mensaje antes era bajo pero ahora no sé si se hizo o hubo un error". #}
   {% if cobranza_ok %}
-    <div class="mb-4 rounded-lg border-2 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-5 py-4 flex items-start gap-3">
-      <span class="text-3xl leading-none text-emerald-600">✔</span>
+    {# estilos inline además de tailwind: el build JIT está congelado y
+       algunas clases pueden no existir (gotcha 2026-06-30). #}
+    <div class="mb-4 flex items-start gap-3"
+         style="background:#ecfdf5;border:2px solid #34d399;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1rem;">
+      <span style="font-size:1.9rem;line-height:1;color:#059669;">✔</span>
       <div>
-        <p class="text-lg font-bold text-emerald-800 dark:text-emerald-300">Cobranza guardada</p>
-        <p class="text-sm text-emerald-900 dark:text-emerald-200 mt-0.5">{{ cobranza_ok }}</p>
+        <p style="font-size:1.15rem;font-weight:700;color:#065f46;margin:0;">Cobranza guardada</p>
+        <p style="font-size:.9rem;color:#064e3b;margin:.15rem 0 0;">{{ cobranza_ok }}</p>
       </div>
     </div>
   {% endif %}
