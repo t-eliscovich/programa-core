@@ -1919,8 +1919,12 @@
         totalAplicado += parseMonto(inp.value);
       });
       const diff = totalAplicado - totalCheques;
+      // TMT 2026-07-06 (dueña): el confirm de diferencia molesta por centavos —
+      // solo preguntar cuando la diferencia supera $5. Hasta $5 se guarda
+      // directo (el backend igual la maneja).
+      const MIN_AVISO_USD = 5.00;
       // Si aplicaron MÁS que los cheques (positivo) y la diferencia es chica:
-      if (diff > 0.005 && diff <= TOLERANCIA_USD) {
+      if (diff > MIN_AVISO_USD && diff <= TOLERANCIA_USD) {
         const ok = confirm(
           `La suma aplicada ($ ${totalAplicado.toFixed(2)}) supera el total ` +
           `de cheques ($ ${totalCheques.toFixed(2)}) por $ ${diff.toFixed(2)}.\n\n` +
@@ -1930,7 +1934,7 @@
         if (!ok) e.preventDefault();
       }
       // Si aplicaron MENOS, mostrar aviso también (queda en cartera):
-      else if (diff < -0.005 && diff >= -TOLERANCIA_USD) {
+      else if (diff < -MIN_AVISO_USD && diff >= -TOLERANCIA_USD) {
         // TMT 2026-07-06: si el recuadro de sobrante está visible, la
         // decisión ya es explícita (radios NC/anticipo) — no preguntar.
         const sbox = document.getElementById('sobrante-box');
