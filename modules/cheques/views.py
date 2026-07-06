@@ -984,7 +984,10 @@ def nuevo():
                 f"(total $ {total_creado:,.2f}): {nums}.{sufijo}",
                 "ok",
             )
-            return redirect(url_for("cheques.lista", q=codigo_cli))
+            # TMT 2026-07-06 (dueña): al terminar una cobranza QUEDARSE en la
+            # pantalla de cobranza (form limpio para la siguiente), no ir a la
+            # lista de cheques. El flash de arriba confirma lo creado.
+            return redirect(url_for("cheques.nuevo"))
         if es_anticipo and ch.get("id_cheque_anticipo"):
             flash(
                 f"Cheque N° {ch.get('no_cheque')} creado como ANTICIPO. Se generó "
@@ -999,7 +1002,9 @@ def nuevo():
             )
         else:
             flash(f"Cheque N° {ch.get('no_cheque')} creado en cartera.", "ok")
-        return redirect(url_for("cheques.detalle", id_cheque=ch["id_cheque"]))
+        # TMT 2026-07-06 (dueña): idem multi-cheque — quedarse en cobranza
+        # (antes iba a la ficha del cheque).
+        return redirect(url_for("cheques.nuevo"))
     except ValueError as e:
         errores.append(str(e))
         return render_template(
