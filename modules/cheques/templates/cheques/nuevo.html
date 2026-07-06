@@ -4,7 +4,7 @@
 
 {% block content %}
 {# TMT 2026-05-17 — patrón estándar de página (ver .page-shell en base.html). #}
-<div class="page-shell page-shell--xl">
+<div class="page-shell page-shell--xl cobranza-page">
   {# TMT 2026-05-18 — patrón canónico (page-shell--xl + header sin subtitle).
      Coincide con compra/nueva y factura/nueva. #}
   <header class="page-header">
@@ -30,6 +30,9 @@
     {# Layout 1 columna — el toggle "Es anticipo" se sacó (Tamara 2026-05-23)
        porque era redundante con el banco emisor 97 ANTICIPO. Si querés
        cargar un anticipo, elegís banco 97 directamente. #}
+    {# TMT 2026-07-06 (dueña): pantalla dividida en ≥1280px — cheques a la
+       IZQUIERDA, facturas a la DERECHA (CSS .cobranza-split más abajo). #}
+    <div class="cobranza-split">
     <div class="grid grid-cols-1 gap-4">
 
       {# ─── Columna izquierda: campos del cheque ───────────────────
@@ -108,6 +111,21 @@
               .cobranza-chq-head{ display:none; }
               .cobranza-chq-row{ grid-template-columns:1fr 1fr; }
             }
+            /* TMT 2026-07-06 (dueña): split cheques|facturas en pantallas
+               anchas. La col izquierda queda angosta → cada cheque pasa a
+               2 renglones de 3 campos (importe·banco·N° / depositar·estado·doc). */
+            @media (min-width:1280px){
+              .cobranza-page{ max-width:96rem; }
+              .cobranza-split{ display:grid; grid-template-columns:minmax(23rem,2fr) minmax(0,3fr); gap:1.5rem; align-items:start; }
+              .cobranza-split > #aplicacion-facturas{ margin-top:0; }
+              .cobranza-chq-head, .cobranza-chq-row{ grid-template-columns:7rem minmax(7rem,1.4fr) minmax(5.5rem,1fr); }
+              .cobranza-chq-head span:nth-child(n+4){ display:none; }
+              .cobranza-fact-scroll{ overflow-x:auto; }
+            }
+            /* cursor de teclado en la tabla de facturas (↑↓/Espacio/T/H) */
+            .cobranza-fact-cursor > td{ box-shadow:inset 0 0 0 9999px rgb(2 132 199 / .08); }
+            .cobranza-fact-cursor > td:first-child{ border-left:3px solid rgb(2 132 199); }
+            .cobranza-fact-scroll:focus{ outline:2px solid rgb(2 132 199 / .4); outline-offset:-2px; }
           </style>
           <div class="cobranza-chq-head text-slate-500">
             <span style="text-align:right">Importe</span>
@@ -190,7 +208,7 @@
           <div class="flex items-baseline justify-between mt-1">
             <p class="text-[10px] text-slate-500" id="cheques-multi-hint">
               {# TMT 2026-05-18 — hint corto (Regla 3) #}
-              + agrega bloques; importe se autocompleta del anterior.
+              ↵ avanza de campo y al final arma otro cheque · ↵ con importe vacío salta a facturas · facturas: ↑↓ moverse, Espacio tildar, T todas, H hasta acá · F10 o Ctrl+↵ guarda
             </p>
             <p class="text-xs text-slate-700" id="cheques-total-display">
               Total cheques: <strong id="cheques-total-monto">$ 0,00</strong>
@@ -267,7 +285,7 @@
            dueña pidió "no hace falta tanto espacio para todo". Sacamos Fecha,
            Total, Abonado y Acum. saldo; quedan N°, Vence, Saldo, A aplicar y
            Resta. Filas finas + contenedor alto para ver más facturas. #}
-        <div class="cobranza-fact-scroll">
+        <div class="cobranza-fact-scroll" tabindex="0" title="↑↓ moverse · Espacio tildar · T todas · H hasta acá">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
               <tr>
@@ -316,6 +334,7 @@
       {# TMT 2026-05-18 — instrucciones largas movidas a tooltips de los
          headers de columna (Regla 3). #}
     </div>
+    </div>{# /cobranza-split #}
 
     <div class="flex items-center justify-between mt-6 pt-4 border-t">
       <a href="{{ url_for('cheques.lista') }}"
@@ -686,6 +705,7 @@
     recalcAcum();
     updateSummary();
     syncToggleAll();
+    refrescarCursorFacturas();
   }
 
   // Sync del header "tick-all": tildado si TODOS están tildados, sino destildado.
@@ -1061,24 +1081,40 @@
     });
   }
 
-  // TMT 2026-07-06 (dueña): 'una vez completada la línea, si aprieto Enter
-  // que empiece el 2do cheque'. Enter dentro de la grilla de cheques NUNCA
-  // submitea el form (evita guardar por accidente); si el bloque está
-  // completo (importe > 0 y banco emisor elegido) equivale a "+ Otro cheque".
-  // Delegado en chequesList para cubrir también los bloques clonados.
+  // TMT 2026-07-06 (dueña, estilo dBase): Enter AVANZA campo a campo dentro
+  // del bloque (importe → banco → N° → a depositar → estado → doc). En el
+  // último campo, si la línea está completa (importe>0 + banco), arma el 2do
+  // cheque con el cursor en el IMPORTE (heredado, seleccionado). Enter con el
+  // importe VACÍO = "no hay más cheques" → salta al panel de facturas.
+  // Enter dentro de la grilla NUNCA submitea el form.
+  const CHQ_ORDEN = ['.cheque-imp', '.cheque-banco', '.cheque-num',
+                     '.cheque-fechad', '.cheque-stat', '.cheque-docbanco'];
   chequesList.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const bloque = e.target.closest ? e.target.closest('.cheque-bloque') : null;
     if (!bloque) return;
     e.preventDefault();
+    const idx = CHQ_ORDEN.findIndex(sel => e.target.matches && e.target.matches(sel));
+    if (idx === 0 && !(parseMonto(e.target.value) > 0)) {
+      // importe vacío → pasar a las facturas (si hay panel visible)
+      if (factScroll && !panel.classList.contains('hidden')) factScroll.focus();
+      return;
+    }
+    // siguiente campo visible/habilitado del MISMO bloque
+    for (let i = idx + 1; i < CHQ_ORDEN.length; i++) {
+      const el = bloque.querySelector(CHQ_ORDEN[i]);
+      if (el && !el.disabled && el.offsetParent !== null
+          && getComputedStyle(el).visibility !== 'hidden') {
+        el.focus();
+        if (el.select) el.select();
+        return;
+      }
+    }
+    // último campo → nuevo cheque si la línea está completa
     const imp = parseMonto((bloque.querySelector('.cheque-imp') || {}).value || '');
     const banco = ((bloque.querySelector('.cheque-banco') || {}).value || '').trim();
     if (imp > 0 && banco && btnAddCheque) {
       btnAddCheque.click();
-      // TMT 2026-07-06 (dueña): tras el Enter, el cursor va al MONTO del
-      // bloque nuevo (viene heredado y capaz hay que cambiarlo) — "empezamos
-      // desde el primer campo". select() para que tipear lo reemplace.
-      // (El botón "+ Otro cheque" a mano sigue enfocando el N°.)
       const nuevoImp = chequesList.querySelector('.cheque-bloque .cheque-imp');
       if (nuevoImp) { nuevoImp.focus(); nuevoImp.select(); }
     }
@@ -1306,6 +1342,88 @@
       render(buscar.value);
     });
   }
+  // ── TMT 2026-07-06 (dueña, estilo dBase): teclado en el panel de facturas.
+  // El contenedor es focuseable (tabindex=0): ↑↓ mueven un cursor visual,
+  // Espacio tilda/destilda la fila, T = TODAS, H = hasta la fila del cursor.
+  // Enter en un monto "A aplicar" confirma y baja al monto de la fila
+  // siguiente. F10 / Ctrl+Enter guardan desde cualquier lado.
+  const factScroll = document.querySelector('.cobranza-fact-scroll');
+  let factCursorId = null;
+  function filasFact() {
+    return [...tbody.querySelectorAll('input.aplic-cancel')].map(c => c.closest('tr'));
+  }
+  function refrescarCursorFacturas() {
+    const filas = filasFact();
+    if (!filas.length) { factCursorId = null; return; }
+    let fila = filas.find(tr => tr.querySelector('input.aplic-cancel').dataset.id === factCursorId);
+    if (!fila) { fila = filas[0]; factCursorId = fila.querySelector('input.aplic-cancel').dataset.id; }
+    filas.forEach(tr => tr.classList.toggle('cobranza-fact-cursor', tr === fila));
+  }
+  function moverCursorFacturas(delta) {
+    const filas = filasFact();
+    if (!filas.length) return;
+    let i = filas.findIndex(tr => tr.querySelector('input.aplic-cancel').dataset.id === factCursorId);
+    i = Math.max(0, Math.min(filas.length - 1, (i < 0 ? 0 : i + delta)));
+    factCursorId = filas[i].querySelector('input.aplic-cancel').dataset.id;
+    refrescarCursorFacturas();
+    filas[i].scrollIntoView({ block: 'nearest' });
+  }
+  if (factScroll) {
+    factScroll.addEventListener('keydown', (e) => {
+      const t = e.target;
+      if (t.tagName === 'BUTTON') return;  // botón Max: teclado nativo
+      if (t.classList && t.classList.contains('aplic-input')) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          factCursorId = t.dataset.id;
+          moverCursorFacturas(1);
+          const fila = filasFact().find(tr => tr.querySelector('input.aplic-cancel').dataset.id === factCursorId);
+          const inp = fila && fila.querySelector('input.aplic-input');
+          if (inp) { inp.focus(); inp.select(); }
+        }
+        return;  // tipeo normal en el monto
+      }
+      if (t.classList && t.classList.contains('aplic-cancel')
+          && (e.key === ' ' || e.key === 'Enter')) return;  // toggle nativo
+      if (e.key === 'ArrowDown') { e.preventDefault(); moverCursorFacturas(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); moverCursorFacturas(-1); }
+      else if (e.key === ' ') {
+        e.preventDefault();
+        const fila = filasFact().find(tr => tr.querySelector('input.aplic-cancel').dataset.id === factCursorId);
+        const chk = fila && fila.querySelector('input.aplic-cancel');
+        if (chk) chk.click();
+      }
+      else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        const b = document.getElementById('aplic-todas');
+        if (b) b.click();
+      }
+      else if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        const idx = facturas.findIndex(f => String(f.id_factura) === String(factCursorId));
+        if (idx >= 0) {
+          facturas.forEach((f, i) => { manualValues[f.id_factura] = (i <= idx) ? (parseFloat(f.saldo) || 0) : 0; });
+          render(buscar.value);
+        }
+      }
+      else if (e.key === 'Enter') { e.preventDefault(); }  // nunca submit acá
+    });
+    // click en una fila también posiciona el cursor
+    tbody.addEventListener('click', (e) => {
+      const tr = e.target.closest && e.target.closest('tr');
+      const chk = tr && tr.querySelector && tr.querySelector('input.aplic-cancel');
+      if (chk) { factCursorId = chk.dataset.id; refrescarCursorFacturas(); }
+    });
+  }
+  // F10 / Ctrl+Enter (o Cmd+Enter) = Guardar desde cualquier campo (dBase F10).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'F10' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      const form = document.getElementById('cheque-form');
+      if (form) form.requestSubmit();
+    }
+  });
+
   if (anticipoChk) anticipoChk.addEventListener('change', actualizarVisibilidad);
 
   // TMT 2026-05-27 dueña: banco emisor ahora es POR-CHEQUE. Cada bloque
