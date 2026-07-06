@@ -610,6 +610,10 @@ def reversar_mov(id_mov_doble: int):
 # tipo → permiso de la operación (el que se necesita para reversarla inline).
 _PERMISO_REVERSO_INLINE = {
     "cheque_aplicado_a_factura": "cheques.aplicar",
+    # TMT 2026-07-06 (Andrés): "Tipo 'retiro_op' aún no tiene reverso
+    # automatizado" — ahora sí: deshacer_op (borra retiro + imputación y
+    # devuelve el monto a la fila posdat OP si el retiro la había bajado).
+    "retiro_op": "posdat.editar",
 }
 
 
@@ -662,6 +666,37 @@ def reversar_mov_inline(id_mov_doble: int):
         return render_template("404.html"), 404
 
     usuario = (g.user or {}).get("username", "web")
+
+    # TMT 2026-07-06: retiro_op tiene reverso atómico propio — deshacer_op
+    # maneja su propia transacción (no entra al db.tx() genérico de abajo).
+    if tipo == "retiro_op":
+        from modules.retiros import queries as _ret_q
+        try:
+            _imp = db.fetch_one(
+                "SELECT id_op_retiro_linea FROM scintela.op_retiro_linea "
+                "WHERE id_retiro = %s ORDER BY id_op_retiro_linea DESC LIMIT 1",
+                (int(r.get("origen_id") or 0),),
+            )
+            if not _imp:
+                flash(
+                    "No encuentro la imputación de ese retiro OP (¿ya fue "
+                    "deshecho, o el retiro se cargó sin línea?). Si el retiro "
+                    "sigue en la fila OP de /posdat, deshacelo con el ✕ de ahí.",
+                    "warn",
+                )
+                return redirect(_next_seguro())
+            res = _ret_q.deshacer_op(int(_imp["id_op_retiro_linea"]), usuario=usuario)
+            flash(
+                f"Retiro OP reversado: $ {res['monto']:,.2f}. La cuenta OP "
+                f"volvió a subir y el retiro se borró de /retiros.",
+                "ok",
+            )
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude reversar el retiro OP (rollback total)", e)
+        return redirect(_next_seguro())
+
     from modules.cheques import queries as _ch_q
 
     try:

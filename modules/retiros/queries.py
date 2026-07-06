@@ -97,14 +97,22 @@ def lineas_op() -> list[dict]:
     # 0109 -> defensivo (sin imputaciones).
     alloc_rows: dict[str, list[dict]] = {}
     try:
-        for a in (db.fetch_all(
-            "SELECT id_op_retiro_linea, line_key, fecha, monto "
-            "FROM scintela.op_retiro_linea ORDER BY fecha, id_op_retiro_linea"
-        ) or []):
+        try:
+            _alloc = db.fetch_all(
+                "SELECT id_op_retiro_linea, line_key, fecha, monto, bajo_posdat "
+                "FROM scintela.op_retiro_linea ORDER BY fecha, id_op_retiro_linea"
+            ) or []
+        except Exception:  # noqa: BLE001
+            _alloc = db.fetch_all(
+                "SELECT id_op_retiro_linea, line_key, fecha, monto "
+                "FROM scintela.op_retiro_linea ORDER BY fecha, id_op_retiro_linea"
+            ) or []
+        for a in _alloc:
             alloc_rows.setdefault(a["line_key"], []).append({
                 "id": a["id_op_retiro_linea"],
                 "fecha": a.get("fecha"),
                 "monto": round(float(a.get("monto") or 0), 2),
+                "bajo_posdat": bool(a.get("bajo_posdat")),
             })
     except Exception:  # noqa: BLE001
         alloc_rows = {}
@@ -114,6 +122,11 @@ def lineas_op() -> list[dict]:
         credito = round(float(r.get("credito") or 0), 2)
         imps = alloc_rows.get(r.get("line_key"), [])
         retirado = round(sum(i["monto"] for i in imps), 2)
+        # TMT 2026-07-06: las imputaciones nuevas (bajo_posdat) YA están
+        # reflejadas en el crédito (bajaron el importe real) — restar solo
+        # las viejas display-only para no descontar dos veces.
+        retirado_display = round(sum(i["monto"] for i in imps
+                                     if not i.get("bajo_posdat")), 2)
         out.append({
             "line_key": r.get("line_key"),
             "origen": r.get("origen"),
@@ -121,10 +134,41 @@ def lineas_op() -> list[dict]:
             "concepto": r.get("concepto") or "",
             "credito": credito,
             "retirado": retirado,
-            "restante": round(credito - retirado, 2),
+            "restante": round(credito - retirado_display, 2),
             "imputaciones": imps,
         })
     return out
+
+
+def _posdat_de_line_key(line_key: str, conn=None):
+    """Fila posdat OP identificada por line_key 'P|num|concepto' (o None)."""
+    if not line_key or not line_key.startswith("P|"):
+        return None
+    try:
+        _, num_s, concepto = line_key.split("|", 2)
+        num = int(num_s or 0)
+    except ValueError:
+        return None
+    return db.fetch_one(
+        "SELECT id_posdat, importe FROM scintela.posdat "
+        "WHERE UPPER(TRIM(prov)) = 'OP' AND COALESCE(num, 0) = %s "
+        "AND COALESCE(concepto, '') = %s ORDER BY id_posdat LIMIT 1",
+        (num, concepto), conn=conn,
+    )
+
+
+def _col_bajo_posdat(conn=None) -> bool:
+    """True si la columna op_retiro_linea.bajo_posdat existe (mig 0111)."""
+    try:
+        r = db.fetch_one(
+            "SELECT 1 AS ok FROM information_schema.columns "
+            "WHERE table_schema = 'scintela' AND table_name = 'op_retiro_linea' "
+            "AND column_name = 'bajo_posdat'",
+            conn=conn,
+        )
+        return bool(r)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
@@ -170,16 +214,48 @@ def crear_op(*, monto: float, de: str = "OP", fecha: date | None = None,
                 "SELECT to_regclass('scintela.op_retiro_linea') AS t", conn=conn
             ) or {}
             if _reg.get("t"):
-                db.execute(
-                    """
-                    INSERT INTO scintela.op_retiro_linea
-                        (line_key, fecha, monto, id_retiro, concepto, usuario_crea)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (line_key[:200], fecha, monto, id_retiro,
-                     (line_concepto or "")[:120], USUARIO_RETIRO_OP),
-                    conn=conn,
-                )
+                # TMT 2026-07-06 (dueña): "bajar la deuda OP de verdad" — el
+                # retiro EDITA la fila posdat OP (importe += monto → el crédito
+                # negativo sube hacia 0). Pasivos en Resultados baja; el retiro
+                # en URET compensa a "Ut. Real" (ΔPATR + URET). posdat es
+                # PC-owned (el sync nunca lo pisa) → el cambio persiste.
+                # Requiere mig 0111 (bajo_posdat); sin la columna cae al
+                # comportamiento viejo (display-only) para no romper.
+                _con_col = _col_bajo_posdat(conn=conn)
+                _bajo = False
+                if _con_col:
+                    _pd = _posdat_de_line_key(line_key, conn=conn)
+                    if _pd:
+                        db.execute(
+                            "UPDATE scintela.posdat "
+                            "SET importe = ROUND(COALESCE(importe, 0) + %s, 2) "
+                            "WHERE id_posdat = %s",
+                            (monto, _pd["id_posdat"]), conn=conn,
+                        )
+                        _bajo = True
+                if _con_col:
+                    db.execute(
+                        """
+                        INSERT INTO scintela.op_retiro_linea
+                            (line_key, fecha, monto, id_retiro, concepto,
+                             usuario_crea, bajo_posdat)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (line_key[:200], fecha, monto, id_retiro,
+                         (line_concepto or "")[:120], USUARIO_RETIRO_OP, _bajo),
+                        conn=conn,
+                    )
+                else:
+                    db.execute(
+                        """
+                        INSERT INTO scintela.op_retiro_linea
+                            (line_key, fecha, monto, id_retiro, concepto, usuario_crea)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (line_key[:200], fecha, monto, id_retiro,
+                         (line_concepto or "")[:120], USUARIO_RETIRO_OP),
+                        conn=conn,
+                    )
         try:
             import mov_doble as _md
             _md.registrar(
@@ -208,15 +284,24 @@ def imputaciones_de_linea(line_key: str) -> list[dict]:
     Tabla PC-only: puede no existir hasta correr la migracion 0109 -> [] defensivo."""
     try:
         rows = db.fetch_all(
-            "SELECT id_op_retiro_linea AS id, fecha, monto "
+            "SELECT id_op_retiro_linea AS id, fecha, monto, bajo_posdat "
             "FROM scintela.op_retiro_linea WHERE line_key = %s "
             "ORDER BY fecha, id_op_retiro_linea",
             (line_key,),
         ) or []
     except Exception:  # noqa: BLE001
-        return []
+        try:
+            rows = db.fetch_all(
+                "SELECT id_op_retiro_linea AS id, fecha, monto "
+                "FROM scintela.op_retiro_linea WHERE line_key = %s "
+                "ORDER BY fecha, id_op_retiro_linea",
+                (line_key,),
+            ) or []
+        except Exception:  # noqa: BLE001
+            return []
     return [{"id": r["id"], "fecha": r.get("fecha"),
-             "monto": round(float(r.get("monto") or 0), 2)} for r in rows]
+             "monto": round(float(r.get("monto") or 0), 2),
+             "bajo_posdat": bool(r.get("bajo_posdat"))} for r in rows]
 
 
 
@@ -228,8 +313,11 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
     restante). Auditado con un mov_doble de reverso. Atomico.
     """
     with db.tx() as conn:
+        _con_col = _col_bajo_posdat(conn=conn)
+        _cols = ("id_op_retiro_linea, line_key, monto, id_retiro, fecha, concepto"
+                 + (", bajo_posdat" if _con_col else ""))
         row = db.fetch_one(
-            "SELECT id_op_retiro_linea, line_key, monto, id_retiro, fecha, concepto "
+            f"SELECT {_cols} "
             "FROM scintela.op_retiro_linea WHERE id_op_retiro_linea = %s",
             (id_op_retiro_linea,), conn=conn,
         )
@@ -264,6 +352,23 @@ def deshacer_op(id_op_retiro_linea: int, usuario: str = "web") -> dict:
             db.execute(
                 "DELETE FROM scintela.retiros WHERE id_retiro = %s",
                 (target_id,), conn=conn,
+            )
+        # TMT 2026-07-06: si el retiro BAJÓ el posdat (modelo nuevo), el
+        # deshacer le DEVUELVE el monto (importe -= monto → el crédito vuelve
+        # a bajar). Las imputaciones viejas (display-only) no tocan posdat.
+        if row.get("bajo_posdat"):
+            _pd = _posdat_de_line_key(line_key, conn=conn)
+            if not _pd:
+                raise ValueError(
+                    "No encuentro la fila posdat OP de esta imputacion para "
+                    "devolverle el monto — no deshago nada (¿se borró o cambió "
+                    "el concepto de la fila OP?)."
+                )
+            db.execute(
+                "UPDATE scintela.posdat "
+                "SET importe = ROUND(COALESCE(importe, 0) - %s, 2) "
+                "WHERE id_posdat = %s",
+                (monto, _pd["id_posdat"]), conn=conn,
             )
         # Borrar la imputacion (restaura el restante de la linea).
         db.execute(

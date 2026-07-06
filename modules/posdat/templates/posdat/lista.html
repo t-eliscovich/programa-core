@@ -287,18 +287,11 @@
                El tooltip elaborado anterior rompía Jinja en algunos
                casos edge (filas non-YY con campos undefined) — uso
                tooltip simple. #}
-            {% if f.op_line_key and (f.op_retirado or 0) > 0 %}
-              {# TMT 2026-07-06 (dueña): la fila OP muestra el crédito NETEADO
-                 (crédito − retiros OP imputados) — "el retiro tiene que bajar
-                 la cuenta OP". Es SOLO display: el importe real del posdat no
-                 cambia, TOTP y la UTILIDAD no se mueven (pedido explícito).
-                 Con retiros encima, la celda deja de ser editable inline para
-                 no pisar el importe real con el neteado. #}
-              <span class="{% if es_ajuste %}text-violet-700{% endif %}"
-                    title="Neteado: crédito {{ f.importe | num_es }} + retiros OP {{ f.op_retirado | num_es }}. El importe real del posdat no cambió — la utilidad no se mueve. El detalle está en el chip 'Retiro OP · restante'.">
-                {{ (0 - f.op_restante) | num_es }}
-              </span>
-            {% elif tiene_permiso('posdat.editar') %}
+            {# TMT 2026-07-06 v2 (dueña, "bajar la deuda OP de verdad"): el
+               retiro ahora EDITA el importe real del posdat OP → esta celda
+               vuelve a mostrar el importe real (que ya viene bajado) y sigue
+               editable. El neteado display de la v1 quedó obsoleto. #}
+            {% if tiene_permiso('posdat.editar') %}
               <input type="number" step="0.01"
                      class="posdat-importe-edit w-32 bg-transparent border border-transparent hover:border-slate-300 focus:border-sky-400 focus:bg-white rounded px-1 py-0 text-right text-xs tabular-nums {% if es_ajuste %}text-violet-700{% endif %}"
                      value="{{ f.importe }}"

@@ -527,10 +527,16 @@ def lista():
                     _imps = _ret.imputaciones_de_linea(_lk)
                     _cred = round(-float(_f.get("importe") or 0), 2)
                     _ret_sum = round(sum(i["monto"] for i in _imps), 2)
+                    # TMT 2026-07-06 (dueña, "bajar la deuda de verdad"): las
+                    # imputaciones nuevas (bajo_posdat) YA bajaron el importe
+                    # real → el crédito actual las refleja. Solo las viejas
+                    # (display-only) se restan acá para el restante.
+                    _ret_viejo = round(sum(i["monto"] for i in _imps
+                                           if not i.get("bajo_posdat")), 2)
                     _f["op_line_key"] = _lk
                     _f["op_credito"] = _cred
                     _f["op_retirado"] = _ret_sum
-                    _f["op_restante"] = round(_cred - _ret_sum, 2)
+                    _f["op_restante"] = round(_cred - _ret_viejo, 2)
                     _f["op_imputaciones"] = _imps
         except Exception:  # noqa: BLE001
             pass
