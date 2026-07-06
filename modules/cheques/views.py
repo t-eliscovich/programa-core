@@ -798,6 +798,14 @@ def nuevo():
             espejos_anticipo = queries.distribuir_espejos_anticipo(
                 _imps_97, suma_cancelada
             )
+            # TMT 2026-07-06 (dueña): "que me deje elegir si queda nota de
+            # crédito o totaliza". Radio sobrante_anticipo_modo: 'nc'
+            # (default, espejo NB=98 por el sobrante) o 'totalizar' (el
+            # sobrante se olvida — sin espejo, igual que el T de facturas).
+            _modo_sobrante = (request.form.get("sobrante_anticipo_modo")
+                              or "nc").strip().lower()
+            if _modo_sobrante == "totalizar" and espejos_anticipo is not None:
+                espejos_anticipo = [0.0 for _ in espejos_anticipo]
 
         with db.tx() as conn:
             _idx_esp_97 = 0

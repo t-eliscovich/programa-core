@@ -406,6 +406,13 @@
           Anticipo: <strong id="antchq-anticipo">—</strong> ·
           Cancela: <strong id="antchq-cancela">$ 0,00</strong> ·
           NC sobrante: <strong id="antchq-sobrante">—</strong>
+          {# TMT 2026-07-06 (dueña): "que me deje elegir si queda nota de
+             crédito o totaliza" — aplica al SOBRANTE (anticipo − cancelado).
+             Solo visible cuando hay sobrante >= $1. #}
+          <span id="antchq-sobrante-modo" class="ml-3 hidden">
+            <label class="mr-2 cursor-pointer"><input type="radio" name="sobrante_anticipo_modo" value="nc" checked> queda como NC (saldo a favor)</label>
+            <label class="cursor-pointer"><input type="radio" name="sobrante_anticipo_modo" value="totalizar"> totalizar (olvidar el sobrante)</label>
+          </span>
         </div>
       </div>
       <div class="border rounded overflow-hidden">
@@ -1125,6 +1132,10 @@
     const sobrante = anticipo - cancela;
     document.getElementById('antchq-anticipo').textContent = '$ ' + fmt(anticipo);
     document.getElementById('antchq-cancela').textContent = '$ ' + fmt(cancela);
+    // Radios NC/totalizar: visibles solo con sobrante >= $1 (debajo de eso
+    // no se crea espejo de todos modos).
+    const _modoWrap = document.getElementById('antchq-sobrante-modo');
+    if (_modoWrap) _modoWrap.classList.toggle('hidden', !(sobrante >= 1.0));
     document.getElementById('antchq-sobrante').textContent =
       sobrante >= 1.0 ? ('$ ' + fmt(sobrante)) : '— (sin NC)';
     const errEl = document.getElementById('antchq-error');
