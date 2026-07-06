@@ -1635,6 +1635,11 @@
   function ddRender() {
     if (!clientesDD || CLIENTES_ALL.length === 0) return;
     const raw = (codigoInput.value || '').trim();
+    // TMT 2026-07-06 (dueña): el dropdown aparece SOLO cuando empieza a
+    // escribir — con el campo vacío no listamos todos los clientes (el
+    // autofocus abría la lista entera y molestaba; además un click ahí
+    // elegía un cliente sin querer).
+    if (!raw) { ddCerrar(); return; }
     let matches;
     if (raw.startsWith('%')) {
       const t = raw.slice(1).toLowerCase();
@@ -1670,7 +1675,7 @@
   }
 
   codigoInput.addEventListener('input', ddRender);
-  codigoInput.addEventListener('focus', ddRender);
+  // focus NO abre la lista (solo tipear); ver comentario en ddRender.
   codigoInput.addEventListener('keydown', (e) => {
     if (!clientesDD || clientesDD.classList.contains('hidden')) return;
     if (e.key === 'ArrowDown') {
