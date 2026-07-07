@@ -306,10 +306,28 @@ def _leer_dbf_fechad(dbf_path):
     return out
 
 
-@bp.route("/fechad-sync", methods=["POST"])
+_FORM_FECHAD = """
+<!doctype html><meta charset=utf-8><title>POSDAT fechad-sync</title>
+<div style="max-width:640px;margin:2rem auto;font-family:system-ui">
+<h2>Refrescar fechad de POSDAT desde el dBase</h2>
+<p>Sub&iacute; el tarball con POSDAT.DBF fresco. Actualiza <b>SOLO</b> la
+columna <code>fechad</code> (banc 0 y 9) pareando por prov+importe+concepto.
+No inserta ni borra. Corre en <b>DRY-RUN</b> salvo que marques Aplicar.</p>
+<form method=post action="/admin/posdat-reconcile/fechad-sync" enctype="multipart/form-data">
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <label><input type=checkbox name=apply value=1> Aplicar (escribe en producci&oacute;n)</label><br><br>
+  <button type=submit>Correr</button>
+</form></div>
+"""
+
+
+@bp.route("/fechad-sync", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def fechad_sync():
+    if request.method == "GET":
+        return render_template_string(_FORM_FECHAD)
     f = request.files.get("tarball")
     if not f or not f.filename:
         return Response("ERROR: falta el tarball.\n", mimetype="text/plain", status=400)
