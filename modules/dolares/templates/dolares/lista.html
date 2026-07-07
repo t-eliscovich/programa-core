@@ -15,7 +15,7 @@
     background: rgb(255 255 255);
     border: 1px solid rgb(226 232 240);
     border-radius: 8px;
-    padding: 14px 16px;
+    padding: 8px 12px;  /* TMT 2026-07-06 dueña: cards más chicas */
     transition: border-color .15s ease;
   }
   .kpi-card:hover { border-color: rgb(148 163 184); }
@@ -32,7 +32,7 @@
   .dark .kpi-card .kpi-label { color: rgb(148 163 184); }
 
   .kpi-card .kpi-value {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 600;
     color: rgb(15 23 42);
     margin-top: 4px;
@@ -244,7 +244,10 @@
 
   {# ----- KPI hero — 4 tarjetas ----- #}
   {% if resumen %}
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+  {# TMT 2026-07-06 (dueña: "pantalla demasiado larga, cards más chicas"):
+     sm:grid-cols-3 NO existe en el tailwind congelado → las cards se
+     apilaban a lo ancho. Grid inline (gotcha 2026-06-30). #}
+  <div class="mb-4" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;">
     <div class="kpi-card">
       <div class="kpi-label">Total vivo</div>
       <div class="kpi-value kpi-accent">$ {{ resumen.total_vivos | num_es(0) }}</div>

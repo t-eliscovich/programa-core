@@ -1,4 +1,10 @@
-"""/importaciones — importaciones de Asinfo cruzadas con compras del programa."""
+"""/importaciones — importaciones de Asinfo cruzadas con compras del programa.
+
+Modelo v2 (TMT 2026-07-06 dueña): sin flujo "Pagar" ni predicción de costo.
+Los ANTICIPOS (≈90% del valor) se cargan acá como movimientos (ND automática
+en Pichincha); el RESTANTE se carga por /compras como compra normal al
+proveedor. Valor del stock de cada importación = Σ anticipos.
+"""
 from __future__ import annotations
 
 from flask import (
@@ -14,7 +20,8 @@ from flask import (
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from exports import csv_response
-from parsers import parse_int, parse_monto
+from filters import today_ec
+from parsers import parse_date, parse_int, parse_monto
 
 importaciones_bp = Blueprint(
     "importaciones",
@@ -32,7 +39,6 @@ def lista():
     q = (request.args.get("q") or "").strip().upper()
     estado = (request.args.get("estado") or "").strip()  # "" | "match" | "sin_match" | "sin_codigo"
     recep = (request.args.get("recep") or "").strip()    # "" | "recibida" | "pendiente"
-    pago = (request.args.get("pago") or "").strip()      # "" | "pendiente" | "contabilizada"
 
     error = None
     rows = []
@@ -59,30 +65,6 @@ def lista():
         rows = [r for r in rows if r.get("recibida")]
     elif recep == "pendiente":
         rows = [r for r in rows if not r.get("recibida")]
-    # Filtro por estado de pago/contabilización. Aplica a las que tienen COMPRA
-    # en el programa (las que traen kilos reales a TC/PT). Las de fuente
-    # 'anticipo' todavía no son compra → no entran al circuito pendiente/kilos.
-    if pago == "pendiente":
-        rows = [r for r in rows if r.get("estado_flujo") == "faltan_pagar"]
-    elif pago == "pagada":
-        rows = [r for r in rows if r.get("estado_flujo") == "pagada"]
-
-    # KPIs del flujo (sobre el conjunto YA filtrado, como el resto de contadores).
-    # Partición que SUMA al total: en tránsito + faltan pagar + pagadas = total.
-    # El estado se deriva de lo que el programa ya sabe (posdat/anticipo), salvo
-    # que la dueña lo haya marcado a mano. Ver service.importaciones_con_cruce.
-    pend_pago = sum(1 for r in rows if r.get("estado_flujo") == "faltan_pagar")
-    pagadas = sum(1 for r in rows if r.get("estado_flujo") == "pagada")
-    kg_pend_pago = sum(
-        float(r.get("kg_recibidos") or r.get("kg") or 0)
-        for r in rows
-        if r.get("estado_flujo") == "faltan_pagar"
-    )
-    deuda_pend = sum(
-        float(r.get("deuda_efectiva") or 0)
-        for r in rows
-        if r.get("estado_flujo") == "faltan_pagar"
-    )
 
     total = len(rows)
     con_codigo = sum(1 for r in rows if r.get("codigo"))
@@ -93,6 +75,8 @@ def lista():
     importe_programa = sum(
         r["importe_programa"] for r in rows if r.get("importe_programa")
     )
+    # Σ anticipos pagados = valor del stock de las importaciones (modelo v2).
+    anticipos_total = sum(float(r.get("anticipo_aplicado") or 0) for r in rows)
 
     if request.args.get("export") == "csv":
         export_rows = [
@@ -110,6 +94,10 @@ def lista():
                 "fuente": (r.get("fuente") or "").capitalize(),
                 "importe_programa": (
                     round(r["importe_programa"], 2) if r.get("importe_programa") else ""
+                ),
+                "anticipos": (
+                    round(float(r.get("anticipo_aplicado") or 0), 2)
+                    if r.get("anticipo_aplicado") else ""
                 ),
             }
             for r in rows
@@ -129,6 +117,7 @@ def lista():
                 ("total_asinfo", "Total Asinfo (ref)"),
                 ("fuente", "Fuente programa"),
                 ("importe_programa", "Importe programa (US)"),
+                ("anticipos", "Anticipos (US) = valor stock"),
             ],
             filename="importaciones_cruce.csv",
         )
@@ -143,14 +132,11 @@ def lista():
         recibidas=recibidas,
         pendientes=pendientes,
         importe_programa=importe_programa,
-        pend_pago=pend_pago,
-        pagadas=pagadas,
-        kg_pend_pago=kg_pend_pago,
-        deuda_pend=deuda_pend,
+        anticipos_total=anticipos_total,
         q=q,
         estado=estado,
         recep=recep,
-        pago=pago,
+        hoy=today_ec().isoformat(),
         error=error,
     )
 
@@ -159,7 +145,7 @@ def _volver():
     """Vuelve a /importaciones preservando los filtros actuales."""
     args = {
         k: request.form.get(k)
-        for k in ("q", "estado", "recep", "pago")
+        for k in ("q", "estado", "recep")
         if request.form.get(k)
     }
     return redirect(url_for("importaciones.lista", **args))
@@ -179,31 +165,24 @@ def _im():
 @requiere_login
 @requiere_permiso("compras.editar")
 def recibir():
-    """Recibe el hilo con costo estimado → genera la deuda. Los kg entran al stock.
+    """Recibe la importación: los kg entran al stock.
 
-    Por pantalla y reproducible: prov + numero + kg + costo_estimado (prefill =
-    promedio histórico, editable) + anticipo aplicado (neteo de la deuda).
+    Modelo v2 (TMT 2026-07-06): recibir NO genera deuda ni pide costo — el
+    valor del stock de la importación es Σ anticipos y el restante se carga
+    por /compras.
     """
     from modules.importaciones import pago as _pago
 
     prov, numero = _prov_num()
     im = _im()
     kg = parse_monto(request.form.get("kg"))
-    costo = parse_monto(request.form.get("costo_estimado"))
-    anticipo = parse_monto(request.form.get("anticipo")) or 0
     if not im:
         flash("Importación inválida (falta el número IM-).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.set_recepcion(im, prov, numero, kg=kg, costo_estimado=costo,
-                            anticipo=anticipo, usuario=usuario)
-        deuda = max(0.0, round(float(costo or 0) - float(anticipo or 0), 2))
-        flash(
-            f"Importación {im} recibida: {kg or 0:,.0f} kg al stock · "
-            f"costo estimado $ {costo or 0:,.2f} · deuda $ {deuda:,.2f}.",
-            "ok",
-        )
+        _pago.set_recepcion(im, prov, numero, kg=kg, usuario=usuario)
+        flash(f"Importación {im} recibida: {kg or 0:,.0f} kg al stock.", "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
@@ -211,41 +190,12 @@ def recibir():
     return _volver()
 
 
-@importaciones_bp.route("/importaciones/pagar", methods=["POST"])
-@requiere_login
-@requiere_permiso("compras.editar")
-def pagar():
-    """Paga la importación: el monto real sobrescribe la deuda y la marca pagada."""
-    from modules.importaciones import pago as _pago
-
-    prov, numero = _prov_num()
-    im = _im()
-    monto = parse_monto(request.form.get("monto_real"))
-    anticipo = parse_monto(request.form.get("anticipo")) or 0
-    if not im:
-        flash("Importación inválida (falta el número IM-).", "warn")
-        return _volver()
-    try:
-        usuario = (g.user or {}).get("username", "web")
-        _pago.set_pago(im, prov, numero, monto_real=monto, anticipo=anticipo, usuario=usuario)
-        deuda = max(0.0, round(float(monto or 0) - float(anticipo or 0), 2))
-        flash(
-            f"Importación {im} pagada: monto real $ {monto or 0:,.2f} "
-            f"(deuda ajustada a $ {deuda:,.2f}).",
-            "ok",
-        )
-    except ValueError as e:
-        flash(str(e), "warn")
-    except Exception as e:  # noqa: BLE001
-        flash_exc("No pude registrar el pago", e)
-    return _volver()
-
-
 @importaciones_bp.route("/importaciones/deshacer-recepcion", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.editar")
 def deshacer_recepcion():
-    """Revierte la recepción (vuelve a 'en tránsito', saca los kg del stock)."""
+    """Revierte la recepción (vuelve a 'en tránsito', saca los kg del stock).
+    Los anticipos (movimientos + ND) no se tocan — se deshacen con su ✕."""
     from modules.importaciones import pago as _pago
 
     prov, numero = _prov_num()
@@ -262,23 +212,76 @@ def deshacer_recepcion():
     return _volver()
 
 
-@importaciones_bp.route("/importaciones/deshacer-pago", methods=["POST"])
+@importaciones_bp.route("/importaciones/movimiento", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.editar")
-def deshacer_pago():
-    """Revierte solo el pago: vuelve a 'recibida, pendiente de pago'."""
+def movimiento_agregar():
+    """Registra un ANTICIPO como MOVIMIENTO (mig 0113).
+
+    TMT 2026-07-06 (dueña): muchos anticipos por importación, nada se pisa;
+    Σ anticipos = valor del stock. Cada anticipo genera AUTOMÁTICAMENTE su ND
+    en Pichincha (la pantalla avisa para que no la carguen a mano otra vez).
+    La UI solo carga anticipos — el restante va por /compras.
+    """
     from modules.importaciones import pago as _pago
 
-    prov, numero = _prov_num()
+    prov, _numero = _prov_num()
     im = _im()
-    anticipo = parse_monto(request.form.get("anticipo")) or 0
+    monto = parse_monto(request.form.get("monto_mov"))
+    fecha = parse_date(request.form.get("fecha_mov"))
+    nota = (request.form.get("nota_mov") or "").strip()
     if not im:
         flash("Importación inválida (falta el número IM-).", "warn")
         return _volver()
     try:
         usuario = (g.user or {}).get("username", "web")
-        _pago.deshacer_pago(im, prov, numero, anticipo=anticipo, usuario=usuario)
-        flash(f"Pago de {im} deshecho (queda pendiente de pago).", "ok")
+        r = _pago.agregar_movimiento(
+            im, "anticipo", monto, fecha=fecha, nota=nota, prov=prov, usuario=usuario,
+        )
+        msg = f"Anticipo de $ {float(monto or 0):,.2f} registrado en {im}."
+        if r.get("id_transaccion"):
+            msg += (
+                f" Se generó SOLA la ND #{r['id_transaccion']} en Pichincha — "
+                "no la cargues a mano en el banco."
+            )
+        if r.get("anticipo_aplicado") is not None:
+            msg += f" Σ anticipos (valor stock): $ {float(r['anticipo_aplicado']):,.2f}."
+        flash(msg, "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
-        flash_exc("No pude deshacer el pago", e)
+        flash_exc("No pude registrar el anticipo", e)
+    return _volver()
+
+
+@importaciones_bp.route("/importaciones/movimiento/deshacer", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def movimiento_deshacer():
+    """✕ de un movimiento: borra el anticipo Y compensa su ND con una NC
+    en Pichincha (par atómico, mov_doble de auditoría)."""
+    from modules.importaciones import pago as _pago
+
+    id_mov = parse_int(request.form.get("id_mov"))
+    if not id_mov:
+        flash("Movimiento inválido.", "warn")
+        return _volver()
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = _pago.deshacer_movimiento(id_mov, usuario=usuario)
+        msg = f"Anticipo de $ {float(r.get('monto') or 0):,.2f} borrado de {r.get('im_numero')}."
+        if r.get("id_transaccion_reverso"):
+            msg += (
+                f" Su ND quedó compensada con la NC #{r['id_transaccion_reverso']} "
+                "en Pichincha."
+            )
+        else:
+            msg += " (Sin ND automática linkeada — si hiciste la ND a mano, resolvela en el banco.)"
+        if r.get("anticipo_aplicado") is not None:
+            msg += f" Σ anticipos ahora: $ {float(r['anticipo_aplicado']):,.2f}."
+        flash(msg, "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude deshacer el movimiento", e)
     return _volver()

@@ -514,23 +514,10 @@ def _fabricacion_page(proceso: str):
     hilo_total = _kg(51) + float(saldo_tc.get("saldo") or 0)
     cruda_total = _kg(52) + float(saldo_pt.get("saldo") or 0)
 
-    # ── Kilos pendientes de pago (importaciones NO contabilizadas) ──────────
-    # Por defecto se CUENTAN (pend=1): el almacén físico ya los tiene, así que
-    # el total no cambia y se mantiene la paridad con dBase ("libera todo").
-    # Con ?pend=0 se restan del total para ver el "disponible contabilizado".
-    # Check de prueba pedido por la dueña (2026-06-26) para irlo validando.
-    contar_pendientes = (request.args.get("pend", "1") != "0")
-    pendiente_kg = 0.0
-    pendiente_n = 0
-    try:
-        from modules.importaciones import service as _imp_service
-
-        _pend = _imp_service.kilos_pendientes_importaciones()
-        pendiente_kg = float(_pend.get("kg") or 0)
-        pendiente_n = int(_pend.get("n") or 0)
-    except Exception:  # noqa: BLE001
-        pendiente_kg, pendiente_n = 0.0, 0
-    total_kg_mostrado = total_kg if contar_pendientes else max(0.0, total_kg - pendiente_kg)
+    # TMT 2026-07-06 (dueña): se eliminó el toggle ?pend (pagado/pendiente).
+    # TODO lo recibido cuenta en el stock oficial, sin distinción — la
+    # "deuda" de importaciones dejó de predecirse (el restante entra por
+    # /compras y el pasivo real vive en posdat).
 
     # Valor del stock del programa (kg + $) — mismo cálculo que el Balance.
     stock_programa = {}
@@ -587,10 +574,6 @@ def _fabricacion_page(proceso: str):
         total_kg=total_kg,
         hilo_total=hilo_total,
         cruda_total=cruda_total,
-        total_kg_mostrado=total_kg_mostrado,
-        pendiente_kg=pendiente_kg,
-        pendiente_n=pendiente_n,
-        contar_pendientes=contar_pendientes,
         stock_programa=stock_programa,
         error=error,
     )

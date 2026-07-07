@@ -115,8 +115,8 @@
       {% endfor %}
       <span class="op">=</span>
       <span class="item item--total">
-        <div class="kpi-label">Total{% if not contar_pendientes %} disponible{% endif %}</div>
-        <div class="kpi-val">{{ total_kg_mostrado | num_es(0) }}</div>
+        <div class="kpi-label">Total</div>
+        <div class="kpi-val">{{ total_kg | num_es(0) }}</div>
         <div class="kpi-sub">kg</div>
       </span>
     </div>
@@ -133,20 +133,6 @@
         <div class="combo-val">{{ cruda_total | num_es(0) }} <span class="combo-unit">kg</span></div>
         <div class="combo-sub">Tela Cruda + En proceso PT</div>
       </div>
-    </div>
-
-    {# ── Importaciones recibidas que faltan pagar (TMT 2026-06-29) ──────────
-       Los kg recibidos YA están contados en el stock de arriba (todo junto).
-       Acá sólo se muestran las que faltan pagar, con link a la pestaña. #}
-    <div class="chain-foot no-print" style="display:flex; flex-wrap:wrap; align-items:center; gap:14px;">
-      <span>
-        Recibidas, <strong>falta pagar</strong>:
-        <strong class="{{ 'text-amber-700' if pendiente_kg else 'text-slate-500' }}">{{ pendiente_kg | num_es(0) }} kg</strong>
-        {% if pendiente_n %}<span class="text-slate-400">· {{ pendiente_n }} importac.</span>{% endif %}
-        <span class="text-slate-400">(ya contadas en el stock)</span>
-      </span>
-      <a class="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100"
-         href="{{ url_for('importaciones.lista', pago='pendiente') }}">Ver las que faltan pagar →</a>
     </div>
 
     {% if stock_programa.get('total') %}
