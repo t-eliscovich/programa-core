@@ -11,6 +11,25 @@
             max-width: none !important; padding: 0 !important; }
     .hoja tbody tr { page-break-inside: avoid; }
     @page { margin: 1.2cm; size: auto; }
+
+    /* TMT 2026-07-07 feedback dueña sobre el PDF impreso: "más finitas las
+       líneas, sin color, solo código de cliente". Filas compactas, líneas
+       hairline gris, todo B/N, sin nombre de cliente (solo código). */
+    .cli-nombre { display: none !important; }
+    .hoja table.principal { font-size: 8pt !important; }
+    .hoja table.principal td, .hoja table.principal th {
+      padding: 1px 3px !important;
+      border-bottom: 0.3pt solid #bbb !important;
+    }
+    .hoja table.principal thead th { border-bottom: 0.8pt solid #000 !important; }
+    .hoja tfoot { display: table-row-group !important; }   /* total UNA vez al final */
+    .hoja tfoot td { border-top: 0.8pt solid #000 !important; border-bottom: none !important; }
+    .apps { font-size: 7.5pt !important; }
+    .facts { font-size: 7pt !important; }
+    .medio { font-size: 8pt !important; }
+    .badge, .badge-t, .badge-a { color: #000 !important; border-color: #000 !important;
+                                 background: none !important; padding: 0 2px !important; }
+    .saldo-neg, .neg { color: #000 !important; }
   }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
           padding:1.25rem 1.5rem; margin:1rem auto; max-width:980px; border-radius:4px; }
@@ -117,7 +136,7 @@
           </td>
           <td>
             <span class="mono" style="font-weight:600">{{ c.codigo_cli or '' }}</span>
-            <span class="facts">{{ c.cliente | cleanstr | truncate(26, True, '…') }}</span>
+            <span class="facts cli-nombre">{{ c.cliente | cleanstr | truncate(26, True, '…') }}</span>
           </td>
           <td>
             {% if c.aplicaciones %}
