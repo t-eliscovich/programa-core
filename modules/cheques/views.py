@@ -1633,6 +1633,71 @@ def reversar(id_cheque: int):
     return redirect(url_for("cheques.detalle", id_cheque=id_cheque))
 
 
+@cheques_bp.route("/cheques/<int:id_cheque>/deshacer-deposito", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.transicionar")
+def deshacer_deposito(id_cheque: int):
+    """Devuelve UN cheque depositado a cartera (Z) porque al final no se
+    depositó. Ajusta el depósito de banco 'dep.N ch.' (baja el importe por el
+    cheque; si era el único, se elimina). NO es rebote (no toca al cliente) ni
+    anulación (el cheque sigue vivo). TMT 2026-07-07 dueña. Gate por
+    cheques.transicionar → anda para Alex, Andres y cualquiera, no solo la dueña.
+    """
+    ch = queries.por_id(id_cheque)
+    if not ch:
+        abort(404)
+    stat = (ch.get("stat") or "").upper()
+    next_url = request.values.get("next") or url_for("cheques.detalle", id_cheque=id_cheque)
+    if stat not in queries.STATS_DEPOSITADO:
+        flash(f"El cheque no está depositado (estado {stat}); no hay depósito que deshacer.", "warn")
+        return redirect(next_url)
+    if request.method == "POST":
+        motivo = (request.form.get("motivo") or "").strip()
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            r = queries.deshacer_deposito_cheque(
+                id_cheque=int(ch["id_cheque"]), usuario=usuario, motivo=motivo
+            )
+            flash(
+                f"Cheque {r['no_cheque'] or '#' + str(r['id_cheque'])} devuelto a cartera (Z). "
+                f"Ajusté el depósito del banco por $ {float(r['importe']):,.2f}"
+                + (f" ({r['movs_tocados']} depósito(s) tocado(s))." if r.get("movs_tocados") else "."),
+                "ok",
+            )
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude devolver el cheque a cartera", e)
+        return redirect(request.form.get("next") or next_url)
+    no_ch = ch.get("no_cheque") or f"#{id_cheque}"
+    importe = ch.get("importe") or 0
+    detalle = {
+        "N° cheque": no_ch,
+        "Cliente": ch.get("codigo_cli", ""),
+        "Importe": f"$ {importe}",
+        "Estado actual": f"{stat} (depositado)",
+        "Qué va a pasar": (
+            f"(1) El cheque vuelve a cartera (Z). (2) El depósito del banco baja "
+            f"$ {float(importe or 0):,.2f} (si era el único cheque, se elimina el "
+            "movimiento). (3) NO se toca al cliente — no es un rebote."
+        ),
+    }
+    return render_template(
+        "_confirmar_accion.html",
+        titulo=f"Volver a cartera — cheque {no_ch}",
+        mensaje=(
+            "Marcaste este cheque como depositado pero al final no se depositó. Lo "
+            "devolvemos a cartera y ajustamos el depósito del banco. Es reversible: "
+            "podés volver a depositarlo cuando quieras."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("cheques.deshacer_deposito", id_cheque=id_cheque, next=next_url),
+        volver_url=next_url,
+        motivo_requerido=False,
+        confirm_label="Devolver a cartera",
+    )
+
+
 @cheques_bp.route("/cheques/<int:id_cheque>/postergar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("cheques.crear")

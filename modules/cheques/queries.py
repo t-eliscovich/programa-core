@@ -1906,8 +1906,15 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "endpoint": "cheques.anular_error_carga",
         },
     ],
-    # B = depositado en banco. Sólo se puede marcar rebote.
+    # B = depositado en banco. Volver a cartera (no se depositó) o marcar rebote.
+    # TMT 2026-07-07 dueña: "si marcamos depositado y al final no lo depositamos".
     "B": [
+        {
+            "stat_destino": "Z",
+            "label": "Volver a cartera (no se depositó)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.deshacer_deposito",
+        },
         {
             "stat_destino": "9",
             "label": "Marcar como rebotado",
@@ -1917,6 +1924,12 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     ],
     "A": [
         {
+            "stat_destino": "Z",
+            "label": "Volver a cartera (no se depositó)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.deshacer_deposito",
+        },
+        {
             "stat_destino": "9",
             "label": "Marcar como rebotado",
             "kind": "WIZARD",
@@ -1924,6 +1937,12 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
         },
     ],
     "V": [
+        {
+            "stat_destino": "Z",
+            "label": "Volver a cartera (no se depositó)",
+            "kind": "WIZARD",
+            "endpoint": "cheques.deshacer_deposito",
+        },
         {
             "stat_destino": "9",
             "label": "Marcar como rebotado",
@@ -2019,6 +2038,125 @@ STATS_REBOTE_REAL = ("B", "1", "2", "A")
 # Stats considerados terminales — no admiten transiciones salvo reversa.
 # 'B' = depositado feliz; 'T' no aplica a cheques (es factura).
 STATS_TERMINALES = ("B",)
+
+
+def _relabel_dep_concepto(concepto: str, n: int) -> str:
+    """Reescribe el contador de un concepto de depósito consolidado
+    'dep.N ch.' → 'dep.<n> ch.' cuando sacamos un cheque del lote. Si el
+    concepto no matchea ese patrón, lo deja igual. TMT 2026-07-07."""
+    import re as _re
+    c = concepto or ""
+    return _re.sub(r"dep\.\s*\d+\s*ch\.", f"dep.{n} ch.", c, flags=_re.IGNORECASE)[:50]
+
+
+def deshacer_deposito_cheque(*, id_cheque: int, usuario: str = "web", motivo: str = "") -> dict:
+    """Saca UN cheque de su depósito y lo devuelve a cartera (Z).
+
+    TMT 2026-07-07 dueña: "si hay un cheque que marcamos depositado y al final
+    no lo depositamos, cómo lo devolvemos". NO es rebote (no toca al cliente)
+    ni anulación (el cheque sigue vivo) — simplemente deshace el depósito.
+
+    Lado banco: el depósito consolidado 'dep.N ch.' baja su importe por el
+    cheque y su contador N→N-1; si el cheque era el único (o el mov queda en
+    ~0), se elimina el movimiento. Recalcula el saldo running del banco. Guard:
+    NO toca un depósito ya conciliado (rompería la conciliación) — avisa que
+    hay que desconciliar primero. Reproducible por pantalla, reversible
+    (podés volver a depositar el cheque). Anda para cualquier usuario con
+    cheques.transicionar (Alex, Andres, etc.), no solo la dueña.
+    """
+    import bank_helpers
+    ch = db.fetch_one(
+        "SELECT id_cheque, no_cheque, codigo_cli, importe, stat "
+        "FROM scintela.cheque WHERE id_cheque = %s",
+        (id_cheque,),
+    )
+    if not ch:
+        raise ValueError("El cheque no existe.")
+    stat_prev = (ch.get("stat") or "").upper()
+    if stat_prev not in STATS_DEPOSITADO:
+        raise ValueError(
+            f"El cheque no está depositado (estado {stat_prev}); no hay depósito que deshacer."
+        )
+    imp_ch = round(float(ch.get("importe") or 0), 2)
+    bancos_recompute: set[int] = set()
+    n_movs = 0
+    with db.tx() as conn:
+        links = db.fetch_all(
+            "SELECT cxt.id_transaccion, tb.no_banco, tb.importe, tb.concepto "
+            "  FROM scintela.chequextransaccion cxt "
+            "  JOIN scintela.transacciones_bancarias tb "
+            "    ON tb.id_transaccion = cxt.id_transaccion "
+            " WHERE cxt.id_cheque = %s AND UPPER(COALESCE(tb.documento,'')) = 'DE'",
+            (id_cheque,),
+            conn=conn,
+        ) or []
+        for lk in links:
+            id_t = int(lk["id_transaccion"])
+            no_banco = int(lk["no_banco"])
+            conc = db.fetch_one(
+                "SELECT 1 FROM scintela.banco_conciliacion_match "
+                "WHERE id_transaccion = %s AND deshecho_en IS NULL LIMIT 1",
+                (id_t,),
+                conn=conn,
+            )
+            if conc:
+                raise ValueError(
+                    f"El depósito de este cheque (mov #{id_t}) ya está conciliado con el "
+                    "banco. Desconciliá primero desde la conciliación y volvé a intentar."
+                )
+            n = int((db.fetch_one(
+                "SELECT COUNT(*) AS n FROM scintela.chequextransaccion WHERE id_transaccion = %s",
+                (id_t,), conn=conn,
+            ) or {}).get("n") or 0)
+            de_imp = round(float(lk["importe"] or 0), 2)
+            db.execute(
+                "DELETE FROM scintela.chequextransaccion "
+                "WHERE id_cheque = %s AND id_transaccion = %s",
+                (id_cheque, id_t), conn=conn,
+            )
+            nuevo_imp = round(de_imp - imp_ch, 2)
+            if n <= 1 or nuevo_imp <= 0.005:
+                db.execute(
+                    "DELETE FROM scintela.transacciones_bancarias WHERE id_transaccion = %s",
+                    (id_t,), conn=conn,
+                )
+            else:
+                db.execute(
+                    "UPDATE scintela.transacciones_bancarias "
+                    "   SET importe = %s, concepto = %s "
+                    " WHERE id_transaccion = %s",
+                    (nuevo_imp, _relabel_dep_concepto(lk.get("concepto") or "", n - 1), id_t),
+                    conn=conn,
+                )
+            bancos_recompute.add(no_banco)
+            n_movs += 1
+        db.execute(
+            "UPDATE scintela.cheque "
+            "   SET stat = 'Z', fechaing = NULL, "
+            "       usuario_modifica = %s, fecha_modifica = CURRENT_TIMESTAMP "
+            " WHERE id_cheque = %s",
+            (usuario, id_cheque), conn=conn,
+        )
+        for nb in bancos_recompute:
+            anc = db.fetch_one(
+                "SELECT id_transaccion AS ancla FROM scintela.transacciones_bancarias "
+                "WHERE no_banco = %s ORDER BY fecha ASC, id_transaccion ASC OFFSET 1 LIMIT 1",
+                (nb,), conn=conn,
+            )
+            if anc and anc.get("ancla"):
+                bank_helpers.recompute_saldos_desde(
+                    conn, no_banco=nb, no_cta=None, ancla_id=int(anc["ancla"]),
+                )
+    return {
+        "id_cheque": id_cheque,
+        "no_cheque": ch.get("no_cheque"),
+        "stat_previo": stat_prev,
+        "stat_nuevo": "Z",
+        "importe": imp_ch,
+        "movs_tocados": n_movs,
+    }
+
+
 
 
 def crear(
