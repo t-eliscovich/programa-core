@@ -298,7 +298,24 @@
      pantalla"). text-xs + py-1 + headers en text-[10px]. Mismo patrón
      que /activos. Columna Estado angosta (~50px). #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-xs sortable">
+    <style>
+      /* TMT 2026-07-07 dueña: "no veo los montos en los cheques" al imprimir.
+         La columna Importe estaba a la derecha de todo y en vertical se salia
+         de la hoja (table-layout:auto la empujaba fuera de pagina). Forzamos
+         table-layout:fixed en impresion para que TODAS las columnas —incluida
+         Importe— entren en el ancho de la pagina. */
+      @media print {
+        table.chq-table { table-layout: fixed !important; width: 100% !important; font-size: 8px !important; }
+        table.chq-table th, table.chq-table td {
+          white-space: normal !important; word-break: break-word;
+          padding: 2px 3px !important;
+        }
+        /* Columnas anchas que no aportan al listado impreso de montos:
+           Postergada, Depositado, Doc. banco → ocultas para dar aire a Importe. */
+        table.chq-table th.chq-print-hide, table.chq-table td.chq-print-hide { display: none !important; }
+      }
+    </style>
+    <table class="w-full text-xs sortable chq-table">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
           {% if tiene_permiso('cheques.aplicar') %}
@@ -311,13 +328,13 @@
           <th class="px-2 py-1 text-left font-medium">Cliente</th>
           <th class="px-2 py-1 text-left font-medium">N°</th>
           <th class="px-2 py-1 text-left font-medium" title="Fecha original a depositar — la pactada al alta del cheque. NUNCA cambia." data-sort-type="date" data-acum-driver>F. dep.</th>
-          <th class="px-2 py-1 text-left font-medium" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
-          <th class="px-2 py-1 text-left font-medium" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
+          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Última fecha postergada. Vacío si nunca se postergó." data-sort-type="date">Postergada</th>
+          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="Día en que realmente se depositó (fechaing). '—' si todavía está en cartera." data-sort-type="date">Depositado</th>
           <th class="px-2 py-1 text-left font-medium">Banco</th>
           {# TMT 2026-05-27 dueña: 'no es lo mismo numero de documento que
              numero de cheque!!'. Columna nueva para N° de comprobante /
              depósito que da el banco (doc_banco). Editable inline. #}
-          <th class="px-2 py-1 text-left font-medium" title="N° comprobante/depósito/transferencia (lo que da el banco)">Doc. banco</th>
+          <th class="px-2 py-1 text-left font-medium chq-print-hide" title="N° comprobante/depósito/transferencia (lo que da el banco)">Doc. banco</th>
           {# TMT 2026-06-16 dueña: ordenar por importe de mayor a menor SOBRE TODO el
              listado (server-side, no solo la página visible). data-no-sort apaga el
              sort client-side en esta columna; el link togglea desc/asc y preserva los
@@ -412,7 +429,7 @@
              Si el cheque está en stat que permite postergar (Z, P, 1, 2, D),
              la columna Postergada es un date input editable. Onchange →
              POST cheques.postergar con nueva_fechad. Si no, muestra "—". #}
-          <td class="px-1.5 py-1.5" data-stop="1" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5 chq-print-hide" data-stop="1" style="white-space: nowrap;">
             {% set _stat_post = (c.stat or '').upper() %}
             {% if _stat_post in ('Z', 'P', '1', '2', 'D') %}
               {# TMT 2026-06-16 dueña: input de TEXTO dd/mm/aaaa (el <input type=date>
@@ -437,7 +454,7 @@
               <span class="text-slate-300">—</span>
             {% endif %}
           </td>
-          <td class="px-1.5 py-1.5" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5 chq-print-hide" style="white-space: nowrap;">
             {% if fechaing_real %}
               <span class="font-medium text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>
             {% else %}
@@ -451,7 +468,7 @@
              Inline edit del doc_banco (N° comprobante/depósito). Vacío
              es válido (NULL en DB). #}
           {% set _db_editable = _stat_ne not in ('X','T','R','3','E') and tiene_permiso('cheques.editar') %}
-          <td class="px-1.5 py-1.5 font-mono text-xs" data-stop="1" style="white-space: nowrap;">
+          <td class="px-1.5 py-1.5 font-mono text-xs chq-print-hide" data-stop="1" style="white-space: nowrap;">
             {% if _db_editable %}
               {% set _db_val = c.doc_banco or '' %}
               <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=c.id_cheque) }}"
