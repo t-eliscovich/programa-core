@@ -587,3 +587,93 @@ def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False
     nuevo = _leer_pc_banc0()
     yield line(f"PC banc=0 ahora: {len(nuevo)} filas, suma {sum(x['importe'] for x in nuevo):,.2f}")
     yield line(f"dBase: {dbf_sum:,.2f}")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# TMT 2026-07-07 (dueña): "uno por uno" — dump JSON de posdat de PC para
+# comparar contra POSDAT.DBF fuera de la app, + apply de un mapa exacto
+# id_posdat->fechad (yo calculo el match preciso con el dBase). Solo fechad.
+# ─────────────────────────────────────────────────────────────────────
+
+@bp.route("/pc-dump", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def pc_dump():
+    import db
+    from flask import jsonify
+    rows = db.fetch_all(
+        """
+        SELECT id_posdat, COALESCE(num,0) AS num, COALESCE(prov,'') AS prov,
+               importe, COALESCE(concepto,'') AS concepto, fechad,
+               COALESCE(banc,0) AS banc, COALESCE(usuario_crea,'') AS usuario_crea
+          FROM scintela.posdat
+         WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+           AND COALESCE(num,0) <> 9999
+         ORDER BY id_posdat
+        """
+    ) or []
+    out = []
+    for r in rows:
+        out.append({
+            "id": int(r["id_posdat"]),
+            "num": int(r["num"] or 0),
+            "prov": r["prov"],
+            "importe": round(float(r["importe"] or 0), 2),
+            "concepto": r["concepto"] or "",
+            "fechad": r["fechad"].isoformat() if r["fechad"] else None,
+            "banc": int(r["banc"] or 0),
+            "usuario_crea": r["usuario_crea"],
+        })
+    return jsonify(out)
+
+
+@bp.route("/apply-fechad", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def apply_fechad():
+    """Aplica un mapa exacto {id_posdat: 'YYYY-MM-DD' | null} a fechad. SOLO fechad."""
+    import json as _json
+    from datetime import date as _date
+    import db
+    raw = request.form.get("mapa") or "{}"
+    try:
+        mapa = _json.loads(raw)
+    except Exception as e:  # noqa: BLE001
+        return Response(f"ERROR mapa JSON: {e}\n", mimetype="text/plain", status=400)
+    aplicar = request.form.get("apply") in ("1", "true", "on")
+
+    def _run():
+        n = 0
+        cambios = []
+        for k, v in mapa.items():
+            try:
+                idp = int(k)
+            except (TypeError, ValueError):
+                continue
+            nueva = None
+            if v:
+                try:
+                    y, m, d = str(v).split("-")
+                    nueva = _date(int(y), int(m), int(d))
+                except Exception:  # noqa: BLE001
+                    yield f"[skip] id={idp} fecha inválida {v!r}\n"
+                    continue
+            cambios.append((idp, nueva))
+        yield f"=== apply-fechad — {'APLICAR' if aplicar else 'DRY-RUN'} · {len(cambios)} ids ===\n"
+        if not aplicar:
+            for idp, nueva in cambios[:80]:
+                yield f"  id={idp} -> {nueva}\n"
+            yield ">>> DRY-RUN.\n"
+            return
+        try:
+            with db.tx() as conn:
+                for idp, nueva in cambios:
+                    db.execute("UPDATE scintela.posdat SET fechad=%s WHERE id_posdat=%s",
+                               (nueva, idp), conn=conn)
+                    n += 1
+            yield f">>> APLICADO: {n} fechad actualizadas.\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"[ERROR rollback] {e!r}\n"
+
+    return Response(stream_with_context(_run()), mimetype="text/plain")
+
