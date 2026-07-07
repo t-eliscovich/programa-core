@@ -268,6 +268,152 @@ def _run(aplicar: bool):
     yield from reconcile_desde_dbf(miembro, aplicar, soft_delete=False)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# TMT 2026-07-07 (dueña): "el gráfico de flujo tiene que copiar el dBase".
+# POSDAT.DBF está vetado del sync (NEVER_EXTRACT) porque el TRUNCATE+INSERT
+# rompería el estado PC (id_posdat, YY, anulada, OP retiros). PERO eso deja
+# la FECHAD de los posdatados VIEJA: el dBase posterga pagos a futuro y PC
+# los sigue mostrando vencidos → el flujo los amontona en hoy (−2M en vez de
+# +638K). Este endpoint es QUIRÚRGICO y SEGURO: refresca SOLO la columna
+# `fechad` (banc 0 y 9) desde el POSDAT.DBF fresco, pareando por
+# prov+importe+concepto. NO inserta, NO borra → cero riesgo de doble conteo o
+# pérdida de datos. Dry-run por defecto; aplica con ?apply=1.
+# ─────────────────────────────────────────────────────────────────────
+
+def _norm_cpt(s) -> str:
+    return " ".join((s or "").strip().upper().split())
+
+
+def _leer_dbf_fechad(dbf_path):
+    """[{prov, importe, concepto, fechad}] de POSDAT.DBF (num!=9999, con fechad)."""
+    import dbfread
+    out = []
+    for r in dbfread.DBF(str(dbf_path), char_decode_errors="replace", load=False):
+        try:
+            if int(r.get("NUM") or 0) == 9999:
+                continue
+        except (TypeError, ValueError):
+            pass
+        fd = r.get("FECHAD")
+        if not fd:
+            continue
+        out.append({
+            "prov": (r.get("PROV") or "").strip().upper(),
+            "importe": round(float(r.get("IMPORTE") or 0), 2),
+            "concepto": _norm_cpt(r.get("CONCEPTO")),
+            "fechad": fd,
+        })
+    return out
+
+
+@bp.route("/fechad-sync", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def fechad_sync():
+    f = request.files.get("tarball")
+    if not f or not f.filename:
+        return Response("ERROR: falta el tarball.\n", mimetype="text/plain", status=400)
+    if not f.filename.lower().endswith((".tar.gz", ".tgz")):
+        return Response("ERROR: esperaba .tar.gz / .tgz.\n", mimetype="text/plain", status=400)
+    aplicar = request.form.get("apply") in ("1", "true", "on")
+    TARBALL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if TARBALL_PATH.exists():
+        TARBALL_PATH.unlink()
+    f.save(TARBALL_PATH)
+    if TARBALL_PATH.stat().st_size > MAX_TARBALL_BYTES:
+        TARBALL_PATH.unlink(missing_ok=True)
+        return Response("ERROR: tarball muy grande.\n", mimetype="text/plain", status=400)
+    return Response(stream_with_context(_run_fechad(aplicar)), mimetype="text/plain")
+
+
+def _run_fechad(aplicar: bool):
+    import shutil
+    import db
+
+    def line(m=""):
+        return m.rstrip("\n") + "\n"
+
+    yield line(f"=== POSDAT fechad-sync — {'APLICAR' if aplicar else 'DRY-RUN'} ===")
+    try:
+        if EXTRACT_DIR.exists():
+            shutil.rmtree(EXTRACT_DIR)
+        EXTRACT_DIR.mkdir(parents=True)
+        miembro = None
+        with tarfile.open(TARBALL_PATH, "r:gz") as tar:
+            for m in tar.getmembers():
+                if m.isfile() and Path(m.name).name.upper() == "POSDAT.DBF":
+                    m.name = "POSDAT.DBF"
+                    tar.extract(m, EXTRACT_DIR)
+                    miembro = EXTRACT_DIR / "POSDAT.DBF"
+                    break
+        if not miembro or not miembro.exists():
+            yield line("[ERROR] el tarball no contiene POSDAT.DBF")
+            return
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"[ERROR] no pude extraer: {exc!r}")
+        return
+
+    dbf = _leer_dbf_fechad(miembro)
+    yield line(f"POSDAT.DBF: {len(dbf)} registros con fechad (num!=9999).")
+
+    # Mapa DBF: key -> lista de fechad (para consumir 1 a 1 en duplicados).
+    dbf_map = defaultdict(list)
+    for d in dbf:
+        dbf_map[(d["prov"], d["importe"], d["concepto"])].append(d["fechad"])
+    for k in dbf_map:
+        dbf_map[k].sort()
+
+    pc = db.fetch_all(
+        """
+        SELECT id_posdat, COALESCE(prov,'') AS prov, importe,
+               COALESCE(concepto,'') AS concepto, fechad, COALESCE(banc,0) AS banc
+          FROM scintela.posdat
+         WHERE (anulada IS NOT TRUE OR anulada IS NULL)
+           AND COALESCE(num, 0) <> 9999
+         ORDER BY id_posdat
+        """
+    ) or []
+    yield line(f"PC posdat vivos (num!=9999): {len(pc)}")
+
+    cambios = []
+    sin_match = 0
+    for r in pc:
+        key = (r["prov"].strip().upper(), round(float(r["importe"] or 0), 2), _norm_cpt(r["concepto"]))
+        fechas = dbf_map.get(key)
+        if not fechas:
+            sin_match += 1
+            continue
+        nueva = fechas.pop(0)  # consume 1
+        vieja = r["fechad"]
+        if vieja != nueva:
+            cambios.append((r["id_posdat"], r["prov"], round(float(r["importe"] or 0), 2), vieja, nueva))
+
+    yield line(f"Pareados con cambio de fechad: {len(cambios)} · sin match en DBF: {sin_match}")
+    yield line("")
+    for cid, prov, imp, vieja, nueva in cambios[:60]:
+        yield line(f"  #{cid} {prov:<4} {imp:>12,.2f}  {vieja} -> {nueva}")
+    if len(cambios) > 60:
+        yield line(f"  ... (+{len(cambios) - 60} más)")
+    yield line("")
+
+    if not aplicar:
+        yield line(">>> DRY-RUN: no se tocó nada. Reenviá con Aplicar para escribir.")
+        return
+
+    n = 0
+    try:
+        with db.tx() as conn:
+            for cid, _p, _i, _v, nueva in cambios:
+                db.execute(
+                    "UPDATE scintela.posdat SET fechad = %s WHERE id_posdat = %s",
+                    (nueva, cid), conn=conn,
+                )
+                n += 1
+        yield line(f">>> APLICADO: {n} fechad actualizadas.")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"[ERROR] al aplicar (rollback): {exc!r}")
+
+
 def reconcile_desde_dbf(dbf_path: Path, aplicar: bool, soft_delete: bool = False):
     """Lee POSDAT.DBF + PC, calcula el plan, lo loguea y (si aplicar) lo ejecuta.
 
