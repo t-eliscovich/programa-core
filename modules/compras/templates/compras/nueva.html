@@ -115,17 +115,17 @@
 
       <label class="flex flex-col col-span-2 md:col-span-3">
         <span class="text-xs text-slate-600">Concepto</span>
-        {# TMT 2026-07-06 (dueña): picker de importación — si el proveedor
-           tiene importaciones sin compra, se listan acá; elegir una llena el
-           concepto con el número de la Nota → match garantizado. #}
-        <div id="imp-match-panel" class="hidden mb-2 rounded border border-sky-300 p-2 text-xs"
-             style="background:#f0f9ff;">
-          <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor sin compra — elegí con cuál matchea:</p>
-          <div id="imp-match-list" class="space-y-0.5"></div>
-          <p id="imp-match-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
-        </div>
         <input type="text" name="concepto" value="{{ form.concepto or '' }}"
                class="border rounded px-2 py-1 mt-0.5 text-sm" maxlength="200">
+        {# TMT 2026-07-07 (dueña): el picker va DEBAJO del campo Concepto (antes
+           aparecía arriba, "antes" del campo). Grilla de 3 columnas inline
+           (grid-cols-3 responsive NO está en el tailwind congelado). #}
+        <div id="imp-match-panel" class="hidden mt-2 rounded border border-sky-300 p-2 text-xs"
+             style="background:#f0f9ff;">
+          <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor sin compra — elegí con cuál matchea:</p>
+          <div id="imp-match-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.375rem;"></div>
+          <p id="imp-match-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
+        </div>
       </label>
 
       <label class="flex items-center gap-2 col-span-2 md:col-span-3">
@@ -203,7 +203,7 @@
         ims.forEach(im => {
           const b = document.createElement('button');
           b.type = 'button';
-          b.className = 'block w-full text-left px-2 py-1 rounded hover:bg-sky-100';
+          b.className = 'block text-left px-2 py-1 rounded hover:bg-sky-100';
           b.style.border = '1px solid #bae6fd';
           const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '') + ' $ ' + Number(im.compras_usd).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';

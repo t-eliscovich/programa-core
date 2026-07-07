@@ -773,6 +773,20 @@
         const saldo = parseFloat(e.target.dataset.saldo || 0);
         const inp = tbody.querySelector(`input.aplic-input[data-id="${id}"]`);
         if (!inp) return;
+        // TMT 2026-07-07 (dueña, caso destildar): al tocar CUALQUIER tilde,
+        // congelamos el estado actual de TODAS las filas en manualValues
+        // (quedan decididas tal cual se ven) ANTES de aplicar el cambio.
+        // Antes, destildar una fila liberaba su plata al pool y el re-FIFO la
+        // usaba para tildar SOLA la factura de abajo ("deseleccioné una y se
+        // marcó la siguiente"). Congelando todo, lo liberado va directo al
+        // sobrante → nota de crédito, sin re-marcar a nadie. Mismo patrón que
+        // la tabla de anticipos (manualCancel).
+        tbody.querySelectorAll('input.aplic-input').forEach(o => {
+          const oid = o.dataset.id;
+          if (manualValues[oid] === undefined) {
+            manualValues[oid] = parseMonto(o.value) || 0;
+          }
+        });
         // TMT 2026-07-06 (dueña): "deseleccioné una factura pero el monto no
         // se borró". Una fila con monto PARCIAL muestra el checkbox en
         // estado intermedio (rayita); clickearlo BORRA el monto (deselección),

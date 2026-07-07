@@ -222,13 +222,19 @@
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Concepto</label>
         {# TMT 2026-07-06 (dueña): picker de importación a matchear (igual que
            /compras/nueva) — elegir llena el concepto con el nº de la Nota. #}
-        <div id="dol-imp-panel" class="hidden rounded border border-sky-300 p-2 text-xs" style="background:#f0f9ff;grid-column:1 / -1;">
-          <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor — elegí con cuál matchea:</p>
-          <div id="dol-imp-list"></div>
-          <p id="dol-imp-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
-        </div>
         <input name="concepto" maxlength="100"
                class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+      </div>
+      {# TMT 2026-07-07 (dueña): el picker va DEBAJO/APARTE del campo Concepto
+         (antes aparecía "antes" del campo, y grid-column no aplica en flex).
+         Toma el ancho completo del form (flex-basis 100%) y lista en grilla
+         de 3 columnas inline (grid-cols-3 responsive NO está en el tailwind
+         congelado). #}
+      <div id="dol-imp-panel" class="hidden rounded border border-sky-300 p-2 text-xs"
+           style="background:#f0f9ff;flex-basis:100%;width:100%;">
+        <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor — elegí con cuál matchea:</p>
+        <div id="dol-imp-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.375rem;"></div>
+        <p id="dol-imp-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
       </div>
       <div>
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Importe USD</label>
@@ -462,9 +468,8 @@ document.addEventListener('click', function (ev) {
         ims.forEach(im => {
           const b = document.createElement('button');
           b.type = 'button';
-          b.className = 'block w-full text-left px-2 py-1 rounded hover:bg-sky-100';
+          b.className = 'block text-left px-2 py-1 rounded hover:bg-sky-100';
           b.style.border = '1px solid #bae6fd';
-          b.style.marginBottom = '2px';
           const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '')) : '';
           b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
