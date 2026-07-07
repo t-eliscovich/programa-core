@@ -407,8 +407,25 @@
               <td class="px-3 py-1 text-slate-500" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '' }}</td>
               <td class="px-3 py-1 text-right text-mono text-emerald-700">{{ c.importe | money_es if c.importe is not none else '' }}</td>
               <td class="px-3 py-1 text-right text-mono text-slate-400"></td>
-              <td class="px-3 py-1 text-center">
-                {% if m.conciliacion_id %}<span class="text-emerald-600 text-[10px] font-semibold" title="Depósito conciliado con el banco">✓</span>{% else %}<span class="text-slate-300 text-[10px]" title="Sin conciliar">—</span>{% endif %}
+              <td class="px-3 py-1 text-center" style="white-space: nowrap;">
+                {# TMT 2026-07-07 dueña: "no puedo conciliar desde aca, tendría que
+                   poder clickear". El depósito es UN movimiento consolidado en PC,
+                   así que clickear acá concilia/desconcilia el depósito entero
+                   (todos sus cheques). Mismo toggle que la fila padre. #}
+                {% if tiene_permiso('bancos.conciliar') %}
+                <form method="post" class="inline-block m-0 p-0"
+                      action="{{ url_for('bancos.toggle_conciliado', no_banco=banco.no_banco, id_transaccion=m.id_transaccion, desde=desde, hasta=hasta, conciliado=conciliado_filtro or none, cliente=cliente_filtro or none, monto=monto_filtro_raw or none, doc_num=doc_num_filtro or none) }}"
+                      onsubmit="return confirm({% if m.conciliacion_id %}'¿Marcar el depósito (dep.{{ m.n_cheques }} ch.) como NO conciliado?'{% else %}'¿Conciliar el depósito (dep.{{ m.n_cheques }} ch.)? Concilia todos los cheques del depósito juntos.'{% endif %});">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  {% if m.conciliacion_id %}
+                    <button type="submit" class="text-emerald-600 text-[11px] font-semibold hover:text-emerald-800" title="Conciliado · click para desmarcar el depósito">✓</button>
+                  {% else %}
+                    <button type="submit" class="text-slate-400 text-[11px] hover:text-emerald-700" title="Sin conciliar · click para conciliar el depósito (todos los cheques)">—</button>
+                  {% endif %}
+                </form>
+                {% else %}
+                  {% if m.conciliacion_id %}<span class="text-emerald-600 text-[10px] font-semibold">✓</span>{% else %}<span class="text-slate-300 text-[10px]">—</span>{% endif %}
+                {% endif %}
               </td>
               {# TMT 2026-07-07 duena: devolver ESTE cheque a cartera si al final
                  no se deposito. Solo para cheques depositados y con permiso. #}

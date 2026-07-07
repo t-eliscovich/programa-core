@@ -303,9 +303,11 @@
     </table>
   </div>
 
-  {# Cheques — TMT 2026-07-07 dueña: "imprimamos solo facturas" → no-print. #}
-  <h2 class="no-print text-lg font-semibold mb-2">Cheques</h2>
-  <div class="no-print bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+  {# Cheques — TMT 2026-07-07 dueña v2: "en imprimir estado de cuenta volvé a
+     poner los cheques abajo" → se quita el no-print; se imprimen al final,
+     después de la tabla de facturas. #}
+  <h2 class="text-lg font-semibold mb-2 mt-6">Cheques</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
