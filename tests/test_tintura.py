@@ -503,3 +503,135 @@ def test_stock_al_dia_to_dict_serializa_fecha():
         d = service.stock_quimicos_al_dia()[0].to_dict()
     assert d["fecha_lectura"] == "2026-05-01"
     assert d["stock_al_dia_kg"] == 13.0
+
+
+# ---------------------------------------------------------------------------
+# costo_por_orden (corte tintura 2026-07-07)
+# ---------------------------------------------------------------------------
+
+
+def test_costo_por_orden_sin_filtros_vacio():
+    with patch("modules.tintura.service.formulas_db.fetch_all", return_value=[]):
+        assert service.costo_por_orden() == {}
+
+
+def test_costo_por_orden_con_todos_los_filtros_y_nulls():
+    rows = [
+        {"numero": "24089", "costo_us": 32.5},
+        {"numero": None, "costo_us": None},  # numero None -> "", costo None -> 0.0
+    ]
+    with patch(
+        "modules.tintura.service.formulas_db.fetch_all", return_value=rows
+    ) as m:
+        result = service.costo_por_orden(
+            creacion_desde=date(2026, 7, 7),
+            creacion_hasta=date(2026, 7, 31),
+            terminado_desde=date(2026, 7, 7),
+            terminado_hasta=date(2026, 7, 31),
+        )
+    assert result == {"24089": 32.5, "": 0.0}
+    # los 4 filtros de fecha se pasaron como params
+    _sql, params = m.call_args[0]
+    assert len(params) == 4
+
+
+# ---------------------------------------------------------------------------
+# tinto_equiv_formulas (corte tintura 2026-07-07)
+# ---------------------------------------------------------------------------
+
+
+def test_tinto_equiv_formulas_vacio():
+    with patch("modules.tintura.service.formulas_db.fetch_all", return_value=[]):
+        assert service.tinto_equiv_formulas() == []
+
+
+def test_tinto_equiv_formulas_mapea_y_excluye_lavados_por_defecto():
+    rows = [
+        {
+            "numero": "24089",
+            "fecha": "07/07/2026",
+            "fecha_terminado": "2026-07-09",
+            "cod": "AZ-117",
+            "color": "Azul Marino",
+            "categoria": "Jersey",
+            "kg": 205.5,
+            "kgn": 198.7,
+            "importe": 32.5,
+        },
+        {  # cod/color/categoria vacíos -> None; kg/kgn None -> None
+            "numero": None,
+            "fecha": None,
+            "fecha_terminado": None,
+            "cod": "",
+            "color": None,
+            "categoria": "",
+            "kg": None,
+            "kgn": None,
+            "importe": None,
+        },
+    ]
+    with patch(
+        "modules.tintura.service.formulas_db.fetch_all", return_value=rows
+    ) as m:
+        result = service.tinto_equiv_formulas(
+            creacion_desde=date(2026, 7, 7), creacion_hasta=date(2026, 7, 31)
+        )
+    assert len(result) == 2
+    o = result[0]
+    assert o.numero == "24089"
+    assert o.fecha == date(2026, 7, 7)
+    assert o.fecha_terminado == date(2026, 7, 9)
+    assert o.cod == "AZ-117"
+    assert o.color == "Azul Marino"
+    assert o.kg == 205.5
+    assert o.kgn == 198.7
+    assert o.importe == 32.5
+    o2 = result[1]
+    assert o2.numero == ""
+    assert o2.cod is None and o2.color is None and o2.categoria is None
+    assert o2.kg is None and o2.kgn is None
+    assert o2.importe == 0.0
+    # con excluir_lavados por defecto (True) el SQL filtra lavados
+    sql, _params = m.call_args[0]
+    assert "lavado" in sql.lower()
+
+
+def test_tinto_equiv_formulas_sin_excluir_lavados_sin_fechas():
+    with patch(
+        "modules.tintura.service.formulas_db.fetch_all", return_value=[]
+    ) as m:
+        service.tinto_equiv_formulas(excluir_lavados=False)
+    sql, _params = m.call_args[0]
+    assert "lavado" not in sql.lower()
+
+
+def test_tinto_equiv_orden_to_dict_serializa_fechas():
+    o = service.TintoEquivOrden(
+        numero="1",
+        fecha=date(2026, 7, 7),
+        fecha_terminado=date(2026, 7, 9),
+        cod="X",
+        color="Rojo",
+        categoria="Jersey",
+        kg=100.0,
+        kgn=98.0,
+        importe=10.0,
+    )
+    d = o.to_dict()
+    assert d["fecha"] == "2026-07-07"
+    assert d["fecha_terminado"] == "2026-07-09"
+    # rama None de to_dict
+    o2 = service.TintoEquivOrden(
+        numero="2",
+        fecha=None,
+        fecha_terminado=None,
+        cod=None,
+        color=None,
+        categoria=None,
+        kg=None,
+        kgn=None,
+        importe=0.0,
+    )
+    d2 = o2.to_dict()
+    assert d2["fecha"] is None
+    assert d2["fecha_terminado"] is None
