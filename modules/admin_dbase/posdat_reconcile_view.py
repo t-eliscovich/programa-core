@@ -677,3 +677,154 @@ def apply_fechad():
 
     return Response(stream_with_context(_run()), mimetype="text/plain")
 
+
+# ─────────────────────────────────────────────────────────────────────
+# TMT 2026-07-07 (dueña): "que quede TODO igual al dBase". Los posdat de
+# importación (banc=9, AC/AI/CL) y YY vienen de 'dbf-import' pero con IMPORTES
+# viejos — el dBase los actualizó y PC nunca los sincronizó (POSDAT vetado).
+# Este endpoint RESTAURA el sync de posdat SOLO para los registros de origen
+# dBase: borra los usuario_crea IN ('dbf-import','reconcile-dbf') que NO tengan
+# link mov_doble (los dbf-import puros no tienen estado propio de PC), e inserta
+# TODO el POSDAT.DBF fresco. PRESERVA los PC-creados (andres/tamara/pc-retiro-op
+# y cualquiera con link). Dry-run por defecto; apply=1 en una transacción.
+# ─────────────────────────────────────────────────────────────────────
+
+_FORM_FULL = """
+<!doctype html><meta charset=utf-8><title>POSDAT full-sync</title>
+<div style="max-width:640px;margin:2rem auto;font-family:system-ui">
+<h2>Sincronizar POSDAT con el dBase (registros dBase)</h2>
+<p>Sub&iacute; el tarball con POSDAT.DBF fresco. <b>Borra</b> los posdat de origen
+dBase (dbf-import / reconcile-dbf) SIN link mov_doble e <b>inserta</b> el POSDAT.DBF
+completo. <b>Preserva</b> los PC-creados (andres/tamara/OP y los que tengan link).
+DRY-RUN salvo que marques Aplicar.</p>
+<form method=post action="/admin/posdat-reconcile/full-sync" enctype="multipart/form-data">
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+  <input type=file name=tarball accept=".tar.gz,.tgz" required><br><br>
+  <label><input type=checkbox name=apply value=1> Aplicar (escribe en producci&oacute;n)</label><br><br>
+  <button type=submit>Correr</button>
+</form></div>
+"""
+
+
+def _leer_dbf_full(dbf_path):
+    """Todos los registros de POSDAT.DBF (num!=9999) con todos los campos."""
+    import dbfread
+    out = []
+    for r in dbfread.DBF(str(dbf_path), char_decode_errors="replace", load=False):
+        try:
+            if int(r.get("NUM") or 0) == 9999:
+                continue
+        except (TypeError, ValueError):
+            pass
+        out.append({
+            "fecha": r.get("FECHA"),
+            "fechad": r.get("FECHAD"),
+            "prov": (r.get("PROV") or "").strip()[:3],
+            "num": int(r.get("NUM") or 0),
+            "importe": round(float(r.get("IMPORTE") or 0), 2),
+            "concepto": (r.get("CONCEPTO") or "").strip()[:100],
+            "banc": int(r.get("BANC") or 0),
+            "clave": (r.get("CLAVE") or "").strip()[:3],
+        })
+    return out
+
+
+@bp.route("/full-sync", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def full_sync():
+    if request.method == "GET":
+        return render_template_string(_FORM_FULL)
+    f = request.files.get("tarball")
+    if not f or not f.filename:
+        return Response("ERROR: falta el tarball.\n", mimetype="text/plain", status=400)
+    if not f.filename.lower().endswith((".tar.gz", ".tgz")):
+        return Response("ERROR: esperaba .tar.gz / .tgz.\n", mimetype="text/plain", status=400)
+    aplicar = request.form.get("apply") in ("1", "true", "on")
+    TARBALL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if TARBALL_PATH.exists():
+        TARBALL_PATH.unlink()
+    f.save(TARBALL_PATH)
+    if TARBALL_PATH.stat().st_size > MAX_TARBALL_BYTES:
+        TARBALL_PATH.unlink(missing_ok=True)
+        return Response("ERROR: tarball muy grande.\n", mimetype="text/plain", status=400)
+    return Response(stream_with_context(_run_full(aplicar)), mimetype="text/plain")
+
+
+def _run_full(aplicar: bool):
+    import shutil
+    import db
+
+    def line(m=""):
+        return m.rstrip("\n") + "\n"
+
+    yield line(f"=== POSDAT full-sync — {'APLICAR' if aplicar else 'DRY-RUN'} ===")
+    try:
+        if EXTRACT_DIR.exists():
+            shutil.rmtree(EXTRACT_DIR)
+        EXTRACT_DIR.mkdir(parents=True)
+        miembro = None
+        with tarfile.open(TARBALL_PATH, "r:gz") as tar:
+            for m in tar.getmembers():
+                if m.isfile() and Path(m.name).name.upper() == "POSDAT.DBF":
+                    m.name = "POSDAT.DBF"
+                    tar.extract(m, EXTRACT_DIR)
+                    miembro = EXTRACT_DIR / "POSDAT.DBF"
+                    break
+        if not miembro or not miembro.exists():
+            yield line("[ERROR] el tarball no contiene POSDAT.DBF")
+            return
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"[ERROR] no pude extraer: {exc!r}")
+        return
+
+    dbf = _leer_dbf_full(miembro)
+    yield line(f"POSDAT.DBF: {len(dbf)} registros a insertar (num!=9999).")
+
+    # A borrar: dbf-import/reconcile-dbf SIN link mov_doble.
+    a_borrar = db.fetch_all(
+        """
+        SELECT p.id_posdat, p.prov, p.importe, COALESCE(p.usuario_crea,'') AS uc,
+               EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo'
+                        AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat)
+                          OR (m.origen_table='posdat'  AND m.origen_id =p.id_posdat))) AS linked
+          FROM scintela.posdat p
+         WHERE COALESCE(p.usuario_crea,'') IN ('dbf-import','reconcile-dbf')
+           AND COALESCE(p.num,0) <> 9999
+        """
+    ) or []
+    borrar_ids = [r["id_posdat"] for r in a_borrar if not r["linked"]]
+    saltados = [r for r in a_borrar if r["linked"]]
+    conservados = db.fetch_one(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS t FROM scintela.posdat "
+        "WHERE COALESCE(usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf') "
+        "AND COALESCE(num,0) <> 9999"
+    ) or {}
+    yield line(f"A borrar (dbf-origin sin link): {len(borrar_ids)} · saltados por link: {len(saltados)}")
+    yield line(f"Preservados (PC-creados): {conservados.get('n')} (TOTP {float(conservados.get('t') or 0):,.2f})")
+    total_dbf = sum(float(d['importe']) for d in dbf)
+    yield line(f"TOTP resultante ≈ dBase {total_dbf:,.2f} + preservados {float(conservados.get('t') or 0):,.2f}")
+
+    if not aplicar:
+        yield line(">>> DRY-RUN: no se tocó nada. Marcá Aplicar para escribir.")
+        return
+
+    try:
+        with db.tx() as conn:
+            if borrar_ids:
+                db.execute(
+                    "DELETE FROM scintela.posdat WHERE id_posdat = ANY(%s)",
+                    (borrar_ids,), conn=conn,
+                )
+            for d in dbf:
+                db.execute(
+                    "INSERT INTO scintela.posdat "
+                    "(fecha, fechad, prov, num, importe, concepto, banc, clave, usuario_crea) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'dbf-import')",
+                    (d["fecha"], d["fechad"], d["prov"], d["num"], d["importe"],
+                     d["concepto"], d["banc"], d["clave"]), conn=conn,
+                )
+        yield line(f">>> APLICADO: borrados {len(borrar_ids)}, insertados {len(dbf)}.")
+    except Exception as exc:  # noqa: BLE001
+        yield line(f"[ERROR rollback] {exc!r}")
+
