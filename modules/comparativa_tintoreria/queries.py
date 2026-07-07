@@ -235,18 +235,56 @@ def tinto_filas_mes(yy: int, mm: int) -> list[dict]:
     """Filas crudas de scintela.tinto del mes (yy, mm) para la planilla
     de carga (/informes/tinto-carga). Incluye TODO menos stat X/Y para
     que la dueña vea exactamente lo que suma el balance."""
-    return db.fetch_all(
+    from modules.informes.queries import CORTE_TINTURA  # corte dBase->formulas
+
+    rows = db.fetch_all(
         """
         SELECT id_tinto, fecha, cod, color, kg, kgn, importe, stat,
                COALESCE(usuario_crea, '') AS usuario_crea
           FROM scintela.tinto
          WHERE EXTRACT(YEAR FROM fecha) = %s
            AND EXTRACT(MONTH FROM fecha) = %s
+           AND fecha < %s
            AND COALESCE(stat, '') NOT IN ('X', 'Y')
          ORDER BY fecha DESC, id_tinto DESC
         """,
-        (yy, mm),
-    )
+        (yy, mm, CORTE_TINTURA),
+    ) or []
+    rows = [dict(r) for r in rows]
+
+    # CORTE tintura: del corte en adelante las filas salen de formulas_app.
+    # Read-only: usuario_crea='formulas_app' -> el template no muestra "borrar".
+    try:
+        import calendar
+
+        m_ini = date(yy, mm, 1)
+        m_fin = date(yy, mm, calendar.monthrange(yy, mm)[1])
+        f_desde = max(CORTE_TINTURA, m_ini)
+        if f_desde <= m_fin:
+            from modules.tintura import service as _tint_svc
+
+            form = [
+                {
+                    "id_tinto": None,
+                    "fecha": o.fecha,
+                    "cod": o.cod,
+                    "color": o.color,
+                    "kg": o.kg,
+                    "kgn": o.kgn,
+                    "importe": o.importe,
+                    "stat": "A",
+                    "usuario_crea": "formulas_app",
+                }
+                for o in _tint_svc.tinto_equiv_formulas(
+                    f_desde, m_fin, excluir_lavados=False
+                )
+            ]
+            form.sort(key=lambda d: (d["fecha"] or date.min), reverse=True)
+            rows = form + rows  # formulas (>=corte, más nuevas) arriba
+    except Exception:  # noqa: BLE001 -- fail-soft
+        pass
+
+    return rows
 
 
 def tinto_costos_catalogo() -> list[dict]:
