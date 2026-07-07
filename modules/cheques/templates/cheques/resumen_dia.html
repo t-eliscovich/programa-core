@@ -3,25 +3,49 @@
 
 {% block content %}
 <style>
+  /* CSS custom (el tailwind.css del repo es un build JIT congelado). */
   @media print {
     .no-print { display: none !important; }
     body { background: #fff !important; color: #000 !important; }
-    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important; max-width: none !important; }
-    @page { margin: 1.5cm; size: auto; }
+    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important;
+            max-width: none !important; padding: 0 !important; }
+    .hoja tbody tr { page-break-inside: avoid; }
+    @page { margin: 1.2cm; size: auto; }
   }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
-          padding:1.5rem 1.75rem; margin:1rem auto; max-width:820px; border-radius:4px; }
-  .hoja h2 { font-size:15px; text-transform:uppercase; letter-spacing:.04em; margin:16px 0 6px; color:#1e293b; }
-  .hoja table { width:100%; border-collapse:collapse; }
-  .hoja th { border-bottom:2px solid #1e293b; padding:6px 4px; text-align:left; font-size:10px;
-             text-transform:uppercase; letter-spacing:.04em; color:#475569; }
-  .hoja td { padding:5px 4px; border-bottom:1px solid #e2e8f0; font-size:12px; vertical-align:top; }
-  .hoja td.num { text-align:right; font-family:ui-monospace,monospace; white-space:nowrap; }
-  .hoja tfoot td { border-top:2px solid #1e293b; font-weight:600; font-size:13px; padding-top:8px; }
-  .facts { color:#64748b; font-size:11px; }
-  .kpis { display:flex; gap:24px; flex-wrap:wrap; margin-top:6px; }
-  .kpi { font-size:12px; }
-  .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; }
+          padding:1.25rem 1.5rem; margin:1rem auto; max-width:980px; border-radius:4px; }
+  .hoja table.principal { width:100%; border-collapse:collapse; margin-top:12px; }
+  .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px 5px; text-align:left;
+             font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
+  .hoja table.principal td { padding:5px 5px; border-bottom:1px solid #e2e8f0; font-size:12px;
+             vertical-align:top; }
+  .hoja td.num, .hoja th.num { text-align:right; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+             white-space:nowrap; }
+  .hoja tfoot td { border-top:2px solid #1e293b; border-bottom:none; font-weight:700;
+             font-size:13px; padding-top:8px; }
+  .facts { color:#64748b; font-size:10.5px; }
+  .mono  { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .kpis { display:flex; gap:28px; flex-wrap:wrap; margin-top:8px; }
+  .kpi { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:.03em; }
+  .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; color:#0f172a; }
+  .medio { font-weight:600; font-size:11px; white-space:nowrap; }
+
+  /* Sub-líneas de facturas dentro de la fila del ingreso (estilo tirilla dBase:
+     fecha · numf · importe fact · abonó · saldo resultante). */
+  .apps { display:table; width:100%; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:11px; color:#334155; border-collapse:collapse; }
+  .app  { display:table-row; }
+  .app > span { display:table-cell; padding:0 0 1px 10px; text-align:right; white-space:nowrap; }
+  .app > span.ffecha { padding-left:0; text-align:left; color:#94a3b8; }
+  .app > span.fnumf  { text-align:left; font-weight:600; }
+  .app > span.fbadge { text-align:center; padding-left:8px; }
+  .saldo-cero { font-weight:700; }
+  .saldo-neg  { font-weight:700; color:#b91c1c; }         /* saldo a favor */
+  .badge { display:inline-block; min-width:16px; text-align:center; font-size:10px;
+           font-weight:700; border-radius:3px; padding:0 4px; border:1px solid; }
+  .badge-t { color:#047857; border-color:#047857; background:#ecfdf5; }
+  .badge-a { color:#b45309; border-color:#b45309; background:#fffbeb; }
+  .neg { color:#b91c1c; }
 </style>
 
 <div class="no-print bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 max-w-4xl">
@@ -41,34 +65,6 @@
   <div class="no-print mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">{{ error }}</div>
 {% endif %}
 
-{% macro tabla(titulo, filas) %}
-  {% if filas %}
-    <h2>{{ titulo }}</h2>
-    <table>
-      <thead>
-        <tr><th>N° / Banco</th><th>Cliente</th><th>Cancela facturas</th><th style="text-align:right">Importe</th></tr>
-      </thead>
-      <tbody>
-        {% for c in filas %}
-          <tr>
-            <td>
-              {% if c.no_cheque %}<span class="font-mono">{{ c.no_cheque }}</span>{% endif %}
-              <div class="facts">{{ c.banco_emisor or '' }}</div>
-            </td>
-            <td><span class="facts font-mono">{{ c.codigo_cli or '' }}</span> {{ c.cliente }}</td>
-            <td class="facts">
-              {% for a in c.aplicaciones %}
-                {{ a.numf_completo or a.numf or '—' }}{% if not loop.last %}, {% endif %}
-              {% else %}—{% endfor %}
-            </td>
-            <td class="num">$ {{ '%.2f'|format(c.importe|float) }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-{% endmacro %}
-
 <div class="hoja">
   <div class="flex items-start justify-between mb-2 pb-3 border-b-2 border-slate-800">
     <div>
@@ -78,19 +74,105 @@
     <div class="text-right text-sm text-slate-600">{{ fecha | fecha_es }}</div>
   </div>
 
-  {% if not resumen or resumen.total_general == 0 and resumen.n_cheques == 0 and resumen.n_depositos == 0 and resumen.n_efectivo == 0 %}
+  {% if not resumen or not resumen.ingresos %}
     <div class="text-center py-10 text-slate-500">Sin cobranza registrada para esta fecha.</div>
   {% else %}
     <div class="kpis">
-      <div class="kpi">Cheques ({{ resumen.n_cheques }})<b>$ {{ '%.2f'|format(resumen.total_cheques) }}</b></div>
-      <div class="kpi">Depósitos ({{ resumen.n_depositos }})<b>$ {{ '%.2f'|format(resumen.total_depositos) }}</b></div>
-      <div class="kpi">Efectivo ({{ resumen.n_efectivo }})<b>$ {{ '%.2f'|format(resumen.total_efectivo) }}</b></div>
-      <div class="kpi">TOTAL<b>$ {{ '%.2f'|format(resumen.total_general) }}</b></div>
+      <div class="kpi">Cheques ({{ resumen.n_cheques }})<b>{{ resumen.total_cheques | money_es }}</b></div>
+      <div class="kpi">Depósitos ({{ resumen.n_depositos }})<b>{{ resumen.total_depositos | money_es }}</b></div>
+      <div class="kpi">Efectivo ({{ resumen.n_efectivo }})<b>{{ resumen.total_efectivo | money_es }}</b></div>
+      <div class="kpi">Total del día<b>{{ resumen.total_general | money_es }}</b></div>
     </div>
 
-    {{ tabla('Cheques', resumen.cheques) }}
-    {{ tabla('Depósitos', resumen.depositos) }}
-    {{ tabla('Efectivo', resumen.efectivo) }}
+    <table class="principal">
+      <thead>
+        <tr>
+          <th style="width:52px">Hora</th>
+          <th style="width:84px">Medio</th>
+          <th style="width:90px">Doc.</th>
+          <th style="width:190px">Cliente</th>
+          <th>Facturas que paga <span style="font-weight:400; text-transform:none">(fecha · numf · fact. · abonó · saldo)</span></th>
+          <th class="num" style="width:90px">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in resumen.ingresos %}
+        <tr>
+          <td class="facts mono">
+            {{ c.fecha_crea | hora_ec('%H:%M') if c.fecha_crea else '' }}
+            <div>{{ (c.usuario_crea or '') | cleanstr | truncate(10, True, '…') }}</div>
+          </td>
+          <td>
+            <span class="medio">{{ c.medio }}</span>
+            {% if c.medio == 'CHEQUE' %}
+              <div class="facts">{{ c.banco_emisor | cleanstr }}</div>
+              {% if c.fechad and c.fechad != c.fecha %}
+                <div class="facts">dep. {{ c.fechad | fecha_es }}</div>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td class="mono" style="font-size:11px">
+            {% if c.no_cheque %}<div>{{ c.no_cheque }}</div>{% endif %}
+            {% if c.doc_banco %}<div class="facts">{{ c.doc_banco | cleanstr }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="mono" style="font-weight:600">{{ c.codigo_cli or '' }}</span>
+            <span class="facts">{{ c.cliente | cleanstr | truncate(26, True, '…') }}</span>
+          </td>
+          <td>
+            {% if c.aplicaciones %}
+              <div class="apps">
+                {% for a in c.aplicaciones %}
+                  {% set saldo = a.saldo_f if a.saldo_f is not none else a.fact_saldo %}
+                  {% set st = (a.stat_f or '') | upper | trim %}
+                  <div class="app">
+                    <span class="ffecha">{{ a.fact_fecha | fecha_es if a.fact_fecha else '' }}</span>
+                    <span class="fnumf">{{ a.numf_completo or a.numf or '—' }}</span>
+                    <span>{{ a.fact_importe | money_es }}</span>
+                    <span>{{ a.aplicado | money_es }}</span>
+                    <span class="{{ 'saldo-neg' if saldo is not none and saldo|float < -0.005 else ('saldo-cero' if saldo is not none and saldo|float|abs <= 0.005 else '') }}">{{ saldo | money_es }}</span>
+                    <span class="fbadge">
+                      {% if st == 'T' %}<span class="badge badge-t" title="Totalizó — factura cancelada">T</span>
+                      {% elif st %}<span class="badge badge-a" title="Abonó — queda saldo">A</span>{% endif %}
+                    </span>
+                  </div>
+                {% endfor %}
+              </div>
+              {% if c.total_aplicado and (c.importe|float - c.total_aplicado)|abs > 0.01 %}
+                <div class="facts" style="margin-top:1px">aplicó {{ c.total_aplicado | money_es }} de {{ c.importe | money_es }}</div>
+              {% endif %}
+            {% elif c.medio == 'ANTICIPO' %}
+              <span class="facts">anticipo · saldo a favor del cliente</span>
+            {% else %}
+              <span class="facts">— sin aplicar a facturas</span>
+            {% endif %}
+          </td>
+          <td class="num {{ 'neg' if c.importe and c.importe|float < 0 else '' }}">
+            {{ c.importe | money_es }}
+            {% if c.paga %}
+              <div><span class="badge {{ 'badge-t' if c.paga == 'T' else 'badge-a' }}"
+                    title="{{ 'Totalizó todas las facturas' if c.paga == 'T' else 'Abonó — queda saldo pendiente' }}">{{ c.paga }}</span></div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5">TOTAL DEL DÍA — {{ resumen.ingresos | length }} ingreso{{ 's' if resumen.ingresos|length != 1 }}
+            <span class="facts" style="font-weight:400">({{ resumen.n_cheques }} cheq. · {{ resumen.n_depositos }} dep. · {{ resumen.n_efectivo }} efect.)</span>
+          </td>
+          <td class="num">{{ resumen.total_general | money_es }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="facts" style="margin-top:10px">
+      <span class="badge badge-t">T</span> totalizó (la factura quedó cancelada) ·
+      <span class="badge badge-a">A</span> abonó (queda saldo) ·
+      saldo <span class="saldo-neg">negativo</span> = saldo a favor del cliente ·
+      el saldo mostrado es el que quedó AL APLICAR el cobro.
+    </div>
   {% endif %}
 </div>
 {% endblock %}

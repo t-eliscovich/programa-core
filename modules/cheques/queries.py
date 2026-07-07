@@ -3911,22 +3911,30 @@ def resumen_cobranza_dia(fecha) -> dict:
 
     El dBase, al cerrar una sesión de cobranza, imprime: cuántos CHEQUES,
     DEPÓSITOS y EFECTIVO entraron, sus totales, y el detalle de cada uno con
-    el cliente, concepto y las facturas que cancela. Como PC no tiene
-    "sesión", agrupamos por fecha de cobranza (`cheque.fecha`).
+    el cliente, medio y las facturas que cancela — con fecha, numf, importe,
+    abonado acumulado y SALDO RESULTANTE (incluye 0.00 y negativos = saldo a
+    favor, la dueña quiere verlos). Como PC no tiene "sesión", agrupamos por
+    fecha de cobranza (`cheque.fecha`).
 
     Buckets (paridad FINAL: CH = NB<90 ó NB=98; DE = NB 90/91; EF = NB=99):
       - cheques    → cheque real en cartera / depositado (banco emisor < 90)
       - depositos  → depósito directo (no_banco 90/91)
       - efectivo   → efectivo (no_banco 99)
 
-    Devuelve dict con las 3 listas, sus totales y contadores + total general.
-    Solo lectura.
+    Devuelve dict con `ingresos` (lista plana en orden de carga, UNA entrada
+    por cobro con sus aplicaciones + flag paga T/A), las 3 listas por bucket,
+    sus totales y contadores + total general. Solo lectura.
+
+    Por aplicación usamos el SNAPSHOT de chequesxfact (abono_f/saldo_f/stat_f
+    al momento de aplicar) — igual que la tirilla del dBase, que imprime el
+    saldo que quedó en ESE momento, no el saldo vivo de hoy.
     """
     rows = (
         db.fetch_all(
             """
             SELECT c.id_cheque, c.no_cheque, c.importe, c.fecha, c.fechad,
-                   c.no_banco, c.stat,
+                   c.no_banco, c.stat, c.doc_banco,
+                   c.fecha_crea, c.usuario_crea,
                    COALESCE(c.banco, '') AS banco_emisor,
                    c.codigo_cli,
                    COALESCE(cl.nombre, '') AS cliente
@@ -3934,7 +3942,7 @@ def resumen_cobranza_dia(fecha) -> dict:
               LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
              WHERE c.fecha = %s
                AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
-             ORDER BY c.no_banco, c.id_cheque
+             ORDER BY c.id_cheque
             """,
             (fecha,),
         )
@@ -3950,7 +3958,11 @@ def resumen_cobranza_dia(fecha) -> dict:
             db.fetch_all(
                 f"""
                 SELECT cxf.id_cheque, cxf.importe AS aplicado, cxf.tipo,
-                       f.numf, f.numf_completo, f.saldo AS fact_saldo
+                       cxf.abono_f, cxf.saldo_f, cxf.stat_f,
+                       f.numf, f.numf_completo,
+                       f.fecha AS fact_fecha,
+                       f.importe AS fact_importe,
+                       f.saldo AS fact_saldo
                   FROM scintela.chequesxfact cxf
                   LEFT JOIN scintela.factura f ON f.id_factura = cxf.id_fact
                  WHERE cxf.id_cheque IN ({placeholders})
@@ -3963,12 +3975,31 @@ def resumen_cobranza_dia(fecha) -> dict:
         for a in aplics:
             aplic_por_cheque.setdefault(a["id_cheque"], []).append(a)
 
+    def _medio(nb: int) -> str:
+        if nb == 90:
+            return "DEP.PICH."
+        if nb == 91:
+            return "DEP.INTER."
+        if nb == 99:
+            return "EFECTIVO"
+        if nb == 98:
+            return "ANTICIPO"
+        return "CHEQUE"
+
     cheques: list[dict] = []
     depositos: list[dict] = []
     efectivo: list[dict] = []
     for r in rows:
-        r["aplicaciones"] = aplic_por_cheque.get(r["id_cheque"], [])
+        apps = aplic_por_cheque.get(r["id_cheque"], [])
+        r["aplicaciones"] = apps
         nb = r.get("no_banco") or 0
+        r["medio"] = _medio(nb)
+        r["total_aplicado"] = round(sum(float(a.get("aplicado") or 0) for a in apps), 2)
+        # Flag paga (paridad dBase): T si TODAS las facturas afectadas
+        # quedaron totalizadas al aplicar (snapshot stat_f), A si abonó y
+        # alguna quedó con saldo, '' si no cancela facturas.
+        stats = {(a.get("stat_f") or "").strip().upper() for a in apps}
+        r["paga"] = "T" if apps and stats == {"T"} else ("A" if apps else "")
         if nb == 99:
             efectivo.append(r)
         elif nb in (90, 91):
@@ -3982,6 +4013,7 @@ def resumen_cobranza_dia(fecha) -> dict:
     tot_ch, tot_de, tot_ef = _tot(cheques), _tot(depositos), _tot(efectivo)
     return {
         "fecha": fecha,
+        "ingresos": rows,  # lista plana en orden de carga (id_cheque asc)
         "cheques": cheques,
         "depositos": depositos,
         "efectivo": efectivo,
