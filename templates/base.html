@@ -41,6 +41,12 @@
 
     .text-mono { font-variant-numeric: tabular-nums; }
 
+    /* TMT 2026-07-07 dueña: en /cheques el importe se ve en pantalla como
+       input editable (dentro de un <form>), pero el print stylesheet oculta
+       todos los <form> e <input>, asi que la LISTA IMPRESA salia SIN montos.
+       .print-only = span con el valor plano que solo aparece al imprimir. */
+    .print-only { display: none; }
+
     /* TMT 2026-05-19 v8 — bordes en NEGRO (pedido dueña 2da iteración:
        "LINEAS DE LOS RECUADROS EN NEGRO, MI PAPA NO KAS VE"). Override
        MUY oscuro para máximo contraste. En dark mode no tocamos. */
@@ -86,6 +92,10 @@
       button, details > summary > div, summary {
         display: none !important;
       }
+
+      /* TMT 2026-07-07 — el valor plano (span.print-only) SI se imprime,
+         aunque su hermano <input> quede oculto por la regla de arriba. */
+      .print-only { display: inline !important; }
 
       /* TMT 2026-07-07 — flechitas ↑↓↕ de sortable-tables.js: no van en papel. */
       .sort-icon { display: none !important; }

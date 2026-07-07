@@ -489,6 +489,11 @@
                        title="Editar importe (Enter para guardar)">
                 <button type="submit" class="hidden text-[10px] px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-700 text-white" title="Guardar">✓</button>
               </form>
+              {# TMT 2026-07-07 dueña: el importe editable vive en un <input> dentro
+                 de un <form>; el print stylesheet oculta form/input, asi que la lista
+                 IMPRESA salia sin montos. Este span sale SOLO al imprimir (.print-only)
+                 con el valor plano formato es-EC. #}
+              <span class="print-only">{{ c.importe | money_es }}</span>
             {% else %}
               {{ c.importe | money_es }}
             {% endif %}
