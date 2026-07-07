@@ -778,13 +778,14 @@ def _run_full(aplicar: bool):
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
 
+    from collections import Counter as _Counter
     dbf = _leer_dbf_full(miembro)
-    yield line(f"POSDAT.DBF: {len(dbf)} registros a insertar (num!=9999).")
+    yield line(f"POSDAT.DBF: {len(dbf)} registros (num!=9999).")
 
-    # A borrar: dbf-import/reconcile-dbf SIN link mov_doble.
+    # dbf-origin SIN link → se borran y se reemplazan por el DBF.
     a_borrar = db.fetch_all(
         """
-        SELECT p.id_posdat, p.prov, p.importe, COALESCE(p.usuario_crea,'') AS uc,
+        SELECT p.id_posdat,
                EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo'
                         AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat)
                           OR (m.origen_table='posdat'  AND m.origen_id =p.id_posdat))) AS linked
@@ -794,16 +795,43 @@ def _run_full(aplicar: bool):
         """
     ) or []
     borrar_ids = [r["id_posdat"] for r in a_borrar if not r["linked"]]
-    saltados = [r for r in a_borrar if r["linked"]]
-    conservados = db.fetch_one(
-        "SELECT COUNT(*) AS n, COALESCE(SUM(importe),0) AS t FROM scintela.posdat "
-        "WHERE COALESCE(usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf') "
-        "AND COALESCE(num,0) <> 9999"
-    ) or {}
-    yield line(f"A borrar (dbf-origin sin link): {len(borrar_ids)} · saltados por link: {len(saltados)}")
-    yield line(f"Preservados (PC-creados): {conservados.get('n')} (TOTP {float(conservados.get('t') or 0):,.2f})")
-    total_dbf = sum(float(d['importe']) for d in dbf)
-    yield line(f"TOTP resultante ≈ dBase {total_dbf:,.2f} + preservados {float(conservados.get('t') or 0):,.2f}")
+    n_saltados = sum(1 for r in a_borrar if r["linked"])
+
+    # Los que QUEDAN (no se borran): PC-creados + dbf-origin linkeados. Su
+    # (prov,importe,concepto) NO debe re-insertarse desde el DBF (evita duplicar).
+    quedan = db.fetch_all(
+        """
+        SELECT COALESCE(p.prov,'') AS prov, p.importe, COALESCE(p.concepto,'') AS concepto
+          FROM scintela.posdat p
+         WHERE COALESCE(p.num,0) <> 9999
+           AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
+           AND (COALESCE(p.usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf')
+                OR EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo'
+                            AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat)
+                              OR (m.origen_table='posdat'  AND m.origen_id =p.id_posdat))))
+        """
+    ) or []
+    quedan_keys = _Counter()
+    quedan_t = 0.0
+    for q in quedan:
+        quedan_keys[(q["prov"].strip().upper(), round(float(q["importe"] or 0), 2), _norm_cpt(q["concepto"]))] += 1
+        quedan_t += float(q["importe"] or 0)
+
+    # DBF a insertar = los que NO están ya cubiertos por un 'queda'.
+    dbf_insert, skip_dup = [], 0
+    for d in dbf:
+        k = (d["prov"].strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
+        if quedan_keys.get(k, 0) > 0:
+            quedan_keys[k] -= 1
+            skip_dup += 1
+        else:
+            dbf_insert.append(d)
+
+    ins_t = sum(float(d["importe"]) for d in dbf_insert)
+    yield line(f"A borrar (dbf-origin sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
+    yield line(f"Quedan (PC-creados + linkeados): {len(quedan)} (TOTP {quedan_t:,.2f})")
+    yield line(f"DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos por linkeados)")
+    yield line(f"TOTP resultante ≈ quedan {quedan_t:,.2f} + insert {ins_t:,.2f} = {quedan_t + ins_t:,.2f}  (dBase POSDAT.DBF total ≈ {sum(float(d['importe']) for d in dbf):,.2f})")
 
     if not aplicar:
         yield line(">>> DRY-RUN: no se tocó nada. Marcá Aplicar para escribir.")
@@ -812,19 +840,16 @@ def _run_full(aplicar: bool):
     try:
         with db.tx() as conn:
             if borrar_ids:
-                db.execute(
-                    "DELETE FROM scintela.posdat WHERE id_posdat = ANY(%s)",
-                    (borrar_ids,), conn=conn,
-                )
-            for d in dbf:
+                db.execute("DELETE FROM scintela.posdat WHERE id_posdat = ANY(%s)",
+                           (borrar_ids,), conn=conn)
+            for d in dbf_insert:
                 db.execute(
                     "INSERT INTO scintela.posdat "
                     "(fecha, fechad, prov, num, importe, concepto, banc, clave, usuario_crea) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'dbf-import')",
                     (d["fecha"], d["fechad"], d["prov"], d["num"], d["importe"],
-                     d["concepto"], d["banc"], d["clave"]), conn=conn,
-                )
-        yield line(f">>> APLICADO: borrados {len(borrar_ids)}, insertados {len(dbf)}.")
+                     d["concepto"], d["banc"], d["clave"]), conn=conn)
+        yield line(f">>> APLICADO: borrados {len(borrar_ids)}, insertados {len(dbf_insert)}.")
     except Exception as exc:  # noqa: BLE001
         yield line(f"[ERROR rollback] {exc!r}")
 
