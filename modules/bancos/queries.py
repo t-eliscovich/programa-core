@@ -451,11 +451,26 @@ def movimientos(
             md.id_original         AS mov_id_original,
             md.id_reverso          AS mov_id_reverso
         FROM scintela.transacciones_bancarias t
-        LEFT JOIN scintela.mov_doble md
-               ON (md.origen_table  = 'transacciones_bancarias'
-                   AND md.origen_id  = t.id_transaccion)
-               OR (md.destino_table = 'transacciones_bancarias'
-                   AND md.destino_id = t.id_transaccion)
+        -- TMT 2026-07-07: FIX fan-out. El LEFT JOIN plano con `OR` duplicaba
+        -- la fila cuando una tx tenía VARIOS mov_doble apuntándola — el caso
+        -- clásico es un depósito "dep.N ch." que registra 1 mov_doble por
+        -- cheque: la MISMA tx (mismo importe/saldo) aparecía N veces y el
+        -- contador decía "Mostrando 221 de 180". LATERAL + LIMIT 1 garantiza
+        -- una sola fila por tx, priorizando el mov_doble relevante para el
+        -- badge de reverso (reverso/reversado) y, a igualdad, el más reciente.
+        LEFT JOIN LATERAL (
+            SELECT md.id_mov_doble, md.estado, md.usuario, md.concepto,
+                   md.id_original, md.id_reverso
+              FROM scintela.mov_doble md
+             WHERE (md.origen_table  = 'transacciones_bancarias'
+                    AND md.origen_id  = t.id_transaccion)
+                OR (md.destino_table = 'transacciones_bancarias'
+                    AND md.destino_id = t.id_transaccion)
+             ORDER BY (CASE WHEN md.estado IN ('reverso', 'reversado')
+                            THEN 0 ELSE 1 END),
+                      md.id_mov_doble DESC
+             LIMIT 1
+        ) md ON TRUE
         WHERE t.no_banco = %(no_banco)s
           AND (%(desde)s::date IS NULL OR t.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR t.fecha <= %(hasta)s::date)
