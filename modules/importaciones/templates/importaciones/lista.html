@@ -231,7 +231,10 @@
                    el restante se carga por /compras. #}
                 {% if tiene_permiso('compras.editar') %}
                 <details class="acc-edit mov-imp">
-                  <summary>+ ver movimientos ({{ _movs | length }})</summary>
+                  {# TMT 2026-07-06 (dueña): "quitá el ver movimientos" — el
+                     detalle (form + lista con ✕) se abre/cierra SOLO con el
+                     botón "+ Anticipo" de la columna Cargar. #}
+                  <summary style="display:none"></summary>
                   {% if _movs %}
                   <table class="mov-tabla">
                     {% for m in _movs %}
@@ -330,10 +333,12 @@
     const tr = b.closest('tr');
     const det = tr && tr.querySelector('details');
     if (det) {
-      det.open = true;
-      const monto = det.querySelector('input[name="monto_mov"]');
-      if (monto) { monto.focus(); }
-      det.scrollIntoView({block: 'nearest'});
+      det.open = !det.open;  // toggle (el summary está oculto)
+      if (det.open) {
+        const monto = det.querySelector('input[name="monto_mov"]');
+        if (monto) { monto.focus(); }
+        det.scrollIntoView({block: 'nearest'});
+      }
     }
   });
 })();
