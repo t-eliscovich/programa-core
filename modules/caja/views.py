@@ -400,10 +400,11 @@ def cargar_agregar():
     filas_ordenadas = sorted(filas, key=lambda f: f["fecha"])
     fecha_min = filas_ordenadas[0]["fecha"]
     tot_e = tot_s = 0.0
+    import mov_doble as _md
     try:
         with db.tx() as conn:
             for f in filas_ordenadas:
-                caja_helpers.insert_movimiento_caja(
+                r = caja_helpers.insert_movimiento_caja(
                     conn,
                     fecha=f["fecha"],
                     tipo=f["tipo"],
@@ -412,6 +413,31 @@ def cargar_agregar():
                     clave=clave,
                     usuario=usuario,
                 )
+                # TMT 2026-07-07 (dueña): registrar mov_doble por CADA fila de
+                # la carga masiva, igual que el alta simple (queries.crear).
+                # Sin esto, los movimientos batch salían en /mi-historial con
+                # id sintético NEGATIVO y SIN botón de reverso (el template
+                # solo ofrece reversar si id_mov_doble > 0) → Alex no podía
+                # reversar sus cargas de caja (404). Con el mov_doble self-ref
+                # sale con id positivo y despacha a caja.confirmar_reverso
+                # (gate caja.crear, que Alex tiene). Sin side-effects.
+                id_caja_new = r.get("id_caja") if r else None
+                if id_caja_new:
+                    _md.registrar(
+                        conn=conn,
+                        tipo=f"caja_{f['tipo'].lower()}_simple",
+                        origen_table="caja",
+                        origen_id=id_caja_new,
+                        destino_table="caja",
+                        destino_id=id_caja_new,
+                        importe=f["importe"],
+                        fecha=f["fecha"],
+                        concepto=f["concepto"],
+                        usuario=usuario,
+                        metadata={"tipo_caja": f["tipo"],
+                                  "tiene_side_effect": False,
+                                  "origen": "caja/cargar"},
+                    )
                 if f["tipo"] == "E":
                     tot_e += f["importe"]
                 else:
