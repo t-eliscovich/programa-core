@@ -374,12 +374,32 @@ def _run_fechad(aplicar: bool):
     dbf = _leer_dbf_fechad(miembro)
     yield line(f"POSDAT.DBF: {len(dbf)} registros con fechad (num!=9999).")
 
-    # Mapa DBF: key -> lista de fechad (para consumir 1 a 1 en duplicados).
-    dbf_map = defaultdict(list)
-    for d in dbf:
-        dbf_map[(d["prov"], d["importe"], d["concepto"])].append(d["fechad"])
-    for k in dbf_map:
-        dbf_map[k].sort()
+    # Registros DBF disponibles para consumir 1 a 1. Dos índices:
+    #   exact = (prov, importe, concepto)  ·  loose = (prov, importe)
+    # Los posdat de importación de PC (andres) tienen concepto NULL → no
+    # matchean por concepto; el 2do pase por (prov,importe) los alcanza.
+    import itertools as _it
+    dbf_recs = [{"prov": d["prov"], "importe": d["importe"],
+                 "concepto": d["concepto"], "fechad": d["fechad"], "used": False}
+                for d in dbf]
+    idx_exact = defaultdict(list)
+    idx_loose = defaultdict(list)
+    for rec in dbf_recs:
+        idx_exact[(rec["prov"], rec["importe"], rec["concepto"])].append(rec)
+        idx_loose[(rec["prov"], rec["importe"])].append(rec)
+    for k in idx_exact: idx_exact[k].sort(key=lambda r: r["fechad"])
+    for k in idx_loose: idx_loose[k].sort(key=lambda r: r["fechad"])
+
+    def _tomar(prov, imp, cpt):
+        for rec in idx_exact.get((prov, imp, cpt), ()):  # 1er pase: exacto
+            if not rec["used"]:
+                rec["used"] = True
+                return rec["fechad"]
+        for rec in idx_loose.get((prov, imp), ()):        # 2do pase: prov+importe
+            if not rec["used"]:
+                rec["used"] = True
+                return rec["fechad"]
+        return None
 
     pc = db.fetch_all(
         """
@@ -396,15 +416,14 @@ def _run_fechad(aplicar: bool):
     cambios = []
     sin_match = 0
     for r in pc:
-        key = (r["prov"].strip().upper(), round(float(r["importe"] or 0), 2), _norm_cpt(r["concepto"]))
-        fechas = dbf_map.get(key)
-        if not fechas:
+        prov = r["prov"].strip().upper(); imp = round(float(r["importe"] or 0), 2)
+        nueva = _tomar(prov, imp, _norm_cpt(r["concepto"]))
+        if nueva is None:
             sin_match += 1
             continue
-        nueva = fechas.pop(0)  # consume 1
         vieja = r["fechad"]
         if vieja != nueva:
-            cambios.append((r["id_posdat"], r["prov"], round(float(r["importe"] or 0), 2), vieja, nueva))
+            cambios.append((r["id_posdat"], r["prov"], imp, vieja, nueva))
 
     yield line(f"Pareados con cambio de fechad: {len(cambios)} · sin match en DBF: {sin_match}")
     yield line("")
