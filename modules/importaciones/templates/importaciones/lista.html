@@ -171,7 +171,10 @@
           {# TMT 2026-07-06 (dueña): "en importaciones agregá fecha de recepción" #}
           <th style="width: 8%">Recibida</th>
           <th class="text-right" style="width: 11%">Compras (US$)</th>
-          <th style="width: 26%" data-no-sort>Anticipos (US$ = valor stock)</th>
+          <th style="width: 17%" data-no-sort>Anticipos (US$ = valor stock)</th>
+          {# TMT 2026-07-06 (dueña): "otra columna: un botón para sumar
+             anticipo y otro para compra". #}
+          <th style="width: 9%" data-no-sort>Cargar</th>
         </tr>
       </thead>
       <tbody>
@@ -228,7 +231,7 @@
                    el restante se carga por /compras. #}
                 {% if tiene_permiso('compras.editar') %}
                 <details class="acc-edit mov-imp">
-                  <summary>+ ver movimientos ({{ _movs | length }}) / cargar anticipo</summary>
+                  <summary>+ ver movimientos ({{ _movs | length }})</summary>
                   {% if _movs %}
                   <table class="mov-tabla">
                     {% for m in _movs %}
@@ -269,9 +272,20 @@
                 <span class="text-slate-300">—</span>
               {% endif %}
             </td>
+            <td class="text-center" style="white-space:nowrap;">
+              {% if r.codigo %}
+                <button type="button" class="btn-cargar-ant text-[11px] px-1.5 py-0.5 rounded"
+                        style="border:1px solid #6ee7b7;background:#ecfdf5;color:#065f46;"
+                        title="Cargar un anticipo a esta importación (genera la ND en Pichincha sola)">+ Anticipo</button>
+                <a class="text-[11px] px-1.5 py-0.5 rounded inline-block"
+                   style="border:1px solid #93c5fd;background:#eff6ff;color:#1e40af;"
+                   href="{{ url_for('compras.nueva', codigo_prov=(r.prov or ''), concepto=(r.numero if r.numero is not none else ''), tipo='H') }}"
+                   title="Cargar la compra del restante en /compras, ya matcheada a {{ r.im_numero }} (concepto {{ r.numero }})">+ Compra</a>
+              {% else %}<span class="text-slate-300">—</span>{% endif %}
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="9" class="text-center py-8 text-slate-500">
+          <tr><td colspan="10" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
           </td></tr>
         {% endfor %}
@@ -306,4 +320,22 @@
   });
 </script>
 </div>
+<script>
+(function () {
+  // TMT 2026-07-06 (dueña): botón "+ Anticipo" abre el detalle de la fila
+  // y enfoca el monto (el form vive dentro del <details> de Anticipos).
+  document.addEventListener('click', function (e) {
+    const b = e.target.closest && e.target.closest('.btn-cargar-ant');
+    if (!b) return;
+    const tr = b.closest('tr');
+    const det = tr && tr.querySelector('details');
+    if (det) {
+      det.open = true;
+      const monto = det.querySelector('input[name="monto_mov"]');
+      if (monto) { monto.focus(); }
+      det.scrollIntoView({block: 'nearest'});
+    }
+  });
+})();
+</script>
 {% endblock %}
