@@ -188,7 +188,8 @@
               {% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
             <td class="fecha text-slate-500">
-              {% if r.fecha_recepcion %}{{ r.fecha_recepcion }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+              {% set _frec = r.fecha_recepcion_pc or r.fecha_recepcion %}
+              {% if _frec %}{{ _frec }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
             <td class="num">
               {% if r.fuente == 'compra' %}
