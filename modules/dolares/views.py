@@ -1,9 +1,9 @@
 """Anticipos en USD — listado y vista agrupada de scintela.dolares."""
 
-from flask import Blueprint, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 import db
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
@@ -40,10 +40,15 @@ def _nombres_clientes(codigos: list[str]) -> dict[str, str]:
     return {r["cta"]: r["nombre"] for r in rows or []}
 
 
+# TMT 2026-07-06 (dueña): /anticipos/ se retira y su gente entra ACÁ. Quien
+# hoy usaba /anticipos tenía facturas.ver (Bodega/Alex, Ventas) pero NO
+# informes.ver — mismo patrón granular que /informes/deudas (2026-07-01):
+# se acepta cualquiera de los dos permisos, sin aflojar nada de escritura.
 @dolares_bp.route("/dolares")
 @requiere_login
-@requiere_permiso("informes.ver")
 def lista():
+    if not (tiene_permiso("informes.ver") or tiene_permiso("facturas.ver")):
+        abort(404)
     """Anticipos en USD — vista moderna agrupada por cuenta.
 
     El total de los anticipos vivos (st vacío) coincide con el campo
@@ -86,7 +91,62 @@ def lista():
         filas=filas, cuentas=cuentas, resumen=res,
         desde=desde, hasta=hasta, cta=cta, q=q,
         solo_vivos=solo_vivos, error=error,
+        hoy=today_ec().isoformat(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Alta y cancelación directa de anticipos — MOVIDO de modules/anticipos.
+# TMT 2026-07-06 (dueña): "/anticipos/ borrar, tiene que ser esta pantalla
+# /dolares". Misma lógica de negocio que el flujo dBase (TMT 2026-06-11):
+# ST=' ' = vivo (suma a ANTICIPOS del balance, INFORMES.PRG L58); cancelar
+# = ST='B'. Permisos de ESCRITURA intactos: facturas.crear (igual que
+# tenían anticipos.nuevo / anticipos.cancelar — no se afloja).
+# ---------------------------------------------------------------------------
+
+@dolares_bp.route("/dolares/nuevo-anticipo", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def nuevo_anticipo():
+    """Alta de anticipo directo en scintela.dolares (ex anticipos.nuevo)."""
+    try:
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
+        cta = (request.form.get("cta") or "").strip().upper()[:3]
+        concepto = (request.form.get("concepto") or "").strip()[:100]
+        # parse_monto = parser canónico de plata (EU: 1.234,56) — el input
+        # del form es texto, no type=number, para aceptar formato EU.
+        monto = parse_monto(request.form.get("importe"))
+        importe = round(float(monto), 2) if monto is not None else 0.0
+        if not cta or importe <= 0:
+            flash("Faltan datos (cliente / importe).", "warn")
+            return redirect(url_for("dolares.lista"))
+        usuario = (getattr(g, "user", None) or {}).get("username", "web")
+        db.execute(
+            "INSERT INTO scintela.dolares (fecha, cta, concepto, importe, st, usuario_crea) "
+            "VALUES (%s, %s, %s, %s, ' ', %s)",
+            (fecha, cta, concepto, importe, usuario),
+        )
+        flash(f"Anticipo {cta} $ {importe:,.2f} registrado (suma a ANTICIPOS).", "ok")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No se pudo registrar el anticipo", e)
+    return redirect(url_for("dolares.lista"))
+
+
+@dolares_bp.route("/dolares/anticipo/<int:id_dolares>/cancelar", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def cancelar_anticipo(id_dolares: int):
+    """Cancela un anticipo vivo → ST='B' (ex anticipos.cancelar)."""
+    n = db.execute(
+        "UPDATE scintela.dolares SET st = 'B' WHERE id_dolares = %s "
+        "AND (st IS NULL OR TRIM(COALESCE(st,'')) = '')",
+        (id_dolares,),
+    )
+    flash(
+        "Anticipo cancelado (ST=B)." if n else "No se encontró o ya estaba cancelado.",
+        "ok" if n else "warn",
+    )
+    return redirect(url_for("dolares.lista"))
 
 
 @dolares_bp.route("/dolares/convertir-lote", methods=["GET", "POST"])

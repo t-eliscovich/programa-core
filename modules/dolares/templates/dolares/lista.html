@@ -153,6 +153,18 @@
       {# TMT 2026-05-20 — botones explícitos para los 2 workflows que
          consumen anticipos (pedido dueña: "Hilado no veo el convertir
          lote"). Ambos visibles desde acá. #}
+      {# TMT 2026-07-06 (dueña): alta de anticipo MOVIDA de /anticipos/ —
+         form colapsable acá arriba. Permiso de escritura intacto
+         (facturas.crear, el que tenía anticipos.nuevo). #}
+      {% if tiene_permiso('facturas.crear') %}
+        <button type="button" id="btn-nuevo-anticipo"
+                onclick="var p=document.getElementById('panel-nuevo-anticipo'); p.classList.toggle('hidden'); if(!p.classList.contains('hidden')){p.querySelector('input[name=cta]').focus();}"
+                class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white shadow-sm"
+                title="Cargar un anticipo directo (ex /anticipos/)">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo anticipo
+        </button>
+      {% endif %}
       {% if tiene_permiso('compras.crear') %}
         <a href="{{ url_for('dolares.convertir_lote') }}"
            class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
@@ -187,6 +199,42 @@
       </details>
     </div>
   </div>
+
+  {# TMT 2026-07-06 (dueña): panel de alta colapsable (ex pantalla /anticipos/).
+     ST=' ' = vivo, suma a ANTICIPOS del balance igual que DOLARES del dBase. #}
+  {% if tiene_permiso('facturas.crear') %}
+  <div id="panel-nuevo-anticipo" class="hidden mb-6 border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 p-4">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-3">Nuevo anticipo</h2>
+    <form method="post" action="{{ url_for('dolares.nuevo_anticipo') }}"
+          class="flex flex-wrap items-end gap-3 text-sm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Fecha</label>
+        <input type="date" name="fecha" value="{{ hoy }}" required
+               class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Cliente (CTA)</label>
+        <input name="cta" maxlength="3" required placeholder="ABC"
+               class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm uppercase font-mono">
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Concepto</label>
+        <input name="concepto" maxlength="100"
+               class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Importe USD</label>
+        {# texto (no type=number) para aceptar formato EU: 1.234,56 #}
+        <input name="importe" required inputmode="decimal" placeholder="1.234,56"
+               class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm text-right">
+      </div>
+      <button class="px-4 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">+ Anticipo</button>
+      <button type="button" class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              onclick="document.getElementById('panel-nuevo-anticipo').classList.add('hidden')">Cerrar</button>
+    </form>
+  </div>
+  {% endif %}
 
   {% if error %}
   <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
@@ -318,6 +366,7 @@
             <th class="px-4 py-2 text-right font-medium" title="Saldo corrido de la cuenta hasta este movimiento">Saldo cta.</th>
             <th class="px-4 py-2 text-left font-medium">Estado</th>
             <th class="px-4 py-2 text-left font-medium">Clave</th>
+            {% if tiene_permiso('facturas.crear') %}<th class="px-4 py-2 no-print"></th>{% endif %}
           </tr>
         </thead>
         <tbody>
@@ -339,13 +388,45 @@
               {% endif %}
             </td>
             <td class="px-4 py-1.5 font-mono text-xs">{{ d.clave }}</td>
+            {% if tiene_permiso('facturas.crear') %}
+            <td class="px-4 py-1.5 no-print text-right">
+              {% if vivo %}
+              {# TMT 2026-07-06 (dueña): cancelar MOVIDO de /anticipos/ —
+                 confirmación en 2 clics (sin confirm() nativo). #}
+              <form method="post" action="{{ url_for('dolares.cancelar_anticipo', id_dolares=d.id_dolares) }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="button" class="btn-cancelar-anticipo text-xs text-red-600 dark:text-red-400 hover:underline whitespace-nowrap"
+                        data-label="cancelar">cancelar</button>
+              </form>
+              {% endif %}
+            </td>
+            {% endif %}
           </tr>
           {% else %}
-          {{ empty_row(7, 'Sin anticipos para el filtro.', 'Probá quitar "Solo vivos" o ampliar el rango de fechas.') }}
+          {{ empty_row(8 if tiene_permiso('facturas.crear') else 7, 'Sin anticipos para el filtro.', 'Probá quitar "Solo vivos" o ampliar el rango de fechas.') }}
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
+
+{# TMT 2026-07-06 (dueña): cancelar anticipo con confirmación en 2 clics —
+   1er clic arma el botón ("¿confirmar?"), 2do clic postea; se desarma solo
+   a los 4 segundos. Sin confirm() nativo (regla del proyecto). #}
+<script>
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest('.btn-cancelar-anticipo');
+  if (!b) return;
+  if (b.dataset.armed === '1') { b.closest('form').submit(); return; }
+  b.dataset.armed = '1';
+  b.textContent = '¿confirmar?';
+  b.classList.add('font-semibold');
+  setTimeout(function () {
+    b.dataset.armed = '';
+    b.textContent = b.dataset.label;
+    b.classList.remove('font-semibold');
+  }, 4000);
+});
+</script>
 {% endblock %}

@@ -475,6 +475,9 @@ def create_app() -> Flask:
 
     # Anticipos (scintela.dolares) — TMT 2026-06-11 dueña: sin sync, los
     # anticipos se cargan directo en PC. Alta + cancelación, suma a ANTIC.
+    # TMT 2026-07-06 (dueña): "/anticipos/ borrar, tiene que ser /dolares" —
+    # alta + cancelar MOVIDOS a modules/dolares; este blueprint queda solo
+    # como redirects de compatibilidad (no borrar del disco todavía).
     from modules.anticipos.views import bp as anticipos_bp
 
     app.register_blueprint(anticipos_bp)
