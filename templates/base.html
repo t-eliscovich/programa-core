@@ -114,6 +114,16 @@
         margin: 0 !important;
       }
 
+      /* TMT 2026-07-07 — BUG "imprime solo una hoja": el layout de pantalla
+         es un outer flex con height:100vh (inline) y <main> con scroll
+         interno (overflow:auto). Al imprimir, lo que queda dentro del scroll
+         no pagina: se recorta a la primera hoja (pasaba en resumen-dia y
+         estado-cuenta). En print el outer y el main tienen que ser bloques
+         de altura natural con overflow visible. */
+      html, body { height: auto !important; overflow: visible !important; }
+      body > div.flex { display: block !important; height: auto !important; overflow: visible !important; }
+      main { display: block !important; overflow: visible !important; height: auto !important; }
+
       /* Hide KPI cards / heros / decorativo. */
       .grid, .grid-cols-1, .grid-cols-2, .grid-cols-3, .grid-cols-4,
       [class*="md:grid-cols"] {
