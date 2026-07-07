@@ -209,7 +209,12 @@
       {% if data.facturas %}
       <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
         <tr class="font-semibold">
-          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="3">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
+          {# TMT 2026-07-06 (dueña: "abonado y saldo ambas dicen 241k, no
+             está sumando bien"): el rótulo abarcaba 3 columnas pero la tabla
+             tiene 4 antes de Kg (N°, Tipo, Fecha, Vence) → TODO el pie
+             quedaba corrido una columna a la izquierda. Los totales estaban
+             bien calculados; era alineación. #}
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="4">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
           <td class="px-4 py-3 text-right text-mono">{{ t.kg | kg_es }}</td>
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>

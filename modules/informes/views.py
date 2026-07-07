@@ -1845,10 +1845,22 @@ def estado_cuenta_totalizar(codigo_cli):
     los que ven la cuenta.
     """
     codigo_up = codigo_cli.upper()
+    # TMT 2026-07-06 (dueña): "¿cómo elegís hasta dónde totalizar?" — corte
+    # opcional por fecha (inclusive). Vacío = todas las vivas.
+    _hasta_raw = (request.values.get("hasta") or "").strip()
+    _hasta = None
+    if _hasta_raw:
+        try:
+            from datetime import date as _date
+            _hasta = _date.fromisoformat(_hasta_raw)
+        except ValueError:
+            flash("Fecha 'hasta' inválida — se ignora el corte.", "warn")
+            _hasta = None
     if request.method == "POST":
         usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
         try:
-            res = queries.totalizar_estado_cuenta_ejecutar(codigo_up, usuario=usuario)
+            res = queries.totalizar_estado_cuenta_ejecutar(
+                codigo_up, usuario=usuario, hasta=_hasta)
         except ValueError as e:
             flash(str(e), "warn")
             return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
@@ -1866,11 +1878,13 @@ def estado_cuenta_totalizar(codigo_cli):
         }
         return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
-    data, error = _safe(lambda: queries.totalizar_estado_cuenta_preview(codigo_up), {})
+    data, error = _safe(
+        lambda: queries.totalizar_estado_cuenta_preview(codigo_up, hasta=_hasta), {})
     if not data or not data.get("cliente"):
         abort(404)
     return render_template(
-        "informes/totalizar_preview.html", data=data, error=error, hoy=today_ec()
+        "informes/totalizar_preview.html", data=data, error=error, hoy=today_ec(),
+        hasta=_hasta_raw,
     )
 
 

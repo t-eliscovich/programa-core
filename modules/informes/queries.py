@@ -8209,6 +8209,9 @@ _SQL_FACTURAS_TOTALIZAR = """
        -- criterio canónico de cartera (fix NJL 2026-06-17): el backfill
        -- histórico de Asinfo no participa de la cobranza.
        AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+       -- TMT 2026-07-06 (dueña: "¿cómo elegís hasta dónde totalizar?"):
+       -- corte opcional por fecha INCLUSIVE — lo posterior no se toca.
+       AND (CAST(%s AS date) IS NULL OR fecha <= CAST(%s AS date))
      ORDER BY fecha ASC, id_factura ASC
 """
 
@@ -8289,7 +8292,7 @@ def _totalizar_armar(facturas: list[dict]) -> dict:
     }
 
 
-def totalizar_estado_cuenta_preview(codigo_cli: str) -> dict:
+def totalizar_estado_cuenta_preview(codigo_cli: str, hasta=None) -> dict:
     """Datos para la pantalla de confirmación del TOTALIZAR (solo lectura).
 
     Devuelve cliente + filas [actual → después] + totales + n_links (los
@@ -8301,7 +8304,7 @@ def totalizar_estado_cuenta_preview(codigo_cli: str) -> dict:
     )
     if not cliente:
         return {"cliente": None}
-    facturas = db.fetch_all(_SQL_FACTURAS_TOTALIZAR, (codigo_cli,))
+    facturas = db.fetch_all(_SQL_FACTURAS_TOTALIZAR, (codigo_cli, hasta, hasta))
     n_links = 0
     if facturas:
         row = db.fetch_one(
@@ -8342,7 +8345,8 @@ def totalizar_estado_cuenta_preview(codigo_cli: str) -> dict:
     }
 
 
-def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web") -> dict:
+def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
+                                     hasta=None) -> dict:
     """Ejecuta el TOTALIZAR en UNA transacción. IRREVERSIBLE.
 
     1. Lockea las facturas vivas del cliente (FOR UPDATE) y recalcula la
@@ -8359,7 +8363,8 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web") -> d
     codigo_cli = (codigo_cli or "").strip().upper()
     with db.tx() as conn:
         facturas = db.fetch_all(
-            _SQL_FACTURAS_TOTALIZAR + " FOR UPDATE", (codigo_cli,), conn=conn
+            _SQL_FACTURAS_TOTALIZAR + " FOR UPDATE",
+            (codigo_cli, hasta, hasta), conn=conn,
         )
         if not facturas:
             raise ValueError(

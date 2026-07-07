@@ -139,11 +139,24 @@
     </div>
   </div>
 
+  {# TMT 2026-07-06 (dueña: "¿cómo elegís hasta dónde totalizar?"):
+     corte opcional por fecha inclusive — lo posterior no se toca. #}
+  <form method="get" class="no-print mb-3 flex items-end gap-2"
+        action="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}">
+    <label class="flex flex-col text-xs text-slate-600">
+      Totalizar hasta (inclusive — vacío = todas)
+      <input type="date" name="hasta" value="{{ hasta or '' }}"
+             class="border rounded px-2 py-1 mt-0.5 text-sm">
+    </label>
+    <button type="submit" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Recalcular</button>
+  </form>
+
   {# ─── Confirmar / Cancelar — sin confirm() nativo (congela Chrome):
         checkbox que arma el botón = confirmación de 2 clicks en pantalla. #}
   <div class="no-print max-w-5xl mx-auto mt-2 mb-8 bg-white border border-slate-200 rounded-lg p-4">
     <form method="post" action="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="hasta" value="{{ hasta or '' }}">
       <label class="flex items-start gap-2 text-sm text-slate-700 cursor-pointer select-none">
         <input type="checkbox" id="chk-entiendo" class="mt-0.5">
         <span>Entiendo que se pierden {{ data.n_links }} vínculo{{ '' if data.n_links == 1 else 's' }} cheque↔factura y que <strong>esta operación no tiene deshacer</strong>.</span>
