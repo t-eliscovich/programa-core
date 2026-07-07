@@ -475,11 +475,13 @@ def emitir_cheque():
         with contextlib.suppress(Exception):
             row = _db.fetch_one(
                 """
-                SELECT MAX(numreferencia)::int AS ultimo
-                  FROM scintela.transaccion
+                SELECT MAX(CASE WHEN COALESCE(NULLIF(TRIM(numreferencia_manual),''),
+                                             numreferencia::text) ~ '^[0-9]+$'
+                                THEN COALESCE(NULLIF(TRIM(numreferencia_manual),''),
+                                              numreferencia::text)::bigint END) AS ultimo
+                  FROM scintela.transacciones_bancarias
                  WHERE no_banco = %s
                    AND documento = 'CH'
-                   AND numreferencia IS NOT NULL
                 """,
                 (int(no_banco_inicial),),
             )

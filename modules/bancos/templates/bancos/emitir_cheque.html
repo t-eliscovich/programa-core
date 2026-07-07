@@ -319,23 +319,31 @@
           {# TMT 2026-05-19 v5 — pedido dueña: chip V2/V5/V8 (servicios)
              dejan el concepto vacío. El xgast.num del chip es la verdad,
              concepto es texto libre. #}
-          <div class="flex flex-wrap gap-1.5">
+          {# TMT 2026-07-07 — grilla 3×3 espejo del "Reporte mensual" de
+             /informes/gastos: columnas = Tejeduría/Tintorería/Administración,
+             filas = Sueldos/Servicios/Otros. Orden row-major para alinear. #}
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.375rem" class="mb-1">
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 text-center">Tejeduría</div>
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 text-center">Tintorería</div>
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 text-center">Administración</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.375rem">
             {% set vchips = [
               (1, 'V1', 'Sueldos tejeduría',   'KKSU '),
-              (2, 'V2', 'Servicios tejeduría', ''),
-              (3, 'V3', 'Otros tejeduría',     'KK '),
               (4, 'V4', 'Sueldos tintorería',  'CCSU '),
-              (5, 'V5', 'Servicios tintorería',''),
-              (6, 'V6', 'Otros tintorería',    'CC '),
               (7, 'V7', 'Sueldos admin',       'SU '),
+              (2, 'V2', 'Servicios tejeduría', ''),
+              (5, 'V5', 'Servicios tintorería',''),
               (8, 'V8', 'Servicios admin',     ''),
+              (3, 'V3', 'Otros tejeduría',     'KK '),
+              (6, 'V6', 'Otros tintorería',    'CC '),
               (9, 'V9', 'Otros admin',         ''),
             ] %}
             {% for num, code, label, tmpl in vchips %}
               <button type="button"
                       data-vnum="{{ num }}"
                       data-tmpl="{{ tmpl }}"
-                      class="vchip-cheque text-xs px-2.5 py-1 rounded-full border border-slate-300 bg-white hover:bg-sky-50 hover:border-sky-400 text-slate-700"
+                      class="vchip-cheque text-xs px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-sky-50 hover:border-sky-400 text-slate-700 text-center"
                       title="Categoría {{ code }} — {{ label }}">
                 <span class="font-mono text-slate-500">{{ code }}</span>
                 <span class="ml-1">{{ label }}</span>
@@ -360,9 +368,9 @@
                 const tmpl = btn.dataset.tmpl || '';
                 hidden.value = num;
                 document.querySelectorAll('.vchip-cheque').forEach(b => {
-                  b.classList.remove('bg-sky-100', 'border-sky-400');
+                  b.classList.remove('bg-sky-600', 'text-white', 'border-sky-600', 'font-semibold');
                 });
-                btn.classList.add('bg-sky-100', 'border-sky-400');
+                btn.classList.add('bg-sky-600', 'text-white', 'border-sky-600', 'font-semibold');
                 if (inp && !(inp.value || '').trim() && tmpl) {
                   inp.value = tmpl;
                 }

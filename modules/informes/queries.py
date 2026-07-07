@@ -1892,7 +1892,7 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
         WHERE num = %s
           AND COALESCE(stat, '') <> 'Y'
           {where_fecha}
-        ORDER BY fecha ASC, id_xgast ASC
+        ORDER BY fecha DESC, id_xgast DESC
     """
     filas = db.fetch_all(sql, (n,)) or []
 
@@ -1918,7 +1918,7 @@ def gastos_detalle_categoria(num: int, mes_actual: bool = True) -> dict:
                {where_fecha_c}
         ) sub
          WHERE num_calc = %s
-         ORDER BY fecha ASC, id_compra ASC
+         ORDER BY fecha DESC, id_compra DESC
     """
     filas_compras = db.fetch_all(sql_c, (n,)) or []
 
