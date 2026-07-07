@@ -27,8 +27,11 @@
     .apps { font-size: 7.5pt !important; }
     .facts { font-size: 7pt !important; }
     .medio { font-size: 8pt !important; }
-    .badge, .badge-t, .badge-a { color: #000 !important; border-color: #000 !important;
-                                 background: none !important; padding: 0 2px !important; }
+    /* TMT 2026-07-07 dueña: "quita los recuadros de la A y la T cuando
+       imprimo" — en papel la letra sola, sin borde ni fondo. */
+    .badge, .badge-t, .badge-a { color: #000 !important; border: none !important;
+                                 background: none !important; padding: 0 !important;
+                                 font-weight: 700 !important; }
     .saldo-neg, .neg { color: #000 !important; }
   }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);

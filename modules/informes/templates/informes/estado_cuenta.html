@@ -26,29 +26,48 @@
 <style>
   .print-header { display: none; }
   @media print {
-    /* Header compacto de impresión: 1 línea, todo lo demás del header
-       tiene no-print. */
+    /* TMT 2026-07-07 v2 (dueña sobre el PDF): "más lindo para la vista, lo
+       que más te entre por hoja, solo facturas". Header 2 líneas prolijo,
+       tabla bien densa con selectores de ALTA especificidad (v1 con `th, td`
+       a secas perdía contra los py-2/px-4 de las celdas → filas altas,
+       28 por hoja), y Cheques/Anticipos con no-print. */
     .print-header {
       display: block !important;
-      font-size: 11pt !important;
-      font-weight: bold !important;
       border-bottom: 1.5pt solid #000 !important;
-      padding: 0 0 3pt 0 !important;
-      margin: 0 0 5pt 0 !important;
+      padding: 0 0 4pt 0 !important;
+      margin: 0 0 6pt 0 !important;
     }
-    .print-header .ph-meta { font-weight: normal !important; font-size: 9pt !important; }
+    .print-header .ph-top { display: flex !important; justify-content: space-between !important;
+                            align-items: baseline !important; }
+    .print-header .ph-nombre { font-size: 12pt !important; font-weight: bold !important;
+                               letter-spacing: .02em !important; }
+    .print-header .ph-saldo  { font-size: 10pt !important; font-weight: 600 !important; margin-top: 1pt !important; }
+    .print-header .ph-meta   { font-weight: normal !important; font-size: 8pt !important; color: #000 !important; }
 
-    /* Tabla densa: tipografía chica, padding mínimo (pisa el 9pt/2px 4px
-       global de base.html para meter más filas por hoja). */
-    table { font-size: 8pt !important; line-height: 1.15 !important; }
-    th, td { padding: 1px 3px !important; }
+    /* Tabla densa. Especificidad alta para pisar px-4/py-2 de las celdas
+       y el th,td global de base.html. */
+    .max-w-6xl table { font-size: 7.5pt !important; line-height: 1.1 !important;
+                       border-collapse: collapse !important; }
+    .max-w-6xl table th, .max-w-6xl table td {
+      padding: 0.5pt 3pt !important;
+      font-size: 7.5pt !important;
+      line-height: 1.1 !important;
+    }
+    .max-w-6xl table td { border-bottom: 0.3pt solid #ccc !important; }
+    .max-w-6xl table thead th { border-bottom: 0.8pt solid #000 !important;
+                                font-size: 6.5pt !important; }
+    .max-w-6xl table tfoot td { border-top: 0.8pt solid #000 !important;
+                                border-bottom: none !important; font-weight: 700 !important; }
     thead { display: table-header-group !important; }   /* repite por página */
     tfoot { display: table-row-group !important; }      /* totales UNA vez al final, no por página */
     tr { page-break-inside: avoid !important; }
     h2 { font-size: 9pt !important; margin: 5pt 0 1pt 0 !important; page-break-after: avoid !important; }
 
-    /* Pills / badges (saldo_pill, "anulado", "Anticipo") → texto plano. */
-    td span { padding: 0 !important; background: none !important; }
+    /* Pills / badges (saldo_pill, "anulado") → texto plano al tamaño de la celda. */
+    .max-w-6xl table td span, .max-w-6xl table td div {
+      padding: 0 !important; background: none !important; border: none !important;
+      font-size: inherit !important; line-height: inherit !important;
+    }
 
     /* Nada de controles de UI en papel (los <button>/no-print ya los tapa
        base.html; esto cubre links de acción y title-tooltips no). */
@@ -59,9 +78,13 @@
   {# Header de IMPRESIÓN — invisible en pantalla. Pedido dueña 2026-07-07:
      "deja SOLO nombre+código y el saldo del cliente". #}
   <div class="print-header">
-    {{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})
-    &nbsp;·&nbsp; Saldo: {{ _saldo_neto | money_es }}
-    <span class="ph-meta">&nbsp;·&nbsp; impreso {{ g.now | fecha_es }}</span>
+    <div class="ph-top">
+      <span class="ph-nombre">{{ data.cliente.nombre | cleanstr }} <span class="ph-meta">({{ data.cliente.codigo_cli }})</span></span>
+      <span class="ph-meta">impreso {{ g.now | fecha_es }}</span>
+    </div>
+    <div class="ph-saldo">Saldo: {{ _saldo_neto | money_es }}
+      <span class="ph-meta">· {{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }} abiertas</span>
+    </div>
   </div>
   {# TMT 2026-07-06 (dueña): banner grande de éxito del TOTALIZAR (one-shot,
      via session — patrón cobranza_ok) + imprimir el resultado. #}
@@ -280,9 +303,9 @@
     </table>
   </div>
 
-  {# Cheques #}
-  <h2 class="text-lg font-semibold mb-2">Cheques</h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+  {# Cheques — TMT 2026-07-07 dueña: "imprimamos solo facturas" → no-print. #}
+  <h2 class="no-print text-lg font-semibold mb-2">Cheques</h2>
+  <div class="no-print bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
@@ -380,8 +403,9 @@
      facturas. Antes quedaban escondidos entre los cheques y no se veían;
      ahora se listan acá y netean el saldo de arriba. #}
   {% if data.anticipos %}
-  <h2 class="text-lg font-semibold mb-2 mt-8">Saldo a favor / anticipos</h2>
-  <div class="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded overflow-hidden">
+  {# TMT 2026-07-07 dueña: "imprimamos solo facturas" → no-print. #}
+  <h2 class="no-print text-lg font-semibold mb-2 mt-8">Saldo a favor / anticipos</h2>
+  <div class="no-print bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-emerald-50 dark:bg-emerald-900/20 text-xs uppercase tracking-wider text-slate-500">
         <tr>
