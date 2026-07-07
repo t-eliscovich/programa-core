@@ -170,8 +170,8 @@
           <th class="text-right" style="width: 9%">Kg</th>
           {# TMT 2026-07-06 (dueña): "en importaciones agregá fecha de recepción" #}
           <th style="width: 8%">Recibida</th>
-          <th class="text-right" style="width: 13%">Programa (US$)</th>
-          <th style="width: 24%" data-no-sort>Anticipos (= valor stock)</th>
+          <th class="text-right" style="width: 11%">Compras (US$)</th>
+          <th style="width: 26%" data-no-sort>Anticipos (US$ = valor stock)</th>
         </tr>
       </thead>
       <tbody>
@@ -191,15 +191,14 @@
               {% set _frec = r.fecha_recepcion_pc or r.fecha_recepcion %}
               {% if _frec %}{{ _frec }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
+            {# TMT 2026-07-06 v3 (dueña): columna COMPRAS separada de
+               ANTICIPOS — antes "Programa" mezclaba las dos con badges y
+               los anticipos aparecían en dos lados con números distintos. #}
             <td class="num">
-              {% if r.fuente == 'compra' %}
-                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">$ {{ r.importe_programa | num_es(2) }}</a>
+              {% if r.compra %}
+                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">$ {{ r.compra.importe_total | num_es(2) }}</a>
                 {% if r.compra.n > 1 %}<span class="text-slate-400">({{ r.compra.n }})</span>{% endif %}
-                <span class="recep recep-compra">compra</span>
-              {% elif r.fuente == 'anticipo' %}
-                <span class="ok">$ {{ r.importe_programa | num_es(2) }}</span>
-                <span class="recep recep-no" title="Anticipo USD — todavía no convertido a compra">anticipo</span>
-              {% elif r.codigo %}
+              {% elif r.codigo and not r.anticipo_total %}
                 <span class="no" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
               {% else %}
                 <span class="text-slate-300">—</span>
@@ -209,8 +208,16 @@
               {% if r.codigo %}
                 {% set _movs = r.movimientos or [] %}
                 <div class="acc-valor">
-                  <b>$ {{ (r.anticipo_aplicado or 0) | num_es(2) }}</b>
-                  <span class="acc-hint">Σ {{ _movs | length }} anticipo{{ '' if _movs | length == 1 else 's' }}</span>
+                  {% if r.anticipo_total %}<b>$ {{ r.anticipo_total | num_es(2) }}</b>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                  {% if r.anticipo_usd_dolares %}
+                    <span class="acc-hint" title="Anticipos USD matcheados desde /dolares por el código {{ r.codigo }}">{{ '$ ' + (r.anticipo_usd_dolares | num_es(2)) + ' de /dolares' }}{% if _movs %} + $ {{ (r.anticipo_aplicado or 0) | num_es(2) }} acá{% endif %}</span>
+                  {% elif _movs %}
+                    <span class="acc-hint">Σ {{ _movs | length }} anticipo{{ '' if _movs | length == 1 else 's' }}</span>
+                  {% endif %}
+                  {% if r.codigo_compartido %}
+                    <span class="recep recep-no" title="Este código ({{ r.codigo }}) lo comparten VARIAS importaciones — el anticipo de /dolares se muestra en todas pero se cuenta UNA vez en el total.">compartido</span>
+                  {% endif %}
                 </div>
 
                 {# ── Movimientos: anticipos (mig 0113) ──

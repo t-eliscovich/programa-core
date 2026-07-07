@@ -75,8 +75,34 @@ def lista():
     importe_programa = sum(
         r["importe_programa"] for r in rows if r.get("importe_programa")
     )
-    # Σ anticipos pagados = valor del stock de las importaciones (modelo v2).
-    anticipos_total = sum(float(r.get("anticipo_aplicado") or 0) for r in rows)
+    # TMT 2026-07-06 v3 (dueña: "ordená anticipos y compras, fijate que
+    # sumen bien"): el ANTICIPO TOTAL de una importación = anticipos USD
+    # matcheados de /dolares (r.anticipo.importe_total) + movimientos
+    # cargados acá (r.anticipo_aplicado). Además, si VARIAS importaciones
+    # comparten el mismo código (ej. "AC 19" partida en dos IM), el matcheo
+    # por (prov, número) les asigna el MISMO anticipo USD a ambas → se marca
+    # compartido y se cuenta UNA sola vez en el KPI (evita doble suma).
+    _vistos_codigo: dict = {}
+    for r in rows:
+        _k = ((r.get("prov") or "").strip().upper(), r.get("numero"))
+        if r.get("prov") and r.get("numero") is not None:
+            _vistos_codigo[_k] = _vistos_codigo.get(_k, 0) + 1
+    anticipos_total = 0.0
+    _usd_contados: set = set()
+    for r in rows:
+        _usd = float((r.get("anticipo") or {}).get("importe_total") or 0)
+        _movs = float(r.get("anticipo_aplicado") or 0)
+        _k = ((r.get("prov") or "").strip().upper(), r.get("numero"))
+        r["codigo_compartido"] = bool(
+            r.get("numero") is not None and _vistos_codigo.get(_k, 0) > 1
+        )
+        r["anticipo_usd_dolares"] = _usd
+        r["anticipo_total"] = round(_usd + _movs, 2)
+        anticipos_total += _movs
+        if _usd and _k not in _usd_contados:
+            anticipos_total += _usd
+            _usd_contados.add(_k)
+    anticipos_total = round(anticipos_total, 2)
 
     if request.args.get("export") == "csv":
         export_rows = [
