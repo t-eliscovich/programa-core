@@ -4,20 +4,42 @@
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Flujo de Fondos</strong>{% endblock %}
 
 {% block content %}
+{# TMT 2026-07-06 (dueña) "no está como el dBase": tabla DIARIA réplica de la
+   opción 6 (MENU.PRG PROCEDURE FLUJO + FLUJO.DBF). Columnas y orden = TIT del
+   dBase: FECHA · PICH · INTER · CHEQ · MAT.PR · GASTS · SALDO. Primera fila =
+   arranque de hoy (la caja va en la columna Gastos, igual que el dBase).
+   Cortes de semana con acumulado de ingresos/egresos (ACUMI/ACUME). #}
 <div class="max-w-5xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Flujo de Fondos proyectado',
-                 descripcion='Réplica de la opción 6 del dBase: entradas y salidas semana a semana según vencimientos. Cobros = facturas por vencer + cheques en cartera. Pagos = posdatados y provisiones a su vencimiento.') }}
+    {{ page_hero('Flujo de Fondos',
+                 descripcion='Réplica de la opción 6 del dBase: una fila por día de vencimiento. Entra: cheques en cartera. Sale: posdatados (materia prima separada de gastos). Facturas no suman (criterio dBase).') }}
+    <a href="{{ url_for('informes.flujo_grafico') }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver gráfico</a>
   </div>
 
-  <div class="grid grid-cols-2 gap-4 mb-6 max-w-xl">
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-3 gap-4 mb-6">
     <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 shadow-sm">
-      <div class="text-xs uppercase tracking-wide text-slate-500">Arranque (Bancos + Caja hoy)</div>
-      <div class="text-2xl font-semibold tabular-nums">{{ arranque | num_es }}</div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Arranque hoy (Pich + Inter + Caja)</div>
+      <div class="text-2xl font-semibold tabular-nums">{{ arranque.total | num_es }}</div>
+      <div class="text-xs text-slate-500 mt-1 tabular-nums">
+        Pichincha {{ arranque.s1 | num_es }} · Inter {{ arranque.s2 | num_es }} · Caja {{ arranque.caja | num_es }}
+        {% if arranque.p1 or arranque.p2 %}<br>incluye cheques emitidos sin debitar: {{ (arranque.p1 + arranque.p2) | num_es }}{% endif %}
+      </div>
     </div>
     <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 shadow-sm">
-      <div class="text-xs uppercase tracking-wide text-slate-500">Flujo neto total proyectado</div>
-      <div class="text-2xl font-semibold tabular-nums {% if total_neto < 0 %}text-rose-700{% endif %}">{{ total_neto | num_es }}</div>
+      <div class="text-xs uppercase tracking-wide text-slate-500">Saldo final proyectado</div>
+      <div class="text-2xl font-semibold tabular-nums {% if saldo_final < 0 %}text-rose-700{% endif %}">{{ saldo_final | num_es }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 shadow-sm">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Mínimo proyectado</div>
+      <div class="text-2xl font-semibold tabular-nums {% if saldo_min < 0 %}text-rose-700{% endif %}">{{ saldo_min | num_es }}</div>
+      <div class="text-xs text-slate-500 mt-1">el {{ fecha_min | fecha_es }}</div>
     </div>
   </div>
 
@@ -25,33 +47,52 @@
     <table class="w-full text-sm" id="flujo-tabla">
       <thead class="text-xs uppercase tracking-wide text-slate-500 bg-slate-50 dark:bg-slate-800">
         <tr>
-          <th class="px-3 py-2 text-left">Semana (lunes)</th>
-          <th class="px-3 py-2 text-right" title="Facturas stat Z/A por vencimiento. El dBase NO las suma al flujo (MENU.PRG FA=0) — acá {{ 'SUMAN' if incluir_fact else 'NO suman (solo informativas, igual que dBase)' }}.">{{ '+' if incluir_fact else '·' }} Cobros facturas</th>
-          <th class="px-3 py-2 text-right" title="Cheques en cartera (Z/1/2/3/P) por fecha de depósito">+ Cheques</th>
-          <th class="px-3 py-2 text-right" title="Posdatados y provisiones por fecha de pago">− Pagos posdat</th>
-          <th class="px-3 py-2 text-right">Neto</th>
-          <th class="px-3 py-2 text-right">Saldo proyectado</th>
+          <th class="px-3 py-2 text-left">Fecha</th>
+          <th class="px-3 py-2 text-right" title="Saldo proyectado Pichincha — baja cuando debitan los cheques emitidos (posdat banc=1)">{{ L.BANCO_PICHINCHA }}</th>
+          <th class="px-3 py-2 text-right" title="Saldo proyectado Internacional — baja con los posdat banc=2">Inter</th>
+          <th class="px-3 py-2 text-right" title="Cheques en cartera (Z/1/2/3/P) por fecha de depósito">Cheques</th>
+          {% if incluir_fact %}<th class="px-3 py-2 text-right" title="Facturas Z/A proyectadas a vencimiento+50 días (regla dBase)">Facturas</th>{% endif %}
+          <th class="px-3 py-2 text-right" title="Posdatados a proveedores de hilado (tipo H) — MAT.PR en el dBase">Mat. prima</th>
+          <th class="px-3 py-2 text-right" title="Resto de posdatados (banc 0 y forzados banc 9). En la fila de arranque: la CAJA, como el dBase">Gastos</th>
+          <th class="px-3 py-2 text-right">Saldo</th>
         </tr>
       </thead>
       <tbody class="divide-y">
-        {% for s in semanas %}
-        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if s.acumulado < 0 %}bg-rose-50/50{% endif %}">
-          <td class="px-3 py-1.5 whitespace-nowrap">{{ s.semana | fecha_es }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums">{{ s.cobros_facturas | num_es }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums">{{ s.cheques_deposito | num_es }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums text-rose-700">{{ s.pagos_posdat | num_es }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums font-medium {% if s.neto < 0 %}text-rose-700{% endif %}">{{ s.neto | num_es }}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums font-semibold {% if s.acumulado < 0 %}text-rose-700{% endif %}">{{ s.acumulado | num_es }}</td>
-        </tr>
+        {% for f in filas %}
+          {% if f.tipo == 'semana' %}
+          <tr style="background:#f1f5f9;">
+            <td class="px-3 py-1 text-xs text-slate-500 font-medium" colspan="3">Σ semana</td>
+            <td class="px-3 py-1 text-right tabular-nums text-xs font-semibold" {% if incluir_fact %}colspan="2"{% endif %}>{{ f.ingresos | num_es }}</td>
+            <td class="px-3 py-1 text-right tabular-nums text-xs font-semibold text-rose-700" colspan="2">{{ (-f.egresos) | num_es }}</td>
+            <td></td>
+          </tr>
+          {% else %}
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              {% if f.tipo == 'arranque' %}style="background:#f0f9ff;font-weight:600;"{% elif f.vencida %}style="background:#fff7ed;"{% endif %}>
+            <td class="px-3 py-1.5 whitespace-nowrap">{{ f.fecha | fecha_es }}
+              {% if f.tipo == 'arranque' %}<span class="text-xs text-sky-700">· HOY (arranque)</span>{% endif %}
+              {% if f.vencida %}<span class="text-xs text-amber-700" title="Vencimiento pasado sin resolver — el dBase también lo lista a su fecha real">· vencido</span>{% endif %}
+            </td>
+            <td class="px-3 py-1.5 text-right tabular-nums {% if f.pichincha < 0 %}text-rose-700{% endif %}">{{ f.pichincha | num_es }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums {% if f.inter < 0 %}text-rose-700{% endif %}">{{ f.inter | num_es }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ f.cheques | num_es if f.cheques else '' }}</td>
+            {% if incluir_fact %}<td class="px-3 py-1.5 text-right tabular-nums">{{ f.facturas | num_es if f.facturas else '' }}</td>{% endif %}
+            <td class="px-3 py-1.5 text-right tabular-nums {% if f.mprima < 0 %}text-rose-700{% endif %}">{{ f.mprima | num_es if f.mprima else '' }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums {% if f.gastos < 0 %}text-rose-700{% endif %}">{{ f.gastos | num_es if f.gastos else '' }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums font-semibold {% if f.saldo < 0 %}text-rose-700{% endif %}">{{ f.saldo | num_es }}</td>
+          </tr>
+          {% endif %}
         {% else %}
-        <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">Sin vencimientos pendientes.</td></tr>
+        <tr><td colspan="{{ 8 if incluir_fact else 7 }}" class="px-3 py-6 text-center text-slate-400">Sin vencimientos pendientes.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   <p class="text-xs text-slate-400 mt-3">
-    {% if incluir_fact %}Incluye cobros de facturas (el dBase no los proyecta — criterio optimista). <a class="underline" href="{{ url_for('informes.flujo_fondos') }}">Ver como dBase (sin facturas)</a>.
-    {% else %}Criterio dBase: los cobros de facturas NO suman al flujo (columna informativa). <a class="underline" href="{{ url_for('informes.flujo_fondos', incluir_facturas=1) }}">Incluir cobros de facturas</a>.{% endif %}
-    · Los vencimientos pasados se agrupan en la semana actual (igual que el dBase corre FECHAD a hoy). Las provisiones YY/RT entran por su saldo actual a la fecha de vencimiento.</p>
+    {% if incluir_fact %}Incluye cobros de facturas proyectados a vencimiento+50 días (el dBase los calcula pero NO los suma — criterio optimista). <a class="underline" href="{{ url_for('informes.flujo_fondos') }}">Ver como dBase (sin facturas)</a>.
+    {% else %}Criterio dBase: los cobros de facturas NO suman al flujo (MENU.PRG hardcodea FA=0 — flujo conservador, solo cheques en mano). <a class="underline" href="{{ url_for('informes.flujo_fondos', incluir_facturas=1) }}">Incluir cobros de facturas</a>.{% endif %}
+    · Materia prima = posdatados a proveedores de hilado (tipo H), como el MAT.PR del dBase.
+    · Los cortes «Σ semana» replican el acumulado semanal de ingresos/egresos del dBase.
+  </p>
 </div>
 {% endblock %}

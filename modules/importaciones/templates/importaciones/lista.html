@@ -166,8 +166,10 @@
           <th style="width: 8%">Fecha</th>
           <th style="width: 9%">Proveedor</th>
           <th style="width: 8%">Código</th>
-          <th style="width: 20%" data-no-sort>Nota Asinfo</th>
+          <th style="width: 16%" data-no-sort>Nota Asinfo</th>
           <th class="text-right" style="width: 9%">Kg</th>
+          {# TMT 2026-07-06 (dueña): "en importaciones agregá fecha de recepción" #}
+          <th style="width: 8%">Recibida</th>
           <th class="text-right" style="width: 13%">Programa (US$)</th>
           <th style="width: 24%" data-no-sort>Anticipos (= valor stock)</th>
         </tr>
@@ -184,6 +186,9 @@
               {% if r.kg_recibidos is not none and r.kg_recibidos %}{{ r.kg_recibidos | num_es(0) }}
               {% elif r.kg is not none %}{{ r.kg | num_es(0) }}
               {% else %}<span class="text-slate-300">—</span>{% endif %}
+            </td>
+            <td class="fecha text-slate-500">
+              {% if r.fecha_recepcion %}{{ r.fecha_recepcion }}{% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
             <td class="num">
               {% if r.fuente == 'compra' %}
@@ -258,7 +263,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-center py-8 text-slate-500">
+          <tr><td colspan="9" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
           </td></tr>
         {% endfor %}

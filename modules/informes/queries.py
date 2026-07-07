@@ -4513,35 +4513,312 @@ def flujo_ultimos_dias(dias: int = 30) -> list[dict]:
     )
 
 
+# ---------------------------------------------------------------------------
+# FLUJO DE FONDOS — réplica exacta de la opción 6 del dBase (MENU.PRG
+# PROCEDURE FLUJO, L560-720 + FLUJO.DBF).
+#
+# TMT 2026-07-06 (dueña): "tenemos que revisar flujo de fondos, no está como
+# el dBase". Auditado contra MENU.PRG + VARMEMO.MEM + FLUJO.DBF del 03/07:
+#
+#   Arranque (L629-641):
+#       SALCA = último saldo de CAJA
+#       P1/P2 = Σ posdat banc=1/2 (cheques YA emitidos, aún sin debitar —
+#               el libro bancario ya registró el débito, por eso se re-suman)
+#       S1 = saldo Pichincha + P1 ;  S2 = saldo Inter + P2
+#       ST = S1 + S2 + SALCA   → primera fila del flujo (FECHA=hoy,
+#            GASTOS=SALCA: el dBase guarda la caja en la col. GASTOS).
+#   Items → archivo temporal INGRESOS (L642-651):
+#       cheques  STAT $ "Z123P"          (cartera; 'D'/devuelto NO entra)
+#       facturas STAT $ "ZA"             (…pero L701 hardcodea FA=0)
+#       posdat   NUM # 9999
+#       facturas: FECHAD = VENCIM+50; si queda <= hoy+5 → hoy+7
+#   Loop por FECHAD (L666-706), una fila por día:
+#       CASE NB>0            → C  (ingreso cheques)
+#       CASE NB=0 (factura)  → FA (…y luego FA=0)
+#       CASE BANC=1 / BANC=2 → P1/P2 (bajan PICH/INTER a su fechad)
+#       CASE PROV $ HIL      → H  (materia prima: proveedores tipo H activos)
+#       CASE BANC=9 .OR. 0   → G  (gastos: posdat comunes + forzados banc=9)
+#       SALDO = ST - P1 - P2 + C + FA - G - H
+#       Corte de semana (DOW(FECH) <= ANT): fila en blanco con ACUMI
+#       (Σ ingresos) bajo CHEQ y ACUME (Σ G+H) bajo GASTS.
+# ---------------------------------------------------------------------------
+
+
+def _saldo_banco_por_nombre(fragmento: str) -> float:
+    """Último saldo (fecha <= hoy — excluye postdatados, feedback 2026-06-25)
+    del banco cuyo nombre contiene `fragmento` ('PICHINC' / 'INTERNACI')."""
+    row = db.fetch_one(
+        """
+        SELECT COALESCE((
+                 SELECT t.saldo
+                   FROM scintela.transacciones_bancarias t
+                  WHERE t.no_banco = b.no_banco
+                    AND t.fecha <= CURRENT_DATE
+                  ORDER BY t.fecha DESC, t.id_transaccion DESC
+                  LIMIT 1), 0) AS saldo
+          FROM scintela.banco b
+         WHERE POSITION(%s IN UPPER(COALESCE(b.nombre, ''))) > 0
+         ORDER BY b.no_banco
+         LIMIT 1
+        """,
+        (fragmento,),
+    )
+    return float((row or {}).get("saldo") or 0)
+
+
+def flujo_arranque_dbase() -> dict:
+    """Saldos de arranque del flujo (MENU.PRG L629-641). Ver bloque arriba."""
+    caja_row = db.fetch_one(
+        """
+        SELECT saldo FROM scintela.caja
+         WHERE saldo IS NOT NULL
+         ORDER BY fecha DESC NULLS LAST, id_caja DESC
+         LIMIT 1
+        """
+    )
+    salca = float((caja_row or {}).get("saldo") or 0)
+    p_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(CASE WHEN banc = 1 THEN importe END), 0) AS p1,
+               COALESCE(SUM(CASE WHEN banc = 2 THEN importe END), 0) AS p2
+          FROM scintela.posdat
+         WHERE banc IN (1, 2)
+           AND COALESCE(num, 0) <> 9999
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+        """
+    )
+    p1 = float((p_row or {}).get("p1") or 0)
+    p2 = float((p_row or {}).get("p2") or 0)
+    s1 = _saldo_banco_por_nombre("PICHINC") + p1
+    s2 = _saldo_banco_por_nombre("INTERNACI") + p2
+    return {
+        "s1": round(s1, 2),
+        "s2": round(s2, 2),
+        "p1": round(p1, 2),
+        "p2": round(p2, 2),
+        "caja": round(salca, 2),
+        "total": round(s1 + s2 + salca, 2),
+    }
+
+
+def flujo_items_dbase(incluir_facturas: bool = False) -> list[dict]:
+    """Items pendientes del flujo, tipados como el dBase arma INGRESOS.
+
+    Devuelve [{fecha, tipo, importe}] con tipo ∈ cheque | factura |
+    posdat1 | posdat2 | mprima | gasto. Sin ventana: TODO lo pendiente
+    (el dBase tampoco recorta)."""
+    items: list[dict] = []
+    # Cheques en cartera — MENU.PRG L643: &AF CHEQUES FOR STAT $ "Z123P".
+    # OJO: stat 'D' (devuelto) NO entra — el dBase no lo cuenta como
+    # ingreso futuro. TMT 2026-07-06 (dueña): antes se sumaba.
+    rows = (
+        db.fetch_all(
+            """
+        SELECT fechad AS fecha, COALESCE(SUM(importe), 0) AS total
+          FROM scintela.cheque
+         WHERE stat IN ('Z', '1', '2', '3', 'P')
+           AND fechad IS NOT NULL
+         GROUP BY fechad
+        """
+        )
+        or []
+    )
+    items += [
+        {"fecha": r["fecha"], "tipo": "cheque", "importe": float(r["total"] or 0)}
+        for r in rows
+    ]
+    # Posdat — MENU.PRG L645 (&AF POSDAT FOR NUM#9999) + CASE L677-684.
+    # El orden del CASE importa: banc=1/2 gana sobre PROV$HIL, y HIL
+    # (proveedores de hilado, FABRICA TIPO='H' ACTIVA='S') gana sobre el
+    # resto (banc 0/9 → gastos). Réplica con scintela.proveedor.tipo.
+    rows = (
+        db.fetch_all(
+            """
+        SELECT p.fechad AS fecha,
+               CASE WHEN COALESCE(p.banc, 0) = 1 THEN 'posdat1'
+                    WHEN COALESCE(p.banc, 0) = 2 THEN 'posdat2'
+                    WHEN UPPER(COALESCE(pr.tipo, '')) = 'H'
+                         AND UPPER(LEFT(COALESCE(pr.activo, '1'), 1)) IN ('1', 'S')
+                         THEN 'mprima'
+                    ELSE 'gasto' END AS tipo,
+               COALESCE(SUM(p.importe), 0) AS total
+          FROM scintela.posdat p
+          LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = p.prov
+         WHERE p.fechad IS NOT NULL
+           AND COALESCE(p.num, 0) <> 9999
+           AND COALESCE(p.banc, 0) IN (0, 1, 2, 9)
+           AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
+         GROUP BY 1, 2
+        """
+        )
+        or []
+    )
+    items += [
+        {"fecha": r["fecha"], "tipo": r["tipo"], "importe": float(r["total"] or 0)}
+        for r in rows
+    ]
+    if incluir_facturas:
+        # MENU.PRG L644+647-649: facturas stat Z/A; cobro proyectado a
+        # VENCIM+50; si eso queda a <= hoy+5 días → hoy+7.
+        rows = (
+            db.fetch_all(
+                """
+            SELECT CASE WHEN COALESCE(vencimiento, CURRENT_DATE) + 50
+                             <= CURRENT_DATE + 5
+                        THEN CURRENT_DATE + 7
+                        ELSE COALESCE(vencimiento, CURRENT_DATE) + 50 END AS fecha,
+                   COALESCE(SUM(saldo), 0) AS total
+              FROM scintela.factura
+             WHERE stat IN ('Z', 'A') AND COALESCE(saldo, 0) <> 0
+             GROUP BY 1
+            """
+            )
+            or []
+        )
+        items += [
+            {"fecha": r["fecha"], "tipo": "factura", "importe": float(r["total"] or 0)}
+            for r in rows
+        ]
+    return items
+
+
+def _dow_dbase(d) -> int:
+    """DOW() de dBase: domingo=1 … sábado=7."""
+    return d.isoweekday() % 7 + 1
+
+
+def construir_flujo_diario(
+    hoy,
+    s1: float,
+    s2: float,
+    salca: float,
+    items: list[dict],
+    incluir_facturas: bool = False,
+    vencidos_a_hoy: bool = False,
+) -> list[dict]:
+    """Loop de PROCEDURE FLUJO (MENU.PRG L652-706) — función PURA (testeable).
+
+    Devuelve filas tipo:
+      'arranque' — hoy, PICH=S1, INTER=S2, GASTOS=+caja, SALDO=S1+S2+SALCA
+      'dia'      — una por fecha con movimiento, saldos acumulados
+      'semana'   — corte de semana: ingresos (ACUMI) / egresos (ACUME)
+
+    El dBase muestra los vencidos a su fecha real (quedan ANTES de hoy en
+    la tabla); `vencidos_a_hoy=True` los imputa a hoy (lo usa el gráfico).
+    FA=0 salvo `incluir_facturas` (dBase L701)."""
+    por_dia: dict = {}
+    for it in items:
+        f = it.get("fecha") or hoy
+        if vencidos_a_hoy and f < hoy:
+            f = hoy
+        d = por_dia.setdefault(
+            f,
+            {"cheque": 0.0, "factura": 0.0, "posdat1": 0.0,
+             "posdat2": 0.0, "mprima": 0.0, "gasto": 0.0},
+        )
+        d[it["tipo"]] += float(it.get("importe") or 0)
+
+    st = s1 + s2 + salca
+    filas: list[dict] = [
+        {
+            "tipo": "arranque", "fecha": hoy,
+            "pichincha": round(s1, 2), "inter": round(s2, 2),
+            "cheques": 0.0, "facturas": 0.0, "mprima": 0.0,
+            # dBase: la primera fila lleva la CAJA en la columna GASTOS.
+            "gastos": round(salca, 2), "saldo": round(st, 2),
+            "vencida": False,
+        }
+    ]
+    ant = _dow_dbase(hoy)
+    acumi = acume = 0.0
+    for f in sorted(por_dia):
+        d = por_dia[f]
+        # Corte de semana (L697: IF DOW(FECH) <= ANT) — fila con los
+        # acumulados. Las de 0/0 (arranque inmediato) no aportan: se omiten.
+        if _dow_dbase(f) <= ant and (acumi or acume):
+            filas.append(
+                {"tipo": "semana", "ingresos": round(acumi, 2),
+                 "egresos": round(acume, 2)}
+            )
+            acumi = acume = 0.0
+        ant = _dow_dbase(f)
+        c = d["cheque"]
+        fa = d["factura"] if incluir_facturas else 0.0  # L701: FA=0
+        p1, p2, h, g = d["posdat1"], d["posdat2"], d["mprima"], d["gasto"]
+        s1 -= p1
+        s2 -= p2
+        st = st - p1 - p2 + c + fa - g - h
+        filas.append(
+            {
+                "tipo": "dia", "fecha": f,
+                "pichincha": round(s1, 2), "inter": round(s2, 2),
+                "cheques": round(c, 2), "facturas": round(fa, 2),
+                "mprima": round(-h, 2), "gastos": round(-g, 2),
+                "saldo": round(st, 2), "vencida": f < hoy,
+            }
+        )
+        acumi += c + fa
+        acume += g + h
+    # Última semana parcial: el dBase la deja sin subtotal (quirk del loop);
+    # acá sí la mostramos — misma cuenta, más completa.
+    if acumi or acume:
+        filas.append(
+            {"tipo": "semana", "ingresos": round(acumi, 2),
+             "egresos": round(acume, 2)}
+        )
+    return filas
+
+
+def flujo_fondos_diario(incluir_facturas: bool = False) -> dict:
+    """Tabla diaria del Flujo de Fondos — lo que renderiza /informes/flujo-fondos."""
+    hoy = today_ec()
+    arr = flujo_arranque_dbase()
+    items = flujo_items_dbase(incluir_facturas=incluir_facturas)
+    filas = construir_flujo_diario(
+        hoy, arr["s1"], arr["s2"], arr["caja"], items,
+        incluir_facturas=incluir_facturas,
+    )
+    dias = [f for f in filas if f["tipo"] in ("arranque", "dia")]
+    minimo = min(dias, key=lambda f: f["saldo"]) if dias else None
+    return {
+        "arranque": arr,
+        "filas": filas,
+        "saldo_final": dias[-1]["saldo"] if dias else arr["total"],
+        "saldo_min": minimo["saldo"] if minimo else arr["total"],
+        "fecha_min": minimo["fecha"] if minimo else hoy,
+    }
+
+
 def flujo_calculado(
     dias_atras: int = 14,
     dias_adelante: int = 365,
     ignorar_cheques: bool = False,
 ) -> list[dict]:
-    """Flujo de caja calculado EN VIVO desde los datos transaccionales.
+    """Flujo de caja calculado EN VIVO — alimenta /informes/flujo/grafico.
 
-    Distinto de `flujo_proyeccion()`: éste no depende de que alguien haya
-    cargado la tabla `scintela.flujo`. Computa la proyección directamente
-    desde las fuentes de verdad:
+    TMT 2026-07-06 (dueña) "no está como el dBase" — reescrito sobre los
+    helpers de la opción 6 (flujo_arranque_dbase / flujo_items_dbase /
+    construir_flujo_diario). Cambios vs la versión anterior:
+      - Arranque ST = S1 + S2 + SALCA (Pichincha + Inter + Caja, con corte
+        fecha<=hoy). Antes sumaba el último saldo de TODOS los bancos
+        (incluyendo pseudo-bancos contables) y sin el corte (postdatados
+        con saldo viejo desfasaban el arranque — mismo bug 2026-06-25).
+      - Posdat banc=1/2 (cheques emitidos sin debitar) engordan el arranque
+        y se restan a su FECHAD (MENU.PRG L634-641 + L677-679). Antes no
+        se proyectaban.
+      - Cheques: stat Z/1/2/3/P como dBase — se saca 'D' (devuelto) y los
+        VENCIDOS se imputan a hoy (antes el filtro fechad>=hoy los perdía).
+      - Posdat num=9999 excluidos (dBase L645).
+      - MPRIMA (proveedores tipo 'H') separada de GASTOS (dBase L681) —
+        el gráfico ya la dibuja aparte.
+      - Facturas: FA=0, igual que el dBase (L701) y que antes.
 
-      - Saldo inicial = SUM(saldos bancarios actuales).
-      - Por cada día futuro:
-          + cheques en cartera (Z, D, P) con fechad = ese día → ingresos
-          - posdat con banc<>9 con fechad = ese día → egresos a proveedores
-      - El saldo se acumula día a día.
-
-    Para días pasados (`dias_atras`) no calculamos historia real (sería caro
-    y requeriría hacer replay del libro bancario). Mostramos el saldo de
-    hoy como línea recta hacia atrás — sirve para dar contexto visual al
-    gerente sin engañar.
-
-    Devuelve filas con la misma forma que `flujo_proyeccion()` para que el
-    template las pueda consumir igual:
+    Forma de salida SIN cambios (el template consume igual):
         {fecha, saldo, cheques, facturas, posdat1, posdat2, pichincha,
          inter, mprima, gastos, pagos, dolares}
 
-    El gráfico actual usa principalmente: saldo, cheques, gastos, mprima.
-    Los demás van en 0.
+    Para días pasados (`dias_atras`) se muestra el saldo de hoy como línea
+    recta hacia atrás — contexto visual, no historia real.
     """
     from datetime import timedelta as _td
 
@@ -4554,191 +4831,68 @@ def flujo_calculado(
     except (TypeError, ValueError):
         adelante = 365
 
-    # ─────────────────────────────────────────────────────────────────────
-    # Replicación EXACTA de PROCEDURE FLUJO en MENU.PRG líneas 569-720.
-    # Saldo inicial:
-    #   ST = S1 + S2 + SALCA
-    #   S1 = saldo Pichincha (= banco_1)
-    #   S2 = saldo Internacional (= banco_2)
-    #   SALCA = caja saldo final
-    # Por día (FECHAD): aplicar todos los movimientos vivos:
-    #   + cheques en cartera (stat Z/1/2/3/P/D)               → INGRESO
-    #   + facturas vivas (stat Z/A) por VENCIMIENTO           → INGRESO
-    #   - posdat (banc<>9, todos)                             → EGRESO
-    # Acumulación día a día.
-    # ─────────────────────────────────────────────────────────────────────
-
-    # 1) Saldo CAJA — último saldo registrado.
-    caja_row = db.fetch_one(
-        """
-        SELECT saldo
-        FROM scintela.caja
-        WHERE saldo IS NOT NULL
-        ORDER BY fecha DESC NULLS LAST, id_caja DESC
-        LIMIT 1
-        """
-    )
-    saldo_caja = float((caja_row or {}).get("saldo") or 0) if caja_row else 0.0
-
-    # 2) Saldo BANCOS — suma del último saldo por banco.
-    saldo_row = db.fetch_one(
-        """
-        SELECT COALESCE(SUM(s), 0) AS saldo_total FROM (
-          SELECT (
-            SELECT t.saldo
-            FROM scintela.transacciones_bancarias t
-            WHERE t.no_banco = b.no_banco
-            ORDER BY t.fecha DESC, t.id_transaccion DESC
-            LIMIT 1
-          ) AS s
-          FROM scintela.banco b
-        ) sub
-        """
-    )
-    saldo_bancos = float((saldo_row or {}).get("saldo_total") or 0)
-
-    # Saldo inicial total: caja + bancos. (PRG: ST = S1+S2+SALCA).
-    saldo_hoy = saldo_caja + saldo_bancos
-
-    # 3) Cheques en cartera por FECHAD (= fecha de depósito).
-    # PRG línea 643: &AF CHEQUES FOR STAT $ "Z123P" — Z=cartera, 1/2/3=banco
-    # asignado, P=postergado, D=depositado-pendiente. Agregamos D que
-    # también es ingreso futuro (cheque ya en banco esperando acreditación).
-    #
-    # Modo `ignorar_cheques`: el gerente quiere ver el peor caso (sólo
-    # egresos por posdat, sin contar cobranzas futuras). Útil cuando hay
-    # sospecha de cheques con stat=Z stale (cobrados pero no marcados).
-    if ignorar_cheques:
-        cheques_por_dia: dict = {}
-    else:
-        cheques_rows = (
-            db.fetch_all(
-                """
-            SELECT fechad AS fecha,
-                   COALESCE(SUM(importe), 0) AS total
-              FROM scintela.cheque
-             WHERE stat IN ('Z','1','2','3','P','D')
-               AND fechad IS NOT NULL
-               AND fechad >= CURRENT_DATE
-               AND fechad <= CURRENT_DATE + make_interval(days => %s)
-             GROUP BY fechad
-            """,
-                (adelante,),
-            )
-            or []
-        )
-        cheques_por_dia = {r["fecha"]: float(r["total"] or 0) for r in cheques_rows}
-
-    # 4) Facturas — el dBase legacy NO las incluye en el gráfico, aunque
-    # las procesa en el loop. PRG MENU.PRG línea 670: `FA = 0` se ejecuta
-    # ANTES del REPLA SALDO WITH ST-P1-P2+C+FA-G-H, anulando el aporte
-    # de FA. La intención del autor original fue mostrar SOLAMENTE flujo
-    # de cheques (lo que efectivamente entra en banco) sin contar facturas
-    # (que pueden cobrar tarde, con descuento, o no cobrar). Replicamos
-    # ese comportamiento — facturas_por_dia queda vacío.
-    facturas_por_dia: dict = {}
-
-    # 5) Posdat por FECHAD (egresos). PRG MENU.PRG líneas 677-679:
-    #     CASE BANC = 1 → P1 += IMPORTE   (cheque emitido, banco 1)
-    #     CASE BANC = 2 → P2 += IMPORTE   (cheque emitido, banco 2)
-    #     CASE BANC=9 OR BANC=0 → G += IMPORTE  (egreso general)
-    # Los tres se descuentan del saldo: SALDO = ST - P1 - P2 + C + FA - G - H.
-    # ⇒ TODO posdat afecta el flujo, sin importar banc.
-    #
-    # Bug TMT 2026-05-08: filtrabamos `banc<>9` pensando que BANC=9 =
-    # "cerrada/pagada". Es cierto para el balance/pasivos pero NO para
-    # el flujo: BANC=9 son cheques POSDATADOS que YA EMITIMOS a
-    # proveedores y que van a salir del banco al fechad. En la data
-    # actual son $5.9M de obligaciones reales — no contarlas mostraba un
-    # Replicación EXACTA de MENU.PRG líneas 683-684:
-    #     CASE BANC=9 .OR. BANC=0
-    #        G = G + IMPORTE
-    # dBase suma TODOS los banc=0 y banc=9 como egresos (G).
-    # Vencidos: el PRG legacy en línea 649 los empuja a CURRENT_DATE+7
-    #     &RF DATE()+7 FOR FECHAD<=DATE()+5 AND NB=0 AND PROV=' '
-    # Nosotros los imputamos a hoy (equivalente, más conservador).
-    #
-    # banc=10/32 (modernos PC) NO se cuentan: bank_helpers.insert_movimiento_bancario
-    # ya descontó saldo en transacciones_bancarias al emitir, así que el
-    # saldo de hoy ya los refleja. Sumarlos sería double-counting.
-    #
-    # Historia (errores que cometí 2026-05-13, no repetir):
-    #   1) Cambié a banc=0 only → flujo optimista, dBase mostraba -$2.3M.
-    #   2) Filtre banc=9 vencidos → faltaron $1.3M; gap consistente vs dBase.
-    #   3) Definitivo: mirror dBase = banc IN (0, 9), vencidos imputados a hoy.
-    posdat_rows = (
-        db.fetch_all(
-            f"""
-        SELECT
-          CASE WHEN fechad < CURRENT_DATE THEN CURRENT_DATE ELSE fechad END AS fecha,
-          COALESCE(SUM(importe), 0) AS total
-        FROM scintela.posdat
-        WHERE fechad IS NOT NULL
-          AND fechad <= CURRENT_DATE + make_interval(days => %s)
-          AND {POSDAT_EGRESO_FLUJO_WHERE}
-          AND (anulada IS NOT TRUE OR anulada IS NULL)
-        GROUP BY 1
-        """,
-            (adelante,),
-        )
-        or []
-    )
-    posdat_por_dia = {r["fecha"]: float(r["total"] or 0) for r in posdat_rows}
-
-    # 6) Construir la curva día a día.
     hoy = today_ec()
-    filas: list[dict] = []
-    saldo_acum = saldo_hoy
+    tope = hoy + _td(days=adelante)
+    arr = flujo_arranque_dbase()
 
-    # Días pasados — línea recta del saldo actual (no recalculamos historia).
+    por_dia: dict = {}
+    for it in flujo_items_dbase():
+        if ignorar_cheques and it["tipo"] == "cheque":
+            continue
+        f = it.get("fecha") or hoy
+        if f < hoy:
+            # Vencidos imputados a hoy: el dBase los lista a su fecha real,
+            # pero el chart arranca hoy — mismo efecto sobre el saldo.
+            f = hoy
+        if f > tope:
+            continue
+        d = por_dia.setdefault(
+            f,
+            {"cheque": 0.0, "factura": 0.0, "posdat1": 0.0,
+             "posdat2": 0.0, "mprima": 0.0, "gasto": 0.0},
+        )
+        d[it["tipo"]] += float(it.get("importe") or 0)
+
+    filas: list[dict] = []
+
+    # Días pasados — línea recta del saldo actual (sin replay de historia).
     for offset in range(-atras, 0):
         fecha = hoy + _td(days=offset)
         filas.append(
             {
-                "fecha": fecha,
-                "saldo": saldo_hoy,
-                "cheques": 0.0,
-                "facturas": 0.0,
-                "posdat1": 0.0,
-                "posdat2": 0.0,
-                "pichincha": 0.0,
-                "inter": 0.0,
-                "mprima": 0.0,
-                "gastos": 0.0,
-                "pagos": 0.0,
-                "dolares": 0.0,
+                "fecha": fecha, "saldo": arr["total"],
+                "cheques": 0.0, "facturas": 0.0,
+                "posdat1": 0.0, "posdat2": 0.0,
+                "pichincha": 0.0, "inter": 0.0,
+                "mprima": 0.0, "gastos": 0.0,
+                "pagos": 0.0, "dolares": 0.0,
             }
         )
 
-    # Hoy y adelante — proyección acumulada.
-    # Día t: saldo_t = saldo_{t-1} + cheques(t) + facturas(t) - posdat(t)
-    # PRG línea 668: REPLA SALDO WITH ST-P1-P2+C+FA-G-H
-    #
-    # ⚠ Importante: aplicamos cambios también en offset=0 (hoy). Los
-    # vencidos los imputamos a hoy (CASE WHEN fechad < hoy THEN hoy)
-    # y deben restarse al saldo HOY, no a mañana. Si los salteábamos
-    # con `if offset > 0` se perdían $1.4M de banc=0 + banc=9 vencidos
-    # y el chart quedaba $1.4M más optimista que la suma SQL directa.
+    # Hoy y adelante — acumulación diaria (PRG L692: SALDO=ST-P1-P2+C+FA-G-H).
+    # ⚠ offset=0 también aplica cambios: los vencidos imputados a hoy deben
+    # restar/sumar HOY, no mañana (bug histórico de $1.4M — no repetir).
+    s1, s2, saldo_acum = arr["s1"], arr["s2"], arr["total"]
+    vacio = {"cheque": 0.0, "factura": 0.0, "posdat1": 0.0,
+             "posdat2": 0.0, "mprima": 0.0, "gasto": 0.0}
     for offset in range(0, adelante + 1):
         fecha = hoy + _td(days=offset)
-        cheq_in = cheques_por_dia.get(fecha, 0.0)
-        fact_in = facturas_por_dia.get(fecha, 0.0)
-        egreso = posdat_por_dia.get(fecha, 0.0)
-        saldo_acum = saldo_acum + cheq_in + fact_in - egreso
+        d = por_dia.get(fecha, vacio)
+        s1 -= d["posdat1"]
+        s2 -= d["posdat2"]
+        saldo_acum = (
+            saldo_acum - d["posdat1"] - d["posdat2"]
+            + d["cheque"] - d["gasto"] - d["mprima"]
+        )
         filas.append(
             {
-                "fecha": fecha,
-                "saldo": saldo_acum,
-                "cheques": cheq_in,
-                "facturas": fact_in,
-                "posdat1": 0.0,
-                "posdat2": 0.0,
-                "pichincha": 0.0,
-                "inter": 0.0,
-                "mprima": 0.0,
-                "gastos": -egreso,  # negativo: el chart lo trata como egreso
-                "pagos": 0.0,
-                "dolares": 0.0,
+                "fecha": fecha, "saldo": saldo_acum,
+                "cheques": d["cheque"], "facturas": 0.0,
+                "posdat1": -d["posdat1"], "posdat2": -d["posdat2"],
+                "pichincha": s1, "inter": s2,
+                "mprima": -d["mprima"],
+                "gastos": -d["gasto"],  # negativo: el chart lo trata como egreso
+                "pagos": 0.0, "dolares": 0.0,
             }
         )
 

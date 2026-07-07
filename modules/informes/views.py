@@ -2034,84 +2034,41 @@ def gastos_forzados_importar():
 @requiere_login
 @requiere_permiso("informes.ver")
 def flujo_fondos():
-    """Flujo de Fondos PROYECTADO — réplica de la opción 6 del dBase (MENU.PRG
-    L631-707, FLUJO.DBF): cuánta plata entra y sale semana a semana hacia
-    adelante, según vencimientos.
+    """Flujo de Fondos DIARIO — réplica de la opción 6 del dBase (MENU.PRG
+    PROCEDURE FLUJO L560-720 + FLUJO.DBF).
 
-    TMT 2026-06-10 (estudio dBase vs PC): era el gap funcional #1 para usar
-    PC sin dBase. Entradas: facturas por cobrar (vencimiento, stat Z/A) +
-    cheques en cartera por depositar (fechad, stat Z/1/2/3/P). Salidas:
-    posdatados por pagar (fechad, banc=0, no anuladas — incluye provisiones
-    YY/RT a su vencimiento). Saldo proyectado arranca de Bancos+Caja live.
+    TMT 2026-07-06 (dueña) "flujo de fondos no está como el dBase": antes
+    esta pantalla agrupaba por SEMANA con columnas propias. El dBase muestra
+    UNA FILA POR DÍA con vencimientos, columnas FECHA / PICH / INTER / CHEQ /
+    MAT.PR / GASTS / SALDO, primera fila = arranque (hoy: Pichincha + Inter +
+    Caja) y un corte por semana con el acumulado de ingresos/egresos
+    (ACUMI/ACUME). Reescrito para calcar eso 1:1 — el cálculo vive en
+    queries.flujo_fondos_diario() (mismos helpers que usa el gráfico).
+
+    Igual que antes: por default las facturas NO suman (dBase L701 hardcodea
+    FA=0 — flujo conservador, solo cheques en mano); ?incluir_facturas=1
+    proyecta también los cobros de cartera a VENCIM+50 (regla dBase L647-649).
     """
-    # TMT 2026-06-10 dueña 'no puede ser tan alta': el dBase NO proyecta los
-    # cobros de facturas (MENU.PRG L701 hardcodea FA=0) — su flujo es
-    # conservador: solo cheques en mano. Default igual que dBase; con
-    # ?incluir_facturas=1 se suman tambien los cobros de cartera.
     incluir_fact = request.args.get("incluir_facturas") == "1"
-    import db
-    semanas = db.fetch_all(
-        """
-        WITH items AS (
-            -- dBase proyectaba el cobro a VENCIM+50 días (RF VENCIM+50) antes
-            -- de anularlo con FA=0. El toggle opcional usa ese mismo corrimiento.
-            SELECT date_trunc('week', COALESCE(vencimiento, CURRENT_DATE)
-                                      + INTERVAL '50 days')::date AS sem,
-                   saldo AS imp, 'fact' AS tipo
-              FROM scintela.factura
-             WHERE stat IN ('Z', 'A') AND COALESCE(saldo, 0) <> 0
-            UNION ALL
-            SELECT date_trunc('week', COALESCE(fechad, CURRENT_DATE))::date,
-                   importe, 'chq'
-              FROM scintela.cheque
-             WHERE stat IN ('Z', '1', '2', '3', 'P')
-            UNION ALL
-            -- banc=0 (por pagar) Y banc=1/2 (cheques YA emitidos sin debitar):
-            -- el dBase suma banc=1/2 al arranque (S1=SALDO+P1) y los resta a
-            -- su fechad (MENU.PRG: REPLA POSDAT1 WITH -P1...). Igual acá.
-            SELECT date_trunc('week', COALESCE(fechad, CURRENT_DATE))::date,
-                   -importe, 'pos'
-              FROM scintela.posdat
-             WHERE COALESCE(banc, 0) IN (0, 1, 2)
-               AND (anulada IS NOT TRUE OR anulada IS NULL)
-        )
-        SELECT GREATEST(sem, date_trunc('week', CURRENT_DATE)::date) AS semana,
-               SUM(CASE WHEN tipo = 'fact' THEN imp ELSE 0 END) AS cobros_facturas,
-               SUM(CASE WHEN tipo = 'chq'  THEN imp ELSE 0 END) AS cheques_deposito,
-               SUM(CASE WHEN tipo = 'pos'  THEN imp ELSE 0 END) AS pagos_posdat,
-               SUM(imp) AS neto
-          FROM items
-         GROUP BY 1
-         ORDER BY 1
-        """,
-    ) or []
-    # Saldo de arranque: bancos + caja (mismas fuentes del balance live).
-    try:
-        row_b = db.fetch_one(
-            """
-            SELECT COALESCE((SELECT saldo FROM scintela.transacciones_bancarias
-                              WHERE no_banco = 10 ORDER BY id_transaccion DESC LIMIT 1), 0)
-                 + COALESCE((SELECT saldo FROM scintela.caja
-                              ORDER BY id_caja DESC LIMIT 1), 0)
-                 + COALESCE((SELECT SUM(importe) FROM scintela.posdat
-                              WHERE COALESCE(banc, 0) IN (1, 2)
-                                AND (anulada IS NOT TRUE OR anulada IS NULL)), 0)
-                   AS arranque
-            """,
-        )
-        arranque = float((row_b or {}).get("arranque") or 0)
-    except Exception:  # noqa: BLE001
-        arranque = 0.0
-    acum = arranque
-    for s in semanas:
-        for k in ("cobros_facturas", "cheques_deposito", "pagos_posdat"):
-            s[k] = float(s.get(k) or 0)
-        s["neto"] = round(s["cheques_deposito"] + s["pagos_posdat"]
-                          + (s["cobros_facturas"] if incluir_fact else 0), 2)
-        acum += s["neto"]
-        s["acumulado"] = round(acum, 2)
+    data, error = _safe(
+        lambda: queries.flujo_fondos_diario(incluir_facturas=incluir_fact),
+        None,
+    )
+    if not data:
+        data = {
+            "arranque": {"s1": 0.0, "s2": 0.0, "p1": 0.0, "p2": 0.0,
+                         "caja": 0.0, "total": 0.0},
+            "filas": [], "saldo_final": 0.0, "saldo_min": 0.0,
+            "fecha_min": today_ec(),
+        }
     return render_template(
         "informes/flujo_fondos.html",
-        semanas=semanas, arranque=arranque, incluir_fact=incluir_fact,
-        total_neto=round(sum(s["neto"] for s in semanas), 2),
+        arranque=data["arranque"],
+        filas=data["filas"],
+        saldo_final=data["saldo_final"],
+        saldo_min=data["saldo_min"],
+        fecha_min=data["fecha_min"],
+        hoy=today_ec(),
+        incluir_fact=incluir_fact,
+        error=error,
     )

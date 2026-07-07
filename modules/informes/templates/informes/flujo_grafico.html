@@ -359,8 +359,14 @@
           <span>Ignorar cheques (peor caso)</span>
         </label>
       </form>
-      <a href="{{ url_for('informes.flujo_cargar') }}"
+      {# TMT 2026-07-06 (dueña): acceso directo a la tabla diaria — es lo
+         primero que muestra la opción 6 del dBase (el gráfico viene después). #}
+      <a href="{{ url_for('informes.flujo_fondos') }}"
          class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
+        Tabla diaria (dBase)
+      </a>
+      <a href="{{ url_for('informes.flujo_cargar') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
         Cargar datos
       </a>
       <button onclick="window.print()"
