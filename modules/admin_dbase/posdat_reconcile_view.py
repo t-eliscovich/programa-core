@@ -778,11 +778,27 @@ def _run_full(aplicar: bool):
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
 
-    from collections import Counter as _Counter
-    dbf = _leer_dbf_full(miembro)
-    yield line(f"POSDAT.DBF: {len(dbf)} registros (num!=9999).")
+    yield from reconcile_posdat_full_desde_dbf(miembro, aplicar)
 
-    # dbf-origin SIN link → se borran y se reemplazan por el DBF.
+
+def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
+    """Reconcile QUIRÚRGICO de scintela.posdat contra POSDAT.DBF (banc 0 y 9).
+
+    Reusable: lo llama el endpoint /full-sync Y el hook post-sync del
+    /admin/dbase-sync (para que el update diario alinee los posdat solo).
+    Borra los dbf-import/reconcile-dbf SIN link mov_doble e inserta el DBF,
+    preservando PC-creados/linkeados y sin re-insertar lo ya cubierto. Yields
+    líneas de log. TMT 2026-07-07 (dueña): "que ande para los próximos syncs".
+    """
+    from collections import Counter as _Counter
+    import db
+
+    def line(m=""):
+        return m.rstrip("\n") + "\n"
+
+    dbf = _leer_dbf_full(dbf_path)
+    yield line(f"[posdat-reconcile] POSDAT.DBF: {len(dbf)} registros (num!=9999).")
+
     a_borrar = db.fetch_all(
         """
         SELECT p.id_posdat,
@@ -797,8 +813,6 @@ def _run_full(aplicar: bool):
     borrar_ids = [r["id_posdat"] for r in a_borrar if not r["linked"]]
     n_saltados = sum(1 for r in a_borrar if r["linked"])
 
-    # Los que QUEDAN (no se borran): PC-creados + dbf-origin linkeados. Su
-    # (prov,importe,concepto) NO debe re-insertarse desde el DBF (evita duplicar).
     quedan = db.fetch_all(
         """
         SELECT COALESCE(p.prov,'') AS prov, p.importe, COALESCE(p.concepto,'') AS concepto
@@ -817,7 +831,6 @@ def _run_full(aplicar: bool):
         quedan_keys[(q["prov"].strip().upper(), round(float(q["importe"] or 0), 2), _norm_cpt(q["concepto"]))] += 1
         quedan_t += float(q["importe"] or 0)
 
-    # DBF a insertar = los que NO están ya cubiertos por un 'queda'.
     dbf_insert, skip_dup = [], 0
     for d in dbf:
         k = (d["prov"].strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
@@ -828,13 +841,13 @@ def _run_full(aplicar: bool):
             dbf_insert.append(d)
 
     ins_t = sum(float(d["importe"]) for d in dbf_insert)
-    yield line(f"A borrar (dbf-origin sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
-    yield line(f"Quedan (PC-creados + linkeados): {len(quedan)} (TOTP {quedan_t:,.2f})")
-    yield line(f"DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos por linkeados)")
-    yield line(f"TOTP resultante ≈ quedan {quedan_t:,.2f} + insert {ins_t:,.2f} = {quedan_t + ins_t:,.2f}  (dBase POSDAT.DBF total ≈ {sum(float(d['importe']) for d in dbf):,.2f})")
+    yield line(f"[posdat-reconcile] A borrar (dbf-origin sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
+    yield line(f"[posdat-reconcile] Quedan (PC-creados + linkeados): {len(quedan)} (TOTP {quedan_t:,.2f})")
+    yield line(f"[posdat-reconcile] DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos)")
+    yield line(f"[posdat-reconcile] TOTP resultante ≈ {quedan_t + ins_t:,.2f}")
 
     if not aplicar:
-        yield line(">>> DRY-RUN: no se tocó nada. Marcá Aplicar para escribir.")
+        yield line(">>> DRY-RUN: no se tocó nada.")
         return
 
     try:
@@ -849,7 +862,7 @@ def _run_full(aplicar: bool):
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'dbf-import')",
                     (d["fecha"], d["fechad"], d["prov"], d["num"], d["importe"],
                      d["concepto"], d["banc"], d["clave"]), conn=conn)
-        yield line(f">>> APLICADO: borrados {len(borrar_ids)}, insertados {len(dbf_insert)}.")
+        yield line(f">>> [posdat-reconcile] APLICADO: borrados {len(borrar_ids)}, insertados {len(dbf_insert)}.")
     except Exception as exc:  # noqa: BLE001
-        yield line(f"[ERROR rollback] {exc!r}")
+        yield line(f"[ERROR posdat-reconcile rollback] {exc!r}")
 
