@@ -292,6 +292,17 @@ def comparativa_tintoreria():
     except Exception as e:  # noqa: BLE001
         error = (error + " | " if error else "") + f"formulas_app: {e}"
 
+    # Costo de colorantes+aux consumidos por OT (formulas_app). Para llenar el
+    # $/kg del lado formulas — antes quedaba vacío porque no había costo.
+    costos_form: dict[str, float] = {}
+    try:
+        from modules.tintura import service as _tint_svc_c
+        costos_form = _tint_svc_c.costo_por_orden(
+            terminado_desde=desde, terminado_hasta=hasta
+        )
+    except Exception:  # noqa: BLE001 -- fail-soft
+        costos_form = {}
+
     # Indexar form por fecha_terminado
     form_por_fecha: dict[date, list] = defaultdict(list)
     for o in rows_form:
@@ -303,7 +314,7 @@ def comparativa_tintoreria():
     # Indexar form por (fecha_terminado, formula_cod) para enriquecer el
     # detalle_color del lado PC con cruda/terminada/desperdicio/fecha_term.
     form_por_fecha_cod: dict[tuple, dict] = defaultdict(
-        lambda: {"cruda": 0.0, "terminada": 0.0, "n_ots": 0, "ots": []}
+        lambda: {"cruda": 0.0, "terminada": 0.0, "n_ots": 0, "ots": [], "costo": 0.0}
     )
     for o in rows_form:
         if o.fecha_terminado and o.formula_cod:
@@ -315,6 +326,7 @@ def comparativa_tintoreria():
                 slot["terminada"] += float(o.tela_terminada_kg or 0)
                 slot["n_ots"] += 1
                 slot["ots"].append(o.to_dict())
+                slot["costo"] += float(costos_form.get(o.numero, 0.0) or 0.0)
 
     # Indexar PC color por fecha. Enriquece cada línea con los datos
     # de formulas_app del mismo código (suma kg crudo + terminado).
@@ -343,6 +355,7 @@ def comparativa_tintoreria():
             enriched["form_cruda_kg"] = cruda
             enriched["form_terminada_kg"] = terminada
             enriched["form_n_ots"] = form_match["n_ots"]
+            enriched["form_costo"] = float(form_match.get("costo") or 0.0)
             enriched["form_fecha_terminado"] = r["fecha"]  # mismo día
             # Desperdicio % = (cruda - terminada) / cruda * 100. None si no aplica.
             if cruda > 0 and terminada >= 0:
@@ -354,6 +367,7 @@ def comparativa_tintoreria():
             enriched["form_cruda_kg"] = None
             enriched["form_terminada_kg"] = None
             enriched["form_n_ots"] = 0
+            enriched["form_costo"] = None
             enriched["form_fecha_terminado"] = None
             enriched["form_desperdicio_pct"] = None
         pc_color_por_fecha[r["fecha"]].append(enriched)
@@ -473,10 +487,14 @@ def comparativa_tintoreria():
                     # TMT 2026-05-26 dueña: 'el costo calculalo con formulas!'
                     # Costo $/kg usando kg de formulas (terminado preferido,
                     # fallback a crudo, fallback a dbase si formulas vacío).
+                    # $/kg con COSTO de formulas_app (importe consumido); si
+                    # una OT no trajo costo, fallback al importe del dBase.
+                    form_costo = float(c.get("form_costo") or 0.0)
+                    imp_costo = form_costo if form_costo > 0 else importe_pc
                     if kg_form_term and kg_form_term > 0:
-                        costo_kg = importe_pc / kg_form_term
+                        costo_kg = imp_costo / kg_form_term
                     elif kg_form_cruda and kg_form_cruda > 0:
-                        costo_kg = importe_pc / kg_form_cruda
+                        costo_kg = imp_costo / kg_form_cruda
                     elif kg_pc > 0:
                         costo_kg = importe_pc / kg_pc
                     else:
@@ -507,6 +525,13 @@ def comparativa_tintoreria():
                 try:
                     cruda = float(form_data.get("cruda") or 0)
                     term = float(form_data.get("terminada") or 0)
+                    f_costo = float(form_data.get("costo") or 0.0)
+                    if f_costo > 0 and term > 0:
+                        costo_solo = f_costo / term
+                    elif f_costo > 0 and cruda > 0:
+                        costo_solo = f_costo / cruda
+                    else:
+                        costo_solo = None
                     desperd = ((cruda - term) / cruda * 100.0) if cruda > 0 else None
                     filas_codigo.append({
                         "fecha": f,
@@ -517,11 +542,8 @@ def comparativa_tintoreria():
                         "kg_form_cruda": cruda if cruda > 0 else None,
                         "desperdicio_pct": round(desperd, 1) if desperd is not None else None,
                         "form_n_ots": int(form_data.get("n_ots") or 0),
-                        # TMT 2026-05-27 dueña: 'dict object has no attribute
-                        # costo_kg'. Sin importe PC (es OT solo-formulas) no
-                        # podemos calcular costo $/kg. Explicit None evita el
-                        # error de Jinja al hacer r.costo_kg.
-                        "costo_kg": None,
+                        # $/kg de la OT solo-formulas = costo consumido / kg.
+                        "costo_kg": costo_solo,
                     })
                 except Exception:
                     continue
@@ -542,10 +564,14 @@ def comparativa_tintoreria():
                 desperd_pct = ((kg_form_cruda - kg_form_term) / kg_form_cruda * 100.0) if kg_form_cruda > 0 else None
                 # TMT 2026-05-26 dueña: costo con formulas (kg terminado o crudo).
                 importe_dia = sum(float(c.get("importe") or 0) for c in cods)
+                form_costo_dia = sum(
+                    float(costos_form.get(o.numero, 0.0) or 0.0) for o in ots_dia
+                )
+                imp_costo_dia = form_costo_dia if form_costo_dia > 0 else importe_dia
                 if kg_form_term and kg_form_term > 0:
-                    costo_promedio = importe_dia / kg_form_term
+                    costo_promedio = imp_costo_dia / kg_form_term
                 elif kg_form_cruda and kg_form_cruda > 0:
-                    costo_promedio = importe_dia / kg_form_cruda
+                    costo_promedio = imp_costo_dia / kg_form_cruda
                 elif kg_dbase > 0:
                     costo_promedio = importe_dia / kg_dbase
                 else:
