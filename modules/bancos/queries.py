@@ -538,6 +538,46 @@ def movimientos(
             r["conciliacion_id"] = "dbase"
             r["conciliado_por"] = "dBase"
             r["conciliado_estado"] = "dbase"
+
+    # TMT 2026-07-07 duena: 'con un + ver todos los movimientos' + 'no puedo
+    # clickear para ir al cheque'. Para los depositos (DE) traemos los cheques
+    # linkeados via chequextransaccion -> cheque en UNA query batch. El template
+    # usa esto para (a) un expander '+' que muestra cheque por cheque en un
+    # deposito consolidado 'dep.N ch.' y (b) un link directo a la ficha del
+    # cheque (cheques.detalle). Fail-graceful: sin la tabla, no hay expander.
+    try:
+        de_ids = [
+            r["id_transaccion"]
+            for r in rows
+            if r.get("id_transaccion")
+            and (r.get("documento") or "").strip().upper() == "DE"
+        ]
+        if de_ids:
+            chq = db.fetch_all(
+                """
+                SELECT cxt.id_transaccion,
+                       c.id_cheque, c.no_cheque, c.importe, c.codigo_cli,
+                       c.doc_banco, c.fechad,
+                       COALESCE(cli.nombre, '') AS cliente
+                  FROM scintela.chequextransaccion cxt
+                  JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque
+                  LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
+                 WHERE cxt.id_transaccion = ANY(%s)
+                 ORDER BY cxt.id_transaccion, c.no_cheque
+                """,
+                (de_ids,),
+            ) or []
+            by_tx: dict = {}
+            for c in chq:
+                by_tx.setdefault(c["id_transaccion"], []).append(c)
+            for r in rows:
+                lst = by_tx.get(r.get("id_transaccion"))
+                if lst:
+                    r["cheques"] = lst
+                    r["n_cheques"] = len(lst)
+    except Exception:
+        pass  # fail-graceful: la vista funciona sin el expander si falla
+
     return rows
 
 

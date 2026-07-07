@@ -294,7 +294,27 @@
                 <span class="inline-block px-1.5 py-0.5 mr-1 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 text-[10px] font-mono"
                       title="Esta fila fue reversada por el mov #{{ m.mov_id_reverso }}">⊘ reversado</span>
               {% endif %}
-              {{ m.concepto or '' }}
+              {# TMT 2026-07-07 duena: 'ir al cheque' + 'con un + ver todos los
+                 movimientos'. Deposito con 1 cheque -> concepto es link directo
+                 a la ficha. Con N cheques -> boton '+' que expande cheque por
+                 cheque (reusa el JS de lotes: .lote-toggle + tr.lote-child). #}
+              {% if m.cheques and m.n_cheques == 1 %}
+                <a href="{{ url_for('cheques.detalle', id_cheque=m.cheques[0].id_cheque) }}"
+                   class="text-sky-700 dark:text-sky-400 hover:underline"
+                   title="Ir a la ficha del cheque #{{ m.cheques[0].no_cheque }}">{{ m.concepto or '' }}</a>
+              {% else %}
+                {{ m.concepto or '' }}
+              {% endif %}
+              {% if m.cheques and m.n_cheques > 1 %}
+                <button type="button"
+                        class="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 lote-toggle align-middle"
+                        data-lote="tx{{ m.id_transaccion }}"
+                        aria-expanded="false"
+                        title="Ver los {{ m.n_cheques }} cheques de este deposito">
+                  <span class="lote-icon-open">+ ver {{ m.n_cheques }} cheques</span>
+                  <span class="lote-icon-close hidden">- ocultar</span>
+                </button>
+              {% endif %}
               {% if m.mov_concepto and (m.mov_concepto | length) > (m.concepto | length if m.concepto else 0) %}
                 <div class="text-[11px] text-slate-500 mt-0.5">{{ m.mov_concepto }}</div>
               {% endif %}
@@ -365,6 +385,33 @@
               {% endif %}
             </td>
           </tr>
+          {# TMT 2026-07-07 duena: filas detalle del deposito - 1 por cheque,
+             ocultas hasta apretar el '+'. Cada una linkea a la ficha del
+             cheque. Reusa el JS de lotes via data-lote="tx<id>". #}
+          {% if m.cheques and m.n_cheques > 1 %}
+            {% for c in m.cheques %}
+            <tr class="border-t border-slate-50 dark:border-slate-800/40 lote-child hidden text-xs bg-slate-50/40 dark:bg-slate-800/20"
+                data-lote="tx{{ m.id_transaccion }}">
+              <td class="px-3 py-1 text-slate-400" style="padding-left:2.5rem; white-space: nowrap;">&#8627;</td>
+              <td class="px-3 py-1">
+                <span class="inline-block px-1 py-0 rounded bg-emerald-50 text-emerald-700 text-[10px] font-mono">CH</span>
+              </td>
+              <td class="px-3 py-1 font-mono text-[11px] text-slate-500">{{ c.no_cheque or '' }}</td>
+              <td class="px-3 py-1">
+                <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
+                   class="text-sky-700 dark:text-sky-400 hover:underline"
+                   title="Ir a la ficha del cheque #{{ c.no_cheque }}">
+                  cheque #{{ c.no_cheque }}{% if c.cliente or c.codigo_cli %} &middot; {{ c.cliente or c.codigo_cli }}{% endif %} &rarr;
+                </a>
+              </td>
+              <td class="px-3 py-1 text-slate-500" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '' }}</td>
+              <td class="px-3 py-1 text-right text-mono text-emerald-700">{{ c.importe | money_es if c.importe is not none else '' }}</td>
+              <td class="px-3 py-1 text-right text-mono text-slate-400"></td>
+              <td class="px-3 py-1 text-center"></td>
+              <td class="px-3 py-1 no-print"></td>
+            </tr>
+            {% endfor %}
+          {% endif %}
         {% endif %}
         {% else %}
         {{ empty_row(9, 'Sin movimientos en el rango seleccionado.') }}
