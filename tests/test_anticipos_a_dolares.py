@@ -91,7 +91,6 @@ def _patch_anticipo_deps(monkeypatch):
         lambda sql, params=None, conn=None: (ins.append((sql, params)) or {"id_dolares": 1}),
     )
     monkeypatch.setattr(dbmod, "execute", lambda *a, **k: 1)
-    monkeypatch.setattr(dbmod, "fetch_one", lambda *a, **k: {"no_banco": 10, "no_cta": None})
     monkeypatch.setattr(bank_helpers, "insert_movimiento_bancario",
                         lambda *a, **k: {"id_transaccion": 99})
     monkeypatch.setattr(_md, "registrar", lambda **k: 1)
@@ -133,13 +132,31 @@ def test_alta_anticipo_sin_permiso_escritura_404(app, fake_db):
 
 
 def test_cancelar_anticipo_vive_en_dolares(app, fake_db, monkeypatch):
+    import contextlib
     import db as dbmod
+    c = _login(app, fake_db, ["facturas.crear"])
     ejecutados: list[tuple] = []
+
+    @contextlib.contextmanager
+    def _fake_tx():
+        yield object()
+
+    # fetch_one: la fila del anticipo para la query de dolares; para todo lo
+    # demás (auth, mov_doble) delega al fake_db (mov_doble → None → sin reverso).
+    _orig_fetch = fake_db.fetch_one
+
+    def _fetch(sql, params=None, conn=None):
+        low = " ".join(sql.split()).lower()
+        if "from scintela.dolares" in low:
+            return {"id_dolares": 77, "cta": "ABC", "importe": 10.0}
+        return _orig_fetch(sql, params, conn)
+
+    monkeypatch.setattr(dbmod, "tx", _fake_tx)
+    monkeypatch.setattr(dbmod, "fetch_one", _fetch)
     monkeypatch.setattr(
         dbmod, "execute",
         lambda sql, params=None, conn=None: ejecutados.append((sql, params)) or 1,
     )
-    c = _login(app, fake_db, ["facturas.crear"])
     r = c.post("/dolares/anticipo/77/cancelar", data={})
     assert r.status_code == 302
     updates = [x for x in ejecutados if "SET st = 'B'" in x[0]]
