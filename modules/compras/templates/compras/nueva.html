@@ -205,9 +205,10 @@
           b.type = 'button';
           b.className = 'block w-full text-left px-2 py-1 rounded hover:bg-sky-100';
           b.style.border = '1px solid #bae6fd';
-          const ant = im.anticipos ? (' · anticipos $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
+          const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
+          const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '') + ' $ ' + Number(im.compras_usd).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
-            + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant
+            + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant + yac
             + (im.fecha ? ' · ' + im.fecha : '');
           b.addEventListener('click', () => {
             concepto.value = String(im.numero != null ? im.numero : (im.codigo || ''));

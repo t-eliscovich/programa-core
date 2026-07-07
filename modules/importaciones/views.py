@@ -312,8 +312,10 @@ def api_importaciones_abiertas(prov):
     for r in rows:
         if (r.get("prov") or "").strip().upper() != prov:
             continue
-        if r.get("fuente") == "compra":
-            continue  # ya tiene compra matcheada
+        # TMT 2026-07-06 v2 (dueña): "sí podés matchear varias veces en
+        # compras y anticipos" — se listan TODAS las importaciones del
+        # proveedor; lo ya matcheado va como referencia, no como filtro.
+        _comp = r.get("compra") or {}
         out.append({
             "im_numero": r.get("im_numero"),
             "codigo": r.get("codigo"),
@@ -324,5 +326,7 @@ def api_importaciones_abiertas(prov):
             "anticipos": float(r.get("anticipo_aplicado") or 0)
                          if r.get("anticipo_aplicado") is not None else
                          float((r.get("anticipo") or {}).get("importe_total") or 0),
+            "compras_n": int(_comp.get("n") or 0),
+            "compras_usd": float(_comp.get("importe_total") or 0),
         })
     return {"prov": prov, "importaciones": out[:30]}

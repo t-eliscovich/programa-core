@@ -220,6 +220,13 @@
       </div>
       <div>
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Concepto</label>
+        {# TMT 2026-07-06 (dueña): picker de importación a matchear (igual que
+           /compras/nueva) — elegir llena el concepto con el nº de la Nota. #}
+        <div id="dol-imp-panel" class="hidden rounded border border-sky-300 p-2 text-xs" style="background:#f0f9ff;grid-column:1 / -1;">
+          <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor — elegí con cuál matchea:</p>
+          <div id="dol-imp-list"></div>
+          <p id="dol-imp-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
+        </div>
         <input name="concepto" maxlength="100"
                class="w-64 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
       </div>
@@ -431,5 +438,52 @@ document.addEventListener('click', function (ev) {
     b.classList.remove('font-semibold');
   }, 4000);
 });
+</script>
+<script>
+(function () {
+  // TMT 2026-07-06 (dueña): al cargar un anticipo USD, mostrar con qué
+  // importación va a matchear (match = cta + primer número del concepto).
+  const cta = document.querySelector('#panel-nuevo-anticipo input[name="cta"], form input[name="cta"]');
+  const concepto = cta ? cta.closest('form').querySelector('input[name="concepto"]') : null;
+  const panel = document.getElementById('dol-imp-panel');
+  const list = document.getElementById('dol-imp-list');
+  const elegida = document.getElementById('dol-imp-elegida');
+  if (!cta || !concepto || !panel) return;
+  let timer = null;
+  function cargar() {
+    const p = (cta.value || '').trim().toUpperCase();
+    if (!p || p.length < 2) { panel.classList.add('hidden'); return; }
+    fetch('/importaciones/_api/abiertas/' + encodeURIComponent(p))
+      .then(r => r.ok ? r.json() : {importaciones: []})
+      .then(d => {
+        const ims = d.importaciones || [];
+        if (!ims.length) { panel.classList.add('hidden'); return; }
+        list.innerHTML = '';
+        ims.forEach(im => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'block w-full text-left px-2 py-1 rounded hover:bg-sky-100';
+          b.style.border = '1px solid #bae6fd';
+          b.style.marginBottom = '2px';
+          const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
+          const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '')) : '';
+          b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
+            + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant + yac;
+          b.addEventListener('click', () => {
+            concepto.value = String(im.numero != null ? im.numero : '') + ' ';
+            concepto.focus();
+            elegida.textContent = '✔ Va a matchear con ' + im.im_numero + ' (' + (im.codigo || '') + ')';
+            elegida.classList.remove('hidden');
+          });
+          list.appendChild(b);
+        });
+        panel.classList.remove('hidden');
+      })
+      .catch(() => panel.classList.add('hidden'));
+  }
+  ['input', 'change', 'blur'].forEach(ev => cta.addEventListener(ev, () => {
+    clearTimeout(timer); timer = setTimeout(cargar, 450);
+  }));
+})();
 </script>
 {% endblock %}
