@@ -298,7 +298,7 @@
                  movimientos'. Deposito con 1 cheque -> concepto es link directo
                  a la ficha. Con N cheques -> boton '+' que expande cheque por
                  cheque (reusa el JS de lotes: .lote-toggle + tr.lote-child). #}
-              {% if m.cheques and m.n_cheques == 1 %}
+              {% if m.cheques and m.n_cheques == 1 and tiene_permiso('cheques.ver') %}
                 <a href="{{ url_for('cheques.detalle', id_cheque=m.cheques[0].id_cheque) }}"
                    class="text-sky-700 dark:text-sky-400 hover:underline"
                    title="Ir a la ficha del cheque #{{ m.cheques[0].no_cheque }}">{{ m.concepto or '' }}</a>
@@ -398,11 +398,15 @@
               </td>
               <td class="px-3 py-1 font-mono text-[11px] text-slate-500">{{ c.no_cheque or '' }}</td>
               <td class="px-3 py-1">
+                {% if tiene_permiso('cheques.ver') %}
                 <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"
                    class="text-sky-700 dark:text-sky-400 hover:underline"
                    title="Ir a la ficha del cheque #{{ c.no_cheque }}">
                   cheque #{{ c.no_cheque }}{% if c.cliente or c.codigo_cli %} &middot; {{ c.cliente or c.codigo_cli }}{% endif %} &rarr;
                 </a>
+                {% else %}
+                <span class="text-slate-600 dark:text-slate-300">cheque #{{ c.no_cheque }}{% if c.cliente or c.codigo_cli %} &middot; {{ c.cliente or c.codigo_cli }}{% endif %}</span>
+                {% endif %}
               </td>
               <td class="px-3 py-1 text-slate-500" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '' }}</td>
               <td class="px-3 py-1 text-right text-mono text-emerald-700">{{ c.importe | money_es if c.importe is not none else '' }}</td>
