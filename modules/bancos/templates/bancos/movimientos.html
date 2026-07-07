@@ -366,11 +366,7 @@
                    title="Reversar este cheque emitido y deshacer su side effect">
                   ↺ reversar
                 </a>
-                <a href="{{ url_for('bancos.cheque_imprimible', id_transaccion=m.id_transaccion) }}"
-                   class="text-xs text-slate-600 hover:text-slate-900 hover:underline ml-2"
-                   title="Imprimir este cheque con el monto en letras (sobre el cheque físico)">
-                  🖨 cheque en letras
-                </a>
+                {# TMT 2026-07-07 dueña: "cheque en letras" removido — no se usa. #}
               {# TMT 2026-06-26: eliminar movimientos cargados en PC (no del
                  dBase), sin conciliar. El route revalida todos los guards. #}
               {% elif tiene_permiso('bancos.conciliar')
