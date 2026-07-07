@@ -118,8 +118,8 @@
           <th style="width:84px">Medio</th>
           <th style="width:90px">Doc.</th>
           <th style="width:190px">Cliente</th>
-          <th>Facturas que paga <span style="font-weight:400; text-transform:none">(fecha · numf · fact. · abonó · saldo)</span></th>
           <th class="num" style="width:90px">Importe</th>
+          <th>Facturas que paga <span style="font-weight:400; text-transform:none">(fecha · numf · fact. · abonó · saldo)</span></th>
         </tr>
       </thead>
       <tbody>
@@ -145,6 +145,13 @@
           <td>
             <span class="mono" style="font-weight:600">{{ c.codigo_cli or '' }}</span>
             <span class="facts cli-nombre">{{ c.cliente | cleanstr | truncate(26, True, '…') }}</span>
+          </td>
+          <td class="num {{ 'neg' if c.importe and c.importe|float < 0 else '' }}">
+            {{ c.importe | money_es }}
+            {% if c.paga %}
+              <span class="badge {{ 'badge-t' if c.paga == 'T' else 'badge-a' }}" style="margin-left:4px"
+                    title="{{ 'Totalizó todas las facturas' if c.paga == 'T' else 'Abonó — queda saldo pendiente' }}">{{ c.paga }}</span>
+            {% endif %}
           </td>
           <td>
             {% if c.aplicaciones %}
@@ -174,22 +181,16 @@
               <span class="facts">— sin aplicar a facturas</span>
             {% endif %}
           </td>
-          <td class="num {{ 'neg' if c.importe and c.importe|float < 0 else '' }}">
-            {{ c.importe | money_es }}
-            {% if c.paga %}
-              <div><span class="badge {{ 'badge-t' if c.paga == 'T' else 'badge-a' }}"
-                    title="{{ 'Totalizó todas las facturas' if c.paga == 'T' else 'Abonó — queda saldo pendiente' }}">{{ c.paga }}</span></div>
-            {% endif %}
-          </td>
         </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="5">TOTAL DEL DÍA — {{ resumen.ingresos | length }} ingreso{{ 's' if resumen.ingresos|length != 1 }}
+          <td colspan="4">TOTAL DEL DÍA — {{ resumen.ingresos | length }} ingreso{{ 's' if resumen.ingresos|length != 1 }}
             <span class="facts" style="font-weight:400">({{ resumen.n_cheques }} cheq. · {{ resumen.n_depositos }} dep. · {{ resumen.n_efectivo }} efect.)</span>
           </td>
           <td class="num">{{ resumen.total_general | money_es }}</td>
+          <td></td>
         </tr>
       </tfoot>
     </table>

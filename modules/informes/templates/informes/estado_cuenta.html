@@ -33,7 +33,7 @@
        28 por hoja), y Cheques/Anticipos con no-print. */
     .print-header {
       display: block !important;
-      border-bottom: 1.5pt solid #000 !important;
+      border-bottom: 1.5pt solid #9ca3af !important;
       padding: 0 0 4pt 0 !important;
       margin: 0 0 6pt 0 !important;
     }
@@ -54,9 +54,9 @@
       line-height: 1.1 !important;
     }
     .max-w-6xl table td { border-bottom: 0.3pt solid #ccc !important; }
-    .max-w-6xl table thead th { border-bottom: 0.8pt solid #000 !important;
+    .max-w-6xl table thead th { border-bottom: 0.8pt solid #9ca3af !important;
                                 font-size: 6.5pt !important; }
-    .max-w-6xl table tfoot td { border-top: 0.8pt solid #000 !important;
+    .max-w-6xl table tfoot td { border-top: 0.8pt solid #9ca3af !important;
                                 border-bottom: none !important; font-weight: 700 !important; }
     thead { display: table-header-group !important; }   /* repite por página */
     tfoot { display: table-row-group !important; }      /* totales UNA vez al final, no por página */
@@ -173,9 +173,9 @@
        NB=98). Antes el espejo de anticipo quedaba escondido entre los cheques y
        el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
     {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
-    <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if _saldo_neto > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Saldo cliente</div>
-      <div class="mt-1 text-3xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if _saldo_neto > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
+    <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if _saldo_neto > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-3">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo cliente</div>
+      <div class="mt-0.5 text-2xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if _saldo_neto > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
         {{ _saldo_neto | money_es }}
       </div>
       {% if (t.saldo_a_favor or 0) > 0.005 %}
@@ -196,14 +196,14 @@
         <div class="mt-1 text-xs text-slate-500">Sin facturas vencidas.</div>
       {% endif %}
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Cheques en cartera</div>
-      <div class="mt-1 text-xl font-semibold text-mono">{{ t.cheques_cartera | money_es }}</div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Cheques en cartera</div>
+      <div class="mt-0.5 text-lg font-semibold text-mono">{{ t.cheques_cartera | money_es }}</div>
       <div class="mt-1 text-xs text-slate-500">posfechados / sin depositar</div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Cupo</div>
-      <div class="mt-1 text-xl font-semibold text-mono">{{ data.cliente.cupo | money_es }}</div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Cupo</div>
+      <div class="mt-0.5 text-lg font-semibold text-mono">{{ data.cliente.cupo | money_es }}</div>
       {% set cupo = (data.cliente.cupo or 0) | float %}
       {% if cupo > 0 %}
         {% set pct = (t.saldo_vivo / cupo * 100) %}
@@ -217,8 +217,8 @@
   {# Estado / forma de pago / descuento — secundario.
      TMT 2026-07-07 (dueña): fuera de la impresión (no-print). #}
   <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Stop</div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2.5">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Stop</div>
       <div class="mt-1">
         {% if data.cliente.stop == 'S' %}
           <span class="text-red-600 font-semibold">Bloqueado</span>
@@ -227,12 +227,12 @@
         {% endif %}
       </div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Forma de pago</div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2.5">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Forma de pago</div>
       <div class="mt-1">{{ data.cliente.pago or '—' }}</div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs uppercase tracking-wider text-slate-500">Descuento</div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2.5">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Descuento</div>
       <div class="mt-1 text-mono">{{ data.cliente.descuento | num_es(1) }} %</div>
     </div>
   </div>
@@ -246,8 +246,6 @@
           <th class="px-4 py-3 text-left font-medium">N°</th>
           <th class="px-4 py-3 text-left font-medium">Tipo</th>
           <th class="px-4 py-3 text-left font-medium">Fecha</th>
-          <th class="px-4 py-3 text-left font-medium">Vence</th>
-          <th class="px-4 py-3 text-right font-medium">Kg</th>
           <th class="px-4 py-3 text-right font-medium">Importe</th>
           <th class="px-4 py-3 text-right font-medium">Abonado</th>
           <th class="px-4 py-3 text-right font-medium">Saldo</th>
@@ -270,8 +268,6 @@
              a favor / la "ND" de la dueña); positivo = Factura. #}
           <td class="px-4 py-2 text-xs whitespace-nowrap {{ 'text-amber-700 font-medium' if (f.importe or 0) < 0 }}">{{ 'Devolución' if (f.importe or 0) < 0 else 'Factura' }}</td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
-          <td class="px-4 py-2" style="white-space: nowrap;">{{ f.vencimiento | fecha_es }}</td>
-          <td class="px-4 py-2 text-right text-mono">{{ f.kg | kg_es }}</td>
           <td class="px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
           <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
@@ -279,7 +275,7 @@
           <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
         </tr>
         {% else %}
-        {{ empty_row(10, 'Sin facturas para este cliente.') }}
+        {{ empty_row(8, 'Sin facturas para este cliente.') }}
         {% endfor %}
       </tbody>
       {% if data.facturas %}
@@ -290,8 +286,7 @@
              tiene 4 antes de Kg (N°, Tipo, Fecha, Vence) → TODO el pie
              quedaba corrido una columna a la izquierda. Los totales estaban
              bien calculados; era alineación. #}
-          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="4">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
-          <td class="px-4 py-3 text-right text-mono">{{ t.kg | kg_es }}</td>
+          <td class="px-4 py-3 text-xs uppercase tracking-wider text-slate-500" colspan="3">Totales ({{ data.facturas | length }} factura{{ '' if data.facturas|length == 1 else 's' }})</td>
           <td class="px-4 py-3 text-right text-mono">{{ t.importe | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono text-slate-500">{{ t.abono | money_es }}</td>
           <td class="px-4 py-3 text-right text-mono {{ 'text-red-600 dark:text-red-400' if t.saldo > 0 else '' }}">{{ t.saldo | money_es }}</td>
@@ -301,6 +296,16 @@
       </tfoot>
       {% endif %}
     </table>
+  </div>
+
+  {# TMT 2026-07-07 (dueña): TOTAL final = saldo del cliente + cheques en
+     cartera (ej. EDU 241.781,01 + 20.000 = 261.781,01). Debe imprimirse. #}
+  {% set _total_con_cheques = (_saldo_neto or 0) + (t.cheques_cartera or 0) %}
+  <div class="mb-8 flex justify-end">
+    <div class="text-right border-t-2 border-slate-300 dark:border-slate-700 pt-2">
+      <span class="text-xs uppercase tracking-wider text-slate-500">Total (saldo + cheques en cartera)</span>
+      <span class="ml-3 text-lg font-semibold text-mono">$ {{ _total_con_cheques | money_es }}</span>
+    </div>
   </div>
 
   {# Cheques — TMT 2026-07-07 dueña v2: "en imprimir estado de cuenta volvé a
