@@ -54,13 +54,18 @@
 
   /* Sub-líneas de facturas dentro de la fila del ingreso (estilo tirilla dBase:
      fecha · numf · importe fact · abonó · saldo resultante). */
-  .apps { display:table; width:100%; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  /* TMT 2026-07-07 v2 (dueña: "no está bien encolumnada"): cada .apps es una
+     mini-tabla independiente → sin anchos fijos cada fila encolumnaba distinto.
+     Anchos FIJOS por celda para que TODAS las filas alineen igual (sin
+     width:100%, la tabla ocupa lo que suman las celdas). */
+  .apps { display:table; table-layout:fixed; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
           font-size:11px; color:#334155; border-collapse:collapse; }
   .app  { display:table-row; }
-  .app > span { display:table-cell; padding:0 0 1px 10px; text-align:right; white-space:nowrap; }
-  .app > span.ffecha { padding-left:0; text-align:left; color:#94a3b8; }
-  .app > span.fnumf  { text-align:left; font-weight:600; }
-  .app > span.fbadge { text-align:center; padding-left:8px; }
+  .app > span { display:table-cell; padding:0 0 1px 8px; text-align:right; white-space:nowrap; }
+  .app > span.ffecha { width:68px; padding-left:0; text-align:left; color:#94a3b8; }
+  .app > span.fnumf  { width:58px; text-align:left; font-weight:600; }
+  .app > span:nth-child(3), .app > span:nth-child(4), .app > span:nth-child(5) { width:74px; }
+  .app > span.fbadge { width:16px; text-align:center; padding-left:6px; }
   .saldo-cero { font-weight:700; }
   .saldo-neg  { font-weight:700; color:#b91c1c; }         /* saldo a favor */
   .badge { display:inline-block; min-width:16px; text-align:center; font-size:10px;
