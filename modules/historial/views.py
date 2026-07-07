@@ -364,6 +364,10 @@ def lista():
         q=q or "",
         error=error,
         limite=limite,
+        # TMT 2026-07-07 (dueña): pasar mis_origenes al template para que el
+        # form de filtro y los links lo preserven → Alex puede filtrar/paginar
+        # su historial sin perder el flag (sin él el gate lo bloqueaba).
+        mis_origenes=mis_origenes,
         # TMT 2026-07-01: tipos que reversan INLINE (POST directo, sin wizard).
         tipos_inline=list(_PERMISO_REVERSO_INLINE.keys()),
     )
