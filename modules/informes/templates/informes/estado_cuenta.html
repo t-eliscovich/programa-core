@@ -11,7 +11,58 @@
 {# TMT 2026-06-07: dirección en el header del estado de cuenta. #}
 {% set _dir = ((data.cliente.direccion1 ~ ' ' ~ data.cliente.direccion2) if data.cliente.direccion2 else data.cliente.direccion1) | cleanstr %}
 {% set _desc %}<span class="font-mono">{{ data.cliente.codigo_cli }}</span>{% endset %}
+
+{# TMT 2026-07-07 (dueña): la impresión estaba "pésima" — salía toda la ficha
+   (dirección/RUC/tel, tiles de saldo/cheques/cupo, stop/pago/descuento) y la
+   tabla ocupaba hojas de más. Ahora el print = 1 línea de header (cliente +
+   saldo + fecha, como el CUENTA.PRG del dBase: "CLIENTE : (CLI) NOMBRE") +
+   tablas densas. En PANTALLA no cambia nada: la ficha completa sigue igual,
+   solo se marcó no-print. GOTCHA repo: tailwind.css es build congelado →
+   todo el CSS de print va acá en <style> custom. #}
+{% set t = data.totales %}
+{# _saldo_neto = saldo facturas − saldo a favor (mismo criterio que el tile
+   grande de pantalla, TMT 2026-06-23). #}
+{% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+<style>
+  .print-header { display: none; }
+  @media print {
+    /* Header compacto de impresión: 1 línea, todo lo demás del header
+       tiene no-print. */
+    .print-header {
+      display: block !important;
+      font-size: 11pt !important;
+      font-weight: bold !important;
+      border-bottom: 1.5pt solid #000 !important;
+      padding: 0 0 3pt 0 !important;
+      margin: 0 0 5pt 0 !important;
+    }
+    .print-header .ph-meta { font-weight: normal !important; font-size: 9pt !important; }
+
+    /* Tabla densa: tipografía chica, padding mínimo (pisa el 9pt/2px 4px
+       global de base.html para meter más filas por hoja). */
+    table { font-size: 8pt !important; line-height: 1.15 !important; }
+    th, td { padding: 1px 3px !important; }
+    thead { display: table-header-group !important; }   /* repite por página */
+    tfoot { display: table-row-group !important; }      /* totales UNA vez al final, no por página */
+    tr { page-break-inside: avoid !important; }
+    h2 { font-size: 9pt !important; margin: 5pt 0 1pt 0 !important; page-break-after: avoid !important; }
+
+    /* Pills / badges (saldo_pill, "anulado", "Anticipo") → texto plano. */
+    td span { padding: 0 !important; background: none !important; }
+
+    /* Nada de controles de UI en papel (los <button>/no-print ya los tapa
+       base.html; esto cubre links de acción y title-tooltips no). */
+    .no-print { display: none !important; }
+  }
+</style>
 <div class="max-w-6xl">
+  {# Header de IMPRESIÓN — invisible en pantalla. Pedido dueña 2026-07-07:
+     "deja SOLO nombre+código y el saldo del cliente". #}
+  <div class="print-header">
+    {{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})
+    &nbsp;·&nbsp; Saldo: {{ _saldo_neto | money_es }}
+    <span class="ph-meta">&nbsp;·&nbsp; impreso {{ g.now | fecha_es }}</span>
+  </div>
   {# TMT 2026-07-06 (dueña): banner grande de éxito del TOTALIZAR (one-shot,
      via session — patrón cobranza_ok) + imprimir el resultado. #}
   {% if totalizar_ok %}
@@ -29,7 +80,8 @@
             class="shrink-0 text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Imprimir resultado</button>
   </div>
   {% endif %}
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+  {# no-print: en papel lo reemplaza el .print-header de arriba. #}
+  <div class="no-print flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
     <div class="no-print flex items-center gap-2">
       {# TMT 2026-05-18 — volver a la cartera total (pedido de la dueña) #}
@@ -55,9 +107,9 @@
   {# TMT 2026-06-07: bloque de contacto prominente — la dueña pidió que el
      estado de cuenta clásico sirva también a los empleados (dirección / RUC /
      tel claros y legibles). Solo va acá (no se repite en la cuenta corriente).
-     Sin no-print: se imprime con el estado. #}
+     TMT 2026-07-07 (dueña): en la IMPRESIÓN no va — no-print. #}
   {% if (_dir and _dir | trim) or data.cliente.ruc or data.cliente.telefono %}
-  <div class="mb-5 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+  <div class="no-print mb-5 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
     {# TMT 2026-06-07: el dBase guarda la dirección en DOS renglones
        (direccion1 + direccion2). Mostramos ambos. #}
     {% set _d1 = data.cliente.direccion1 | cleanstr %}
@@ -83,8 +135,9 @@
 
   {# TMT 2026-05-17: tile principal — saldo del cliente.
      Antes decía "Nos debe", cambiado a "Saldo cliente" para tono profesional. #}
-  {% set t = data.totales %}
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+  {# `t` y `_saldo_neto` ya vienen seteados arriba (los usa el print-header).
+     TMT 2026-07-07 (dueña): tiles SALDO/CHEQUES/CUPO fuera de la impresión. #}
+  <div class="no-print grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
     {# TMT 2026-05-20 PASADA 6 Federico #14 — drift entre header
        SALDO CLIENTE y último ACUM de la tabla.
        Root cause: `saldo_vivo` solo suma facturas Z/A con saldo>0.
@@ -96,7 +149,6 @@
     {# TMT 2026-06-23 (dueña): el SALDO grande netea el saldo a favor (anticipos
        NB=98). Antes el espejo de anticipo quedaba escondido entre los cheques y
        el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
-    {% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
     {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
     <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if _saldo_neto > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-4">
       <div class="text-xs uppercase tracking-wider text-slate-500">Saldo cliente</div>
@@ -139,8 +191,9 @@
     </div>
   </div>
 
-  {# Estado / forma de pago / descuento — secundario #}
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+  {# Estado / forma de pago / descuento — secundario.
+     TMT 2026-07-07 (dueña): fuera de la impresión (no-print). #}
+  <div class="no-print grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-xs uppercase tracking-wider text-slate-500">Stop</div>
       <div class="mt-1">
@@ -363,7 +416,7 @@
         </tr>
       </tfoot>
     </table>
-    <div class="px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500">
+    <div class="no-print px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500">
       El saldo a favor se aplica automáticamente a futuras facturas y ya está descontado del “Saldo cliente” de arriba.
     </div>
   </div>
