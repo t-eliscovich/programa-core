@@ -551,6 +551,185 @@ def _row_to_stock_al_dia(r: dict) -> StockProductoAlDia:
 
 
 # ---------------------------------------------------------------------------
+# Función pública: costo de tintorería (colorantes + auxiliares consumidos)
+# ---------------------------------------------------------------------------
+#
+# Esto es lo que faltaba para migrar la tintura del dBase (scintela.tinto,
+# columna `importe`) a formulas_app. En formulas_app el costo NO viene
+# pre-calculado: se deriva de lo que cada orden efectivamente consumió,
+#
+#     costo_us(orden) = Σ  orden_lineas.cantidad_kg
+#                          × COALESCE(NULLIF(orden_lineas.precio_us, 0),
+#                                     productos.us, 0)
+#
+# Se prefiere el precio capturado en la línea (precio_us del momento del
+# tinturado); si esa línea no lo trae, se cae al precio catálogo del
+# producto (productos.us, promedio ponderado). Precio SIN IVA — igual que
+# `productos.us` se guarda sin IVA en formulas_app; el balance de Programa
+# Core trabaja con costos internos sin IVA. Si al verificar contra el dBase
+# el `importe` viniera con IVA, se multiplica por IVA_FACTOR acá.
+
+
+@dataclass(frozen=True)
+class TintoEquivOrden:
+    """Una orden de formulas_app expresada como si fuera una fila de
+    `scintela.tinto` — para que el router por fecha de corte pueda
+    alimentar las mismas planillas (flujo-produccion, tinto-carga) que
+    hoy leen del dBase, sin reescribir la lógica de Bajos/Fuertes.
+
+    Mapeo scintela.tinto  →  formulas_app:
+        cod      →  ordenes.codigo (código de fórmula)
+        color    →  formulas.color
+        kg       →  tela_cruda_kg   (bruto / entrada — denominador del $/kg)
+        kgn      →  tela_terminada_kg (neto / salida — kg tinturados KTINT)
+        importe  →  costo colorantes+aux consumidos (fórmula de arriba)
+    """
+
+    numero: str
+    fecha: date | None
+    fecha_terminado: date | None
+    cod: str | None
+    color: str | None
+    categoria: str | None
+    kg: float | None                    # bruto (tela_cruda_kg)
+    kgn: float | None                   # neto  (tela_terminada_kg)
+    importe: float                      # costo colorantes+aux consumidos
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["fecha"] = self.fecha.isoformat() if self.fecha else None
+        d["fecha_terminado"] = (
+            self.fecha_terminado.isoformat() if self.fecha_terminado else None
+        )
+        return d
+
+
+def costo_por_orden(
+    creacion_desde: date | None = None,
+    creacion_hasta: date | None = None,
+    terminado_desde: date | None = None,
+    terminado_hasta: date | None = None,
+) -> dict[str, float]:
+    """Costo de colorantes+auxiliares consumidos por orden.
+
+    Devuelve `{numero_orden: costo_us}`. Rango por creación (ordenes.fecha,
+    'DD/MM/YYYY') y/o por terminado (ordenes.fecha_terminado, ISO). Si no se
+    pasa rango, devuelve todas (cuidado con el volumen).
+
+    [] / {} fail-soft si formulas_db no está configurado.
+    """
+    where = ["1=1"]
+    params: list = []
+    if creacion_desde:
+        where.append("TO_DATE(o.fecha, 'DD/MM/YYYY') >= %s")
+        params.append(creacion_desde)
+    if creacion_hasta:
+        where.append("TO_DATE(o.fecha, 'DD/MM/YYYY') <= %s")
+        params.append(creacion_hasta)
+    if terminado_desde:
+        where.append("o.fecha_terminado >= %s")
+        params.append(terminado_desde.isoformat())
+    if terminado_hasta:
+        where.append("o.fecha_terminado <= %s")
+        params.append(terminado_hasta.isoformat())
+
+    rows = formulas_db.fetch_all(
+        f"""
+        SELECT o.numero,
+               COALESCE(SUM(
+                   ol.cantidad_kg
+                   * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+               ), 0) AS costo_us
+          FROM ordenes o
+          JOIN orden_lineas ol ON ol.orden_id = o.id
+          LEFT JOIN productos p ON p.num = ol.producto_num
+         WHERE {" AND ".join(where)}
+         GROUP BY o.numero
+        """,
+        tuple(params),
+    )
+    return {str(r.get("numero") or ""): _f(r.get("costo_us")) for r in rows}
+
+
+def tinto_equiv_formulas(
+    creacion_desde: date | None = None,
+    creacion_hasta: date | None = None,
+    excluir_lavados: bool = True,
+) -> list[TintoEquivOrden]:
+    """Órdenes de formulas_app como filas equivalentes a `scintela.tinto`.
+
+    Cada fila trae kg bruto (tela_cruda_kg), kg neto (tela_terminada_kg) y
+    el `importe` = costo de colorantes+auxiliares consumidos. Pensado para
+    que el router por fecha alimente las mismas planillas que hoy leen del
+    dBase: la lógica de Bajos/Fuertes (importe/kg < 0.4) se aplica igual,
+    sin duplicar código.
+
+    excluir_lavados: si True, descarta las órdenes de categoría de lavado
+        (equivale a la exclusión `cod <> 'LAV'` del dBase — los lavados no
+        cuentan como tinturado).
+    """
+    where = ["1=1"]
+    params: list = []
+    if creacion_desde:
+        where.append("TO_DATE(o.fecha, 'DD/MM/YYYY') >= %s")
+        params.append(creacion_desde)
+    if creacion_hasta:
+        where.append("TO_DATE(o.fecha, 'DD/MM/YYYY') <= %s")
+        params.append(creacion_hasta)
+    if excluir_lavados:
+        # Lavados: categoría 'Lavado Maquina' o color/código que arranca con LAV.
+        where.append(
+            "COALESCE(f.categoria, '') NOT ILIKE '%%lavado%%' "
+            "AND COALESCE(f.color, '') NOT ILIKE 'LAV%%' "
+            "AND UPPER(TRIM(COALESCE(o.codigo, ''))) <> 'LAV'"
+        )
+
+    rows = formulas_db.fetch_all(
+        f"""
+        WITH costos AS (
+            SELECT ol.orden_id,
+                   COALESCE(SUM(
+                       ol.cantidad_kg
+                       * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                   ), 0) AS costo_us
+              FROM orden_lineas ol
+              LEFT JOIN productos p ON p.num = ol.producto_num
+             GROUP BY ol.orden_id
+        )
+        SELECT o.numero,
+               o.fecha,
+               o.fecha_terminado,
+               o.codigo             AS cod,
+               f.color,
+               f.categoria,
+               o.tela_cruda_kg      AS kg,
+               o.tela_terminada_kg  AS kgn,
+               COALESCE(c.costo_us, 0) AS importe
+          FROM ordenes o
+          LEFT JOIN formulas f ON f.cod = o.codigo
+          LEFT JOIN costos   c ON c.orden_id = o.id
+         WHERE {" AND ".join(where)}
+         ORDER BY TO_DATE(o.fecha, 'DD/MM/YYYY') ASC NULLS LAST, o.id ASC
+        """,
+        tuple(params),
+    )
+    return [
+        TintoEquivOrden(
+            numero=str(r.get("numero") or ""),
+            fecha=_parse_ddmmyyyy(r.get("fecha")),
+            fecha_terminado=_parse_iso(r.get("fecha_terminado")),
+            cod=(r.get("cod") or None),
+            color=(r.get("color") or None),
+            categoria=(r.get("categoria") or None),
+            kg=_fo(r.get("kg")),
+            kgn=_fo(r.get("kgn")),
+            importe=_f(r.get("importe")),
+        )
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Disponibilidad
 # ---------------------------------------------------------------------------
 

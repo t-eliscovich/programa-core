@@ -49,6 +49,13 @@ from modules.posdat import (
 NO_BACKFILL_WHERE = "COALESCE(usuario_crea, '') <> 'asinfo-backfill'"
 
 # ---------------------------------------------------------------------------
+# Corte de tintura dBase -> formulas_app (decision duena 2026-07-07).
+# Lotes con fecha ANTERIOR al corte se quedan con el dBase (scintela.tinto).
+# Lotes con fecha >= corte salen de formulas_app. Cambiar SOLO esta constante.
+# ---------------------------------------------------------------------------
+CORTE_TINTURA = date(2026, 7, 7)
+
+# ---------------------------------------------------------------------------
 # Constantes del PRG legacy (INFORMES.PRG líneas 5-6)
 # ---------------------------------------------------------------------------
 
@@ -800,6 +807,8 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # Federico 2026-05-21 -- antes usaba compra tipo='C' + una heuristica
     # fija 38.4/61.6; ahora reproduce la logica real del dBase.
     _LIM_TINT = 0.4
+    # CORTE tintura: el dBase (scintela.tinto) solo cuenta los lotes
+    # ANTERIORES al corte; del corte en adelante suma el bloque _f_* (formulas).
     _t = db.fetch_one(
         """
         SELECT
@@ -811,8 +820,11 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
           COALESCE(SUM(CASE WHEN importe / NULLIF(kg, 0) < %(lim)s
                             THEN importe ELSE 0 END), 0)              AS itibaj
         FROM scintela.tinto
+        WHERE fecha < %(corte)s
+          AND EXTRACT(YEAR FROM fecha)  = %(yy)s
+          AND EXTRACT(MONTH FROM fecha) = %(mm)s
         """,
-        {"lim": _LIM_TINT},
+        {"lim": _LIM_TINT, "corte": CORTE_TINTURA, "yy": yy, "mm": mm},
     ) or {}
     _ct = db.fetch_one(
         f"""
@@ -830,10 +842,39 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
         """,
         {"lim": _LIM_TINT, "yy": yy, "mm": mm},
     ) or {}
-    _ktint = float(_t.get("ktint") or 0)
-    _itin = float(_t.get("itin") or 0)
-    bajos_kg = float(_ct.get("kbaj") or 0) + float(_t.get("ktibaj") or 0)
-    bajos_us = float(_ct.get("ibaj") or 0) + float(_t.get("itibaj") or 0)
+    # CORTE tintura: del corte en adelante, los lotes salen de formulas_app,
+    # con la MISMA regla Bajos/Fuertes (importe/kg < 0.4). Solo cuentan las
+    # ordenes ya terminadas (tela_terminada_kg > 0) para que el $/kg no se
+    # dispare con ordenes en proceso.
+    _f_ktint = _f_itin = _f_ktibaj = _f_itibaj = 0.0
+    try:
+        import calendar as _cal
+
+        from modules.tintura import service as _tint_svc
+
+        _m_ini = date(yy, mm, 1)
+        _m_fin = date(yy, mm, _cal.monthrange(yy, mm)[1])
+        _f_desde = max(CORTE_TINTURA, _m_ini)
+        if _f_desde <= _m_fin:
+            for _o in _tint_svc.tinto_equiv_formulas(_f_desde, _m_fin):
+                _kgn = _o.kgn or 0.0
+                if _kgn <= 0:
+                    continue
+                _kg = _o.kg or 0.0
+                _imp = _o.importe or 0.0
+                _f_ktint += _kgn
+                _f_itin += _imp
+                _den = _kg if _kg > 0 else _kgn
+                if _den > 0 and (_imp / _den) < _LIM_TINT:
+                    _f_ktibaj += _kgn
+                    _f_itibaj += _imp
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+        pass
+
+    _ktint = float(_t.get("ktint") or 0) + _f_ktint
+    _itin = float(_t.get("itin") or 0) + _f_itin
+    bajos_kg = float(_ct.get("kbaj") or 0) + float(_t.get("ktibaj") or 0) + _f_ktibaj
+    bajos_us = float(_ct.get("ibaj") or 0) + float(_t.get("itibaj") or 0) + _f_itibaj
     fuertes_kg = _ktint - bajos_kg
     fuertes_us = _itin - bajos_us
     tint_kg = _ktint
@@ -900,7 +941,7 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     except Exception:  # noqa: BLE001
         _ktin_live = 0.0
     # Si no hay datos live del mes actual, fallback a ktin de historia.
-    cs_col_kg = _ktin_live if _ktin_live > 0 else ktin
+    cs_col_kg = _ktint if _ktint > 0 else ktin  # CORTE: KTINT combinado (dBase+formulas)
     cs_col_ukg = _safe_div(cs_col_us, cs_col_kg)
     # Aplicar al header de colorantes el ingreso $ del mes.
     header["colorantes"]["ingresos_us"] = cs_col_us
@@ -2142,6 +2183,7 @@ def tinto_mes_corriente_resultado() -> dict:
     # psycopg2 los confunde con placeholders cuando params es `()` (default
     # de db.fetch_one) y tira "tuple index out of range". Mismo patrón
     # que `provisiones/queries.py` (ver nota allá).
+    # CORTE tintura: el dBase solo cuenta los lotes ANTERIORES al corte.
     row = (
         db.fetch_one(
             """
@@ -2154,14 +2196,47 @@ def tinto_mes_corriente_resultado() -> dict:
         FROM scintela.tinto
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
-        """
+          AND fecha <  %(corte)s
+        """,
+            {"corte": CORTE_TINTURA},
         )
         or {}
     )
+    itin = float(row.get("itin") or 0)
+    ktint = float(row.get("ktint") or 0)
+    kr = float(row.get("kr") or 0)
+
+    # CORTE tintura: del corte en adelante los lotes salen de formulas_app.
+    # Reglas legacy: itin suma TODAS las filas; ktint/kr excluyen lavados por
+    # prefijo de color ('LAV%'); kr exige kg (bruto) > 0.
+    try:
+        import calendar as _cal
+
+        from modules.tintura import service as _tint_svc
+
+        _hoy = today_ec()
+        _m_ini = _hoy.replace(day=1)
+        _m_fin = _hoy.replace(day=_cal.monthrange(_hoy.year, _hoy.month)[1])
+        _f_desde = max(CORTE_TINTURA, _m_ini)
+        if _f_desde <= _m_fin:
+            for _o in _tint_svc.tinto_equiv_formulas(
+                _f_desde, _m_fin, excluir_lavados=False
+            ):
+                itin += _o.importe or 0.0
+                if (_o.color or "").strip().upper().startswith("LAV"):
+                    continue
+                _kg = _o.kg or 0.0
+                _kgn = _o.kgn or 0.0
+                ktint += _kg
+                if _kg > 0:
+                    kr += _kgn
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+        pass
+
     return {
-        "itin": float(row.get("itin") or 0),
-        "ktint": float(row.get("ktint") or 0),
-        "kr": float(row.get("kr") or 0),
+        "itin": itin,
+        "ktint": ktint,
+        "kr": kr,
     }
 
 
@@ -2239,11 +2314,15 @@ def tinto_kg_servicios_mes() -> float:
         FROM scintela.tinto
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
+          AND fecha <  %(corte)s
           AND UPPER(TRIM(stat)) = 'S'
-        """
+        """,
+            {"corte": CORTE_TINTURA},
         )
         or {}
     )
+    # CORTE tintura: del corte en adelante formulas_app no distingue servicio
+    # a terceros (decision duena: no aplica), asi que KSTI post-corte = 0.
     return float(row.get("kg") or 0)
 
 
