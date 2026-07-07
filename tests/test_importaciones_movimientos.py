@@ -333,7 +333,11 @@ def test_vista_renderiza_anticipos_para_editor(app, fake_db):
         r = c.get("/importaciones")
     assert r.status_code == 200
     html = r.data.decode("utf-8")
-    assert "ver movimientos (2)" in html
+    # TMT 2026-07-07: el link "ver movimientos" se quitó (el detalle se abre
+    # con el botón "+ Anticipo" de la columna Cargar) — validamos que el
+    # detalle exista con sus movimientos y el form.
+    assert 'name="monto_mov"' in html
+    assert html.count("antmov-undo") >= 1 or "ANT" in html
     assert "1er anticipo" in html
     assert "17.000,00" in html            # Σ anticipos = valor stock (formato EU)
     assert "se genera sola" in html       # aviso ND automática

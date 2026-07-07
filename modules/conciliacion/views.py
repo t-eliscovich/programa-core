@@ -8,20 +8,6 @@ from flask import Blueprint, flash, g, redirect, render_template, request, sessi
 
 from filters import today_ec
 
-
-def _usuario_actual() -> str:
-    """Username del user logueado, fallback 'conciliacion' si no hay g.user.
-
-    TMT 2026-05-26 dueña: el historial decía 'conciliacion' como usuario
-    en lugar de quien realmente confirmó (ej. 'alex'). Centralizamos
-    para que TODAS las rutas del módulo usen g.user.username.
-    """
-    try:
-        u = (g.user or {}).get("username") if g.user else None
-        return u or (request.remote_user or "conciliacion")
-    except Exception:
-        return request.remote_user or "conciliacion"
-
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
 from modules.conciliacion import queries
@@ -53,6 +39,20 @@ from modules.conciliacion.matcher_depositos import (
 from modules.conciliacion.parser import parse_csv
 from modules.conciliacion.parser_banco import parse_banco_xlsx
 from modules.conciliacion.parser_xlsx import parse_xlsx
+
+def _usuario_actual() -> str:
+    """Username del user logueado, fallback 'conciliacion' si no hay g.user.
+
+    TMT 2026-05-26 dueña: el historial decía 'conciliacion' como usuario
+    en lugar de quien realmente confirmó (ej. 'alex'). Centralizamos
+    para que TODAS las rutas del módulo usen g.user.username.
+    """
+    try:
+        u = (g.user or {}).get("username") if g.user else None
+        return u or (request.remote_user or "conciliacion")
+    except Exception:
+        return request.remote_user or "conciliacion"
+
 
 conciliacion_bp = Blueprint(
     "conciliacion",
