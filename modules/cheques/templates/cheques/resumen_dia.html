@@ -36,7 +36,7 @@
   }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
           padding:1.25rem 1.5rem; margin:1rem auto; max-width:980px; border-radius:4px; }
-  .hoja table.principal { width:100%; border-collapse:collapse; margin-top:12px; }
+  .hoja table.principal { width:100%; table-layout:fixed; border-collapse:collapse; margin-top:12px; }
   .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px 5px; text-align:left;
              font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
   .hoja table.principal td { padding:5px 5px; border-bottom:1px solid #e2e8f0; font-size:12px;
@@ -113,11 +113,11 @@
     <table class="principal">
       <thead>
         <tr>
-          <th style="width:52px">Hora</th>
-          <th style="width:84px">Medio</th>
-          <th style="width:90px">Doc.</th>
-          <th style="width:190px">Cliente</th>
-          <th class="num" style="width:90px">Importe</th>
+          <th style="width:46px">Hora</th>
+          <th style="width:78px">Medio</th>
+          <th style="width:74px">Doc.</th>
+          <th style="width:150px">Cliente</th>
+          <th class="num" style="width:100px">Importe</th>
           <th>
             <div>Facturas que paga</div>
             <div class="facts mono" style="margin-top:2px; text-transform:none; letter-spacing:0; font-weight:400; display:table; table-layout:fixed;">
