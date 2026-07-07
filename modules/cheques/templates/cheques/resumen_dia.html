@@ -62,9 +62,8 @@
           font-size:11px; color:#334155; border-collapse:collapse; }
   .app  { display:table-row; }
   .app > span { display:table-cell; padding:0 0 1px 8px; text-align:right; white-space:nowrap; }
-  .app > span.ffecha { width:68px; padding-left:0; text-align:left; color:#94a3b8; }
-  .app > span.fnumf  { width:58px; text-align:left; font-weight:600; }
-  .app > span:nth-child(3), .app > span:nth-child(4), .app > span:nth-child(5) { width:74px; }
+  .app > span.fnumf  { width:64px; padding-left:0; text-align:left; font-weight:600; }
+  .app > span:nth-child(2), .app > span:nth-child(3), .app > span:nth-child(4) { width:80px; }
   .app > span.fbadge { width:16px; text-align:center; padding-left:6px; }
   .saldo-cero { font-weight:700; }
   .saldo-neg  { font-weight:700; color:#b91c1c; }         /* saldo a favor */
@@ -119,7 +118,16 @@
           <th style="width:90px">Doc.</th>
           <th style="width:190px">Cliente</th>
           <th class="num" style="width:90px">Importe</th>
-          <th>Facturas que paga <span style="font-weight:400; text-transform:none">(fecha · numf · fact. · abonó · saldo)</span></th>
+          <th>
+            <div>Facturas que paga</div>
+            <div class="facts mono" style="margin-top:2px; text-transform:none; letter-spacing:0; font-weight:400; display:table; table-layout:fixed;">
+              <span style="display:table-cell; width:64px; text-align:left;">N.º fact.</span>
+              <span style="display:table-cell; width:80px; text-align:right; padding-left:8px;">importe</span>
+              <span style="display:table-cell; width:80px; text-align:right; padding-left:8px;">abonó</span>
+              <span style="display:table-cell; width:80px; text-align:right; padding-left:8px;">saldo</span>
+              <span style="display:table-cell; width:16px;"></span>
+            </div>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -160,7 +168,6 @@
                   {% set saldo = a.saldo_f if a.saldo_f is not none else a.fact_saldo %}
                   {% set st = (a.stat_f or '') | upper | trim %}
                   <div class="app">
-                    <span class="ffecha">{{ a.fact_fecha | fecha_es if a.fact_fecha else '' }}</span>
                     <span class="fnumf">{{ a.numf_completo or a.numf or '—' }}</span>
                     <span>{{ a.fact_importe | money_es }}</span>
                     <span>{{ a.aplicado | money_es }}</span>

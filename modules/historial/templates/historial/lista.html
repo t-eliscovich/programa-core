@@ -10,7 +10,7 @@
   <div class="flex items-start justify-between gap-4 mb-4 flex-wrap">
     {{ page_hero('Historial de movimientos') }}
     <div class="no-print flex items-center gap-2">
-      <a href="{{ url_for('historial.lista', desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, export='csv') }}"
+      <a href="{{ url_for('historial.lista', desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, mis_origenes='1' if mis_origenes else none, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
     </div>
   </div>
@@ -44,6 +44,10 @@
 
   {# Filtros #}
   <form class="no-print flex flex-wrap items-end gap-3 mb-4 p-3 bg-white border border-slate-200 rounded">
+    {# TMT 2026-07-07 (dueña): preservar mis_origenes al filtrar/paginar — sin
+       esto, Alex (que ve /mi-historial sin informes.ver) al filtrar perdía el
+       flag y el gate le daba 404. #}
+    {% if mis_origenes %}<input type="hidden" name="mis_origenes" value="1">{% endif %}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
       <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo, usuario…"
@@ -89,7 +93,7 @@
       </select>
     </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
-    <a href="{{ url_for('historial.lista') }}"
+    <a href="{{ url_for('historial.lista', mis_origenes='1' if mis_origenes else none) }}"
        class="text-sm text-slate-500 hover:text-slate-700 ml-2">limpiar</a>
   </form>
 

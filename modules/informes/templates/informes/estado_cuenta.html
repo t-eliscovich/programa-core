@@ -298,16 +298,6 @@
     </table>
   </div>
 
-  {# TMT 2026-07-07 (dueña): TOTAL final = saldo del cliente + cheques en
-     cartera (ej. EDU 241.781,01 + 20.000 = 261.781,01). Debe imprimirse. #}
-  {% set _total_con_cheques = (_saldo_neto or 0) + (t.cheques_cartera or 0) %}
-  <div class="mb-8 flex justify-end">
-    <div class="text-right border-t-2 border-slate-300 dark:border-slate-700 pt-2">
-      <span class="text-xs uppercase tracking-wider text-slate-500">Total (saldo + cheques en cartera)</span>
-      <span class="ml-3 text-lg font-semibold text-mono">$ {{ _total_con_cheques | money_es }}</span>
-    </div>
-  </div>
-
   {# Cheques — TMT 2026-07-07 dueña v2: "en imprimir estado de cuenta volvé a
      poner los cheques abajo" → se quita el no-print; se imprimen al final,
      después de la tabla de facturas. #}
@@ -403,6 +393,18 @@
         <div>Endosados <span class="text-slate-400">(E)</span>: <span class="text-mono font-semibold">{{ t.cheques_endosados | money_es }}</span></div>
       </div>
     {% endif %}
+  </div>
+
+  {# TMT 2026-07-07 (dueña) v2: TOTAL final = saldo cliente + cheques del cliente
+     (ej. EDU 241.781,01 + 20.000,00 = 261.781,01). Va al FINAL (después de los
+     cheques) y se imprime. Suma cheques_total (todos los cheques vivos), NO
+     cheques_cartera (que era 0 y por eso no sumaba). #}
+  {% set _total_con_cheques = (_saldo_neto or 0) + (t.cheques_total or 0) %}
+  <div class="mb-8 flex justify-end">
+    <div class="text-right border-t-2 border-slate-400 dark:border-slate-600 pt-2">
+      <span class="text-xs uppercase tracking-wider text-slate-500">Total (saldo + cheques)</span>
+      <span class="ml-3 text-xl font-semibold text-mono">$ {{ _total_con_cheques | money_es }}</span>
+    </div>
   </div>
 
   {# TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
