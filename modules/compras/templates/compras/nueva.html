@@ -115,6 +115,15 @@
 
       <label class="flex flex-col col-span-2 md:col-span-3">
         <span class="text-xs text-slate-600">Concepto</span>
+        {# TMT 2026-07-06 (dueña): picker de importación — si el proveedor
+           tiene importaciones sin compra, se listan acá; elegir una llena el
+           concepto con el número de la Nota → match garantizado. #}
+        <div id="imp-match-panel" class="hidden mb-2 rounded border border-sky-300 p-2 text-xs"
+             style="background:#f0f9ff;">
+          <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor sin compra — elegí con cuál matchea:</p>
+          <div id="imp-match-list" class="space-y-0.5"></div>
+          <p id="imp-match-elegida" class="hidden mt-1 font-semibold text-emerald-700"></p>
+        </div>
         <input type="text" name="concepto" value="{{ form.concepto or '' }}"
                class="border rounded px-2 py-1 mt-0.5 text-sm" maxlength="200">
       </label>
@@ -171,4 +180,51 @@
 
   </form>
 </div>
+<script>
+(function () {
+  // TMT 2026-07-06 (dueña): "cuando el proveedor es uno de importaciones,
+  // si cargo compras debería mostrar cuál importación va a hacer match".
+  const prov = document.querySelector('input[name="codigo_prov"]');
+  const concepto = document.querySelector('input[name="concepto"]');
+  const panel = document.getElementById('imp-match-panel');
+  const list = document.getElementById('imp-match-list');
+  const elegida = document.getElementById('imp-match-elegida');
+  if (!prov || !concepto || !panel) return;
+  let timer = null;
+  function cargar() {
+    const p = (prov.value || '').trim().toUpperCase();
+    if (!p) { panel.classList.add('hidden'); return; }
+    fetch('/importaciones/_api/abiertas/' + encodeURIComponent(p))
+      .then(r => r.ok ? r.json() : {importaciones: []})
+      .then(d => {
+        const ims = d.importaciones || [];
+        if (!ims.length) { panel.classList.add('hidden'); return; }
+        list.innerHTML = '';
+        ims.forEach(im => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'block w-full text-left px-2 py-1 rounded hover:bg-sky-100';
+          b.style.border = '1px solid #bae6fd';
+          const ant = im.anticipos ? (' · anticipos $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
+          b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
+            + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant
+            + (im.fecha ? ' · ' + im.fecha : '');
+          b.addEventListener('click', () => {
+            concepto.value = String(im.numero != null ? im.numero : (im.codigo || ''));
+            concepto.dispatchEvent(new Event('input', {bubbles: true}));
+            elegida.textContent = '✔ Va a matchear con ' + im.im_numero + ' (' + (im.codigo || '') + ')';
+            elegida.classList.remove('hidden');
+          });
+          list.appendChild(b);
+        });
+        panel.classList.remove('hidden');
+      })
+      .catch(() => panel.classList.add('hidden'));
+  }
+  ['input', 'change', 'blur'].forEach(ev => prov.addEventListener(ev, () => {
+    clearTimeout(timer); timer = setTimeout(cargar, 450);
+  }));
+  if (prov.value) cargar();
+})();
+</script>
 {% endblock %}

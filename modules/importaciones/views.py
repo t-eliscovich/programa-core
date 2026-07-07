@@ -285,3 +285,44 @@ def movimiento_deshacer():
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude deshacer el movimiento", e)
     return _volver()
+
+
+@importaciones_bp.route("/importaciones/_api/abiertas/<prov>")
+@requiere_login
+@requiere_permiso("compras.ver")
+def api_importaciones_abiertas(prov):
+    """Importaciones del proveedor SIN compra matcheada todavía.
+
+    TMT 2026-07-06 (dueña): "cuando el proveedor es uno de importaciones,
+    si cargo anticipos o compras debería mostrar cuál importación va a
+    hacer match". Alimenta el picker de /compras/nueva: elegir una llena
+    el CONCEPTO con el número de la Nota → el cruce (codigo_prov +
+    concepto-numérico, ver service._buscar_compras) matchea seguro.
+    """
+    from modules.importaciones import service
+
+    prov = (prov or "").strip().upper()
+    if not prov:
+        return {"importaciones": []}, 400
+    try:
+        rows = service.importaciones_con_cruce(limite=400)
+    except Exception:  # noqa: BLE001
+        return {"importaciones": []}
+    out = []
+    for r in rows:
+        if (r.get("prov") or "").strip().upper() != prov:
+            continue
+        if r.get("fuente") == "compra":
+            continue  # ya tiene compra matcheada
+        out.append({
+            "im_numero": r.get("im_numero"),
+            "codigo": r.get("codigo"),
+            "numero": r.get("numero"),
+            "nota": r.get("nota"),
+            "fecha": str(r.get("fecha") or ""),
+            "kg": r.get("kg"),
+            "anticipos": float(r.get("anticipo_aplicado") or 0)
+                         if r.get("anticipo_aplicado") is not None else
+                         float((r.get("anticipo") or {}).get("importe_total") or 0),
+        })
+    return {"prov": prov, "importaciones": out[:30]}
