@@ -53,7 +53,12 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
 
     Excluye stat X (eliminados) e Y (anulados) como el resto del módulo.
     """
-    return db.fetch_all(
+    # CORTE tintura 2026-07-07: los lotes ANTERIORES al corte salen del dBase
+    # (scintela.tinto); del corte en adelante, de formulas_app. Se mergea en
+    # Python porque formulas_app vive en otra base (no se puede UNION en SQL).
+    from modules.informes.queries import CORTE_TINTURA
+
+    rows = db.fetch_all(
         """
         WITH clasif AS (
             SELECT EXTRACT(YEAR  FROM fecha)::int AS yy,
@@ -68,6 +73,7 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
              WHERE COALESCE(stat, '') NOT IN ('X', 'Y')
                AND COALESCE(kg, 0) > 0
                AND fecha BETWEEN %s AND %s
+               AND fecha < %s
         )
         SELECT yy, mm, tipo,
                COALESCE(SUM(kg_n), 0) AS kg,
@@ -76,8 +82,42 @@ def tinto_bajos_fuertes_por_mes(desde: date, hasta: date, limite_bajos: float = 
          GROUP BY yy, mm, tipo
          ORDER BY yy, mm, tipo
         """,
-        (limite_bajos, desde, hasta),
-    )
+        (limite_bajos, desde, hasta, CORTE_TINTURA),
+    ) or []
+
+    agg: dict = {}
+    for r in rows:
+        agg[(int(r["yy"]), int(r["mm"]), r["tipo"])] = {
+            "yy": int(r["yy"]), "mm": int(r["mm"]), "tipo": r["tipo"],
+            "kg": float(r["kg"] or 0), "importe": float(r["importe"] or 0),
+        }
+
+    # formulas_app: del corte en adelante, misma regla Bajos/Fuertes (imp/kg).
+    f_desde = max(desde, CORTE_TINTURA)
+    if f_desde <= hasta:
+        try:
+            from modules.tintura import service as _tint_svc
+
+            for o in _tint_svc.tinto_equiv_formulas(f_desde, hasta):
+                if not o.fecha:
+                    continue
+                kg_bruto = o.kg or 0.0
+                if kg_bruto <= 0:  # igual que el guard AND kg>0 del dBase
+                    continue
+                kg_n = (o.kgn if o.kgn is not None else o.kg) or 0.0
+                imp = o.importe or 0.0
+                tipo = "Bajos" if (imp / kg_bruto) <= limite_bajos else "Fuertes"
+                k = (o.fecha.year, o.fecha.month, tipo)
+                cur = agg.setdefault(k, {
+                    "yy": o.fecha.year, "mm": o.fecha.month,
+                    "tipo": tipo, "kg": 0.0, "importe": 0.0,
+                })
+                cur["kg"] += kg_n
+                cur["importe"] += imp
+        except Exception:  # noqa: BLE001 -- fail-soft
+            pass
+
+    return sorted(agg.values(), key=lambda d: (d["yy"], d["mm"], d["tipo"]))
 
 
 def _amortizacion_dcc_por_mes(desde: date, hasta: date) -> dict:

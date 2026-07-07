@@ -231,69 +231,10 @@
     </div>
 
     {# ─── TINTORERIA + COSTOS UNITARIOS ────────────────────────── #}
-    {% set tint = data.tintoreria or {} %}
-    {% set cs = data.cs or {} %}
-    {% set csc = cs.get('colorantes', {}) %}
-    {% set csp = cs.get('produccion', {}) %}
-    {# Federico 2026-05-22 — TINTORERÍA y COSTOS UNITARIOS unificados en
-       un solo cuadro "Costos de tintorería".
-       TMT 2026-05-24 v3 — dueña volvió a pedir la tabla mensual. Ya no la
-       ocultamos cuando hay 1 mes; mostramos siempre que haya data. #}
+    {# Bloque "Costos de tintorería" (mes en curso) removido 2026-07-07 — era
+       redundante con "COSTOS DE TINTORERÍA · ÚLTIMOS N MESES" de abajo, que
+       ahora es la única tabla de tintorería (sale de formulas_app). #}
     {% set _show_historial = tintoreria_mensual and tintoreria_mensual.filas %}
-    <div class="blk">
-      <div class="blk-title">Costos de tintorería</div>
-      <table>
-        <thead>
-          <tr>
-            <th class="lbl">Colorantes y auxiliares</th>
-            <th>%</th><th>Kg</th><th>$/Kg</th><th>$</th><th>Mes Ant.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% set bj = tint.get('bajos') or {} %}
-          {% set ft = tint.get('fuertes') or {} %}
-          {% set tt = tint.get('total') or {} %}
-          <tr>
-            <td class="lbl">Bajos</td>
-            <td class="num">{{ '%.1f' % (bj.pct or 0) }}</td>
-            <td class="num">{{ bj.kg | num_es(0) if bj.kg else '—' }}</td>
-            <td class="num">{{ '%.3f' % (bj.ukg or 0) if bj.ukg else '—' }}</td>
-            <td class="num">{{ bj.us | num_es(0) if bj.us else '—' }}</td>
-            <td class="num">{{ '%.3f' % (bj.ant or 0) if bj.ant else '—' }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Fuertes</td>
-            <td class="num">{{ '%.1f' % (ft.pct or 0) }}</td>
-            <td class="num">{{ ft.kg | num_es(0) if ft.kg else '—' }}</td>
-            <td class="num">{{ '%.3f' % (ft.ukg or 0) if ft.ukg else '—' }}</td>
-            <td class="num">{{ ft.us | num_es(0) if ft.us else '—' }}</td>
-            <td class="num">{{ '%.3f' % (ft.ant or 0) if ft.ant else '—' }}</td>
-          </tr>
-          {% if tt.kg %}
-            <tr class="total">
-              <td class="lbl">Total</td>
-              <td class="num">100.0</td>
-              <td class="num">{{ tt.kg | num_es(0) }}</td>
-              <td class="num">{{ '%.3f' % (tt.ukg or 0) }}</td>
-              <td class="num">{{ tt.us | num_es(0) }}</td>
-              <td class="num">{{ '%.3f' % (tt.ant or 0) if tt.ant else '—' }}</td>
-            </tr>
-          {% endif %}
-          <tr>
-            <td class="lbl">Gs. Producción</td>
-            <td class="num">—</td>
-            <td class="num">{{ csp.kg | num_es(0) if csp.kg else '—' }}</td>
-            <td class="num">{{ '%.3f' % (csp.ukg or 0) if csp.ukg else '—' }}</td>
-            <td class="num">{{ csp.us | num_es(0) if csp.us else '—' }}</td>
-            <td class="num">{{ '%.3f' % (csp.ant or 0) if csp.ant else '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p class="mt-2 text-[10px] text-slate-500">
-      Bajos/Fuertes: $/kg &lt; 0.4 → Bajos, ≥ 0.4 → Fuertes. Mes Ant.: del mes pasado (scintela.historia).
-    </p>
   {% endif %}
 
   {# TMT 2026-05-22 — resumen últimos 12 meses Bajos/Fuertes inyectado por
