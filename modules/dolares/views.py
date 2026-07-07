@@ -121,12 +121,43 @@ def nuevo_anticipo():
             flash("Faltan datos (cliente / importe).", "warn")
             return redirect(url_for("dolares.lista"))
         usuario = (getattr(g, "user", None) or {}).get("username", "web")
-        db.execute(
-            "INSERT INTO scintela.dolares (fecha, cta, concepto, importe, st, usuario_crea) "
-            "VALUES (%s, %s, %s, %s, ' ', %s)",
-            (fecha, cta, concepto, importe, usuario),
-        )
-        flash(f"Anticipo {cta} $ {importe:,.2f} registrado (suma a ANTICIPOS).", "ok")
+        # clave = operador (paridad dBase). g.user no trae 'clave' → prefijo
+        # del username en mayúsculas (andres→AND). Mismo patrón que compras/gastos.
+        clave = (getattr(g, "user", None) or {}).get("clave") or usuario[:3].upper()
+        import bank_helpers
+        import mov_doble as _md
+        from periodo_guard import asegurar_fecha_abierta
+        # TMT 2026-07-07 (dueña): cargar un anticipo USD RESTA del banco (ND
+        # automática desde Pichincha, igual que anticipos de importación) +
+        # registra el par en mov_doble → aparece en /historial. Todo atómico.
+        _BANCO_PICHINCHA = 10
+        asegurar_fecha_abierta(fecha)
+        with db.tx() as conn:
+            dol_row = db.execute_returning(
+                "INSERT INTO scintela.dolares "
+                "(fecha, cta, concepto, importe, st, clave, usuario_crea) "
+                "VALUES (%s, %s, %s, %s, ' ', %s, %s) RETURNING id_dolares",
+                (fecha, cta, concepto, importe, clave, usuario),
+                conn=conn,
+            ) or {}
+            id_dolares = dol_row.get("id_dolares")
+            mov_b = bank_helpers.insert_movimiento_bancario(
+                conn, no_banco=_BANCO_PICHINCHA, no_cta=None, fecha=fecha,
+                documento="ND", importe=importe,
+                concepto=(f"ANTICIPO {cta} {concepto}").strip()[:50],
+                prov=(cta or None), usuario=usuario,
+            )
+            id_tx = mov_b.get("id_transaccion")
+            _md.registrar(
+                conn=conn, tipo="dolares_anticipo",
+                origen_table="dolares", origen_id=id_dolares,
+                destino_table="transacciones_bancarias", destino_id=id_tx,
+                importe=importe, fecha=fecha,
+                concepto=(f"Anticipo USD {cta} $ {importe:.2f} (ND Pichincha)")[:200],
+                usuario=usuario,
+                metadata={"cta": cta, "no_banco": _BANCO_PICHINCHA, "id_transaccion": id_tx},
+            )
+        flash(f"Anticipo {cta} $ {importe:,.2f} registrado — ND Pichincha (resta del banco).", "ok")
     except Exception as e:  # noqa: BLE001
         flash_exc("No se pudo registrar el anticipo", e)
     return redirect(url_for("dolares.lista"))
@@ -137,15 +168,56 @@ def nuevo_anticipo():
 @requiere_permiso("facturas.crear")
 def cancelar_anticipo(id_dolares: int):
     """Cancela un anticipo vivo → ST='B' (ex anticipos.cancelar)."""
-    n = db.execute(
-        "UPDATE scintela.dolares SET st = 'B' WHERE id_dolares = %s "
-        "AND (st IS NULL OR TRIM(COALESCE(st,'')) = '')",
-        (id_dolares,),
-    )
-    flash(
-        "Anticipo cancelado (ST=B)." if n else "No se encontró o ya estaba cancelado.",
-        "ok" if n else "warn",
-    )
+    # TMT 2026-07-07 (dueña): cancelar un anticipo también REVIERTE la ND del
+    # banco — compensa con una NC(+) del mismo importe (paper trail) y marca el
+    # mov_doble reversado. Atómico. Espejo de importaciones/pago.deshacer.
+    import bank_helpers
+    import mov_doble as _md
+    from periodo_guard import asegurar_fecha_abierta
+    usuario = (getattr(g, "user", None) or {}).get("username", "web")
+    try:
+        with db.tx() as conn:
+            row = db.fetch_one(
+                "SELECT id_dolares, cta, importe FROM scintela.dolares "
+                "WHERE id_dolares = %s AND (st IS NULL OR TRIM(COALESCE(st,'')) = '')",
+                (id_dolares,), conn=conn,
+            )
+            if not row:
+                flash("No se encontró o ya estaba cancelado.", "warn")
+                return redirect(url_for("dolares.lista"))
+            md = db.fetch_one(
+                "SELECT id_mov_doble, destino_id FROM scintela.mov_doble "
+                "WHERE origen_table='dolares' AND origen_id=%s "
+                "  AND tipo='dolares_anticipo' AND estado='activo' "
+                "ORDER BY id_mov_doble DESC LIMIT 1",
+                (id_dolares,), conn=conn,
+            )
+            if md and md.get("destino_id"):
+                tx = db.fetch_one(
+                    "SELECT no_banco, no_cta FROM scintela.transacciones_bancarias "
+                    "WHERE id_transaccion = %s", (md["destino_id"],), conn=conn,
+                )
+                if tx:
+                    fecha_rev = today_ec()
+                    asegurar_fecha_abierta(fecha_rev)
+                    bank_helpers.insert_movimiento_bancario(
+                        conn, no_banco=int(tx["no_banco"]), no_cta=tx.get("no_cta"),
+                        fecha=fecha_rev, documento="NC",
+                        importe=abs(float(row["importe"] or 0)),
+                        concepto=(f"REVERSO ANTICIPO {row.get('cta') or ''}").strip()[:50],
+                        usuario=usuario,
+                    )
+                db.execute(
+                    "UPDATE scintela.mov_doble SET estado='reversado' WHERE id_mov_doble = %s",
+                    (md["id_mov_doble"],), conn=conn,
+                )
+            db.execute(
+                "UPDATE scintela.dolares SET st = 'B' WHERE id_dolares = %s",
+                (id_dolares,), conn=conn,
+            )
+        flash("Anticipo cancelado (ST=B) — se revirtió la ND del banco.", "ok")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No se pudo cancelar el anticipo", e)
     return redirect(url_for("dolares.lista"))
 
 
