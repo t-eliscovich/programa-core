@@ -434,6 +434,8 @@
       </div>
       <p class="text-[11px] text-slate-500 mt-1">
         Pre-tildados FIFO por fecha hasta cubrir el anticipo — destildá / tildá otros si hace falta.
+        {# TMT 2026-07-07 (dueña): destildar NO re-tilda otro cheque — lo liberado va directo a la NC. #}
+        Al destildar, esa plata pasa directo al <strong>sobrante → nota de crédito</strong> (no se tilda otro cheque solo).
         Al guardar, los tildados pasan a <strong>✗ cancelado</strong>; si el anticipo supera lo cancelado,
         el resto queda como <strong>nota de crédito</strong> (NB=98) del cliente. Sobrante &lt; $1 no genera NC.
       </p>
@@ -1118,10 +1120,21 @@
                   : '<span class="text-slate-400">queda en cartera</span>'))}</td>
         </tr>`;
     }).join('');
-    // Wire de los checkboxes: persistir la decisión + re-FIFO del resto
-    // (igual que el panel de facturas: destildar libera pool para otras).
+    // Wire de los checkboxes. TMT 2026-07-07 (dueña, caso CLR): "si
+    // deselecciono, solo se tiene que ir a nota de crédito y ya" — al tocar
+    // CUALQUIER tilde congelamos el estado actual de TODAS las filas (quedan
+    // decididas tal cual se ven) y aplicamos el cambio. Antes el re-FIFO
+    // usaba el pool liberado para tildar OTRO cheque solo ("no me deja
+    // deseleccionar"): destildabas uno y aparecía tildado el siguiente.
+    // Ahora destildar solo baja lo cancelado y la plata liberada va directo
+    // al SOBRANTE → nota de crédito (espejo NB=98).
     antTbody.querySelectorAll('input.antchq-cancel').forEach(chk => {
       chk.addEventListener('change', e => {
+        antTbody.querySelectorAll('input.antchq-cancel').forEach(o => {
+          if (manualCancel[o.dataset.id] === undefined) {
+            manualCancel[o.dataset.id] = o.checked;
+          }
+        });
         manualCancel[e.target.dataset.id] = e.target.checked;
         renderAnticipoCheques();
       });

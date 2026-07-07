@@ -1486,7 +1486,15 @@ def por_id(id_cheque: int) -> dict | None:
                c.doc_banco,
                COALESCE(cli.nombre, '') AS cliente,
                cli.ruc, cli.telefono,
-               COALESCE(bco.nombre, c.banco) AS banco
+               -- TMT 2026-07-07: espejo de anticipo (NB=98 negativo o banco
+               -- texto 'ANTICIPO') dice ANTICIPO, no el 'UKN' del catálogo.
+               CASE
+                 WHEN c.no_banco = 98
+                      AND (UPPER(TRIM(COALESCE(c.banco, ''))) = 'ANTICIPO'
+                           OR COALESCE(c.importe, 0) < 0)
+                 THEN 'ANTICIPO'
+                 ELSE COALESCE(bco.nombre, c.banco)
+               END AS banco
           FROM scintela.cheque c
           LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
           LEFT JOIN scintela.banco   bco ON bco.no_banco   = c.no_banco
@@ -2354,63 +2362,114 @@ def crear(
         if es_anticipo and importe_principal > 0 and (
             anticipo_espejo_importe is None or _imp_espejo >= 1.00
         ):
-            espejo = (
-                db.execute_returning(
-                    """
-                INSERT INTO scintela.cheque
-                    (no_cheque, fecha, fechad, fecha_recibido,
-                     codigo_cli, importe, no_banco,
-                     banco, stat, fechaing, prov, clave, usuario_crea,
-                     id_cheque_padre)
-                VALUES (%s, %s, %s, %s,
-                        %s, %s, %s,
-                        %s, 'Z', CURRENT_DATE, %s, %s, %s, %s)
-                RETURNING id_cheque
-                """,
-                    (
-                        (no_cheque or "").strip()[:10],
-                        fecha,
-                        # TMT 2026-06-11 paridad ALTAS.PRG L156: espejo de
-                        # anticipo con FECHAD+30, NB=98 y BANCO='ANTICIPO'.
-                        (fechad or fecha) + timedelta(days=30),
-                        fecha_recibido,
-                        codigo_cli.upper().strip(),
-                        -_imp_espejo,  # espejo negativo (sobrante si hubo cancelados)
-                        98,
-                        "ANTICIPO",
-                        (prov or None),
-                        (clave or None) and clave[:5],
-                        usuario,
-                        row.get("id_cheque"),  # apunta al cheque "padre" para auditoría
-                    ),
-                    conn=conn,
-                )
-                or {}
+            # TMT 2026-07-07: INSERT + mov_doble extraídos a
+            # crear_espejo_anticipo() para reusar desde el view (anticipo
+            # aplicado PARCIALMENTE a facturas → espejo por el resto).
+            espejo = crear_espejo_anticipo(
+                conn=conn,
+                id_cheque_padre=row.get("id_cheque"),
+                no_cheque=no_cheque,
+                fecha=fecha,
+                fechad=fechad,
+                fecha_recibido=fecha_recibido,
+                codigo_cli=codigo_cli,
+                importe_espejo=_imp_espejo,
+                prov=prov,
+                clave=clave,
+                usuario=usuario,
             )
             row["id_cheque_anticipo"] = espejo.get("id_cheque")
-            # mov_doble del espejo — link cheque normal → cheque espejo.
-            # TMT 2026-05-14 (issue #25).
-            if espejo.get("id_cheque") and row.get("id_cheque"):
-                _md.registrar(
-                    conn=conn,
-                    tipo="cheque_anticipo_espejo",
-                    origen_table="cheque",
-                    origen_id=row["id_cheque"],
-                    destino_table="cheque",
-                    destino_id=espejo["id_cheque"],
-                    importe=-_imp_espejo,  # espejo es negativo
-                    fecha=fecha,
-                    concepto=(
-                        f"Espejo de anticipo ch{(no_cheque or '').strip()} de {codigo_cli.upper().strip()}"
-                    )[:200],
-                    usuario=usuario,
-                    metadata={
-                        "codigo_cli": codigo_cli.upper().strip(),
-                        "id_cheque_padre": row["id_cheque"],
-                        "id_cheque_espejo": espejo["id_cheque"],
-                    },
-                )
     return row
+
+
+def crear_espejo_anticipo(
+    *,
+    conn,
+    id_cheque_padre: int | None,
+    no_cheque: str = "",
+    fecha: date,
+    fechad: date | None = None,
+    fecha_recibido: date | None = None,
+    codigo_cli: str,
+    importe_espejo: float,
+    prov: str | None = None,
+    clave: str | None = None,
+    usuario: str = "web",
+) -> dict:
+    """Crea el cheque ESPEJO de anticipo (NB=98, banco='ANTICIPO', negativo).
+
+    Paridad ALTAS.PRG L156: FECHAD+30, stat 'Z', id_cheque_padre para
+    auditoría. Registra mov_doble tipo='cheque_anticipo_espejo' (el
+    historial ya lo conoce; el reverso existente no cambia).
+
+    Usado por:
+      - crear(es_anticipo=True): flujo clásico / sobrante de cancelados;
+      - views.nuevo: anticipo (97) aplicado PARCIALMENTE a facturas —
+        TMT 2026-07-07 (dueña, caso CLR): "si deselecciono, solo se tiene
+        que ir a nota de crédito y ya" — lo NO aplicado del anticipo va a
+        NC/espejo, aunque haya aplicaciones.
+
+    Corre dentro de la tx del caller (conn obligatoria).
+    """
+    import mov_doble as _md
+
+    _imp = round(float(importe_espejo or 0), 2)
+    espejo = (
+        db.execute_returning(
+            """
+        INSERT INTO scintela.cheque
+            (no_cheque, fecha, fechad, fecha_recibido,
+             codigo_cli, importe, no_banco,
+             banco, stat, fechaing, prov, clave, usuario_crea,
+             id_cheque_padre)
+        VALUES (%s, %s, %s, %s,
+                %s, %s, %s,
+                %s, 'Z', CURRENT_DATE, %s, %s, %s, %s)
+        RETURNING id_cheque
+        """,
+            (
+                (no_cheque or "").strip()[:10],
+                fecha,
+                # TMT 2026-06-11 paridad ALTAS.PRG L156: espejo de
+                # anticipo con FECHAD+30, NB=98 y BANCO='ANTICIPO'.
+                (fechad or fecha) + timedelta(days=30),
+                fecha_recibido,
+                codigo_cli.upper().strip(),
+                -_imp,  # espejo negativo (sobrante si hubo cancelados/aplicaciones)
+                98,
+                "ANTICIPO",
+                (prov or None),
+                (clave or None) and clave[:5],
+                usuario,
+                id_cheque_padre,  # apunta al cheque "padre" para auditoría
+            ),
+            conn=conn,
+        )
+        or {}
+    )
+    # mov_doble del espejo — link cheque normal → cheque espejo.
+    # TMT 2026-05-14 (issue #25).
+    if espejo.get("id_cheque") and id_cheque_padre:
+        _md.registrar(
+            conn=conn,
+            tipo="cheque_anticipo_espejo",
+            origen_table="cheque",
+            origen_id=id_cheque_padre,
+            destino_table="cheque",
+            destino_id=espejo["id_cheque"],
+            importe=-_imp,  # espejo es negativo
+            fecha=fecha,
+            concepto=(
+                f"Espejo de anticipo ch{(no_cheque or '').strip()} de {codigo_cli.upper().strip()}"
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "codigo_cli": codigo_cli.upper().strip(),
+                "id_cheque_padre": id_cheque_padre,
+                "id_cheque_espejo": espejo["id_cheque"],
+            },
+        )
+    return espejo
 
 
 def postergar(
@@ -3800,11 +3859,22 @@ def buscar(
                -- del no_cheque, alimentado al alta y al inline edit.
                c.doc_banco,
                c.no_banco, c.banco AS banco_nombre,
-               COALESCE(
-                 (SELECT bco.nombre FROM scintela.banco bco
-                   WHERE bco.no_banco = c.no_banco LIMIT 1),
-                 c.banco
-               ) AS banco,
+               -- TMT 2026-07-07 (dueña, caso CLR): los espejos de anticipo
+               -- (NB=98 negativos / banco texto 'ANTICIPO') mostraban 'UKN'
+               -- porque el catálogo tiene 98=UKN legacy y el COALESCE
+               -- prefería el nombre del catálogo. Ahora dicen ANTICIPO;
+               -- los 98 legacy positivos sin marca siguen como UKN.
+               CASE
+                 WHEN c.no_banco = 98
+                      AND (UPPER(TRIM(COALESCE(c.banco, ''))) = 'ANTICIPO'
+                           OR COALESCE(c.importe, 0) < 0)
+                 THEN 'ANTICIPO'
+                 ELSE COALESCE(
+                   (SELECT bco.nombre FROM scintela.banco bco
+                     WHERE bco.no_banco = c.no_banco LIMIT 1),
+                   c.banco
+                 )
+               END AS banco,
                -- Para cheques endosados: a qué proveedor se le pasó.
                -- c.prov guarda el codigo_prov del destino. TMT 2026-05-13.
                c.prov AS endoso_prov,

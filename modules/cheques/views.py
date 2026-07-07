@@ -449,34 +449,39 @@ def nuevo():
         sobrante_a_factura = 0
     motivo_dif = (request.form.get("motivo_diferencia") or "").strip()[:60]
     aplicaciones_pre: list[dict] = []
-    if not es_anticipo:
-        for k, v in request.form.items():
-            if not k.startswith("aplicar[") or not k.endswith("]"):
-                continue
-            try:
-                id_fact = int(k[len("aplicar[") : -1])
-            except ValueError:
-                continue
-            imp = parse_monto(v)
-            # TMT 2026-05-15: aceptamos importes NEGATIVOS para absorber
-            # créditos a favor del cliente (devoluciones, sobre-aplicaciones).
-            # Antes el filtro `imp <= 0.005` descartaba todo lo no-positivo;
-            # ahora descartamos sólo lo cercano a cero (|imp| < 0.005).
-            if imp is None or abs(imp) < 0.005:
-                continue
-            # `stat_final[id_fact]` viene del paso de confirmación cuando
-            # la dueña eligió T o A explícitamente. Sin override, queries
-            # decide automático.
-            forzar_stat = (request.form.get(f"stat_final[{id_fact}]") or "").upper()
-            if forzar_stat not in ("T", "A"):
-                forzar_stat = ""
-            aplicaciones_pre.append(
-                {
-                    "id_fact": id_fact,
-                    "importe": float(imp),
-                    "forzar_stat": forzar_stat,
-                }
-            )
+    # TMT 2026-07-07 (dueña, caso CLR): las aplicaciones se parsean TAMBIÉN
+    # en modo anticipo. Antes `if not es_anticipo:` las ignoraba en silencio
+    # y el anticipo era todo-o-nada. Ahora un anticipo (97) aplicado
+    # PARCIALMENTE a facturas genera el espejo NB=98 por el RESTO (ver el
+    # bloque "espejo parcial de anticipo" más abajo). "Si deselecciono, solo
+    # se tiene que ir a nota de crédito y ya."
+    for k, v in request.form.items():
+        if not k.startswith("aplicar[") or not k.endswith("]"):
+            continue
+        try:
+            id_fact = int(k[len("aplicar[") : -1])
+        except ValueError:
+            continue
+        imp = parse_monto(v)
+        # TMT 2026-05-15: aceptamos importes NEGATIVOS para absorber
+        # créditos a favor del cliente (devoluciones, sobre-aplicaciones).
+        # Antes el filtro `imp <= 0.005` descartaba todo lo no-positivo;
+        # ahora descartamos sólo lo cercano a cero (|imp| < 0.005).
+        if imp is None or abs(imp) < 0.005:
+            continue
+        # `stat_final[id_fact]` viene del paso de confirmación cuando
+        # la dueña eligió T o A explícitamente. Sin override, queries
+        # decide automático.
+        forzar_stat = (request.form.get(f"stat_final[{id_fact}]") or "").upper()
+        if forzar_stat not in ("T", "A"):
+            forzar_stat = ""
+        aplicaciones_pre.append(
+            {
+                "id_fact": id_fact,
+                "importe": float(imp),
+                "forzar_stat": forzar_stat,
+            }
+        )
 
     # TMT 2026-07-06 (dueña): ANTICIPO (97) aplicado a CHEQUES EN CARTERA —
     # "esto va a ser un anticipo que se lo aplicamos a los cheques... si el
@@ -772,6 +777,10 @@ def nuevo():
         espejos_anticipo: list[float] | None = None
         suma_cancelada = 0.0
         total_anticipo_97 = 0.0
+        # TMT 2026-07-07: espejos NB=98 creados por el RESTO de un anticipo
+        # aplicado parcialmente a facturas (se llena dentro de la tx; se usa
+        # después para el flash).
+        espejos_parciales: list[dict] = []
         if cheques_cancelar_ids:
             _rows_canc = db.fetch_all(
                 "SELECT id_cheque, importe FROM scintela.cheque "
@@ -815,6 +824,11 @@ def nuevo():
                 # TMT 2026-06-29 (dueña, paridad CANCELA): un cheque marcado
                 # anticipo SOLO genera el espejo (saldo a favor) si NO se aplica
                 # a facturas. Si la dueña aplicó a factura(s), es un cobro normal.
+                # TMT 2026-07-07 (dueña, caso CLR): con aplicación PARCIAL,
+                # crear() sigue sin generar el espejo acá (el importe aplicado
+                # todavía no se conoce) — el espejo por el RESTO se crea más
+                # abajo, después de distribuir FIFO ("espejo parcial de
+                # anticipo"). Lo no aplicado ya no se pierde en cartera.
                 _ch_es_anticipo = (
                     ch_in.get("es_anticipo") or es_anticipo or (_ch_no_banco == 97)
                 ) and not aplicaciones_pre
@@ -1075,16 +1089,67 @@ def nuevo():
                             conn=conn,
                         )
 
+                # ── ESPEJO PARCIAL DE ANTICIPO ─ TMT 2026-07-07 (dueña, caso
+                # CLR): un cheque-anticipo (97) aplicado PARCIALMENTE a
+                # facturas genera el espejo NB=98 por lo NO aplicado, en
+                # automático (sin checkbox): "si deselecciono, solo se tiene
+                # que ir a nota de crédito y ya". Antes el espejo se creaba
+                # SOLO si no había NINGUNA aplicación (todo-o-nada) y el resto
+                # del anticipo moría en el cheque, en cartera. Resto < $1 =
+                # centavos → sin espejo (mismo umbral de siempre).
+                _es_ant_ids: set[int] = set()
+                for _chin, _chcr in zip(cheques_in, cheques_creados):
+                    if (isinstance(_chcr, dict) and _chcr.get("id_cheque")
+                            and (_chin.get("es_anticipo") or es_anticipo)):
+                        _es_ant_ids.add(int(_chcr["id_cheque"]))
+                if _es_ant_ids:
+                    _chin_por_id = {
+                        int(_chcr["id_cheque"]): _chin
+                        for _chin, _chcr in zip(cheques_in, cheques_creados)
+                        if isinstance(_chcr, dict) and _chcr.get("id_cheque")
+                    }
+                    for c in cheques_restantes:
+                        if c["id_cheque"] not in _es_ant_ids:
+                            continue
+                        _resto_ant = round(float(c["restante"]), 2)
+                        if _resto_ant < 1.00:
+                            continue
+                        _chcr = next(
+                            x for x in cheques_creados
+                            if isinstance(x, dict)
+                            and int(x.get("id_cheque") or 0) == c["id_cheque"]
+                        )
+                        _chin = _chin_por_id[c["id_cheque"]]
+                        _esp = queries.crear_espejo_anticipo(
+                            conn=conn,
+                            id_cheque_padre=c["id_cheque"],
+                            no_cheque=_chin.get("no_cheque") or "",
+                            fecha=fecha,
+                            fechad=_chin.get("fechad") or fechad,
+                            fecha_recibido=fecha_recibido,
+                            codigo_cli=codigo_cli,
+                            importe_espejo=_resto_ant,
+                            usuario=usuario,
+                        )
+                        _chcr["id_cheque_anticipo"] = _esp.get("id_cheque")
+                        espejos_parciales.append(
+                            {"id_cheque": c["id_cheque"], "importe": _resto_ant}
+                        )
+
                 # TMT 2026-06-15: SOBRANTE aprobado (cheques > facturas) →
                 # anticipo del cliente como espejo negativo NB=98 (igual que
                 # es_anticipo; paridad dBase ALTAS.PRG 154-157). NO toca
                 # scintela.dolares (eso es solo proveedores). El sobrante = lo
                 # que quedó sin aplicar de los cheques (restante > 0). Requiere
                 # el checkbox (conservador: no se crean anticipos por error).
+                # TMT 2026-07-07: los cheques-anticipo (97) quedan AFUERA de
+                # esta suma — su resto ya se convirtió en espejo arriba
+                # (sino se duplicaría la NC).
                 if (aprobar_dif or confirmar_anticipo) and not es_anticipo:
                     _sobrante = round(
                         sum(c["restante"] for c in cheques_restantes
-                            if c["restante"] > 0.005), 2)
+                            if c["restante"] > 0.005
+                            and c["id_cheque"] not in _es_ant_ids), 2)
                     # TMT 2026-06-15: < $1 = centavos -> absorber (no anticipo);
                     # >= $1 -> espejo (anticipo del cliente).
                     if _sobrante >= 1.00:
@@ -1128,6 +1193,18 @@ def nuevo():
                                   f"(espejo NB=98, aplica a futuras facturas).", "ok")
 
         ch = cheques_creados[0]  # primero — usado abajo para redirect
+
+        # TMT 2026-07-07 (dueña, caso CLR): anticipo aplicado PARCIALMENTE —
+        # avisar cuánto quedó como nota de crédito / saldo a favor.
+        if espejos_parciales:
+            _tot_esp = round(sum(e["importe"] for e in espejos_parciales), 2)
+            flash(
+                f"Anticipo aplicado parcialmente: $ {_tot_esp:,.2f} quedó como "
+                f"nota de crédito / saldo a favor de "
+                f"{codigo_cli.upper().strip()} (espejo NB=98, se aplica a "
+                f"futuras facturas).",
+                "ok",
+            )
 
         # TMT 2026-07-06 (dueña): resumen del anticipo→cheques cancelados.
         if cheques_cancelar_ids:
