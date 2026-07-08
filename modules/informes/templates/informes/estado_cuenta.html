@@ -54,6 +54,10 @@
       line-height: 1.1 !important;
     }
     .max-w-6xl table td { border-bottom: 0.3pt solid #ccc !important; }
+    /* TMT 2026-07-07 (dueña): TODAS las líneas grises al imprimir. Las clases
+       Tailwind border-slate-300/400/700 del tfoot, del bloque TOTAL y de los
+       contenedores se veían oscuras en papel → forzamos gris claro a todo. */
+    .max-w-6xl * { border-color: #d1d5db !important; }
     .max-w-6xl table thead th { border-bottom: 0.8pt solid #9ca3af !important;
                                 font-size: 6.5pt !important; }
     .max-w-6xl table tfoot td { border-top: 0.8pt solid #9ca3af !important;

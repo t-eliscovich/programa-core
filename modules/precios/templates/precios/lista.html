@@ -42,16 +42,6 @@
         </button>
       </form>
       <span class="text-slate-300 dark:text-slate-600">|</span>
-      <div class="flex items-center gap-2">
-        <label class="text-sm text-slate-600 dark:text-slate-300">Vista previa</label>
-        <select id="tramo-preview"
-                class="rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
-          {% for label, factor in tramos %}
-          <option value="{{ factor }}" {% if loop.index0 == 1 %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <span class="text-slate-300 dark:text-slate-600">|</span>
       <button type="submit" form="form-precios"
               class="rounded bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-1.5 font-medium">
         Guardar
@@ -76,7 +66,7 @@
         <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Editar todos los basicos</h2>
         <p class="text-xs text-slate-500 dark:text-slate-400">
           Cada celda es el precio de lista (Basico). En <span class="text-amber-600 dark:text-amber-400 font-medium">ambar</span>
-          se muestra como queda con el descuento elegido arriba (vista previa, no se guarda).
+          se muestra cómo queda con el <b>aumento</b> del "Subir %" de arriba (vista previa, no se guarda).
         </p>
       </div>
       <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
@@ -205,13 +195,14 @@
     return (neg ? '-' : '') + parts[0] + ',' + parts[1];
   }
 
+  var pctInput = document.getElementById('pct-input');
   function recalcCelda(input) {
     var prev = input.parentNode.querySelector('.preview-descuento');
     if (!prev) return;
-    var factor = parseFloat(tramoSel ? tramoSel.value : '1') || 1;
     var v = parseEU(input.value);
-    if (v == null) { prev.textContent = ''; return; }
-    prev.textContent = fmtEU(v * factor);
+    var pct = pctInput ? parseEU(pctInput.value) : null;
+    if (v == null || pct == null || pct === 0) { prev.textContent = ''; return; }
+    prev.textContent = fmtEU(v * (1 + pct / 100));
   }
 
   function recalcTodo() {
@@ -229,7 +220,7 @@
   celdas.forEach(function (input) {
     input.addEventListener('input', function () { recalcCelda(input); });
   });
-  if (tramoSel) tramoSel.addEventListener('change', recalcTodo);
+  if (pctInput) pctInput.addEventListener('input', recalcTodo);
 
   if (btnEditar) btnEditar.addEventListener('click', function () { setModo(true); });
   if (btnCancelar) btnCancelar.addEventListener('click', function () { setModo(false); });
