@@ -799,50 +799,79 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
     dbf = _leer_dbf_full(dbf_path)
     yield line(f"[posdat-reconcile] POSDAT.DBF: {len(dbf)} registros (num!=9999).")
 
+    # --- A BORRAR ---
+    # TMT 2026-07-07 (dueña "alinear TODO al dBase"): el criterio viejo solo
+    # borraba usuario_crea IN ('dbf-import','reconcile-dbf'). Los YY/RT viejos
+    # de PC tienen OTRO origen -> sobrevivían, y como su importe acumulado no
+    # matchea exacto contra el DBF, el DBF se insertaba ENCIMA -> duplicado
+    # (YY 11->22 = +905k, RT x2, +1,17M de pasivo fantasma -> utilidad -1M).
+    # AHORA: banc=0 = ESPEJO REAL -> borrar TODOS los banc=0 SIN link mov_doble
+    # (cualquier origen); así se van duplicados + PC-only espejos-de-cheque que
+    # no están en el dBase. Los linkeados (OP retiro) se PRESERVAN para no
+    # orfanar el mov_doble. banc=9 (importaciones) mantiene el criterio previo.
+    _LINK = ("EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo' "
+             "AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat) "
+             "OR (m.origen_table='posdat' AND m.origen_id=p.id_posdat)))")
     a_borrar = db.fetch_all(
-        """
-        SELECT p.id_posdat,
-               EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo'
-                        AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat)
-                          OR (m.origen_table='posdat'  AND m.origen_id =p.id_posdat))) AS linked
+        f"""
+        SELECT p.id_posdat, {_LINK} AS linked
           FROM scintela.posdat p
-         WHERE COALESCE(p.usuario_crea,'') IN ('dbf-import','reconcile-dbf')
-           AND COALESCE(p.num,0) <> 9999
+         WHERE COALESCE(p.num,0) <> 9999
+           AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
+           AND ( COALESCE(p.banc,0) = 0
+                 OR COALESCE(p.usuario_crea,'') IN ('dbf-import','reconcile-dbf') )
         """
     ) or []
     borrar_ids = [r["id_posdat"] for r in a_borrar if not r["linked"]]
     n_saltados = sum(1 for r in a_borrar if r["linked"])
 
+    # QUEDAN = sobreviven al borrado: linkeados + banc<>0 no-dbf-import.
     quedan = db.fetch_all(
-        """
-        SELECT COALESCE(p.prov,'') AS prov, p.importe, COALESCE(p.concepto,'') AS concepto
+        f"""
+        SELECT COALESCE(p.prov,'') AS prov, p.importe,
+               COALESCE(p.concepto,'') AS concepto, COALESCE(p.banc,0) AS banc,
+               {_LINK} AS linked
           FROM scintela.posdat p
          WHERE COALESCE(p.num,0) <> 9999
            AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
-           AND (COALESCE(p.usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf')
-                OR EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo'
-                            AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat)
-                              OR (m.origen_table='posdat'  AND m.origen_id =p.id_posdat))))
+           AND ( {_LINK}
+                 OR ( COALESCE(p.banc,0) <> 0
+                      AND COALESCE(p.usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf') ) )
         """
     ) or []
-    quedan_keys = _Counter()
+    # Dedup: banc=0 se saltea SOLO si un linkeado del mismo prov ya lo cubre
+    # (evita doble OP). banc=9 mantiene dedup por clave exacta.
+    linked_prov_b0 = set()
+    quedan_keys_b9 = _Counter()
     quedan_t = 0.0
     for q in quedan:
-        quedan_keys[(q["prov"].strip().upper(), round(float(q["importe"] or 0), 2), _norm_cpt(q["concepto"]))] += 1
         quedan_t += float(q["importe"] or 0)
+        if int(q["banc"] or 0) == 0:
+            if q["linked"]:
+                linked_prov_b0.add((q["prov"] or "").strip().upper())
+        else:
+            quedan_keys_b9[((q["prov"] or "").strip().upper(),
+                            round(float(q["importe"] or 0), 2),
+                            _norm_cpt(q["concepto"]))] += 1
 
     dbf_insert, skip_dup = [], 0
     for d in dbf:
-        k = (d["prov"].strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
-        if quedan_keys.get(k, 0) > 0:
-            quedan_keys[k] -= 1
-            skip_dup += 1
+        if int(d["banc"]) == 0:
+            if (d["prov"] or "").strip().upper() in linked_prov_b0:
+                skip_dup += 1
+            else:
+                dbf_insert.append(d)
         else:
-            dbf_insert.append(d)
+            k = ((d["prov"] or "").strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
+            if quedan_keys_b9.get(k, 0) > 0:
+                quedan_keys_b9[k] -= 1
+                skip_dup += 1
+            else:
+                dbf_insert.append(d)
 
     ins_t = sum(float(d["importe"]) for d in dbf_insert)
-    yield line(f"[posdat-reconcile] A borrar (dbf-origin sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
-    yield line(f"[posdat-reconcile] Quedan (PC-creados + linkeados): {len(quedan)} (TOTP {quedan_t:,.2f})")
+    yield line(f"[posdat-reconcile] A borrar (sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
+    yield line(f"[posdat-reconcile] Quedan (linkeados + banc9 PC): {len(quedan)} (suma {quedan_t:,.2f})")
     yield line(f"[posdat-reconcile] DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos)")
     yield line(f"[posdat-reconcile] TOTP resultante ≈ {quedan_t + ins_t:,.2f}")
 
