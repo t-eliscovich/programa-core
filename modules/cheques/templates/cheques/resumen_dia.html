@@ -7,6 +7,9 @@
   @media print {
     .no-print { display: none !important; }
     body { background: #fff !important; color: #000 !important; }
+    /* TMT 2026-07-07: mismo trato gris que el estado de cuenta impreso —
+       el divisor superior (border-slate-800) sale gris, no negro. */
+    .hoja .border-b-2 { border-bottom-color: #9ca3af !important; }
     .hoja { border: none !important; box-shadow: none !important; margin: 0 !important;
             max-width: none !important; padding: 0 !important; }
     .hoja tbody tr { page-break-inside: avoid; }
@@ -19,11 +22,11 @@
     .hoja table.principal { font-size: 8pt !important; }
     .hoja table.principal td, .hoja table.principal th {
       padding: 1px 3px !important;
-      border-bottom: 0.3pt solid #bbb !important;
+      border-bottom: 0.3pt solid #ccc !important;
     }
-    .hoja table.principal thead th { border-bottom: 0.8pt solid #000 !important; }
+    .hoja table.principal thead th { border-bottom: 0.8pt solid #9ca3af !important; }
     .hoja tfoot { display: table-row-group !important; }   /* total UNA vez al final */
-    .hoja tfoot td { border-top: 0.8pt solid #000 !important; border-bottom: none !important; }
+    .hoja tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; }
     .apps { font-size: 7.5pt !important; }
     .facts { font-size: 7pt !important; }
     .medio { font-size: 8pt !important; }
