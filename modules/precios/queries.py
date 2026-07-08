@@ -76,33 +76,35 @@ def subir_porcentaje(pct: float, usuario: str) -> None:
     )
 
 
-# Los TRES descuentos de cliente que interesan (los valores dominantes en
-# CLIENTES.DBF: 4% -> 1034 clientes, 7% -> 916, 9% -> 651). El dBase
-# (INFORMES.PRG :714-715 y :754-755) parte a los clientes en Minorista
-# (DESCUENTO <= 7%) y Mayorista (DESCUENTO > 7%): por eso 4% y 7% son
-# Minorista y 9% es Mayorista. Precio neto = lista * (1 - d/100).
-TRAMOS_DESCUENTO: list[int] = [4, 7, 9]
-CORTE_MAYORISTA: int = 7  # <= 7% Minorista, > 7% Mayorista
+# Los CUATRO tramos de precio que usa la duena: basico (precio de lista, sin
+# descuento) y luego descuentos EN CASCADA (sucesivos): 5%, 5%+9% y 5%+14%.
+# "5%+9%" = un 5% de descuento y luego un 9% adicional sobre el ya rebajado,
+# es decir lista * 0.95 * 0.91. Cada tramo es (etiqueta, factor sobre la lista).
+TRAMOS_DESCUENTO: list[tuple[str, float]] = [
+    ("Basico", 1.0),
+    ("5%", 0.95),
+    ("5%+9%", 0.95 * 0.91),
+    ("5%+14%", 0.95 * 0.86),
+]
 
 
 def tabla_descuentos(filas: list[dict], columna: str) -> list[dict]:
-    """Precio de lista y neto a 4/7/9% de descuento, por clase de color, para
-    UNA tela (`columna`). Solo lectura -- los descuentos son derivados, no se
-    guardan. Replica compacta de "precio de lista - DESCUENTO del cliente".
+    """Precio de lista (Basico) y neto a los 4 tramos en cascada (5%, 5%+9%,
+    5%+14%), por clase de color, para UNA tela (`columna`). Solo lectura -- los
+    descuentos son derivados, no se guardan.
     """
     if columna not in COLUMNAS_TELA:
         raise ValueError(f"columna invalida: {columna!r}")
     out: list[dict] = []
     for f in filas:
         lista = f.get(columna)
-        netos: dict[int, float | None] = {}
+        netos: list[float | None] = []
         if lista is not None:
             lista = float(lista)
-            for d in TRAMOS_DESCUENTO:
-                netos[d] = round(lista * (1 - d / 100.0), 2)
+            for _, factor in TRAMOS_DESCUENTO:
+                netos.append(round(lista * factor, 2))
         else:
-            for d in TRAMOS_DESCUENTO:
-                netos[d] = None
+            netos = [None for _ in TRAMOS_DESCUENTO]
         out.append(
             {
                 "clase": int(f["clase"]),

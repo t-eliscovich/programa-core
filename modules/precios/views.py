@@ -41,7 +41,7 @@ def lista():
     except Exception as e:  # noqa: BLE001
         filas, error = [], str(e)
 
-    # Seccion de descuentos (solo lectura): neto a 4/7/9% para UNA tela.
+    # Seccion de descuentos (solo lectura): Basico + 5% / 5%+9% / 5%+14% (cascada).
     tela_sel = (request.args.get("tela") or "jersey").strip().lower()
     if tela_sel not in queries.COLUMNAS_TELA:
         tela_sel = "jersey"
@@ -57,7 +57,6 @@ def lista():
         error=error,
         descuentos=descuentos,
         tramos=queries.TRAMOS_DESCUENTO,
-        corte_mayorista=queries.CORTE_MAYORISTA,
         tela_sel=tela_sel,
     )
 
