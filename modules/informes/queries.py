@@ -4907,11 +4907,12 @@ def flujo_calculado(
             continue
         f = it.get("fecha") or hoy
         if f < hoy:
-            # TMT 2026-07-07 (dueña): "dejalo igual al dBase — los vencidos van
-            # a su fecha real, hoy arranca con el saldo lleno (2,98M)". Antes se
-            # imputaban a hoy (hoy quedaba neto de lo vencido). Ahora los
-            # vencidos NO se amontonan en hoy: el arranque de hoy = saldo real.
-            continue
+            # TMT 2026-07-07 (dueña): "igual al dBase — hoy arranca en el saldo
+            # lleno (2,98M) pero los vencidos SÍ se restan". El dBase arranca en
+            # ST y procesa los vencidos por fechad (running saldo baja). Para que
+            # el NODO de hoy quede en ST y no neto, los vencidos se imputan a
+            # hoy+1 (se restan apenas pasa hoy, sin hundir el arranque).
+            f = hoy + _td(days=1)
         if f > tope:
             continue
         d = por_dia.setdefault(
