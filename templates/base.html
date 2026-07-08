@@ -796,10 +796,10 @@
            (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
            e importaciones siguen vivas por URL y linkeadas DENTRO de estas
            dos páginas — sólo salen del menú. #}
-        {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → "Inventario TC/PT";
-           "Importaciones" → "Ingreso de hilado" (pantalla de solo lectura). #}
-        {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario TC', 'box') }}
-        {{ nav_link('stock_asinfo.fabricacion_pt', 'Inventario PT', 'box') }}
+        {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → UNA sola "Inventario"
+           (la página tiene el toggle TC/PT adentro). "Importaciones" →
+           "Ingreso de hilado" (pantalla de solo lectura). #}
+        {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box') }}
         {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
       </details>
       {% endif %}
