@@ -905,7 +905,13 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # % de CRUDO ingresos = desperdicio de tejeduria (0,5%), igual que el
     # dBase. _kh es el hilado consumido (tejido + 0,5%). Federico 2026-05-22.
     header["tejido"]["ingresos_pct"] = _safe_div(_kh - _kg_tej, _kg_tej) * 100
-    header["tejido"]["stock_act_kg"] = max(tj0 + _kg_tej - ktin, 0)
+    # CRUDO egresos = lo que SE FUE a tintura = _ktint (tinturado real, del
+    # scintela.tinto), que es EXACTAMENTE el TERMINADO ingreso → la cadena
+    # cierra (crudo egreso = terminado ingreso). Antes usaba historia.ktin, que
+    # venía inflado (p.ej. 341k vs 48k reales) y clampeaba el stock de crudo a 0.
+    # TMT 2026-07-08 (dueña "ponele bien lo de dbase, sigue mal").
+    header["tejido"]["egresos_kg"] = _ktint
+    header["tejido"]["stock_act_kg"] = max(tj0 + _kg_tej - _ktint, 0)
     header["hilado"]["egresos_kg"] = _kh
     header["hilado"]["egresos_us"] = _kh * um_act
     _hil_act = max(hi0 + kcom - _kh, 0)
