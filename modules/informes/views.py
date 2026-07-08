@@ -1862,6 +1862,60 @@ def iniciales():
     return render_template("informes/iniciales.html", filas=filas, anio=anio, error=error)
 
 
+# ---------------------------------------------------------------------------
+# Stock inicial mensual (foto de Asinfo persistida) — TMT 2026-07-08
+# ---------------------------------------------------------------------------
+# Asinfo es live-only: para tener un "stock inicial" por mes se toma una foto
+# del inventario live (bodegas 51/52/53 + WIP) y se persiste en
+# scintela.stock_inicial_mes. Ver modules/informes/stock_inicial.py.
+
+@informes_bp.route("/stock-inicial")
+@requiere_login
+@requiere_permiso("informes.ver")
+def stock_inicial():
+    """Muestra las fotos de stock inicial guardadas por mes + form de captura."""
+    from . import stock_inicial as si_q
+
+    hoy = today_ec()
+    meses, error = _safe(lambda: si_q.meses_capturados(24), [])
+    if not isinstance(meses, list):
+        meses = []
+    return render_template(
+        "informes/stock_inicial.html",
+        meses=meses,
+        anio=hoy.year,
+        mes=hoy.month,
+        etapa_label=si_q.ETAPA_LABEL,
+        error=error,
+    )
+
+
+@informes_bp.route("/stock-inicial/capturar", methods=["POST"])
+@requiere_login
+@requiere_permiso("informes.editar")  # escribe una foto — mismo gate que snapshot-mes
+def stock_inicial_capturar():
+    """Toma la foto live de Asinfo y la persiste para (anio, mes). Fail-soft."""
+    from . import stock_inicial as si_q
+
+    try:
+        anio = int(request.form.get("anio") or today_ec().year)
+        mes = int(request.form.get("mes") or today_ec().month)
+    except (TypeError, ValueError):
+        flash("Parámetros inválidos.", "error")
+        return redirect(url_for("informes.stock_inicial"))
+    mes = max(1, min(mes, 12))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = si_q.capturar(anio, mes, usuario=usuario)
+        if r.get("aplicado"):
+            flash(r.get("razon", f"Foto {mes:02d}/{anio} guardada."), "ok")
+        else:
+            flash(r.get("razon", "Asinfo no disponible — nada que guardar."), "info")
+    except Exception as e:
+        flash_exc("Captura de stock inicial falló", e)
+    return redirect(url_for("informes.stock_inicial"))
+
+
 @informes_bp.route("/estado-cuenta", methods=["GET"])
 @requiere_login
 @requiere_permiso("clientes.ver")

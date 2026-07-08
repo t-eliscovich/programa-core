@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Stock inicial por mes{% endblock %}
+{% block breadcrumb %}Informes / <strong>Stock inicial (Asinfo por mes)</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-07-08 (dueña): stock inicial por mes desde Asinfo (live-only) →
+   foto persistida en scintela.stock_inicial_mes. #}
+<div class="max-w-full">
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Stock inicial por mes',
+        'Foto mensual del inventario de Asinfo (kg) por etapa. Asinfo es live-only: se guarda una foto por mes para tener una línea base.') }}
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {# ── Capturar foto del mes ─────────────────────────────────────────── #}
+  <form method="post" action="{{ url_for('informes.stock_inicial_capturar') }}"
+        class="no-print flex flex-wrap items-end gap-3 mb-6 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Año</label>
+      <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Mes</label>
+      <select name="mes" class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        {% for m in range(1, 13) %}
+          <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ '%02d' % m }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">
+      Capturar foto de Asinfo
+    </button>
+    <p class="text-xs text-slate-500 basis-full">
+      Toma el inventario live de Asinfo (bodegas 51 Hilo / 52 Tela Cruda / 53 PT
+      + en proceso) y lo guarda para ese mes. Idempotente: re-capturar sobreescribe.
+      Si Asinfo está caído no se guarda nada.
+    </p>
+  </form>
+
+  {# ── Fotos guardadas ───────────────────────────────────────────────── #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
+    <table class="text-xs" style="min-width: 1000px;">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 uppercase tracking-wider text-slate-500">
+        <tr class="border-b-2 border-slate-200 dark:border-slate-700">
+          <th class="px-3 py-2 text-left font-medium">Período</th>
+          <th class="px-3 py-2 text-right font-medium">Hilo</th>
+          <th class="px-3 py-2 text-right font-medium">En proc. TC</th>
+          <th class="px-3 py-2 text-right font-medium">Tela Cruda</th>
+          <th class="px-3 py-2 text-right font-medium">En proc. PT</th>
+          <th class="px-3 py-2 text-right font-medium">Terminada</th>
+          <th class="px-3 py-2 text-right font-semibold">Total kg</th>
+          <th class="px-3 py-2 text-left font-medium">Capturado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in meses %}
+          <tr class="border-b border-slate-100 dark:border-slate-800">
+            <td class="px-3 py-2 font-mono">{{ '%02d/%d' % (r.mes, r.anio) }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ r.hilo | num_es(0) }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ r.en_proceso_tc | num_es(0) }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ r.tela_cruda | num_es(0) }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ r.en_proceso_pt | num_es(0) }}</td>
+            <td class="px-3 py-2 text-right font-mono">{{ r.terminada | num_es(0) }}</td>
+            <td class="px-3 py-2 text-right font-mono font-semibold">{{ r.total_kg | num_es(0) }}</td>
+            <td class="px-3 py-2 text-slate-500">{{ r.capturado_en | fecha_hora_ec }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="px-3 py-6 text-center text-slate-400 italic">
+              Todavía no hay fotos guardadas. Usá el botón de arriba para capturar el mes actual.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
