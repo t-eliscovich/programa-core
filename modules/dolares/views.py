@@ -309,6 +309,13 @@ def convertir_lote():
     for _a in anticipos:
         _m = _re.search(r"\d+", str(_a.get("concepto") or ""))
         _a["ref"] = _m.group(0) if _m else ""
+    # TMT 2026-07-08 (dueña "ordenalo"): agrupar por código de proveedor y nº,
+    # igual que el panel de importaciones — así los del mismo AC quedan juntos.
+    anticipos.sort(key=lambda a: (
+        str(a.get("cta") or "").upper(),
+        int(a["ref"]) if str(a.get("ref") or "").isdigit() else 10**9,
+        a.get("fecha") or "",
+    ))
 
     # DERECHA — importaciones (importaciones_con_cruce). Fail-soft: si Asinfo
     # está caído o el service explota, seguimos mostrando la izquierda y

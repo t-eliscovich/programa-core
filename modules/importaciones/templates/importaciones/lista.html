@@ -170,8 +170,8 @@
           <th class="text-right" style="width: 9%">Kg</th>
           {# TMT 2026-07-06 (dueña): "en importaciones agregá fecha de recepción" #}
           <th style="width: 8%">Recibida</th>
-          <th class="text-right" style="width: 11%">Compras (US$)</th>
-          <th style="width: 17%" data-no-sort>Anticipos (US$ = valor stock)</th>
+          <th class="text-right" style="width: 11%">Compras US$</th>
+          <th class="text-right" style="width: 17%" data-no-sort>Anticipos US$</th>
           {# TMT 2026-07-06 (dueña): "otra columna: un botón para sumar
              anticipo y otro para compra". #}
           {# TMT 2026-07-08 (dueña): "Ingreso de hilado" es de SOLO LECTURA — la
@@ -209,26 +209,15 @@
                 <span class="text-slate-300">—</span>
               {% endif %}
             </td>
-            <td class="acc-cell">
-              {% if r.codigo %}
+            {# TMT 2026-07-08 (dueña "hacelo neat"): celda de anticipos limpia —
+               solo el valor + un contador chico. Se sacó la línea verbosa
+               "$X de /dolares + $Y acá" y el badge "compartido" (confundía; el
+               total ya cuenta el anticipo compartido una sola vez). #}
+            <td class="acc-cell text-right">
+              {% if r.codigo and r.anticipo_total %}
                 {% set _movs = r.movimientos or [] %}
-                <div class="acc-valor">
-                  {% if r.anticipo_total %}<b>$ {{ r.anticipo_total | num_es(2) }}</b>
-                  {% else %}<span class="text-slate-300">—</span>{% endif %}
-                  {% if r.anticipo_usd_dolares %}
-                    <span class="acc-hint" title="Anticipos USD matcheados desde /dolares por el código {{ r.codigo }}">{{ '$ ' + (r.anticipo_usd_dolares | num_es(2)) + ' de /dolares' }}{% if _movs %} + $ {{ (r.anticipo_aplicado or 0) | num_es(2) }} acá{% endif %}</span>
-                  {% elif _movs %}
-                    <span class="acc-hint">Σ {{ _movs | length }} anticipo{{ '' if _movs | length == 1 else 's' }}</span>
-                  {% endif %}
-                  {% if r.codigo_compartido %}
-                    <span class="recep recep-no" title="Este código ({{ r.codigo }}) lo comparten VARIAS importaciones — el anticipo de /dolares se muestra en todas pero se cuenta UNA vez en el total.">compartido</span>
-                  {% endif %}
-                </div>
-
-                {# TMT 2026-07-08 (dueña): el detalle de anticipos (lista + form)
-                   se movió a una FILA COMPLETA debajo (.acc-detail-row). Antes
-                   vivía apretado en esta celda angosta y se cortaba a la
-                   derecha. Acá sólo queda el resumen del monto. #}
+                <b>$ {{ r.anticipo_total | num_es(2) }}</b>
+                {% if _movs %}<span class="acc-hint">· {{ _movs | length }} ant.</span>{% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}

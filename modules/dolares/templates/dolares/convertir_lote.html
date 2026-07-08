@@ -113,7 +113,7 @@
                     {{ a.fecha | fecha_es if a.fecha else '—' }}
                   </td>
                   <td class="px-3 py-2 text-xs font-mono text-slate-600">
-                    {{ a.cta }}{% if a.nombre %}<span class="block text-slate-400">{{ a.nombre }}</span>{% endif %}
+                    {{ a.cta }}{# TMT 2026-07-08 (dueña "solo con código"): sin nombre largo #}
                   </td>
                   <td class="px-3 py-2 text-sm text-slate-800">{{ a.concepto or '—' }}</td>
                   <td class="px-3 py-2 text-right tabular-nums font-semibold">$ {{ a.importe | num_es }}</td>
@@ -168,7 +168,7 @@
                       {% if im.codigo %}<span class="block text-sky-700 font-semibold">{{ im.codigo }}</span>{% endif %}
                     </td>
                     <td class="px-3 py-2 text-xs font-mono text-slate-600">
-                      {{ im.prov or '—' }}{% if im.proveedor %}<span class="block text-slate-400">{{ im.proveedor }}</span>{% endif %}
+                      {{ im.prov or '—' }}{# TMT 2026-07-08 (dueña "solo con código"): sin nombre largo #}
                     </td>
                     <td class="px-3 py-2 text-xs text-slate-700">{{ im.nota or '—' }}</td>
                     <td class="px-3 py-2 text-right tabular-nums text-slate-700">
