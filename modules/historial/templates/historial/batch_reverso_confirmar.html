@@ -1,136 +1,160 @@
 {% extends "base.html" %}
-{% block title %}Reversar operación batch{% endblock %}
+{% block title %}Reversar operación{% endblock %}
 
 {% block content %}
-<div class="max-w-3xl">
-  <h1 class="text-xl font-semibold mb-1">Reversar operación completa</h1>
-  <p class="text-sm text-slate-500 mb-4">
-    Esta operación contiene <strong>{{ rows | length }}</strong> movimientos
-    que se ejecutaron juntos. El reverso los anula <strong>todos al mismo
-    tiempo</strong> dentro de una sola transacción — si cualquiera falla,
-    no se anula nada.
-  </p>
+{# TMT 2026-07-08 (dueña: "ponelo lindo, compacto; las previas como bullet
+   points, no como contando"). Rediseño: chips-resumen + listas en bullets con
+   color (emerald=vuelve, rose=se elimina). Estilos inline (tailwind congelado). #}
+<style>
+  .rv-wrap{max-width:520px;margin:0 auto;}
+  .rv-h{font-size:18px;font-weight:700;color:#0f172a;letter-spacing:-.01em;}
+  .dark .rv-h{color:#f1f5f9;}
+  .rv-sub{font-size:12.5px;color:#64748b;margin:3px 0 14px;line-height:1.5;}
+  .rv-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;
+           box-shadow:0 1px 3px rgba(15,23,42,.06);overflow:hidden;}
+  .dark .rv-card{background:#0f172a;border-color:#1e293b;}
+  .rv-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;}
+  .rv-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;
+           font-weight:600;padding:5px 11px;border-radius:999px;line-height:1;}
+  .rv-chip .d{width:7px;height:7px;border-radius:50%;}
+  .rv-grp{padding:13px 16px;}
+  .rv-grp + .rv-grp{border-top:1px solid #f1f5f9;}
+  .dark .rv-grp + .rv-grp{border-top-color:#1e293b;}
+  .rv-glab{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:700;
+           text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:10px;}
+  .rv-glab .d{width:8px;height:8px;border-radius:50%;flex:none;}
+  .rv-glab .n{margin-left:auto;font-weight:600;color:#94a3b8;letter-spacing:0;}
+  .rv-blist{display:flex;flex-direction:column;gap:7px;max-height:200px;overflow-y:auto;padding-right:2px;}
+  .rv-item{display:flex;align-items:baseline;gap:9px;font-size:13px;}
+  .rv-bul{flex:none;font-size:15px;line-height:1;transform:translateY(1px);}
+  .rv-txt{flex:1;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dark .rv-txt{color:#e2e8f0;}
+  .rv-txt .tag{font-family:ui-monospace,monospace;font-weight:600;color:#334155;}
+  .dark .rv-txt .tag{color:#cbd5e1;}
+  .rv-txt .m{color:#94a3b8;font-size:11.5px;}
+  .rv-amt{flex:none;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;
+          color:#0f172a;white-space:nowrap;}
+  .dark .rv-amt{color:#f1f5f9;}
+  .rv-warn{color:#e11d48;font-size:10.5px;font-weight:600;}
+  .rv-mach{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .rv-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;}
+  .rv-motivo{width:100%;border:1px solid #e5e7eb;border-radius:9px;padding:8px 10px;
+             font-size:13px;resize:vertical;background:#fff;box-sizing:border-box;}
+  .dark .rv-motivo{background:#0b1220;border-color:#1e293b;color:#e2e8f0;}
+  .rv-motivo:focus{outline:none;border-color:#94a3b8;}
+  .rv-cancel{font-size:13px;color:#64748b;text-decoration:none;}
+  .rv-cancel:hover{color:#334155;}
+  .rv-go{background:#e11d48;color:#fff;border:none;border-radius:9px;padding:9px 16px;
+         font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .rv-go:hover{background:#be123c;}
+</style>
 
-  <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4 shadow-sm">
-    <div class="text-xs text-slate-500 uppercase mb-2">Batch ID</div>
-    <div class="font-mono text-xs text-slate-700 mb-3">{{ batch_id }}</div>
-    <div class="grid grid-cols-3 gap-3 text-sm">
-      <div>
-        <div class="text-xs text-slate-500 uppercase">Movimientos</div>
-        <div class="font-semibold text-lg tabular-nums">{{ rows | length }}</div>
+{% set ns = namespace(act=none) %}
+{% for r in rows %}{% if r.tipo == 'activacion_maquinaria' %}{% set ns.act = r %}{% endif %}{% endfor %}
+
+<div class="rv-wrap">
+  {% if ns.act %}
+  {# ---------- Vista dedicada: activación de maquinaria ---------- #}
+  {% set a = ns.act %}
+  <div class="rv-h">Deshacer activación de máquina</div>
+  <div class="rv-sub">Se hace todo junto, en una sola transacción. Si algo falla, no se deshace nada.</div>
+
+  <div class="rv-chips">
+    <span class="rv-chip" style="background:#f1f5f9;color:#334155;">
+      <span class="d" style="background:#64748b;"></span>La máquina se elimina</span>
+    {% if a._anticipos %}
+    <span class="rv-chip" style="background:#ecfdf5;color:#047857;">
+      <span class="d" style="background:#10b981;"></span>{{ a._anticipos | length }} anticipo(s) vuelven a vivos</span>
+    {% endif %}
+    {% if a._cuotas %}
+    <span class="rv-chip" style="background:#fff1f2;color:#be123c;">
+      <span class="d" style="background:#f43f5e;"></span>{{ a._cuotas | length }} cuota(s) se borran</span>
+    {% endif %}
+  </div>
+
+  <div class="rv-card">
+    <div class="rv-grp">
+      <div class="rv-mach">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#0f172a;">Máquina · activo #{{ a.origen_id }}</div>
+          <div style="font-size:11.5px;color:#94a3b8;">se elimina del activo fijo</div>
+        </div>
+        <div class="rv-amt" style="font-size:15px;">$ {{ a.importe | num_es }}</div>
       </div>
-      <div>
-        <div class="text-xs text-slate-500 uppercase">Total bruto</div>
-        <div class="font-semibold text-lg tabular-nums">$ {{ total | num_es }}</div>
+    </div>
+
+    {% if a._anticipos %}
+    <div class="rv-grp">
+      <div class="rv-glab"><span class="d" style="background:#10b981;"></span>
+        Vuelven a vivos → /dolares <span class="n">{{ a._anticipos | length }}</span></div>
+      <div class="rv-blist">
+        {% for x in a._anticipos %}
+        <div class="rv-item">
+          <span class="rv-bul" style="color:#10b981;">•</span>
+          <span class="rv-txt"><span class="tag">{{ x.cta }}</span> {{ x.concepto | cleanstr }}</span>
+          <span class="rv-amt" style="color:#059669;">$ {{ x.importe | num_es(2) }}</span>
+        </div>
+        {% endfor %}
       </div>
-      <div>
-        <div class="text-xs text-slate-500 uppercase">Fecha</div>
-        <div>{{ rows[0].fecha_operacion | fecha_es }}</div>
+    </div>
+    {% endif %}
+
+    {% if a._cuotas %}
+    <div class="rv-grp">
+      <div class="rv-glab"><span class="d" style="background:#f43f5e;"></span>
+        Se eliminan · cuotas (posdatados) <span class="n">{{ a._cuotas | length }}</span></div>
+      <div class="rv-blist">
+        {% for c in a._cuotas %}
+        <div class="rv-item">
+          <span class="rv-bul" style="color:#f43f5e;">•</span>
+          <span class="rv-txt">{{ c.concepto | cleanstr }} <span class="m">· vence {{ c.fechad | fecha_es }}</span>
+            {% if c.banc and c.banc != 0 %}<span class="rv-warn">⚠ ya en banco</span>{% endif %}</span>
+          <span class="rv-amt">$ {{ c.importe | num_es(2) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% else %}
+  {# ---------- Vista genérica: batch de varios movimientos ---------- #}
+  <div class="rv-h">Reversar operación</div>
+  <div class="rv-sub">
+    {{ rows | length }} movimiento(s) que se hicieron juntos — se anulan todos en
+    una sola transacción. Si algo falla, no se anula nada.
+  </div>
+  <div class="rv-chips">
+    <span class="rv-chip" style="background:#f1f5f9;color:#334155;">
+      <span class="d" style="background:#64748b;"></span>{{ rows | length }} movimiento(s)</span>
+    <span class="rv-chip" style="background:#f1f5f9;color:#334155;">total $ {{ total | num_es }}</span>
+  </div>
+  <div class="rv-card">
+    <div class="rv-grp">
+      <div class="rv-blist">
+        {% for r in rows %}
+        <div class="rv-item">
+          <span class="rv-bul" style="color:#94a3b8;">•</span>
+          <span class="rv-txt">{{ r.tipo.replace('_',' ').title() }}
+            <span class="m">· {{ r.origen_table }}#{{ r.origen_id }} → {{ r.destino_table }}#{{ r.destino_id }}</span></span>
+          <span class="rv-amt">$ {{ r.importe | num_es }}</span>
+        </div>
+        {% endfor %}
       </div>
     </div>
   </div>
+  {% endif %}
 
-  <div class="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4 shadow-sm">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-        <tr>
-          <th class="px-3 py-2 text-left">#</th>
-          <th class="px-3 py-2 text-left">Tipo</th>
-          <th class="px-3 py-2 text-left">Origen → Destino</th>
-          <th class="px-3 py-2 text-right">Importe</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rows %}
-        <tr class="border-t border-slate-100">
-          <td class="px-3 py-2 font-mono text-xs">#{{ r.id_mov_doble }}</td>
-          <td class="px-3 py-2 text-xs">
-            <div class="font-medium">{{ r.tipo.replace('_', ' ').title() }}</div>
-            <div class="text-[10px] text-slate-400 font-mono">{{ r.tipo }}</div>
-          </td>
-          <td class="px-3 py-2 text-xs">
-            {{ r.origen_table }}#{{ r.origen_id }} → {{ r.destino_table }}#{{ r.destino_id }}
-          </td>
-          <td class="px-3 py-2 text-right font-mono tabular-nums">
-            {{ r.importe | num_es }}
-          </td>
-        </tr>
-        {# TMT 2026-07-08 (dueña): el reverso de una activación NO es solo la
-           máquina — mostramos explícito que TAMBIÉN vuelven los anticipos y se
-           eliminan las cuotas. Todo pende de esta fila resumen. #}
-        {% if r.tipo == 'activacion_maquinaria' %}
-        <tr class="border-t border-slate-50" style="background:#ecfdf5;">
-          <td></td>
-          <td colspan="3" class="px-3 py-3 text-xs" style="color:#065f46;">
-            <div class="mb-2 font-medium">No solo la máquina — se deshace todo junto:</div>
-            {% if r._anticipos %}
-            <div class="mb-2">
-              <div class="font-semibold uppercase tracking-wide text-[10px] mb-1" style="color:#047857;">
-                Anticipos que vuelven a vivos ({{ r._anticipos | length }}) → /dolares
-              </div>
-              <table class="w-full text-[11px]" style="border-collapse:collapse;">
-                {% for a in r._anticipos %}
-                <tr>
-                  <td class="py-0.5 pr-2 font-mono">{{ a.cta }}</td>
-                  <td class="py-0.5 pr-2">{{ a.concepto | cleanstr }}</td>
-                  <td class="py-0.5 text-right font-mono tabular-nums">$ {{ a.importe | num_es(2) }}</td>
-                  <td class="py-0.5 pl-2" style="color:#64748b;">{{ 'consumido' if a.st == 'M' else a.st }}</td>
-                </tr>
-                {% endfor %}
-              </table>
-            </div>
-            {% endif %}
-            {% if r._cuotas %}
-            <div>
-              <div class="font-semibold uppercase tracking-wide text-[10px] mb-1" style="color:#047857;">
-                Cuotas (posdatados) que se eliminan ({{ r._cuotas | length }})
-              </div>
-              <table class="w-full text-[11px]" style="border-collapse:collapse;">
-                {% for c in r._cuotas %}
-                <tr>
-                  <td class="py-0.5 pr-2 font-mono">#{{ c.num }}</td>
-                  <td class="py-0.5 pr-2">{{ c.concepto | cleanstr }}</td>
-                  <td class="py-0.5 pr-2" style="color:#64748b;">vence {{ c.fechad | fecha_es }}</td>
-                  <td class="py-0.5 text-right font-mono tabular-nums">$ {{ c.importe | num_es(2) }}</td>
-                  {% if c.banc and c.banc != 0 %}<td class="py-0.5 pl-2" style="color:#b91c1c;">⚠ ya en banco</td>{% endif %}
-                </tr>
-                {% endfor %}
-              </table>
-            </div>
-            {% endif %}
-          </td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <form method="post" class="bg-amber-50 border border-amber-200 rounded p-4">
+  <form method="post" style="margin-top:14px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label class="block">
-      <span class="text-sm font-semibold text-amber-900">
-        Motivo del reverso
-        <span class="text-slate-400 font-normal normal-case">(opcional)</span>
-      </span>
-      <span class="block text-xs text-amber-700 mb-1">
-        No es obligatorio. Si lo escribís, queda en el historial de auditoría.
-      </span>
-      <textarea name="motivo" rows="3"
-                placeholder="Ej: cliente cambió de opinión, importe equivocado, etc."
-                class="w-full border border-amber-300 rounded px-2 py-1.5 text-sm
-                       focus:border-amber-500 focus:outline-none"></textarea>
+    <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:5px;">
+      Motivo <span style="text-transform:none;font-weight:400;">(opcional)</span>
     </label>
-
-    <div class="flex items-center justify-between mt-4 pt-3 border-t border-amber-200">
-      <a href="{{ url_for('historial.lista') }}"
-         class="text-sm text-slate-500 hover:text-slate-700">
-        ← Volver al historial
-      </a>
-      <button type="submit"
-              class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded shadow-sm font-medium text-sm">
-        ↺ Reversar los {{ rows | length }} movimientos
-      </button>
+    <textarea name="motivo" rows="2" class="rv-motivo"
+              placeholder="Opcional — queda en el historial si lo escribís."></textarea>
+    <div class="rv-foot">
+      <a href="{{ url_for('historial.lista') }}" class="rv-cancel">← Cancelar</a>
+      <button type="submit" class="rv-go">↺ Deshacer{% if ns.act %} activación{% endif %}</button>
     </div>
   </form>
 </div>
