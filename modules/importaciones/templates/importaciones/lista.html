@@ -223,54 +223,10 @@
                   {% endif %}
                 </div>
 
-                {# ── Movimientos: anticipos (mig 0113) ──
-                   TMT 2026-07-06 (dueña): una importación puede tener MUCHOS
-                   anticipos; cada carga es un MOVIMIENTO nuevo (nada se pisa)
-                   que genera SOLA su ND en Pichincha. El ✕ borra el movimiento
-                   y compensa la ND (par atómico). Σ anticipos = valor stock;
-                   el restante se carga por /compras. #}
-                {% if tiene_permiso('compras.editar') %}
-                <details class="acc-edit mov-imp">
-                  {# TMT 2026-07-06 (dueña): "quitá el ver movimientos" — el
-                     detalle (form + lista con ✕) se abre/cierra SOLO con el
-                     botón "+ Anticipo" de la columna Cargar. #}
-                  <summary style="display:none"></summary>
-                  {% if _movs %}
-                  <table class="mov-tabla">
-                    {% for m in _movs %}
-                    <tr>
-                      <td class="fecha">{{ m.fecha }}</td>
-                      <td>{{ 'ANT' if m.tipo == 'anticipo' else 'PAGO' }}</td>
-                      <td class="num">$ {{ m.monto | num_es(2) }}</td>
-                      <td class="mov-nota" title="{{ m.nota }}{% if m.id_transaccion %} · ND #{{ m.id_transaccion }}{% endif %}">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</td>
-                      <td>
-                        <form method="post" action="{{ url_for('importaciones.movimiento_deshacer') }}" style="display:inline">
-                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                          <input type="hidden" name="id_mov" value="{{ m.id_mov }}">
-                          <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}">
-                          <button class="mov-x" title="Borra el movimiento y compensa su ND en Pichincha (2 clics)">✕</button>
-                        </form>
-                      </td>
-                    </tr>
-                    {% endfor %}
-                  </table>
-                  {% endif %}
-                  <form method="post" action="{{ url_for('importaciones.movimiento_agregar') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
-                    <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}">
-                    <div class="acc-row"><label>Monto</label>
-                      <input type="text" name="monto_mov" placeholder="0,00"></div>
-                    <div class="acc-row"><label>Fecha</label>
-                      <input type="date" name="fecha_mov" value="{{ hoy }}"></div>
-                    <div class="acc-row"><label>Nota</label>
-                      <input type="text" name="nota_mov" maxlength="120" style="text-align:left"></div>
-                    <div class="mov-aviso">⚠ La <b>Nota de Débito en Pichincha se genera sola</b> al registrar — no la cargues a mano en el banco.</div>
-                    <button class="btn-acc btn-ant">Registrar anticipo</button>
-                    <div class="acc-hint">El restante (sobre los anticipos) se carga por /compras.</div>
-                  </form>
-                </details>
-                {% endif %}
+                {# TMT 2026-07-08 (dueña): el detalle de anticipos (lista + form)
+                   se movió a una FILA COMPLETA debajo (.acc-detail-row). Antes
+                   vivía apretado en esta celda angosta y se cortaba a la
+                   derecha. Acá sólo queda el resumen del monto. #}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
@@ -287,6 +243,57 @@
               {% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
           </tr>
+          {# TMT 2026-07-08 (dueña "arreglá la página de importaciones"): el
+             detalle del anticipo ahora es una FILA COMPLETA (colspan 10) que se
+             abre con "+ Anticipo" — antes vivía en la celda angosta y el ✕ y los
+             campos se cortaban a la derecha. #}
+          {% if r.codigo and tiene_permiso('compras.editar') %}
+          {% set _movs = r.movimientos or [] %}
+          <tr class="acc-detail-row" style="display:none;">
+            <td colspan="10" style="background:#f8fafc;padding:14px 18px;border-top:1px solid #e5e7eb;">
+              <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;">
+                {% if _movs %}
+                <div style="flex:1;min-width:280px;">
+                  <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:9px;">Anticipos cargados · {{ _movs|length }}</div>
+                  <div style="display:flex;flex-direction:column;gap:7px;">
+                    {% for m in _movs %}
+                    <div style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                      <span style="color:#94a3b8;font-size:11.5px;white-space:nowrap;">{{ m.fecha }}</span>
+                      <span style="font-family:ui-monospace,monospace;font-size:11px;font-weight:600;color:#475569;background:#eef2f6;border-radius:5px;padding:1px 7px;">{{ 'ANT' if m.tipo=='anticipo' else 'PAGO' }}</span>
+                      <span style="flex:1;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span>
+                      <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">$ {{ m.monto|num_es(2) }}</span>
+                      <form method="post" action="{{ url_for('importaciones.movimiento_deshacer') }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="id_mov" value="{{ m.id_mov }}">
+                        <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}">
+                        <button class="mov-x" title="Borra el movimiento y compensa su ND en Pichincha (2 clics)" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:13px;padding:0 2px;white-space:nowrap;">✕</button>
+                      </form>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+                <form method="post" action="{{ url_for('importaciones.movimiento_agregar') }}" style="flex:1;min-width:320px;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="prov" value="{{ r.prov }}"><input type="hidden" name="numero" value="{{ r.numero }}"><input type="hidden" name="im_numero" value="{{ r.im_numero }}">
+                  <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="estado" value="{{ estado }}"><input type="hidden" name="recep" value="{{ recep }}">
+                  <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:9px;">Registrar anticipo</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+                    <label style="display:flex;flex-direction:column;font-size:10.5px;color:#64748b;font-weight:600;gap:3px;">Monto
+                      <input type="text" name="monto_mov" placeholder="0,00" style="width:120px;border:1px solid #cbd5e1;border-radius:7px;padding:6px 9px;font-size:13px;text-align:right;"></label>
+                    <label style="display:flex;flex-direction:column;font-size:10.5px;color:#64748b;font-weight:600;gap:3px;">Fecha
+                      <input type="date" name="fecha_mov" value="{{ hoy }}" style="border:1px solid #cbd5e1;border-radius:7px;padding:6px 9px;font-size:13px;"></label>
+                    <label style="display:flex;flex-direction:column;font-size:10.5px;color:#64748b;font-weight:600;gap:3px;flex:1;min-width:130px;">Nota
+                      <input type="text" name="nota_mov" maxlength="120" style="border:1px solid #cbd5e1;border-radius:7px;padding:6px 9px;font-size:13px;"></label>
+                    <button class="btn-acc btn-ant" style="border:none;background:#059669;color:#fff;border-radius:8px;padding:8px 15px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Registrar anticipo</button>
+                  </div>
+                  <div style="font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:7px 11px;margin-top:11px;">⚠ La <b>Nota de Débito en Pichincha se genera sola</b> al registrar — no la cargues a mano en el banco.</div>
+                  <div style="font-size:11px;color:#94a3b8;margin-top:6px;">El restante (sobre los anticipos) se carga por /compras.</div>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
         {% else %}
           <tr><td colspan="10" class="text-center py-8 text-slate-500">
             {% if error %}Error en la consulta.{% else %}Sin importaciones en el filtro actual.{% endif %}
@@ -331,13 +338,16 @@
     const b = e.target.closest && e.target.closest('.btn-cargar-ant');
     if (!b) return;
     const tr = b.closest('tr');
-    const det = tr && tr.querySelector('details');
-    if (det) {
-      det.open = !det.open;  // toggle (el summary está oculto)
-      if (det.open) {
-        const monto = det.querySelector('input[name="monto_mov"]');
+    // TMT 2026-07-08: el detalle ahora es la FILA HERMANA de abajo
+    // (.acc-detail-row, colspan completo), no un <details> en la celda.
+    const detail = tr && tr.nextElementSibling;
+    if (detail && detail.classList.contains('acc-detail-row')) {
+      const showing = detail.style.display !== 'none';
+      detail.style.display = showing ? 'none' : 'table-row';
+      if (!showing) {
+        const monto = detail.querySelector('input[name="monto_mov"]');
         if (monto) { monto.focus(); }
-        det.scrollIntoView({block: 'nearest'});
+        detail.scrollIntoView({block: 'nearest'});
       }
     }
   });
