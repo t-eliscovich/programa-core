@@ -870,6 +870,11 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
                 dbf_insert.append(d)
 
     ins_t = sum(float(d["importe"]) for d in dbf_insert)
+    # Desglose por banc para ver el PASIVO real (solo banc=0) antes de aplicar.
+    keep_b0 = sum(float(q["importe"] or 0) for q in quedan if int(q["banc"] or 0) == 0)
+    ins_b0  = sum(float(d["importe"]) for d in dbf_insert if int(d["banc"]) == 0)
+    yield line(f"[posdat-reconcile] >>> PASIVO banc=0 resultante (=KPI Pasivos) ≈ {keep_b0 + ins_b0:,.2f} "
+               f"(quedan-linkeados {keep_b0:,.2f} + DBF {ins_b0:,.2f})")
     yield line(f"[posdat-reconcile] A borrar (sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
     yield line(f"[posdat-reconcile] Quedan (linkeados + banc9 PC): {len(quedan)} (suma {quedan_t:,.2f})")
     yield line(f"[posdat-reconcile] DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos)")
