@@ -27,19 +27,22 @@ comparativa_tintoreria_bp = Blueprint(
 )
 
 
-def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int = 12) -> dict | None:
-    """Devuelve la estructura {filas, promedio, total, limite_bajos} con los
-    últimos `n_meses` meses hasta (incluyendo) anio/mes. None si falla.
-    Se usa para inyectar en el template de /informes/flujo-produccion.
+def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -> dict | None:
+    """Devuelve la estructura {filas, promedio, total, limite_bajos} con TODOS
+    los meses del año `anio` que tengan data (hasta el mes `mes` inclusive).
+    None si falla.  Se usa para inyectar en el template de /informes/flujo-produccion.
+
+    TMT 2026-07-07 — pedido dueña: el PROMEDIO tiene que ser el promedio POR
+    AÑO (promedio 2026 = todos los meses de 2026 con data; en 2027 sería el
+    promedio de 2027), no el del último mes. Antes la ventana era "últimos 12
+    meses" y con un solo mes cargado el PROMEDIO quedaba idéntico al mes único.
+    Ahora la ventana es el AÑO calendario de `anio` (enero -> mes en curso) y
+    el PROMEDIO = suma meses del año / cantidad de meses del año con data.
+    El parámetro `n_meses` se conserva por compatibilidad pero se ignora.
     """
+    _ = n_meses  # compat: ya no se usa (ventana = año calendario)
+    desde = date(anio, 1, 1)
     hasta = date(anio, mes, calendar.monthrange(anio, mes)[1])
-    # `n_meses` meses atrás (incluye el mes actual).
-    desde_mm = mes - (n_meses - 1)
-    desde_yy = anio
-    while desde_mm < 1:
-        desde_mm += 12
-        desde_yy -= 1
-    desde = date(desde_yy, desde_mm, 1)
 
     raw = queries.tinto_bajos_fuertes_por_mes(desde, hasta) or []
     try:
@@ -99,6 +102,7 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int = 12) -> dict | 
         "filas": filas,
         "promedio": promedio,
         "total": total,
+        "anio": anio,
         "desde": desde,
         "hasta": hasta,
     }
@@ -118,7 +122,7 @@ def _inject_tintoreria_mensual():
         hoy = today_ec()
         anio = int(request.args.get("anio") or hoy.year)
         mes = max(1, min(12, int(request.args.get("mes") or hoy.month)))
-        data = _build_tintoreria_mensual(anio, mes, n_meses=12)
+        data = _build_tintoreria_mensual(anio, mes)
         return {"tintoreria_mensual": data}
     except Exception as e:  # noqa: BLE001
         _LOG.warning("inject_tintoreria_mensual falló: %s", e)

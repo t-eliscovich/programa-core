@@ -245,7 +245,7 @@
      es 100% redundante con la tabla "Costos de tintorería" de arriba. #}
   {% if _show_historial %}
     <div class="blk">
-      <div class="blk-title">COSTOS DE TINTORERÍA · ÚLTIMOS {{ tintoreria_mensual.filas | length }} MESES</div>
+      <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}{% if tintoreria_mensual.filas | length == 1 %} (solo 1 mes con data){% endif %}</div>
       <table>
         <colgroup>
           <col style="width: 13%">
@@ -299,7 +299,7 @@
           {% endfor %}
           {% set p = tintoreria_mensual.promedio %}
           <tr>
-            <td class="lbl" rowspan="4" style="color: rgb(30 64 175);">PROMEDIO</td>
+            <td class="lbl" rowspan="4" style="color: rgb(30 64 175);">PROMEDIO {{ tintoreria_mensual.anio }}</td>
             <td class="lbl" style="color: rgb(30 64 175);">Bajos</td>
             <td class="num" style="color: rgb(30 64 175);">{{ '%.1f' % p.b_pct }}</td>
             <td class="num" style="color: rgb(30 64 175);">{{ p.b_kg | num_es(0) }}</td>
@@ -337,7 +337,7 @@
         <code>xgast</code> + amortización DCC (cuota mensual de activos
         tipo M y 50% de tipo I) — mismo número que
         <strong>TINTORERÍA TOTAL CON AMORT</strong> de /informes/gastos.
-        % sobre kg del mes. $/kg ponderado. PROMEDIO = Σ meses / cantidad de meses.
+        % sobre kg del mes. $/kg ponderado. PROMEDIO {{ tintoreria_mensual.anio }} = Σ meses del año / cantidad de meses del año con data.
       </p>
     </div>
   {% endif %}
