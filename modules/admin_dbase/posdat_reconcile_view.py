@@ -745,6 +745,11 @@ def full_sync():
     if not f.filename.lower().endswith((".tar.gz", ".tgz")):
         return Response("ERROR: esperaba .tar.gz / .tgz.\n", mimetype="text/plain", status=400)
     aplicar = request.form.get("apply") in ("1", "true", "on")
+    # TMT 2026-07-08: modo sin-streaming. La respuesta chunked se corta a través
+    # del proxy (el cliente ve "network error" tras la 1ra línea). Con nostream=1
+    # juntamos toda la salida server-side y la devolvemos de una — confiable para
+    # leer el plan y para APLICAR sin que un corte de conexión mate la tx.
+    nostream = request.form.get("nostream") in ("1", "true", "on")
     TARBALL_PATH.parent.mkdir(parents=True, exist_ok=True)
     if TARBALL_PATH.exists():
         TARBALL_PATH.unlink()
@@ -752,6 +757,8 @@ def full_sync():
     if TARBALL_PATH.stat().st_size > MAX_TARBALL_BYTES:
         TARBALL_PATH.unlink(missing_ok=True)
         return Response("ERROR: tarball muy grande.\n", mimetype="text/plain", status=400)
+    if nostream:
+        return Response("".join(_run_full(aplicar)), mimetype="text/plain")
     return Response(stream_with_context(_run_full(aplicar)), mimetype="text/plain")
 
 
