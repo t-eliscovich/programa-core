@@ -311,10 +311,16 @@ def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
                return_value={}):
         data = v._build_tintoreria_mensual(2026, 7)
 
+    # TMT 2026-07-08 (dueña): la vista muestra SOLO el mes en curso en las
+    # FILAS; los meses previos rellenados desde formulas_app siguen entrando
+    # al PROMEDIO del año (ver modules/comparativa_tintoreria/views.py).
     labels = [f["label"] for f in data["filas"]]
-    assert labels == ["04/2026", "05/2026", "07/2026"]  # 3 meses, ordenados
+    assert labels == ["07/2026"]  # solo el mes seleccionado
     julio = next(f for f in data["filas"] if f["label"] == "07/2026")
     # julio salió del dBase (kg total 300), NO del row falso de formulas (9999)
     assert julio["t_kg"] == 300.0
-    abril = next(f for f in data["filas"] if f["label"] == "04/2026")
-    assert abril["b_kg"] == 500.0
+    # el PROMEDIO del año incorpora los 3 meses (julio dBase + abril/mayo de
+    # formulas), sin doblar julio: Bajos = (100+500+0)/3, Fuertes = (200+0+700)/3
+    prom = data["promedio"]
+    assert prom["b_kg"] == 200.0
+    assert prom["f_kg"] == 300.0

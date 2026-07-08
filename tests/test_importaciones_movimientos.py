@@ -44,8 +44,10 @@ class _DBStub:
     def __init__(self):
         self.pago: dict[str, dict] = {}   # im_numero -> fila
         self.movs: dict[int, dict] = {}   # id_mov -> fila
+        self.dolares: dict[int, dict] = {}  # id_dolares -> fila (anticipo USD vivo)
         self._id_mov = 0
         self._id_pago = 0
+        self._id_dolares = 0
 
     def seed_pago(self, im, *, costo_estimado=None):
         self._id_pago += 1
@@ -132,6 +134,12 @@ class _DBStub:
         if "insert into scintela.importacion_pago" in s:
             self.seed_pago(p[0])
             return {"id_importacion_pago": self._id_pago}
+        if "insert into scintela.dolares" in s:
+            # TMT 2026-07-08: el anticipo ahora crea su fila viva en
+            # scintela.dolares (st=' ') — ver modules/importaciones/pago.py.
+            self._id_dolares += 1
+            self.dolares[self._id_dolares] = {"id_dolares": self._id_dolares, "st": " "}
+            return {"id_dolares": self._id_dolares}
         raise AssertionError(f"execute_returning sin stub: {s[:90]}")
 
     @contextlib.contextmanager
