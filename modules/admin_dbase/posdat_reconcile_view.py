@@ -789,7 +789,15 @@ def _run_full(aplicar: bool):
         yield line(f"[ERROR] no pude extraer: {exc!r}")
         return
 
-    yield from reconcile_posdat_full_desde_dbf(miembro, aplicar)
+    # TMT 2026-07-08: capturar cualquier excepción del reconcile y devolverla
+    # como texto (antes tiraba 500 en nostream / cortaba el stream). Así el
+    # dry-run muestra la causa en vez de una página de error opaca.
+    try:
+        yield from reconcile_posdat_full_desde_dbf(miembro, aplicar)
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        yield line(f"[ERROR reconcile] {exc!r}")
+        yield line(traceback.format_exc())
 
 
 def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool = False):
