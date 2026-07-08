@@ -135,7 +135,27 @@
                    + (c_postergados.get('n', 0) or 0) + (c_daniela.get('n', 0) or 0) %}
     {% set _hero_label = 'cheques en cartera' %}
   {% endif %}
-  <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
+  {# Encabezado de INFORME (solo impresión) — pedido dueña 2026-07-07:
+     "hay que imprimir un informe, no la pantalla". #}
+  <style>
+    .print-report-head { display: none; }
+    @media print {
+      .print-report-head { display: block !important; margin-bottom: 8pt; }
+      .print-report-head .prh-top { display: flex !important; justify-content: space-between;
+        align-items: baseline; border-bottom: 1.5pt solid #9ca3af; padding-bottom: 3pt; }
+      .print-report-head .prh-title { font-size: 15pt; font-weight: bold; }
+      .print-report-head .prh-meta  { font-size: 8pt; color: #000; font-weight: normal; }
+      .print-report-head .prh-sub   { font-size: 9pt; margin-top: 2pt; color: #000; }
+    }
+  </style>
+  <div class="print-report-head">
+    <div class="prh-top">
+      <span class="prh-title">Informe de Cheques</span>
+      <span class="prh-meta">impreso {{ g.now | fecha_es }}</span>
+    </div>
+    <div class="prh-sub">Total $ {{ _hero_total | num_es(0) }} · {{ _hero_n }} cheque{{ '' if _hero_n == 1 else 's' }} · {{ _hero_label }}</div>
+  </div>
+  <div class="no-print flex items-start justify-between gap-6 mb-6 flex-wrap">
     {{ page_hero(
         'Cheques',
         kpi_valor='$ ' ~ (_hero_total | num_es(0)),
@@ -347,7 +367,7 @@
             <a href="{{ url_for('cheques.lista', **_ord_args) }}" class="hover:underline"
                title="Ordenar por importe en todo el listado (mayor↓ / menor↑)">Importe{% if _ord_cur == 'importe_desc' %} ↓{% elif _ord_cur == 'importe_asc' %} ↑{% endif %}</a>
           </th>
-          <th class="px-1 py-1 text-center font-medium" data-no-sort style="width:50px;">Estado</th>
+          <th class="px-1 py-1 text-center font-medium chq-print-hide" data-no-sort style="width:50px;">Estado</th>
           <th class="px-2 py-1 text-right font-medium no-print" data-no-sort>Acc.</th>
         </tr>
       </thead>
@@ -526,7 +546,7 @@
                             (de arriba), no hace falta acá.
              El form de postergar se elimina del dropdown porque ya está
              editable inline. #}
-          <td class="px-1 py-1.5 text-center" data-stop="1">
+          <td class="px-1 py-1.5 text-center chq-print-hide" data-stop="1">
             {% set s = c.stat or '' %}
             {% set transs = transiciones_legales.get(s, []) if transiciones_legales else [] %}
             {# Filtramos POSTERGAR — ya se edita inline en columna Postergada. #}
@@ -581,7 +601,7 @@
              SOLO mostramos "↺ reversar" cuando el cheque no está depositado
              (Z/D/P/V). Para B/A/1/2 (ya circuló banco), "sin fondos" vive
              como opción de estado dentro del detalle del cheque. #}
-          <td class="px-1 py-1.5 text-right">
+          <td class="px-1 py-1.5 text-right no-print">
             {% if s in ('Z', 'D', 'P', 'V') and tiene_permiso('cheques.anular') %}
               <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=c.id_cheque) }}"
                  data-stop="1"
