@@ -667,11 +667,12 @@ def activar_maquinaria(
                     ids_posdat.append(int(pr["id_posdat"]))
 
         # ── 7. mov_doble del evento atómico ─────────────────────────────
+        # TMT 2026-07-08: SIN batch_id — la activación es UN evento reversible
+        # de a una fila (activos.reversar_activacion). Antes iba con batch_id y
+        # se renderizaba como "operación compuesta" de 1 ítem, cuyo reverso de
+        # batch no tenía handler. Ahora es una fila normal con su ↺ reversar.
         try:
-            import uuid as _uuid
-
             import mov_doble as _md
-            batch_id = str(_uuid.uuid4())
             # Una fila resumen del evento (audit completo).
             _md.registrar(
                 conn=conn,
@@ -688,7 +689,6 @@ def activar_maquinaria(
                     f"deuda ${deuda_total:.2f} en {n_cuotas} cuotas"
                 )[:200],
                 usuario=usuario,
-                batch_id=batch_id,
                 metadata={
                     "codigo_prov":      codigo_prov,
                     "id_activos":       id_activos,
@@ -718,6 +718,165 @@ def activar_maquinaria(
         "n_cuotas":               n_cuotas,
         "cuota_mensual":          cuota_mensual,
     }
+
+
+def reversar_activacion(
+    id_mov_doble: int,
+    *,
+    motivo: str = "",
+    usuario: str = "web",
+    conn=None,
+) -> dict:
+    """Deshace una activación de maquinaria — inverso EXACTO de
+    activar_maquinaria() (pedido dueña 2026-07-08: "debería reversar la
+    activación, volver los anticipos y eliminar las cuotas, y mostrarse en
+    el historial").
+
+      1. Restaura los anticipos consumidos a vivos (st='M' → st='').
+      2. Elimina las cuotas (posdat) creadas.
+      3. Elimina la máquina (scintela.activos).
+      4. Registra el reverso en mov_doble y marca el original 'reversado'.
+
+    Lee los ids desde el mov_doble original (tipo='activacion_maquinaria').
+    Atómico. `conn` opcional: si viene (reverso de batch) corre dentro de esa
+    tx; si no, abre una propia. Idempotente-seguro con guards claros.
+
+    Guards (rechaza con ValueError):
+      - La máquina ya no existe.
+      - La máquina ya amortizó (amortizac>0 o ult_mes_amortizado != NULL) —
+        el valor en libros ya cambió, hay que revisarlo a mano.
+      - Alguna cuota ya fue registrada al banco / pagada (banc != 0).
+    """
+    import json as _json
+
+    import mov_doble as _md
+
+    md = db.fetch_one(
+        "SELECT id_mov_doble, tipo, origen_id, estado, metadata "
+        "FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not md:
+        raise ValueError("Movimiento no encontrado.")
+    if (md.get("tipo") or "") != "activacion_maquinaria":
+        raise ValueError(
+            f"Este movimiento no es una activación de maquinaria "
+            f"(tipo={md.get('tipo')!r})."
+        )
+    if (md.get("estado") or "") in ("reverso", "reversado"):
+        raise ValueError("Esta activación ya fue reversada.")
+
+    meta = md.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            meta = {}
+    ids_anticipos = [int(x) for x in (meta.get("ids_anticipos") or []) if x]
+    ids_posdat = [int(x) for x in (meta.get("ids_posdat") or []) if x]
+    id_activos = int(meta.get("id_activos") or md.get("origen_id") or 0)
+    valor_total = float(meta.get("valor_total") or 0)
+    if not id_activos:
+        raise ValueError("No encuentro la máquina creada por la activación.")
+
+    def _do(cx) -> dict:
+        maq = db.fetch_one(
+            "SELECT id_activos, COALESCE(amortizac,0) AS amortizac, "
+            "       ult_mes_amortizado "
+            "FROM scintela.activos WHERE id_activos = %s FOR UPDATE",
+            (id_activos,), conn=cx,
+        )
+        if not maq:
+            raise ValueError(
+                f"La máquina #{id_activos} ya no existe (¿ya se deshizo o la "
+                f"borró un sync?). No hay nada que reversar."
+            )
+        if float(maq.get("amortizac") or 0) > 0 or maq.get("ult_mes_amortizado"):
+            raise ValueError(
+                f"La máquina #{id_activos} ya amortizó al menos un mes — el "
+                f"valor en libros cambió. Revisá la amortización a mano antes "
+                f"de reversar."
+            )
+
+        # Guard cuotas: si alguna ya fue registrada al banco / pagada
+        # (banc != 0), no borramos nada — avisamos.
+        if ids_posdat:
+            ph = ", ".join(["%s"] * len(ids_posdat))
+            pagadas = db.fetch_all(
+                f"SELECT id_posdat, num, banc FROM scintela.posdat "
+                f"WHERE id_posdat IN ({ph}) AND COALESCE(banc,0) <> 0",
+                tuple(ids_posdat), conn=cx,
+            ) or []
+            if pagadas:
+                nums = ", ".join(str(p.get("num") or p.get("id_posdat")) for p in pagadas)
+                raise ValueError(
+                    f"No puedo reversar: la(s) cuota(s) {nums} ya fue(ron) "
+                    f"registrada(s) al banco / pagada(s). Deshacé ese débito "
+                    f"primero."
+                )
+
+        # 1) Restaurar anticipos consumidos (solo los que siguen en 'M').
+        restaurados = 0
+        if ids_anticipos:
+            ph = ", ".join(["%s"] * len(ids_anticipos))
+            restaurados = db.execute(
+                f"UPDATE scintela.dolares "
+                f"   SET st = '', usuario_modifica = %s, "
+                f"       fecha_modifica = CURRENT_TIMESTAMP "
+                f" WHERE id_dolares IN ({ph}) AND COALESCE(st,'') = 'M'",
+                (usuario[:50], *ids_anticipos), conn=cx,
+            )
+
+        # 2) Eliminar las cuotas (posdat) creadas.
+        if ids_posdat:
+            ph = ", ".join(["%s"] * len(ids_posdat))
+            db.execute(
+                f"DELETE FROM scintela.posdat WHERE id_posdat IN ({ph})",
+                tuple(ids_posdat), conn=cx,
+            )
+
+        # 3) Eliminar la máquina.
+        db.execute(
+            "DELETE FROM scintela.activos WHERE id_activos = %s",
+            (id_activos,), conn=cx,
+        )
+
+        # 4) mov_doble reverso (marca el original 'reversado').
+        _md.registrar(
+            conn=cx,
+            tipo="activacion_maquinaria_reverso",
+            origen_table="activos",
+            origen_id=id_activos,
+            destino_table="activos",
+            destino_id=id_activos,
+            importe=valor_total,
+            fecha=today_ec(),
+            concepto=(
+                f"REVERSO activación máquina #{id_activos}: "
+                f"{restaurados} anticipo(s) restaurados, "
+                f"{len(ids_posdat)} cuota(s) eliminada(s)"
+                + (f" — {motivo}" if motivo else "")
+            )[:200],
+            usuario=usuario,
+            id_original=id_mov_doble,
+            metadata={
+                "id_activos": id_activos,
+                "ids_anticipos": ids_anticipos,
+                "ids_posdat": ids_posdat,
+                "restaurados": restaurados,
+                "motivo": motivo or "",
+            },
+        )
+        return {
+            "id_activos": id_activos,
+            "restaurados": restaurados,
+            "cuotas_eliminadas": len(ids_posdat),
+        }
+
+    if conn is not None:
+        return _do(conn)
+    with db.tx() as cx:
+        return _do(cx)
 
 
 def correr_amortizacion(usuario: str = "web") -> dict:

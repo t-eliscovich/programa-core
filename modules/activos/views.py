@@ -297,6 +297,49 @@ def activar_maquinaria():
     )
 
 
+@activos_bp.route("/activos/reversar-activacion/<int:id_mov_doble>",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("activos.crear")
+def reversar_activacion(id_mov_doble: int):
+    """Deshace una activación de maquinaria desde /historial (pedido dueña
+    2026-07-08). GET: confirmación. POST: ejecuta queries.reversar_activacion
+    (restaura anticipos + elimina cuotas + elimina la máquina, atómico)."""
+    if request.method == "GET":
+        return render_template(
+            "_confirmar_accion.html",
+            titulo="Deshacer activación de maquinaria",
+            mensaje=(
+                "Vas a deshacer esta activación: se ELIMINA la máquina, se "
+                "borran las cuotas (posdatados) creadas y los anticipos "
+                "vuelven a estar vivos (sin consumir). Queda registrado en "
+                "/historial. No se puede si la máquina ya amortizó un mes o "
+                "alguna cuota ya fue registrada al banco."
+            ),
+            accion_url=url_for("activos.reversar_activacion",
+                               id_mov_doble=id_mov_doble),
+            volver_url=url_for("historial.lista"),
+            motivo_requerido=False,
+            motivo_obligatorio=False,
+            confirm_label="Deshacer activación",
+        )
+    motivo = (request.form.get("motivo") or "").strip()
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.reversar_activacion(id_mov_doble, motivo=motivo, usuario=usuario)
+        flash(
+            f"Activación deshecha: máquina #{r['id_activos']} eliminada, "
+            f"{r['restaurados']} anticipo(s) restaurados, "
+            f"{r['cuotas_eliminadas']} cuota(s) eliminada(s).",
+            "ok",
+        )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude deshacer la activación", e)
+    return redirect(url_for("historial.lista"))
+
+
 @activos_bp.route("/activos/_api/reordenar", methods=["POST"])
 @requiere_login
 @requiere_permiso("activos.crear")  # mismo permiso que crear, agrupado

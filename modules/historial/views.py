@@ -12,7 +12,7 @@ from flask import (
 )
 
 import db
-from auth import requiere_login, requiere_permiso, tiene_permiso
+from auth import requiere_login, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 
@@ -89,6 +89,10 @@ def lista():
         "capital": "capital.ver",
         "provision": "provisiones.ver",
         "activo": "activos.ver",
+        # TMT 2026-07-08: los mov_doble de activos usan origen_table='activos'
+        # (plural) — sin esta clave, /mi-historial los ocultaba a usuarios sin
+        # wildcard (ej. Alex). Accionista/Admin no se ven afectados.
+        "activos": "activos.ver",
     }
 
     origenes_permitidos = None
@@ -486,6 +490,12 @@ _REVERSO_DISPATCH = {
         "dolares.reversar_conversion",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # Activación de maquinaria — restaura anticipos consumidos + borra las
+    # cuotas (posdat) + borra la máquina, atómico. TMT 2026-07-08 (dueña).
+    "activacion_maquinaria": (
+        "activos.reversar_activacion",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
     # Capital aporte/retiro — wizards nuevos atómicos. TMT 2026-05-13.
     "aporte_capital_a_caja": ("capital.reversar_aporte", lambda r: {"id_capital": r["origen_id"]}),
     "aporte_capital_a_pichincha": ("capital.reversar_aporte", lambda r: {"id_capital": r["origen_id"]}),
@@ -744,6 +754,9 @@ _TIPOS_BATCH_REVERSABLES = {
     "cheque_creado",
     "cheque_aplicado_a_factura",
     "cheque_anticipo_espejo",
+    # Activaciones viejas quedaron con batch_id (1 fila) — el botón que ve la
+    # dueña es el de batch. TMT 2026-07-08. Las nuevas ya no llevan batch_id.
+    "activacion_maquinaria",
 }
 
 
@@ -755,6 +768,7 @@ _PERMISO_REVERSO_BATCH = {
     "cheque_aplicado_a_factura": "cheques.aplicar",
     "cheque_creado": "cheques.anular",
     "cheque_anticipo_espejo": "cheques.anular",
+    "activacion_maquinaria": "activos.crear",
 }
 
 
@@ -847,6 +861,14 @@ def reversar_batch(batch_id: str):
                     # El espejo se anula con el cheque padre (anular_por_error_de_carga
                     # ya cascadea). Saltamos acá.
                     continue
+                elif tipo == "activacion_maquinaria":
+                    from modules.activos import queries as _aq
+                    _aq.reversar_activacion(
+                        int(r["id_mov_doble"]),
+                        motivo=f"{motivo} (batch {batch_id[:8]})",
+                        usuario=usuario,
+                        conn=conn,
+                    )
 
             flash(
                 f"Batch reversado: {len(rows)} movimientos anulados juntos.",

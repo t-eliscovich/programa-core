@@ -58,6 +58,8 @@ TIPOS_LABEL = {
     "cheque_aplicado_a_factura":"Cheque → Factura aplicada",
     "cheque_reemplazo":         "Cheque reemplazo (XX)",
     "bap_anticipo_a_compra":    "BAP: anticipo USD → Compra",
+    "activacion_maquinaria":        "Activación de maquinaria",
+    "activacion_maquinaria_reverso": "Reverso: activación de maquinaria",
     "factura_devolucion":       "Factura: devolución",
     "reverso_cheque_rebote":    "Reverso: cheque rebotado",
     "reverso_cheque_administrativo": "Reverso: cheque (admin)",
