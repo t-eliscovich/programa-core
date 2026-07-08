@@ -851,6 +851,92 @@ def fabricacion_proceso(id_bodega: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Inventario por ETAPA del flujo de producción (live, kg desde Asinfo)
+# ---------------------------------------------------------------------------
+# TMT 2026-07-08 — para /flujo-produccion la dueña pidió ver el inventario
+# live de Asinfo desglosado por etapa (Hilo / Tela Cruda / Terminada) con los
+# saldos EN PROCESO entre pasos. Consolida stock_asinfo_lote_totales() (saldos
+# de bodega 51/52/53) con fabricacion_proceso(52/53) (WIP entre pasos), usando
+# EXACTAMENTE la combinación de las tabs Fabricación (stock_asinfo/views.py):
+#     Hilo total  = bodega 51 + En proceso TC (saldo de fabricacion_proceso 52)
+#     Cruda total = bodega 52 + En proceso PT (saldo de fabricacion_proceso 53)
+# Solo kg — los dólares de Asinfo no son confiables (ver módulo de stock/lote).
+
+_INVENTARIO_ETAPA_TTL_SECS = 600  # 10 minutos
+_INVENTARIO_ETAPA_CACHE: dict = {}
+
+
+def inventario_por_etapa() -> dict:
+    """Kg de inventario live por etapa del flujo (fail-soft).
+
+    Returns dict:
+        disponible     — bool. False si el bridge Asinfo no está armado o las
+                         queries no devolvieron nada.
+        hilo           — kg en bodega 51 (Hilo).
+        tela_cruda     — kg en bodega 52 (Tela Cruda).
+        terminada      — kg en bodega 53 (Producto Terminado).
+        en_proceso_tc  — kg despachados a tejer aún no devueltos como TC
+                         (saldo de fabricacion_proceso(52)).
+        en_proceso_pt  — kg de TC despachados a tinturar/confeccionar aún no
+                         devueltos como PT (saldo de fabricacion_proceso(53)).
+        hilo_total     — hilo + en_proceso_tc.
+        cruda_total    — tela_cruda + en_proceso_pt.
+        total          — cadena completa (hilo + tc_wip + cruda + pt_wip + PT).
+
+    Todos los valores son 0.0 cuando disponible es False. Nunca lanza.
+    """
+    import time as _time
+    now = _time.time()
+    cached = _INVENTARIO_ETAPA_CACHE.get("all")
+    if cached and (now - cached[0]) < _INVENTARIO_ETAPA_TTL_SECS:
+        return cached[1]
+
+    vacio = {
+        "disponible": False,
+        "hilo": 0.0, "tela_cruda": 0.0, "terminada": 0.0,
+        "en_proceso_tc": 0.0, "en_proceso_pt": 0.0,
+        "hilo_total": 0.0, "cruda_total": 0.0, "total": 0.0,
+    }
+    if not disponible():
+        return vacio
+
+    try:
+        totales = stock_asinfo_lote_totales() or []
+        por_bodega = {int(r.get("id_bodega")): float(r.get("total_kg") or 0)
+                      for r in totales}
+        # WIP entre pasos: saldo = material despachado − producido.
+        wip_tc = float((fabricacion_proceso(52).get("resumen") or {}).get("saldo") or 0)
+        wip_pt = float((fabricacion_proceso(53).get("resumen") or {}).get("saldo") or 0)
+    except Exception:  # noqa: BLE001
+        return vacio
+
+    hilo = por_bodega.get(51, 0.0)
+    tela_cruda = por_bodega.get(52, 0.0)
+    terminada = por_bodega.get(53, 0.0)
+    # Sólo saldos WIP positivos suman stock (ídem stock_en_proceso()).
+    wip_tc = max(0.0, wip_tc)
+    wip_pt = max(0.0, wip_pt)
+
+    if not (hilo or tela_cruda or terminada or wip_tc or wip_pt):
+        # Nada vino — tratar como no disponible (fail-soft).
+        return vacio
+
+    out = {
+        "disponible": True,
+        "hilo": hilo,
+        "tela_cruda": tela_cruda,
+        "terminada": terminada,
+        "en_proceso_tc": wip_tc,
+        "en_proceso_pt": wip_pt,
+        "hilo_total": hilo + wip_tc,
+        "cruda_total": tela_cruda + wip_pt,
+        "total": hilo + wip_tc + tela_cruda + wip_pt + terminada,
+    }
+    _INVENTARIO_ETAPA_CACHE["all"] = (now, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Importaciones de Asinfo (para cruzar contra compras/anticipos del programa)
 # ---------------------------------------------------------------------------
 # La lista "Importación" del ERP. La `Nota` (factura_proveedor.descripcion)

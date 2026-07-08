@@ -1536,12 +1536,32 @@ def flujo_produccion():
         lambda: queries.movimientos_mes_dbase(anio=anio, mes=mes),
         {},
     )
+
+    # TMT 2026-07-08 (dueña): dos tablas al tope — inventario live de Asinfo
+    # por etapa (kg) y el mismo desglose combinando kg (Asinfo) con $ (PC).
+    # Ambas fail-soft: si Asinfo está caído la vista igual renderiza.
+    from modules.asinfo import service as asinfo_service
+
+    inv_asinfo, _e_inv = _safe(asinfo_service.inventario_por_etapa, {})
+    if not isinstance(inv_asinfo, dict):
+        inv_asinfo = {}
+    # Valor $ del stock del programa (misma fuente que /stock y el Balance).
+    def _stock_pc():
+        from modules.stock import queries as _stock_q
+        return _stock_q.resumen_stock()
+
+    stock_pc, _e_pc = _safe(_stock_pc, {})
+    if not isinstance(stock_pc, dict):
+        stock_pc = {}
+
     return render_template(
         "informes/flujo_produccion.html",
         data=data,
         anio=anio,
         mes=mes,
         error=error,
+        inv_asinfo=inv_asinfo,
+        stock_pc=stock_pc,
     )
 
 

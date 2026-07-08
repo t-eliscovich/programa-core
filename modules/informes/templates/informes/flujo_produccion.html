@@ -92,6 +92,111 @@
     </div>
   {% endif %}
 
+  {# ─── TABLA 1: INVENTARIO ASINFO (LIVE) — kg por etapa ────────────
+       TMT 2026-07-08 (dueña): kg live de Asinfo por etapa del flujo, con
+       los saldos EN PROCESO entre pasos. Fail-soft: si el bridge Asinfo
+       está caído, se muestra un aviso apagado en vez de la tabla. #}
+  <div class="blk mb-2">
+    <div class="blk-title">Inventario Asinfo (live)</div>
+    {% if inv_asinfo and inv_asinfo.disponible %}
+      <table>
+        <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
+        <thead>
+          <tr><th class="lbl">Etapa</th><th>Kg</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="lbl">Hilo (bodega 51)</td>
+            <td class="num">{{ inv_asinfo.hilo | num_es(0) }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">En proceso (Hilo → Tela Cruda)</td>
+            <td class="num">{{ inv_asinfo.en_proceso_tc | num_es(0) }}</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">Hilo total</td>
+            <td class="num">{{ inv_asinfo.hilo_total | num_es(0) }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Tela Cruda (bodega 52)</td>
+            <td class="num">{{ inv_asinfo.tela_cruda | num_es(0) }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">En proceso (Tela Cruda → Terminada)</td>
+            <td class="num">{{ inv_asinfo.en_proceso_pt | num_es(0) }}</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">Cruda total</td>
+            <td class="num">{{ inv_asinfo.cruda_total | num_es(0) }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Terminada / PT (bodega 53)</td>
+            <td class="num">{{ inv_asinfo.terminada | num_es(0) }}</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">Total inventario</td>
+            <td class="num">{{ inv_asinfo.total | num_es(0) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    {% else %}
+      <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>
+    {% endif %}
+  </div>
+
+  {# ─── TABLA 2: STOCK (kg Asinfo + $ PC) ───────────────────────────
+       Kg viene de Asinfo (etapa), $ del programa (resumen_stock, misma
+       fuente que /stock y el Balance — Asinfo NO tiene $ confiables).
+       Mapeo etapa → categoría PC: Hilo↔hilado, Tela Cruda↔tejido,
+       Terminada↔terminado. Los $ se muestran aunque Asinfo esté caído. #}
+  {% set _pc = stock_pc or {} %}
+  {% set _hpc = _pc.get('hilado', {}) %}
+  {% set _tpc = _pc.get('tejido', {}) %}
+  {% set _fpc = _pc.get('terminado', {}) %}
+  {% set _totpc = _pc.get('total', {}) %}
+  {% set _asi = inv_asinfo.disponible if inv_asinfo else false %}
+  <div class="blk mb-2">
+    <div class="blk-title">Stock (kg Asinfo + $ PC)</div>
+    <table>
+      <colgroup><col style="width:40%"><col style="width:30%"><col style="width:30%"></colgroup>
+      <thead>
+        <tr><th class="lbl">Etapa</th><th>Kg (Asinfo)</th><th>$ (PC)</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="lbl">Hilo</td>
+          <td class="num">{% if _asi %}{{ inv_asinfo.hilo_total | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
+          <td class="num">{{ _hpc.get('us') | num_es(0) if _hpc.get('us') else '—' }}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Tela Cruda</td>
+          <td class="num">{% if _asi %}{{ inv_asinfo.cruda_total | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
+          <td class="num">{{ _tpc.get('us') | num_es(0) if _tpc.get('us') else '—' }}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Terminada</td>
+          <td class="num">{% if _asi %}{{ inv_asinfo.terminada | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
+          <td class="num">{{ _fpc.get('us') | num_es(0) if _fpc.get('us') else '—' }}</td>
+        </tr>
+        <tr class="total">
+          <td class="lbl">Total</td>
+          <td class="num">{% if _asi %}{{ inv_asinfo.total | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
+          <td class="num">{{ _totpc.get('us') | num_es(0) if _totpc.get('us') else '—' }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="mt-2 text-[10px] text-slate-500">
+      <strong>Origen:</strong> los <strong>Kg</strong> son el inventario live de
+      Asinfo por etapa (Hilo = bodega 51 + en proceso a Tela Cruda; Cruda =
+      bodega 52 + en proceso a Terminada; Terminada = bodega 53). El
+      <strong>$</strong> viene de las tablas del programa
+      (<code>resumen_stock</code>: compras/facturas/iniciales/tinto), misma
+      fuente que /stock y el Balance — Asinfo no tiene dólares confiables.
+      Mapeo: Hilo↔hilado, Tela Cruda↔tejido, Terminada↔terminado.
+      {% if not _asi %}<em>Asinfo no disponible: los Kg no se pudieron traer.</em>{% endif %}
+    </p>
+  </div>
+
   {% if not data or not data.header %}
     <div class="bg-amber-50 border border-amber-300 rounded p-4 text-sm">
       <p class="font-medium text-amber-800">Sin datos para {{ '%02d/%d' % (mes, anio) }}.</p>

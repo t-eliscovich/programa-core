@@ -438,10 +438,10 @@ def en_proceso():
 # dentro de la misma página. Las URLs viejas siguen vivas, sólo salen del menú.
 
 _PROCESOS = {
-    "tc": {"bodega": 52, "titulo": "Fabricación TC",
+    "tc": {"bodega": 52, "titulo": "Inventario TC",
            "material": "HILO", "produce": "TELA CRUDA",
            "bodega_material": 51, "bodega_produce": 52},
-    "pt": {"bodega": 53, "titulo": "Fabricación PT",
+    "pt": {"bodega": 53, "titulo": "Inventario PT",
            "material": "TELA CRUDA", "produce": "PRODUCTO TERMINADO",
            "bodega_material": 52, "bodega_produce": 53},
 }
@@ -528,47 +528,16 @@ def _fabricacion_page(proceso: str):
     except Exception:  # noqa: BLE001
         stock_programa = {}
 
-    ofts = data.get("ofts", [])
-    estado = (request.args.get("estado") or "").strip()  # "" | "curso" | "sin"
-    if estado == "curso":
-        ofts = [o for o in ofts if o.get("iniciada")]
-    elif estado == "sin":
-        ofts = [o for o in ofts if not o.get("iniciada")]
-    q = (request.args.get("q") or "").strip().upper()
-    if q:
-        ofts = [
-            o for o in ofts
-            if q in (o.get("oft") or "").upper()
-            or q in (o.get("producto") or "").upper()
-            or q in (o.get("prod_codigo") or "").upper()
-            or q in (o.get("tejido") or "").upper()
-        ]
-
-    if request.args.get("export") == "csv":
-        return csv_response(
-            ofts,
-            columnas=[
-                ("oft", "Orden Fabricación"),
-                ("producto", "Producto"),
-                ("tejido", "Tejido"),
-                ("planif", "Planificada"),
-                ("fab", "Fabricada"),
-                ("por_producir", "Por producir"),
-                ("issued", "Material despachado (OSM)"),
-                ("saldo", "Saldo en proceso"),
-            ],
-            filename=f"fabricacion_{proceso}.csv",
-        )
+    # La vista "Inventario" ya no muestra las órdenes de fabricación (OFT):
+    # se conserva sólo el inventario en kg y el "Inventario en proceso".
+    # fabricacion_proceso() sigue trayendo ofts/por_tejido para calcular el
+    # resumen (saldo en proceso), pero no se pasan al template.
 
     return render_template(
         "stock_asinfo/fabricacion.html",
         proceso=proceso,
         cfg=cfg,
         resumen=data.get("resumen", {}),
-        por_tejido=data.get("por_tejido", []),
-        ofts=ofts,
-        q=q,
-        estado=estado,
         totales_bodega=totales_bodega,
         cadena=cadena,
         total_kg=total_kg,

@@ -88,9 +88,9 @@
     </div>
     <div class="flex gap-1 no-print">
       <a href="{{ url_for('stock_asinfo.fabricacion_tc') }}"
-         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if proceso == 'tc' else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">Fabricación TC</a>
+         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if proceso == 'tc' else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">Inventario TC</a>
       <a href="{{ url_for('stock_asinfo.fabricacion_pt') }}"
-         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if proceso == 'pt' else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">Fabricación PT</a>
+         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if proceso == 'pt' else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">Inventario PT</a>
     </div>
   </div>
 
@@ -145,149 +145,30 @@
     {% endif %}
   </div>
 
-  {# ── Los dos bloques del Excel ─────────────────────────────────── #}
-  <div class="bloques">
-
-    <div class="card">
-      <div class="card-title">Inventario en proceso</div>
-      <table>
-        <thead>
-          <tr>
-            <th></th>
-            <th class="num">Despachado (OSM)</th>
-            <th class="num">Ing. fabricación</th>
-            <th class="num">Saldo</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="total-row">
-            <td>{{ cfg.material }}</td>
-            <td class="num">{{ (resumen.issued or 0) | num_es(2) }}</td>
-            <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
-            <td class="num {{ 'neg' if (resumen.saldo or 0) < 0 }}">{{ (resumen.saldo or 0) | num_es(2) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
-        Saldo = {{ cfg.material | lower }} despachado a órdenes abiertas − lo ya devuelto fabricado.
-      </p>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Órdenes de fabricación</div>
-      <table>
-        <thead>
-          <tr>
-            <th></th>
-            <th class="num">Planificada</th>
-            <th class="num">Fabricada</th>
-            <th class="num">Por producir</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% if proceso == 'pt' %}
-            {% for t in por_tejido %}
-              <tr>
-                <td>{{ t.tejido }}</td>
-                <td class="num">{{ t.planif | num_es(2) }}</td>
-                <td class="num">{{ t.fab | num_es(2) }}</td>
-                <td class="num {{ 'neg' if t.por_producir < 0 }}">{{ t.por_producir | num_es(2) }}</td>
-              </tr>
-            {% endfor %}
-          {% else %}
-            <tr>
-              <td>{{ cfg.produce }} <span class="text-slate-400">({{ resumen.n_inic or 0 }} en curso)</span></td>
-              <td class="num">{{ (resumen.planif_inic or 0) | num_es(2) }}</td>
-              <td class="num">{{ (resumen.fab_inic or 0) | num_es(2) }}</td>
-              <td class="num {{ 'neg' if (resumen.por_producir_inic or 0) < 0 }}">{{ (resumen.por_producir_inic or 0) | num_es(2) }}</td>
-            </tr>
-          {% endif %}
-          {% if proceso == 'pt' %}
-          <tr class="total-row">
-            <td>En curso ({{ resumen.n_inic or 0 }})</td>
-            <td class="num">{{ (resumen.planif_inic or 0) | num_es(2) }}</td>
-            <td class="num">{{ (resumen.fab_inic or 0) | num_es(2) }}</td>
-            <td class="num {{ 'neg' if (resumen.por_producir_inic or 0) < 0 }}">{{ (resumen.por_producir_inic or 0) | num_es(2) }}</td>
-          </tr>
-          {% endif %}
-          <tr>
-            <td class="text-slate-400">Sin iniciar ({{ resumen.n_sin or 0 }})</td>
-            <td class="num text-slate-400">{{ (resumen.planif_sin or 0) | num_es(2) }}</td>
-            <td class="num text-slate-400">—</td>
-            <td class="num text-slate-400">{{ (resumen.planif_sin or 0) | num_es(2) }}</td>
-          </tr>
-          <tr class="total-row">
-            <td>Total general ({{ resumen.n_ofts or 0 }})</td>
-            <td class="num">{{ (resumen.planif or 0) | num_es(2) }}</td>
-            <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
-            <td class="num {{ 'neg' if (resumen.por_producir or 0) < 0 }}">{{ (resumen.por_producir or 0) | num_es(2) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
-        En curso = con material ya despachado (lo que cuenta el Excel). Sin iniciar = abiertas sin movimiento todavía.
-      </p>
-    </div>
-
-  </div>
-
-  {# ── Detalle por OFT ───────────────────────────────────────────── #}
-  <div class="flex items-center justify-between mb-2 no-print">
-    <form method="get" class="flex gap-2 items-center">
-      <input type="text" name="q" value="{{ q }}" placeholder="Buscar OFT / producto…"
-             class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64">
-      {% if estado %}<input type="hidden" name="estado" value="{{ estado }}">{% endif %}
-      <button class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Filtrar</button>
-      <span class="flex gap-1 ml-2">
-        {% for val, lbl in [('', 'Todas'), ('curso', 'En curso'), ('sin', 'Sin iniciar')] %}
-          <a href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, q=q or None, estado=val or None) }}"
-             class="text-xs px-2.5 py-1 rounded-full {{ 'bg-slate-800 text-white' if estado == val else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">{{ lbl }}</a>
-        {% endfor %}
-      </span>
-    </form>
-    <a href="{{ url_for('stock_asinfo.fabricacion_' ~ proceso, q=q or None, estado=estado or None, export='csv') }}"
-       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
-  </div>
-
-  <div class="card mb-5">
-    <div class="card-title">Detalle por orden de fabricación</div>
-    <div class="overflow-x-auto">
-    <table class="sortable">
+  {# ── Inventario en proceso ─────────────────────────────────────── #}
+  <div class="card" style="margin-bottom: 20px;">
+    <div class="card-title">Inventario en proceso</div>
+    <table>
       <thead>
         <tr>
-          <th>Orden Fab.</th>
-          <th>Producto</th>
-          {% if proceso == 'pt' %}<th>Tejido</th>{% endif %}
-          <th class="num">Planificada</th>
-          <th class="num">Fabricada</th>
-          <th class="num">Por producir</th>
+          <th></th>
           <th class="num">Despachado (OSM)</th>
-          <th class="num">Saldo en proceso</th>
+          <th class="num">Ing. fabricación</th>
+          <th class="num">Saldo</th>
         </tr>
       </thead>
       <tbody>
-        {% for o in ofts %}
-          <tr>
-            <td class="font-mono text-slate-500 whitespace-nowrap">{{ o.oft }}</td>
-            <td data-sort-value="{{ o.producto }}">
-              <div class="font-medium text-slate-800">{{ o.producto or o.prod_codigo }}</div>
-              {% if o.prod_codigo %}<div class="font-mono text-[10px] text-slate-400">{{ o.prod_codigo }}</div>{% endif %}
-            </td>
-            {% if proceso == 'pt' %}<td class="text-slate-600">{{ o.tejido }}</td>{% endif %}
-            <td class="num text-slate-500">{{ o.planif | num_es(2) }}</td>
-            <td class="num text-slate-500">{{ o.fab | num_es(2) }}</td>
-            <td class="num text-slate-500 {{ 'neg' if o.por_producir < 0 }}">{{ o.por_producir | num_es(2) }}</td>
-            <td class="num text-slate-500">{{ o.issued | num_es(2) }}</td>
-            <td class="num font-semibold {{ 'neg' if o.saldo < 0 }}">{{ o.saldo | num_es(2) }}</td>
-          </tr>
-        {% else %}
-          <tr><td colspan="{{ 8 if proceso == 'pt' else 7 }}" class="text-center py-8 text-slate-500">
-            {% if error %}Error en la consulta.{% else %}Sin órdenes abiertas.{% endif %}
-          </td></tr>
-        {% endfor %}
+        <tr class="total-row">
+          <td>{{ cfg.material }}</td>
+          <td class="num">{{ (resumen.issued or 0) | num_es(2) }}</td>
+          <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
+          <td class="num {{ 'neg' if (resumen.saldo or 0) < 0 }}">{{ (resumen.saldo or 0) | num_es(2) }}</td>
+        </tr>
       </tbody>
     </table>
-    </div>
+    <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
+      Saldo = {{ cfg.material | lower }} despachado a órdenes abiertas − lo ya devuelto fabricado.
+    </p>
   </div>
 
   {# ── El resto de las vistas de Stock ───────────────────────────── #}
@@ -319,8 +200,7 @@
   </div>
 
   <p class="text-xs text-slate-500 mt-4">
-    Incluye todas las órdenes de fabricación abiertas. Saldos negativos = se fabricó más de lo
-    despachado (yield/timing). Cache 10 min.
+    Saldos negativos = se fabricó más de lo despachado (yield/timing). Cache 10 min.
   </p>
 </div>
 {% endblock %}

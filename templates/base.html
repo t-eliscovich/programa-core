@@ -751,11 +751,12 @@
       </details>
       {% endif %}
 
+      {# TMT 2026-07-08 dueña: "Ventas (factura)" y "Nueva compra" salen del menú
+         (no se usan desde acá). Nueva compra se entra desde la pantalla de
+         Compras (botón). Ventas/factura sigue viva por URL (facturas.nueva). #}
       <details class="sidebar-section" data-key="ingreso" open>
         <summary>Ingresos</summary>
         {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
-        {% if tiene_permiso('facturas.crear') %}{{ nav_link('facturas.nueva', 'Ventas (factura)', 'file') }}{% endif %}
-        {% if tiene_permiso('compras.crear') %}{{ nav_link('compras.nueva', 'Nueva Compra', 'shopping') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="modificar" open>
@@ -795,9 +796,11 @@
            (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
            e importaciones siguen vivas por URL y linkeadas DENTRO de estas
            dos páginas — sólo salen del menú. #}
-        {{ nav_link('stock_asinfo.fabricacion_tc', 'Fabricación TC', 'box') }}
-        {{ nav_link('stock_asinfo.fabricacion_pt', 'Fabricación PT', 'box') }}
-        {{ nav_link('importaciones.lista', 'Importaciones', 'truck') }}
+        {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → "Inventario TC/PT";
+           "Importaciones" → "Ingreso de hilado" (pantalla de solo lectura). #}
+        {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario TC', 'box') }}
+        {{ nav_link('stock_asinfo.fabricacion_pt', 'Inventario PT', 'box') }}
+        {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
       </details>
       {% endif %}
 
