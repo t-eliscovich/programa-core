@@ -4656,16 +4656,25 @@ def flujo_arranque_dbase() -> dict:
         """
     )
     salca = float((caja_row or {}).get("saldo") or 0)
-    # TMT 2026-07-07 (dueña): "no hay más P1 y P2, podemos eliminar esa parte".
-    # Ya no existen posdatados banc=1/2 → arranque directo: Pichincha +
-    # Internacional + Caja, sin sumar P1/P2.
-    s1 = _saldo_banco_por_nombre("PICHINC")
-    s2 = _saldo_banco_por_nombre("INTERNACI")
+    p_row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(CASE WHEN banc = 1 THEN importe END), 0) AS p1,
+               COALESCE(SUM(CASE WHEN banc = 2 THEN importe END), 0) AS p2
+          FROM scintela.posdat
+         WHERE banc IN (1, 2)
+           AND COALESCE(num, 0) <> 9999
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+        """
+    )
+    p1 = float((p_row or {}).get("p1") or 0)
+    p2 = float((p_row or {}).get("p2") or 0)
+    s1 = _saldo_banco_por_nombre("PICHINC") + p1
+    s2 = _saldo_banco_por_nombre("INTERNACI") + p2
     return {
         "s1": round(s1, 2),
         "s2": round(s2, 2),
-        "p1": 0.0,
-        "p2": 0.0,
+        "p1": round(p1, 2),
+        "p2": round(p2, 2),
         "caja": round(salca, 2),
         "total": round(s1 + s2 + salca, 2),
     }
@@ -4705,7 +4714,9 @@ def flujo_items_dbase(incluir_facturas: bool = False) -> list[dict]:
         db.fetch_all(
             """
         SELECT p.fechad AS fecha,
-               CASE WHEN UPPER(COALESCE(pr.tipo, '')) = 'H'
+               CASE WHEN COALESCE(p.banc, 0) = 1 THEN 'posdat1'
+                    WHEN COALESCE(p.banc, 0) = 2 THEN 'posdat2'
+                    WHEN UPPER(COALESCE(pr.tipo, '')) = 'H'
                          AND UPPER(LEFT(COALESCE(pr.activo, '1'), 1)) IN ('1', 'S')
                          THEN 'mprima'
                     ELSE 'gasto' END AS tipo,
@@ -4714,7 +4725,7 @@ def flujo_items_dbase(incluir_facturas: bool = False) -> list[dict]:
           LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = p.prov
          WHERE p.fechad IS NOT NULL
            AND COALESCE(p.num, 0) <> 9999
-           AND COALESCE(p.banc, 0) IN (0, 9)
+           AND COALESCE(p.banc, 0) IN (0, 1, 2, 9)
            AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
          GROUP BY 1, 2
         """
@@ -4781,7 +4792,8 @@ def construir_flujo_diario(
             f = hoy
         d = por_dia.setdefault(
             f,
-            {"cheque": 0.0, "factura": 0.0, "mprima": 0.0, "gasto": 0.0},
+            {"cheque": 0.0, "factura": 0.0, "posdat1": 0.0,
+             "posdat2": 0.0, "mprima": 0.0, "gasto": 0.0},
         )
         if it["tipo"] in d:
             d[it["tipo"]] += float(it.get("importe") or 0)
@@ -4812,8 +4824,10 @@ def construir_flujo_diario(
         ant = _dow_dbase(f)
         c = d["cheque"]
         fa = d["factura"] if incluir_facturas else 0.0  # L701: FA=0
-        h, g = d["mprima"], d["gasto"]
-        st = st + c + fa - g - h
+        p1, p2, h, g = d["posdat1"], d["posdat2"], d["mprima"], d["gasto"]
+        s1 -= p1
+        s2 -= p2
+        st = st - p1 - p2 + c + fa - g - h
         filas.append(
             {
                 "tipo": "dia", "fecha": f,
@@ -4917,7 +4931,8 @@ def flujo_calculado(
             continue
         d = por_dia.setdefault(
             f,
-            {"cheque": 0.0, "factura": 0.0, "mprima": 0.0, "gasto": 0.0},
+            {"cheque": 0.0, "factura": 0.0, "posdat1": 0.0,
+             "posdat2": 0.0, "mprima": 0.0, "gasto": 0.0},
         )
         if it["tipo"] in d:
             d[it["tipo"]] += float(it.get("importe") or 0)
@@ -4942,18 +4957,22 @@ def flujo_calculado(
     # ⚠ offset=0 también aplica cambios: los vencidos imputados a hoy deben
     # restar/sumar HOY, no mañana (bug histórico de $1.4M — no repetir).
     s1, s2, saldo_acum = arr["s1"], arr["s2"], arr["total"]
-    vacio = {"cheque": 0.0, "factura": 0.0, "mprima": 0.0, "gasto": 0.0}
+    vacio = {"cheque": 0.0, "factura": 0.0, "posdat1": 0.0,
+             "posdat2": 0.0, "mprima": 0.0, "gasto": 0.0}
     for offset in range(0, adelante + 1):
         fecha = hoy + _td(days=offset)
         d = por_dia.get(fecha, vacio)
+        s1 -= d["posdat1"]
+        s2 -= d["posdat2"]
         saldo_acum = (
-            saldo_acum + d["cheque"] - d["gasto"] - d["mprima"]
+            saldo_acum - d["posdat1"] - d["posdat2"]
+            + d["cheque"] - d["gasto"] - d["mprima"]
         )
         filas.append(
             {
                 "fecha": fecha, "saldo": saldo_acum,
                 "cheques": d["cheque"], "facturas": 0.0,
-                "posdat1": 0.0, "posdat2": 0.0,
+                "posdat1": -d["posdat1"], "posdat2": -d["posdat2"],
                 "pichincha": s1, "inter": s2,
                 "mprima": -d["mprima"],
                 "gastos": -d["gasto"],  # negativo: el chart lo trata como egreso
