@@ -2138,6 +2138,12 @@ def flujo_fondos():
     # TMT 2026-07-08 (dueña "estos -87k no sé de dónde salen"): enriquecemos cada
     # fila-día con el DETALLE de los posdat que componen GASTOS y MAT.PRIMA, para
     # mostrarlo en un tooltip. Best-effort: si falla, la tabla sigue igual.
+    # TMT 2026-07-08 (dueña "no bajamos tanto de la nada"): DESGLOSE del saldo
+    # final en sus componentes, para que se vea que la caída NO viene de la
+    # deuda actual sino de las COMPRAS FUTURAS de hilado (banc=9) que el flujo
+    # proyecta sin las ventas futuras que las pagan (FA=0). Reusa el detalle ya
+    # traído. Best-effort: si falla, la página sigue igual sin la caja.
+    desglose = None
     try:
         _det = queries.flujo_egresos_detalle()
         _by_day: dict = {}
@@ -2147,6 +2153,24 @@ def flujo_fondos():
             if _f.get("tipo") == "dia":
                 _f["gastos_det"] = _by_day.get((_f.get("fecha"), "gasto"), [])
                 _f["mprima_det"] = _by_day.get((_f.get("fecha"), "mprima"), [])
+        # Buckets por banc: 0 = deuda actual (pasivos); 9 = importaciones de
+        # hilado a futuro; 1/2 = cheques emitidos sin debitar (van al arranque).
+        _egr_deuda = sum(i["importe"] for i in _det if i["banc"] == 0)
+        _egr_import = sum(i["importe"] for i in _det if i["banc"] == 9)
+        _ing_cheques = sum(
+            f.get("cheques", 0.0) for f in data.get("filas", [])
+            if f.get("tipo") == "dia"
+        )
+        _arr = data["arranque"]["total"]
+        desglose = {
+            "arranque": round(_arr, 2),
+            "cheques": round(_ing_cheques, 2),
+            "deuda": round(_egr_deuda, 2),
+            "importaciones": round(_egr_import, 2),
+            # Saldo "operativo": lo que quedaría si NO proyectáramos las compras
+            # futuras de hilado (que se pagan con ventas futuras no contadas).
+            "sin_importaciones": round(_arr + _ing_cheques - _egr_deuda, 2),
+        }
     except Exception:  # noqa: BLE001
         pass
 
@@ -2159,5 +2183,6 @@ def flujo_fondos():
         fecha_min=data["fecha_min"],
         hoy=today_ec(),
         incluir_fact=incluir_fact,
+        desglose=desglose,
         error=error,
     )

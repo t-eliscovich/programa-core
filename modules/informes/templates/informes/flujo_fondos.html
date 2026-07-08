@@ -43,6 +43,32 @@
     </div>
   </div>
 
+  {# TMT 2026-07-08 (dueña "no bajamos tanto de la nada"): desglose del saldo
+     final en sus 4 componentes. Muestra que la caída la maneja casi entera la
+     compra futura de hilado (banc=9), no la deuda actual. #}
+  {% if desglose %}
+  <div class="bg-white dark:bg-slate-900 border rounded-lg shadow-sm p-4 mb-6">
+    <div class="text-xs uppercase tracking-wide text-slate-500 mb-3">¿De dónde sale el saldo final?</div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;" class="tabular-nums">
+      <span style="background:#f0f9ff;color:#075985;border:1px solid #bae6fd;border-radius:6px;padding:3px 9px;">Arranque hoy <b>{{ desglose.arranque | num_es }}</b></span>
+      <span style="color:#059669;">+</span>
+      <span style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;padding:3px 9px;">Cheques por cobrar <b>{{ desglose.cheques | num_es }}</b></span>
+      <span style="color:#e11d48;">−</span>
+      <span style="background:#fff1f2;color:#9f1239;border:1px solid #fecdd3;border-radius:6px;padding:3px 9px;">Deuda actual <b>{{ desglose.deuda | num_es }}</b></span>
+      <span style="color:#e11d48;">−</span>
+      <span style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:6px;padding:3px 9px;">Compras futuras de hilado <b>{{ desglose.importaciones | num_es }}</b></span>
+      <span style="color:#334155;">=</span>
+      <span style="background:{% if saldo_final < 0 %}#fef2f2{% else %}#ecfdf5{% endif %};color:{% if saldo_final < 0 %}#991b1b{% else %}#065f46{% endif %};border:1px solid {% if saldo_final < 0 %}#fca5a5{% else %}#6ee7b7{% endif %};border-radius:6px;padding:3px 9px;font-weight:600;">Saldo final {{ saldo_final | num_es }}</span>
+    </div>
+    <p class="text-xs text-slate-500 mt-3" style="line-height:1.5;">
+      Sin proyectar las compras futuras de hilado, el flujo quedaría en
+      <b class="{% if desglose.sin_importaciones < 0 %}text-rose-700{% else %}text-emerald-700{% endif %} tabular-nums">{{ desglose.sin_importaciones | num_es }}</b>.
+      La caída a rojo la produce casi entera <b>{{ desglose.importaciones | num_es }}</b> de hilado a comprar en los próximos meses —
+      que el flujo cuenta como salida pero <b>no</b> cuenta las ventas que van a pagar ese hilado (criterio dBase: FA=0, solo cheques en mano).
+    </p>
+  </div>
+  {% endif %}
+
   <div class="bg-white dark:bg-slate-900 border rounded-lg shadow-sm overflow-x-auto">
     <table class="w-full text-sm" id="flujo-tabla">
       <thead class="text-xs uppercase tracking-wide text-slate-500 bg-slate-50 dark:bg-slate-800">
