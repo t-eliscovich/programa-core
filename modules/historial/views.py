@@ -427,6 +427,17 @@ _REVERSO_DISPATCH = {
         "bancos.reversar_cheque_emitido",
         lambda r: {"id_transaccion": r["origen_id"]},
     ),
+    # TMT 2026-07-08 (dueña "todo reversible"): cheque emitido SIN side-effect
+    # (tipo 'otro' o proveedor sin posdat) y anticipo USD. reversar_cheque_emitido
+    # compensa el CH con NC; para anticipo_usd además anula la fila dolares.
+    "cheque_emitido_otro": (
+        "bancos.reversar_cheque_emitido",
+        lambda r: {"id_transaccion": r["origen_id"]},
+    ),
+    "cheque_emitido_anticipo_usd": (
+        "bancos.reversar_cheque_emitido",
+        lambda r: {"id_transaccion": r["origen_id"]},
+    ),
     # Caja con side effect — caja.reversar deshace los side-effects vía
     # aplicar_side_effect(inverso=True). Verificado audit #5,6,7,9,10.
     "caja_s_to_transfer_banco": ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]}),

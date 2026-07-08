@@ -918,23 +918,31 @@ def emitir_cheque(
                 destino_table, destino_id = "xgast", extras["id_xgast"]
             elif tipo == "anticipo_usd" and extras.get("id_dolares"):
                 destino_table, destino_id = "dolares", extras["id_dolares"]
-            if destino_table:
-                import mov_doble as _md
-                id_mov_doble = _md.registrar(
-                    conn=conn,
-                    tipo=f"cheque_emitido_{tipo}",
-                    origen_table="transacciones_bancarias",
-                    origen_id=id_transaccion,
-                    destino_table=destino_table,
-                    destino_id=destino_id,
-                    importe=importe_f,
-                    fecha=fecha,
-                    concepto=(concepto or beneficiario or "")[:200],
-                    usuario=usuario,
-                    metadata={"no_banco": no_banco,
-                              "no_cheque": no_cheque,
-                              "beneficiario": beneficiario},
-                )
+            # TMT 2026-07-08 (dueña "todo movimiento en historial + reversible"):
+            # ANTES sólo se registraba mov_doble si había side-effect. Un cheque
+            # 'otro' o 'proveedor' SIN posdat salía del banco INVISIBLE en
+            # /historial y sin botón de reverso (egreso de caja sin rastro).
+            # Ahora SIEMPRE registramos: si no hay contraparte, el destino es la
+            # propia fila bancaria. El reverso (bancos.reversar_cheque_emitido)
+            # compensa el CH con una NC igual — con o sin side-effect.
+            if not destino_table:
+                destino_table, destino_id = "transacciones_bancarias", id_transaccion
+            import mov_doble as _md
+            id_mov_doble = _md.registrar(
+                conn=conn,
+                tipo=f"cheque_emitido_{tipo}",
+                origen_table="transacciones_bancarias",
+                origen_id=id_transaccion,
+                destino_table=destino_table,
+                destino_id=destino_id,
+                importe=importe_f,
+                fecha=fecha,
+                concepto=(concepto or beneficiario or "")[:200],
+                usuario=usuario,
+                metadata={"no_banco": no_banco,
+                          "no_cheque": no_cheque,
+                          "beneficiario": beneficiario},
+            )
 
     return {
         "id_transaccion":  id_transaccion,
@@ -2043,6 +2051,30 @@ def reversar_cheque_emitido(
                     conn=conn,
                 )
                 side_revertido = {"tipo": "xgast_anulado", "id_xgast": dest_id}
+
+            elif tipo_orig == "cheque_emitido_anticipo_usd" and dest_table == "dolares":
+                # TMT 2026-07-08: anular la fila de anticipo en scintela.dolares
+                # (st='X') para que deje de sumar a ANTICIPOS — el banco ya se
+                # compensó arriba con la NC. Si ya fue consumida por un BAP
+                # (st no vacío ≠ 'X') bloqueamos con mensaje claro.
+                dol = db.fetch_one(
+                    "SELECT st FROM scintela.dolares WHERE id_dolares=%s",
+                    (dest_id,), conn=conn,
+                )
+                if dol:
+                    _st = (dol.get("st") or "").strip()
+                    if _st and _st != "X":
+                        raise ValueError(
+                            f"El anticipo USD #{dest_id} ligado a este cheque ya "
+                            f"fue aplicado (st='{_st}') — resolvelo en /dolares "
+                            f"antes de reversar el cheque."
+                        )
+                    db.execute(
+                        "UPDATE scintela.dolares SET st='X', usuario_modifica=%s, "
+                        "fecha_modifica=NOW() WHERE id_dolares=%s",
+                        (usuario[:50], dest_id), conn=conn,
+                    )
+                side_revertido = {"tipo": "anticipo_usd_anulado", "id_dolares": dest_id}
 
         # 3) Registrar reverso en mov_doble (siempre, aunque no haya side effect).
         id_md_rev = _md.registrar(

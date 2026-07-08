@@ -135,6 +135,10 @@ def stub(monkeypatch):
     import bank_helpers
     monkeypatch.setattr(bank_helpers.db, "execute_returning", s.execute_returning)
     monkeypatch.setattr(bank_helpers.db, "fetch_one", s.fetch_one)
+    # TMT 2026-07-08: emitir_cheque ahora registra mov_doble SIEMPRE (también
+    # 'otro' / proveedor sin posdat). Stub para no depender de mov_doble interno.
+    import mov_doble
+    monkeypatch.setattr(mov_doble, "registrar", lambda *a, **kw: 99500)
     return s
 
 
@@ -169,6 +173,9 @@ def test_tipo_otro_solo_insert_transaccion(stub):
                         concepto="impuesto IVA")
     assert r["tipo"] == "otro"
     assert r["importe"] == 100
+    # TMT 2026-07-08: aunque no tiene side-effect, ahora registra mov_doble
+    # (destino = la propia fila bancaria) → aparece en /historial y es reversible.
+    assert r["id_mov_doble"] == 99500
     txt = _sql_text(stub.executes)
     assert "transacciones_bancarias" in txt
     # NO inserta en otras tablas
