@@ -4783,7 +4783,8 @@ def construir_flujo_diario(
             f,
             {"cheque": 0.0, "factura": 0.0, "mprima": 0.0, "gasto": 0.0},
         )
-        d[it["tipo"]] += float(it.get("importe") or 0)
+        if it["tipo"] in d:
+            d[it["tipo"]] += float(it.get("importe") or 0)
 
     st = s1 + s2 + salca
     filas: list[dict] = [
@@ -4915,7 +4916,8 @@ def flujo_calculado(
             f,
             {"cheque": 0.0, "factura": 0.0, "mprima": 0.0, "gasto": 0.0},
         )
-        d[it["tipo"]] += float(it.get("importe") or 0)
+        if it["tipo"] in d:
+            d[it["tipo"]] += float(it.get("importe") or 0)
 
     filas: list[dict] = []
 

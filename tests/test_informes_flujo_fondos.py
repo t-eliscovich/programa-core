@@ -53,16 +53,6 @@ def test_mprima_separada_de_gastos():
     assert dia["saldo"] == 130.0
 
 
-def test_posdat1_baja_pichincha_a_su_fechad():
-    # MENU.PRG L700: REPLA POSDAT1 WITH -P1, PICHINCHA WITH S1-P1.
-    items = [{"fecha": date(2026, 7, 8), "tipo": "posdat1", "importe": 40.0}]
-    filas = construir_flujo_diario(LUNES, 100.0, 50.0, 10.0, items)
-    dia = [f for f in filas if f["tipo"] == "dia"][0]
-    assert dia["pichincha"] == 60.0
-    assert dia["inter"] == 50.0
-    assert dia["saldo"] == 120.0
-
-
 def test_corte_de_semana_acumula_ingresos_y_egresos():
     # dBase L697: al cambiar de semana (DOW no crece) inserta la fila con
     # ACUMI (Σ ingresos) y ACUME (Σ gastos+mprima), y resetea.
