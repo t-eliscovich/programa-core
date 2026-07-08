@@ -28,17 +28,37 @@ precios_bp = Blueprint("precios", __name__, template_folder="templates")
 @precios_bp.route("/precios")
 @requiere_login
 def lista():
-    """Ver la lista de precios. Sólo login — la ven todos los roles."""
+    """Ver la lista de precios. Sólo login — la ven todos los roles.
+
+    Muestra la matriz base (editable) y, como el dBase, los descuentos y
+    porcentajes: el % de recargo de cada clase de color sobre el BLANCO y el
+    precio neto con cada tramo de descuento de cliente (MINORISTA <=7 /
+    MAYORISTA >7) para la tela elegida.
+    """
     try:
         filas = queries.matriz()
         error = None
     except Exception as e:  # noqa: BLE001
         filas, error = [], str(e)
+
+    # Tela seleccionada para la tabla de descuentos (default: la primera).
+    tela_sel = (request.args.get("tela") or "").strip().lower()
+    if tela_sel not in queries.COLUMNAS_TELA:
+        tela_sel = queries.TELAS[0][0]
+
+    porcentajes = queries.porcentajes_sobre_blanco(filas) if filas else {}
+    tabla_desc = queries.tabla_descuentos(filas, tela_sel) if filas else []
+
     return render_template(
         "precios/lista.html",
         filas=filas,
         telas=queries.TELAS,
         error=error,
+        porcentajes=porcentajes,
+        tabla_desc=tabla_desc,
+        tela_sel=tela_sel,
+        tramos=queries.TRAMOS_DESCUENTO,
+        corte_mayorista=queries.CORTE_MAYORISTA,
     )
 
 

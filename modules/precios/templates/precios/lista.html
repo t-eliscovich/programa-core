@@ -47,6 +47,9 @@
               title="Clic para editar"
               {% endif %}>
             {% if f[col] is not none %}{{ f[col] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+            {% if f.clase|int != 1 and porcentajes.get(f.clase|int, {}).get(col) is not none %}
+            <span class="block text-[10px] text-emerald-600 dark:text-emerald-400 leading-none no-print">+{{ porcentajes[f.clase|int][col] | num_es(1) }}%</span>
+            {% endif %}
           </td>
           {% endfor %}
         </tr>
@@ -58,6 +61,65 @@
       </tbody>
     </table>
   </div>
+</div>
+
+<div class="max-w-6xl mt-8">
+  <div class="flex items-end justify-between gap-4 mb-3 flex-wrap">
+    <div>
+      <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-200">Descuentos de cliente</h2>
+      <p class="text-xs text-slate-500">Precio neto USD/kg = lista × (1 − descuento). El descuento de cada cliente sale de su ficha (CLIENTES.DBF). MINORISTA = descuento ≤ {{ corte_mayorista }}%, MAYORISTA = descuento &gt; {{ corte_mayorista }}%.</p>
+    </div>
+    <form method="get" action="{{ url_for('precios.lista') }}" class="no-print">
+      <label class="text-xs text-slate-500 mr-2">Tela</label>
+      <select name="tela" onchange="this.form.submit()"
+              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+        {% for col, label in telas %}
+        <option value="{{ col }}" {% if col == tela_sel %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+    <table class="w-full text-sm" style="border-collapse:collapse;">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium">Clase</th>
+          <th class="px-3 py-2 text-right font-medium">Lista</th>
+          {% for d in tramos %}
+          {% set es_mayor = d > corte_mayorista %}
+          <th class="px-3 py-2 text-right font-medium {% if es_mayor %}bg-amber-50 dark:bg-amber-900/20{% else %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
+            {% if d == 0 %}0%<span class="block text-[9px] normal-case font-normal">s/desc</span>{% else %}{{ d }}%<span class="block text-[9px] normal-case font-normal">{% if es_mayor %}mayor{% else %}menor{% endif %}</span>{% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in tabla_desc %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
+            <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums font-semibold">
+            {% if f.lista is not none %}{{ f.lista | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+          </td>
+          {% for d in tramos %}
+          {% set es_mayor = d > corte_mayorista %}
+          <td class="px-3 py-2 text-right tabular-nums {% if es_mayor %}bg-amber-50/40 dark:bg-amber-900/10{% else %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}">
+            {% if f.netos.get(d) is not none %}{{ f.netos[d] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ tramos|length + 2 }}" class="px-3 py-8 text-center text-slate-400">Sin precios cargados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-slate-500 mt-2">
+    <span class="inline-block w-3 h-3 rounded-sm bg-emerald-100 dark:bg-emerald-900/40 align-middle mr-1"></span>MINORISTA (≤ {{ corte_mayorista }}%)
+    <span class="inline-block w-3 h-3 rounded-sm bg-amber-100 dark:bg-amber-900/40 align-middle ml-4 mr-1"></span>MAYORISTA (&gt; {{ corte_mayorista }}%)
+  </p>
 </div>
 
 {% if puede_editar %}
