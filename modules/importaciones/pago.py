@@ -342,6 +342,28 @@ def agregar_movimiento(
             (id_tx, id_mov), conn=conn,
         )
 
+        # TMT 2026-07-08 (dueña: "se cargó en la importación pero no lo veo en la
+        # base de anticipos y se está restando en utilidad"). El anticipo baja
+        # Pichincha (ND) pero NO creaba el ACTIVO que lo compense → el
+        # patrimonio caía por el monto. Igual que /dolares/nuevo-anticipo,
+        # bancos anticipo_usd y el router DOLARES: además de la ND insertamos
+        # la fila viva en scintela.dolares (cta=prov, st=' ') → cuenta en
+        # ANTICIPOS del balance (informes.queries.anticipos) y aparece en
+        # /dolares. Solo para 'anticipo' (el 'pago' parcial es contra stock ya
+        # recibido). Se consume por BAP en /compras como cualquier anticipo USD;
+        # el ✕ lo revierte (st='X'). id_dolares queda en el mov_doble.
+        id_dolares = None
+        if tipo == "anticipo":
+            clave = usuario[:3].upper()
+            dol_row = db.execute_returning(
+                "INSERT INTO scintela.dolares "
+                "(fecha, cta, concepto, importe, st, clave, usuario_crea) "
+                "VALUES (%s, %s, %s, %s, ' ', %s, %s) RETURNING id_dolares",
+                (fecha, (prov or "")[:3], concepto_nd, monto_f, clave, usuario[:50]),
+                conn=conn,
+            ) or {}
+            id_dolares = dol_row.get("id_dolares")
+
         _md.registrar(
             conn=conn,
             tipo=tipo_md,
@@ -359,6 +381,7 @@ def agregar_movimiento(
                 "prov": prov,
                 "no_banco": _BANCO_PICHINCHA,
                 "id_transaccion": id_tx,
+                "id_dolares": id_dolares,
             },
         )
 
@@ -442,13 +465,46 @@ def deshacer_movimiento(id_mov, *, usuario: str = "web") -> dict:
         # mov_doble del reverso, enlazado al original (queda 'reversado').
         md_orig = db.fetch_one(
             """
-            SELECT id_mov_doble FROM scintela.mov_doble
+            SELECT id_mov_doble, metadata FROM scintela.mov_doble
              WHERE origen_table = 'importacion_pago_mov'
                AND origen_id = %s AND estado = 'activo'
              ORDER BY id_mov_doble DESC LIMIT 1
             """,
             (int(id_mov),), conn=conn,
         ) or {}
+
+        # TMT 2026-07-08: si el anticipo creó su fila en scintela.dolares
+        # (activo que compensa la ND — ver agregar_movimiento), el ✕ la
+        # neutraliza (st='X') para que salga de ANTICIPOS. Si ya fue
+        # consumida por un BAP (st no vacío ≠ 'X') → bloqueamos con mensaje
+        # claro, igual que bancos.reversar_movimiento_simple.
+        _meta = md_orig.get("metadata") or {}
+        if isinstance(_meta, str):
+            import json as _json
+            try:
+                _meta = _json.loads(_meta)
+            except Exception:  # noqa: BLE001
+                _meta = {}
+        _id_dolares = _meta.get("id_dolares")
+        if _id_dolares:
+            _dol = db.fetch_one(
+                "SELECT st FROM scintela.dolares WHERE id_dolares = %s",
+                (_id_dolares,), conn=conn,
+            )
+            if _dol:
+                _st = (_dol.get("st") or "").strip()
+                if _st and _st != "X":
+                    raise ValueError(
+                        f"El anticipo USD #{_id_dolares} de esta importación ya "
+                        f"fue aplicado (st='{_st}') — resolvelo en /dolares antes "
+                        f"de deshacer."
+                    )
+                db.execute(
+                    "UPDATE scintela.dolares SET st='X', usuario_modifica=%s, "
+                    "fecha_modifica=NOW() WHERE id_dolares=%s",
+                    (usuario[:50], _id_dolares), conn=conn,
+                )
+
         _md.registrar(
             conn=conn,
             tipo=f"reverso_{tipo_md}",

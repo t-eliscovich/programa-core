@@ -260,11 +260,15 @@
   {# TMT 2026-07-06 (dueña: "pantalla demasiado larga, cards más chicas"):
      sm:grid-cols-3 NO existe en el tailwind congelado → las cards se
      apilaban a lo ancho. Grid inline (gotcha 2026-06-30). #}
-  <div class="mb-4" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;">
+  {# TMT 2026-07-08 (dueña: "se ve horrible, debería tener un mini-resumen"):
+     tira compacta de 4 KPIs = total vivo (=ANTICIPOS del balance) + partidas
+     + cuentas + aplicados/consumidos. Grid inline (sm:grid-cols-* no existe en
+     el tailwind congelado). #}
+  <div class="mb-4" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;">
     <div class="kpi-card">
       <div class="kpi-label">Total vivo</div>
       <div class="kpi-value kpi-accent">$ {{ resumen.total_vivos | num_es(0) }}</div>
-      <div class="kpi-meta">suma al balance</div>
+      <div class="kpi-meta">= ANTICIPOS del balance</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Partidas vivas</div>
@@ -276,17 +280,25 @@
       <div class="kpi-value">{{ resumen.n_ctas_vivos | num_es(0) }}</div>
       <div class="kpi-meta">proveedores con anticipo</div>
     </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Aplicados</div>
+      <div class="kpi-value">$ {{ resumen.total_aplicados | num_es(0) }}</div>
+      <div class="kpi-meta">{{ resumen.n_aplicados | num_es(0) }} consumidos / cancelados</div>
+    </div>
   </div>
   {% endif %}
 
-  {# ----- Cards por cuenta — top 12, ranked por saldo ----- #}
+  {# ----- Cards por cuenta — top 12, ranked por saldo -----
+     TMT 2026-07-08 (dueña "pantalla demasiado larga"): colapsable, cerrado
+     por defecto. El mini-resumen de arriba alcanza para el pantallazo; el
+     detalle por cuenta se abre a demanda. #}
   {% if cuentas %}
   {% set max_saldo = cuentas[0].total_vivo | float if cuentas[0].total_vivo else 0 %}
-  <div class="mb-6">
-    <div class="flex items-baseline justify-between mb-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">Por cuenta</h2>
-      <span class="text-xs text-slate-500">{{ cuentas | length }} cuenta{{ 's' if cuentas | length != 1 else '' }} con anticipo vivo</span>
-    </div>
+  <details class="mb-6">
+    <summary class="flex items-baseline justify-between mb-3 cursor-pointer select-none list-none">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">Por cuenta ▸</h2>
+      <span class="text-xs text-slate-500">{{ cuentas | length }} cuenta{{ 's' if cuentas | length != 1 else '' }} con anticipo vivo · US$ {{ resumen.total_vivos | num_es(0) }}</span>
+    </summary>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
       {% for c in cuentas[:12] %}
       {# Bug TMT 2026-05-13: c.total_vivo viene como decimal.Decimal del SUM
@@ -327,7 +339,7 @@
       — usá el filtro de abajo o el CSV para ver el resto.
     </p>
     {% endif %}
-  </div>
+  </details>
   {% endif %}
 
   {# ----- Filtros + detalle ----- #}
