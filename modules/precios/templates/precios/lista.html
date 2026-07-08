@@ -28,14 +28,26 @@
   <!-- Barra de edicion (oculta hasta apretar "Editar") -->
   <div id="barra-edicion" class="no-print mb-4 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 px-4 py-3" style="display:none;">
     <div class="flex items-center gap-3 flex-wrap">
-      <form method="post" action="{{ url_for('precios.subir_porcentaje') }}"
-            class="flex items-center gap-2"
-            onsubmit="return confirm('Subir TODOS los precios ' + (document.getElementById('pct-input').value || '0') + '%?');">
+      <form id="form-subir" method="post" action="{{ url_for('precios.subir_porcentaje') }}"
+            class="flex items-center gap-2 flex-wrap">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="text-sm text-slate-600 dark:text-slate-300">Subir % a todos</label>
-        <input type="text" name="pct" id="pct-input" placeholder="5"
-               class="w-20 text-right rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
-        <span class="text-sm text-slate-500">%</span>
+        <label class="text-sm text-slate-600 dark:text-slate-300">Subir a todos</label>
+        <label class="text-sm text-slate-600 dark:text-slate-300 inline-flex items-center gap-1">
+          <input type="radio" name="modo" value="pct" class="modo-radio" checked> %
+        </label>
+        <label class="text-sm text-slate-600 dark:text-slate-300 inline-flex items-center gap-1">
+          <input type="radio" name="modo" value="monto" class="modo-radio"> $ fijo
+        </label>
+        <span id="wrap-pct" class="inline-flex items-center gap-1">
+          <input type="text" name="pct" id="pct-input" placeholder="5"
+                 class="w-20 text-right rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+          <span class="text-sm text-slate-500">%</span>
+        </span>
+        <span id="wrap-monto" class="inline-flex items-center gap-1" style="display:none;">
+          <span class="text-sm text-slate-500">$</span>
+          <input type="text" name="monto" id="monto-input" placeholder="0,10"
+                 class="w-20 text-right rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+        </span>
         <button type="submit"
                 class="rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1 font-medium">
           Aplicar a todos
@@ -66,31 +78,32 @@
         <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Editar todos los basicos</h2>
         <p class="text-xs text-slate-500 dark:text-slate-400">
           Cada celda es el precio de lista (Basico). En <span class="text-amber-600 dark:text-amber-400 font-medium">ambar</span>
-          se muestra cómo queda con el <b>aumento</b> del "Subir %" de arriba (vista previa, no se guarda).
+          se muestra cómo queda con el <b>aumento</b> de arriba (% o $ fijo, según lo elegido) — vista previa, no se guarda.
         </p>
       </div>
       <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-        <table class="text-sm" style="border-collapse:collapse; min-width:100%;">
+        <table class="text-sm" style="border-collapse:collapse; table-layout:fixed;">
           <thead class="text-xs uppercase tracking-wider text-slate-500">
             <tr class="bg-slate-50 dark:bg-slate-800/50">
-              <th class="px-2 py-2 text-left font-medium sticky left-0 bg-slate-50 dark:bg-slate-800/50 z-10">Clase</th>
+              <th class="px-2 py-2 text-left font-medium sticky left-0 bg-slate-50 dark:bg-slate-800/50 z-10" style="width:120px;">Clase</th>
               {% for col, label in telas %}
-              <th class="px-1 py-2 text-center font-medium whitespace-nowrap">{{ label }}</th>
+              <th class="px-1 py-2 text-center font-medium whitespace-nowrap" style="width:82px;">{{ label }}</th>
               {% endfor %}
             </tr>
           </thead>
           <tbody>
             {% for f in filas %}
             <tr class="border-t border-slate-100 dark:border-slate-800">
-              <td class="px-2 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap sticky left-0 bg-white dark:bg-slate-900 z-10">
+              <td class="px-2 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap sticky left-0 bg-white dark:bg-slate-900 z-10" style="width:120px;">
                 <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
               </td>
               {% for col, label in telas %}
               {% set val = f[col] %}
-              <td class="px-1 py-1 text-center align-top">
+              <td class="px-1 py-1 text-center align-top" style="width:82px;">
                 <input type="text"
                        name="p_{{ f.clase }}_{{ col }}"
-                       class="celda-matriz w-14 text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm tabular-nums"
+                       class="celda-matriz text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm tabular-nums"
+                       style="width:74px;"
                        value="{{ val | num_es if val is not none else '' }}"
                        autocomplete="off">
                 <div class="preview-descuento tabular-nums text-amber-600 dark:text-amber-400 mt-0.5 text-right pr-1"
@@ -112,32 +125,33 @@
        descuentos EN CASCADA sobre la tela elegida: 5%, 5%+9% (=x0.95x0.91) y
        5%+14% (=x0.95x0.86). Se recalculan, no se guardan. Se oculta al editar. -->
   <div id="bloque-descuentos" class="mt-8">
-    <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
-      <div>
-        <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Descuentos</h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-          Basico = precio de lista. Los descuentos son sucesivos (en cascada):
-          5% &middot; 5%+9% &middot; 5%+14%.
-        </p>
-      </div>
-      <form method="get" action="{{ url_for('precios.lista') }}" class="no-print flex items-center gap-2">
-        <label class="text-sm text-slate-600 dark:text-slate-300">Tela</label>
-        <select name="tela" onchange="this.form.submit()"
-                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+    <div class="flex items-center justify-between gap-4 flex-wrap mb-3">
+      <form method="get" action="{{ url_for('precios.lista') }}" class="no-print flex items-center gap-3">
+        <label class="text-xl font-bold text-slate-700 dark:text-slate-200" for="tela-sel">TELA</label>
+        <select name="tela" id="tela-sel" onchange="this.form.submit()"
+                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-lg font-semibold text-slate-800 dark:text-slate-100"
+                style="min-width:220px;">
           {% for col, label in telas %}
           <option value="{{ col }}" {% if col == tela_sel %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </form>
+      <div class="text-right">
+        <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Descuentos</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Basico = precio de lista. Los descuentos son sucesivos (en cascada):
+          5% &middot; 5%+4% &middot; 5%+9% &middot; 5%+14%.
+        </p>
+      </div>
     </div>
 
     <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-      <table class="w-full text-sm" style="border-collapse:collapse;">
+      <table class="w-full text-sm" style="border-collapse:collapse; table-layout:fixed;">
         <thead class="text-xs uppercase tracking-wider text-slate-500">
           <tr class="bg-slate-50 dark:bg-slate-800/50">
-            <th class="px-3 py-2 text-left font-medium">Clase</th>
+            <th class="px-3 py-2 text-left font-medium" style="width:26%;">Clase</th>
             {% for label, _factor in tramos %}
-            <th class="px-3 py-2 text-right font-medium"
+            <th class="px-3 py-2 text-right font-medium whitespace-nowrap"
                 {% if loop.index0 == 0 %}style="background:rgba(16,185,129,0.10);"{% else %}style="background:rgba(245,158,11,0.10);"{% endif %}>{{ label }}</th>
             {% endfor %}
           </tr>
@@ -196,18 +210,53 @@
   }
 
   var pctInput = document.getElementById('pct-input');
+  var montoInput = document.getElementById('monto-input');
+  var modoRadios = Array.prototype.slice.call(document.querySelectorAll('.modo-radio'));
+
+  function modoActual() {
+    var r = document.querySelector('.modo-radio:checked');
+    return r ? r.value : 'pct';
+  }
+
   function recalcCelda(input) {
     var prev = input.parentNode.querySelector('.preview-descuento');
     if (!prev) return;
     var v = parseEU(input.value);
-    var pct = pctInput ? parseEU(pctInput.value) : null;
-    if (v == null || pct == null || pct === 0) { prev.textContent = ''; return; }
-    prev.textContent = fmtEU(v * (1 + pct / 100));
+    if (v == null) { prev.textContent = ''; return; }
+    if (modoActual() === 'monto') {
+      var m = montoInput ? parseEU(montoInput.value) : null;
+      if (m == null || m === 0) { prev.textContent = ''; return; }
+      prev.textContent = fmtEU(v + m);
+    } else {
+      var pct = pctInput ? parseEU(pctInput.value) : null;
+      if (pct == null || pct === 0) { prev.textContent = ''; return; }
+      prev.textContent = fmtEU(v * (1 + pct / 100));
+    }
   }
 
   function recalcTodo() {
     celdas.forEach(recalcCelda);
   }
+
+  // Toggle % vs $ fijo: muestra el input correspondiente y recalcula la vista previa.
+  function updateModoUI() {
+    var modo = modoActual();
+    var wp = document.getElementById('wrap-pct');
+    var wm = document.getElementById('wrap-monto');
+    if (wp) wp.style.display = modo === 'monto' ? 'none' : '';
+    if (wm) wm.style.display = modo === 'monto' ? '' : 'none';
+    recalcTodo();
+  }
+  modoRadios.forEach(function (r) { r.addEventListener('change', updateModoUI); });
+  if (montoInput) montoInput.addEventListener('input', recalcTodo);
+
+  var formSubir = document.getElementById('form-subir');
+  if (formSubir) formSubir.addEventListener('submit', function (e) {
+    var msg = modoActual() === 'monto'
+      ? 'Sumar ' + ((montoInput && montoInput.value) || '0') + ' a TODOS los precios?'
+      : 'Subir TODOS los precios ' + ((pctInput && pctInput.value) || '0') + '%?';
+    if (!confirm(msg)) e.preventDefault();
+  });
 
   function setModo(on) {
     if (barra) barra.style.display = on ? '' : 'none';

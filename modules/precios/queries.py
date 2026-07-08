@@ -76,6 +76,27 @@ def subir_porcentaje(pct: float, usuario: str) -> None:
     )
 
 
+def sumar_monto(monto: float, usuario: str) -> None:
+    """Suma un `monto` fijo (USD) a TODOS los precios de la matriz.
+
+    Alternativa al aumento porcentual: agrega el mismo importe (p.ej. 0,10 =
+    diez centavos) a las 12 columnas de tela en todas las clases, redondeando a
+    2 decimales. Las celdas vacías (NULL) quedan como están (NULL + n = NULL).
+    """
+    sets = ", ".join(
+        f"{col} = ROUND({col} + %(monto)s::numeric, 2)" for col, _ in TELAS
+    )
+    db.execute(
+        f"""
+        UPDATE scintela.precios
+           SET {sets},
+               actualizado = CURRENT_TIMESTAMP,
+               usuario_edita = %(usuario)s
+        """,
+        {"monto": monto, "usuario": usuario},
+    )
+
+
 # Los CUATRO tramos de precio que usa la duena: basico (precio de lista, sin
 # descuento) y luego descuentos EN CASCADA (sucesivos): 5%, 5%+9% y 5%+14%.
 # "5%+9%" = un 5% de descuento y luego un 9% adicional sobre el ya rebajado,
@@ -83,6 +104,7 @@ def subir_porcentaje(pct: float, usuario: str) -> None:
 TRAMOS_DESCUENTO: list[tuple[str, float]] = [
     ("Basico", 1.0),
     ("5%", 0.95),
+    ("5%+4%", 0.95 * 0.96),
     ("5%+9%", 0.95 * 0.91),
     ("5%+14%", 0.95 * 0.86),
 ]

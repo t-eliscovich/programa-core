@@ -94,11 +94,33 @@ def actualizar():
 @requiere_login
 @requiere_permiso("precios.editar")
 def subir_porcentaje():
-    """Sube TODOS los precios de la matriz un % (la forma normal de actualizar).
+    """Sube TODOS los precios de la matriz (la forma normal de actualizar).
 
-    Gated 'precios.editar'. El % se parsea con el parser EU/es-EC (coma
-    decimal). Un % <= -100 dejaría precios en cero/negativos → se rechaza.
+    Gated 'precios.editar'. Dos modos según el campo `modo`:
+    - "pct" (default): sube todos un % (multiplica). Un % <= -100 dejaría los
+      precios en cero/negativos → se rechaza.
+    - "monto": suma un importe fijo (USD) a todos (p.ej. 0,10 = diez centavos).
+    Ambos importes se parsean con el parser EU/es-EC (coma decimal).
     """
+    usuario = (g.user or {}).get("username", "web")
+    modo = (request.form.get("modo") or "pct").strip().lower()
+
+    if modo == "monto":
+        monto_raw = request.form.get("monto")
+        monto = parse_monto(monto_raw)
+        if monto is None:
+            flash(
+                f"No entendí el monto «{monto_raw}». Usá formato 0,10.", "error"
+            )
+            return redirect(url_for("precios.lista"))
+        try:
+            queries.sumar_monto(float(monto), usuario)
+            signo = "+" if float(monto) >= 0 else ""
+            flash(f"Sumado {signo}{monto} a todos los precios.", "ok")
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude sumar el monto a los precios", e)
+        return redirect(url_for("precios.lista"))
+
     pct_raw = request.form.get("pct")
     pct = parse_monto(pct_raw)
     if pct is None:
@@ -108,7 +130,6 @@ def subir_porcentaje():
         flash("El porcentaje no puede dejar los precios en cero o negativos.", "error")
         return redirect(url_for("precios.lista"))
 
-    usuario = (g.user or {}).get("username", "web")
     try:
         queries.subir_porcentaje(float(pct), usuario)
         signo = "+" if float(pct) >= 0 else ""
