@@ -225,3 +225,96 @@ def test_dbase_compare_yy_asof_fecha_tarball():
     assert "posdat_mtime" in src and "_resolver_cuotas" in src, (
         "el as-of tarball debe usar el MISMO motor de cuotas que posdat"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# COSTOS DE TINTORERÍA multi-mes: los meses previos al mes en curso salen de
+# formulas_app (scintela.tinto solo guarda el mes vigente del dBase).
+# Pedido dueña 2026-07-07: la tabla tiene que mostrar MÁS de un mes.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_tinto_formulas_bajos_fuertes_por_mes_clasifica_y_agrupa():
+    """La query de formulas_app clasifica Bajos/Fuertes con $/kg <= 0.4,
+    agrupa por (yy, mm, tipo), suma kgn como kg, e ignora órdenes sin
+    terminar (kgn <= 0)."""
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from modules.comparativa_tintoreria import queries as q
+    from modules.tintura.service import TintoEquivOrden
+
+    fake = [
+        # Bajos: 100/1000 crudo = 0.1 <= 0.4
+        TintoEquivOrden(numero="1", fecha=_date(2026, 4, 3), fecha_terminado=None,
+                        cod="A", color="c", categoria=None,
+                        kg=1000.0, kgn=950.0, importe=100.0),
+        # Fuertes: 800/1000 = 0.8 > 0.4
+        TintoEquivOrden(numero="2", fecha=_date(2026, 4, 10), fecha_terminado=None,
+                        cod="B", color="c", categoria=None,
+                        kg=1000.0, kgn=900.0, importe=800.0),
+        # otra Bajos en mayo
+        TintoEquivOrden(numero="3", fecha=_date(2026, 5, 1), fecha_terminado=None,
+                        cod="A", color="c", categoria=None,
+                        kg=2000.0, kgn=1900.0, importe=200.0),
+        # sin terminar → se ignora
+        TintoEquivOrden(numero="4", fecha=_date(2026, 5, 2), fecha_terminado=None,
+                        cod="A", color="c", categoria=None,
+                        kg=500.0, kgn=0.0, importe=50.0),
+    ]
+    with patch("modules.tintura.service.tinto_equiv_formulas", return_value=fake):
+        rows = q.tinto_formulas_bajos_fuertes_por_mes(_date(2026, 1, 1), _date(2026, 5, 31))
+
+    by = {(r["yy"], r["mm"], r["tipo"]): r for r in rows}
+    assert by[(2026, 4, "Bajos")]["kg"] == 950.0
+    assert by[(2026, 4, "Bajos")]["importe"] == 100.0
+    assert by[(2026, 4, "Fuertes")]["kg"] == 900.0
+    assert by[(2026, 5, "Bajos")]["kg"] == 1900.0
+    # la orden sin terminar (numero 4) no aporta
+    assert (2026, 5, "Fuertes") not in by
+
+
+def test_tinto_formulas_bajos_fuertes_por_mes_fail_soft():
+    """Si el bridge rompe o formulas_app no está, devuelve [] sin romper."""
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from modules.comparativa_tintoreria import queries as q
+
+    with patch("modules.tintura.service.tinto_equiv_formulas",
+               side_effect=RuntimeError("db down")):
+        assert q.tinto_formulas_bajos_fuertes_por_mes(_date(2026, 1, 1), _date(2026, 12, 31)) == []
+
+
+def test_build_tintoreria_mensual_rellena_meses_desde_formulas():
+    """_build_tintoreria_mensual usa scintela.tinto donde existe y rellena
+    los meses faltantes desde formulas_app, sin doblar el mes del dBase."""
+    from unittest.mock import patch
+
+    from modules.comparativa_tintoreria import views as v
+
+    # scintela.tinto solo tiene julio (como en producción)
+    tinto_rows = [
+        {"yy": 2026, "mm": 7, "tipo": "Bajos", "kg": 100.0, "importe": 10.0},
+        {"yy": 2026, "mm": 7, "tipo": "Fuertes", "kg": 200.0, "importe": 250.0},
+    ]
+    # formulas_app tiene abril, mayo y TAMBIÉN julio (que NO debe pisar al dBase)
+    form_rows = [
+        {"yy": 2026, "mm": 4, "tipo": "Bajos", "kg": 500.0, "importe": 50.0},
+        {"yy": 2026, "mm": 5, "tipo": "Fuertes", "kg": 700.0, "importe": 600.0},
+        {"yy": 2026, "mm": 7, "tipo": "Bajos", "kg": 9999.0, "importe": 9999.0},
+    ]
+    with patch("modules.comparativa_tintoreria.views.queries.tinto_bajos_fuertes_por_mes",
+               return_value=tinto_rows), \
+         patch("modules.comparativa_tintoreria.views.queries.tinto_formulas_bajos_fuertes_por_mes",
+               return_value=form_rows), \
+         patch("modules.comparativa_tintoreria.views.queries.gs_produccion_tintoreria_por_mes",
+               return_value={}):
+        data = v._build_tintoreria_mensual(2026, 7)
+
+    labels = [f["label"] for f in data["filas"]]
+    assert labels == ["04/2026", "05/2026", "07/2026"]  # 3 meses, ordenados
+    julio = next(f for f in data["filas"] if f["label"] == "07/2026")
+    # julio salió del dBase (kg total 300), NO del row falso de formulas (9999)
+    assert julio["t_kg"] == 300.0
+    abril = next(f for f in data["filas"] if f["label"] == "04/2026")
+    assert abril["b_kg"] == 500.0

@@ -58,6 +58,25 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
         slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
         slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
 
+    # scintela.tinto solo guarda el mes en curso del dBase (~1 mes de data).
+    # Los meses anteriores tienen su tinturado en formulas_app. Traemos esos
+    # meses via el mismo bridge que usa flujo-produccion (tinto_equiv_formulas)
+    # y los AGREGAMOS SOLO para los (yy, mm) que scintela.tinto no tiene, para
+    # no doblar el mes que ya vino del dBase (July queda identico al balance).
+    try:
+        raw_f = queries.tinto_formulas_bajos_fuertes_por_mes(desde, hasta) or []
+    except Exception:  # noqa: BLE001
+        raw_f = []
+    meses_tinto = set(meses_dict.keys())
+    for r in raw_f:
+        k = (int(r["yy"]), int(r["mm"]))
+        if k in meses_tinto:
+            continue  # ese mes ya vino del dBase -- no mezclar bases de costo
+        slot = meses_dict.setdefault(k, {"Bajos": {"kg": 0.0, "imp": 0.0},
+                                          "Fuertes": {"kg": 0.0, "imp": 0.0}})
+        slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
+        slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
+
     def _calc(b_kg, b_imp, f_kg, f_imp, gp_us=0.0):
         tot_kg = b_kg + f_kg
         tot_imp = b_imp + f_imp

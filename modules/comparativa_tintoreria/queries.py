@@ -317,3 +317,64 @@ def tinto_pc_por_dia(desde: date, hasta: date) -> list[dict]:
         """,
         (desde, hasta),
     )
+
+
+def tinto_formulas_bajos_fuertes_por_mes(
+    desde: date, hasta: date, limite_bajos: float = 0.4
+) -> list[dict]:
+    """Igual que `tinto_bajos_fuertes_por_mes` pero leyendo de formulas_app.
+
+    Los meses anteriores al CORTE_TINTURA (y en general los que no están en
+    scintela.tinto, que sólo guarda el mes en curso del dBase) tienen su
+    tinturado registrado en formulas_app, no en el dBase. Esta función trae
+    esas órdenes vía `modules.tintura.service.tinto_equiv_formulas` (el mismo
+    bridge que usa /informes/flujo-produccion del corte en adelante) y las
+    clasifica Bajos/Fuertes con la MISMA regla ($/kg <= limite_bajos), para
+    no duplicar lógica.
+
+    Mapeo por orden (ver TintoEquivOrden):
+        kg      = tela_cruda_kg   (bruto → denominador del $/kg)
+        kgn     = tela_terminada_kg (neto → kg tinturados que se suman)
+        importe = costo colorantes+auxiliares consumidos
+
+    Sólo cuenta órdenes que ya salieron terminadas (kgn > 0), igual que el
+    dBase sólo registra lotes cerrados, para que el $/kg no se diluya con
+    órdenes en proceso. Excluye lavados (excluir_lavados=True en el bridge).
+
+    Devuelve una fila por (yy, mm, tipo) con kg (= Σ kgn) y importe, en el
+    MISMO shape que `tinto_bajos_fuertes_por_mes` para que el caller las
+    pueda mezclar transparentemente.
+
+    Fail-soft: si formulas_app no está disponible o rompe, devuelve [].
+    """
+    try:
+        from modules.tintura import service as _tint_svc
+    except Exception:  # noqa: BLE001
+        return []
+
+    try:
+        ordenes = _tint_svc.tinto_equiv_formulas(desde, hasta) or []
+    except Exception:  # noqa: BLE001
+        return []
+
+    # {(yy, mm, tipo): [kg_acum, imp_acum]}
+    acc: dict[tuple, list] = {}
+    for o in ordenes:
+        kgn = float(o.kgn or 0.0)
+        if kgn <= 0:
+            continue  # todavía no salió terminada
+        if o.fecha is None:
+            continue
+        imp = float(o.importe or 0.0)
+        kg_bruto = float(o.kg or 0.0)
+        den = kg_bruto if kg_bruto > 0 else kgn  # bruto preferido, fallback neto
+        tipo = "Bajos" if (den > 0 and (imp / den) <= limite_bajos) else "Fuertes"
+        k = (o.fecha.year, o.fecha.month, tipo)
+        slot = acc.setdefault(k, [0.0, 0.0])
+        slot[0] += kgn
+        slot[1] += imp
+
+    return [
+        {"yy": yy, "mm": mm, "tipo": tipo, "kg": v[0], "importe": v[1]}
+        for (yy, mm, tipo), v in sorted(acc.items())
+    ]
