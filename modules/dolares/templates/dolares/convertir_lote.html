@@ -227,13 +227,19 @@
         {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    // ── Filtro: tokens; cada token debe matchear prov O ref de la fila ────
+    // ── Filtro: tokens; cada token debe matchear prov O ref de la fila.
+    // TMT 2026-07-08 (dueña): un token NUMÉRICO (el nº de importación) matchea
+    // la ref por IGUALDAD, no "contiene" — así "15" no arrastra "150"/"215".
+    // Tokens no numéricos (prov, ej. "ac") siguen por substring. ────────────
     function filtrar() {
       const tokens = ($filtro.value || '').toLowerCase().split(/\s+/).filter(Boolean);
       const aplica = (row) => {
         const prov = (row.dataset.prov || '');
         const ref  = (row.dataset.ref || '');
-        return tokens.every(t => prov.includes(t) || ref.includes(t));
+        return tokens.every(t => {
+          if (/^\d+$/.test(t)) return ref === t || prov.includes(t);
+          return prov.includes(t) || ref.includes(t);
+        });
       };
       filasAnti().forEach(r => { r.style.display = aplica(r) ? '' : 'none'; });
       filasImp().forEach(r => { r.style.display = aplica(r) ? '' : 'none'; });
