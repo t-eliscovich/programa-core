@@ -809,6 +809,44 @@ def reversar_batch(batch_id: str):
         return render_template("404.html"), 404
 
     if request.method == "GET":
+        # TMT 2026-07-08 (dueña: "mostrame qué anticipos borra y qué cuotas
+        # borra"). Para las filas de activación traemos el DETALLE real de los
+        # anticipos que vuelven a vivos y las cuotas (posdatados) que se
+        # eliminan, leyendo los ids del metadata. Best-effort: si falla, la
+        # pantalla sigue mostrando el resumen.
+        import json as _json
+        for r in rows:
+            if r.get("tipo") != "activacion_maquinaria":
+                continue
+            meta = r.get("metadata") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = _json.loads(meta)
+                except Exception:  # noqa: BLE001
+                    meta = {}
+            ids_ant = [int(x) for x in (meta.get("ids_anticipos") or []) if x]
+            ids_pos = [int(x) for x in (meta.get("ids_posdat") or []) if x]
+            r["_anticipos"] = []
+            r["_cuotas"] = []
+            try:
+                if ids_ant:
+                    ph = ", ".join(["%s"] * len(ids_ant))
+                    r["_anticipos"] = db.fetch_all(
+                        f"SELECT id_dolares, cta, concepto, importe, "
+                        f"COALESCE(st,'') AS st FROM scintela.dolares "
+                        f"WHERE id_dolares IN ({ph}) ORDER BY id_dolares",
+                        tuple(ids_ant),
+                    ) or []
+                if ids_pos:
+                    ph = ", ".join(["%s"] * len(ids_pos))
+                    r["_cuotas"] = db.fetch_all(
+                        f"SELECT id_posdat, num, fechad, importe, concepto, "
+                        f"COALESCE(banc,0) AS banc FROM scintela.posdat "
+                        f"WHERE id_posdat IN ({ph}) ORDER BY fechad, id_posdat",
+                        tuple(ids_pos),
+                    ) or []
+            except Exception:  # noqa: BLE001
+                pass
         return render_template(
             "historial/batch_reverso_confirmar.html",
             batch_id=batch_id,

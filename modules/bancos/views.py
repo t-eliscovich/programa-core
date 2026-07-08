@@ -1062,8 +1062,8 @@ def eliminar_movimiento_pc(no_banco: int, id_transaccion: int):
     El dBase no se toca; si el mov viene del dBase se corrige allá y se
     re-sincroniza.
     """
-    import db as _db
     import bank_helpers
+    import db as _db
 
     tx = _db.fetch_one(
         """
@@ -1419,7 +1419,9 @@ def confirmar_reverso_movimiento_simple(id_mov_doble: int):
         },
         accion_url=url_for("bancos.confirmar_reverso_movimiento_simple", id_mov_doble=id_mov_doble),
         volver_url=url_for("historial.lista"),
-        motivo_obligatorio=True,
+        # TMT 2026-07-08 dueña: el motivo de reverso NO es obligatorio ("se
+        # hace largo"). El handler ya lo acepta vacío.
+        motivo_obligatorio=False,
         confirm_label="Reversar",
     )
 

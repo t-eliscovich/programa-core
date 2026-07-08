@@ -192,7 +192,8 @@ def confirmar_reverso(id_caja: int):
         accion_url=url_for("caja.reversar", id_caja=id_caja),
         volver_url=url_for("caja.lista"),
         motivo_requerido=True,
-        motivo_obligatorio=True,  # reverso de caja exige motivo (puede arrastrar side effects)
+        # TMT 2026-07-08 dueña: motivo de reverso NO obligatorio ("se hace largo").
+        motivo_obligatorio=False,
         confirm_label="Confirmar reverso",
     )
 
