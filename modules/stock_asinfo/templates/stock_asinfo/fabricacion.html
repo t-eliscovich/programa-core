@@ -100,40 +100,27 @@
     </div>
   {% endif %}
 
-  {# ── Stock total: la cadena completa del flujo, en kg ─────────── #}
+  {# ── Stock total: cadena del flujo encolumnada (una fila por etapa) ─── #}
+  {# TMT 2026-07-08 dueña: "encolumná acá como stock: columna por etapa pero  #}
+  {# no a lo largo, que sea para abajo también" → tabla vertical, no la tira. #}
   <div class="card" style="margin-bottom: 20px;">
     <div class="card-title">Stock total (kg) — hilo a producto terminado</div>
-    <div class="chain">
-      {% for c in cadena %}
-        {% if not loop.first %}<span class="op">+</span>{% endif %}
-        <a href="{{ c.url }}"
-           class="item {{ 'item--proceso' if 'proceso' in c.label | lower }} {{ 'item--actual' if c.actual }}">
-          <div class="kpi-label">{{ c.label }}</div>
-          <div class="kpi-val">{{ c.kg | num_es(0) }}</div>
-          <div class="kpi-sub">{{ c.sub }}</div>
-        </a>
-      {% endfor %}
-      <span class="op">=</span>
-      <span class="item item--total">
-        <div class="kpi-label">Total</div>
-        <div class="kpi-val">{{ total_kg | num_es(0) }}</div>
-        <div class="kpi-sub">kg</div>
-      </span>
-    </div>
-
-    {# ── Totales combinados (TMT 2026-06-26 dueña) ──────────────────────── #}
-    <div class="combos">
-      <div class="combo combo--hilo">
-        <div class="combo-label">Hilo total</div>
-        <div class="combo-val">{{ hilo_total | num_es(0) }} <span class="combo-unit">kg</span></div>
-        <div class="combo-sub">Hilo + En proceso TC</div>
-      </div>
-      <div class="combo combo--cruda">
-        <div class="combo-label">Cruda total</div>
-        <div class="combo-val">{{ cruda_total | num_es(0) }} <span class="combo-unit">kg</span></div>
-        <div class="combo-sub">Tela Cruda + En proceso PT</div>
-      </div>
-    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Etapa</th>
+          <th class="num">kg</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas or [] %}
+          <tr{{ ' class="total-row"' | safe if f.bold }}>
+            <td>{{ f.label or '—' }}</td>
+            <td class="num">{{ (f.kg or 0) | num_es(0) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
 
     {% if stock_programa.get('total') %}
     <div class="chain-foot">

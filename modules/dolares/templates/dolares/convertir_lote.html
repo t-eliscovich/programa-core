@@ -1,261 +1,309 @@
 {% extends "base.html" %}
-{% block title %}BAP — Convertir anticipos USD a compra{% endblock %}
+{% block title %}BAP — Conciliar anticipos USD ↔ importaciones{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('dolares.lista') }}" class="hover:underline">Anticipos USD</a> /
-  <strong>BAP — Convertir lote</strong>
+  <strong>Conciliar → Convertir a compra</strong>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-5xl">
-  <h1 class="text-2xl font-semibold text-slate-900 mb-1">BAP — Convertir anticipos a compra</h1>
-  <p class="text-sm text-slate-500 mb-6">
-    Replica el procedure <code class="text-xs">BAP</code> de BANCOS.PRG. Elegí
-    un proveedor, marcá los anticipos a consumir y se crea una compra con
-    <code class="text-xs">cuenta_pagada='A'</code> (pagada con anticipo) y
-    comprobante <code class="text-xs">BAP&lt;N&gt;</code>.
+<div class="max-w-7xl">
+  <h1 class="text-2xl font-semibold text-slate-900 mb-1">Conciliar anticipos USD con importaciones</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    A la izquierda los anticipos vivos; a la derecha las importaciones
+    (Ingreso de hilado). Escribí un filtro (ej. <code class="text-xs">AC 15</code>)
+    y filtra los dos lados a la vez. Marcá los anticipos, elegí la importación
+    destino y convertí a compra (BAP).
   </p>
 
-  {% if not prov_sel %}
-    {# ─── Lista por proveedor ──────────────────────────────────────────── #}
-    <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-      <table class="w-full text-sm">
-        <thead class="bg-slate-50 border-b border-slate-200">
-          <tr class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-            <th class="px-4 py-3 text-left">Proveedor</th>
-            <th class="px-4 py-3 text-right">Total USD</th>
-            <th class="px-4 py-3 text-right">Anticipos</th>
-            <th class="px-4 py-3 text-left whitespace-nowrap">Primer fecha</th>
-            <th class="px-4 py-3 text-left whitespace-nowrap">Última fecha</th>
-            <th class="px-4 py-3 text-center w-32"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          {% if not grupos %}
-            <tr>
-              <td colspan="6" class="px-4 py-12 text-center text-slate-400">
-                No hay anticipos vivos para convertir.
-              </td>
-            </tr>
-          {% endif %}
-          {% for g in grupos %}
-            <tr class="hover:bg-slate-50">
-              <td class="px-4 py-3">
-                <div class="font-mono text-xs text-slate-400">{{ g.codigo_prov }}</div>
-                <div class="text-sm text-slate-800">{{ g.nombre or '—' }}</div>
-              </td>
-              <td class="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
-                $ {{ '%.2f' | format(g.total_usd | float) }}
-              </td>
-              <td class="px-4 py-3 text-right tabular-nums">{{ g.n_anticipos }}</td>
-              <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                {{ g.primer_fecha | fecha_es if g.primer_fecha else '—' }}
-              </td>
-              <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                {{ g.ult_fecha | fecha_es if g.ult_fecha else '—' }}
-              </td>
-              <td class="px-4 py-3 text-center">
-                <a href="{{ url_for('dolares.convertir_lote', prov=g.codigo_prov) }}"
-                   class="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white">
-                  Convertir →
-                </a>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  {# ── Filtro único (filtra ambos paneles en JS) ────────────────────────── #}
+  <div class="mb-4">
+    <label class="block">
+      <span class="text-xs font-medium text-slate-600">Filtro (proveedor y/o nº — ej. "AC 15", "15", "AC")</span>
+      <input type="text" id="filtro" autocomplete="off"
+             placeholder="AC 15"
+             class="mt-1 block w-full md:w-96 border rounded px-3 py-2 text-sm">
+    </label>
+  </div>
 
-  {% else %}
-    {# ─── Selección por proveedor ─────────────────────────────────────── #}
-    <div class="mb-3 flex items-center gap-2">
-      <a href="{{ url_for('dolares.convertir_lote') }}"
-         class="text-sm text-sky-600 hover:underline">← Volver a la lista</a>
-      <span class="text-slate-300">·</span>
-      <span class="text-sm text-slate-700">
-        Proveedor: <strong class="font-mono">{{ prov_sel }}</strong>
-        {% if nombres.get(prov_sel) %} — {{ nombres.get(prov_sel) }}{% endif %}
-      </span>
-    </div>
+  <form method="post" action="{{ url_for('dolares.convertir_lote') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="codigo_prov" id="f-codigo-prov" value="">
+    <input type="hidden" name="concepto"    id="f-concepto" value="">
+    <input type="hidden" name="tipo_compra" value="H">
+    <input type="hidden" name="fecha" value="{{ hoy }}">
 
-    {% if not anticipos %}
-      <div class="bg-white border border-slate-200 rounded-lg p-12 text-center text-slate-500">
-        Este proveedor no tiene anticipos vivos.
+    {# ── Sticky summary bar ──────────────────────────────────────────────── #}
+    <div class="sticky top-2 z-10 bg-emerald-50 border border-emerald-200 rounded-lg px-5 py-4 mb-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+      <div class="flex items-baseline gap-4 flex-wrap">
+        <div>
+          <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Anticipos marcados</div>
+          <div class="text-2xl font-bold text-emerald-900 tabular-nums" id="contador">0</div>
+        </div>
+        <div class="h-10 w-px bg-emerald-200"></div>
+        <div>
+          <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Total anticipos USD</div>
+          <div class="text-2xl font-bold text-emerald-900 tabular-nums" id="suma">$ 0,00</div>
+        </div>
+        <div class="h-10 w-px bg-emerald-200"></div>
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Importación destino</div>
+          <div class="text-sm font-semibold text-slate-800" id="im-destino">— sin elegir —</div>
+          <div class="text-xs text-slate-500 tabular-nums" id="im-valor"></div>
+        </div>
       </div>
-    {% else %}
-      <form method="post" action="{{ url_for('dolares.convertir_lote') }}"
-            class="space-y-4">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="codigo_prov" value="{{ prov_sel }}">
+      <div class="flex items-center gap-2">
+        <a href="{{ url_for('dolares.lista') }}"
+           class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-100 text-sm">
+          Cancelar
+        </a>
+        <button type="submit" id="btn-confirmar" disabled
+                class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded
+                       disabled:opacity-40 disabled:cursor-not-allowed">
+          Convertir a compra →
+        </button>
+      </div>
+    </div>
 
-        {# Sticky summary #}
-        <div class="sticky top-2 z-10 bg-emerald-50 border border-emerald-200 rounded-lg px-5 py-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
-          <div class="flex items-baseline gap-4">
-            <div>
-              <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Anticipos a consumir</div>
-              <div class="text-2xl font-bold text-emerald-900 tabular-nums" id="contador">0</div>
-            </div>
-            <div class="h-10 w-px bg-emerald-200"></div>
-            <div>
-              <div class="text-xs uppercase tracking-wider text-emerald-700 font-semibold">Total USD</div>
-              <div class="text-2xl font-bold text-emerald-900 tabular-nums" id="suma">$ 0,00</div>
-            </div>
-          </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      {# ── IZQUIERDA — Anticipos ─────────────────────────────────────────── #}
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+        <div class="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Anticipos (vivos)</h2>
           <div class="flex items-center gap-2">
             <button type="button" id="btn-todos"
-                    class="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100">
-              Marcar todos
-            </button>
+                    class="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100">Marcar visibles</button>
             <button type="button" id="btn-ninguno"
-                    class="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100">
-              Limpiar
-            </button>
+                    class="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100">Limpiar</button>
           </div>
         </div>
-
-        {# Form fields para la compra #}
-        <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
-          <h3 class="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Datos de la compra</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label class="block">
-              <span class="text-xs font-medium text-slate-600">Fecha de compra</span>
-              <input type="date" name="fecha" value="{{ hoy }}"
-                     class="mt-1 block w-full border rounded px-3 py-2 text-sm">
-            </label>
-            <label class="block">
-              <span class="text-xs font-medium text-slate-600">Tipo</span>
-              <select name="tipo_compra"
-                      class="mt-1 block w-full border rounded px-3 py-2 text-sm">
-                <option value="H" selected>H — Hilado</option>
-                <option value="K">K — Tejeduría</option>
-                <option value="Q">Q — Químicos</option>
-                <option value="C">C — Fábrica</option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="text-xs font-medium text-slate-600">Kg (opcional)</span>
-              <input type="text" name="kg" inputmode="decimal" placeholder="0.00"
-                     class="mt-1 block w-full border rounded px-3 py-2 text-sm text-right font-mono">
-            </label>
-            <label class="block md:col-span-3">
-              <span class="text-xs font-medium text-slate-600">Concepto (texto libre, ej. N° factura del proveedor)</span>
-              <input type="text" name="concepto" maxlength="50"
-                     placeholder="Ej: FAC 4231/A"
-                     class="mt-1 block w-full border rounded px-3 py-2 text-sm">
-            </label>
-            <label class="block md:col-span-3">
-              <span class="text-xs font-medium text-slate-600">Motivo / Notas <span class="text-slate-400 font-normal">(opcional)</span></span>
-              <textarea name="motivo" rows="2" maxlength="200"
-                        class="mt-1 block w-full border rounded px-3 py-2 text-sm"></textarea>
-            </label>
-          </div>
-        </div>
-
-        {# Tabla de anticipos #}
-        <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-                <th class="px-4 py-3 text-center w-12">
-                  <input type="checkbox" id="check-all">
-                </th>
-                <th class="px-4 py-3 text-left" title="Nº de importación (del concepto). Clic para marcar todos los de ese número.">Ref (nº)</th>
-                <th class="px-4 py-3 text-left">Fecha</th>
-                <th class="px-4 py-3 text-left">Concepto</th>
-                <th class="px-4 py-3 text-right whitespace-nowrap">Importe USD</th>
-                <th class="px-4 py-3 text-center">Clave</th>
+                <th class="px-3 py-2 text-center w-10"></th>
+                <th class="px-3 py-2 text-left">Ref (nº)</th>
+                <th class="px-3 py-2 text-left">Fecha</th>
+                <th class="px-3 py-2 text-left">Prov</th>
+                <th class="px-3 py-2 text-left">Concepto</th>
+                <th class="px-3 py-2 text-right whitespace-nowrap">Importe USD</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100" id="filas-anticipos">
+              {% if not anticipos %}
+                <tr><td colspan="6" class="px-4 py-10 text-center text-slate-400">No hay anticipos vivos.</td></tr>
+              {% endif %}
               {% for a in anticipos %}
-                <tr data-importe="{{ a.importe or 0 }}" data-ref="{{ a.ref or '' }}" class="hover:bg-slate-50">
-                  <td class="px-4 py-3 text-center">
+                <tr class="fila-anti hover:bg-slate-50"
+                    data-prov="{{ a.cta | lower }}" data-ref="{{ a.ref }}">
+                  <td class="px-3 py-2 text-center">
                     <input type="checkbox" name="id_dolares" value="{{ a.id_dolares }}"
-                           data-importe="{{ a.importe or 0 }}" data-ref="{{ a.ref or '' }}" class="anti-check">
+                           class="anti-check"
+                           data-importe="{{ a.importe or 0 }}"
+                           data-prov="{{ a.cta | upper }}"
+                           data-ref="{{ a.ref }}">
                   </td>
-                  <td class="px-4 py-3">
+                  <td class="px-3 py-2">
                     {% if a.ref %}
-                      <button type="button" class="ref-chip text-xs font-mono font-semibold px-2 py-0.5 rounded"
-                              data-ref="{{ a.ref }}"
-                              style="border:1px solid #bae6fd;background:#f0f9ff;color:#075985;cursor:pointer;"
-                              title="Marcar todos los anticipos del nº {{ a.ref }}">{{ a.ref }}</button>
+                      <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded"
+                            style="border:1px solid #bae6fd;background:#f0f9ff;color:#075985;">{{ a.ref }}</span>
                     {% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
                   </td>
-                  <td class="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
+                  <td class="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
                     {{ a.fecha | fecha_es if a.fecha else '—' }}
                   </td>
-                  <td class="px-4 py-3 text-sm text-slate-800">{{ a.concepto or '—' }}</td>
-                  <td class="px-4 py-3 text-right tabular-nums font-semibold">
-                    $ {{ '%.2f' | format(a.importe | float) }}
+                  <td class="px-3 py-2 text-xs font-mono text-slate-600">
+                    {{ a.cta }}{% if a.nombre %}<span class="block text-slate-400">{{ a.nombre }}</span>{% endif %}
                   </td>
-                  <td class="px-4 py-3 text-center text-xs text-slate-500">
-                    {{ a.clave or '—' }}
-                  </td>
+                  <td class="px-3 py-2 text-sm text-slate-800">{{ a.concepto or '—' }}</td>
+                  <td class="px-3 py-2 text-right tabular-nums font-semibold">$ {{ a.importe | num_es }}</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
+      </div>
 
-        <div class="flex items-center justify-end gap-2">
-          <a href="{{ url_for('dolares.lista') }}"
-             class="px-4 py-2 border border-slate-300 rounded hover:bg-slate-100 text-sm">
-            Cancelar
-          </a>
-          <button type="submit" id="btn-confirmar" disabled
-                  class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded
-                         disabled:opacity-40 disabled:cursor-not-allowed">
-            Convertir a compra →
-          </button>
+      {# ── DERECHA — Importaciones ───────────────────────────────────────── #}
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+        <div class="bg-slate-50 border-b border-slate-200 px-4 py-3">
+          <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Importaciones (Ingreso de hilado)</h2>
         </div>
-      </form>
+        {% if imp_error %}
+          <div class="px-4 py-10 text-center text-amber-600 text-sm">
+            Sin importaciones (Asinfo no respondió). Podés convertir igual usando
+            los anticipos seleccionados.
+          </div>
+        {% elif not importaciones %}
+          <div class="px-4 py-10 text-center text-slate-400 text-sm">Sin importaciones.</div>
+        {% else %}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr class="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                  <th class="px-3 py-2 text-center w-10"></th>
+                  <th class="px-3 py-2 text-left">Nº imp.</th>
+                  <th class="px-3 py-2 text-left">Prov</th>
+                  <th class="px-3 py-2 text-left">Nota</th>
+                  <th class="px-3 py-2 text-right whitespace-nowrap">Kg</th>
+                  <th class="px-3 py-2 text-right whitespace-nowrap">Valor USD</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100" id="filas-import">
+                {% for im in importaciones %}
+                  <tr class="fila-import hover:bg-slate-50"
+                      data-prov="{{ im.prov | lower }}" data-ref="{{ im.ref }}">
+                    <td class="px-3 py-2 text-center">
+                      {% if im.prov and im.ref %}
+                        <input type="radio" name="__im_pick" class="im-pick"
+                               data-prov="{{ im.prov }}"
+                               data-ref="{{ im.ref }}"
+                               data-im="{{ im.im_numero }}"
+                               data-codigo="{{ im.codigo }}"
+                               data-valor="{{ im.valor or 0 }}">
+                      {% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-xs font-mono text-slate-700 whitespace-nowrap">
+                      {{ im.im_numero or '—' }}
+                      {% if im.codigo %}<span class="block text-sky-700 font-semibold">{{ im.codigo }}</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-xs font-mono text-slate-600">
+                      {{ im.prov or '—' }}{% if im.proveedor %}<span class="block text-slate-400">{{ im.proveedor }}</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-xs text-slate-700">{{ im.nota or '—' }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums text-slate-700">
+                      {{ im.kg | num_es if im.kg is not none else '—' }}
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums font-semibold {% if im.fuente %}text-emerald-700{% else %}text-slate-400{% endif %}">
+                      {% if im.valor %}$ {{ im.valor | num_es }}{% else %}—{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
 
-      <script>
-      (function() {
-        const checks = () => Array.from(document.querySelectorAll('.anti-check'));
-        const $count = document.getElementById('contador');
-        const $sum   = document.getElementById('suma');
-        const $btn   = document.getElementById('btn-confirmar');
-        const $all   = document.getElementById('check-all');
+    </div>
 
-        function actualizar() {
-          const sel = checks().filter(c => c.checked);
-          $count.textContent = sel.length;
-          const total = sel.reduce((s, c) => s + parseFloat(c.dataset.importe || 0), 0);
-          $sum.textContent = '$ ' + total.toLocaleString('es-EC',
-            {minimumFractionDigits: 2, maximumFractionDigits: 2});
-          $btn.disabled = sel.length === 0;
-          const visSel = sel.length;
-          const all = checks();
-          $all.checked = all.length > 0 && visSel === all.length;
-          $all.indeterminate = visSel > 0 && visSel < all.length;
-        }
-        checks().forEach(c => c.addEventListener('change', actualizar));
-        $all.addEventListener('change', () => {
-          checks().forEach(c => c.checked = $all.checked);
-          actualizar();
-        });
-        document.getElementById('btn-todos').addEventListener('click', () => {
-          checks().forEach(c => c.checked = true);
-          actualizar();
-        });
-        document.getElementById('btn-ninguno').addEventListener('click', () => {
-          checks().forEach(c => c.checked = false);
-          actualizar();
-        });
-        // TMT 2026-07-08 (dueña): clic en el chip de Ref marca TODOS los
-        // anticipos de ese nº de importación (p.ej. los 3 de "AC 15").
-        document.querySelectorAll('.ref-chip').forEach(chip => {
-          chip.addEventListener('click', () => {
-            const ref = chip.dataset.ref;
-            const grupo = checks().filter(c => c.dataset.ref === ref);
-            const todos = grupo.every(c => c.checked);
-            grupo.forEach(c => c.checked = !todos);  // toggle del grupo
-            actualizar();
-          });
-        });
-      })();
-      </script>
-    {% endif %}
-  {% endif %}
+    {# Opcionales de la compra #}
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mt-4 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-4">
+      <label class="block">
+        <span class="text-xs font-medium text-slate-600">Fecha de compra</span>
+        <input type="date" value="{{ hoy }}" disabled
+               class="mt-1 block w-full border rounded px-3 py-2 text-sm bg-slate-50">
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-slate-600">Kg (opcional)</span>
+        <input type="text" name="kg" inputmode="decimal" placeholder="0,00"
+               class="mt-1 block w-full border rounded px-3 py-2 text-sm text-right font-mono">
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-slate-600">Motivo / Notas (opcional)</span>
+        <input type="text" name="motivo" maxlength="200"
+               class="mt-1 block w-full border rounded px-3 py-2 text-sm">
+      </label>
+    </div>
+  </form>
+
+  <script>
+  (function() {
+    const antiChecks = () => Array.from(document.querySelectorAll('.anti-check'));
+    const filasAnti  = () => Array.from(document.querySelectorAll('.fila-anti'));
+    const filasImp   = () => Array.from(document.querySelectorAll('.fila-import'));
+    const imPicks    = () => Array.from(document.querySelectorAll('.im-pick'));
+    const $count = document.getElementById('contador');
+    const $sum   = document.getElementById('suma');
+    const $btn   = document.getElementById('btn-confirmar');
+    const $filtro = document.getElementById('filtro');
+    const $imDest = document.getElementById('im-destino');
+    const $imValor = document.getElementById('im-valor');
+    const $fProv = document.getElementById('f-codigo-prov');
+    const $fConc = document.getElementById('f-concepto');
+
+    function fmt(n) {
+      return '$ ' + (n || 0).toLocaleString('es-EC',
+        {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    // ── Filtro: tokens; cada token debe matchear prov O ref de la fila ────
+    function filtrar() {
+      const tokens = ($filtro.value || '').toLowerCase().split(/\s+/).filter(Boolean);
+      const aplica = (row) => {
+        const prov = (row.dataset.prov || '');
+        const ref  = (row.dataset.ref || '');
+        return tokens.every(t => prov.includes(t) || ref.includes(t));
+      };
+      filasAnti().forEach(r => { r.style.display = aplica(r) ? '' : 'none'; });
+      filasImp().forEach(r => { r.style.display = aplica(r) ? '' : 'none'; });
+    }
+
+    // ── Resumen anticipos seleccionados ──────────────────────────────────
+    function actualizar() {
+      const sel = antiChecks().filter(c => c.checked);
+      $count.textContent = sel.length;
+      const total = sel.reduce((s, c) => s + parseFloat(c.dataset.importe || 0), 0);
+      $sum.textContent = fmt(total);
+      const pick = imPicks().find(r => r.checked);
+      let prov = '', conc = '';
+      if (pick) {
+        prov = pick.dataset.prov || '';
+        conc = pick.dataset.ref || '';
+      } else if (sel.length) {
+        // Fallback: proveedor + ref de los propios anticipos.
+        const provs = [...new Set(sel.map(c => c.dataset.prov))];
+        prov = provs.length === 1 ? provs[0] : '';
+        const refs = [...new Set(sel.map(c => c.dataset.ref).filter(Boolean))];
+        conc = refs.length === 1 ? refs[0] : '';
+      }
+      $fProv.value = prov;
+      $fConc.value = conc;
+      $btn.disabled = sel.length === 0 || !prov;
+    }
+
+    antiChecks().forEach(c => c.addEventListener('change', actualizar));
+    imPicks().forEach(r => r.addEventListener('change', () => {
+      const pick = imPicks().find(x => x.checked);
+      if (pick) {
+        $imDest.textContent = (pick.dataset.codigo || pick.dataset.im || '') +
+          ' (' + pick.dataset.im + ')';
+        const v = parseFloat(pick.dataset.valor || 0);
+        $imValor.textContent = v ? fmt(v) : '';
+      } else {
+        $imDest.textContent = '— sin elegir —';
+        $imValor.textContent = '';
+      }
+      actualizar();
+    }));
+
+    document.getElementById('btn-todos').addEventListener('click', () => {
+      // Solo las filas visibles (respeta el filtro).
+      antiChecks().forEach(c => {
+        const row = c.closest('.fila-anti');
+        if (row && row.style.display !== 'none') c.checked = true;
+      });
+      actualizar();
+    });
+    document.getElementById('btn-ninguno').addEventListener('click', () => {
+      antiChecks().forEach(c => c.checked = false);
+      actualizar();
+    });
+    $filtro.addEventListener('input', filtrar);
+
+    // Aviso si al enviar hay anticipos de proveedores mezclados.
+    document.querySelector('form').addEventListener('submit', (ev) => {
+      const sel = antiChecks().filter(c => c.checked);
+      const provs = [...new Set(sel.map(c => c.dataset.prov))];
+      if (provs.length > 1) {
+        ev.preventDefault();
+        alert('Los anticipos seleccionados son de proveedores distintos (' +
+          provs.join(', ') + '). Elegí anticipos de un mismo proveedor.');
+      }
+    });
+
+    actualizar();
+  })();
+  </script>
 </div>
 {% endblock %}

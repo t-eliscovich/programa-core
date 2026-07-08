@@ -225,11 +225,22 @@ def cancelar_anticipo(id_dolares: int):
 @requiere_login
 @requiere_permiso("compras.crear")
 def convertir_lote():
-    """BAP — conversión lote de anticipos USD a compra (BANCOS.PRG:733-819).
+    """BAP — conciliación split-screen anticipos USD → compra (BANCOS.PRG).
 
-    GET sin proveedor: muestra agrupación por proveedor con totales.
-    GET con `?prov=XX`: muestra anticipos del proveedor con checkboxes.
-    POST: ejecuta `queries.convertir_a_compra()`.
+    TMT 2026-07-08 (dueña): "no hace falta tantos pasos". Se retira el flujo
+    de 3 pasos (tabla por proveedor → anticipos del proveedor → convertir) y
+    se reemplaza por UNA pantalla partida en dos:
+      · IZQUIERDA: los anticipos vivos (st vacío) de todos los proveedores
+        tipo H, con checkbox para seleccionar.
+      · DERECHA: las importaciones (`importaciones_con_cruce`, la misma data
+        de "Ingreso de hilado"), como referencia, con un radio para elegir
+        la importación destino.
+    Un único filtro (ej. "AC 15") filtra AMBOS lados por prov + nº (JS, sobre
+    data-attributes). Se selecciona a un lado y al otro como una conciliación.
+
+    POST: ejecuta `queries.convertir_a_compra()` con el proveedor de la
+    importación elegida (o de los anticipos si no se eligió ninguna) y el
+    concepto = nº de la importación (para que la compra matchee con ella).
 
     Permisos: `compras.crear` (estamos creando una compra).
     """
@@ -240,8 +251,10 @@ def convertir_lote():
             ids = [int(x) for x in ids_raw if x and str(x).strip()]
         except ValueError:
             flash("IDs de anticipos inválidos.", "warn")
-            return redirect(url_for("dolares.convertir_lote",
-                                    prov=codigo_prov))
+            return redirect(url_for("dolares.convertir_lote"))
+        # concepto = nº de la importación elegida en el panel derecho (así la
+        # compra queda matcheada a ella). Si no se eligió ninguna, el JS manda
+        # como fallback la ref de los propios anticipos.
         concepto = (request.form.get("concepto") or "").strip()
         tipo_compra = (request.form.get("tipo_compra") or "H").strip().upper()
         fecha = parse_date(request.form.get("fecha")) or today_ec()
@@ -249,12 +262,12 @@ def convertir_lote():
         motivo = (request.form.get("motivo") or "").strip()
 
         if not codigo_prov:
-            flash("Proveedor requerido.", "warn")
+            flash("No pude determinar el proveedor (elegí una importación o "
+                  "anticipos de un mismo proveedor).", "warn")
             return redirect(url_for("dolares.convertir_lote"))
         if not ids:
             flash("Seleccioná al menos un anticipo para convertir.", "warn")
-            return redirect(url_for("dolares.convertir_lote",
-                                    prov=codigo_prov))
+            return redirect(url_for("dolares.convertir_lote"))
 
         try:
             usuario = (g.user or {}).get("username", "web")
@@ -279,62 +292,71 @@ def convertir_lote():
             return redirect(url_for("compras.lista", q=codigo_prov))
         except ValueError as e:
             flash(str(e), "warn")
-            return redirect(url_for("dolares.convertir_lote",
-                                    prov=codigo_prov))
+            return redirect(url_for("dolares.convertir_lote"))
         except Exception as e:  # noqa: BLE001
             flash_exc("No pude convertir los anticipos", e)
-            return redirect(url_for("dolares.convertir_lote",
-                                    prov=codigo_prov))
+            return redirect(url_for("dolares.convertir_lote"))
 
-    # GET
-    prov_sel = (request.args.get("prov") or "").strip().upper() or None
-    # TMT 2026-05-20 — pedido dueña: "Lo mismo para hilo (H)". Filtramos
-    # proveedores tipo='H' en el wizard de convertir-lote.
-    grupos, _ = _safe(
-        lambda: queries.anticipos_pendientes_por_proveedor(tipos_filter=["H"]),
+    # ── GET: conciliación split-screen ─────────────────────────────────────
+    import re as _re
+
+    # IZQUIERDA — anticipos vivos de proveedores tipo H (todos, de una).
+    # Ref (nº) = primer número del concepto (mismo parseo del flujo viejo).
+    anticipos, _ = _safe(
+        lambda: queries.anticipos_vivos(tipos_filter=["H"]),
         [],
     )
+    for _a in anticipos:
+        _m = _re.search(r"\d+", str(_a.get("concepto") or ""))
+        _a["ref"] = _m.group(0) if _m else ""
 
-    # Enriquecer con nombre del proveedor (no es N+1 grande — pocos proveedores).
-    nombres: dict[str, str] = {}
+    # DERECHA — importaciones (importaciones_con_cruce). Fail-soft: si Asinfo
+    # está caído o el service explota, seguimos mostrando la izquierda y
+    # marcamos "sin importaciones" en el panel derecho (nunca rompe la vista).
+    importaciones: list[dict] = []
+    imp_error: str | None = None
     try:
-        rows = db.fetch_all(
-            "SELECT codigo_prov, COALESCE(nombre,'') AS nombre "
-            "FROM scintela.proveedor"
-        ) or []
-        nombres = {r["codigo_prov"]: r["nombre"] for r in rows}
-    except Exception:
-        pass
-    for g_row in grupos:
-        g_row["nombre"] = nombres.get(g_row["codigo_prov"]) or ""
-
-    anticipos: list[dict] = []
-    if prov_sel:
-        anticipos, _ = _safe(
-            lambda: queries.anticipos_pendientes_de_proveedor(prov_sel),
-            [],
-        )
-        # TMT 2026-07-08 (dueña): "mostrar todos los AC por valor, no una suma
-        # del proveedor — vamos a tener 3 de AC 15 y unirlos con el AC 15 de
-        # importaciones". Extraemos la REF (nº de importación) del concepto (el
-        # primer número), la mostramos y ordenamos los anticipos por ref para que
-        # los del mismo número queden juntos y se puedan marcar de una.
-        import re as _re
-        for _a in anticipos:
-            _m = _re.search(r"\d+", str(_a.get("concepto") or ""))
-            _a["ref"] = _m.group(0) if _m else ""
-        anticipos.sort(key=lambda a: (
-            0 if a.get("ref") else 1,
-            int(a["ref"]) if a.get("ref", "").isdigit() else 0,
-            a.get("fecha") or "",
+        from modules.importaciones import service as _imp_service
+        raw = _imp_service.importaciones_con_cruce()
+        for r in raw:
+            prov = (r.get("prov") or "").strip().upper()
+            num = r.get("numero")
+            ref = str(num) if num is not None else ""
+            # Valor de la importación: compra o anticipo USD confiable del
+            # programa (importe_programa); si no, Σ movimientos (anticipo_aplicado).
+            valor = r.get("importe_programa")
+            if valor is None:
+                _ap = float(r.get("anticipo_aplicado") or 0)
+                valor = _ap or None
+            importaciones.append({
+                "im_numero": r.get("im_numero") or "",
+                "prov": prov,
+                "codigo": r.get("codigo") or "",
+                "ref": ref,
+                "nota": r.get("nota") or "",
+                "kg": r.get("kg"),
+                "proveedor": r.get("proveedor") or "",
+                "valor": valor,
+                "fuente": (r.get("fuente") or ""),
+            })
+        # Con código primero (matcheables), luego por prov y nº.
+        importaciones.sort(key=lambda x: (
+            0 if x["prov"] and x["ref"] else 1,
+            x["prov"],
+            int(x["ref"]) if x["ref"].isdigit() else 0,
         ))
+    except Exception as e:  # noqa: BLE001
+        imp_error = str(e)
+        importaciones = []
+
+    total_anticipos_usd = sum(float(a.get("importe") or 0) for a in anticipos)
 
     return render_template(
         "dolares/convertir_lote.html",
-        grupos=grupos,
-        prov_sel=prov_sel,
         anticipos=anticipos,
-        nombres=nombres,
+        importaciones=importaciones,
+        imp_error=imp_error,
+        total_anticipos_usd=total_anticipos_usd,
         hoy=today_ec().isoformat(),
     )
 

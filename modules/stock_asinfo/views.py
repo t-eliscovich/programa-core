@@ -514,6 +514,22 @@ def _fabricacion_page(proceso: str):
     hilo_total = _kg(51) + float(saldo_tc.get("saldo") or 0)
     cruda_total = _kg(52) + float(saldo_pt.get("saldo") or 0)
 
+    # TMT 2026-07-08 (dueña): "encolumná acá como stock: columna por etapa pero
+    # no a lo largo, que sea para abajo también." → la cadena horizontal pasa a
+    # ser una TABLA vertical (una fila por etapa, en orden de producción). Se
+    # reusan EXACTAMENTE los mismos kg de la cadena/combos; no se recalcula nada.
+    filas = [
+        {"label": "Hilo (bodega 51)", "kg": _kg(51), "bold": False},
+        {"label": "En proceso (Hilo → Tela Cruda)",
+         "kg": float(saldo_tc.get("saldo") or 0), "bold": False},
+        {"label": "Hilo total", "kg": hilo_total, "bold": True},
+        {"label": "Tela Cruda (bodega 52)", "kg": _kg(52), "bold": False},
+        {"label": "En proceso (Tela Cruda → Terminada)",
+         "kg": float(saldo_pt.get("saldo") or 0), "bold": False},
+        {"label": "Cruda total", "kg": cruda_total, "bold": True},
+        {"label": "Prod. Terminado (bodega 53)", "kg": _kg(53), "bold": False},
+    ]
+
     # TMT 2026-07-06 (dueña): se eliminó el toggle ?pend (pagado/pendiente).
     # TODO lo recibido cuenta en el stock oficial, sin distinción — la
     # "deuda" de importaciones dejó de predecirse (el restante entra por
@@ -543,6 +559,7 @@ def _fabricacion_page(proceso: str):
         total_kg=total_kg,
         hilo_total=hilo_total,
         cruda_total=cruda_total,
+        filas=filas,
         stock_programa=stock_programa,
         error=error,
     )

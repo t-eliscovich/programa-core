@@ -214,6 +214,44 @@ def anticipos_pendientes_de_proveedor(codigo_prov: str) -> list[dict]:
     ) or []
 
 
+def anticipos_vivos(tipos_filter: list[str] | None = None) -> list[dict]:
+    """Todos los anticipos vivos (`st` vacío) de TODOS los proveedores.
+
+    Pensada para la conciliación split-screen (/dolares/convertir-lote): en
+    vez de agrupar por proveedor y navegar de a uno, devolvemos el detalle de
+    cada anticipo vivo para pintarlos todos juntos y filtrarlos en el cliente.
+
+    Cada fila: id_dolares, fecha, cta (= codigo_prov, 3 chars), concepto,
+    importe, clave, nombre (del proveedor).
+
+    `tipos_filter` (ej. ['H'] hilado) filtra por `scintela.proveedor.tipo`,
+    mismo criterio que `anticipos_pendientes_por_proveedor`. Sin filtro:
+    todos los anticipos vivos.
+    """
+    tipos_norm = None
+    if tipos_filter:
+        tipos_norm = [t.strip().upper()[:1] for t in tipos_filter if t and t.strip()]
+        tipos_norm = [t for t in tipos_norm if t]
+    return db.fetch_all(
+        """
+        SELECT d.id_dolares, d.fecha, UPPER(TRIM(d.cta)) AS cta,
+               d.concepto, d.importe, d.clave,
+               MAX(COALESCE(p.nombre, '')) OVER (
+                   PARTITION BY UPPER(TRIM(d.cta))
+               ) AS nombre
+          FROM scintela.dolares d
+          LEFT JOIN scintela.proveedor p
+                 ON UPPER(TRIM(p.codigo_prov)) = UPPER(TRIM(d.cta))
+         WHERE (d.st IS NULL OR d.st IN ('', ' '))
+           AND d.cta IS NOT NULL AND TRIM(d.cta) <> ''
+           AND (%(tipos_norm)s::text[] IS NULL
+                OR UPPER(COALESCE(p.tipo, '')) = ANY(%(tipos_norm)s::text[]))
+         ORDER BY UPPER(TRIM(d.cta)) ASC, d.fecha ASC, d.id_dolares ASC
+        """,
+        {"tipos_norm": tipos_norm},
+    ) or []
+
+
 def convertir_a_compra(
     *,
     codigo_prov: str,
