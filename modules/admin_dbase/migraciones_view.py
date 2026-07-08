@@ -113,8 +113,11 @@ def status():
         f.name for f in migr_dir.iterdir()
         if f.suffix in (".sql", ".py") and f.name[:4].isdigit()
     ]) if migr_dir.exists() else []
-    pendientes = [n for n in en_disco if n.rsplit(".", 1)[0] not in aplicadas
-                  and n not in aplicadas]
+    # TMT 2026-07-08: migraciones_aplicadas guarda la VERSIÓN de 4 dígitos
+    # (varchar(4), igual que migrate.py). Antes comparábamos el nombre de
+    # archivo completo/stem → marcaba TODO como pendiente aunque estuviera
+    # aplicado. Comparar por el prefijo de 4 dígitos (idéntico a migrate.py).
+    pendientes = [n for n in en_disco if n[:4] not in aplicadas]
     return Response(
         json.dumps({
             "aplicadas": aplicadas,
