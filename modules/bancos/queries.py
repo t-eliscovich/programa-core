@@ -948,6 +948,158 @@ def emitir_cheque(
     }
 
 
+def no_banco_pichincha() -> int:
+    """Resuelve el no_banco de Pichincha por nombre (fallback 10).
+
+    Intela opera SOLO Pichincha para débitos manuales. La convención
+    histórica es no_banco=10, pero lo resolvemos por nombre para no
+    hardcodear si alguna vez cambia el id en el seed.
+    """
+    row = db.fetch_one(
+        "SELECT no_banco FROM scintela.banco "
+        "WHERE UPPER(COALESCE(nombre,'')) LIKE '%%PICHINC%%' "
+        "ORDER BY no_banco LIMIT 1"
+    )
+    return int(row["no_banco"]) if row and row.get("no_banco") is not None else 10
+
+
+def registrar_debito_posdat(
+    *,
+    id_posdat: int,
+    importe=None,
+    fecha=None,
+    no_cheque: str = "",
+    usuario: str = "web",
+) -> dict:
+    """Manda a debitar un posdatado al banco Pichincha (pedido dueña 2026-07-08).
+
+    Caso de uso: hay posdatados (cheques propios que la dueña emitió) que va
+    a MANDAR A DEBITAR al banco. Al registrarlos, el monto:
+      - sale de Pasivos (el posdat pasa de banc=0 → banc=Pichincha), y
+      - baja el saldo de Pichincha (movimiento ND = nota de débito).
+
+    Atómico (una sola tx):
+      1. INSERT ND en Pichincha por el importe (signo −1 → resta saldo).
+      2. UPDATE posdat SET banc=<pichincha> (deja de ser deuda viva banc=0).
+      3. mov_doble tipo='nota_debito' linkeando la fila bancaria con el posdat.
+         metadata.id_posdat_debito permite que el reverso reabra el posdat
+         (ver reversar_movimiento_simple).
+
+    Es la contracara del `emitir_cheque(tipo='proveedor')` pero como ND (la
+    dueña eligió "nota de débito", no "cheque") y en UN click desde /posdat.
+    Reversible por /historial o los movimientos de Pichincha (ND → NC + el
+    posdat vuelve a banc=0).
+
+    Devuelve dict {id_transaccion, id_mov_doble, no_banco, importe, saldo_nuevo}.
+    Lanza ValueError si el posdat no existe, ya fue debitado (banc!=0), está
+    anulado o el importe es inválido.
+    """
+    import bank_helpers
+    import mov_doble as _md
+
+    if not id_posdat:
+        raise ValueError("id_posdat requerido.")
+
+    pd = db.fetch_one(
+        """
+        SELECT id_posdat, num, prov, importe, concepto,
+               COALESCE(banc, 0) AS banc,
+               (anulada IS TRUE) AS anulada
+          FROM scintela.posdat
+         WHERE id_posdat = %s
+        """,
+        (id_posdat,),
+    )
+    if not pd:
+        raise ValueError(f"Posdatado #{id_posdat} no existe.")
+    if pd.get("anulada"):
+        raise ValueError(f"Posdatado #{id_posdat} está anulado.")
+    if int(pd.get("banc") or 0) != 0:
+        raise ValueError(
+            f"Posdatado #{id_posdat} ya no es deuda viva (banc={pd.get('banc')}). "
+            "Probablemente ya fue debitado o pagado."
+        )
+
+    # Importe: por defecto el del posdat; si viene uno explícito debe coincidir
+    # (defensa contra que la fila cambie entre el render y el submit).
+    importe_pd = round(float(pd.get("importe") or 0), 2)
+    importe_f = round(float(importe), 2) if importe is not None else importe_pd
+    if importe_f <= 0:
+        raise ValueError("El importe a debitar debe ser mayor a cero.")
+    if importe is not None and abs(importe_f - importe_pd) > 0.01:
+        raise ValueError(
+            f"El importe enviado (${importe_f:.2f}) no coincide con el del "
+            f"posdatado (${importe_pd:.2f}). Refrescá la lista y probá de nuevo."
+        )
+
+    fecha_deb = fecha or today_ec()
+    asegurar_fecha_abierta(fecha_deb)
+
+    no_banco = no_banco_pichincha()
+    prov = (pd.get("prov") or "").strip().upper() or None
+    concepto_pd = (pd.get("concepto") or "").strip()
+    concepto = (f"Débito posdat {prov or ''} {concepto_pd}").strip()[:50]
+    numref = int(no_cheque) if (no_cheque or "").strip().isdigit() else None
+
+    with db.tx() as conn:
+        mov = bank_helpers.insert_movimiento_bancario(
+            conn,
+            no_banco=no_banco,
+            no_cta=None,
+            fecha=fecha_deb,
+            documento="ND",
+            importe=importe_f,
+            concepto=concepto,
+            prov=prov,
+            numreferencia=numref,
+            usuario=usuario,
+        )
+        id_transaccion = mov.get("id_transaccion")
+
+        db.execute(
+            """
+            UPDATE scintela.posdat
+               SET banc = %s,
+                   fecha_modifica = CURRENT_TIMESTAMP,
+                   usuario_modifica = %s
+             WHERE id_posdat = %s
+            """,
+            (no_banco, usuario[:50], id_posdat),
+            conn=conn,
+        )
+
+        id_mov_doble = _md.registrar(
+            conn=conn,
+            tipo="nota_debito",
+            origen_table="transacciones_bancarias",
+            origen_id=id_transaccion,
+            destino_table="posdat",
+            destino_id=id_posdat,
+            importe=importe_f,
+            fecha=fecha_deb,
+            concepto=concepto[:200],
+            usuario=usuario,
+            metadata={
+                "no_banco": no_banco,
+                "documento": "ND",
+                "prov": prov or "",
+                # Clave para que el reverso reabra el posdat (banc→0):
+                "id_posdat_debito": int(id_posdat),
+                "no_cheque": (no_cheque or "").strip(),
+            },
+        )
+
+    return {
+        "id_transaccion": id_transaccion,
+        "id_mov_doble": id_mov_doble,
+        "no_banco": no_banco,
+        "banco_nombre": "Pichincha",
+        "importe": importe_f,
+        "saldo_nuevo": mov.get("saldo_nuevo"),
+        "id_posdat": int(id_posdat),
+    }
+
+
 def posdat_abiertas_de(prov: str | None = None) -> list[dict]:
     """Posdats abiertas para el wizard de emitir cheque.
 
@@ -1432,6 +1584,21 @@ def reversar_movimiento_simple(
             db.execute(
                 "DELETE FROM scintela.compra WHERE id_compra = %s",
                 (id_compra,), conn=conn,
+            )
+
+        # Posdat debitado a banco (registrar_debito_posdat) → reabrir
+        # (banc=0) para que vuelva a ser deuda viva en /posdat. TMT 2026-07-08.
+        id_pd_deb = meta.get("id_posdat_debito")
+        if id_pd_deb:
+            db.execute(
+                """
+                UPDATE scintela.posdat
+                   SET banc = 0,
+                       fecha_modifica = CURRENT_TIMESTAMP,
+                       usuario_modifica = %s
+                 WHERE id_posdat = %s
+                """,
+                (usuario[:50], id_pd_deb), conn=conn,
             )
 
         # Posdat INOP → anular (soft-delete, recuperable).

@@ -301,6 +301,47 @@ def anular(id_posdat: int):
     return redirect(url_for("posdat.lista"))
 
 
+@posdat_bp.route("/posdat/<int:id_posdat>/registrar-banco", methods=["POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def registrar_banco(id_posdat: int):
+    """Manda a debitar un posdatado a Pichincha (pedido dueña 2026-07-08).
+
+    Un click desde /posdat con mini-confirmación: registra un ND en Pichincha
+    por el monto del posdatado y lo saca de Pasivos (banc=0 → Pichincha).
+    Delega en bancos.queries.registrar_debito_posdat (atómico + reversible).
+    """
+    pd = queries.por_id(id_posdat)
+    if not pd:
+        abort(404)
+    fecha = parse_date(request.form.get("fecha")) or today_ec()
+    no_cheque = (request.form.get("no_cheque") or "").strip()
+    importe = parse_monto(request.form.get("importe"))
+    try:
+        from modules.bancos import queries as _bq
+
+        usuario = (g.user or {}).get("username", "web")
+        r = _bq.registrar_debito_posdat(
+            id_posdat=id_posdat,
+            importe=importe,
+            fecha=fecha,
+            no_cheque=no_cheque,
+            usuario=usuario,
+        )
+        from filters import money_es as _money_es
+
+        flash(
+            f"Débito registrado en {r['banco_nombre']} por {_money_es(r['importe'])}. "
+            f"El posdatado salió de Pasivos.",
+            "ok",
+        )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude registrar el débito", e)
+    return redirect(url_for("posdat.lista"))
+
+
 @posdat_bp.route("/posdat/retiro-op", methods=["POST"])
 @requiere_login
 @requiere_permiso("posdat.editar")

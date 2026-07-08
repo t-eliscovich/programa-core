@@ -300,6 +300,24 @@
             {% else %}
               {{ f.importe | num_es }}
             {% endif %}
+            {# TMT 2026-07-08 dueña: botón "Registrar banco" al lado del monto.
+               Manda a debitar ESTE posdatado a Pichincha (ND) → sale de
+               Pasivos. Solo en la tab Posdatados, filas reales (no OP, no
+               ajuste ≤0) y con permiso de banco. Abre un mini-modal para
+               confirmar fecha + N° de cheque opcional. #}
+            {% if tab != 'yy' and not f.op_line_key and not es_ajuste and tiene_permiso('bancos.conciliar') %}
+              <button type="button"
+                      class="posdat-registrar-banco no-print ml-1 align-middle"
+                      style="background:#1d4ed8;color:#ffffff;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;"
+                      data-id-posdat="{{ f.id_posdat }}"
+                      data-importe="{{ f.importe }}"
+                      data-importe-fmt="{{ f.importe | money_es }}"
+                      data-prov="{{ f.prov or '' }}"
+                      data-concepto="{{ f.concepto or '' }}"
+                      title="Mandar a debitar este posdatado a Pichincha (sale de Pasivos)">
+                Registrar banco
+              </button>
+            {% endif %}
           </td>
           {% if _show_mensual %}
           {# TMT 2026-05-27 dueña: 'RT sigue teniendo --- en cuota mensual'
@@ -807,5 +825,78 @@
       }
     })();
   </script>
+
+  {# ── TMT 2026-07-08 dueña: mini-modal "Registrar banco" ──────────────
+     Manda a debitar un posdatado a Pichincha (ND). Un solo modal reusado
+     por todas las filas; el JS lo rellena con los datos del botón clickeado.
+     Form real (POST normal → redirect + flash) para que sea reproducible
+     por un usuario. Estilos inline (el tailwind.css está congelado). #}
+  {% if tiene_permiso('bancos.conciliar') %}
+  <div id="registrar-banco-modal" class="no-print"
+       style="display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);align-items:center;justify-content:center;">
+    <form method="post" id="registrar-banco-form"
+          style="background:#fff;border-radius:10px;max-width:380px;width:92%;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.25);">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="importe" id="rb-importe">
+      <div style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:2px;">Registrar en Pichincha</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:14px;">
+        Se registra un débito (ND) en Pichincha y el posdatado sale de Pasivos.
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;">Monto</span>
+        <span id="rb-monto" style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:#1d4ed8;"></span>
+      </div>
+      <div id="rb-detalle" style="font-size:11px;color:#475569;margin-bottom:14px;"></div>
+      <label style="display:block;font-size:11px;color:#334155;margin-bottom:4px;">Fecha del débito</label>
+      <input type="date" name="fecha" id="rb-fecha" value="{{ today_iso }}"
+             style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:13px;margin-bottom:12px;">
+      <label style="display:block;font-size:11px;color:#334155;margin-bottom:4px;">N° de cheque <span style="color:#94a3b8;">(opcional)</span></label>
+      <input type="text" name="no_cheque" id="rb-cheque" inputmode="numeric" autocomplete="off"
+             placeholder="—"
+             style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:13px;margin-bottom:18px;">
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button type="button" id="rb-cancel"
+                style="background:#f1f5f9;color:#334155;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;">Cancelar</button>
+        <button type="submit" id="rb-confirm"
+                style="background:#1d4ed8;color:#fff;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;">Confirmar débito</button>
+      </div>
+    </form>
+  </div>
+  <script>
+    (function () {
+      const modal = document.getElementById('registrar-banco-modal');
+      const form  = document.getElementById('registrar-banco-form');
+      if (!modal || !form) return;
+      const elMonto   = document.getElementById('rb-monto');
+      const elImporte = document.getElementById('rb-importe');
+      const elDetalle = document.getElementById('rb-detalle');
+      const elCheque  = document.getElementById('rb-cheque');
+      const btnCancel = document.getElementById('rb-cancel');
+
+      function abrir(btn) {
+        const id = btn.dataset.idPosdat;
+        form.action = '/posdat/' + id + '/registrar-banco';
+        elImporte.value = btn.dataset.importe || '';
+        elMonto.textContent = btn.dataset.importeFmt || '';
+        const prov = (btn.dataset.prov || '').trim();
+        const conc = (btn.dataset.concepto || '').trim();
+        elDetalle.textContent = [prov, conc].filter(Boolean).join(' · ');
+        elCheque.value = '';
+        modal.style.display = 'flex';
+        setTimeout(() => elCheque.focus(), 50);
+      }
+      function cerrar() { modal.style.display = 'none'; }
+
+      document.querySelectorAll('.posdat-registrar-banco').forEach(btn => {
+        btn.addEventListener('click', () => abrir(btn));
+      });
+      btnCancel.addEventListener('click', cerrar);
+      modal.addEventListener('click', (e) => { if (e.target === modal) cerrar(); });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display === 'flex') cerrar();
+      });
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}
