@@ -54,48 +54,6 @@
   </div>
   {% endif %}
 
-  <form id="form-precios" method="post" action="{{ url_for('precios.guardar') if puede_editar else '' }}">
-    {% if puede_editar %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-    <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-      <table class="w-full text-sm" style="border-collapse:collapse;">
-        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-3 py-3 text-left font-medium">Clase</th>
-            {% for col, label in telas %}
-            <th class="px-3 py-3 text-right font-medium">{{ label }}</th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in filas %}
-          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-            <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
-              <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
-            </td>
-            {% for col, label in telas %}
-            <td class="px-3 py-2 text-right tabular-nums">
-              <span class="celda-texto">
-                {% if f[col] is not none %}{{ f[col] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
-              </span>
-              {% if puede_editar %}
-              <input type="text" name="p_{{ f.clase }}_{{ col }}"
-                     class="celda-input w-20 text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm"
-                     style="display:none;"
-                     value="{{ f[col] | num_es if f[col] is not none else '' }}">
-              {% endif %}
-            </td>
-            {% endfor %}
-          </tr>
-          {% else %}
-          <tr><td colspan="{{ telas|length + 1 }}" class="px-3 py-8 text-center text-slate-400">
-            Sin precios cargados. Corre la migracion 0114 en /admin/migraciones.
-          </td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </form>
-
   <!-- Descuentos (solo lectura, derivados): Basico (precio de lista) y luego
        descuentos EN CASCADA sobre la tela elegida: 5%, 5%+9% (=x0.95x0.91) y
        5%+14% (=x0.95x0.86). Se recalculan, no se guardan. -->
@@ -119,6 +77,8 @@
       </form>
     </div>
 
+    <form id="form-precios" method="post" action="{{ url_for('precios.guardar') if puede_editar else '' }}">
+    {% if puede_editar %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
     <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
       <table class="w-full text-sm" style="border-collapse:collapse;">
         <thead class="text-xs uppercase tracking-wider text-slate-500">
@@ -139,7 +99,15 @@
             {% for neto in d.netos %}
             <td class="px-3 py-2 text-right tabular-nums"
                 {% if loop.index0 == 0 %}style="background:rgba(16,185,129,0.06);"{% else %}style="background:rgba(245,158,11,0.05);"{% endif %}>
-              {% if neto is not none %}{{ neto | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+              {% if loop.index0 == 0 and puede_editar %}
+                <span class="celda-texto">{% if neto is not none %}{{ neto | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}</span>
+                <input type="text" name="p_{{ d.clase }}_{{ tela_sel }}"
+                       class="celda-input w-14 text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm"
+                       style="display:none;"
+                       value="{{ neto | num_es if neto is not none else '' }}">
+              {% else %}
+                {% if neto is not none %}{{ neto | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+              {% endif %}
             </td>
             {% endfor %}
           </tr>
@@ -149,6 +117,7 @@
         </tbody>
       </table>
     </div>
+    </form>
   </div>
 </div>
 
