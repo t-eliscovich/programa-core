@@ -45,7 +45,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {# --- Step 1: tipo de cheque ---------------------------------------- #}
-    <div>
+    <div id="step1-tipo">
       <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-1">
         1. ¿Qué estás pagando?
       </h2>
@@ -192,8 +192,11 @@
     {# --- Step 3: campos específicos por tipo (mostrados con JS) ------- #}
     {# TMT 2026-05-19 — header "3. Detalles del destino" removido (pedido
        dueña item 10). Cada bloque interno ya está etiquetado por sus
-       campos; el header agregaba ruido sin explicar nada. #}
-    <div class="border-t border-slate-200 pt-3">
+       campos; el header agregaba ruido sin explicar nada.
+       TMT 2026-07-08 (dueña): "cuando elijo gasto, que las 9 categorías se
+       vean apenas selecciono, no abajo de todo" → un JS mueve este contenedor
+       (id campos-detalle) justo debajo de la selección de tipo (step1-tipo). #}
+    <div id="campos-detalle" class="border-t border-slate-200 pt-3">
       <div id="campos-proveedor" class="campos-tipo hidden space-y-3">
         {# TMT 2026-05-19 v7 — Pedido dueña: "esta repetido 3 veces el provedor.
            una sola". Cuando llegamos con posdat_target (botón Pagar), TODO
@@ -407,6 +410,12 @@
 
   <script>
   (function() {
+    // TMT 2026-07-08 (dueña): mover los campos específicos (incl. las 9
+    // categorías de gasto) JUSTO debajo de la selección de tipo, para verlos
+    // apenas se elige el tipo y no al final del formulario.
+    const _s1 = document.getElementById('step1-tipo');
+    const _det = document.getElementById('campos-detalle');
+    if (_s1 && _det) { _s1.after(_det); }
     // Mostrar el bloque de campos según el radio "tipo" seleccionado
     const radios = document.querySelectorAll('input[name="tipo"]');
     const bloques = document.querySelectorAll('.campos-tipo');
