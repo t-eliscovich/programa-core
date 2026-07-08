@@ -937,6 +937,124 @@ def inventario_por_etapa() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Inventario por ETAPA AS-OF una fecha (snapshot histórico de Asinfo)
+# ---------------------------------------------------------------------------
+# TMT 2026-07-08 — para /flujo-produccion la dueña pidió un segundo cuadro de
+# "MOVIMIENTOS DEL MES" cuyo Stock INICIAL salga de Asinfo (stock al ARRANQUE
+# del mes seleccionado) en vez de las iniciales del programa. `saldo_producto_lote`
+# guarda snapshots FECHADOS por (producto, bodega, lote); el saldo a una fecha
+# de corte = el último snapshot por (producto, bodega, lote) con fecha <= corte
+# (mismo patrón ROW_NUMBER que inventario_por_etapa()/stock_asinfo_lote_totales,
+# pero con el filtro de fecha DENTRO de la partición).
+#
+# El WIP entre pasos (en proceso) NO se puede reconstruir a una fecha pasada:
+# orden_fabricacion sólo guarda el estado ACTUAL (cantidad_fabricada de hoy), no
+# el histórico. Por eso las etapas "en proceso" quedan en 0 para la foto as-of y
+# hilo_total/cruda_total = el saldo de bodega puro (documentado). Sólo kg.
+
+_INVENTARIO_ASOF_TTL_SECS = 600  # 10 minutos
+_INVENTARIO_ASOF_CACHE: dict = {}
+
+
+def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
+    """Kg de inventario por etapa AS-OF `fecha_corte` (fail-soft).
+
+    Igual shape que inventario_por_etapa() (keys: disponible, hilo, tela_cruda,
+    terminada, en_proceso_tc, en_proceso_pt, hilo_total, cruda_total, total),
+    pero los saldos de bodega 51/52/53 se toman al último snapshot con
+    `fecha <= fecha_corte`. El WIP entre pasos no es reconstruible a fecha
+    pasada → en_proceso_tc/pt = 0.0 (y por ende hilo_total = hilo,
+    cruda_total = tela_cruda).
+
+    Args:
+        fecha_corte: `date`/`datetime` o string 'YYYY-MM-DD'. El saldo se toma
+                     al último snapshot en o antes de esta fecha (inclusive).
+
+    Todos los valores son 0.0 y disponible=False si Asinfo no está armado o
+    cualquier query falla. Nunca lanza. Cache TTL 10 min por fecha_corte.
+    """
+    import time as _time
+
+    if hasattr(fecha_corte, "isoformat"):
+        fecha_corte = fecha_corte.isoformat()[:10]
+    fecha_corte = str(fecha_corte)[:10]
+
+    vacio = {
+        "disponible": False,
+        "hilo": 0.0, "tela_cruda": 0.0, "terminada": 0.0,
+        "en_proceso_tc": 0.0, "en_proceso_pt": 0.0,
+        "hilo_total": 0.0, "cruda_total": 0.0, "total": 0.0,
+    }
+
+    # Sanitizar la fecha: sólo dígitos y guiones (defensa SQL injection —
+    # va inline en el SQL de Metabase que no soporta bind params acá).
+    import re as _re
+    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha_corte):
+        return vacio
+
+    now = _time.time()
+    cached = _INVENTARIO_ASOF_CACHE.get(fecha_corte)
+    if cached and (now - cached[0]) < _INVENTARIO_ASOF_TTL_SECS:
+        return cached[1]
+
+    if not disponible():
+        return vacio
+
+    # Último snapshot por (producto, bodega, lote) con fecha <= corte, sumado
+    # por bodega. Réplica de stock_asinfo_lote_totales() con el filtro de fecha
+    # empujado a la partición del ROW_NUMBER.
+    sql = f"""
+        WITH ult AS (
+            SELECT id_producto, id_bodega, id_lote, saldo,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY id_producto, id_bodega, id_lote
+                       ORDER BY fecha DESC, id_saldo_producto_lote DESC
+                   ) AS rn
+              FROM saldo_producto_lote
+             WHERE fecha <= '{fecha_corte}'
+               AND id_bodega IN (51, 52, 53)
+        )
+        SELECT id_bodega    AS id_bodega,
+               SUM(saldo)   AS total_kg
+          FROM ult
+         WHERE rn = 1 AND saldo > 0
+         GROUP BY id_bodega
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=100) or []
+        por_bodega = {int(r.get("id_bodega")): float(r.get("total_kg") or 0)
+                      for r in rows}
+    except Exception:  # noqa: BLE001
+        return vacio
+
+    hilo = por_bodega.get(51, 0.0)
+    tela_cruda = por_bodega.get(52, 0.0)
+    terminada = por_bodega.get(53, 0.0)
+
+    if not (hilo or tela_cruda or terminada):
+        # Nada vino — tratar como no disponible (fail-soft).
+        return vacio
+
+    # WIP entre pasos no es reconstruible a fecha pasada (ver nota arriba).
+    en_proceso_tc = 0.0
+    en_proceso_pt = 0.0
+
+    out = {
+        "disponible": True,
+        "hilo": hilo,
+        "tela_cruda": tela_cruda,
+        "terminada": terminada,
+        "en_proceso_tc": en_proceso_tc,
+        "en_proceso_pt": en_proceso_pt,
+        "hilo_total": hilo + en_proceso_tc,
+        "cruda_total": tela_cruda + en_proceso_pt,
+        "total": hilo + tela_cruda + terminada + en_proceso_tc + en_proceso_pt,
+    }
+    _INVENTARIO_ASOF_CACHE[fecha_corte] = (now, out)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Importaciones de Asinfo (para cruzar contra compras/anticipos del programa)
 # ---------------------------------------------------------------------------
 # La lista "Importación" del ERP. La `Nota` (factura_proveedor.descripcion)

@@ -52,31 +52,24 @@
       <span class="text-sm text-slate-600">
         Clave corta (operador de movimientos)
       </span>
-      {# TMT 2026-05-21 dueña: set canónico = {FED, TAM, ALX, ADR}.
-         Antes el input era libre y aparecía drift (tel/TEL/TAM, AND vs ADR).
-         Ahora dropdown cerrado — solo permite las 4 oficiales o vacío. #}
-      <select name="clave" class="border rounded px-2 py-1 mt-1">
-        <option value="">— sin clave —</option>
-        {% set _claves_canonicas = [
-          ('FED', 'FED — Federico'),
-          ('TAM', 'TAM — Tamara'),
-          ('ALX', 'ALX — Alex'),
-          ('ADR', 'ADR — Andres'),
-        ] %}
-        {% for code, label in _claves_canonicas %}
-          <option value="{{ code }}"
-                  {% if (form.clave or '')|upper == code %}selected{% endif %}>
-            {{ label }}
-          </option>
-        {% endfor %}
-        {# Mostrar clave actual si NO está en el set canónico (legacy) — la
-           dueña puede verla pero al guardar se reemplazará por la elegida. #}
-        {% if form.clave and (form.clave|upper) not in ['FED','TAM','ALX','ADR'] %}
-          <option value="{{ form.clave|upper }}" selected>
-            {{ form.clave|upper }} — (legacy, cambiar a una canónica)
-          </option>
-        {% endif %}
-      </select>
+      {# TMT 2026-07-08 dueña "me tiene que dejar crear clave acá": antes era un
+         dropdown cerrado a {FED,TAM,ALX,ADR}. Ahora es un input con datalist —
+         se puede ELEGIR una existente o ESCRIBIR una nueva (1-4 letras/números,
+         ej. MAR, IRE). Se normaliza a MAYÚSCULAS al guardar. Vacío = sin clave. #}
+      <input name="clave" list="claves-list" value="{{ (form.clave or '')|upper }}"
+             maxlength="4" autocomplete="off"
+             placeholder="— sin clave — (o escribí una nueva, ej. MAR)"
+             class="border rounded px-2 py-1 mt-1" style="text-transform:uppercase;">
+      <datalist id="claves-list">
+        <option value="FED">FED — Federico</option>
+        <option value="TAM">TAM — Tamara</option>
+        <option value="ALX">ALX — Alex</option>
+        <option value="ADR">ADR — Andres</option>
+      </datalist>
+      <span class="text-xs text-slate-400 mt-1">
+        Dejá vacío para "sin clave". Podés crear una nueva: 1-4 letras o números
+        (ej. MAR, IRE). Se guarda en mayúsculas.
+      </span>
     </label>
 
     {% if modo=='editar' %}

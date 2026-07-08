@@ -144,57 +144,97 @@
     {% endif %}
   </div>
 
-  {# ─── TABLA 2: STOCK (kg Asinfo + $ PC) ───────────────────────────
-       Kg viene de Asinfo (etapa), $ del programa (resumen_stock, misma
-       fuente que /stock y el Balance — Asinfo NO tiene $ confiables).
-       Mapeo etapa → categoría PC: Hilo↔hilado, Tela Cruda↔tejido,
-       Terminada↔terminado. Los $ se muestran aunque Asinfo esté caído. #}
-  {% set _pc = stock_pc or {} %}
-  {% set _hpc = _pc.get('hilado', {}) %}
-  {% set _tpc = _pc.get('tejido', {}) %}
-  {% set _fpc = _pc.get('terminado', {}) %}
-  {% set _totpc = _pc.get('total', {}) %}
-  {% set _asi = inv_asinfo.disponible if inv_asinfo else false %}
+  {# ─── TABLA 2: MOVIMIENTOS DEL MES (inicial Asinfo) ───────────────
+       TMT 2026-07-08 (dueña): clon de MOVIMIENTOS DEL MES (abajo) pero con el
+       Stock inicial (kg) tomado del snapshot de Asinfo a la fecha de inicio del
+       mes seleccionado (as-of por bodega 51/52/53), no de las iniciales del
+       programa. Ingresos/Egresos y toda la lógica de $/$-por-kg son idénticas;
+       Stock act. = inicial + ingresos − egresos. COLORANTES no tiene stock en
+       Asinfo → mantiene el valor del programa. Fail-soft: si Asinfo está caído
+       se muestra un aviso apagado. #}
   <div class="blk mb-2">
-    <div class="blk-title">Stock (kg Asinfo + $ PC)</div>
-    <table>
-      <colgroup><col style="width:40%"><col style="width:30%"><col style="width:30%"></colgroup>
-      <thead>
-        <tr><th class="lbl">Etapa</th><th>Kg (Asinfo)</th><th>$ (PC)</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="lbl">Hilo</td>
-          <td class="num">{% if _asi %}{{ inv_asinfo.hilo_total | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
-          <td class="num">{{ _hpc.get('us') | num_es(0) if _hpc.get('us') else '—' }}</td>
-        </tr>
-        <tr>
-          <td class="lbl">Tela Cruda</td>
-          <td class="num">{% if _asi %}{{ inv_asinfo.cruda_total | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
-          <td class="num">{{ _tpc.get('us') | num_es(0) if _tpc.get('us') else '—' }}</td>
-        </tr>
-        <tr>
-          <td class="lbl">Terminada</td>
-          <td class="num">{% if _asi %}{{ inv_asinfo.terminada | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
-          <td class="num">{{ _fpc.get('us') | num_es(0) if _fpc.get('us') else '—' }}</td>
-        </tr>
-        <tr class="total">
-          <td class="lbl">Total</td>
-          <td class="num">{% if _asi %}{{ inv_asinfo.total | num_es(0) }}{% else %}<span class="nd">—</span>{% endif %}</td>
-          <td class="num">{{ _totpc.get('us') | num_es(0) if _totpc.get('us') else '—' }}</td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="mt-2 text-[10px] text-slate-500">
-      <strong>Origen:</strong> los <strong>Kg</strong> son el inventario live de
-      Asinfo por etapa (Hilo = bodega 51 + en proceso a Tela Cruda; Cruda =
-      bodega 52 + en proceso a Terminada; Terminada = bodega 53). El
-      <strong>$</strong> viene de las tablas del programa
-      (<code>resumen_stock</code>: compras/facturas/iniciales/tinto), misma
-      fuente que /stock y el Balance — Asinfo no tiene dólares confiables.
-      Mapeo: Hilo↔hilado, Tela Cruda↔tejido, Terminada↔terminado.
-      {% if not _asi %}<em>Asinfo no disponible: los Kg no se pudieron traer.</em>{% endif %}
-    </p>
+    <div class="blk-title">Movimientos del mes (inicial Asinfo)</div>
+    {% if mov_asinfo %}
+      {% set ahl = mov_asinfo.get('hilado', {}) %}
+      {% set atj = mov_asinfo.get('tejido', {}) %}
+      {% set ate = mov_asinfo.get('terminado', {}) %}
+      {% set aco = mov_asinfo.get('colorantes', {}) %}
+      <table class="mov-table">
+        <colgroup>
+          <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="lbl"></th>
+            <th>HILADO KG</th>
+            <th>$/KG</th>
+            <th>$</th>
+            <th></th>
+            <th>CRUDO KG</th>
+            <th>TERM. KG</th>
+            <th>COLOR. $</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="lbl">Stock inic.</td>
+            <td class="num">{{ ahl.get('stock_inic_kg') | num_es(0) if ahl.get('stock_inic_kg') else '—' }}</td>
+            <td class="num">{{ '%.3f' % (ahl.get('stock_inic_ukg') or 0) if ahl.get('stock_inic_ukg') else '—' }}</td>
+            <td class="num">{{ ahl.get('stock_inic_us') | num_es(0) if ahl.get('stock_inic_us') else '—' }}</td>
+            <td></td>
+            <td class="num">{{ atj.get('stock_inic_kg') | num_es(0) if atj.get('stock_inic_kg') else '—' }}</td>
+            <td class="num">{{ ate.get('stock_inic_kg') | num_es(0) if ate.get('stock_inic_kg') else '—' }}</td>
+            <td class="num">{{ aco.get('stock_inic_us') | num_es(0) if aco.get('stock_inic_us') else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Ingresos</td>
+            <td class="num">{{ ahl.get('ingresos_kg') | num_es(0) if ahl.get('ingresos_kg') else '—' }}</td>
+            <td class="num">{{ '%.3f' % (ahl.get('ingresos_ukg') or 0) if ahl.get('ingresos_ukg') else '—' }}</td>
+            <td class="num">{{ ahl.get('ingresos_us') | num_es(0) if ahl.get('ingresos_us') else '—' }}</td>
+            <td></td>
+            <td class="num">
+              {{ atj.get('ingresos_kg') | num_es(0) if atj.get('ingresos_kg') else '—' }}
+              {% if atj.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % atj.ingresos_pct }}%</span>{% endif %}
+            </td>
+            <td class="num">
+              {{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}
+              {% if ate.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % ate.ingresos_pct }}%</span>{% endif %}
+            </td>
+            <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Egresos</td>
+            <td class="num">{{ ahl.get('egresos_kg') | num_es(0) if ahl.get('egresos_kg') else '—' }}</td>
+            <td class="num">{{ '%.3f' % (ahl.get('egresos_ukg') or 0) if ahl.get('egresos_ukg') else '—' }}</td>
+            <td class="num">{{ ahl.get('egresos_us') | num_es(0) if ahl.get('egresos_us') else '—' }}</td>
+            <td></td>
+            <td class="num">{{ atj.get('egresos_kg') | num_es(0) if atj.get('egresos_kg') else '—' }}</td>
+            <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
+            <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">Stock act.</td>
+            <td class="num">{{ ahl.get('stock_act_kg') | num_es(0) if ahl.get('stock_act_kg') else '—' }}</td>
+            <td class="num">{{ '%.3f' % (ahl.get('stock_act_ukg') or 0) if ahl.get('stock_act_ukg') else '—' }}</td>
+            <td class="num">{{ ahl.get('stock_act_us') | num_es(0) if ahl.get('stock_act_us') else '—' }}</td>
+            <td></td>
+            <td class="num">{{ atj.get('stock_act_kg') | num_es(0) if atj.get('stock_act_kg') else '—' }}</td>
+            <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
+            <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="mt-2 text-[10px] text-slate-500">
+        <strong>Diferencia con la tabla de abajo:</strong> el <strong>Stock
+        inic.</strong> sale del inventario de Asinfo al arranque del mes
+        (snapshot as-of por bodega 51 Hilo / 52 Tela Cruda / 53 PT), no de las
+        iniciales del programa. Ingresos, Egresos y los $/$-por-kg son idénticos;
+        Stock act. = inicial + ingresos − egresos. <em>Colorantes</em> no tiene
+        stock en Asinfo: mantiene el valor del programa.
+      </p>
+    {% else %}
+      <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>
+    {% endif %}
   </div>
 
   {% if not data or not data.header %}

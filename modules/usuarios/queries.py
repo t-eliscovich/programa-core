@@ -1,25 +1,32 @@
 """Consultas de usuarios (seguridad.usuario + seguridad.rol)."""
 
+import re
+
 import bcrypt
 
 import db
 
-# TMT 2026-05-21 dueña: set canónico de claves de operador de movimientos.
-# El form de /usuarios usa un dropdown cerrado a estas 4 opciones.
-# `None` / cadena vacía son válidos (clave opcional).
+# TMT 2026-05-21 dueña: set canónico de claves de operador de movimientos
+# (sugerencias en el datalist del form). TMT 2026-07-08: ya NO es cerrado —
+# se pueden crear claves nuevas (ver _normalizar_clave).
 CLAVES_CANONICAS = ("FED", "TAM", "ALX", "ADR")
+
+_CLAVE_RE = re.compile(r"^[A-Z0-9]{1,4}$")
 
 
 def _normalizar_clave(clave: str | None) -> str | None:
-    """Devuelve clave en mayúsculas si está en el set canónico, sino None.
+    """Normaliza la clave corta de operador a MAYÚSCULAS.
 
-    Acepta '' o None → None (clave opcional). Cualquier valor fuera del
-    set se rechaza retornando None (el caller decide si flashear warning).
+    TMT 2026-07-08 (dueña "me tiene que dejar crear clave acá"): antes sólo
+    aceptaba el set canónico {FED,TAM,ALX,ADR}. Ahora acepta CUALQUIER clave
+    corta nueva (1-4 letras/números), normalizada a mayúsculas para evitar
+    drift (tel/TEL, and/ADR). '' o None → None (opcional). Lo que no matchea
+    el patrón se rechaza (None).
     """
     if not clave:
         return None
     c = clave.strip().upper()
-    if c not in CLAVES_CANONICAS:
+    if not _CLAVE_RE.match(c):
         return None
     return c
 

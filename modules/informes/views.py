@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from flask import (
@@ -40,6 +40,61 @@ def _safe(fn, default):
         return fn(), None
     except Exception as e:
         return default, str(e)
+
+
+def _build_mov_asinfo(data, inv_inic) -> dict | None:
+    """Clon del `header` de movimientos_mes_dbase con el Stock inicial (kg)
+    tomado de Asinfo a la fecha de inicio del mes (snapshot as-of), en vez de
+    scintela.iniciales/historia.
+
+    Recalcula Stock act. = inicial + ingresos − egresos (clamp ≥0, igual que la
+    query original). Ingresos/Egresos y la lógica de $/$-por-kg quedan idénticas
+    a la tabla original: los $ del stock inicial/actual se reobtienen aplicando
+    el MISMO $/kg (stock_inic_ukg / stock_act_ukg) sobre la nueva base de kg; los
+    $ de ingresos/egresos no se tocan.
+
+    Mapeo etapa → categoría, MISMA combinación que la tabla live "Inventario
+    Asinfo": Hilado←hilo_total, Crudo/Tejido←cruda_total, Terminado←terminada.
+    COLORANTES no tiene stock en Asinfo → se deja el valor del programa (PC).
+
+    Devuelve None si no hay `header` o si Asinfo no está disponible (la vista
+    muestra un aviso apagado en la tabla).
+    """
+    if not isinstance(data, dict):
+        return None
+    header = data.get("header") or {}
+    if not header or not (isinstance(inv_inic, dict) and inv_inic.get("disponible")):
+        return None
+
+    def _f(d, k):
+        try:
+            return float(d.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    hl = dict(header.get("hilado", {}))
+    tj = dict(header.get("tejido", {}))
+    te = dict(header.get("terminado", {}))
+    co = dict(header.get("colorantes", {}))
+
+    hi0 = _f(inv_inic, "hilo_total")
+    tc0 = _f(inv_inic, "cruda_total")
+    pf0 = _f(inv_inic, "terminada")
+
+    # HILADO — override inicial kg; recomputar act kg. $ reusan el $/kg existente.
+    hl["stock_inic_kg"] = hi0
+    hl["stock_inic_us"] = hi0 * _f(hl, "stock_inic_ukg")
+    hl["stock_act_kg"] = max(hi0 + _f(hl, "ingresos_kg") - _f(hl, "egresos_kg"), 0.0)
+    hl["stock_act_us"] = hl["stock_act_kg"] * _f(hl, "stock_act_ukg")
+
+    # CRUDO / TERMINADO — sólo kg.
+    tj["stock_inic_kg"] = tc0
+    tj["stock_act_kg"] = max(tc0 + _f(tj, "ingresos_kg") - _f(tj, "egresos_kg"), 0.0)
+    te["stock_inic_kg"] = pf0
+    te["stock_act_kg"] = max(pf0 + _f(te, "ingresos_kg") - _f(te, "egresos_kg"), 0.0)
+
+    # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
+    return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co}
 
 
 def _asof_dia_overrides(comp: dict, as_of) -> None:
@@ -1537,22 +1592,25 @@ def flujo_produccion():
         {},
     )
 
-    # TMT 2026-07-08 (dueña): dos tablas al tope — inventario live de Asinfo
-    # por etapa (kg) y el mismo desglose combinando kg (Asinfo) con $ (PC).
-    # Ambas fail-soft: si Asinfo está caído la vista igual renderiza.
+    # TMT 2026-07-08 (dueña): tabla live de Asinfo por etapa (kg) al tope, y
+    # un segundo cuadro "MOVIMIENTOS DEL MES (inicial Asinfo)" — clon del de
+    # abajo pero con el Stock inicial tomado del snapshot de Asinfo al arranque
+    # del mes. Ambas fail-soft: si Asinfo está caído la vista igual renderiza.
     from modules.asinfo import service as asinfo_service
 
     inv_asinfo, _e_inv = _safe(asinfo_service.inventario_por_etapa, {})
     if not isinstance(inv_asinfo, dict):
         inv_asinfo = {}
-    # Valor $ del stock del programa (misma fuente que /stock y el Balance).
-    def _stock_pc():
-        from modules.stock import queries as _stock_q
-        return _stock_q.resumen_stock()
 
-    stock_pc, _e_pc = _safe(_stock_pc, {})
-    if not isinstance(stock_pc, dict):
-        stock_pc = {}
+    # Stock inicial as-of = inventario de Asinfo a la fecha de inicio del mes.
+    fecha_corte = date(anio, mes, 1)
+    inv_asinfo_inic, _e_inic = _safe(
+        lambda: asinfo_service.inventario_por_etapa_a_fecha(fecha_corte),
+        {},
+    )
+    if not isinstance(inv_asinfo_inic, dict):
+        inv_asinfo_inic = {}
+    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic)
 
     return render_template(
         "informes/flujo_produccion.html",
@@ -1561,7 +1619,7 @@ def flujo_produccion():
         mes=mes,
         error=error,
         inv_asinfo=inv_asinfo,
-        stock_pc=stock_pc,
+        mov_asinfo=mov_asinfo,
     )
 
 
