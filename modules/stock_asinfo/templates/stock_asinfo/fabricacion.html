@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ cfg.titulo }}{% endblock %}
+{% block title %}Inventario{% endblock %}
 {% block breadcrumb %}
-  <span>Stock</span> / <strong>{{ cfg.titulo }}</strong>
+  <span>Stock</span> / <strong>Inventario</strong>
 {% endblock %}
 
 {% block head_extra %}
@@ -80,17 +80,12 @@
 {% block content %}
 <div class="page-shell page-shell--full fb">
 
-  {# ── Encabezado + switch de proceso ───────────────────────────── #}
+  {# ── Encabezado — TMT 2026-07-08 (dueña): "unificamos PT y TC en una
+       pantalla". Una sola vista "Inventario" con toda la cadena; sin toggle. #}
   <div class="flex items-center justify-between mb-4">
     <div>
-      <h1 class="text-xl font-semibold">{{ cfg.titulo }}</h1>
-      <p class="text-xs text-slate-500">{{ cfg.material | capitalize }} → {{ cfg.produce | lower }} · kg · fuente Asinfo</p>
-    </div>
-    <div class="flex gap-1 no-print">
-      <a href="{{ url_for('stock_asinfo.fabricacion_tc') }}"
-         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if proceso == 'tc' else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">Inventario TC</a>
-      <a href="{{ url_for('stock_asinfo.fabricacion_pt') }}"
-         class="px-4 py-1.5 rounded text-sm font-medium {{ 'bg-slate-800 text-white' if proceso == 'pt' else 'border border-slate-300 text-slate-600 hover:bg-slate-50' }}">Inventario PT</a>
+      <h1 class="text-xl font-semibold">Inventario</h1>
+      <p class="text-xs text-slate-500">Hilo → producto terminado · kg · fuente Asinfo</p>
     </div>
   </div>
 
