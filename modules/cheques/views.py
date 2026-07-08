@@ -2485,7 +2485,11 @@ def confirmar_rebote(id_cheque: int):
         accion_url=url_for("cheques.transicionar", id_cheque=id_cheque),
         volver_url=url_for("cheques.detalle", id_cheque=id_cheque),
         motivo_requerido=True,
-        motivo_obligatorio=True,
+        # TMT 2026-07-08 dueña: "cuando cancelo el cheque no me obligues a poner
+        # motivo, se hace largo". El handler ya lo trata opcional (usa default
+        # si viene vacío) — sacamos el `required` del front. Era el ÚNICO
+        # confirm de cheques que forzaba motivo; el resto ya es opcional.
+        motivo_obligatorio=False,
         confirm_label="Confirmar rebote",
         # Hidden inputs extras para que el POST a transicionar reciba stat_destino.
         extras_hidden=[{"name": "stat_destino", "value": "9"}],
