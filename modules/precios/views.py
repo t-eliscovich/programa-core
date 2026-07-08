@@ -41,11 +41,24 @@ def lista():
     except Exception as e:  # noqa: BLE001
         filas, error = [], str(e)
 
+    # Seccion de descuentos (solo lectura): neto a 4/7/9% para UNA tela.
+    tela_sel = (request.args.get("tela") or "jersey").strip().lower()
+    if tela_sel not in queries.COLUMNAS_TELA:
+        tela_sel = "jersey"
+    try:
+        descuentos = queries.tabla_descuentos(filas, tela_sel) if filas else []
+    except Exception:  # noqa: BLE001
+        descuentos = []
+
     return render_template(
         "precios/lista.html",
         filas=filas,
         telas=queries.TELAS,
         error=error,
+        descuentos=descuentos,
+        tramos=queries.TRAMOS_DESCUENTO,
+        corte_mayorista=queries.CORTE_MAYORISTA,
+        tela_sel=tela_sel,
     )
 
 

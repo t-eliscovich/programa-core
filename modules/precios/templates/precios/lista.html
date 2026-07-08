@@ -95,6 +95,72 @@
       </table>
     </div>
   </form>
+
+  <!-- Descuentos (solo lectura): neto a 4/7/9% para la tela elegida.
+       El dBase (INFORMES.PRG) parte a los clientes en Minorista (<=7%) y
+       Mayorista (>7%): por eso 4% y 7% son Minorista y 9% es Mayorista. -->
+  <div class="mt-8">
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+      <div>
+        <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Descuentos</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Precio neto = lista x (1 - descuento). Minorista hasta 7%, Mayorista mas de 7%.
+        </p>
+      </div>
+      <form method="get" action="{{ url_for('precios.lista') }}" class="no-print flex items-center gap-2">
+        <label class="text-sm text-slate-600 dark:text-slate-300">Tela</label>
+        <select name="tela" onchange="this.form.submit()"
+                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+          {% for col, label in telas %}
+          <option value="{{ col }}" {% if col == tela_sel %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+
+    <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+      <table class="w-full text-sm" style="border-collapse:collapse;">
+        <thead class="text-xs uppercase tracking-wider text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-800/50">
+            <th class="px-3 py-2 text-left font-medium" rowspan="2">Clase</th>
+            <th class="px-3 py-2 text-right font-medium" rowspan="2">Lista</th>
+            <th class="px-3 py-2 text-center font-medium" colspan="2"
+                style="background:rgba(16,185,129,0.10);">Minorista</th>
+            <th class="px-3 py-2 text-center font-medium" colspan="1"
+                style="background:rgba(245,158,11,0.12);">Mayorista</th>
+          </tr>
+          <tr class="bg-slate-50 dark:bg-slate-800/50">
+            <th class="px-3 py-2 text-right font-medium" style="background:rgba(16,185,129,0.10);">4%</th>
+            <th class="px-3 py-2 text-right font-medium" style="background:rgba(16,185,129,0.10);">7%</th>
+            <th class="px-3 py-2 text-right font-medium" style="background:rgba(245,158,11,0.12);">9%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in descuentos %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
+              <span class="text-slate-400 mr-1">{{ d.clase }}</span>{{ d.descripcio }}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums">
+              {% if d.lista is not none %}{{ d.lista | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums" style="background:rgba(16,185,129,0.06);">
+              {% if d.netos[4] is not none %}{{ d.netos[4] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums" style="background:rgba(16,185,129,0.06);">
+              {% if d.netos[7] is not none %}{{ d.netos[7] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-right tabular-nums" style="background:rgba(245,158,11,0.08);">
+              {% if d.netos[9] is not none %}{{ d.netos[9] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="px-3 py-6 text-center text-slate-400">Sin precios para calcular descuentos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 {% if puede_editar %}
