@@ -55,6 +55,22 @@
             {{ r.importe | num_es }}
           </td>
         </tr>
+        {# TMT 2026-07-08 (dueña): el reverso de una activación NO es solo la
+           máquina — mostramos explícito que TAMBIÉN vuelven los anticipos y se
+           eliminan las cuotas. Todo pende de esta fila resumen. #}
+        {% if r.tipo == 'activacion_maquinaria' and r.metadata is mapping %}
+        {% set _na = (r.metadata.get('ids_anticipos') or []) | length %}
+        {% set _nc = (r.metadata.get('ids_posdat') or []) | length %}
+        <tr class="border-t border-slate-50" style="background:#ecfdf5;">
+          <td></td>
+          <td colspan="3" class="px-3 py-2 text-xs" style="color:#065f46;">
+            Este reverso deshace TODO lo que salió de activar la máquina:
+            <strong>restaura {{ _na }} anticipo(s)</strong> a vivos (vuelven a
+            /dolares) y <strong>elimina {{ _nc }} cuota(s)</strong> (posdatados),
+            además de borrar la máquina. Todo junto, en una sola transacción.
+          </td>
+        </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
