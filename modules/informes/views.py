@@ -1175,6 +1175,79 @@ def flujo_grafico():
     )
 
 
+@informes_bp.route("/flujo/grafico/export.xlsx")
+@requiere_login
+@requiere_permiso("informes.ver")
+def flujo_grafico_export():
+    """Excel del flujo día por día — qué SUMA (ingresos) y qué RESTA (egresos)
+    cada día, con el saldo acumulado. Pedido dueña 2026-07-08 ("un excel del
+    flujo que muestre cada día que suma y que resta"). Misma fuente que el
+    gráfico (flujo_calculado): cheques cobrados = ingreso (+); posdat P1/P2,
+    materia prima y gastos = egresos (−). Fechas en DD/MM/AAAA."""
+    import io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    ignorar_cheques = request.args.get("ignorar_cheques") in ("1", "true", "yes", "on")
+    filas, _ = _safe(
+        lambda: queries.flujo_calculado(
+            dias_atras=0, dias_adelante=365, ignorar_cheques=ignorar_cheques
+        ),
+        [],
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Flujo"
+    headers = [
+        "Fecha", "Ingresos (cheques)", "Posdat P1", "Posdat P2",
+        "Materia prima", "Gastos", "Neto del día", "Saldo acumulado",
+    ]
+    hdr_font = Font(bold=True, color="FFFFFF")
+    hdr_fill = PatternFill("solid", fgColor="0F172A")
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=c, value=h)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    money_fmt = "#,##0.00"
+    rownum = 2
+    for r in filas:
+        ing = float(r.get("cheques") or 0)   # +
+        p1 = float(r.get("posdat1") or 0)    # ya negativo (egreso)
+        p2 = float(r.get("posdat2") or 0)
+        mp = float(r.get("mprima") or 0)
+        g = float(r.get("gastos") or 0)
+        # Sólo días con movimiento (el resto es la línea plana del saldo).
+        if ing == 0 and p1 == 0 and p2 == 0 and mp == 0 and g == 0:
+            continue
+        neto = round(ing + p1 + p2 + mp + g, 2)
+        ws.cell(row=rownum, column=1, value=r.get("fecha")).number_format = "DD/MM/YYYY"
+        for i, v in enumerate(
+            [ing, p1, p2, mp, g, neto, round(float(r.get("saldo") or 0), 2)], start=2
+        ):
+            ws.cell(row=rownum, column=i, value=v).number_format = money_fmt
+        rownum += 1
+
+    for i, w in enumerate([13, 18, 13, 13, 14, 13, 14, 16], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="flujo_{today_ec().isoformat()}.xlsx"'
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Flujo — carga manual / CSV  (v1: la forma más rápida de poblar scintela.flujo
 # sin necesidad de importar desde el dBase viejo ni correr scripts a mano).
