@@ -225,12 +225,15 @@
         </tbody>
       </table>
       <p class="mt-2 text-[10px] text-slate-500">
-        <strong>Diferencia con la tabla de abajo:</strong> el <strong>Stock
-        inic.</strong> sale del inventario de Asinfo al arranque del mes
-        (snapshot as-of por bodega 51 Hilo / 52 Tela Cruda / 53 PT), no de las
-        iniciales del programa. Ingresos, Egresos y los $/$-por-kg son idénticos;
-        Stock act. = inicial + ingresos − egresos. <em>Colorantes</em> no tiene
-        stock en Asinfo: mantiene el valor del programa.
+        <strong>Todo de Asinfo, lógica del dBase:</strong> los saldos
+        <strong>inicial</strong> (al 1° del mes) y <strong>actual</strong> (hoy)
+        salen de Asinfo. Cadena de masa: el egreso de cada etapa = el ingreso de
+        la siguiente — <strong>egreso de hilado = lo que se fue a tejer = ingreso
+        de crudo</strong>; egreso de crudo = ingreso de terminado. Lo tejido del
+        mes es la única cifra del dBase (ancla); lo tinturado, las compras de hilo
+        y las ventas se derivan para cerrar el balance contra los saldos de Asinfo.
+        Los $/kg se mantienen del programa (Asinfo no tiene dólares confiables).
+        <em>Colorantes</em> no tiene stock en Asinfo: mantiene el valor del programa.
       </p>
     {% else %}
       <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>

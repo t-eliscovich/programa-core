@@ -42,28 +42,34 @@ def _safe(fn, default):
         return default, str(e)
 
 
-def _build_mov_asinfo(data, inv_inic) -> dict | None:
-    """Clon del `header` de movimientos_mes_dbase con el Stock inicial (kg)
-    tomado de Asinfo a la fecha de inicio del mes (snapshot as-of), en vez de
-    scintela.iniciales/historia.
+def _build_mov_asinfo(data, inv_inic, inv_act) -> dict | None:
+    """Tabla 'movimientos del mes' con la MISMA lógica del dBase/TINT.BAT pero
+    con los datos viniendo de Asinfo (no de scintela.iniciales/historia).
 
-    Recalcula Stock act. = inicial + ingresos − egresos (clamp ≥0, igual que la
-    query original). Ingresos/Egresos y la lógica de $/$-por-kg quedan idénticas
-    a la tabla original: los $ del stock inicial/actual se reobtienen aplicando
-    el MISMO $/kg (stock_inic_ukg / stock_act_ukg) sobre la nueva base de kg; los
-    $ de ingresos/egresos no se tocan.
+    El dBase arma una cadena de balance de masa (hilado→crudo→terminado) donde
+    el egreso de una etapa = el ingreso de la siguiente. Acá los SALDOS (inicial
+    as-of el 1° del mes + actual live) salen de Asinfo; el único flujo que Asinfo
+    no da por mes es "lo tejido" (W=ktej), que se toma del dBase como ANCLA, y el
+    resto (lo tinturado, compras de hilo, ventas) se DERIVA para cerrar el balance
+    contra los saldos de Asinfo. Ver el bloque de cálculo abajo.
 
-    Mapeo etapa → categoría, MISMA combinación que la tabla live "Inventario
-    Asinfo": Hilado←hilo_total, Crudo/Tejido←cruda_total, Terminado←terminada.
-    COLORANTES no tiene stock en Asinfo → se deja el valor del programa (PC).
+    $/kg: se mantienen los del dBase (Asinfo no tiene dólares confiables), aplicados
+    a las nuevas bases de kg. COLORANTES no tiene stock en Asinfo → valor PC.
 
-    Devuelve None si no hay `header` o si Asinfo no está disponible (la vista
-    muestra un aviso apagado en la tabla).
+    Mapeo etapa → categoría: Hilado←hilo_total, Crudo/Tejido←cruda_total,
+    Terminado←terminada (misma combinación que la tabla 'Inventario Asinfo live').
+
+    Devuelve None si no hay `header` o si Asinfo (inicial O actual) no está
+    disponible → la vista muestra un aviso apagado.
     """
     if not isinstance(data, dict):
         return None
     header = data.get("header") or {}
-    if not header or not (isinstance(inv_inic, dict) and inv_inic.get("disponible")):
+    if not header:
+        return None
+    if not (isinstance(inv_inic, dict) and inv_inic.get("disponible")):
+        return None
+    if not (isinstance(inv_act, dict) and inv_act.get("disponible")):
         return None
 
     def _f(d, k):
@@ -77,21 +83,60 @@ def _build_mov_asinfo(data, inv_inic) -> dict | None:
     te = dict(header.get("terminado", {}))
     co = dict(header.get("colorantes", {}))
 
+    # ── Saldos de Asinfo: inicial (as-of 1° del mes) y ACTUAL (live) ──────
     hi0 = _f(inv_inic, "hilo_total")
     tc0 = _f(inv_inic, "cruda_total")
     pf0 = _f(inv_inic, "terminada")
+    hi1 = _f(inv_act, "hilo_total")
+    tc1 = _f(inv_act, "cruda_total")
+    pf1 = _f(inv_act, "terminada")
 
-    # HILADO — override inicial kg; recomputar act kg. $ reusan el $/kg existente.
+    # ── Cadena de balance de masa (misma lógica que el dBase/TINT.BAT, pero
+    # con datos de Asinfo). El dBase hace:
+    #   hilado_act = hilado_ini + compras − ktej   (ktej = lo TEJIDO del mes)
+    #   crudo_act  = crudo_ini  + ktej   − ktin     (ktin = lo TINTURADO)
+    #   term_act   = term_ini   + ktin   − kvent    (kvent = lo VENDIDO)
+    # y el EGRESO de cada etapa = el INGRESO de la siguiente
+    # (hilado egreso = ktej = crudo ingreso; crudo egreso = ktin = term ingreso).
+    #
+    # Acá los SALDOS (inicial y actual) vienen de Asinfo. El único flujo que no
+    # da Asinfo por mes es "lo tejido" (W) → lo tomamos del dBase como ANCLA, y
+    # derivamos el resto para que TODO cierre contra los saldos de Asinfo:
+    #   W (lo tejido)      = ktej del dBase              [ancla]
+    #   D (lo tinturado)   = crudo_ini + W − crudo_act   [balance crudo]
+    #   compras (hilo)     = hilado_act − hilado_ini + W [balance hilado]
+    #   ventas (terminado) = term_ini + D − term_act     [balance terminado]
+    # TMT 2026-07-08 (dueña: "el egreso de hilado tiene que ser lo que se fue a
+    # tejer" + "los datos vienen de Asinfo, no se cargan").
+    W = _f(tj, "ingresos_kg")                 # lo tejido este mes (ktej, dBase)
+    D = max(tc0 + W - tc1, 0.0)               # lo tinturado (derivado)
+    compras = max(hi1 - hi0 + W, 0.0)         # compras de hilo (derivado)
+    ventas = max(pf0 + D - pf1, 0.0)          # ventas de terminado (derivado)
+
+    # HILADO — inicial/actual de Asinfo; ingreso=compras, egreso=W (lo tejido).
+    # $/kg: mismos que el dBase (stock_inic_ukg, ingresos_ukg, egresos_ukg=um_act).
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_us"] = hi0 * _f(hl, "stock_inic_ukg")
-    hl["stock_act_kg"] = max(hi0 + _f(hl, "ingresos_kg") - _f(hl, "egresos_kg"), 0.0)
-    hl["stock_act_us"] = hl["stock_act_kg"] * _f(hl, "stock_act_ukg")
+    hl["ingresos_kg"] = compras
+    hl["ingresos_us"] = compras * _f(hl, "ingresos_ukg")
+    hl["egresos_kg"] = W
+    hl["egresos_us"] = W * _f(hl, "egresos_ukg")
+    hl["stock_act_kg"] = hi1
+    hl["stock_act_us"] = hi1 * _f(hl, "stock_act_ukg")
 
-    # CRUDO / TERMINADO — sólo kg.
+    # CRUDO — ingreso=W (lo tejido), egreso=D (lo tinturado). Sólo kg.
     tj["stock_inic_kg"] = tc0
-    tj["stock_act_kg"] = max(tc0 + _f(tj, "ingresos_kg") - _f(tj, "egresos_kg"), 0.0)
+    tj["ingresos_kg"] = W
+    tj["egresos_kg"] = D
+    tj["ingresos_pct"] = (D / W * 100.0) if W else 0.0
+    tj["stock_act_kg"] = tc1
+
+    # TERMINADO — ingreso=D (lo tinturado), egreso=ventas. Sólo kg.
     te["stock_inic_kg"] = pf0
-    te["stock_act_kg"] = max(pf0 + _f(te, "ingresos_kg") - _f(te, "egresos_kg"), 0.0)
+    te["ingresos_kg"] = D
+    te["egresos_kg"] = ventas
+    te["ingresos_pct"] = (ventas / D * 100.0) if D else 0.0
+    te["stock_act_kg"] = pf1
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
     return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co}
@@ -1610,7 +1655,7 @@ def flujo_produccion():
     )
     if not isinstance(inv_asinfo_inic, dict):
         inv_asinfo_inic = {}
-    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic)
+    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo)
 
     return render_template(
         "informes/flujo_produccion.html",
