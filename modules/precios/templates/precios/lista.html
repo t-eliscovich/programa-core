@@ -25,12 +25,12 @@
   {% endif %}
 
   {% if puede_editar %}
-  <!-- Barra de edición (oculta hasta apretar "Editar") -->
+  <!-- Barra de edicion (oculta hasta apretar "Editar") -->
   <div id="barra-edicion" class="no-print mb-4 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 px-4 py-3" style="display:none;">
     <div class="flex items-center gap-3 flex-wrap">
       <form method="post" action="{{ url_for('precios.subir_porcentaje') }}"
             class="flex items-center gap-2"
-            onsubmit="return confirm('¿Subir TODOS los precios ' + (document.getElementById('pct-input').value || '0') + '%?');">
+            onsubmit="return confirm('Subir TODOS los precios ' + (document.getElementById('pct-input').value || '0') + '%?');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="text-sm text-slate-600 dark:text-slate-300">Subir % a todos</label>
         <input type="text" name="pct" id="pct-input" placeholder="5"
@@ -41,6 +41,16 @@
           Aplicar a todos
         </button>
       </form>
+      <span class="text-slate-300 dark:text-slate-600">|</span>
+      <div class="flex items-center gap-2">
+        <label class="text-sm text-slate-600 dark:text-slate-300">Vista previa</label>
+        <select id="tramo-preview"
+                class="rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+          {% for label, factor in tramos %}
+          <option value="{{ factor }}" {% if loop.index0 == 1 %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <span class="text-slate-300 dark:text-slate-600">|</span>
       <button type="submit" form="form-precios"
               class="rounded bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-1.5 font-medium">
@@ -54,10 +64,64 @@
   </div>
   {% endif %}
 
+  {% if puede_editar %}
+  <!-- MATRIZ COMPLETA EDITABLE (solo modo edicion): filas = clases de color,
+       columnas = las 12 telas. Cada celda es el "Basico" (precio de lista)
+       editable, y debajo el precio con el descuento elegido en OTRO COLOR
+       (ambar). El descuento se recalcula en vivo al tipear o cambiar el tramo. -->
+  <form id="form-precios" method="post" action="{{ url_for('precios.guardar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div id="bloque-matriz" class="mt-2" style="display:none;">
+      <div class="mb-2">
+        <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Editar todos los basicos</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Cada celda es el precio de lista (Basico). En <span class="text-amber-600 dark:text-amber-400 font-medium">ambar</span>
+          se muestra como queda con el descuento elegido arriba (vista previa, no se guarda).
+        </p>
+      </div>
+      <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+        <table class="text-sm" style="border-collapse:collapse; min-width:100%;">
+          <thead class="text-xs uppercase tracking-wider text-slate-500">
+            <tr class="bg-slate-50 dark:bg-slate-800/50">
+              <th class="px-2 py-2 text-left font-medium sticky left-0 bg-slate-50 dark:bg-slate-800/50 z-10">Clase</th>
+              {% for col, label in telas %}
+              <th class="px-1 py-2 text-center font-medium whitespace-nowrap">{{ label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in filas %}
+            <tr class="border-t border-slate-100 dark:border-slate-800">
+              <td class="px-2 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap sticky left-0 bg-white dark:bg-slate-900 z-10">
+                <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
+              </td>
+              {% for col, label in telas %}
+              {% set val = f[col] %}
+              <td class="px-1 py-1 text-center align-top">
+                <input type="text"
+                       name="p_{{ f.clase }}_{{ col }}"
+                       class="celda-matriz w-14 text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm tabular-nums"
+                       value="{{ val | num_es if val is not none else '' }}"
+                       autocomplete="off">
+                <div class="preview-descuento tabular-nums text-amber-600 dark:text-amber-400 mt-0.5 text-right pr-1"
+                     style="font-size:11px; line-height:1.1; min-height:0.9rem;"></div>
+              </td>
+              {% endfor %}
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ (telas | length) + 1 }}" class="px-3 py-6 text-center text-slate-400">Sin precios cargados.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </form>
+  {% endif %}
+
   <!-- Descuentos (solo lectura, derivados): Basico (precio de lista) y luego
        descuentos EN CASCADA sobre la tela elegida: 5%, 5%+9% (=x0.95x0.91) y
-       5%+14% (=x0.95x0.86). Se recalculan, no se guardan. -->
-  <div class="mt-8">
+       5%+14% (=x0.95x0.86). Se recalculan, no se guardan. Se oculta al editar. -->
+  <div id="bloque-descuentos" class="mt-8">
     <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
       <div>
         <h2 class="text-base font-semibold text-slate-800 dark:text-slate-200">Descuentos</h2>
@@ -77,8 +141,6 @@
       </form>
     </div>
 
-    <form id="form-precios" method="post" action="{{ url_for('precios.guardar') if puede_editar else '' }}">
-    {% if puede_editar %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
     <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
       <table class="w-full text-sm" style="border-collapse:collapse;">
         <thead class="text-xs uppercase tracking-wider text-slate-500">
@@ -99,15 +161,7 @@
             {% for neto in d.netos %}
             <td class="px-3 py-2 text-right tabular-nums"
                 {% if loop.index0 == 0 %}style="background:rgba(16,185,129,0.06);"{% else %}style="background:rgba(245,158,11,0.05);"{% endif %}>
-              {% if loop.index0 == 0 and puede_editar %}
-                <span class="celda-texto">{% if neto is not none %}{{ neto | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}</span>
-                <input type="text" name="p_{{ d.clase }}_{{ tela_sel }}"
-                       class="celda-input w-14 text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm"
-                       style="display:none;"
-                       value="{{ neto | num_es if neto is not none else '' }}">
-              {% else %}
-                {% if neto is not none %}{{ neto | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
-              {% endif %}
+              {% if neto is not none %}{{ neto | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
             </td>
             {% endfor %}
           </tr>
@@ -117,27 +171,65 @@
         </tbody>
       </table>
     </div>
-    </form>
   </div>
 </div>
 
 {% if puede_editar %}
 <script>
 (function () {
-  var editando = false;
   var btnEditar = document.getElementById('btn-editar');
   var btnCancelar = document.getElementById('btn-cancelar');
   var barra = document.getElementById('barra-edicion');
-  var textos = document.querySelectorAll('.celda-texto');
-  var inputs = document.querySelectorAll('.celda-input');
+  var bloqueMatriz = document.getElementById('bloque-matriz');
+  var bloqueDesc = document.getElementById('bloque-descuentos');
+  var tramoSel = document.getElementById('tramo-preview');
+  var celdas = Array.prototype.slice.call(document.querySelectorAll('.celda-matriz'));
+
+  // Parser EU/es-EC: punto = miles, coma = decimal (igual que parse_monto).
+  function parseEU(s) {
+    if (s == null) return null;
+    s = String(s).trim();
+    if (!s) return null;
+    s = s.replace(/\./g, '').replace(/,/g, '.');
+    var n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  }
+
+  // Formato es-EC con 2 decimales (punto miles, coma decimal).
+  function fmtEU(n) {
+    var neg = n < 0;
+    n = Math.abs(n);
+    var s = n.toFixed(2);
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return (neg ? '-' : '') + parts[0] + ',' + parts[1];
+  }
+
+  function recalcCelda(input) {
+    var prev = input.parentNode.querySelector('.preview-descuento');
+    if (!prev) return;
+    var factor = parseFloat(tramoSel ? tramoSel.value : '1') || 1;
+    var v = parseEU(input.value);
+    if (v == null) { prev.textContent = ''; return; }
+    prev.textContent = fmtEU(v * factor);
+  }
+
+  function recalcTodo() {
+    celdas.forEach(recalcCelda);
+  }
 
   function setModo(on) {
-    editando = on;
     if (barra) barra.style.display = on ? '' : 'none';
     if (btnEditar) btnEditar.style.display = on ? 'none' : '';
-    textos.forEach(function (t) { t.style.display = on ? 'none' : ''; });
-    inputs.forEach(function (i) { i.style.display = on ? '' : 'none'; });
+    if (bloqueMatriz) bloqueMatriz.style.display = on ? '' : 'none';
+    if (bloqueDesc) bloqueDesc.style.display = on ? 'none' : '';
+    if (on) recalcTodo();
   }
+
+  celdas.forEach(function (input) {
+    input.addEventListener('input', function () { recalcCelda(input); });
+  });
+  if (tramoSel) tramoSel.addEventListener('change', recalcTodo);
 
   if (btnEditar) btnEditar.addEventListener('click', function () { setModo(true); });
   if (btnCancelar) btnCancelar.addEventListener('click', function () { setModo(false); });
