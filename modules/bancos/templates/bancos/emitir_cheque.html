@@ -53,44 +53,36 @@
          que el flujo de pagar materia prima en cuenta dólares (IN.<CT>)
          tenga su card propia y registre la fila en scintela.dolares.
          Si la URL trae ?tipo=<X>, ese radio queda pre-seleccionado. #}
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="tipo-grid">
-        <label class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50" style="padding:.5rem .625rem">
-          <input type="radio" name="tipo" value="proveedor" class="sr-only" data-target="campos-proveedor"
-                 {% if tipo_inicial == 'proveedor' %}checked{% endif %} required>
-          <div class="text-xl">🏭</div>
-          <div class="font-medium text-sm mt-0.5">Proveedor</div>
-          <div class="text-xs text-slate-500 mt-0.5">Pagar materia prima / servicio</div>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-1.5" id="tipo-grid">
+        <label title="Pagar materia prima / servicio" class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50 flex items-center gap-2" style="padding:.375rem .5rem">
+          <input type="radio" name="tipo" value="proveedor" class="sr-only" data-target="campos-proveedor" {% if tipo_inicial == 'proveedor' %}checked{% endif %} required>
+          <span class="text-lg leading-none">🏭</span>
+          <span class="font-medium text-sm leading-tight">Proveedor</span>
         </label>
-        <label class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50" style="padding:.5rem .625rem">
-          <input type="radio" name="tipo" value="anticipo_usd" class="sr-only" data-target="campos-anticipo_usd"
-                 {% if tipo_inicial == 'anticipo_usd' %}checked{% endif %}>
-          <div class="text-xl">💵</div>
-          <div class="font-medium text-sm mt-0.5">Anticipo USD</div>
-          <div class="text-xs text-slate-500 mt-0.5">Pago en cuenta dólares (IN.&lt;CT&gt;)</div>
+        <label title="Pago en cuenta dólares (IN.&lt;CT&gt;)" class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50 flex items-center gap-2" style="padding:.375rem .5rem">
+          <input type="radio" name="tipo" value="anticipo_usd" class="sr-only" data-target="campos-anticipo_usd" {% if tipo_inicial == 'anticipo_usd' %}checked{% endif %}>
+          <span class="text-lg leading-none">💵</span>
+          <span class="font-medium text-sm leading-tight">Anticipo USD</span>
         </label>
-        <label class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50" style="padding:.5rem .625rem">
+        <label title="Pago de dividendos al accionista" class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50 flex items-center gap-2" style="padding:.375rem .5rem">
           <input type="radio" name="tipo" value="retiro" class="sr-only" data-target="campos-retiro">
-          <div class="text-xl">👤</div>
-          <div class="font-medium text-sm mt-0.5">Retiro de capital</div>
-          <div class="text-xs text-slate-500 mt-0.5">Pago de dividendos al accionista</div>
+          <span class="text-lg leading-none">👤</span>
+          <span class="font-medium text-sm leading-tight">Retiro de capital</span>
         </label>
-        <label class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50" style="padding:.5rem .625rem">
+        <label title="Banco → caja física" class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50 flex items-center gap-2" style="padding:.375rem .5rem">
           <input type="radio" name="tipo" value="caja" class="sr-only" data-target="campos-caja">
-          <div class="text-xl">💴</div>
-          <div class="font-medium text-sm mt-0.5">A caja</div>
-          <div class="text-xs text-slate-500 mt-0.5">Banco → caja física</div>
+          <span class="text-lg leading-none">💴</span>
+          <span class="font-medium text-sm leading-tight">A caja</span>
         </label>
-        <label class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50" style="padding:.5rem .625rem">
+        <label title="Luz, contadora, mantenimiento" class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50 flex items-center gap-2" style="padding:.375rem .5rem">
           <input type="radio" name="tipo" value="gasto" class="sr-only" data-target="campos-gasto">
-          <div class="text-xl">📋</div>
-          <div class="font-medium text-sm mt-0.5">Gasto</div>
-          <div class="text-xs text-slate-500 mt-0.5">Luz, contadora, mantenimiento</div>
+          <span class="text-lg leading-none">📋</span>
+          <span class="font-medium text-sm leading-tight">Gasto</span>
         </label>
-        <label class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50" style="padding:.5rem .625rem">
+        <label title="Solo movimiento banco" class="cursor-pointer border rounded-lg hover:border-sky-400 has-[:checked]:border-sky-600 has-[:checked]:bg-sky-50 flex items-center gap-2" style="padding:.375rem .5rem">
           <input type="radio" name="tipo" value="otro" class="sr-only" data-target="campos-otro">
-          <div class="text-xl">📝</div>
-          <div class="font-medium text-sm mt-0.5">Otro</div>
-          <div class="text-xs text-slate-500 mt-0.5">Solo movimiento banco</div>
+          <span class="text-lg leading-none">📝</span>
+          <span class="font-medium text-sm leading-tight">Otro</span>
         </label>
       </div>
     </div>
@@ -100,7 +92,7 @@
       <h2 class="text-sm uppercase tracking-wider text-slate-500 mb-1">
         2. Datos del cheque
       </h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
             Banco origen <span class="text-red-500">*</span>
@@ -146,7 +138,12 @@
           <input type="date" name="fecha" value="{{ hoy }}"
                  class="w-full px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-900">
         </div>
-        <div class="md:col-span-2">
+      </div>
+
+      {# TMT 2026-07-07 — Concepto en su propia fila full-width (los 4 campos
+         del cheque quedan en UNA sola línea arriba). #}
+      <div class="mt-3">
+        <div>
           <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">
             Concepto
             <span class="ml-1 normal-case text-slate-400 tracking-normal">— autocomplete de los más usados</span>
