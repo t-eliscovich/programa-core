@@ -4907,9 +4907,11 @@ def flujo_calculado(
             continue
         f = it.get("fecha") or hoy
         if f < hoy:
-            # Vencidos imputados a hoy: el dBase los lista a su fecha real,
-            # pero el chart arranca hoy — mismo efecto sobre el saldo.
-            f = hoy
+            # TMT 2026-07-07 (dueña): "dejalo igual al dBase — los vencidos van
+            # a su fecha real, hoy arranca con el saldo lleno (2,98M)". Antes se
+            # imputaban a hoy (hoy quedaba neto de lo vencido). Ahora los
+            # vencidos NO se amontonan en hoy: el arranque de hoy = saldo real.
+            continue
         if f > tope:
             continue
         d = por_dia.setdefault(
