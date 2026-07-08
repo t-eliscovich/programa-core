@@ -260,6 +260,7 @@ def agregar_movimiento(
     fecha=None,
     nota: str = "",
     prov: str = "",
+    numero=None,
     usuario: str = "web",
 ) -> dict:
     """Registra un anticipo como MOVIMIENTO nuevo (nada se pisa).
@@ -355,11 +356,20 @@ def agregar_movimiento(
         id_dolares = None
         if tipo == "anticipo":
             clave = usuario[:3].upper()
+            # TMT 2026-07-08 (dueña): el concepto en la lista de anticipos
+            # tiene que identificar la importación como "AC 95" (prov + número),
+            # no el texto largo "ANT IMP IM-...". Si no vino número, caemos al
+            # concepto largo.
+            concepto_dol = (
+                f"{prov} {numero}".strip()
+                if (numero is not None and str(numero).strip() != "")
+                else concepto_nd
+            )[:100]
             dol_row = db.execute_returning(
                 "INSERT INTO scintela.dolares "
                 "(fecha, cta, concepto, importe, st, clave, usuario_crea) "
                 "VALUES (%s, %s, %s, %s, ' ', %s, %s) RETURNING id_dolares",
-                (fecha, (prov or "")[:3], concepto_nd, monto_f, clave, usuario[:50]),
+                (fecha, (prov or "")[:3], concepto_dol, monto_f, clave, usuario[:50]),
                 conn=conn,
             ) or {}
             id_dolares = dol_row.get("id_dolares")

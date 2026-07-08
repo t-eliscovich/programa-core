@@ -251,7 +251,7 @@ def movimiento_agregar():
     """
     from modules.importaciones import pago as _pago
 
-    prov, _numero = _prov_num()
+    prov, numero = _prov_num()
     im = _im()
     monto = parse_monto(request.form.get("monto_mov"))
     fecha = parse_date(request.form.get("fecha_mov"))
@@ -262,7 +262,8 @@ def movimiento_agregar():
     try:
         usuario = (g.user or {}).get("username", "web")
         r = _pago.agregar_movimiento(
-            im, "anticipo", monto, fecha=fecha, nota=nota, prov=prov, usuario=usuario,
+            im, "anticipo", monto, fecha=fecha, nota=nota, prov=prov,
+            numero=numero, usuario=usuario,
         )
         msg = f"Anticipo de $ {float(monto or 0):,.2f} registrado en {im}."
         if r.get("id_transaccion"):
