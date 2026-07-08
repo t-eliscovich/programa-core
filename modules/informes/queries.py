@@ -8478,16 +8478,21 @@ def totalizar_redistribuir_fifo(importes: list, pool: float) -> list[dict]:
     Tolerancia de redondeo: medio centavo (0.005), igual que cobranza.
     """
     pool = round(float(pool or 0), 2)
-    restante = pool
+    # TMT 2026-07-07 (dueña "KAG totalizar no funcionó"): el crédito de las NC
+    # ahora entra al pool DESDE EL ARRANQUE (no solo hacia adelante desde la
+    # fecha de la NC). Así todo el crédito se aplica FIFO a las facturas más
+    # VIEJAS y los abonos CONSOLIDAN en las primeras filas, en vez de quedar
+    # dispersos en las facturas que seguían a cada NC.
+    nc_credito = round(sum(-round(float(i or 0), 2)
+                           for i in importes if float(i or 0) < 0), 2)
+    restante = round(pool + nc_credito, 2)
     out: list[dict] = []
     for imp_raw in importes:
         imp = round(float(imp_raw or 0), 2)
         if imp < 0:
-            # NC / devolución: entra a la redistribución. Se "totaliza" con
-            # saldo=0 (no viola la regla saldo<0 → A: su saldo queda en 0,
-            # el crédito viaja en el pool hacia las siguientes).
+            # NC / devolución: su crédito YA está en el pool (arriba). Se
+            # totaliza con saldo=0; no vuelve a tocar el restante.
             out.append({"stat": "T", "abono": imp, "saldo": 0.0})
-            restante = round(restante - imp, 2)  # −imp > 0 → el pool crece
         elif restante >= imp - 0.005:
             out.append({"stat": "T", "abono": imp, "saldo": 0.0})
             restante = round(restante - imp, 2)

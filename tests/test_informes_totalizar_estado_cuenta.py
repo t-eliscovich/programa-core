@@ -84,16 +84,17 @@ def test_sobra_pool_ultima_queda_a_negativa():
     _check_invariante(importes, 200.0, res)
 
 
-def test_nc_despues_del_corte_mantiene_invariante():
-    # Caso donde el ACUM literal del PRG rompería Σabono: la A se corta en la
-    # 1ra factura y una NC posterior devuelve crédito que sigue FIFO hacia
-    # adelante (nunca reabre la factura ya recorrida).
+def test_nc_credito_consolida_en_las_mas_viejas():
+    # TMT 2026-07-07 (dueña "KAG totalizar no funcionó"): el crédito de la NC
+    # entra al pool DESDE EL ARRANQUE, así consolida en la factura MÁS VIEJA.
+    # pool 100 + NC 60 = 160 → la 1ra (150) se totaliza entera (T), la 3ra (50)
+    # queda con el resto (10 → A saldo 40). Antes quedaba dispersa (1ra A parcial
+    # + 3ra con el crédito de la NC).
     importes = [150.0, -60.0, 50.0]
     res = _redistribuir(importes, 100.0)
-    assert res[0] == {"stat": "A", "abono": 100.0, "saldo": 50.0}
+    assert res[0] == {"stat": "T", "abono": 150.0, "saldo": 0.0}
     assert res[1] == {"stat": "T", "abono": -60.0, "saldo": 0.0}
-    # los 60 de la NC cubren la 3ra (50) y sobran 10 → crédito en la última.
-    assert res[2] == {"stat": "A", "abono": 60.0, "saldo": -10.0}
+    assert res[2] == {"stat": "A", "abono": 10.0, "saldo": 40.0}
     _check_invariante(importes, 100.0, res)
 
 
