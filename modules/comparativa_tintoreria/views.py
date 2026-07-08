@@ -117,8 +117,13 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
     total = {"label": "TOTAL"}
     total.update(_calc(tb_kg, tb_imp, tf_kg, tf_imp, tgp))
 
+    # TMT 2026-07-08 (dueña): en la vista dejar SOLO el mes en curso + el
+    # PROMEDIO del año. El promedio se calcula sobre TODOS los meses (arriba);
+    # acá filtramos las FILAS mostradas al mes seleccionado.
+    filas_mes = [x for x in filas if x["yy"] == anio and x["mm"] == mes]
+
     return {
-        "filas": filas,
+        "filas": filas_mes,
         "promedio": promedio,
         "total": total,
         "anio": anio,
