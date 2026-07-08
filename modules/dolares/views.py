@@ -314,6 +314,20 @@ def convertir_lote():
             lambda: queries.anticipos_pendientes_de_proveedor(prov_sel),
             [],
         )
+        # TMT 2026-07-08 (dueña): "mostrar todos los AC por valor, no una suma
+        # del proveedor — vamos a tener 3 de AC 15 y unirlos con el AC 15 de
+        # importaciones". Extraemos la REF (nº de importación) del concepto (el
+        # primer número), la mostramos y ordenamos los anticipos por ref para que
+        # los del mismo número queden juntos y se puedan marcar de una.
+        import re as _re
+        for _a in anticipos:
+            _m = _re.search(r"\d+", str(_a.get("concepto") or ""))
+            _a["ref"] = _m.group(0) if _m else ""
+        anticipos.sort(key=lambda a: (
+            0 if a.get("ref") else 1,
+            int(a["ref"]) if a.get("ref", "").isdigit() else 0,
+            a.get("fecha") or "",
+        ))
 
     return render_template(
         "dolares/convertir_lote.html",
