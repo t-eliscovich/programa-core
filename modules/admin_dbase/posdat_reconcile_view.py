@@ -880,6 +880,13 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
     yield line(f"[posdat-reconcile] DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos)")
     yield line(f"[posdat-reconcile] TOTP resultante ≈ {quedan_t + ins_t:,.2f}")
 
+    # DIAGNÓSTICO: listar los QUEDAN linkeados (para entender el 1,18M banc=0).
+    yield line("[diag] --- QUEDAN (linkeados/PC) detalle ---")
+    for q in sorted(quedan, key=lambda r:(int(r["banc"] or 0), -abs(float(r["importe"] or 0)))):
+        yield line(f"[diag] banc={int(q['banc'] or 0)} {(q['prov'] or '').strip():<4} "
+                   f"{float(q['importe'] or 0):>13,.2f} link={1 if q['linked'] else 0} "
+                   f"| {str(q['concepto'] or '')[:32]}")
+
     if not aplicar:
         yield line(">>> DRY-RUN: no se tocó nada.")
         return
