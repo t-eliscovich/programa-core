@@ -277,6 +277,10 @@ def create_app() -> Flask:
 
     app.register_blueprint(proveedores_bp)
 
+    from modules.precios.views import precios_bp
+
+    app.register_blueprint(precios_bp)
+
     from modules.facturas.views import facturas_bp
 
     app.register_blueprint(facturas_bp)

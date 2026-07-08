@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Lista de precios{% endblock %}
+{% block breadcrumb %}<strong>Lista de precios</strong>{% endblock %}
+
+{% block content %}
+{% set puede_editar = tiene_permiso('precios.editar') %}
+<div class="max-w-6xl">
+  <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
+    {{ page_hero('Lista de precios', 'Precio USD/kg por tipo de tela y clase de color (replica de PRECIOS.DBF).') }}
+  </div>
+
+  {% if error %}
+  <div class="mb-4 rounded border border-red-300 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-4 py-3 text-sm">
+    No pude leer la lista de precios: {{ error }}
+  </div>
+  {% endif %}
+
+  {% if puede_editar %}
+  <p class="text-xs text-slate-500 mb-3 no-print">Hace clic en un precio para editarlo. Enter guarda, Escape cancela.</p>
+  {% endif %}
+
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+    <table class="w-full text-sm" style="border-collapse:collapse;">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">Clase</th>
+          {% for col, label in telas %}
+          <th class="px-3 py-3 text-right font-medium">{{ label }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filas %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
+            <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
+          </td>
+          {% for col, label in telas %}
+          <td class="px-3 py-2 text-right tabular-nums"
+              {% if puede_editar %}
+              data-precio-cell="1"
+              data-clase="{{ f.clase }}"
+              data-columna="{{ col }}"
+              data-valor="{{ f[col] if f[col] is not none else '' }}"
+              style="cursor:pointer;"
+              title="Clic para editar"
+              {% endif %}>
+            {% if f[col] is not none %}{{ f[col] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ telas|length + 1 }}" class="px-3 py-8 text-center text-slate-400">
+          Sin precios cargados. Corre la migracion 0114 en /admin/migraciones.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if puede_editar %}
+<form id="precio-edit-form" method="post" action="{{ url_for('precios.actualizar') }}" style="display:none;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="clase" id="pe-clase">
+  <input type="hidden" name="columna" id="pe-columna">
+  <input type="hidden" name="valor" id="pe-valor">
+</form>
+
+<script>
+(function () {
+  var editing = null;
+  function fmt(v) {
+    if (v === "" || v == null) return "-";
+    var n = parseFloat(v);
+    if (isNaN(n)) return v;
+    return n.toFixed(2).replace(".", ",");
+  }
+  function closeEditor(cell, original) {
+    cell.innerHTML = fmt(original) === "-"
+      ? '<span class="text-slate-300">-</span>' : fmt(original);
+    editing = null;
+  }
+  function openEditor(cell) {
+    if (editing) return;
+    editing = cell;
+    var current = cell.getAttribute("data-valor") || "";
+    var input = document.createElement("input");
+    input.type = "text";
+    input.value = current === "" ? "" : parseFloat(current).toFixed(2).replace(".", ",");
+    input.className = "w-20 text-right rounded border border-sky-400 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm";
+    cell.innerHTML = "";
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+    function commit() {
+      document.getElementById("pe-clase").value = cell.getAttribute("data-clase");
+      document.getElementById("pe-columna").value = cell.getAttribute("data-columna");
+      document.getElementById("pe-valor").value = input.value.trim();
+      document.getElementById("precio-edit-form").submit();
+    }
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      else if (e.key === "Escape") { e.preventDefault(); closeEditor(cell, current); }
+    });
+    input.addEventListener("blur", function () {
+      var normalized = input.value.trim().replace(",", ".");
+      if (normalized === "" ? current !== "" : parseFloat(normalized) !== parseFloat(current || "NaN")) {
+        commit();
+      } else {
+        closeEditor(cell, current);
+      }
+    });
+  }
+  document.querySelectorAll('[data-precio-cell]').forEach(function (cell) {
+    cell.addEventListener("click", function () { openEditor(cell); });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

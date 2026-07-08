@@ -818,6 +818,7 @@
         <summary>Datos base</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
+        {{ nav_link('precios.lista', 'Lista de precios', 'money') }}
         {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La
            cuota mensual se edita inline desde /posdat (columna nueva
            "Cuota mensual"). La pantalla /provisiones sigue accesible por
@@ -995,6 +996,7 @@
             {% if tiene_permiso('proveedores.ver') %}
               <a href="{{ url_for('proveedores.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Proveedores</a>
             {% endif %}
+            <a href="{{ url_for('precios.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Lista de precios</a>
             {% if tiene_permiso('bancos.ver') %}
               <a href="{{ url_for('bancos.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Bancos</a>
             {% endif %}
