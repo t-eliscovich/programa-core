@@ -109,17 +109,21 @@ def reconciliar_posdat_plan(dbf_banc0: list[dict], pc_banc0: list[dict]) -> dict
         if is_yy_like(r["prov"]):
             dbf_yy[_key(r)] = r
     used: set = set()
-    for r in pc_banc0:
-        if not is_yy_like(r["prov"]):
-            continue
+    # TMT 2026-07-07: DEDUP. Si PC tiene 2+ filas con la MISMA clave YY (pasó
+    # por un full-sync que duplicó), la 1ra matchea->UPDATE y las demás->DELETE.
+    # Ordenamos linkeadas primero para conservar la que tiene el mov_doble.
+    _pc_yy = sorted((r for r in pc_banc0 if is_yy_like(r["prov"])),
+                    key=lambda r: 0 if r.get("linked") else 1)
+    for r in _pc_yy:
         k = _key(r)
-        if k in dbf_yy:
+        if k in dbf_yy and k not in used:
             used.add(k)
             d = dbf_yy[k]
             updates.append({"id": r["id_posdat"], "importe": round(float(d["importe"]), 2),
                             "concepto": r["concepto"], "yy": True,
                             "que": f"{k[0]} {k[1] or '(sin concepto)'}"})
         else:
+            # no está en dBase, o es DUPLICADO de una clave ya matcheada -> borrar
             deletes.append({"id": r["id_posdat"], "prov": _norm(r["prov"]),
                             "importe": round(float(r["importe"]), 2),
                             "concepto": r.get("concepto"), "linked": bool(r.get("linked"))})
@@ -781,14 +785,16 @@ def _run_full(aplicar: bool):
     yield from reconcile_posdat_full_desde_dbf(miembro, aplicar)
 
 
-def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
-    """Reconcile QUIRÚRGICO de scintela.posdat contra POSDAT.DBF (banc 0 y 9).
+def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool = False):
+    """Reconcile de scintela.posdat contra POSDAT.DBF (banc 0 y 9).
 
-    Reusable: lo llama el endpoint /full-sync Y el hook post-sync del
-    /admin/dbase-sync (para que el update diario alinee los posdat solo).
-    Borra los dbf-import/reconcile-dbf SIN link mov_doble e inserta el DBF,
-    preservando PC-creados/linkeados y sin re-insertar lo ya cubierto. Yields
-    líneas de log. TMT 2026-07-07 (dueña): "que ande para los próximos syncs".
+    banc=0 -> reconciliar_posdat_plan: match por clave canónica YY/RT con
+    UPDATE in-place (PRESERVA el mov_doble link), cheques por multiset
+    prov+importe, y DEDUP de duplicados. banc=9 (importaciones) -> borra los
+    dbf-import/reconcile-dbf sin link e inserta el DBF (dedup exacto). Así el
+    pasivo (banc=0) queda IGUAL al dBase sin romper links ni duplicar.
+    TMT 2026-07-07 (dueña "alinear TODO al dBase" + arreglo utilidad -1M).
+    Reusable: endpoint /full-sync + hook post-sync de /admin/dbase-sync.
     """
     from collections import Counter as _Counter
     import db
@@ -797,113 +803,118 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
         return m.rstrip("\n") + "\n"
 
     dbf = _leer_dbf_full(dbf_path)
-    yield line(f"[posdat-reconcile] POSDAT.DBF: {len(dbf)} registros (num!=9999).")
+    dbf_b0 = [{"prov": d["prov"], "importe": d["importe"], "concepto": d["concepto"]}
+              for d in dbf if int(d["banc"]) == 0]
+    dbf_b9 = [d for d in dbf if int(d["banc"]) == 9]
+    yield line(f"[posdat-reconcile] POSDAT.DBF: {len(dbf)} regs (banc0={len(dbf_b0)}, banc9={len(dbf_b9)}).")
 
-    # --- A BORRAR ---
-    # TMT 2026-07-07 (dueña "alinear TODO al dBase"): el criterio viejo solo
-    # borraba usuario_crea IN ('dbf-import','reconcile-dbf'). Los YY/RT viejos
-    # de PC tienen OTRO origen -> sobrevivían, y como su importe acumulado no
-    # matchea exacto contra el DBF, el DBF se insertaba ENCIMA -> duplicado
-    # (YY 11->22 = +905k, RT x2, +1,17M de pasivo fantasma -> utilidad -1M).
-    # AHORA: banc=0 = ESPEJO REAL -> borrar TODOS los banc=0 SIN link mov_doble
-    # (cualquier origen); así se van duplicados + PC-only espejos-de-cheque que
-    # no están en el dBase. Los linkeados (OP retiro) se PRESERVAN para no
-    # orfanar el mov_doble. banc=9 (importaciones) mantiene el criterio previo.
+    # baseline YY/RT = fecha del snapshot (mtime del DBF).
+    try:
+        snap = (datetime.utcfromtimestamp(dbf_path.stat().st_mtime) - timedelta(hours=5)).date()
+    except Exception:  # noqa: BLE001
+        snap = _hoy_ec()
+    if snap > _hoy_ec():
+        snap = _hoy_ec()
+
+    # ── BANC=0: plan correcto (UPDATE in-place preserva links + dedup) ──
+    pc_b0 = _leer_pc_banc0()
+    if aplicar and len(pc_b0) > 0 and len(dbf_b0) < 0.5 * len(pc_b0):
+        yield line(f"[ABORT] DBF banc0 {len(dbf_b0)} vs PC {len(pc_b0)} (<50%) — dump parcial, no aplico.")
+        return
+    plan = reconciliar_posdat_plan(dbf_b0, pc_b0)
+    ups, dels, ins = plan["updates"], plan["deletes"], plan["inserts"]
+
+    proj_b0 = sum(x["importe"] for x in pc_b0)
+    for u in ups:
+        old_imp = next((r["importe"] for r in pc_b0 if r["id_posdat"] == u["id"]), 0)
+        proj_b0 += u["importe"] - old_imp
+    for d in dels:
+        proj_b0 -= d["importe"]
+    for i in ins:
+        proj_b0 += i["importe"]
+    dbf_b0_sum = sum(x["importe"] for x in dbf_b0)
+
+    # ── BANC=9: borrar dbf-import/reconcile-dbf sin link + insert DBF (dedup) ──
     _LINK = ("EXISTS (SELECT 1 FROM scintela.mov_doble m WHERE m.estado='activo' "
              "AND ((m.destino_table='posdat' AND m.destino_id=p.id_posdat) "
              "OR (m.origen_table='posdat' AND m.origen_id=p.id_posdat)))")
-    a_borrar = db.fetch_all(
+    a_borrar9 = db.fetch_all(
         f"""
         SELECT p.id_posdat, {_LINK} AS linked
           FROM scintela.posdat p
          WHERE COALESCE(p.num,0) <> 9999
            AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
-           AND ( COALESCE(p.banc,0) = 0
-                 OR COALESCE(p.usuario_crea,'') IN ('dbf-import','reconcile-dbf') )
+           AND COALESCE(p.banc,0) = 9
+           AND COALESCE(p.usuario_crea,'') IN ('dbf-import','reconcile-dbf')
         """
     ) or []
-    borrar_ids = [r["id_posdat"] for r in a_borrar if not r["linked"]]
-    n_saltados = sum(1 for r in a_borrar if r["linked"])
-
-    # QUEDAN = sobreviven al borrado: linkeados + banc<>0 no-dbf-import.
-    quedan = db.fetch_all(
+    borrar9_ids = [r["id_posdat"] for r in a_borrar9 if not r["linked"]]
+    quedan9 = db.fetch_all(
         f"""
-        SELECT COALESCE(p.prov,'') AS prov, p.importe,
-               COALESCE(p.concepto,'') AS concepto, COALESCE(p.banc,0) AS banc,
-               {_LINK} AS linked
+        SELECT COALESCE(p.prov,'') AS prov, p.importe, COALESCE(p.concepto,'') AS concepto
           FROM scintela.posdat p
          WHERE COALESCE(p.num,0) <> 9999
            AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
-           AND ( {_LINK}
-                 OR ( COALESCE(p.banc,0) <> 0
-                      AND COALESCE(p.usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf') ) )
+           AND COALESCE(p.banc,0) = 9
+           AND ( COALESCE(p.usuario_crea,'') NOT IN ('dbf-import','reconcile-dbf') OR {_LINK} )
         """
     ) or []
-    # Dedup: banc=0 se saltea SOLO si un linkeado del mismo prov ya lo cubre
-    # (evita doble OP). banc=9 mantiene dedup por clave exacta.
-    # Dedup por CLAVE EXACTA (prov, importe, concepto) contra lo que quedó.
-    # banc=0: los sobrevivientes son SOLO linkeados (los sueltos ya se borraron);
-    #   si un linkeado coincide exacto con un registro del DBF, ese DBF se saltea
-    #   (evita doble contar la MISMA obligación). El resto del DBF entra completo.
-    # banc=9: idéntico criterio previo (dedup exacto contra imports PC).
-    quedan_keys_b0 = _Counter()
-    quedan_keys_b9 = _Counter()
-    quedan_t = 0.0
-    for q in quedan:
-        quedan_t += float(q["importe"] or 0)
-        k = ((q["prov"] or "").strip().upper(),
-             round(float(q["importe"] or 0), 2),
-             _norm_cpt(q["concepto"]))
-        if int(q["banc"] or 0) == 0:
-            quedan_keys_b0[k] += 1
-        else:
-            quedan_keys_b9[k] += 1
-
-    dbf_insert, skip_dup = [], 0
-    for d in dbf:
+    keys9 = _Counter()
+    for q in quedan9:
+        keys9[((q["prov"] or "").strip().upper(), round(float(q["importe"] or 0), 2), _norm_cpt(q["concepto"]))] += 1
+    ins9 = []
+    for d in dbf_b9:
         k = ((d["prov"] or "").strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
-        bucket = quedan_keys_b0 if int(d["banc"]) == 0 else quedan_keys_b9
-        if bucket.get(k, 0) > 0:
-            bucket[k] -= 1
-            skip_dup += 1
+        if keys9.get(k, 0) > 0:
+            keys9[k] -= 1
         else:
-            dbf_insert.append(d)
+            ins9.append(d)
 
-    ins_t = sum(float(d["importe"]) for d in dbf_insert)
-    # Desglose por banc para ver el PASIVO real (solo banc=0) antes de aplicar.
-    keep_b0 = sum(float(q["importe"] or 0) for q in quedan if int(q["banc"] or 0) == 0)
-    ins_b0  = sum(float(d["importe"]) for d in dbf_insert if int(d["banc"]) == 0)
-    yield line(f"[posdat-reconcile] >>> PASIVO banc=0 resultante (=KPI Pasivos) ≈ {keep_b0 + ins_b0:,.2f} "
-               f"(quedan-linkeados {keep_b0:,.2f} + DBF {ins_b0:,.2f})")
-    yield line(f"[posdat-reconcile] A borrar (sin link): {len(borrar_ids)} · saltados por link: {n_saltados}")
-    yield line(f"[posdat-reconcile] Quedan (linkeados + banc9 PC): {len(quedan)} (suma {quedan_t:,.2f})")
-    yield line(f"[posdat-reconcile] DBF a insertar: {len(dbf_insert)} (se saltan {skip_dup} ya cubiertos)")
-    yield line(f"[posdat-reconcile] TOTP resultante ≈ {quedan_t + ins_t:,.2f}")
-
-    # DIAGNÓSTICO: listar los QUEDAN linkeados (para entender el 1,18M banc=0).
-    yield line("[diag] --- QUEDAN (linkeados/PC) detalle ---")
-    for q in sorted(quedan, key=lambda r:(int(r["banc"] or 0), -abs(float(r["importe"] or 0)))):
-        yield line(f"[diag] banc={int(q['banc'] or 0)} {(q['prov'] or '').strip():<4} "
-                   f"{float(q['importe'] or 0):>13,.2f} link={1 if q['linked'] else 0} "
-                   f"| {str(q['concepto'] or '')[:32]}")
+    # ── REPORTE ──
+    yield line(f"[posdat-reconcile] BANC=0 plan: {len(ups)} UPDATE · {len(dels)} DEL/ANULA · {len(ins)} INSERT")
+    yield line(f"[posdat-reconcile] >>> PASIVO banc=0 proyectado ≈ {proj_b0:,.2f}  |  dBase {dbf_b0_sum:,.2f}  |  diff {proj_b0 - dbf_b0_sum:,.2f}")
+    yield line(f"[posdat-reconcile] BANC=9: borrar {len(borrar9_ids)} · insertar {len(ins9)} de {len(dbf_b9)}")
 
     if not aplicar:
         yield line(">>> DRY-RUN: no se tocó nada.")
         return
 
+    motivo = "reconcile-dbf: no está en POSDAT.DBF"
     try:
         with db.tx() as conn:
-            if borrar_ids:
-                db.execute("DELETE FROM scintela.posdat WHERE id_posdat = ANY(%s)",
-                           (borrar_ids,), conn=conn)
-            for d in dbf_insert:
-                db.execute(
-                    "INSERT INTO scintela.posdat "
-                    "(fecha, fechad, prov, num, importe, concepto, banc, clave, usuario_crea) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'dbf-import')",
-                    (d["fecha"], d["fechad"], d["prov"], d["num"], d["importe"],
-                     d["concepto"], d["banc"], d["clave"]), conn=conn)
-        yield line(f">>> [posdat-reconcile] APLICADO: borrados {len(borrar_ids)}, insertados {len(dbf_insert)}.")
+            for u in ups:
+                if u["yy"]:
+                    db.execute("UPDATE scintela.posdat SET importe=%s, baseline_date=%s WHERE id_posdat=%s",
+                               (u["importe"], snap, u["id"]), conn=conn)
+                else:
+                    db.execute("UPDATE scintela.posdat SET importe=%s WHERE id_posdat=%s",
+                               (u["importe"], u["id"]), conn=conn)
+            for d in dels:
+                if soft_delete or d["linked"]:
+                    db.execute("UPDATE scintela.posdat SET anulada=TRUE, motivo_anulacion=%s, "
+                               "fecha_anulacion=NOW() WHERE id_posdat=%s", (motivo, d["id"]), conn=conn)
+                else:
+                    db.execute("DELETE FROM scintela.posdat WHERE id_posdat=%s", (d["id"],), conn=conn)
+            for i in ins:
+                if _norm(i["prov"]) in ("YY", "RT"):
+                    db.execute("INSERT INTO scintela.posdat (prov, importe, concepto, banc, usuario_crea, baseline_date) "
+                               "VALUES (%s,%s,%s,0,'reconcile-dbf',%s)",
+                               (i["prov"], i["importe"], i["concepto"], snap), conn=conn)
+                else:
+                    db.execute("INSERT INTO scintela.posdat (prov, importe, concepto, banc, usuario_crea) "
+                               "VALUES (%s,%s,%s,0,'reconcile-dbf')",
+                               (i["prov"], i["importe"], i["concepto"]), conn=conn)
+            if borrar9_ids:
+                db.execute("DELETE FROM scintela.posdat WHERE id_posdat = ANY(%s)", (borrar9_ids,), conn=conn)
+            for d in ins9:
+                db.execute("INSERT INTO scintela.posdat "
+                           "(fecha, fechad, prov, num, importe, concepto, banc, clave, usuario_crea) "
+                           "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'dbf-import')",
+                           (d["fecha"], d["fechad"], d["prov"], d["num"], d["importe"],
+                            d["concepto"], d["banc"], d["clave"]), conn=conn)
+        nuevo = _leer_pc_banc0()
+        yield line(f">>> APLICADO ✓ banc=0: {len(ups)}U/{len(dels)}D/{len(ins)}I → suma {sum(x['importe'] for x in nuevo):,.2f} (dBase {dbf_b0_sum:,.2f})")
+        yield line(f">>> APLICADO ✓ banc=9: -{len(borrar9_ids)} +{len(ins9)}")
     except Exception as exc:  # noqa: BLE001
         yield line(f"[ERROR posdat-reconcile rollback] {exc!r}")
 
