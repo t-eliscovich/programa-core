@@ -238,7 +238,10 @@ ROLES: list[tuple[str, list[str]]] = [
         # Informes (utilidades, retiros, ventas, comisiones, F&U, etc)".
         # Cartera/bancos/caja/cheques/compras/facturas/clientes/proveedores SÍ.
         # TMT 2026-05-22 — la dueña pidió que el rol se llame "Alex" (no Operario).
-        "Alex",
+        # TMT 2026-07-08 — la dueña pidió renombrarlo a "INT" (que no diga "Alex"
+        # en el header de otros usuarios). Migración 0118 renombra la fila
+        # existente Alex→INT preservando id_rol/permisos/usuarios.
+        "INT",
         [
             "stock.ver",
             # Operativa diaria — todo el flujo de cheques, caja, bancos.

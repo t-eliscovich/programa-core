@@ -256,11 +256,17 @@ def _upsert_owner(*, email: str, display_name: str) -> int:
     role_map = _email_to_role_map()
     nombre_rol_deseado = role_map.get(email.lower())
 
+    # TMT 2026-07-08: el rol "Alex" se renombró a "INT" (migración 0118). Si el
+    # OAUTH_ROLE_MAP del server todavía mapea un email a "Alex", lo resolvemos
+    # al rol nuevo con este alias — así NO se cae a Accionista (que degradaría
+    # a Alex en su próximo login OAuth). Alias por nombre, case-insensitive.
+    _ROL_ALIAS = {"alex": "int"}
     role = None
     if nombre_rol_deseado:
+        _deseado = _ROL_ALIAS.get(nombre_rol_deseado.lower(), nombre_rol_deseado.lower())
         role = db.fetch_one(
             "SELECT id_rol FROM seguridad.rol WHERE lower(nombre_rol) = %s",
-            (nombre_rol_deseado.lower(),),
+            (_deseado,),
         )
         if not role:
             _log.warning(
