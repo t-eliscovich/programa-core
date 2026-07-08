@@ -4766,6 +4766,44 @@ def _dow_dbase(d) -> int:
     return d.isoweekday() % 7 + 1
 
 
+def flujo_egresos_detalle() -> list[dict]:
+    """Detalle POR POSDAT de los egresos del flujo (pedido dueña 2026-07-08:
+    "estos -87k no sé de dónde salen").
+
+    Misma clasificación mprima/gasto que flujo_items_dbase, pero fila por fila
+    (con prov + concepto), SIN agregar — para poder mostrar de qué se compone el
+    número de cada día en /informes/flujo-fondos.
+    """
+    rows = db.fetch_all(
+        """
+        SELECT p.fechad AS fecha,
+               CASE WHEN COALESCE(p.banc, 0) = 1 THEN 'posdat1'
+                    WHEN COALESCE(p.banc, 0) = 2 THEN 'posdat2'
+                    WHEN UPPER(COALESCE(pr.tipo, '')) = 'H'
+                         AND UPPER(LEFT(COALESCE(pr.activo, '1'), 1)) IN ('1', 'S')
+                         THEN 'mprima'
+                    ELSE 'gasto' END AS tipo,
+               COALESCE(p.prov, '')     AS prov,
+               COALESCE(p.concepto, '') AS concepto,
+               COALESCE(p.importe, 0)   AS importe,
+               COALESCE(p.banc, 0)      AS banc
+          FROM scintela.posdat p
+          LEFT JOIN scintela.proveedor pr ON pr.codigo_prov = p.prov
+         WHERE p.fechad IS NOT NULL
+           AND COALESCE(p.num, 0) <> 9999
+           AND COALESCE(p.banc, 0) IN (0, 1, 2, 9)
+           AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
+         ORDER BY p.fechad, p.importe DESC
+        """
+    ) or []
+    return [
+        {"fecha": r["fecha"], "tipo": r["tipo"], "prov": r["prov"] or "",
+         "concepto": r["concepto"] or "", "importe": float(r["importe"] or 0),
+         "banc": int(r["banc"] or 0)}
+        for r in rows
+    ]
+
+
 def construir_flujo_diario(
     hoy,
     s1: float,

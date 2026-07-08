@@ -58,15 +58,9 @@
         </tr>
       </thead>
       <tbody class="divide-y">
-        {% for f in filas %}
-          {% if f.tipo == 'semana' %}
-          <tr style="background:#f1f5f9;">
-            <td class="px-3 py-1 text-xs text-slate-500 font-medium" colspan="3">Σ semana</td>
-            <td class="px-3 py-1 text-right tabular-nums text-xs font-semibold" {% if incluir_fact %}colspan="2"{% endif %}>{{ f.ingresos | num_es }}</td>
-            <td class="px-3 py-1 text-right tabular-nums text-xs font-semibold text-rose-700" colspan="2">{{ (-f.egresos) | num_es }}</td>
-            <td></td>
-          </tr>
-          {% else %}
+        {# TMT 2026-07-08 (dueña "no me muestres la suma semanal"): saltamos las
+           filas de corte semanal (Σ semana). #}
+        {% for f in filas if f.tipo != 'semana' %}
           <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40"
               {% if f.tipo == 'arranque' %}style="background:#f0f9ff;font-weight:600;"{% elif f.vencida %}style="background:#fff7ed;"{% endif %}>
             <td class="px-3 py-1.5 whitespace-nowrap">{{ f.fecha | fecha_es }}
@@ -77,11 +71,14 @@
             <td class="px-3 py-1.5 text-right tabular-nums {% if f.inter < 0 %}text-rose-700{% endif %}">{{ f.inter | num_es }}</td>
             <td class="px-3 py-1.5 text-right tabular-nums">{{ f.cheques | num_es if f.cheques else '' }}</td>
             {% if incluir_fact %}<td class="px-3 py-1.5 text-right tabular-nums">{{ f.facturas | num_es if f.facturas else '' }}</td>{% endif %}
-            <td class="px-3 py-1.5 text-right tabular-nums {% if f.mprima < 0 %}text-rose-700{% endif %}">{{ f.mprima | num_es if f.mprima else '' }}</td>
-            <td class="px-3 py-1.5 text-right tabular-nums {% if f.gastos < 0 %}text-rose-700{% endif %}">{{ f.gastos | num_es if f.gastos else '' }}</td>
+            {# TMT 2026-07-08 (dueña "no sé de dónde salen"): hover muestra el
+               detalle de posdat que componen el número del día. #}
+            <td class="px-3 py-1.5 text-right tabular-nums {% if f.mprima < 0 %}text-rose-700{% endif %}"
+                {% if f.mprima_det %}style="cursor:help;text-decoration:underline dotted;text-underline-offset:3px;" title="{% for it in f.mprima_det %}{{ it.prov }} {{ it.concepto }}: {{ it.importe | num_es(0) }}{% if not loop.last %}&#10;{% endif %}{% endfor %}"{% endif %}>{{ f.mprima | num_es if f.mprima else '' }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums {% if f.gastos < 0 %}text-rose-700{% endif %}"
+                {% if f.gastos_det %}style="cursor:help;text-decoration:underline dotted;text-underline-offset:3px;" title="{% for it in f.gastos_det %}{{ it.prov }} {{ it.concepto }}: {{ it.importe | num_es(0) }}{% if not loop.last %}&#10;{% endif %}{% endfor %}"{% endif %}>{{ f.gastos | num_es if f.gastos else '' }}</td>
             <td class="px-3 py-1.5 text-right tabular-nums font-semibold {% if f.saldo < 0 %}text-rose-700{% endif %}">{{ f.saldo | num_es }}</td>
           </tr>
-          {% endif %}
         {% else %}
         <tr><td colspan="{{ 8 if incluir_fact else 7 }}" class="px-3 py-6 text-center text-slate-400">Sin vencimientos pendientes.</td></tr>
         {% endfor %}
@@ -92,7 +89,6 @@
     {% if incluir_fact %}Incluye cobros de facturas proyectados a vencimiento+50 días (el dBase los calcula pero NO los suma — criterio optimista). <a class="underline" href="{{ url_for('informes.flujo_fondos') }}">Ver como dBase (sin facturas)</a>.
     {% else %}Criterio dBase: los cobros de facturas NO suman al flujo (MENU.PRG hardcodea FA=0 — flujo conservador, solo cheques en mano). <a class="underline" href="{{ url_for('informes.flujo_fondos', incluir_facturas=1) }}">Incluir cobros de facturas</a>.{% endif %}
     · Materia prima = posdatados a proveedores de hilado (tipo H), como el MAT.PR del dBase.
-    · Los cortes «Σ semana» replican el acumulado semanal de ingresos/egresos del dBase.
   </p>
 </div>
 {% endblock %}

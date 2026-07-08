@@ -2134,6 +2134,22 @@ def flujo_fondos():
             "filas": [], "saldo_final": 0.0, "saldo_min": 0.0,
             "fecha_min": today_ec(),
         }
+
+    # TMT 2026-07-08 (dueña "estos -87k no sé de dónde salen"): enriquecemos cada
+    # fila-día con el DETALLE de los posdat que componen GASTOS y MAT.PRIMA, para
+    # mostrarlo en un tooltip. Best-effort: si falla, la tabla sigue igual.
+    try:
+        _det = queries.flujo_egresos_detalle()
+        _by_day: dict = {}
+        for _it in _det:
+            _by_day.setdefault((_it["fecha"], _it["tipo"]), []).append(_it)
+        for _f in data.get("filas", []):
+            if _f.get("tipo") == "dia":
+                _f["gastos_det"] = _by_day.get((_f.get("fecha"), "gasto"), [])
+                _f["mprima_det"] = _by_day.get((_f.get("fecha"), "mprima"), [])
+    except Exception:  # noqa: BLE001
+        pass
+
     return render_template(
         "informes/flujo_fondos.html",
         arranque=data["arranque"],
