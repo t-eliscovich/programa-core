@@ -739,17 +739,44 @@ def _leer_dbf_full(dbf_path):
 def full_sync():
     if request.method == "GET":
         return render_template_string(_FORM_FULL)
-    f = request.files.get("tarball")
-    if not f or not f.filename:
-        return Response("ERROR: falta el tarball.\n", mimetype="text/plain", status=400)
-    if not f.filename.lower().endswith((".tar.gz", ".tgz")):
-        return Response("ERROR: esperaba .tar.gz / .tgz.\n", mimetype="text/plain", status=400)
     aplicar = request.form.get("apply") in ("1", "true", "on")
     # TMT 2026-07-08: modo sin-streaming. La respuesta chunked se corta a través
     # del proxy (el cliente ve "network error" tras la 1ra línea). Con nostream=1
     # juntamos toda la salida server-side y la devolvemos de una — confiable para
     # leer el plan y para APLICAR sin que un corte de conexión mate la tx.
     nostream = request.form.get("nostream") in ("1", "true", "on")
+
+    # TMT 2026-07-08: entrada por JSON (base64 de gzip de una lista de filas con
+    # los mismos campos que _leer_dbf_full). Evita el parseo de POSDAT.DBF con
+    # dbfread, que difiere entre plataformas (el DBF regenerado en Linux se leía
+    # corrido / con importes inflados en el dbfread de Windows del server).
+    pj = request.form.get("posdat_json")
+    if pj:
+        import base64
+        import gzip
+        import json as _json
+        try:
+            raw = base64.b64decode(pj)
+            try:
+                raw = gzip.decompress(raw)
+            except Exception:  # noqa: BLE001
+                pass  # permitir JSON sin gzip
+            rows = _json.loads(raw.decode("utf-8"))
+            if not isinstance(rows, list):
+                raise ValueError("posdat_json debe ser una lista")
+        except Exception as exc:  # noqa: BLE001
+            return Response(f"ERROR: posdat_json inválido: {exc!r}\n",
+                            mimetype="text/plain", status=400)
+        gen = _run_full_json(rows, aplicar)
+        if nostream:
+            return Response("".join(gen), mimetype="text/plain")
+        return Response(stream_with_context(gen), mimetype="text/plain")
+
+    f = request.files.get("tarball")
+    if not f or not f.filename:
+        return Response("ERROR: falta el tarball.\n", mimetype="text/plain", status=400)
+    if not f.filename.lower().endswith((".tar.gz", ".tgz")):
+        return Response("ERROR: esperaba .tar.gz / .tgz.\n", mimetype="text/plain", status=400)
     TARBALL_PATH.parent.mkdir(parents=True, exist_ok=True)
     if TARBALL_PATH.exists():
         TARBALL_PATH.unlink()
@@ -800,7 +827,35 @@ def _run_full(aplicar: bool):
         yield line(traceback.format_exc())
 
 
-def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool = False):
+def _run_full_json(rows: list, aplicar: bool):
+    """Igual que _run_full pero desde filas JSON (sin POSDAT.DBF). Normaliza los
+    campos al shape de _leer_dbf_full y corre el mismo reconcile."""
+    def line(m=""):
+        return m.rstrip("\n") + "\n"
+
+    yield line(f"=== POSDAT full-sync (JSON) — {'APLICAR' if aplicar else 'DRY-RUN'} ===")
+    try:
+        norm = []
+        for r in rows:
+            norm.append({
+                "fecha": r.get("fecha"),
+                "fechad": r.get("fechad"),
+                "prov": (str(r.get("prov") or "").strip())[:3],
+                "num": int(r.get("num") or 0),
+                "importe": round(float(r.get("importe") or 0), 2),
+                "concepto": (str(r.get("concepto") or "").strip())[:100],
+                "banc": int(r.get("banc") or 0),
+                "clave": (str(r.get("clave") or "").strip())[:3],
+            })
+        yield from reconcile_posdat_full_desde_dbf(None, aplicar, dbf_rows=norm)
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        yield line(f"[ERROR reconcile-json] {exc!r}")
+        yield line(traceback.format_exc())
+
+
+def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool = False,
+                                    dbf_rows: list | None = None):
     """Reconcile de scintela.posdat contra POSDAT.DBF (banc 0 y 9).
 
     banc=0 -> reconciliar_posdat_plan: match por clave canónica YY/RT con
@@ -810,6 +865,11 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
     pasivo (banc=0) queda IGUAL al dBase sin romper links ni duplicar.
     TMT 2026-07-07 (dueña "alinear TODO al dBase" + arreglo utilidad -1M).
     Reusable: endpoint /full-sync + hook post-sync de /admin/dbase-sync.
+
+    TMT 2026-07-08: `dbf_rows` opcional — lista ya parseada (mismos campos que
+    _leer_dbf_full: fecha, fechad, prov, num, importe, concepto, banc, clave).
+    Se usa cuando los datos llegan por JSON en vez de un POSDAT.DBF, para
+    evitar diferencias de parseo dbfread entre plataformas.
     """
     from collections import Counter as _Counter
     import db
@@ -817,17 +877,24 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool, soft_delete: bool =
     def line(m=""):
         return m.rstrip("\n") + "\n"
 
-    dbf = _leer_dbf_full(dbf_path)
+    if dbf_rows is not None:
+        dbf = [d for d in dbf_rows if int(d.get("num") or 0) != 9999]
+    else:
+        dbf = _leer_dbf_full(dbf_path)
     dbf_b0 = [{"prov": d["prov"], "importe": d["importe"], "concepto": d["concepto"]}
               for d in dbf if int(d["banc"]) == 0]
     dbf_b9 = [d for d in dbf if int(d["banc"]) == 9]
-    yield line(f"[posdat-reconcile] POSDAT.DBF: {len(dbf)} regs (banc0={len(dbf_b0)}, banc9={len(dbf_b9)}).")
+    origen = "JSON" if dbf_rows is not None else "POSDAT.DBF"
+    yield line(f"[posdat-reconcile] {origen}: {len(dbf)} regs (banc0={len(dbf_b0)}, banc9={len(dbf_b9)}).")
 
-    # baseline YY/RT = fecha del snapshot (mtime del DBF).
-    try:
-        snap = (datetime.utcfromtimestamp(dbf_path.stat().st_mtime) - timedelta(hours=5)).date()
-    except Exception:  # noqa: BLE001
+    # baseline YY/RT = fecha del snapshot (mtime del DBF, o HOY si viene por JSON).
+    if dbf_rows is not None:
         snap = _hoy_ec()
+    else:
+        try:
+            snap = (datetime.utcfromtimestamp(dbf_path.stat().st_mtime) - timedelta(hours=5)).date()
+        except Exception:  # noqa: BLE001
+            snap = _hoy_ec()
     if snap > _hoy_ec():
         snap = _hoy_ec()
 
