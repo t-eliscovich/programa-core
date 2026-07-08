@@ -8,6 +8,14 @@
 <div class="max-w-6xl">
   <div class="flex items-start justify-between gap-4 mb-6 flex-wrap">
     {{ page_hero('Lista de precios', 'Precio USD/kg por tipo de tela y clase de color (replica de PRECIOS.DBF).') }}
+    {% if puede_editar %}
+    <div class="no-print flex items-center gap-2">
+      <button type="button" id="btn-editar"
+              class="rounded bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-2 font-medium">
+        Editar
+      </button>
+    </div>
+    {% endif %}
   </div>
 
   {% if error %}
@@ -17,167 +25,98 @@
   {% endif %}
 
   {% if puede_editar %}
-  <p class="text-xs text-slate-500 mb-3 no-print">Hace clic en un precio para editarlo. Enter guarda, Escape cancela.</p>
+  <!-- Barra de edición (oculta hasta apretar "Editar") -->
+  <div id="barra-edicion" class="no-print mb-4 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 px-4 py-3" style="display:none;">
+    <div class="flex items-center gap-3 flex-wrap">
+      <form method="post" action="{{ url_for('precios.subir_porcentaje') }}"
+            class="flex items-center gap-2"
+            onsubmit="return confirm('¿Subir TODOS los precios ' + (document.getElementById('pct-input').value || '0') + '%?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="text-sm text-slate-600 dark:text-slate-300">Subir % a todos</label>
+        <input type="text" name="pct" id="pct-input" placeholder="5"
+               class="w-20 text-right rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+        <span class="text-sm text-slate-500">%</span>
+        <button type="submit"
+                class="rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1 font-medium">
+          Aplicar a todos
+        </button>
+      </form>
+      <span class="text-slate-300 dark:text-slate-600">|</span>
+      <button type="submit" form="form-precios"
+              class="rounded bg-sky-600 hover:bg-sky-700 text-white text-sm px-4 py-1.5 font-medium">
+        Guardar
+      </button>
+      <button type="button" id="btn-cancelar"
+              class="rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm px-4 py-1.5">
+        Cancelar
+      </button>
+    </div>
+  </div>
   {% endif %}
 
-  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-    <table class="w-full text-sm" style="border-collapse:collapse;">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-3 py-3 text-left font-medium">Clase</th>
-          {% for col, label in telas %}
-          <th class="px-3 py-3 text-right font-medium">{{ label }}</th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in filas %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
-            <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
-          </td>
-          {% for col, label in telas %}
-          <td class="px-3 py-2 text-right tabular-nums"
+  <form id="form-precios" method="post" action="{{ url_for('precios.guardar') if puede_editar else '' }}">
+    {% if puede_editar %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+      <table class="w-full text-sm" style="border-collapse:collapse;">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-3 py-3 text-left font-medium">Clase</th>
+            {% for col, label in telas %}
+            <th class="px-3 py-3 text-right font-medium">{{ label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in filas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
+              <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
+            </td>
+            {% for col, label in telas %}
+            <td class="px-3 py-2 text-right tabular-nums">
+              <span class="celda-texto">
+                {% if f[col] is not none %}{{ f[col] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
+              </span>
               {% if puede_editar %}
-              data-precio-cell="1"
-              data-clase="{{ f.clase }}"
-              data-columna="{{ col }}"
-              data-valor="{{ f[col] if f[col] is not none else '' }}"
-              style="cursor:pointer;"
-              title="Clic para editar"
-              {% endif %}>
-            {% if f[col] is not none %}{{ f[col] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
-            {% if f.clase|int != 1 and porcentajes.get(f.clase|int, {}).get(col) is not none %}
-            <span class="block text-[10px] text-emerald-600 dark:text-emerald-400 leading-none no-print">+{{ porcentajes[f.clase|int][col] | num_es(1) }}%</span>
-            {% endif %}
-          </td>
+              <input type="text" name="p_{{ f.clase }}_{{ col }}"
+                     class="celda-input w-20 text-right rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm"
+                     style="display:none;"
+                     value="{{ f[col] | num_es if f[col] is not none else '' }}">
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ telas|length + 1 }}" class="px-3 py-8 text-center text-slate-400">
+            Sin precios cargados. Corre la migracion 0114 en /admin/migraciones.
+          </td></tr>
           {% endfor %}
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ telas|length + 1 }}" class="px-3 py-8 text-center text-slate-400">
-          Sin precios cargados. Corre la migracion 0114 en /admin/migraciones.
-        </td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="max-w-6xl mt-8">
-  <div class="flex items-end justify-between gap-4 mb-3 flex-wrap">
-    <div>
-      <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-200">Descuentos de cliente</h2>
-      <p class="text-xs text-slate-500">Precio neto USD/kg = lista × (1 − descuento). El descuento de cada cliente sale de su ficha (CLIENTES.DBF). MINORISTA = descuento ≤ {{ corte_mayorista }}%, MAYORISTA = descuento &gt; {{ corte_mayorista }}%.</p>
+        </tbody>
+      </table>
     </div>
-    <form method="get" action="{{ url_for('precios.lista') }}" class="no-print">
-      <label class="text-xs text-slate-500 mr-2">Tela</label>
-      <select name="tela" onchange="this.form.submit()"
-              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
-        {% for col, label in telas %}
-        <option value="{{ col }}" {% if col == tela_sel %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </form>
-  </div>
-
-  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-    <table class="w-full text-sm" style="border-collapse:collapse;">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-3 py-2 text-left font-medium">Clase</th>
-          <th class="px-3 py-2 text-right font-medium">Lista</th>
-          {% for d in tramos %}
-          {% set es_mayor = d > corte_mayorista %}
-          <th class="px-3 py-2 text-right font-medium {% if es_mayor %}bg-amber-50 dark:bg-amber-900/20{% else %}bg-emerald-50 dark:bg-emerald-900/20{% endif %}">
-            {% if d == 0 %}0%<span class="block text-[9px] normal-case font-normal">s/desc</span>{% else %}{{ d }}%<span class="block text-[9px] normal-case font-normal">{% if es_mayor %}mayor{% else %}menor{% endif %}</span>{% endif %}
-          </th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in tabla_desc %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
-            <span class="text-slate-400 mr-1">{{ f.clase }}</span>{{ f.descripcio }}
-          </td>
-          <td class="px-3 py-2 text-right tabular-nums font-semibold">
-            {% if f.lista is not none %}{{ f.lista | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
-          </td>
-          {% for d in tramos %}
-          {% set es_mayor = d > corte_mayorista %}
-          <td class="px-3 py-2 text-right tabular-nums {% if es_mayor %}bg-amber-50/40 dark:bg-amber-900/10{% else %}bg-emerald-50/40 dark:bg-emerald-900/10{% endif %}">
-            {% if f.netos.get(d) is not none %}{{ f.netos[d] | num_es }}{% else %}<span class="text-slate-300">-</span>{% endif %}
-          </td>
-          {% endfor %}
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ tramos|length + 2 }}" class="px-3 py-8 text-center text-slate-400">Sin precios cargados.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <p class="text-xs text-slate-500 mt-2">
-    <span class="inline-block w-3 h-3 rounded-sm bg-emerald-100 dark:bg-emerald-900/40 align-middle mr-1"></span>MINORISTA (≤ {{ corte_mayorista }}%)
-    <span class="inline-block w-3 h-3 rounded-sm bg-amber-100 dark:bg-amber-900/40 align-middle ml-4 mr-1"></span>MAYORISTA (&gt; {{ corte_mayorista }}%)
-  </p>
+  </form>
 </div>
 
 {% if puede_editar %}
-<form id="precio-edit-form" method="post" action="{{ url_for('precios.actualizar') }}" style="display:none;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="clase" id="pe-clase">
-  <input type="hidden" name="columna" id="pe-columna">
-  <input type="hidden" name="valor" id="pe-valor">
-</form>
-
 <script>
 (function () {
-  var editing = null;
-  function fmt(v) {
-    if (v === "" || v == null) return "-";
-    var n = parseFloat(v);
-    if (isNaN(n)) return v;
-    return n.toFixed(2).replace(".", ",");
+  var editando = false;
+  var btnEditar = document.getElementById('btn-editar');
+  var btnCancelar = document.getElementById('btn-cancelar');
+  var barra = document.getElementById('barra-edicion');
+  var textos = document.querySelectorAll('.celda-texto');
+  var inputs = document.querySelectorAll('.celda-input');
+
+  function setModo(on) {
+    editando = on;
+    if (barra) barra.style.display = on ? '' : 'none';
+    if (btnEditar) btnEditar.style.display = on ? 'none' : '';
+    textos.forEach(function (t) { t.style.display = on ? 'none' : ''; });
+    inputs.forEach(function (i) { i.style.display = on ? '' : 'none'; });
   }
-  function closeEditor(cell, original) {
-    cell.innerHTML = fmt(original) === "-"
-      ? '<span class="text-slate-300">-</span>' : fmt(original);
-    editing = null;
-  }
-  function openEditor(cell) {
-    if (editing) return;
-    editing = cell;
-    var current = cell.getAttribute("data-valor") || "";
-    var input = document.createElement("input");
-    input.type = "text";
-    input.value = current === "" ? "" : parseFloat(current).toFixed(2).replace(".", ",");
-    input.className = "w-20 text-right rounded border border-sky-400 bg-white dark:bg-slate-950 px-1 py-0.5 text-sm";
-    cell.innerHTML = "";
-    cell.appendChild(input);
-    input.focus();
-    input.select();
-    function commit() {
-      document.getElementById("pe-clase").value = cell.getAttribute("data-clase");
-      document.getElementById("pe-columna").value = cell.getAttribute("data-columna");
-      document.getElementById("pe-valor").value = input.value.trim();
-      document.getElementById("precio-edit-form").submit();
-    }
-    input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); commit(); }
-      else if (e.key === "Escape") { e.preventDefault(); closeEditor(cell, current); }
-    });
-    input.addEventListener("blur", function () {
-      var normalized = input.value.trim().replace(",", ".");
-      if (normalized === "" ? current !== "" : parseFloat(normalized) !== parseFloat(current || "NaN")) {
-        commit();
-      } else {
-        closeEditor(cell, current);
-      }
-    });
-  }
-  document.querySelectorAll('[data-precio-cell]').forEach(function (cell) {
-    cell.addEventListener("click", function () { openEditor(cell); });
-  });
+
+  if (btnEditar) btnEditar.addEventListener('click', function () { setModo(true); });
+  if (btnCancelar) btnCancelar.addEventListener('click', function () { setModo(false); });
 })();
 </script>
 {% endif %}
