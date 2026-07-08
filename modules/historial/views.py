@@ -598,6 +598,13 @@ def reversar_mov(id_mov_doble: int):
         return redirect(url_for("historial.lista"))
 
     handler = _REVERSO_DISPATCH.get(tipo)
+    # TMT 2026-07-08 (dueña "todo reversible"): caja.reversar re-deriva el
+    # side-effect desde la propia fila de caja (NO depende del tipo del
+    # mov_doble), así que CUALQUIER 'caja_*' se reversa seguro por acá. Cubre
+    # los combos que faltaban en el dispatch por mismatch de string
+    # (caja_s_to_gasto, caja_e_to_retiro_socio, caja_e_to_compra_proveedor…).
+    if not handler and tipo.startswith("caja_"):
+        handler = ("caja.confirmar_reverso", lambda r: {"id_caja": r["origen_id"]})
     if not handler:
         # Sin handler específico Y no en lista de bloqueados — guía genérica.
         sugerencia = {
