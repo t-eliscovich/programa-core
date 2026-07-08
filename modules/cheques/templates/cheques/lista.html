@@ -710,6 +710,19 @@
       const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content
                 || (document.querySelector('input[name="csrf_token"]') || {}).value || '';
 
+      // TMT 2026-07-07 (dueña): "Hoy" debe ser la fecha LOCAL de Ecuador
+      // (UTC-5), no la fecha UTC. new Date().toISOString() devuelve UTC, así
+      // que después de las 19:00 de Ecuador ya está en el día siguiente y el
+      // botón filtraba "hasta MAÑANA". Calculamos el día en America/Guayaquil.
+      function hoyEC() {
+        const s = new Date().toLocaleDateString('en-CA', {
+          timeZone: 'America/Guayaquil'
+        });                       // en-CA → 'YYYY-MM-DD'
+        return /^\d{4}-\d{2}-\d{2}$/.test(s)
+          ? s
+          : new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+      }
+
       // ── 1. Filtro "Hoy" — setea desde=hasta=today y submitea ──────
       const btnHoy = document.getElementById('filtro-hoy-btn');
       if (btnHoy) {
@@ -719,7 +732,7 @@
           // TMT 2026-06-23 (dueña): "Hoy" = a depositar HASTA hoy (incluye los
           // atrasados que siguen en cartera), no solo los de fecha == hoy.
           // Por eso limpiamos `desde` y dejamos solo `hasta = hoy`.
-          const hoy = new Date().toISOString().slice(0, 10);
+          const hoy = hoyEC();
           const desde = form.querySelector('input[name="desde"]');
           const hasta = form.querySelector('input[name="hasta"]');
           if (desde) desde.value = '';
@@ -740,7 +753,7 @@
 
       // Default fecha=hoy si el server no la pasó.
       if (fechaEl && !fechaEl.value) {
-        fechaEl.value = new Date().toISOString().slice(0, 10);
+        fechaEl.value = hoyEC();
       }
 
       const fmt = n => Number(n || 0).toLocaleString('es-EC', {
