@@ -841,33 +841,33 @@ def reconcile_posdat_full_desde_dbf(dbf_path, aplicar: bool):
     ) or []
     # Dedup: banc=0 se saltea SOLO si un linkeado del mismo prov ya lo cubre
     # (evita doble OP). banc=9 mantiene dedup por clave exacta.
-    linked_prov_b0 = set()
+    # Dedup por CLAVE EXACTA (prov, importe, concepto) contra lo que quedó.
+    # banc=0: los sobrevivientes son SOLO linkeados (los sueltos ya se borraron);
+    #   si un linkeado coincide exacto con un registro del DBF, ese DBF se saltea
+    #   (evita doble contar la MISMA obligación). El resto del DBF entra completo.
+    # banc=9: idéntico criterio previo (dedup exacto contra imports PC).
+    quedan_keys_b0 = _Counter()
     quedan_keys_b9 = _Counter()
     quedan_t = 0.0
     for q in quedan:
         quedan_t += float(q["importe"] or 0)
+        k = ((q["prov"] or "").strip().upper(),
+             round(float(q["importe"] or 0), 2),
+             _norm_cpt(q["concepto"]))
         if int(q["banc"] or 0) == 0:
-            if q["linked"]:
-                linked_prov_b0.add((q["prov"] or "").strip().upper())
+            quedan_keys_b0[k] += 1
         else:
-            quedan_keys_b9[((q["prov"] or "").strip().upper(),
-                            round(float(q["importe"] or 0), 2),
-                            _norm_cpt(q["concepto"]))] += 1
+            quedan_keys_b9[k] += 1
 
     dbf_insert, skip_dup = [], 0
     for d in dbf:
-        if int(d["banc"]) == 0:
-            if (d["prov"] or "").strip().upper() in linked_prov_b0:
-                skip_dup += 1
-            else:
-                dbf_insert.append(d)
+        k = ((d["prov"] or "").strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
+        bucket = quedan_keys_b0 if int(d["banc"]) == 0 else quedan_keys_b9
+        if bucket.get(k, 0) > 0:
+            bucket[k] -= 1
+            skip_dup += 1
         else:
-            k = ((d["prov"] or "").strip().upper(), d["importe"], _norm_cpt(d["concepto"]))
-            if quedan_keys_b9.get(k, 0) > 0:
-                quedan_keys_b9[k] -= 1
-                skip_dup += 1
-            else:
-                dbf_insert.append(d)
+            dbf_insert.append(d)
 
     ins_t = sum(float(d["importe"]) for d in dbf_insert)
     # Desglose por banc para ver el PASIVO real (solo banc=0) antes de aplicar.
