@@ -206,6 +206,55 @@ def reset_facturas_cache() -> None:
     _FACTURAS_CACHE.clear()
 
 
+# ID de la card Metabase con la retención (IVA+Fuente) por factura. Se puede
+# rotar por env ASINFO_CARD_RETENCIONES; default = 202 (creada 2026-07-09).
+_ASINFO_CARD_RETENCIONES_DEFAULT = "202"
+
+
+def retenciones_periodo(desde, hasta) -> dict:
+    """Retención (fuente + IVA) por factura de Asinfo en el rango [desde, hasta].
+
+    La retención que el cliente emite contra nuestra factura NO es una columna
+    de `factura_cliente`; vive como líneas de forma_cobro de retención. La card
+    (default 202) hace el join detalle_cobro→forma_cobro→forma_pago→factura y
+    agrupa por `numero` (SRI '001-099-NNNNNNNNN'). Ver skill
+    programa-core-integraciones / memoria reference_asinfo_retenciones_join.
+
+    Returns:
+        dict `{numero: {"ret_fuente","ret_iva","ret_total"}}` (todos float).
+        {} si Metabase no está o la card no trae nada (fail-soft).
+    """
+    if hasattr(desde, "isoformat"):
+        desde = desde.isoformat()
+    if hasattr(hasta, "isoformat"):
+        hasta = hasta.isoformat()
+    params = [
+        {
+            "type": "date/single",
+            "target": ["variable", ["template-tag", "fecha_inicio"]],
+            "value": str(desde),
+        },
+        {
+            "type": "date/single",
+            "target": ["variable", ["template-tag", "fecha_fin"]],
+            "value": str(hasta),
+        },
+    ]
+    card_id = os.environ.get(
+        "ASINFO_CARD_RETENCIONES", "").strip() or _ASINFO_CARD_RETENCIONES_DEFAULT
+    rows = metabase_client.fetch_card(card_id, params=params) or []
+    out: dict = {}
+    for r in rows:
+        numero = str(r.get("numero") or "").strip()
+        if not numero:
+            continue
+        rf = float(r.get("ret_fuente") or 0)
+        ri = float(r.get("ret_iva") or 0)
+        rt = float(r.get("ret_total") if r.get("ret_total") is not None else rf + ri)
+        out[numero] = {"ret_fuente": rf, "ret_iva": ri, "ret_total": rt}
+    return out
+
+
 def facturas_totales_por_tipo(desde, hasta) -> dict:
     """Agregados por tipo de documento en el período [desde, hasta].
 

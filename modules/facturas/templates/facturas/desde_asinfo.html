@@ -39,6 +39,39 @@
     {% endif %}
   </form>
 
+  {# ───── TMT 2026-07-09 (dueña): Retenciones de Asinfo del período ─────
+     Trae la retención total (IVA+Fuente) de cada factura desde Asinfo y la
+     APLICA a las facturas de PC (registra scintela.retencion + baja el saldo).
+     Idempotente y reversible. #}
+  {% if ret_n and tiene_permiso('facturas.crear') %}
+  <div class="mb-5 rounded border border-emerald-300 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-900/15 p-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="text-sm">
+        <span class="font-semibold text-emerald-800 dark:text-emerald-300">Retenciones de Asinfo</span>
+        <span class="text-slate-600 dark:text-slate-300">— {{ ret_n }} factura{{ '' if ret_n == 1 else 's' }} con retención (IVA+Fuente) por
+          <span class="text-mono font-semibold">{{ ret_total | money_es }}</span> en el período.</span>
+        <div class="text-xs text-slate-500 mt-1">Aplicar registra la retención y baja el saldo de cada factura (abono). Es idempotente (no la aplica dos veces) y reversible.</div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <form method="POST" action="{{ url_for('facturas.aplicar_retenciones_asinfo') }}" class="inline"
+              onsubmit="return confirm('Aplicar las retenciones de Asinfo del período a las facturas de PC? Registra la retención y baja el saldo de cada una.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="desde" value="{{ desde }}">
+          <input type="hidden" name="hasta" value="{{ hasta }}">
+          <button type="submit" class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Aplicar retenciones</button>
+        </form>
+        <form method="POST" action="{{ url_for('facturas.deshacer_retenciones_asinfo') }}" class="inline"
+              onsubmit="return confirm('Deshacer las retenciones de Asinfo aplicadas en el período? Restaura los saldos y borra las retenciones registradas.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="desde" value="{{ desde }}">
+          <input type="hidden" name="hasta" value="{{ hasta }}">
+          <button type="submit" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Deshacer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {# ───── Bloque diagnóstico: aliases cliente Asinfo↔PC ─────
      TMT 2026-05-26 dueña: muchas facturas missing son por subclientes
      (CL2 en Asinfo == CLR en PC). El alias map evita falsos missing. #}

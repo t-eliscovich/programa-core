@@ -6,6 +6,7 @@ Se liga a scintela.factura por (codigo_cli, numf).
 from datetime import date
 
 import db
+from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 
@@ -158,3 +159,224 @@ def total_por_mes(anio: int | None = None) -> list[dict]:
         """,
         (anio, anio),
     )
+
+
+# ---------------------------------------------------------------------------
+# Retenciones desde Asinfo: registrar + APLICAR (bajar el saldo) por factura.
+# TMT 2026-07-09 (dueña): "buscar retenciones en el asinfo para aplicárselas a
+# las facturas que traemos — la retención total suma de IVA y Fuente de cada
+# factura". Registrar Y bajar el saldo (abono), junto al traer facturas.
+# Idempotente: si la factura ya tiene retención, no la vuelve a aplicar.
+# Reversible: cada aplicación deja un mov_doble con snapshot.
+# ---------------------------------------------------------------------------
+import mov_doble as _md  # noqa: E402
+
+
+def _factura_por_numero(numero: str, conn):
+    """Factura viva de PC (no backfill, no anulada) por numf_completo (SRI)."""
+    return db.fetch_one(
+        """
+        SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono,
+               saldo, stat
+          FROM scintela.factura
+         WHERE numf_completo = %s
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+           AND COALESCE(stat, '') <> 'X'
+         ORDER BY id_factura
+         LIMIT 1
+         FOR UPDATE
+        """,
+        (numero,),
+        conn=conn,
+    )
+
+
+def _aplicar_una_por_numero(numero: str, rete: float, usuario: str,
+                            batch_id: str | None = None) -> str:
+    """Registra scintela.retencion + baja el saldo de la factura `numero`.
+
+    Devuelve: 'aplicada' | 'ya' (ya tenía retención) | 'sin_factura' |
+    'rete_0' | 'rete_gt_importe'.
+    """
+    rete = round(float(rete or 0), 2)
+    if rete <= 0.005:
+        return "rete_0"
+    with db.tx() as conn:
+        f = _factura_por_numero(numero, conn)
+        if not f:
+            return "sin_factura"
+        importe = round(float(f["importe"] or 0), 2)
+        if rete > importe + 0.01:
+            return "rete_gt_importe"
+        ya = db.fetch_one(
+            "SELECT 1 AS x FROM scintela.retencion "
+            "WHERE codigo_cli = %s AND numf = %s",
+            (f["codigo_cli"], f["numf"]),
+            conn=conn,
+        )
+        if ya:
+            return "ya"
+        abono = round(float(f["abono"] or 0), 2)
+        saldo = round(float(f["saldo"] or 0), 2)
+        stat_prev = (f["stat"] or "").strip()
+        rrow = db.execute_returning(
+            "INSERT INTO scintela.retencion "
+            "  (codigo_cli, numf, rete, fecha, usuario_crea) "
+            "VALUES (%s, %s, %s, CURRENT_DATE, %s) "
+            "RETURNING id_retencion",
+            (f["codigo_cli"], f["numf"], rete, usuario),
+            conn=conn,
+        ) or {}
+        id_ret = rrow.get("id_retencion")
+        # Aplicar como abono: baja el saldo. saldo<=0 → 'T' (pagada);
+        # saldo>0 → 'A' (parcial).
+        abono_new = round(abono + rete, 2)
+        saldo_new = round(importe - abono_new, 2)
+        stat_new = "T" if saldo_new <= 0.005 else "A"
+        db.execute(
+            "UPDATE scintela.factura "
+            "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+            " WHERE id_factura = %s",
+            (abono_new, saldo_new, stat_new, usuario, f["id_factura"]),
+            conn=conn,
+        )
+        _md.registrar(
+            conn=conn,
+            tipo="retencion_asinfo_aplicada",
+            origen_table="factura", origen_id=f["id_factura"],
+            destino_table="factura", destino_id=f["id_factura"],
+            importe=rete,
+            fecha=today_ec(),
+            concepto=(
+                f"RETENCIÓN Asinfo {rete:.2f} aplicada a "
+                f"{numero} {f['codigo_cli']} — saldo {saldo:.2f}→{saldo_new:.2f}"
+            )[:200],
+            usuario=usuario,
+            batch_id=batch_id,
+            metadata={
+                "id_retencion": id_ret, "numero": numero,
+                "codigo_cli": f["codigo_cli"], "numf": f["numf"],
+                "rete": rete, "abono_previo": abono, "saldo_previo": saldo,
+                "stat_previo": stat_prev,
+            },
+        )
+    return "aplicada"
+
+
+def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
+    """Trae las retenciones de Asinfo del período y las aplica a las facturas
+    de PC (registra scintela.retencion + baja el saldo). Idempotente.
+
+    Devuelve {n_aplicadas, n_ya, n_sin_factura, n_error, total_aplicado,
+    n_retenciones_asinfo}.
+    """
+    from modules.asinfo import service as asinfo_service
+    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
+    res = {
+        "n_aplicadas": 0, "n_ya": 0, "n_sin_factura": 0, "n_error": 0,
+        "total_aplicado": 0.0, "n_retenciones_asinfo": len(ret_map),
+    }
+    batch_id = None  # cada factura es su propia tx; sin batch atómico
+    for numero, r in ret_map.items():
+        rete = round(float((r or {}).get("ret_total") or 0), 2)
+        try:
+            estado = _aplicar_una_por_numero(numero, rete, usuario, batch_id)
+        except Exception:
+            res["n_error"] += 1
+            continue
+        if estado == "aplicada":
+            res["n_aplicadas"] += 1
+            res["total_aplicado"] = round(res["total_aplicado"] + rete, 2)
+        elif estado == "ya":
+            res["n_ya"] += 1
+        elif estado == "sin_factura":
+            res["n_sin_factura"] += 1
+        elif estado in ("rete_0", "rete_gt_importe"):
+            res["n_error"] += 1
+    return res
+
+
+def _desaplicar_una_por_numero(numero: str, usuario: str) -> str:
+    """Revierte la retención Asinfo aplicada a la factura `numero`: restaura
+    saldo/abono/stat del snapshot, borra la scintela.retencion y marca el
+    mov_doble reversado. Devuelve 'revertida' | 'sin_aplicacion'.
+    """
+    with db.tx() as conn:
+        f = db.fetch_one(
+            "SELECT id_factura, codigo_cli, numf, importe FROM scintela.factura "
+            "WHERE numf_completo = %s ORDER BY id_factura LIMIT 1 FOR UPDATE",
+            (numero,), conn=conn,
+        )
+        if not f:
+            return "sin_aplicacion"
+        mv = db.fetch_one(
+            "SELECT id_mov_doble, metadata FROM scintela.mov_doble "
+            "WHERE tipo = 'retencion_asinfo_aplicada' AND origen_id = %s "
+            "  AND estado = 'activo' "
+            "ORDER BY id_mov_doble DESC LIMIT 1",
+            (f["id_factura"],), conn=conn,
+        )
+        if not mv:
+            return "sin_aplicacion"
+        meta = mv.get("metadata") or {}
+        if isinstance(meta, str):
+            import json as _json
+            try:
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+        # Restaurar factura
+        db.execute(
+            "UPDATE scintela.factura "
+            "   SET abono = %s, saldo = %s, stat = %s, usuario_modifica = %s "
+            " WHERE id_factura = %s",
+            (round(float(meta.get("abono_previo") or 0), 2),
+             round(float(meta.get("saldo_previo") or 0), 2),
+             (meta.get("stat_previo") or "Z"), usuario, f["id_factura"]),
+            conn=conn,
+        )
+        # Borrar la retención registrada
+        id_ret = meta.get("id_retencion")
+        if id_ret:
+            db.execute(
+                "DELETE FROM scintela.retencion WHERE id_retencion = %s",
+                (id_ret,), conn=conn,
+            )
+        else:
+            db.execute(
+                "DELETE FROM scintela.retencion WHERE codigo_cli = %s AND numf = %s",
+                (f["codigo_cli"], f["numf"]), conn=conn,
+            )
+        # Marcar el mov_doble como reversado (reverso administrativo)
+        _md.registrar(
+            conn=conn,
+            tipo="retencion_asinfo_desaplicada",
+            origen_table="factura", origen_id=f["id_factura"],
+            destino_table="factura", destino_id=f["id_factura"],
+            importe=round(float(meta.get("rete") or 0), 2) or 1.0,
+            fecha=today_ec(),
+            concepto=f"REVERSO retención Asinfo {numero} {f['codigo_cli']}"[:200],
+            usuario=usuario,
+            id_original=mv["id_mov_doble"],
+            metadata={"numero": numero, "codigo_cli": f["codigo_cli"]},
+        )
+    return "revertida"
+
+
+def desaplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
+    """Deshace las retenciones Asinfo aplicadas en el período (restaura saldos
+    y borra las scintela.retencion). Idempotente. {n_revertidas, n_sin}."""
+    from modules.asinfo import service as asinfo_service
+    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
+    res = {"n_revertidas": 0, "n_sin": 0}
+    for numero in ret_map:
+        try:
+            estado = _desaplicar_una_por_numero(numero, usuario)
+        except Exception:
+            res["n_sin"] += 1
+            continue
+        if estado == "revertida":
+            res["n_revertidas"] += 1
+        else:
+            res["n_sin"] += 1
+    return res

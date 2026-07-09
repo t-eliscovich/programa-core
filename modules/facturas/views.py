@@ -1000,9 +1000,23 @@ def desde_asinfo():
         grupos_cli.values(), key=lambda g: g["n"], reverse=True
     )
 
+    # ─── TMT 2026-07-09 (dueña): retenciones de Asinfo del período ──
+    # Traer la retención (IVA+Fuente) por factura para poder aplicarla a las
+    # facturas de PC (registra scintela.retencion + baja el saldo). Fail-soft.
+    ret_n, ret_total = 0, 0.0
+    try:
+        from modules.asinfo import service as _asinfo_svc
+        _ret_map = _asinfo_svc.retenciones_periodo(desde, hasta) or {}
+        ret_n = len(_ret_map)
+        ret_total = round(
+            sum(float((v or {}).get("ret_total") or 0) for v in _ret_map.values()), 2)
+    except Exception:
+        pass
+
     return render_template(
         "facturas/desde_asinfo.html",
         desde=desde_s, hasta=hasta_s,
+        ret_n=ret_n, ret_total=ret_total,
         n_total_asinfo=len(asinfo_rows),
         n_pc=len(pc_rows),
         huerfanas=huerfanas,
@@ -1414,6 +1428,65 @@ def cargar_desde_asinfo():
     except Exception as e:
         flash_exc("No se pudo cargar la factura", e)
     return redirect(url_for("facturas.desde_asinfo"))
+
+
+def _rango_retenciones():
+    """Lee desde/hasta del form para las acciones de retenciones (mismo piso
+    2026-06-01 que la vista)."""
+    from datetime import date as _date
+    hoy = today_ec()
+    desde = _parse_date(request.form.get("desde") or "") or (
+        hoy.replace(day=1))
+    hasta = _parse_date(request.form.get("hasta") or "") or hoy
+    if desde < _date(2026, 6, 1):
+        desde = _date(2026, 6, 1)
+    return desde, hasta
+
+
+@facturas_bp.route("/facturas/aplicar-retenciones-asinfo", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def aplicar_retenciones_asinfo():
+    """Aplica las retenciones de Asinfo del período a las facturas de PC:
+    registra scintela.retencion + baja el saldo (abono). Idempotente."""
+    from modules.retenciones import queries as ret_q
+    desde, hasta = _rango_retenciones()
+    usuario = (
+        getattr(g, "user", {}).get("username")
+        if hasattr(g, "user") and isinstance(g.user, dict) else "asinfo")
+    try:
+        r = ret_q.aplicar_retenciones_asinfo(desde, hasta, usuario=usuario)
+        flash(
+            f"Retenciones Asinfo: {r['n_aplicadas']} aplicadas "
+            f"({r['total_aplicado']:,.2f}), {r['n_ya']} ya estaban, "
+            f"{r['n_sin_factura']} sin factura en PC"
+            + (f", {r['n_error']} con error" if r.get("n_error") else "")
+            + f". (de {r['n_retenciones_asinfo']} en Asinfo).", "ok")
+    except Exception as e:
+        flash_exc("No pude aplicar las retenciones de Asinfo", e)
+    return redirect(url_for(
+        "facturas.desde_asinfo", desde=desde.isoformat(), hasta=hasta.isoformat()))
+
+
+@facturas_bp.route("/facturas/deshacer-retenciones-asinfo", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def deshacer_retenciones_asinfo():
+    """Deshace las retenciones Asinfo aplicadas en el período (restaura saldos
+    + borra las scintela.retencion). Idempotente."""
+    from modules.retenciones import queries as ret_q
+    desde, hasta = _rango_retenciones()
+    usuario = (
+        getattr(g, "user", {}).get("username")
+        if hasattr(g, "user") and isinstance(g.user, dict) else "asinfo")
+    try:
+        r = ret_q.desaplicar_retenciones_asinfo(desde, hasta, usuario=usuario)
+        flash(
+            f"Retenciones Asinfo deshechas: {r['n_revertidas']} revertidas.", "ok")
+    except Exception as e:
+        flash_exc("No pude deshacer las retenciones de Asinfo", e)
+    return redirect(url_for(
+        "facturas.desde_asinfo", desde=desde.isoformat(), hasta=hasta.isoformat()))
 
 
 @facturas_bp.route("/facturas")
