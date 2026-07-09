@@ -158,12 +158,9 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     # Asinfo (el maq cancela: inic + ingreso + en_máq − egreso = act_total).
     crudo_egreso = max(tc0 + ci_crudo - tc1, 0.0)   # crudo consumido a tintura
     ventas = max(pf0 + ci_term - pf1, 0.0)          # ventas (cierra terminado)
-    # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente, pero
-    # sólo cuando hay PÉRDIDA de peso (nunca negativo — dueña 2026-07-09). En
-    # tintura el terminado GANA peso (absorbe químicos/agua), así que ahí no
-    # hay desperdicio (queda 0); el desperdicio real vive en tejeduría.
-    desp_crudo = max(W - ci_crudo, 0.0)          # tejeduría: hilo − cruda
-    desp_term = max(crudo_egreso - ci_term, 0.0)  # tintura: crudo − PT (≈0, gana peso)
+    # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente.
+    desp_crudo = W - ci_crudo            # tejeduría: hilo consumido − cruda producida
+    desp_term = crudo_egreso - ci_term   # tintura: crudo consumido − PT producido
 
     # HILADO — inicial/actual de Asinfo; ingreso=compras, egreso=W (lo tejido).
     # $/kg: mismos que el dBase (stock_inic_ukg, ingresos_ukg, egresos_ukg=um_act).

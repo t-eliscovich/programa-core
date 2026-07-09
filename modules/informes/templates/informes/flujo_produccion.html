@@ -181,8 +181,8 @@
             <td class="num">—</td>
             <td class="num">—</td>
             <td></td>
-            <td class="num" style="color:rgb(180 83 9);">{% set _dc = _desp.get('crudo') or 0 %}{% if _dc > 0.5 %}{{ _dc | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
-            <td class="num" style="color:rgb(180 83 9);">{% set _dt = _desp.get('term') or 0 %}{% if _dt > 0.5 %}{{ _dt | num_es(0) }}{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
+            <td class="num" style="color:rgb(180 83 9);">{% set _dc = _desp.get('crudo') or 0 %}{% if _dc >= 0 %}{% else %}−{% endif %}{{ (_dc if _dc >= 0 else -_dc) | num_es(0) }}</td>
+            <td class="num" style="color:rgb(180 83 9);">{% set _dt = _desp.get('term') or 0 %}{% if _dt >= 0 %}{% else %}−{% endif %}{{ (_dt if _dt >= 0 else -_dt) | num_es(0) }}</td>
             <td class="num">—</td>
           </tr>
           {% endif %}
