@@ -79,8 +79,13 @@ def test_top10_deudores_filtra_backfill():
 
 
 def test_template_cheques_anulados_fuera_del_contador():
-    """Los X se listan tachados pero no cuentan en 'Total (N cheques)'."""
-    tpl = _TPL.read_text()
+    """Los X se listan tachados pero no cuentan en 'Total (N cheques)'.
+
+    TMT 2026-07-09: el cuerpo Facturas+Cheques se movió al partial compartido
+    `_estado_cuenta_impreso.html` (commit 42b7fd3); el contador nch.activos
+    vive ahí, no en estado_cuenta.html.
+    """
+    tpl = (_TPL.resolve().parent / "_estado_cuenta_impreso.html").read_text()
     assert "nch.activos" in tpl, "falta el contador de cheques no-anulados"
     assert "anulado" in tpl, "falta la leyenda 'anulado' en los cheques X"
     assert "Total ({{ nch.activos }}" in tpl, (

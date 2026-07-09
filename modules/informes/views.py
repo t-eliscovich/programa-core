@@ -2283,10 +2283,73 @@ def estado_cuenta(codigo_cli):
         "informes/estado_cuenta.html",
         data=data,
         error=error,
+        # TMT 2026-07-09 (dueña): facturas totalizadas (T), para poder
+        # REABRIRLAS desde el panel A↔T. Solo en la vista individual.
+        facturas_totalizadas=(_safe(
+            lambda: queries.facturas_totalizadas_cliente(codigo_up), [])[0]),
         # TMT 2026-07-06 (dueña): banner de éxito del TOTALIZAR (one-shot,
         # patrón cobranza_ok) + botón imprimir el resultado.
         totalizar_ok=session.pop("totalizar_ok", None),
+        neteo_ok=session.pop("neteo_ok", None),
     )
+
+
+@informes_bp.route("/estado-cuenta/<codigo_cli>/factura/<int:id_factura>/toggle-stat",
+                   methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def estado_cuenta_factura_toggle(codigo_cli, id_factura):
+    """Cerrar (A/Z→T) o reabrir (T→A) UNA factura desde el estado de cuenta.
+
+    TMT 2026-07-09 (dueña): "poder pasar facturas de A→T y T→A". Mismo permiso
+    que TOTALIZAR (clientes.ver, decisión dueña #4) — lo usan todos los que
+    gestionan la cuenta.
+    """
+    codigo_up = codigo_cli.upper()
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    try:
+        res = queries.factura_cambiar_stat_a_t(id_factura, codigo_up, usuario=usuario)
+        if res.get("accion") == "cerrada":
+            flash(f"Factura {res.get('numf')} cerrada (→T).", "ok")
+        else:
+            flash(
+                f"Factura {res.get('numf')} reabierta (→A, saldo "
+                f"{res.get('saldo_nuevo', 0):,.2f}).", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude cambiar el estado de la factura", e)
+    return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+
+
+@informes_bp.route("/estado-cuenta/<codigo_cli>/netear", methods=["POST"])
+@requiere_login
+@requiere_permiso("cheques.anular")
+def estado_cuenta_netear(codigo_cli):
+    """Netear (anular) cheque(s) contra anticipo(s) del cliente.
+
+    TMT 2026-07-09 (dueña): "cancelar cheques y anticipos (netearlos)". Los dos
+    lados se cancelan entre sí (stat='X') si suman igual. Gate cheques.anular.
+    """
+    from modules.cheques import queries as chq
+    codigo_up = codigo_cli.upper()
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    ids_cheques = [int(x) for x in request.form.getlist("ch") if x.strip().isdigit()]
+    ids_anticipos = [int(x) for x in request.form.getlist("ant") if x.strip().isdigit()]
+    try:
+        res = chq.netear_cheques_con_anticipos(
+            codigo_cli=codigo_up, ids_cheques=ids_cheques,
+            ids_anticipos=ids_anticipos, usuario=usuario,
+        )
+        session["neteo_ok"] = res
+        flash(
+            f"Neteado: {res['n_cheques']} cheque(s) y {res['n_anticipos']} "
+            f"anticipo(s) por {res['total']:,.2f} anulados entre sí.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:
+        flash_exc("No pude netear", e)
+    return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 
 @informes_bp.route("/estado-cuenta/<codigo_cli>/totalizar", methods=["GET", "POST"])

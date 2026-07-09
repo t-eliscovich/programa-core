@@ -292,5 +292,155 @@
     </div>
   </div>
   {% endif %}
+
+  {# ===================================================================== #}
+  {# TMT 2026-07-09 (dueña): PANEL cambiar estado de facturas A↔T.         #}
+  {# Cerrar (A/Z→T) marca la factura pagada (saldo 0, sale de la lista);   #}
+  {# Reabrir (T→A) la vuelve viva con su saldo restaurado. Reversible.     #}
+  {# Solo con permiso clientes.ver (mismo que TOTALIZAR).                  #}
+  {# ===================================================================== #}
+  {% if tiene_permiso('clientes.ver') %}
+  {% set _vivas = data.facturas | selectattr('importe', 'gt', 0) | list %}
+  <div class="no-print mt-10">
+    <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+      <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Cambiar estado de facturas (A ↔ T)
+        <span class="ml-2 font-normal text-slate-500">— cerrar una factura como pagada (→T) o reabrirla (→A)</span>
+      </summary>
+      <div class="p-4 grid md:grid-cols-2 gap-6">
+        {# Vivas → cerrar (T) #}
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Vivas (Z/A) — cerrar como pagada</div>
+          {% if _vivas %}
+          <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded">
+            {% for f in _vivas %}
+            <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <span class="font-mono text-xs">
+                {{ f.numf_completo or f.numf }}
+                <span class="text-slate-400">· {{ f.fecha | fecha_es }}</span>
+                <span class="ml-1">saldo {{ f.saldo | money_es }}</span>
+                <span class="ml-1 text-slate-400">[{{ f.stat or 'Z' }}]</span>
+              </span>
+              <form method="POST"
+                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
+                    onsubmit="return confirm('Cerrar factura {{ f.numf }} (→T)? Queda pagada y sale de la lista viva. Es reversible (Reabrir).');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="text-xs px-2.5 py-1 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+                  Cerrar → T
+                </button>
+              </form>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-slate-400 px-1">Sin facturas vivas positivas.</div>
+          {% endif %}
+        </div>
+        {# Totalizadas → reabrir (A) #}
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Totalizadas (T) — reabrir</div>
+          {% if facturas_totalizadas %}
+          <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded max-h-80 overflow-auto">
+            {% for f in facturas_totalizadas %}
+            <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <span class="font-mono text-xs">
+                {{ f.numf_completo or f.numf }}
+                <span class="text-slate-400">· {{ f.fecha | fecha_es }}</span>
+                <span class="ml-1">importe {{ f.importe | money_es }}</span>
+                <span class="ml-1 text-slate-400">abon. {{ f.abono | money_es }}</span>
+              </span>
+              <form method="POST"
+                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
+                    onsubmit="return confirm('Reabrir factura {{ f.numf }} (→A)? Vuelve a la lista viva con su saldo.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                        class="text-xs px-2.5 py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20">
+                  Reabrir → A
+                </button>
+              </form>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-slate-400 px-1">Sin facturas totalizadas.</div>
+          {% endif %}
+        </div>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+
+  {# ===================================================================== #}
+  {# TMT 2026-07-09 (dueña): PANEL netear cheques con anticipos.           #}
+  {# Anula (stat X) los cheques y anticipos seleccionados si suman igual.  #}
+  {# Gate cheques.anular.                                                  #}
+  {# ===================================================================== #}
+  {% set _che_vivos = data.cheques | rejectattr('stat', 'equalto', 'X') | selectattr('importe', 'gt', 0) | list %}
+  {% set _ant_vivos = data.anticipos | rejectattr('stat', 'equalto', 'X') | list %}
+  {% if tiene_permiso('cheques.anular') and (_che_vivos or _ant_vivos) %}
+  <div class="no-print mt-6">
+    <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+      <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800">
+        Netear cheques con anticipos
+        <span class="ml-2 font-normal text-slate-500">— anular cheque(s) contra anticipo(s) que sumen igual</span>
+      </summary>
+      <form method="POST"
+            action="{{ url_for('informes.estado_cuenta_netear', codigo_cli=data.cliente.codigo_cli) }}"
+            onsubmit="return confirm('Netear (anular) los cheques y anticipos seleccionados? Ambos lados quedan en X.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="p-4 grid md:grid-cols-2 gap-6">
+          <div>
+            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Cheques a anular</div>
+            {% if _che_vivos %}
+            <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded max-h-80 overflow-auto">
+              {% for c in _che_vivos %}
+              <label class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <input type="checkbox" name="ch" value="{{ c.id_cheque }}">
+                <span class="font-mono text-xs">
+                  {{ (c.no_cheque | cleanstr) if c.no_cheque else '#' ~ c.id_cheque }}
+                  <span class="text-slate-400">· {{ c.nombre_banco or c.banco }}</span>
+                  <span class="ml-1">{{ c.importe | money_es }}</span>
+                  <span class="ml-1 text-slate-400">[{{ c.stat }}]</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-sm text-slate-400 px-1">Sin cheques vivos positivos.</div>
+            {% endif %}
+          </div>
+          <div>
+            <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Anticipos a anular</div>
+            {% if _ant_vivos %}
+            <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded max-h-80 overflow-auto">
+              {% for a in _ant_vivos %}
+              <label class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <input type="checkbox" name="ant" value="{{ a.id_cheque }}">
+                <span class="font-mono text-xs">
+                  #{{ a.id_cheque }}
+                  <span class="text-slate-400">· {{ (a.fecha_crea or a.fecha) | fecha_es }}</span>
+                  <span class="ml-1 text-emerald-700 dark:text-emerald-400">{{ (a.importe * -1) | money_es }}</span>
+                  <span class="ml-1 text-slate-400">[{{ a.stat }}]</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-sm text-slate-400 px-1">Sin anticipos.</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex items-center justify-between gap-3 flex-wrap">
+          <span class="text-xs text-slate-500">Los cheques y anticipos elegidos tienen que sumar lo mismo (netean a cero).</span>
+          <button type="submit"
+                  class="text-sm px-3 py-1.5 rounded border border-red-400 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+            Netear seleccionados
+          </button>
+        </div>
+      </form>
+    </details>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

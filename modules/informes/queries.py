@@ -8837,3 +8837,170 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
             "n_links_borrados": n_links,
             "saldo": calc["sum_saldo_despues"],
         }
+
+
+# ---------------------------------------------------------------------------
+# Cambio manual de estado de factura A/Z ↔ T desde el estado de cuenta.
+# TMT 2026-07-09 (dueña): "poder pasar facturas de A→T y T→A". CERRAR una
+# factura viva (Z/A) la marca T con saldo 0 (se considera pagada, sale de la
+# lista viva); REABRIR una T la vuelve A con su saldo restaurado. Reversible:
+# el CERRAR snapshotea (abono, saldo, stat) en el mov_doble, y el REABRIR
+# restaura ese snapshot si existe (si la T vino de un totalizar u otra fuente,
+# cae al fallback saldo = importe − abono).
+# ---------------------------------------------------------------------------
+def facturas_totalizadas_cliente(codigo_cli: str, limite: int = 300) -> list[dict]:
+    """Facturas T (totalizadas/cerradas) del cliente — para poder REABRIRLAS.
+
+    Mismo criterio de cartera que la lista viva (sin backfill de asinfo). Se
+    listan aparte porque el estado de cuenta oculta las T.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    return db.fetch_all(
+        """
+        SELECT id_factura, numf, numf_completo, fecha, importe, abono, saldo, stat
+          FROM scintela.factura
+         WHERE codigo_cli = %s
+           AND COALESCE(stat, '') = 'T'
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+         ORDER BY fecha DESC, numf DESC
+         LIMIT %s
+        """,
+        (codigo_cli, limite),
+    )
+
+
+def factura_cambiar_stat_a_t(
+    id_factura: int, codigo_cli: str, usuario: str = "web"
+) -> dict:
+    """Toggle A/Z ↔ T de UNA factura (pantalla estado de cuenta). Reversible.
+
+    - Factura VIVA (Z o A) → la CIERRA: stat='T', saldo=0 (se considera
+      pagada). Snapshotea (abono, saldo, stat) previos en el mov_doble.
+    - Factura T → la REABRE: busca el snapshot del último cierre activo por
+      esta tool y restaura (abono, saldo, stat='A'); si no hay snapshot
+      (p.ej. la T vino de un totalizar) cae a stat='A', saldo=importe−abono.
+
+    Devuelve {id_factura, numf, stat_previo, stat_nuevo, saldo_nuevo, accion}.
+    """
+    from periodo_guard import asegurar_fecha_abierta
+
+    codigo_cli = (codigo_cli or "").strip().upper()
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+    with db.tx() as conn:
+        f = db.fetch_one(
+            "SELECT id_factura, numf, numf_completo, codigo_cli, importe, "
+            "       abono, saldo, stat "
+            "  FROM scintela.factura WHERE id_factura = %s FOR UPDATE",
+            (id_factura,),
+            conn=conn,
+        )
+        if not f:
+            raise ValueError(f"Factura #{id_factura} no existe.")
+        if (f.get("codigo_cli") or "").strip().upper() != codigo_cli:
+            raise ValueError(
+                f"La factura #{id_factura} es de "
+                f"{(f.get('codigo_cli') or '?').strip()}, no de {codigo_cli}."
+            )
+        stat_prev = (f.get("stat") or "").strip().upper()
+        importe = round(float(f.get("importe") or 0), 2)
+        abono = round(float(f.get("abono") or 0), 2)
+        saldo = round(float(f.get("saldo") or 0), 2)
+
+        if stat_prev in ("Z", "A", "", " "):
+            # CERRAR → T. Snapshot para poder revertir con exactitud.
+            db.execute(
+                "UPDATE scintela.factura "
+                "   SET stat='T', saldo=0, usuario_modifica=%s "
+                " WHERE id_factura=%s",
+                (usuario, id_factura),
+                conn=conn,
+            )
+            import mov_doble as _md
+            _md.registrar(
+                conn=conn,
+                tipo="factura_cerrada_a_t",
+                origen_table="factura", origen_id=id_factura,
+                destino_table="factura", destino_id=id_factura,
+                importe=importe or 1.0,
+                fecha=fecha,
+                concepto=(
+                    f"CERRAR factura {f.get('numf_completo') or f.get('numf')} "
+                    f"{codigo_cli} {stat_prev or 'Z'}→T (saldo {saldo:.2f}→0)"
+                )[:200],
+                usuario=usuario,
+                metadata={
+                    "id_factura": id_factura, "codigo_cli": codigo_cli,
+                    "stat_previo": stat_prev or "Z",
+                    "abono_previo": abono, "saldo_previo": saldo,
+                },
+            )
+            return {
+                "id_factura": id_factura, "numf": f.get("numf"),
+                "stat_previo": stat_prev or "Z", "stat_nuevo": "T",
+                "saldo_nuevo": 0.0, "accion": "cerrada",
+            }
+
+        if stat_prev == "T":
+            # REABRIR → A. Restaurar del último cierre activo si lo hay.
+            snap = db.fetch_one(
+                """
+                SELECT metadata
+                  FROM scintela.mov_doble
+                 WHERE tipo = 'factura_cerrada_a_t'
+                   AND origen_id = %s
+                   AND estado = 'activo'
+                 ORDER BY id_mov_doble DESC
+                 LIMIT 1
+                """,
+                (id_factura,),
+                conn=conn,
+            )
+            md = (snap or {}).get("metadata") or {}
+            if isinstance(md, str):
+                import json as _json
+                try:
+                    md = _json.loads(md)
+                except Exception:
+                    md = {}
+            if md.get("saldo_previo") is not None:
+                saldo_nuevo = round(float(md.get("saldo_previo") or 0), 2)
+                abono_nuevo = round(float(md.get("abono_previo") or abono), 2)
+            else:
+                saldo_nuevo = round(importe - abono, 2)
+                abono_nuevo = abono
+            db.execute(
+                "UPDATE scintela.factura "
+                "   SET stat='A', saldo=%s, abono=%s, usuario_modifica=%s "
+                " WHERE id_factura=%s",
+                (saldo_nuevo, abono_nuevo, usuario, id_factura),
+                conn=conn,
+            )
+            import mov_doble as _md
+            _md.registrar(
+                conn=conn,
+                tipo="factura_reabierta_de_t",
+                origen_table="factura", origen_id=id_factura,
+                destino_table="factura", destino_id=id_factura,
+                importe=importe or 1.0,
+                fecha=fecha,
+                concepto=(
+                    f"REABRIR factura {f.get('numf_completo') or f.get('numf')} "
+                    f"{codigo_cli} T→A (saldo →{saldo_nuevo:.2f})"
+                )[:200],
+                usuario=usuario,
+                metadata={
+                    "id_factura": id_factura, "codigo_cli": codigo_cli,
+                    "saldo_nuevo": saldo_nuevo, "abono_nuevo": abono_nuevo,
+                },
+            )
+            return {
+                "id_factura": id_factura, "numf": f.get("numf"),
+                "stat_previo": "T", "stat_nuevo": "A",
+                "saldo_nuevo": saldo_nuevo, "accion": "reabierta",
+            }
+
+        raise ValueError(
+            f"La factura #{id_factura} está en stat='{stat_prev}' — solo se "
+            "cierra/reabre desde estados Z/A/T."
+        )

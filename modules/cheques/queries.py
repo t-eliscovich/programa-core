@@ -4233,3 +4233,150 @@ def resumen_cobranza_dia(fecha) -> dict:
         "total_efectivo": tot_ef,
         "total_general": round(tot_ch + tot_de + tot_ef, 2),
     }
+
+
+def netear_cheques_con_anticipos(
+    *,
+    codigo_cli: str,
+    ids_cheques: list[int],
+    ids_anticipos: list[int],
+    usuario: str = "web",
+) -> dict:
+    """NETEA (anula) cheque(s) vivo(s) contra anticipo(s) del mismo cliente.
+
+    TMT 2026-07-09 (dueña): "cancelar cheques y anticipos (netearlos) desde el
+    estado de cuenta — anular un/varios cheque con un/varios anticipo". Los dos
+    lados se cancelan entre sí (stat='X'). Requiere que Σimporte(cheques) ==
+    Σimporte(anticipos) dentro de $0,01 (netean a cero — igual que el flujo 95
+    CANCELA ANTIC. del dBase, pero disparado a mano desde la cuenta).
+
+    - Cheques: se reusa `cancelar_por_anticipo` (mismo guard: vivos, importe>0,
+      del cliente, SIN aplicaciones a factura) → stat='X' + mov_doble reversible.
+    - Anticipos (espejos NB=98, importe negativo): stat='X' + mov_doble
+      'anticipo_neteado'. Todo en UNA tx: si algo falla, rollback total.
+
+    Devuelve {n_cheques, n_anticipos, total, cheques:[...], anticipos:[...]}.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    ids_cheques = [int(i) for i in (ids_cheques or [])]
+    ids_anticipos = [int(i) for i in (ids_anticipos or [])]
+    if not ids_cheques:
+        raise ValueError("Elegí al menos un cheque para netear.")
+    if not ids_anticipos:
+        raise ValueError("Elegí al menos un anticipo para netear.")
+
+    fecha = today_ec()
+    asegurar_fecha_abierta(fecha)
+    with db.tx() as conn:
+        # --- Cheques a anular (positivos, vivos, del cliente) ---
+        cheques = db.fetch_all(
+            "SELECT id_cheque, no_cheque, importe, stat, codigo_cli "
+            "  FROM scintela.cheque "
+            " WHERE id_cheque = ANY(%s) FOR UPDATE",
+            (ids_cheques,),
+            conn=conn,
+        )
+        if len(cheques) != len(set(ids_cheques)):
+            raise ValueError("Algún cheque seleccionado no existe.")
+        suma_cheques = 0.0
+        for c in cheques:
+            if (c.get("codigo_cli") or "").strip().upper() != codigo_cli:
+                raise ValueError(
+                    f"El cheque #{c['id_cheque']} no es de {codigo_cli}."
+                )
+            if float(c.get("importe") or 0) <= 0.005:
+                raise ValueError(
+                    f"El cheque #{c['id_cheque']} no es positivo — no se netea "
+                    "por acá (los espejos/NC no son cheques a anular)."
+                )
+            suma_cheques += round(float(c["importe"] or 0), 2)
+        suma_cheques = round(suma_cheques, 2)
+
+        # --- Anticipos a anular (espejos NB=98, negativos, del cliente) ---
+        anticipos = db.fetch_all(
+            "SELECT id_cheque, no_cheque, importe, stat, codigo_cli, no_banco "
+            "  FROM scintela.cheque "
+            " WHERE id_cheque = ANY(%s) FOR UPDATE",
+            (ids_anticipos,),
+            conn=conn,
+        )
+        if len(anticipos) != len(set(ids_anticipos)):
+            raise ValueError("Algún anticipo seleccionado no existe.")
+        suma_anticipos = 0.0
+        for a in anticipos:
+            if (a.get("codigo_cli") or "").strip().upper() != codigo_cli:
+                raise ValueError(
+                    f"El anticipo #{a['id_cheque']} no es de {codigo_cli}."
+                )
+            if int(a.get("no_banco") or 0) != 98:
+                raise ValueError(
+                    f"#{a['id_cheque']} no es un anticipo (espejo NB=98)."
+                )
+            if (a.get("stat") or "").strip().upper() == "X":
+                raise ValueError(
+                    f"El anticipo #{a['id_cheque']} ya está anulado."
+                )
+            # importe del espejo es negativo → el saldo a favor es su abs().
+            suma_anticipos += round(-float(a["importe"] or 0), 2)
+        suma_anticipos = round(suma_anticipos, 2)
+
+        if abs(suma_cheques - suma_anticipos) > 0.01:
+            raise ValueError(
+                f"No netea a cero: cheques suman ${suma_cheques:,.2f} y "
+                f"anticipos ${suma_anticipos:,.2f}. Ajustá la selección para "
+                "que ambos lados sean iguales."
+            )
+
+        # --- Anular cheques (reusa el primitivo reversible) ---
+        ref_ant = ids_anticipos[0]
+        for c in cheques:
+            cancelar_por_anticipo(
+                id_cheque=c["id_cheque"],
+                codigo_cli=codigo_cli,
+                id_cheque_anticipo=ref_ant,
+                monto_anticipo=round(float(c["importe"] or 0), 2),
+                usuario=usuario,
+                conn=conn,
+            )
+
+        # --- Anular espejos de anticipo ---
+        import mov_doble as _md
+        ref_ch = ids_cheques[0]
+        for a in anticipos:
+            db.execute(
+                "UPDATE scintela.cheque "
+                "SET stat='X', fechaout=%s, "
+                "    observacion = RIGHT("
+                "        COALESCE(observacion || ' | ', '') || %s, 200), "
+                "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                "WHERE id_cheque=%s",
+                (fecha, f"[X] neteado con cheque(s) {codigo_cli}", usuario,
+                 a["id_cheque"]),
+                conn=conn,
+            )
+            _md.registrar(
+                conn=conn,
+                tipo="anticipo_neteado",
+                origen_table="cheque", origen_id=a["id_cheque"],
+                destino_table="cheque", destino_id=ref_ch,
+                importe=-float(a["importe"] or 0) or 1.0,
+                fecha=fecha,
+                concepto=(
+                    f"NETEADO anticipo #{a['id_cheque']} {codigo_cli} "
+                    f"${-float(a['importe'] or 0):,.2f} → X"
+                )[:200],
+                usuario=usuario,
+                metadata={
+                    "id_cheque": a["id_cheque"], "codigo_cli": codigo_cli,
+                    "importe": float(a["importe"] or 0),
+                    "ids_cheques": ids_cheques,
+                },
+            )
+
+    return {
+        "n_cheques": len(cheques),
+        "n_anticipos": len(anticipos),
+        "total": suma_cheques,
+        "cheques": [c["id_cheque"] for c in cheques],
+        "anticipos": [a["id_cheque"] for a in anticipos],
+    }
