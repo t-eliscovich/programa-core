@@ -2534,9 +2534,22 @@ def estado_cuenta_netear(codigo_cli):
             ids_anticipos=ids_anticipos, usuario=usuario,
         )
         session["neteo_ok"] = res
-        flash(
+        _reab = res.get("facturas_reabiertas") or []
+        _msg = (
             f"Neteado: {res['n_cheques']} cheque(s) y {res['n_anticipos']} "
-            f"anticipo(s) por {res['total']:,.2f} anulados entre sí.", "ok")
+            f"anticipo(s) por {res['total']:,.2f} anulados entre sí."
+        )
+        if _reab:
+            _nums = ", ".join(
+                (f"#{r['numf']}" if r.get("numf") else f"id {r['id_factura']}")
+                for r in _reab
+            )
+            _msg += (
+                f" Se reabrió(eron) {len(_reab)} factura(s) que el/los "
+                f"cheque(s) tenían aplicada(s): {_nums} (quedan con saldo "
+                "pendiente; reversible desde el Historial)."
+            )
+        flash(_msg, "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:

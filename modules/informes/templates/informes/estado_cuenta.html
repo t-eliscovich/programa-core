@@ -309,7 +309,7 @@
     <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
       <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800">
         Netear cheques con anticipos
-        <span class="ml-2 font-normal text-slate-500">— anular cheque(s) contra anticipo(s) que sumen igual</span>
+        <span class="ml-2 font-normal text-slate-500">— anular cheque(s) contra anticipo(s) que sumen igual. Si un cheque está aplicado a una factura, se desaplica primero y la factura vuelve a quedar con saldo pendiente.</span>
       </summary>
       <form method="POST"
             action="{{ url_for('informes.estado_cuenta_netear', codigo_cli=data.cliente.codigo_cli) }}"

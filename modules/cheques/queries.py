@@ -4258,12 +4258,19 @@ def netear_cheques_con_anticipos(
     Σimporte(anticipos) dentro de $0,01 (netean a cero — igual que el flujo 95
     CANCELA ANTIC. del dBase, pero disparado a mano desde la cuenta).
 
-    - Cheques: se reusa `cancelar_por_anticipo` (mismo guard: vivos, importe>0,
-      del cliente, SIN aplicaciones a factura) → stat='X' + mov_doble reversible.
+    - Si un cheque está aplicado a factura(s), se DESAPLICA primero (reusa
+      `desaplicar_factura`, reversible) → la factura vuelve a quedar con saldo
+      pendiente, igual que al anular un cheque por error/rebote. TMT 2026-07-09
+      (dueña): "falta que se desaplique el cheque de la factura así completa el
+      flujo".
+    - Cheques: se reusa `cancelar_por_anticipo` (guard: vivos, importe>0,
+      del cliente; ya sin aplicaciones tras desaplicar) → stat='X' + mov_doble
+      reversible.
     - Anticipos (espejos NB=98, importe negativo): stat='X' + mov_doble
       'anticipo_neteado'. Todo en UNA tx: si algo falla, rollback total.
 
-    Devuelve {n_cheques, n_anticipos, total, cheques:[...], anticipos:[...]}.
+    Devuelve {n_cheques, n_anticipos, total, cheques:[...], anticipos:[...],
+    facturas_reabiertas:[{id_cheque, id_factura, numf}]}.
     """
     codigo_cli = (codigo_cli or "").strip().upper()
     ids_cheques = [int(i) for i in (ids_cheques or [])]
@@ -4335,6 +4342,41 @@ def netear_cheques_con_anticipos(
                 "que ambos lados sean iguales."
             )
 
+        # --- Desaplicar los cheques de sus facturas (si estaban aplicados) ---
+        # TMT 2026-07-09 (dueña): "falta que se desaplique el cheque de la
+        # factura así completa el flujo". Un cheque aplicado a factura(s) no
+        # se puede anular directo (cancelar_por_anticipo lo bloquea). Al
+        # netearlo contra un anticipo SÍ queremos reabrir la factura — mismo
+        # criterio que anular un cheque por error de carga / rebote: la
+        # desaplicamos primero (reversible desde el Historial) y después
+        # anulamos el cheque. La factura vuelve a quedar con su saldo pendiente.
+        facturas_reabiertas: list[dict] = []
+        for c in cheques:
+            aps = db.fetch_all(
+                "SELECT DISTINCT cxf.id_fact, "
+                "       COALESCE(f.numf::text, '') AS numf "
+                "  FROM scintela.chequesxfact cxf "
+                "  LEFT JOIN scintela.factura f ON f.id_factura = cxf.id_fact "
+                " WHERE cxf.id_cheque = %s AND cxf.id_fact IS NOT NULL",
+                (c["id_cheque"],),
+                conn=conn,
+            ) or []
+            for ap in aps:
+                desaplicar_factura(
+                    id_cheque=c["id_cheque"],
+                    id_factura=ap["id_fact"],
+                    motivo=f"neteo cheque↔anticipo {codigo_cli}",
+                    usuario=usuario,
+                    conn=conn,
+                )
+                facturas_reabiertas.append(
+                    {
+                        "id_cheque": c["id_cheque"],
+                        "id_factura": int(ap["id_fact"]),
+                        "numf": (ap.get("numf") or "").strip() or None,
+                    }
+                )
+
         # --- Anular cheques (reusa el primitivo reversible) ---
         ref_ant = ids_anticipos[0]
         for c in cheques:
@@ -4387,4 +4429,5 @@ def netear_cheques_con_anticipos(
         "total": suma_cheques,
         "cheques": [c["id_cheque"] for c in cheques],
         "anticipos": [a["id_cheque"] for a in anticipos],
+        "facturas_reabiertas": facturas_reabiertas,
     }
