@@ -42,7 +42,7 @@ def _safe(fn, default):
         return default, str(e)
 
 
-def _build_mov_asinfo(data, inv_inic, inv_act) -> dict | None:
+def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | None:
     """Tabla 'movimientos del mes' con la MISMA lógica del dBase/TINT.BAT pero
     con los datos viniendo de Asinfo (no de scintela.iniciales/historia).
 
@@ -84,11 +84,16 @@ def _build_mov_asinfo(data, inv_inic, inv_act) -> dict | None:
     co = dict(header.get("colorantes", {}))
 
     # ── Saldos de Asinfo: inicial (as-of 1° del mes) y ACTUAL (live) ──────
-    hi0 = _f(inv_inic, "hilo_total")
-    tc0 = _f(inv_inic, "cruda_total")
+    # TMT 2026-07-09 (dueña "solo bodegas 51/52/53, sin en-proceso"): usamos los
+    # saldos de bodega puros (hilo=51, tela_cruda=52, terminada=53), NO los
+    # *_total que suman el WIP (en_proceso). El inicial as-of NO puede
+    # reconstruir el WIP → si el actual lo incluyera, la cadena mostraría un
+    # salto fantasma. Con bodegas puras, inicial y actual quedan consistentes.
+    hi0 = _f(inv_inic, "hilo")
+    tc0 = _f(inv_inic, "tela_cruda")
     pf0 = _f(inv_inic, "terminada")
-    hi1 = _f(inv_act, "hilo_total")
-    tc1 = _f(inv_act, "cruda_total")
+    hi1 = _f(inv_act, "hilo")
+    tc1 = _f(inv_act, "tela_cruda")
     pf1 = _f(inv_act, "terminada")
 
     # ── Cadena de balance de masa (misma lógica que el dBase/TINT.BAT, pero
@@ -110,7 +115,21 @@ def _build_mov_asinfo(data, inv_inic, inv_act) -> dict | None:
     # tejer" + "los datos vienen de Asinfo, no se cargan").
     W = _f(tj, "ingresos_kg")                 # lo tejido este mes (ktej, dBase)
     D = max(tc0 + W - tc1, 0.0)               # lo tinturado (derivado)
-    compras = max(hi1 - hi0 + W, 0.0)         # compras de hilo (derivado)
+    # HILADO ingreso = importaciones RECIBIDAS en Asinfo este mes (por fecha de
+    # recepción), NO el plug derivado. TMT 2026-07-09 (dueña: "cuando llega en
+    # asinfo? fecha recibido"). Es el ingreso de hilado REAL del ERP — en el
+    # dBase eso son las compras tipo H; en PC recién se cargan al convertir a
+    # compra. Fail-soft: si Asinfo no responde, se cae al derivado (hi1-hi0+W)
+    # para no dejar la columna en 0.
+    compras = 0.0
+    if anio and mes:
+        try:
+            from modules.asinfo import service as _asvc
+            compras = float(_asvc.hilado_recibido_mes(int(anio), int(mes)) or 0.0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            compras = 0.0
+    if compras <= 0:
+        compras = max(hi1 - hi0 + W, 0.0)     # fallback: derivado
     ventas = max(pf0 + D - pf1, 0.0)          # ventas de terminado (derivado)
 
     # HILADO — inicial/actual de Asinfo; ingreso=compras, egreso=W (lo tejido).
@@ -1655,7 +1674,7 @@ def flujo_produccion():
     )
     if not isinstance(inv_asinfo_inic, dict):
         inv_asinfo_inic = {}
-    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo)
+    mov_asinfo = _build_mov_asinfo(data, inv_asinfo_inic, inv_asinfo, anio=anio, mes=mes)
 
     return render_template(
         "informes/flujo_produccion.html",

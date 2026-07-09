@@ -1352,3 +1352,30 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
             continue
     _IMPORT_CACHE[cache_key] = (now, out)
     return out
+
+
+def hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> float:
+    """Kg de hilado RECIBIDOS en Asinfo dentro del mes (yy, mm).
+
+    "Recibido" = con documento de recepción (recepcion_proveedor.fecha) cuya
+    fecha cae en el mes pedido. Es el ingreso de hilado REAL que ve el ERP —
+    el equivalente Asinfo a las compras tipo='H' del dBase (que en PC recién
+    se cargan al convertir a compra). Cruza importaciones_asinfo()
+    (fecha_recepcion + recibida) con importaciones_kg() (kg por importación).
+
+    Fail-soft: 0.0 si Metabase falla o no hay datos.
+    """
+    try:
+        imps = importaciones_asinfo(limite=limite)
+        kgmap = importaciones_kg(limite=limite)
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista
+        return 0.0
+    pref = f"{int(yy):04d}-{int(mm):02d}-"
+    total = 0.0
+    for r in imps or []:
+        if not r.get("recibida"):
+            continue
+        fr = r.get("fecha_recepcion") or ""
+        if fr.startswith(pref):
+            total += float(kgmap.get(r.get("im_numero")) or 0.0)
+    return total
