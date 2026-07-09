@@ -212,7 +212,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     #   · STOCK actual = valor de colorantes hoy (última lectura POLI+ALG).
     #   · STOCK inicial = actual + consumo − compras (para que cierre, como el dBase).
     # Todo de formulas_app vía formulas_db (fail-soft).
-    _COLOR_FAMS = ("POLI", "ALG")
+    _COLOR_FAMS = ("POLI", "ALG", "AUX")   # dueña: auxiliares SÍ entran
     color_consumo = color_compras = color_stock = None
     color_ordenes = None
     if anio and mes:
@@ -231,7 +231,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                   FROM orden_lineas ol
                   JOIN ordenes o   ON o.id  = ol.orden_id
                   JOIN productos p ON p.num = ol.producto_num
-                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
                    AND o.fecha_terminado IS NOT NULL
                    AND o.fecha_terminado >= %(d1)s
                    AND o.fecha_terminado <= %(d2)s
@@ -246,7 +246,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
                          * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)), 0) AS us
                   FROM compras c
                   JOIN productos p ON p.num = c.producto_num
-                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')
                    AND c.fecha >= %(d1)s AND c.fecha <= %(d2)s
                 """,
                 {"d1": _d1, "d2": _d2},
