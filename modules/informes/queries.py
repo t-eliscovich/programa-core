@@ -5975,6 +5975,7 @@ def estado_cuenta_clientes_saldos() -> list[dict]:
                COALESCE(NULLIF(TRIM(v.nombre), ''),
                         NULLIF(TRIM(c.vend), ''),
                         '(sin vendedor)')                             AS vendedor_nombre,
+               COALESCE(v.activo, FALSE)                             AS vendedor_activo,
                COALESCE(NULLIF(TRIM(c.provincia), ''), '(sin provincia)') AS provincia,
                COALESCE(gp.codigo_padre, c.codigo_cli)                AS grupo_codigo,
                COALESCE(NULLIF(TRIM(cpad.nombre), ''),

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Imprimir estados de cuenta — {{ titulo }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('informes.estado_cuenta_landing') }}" class="hover:underline">Estados de cuenta</a> /
+  <strong>Imprimir</strong>
+{% endblock %}
+
+{% block content %}
+<style>
+  @media print {
+    .no-print { display: none !important; }
+    .cli-block { page-break-before: always; }
+    .cli-block:first-of-type { page-break-before: avoid; }
+    .cli-block table td, .cli-block table th { padding: 1pt 4pt !important; font-size: 8pt !important; }
+    tr { page-break-inside: avoid !important; }
+    .cli-nombre { font-size: 11pt !important; }
+  }
+  @media screen {
+    .cli-block { border-top: 3px solid #e2e8f0; margin-top: 1.5rem; padding-top: 1rem; }
+    .cli-block:first-of-type { border-top: 0; margin-top: 0; }
+  }
+</style>
+
+<div class="max-w-4xl">
+  {# Barra de acción — no va en papel. #}
+  <div class="no-print mb-5 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-xl font-semibold">Imprimir estados de cuenta</h1>
+      <p class="text-sm text-slate-500">{{ titulo }} · {{ n }} cliente(s), estado completo de cada uno.</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ request.referrer or url_for('informes.estado_cuenta_landing') }}"
+         class="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">← Volver</a>
+      <button onclick="window.print()"
+              class="rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">Imprimir ahora</button>
+    </div>
+  </div>
+
+  {% if not clientes %}
+    <p class="text-slate-500 text-sm">No hay clientes con saldo en esta selección.</p>
+  {% endif %}
+
+  {% for c in clientes %}
+    {% set cli = c.cliente %}
+    {% set t = c.totales %}
+    {% set saldo = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+    <section class="cli-block">
+      <div class="flex items-baseline justify-between gap-4 flex-wrap mb-1">
+        <div class="cli-nombre text-lg font-bold">{{ cli.nombre }}
+          <span class="text-sm font-normal text-slate-500">({{ cli.codigo_cli }})</span>
+        </div>
+        <div class="text-sm">
+          Saldo: <span class="font-bold tabular-nums">{{ saldo | money_es }}</span>
+          {% if t.saldo_vencido %}<span class="text-red-600 dark:text-red-400">· vencido {{ t.saldo_vencido | money_es }}</span>{% endif %}
+          {% if t.cheques_cartera %}<span class="text-slate-500">· cheques cartera {{ t.cheques_cartera | money_es }}</span>{% endif %}
+        </div>
+      </div>
+      {% if cli.provincia or cli.canton %}
+        <div class="text-xs text-slate-500 mb-2">{{ cli.canton }}{% if cli.canton and cli.provincia %}, {% endif %}{{ cli.provincia }}</div>
+      {% endif %}
+
+      {% if c.facturas %}
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
+            <th class="text-left py-1 px-2">Nº</th>
+            <th class="text-left py-1 px-2">Fecha</th>
+            <th class="text-right py-1 px-2">Importe</th>
+            <th class="text-right py-1 px-2">Abonado</th>
+            <th class="text-right py-1 px-2">Saldo</th>
+            <th class="text-center py-1 px-2">St</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in c.facturas %}
+            <tr class="border-b border-slate-100 dark:border-slate-800/60">
+              <td class="py-1 px-2 font-mono text-xs">{{ f.numf_completo or f.numf or '—' }}</td>
+              <td class="py-1 px-2 text-xs whitespace-nowrap">{{ f.fecha | fecha_es if f.fecha else '—' }}</td>
+              <td class="py-1 px-2 text-right tabular-nums">{{ f.importe | money_es }}</td>
+              <td class="py-1 px-2 text-right tabular-nums text-slate-500">{{ f.abono | money_es }}</td>
+              <td class="py-1 px-2 text-right tabular-nums font-medium">{{ f.saldo | money_es }}</td>
+              <td class="py-1 px-2 text-center text-xs text-slate-500">{{ f.stat or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
+            <td class="py-1 px-2" colspan="4">SALDO</td>
+            <td class="py-1 px-2 text-right tabular-nums">{{ saldo | money_es }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      {% else %}
+        <p class="text-xs text-slate-400">Sin facturas vivas.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+
+{% if request.args.get('auto') %}
+<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 400); });</script>
+{% endif %}
+{% endblock %}

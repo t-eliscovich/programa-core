@@ -23,11 +23,16 @@
 <div class="max-w-4xl">
   <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
     {{ page_hero('Estados de cuenta', descripcion='Saldo de clientes con deuda — por cliente, vendedor, provincia o grupo.') }}
-    {% if mode in ('list', 'grupo') %}
-      <button onclick="window.print()"
-              class="no-print rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
-        Imprimir
-      </button>
+    {% if mode == 'list' %}
+      <a href="{{ url_for('informes.estado_cuenta_lote_imprimir', por=por, sel=sel, auto=1) }}"
+         class="no-print rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
+        Imprimir estados completos
+      </a>
+    {% elif mode == 'grupo' %}
+      <a href="{{ url_for('informes.estado_cuenta_lote_imprimir', por='grupo', auto=1) }}"
+         class="no-print rounded-md bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-medium text-white">
+        Imprimir estados completos
+      </a>
     {% endif %}
   </div>
 

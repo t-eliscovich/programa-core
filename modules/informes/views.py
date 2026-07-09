@@ -2070,6 +2070,62 @@ def estado_cuenta_landing():
     )
 
 
+# Provincias del Ecuador (canónicas, UPPER) para normalizar el texto libre de
+# scintela.cliente.provincia (viene truncado a ~10 chars y con typos).
+_PROVINCIAS_EC = (
+    "AZUAY", "BOLIVAR", "CAÑAR", "CARCHI", "CHIMBORAZO", "COTOPAXI", "EL ORO",
+    "ESMERALDAS", "GALAPAGOS", "GUAYAS", "IMBABURA", "LOJA", "LOS RIOS",
+    "MANABI", "MORONA SANTIAGO", "NAPO", "ORELLANA", "PASTAZA", "PICHINCHA",
+    "SANTA ELENA", "SANTO DOMINGO", "SUCUMBIOS", "TUNGURAHUA", "ZAMORA CHINCHIPE",
+)
+# Typos / ciudades que no matchean por prefijo → canónica.
+_PROV_ALIAS = {
+    "TUNGURAGUA": "TUNGURAHUA", "TUNGUAHUA": "TUNGURAHUA", "AMBATO": "TUNGURAHUA",
+    "PICHICHA": "PICHINCHA", "PICHIHCHA": "PICHINCHA",
+    "STO DOMING": "SANTO DOMINGO", "STO DMGO": "SANTO DOMINGO",
+    "STO DOMIGO": "SANTO DOMINGO", "STO DMG": "SANTO DOMINGO",
+    "GUAYAQUIL": "GUAYAS", "STA ELENA": "SANTA ELENA", "TENA": "NAPO",
+}
+
+
+def _normalizar_provincia(raw) -> str:
+    """Texto libre de provincia → provincia canónica del Ecuador.
+
+    Colapsa mayúsc/espacios, truncados (VARCHAR 10 → 'TUNGURAHU', 'STO DOMING'),
+    typos ('TUNGURAGUA', 'PICHICHA') y algunas ciudades ('AMBATO'→Tungurahua).
+    Basura numérica o irreconocible → '(sin provincia)'.
+    """
+    s = (raw or "").strip().upper()
+    if not s or s == "(SIN PROVINCIA)":
+        return "(sin provincia)"
+    if s in _PROV_ALIAS:
+        return _PROV_ALIAS[s]
+    if s in _PROVINCIAS_EC:
+        return s
+    # Truncados / con sufijo: prefijo en cualquier dirección (STO..., GUAYAS 15D).
+    for p in _PROVINCIAS_EC:
+        if p.startswith(s) or s.startswith(p):
+            return p
+    if not any(ch.isalpha() for ch in s):
+        return "(sin provincia)"
+    return s
+
+
+def _ec_group_key(por, r):
+    """(clave, etiqueta) de agrupación de un cliente según la dimensión.
+
+    Compartida por el listado agrupado y por la impresión en lote.
+    """
+    if por == "vendedor":
+        if r.get("vendedor_activo") and (r.get("vend") or "").strip():
+            return (r.get("vend"), r.get("vendedor_nombre") or r.get("vend"))
+        return ("~", "(sin vendedor)")
+    if por == "provincia":
+        prov = _normalizar_provincia(r.get("provincia"))
+        return (prov, prov)
+    return (r.get("grupo_codigo") or "~", r.get("grupo_nombre") or "(sin grupo)")
+
+
 @informes_bp.route("/estado-cuenta/grupos", methods=["GET"])
 @requiere_login
 # TMT 2026-07-09 (dueña): estado de cuenta abierto a todos los usuarios logueados.
@@ -2088,12 +2144,7 @@ def estado_cuenta_grupos():
     filas = filas or []
 
     def _keylabel(r):
-        if por == "vendedor":
-            return (r.get("vend") or "~", r.get("vendedor_nombre") or "(sin vendedor)")
-        if por == "provincia":
-            prov = r.get("provincia") or "(sin provincia)"
-            return (prov, prov)
-        return (r.get("grupo_codigo") or "~", r.get("grupo_nombre") or "(sin grupo)")
+        return _ec_group_key(por, r)
 
     ctx = {"por": por, "error": error, "sel": sel}
 
@@ -2151,6 +2202,62 @@ def estado_cuenta_grupos():
         n_clientes=len(filas),
     )
     return render_template("informes/estado_cuenta_grupos.html", **ctx)
+
+
+@informes_bp.route("/estado-cuenta/imprimir", methods=["GET"])
+@requiere_login
+def estado_cuenta_lote_imprimir():
+    """Imprime el estado de cuenta COMPLETO de cada cliente de la selección,
+    uno tras otro (no el resumen). Dueña 2026-07-09: "cuando pongo imprimir
+    sean todos los estados de cuenta completos, no el total. uno por uno".
+    """
+    por = (request.args.get("por") or "vendedor").strip().lower()
+    if por not in ("vendedor", "grupo", "provincia"):
+        por = "vendedor"
+    sel = (request.args.get("sel") or "").strip()
+    filas, _err = _safe(queries.estado_cuenta_clientes_saldos, [])
+    filas = filas or []
+
+    # Códigos de la selección, en orden de impresión.
+    codes: list[str] = []
+    titulo = ""
+    if por == "grupo":
+        gmap: dict = {}
+        for r in filas:
+            k, label = _ec_group_key("grupo", r)
+            g = gmap.setdefault(k, {"label": label, "clientes": [], "saldo": 0.0})
+            g["clientes"].append(r)
+            g["saldo"] += float(r.get("saldo") or 0)
+        grupos = [g for g in gmap.values() if len(g["clientes"]) >= 2]
+        grupos.sort(key=lambda x: x["saldo"], reverse=True)
+        for g in grupos:
+            g["clientes"].sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
+            codes += [c["codigo_cli"] for c in g["clientes"]]
+        titulo = "Grupos de clientes"
+    else:
+        sub = []
+        for r in filas:
+            k, label = _ec_group_key(por, r)
+            if str(k) == sel:
+                sub.append(r)
+                titulo = ("Vendedor: " if por == "vendedor" else "Provincia: ") + label
+        sub.sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
+        codes = [r["codigo_cli"] for r in sub]
+
+    # Estado de cuenta completo por cliente (facturas + totales).
+    clientes = []
+    for code in codes:
+        d, _e = _safe(lambda c=code: queries.estado_cuenta_cliente(c), {})
+        if d and d.get("cliente"):
+            clientes.append(d)
+
+    return render_template(
+        "informes/estado_cuenta_lote_print.html",
+        clientes=clientes,
+        titulo=titulo,
+        por=por,
+        n=len(clientes),
+    )
 
 
 @informes_bp.route("/estado-cuenta/<codigo_cli>")
