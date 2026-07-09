@@ -104,7 +104,7 @@ def nueva():
 def pedido_nuevo():
     """Pedido nuevo — igual que la cotización pero se ingresan los KILOS
     EXACTOS (sin multiplicar), porque ya sale el pedido."""
-    return _render_form(es_pedido=True, titulo="Nuevo pedido")
+    return _render_form(es_pedido=True, titulo="Factura Proforma")
 
 
 @proformas_bp.route("/proformas/cliente-defaults")
