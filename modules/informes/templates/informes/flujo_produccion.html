@@ -234,7 +234,8 @@
         tinturado y las ventas cierran el crudo y el terminado. Nada sale del
         dBase — el dBase (tabla de abajo) queda solo para comparar. Los $/kg se
         mantienen del programa (Asinfo no tiene dólares confiables).
-        <em>Colorantes</em> no tiene stock en Asinfo: mantiene el valor del programa.
+        <em>Colorantes</em> (COLOR $) sale de <strong>formulas_app</strong>: inicial +
+        compras − consumo (colorante POLI+ALG de las órdenes de tintura del mes) = stock.
       </p>
       {% if mov_asinfo.cmp %}
       <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-500">
@@ -245,22 +246,12 @@
         (= scintela.factura del mes). El restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
         <br><em>Ojo:</em> si las facturas de hoy todavía no se sincronizaron de Asinfo, scintela.factura queda corto y por eso puede no coincidir.
       </p>
+      {% if mov_asinfo.cmp.color_consumo is not none %}
       <p class="mt-1 text-[10px] text-slate-500">
-        {% if mov_asinfo.cmp.color_consumo is not none %}
-        <strong>COLORANTES (formulas_app, POLI+ALG, sin auxiliares):</strong>
-        inicial <b>$ {{ mov_asinfo.cmp.color_inic_der | num_es(0) }}</b>
-        + compras <b>$ {{ mov_asinfo.cmp.color_compras | num_es(0) }}</b>
-        − consumo <b>$ {{ mov_asinfo.cmp.color_consumo | num_es(0) }}</b>
-        (de <b>{{ mov_asinfo.cmp.color_ordenes }}</b> órdenes)
-        = stock hoy <b>$ {{ mov_asinfo.cmp.color_stock | num_es(0) }}</b>.
-        <span class="text-slate-400">(dBase: consumo $ {{ mov_asinfo.cmp.color_programa | num_es(0) }})</span>
-        {% else %}
-        <strong>COLORANTES formulas_app:</strong> sin datos (formulas_db no respondió).
-        {% endif %}
-        {% if mov_asinfo.cmp.color_familias %}
-        <br>Químicos por familia (stock hoy): {% for fam, val in mov_asinfo.cmp.color_familias %}{{ fam }} $ {{ val | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %} — POLI/ALG = colorantes, AUX = auxiliares.
-        {% endif %}
+        COLOR $ = colorante POLI+ALG de formulas_app (auxiliares afuera);
+        el consumo <b>$ {{ mov_asinfo.cmp.color_consumo | num_es(0) }}</b> es de <b>{{ mov_asinfo.cmp.color_ordenes }}</b> órdenes de tintura del mes.
       </p>
+      {% endif %}
       {% endif %}
     {% else %}
       <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>

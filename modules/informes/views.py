@@ -262,6 +262,13 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     color_inic_der = None
     if color_stock is not None and color_consumo is not None and color_compras is not None:
         color_inic_der = color_stock + color_consumo - color_compras
+        # La columna COLOR $ pasa a mostrar los valores de formulas_app (dueña:
+        # "no me los escribas abajo, mostralos"). inicial + compras − consumo =
+        # stock, todo de formulas_app (colorantes POLI+ALG).
+        co["stock_inic_us"] = color_inic_der
+        co["ingresos_us"] = color_compras
+        co["egresos_us"] = color_consumo
+        co["stock_act_us"] = color_stock
 
     cmp = {
         "ventas_derivada": ventas,
