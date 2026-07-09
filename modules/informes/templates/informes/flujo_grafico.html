@@ -445,52 +445,6 @@
         </a>
       </div>
 
-      {# ── Posdatados (deudas a proveedor) contabilizados en el flujo
-         (dueña 2026-07-08: "mostrame los posdatados siendo contabilizados así
-         entiendo de dónde sale cada número"). banc=0 = deuda real; de acá sale
-         cada BAJADA del gráfico, a su vencimiento. Read-only; se editan en
-         /posdat. Fechas DD/MM/AAAA (slicing del ISO, sin type=date gringo). #}
-      {% set _pd_filas = [] %}
-      {% for e in egresos_lista if e.banc == 0 %}{% set _ = _pd_filas.append(e) %}{% endfor %}
-      {% set _total_pd0 = 0 %}
-      {% for e in _pd_filas %}{% set _total_pd0 = _total_pd0 + e.importe %}{% endfor %}
-      <section class="panel gf-panel gf-full" style="margin-bottom:16px;">
-        <div class="gf-head">
-          <h3>Posdatados contabilizados</h3>
-          <span class="gf-sub">
-            Deudas a proveedor (<code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=0</code>)
-            que el flujo va restando a su vencimiento — de acá sale cada bajada del gráfico. Editables desde
-            <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
-            <strong>$ {{ _total_pd0 | num_es(0) }}</strong>
-          </span>
-        </div>
-        <div style="max-height:320px;overflow-y:auto;border:1px solid var(--grid);border-radius:6px;background:var(--panel-hi);">
-          <table style="width:100%;font-size:12px;border-collapse:collapse;font-feature-settings:'tnum' 1;">
-            <thead style="position:sticky;top:0;background:var(--panel-hi);z-index:1;">
-              <tr>
-                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Vence</th>
-                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">PR</th>
-                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Concepto</th>
-                <th style="text-align:right;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Importe USD</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for e in _pd_filas %}
-              {% set _fd = e.fechad or (e.fecha_efectiva[:10] if e.fecha_efectiva else '') %}
-              <tr style="border-bottom:1px dotted var(--grid);">
-                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:11px;white-space:nowrap;">{% if _fd %}{{ _fd[8:10] }}/{{ _fd[5:7] }}/{{ _fd[0:4] }}{% else %}—{% endif %}</td>
-                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:11px;">{{ e.prov or '—' }}</td>
-                <td style="padding:5px 10px;font-size:11px;color:var(--text);">{{ e.concepto or '—' }}</td>
-                <td style="padding:5px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;font-size:11px;">$ {{ e.importe | num_es(2) }}</td>
-              </tr>
-              {% else %}
-              <tr><td colspan="4" style="text-align:center;padding:18px;color:var(--muted);font-style:italic;">Sin posdatados a proveedor en la proyección.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       {# TMT 2026-05-19 v8 (revisión 4) — dueña confirmó: "en posdat hay
          un campo BANC LOS que tienen un numero 9 son los forzados".
          Filtramos egresos_lista a banc=9. Los banc=0 son posdat reales
@@ -735,6 +689,52 @@
            inyectan en el `tbody#gf-tabla-body` arriba para que se mezclen
            con los posdat en la misma tabla. #}
         <div id="gf-list" style="display:none"></div>
+      </section>
+
+      {# ── Posdatados (deudas a proveedor) contabilizados en el flujo
+         (dueña 2026-07-08: "mostrame los posdatados siendo contabilizados así
+         entiendo de dónde sale cada número"). banc=0 = deuda real; de acá sale
+         cada BAJADA del gráfico, a su vencimiento. Read-only; se editan en
+         /posdat. Fechas DD/MM/AAAA (slicing del ISO, sin type=date gringo). #}
+      {% set _pd_filas = [] %}
+      {% for e in egresos_lista if e.banc == 0 %}{% set _ = _pd_filas.append(e) %}{% endfor %}
+      {% set _total_pd0 = 0 %}
+      {% for e in _pd_filas %}{% set _total_pd0 = _total_pd0 + e.importe %}{% endfor %}
+      <section class="panel gf-panel gf-full" style="margin-bottom:16px;">
+        <div class="gf-head">
+          <h3>Posdatados contabilizados</h3>
+          <span class="gf-sub">
+            Deudas a proveedor (<code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;">posdat.banc=0</code>)
+            que el flujo va restando a su vencimiento — de acá sale cada bajada del gráfico. Editables desde
+            <a href="{{ url_for('posdat.lista') }}" style="text-decoration:underline">/posdat</a>.
+            <strong>$ {{ _total_pd0 | num_es(0) }}</strong>
+          </span>
+        </div>
+        <div style="max-height:320px;overflow-y:auto;border:1px solid var(--grid);border-radius:6px;background:var(--panel-hi);">
+          <table style="width:100%;font-size:12px;border-collapse:collapse;font-feature-settings:'tnum' 1;">
+            <thead style="position:sticky;top:0;background:var(--panel-hi);z-index:1;">
+              <tr>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Vence</th>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">PR</th>
+                <th style="text-align:left;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Concepto</th>
+                <th style="text-align:right;padding:6px 10px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--grid);">Importe USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for e in _pd_filas %}
+              {% set _fd = e.fechad or (e.fecha_efectiva[:10] if e.fecha_efectiva else '') %}
+              <tr style="border-bottom:1px dotted var(--grid);">
+                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:11px;white-space:nowrap;">{% if _fd %}{{ _fd[8:10] }}/{{ _fd[5:7] }}/{{ _fd[0:4] }}{% else %}—{% endif %}</td>
+                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:11px;">{{ e.prov or '—' }}</td>
+                <td style="padding:5px 10px;font-size:11px;color:var(--text);">{{ e.concepto or '—' }}</td>
+                <td style="padding:5px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;font-size:11px;">$ {{ e.importe | num_es(2) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" style="text-align:center;padding:18px;color:var(--muted);font-style:italic;">Sin posdatados a proveedor en la proyección.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {# Inyectar filas manuales en la misma tabla. #}
