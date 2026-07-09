@@ -90,6 +90,13 @@
           <input type="checkbox" name="aplica_contado" id="aplica-contado" value="1" checked>
           <span>Descuento por contado (5%)</span>
         </label>
+        {% if es_pedido %}
+        <label class="flex flex-col max-w-xs">
+          <span class="text-xs text-slate-600">Flete (USD)</span>
+          <input name="flete" id="flete" type="text" inputmode="decimal" value="0" placeholder="0"
+                 class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
+        </label>
+        {% endif %}
         <label class="flex flex-col">
           <span class="text-xs text-slate-600">Observaciones</span>
           <textarea name="observaciones" rows="2"
@@ -102,6 +109,9 @@
         <div class="flex justify-between text-slate-500"><span>Descuento por volumen</span><span class="font-mono" id="t-descvol">0,00</span></div>
         <div class="flex justify-between"><span class="text-slate-500">Subtotal c/desc</span><span class="font-mono" id="t-subdesc">0,00</span></div>
         <div class="flex justify-between text-slate-500" id="row-cont"><span>Descuento por contado (5%)</span><span class="font-mono" id="t-desccont">0,00</span></div>
+        {% if es_pedido %}
+        <div class="flex justify-between text-slate-500" id="row-flete"><span>Flete</span><span class="font-mono" id="t-flete">0,00</span></div>
+        {% endif %}
         <div class="flex justify-between text-lg font-semibold border-t border-slate-200 dark:border-slate-800 pt-2 mt-2">
           <span>Total</span><span class="font-mono" id="t-total">0,00</span>
         </div>
@@ -158,12 +168,31 @@
     {v:'cuellos', label:'CUELLOS',  col:'cuellos',  unidad:'cuellos', factor:33, op:'/'},
     {v:'punos',   label:'PUÑOS',    col:'cuellos',  unidad:'puños',   factor:45, op:'/'},
   ];
-  const TIPO_MAP = {}; TIPOS.forEach(t => TIPO_MAP[t.v] = t);
+  // Resolver el tipo escrito (por LABEL, código v, o sin acentos).
+  const TIPO_MAP = {}, TIPO_BY_LABEL = {}, TIPO_BY_NORM = {};
+  function _norm(s){ return (s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  TIPOS.forEach(t => { TIPO_MAP[t.v] = t; TIPO_BY_LABEL[t.label.toUpperCase()] = t; TIPO_BY_NORM[_norm(t.label)] = t; });
+  function tipoObjDe(txt) {
+    const u = (txt || '').trim().toUpperCase();
+    if (!u) return null;
+    const exact = TIPO_BY_LABEL[u] || TIPO_MAP[u.toLowerCase()] || TIPO_BY_NORM[_norm(txt)];
+    if (exact) return exact;
+    // prefijo ÚNICO (ej. "FL" → FLEECE; "PU" → PUÑOS)
+    const nu = _norm(txt);
+    const pref = TIPOS.filter(t => _norm(t.label).indexOf(nu) === 0);
+    return pref.length === 1 ? pref[0] : null;
+  }
 
-  function kgDe(tipoV, cant) {
+  // Datalist de tipos de tela para el autocompletado de la columna Tipo.
+  (function () {
+    const dl = document.createElement('datalist'); dl.id = 'tipos-datalist';
+    TIPOS.forEach(t => { const o = document.createElement('option'); o.value = t.label; dl.appendChild(o); });
+    document.body.appendChild(dl);
+  })();
+
+  function kgDe(t, cant) {
     if (!cant) return 0;
     if (ES_PEDIDO) return cant;   // pedido: el kg se ingresa exacto
-    const t = TIPO_MAP[tipoV];
     if (!t) return 0;
     if (t.op === 'x') return cant * t.factor;
     if (t.op === '/') return t.factor ? cant / t.factor : 0;
@@ -178,10 +207,18 @@
     n = Number(n) || 0;
     return n.toLocaleString('es-EC', {maximumFractionDigits: 2});
   }
+  // Parser TOLERANTE para los campos de la línea (kg/cantidad/precio/desc/flete):
+  // acepta punto O coma como decimal. El ÚLTIMO separador es el decimal; los
+  // demás se descartan. Así "21.80" = 21,80 (no 2180) y "1.234,56" = 1234,56.
   function parseNum(s) {
     if (s == null) return 0;
-    s = String(s).trim().replace(/\./g, '').replace(',', '.');
-    const n = parseFloat(s);
+    s = String(s).trim().replace(/[^0-9.,\-]/g, '');
+    if (!s) return 0;
+    const li = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+    if (li === -1) { const n0 = parseFloat(s); return isNaN(n0) ? 0 : n0; }
+    const ent = s.slice(0, li).replace(/[.,]/g, '');
+    const dec = s.slice(li + 1).replace(/[.,]/g, '');
+    const n = parseFloat((ent || '0') + '.' + (dec || '0'));
     return isNaN(n) ? 0 : n;
   }
 
@@ -190,12 +227,12 @@
     const tr = document.createElement('tr');
     tr.className = 'border-b border-slate-100 dark:border-slate-800';
 
-    // Tipo
+    // Tipo (autocompletado por texto — escribir "FL" → FLEECE)
     const tdTipo = document.createElement('td'); tdTipo.className = 'px-1 py-1';
-    const selTipo = document.createElement('select');
-    selTipo.className = 'border rounded px-2 py-1 text-sm w-full js-tipo';
-    selTipo.innerHTML = '<option value=""></option>' +
-      TIPOS.map(t => `<option value="${t.v}">${t.label}</option>`).join('');
+    const selTipo = document.createElement('input');
+    selTipo.type = 'text'; selTipo.setAttribute('list', 'tipos-datalist');
+    selTipo.autocomplete = 'off'; selTipo.placeholder = 'tela';
+    selTipo.className = 'border rounded px-2 py-1 text-sm w-full uppercase js-tipo';
     tdTipo.appendChild(selTipo);
 
     // Color (autocompletado → determina la clase)
@@ -270,7 +307,7 @@
     function autoPrecio() {
       if (inPrecio.dataset.touched !== '1') {
         const clase = hidClase.value;
-        const t = TIPO_MAP[selTipo.value];
+        const t = tipoObjDe(selTipo.value);
         const p = (clase && t) ? (PRECIOS[clase] || {})[t.col] : null;
         inPrecio.value = (p != null) ? fmt(p) : '';
       }
@@ -278,12 +315,18 @@
     }
 
     function onTipo() {
-      const t = TIPO_MAP[selTipo.value];
+      const t = tipoObjDe(selTipo.value);
       inCant.placeholder = ES_PEDIDO ? 'kg' : (t ? t.unidad : 'cant.');
       autoPrecio();
     }
 
-    selTipo.addEventListener('change', onTipo);
+    selTipo.addEventListener('input', () => { selTipo.value = selTipo.value.toUpperCase(); onTipo(); });
+    selTipo.addEventListener('change', () => {
+      // Expandir prefijo/código al nombre completo (ej. "FL" → FLEECE).
+      const t = tipoObjDe(selTipo.value);
+      if (t && selTipo.value.trim().toUpperCase() !== t.label.toUpperCase()) selTipo.value = t.label;
+      onTipo();
+    });
     inColor.addEventListener('input', () => { inColor.value = inColor.value.toUpperCase(); setClaseDesdeColor(); autoPrecio(); });
     inColor.addEventListener('change', () => {
       // Si tipeó un CÓDIGO (ej. NEG), lo expande al nombre (NEGRO) — como el dBase.
@@ -329,9 +372,9 @@
   function recalc() {
     let subtotal = 0;
     body.querySelectorAll('tr').forEach(tr => {
-      const tipoV = tr.querySelector('.js-tipo').value;
+      const t = tipoObjDe(tr.querySelector('.js-tipo').value);
       const cant = parseNum(tr.querySelector('.js-cant').value);
-      const kg = kgDe(tipoV, cant);
+      const kg = kgDe(t, cant);
       tr.querySelector('.js-kg').textContent = fmt(kg);
       const pu = parseNum(tr.querySelector('.js-precio').value);
       const imp = kg * pu;
@@ -341,22 +384,27 @@
     const pctVol = parseNum(document.getElementById('desc-vol').value);
     const aplicaC = document.getElementById('aplica-contado').checked;
     const pctCont = 5;  // fijo (dueña): contado siempre 5%
+    const fleteEl = document.getElementById('flete');
+    const flete = (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0;
 
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
     const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
-    const total = subDesc - montoCont;
+    const total = subDesc - montoCont + flete;
 
     document.getElementById('t-subtotal').textContent = fmt(subtotal);
     document.getElementById('t-descvol').textContent = '-' + fmt(montoVol);
     document.getElementById('t-subdesc').textContent = fmt(subDesc);
     document.getElementById('t-desccont').textContent = '-' + fmt(montoCont);
+    const tFlete = document.getElementById('t-flete');
+    if (tFlete) tFlete.textContent = fmt(flete);
     document.getElementById('t-total').textContent = fmt(total);
     document.getElementById('row-cont').style.display = aplicaC ? '' : 'none';
   }
 
   document.getElementById('desc-vol').addEventListener('input', recalc);
   document.getElementById('aplica-contado').addEventListener('change', recalc);
+  { const _f = document.getElementById('flete'); if (_f) _f.addEventListener('input', recalc); }
   document.getElementById('add-linea').addEventListener('click', () => {
     agregarFila().querySelector('.js-tipo').focus();
   });
@@ -394,13 +442,12 @@
     const rows = [];
     let subtotal = 0;
     body.querySelectorAll('tr').forEach(tr => {
-      const tipoV = tr.querySelector('.js-tipo').value;
-      const t = TIPO_MAP[tipoV];
-      const tipo = t ? t.label : '';
+      const t = tipoObjDe(tr.querySelector('.js-tipo').value);
+      const tipo = t ? t.label : (tr.querySelector('.js-tipo').value || '').trim();
       const unidad = t ? t.unidad : '';
       const color = tr.querySelector('.js-color').value.trim();
       const cant = parseNum(tr.querySelector('.js-cant').value);
-      const kg = kgDe(tipoV, cant);
+      const kg = kgDe(t, cant);
       const pu = parseNum(tr.querySelector('.js-precio').value);
       if (cant === 0 && pu === 0) return;
       const imp = kg * pu;
@@ -415,10 +462,12 @@
     const pctVol = parseNum(document.getElementById('desc-vol').value);
     const aplicaC = document.getElementById('aplica-contado').checked;
     const pctCont = 5;
+    const fleteEl = document.getElementById('flete');
+    const flete = (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0;
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
     const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
-    const total = subDesc - montoCont;
+    const total = subDesc - montoCont + flete;
     const obs = (document.querySelector('textarea[name="observaciones"]').value || '').trim();
 
     const filasHtml = rows.map(r =>
@@ -440,6 +489,9 @@
     }
     if (aplicaC && montoCont > 0) {
       totHtml += `<div><span>Descuento por pronto pago (5%)</span><span>-${fmt(montoCont)}</span></div>`;
+    }
+    if (flete > 0) {
+      totHtml += `<div><span>Flete</span><span>${fmt(flete)}</span></div>`;
     }
     totHtml += `<div class="total"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
 
