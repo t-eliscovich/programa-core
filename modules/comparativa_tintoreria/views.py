@@ -197,6 +197,24 @@ def tintoreria_detalle():
         slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
         slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
 
+    # scintela.tinto (dBase) sólo guarda el mes en curso; los meses previos
+    # tienen su tinturado en formulas_app. Rellenar los meses que el dBase NO
+    # tiene, sin doblar los que ya vinieron del dBase (mismo merge que
+    # _build_tintoreria_mensual de /informes/flujo-produccion). TMT 2026-07-09.
+    try:
+        raw_f = queries.tinto_formulas_bajos_fuertes_por_mes(desde, hasta) or []
+    except Exception:  # noqa: BLE001
+        raw_f = []
+    _meses_tinto = set(meses.keys())
+    for r in raw_f:
+        k = (int(r["yy"]), int(r["mm"]))
+        if k in _meses_tinto:
+            continue
+        slot = meses.setdefault(k, {"Bajos": {"kg": 0.0, "imp": 0.0},
+                                     "Fuertes": {"kg": 0.0, "imp": 0.0}})
+        slot[r["tipo"]]["kg"] = float(r["kg"] or 0)
+        slot[r["tipo"]]["imp"] = float(r["importe"] or 0)
+
     def _calc(b_kg, b_imp, f_kg, f_imp):
         tot_kg = b_kg + f_kg
         tot_imp = b_imp + f_imp
