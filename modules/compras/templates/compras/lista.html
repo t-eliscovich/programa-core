@@ -126,6 +126,16 @@
       <input type="date" name="hasta" value="{{ hasta or '' }}"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
     </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+      <select name="tipo"
+              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm">
+        <option value="">— Todos —</option>
+        {% for code, lbl in [('H','H · Hilado'),('K','K · Tejido'),('Q','Q · Químicos'),('C','C · Otros'),('A','A · Anticipo'),('I','I · Insumo')] %}
+          <option value="{{ code }}"{% if tipo == code %} selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
     {# TMT 2026-05-21 dueña: botón Mes actual debe combinar con TODOS los
        filtros activos (q, kg, vista, tipo). Antes perdía vista. #}
@@ -133,6 +143,7 @@
     {% if _hoy %}
       <a href="{{ url_for(endpoint_actual,
                           q=q,
+                          tipo=tipo or None,
                           desde=_hoy.replace(day=1).isoformat(),
                           hasta=_hoy.isoformat(),
                           anuladas='1' if incluir_anuladas else None) }}"
@@ -196,7 +207,11 @@
           <td class="px-3 py-2 text-right text-mono{% if anulada %} line-through{% endif %}">{{ c.importe | money_es }}</td>
           <td class="px-3 py-2 text-right text-mono text-slate-500">{{ c.saldo_acumulado | money_es if c.saldo_acumulado is not none else '' }}</td>
           <td class="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{{ c.concepto | cleanstr }}</td>
-          <td class="px-3 py-2 text-xs">{{ c.banco }}</td>
+          <td class="px-3 py-2 text-xs">
+            {% if c.banco %}{{ c.banco }}
+            {% elif (c.cuenta_pagada or '')|upper == 'A' %}<span class="text-slate-500">Anticipo</span>
+            {% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
           <td class="px-3 py-2 text-slate-500" style="white-space: nowrap;">{{ c.fechad | fecha_es if c.fechad else '' }}</td>
           {% if tiene_permiso('compras.anular') or tiene_permiso('compras.editar') %}
             <td class="px-3 py-2 text-right no-print" style="white-space: nowrap;">

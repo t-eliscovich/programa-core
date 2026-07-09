@@ -917,6 +917,7 @@ def total_buscar(
     incluir_anuladas: bool = False,
     vista: str = "todas",
     kg_filter: str | None = None,
+    tipo: str | None = None,
 ) -> dict:
     """SUM(importe) + COUNT(*) sobre TODO el universo del filtro (sin LIMIT).
 
@@ -940,6 +941,7 @@ def total_buscar(
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          AND (%(tipo)s IS NULL OR UPPER(TRIM(COALESCE(c.tipo, ''))) = %(tipo)s)
           AND (
                 %(kg_filter)s IS NULL
              OR (%(kg_filter)s = 'gt0' AND ABS(COALESCE(c.kg, 0)) > 0.01)
@@ -969,6 +971,7 @@ def total_buscar(
             "incluir_anuladas": bool(incluir_anuladas),
             "vista": (vista or "todas").lower(),
             "kg_filter": kg_filter,
+            "tipo": ((tipo or "").upper().strip() or None),
         },
     )
     return {
@@ -986,6 +989,7 @@ def buscar(
     incluir_anuladas: bool = False,
     vista: str = "todas",
     kg_filter: str | None = None,
+    tipo: str | None = None,
 ) -> list[dict]:
     """Histórico de compras filtrable por proveedor/concepto/comprobante + fecha.
 
@@ -1011,7 +1015,7 @@ def buscar(
             """
         SELECT c.id_compra, c.fecha, c.fechad, c.codigo_prov, c.tipo,
                c.comprobante, c.numero, c.kg, c.importe, c.concepto,
-               c.clave, c.no_banco, c.stat, c.observacion,
+               c.clave, c.no_banco, c.stat, c.observacion, c.cuenta_pagada,
                COALESCE(p.nombre, '') AS proveedor,
                COALESCE(b.nombre, '') AS banco,
                (UPPER(COALESCE(c.tipo, '')) = 'K'
@@ -1024,6 +1028,8 @@ def buscar(
                OR UPPER(TRIM(c.codigo_prov)) = UPPER(TRIM(%(q)s)))
           AND (%(desde)s::date IS NULL OR c.fecha >= %(desde)s::date)
           AND (%(hasta)s::date IS NULL OR c.fecha <= %(hasta)s::date)
+          -- Filtro por TIPO (H/K/Q/C/A/I) — dueña 2026-07-09
+          AND (%(tipo)s IS NULL OR UPPER(TRIM(COALESCE(c.tipo, ''))) = %(tipo)s)
           -- TMT 2026-05-18 — filtro KG (>0 producción, =0 compras sin kg)
           AND (
                 %(kg_filter)s IS NULL
@@ -1058,6 +1064,7 @@ def buscar(
                 "incluir_anuladas": bool(incluir_anuladas),
                 "vista": vista,
                 "kg_filter": (kg_filter or None),
+                "tipo": ((tipo or "").upper().strip() or None),
             },
         )
         or []
