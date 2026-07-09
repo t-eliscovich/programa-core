@@ -139,11 +139,28 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         except Exception:  # noqa: BLE001 -- fail-soft
             compras = 0.0
     # W (lo tejido) = hilo CONSUMIDO por tejeduría = balance de hilo de Asinfo
-    # (inic + compras − actual). 100% Asinfo y ADEMÁS hace cerrar el hilado
-    # (antes, con W del dBase, no cerraba: inic+compras−W ≠ actual).
+    # (inic + compras − actual). 100% Asinfo y ADEMÁS hace cerrar el hilado.
     W = max(hi0 + compras - hi1, 0.0)
-    D = max(tc0 + W - tc1, 0.0)               # lo tinturado (deriv., cierra crudo)
-    ventas = max(pf0 + D - pf1, 0.0)          # ventas (deriv., cierra terminado)
+    # INGRESOS REALES a cada bodega desde Asinfo (kardex de fabricación), en vez
+    # de derivarlos del balance. Dueña 2026-07-09: "para tela cruda ingreso y
+    # producto terminado ingreso, sumá desde Asinfo cuánto ingresó a cada
+    # bodega desde el 1° del mes; la diferencia entre lo que egresó del proceso
+    # anterior y lo que ingresó al siguiente es el DESPERDICIO".
+    ci_crudo = ci_term = 0.0
+    if anio and mes:
+        try:
+            from modules.asinfo import service as _asvc2
+            ci_crudo = float(_asvc2.ingreso_fabricacion_mes(52, int(anio), int(mes)) or 0.0)
+            ci_term = float(_asvc2.ingreso_fabricacion_mes(53, int(anio), int(mes)) or 0.0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            ci_crudo = ci_term = 0.0
+    # Egresos derivados para que cada bodega CIERRE con su ingreso real + saldo
+    # Asinfo (el maq cancela: inic + ingreso + en_máq − egreso = act_total).
+    crudo_egreso = max(tc0 + ci_crudo - tc1, 0.0)   # crudo consumido a tintura
+    ventas = max(pf0 + ci_term - pf1, 0.0)          # ventas (cierra terminado)
+    # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente.
+    desp_crudo = W - ci_crudo            # tejeduría: hilo consumido − cruda producida
+    desp_term = crudo_egreso - ci_term   # tintura: crudo consumido − PT producido
 
     # HILADO — inicial/actual de Asinfo; ingreso=compras, egreso=W (lo tejido).
     # $/kg: mismos que el dBase (stock_inic_ukg, ingresos_ukg, egresos_ukg=um_act).
@@ -161,18 +178,20 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     hl["stock_act_kg"] = hi1 + maq_hilado
     hl["stock_act_us"] = (hi1 + maq_hilado) * _f(hl, "stock_act_ukg")
 
-    # CRUDO — ingreso=W (lo tejido), egreso=D (lo tinturado). Sólo kg.
+    # CRUDO — ingreso REAL de Asinfo (bodega 52), egreso derivado. Sólo kg.
+    # El % es el rendimiento: cruda producida / hilo consumido (<100% = merma).
     tj["stock_inic_kg"] = tc0
-    tj["ingresos_kg"] = W
-    tj["egresos_kg"] = D
-    tj["ingresos_pct"] = (D / W * 100.0) if W else 0.0
+    tj["ingresos_kg"] = ci_crudo
+    tj["egresos_kg"] = crudo_egreso
+    tj["ingresos_pct"] = (ci_crudo / W * 100.0) if W else 0.0
     tj["stock_act_kg"] = tc1 + maq_crudo
 
-    # TERMINADO — ingreso=D (lo tinturado), egreso=ventas. Sólo kg.
+    # TERMINADO — ingreso REAL de Asinfo (bodega 53), egreso=ventas. Sólo kg.
+    # El % es el rendimiento: PT producido / crudo consumido (>100% = gana peso).
     te["stock_inic_kg"] = pf0
-    te["ingresos_kg"] = D
+    te["ingresos_kg"] = ci_term
     te["egresos_kg"] = ventas
-    te["ingresos_pct"] = (ventas / D * 100.0) if D else 0.0
+    te["ingresos_pct"] = (ci_term / crudo_egreso * 100.0) if crudo_egreso else 0.0
     te["stock_act_kg"] = pf1
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
@@ -366,6 +385,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
         "cmp": cmp, "quimicos_modelo": quimicos_modelo,
         "maquinas": {"hilado": maq_hilado, "crudo": maq_crudo},
+        "desperdicio": {"crudo": desp_crudo, "term": desp_term},
     }
 
 

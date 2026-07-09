@@ -1428,3 +1428,44 @@ def hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> float:
         if fr.startswith(pref):
             total += float(kgmap.get(r.get("im_numero")) or 0.0)
     return total
+
+
+def ingreso_fabricacion_mes(id_bodega: int, yy: int, mm: int) -> float:
+    """Kg PRODUCIDOS/ingresados a una bodega (52 Tela Cruda / 53 Terminado) en
+    el mes (yy, mm), vía el kardex de fabricación de Asinfo.
+
+    Es "cuánto ingresó a esa bodega" como producto del proceso: los
+    movimientos de inventario ligados a una orden de fabricación con destino a
+    la bodega, sumando `detalle_movimiento_inventario.cantidad` con
+    `movimiento_inventario.fecha` dentro del mes. (Misma fuente que el debug
+    `?v=ing` de debug_fabricacion_wip.)
+
+    Se usa para mostrar el ingreso REAL de tela cruda / terminado (en vez de
+    derivarlo del balance) y así exponer el desperdicio = egreso del proceso
+    anterior − ingreso al siguiente. Fail-soft: 0.0 si Asinfo no responde.
+    """
+    try:
+        yy = int(yy)
+        mm = int(mm)
+    except (TypeError, ValueError):
+        return 0.0
+    d1 = f"{yy:04d}-{mm:02d}-01"
+    ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
+    d2 = f"{ny:04d}-{nm:02d}-01"
+    sql = f"""
+        SELECT SUM(ISNULL(d.cantidad, 0)) AS kg
+          FROM movimiento_inventario m
+          JOIN detalle_movimiento_inventario d
+            ON d.id_movimiento_inventario = m.id_movimiento_inventario
+          JOIN orden_fabricacion o
+            ON o.id_orden_fabricacion = m.id_orden_fabricacion
+         WHERE o.id_bodega = {int(id_bodega)}
+           AND m.id_bodega_destino = {int(id_bodega)}
+           AND m.fecha >= '{d1}'
+           AND m.fecha <  '{d2}'
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=10)
+        return float((rows or [{}])[0].get("kg") or 0.0)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return 0.0

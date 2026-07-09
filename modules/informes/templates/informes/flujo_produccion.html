@@ -173,6 +173,19 @@
             <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
           </tr>
+          {% set _desp = mov_asinfo.get('desperdicio', {}) %}
+          {% if _desp %}
+          <tr>
+            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Desperdicio <span class="pct" style="color:rgb(148 163 184);">egreso ant. − ingreso</span></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num" style="color:rgb(180 83 9);">{% set _dc = _desp.get('crudo') or 0 %}{% if _dc >= 0 %}{% else %}−{% endif %}{{ (_dc if _dc >= 0 else -_dc) | num_es(0) }}</td>
+            <td class="num" style="color:rgb(180 83 9);">{% set _dt = _desp.get('term') or 0 %}{% if _dt >= 0 %}{% else %}−{% endif %}{{ (_dt if _dt >= 0 else -_dt) | num_es(0) }}</td>
+            <td class="num">—</td>
+          </tr>
+          {% endif %}
           {% if aco.get('ajuste_us') is not none %}
           <tr>
             <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Egreso por ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro</span></td>
