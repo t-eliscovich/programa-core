@@ -265,7 +265,7 @@
       {% set mx = ([fp, (ff or 0)] | max) or 1 %}
       {% set libro_w = (fp / mx * 100) if fp > 0 else 0 %}
       {% set fis_w = ((ff or 0) / mx * 100) if (ff and ff > 0) else 0 %}
-      <div class="fp-quim mt-3 max-w-[290px]" data-no-sort-table title="inicial (dBase) + compras (botón Cargar químicos) − egresos (formulas) = final del programa. El ajuste es la varianza contra el físico — se muestra, no se postea.">
+      <div class="fp-quim mt-3" style="max-width:290px" data-no-sort-table title="inicial (dBase) + compras (botón Cargar químicos) − egresos (formulas) = final del programa. El ajuste es la varianza contra el físico — se muestra, no se postea.">
         <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
 
           {# header #}
