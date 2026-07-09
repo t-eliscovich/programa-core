@@ -215,8 +215,11 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         from modules.tintura import service as _tsvc2
 
         def _valor_color(rows):
+            # LECTURA cruda de inventario (la foto física a esa fecha), NO el
+            # stock_al_dia (que suma compras/ajustes y resta consumo-desde-lectura
+            # → inflaba). inicial vs final = movimiento real entre conteos.
             return sum(
-                float(getattr(x, "stock_al_dia_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
+                float(getattr(x, "lectura_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
                 for x in (rows or [])
                 if (getattr(x, "familia", "") or "").strip().upper() in _COLOR_FAMS
             )
