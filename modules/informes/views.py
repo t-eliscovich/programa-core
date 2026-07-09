@@ -113,14 +113,15 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     #   ventas (terminado) = term_ini + D − term_act     [balance terminado]
     # TMT 2026-07-08 (dueña: "el egreso de hilado tiene que ser lo que se fue a
     # tejer" + "los datos vienen de Asinfo, no se cargan").
-    W = _f(tj, "ingresos_kg")                 # lo tejido este mes (ktej, dBase)
-    D = max(tc0 + W - tc1, 0.0)               # lo tinturado (derivado)
-    # HILADO ingreso = importaciones RECIBIDAS en Asinfo este mes (por fecha de
-    # recepción), NO el plug derivado. TMT 2026-07-09 (dueña: "cuando llega en
-    # asinfo? fecha recibido"). Es el ingreso de hilado REAL del ERP — en el
-    # dBase eso son las compras tipo H; en PC recién se cargan al convertir a
-    # compra. Fail-soft: si Asinfo no responde, se cae al derivado (hi1-hi0+W)
-    # para no dejar la columna en 0.
+    # ── TODO de Asinfo — nada del dBase. Asinfo NO tiene foto del "en proceso"
+    # (WIP) al 1° del mes, así que los flujos del medio se DERIVAN de los saldos
+    # de Asinfo (la "cuenta para que dé"), en vez de tomarse del dBase. Dueña
+    # 2026-07-09: "todo de asinfo o de formulas; si en proceso no hay 1 del mes,
+    # hay que hacer una cuenta para que dé". El dBase queda SOLO para comparar
+    # (la tabla de abajo). Antes W ("lo tejido") venía del dBase → por eso
+    # coincidían los 84.067 en las dos tablas; ese era el dato que no cambiaba.
+    #
+    # HILADO ingreso = importaciones RECIBIDAS en Asinfo (por fecha de recepción).
     compras = 0.0
     if anio and mes:
         try:
@@ -128,9 +129,12 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
             compras = float(_asvc.hilado_recibido_mes(int(anio), int(mes)) or 0.0)
         except Exception:  # noqa: BLE001 -- fail-soft
             compras = 0.0
-    if compras <= 0:
-        compras = max(hi1 - hi0 + W, 0.0)     # fallback: derivado
-    ventas = max(pf0 + D - pf1, 0.0)          # ventas de terminado (derivado)
+    # W (lo tejido) = hilo CONSUMIDO por tejeduría = balance de hilo de Asinfo
+    # (inic + compras − actual). 100% Asinfo y ADEMÁS hace cerrar el hilado
+    # (antes, con W del dBase, no cerraba: inic+compras−W ≠ actual).
+    W = max(hi0 + compras - hi1, 0.0)
+    D = max(tc0 + W - tc1, 0.0)               # lo tinturado (deriv., cierra crudo)
+    ventas = max(pf0 + D - pf1, 0.0)          # ventas (deriv., cierra terminado)
 
     # HILADO — inicial/actual de Asinfo; ingreso=compras, egreso=W (lo tejido).
     # $/kg: mismos que el dBase (stock_inic_ukg, ingresos_ukg, egresos_ukg=um_act).
