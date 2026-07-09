@@ -6,12 +6,18 @@
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 — page_hero canónico. #}
 <div class="max-w-5xl">
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
-    {{ page_hero('Estado de cuenta de cliente', descripcion='Buscá por código o nombre, o elegí entre los mayores deudores.') }}
-    <a href="{{ url_for('informes.estado_cuenta_grupos', por='grupo') }}"
-       class="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
-      Imprimir por grupos →
-    </a>
+  <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
+    {{ page_hero('Estados de cuenta', descripcion='Buscá un cliente, o mirá/imprimí por vendedor, provincia o grupo.') }}
+  </div>
+
+  {# ── Tabs (misma barra que estado_cuenta_grupos) ─────────────────────── #}
+  <div class="mb-6 flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 flex-wrap">
+    <a href="{{ url_for('informes.estado_cuenta_landing') }}"
+       class="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-sky-600 text-sky-700 dark:text-sky-400">Por cliente</a>
+    {% for key, label in [('vendedor','Vendedor'), ('provincia','Provincia'), ('grupo','Grupos')] %}
+      <a href="{{ url_for('informes.estado_cuenta_grupos', por=key) }}"
+         class="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">{{ label }}</a>
+    {% endfor %}
   </div>
 
   {% if error %}
