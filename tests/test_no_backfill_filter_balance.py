@@ -60,6 +60,10 @@ def test_balance_queries_use_no_backfill_filter():
         "first_match",
         # SELECT por id_compra puntual:
         "WHERE id_compra =",
+        # SELECT/lock por id_factura puntual (cerrar/revertir factura); NO es
+        # agregación del mes — lo que matchea la heurística es el 'fecha=fecha'
+        # del mov_doble.registrar que viene después, no un filtro de mes:
+        "WHERE id_factura = %s FOR UPDATE",
         # ventas_mes_corriente_kg_fisico(): NO debe filtrar backfill a
         # propósito (kg físicas reales para stock). Contract test espejo:
         # test_ventas_mes_corriente_kg_fisico_NO_filtra_backfill.

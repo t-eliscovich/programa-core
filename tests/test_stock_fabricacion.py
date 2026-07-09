@@ -80,29 +80,34 @@ def _render(app, fake_db, proceso, data, **extra_patches):
 def test_fabricacion_tc_renderiza_estructura_excel(app, fake_db):
     r = _render(app, fake_db, "tc", _DATA_TC)
     assert r.status_code == 200
-    # Bloques del Excel
+    # Bloques que sí muestra la vista Inventario
     assert b"Inventario en proceso" in r.data
     assert b"Despachado (OSM)" in r.data
     assert "Ing. fabricación".encode() in r.data
-    assert "Órdenes de fabricación".encode() in r.data
-    assert b"HILO" in r.data
-    # Cadena de stock total arriba (con los DOS saldos en proceso)
+    assert b"HILO" in r.data  # material del proceso TC
+    # Cadena de stock total (tabla vertical de etapas)
     assert b"Stock total (kg)" in r.data
-    assert b">Hilo<" in r.data and b">En proceso TC<" in r.data
-    assert b">En proceso PT<" in r.data and b">Prod. Terminado<" in r.data
-    # Detalle OFT
-    assert b"OFT-000035309" in r.data
+    assert b">Hilo<" in r.data and b">Prod. Terminado<" in r.data
+    assert b">Hilo total<" in r.data and b">Cruda total<" in r.data
+    # TMT 2026-07-08 (dueña): la vista ya NO muestra las órdenes de
+    # fabricación (OFT) ni el detalle por tejido.
+    assert "Órdenes de fabricación".encode() not in r.data
+    assert b"OFT-000035309" not in r.data
 
 
-def test_fabricacion_pt_agrupa_por_tejido(app, fake_db):
+def test_fabricacion_pt_material_y_sin_detalle_oft(app, fake_db):
     r = _render(app, fake_db, "pt", _DATA_PT)
     assert r.status_code == 200
-    assert b"Fleece" in r.data and b"Jersey" in r.data
-    assert b"Total general" in r.data
-    assert b"TELA CRUDA" in r.data  # material del proceso
+    assert b"TELA CRUDA" in r.data  # material del proceso PT
+    assert b"Inventario en proceso" in r.data
+    # el detalle por tejido y las OFT ya no se muestran (dueña 2026-07-08)
+    assert b"Fleece" not in r.data and b"Jersey" not in r.data
+    assert b"Total general" not in r.data
 
 
-def test_fabricacion_csv_export(app, fake_db):
+def test_fabricacion_export_csv_removido(app, fake_db):
+    # El export CSV de OFT se removió con las órdenes de fabricación; el
+    # parámetro se ignora y devuelve la página HTML normal (dueña 2026-07-08).
     c = _login_stock(app, fake_db)
     from modules.stock import queries as stock_queries
 
@@ -111,7 +116,8 @@ def test_fabricacion_csv_export(app, fake_db):
          patch.object(stock_queries, "resumen_stock", return_value={}):
         r = c.get("/stock/fabricacion-pt?export=csv")
     assert r.status_code == 200
-    assert b"OFT-000033227.1" in r.data
+    assert b"OFT-000033227.1" not in r.data
+    assert b"Inventario en proceso" in r.data
 
 
 def test_fabricacion_fail_soft_sin_asinfo(app, fake_db):
@@ -128,11 +134,13 @@ def test_fabricacion_fail_soft_sin_asinfo(app, fake_db):
 
 
 def test_fabricacion_cadena_en_orden_de_proceso(app, fake_db):
-    """La cadena va Hilo → En proc TC → Tela Cruda → En proc PT → PT → Total."""
+    """La cadena va Hilo → En proceso → Hilo total → Tela Cruda → En proceso
+    → Cruda total → Prod. Terminado → TOTAL (tabla vertical de etapas)."""
     r = _render(app, fake_db, "tc", _DATA_TC)
     body = r.data.decode("utf-8", "ignore")
-    idx = [body.find(s) for s in (">Hilo<", ">En proceso TC<", ">Tela Cruda<",
-                                  ">En proceso PT<", ">Prod. Terminado<", ">Total<")]
+    idx = [body.find(s) for s in (">Hilo<", "En proceso (Hilo", ">Hilo total<",
+                                  "En proceso (Tela", ">Cruda total<",
+                                  ">Prod. Terminado<", ">TOTAL<")]
     assert all(i > -1 for i in idx) and idx == sorted(idx)
 
 
@@ -165,34 +173,6 @@ def test_fabricacion_service_totales_incluyen_negativos(monkeypatch):
     assert abs(out["resumen"]["por_producir"] - 50.0) < 0.01   # 60 + (-10)
     tej = {t["tejido"]: t for t in out["por_tejido"]}
     assert abs(tej["Fleece"]["por_producir"] - (-10.0)) < 0.01
-
-
-def test_fabricacion_of_separa_en_curso_y_sin_iniciar(app, fake_db):
-    """Paridad Excel: Planificada del bloque OF = SOLO iniciadas; las sin
-    movimiento van aparte y el Total general suma todo."""
-    r = _render(app, fake_db, "tc", _DATA_TC)
-    body = r.data.decode("utf-8", "ignore")
-    assert "206.328,15" in body          # en curso (= Excel)
-    assert "317.237,97" in body          # sin iniciar
-    assert "523.566,12" in body          # total general
-    assert "Sin iniciar (143)" in body
-
-
-def test_fabricacion_filtro_estado_detalle(app, fake_db):
-    r = _render_con_estado(app, fake_db, "tc", _DATA_TC, "curso")
-    assert b"OFT-000035309" in r.data and b"OFT-000099999" not in r.data
-    r = _render_con_estado(app, fake_db, "tc", _DATA_TC, "sin")
-    assert b"OFT-000099999" in r.data and b"OFT-000035309" not in r.data
-
-
-def _render_con_estado(app, fake_db, proceso, data, estado):
-    c = _login_stock(app, fake_db)
-    from modules.stock import queries as stock_queries
-
-    with patch.object(service, "fabricacion_proceso", return_value=data), \
-         patch.object(service, "stock_asinfo_lote_totales", return_value=_TOTALES), \
-         patch.object(stock_queries, "resumen_stock", return_value={}):
-        return c.get(f"/stock/fabricacion-{proceso}?estado={estado}")
 
 
 def test_fabricacion_service_split_iniciadas(monkeypatch):

@@ -307,9 +307,10 @@ def test_suma_movs_incluye_pagos_legacy():
 # ─────────────────────────── vista (template) ──────────────────────────────
 
 def test_vista_renderiza_anticipos_para_editor(app, fake_db):
-    """Un usuario con compras.editar ve la Σ de anticipos (= valor stock),
-    la lista de movimientos, el form inline SOLO de anticipos (sin radio
-    anticipo/pago, sin botón Pagar) y el AVISO de la ND automática."""
+    """Un usuario con compras.editar ve el detalle SOLO LECTURA de los
+    anticipos cargados (fecha, ANT, nota/ND, monto y Σ = valor stock).
+    TMT 2026-07-08 (dueña): se quitó el formulario de alta y el aviso de
+    ND automática; el alta de anticipos/compras vive en /dolares y /compras."""
     from unittest.mock import patch
 
     from modules.importaciones import service
@@ -341,17 +342,18 @@ def test_vista_renderiza_anticipos_para_editor(app, fake_db):
         r = c.get("/importaciones")
     assert r.status_code == 200
     html = r.data.decode("utf-8")
-    # TMT 2026-07-07: el link "ver movimientos" se quitó (el detalle se abre
-    # con el botón "+ Anticipo" de la columna Cargar) — validamos que el
-    # detalle exista con sus movimientos y el form.
-    assert 'name="monto_mov"' in html
-    assert html.count("antmov-undo") >= 1 or "ANT" in html
-    assert "1er anticipo" in html
-    assert "17.000,00" in html            # Σ anticipos = valor stock (formato EU)
-    assert "se genera sola" in html       # aviso ND automática
-    assert "movimiento/deshacer" in html  # ✕ por movimiento
-    assert "Registrar anticipo" in html
-    # v2: sin radio anticipo/pago, sin flujo Pagar
+    # Detalle solo-lectura de anticipos cargados
+    assert "Anticipos cargados" in html
+    assert "ANT" in html
+    assert "1er anticipo" in html          # nota del 1er anticipo
+    assert "ND #9002" in html              # 2do anticipo sin nota -> ND #
+    assert "12.000,00" in html and "5.000,00" in html  # monto por movimiento
+    assert "17.000,00" in html             # Σ anticipos aplicados = valor stock
+    # TMT 2026-07-08 (dueña): solo lectura — sin formulario de alta, sin aviso
+    # de ND automática, sin flujo Pagar.
+    assert "se genera sola" not in html
+    assert "Registrar anticipo" not in html
+    assert "movimiento/deshacer" not in html
     assert 'name="tipo_mov"' not in html
     assert "importaciones/pagar" not in html
     assert "btn-pagar" not in html
