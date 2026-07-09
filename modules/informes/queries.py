@@ -885,14 +885,56 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     bajos_pct = (bajos_kg / ktin * 100.0) if ktin else 0.0
     fuertes_pct = (100.0 - bajos_pct) if ktin else 0.0
 
-    # TERMINADO ingresos = kg que SALEN tinturados (KTINT = _ktint),
-    # no los que ENTRAN a tintura (ktin/KT). El % es el DESPERDICIO del
-    # proceso de tintura = (KT - KTINT) / KT, para igualar al dBase
-    # (que muestra ~4%). stock_act se recalcula para que la columna
-    # cuadre. Federico 2026-05-22.
-    header["terminado"]["ingresos_kg"] = _ktint
-    header["terminado"]["ingresos_pct"] = _safe_div(ktin - _ktint, ktin) * 100
-    header["terminado"]["stock_act_kg"] = max(pf0 + _ktint - kvent, 0)
+    # ── Cadena crudo→terminado con los MISMOS flujos que el panel STOCK del
+    # balance (PRG INFORMES.PRG L264/L315), para IGUALAR la foto del dBase.
+    # TMT 2026-07-09 (dueña "el que mostrás está mal, mostrá lo del dBase"):
+    #   · CRUDO egreso  = KT  = kg que ENTRAN a tintura
+    #                         = compras tipo='T' externas + KTINT − servicios(KSTI)
+    #   · TERM  ingreso = KR  = kg NETOS que salen a terminado (con la merma
+    #                           de tintura ~5%; NO es igual a KT).
+    #   · TERM  egreso  = ventas FÍSICAS del mes (kg que salieron del depósito),
+    #                     no el snapshot historia.kvent (que venía del último
+    #                     cierre → daba 335k y hundía el stock de terminado).
+    # Los flujos vivos son del mes en curso; para meses PASADOS se cae al
+    # comportamiento previo (derivado de _ktint / snapshot) para no romper la
+    # foto histórica. Igual criterio que el guard de iniciales del balance.
+    _es_mes_actual = (yy == hoy.year and mm == hoy.month)
+    if _es_mes_actual:
+        try:
+            _tin_res = tinto_mes_corriente_resultado()
+            _ktint_gross = float(_tin_res.get("ktint") or 0)
+            _kr_neto = float(_tin_res.get("kr") or 0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            _ktint_gross, _kr_neto = _ktint, _ktint
+        try:
+            _kt_ext = float(compras_tipo_t_externos_mes().get("kg") or 0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            _kt_ext = 0.0
+        try:
+            _ksti = float(tinto_kg_servicios_mes() or 0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            _ksti = 0.0
+        try:
+            _kvent_fis = float(ventas_mes_corriente_kg_fisico() or 0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            _kvent_fis = kvent
+        _crudo_egreso = max(_kt_ext + _ktint_gross - _ksti, 0.0)
+        _term_ingreso = _kr_neto
+        _term_egreso = _kvent_fis
+    else:
+        # Meses pasados: comportamiento previo (cadena cerrada con _ktint).
+        _crudo_egreso = _ktint
+        _term_ingreso = _ktint
+        _term_egreso = kvent
+
+    # TERMINADO — ingreso = KR (neto a terminado); egreso = ventas físicas.
+    # % = merma de tintura = (crudo egreso − term ingreso) / crudo egreso.
+    header["terminado"]["ingresos_kg"] = _term_ingreso
+    header["terminado"]["ingresos_pct"] = _safe_div(
+        _crudo_egreso - _term_ingreso, _crudo_egreso
+    ) * 100
+    header["terminado"]["egresos_kg"] = _term_egreso
+    header["terminado"]["stock_act_kg"] = max(pf0 + _term_ingreso - _term_egreso, 0)
 
     # CRUDO ingresos = produccion de tejido del mes EN VIVO (total
     # compras tipo K = sum_kg_tej), no el snapshot historia.ktej.
@@ -905,13 +947,11 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # % de CRUDO ingresos = desperdicio de tejeduria (0,5%), igual que el
     # dBase. _kh es el hilado consumido (tejido + 0,5%). Federico 2026-05-22.
     header["tejido"]["ingresos_pct"] = _safe_div(_kh - _kg_tej, _kg_tej) * 100
-    # CRUDO egresos = lo que SE FUE a tintura = _ktint (tinturado real, del
-    # scintela.tinto), que es EXACTAMENTE el TERMINADO ingreso → la cadena
-    # cierra (crudo egreso = terminado ingreso). Antes usaba historia.ktin, que
-    # venía inflado (p.ej. 341k vs 48k reales) y clampeaba el stock de crudo a 0.
-    # TMT 2026-07-08 (dueña "ponele bien lo de dbase, sigue mal").
-    header["tejido"]["egresos_kg"] = _ktint
-    header["tejido"]["stock_act_kg"] = max(tj0 + _kg_tej - _ktint, 0)
+    # CRUDO egresos = KT (lo que ENTRA a tintura). Antes usaba _ktint (los que
+    # SALEN tinturados) → colapsaba crudo egreso = term ingreso sin merma y
+    # quedaba lejos del dBase. TMT 2026-07-09.
+    header["tejido"]["egresos_kg"] = _crudo_egreso
+    header["tejido"]["stock_act_kg"] = max(tj0 + _kg_tej - _crudo_egreso, 0)
     header["hilado"]["egresos_kg"] = _kh
     header["hilado"]["egresos_us"] = _kh * um_act
     _hil_act = max(hi0 + kcom - _kh, 0)
