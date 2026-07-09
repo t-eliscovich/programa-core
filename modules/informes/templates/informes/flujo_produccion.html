@@ -236,6 +236,17 @@
         mantienen del programa (Asinfo no tiene dólares confiables).
         <em>Colorantes</em> no tiene stock en Asinfo: mantiene el valor del programa.
       </p>
+      {% if mov_asinfo.cmp %}
+      <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-500">
+        <strong>Para elegir (dueña):</strong>
+        Ventas del mes — derivada <b>{{ mov_asinfo.cmp.ventas_derivada | num_es(0) }}</b> kg
+        vs real de scintela.factura <b>{{ mov_asinfo.cmp.ventas_real | num_es(0) }}</b> kg.
+        {% if mov_asinfo.cmp.color_formulas is not none %}
+        · Colorantes — programa <b>$ {{ mov_asinfo.cmp.color_programa | num_es(0) }}</b>
+        vs formulas_app (stock químicos) <b>$ {{ mov_asinfo.cmp.color_formulas | num_es(0) }}</b>.
+        {% endif %}
+      </p>
+      {% endif %}
     {% else %}
       <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>
     {% endif %}

@@ -162,7 +162,47 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     te["stock_act_kg"] = pf1
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
-    return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co}
+
+    # ── Comparación "mostrar ambos por ahora así elegimos" (dueña 2026-07-09):
+    #   · VENTAS: la DERIVADA (que cierra el terminado) vs la REAL de
+    #     scintela.factura (kg físicos del mes).
+    #   · COLORANTES: el valor del programa vs el stock de químicos de
+    #     formulas_app (Σ stock_kg × precio_us).
+    ventas_real = 0.0
+    if anio and mes:
+        try:
+            import db as _db
+            _vr = _db.fetch_one(
+                """
+                SELECT COALESCE(SUM(kg), 0) AS kg
+                  FROM scintela.factura
+                 WHERE EXTRACT(YEAR FROM fecha)  = %s
+                   AND EXTRACT(MONTH FROM fecha) = %s
+                   AND (stat IS NULL OR stat <> 'X')
+                """,
+                (int(anio), int(mes)),
+            )
+            ventas_real = float((_vr or {}).get("kg") or 0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            ventas_real = 0.0
+    color_formulas = None
+    try:
+        from modules.tintura import service as _tsvc
+        _q = _tsvc.stock_quimicos() or []
+        color_formulas = sum(
+            float(getattr(x, "stock_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
+            for x in _q
+        )
+    except Exception:  # noqa: BLE001 -- fail-soft
+        color_formulas = None
+
+    cmp = {
+        "ventas_derivada": ventas,
+        "ventas_real": ventas_real,
+        "color_programa": _f(co, "stock_act_us"),
+        "color_formulas": color_formulas,
+    }
+    return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co, "cmp": cmp}
 
 
 def _asof_dia_overrides(comp: dict, as_of) -> None:
