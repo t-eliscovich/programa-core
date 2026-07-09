@@ -336,6 +336,17 @@
   }
   .flujo-wrap .gf-panel.gf-full .gf-head .gf-sub strong { font-weight: 400 !important; }
   .flujo-wrap .gf-panel.gf-full .gf-edit-concepto { font-family: inherit; }
+  .flujo-wrap .flujo-readout {
+    margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+    background: var(--panel-hi); border: 1px solid var(--grid);
+    font-size: 13px; min-height: 20px; display: flex; align-items: center;
+    gap: 8px; font-variant-numeric: tabular-nums;
+  }
+  .flujo-wrap .flujo-readout .ro-hint { color: var(--muted); font-size: 12px; }
+  .flujo-wrap .flujo-readout .ro-fecha { color: var(--text); font-weight: 600; text-transform: capitalize; }
+  .flujo-wrap .flujo-readout .ro-sep { color: var(--muted); }
+  .flujo-wrap .flujo-readout .ro-saldo.pos { color: var(--good); }
+  .flujo-wrap .flujo-readout .ro-saldo.neg { color: var(--bad); }
 </style>
 {% endblock %}
 
@@ -417,6 +428,12 @@
         {# Chart full-width arriba — lo más importante visualmente. #}
         <div class="chart-wrap">
           <canvas id="chart"></canvas>
+        </div>
+
+        {# Lector del tooltip ABAJO del gráfico — para que el cartelito NO tape
+           las barras (dueña 2026-07-09). Es un tooltip "externo" de Chart.js. #}
+        <div class="flujo-readout" id="flujo-readout">
+          <span class="ro-hint">Pasá el cursor sobre una barra para ver la fecha y el saldo.</span>
         </div>
 
         {# TMT 2026-05-19 v2 — leyenda HTML removida (pedido dueña).
@@ -1008,6 +1025,27 @@ function buildChart(q) {
       plugins: {
         legend: { display: false },
         tooltip: {
+          // TMT 2026-07-09 (dueña): tooltip EXTERNO — se muestra en el lector
+          // de abajo (#flujo-readout) para no tapar las barras.
+          enabled: false,
+          external: (ctx) => {
+            const el = document.getElementById('flujo-readout');
+            if (!el) return;
+            const tt = ctx.tooltip;
+            if (!tt || tt.opacity === 0 || !tt.dataPoints || !tt.dataPoints.length) {
+              el.innerHTML = '<span class="ro-hint">Pas\u00e1 el cursor sobre una barra para ver la fecha y el saldo.</span>';
+              return;
+            }
+            const row = rows[tt.dataPoints[0].dataIndex];
+            if (!row) return;
+            let f;
+            try { f = row.fecha.toLocaleDateString('es-EC', {weekday:'short', day:'2-digit', month:'short', year:'numeric'}); }
+            catch (e) { f = row.fecha.toISOString().slice(0, 10); }
+            const cls = row.saldo < 0 ? 'neg' : 'pos';
+            el.innerHTML = '<span class="ro-fecha">' + f + '</span>'
+                         + '<span class="ro-sep">\u00b7</span>'
+                         + '<span class="ro-saldo ' + cls + '">Saldo: $ ' + fmt(row.saldo) + '</span>';
+          },
           backgroundColor: panelCol,
           titleColor: textCol,
           bodyColor: textCol,
