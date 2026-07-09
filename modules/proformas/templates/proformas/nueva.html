@@ -664,6 +664,12 @@
   }
   codigoInput.addEventListener('input', ddRender);
   codigoInput.addEventListener('focus', ddRender);
+  // Traer el descuento del cliente también al TIPEAR el código directo (sin
+  // elegir del dropdown). TMT 2026-07-09 (dueña).
+  codigoInput.addEventListener('change', () => {
+    const v = (codigoInput.value || '').trim();
+    if (v && window.__profPrefillCliente) window.__profPrefillCliente(v);
+  });
   codigoInput.addEventListener('keydown', (e) => {
     if (clientesDD.classList.contains('hidden')) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); ddIdx = Math.min(ddIdx + 1, ddItems.length - 1); ddResaltar(); }
