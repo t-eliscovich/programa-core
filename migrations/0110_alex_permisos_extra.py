@@ -37,7 +37,7 @@ def run(conn) -> None:
 
     alex_perms = None
     for nombre, perms in ROLES:
-        if nombre == "Alex":
+        if nombre in ("Alex", "INT"):  # 'Alex' fue renombrado a 'INT' (dueña 2026-07-08); es el mismo rol/permisos
             alex_perms = perms
             break
     if alex_perms is None:

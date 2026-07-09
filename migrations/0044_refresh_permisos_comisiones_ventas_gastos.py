@@ -38,7 +38,7 @@ def run(conn) -> None:
     # 1) Refrescar permisos del rol 'Alex' desde la fuente canónica.
     operario_perms = None
     for nombre, perms in ROLES:
-        if nombre == "Alex":
+        if nombre in ("Alex", "INT"):  # 'Alex' fue renombrado a 'INT' (dueña 2026-07-08); es el mismo rol/permisos
             operario_perms = perms
             break
     if operario_perms is None:
