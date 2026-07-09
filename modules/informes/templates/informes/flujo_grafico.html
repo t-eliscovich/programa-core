@@ -325,6 +325,17 @@
   .flujo-wrap .gf-panel.gf-full .gf-form-inline button {
     padding: 5px 8px; font-size: 12px;
   }
+  /* TMT 2026-07-09 (dueña): las dos cajas (Gastos forzados + Posdatados)
+     con la MISMA fuente y SIN negritas en ningún lado (encabezados, columna
+     Importe y total incluidos). Concepto usa la fuente de la página como
+     Posdatados (no la default del input). */
+  .flujo-wrap .gf-panel.gf-full table th,
+  .flujo-wrap .gf-panel.gf-full table td,
+  .flujo-wrap .gf-panel.gf-full table td input {
+    font-weight: 400 !important;
+  }
+  .flujo-wrap .gf-panel.gf-full .gf-head .gf-sub strong { font-weight: 400 !important; }
+  .flujo-wrap .gf-panel.gf-full .gf-edit-concepto { font-family: inherit; }
 </style>
 {% endblock %}
 
