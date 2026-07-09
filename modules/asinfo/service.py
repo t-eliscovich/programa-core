@@ -1452,17 +1452,16 @@ def ingreso_fabricacion_mes(id_bodega: int, yy: int, mm: int) -> float:
     d1 = f"{yy:04d}-{mm:02d}-01"
     ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
     d2 = f"{ny:04d}-{nm:02d}-01"
+    # cantidad_fabricada de las órdenes de fabricación de la bodega cuya fecha
+    # cae en el mes = kg producidos (ingresados) a esa bodega. (El kardex
+    # movimiento_inventario está vacío en Asinfo; esta es la fuente que tiene
+    # datos — ver debug_fabricacion_wip ?desde=YYYY-MM-DD.)
     sql = f"""
-        SELECT SUM(ISNULL(d.cantidad, 0)) AS kg
-          FROM movimiento_inventario m
-          JOIN detalle_movimiento_inventario d
-            ON d.id_movimiento_inventario = m.id_movimiento_inventario
-          JOIN orden_fabricacion o
-            ON o.id_orden_fabricacion = m.id_orden_fabricacion
-         WHERE o.id_bodega = {int(id_bodega)}
-           AND m.id_bodega_destino = {int(id_bodega)}
-           AND m.fecha >= '{d1}'
-           AND m.fecha <  '{d2}'
+        SELECT SUM(ISNULL(cantidad_fabricada, 0)) AS kg
+          FROM orden_fabricacion
+         WHERE id_bodega = {int(id_bodega)}
+           AND fecha >= '{d1}'
+           AND fecha <  '{d2}'
     """
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=10)
