@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Nueva cotización{% endblock %}
-{% block breadcrumb %}<strong>Nueva cotización</strong>{% endblock %}
+{% block title %}{{ titulo | default('Nueva cotización') }}{% endblock %}
+{% block breadcrumb %}<strong>{{ titulo | default('Nueva cotización') }}</strong>{% endblock %}
 
 {% block content %}
 {# TMT 2026-07-09 (dueña): recrear Proformas de Ingresos como el dBase
@@ -14,7 +14,7 @@
    - Descuento por volumen + contado 5% fijo, en cascada. #}
 <div class="page-shell page-shell--xl">
   <header class="page-header">
-    <h1 class="page-title">Nueva cotización</h1>
+    <h1 class="page-title">{{ titulo | default('Nueva cotización') }}</h1>
   </header>
 
   {% if errores %}
@@ -62,8 +62,8 @@
             <th class="px-2 py-2 text-left font-medium">Tipo</th>
             <th class="px-2 py-2 text-left font-medium">Color</th>
             <th class="px-2 py-2 text-left font-medium">Clase</th>
-            <th class="px-2 py-2 text-right font-medium">Cantidad</th>
-            <th class="px-2 py-2 text-right font-medium">Kg</th>
+            <th class="px-2 py-2 text-right font-medium">{{ 'Kg' if es_pedido else 'Cantidad' }}</th>
+            {% if not es_pedido %}<th class="px-2 py-2 text-right font-medium">Kg</th>{% endif %}
             <th class="px-2 py-2 text-right font-medium">Precio</th>
             <th class="px-2 py-2 text-right font-medium">Importe</th>
             <th class="px-2 py-2 no-print"></th>
@@ -74,7 +74,7 @@
     </div>
     <div class="mt-2 no-print">
       <button type="button" id="add-linea" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">+ Agregar línea</button>
-      <span class="text-xs text-slate-400 ml-2">ENTER pasa al siguiente campo; en Precio agrega otra línea. La cantidad se pone en piezas (cuellos/puños por unidad, rib en kg).</span>
+      <span class="text-xs text-slate-400 ml-2">ENTER pasa al siguiente campo; en Precio agrega otra línea. {% if es_pedido %}Ingresá los kilos exactos (sin multiplicar).{% else %}La cantidad se pone en piezas (cuellos/puños por unidad, rib en kg).{% endif %}</span>
     </div>
 
     {# ── Descuentos + totales (cascada FACTURO) ────────────────────── #}
@@ -110,7 +110,7 @@
 
     <div class="flex items-center justify-between mt-6 pt-4 border-t no-print">
       <button type="button" id="btn-limpiar" class="text-slate-500 hover:text-slate-700">Limpiar</button>
-      <button type="button" id="btn-imprimir" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">Imprimir cotización</button>
+      <button type="button" id="btn-imprimir" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">Imprimir {{ 'pedido' if es_pedido else 'cotización' }}</button>
     </div>
   </form>
 </div>
@@ -123,6 +123,8 @@
   const PRECIOS = MATRIZ.precios || {}; // {clase: {col: price}}
   const COLORES = JSON.parse(document.getElementById('colores-data').textContent) || [];
   const body = document.getElementById('lineas-body');
+  // PEDIDO: se ingresan los KILOS EXACTOS (sin multiplicar). COTIZACIÓN: cantidad→kg.
+  const ES_PEDIDO = {{ es_pedido | tojson }};
 
   // Mapa por NOMBRE y por CÓDIGO (UPPER) → {cod, color, clase, clase_desc}
   const COLORES_MAP = {};
@@ -159,8 +161,10 @@
   const TIPO_MAP = {}; TIPOS.forEach(t => TIPO_MAP[t.v] = t);
 
   function kgDe(tipoV, cant) {
+    if (!cant) return 0;
+    if (ES_PEDIDO) return cant;   // pedido: el kg se ingresa exacto
     const t = TIPO_MAP[tipoV];
-    if (!t || !cant) return 0;
+    if (!t) return 0;
     if (t.op === 'x') return cant * t.factor;
     if (t.op === '/') return t.factor ? cant / t.factor : 0;
     return cant; // kg directo
@@ -216,13 +220,14 @@
     const tdCant = document.createElement('td'); tdCant.className = 'px-1 py-1';
     const inCant = document.createElement('input');
     inCant.type = 'text'; inCant.inputMode = 'decimal';
-    inCant.placeholder = 'cant.';
+    inCant.placeholder = ES_PEDIDO ? 'kg' : 'cant.';
     inCant.className = 'border rounded px-2 py-1 text-sm w-24 text-right font-mono js-cant';
     tdCant.appendChild(inCant);
 
-    // Kg (derivado, solo lectura)
+    // Kg (derivado, solo lectura) — oculto en pedido (el kg ya se ingresa exacto)
     const tdKg = document.createElement('td'); tdKg.className = 'px-2 py-1 text-right font-mono js-kg text-slate-600 dark:text-slate-300';
     tdKg.textContent = '0,00';
+    if (ES_PEDIDO) tdKg.style.display = 'none';
 
     // Precio (USD/kg, auto de la matriz, editable)
     const tdPrecio = document.createElement('td'); tdPrecio.className = 'px-1 py-1';
@@ -274,7 +279,7 @@
 
     function onTipo() {
       const t = TIPO_MAP[selTipo.value];
-      inCant.placeholder = t ? t.unidad : 'cant.';
+      inCant.placeholder = ES_PEDIDO ? 'kg' : (t ? t.unidad : 'cant.');
       autoPrecio();
     }
 
@@ -418,9 +423,15 @@
 
     const filasHtml = rows.map(r =>
       `<tr><td>${esc(r.tipo)}</td><td>${esc(r.color)}</td>` +
-      `<td class="r">${r.cant ? fmtCant(r.cant) + ' ' + esc(r.unidad) : ''}</td>` +
+      (ES_PEDIDO ? '' : `<td class="r">${r.cant ? fmtCant(r.cant) + ' ' + esc(r.unidad) : ''}</td>`) +
       `<td class="r">${fmt(r.kg)}</td><td class="r">${fmt(r.pu)}</td>` +
       `<td class="r">${fmt(r.imp)}</td></tr>`).join('');
+
+    const DOCNOM = ES_PEDIDO ? 'PEDIDO' : 'COTIZACIÓN';
+    const thCant = ES_PEDIDO ? '' : '<th class="r">Cantidad</th>';
+    const pie = ES_PEDIDO
+      ? 'Pedido de producción — cantidades en kg.'
+      : 'Cotización referencial — precios sujetos a cambio. No constituye factura.';
 
     let totHtml = `<div><span>Subtotal</span><span>${fmt(subtotal)}</span></div>`;
     if (pctVol > 0) {
@@ -433,7 +444,7 @@
     totHtml += `<div class="total"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
 
     const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8">
-<title>Cotización</title><style>
+<title>${DOCNOM}</title><style>
   @page { size: A4; margin: 10mm; }
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12px}
@@ -453,14 +464,14 @@
 </style></head><body><div id="sheet">
   <div class="head">
     <div class="brand">INTELA<small>INDUSTRIA TEXTIL LATINOAMERICANA C. LTDA.</small></div>
-    <div style="text-align:right"><h1>COTIZACIÓN</h1><div class="muted">${esc(fecha)}</div></div>
+    <div style="text-align:right"><h1>${DOCNOM}</h1><div class="muted">${esc(fecha)}</div></div>
   </div>
   <div class="cli"><strong>Cliente:</strong> ${esc(codigo)}${nombre ? ' — ' + esc(nombre) : ''}</div>
-  <table><thead><tr><th>Tipo</th><th>Color</th><th class="r">Cantidad</th><th class="r">Kg</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>
+  <table><thead><tr><th>Tipo</th><th>Color</th>${thCant}<th class="r">Kg</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>
   <tbody>${filasHtml}</tbody></table>
   <div class="tot">${totHtml}</div>
   ${obs ? `<div class="obs"><strong>Observaciones:</strong> ${esc(obs)}</div>` : ''}
-  <div class="pie">Cotización referencial — precios sujetos a cambio. No constituye factura.</div>
+  <div class="pie">${pie}</div>
 </div></body></html>`;
 
     const win = window.open('', 'cotizacion', 'width=900,height=1100');

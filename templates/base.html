@@ -765,6 +765,9 @@
            Solo cotizar e IMPRIMIR — NO se guarda (dueña: "no las guardes, solo
            botón para imprimir. solo nueva cotización"). Sin lista de Proformas. #}
         {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.nueva', 'Nueva cotización', 'file') }}{% endif %}
+        {# TMT 2026-07-09 (dueña): Pedido = igual que cotización pero se ingresan
+           los kilos EXACTOS (sin multiplicar), porque ya sale el pedido. #}
+        {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Nuevo pedido', 'file') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="modificar" open>

@@ -53,20 +53,15 @@ def lista():
     )
 
 
-@proformas_bp.route("/proformas/nueva", methods=["GET"])
-@requiere_login
-@requiere_permiso("proformas.crear")
-def nueva():
-    """Cotización nueva — flujo campo-a-campo del dBase (FACTURAR.PRG), pero
-    solo para COTIZAR e IMPRIMIR. NO se guarda (dueña 2026-07-09: "no las
-    guardes, solo botón para imprimir"). Por eso es GET-only y no hay POST:
-    el cálculo y la impresión son 100% client-side (nueva.html).
+def _render_form(es_pedido: bool, titulo: str):
+    """Render compartido de la pantalla campo-a-campo (nueva.html), usada por
+    Cotización y por Pedido. Solo para COTIZAR/PEDIR e IMPRIMIR — NO se guarda
+    (GET-only, cálculo e impresión 100% client-side).
 
-    Cada línea: Tipo (tela) + Clase de color → precio de lista sugerido
-    (editable) → Kg → Importe = Kg×Precio. Al final descuento por volumen y
-    por contado en cascada, igual que PROCEDURE FACTURO.
+    Diferencia: en PEDIDO se ingresan los KILOS EXACTOS (sin multiplicar
+    piezas), porque ya sale el pedido; en COTIZACIÓN la cantidad se convierte a
+    kg por tipo (piezas×22, cuellos÷33, puños÷45, rib directo).
     """
-    # Datalist de clientes (mismo dropdown que Nueva factura/cobranza).
     try:
         from modules.autocomplete.queries import clientes_para_datalist
         clientes_datalist = clientes_para_datalist()
@@ -91,7 +86,25 @@ def nueva():
         "proformas/nueva.html",
         form=form, errores=[], clientes_datalist=clientes_datalist,
         matriz=matriz, colores=colores,
+        es_pedido=es_pedido, titulo=titulo,
     )
+
+
+@proformas_bp.route("/proformas/nueva", methods=["GET"])
+@requiere_login
+@requiere_permiso("proformas.crear")
+def nueva():
+    """Cotización nueva (kilos por conversión de cantidad)."""
+    return _render_form(es_pedido=False, titulo="Nueva cotización")
+
+
+@proformas_bp.route("/pedidos/nuevo", methods=["GET"])
+@requiere_login
+@requiere_permiso("proformas.crear")
+def pedido_nuevo():
+    """Pedido nuevo — igual que la cotización pero se ingresan los KILOS
+    EXACTOS (sin multiplicar), porque ya sale el pedido."""
+    return _render_form(es_pedido=True, titulo="Nuevo pedido")
 
 
 @proformas_bp.route("/proformas/cliente-defaults")
