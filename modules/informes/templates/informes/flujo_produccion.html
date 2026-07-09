@@ -212,6 +212,18 @@
             <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
           </tr>
+          {% if aco.get('ajuste_us') is not none %}
+          <tr>
+            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Egreso por ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro</span></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num" style="color:rgb(180 83 9);">{% set _aj = aco.get('ajuste_us') %}{% if _aj >= 0 %}+{% else %}−{% endif %}{{ (_aj if _aj >= 0 else -_aj) | num_es(0) }}</td>
+          </tr>
+          {% endif %}
           <tr class="total">
             <td class="lbl">Stock act.</td>
             <td class="num">{{ ahl.get('stock_act_kg') | num_es(0) if ahl.get('stock_act_kg') else '—' }}</td>
@@ -234,8 +246,9 @@
         tinturado y las ventas cierran el crudo y el terminado. Nada sale del
         dBase — el dBase (tabla de abajo) queda solo para comparar. Los $/kg se
         mantienen del programa (Asinfo no tiene dólares confiables).
-        <em>Colorantes</em> (COLOR $) sale de <strong>formulas_app</strong>: inicial +
-        compras − consumo (colorante POLI+ALG de las órdenes de tintura del mes) = stock.
+        <em>Colorantes</em> (COLOR $) es el <strong>libro del programa</strong>: inicial (dBase)
+        + compras (programa, tipo Q) − consumo (formulas) − ajuste (físico − libro) = stock
+        físico de formulas. El detalle está en el panel de abajo.
       </p>
       {% if mov_asinfo.cmp %}
       <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-500">
@@ -246,15 +259,6 @@
         (= scintela.factura del mes). El restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
         <br><em>Ojo:</em> si las facturas de hoy todavía no se sincronizaron de Asinfo, scintela.factura queda corto y por eso puede no coincidir.
       </p>
-      {% if mov_asinfo.cmp.color_stock is not none %}
-      <p class="mt-1 text-[10px] text-slate-500">
-        <strong>COLOR $ (100% formulas_app, colorante + auxiliares):</strong>
-        consumo <b>$ {{ mov_asinfo.cmp.color_consumo | num_es(0) }}</b> (de {{ mov_asinfo.cmp.color_ordenes }} órdenes del mes)
-        · compras <b>$ {{ mov_asinfo.cmp.color_compras | num_es(0) }}</b>
-        · stock hoy <b>$ {{ mov_asinfo.cmp.color_stock | num_es(0) }}</b>
-        · inicial (deriva) <b>$ {{ mov_asinfo.cmp.color_inic_der | num_es(0) }}</b>.
-      </p>
-      {% endif %}
       {% endif %}
 
       {# ─── STOCK DE QUÍMICOS — modelo programa vs formulas (dueña 2026-07-09) ─── #}
@@ -515,36 +519,6 @@
               <td class="num">{{ f.gp_imp | num_es(0) }}</td>
             </tr>
           {% endfor %}
-          {% set p = tintoreria_mensual.promedio %}
-          <tr>
-            <td class="lbl" rowspan="4" style="color: rgb(30 64 175);">PROMEDIO {{ tintoreria_mensual.anio }}</td>
-            <td class="lbl" style="color: rgb(30 64 175);">Bajos</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ '%.1f' % p.b_pct }}</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ p.b_kg | num_es(0) }}</td>
-            <td class="num" style="color: rgb(30 64 175);">{% if p.b_ukg is not none %}{{ '%.3f' % p.b_ukg }}{% else %}—{% endif %}</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ p.b_imp | num_es(0) }}</td>
-          </tr>
-          <tr>
-            <td class="lbl" style="color: rgb(30 64 175);">Fuertes</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ '%.1f' % p.f_pct }}</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ p.f_kg | num_es(0) }}</td>
-            <td class="num" style="color: rgb(30 64 175);">{% if p.f_ukg is not none %}{{ '%.3f' % p.f_ukg }}{% else %}—{% endif %}</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ p.f_imp | num_es(0) }}</td>
-          </tr>
-          <tr class="total">
-            <td class="lbl">Total</td>
-            <td class="num">100.0</td>
-            <td class="num">{{ p.t_kg | num_es(0) }}</td>
-            <td class="num">{% if p.t_ukg is not none %}{{ '%.3f' % p.t_ukg }}{% else %}—{% endif %}</td>
-            <td class="num">{{ p.t_imp | num_es(0) }}</td>
-          </tr>
-          <tr>
-            <td class="lbl" style="color: rgb(30 64 175);">Gs. Producción</td>
-            <td class="num" style="color: rgb(30 64 175);">—</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ p.gp_kg | num_es(0) }}</td>
-            <td class="num" style="color: rgb(30 64 175);">{% if p.gp_ukg is not none %}{{ '%.3f' % p.gp_ukg }}{% else %}—{% endif %}</td>
-            <td class="num" style="color: rgb(30 64 175);">{{ p.gp_imp | num_es(0) }}</td>
-          </tr>
         </tbody>
       </table>
       <p class="mt-2 text-[10px] text-slate-500">
@@ -555,7 +529,7 @@
         <code>xgast</code> + amortización DCC (cuota mensual de activos
         tipo M y 50% de tipo I) — mismo número que
         <strong>TINTORERÍA TOTAL CON AMORT</strong> de /informes/gastos.
-        % sobre kg del mes. $/kg ponderado. PROMEDIO {{ tintoreria_mensual.anio }} = Σ meses del año / cantidad de meses del año con data.
+        % sobre kg del mes. $/kg ponderado.
       </p>
     </div>
   {% endif %}
