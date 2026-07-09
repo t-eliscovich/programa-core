@@ -199,6 +199,16 @@
     return cant; // kg directo
   }
 
+  // Piezas/Cant → Kg según el tipo (TMT 2026-07-09 dueña). Cuellos ÷33 ·
+  // puños ÷45 · demás telas ×22 · RIB = kg directo (devuelve null: el kg se
+  // ingresa a mano en la columna Kg).
+  function kgDesdePiezas(t, piezas) {
+    if (!piezas || !t) return null;
+    if (t.op === 'x') return piezas * t.factor;                   // piezas × 22
+    if (t.op === '/') return t.factor ? piezas / t.factor : null; // ÷33 / ÷45
+    return null; // rib (op 'kg') → kg directo
+  }
+
   // ── Formato EU/Ecuador (punto miles, coma decimal) ───────────────
   function fmt(n) {
     return (Number(n) || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -266,6 +276,7 @@
     inCant.type = 'text'; inCant.inputMode = 'decimal';
     inCant.placeholder = ES_PEDIDO ? 'kg' : 'cant.';
     inCant.className = 'border rounded px-2 py-1 text-sm w-24 text-right font-mono js-cant';
+    inCant.dataset.manual = '0';
     tdCant.appendChild(inCant);
 
     // Kg (derivado, solo lectura) — oculto en pedido (el kg ya se ingresa exacto)
@@ -310,6 +321,20 @@
       }
     }
 
+    // Piezas/Cant → Kg (solo Factura Proforma): autocompleta la columna Kg
+    // con la conversión del tipo, salvo que el usuario haya tipeado el Kg.
+    function autoKgDesdePiezas() {
+      if (!ES_PEDIDO) return;
+      if (inCant.dataset.manual === '1') { recalc(); return; }
+      const t = tipoObjDe(selTipo.value);
+      const piezas = parseNum(inPiezas.value);
+      const kg = kgDesdePiezas(t, piezas);
+      if (kg != null) inCant.value = kg.toFixed(2);
+      else if (!piezas) inCant.value = '';   // sin piezas ni kg a mano → vacío
+      // rib con piezas: no toca Kg (se ingresa a mano)
+      recalc();
+    }
+
     // Precio = matriz[clase][columna del tipo]; si el usuario lo editó, respeta.
     function autoPrecio() {
       if (inPrecio.dataset.touched !== '1') {
@@ -324,7 +349,9 @@
     function onTipo() {
       const t = tipoObjDe(selTipo.value);
       inCant.placeholder = ES_PEDIDO ? 'kg' : (t ? t.unidad : 'cant.');
+      if (ES_PEDIDO) inPiezas.placeholder = (t && t.op === 'kg') ? '—' : (t ? t.unidad : 'piezas');
       autoPrecio();
+      autoKgDesdePiezas();
     }
 
     selTipo.addEventListener('input', () => { selTipo.value = selTipo.value.toUpperCase(); onTipo(); });
@@ -342,11 +369,16 @@
       if (info && info.color && v !== info.color.toUpperCase()) inColor.value = info.color;
       setClaseDesdeColor(); autoPrecio();
     });
-    inCant.addEventListener('input', recalc);
+    inPiezas.addEventListener('input', autoKgDesdePiezas);
+    inCant.addEventListener('input', () => {
+      if (ES_PEDIDO) inCant.dataset.manual = inCant.value.trim() ? '1' : '0';
+      recalc();
+    });
     inPrecio.addEventListener('input', () => { inPrecio.dataset.touched = '1'; recalc(); });
 
     // ENTER = pasar al siguiente campo. En Precio de la última fila, agrega otra.
-    const campos = [selTipo, inColor, inCant, inPrecio];
+    const campos = ES_PEDIDO ? [selTipo, inColor, inPiezas, inCant, inPrecio]
+                             : [selTipo, inColor, inCant, inPrecio];
     campos.forEach((el, idx) => {
       el.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
