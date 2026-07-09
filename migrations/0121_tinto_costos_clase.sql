@@ -1,4 +1,4 @@
--- Migration 0120: clase de color (COSTOS.DBF) en scintela.tinto_costos
+-- Migration 0121: clase de color (COSTOS.DBF) en scintela.tinto_costos
 --
 -- CONTEXTO (dueña 2026-07-09): la cotización necesita la CLASE de precio por
 -- color (1..5 = BLANCO/BAJOS/MEDIOS/JASPEADOS/FUERTES) para sacar el precio de
