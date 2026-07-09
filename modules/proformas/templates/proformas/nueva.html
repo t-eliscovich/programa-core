@@ -61,7 +61,7 @@
           <tr>
             <th class="px-2 py-2 text-left font-medium">Tipo</th>
             <th class="px-2 py-2 text-left font-medium">Color</th>
-            <th class="px-2 py-2 text-left font-medium">Clase</th>
+            <th class="px-2 py-2 text-left font-medium">Piezas/Cant</th>
             <th class="px-2 py-2 text-right font-medium">{{ 'Kg' if es_pedido else 'Cantidad' }}</th>
             {% if not es_pedido %}<th class="px-2 py-2 text-right font-medium">Kg</th>{% endif %}
             <th class="px-2 py-2 text-right font-medium">Precio</th>
@@ -244,14 +244,21 @@
     inColor.className = 'border rounded px-2 py-1 text-sm w-full uppercase js-color';
     tdColor.appendChild(inColor);
 
-    // Clase (derivada del color — solo lectura)
-    const tdClase = document.createElement('td'); tdClase.className = 'px-1 py-1 text-xs';
-    const spanClase = document.createElement('span');
+    // Piezas/Cant (editable) — TMT 2026-07-09 (dueña): antes esta columna
+    // mostraba la CLASE derivada del color (solo lectura); ahora es una casilla
+    // editable. La clase para el precio se sigue derivando del color en un
+    // hidden (js-clase), invisible para el usuario.
+    const tdClase = document.createElement('td'); tdClase.className = 'px-1 py-1';
+    const inPiezas = document.createElement('input');
+    inPiezas.type = 'text'; inPiezas.inputMode = 'numeric';
+    inPiezas.placeholder = 'piezas';
+    inPiezas.className = 'border rounded px-2 py-1 text-sm w-24 text-right font-mono js-piezas';
+    const spanClase = document.createElement('span');  // detached: solo alimenta la lógica de clase/precio
     spanClase.className = 'js-clase-label text-slate-500';
     spanClase.textContent = '—';
     const hidClase = document.createElement('input');
     hidClase.type = 'hidden'; hidClase.className = 'js-clase';
-    tdClase.appendChild(spanClase); tdClase.appendChild(hidClase);
+    tdClase.appendChild(inPiezas); tdClase.appendChild(hidClase);
 
     // Cantidad (según el tipo: piezas / cuellos / puños / kg)
     const tdCant = document.createElement('td'); tdCant.className = 'px-1 py-1';
