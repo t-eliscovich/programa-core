@@ -94,40 +94,6 @@ def nueva():
     )
 
 
-@proformas_bp.route("/proformas/_debug-tinto")
-@requiere_login
-@requiere_permiso("proformas.crear")
-def _debug_tinto():
-    """TEMPORAL: estado de scintela.tinto_costos.clase."""
-    from flask import jsonify
-
-    import db as _db
-    out = {}
-    try:
-        out["col_clase_existe"] = bool(_db.fetch_one(
-            "SELECT 1 x FROM information_schema.columns "
-            "WHERE table_schema='scintela' AND table_name='tinto_costos' "
-            "AND column_name='clase'"))
-    except Exception as e:  # noqa: BLE001
-        out["col_err"] = str(e)
-    try:
-        out["total"] = _db.fetch_one("SELECT COUNT(*) n FROM scintela.tinto_costos")
-        out["con_clase"] = _db.fetch_one(
-            "SELECT COUNT(*) n FROM scintela.tinto_costos WHERE clase BETWEEN 1 AND 5")
-        out["por_clase"] = _db.fetch_all(
-            "SELECT clase, COUNT(*) n FROM scintela.tinto_costos GROUP BY clase ORDER BY clase")
-        out["muestra"] = _db.fetch_all(
-            "SELECT cod, color, clase FROM scintela.tinto_costos "
-            "WHERE cod IN ('BLA','NEG','JAS','AGU','AVE')")
-    except Exception as e:  # noqa: BLE001
-        out["err"] = str(e)
-    try:
-        out["catalogo_len"] = len(queries.colores_catalogo())
-    except Exception as e:  # noqa: BLE001
-        out["cat_err"] = str(e)
-    return jsonify(out)
-
-
 @proformas_bp.route("/proformas/cliente-defaults")
 @requiere_login
 @requiere_permiso("proformas.crear")
