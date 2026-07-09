@@ -4,9 +4,14 @@
 
 {% block content %}
 {# TMT 2026-07-09 (dueña): recrear Proformas de Ingresos como el dBase
-   (FACTURAR.PRG), campo a campo con ENTER. SOLO para cotizar — no factura,
-   no stock, no contabilidad. Precio de lista sale de la matriz de precios
-   (clase de color × tela); descuentos por volumen y contado en cascada. #}
+   (FACTURAR.PRG), campo a campo con ENTER. SOLO para cotizar e IMPRIMIR — no
+   factura, no stock, no contabilidad, NO se guarda.
+   - El COLOR determina la CLASE (categoría de formulas_app) → precio de la
+     matriz de precios (clase × tela). Sin selector de clase suelto.
+   - Se cotiza por KG, pero el usuario ingresa una CANTIDAD según el tipo:
+       resto de telas → piezas × 22 kg;  cuellos → cant ÷ 33;
+       puños → cant ÷ 45 (precio = cuellos);  rib → directo en kg.
+   - Descuento por volumen + contado 5% fijo, en cascada. #}
 <div class="page-shell page-shell--xl">
   <header class="page-header">
     <h1 class="page-title">Nueva cotización</h1>
@@ -19,7 +24,7 @@
     </div>
   {% endif %}
 
-  {# TMT 2026-07-09 (dueña): NO se guarda — solo se imprime. El form no postea. #}
+  {# NO se guarda — solo se imprime. El form no postea. #}
   <form class="page-card" id="prof-form" onsubmit="return false">
 
     {# ── Cabecera: cliente + fecha ─────────────────────────────────── #}
@@ -55,8 +60,9 @@
         <thead class="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
           <tr>
             <th class="px-2 py-2 text-left font-medium">Tipo</th>
-            <th class="px-2 py-2 text-left font-medium">Clase de color</th>
             <th class="px-2 py-2 text-left font-medium">Color</th>
+            <th class="px-2 py-2 text-left font-medium">Clase</th>
+            <th class="px-2 py-2 text-right font-medium">Cantidad</th>
             <th class="px-2 py-2 text-right font-medium">Kg</th>
             <th class="px-2 py-2 text-right font-medium">Precio</th>
             <th class="px-2 py-2 text-right font-medium">Importe</th>
@@ -68,7 +74,7 @@
     </div>
     <div class="mt-2 no-print">
       <button type="button" id="add-linea" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">+ Agregar línea</button>
-      <span class="text-xs text-slate-400 ml-2">ENTER pasa al siguiente campo; en Precio agrega otra línea.</span>
+      <span class="text-xs text-slate-400 ml-2">ENTER pasa al siguiente campo; en Precio agrega otra línea. La cantidad se pone en piezas (cuellos/puños por unidad, rib en kg).</span>
     </div>
 
     {# ── Descuentos + totales (cascada FACTURO) ────────────────────── #}
@@ -80,8 +86,6 @@
                  value="{{ form.descuento_volumen or '0' }}" placeholder="0"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
         </label>
-        {# TMT 2026-07-09 (dueña): el descuento de contado es SIEMPRE 5% (fijo,
-           sin campo para tipear). El check decide si se aplica o no. #}
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" name="aplica_contado" id="aplica-contado" value="1">
           <span>Descuento por contado (5%)</span>
@@ -112,17 +116,60 @@
 </div>
 
 <script id="matriz-data" type="application/json">{{ matriz | tojson }}</script>
+<script id="colores-data" type="application/json">{{ colores | tojson }}</script>
 <script>
 (function () {
   const MATRIZ = JSON.parse(document.getElementById('matriz-data').textContent);
-  const CLASES = MATRIZ.clases || [];   // [{clase, descripcio}]
-  const TELAS  = MATRIZ.telas  || [];   // [{col, label}]
   const PRECIOS = MATRIZ.precios || {}; // {clase: {col: price}}
+  const COLORES = JSON.parse(document.getElementById('colores-data').textContent) || [];
   const body = document.getElementById('lineas-body');
+
+  // Mapa color(UPPER) → {clase, clase_desc, categoria}
+  const COLORES_MAP = {};
+  COLORES.forEach(c => { COLORES_MAP[(c.color || '').toUpperCase()] = c; });
+
+  // Datalist de colores para el autocompletado de la columna Color.
+  (function () {
+    const dl = document.createElement('datalist'); dl.id = 'colores-datalist';
+    COLORES.forEach(c => { const o = document.createElement('option'); o.value = c.color; dl.appendChild(o); });
+    document.body.appendChild(dl);
+  })();
+
+  // ── Tipos de tela + regla de conversión CANTIDAD → KG ─────────────
+  // col   = columna de precio en la matriz (puños usa 'cuellos').
+  // op    = 'x' piezas×factor · '/' cantidad÷factor · 'kg' directo.
+  const TIPOS = [
+    {v:'jersey',  label:'JERSEY',   col:'jersey',   unidad:'piezas',  factor:22, op:'x'},
+    {v:'pique',   label:'PIQUE',    col:'pique',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'toper',   label:'TOPER',    col:'toper',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'alemania',label:'ALEMANIA', col:'alemania', unidad:'piezas',  factor:22, op:'x'},
+    {v:'lycra',   label:'LYCRA',    col:'lycra',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'falso',   label:'FLEECE',   col:'falso',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'kiana',   label:'KIANA',    col:'kiana',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'medical', label:'MEDICAL',  col:'medical',  unidad:'piezas',  factor:22, op:'x'},
+    {v:'micro',   label:'MICRO',    col:'micro',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'james',   label:'JAMES',    col:'james',    unidad:'piezas',  factor:22, op:'x'},
+    {v:'rib',     label:'RIB',      col:'rib',      unidad:'kg',      factor:1,  op:'kg'},
+    {v:'cuellos', label:'CUELLOS',  col:'cuellos',  unidad:'cuellos', factor:33, op:'/'},
+    {v:'punos',   label:'PUÑOS',    col:'cuellos',  unidad:'puños',   factor:45, op:'/'},
+  ];
+  const TIPO_MAP = {}; TIPOS.forEach(t => TIPO_MAP[t.v] = t);
+
+  function kgDe(tipoV, cant) {
+    const t = TIPO_MAP[tipoV];
+    if (!t || !cant) return 0;
+    if (t.op === 'x') return cant * t.factor;
+    if (t.op === '/') return t.factor ? cant / t.factor : 0;
+    return cant; // kg directo
+  }
 
   // ── Formato EU/Ecuador (punto miles, coma decimal) ───────────────
   function fmt(n) {
     return (Number(n) || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  function fmtCant(n) {
+    n = Number(n) || 0;
+    return n.toLocaleString('es-EC', {maximumFractionDigits: 2});
   }
   function parseNum(s) {
     if (s == null) return 0;
@@ -136,42 +183,48 @@
     const tr = document.createElement('tr');
     tr.className = 'border-b border-slate-100 dark:border-slate-800';
 
-    // Tipo (tela)
+    // Tipo
     const tdTipo = document.createElement('td'); tdTipo.className = 'px-1 py-1';
     const selTipo = document.createElement('select');
-    selTipo.name = 'linea_tela';
     selTipo.className = 'border rounded px-2 py-1 text-sm w-full js-tipo';
     selTipo.innerHTML = '<option value=""></option>' +
-      TELAS.map(t => `<option value="${t.col}">${t.label}</option>`).join('');
+      TIPOS.map(t => `<option value="${t.v}">${t.label}</option>`).join('');
     tdTipo.appendChild(selTipo);
 
-    // Clase de color
-    const tdClase = document.createElement('td'); tdClase.className = 'px-1 py-1';
-    const selClase = document.createElement('select');
-    selClase.name = 'linea_clase';
-    selClase.className = 'border rounded px-2 py-1 text-sm w-full js-clase';
-    selClase.innerHTML = '<option value=""></option>' +
-      CLASES.map(c => `<option value="${c.clase}">${c.descripcio}</option>`).join('');
-    tdClase.appendChild(selClase);
-
-    // Color (texto libre)
+    // Color (autocompletado → determina la clase)
     const tdColor = document.createElement('td'); tdColor.className = 'px-1 py-1';
     const inColor = document.createElement('input');
-    inColor.name = 'linea_color'; inColor.type = 'text'; inColor.maxLength = 60;
-    inColor.className = 'border rounded px-2 py-1 text-sm w-full js-color';
+    inColor.type = 'text'; inColor.maxLength = 60;
+    inColor.setAttribute('list', 'colores-datalist');
+    inColor.autocomplete = 'off';
+    inColor.className = 'border rounded px-2 py-1 text-sm w-full uppercase js-color';
     tdColor.appendChild(inColor);
 
-    // Kg
-    const tdKg = document.createElement('td'); tdKg.className = 'px-1 py-1';
-    const inKg = document.createElement('input');
-    inKg.name = 'linea_kg'; inKg.type = 'text'; inKg.inputMode = 'decimal';
-    inKg.className = 'border rounded px-2 py-1 text-sm w-24 text-right font-mono js-kg';
-    tdKg.appendChild(inKg);
+    // Clase (derivada del color — solo lectura)
+    const tdClase = document.createElement('td'); tdClase.className = 'px-1 py-1 text-xs';
+    const spanClase = document.createElement('span');
+    spanClase.className = 'js-clase-label text-slate-500';
+    spanClase.textContent = '—';
+    const hidClase = document.createElement('input');
+    hidClase.type = 'hidden'; hidClase.className = 'js-clase';
+    tdClase.appendChild(spanClase); tdClase.appendChild(hidClase);
 
-    // Precio
+    // Cantidad (según el tipo: piezas / cuellos / puños / kg)
+    const tdCant = document.createElement('td'); tdCant.className = 'px-1 py-1';
+    const inCant = document.createElement('input');
+    inCant.type = 'text'; inCant.inputMode = 'decimal';
+    inCant.placeholder = 'cant.';
+    inCant.className = 'border rounded px-2 py-1 text-sm w-24 text-right font-mono js-cant';
+    tdCant.appendChild(inCant);
+
+    // Kg (derivado, solo lectura)
+    const tdKg = document.createElement('td'); tdKg.className = 'px-2 py-1 text-right font-mono js-kg text-slate-600 dark:text-slate-300';
+    tdKg.textContent = '0,00';
+
+    // Precio (USD/kg, auto de la matriz, editable)
     const tdPrecio = document.createElement('td'); tdPrecio.className = 'px-1 py-1';
     const inPrecio = document.createElement('input');
-    inPrecio.name = 'linea_precio'; inPrecio.type = 'text'; inPrecio.inputMode = 'decimal';
+    inPrecio.type = 'text'; inPrecio.inputMode = 'decimal';
     inPrecio.className = 'border rounded px-2 py-1 text-sm w-24 text-right font-mono js-precio';
     inPrecio.dataset.touched = '0';
     tdPrecio.appendChild(inPrecio);
@@ -188,24 +241,48 @@
     btnDel.addEventListener('click', () => { tr.remove(); recalc(); });
     tdDel.appendChild(btnDel);
 
-    tr.append(tdTipo, tdClase, tdColor, tdKg, tdPrecio, tdImp, tdDel);
+    tr.append(tdTipo, tdColor, tdClase, tdCant, tdKg, tdPrecio, tdImp, tdDel);
 
-    // Auto-precio: al elegir tipo+clase, si el usuario no editó el precio.
+    function setClaseDesdeColor() {
+      const info = COLORES_MAP[(inColor.value || '').trim().toUpperCase()];
+      if (info && info.clase) {
+        hidClase.value = info.clase;
+        spanClase.textContent = info.clase_desc;
+        spanClase.classList.remove('text-amber-600');
+        spanClase.classList.add('text-slate-500');
+      } else {
+        hidClase.value = '';
+        spanClase.textContent = (inColor.value || '').trim() ? '(sin clase)' : '—';
+        spanClase.classList.remove('text-slate-500');
+        if ((inColor.value || '').trim()) spanClase.classList.add('text-amber-600');
+      }
+    }
+
+    // Precio = matriz[clase][columna del tipo]; si el usuario lo editó, respeta.
     function autoPrecio() {
-      if (inPrecio.dataset.touched === '1') { recalc(); return; }
-      const clase = selClase.value, tela = selTipo.value;
-      const p = (PRECIOS[clase] || {})[tela];
-      inPrecio.value = (p != null) ? fmt(p) : '';
+      if (inPrecio.dataset.touched !== '1') {
+        const clase = hidClase.value;
+        const t = TIPO_MAP[selTipo.value];
+        const p = (clase && t) ? (PRECIOS[clase] || {})[t.col] : null;
+        inPrecio.value = (p != null) ? fmt(p) : '';
+      }
       recalc();
     }
-    selTipo.addEventListener('change', autoPrecio);
-    selClase.addEventListener('change', autoPrecio);
-    inPrecio.addEventListener('input', () => { inPrecio.dataset.touched = '1'; recalc(); });
-    inKg.addEventListener('input', recalc);
 
-    // ENTER = pasar al siguiente campo (como el dBase). En Precio, si es la
-    // última fila, agrega otra y salta a su Tipo.
-    const campos = [selTipo, selClase, inColor, inKg, inPrecio];
+    function onTipo() {
+      const t = TIPO_MAP[selTipo.value];
+      inCant.placeholder = t ? t.unidad : 'cant.';
+      autoPrecio();
+    }
+
+    selTipo.addEventListener('change', onTipo);
+    inColor.addEventListener('input', () => { inColor.value = inColor.value.toUpperCase(); setClaseDesdeColor(); autoPrecio(); });
+    inColor.addEventListener('change', () => { setClaseDesdeColor(); autoPrecio(); });
+    inCant.addEventListener('input', recalc);
+    inPrecio.addEventListener('input', () => { inPrecio.dataset.touched = '1'; recalc(); });
+
+    // ENTER = pasar al siguiente campo. En Precio de la última fila, agrega otra.
+    const campos = [selTipo, inColor, inCant, inPrecio];
     campos.forEach((el, idx) => {
       el.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
@@ -214,12 +291,10 @@
           campos[idx + 1].focus();
           if (campos[idx + 1].select) campos[idx + 1].select();
         } else {
-          // último campo (Precio)
           const filas = body.querySelectorAll('tr');
           if (tr === filas[filas.length - 1]) {
             agregarFila().querySelector('.js-tipo').focus();
           } else {
-            // saltar al Tipo de la fila siguiente
             const next = tr.nextElementSibling;
             if (next) next.querySelector('.js-tipo').focus();
           }
@@ -236,11 +311,14 @@
     return tr;
   }
 
-  // ── Recalcular importes + totales (cascada FACTURO) ──────────────
+  // ── Recalcular kg + importes + totales (cascada FACTURO) ─────────
   function recalc() {
     let subtotal = 0;
     body.querySelectorAll('tr').forEach(tr => {
-      const kg = parseNum(tr.querySelector('.js-kg').value);
+      const tipoV = tr.querySelector('.js-tipo').value;
+      const cant = parseNum(tr.querySelector('.js-cant').value);
+      const kg = kgDe(tipoV, cant);
+      tr.querySelector('.js-kg').textContent = fmt(kg);
       const pu = parseNum(tr.querySelector('.js-precio').value);
       const imp = kg * pu;
       tr.querySelector('.js-importe').textContent = fmt(imp);
@@ -269,7 +347,7 @@
     agregarFila().querySelector('.js-tipo').focus();
   });
 
-  // Arrancar con 3 filas visibles y foco en la primera.
+  // Arrancar con 3 filas y foco en la primera.
   agregarFila(); agregarFila(); agregarFila();
   recalc();
   const first = body.querySelector('.js-tipo'); if (first) first.focus();
@@ -290,7 +368,6 @@
   };
 
   // ── Imprimir (SIN guardar) ───────────────────────────────────────
-  // Abre una hoja limpia con membrete y manda a imprimir. No toca la DB.
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -303,15 +380,18 @@
     const rows = [];
     let subtotal = 0;
     body.querySelectorAll('tr').forEach(tr => {
-      const sel = tr.querySelector('.js-tipo');
-      const tipo = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.trim() : '';
+      const tipoV = tr.querySelector('.js-tipo').value;
+      const t = TIPO_MAP[tipoV];
+      const tipo = t ? t.label : '';
+      const unidad = t ? t.unidad : '';
       const color = tr.querySelector('.js-color').value.trim();
-      const kg = parseNum(tr.querySelector('.js-kg').value);
+      const cant = parseNum(tr.querySelector('.js-cant').value);
+      const kg = kgDe(tipoV, cant);
       const pu = parseNum(tr.querySelector('.js-precio').value);
-      if (kg === 0 && pu === 0) return;
+      if (cant === 0 && pu === 0) return;
       const imp = kg * pu;
       subtotal += imp;
-      rows.push({tipo, color, kg, pu, imp});
+      rows.push({tipo, color, cant, unidad, kg, pu, imp});
     });
     if (rows.length === 0) {
       const f = body.querySelector('.js-tipo'); if (f) f.focus();
@@ -320,7 +400,7 @@
 
     const pctVol = parseNum(document.getElementById('desc-vol').value);
     const aplicaC = document.getElementById('aplica-contado').checked;
-    const pctCont = 5;  // fijo (dueña): contado siempre 5%
+    const pctCont = 5;
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
     const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
@@ -329,6 +409,7 @@
 
     const filasHtml = rows.map(r =>
       `<tr><td>${esc(r.tipo)}</td><td>${esc(r.color)}</td>` +
+      `<td class="r">${r.cant ? fmtCant(r.cant) + ' ' + esc(r.unidad) : ''}</td>` +
       `<td class="r">${fmt(r.kg)}</td><td class="r">${fmt(r.pu)}</td>` +
       `<td class="r">${fmt(r.imp)}</td></tr>`).join('');
 
@@ -347,7 +428,6 @@
   @page { size: A4; margin: 10mm; }
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12px}
-  /* #sheet se escala a UNA sola hoja si hiciera falta (ver ajustar()). */
   #sheet{width:190mm;transform-origin:top left}
   .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #c0392b;padding-bottom:8px}
   .brand{font-size:22px;font-weight:bold;color:#c0392b;letter-spacing:2px}
@@ -367,7 +447,7 @@
     <div style="text-align:right"><h1>COTIZACIÓN</h1><div class="muted">${esc(fecha)}</div></div>
   </div>
   <div class="cli"><strong>Cliente:</strong> ${esc(codigo)}${nombre ? ' — ' + esc(nombre) : ''}</div>
-  <table><thead><tr><th>Tipo</th><th>Color</th><th class="r">Kg</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>
+  <table><thead><tr><th>Tipo</th><th>Color</th><th class="r">Cantidad</th><th class="r">Kg</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>
   <tbody>${filasHtml}</tbody></table>
   <div class="tot">${totHtml}</div>
   ${obs ? `<div class="obs"><strong>Observaciones:</strong> ${esc(obs)}</div>` : ''}
@@ -379,8 +459,8 @@
     win.document.open();
     win.document.write(doc);
     win.document.close();
-    // Forzar UNA sola hoja: si el contenido excede el alto útil de A4
-    // (~1040px = 277mm a 96dpi), se escala hacia abajo (nunca agranda).
+    // Forzar UNA sola hoja: si el contenido excede el alto útil de A4 se
+    // escala hacia abajo (nunca agranda).
     const ajustar = () => {
       try {
         const sheet = win.document.getElementById('sheet');
@@ -458,7 +538,6 @@
     else if (e.key === 'Escape') { ddCerrar(); }
   });
   codigoInput.addEventListener('blur', () => setTimeout(ddCerrar, 150));
-  // Prefill si viene precargado
   if (codigoInput.value.trim() && window.__profPrefillCliente) {
     window.__profPrefillCliente(codigoInput.value.trim());
   }

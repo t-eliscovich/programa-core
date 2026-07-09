@@ -65,6 +65,72 @@ def matriz_precios() -> dict:
     }
 
 
+# Mapeo categoría (formulas_app.formulas.categoria) → clase de precio
+# (scintela.precios.clase). Las categorías de formulas mezclan la intensidad del
+# color (Blanco/Bajo/Fuerte/Jaspeado/Directo) con la fibra (Pes=poliéster,
+# Algodón); para el PRECIO solo importa la intensidad, así que el poliéster se
+# colapsa a la misma clase que su intensidad. Verificado contra la base real
+# 2026-07-09 (9 categorías). Los ambiguos (Directo→Jaspeados, Algodón→Bajos,
+# Lavado→Fuertes) son defaults razonables — el precio queda editable por línea.
+_CATEGORIA_A_CLASE: dict[str, int] = {
+    "COLOR BLANCO": 1,      # BLANCO
+    "COLOR BAJO": 2,        # BAJOS
+    "PES BAJO": 2,
+    "ALGODON 100": 2,
+    "COLOR MEDIO": 3,       # MEDIOS (por si aparece)
+    "COLOR JASPEADO": 4,    # JASPEADOS
+    "COLOR DIRECTO": 4,     # (ej. ARENA JASPEADO)
+    "COLOR FUERTE": 5,      # FUERTES
+    "PES FUERTE": 5,
+    "LAVADO MAQUINA": 5,
+}
+_CLASE_DESC: dict[int, str] = {
+    1: "BLANCO", 2: "BAJOS", 3: "MEDIOS", 4: "JASPEADOS", 5: "FUERTES",
+}
+
+
+def _norm_categoria(s: str | None) -> str:
+    import unicodedata
+    s = (s or "").strip().upper()
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def colores_catalogo() -> list[dict]:
+    """Catálogo de colores desde formulas_app (formulas.color + categoria),
+    con la clase de precio derivada de la categoría. El color determina la
+    clase (como el COSTOS.DBF del dBase). Fail-soft: si formulas_app no está
+    disponible devuelve [] y la línea acepta color libre sin clase.
+
+    Devuelve [{color, categoria, clase, clase_desc}] ordenado por color.
+    """
+    try:
+        from modules._lib import formulas_db
+        rows = formulas_db.fetch_all(
+            "SELECT DISTINCT ON (UPPER(color)) color, categoria "
+            "FROM formulas WHERE color IS NOT NULL AND TRIM(color) <> '' "
+            "ORDER BY UPPER(color), categoria"
+        )
+    except Exception:
+        rows = []
+    out: list[dict] = []
+    for r in rows or []:
+        color = (r.get("color") or "").strip()
+        if not color:
+            continue
+        clase = _CATEGORIA_A_CLASE.get(_norm_categoria(r.get("categoria")))
+        out.append({
+            "color": color,
+            "categoria": (r.get("categoria") or "").strip(),
+            "clase": clase,
+            "clase_desc": _CLASE_DESC.get(clase or 0, ""),
+        })
+    out.sort(key=lambda d: d["color"])
+    return out
+
+
 def cliente_defaults(codigo_cli: str) -> dict | None:
     """Datos del cliente para prellenar la cotización: id, nombre y los
     descuentos que el dBase aplica solo (DESCUENTO por volumen, y 5% de contado

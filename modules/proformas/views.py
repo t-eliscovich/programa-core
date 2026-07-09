@@ -78,6 +78,11 @@ def nueva():
     except Exception:
         matriz = {"clases": [], "telas": [], "precios": {}}
 
+    try:
+        colores = queries.colores_catalogo()
+    except Exception:
+        colores = []
+
     form = {"fecha": today_ec().strftime("%d/%m/%Y")}
     for k in ("codigo_cli", "fecha"):
         if request.args.get(k):
@@ -85,39 +90,8 @@ def nueva():
     return render_template(
         "proformas/nueva.html",
         form=form, errores=[], clientes_datalist=clientes_datalist,
-        matriz=matriz,
+        matriz=matriz, colores=colores,
     )
-
-
-@proformas_bp.route("/proformas/_debug-colores")
-@requiere_login
-@requiere_permiso("proformas.crear")
-def _debug_colores():
-    """TEMPORAL: inspecciona formulas_app.formulas (color, categoria) para
-    decidir cómo mapear color→clase de precio. Se borra después."""
-    from flask import jsonify
-    out = {"formulas_db_disponible": False}
-    try:
-        from modules._lib import formulas_db
-        out["formulas_db_disponible"] = formulas_db.disponible()
-        out["por_categoria"] = formulas_db.fetch_all(
-            "SELECT categoria, COUNT(*) AS n, COUNT(DISTINCT color) AS colores "
-            "FROM formulas GROUP BY categoria ORDER BY n DESC"
-        )
-        out["muestra"] = formulas_db.fetch_all(
-            "SELECT cod, color, categoria, grupo FROM formulas "
-            "WHERE color IS NOT NULL AND color <> '' ORDER BY color LIMIT 60"
-        )
-    except Exception as e:  # noqa: BLE001
-        out["error"] = str(e)
-    try:
-        import db
-        out["precios_clases"] = db.fetch_all(
-            "SELECT clase, descripcio FROM scintela.precios ORDER BY clase"
-        )
-    except Exception as e:  # noqa: BLE001
-        out["precios_error"] = str(e)
-    return jsonify(out)
 
 
 @proformas_bp.route("/proformas/cliente-defaults")
