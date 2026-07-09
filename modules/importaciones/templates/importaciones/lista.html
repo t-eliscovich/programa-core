@@ -152,9 +152,15 @@
         <option value="pendiente" {% if recep == 'pendiente' %}selected{% endif %}>En tránsito</option>
       </select>
     </div>
+    <div>
+      {# TMT 2026-07-09 (dueña): filtrar por mes/año de la fecha recibida. #}
+      <label class="block text-xs text-slate-500 mb-1">Recibida en (mes)</label>
+      <input type="month" name="mes" value="{{ mes }}"
+             class="rounded border border-slate-300 px-2 py-1 text-sm bg-white">
+    </div>
     <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Filtrar</button>
     <a href="{{ url_for('importaciones.lista') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Limpiar</a>
-    <a href="{{ url_for('importaciones.lista', q=q, estado=estado, recep=recep, export='csv') }}"
+    <a href="{{ url_for('importaciones.lista', q=q, estado=estado, recep=recep, mes=mes, export='csv') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">CSV</a>
   </form>
 

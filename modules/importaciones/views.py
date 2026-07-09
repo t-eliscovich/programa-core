@@ -39,6 +39,9 @@ def lista():
     q = (request.args.get("q") or "").strip().upper()
     estado = (request.args.get("estado") or "").strip()  # "" | "match" | "sin_match" | "sin_codigo"
     recep = (request.args.get("recep") or "").strip()    # "" | "recibida" | "pendiente"
+    # TMT 2026-07-09 (dueña): filtrar por MES/AÑO de la fecha recibida. El
+    # input type=month da "YYYY-MM"; fecha_recepcion es "YYYY-MM-DD" → prefix.
+    mes = (request.args.get("mes") or "").strip()        # "" | "YYYY-MM"
 
     error = None
     rows = []
@@ -65,6 +68,14 @@ def lista():
         rows = [r for r in rows if r.get("recibida")]
     elif recep == "pendiente":
         rows = [r for r in rows if not r.get("recibida")]
+    if mes:
+        # Filtra por mes/año de la fecha de recepción (solo recibidas la
+        # tienen; las en tránsito quedan fuera). Prefix "YYYY-MM-".
+        _pref = mes + "-"
+        rows = [
+            r for r in rows
+            if (r.get("fecha_recepcion") or "").startswith(_pref)
+        ]
 
     total = len(rows)
     con_codigo = sum(1 for r in rows if r.get("codigo"))
@@ -162,6 +173,7 @@ def lista():
         q=q,
         estado=estado,
         recep=recep,
+        mes=mes,
         hoy=today_ec().isoformat(),
         error=error,
     )
@@ -171,7 +183,7 @@ def _volver():
     """Vuelve a /importaciones preservando los filtros actuales."""
     args = {
         k: request.form.get(k)
-        for k in ("q", "estado", "recep")
+        for k in ("q", "estado", "recep", "mes")
         if request.form.get(k)
     }
     return redirect(url_for("importaciones.lista", **args))
