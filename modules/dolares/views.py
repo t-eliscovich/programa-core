@@ -368,6 +368,98 @@ def convertir_lote():
     )
 
 
+@dolares_bp.route("/dolares/cargar-quimicos", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def cargar_quimicos():
+    """Cargar químicos — anticipos de proveedores tipo Q → compra tipo Q.
+
+    TMT 2026-07-09 (dueña): botón análogo a "convertir a compra (hilado)"
+    pero para químicos. Diferencia clave con el de hilo: NO hay importación
+    que conciliar (los químicos no pasan por el circuito de importaciones de
+    Asinfo) — es directo anticipo → compra. Por eso es una sola columna, sin
+    panel derecho.
+
+    Filtra los anticipos vivos a proveedores `scintela.proveedor.tipo='Q'`
+    (mismo mecanismo `tipos_filter` que el de hilo usa con ['H']). La compra
+    se crea con `tipo_compra='Q'`, así entra como "compras químicos" del mes
+    (la que lee el balance / flujo por `compra.tipo='Q'`).
+
+    Permisos: `compras.crear` (estamos creando una compra), igual que el BAP
+    de hilo.
+    """
+    if request.method == "POST":
+        codigo_prov = (request.form.get("codigo_prov") or "").strip().upper()
+        ids_raw = request.form.getlist("id_dolares")
+        try:
+            ids = [int(x) for x in ids_raw if x and str(x).strip()]
+        except ValueError:
+            flash("IDs de anticipos inválidos.", "warn")
+            return redirect(url_for("dolares.cargar_quimicos"))
+        concepto = (request.form.get("concepto") or "").strip()
+        fecha = parse_date(request.form.get("fecha")) or today_ec()
+        kg = parse_monto(request.form.get("kg"))
+        motivo = (request.form.get("motivo") or "").strip()
+
+        if not codigo_prov:
+            flash("Elegí anticipos de un mismo proveedor de químicos.", "warn")
+            return redirect(url_for("dolares.cargar_quimicos"))
+        if not ids:
+            flash("Seleccioná al menos un anticipo para cargar.", "warn")
+            return redirect(url_for("dolares.cargar_quimicos"))
+
+        try:
+            usuario = (g.user or {}).get("username", "web")
+            r = queries.convertir_a_compra(
+                codigo_prov=codigo_prov,
+                ids_anticipos=ids,
+                fecha=fecha,
+                concepto=concepto,
+                tipo_compra="Q",
+                kg=kg,
+                motivo=motivo,
+                usuario=usuario,
+            )
+            flash(
+                f"Químicos: {r['n_anticipos']} anticipo(s) de {codigo_prov} "
+                f"cargados como compra N° {r['numero_compra']} "
+                f"({r['comprobante']}) por $ {r['importe_total']:.2f}.",
+                "ok",
+            )
+            return redirect(url_for("compras.lista", q=codigo_prov))
+        except ValueError as e:
+            flash(str(e), "warn")
+            return redirect(url_for("dolares.cargar_quimicos"))
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude cargar los químicos", e)
+            return redirect(url_for("dolares.cargar_quimicos"))
+
+    # ── GET: una sola columna de anticipos de proveedores tipo Q ────────────
+    import re as _re
+
+    anticipos, _ = _safe(
+        lambda: queries.anticipos_vivos(tipos_filter=["Q"]),
+        [],
+    )
+    for _a in anticipos:
+        _m = _re.search(r"\d+", str(_a.get("concepto") or ""))
+        _a["ref"] = _m.group(0) if _m else ""
+    anticipos.sort(key=lambda a: (
+        str(a.get("cta") or "").upper(),
+        int(a["ref"]) if str(a.get("ref") or "").isdigit() else 10**9,
+        a.get("fecha") or "",
+    ))
+
+    total_anticipos_usd = sum(float(a.get("importe") or 0) for a in anticipos)
+
+    return render_template(
+        "dolares/cargar_quimicos.html",
+        anticipos=anticipos,
+        total_anticipos_usd=total_anticipos_usd,
+        hoy=today_ec().isoformat(),
+    )
+
+
 @dolares_bp.route("/dolares/reversar-conversion/<int:id_mov_doble>",
                   methods=["GET", "POST"])
 @requiere_login

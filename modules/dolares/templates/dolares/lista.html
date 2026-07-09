@@ -172,6 +172,12 @@
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
           Convertir a compra (hilado)
         </a>
+        <a href="{{ url_for('dolares.cargar_quimicos') }}"
+           class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
+           title="Convertir anticipos de químicos (tipo Q) a compra — baja anticipo, sube stock, reversible">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v6l-4 8a2 2 0 0 0 2 3h8a2 2 0 0 0 2-3l-4-8V2M8 2h8"/></svg>
+          Cargar químicos
+        </a>
       {% endif %}
       {% if tiene_permiso('activos.crear') %}
         <a href="{{ url_for('activos.activar_maquinaria') }}"
