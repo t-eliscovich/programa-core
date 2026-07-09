@@ -256,6 +256,10 @@ def lista():
         # row_url = a dónde va el click de la fila entera. Preferimos
         # origen_url; si no hay, destino_url.
         r["row_url"] = r["origen_url"] or r["destino_url"]
+        # TMT 2026-07-09 (dueña): si el movimiento consolidó >1 item
+        # (p.ej. "6 anticipo(s) → compra"), traer cada uno para poder
+        # desplegarlos uno por uno en el historial.
+        r["detalle"] = queries.detalle_consolidado(r.get("metadata"))
 
     # ──────────────────────────────────────────────────────────────────
     # Construir `items` — una lista de "tarjetas" para el template.

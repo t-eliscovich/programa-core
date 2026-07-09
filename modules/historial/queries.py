@@ -411,3 +411,105 @@ def link_destino(row: dict, factura_numfs: dict | None = None, cheque_nos: dict 
         {"origen_table": row.get("destino_table"), "origen_id": row.get("destino_id")},
         factura_numfs=factura_numfs, cheque_nos=cheque_nos,
     )
+
+
+# =====================================================================
+# Detalle "uno por uno" de los movimientos consolidados.
+# TMT 2026-07-09 (pedido dueña): un mov_doble puede consolidar VARIOS
+# items — p.ej. "BAP CT: 6 anticipo(s) → compra #10001". La dueña quiere
+# ver cada anticipo por separado, y lo mismo para cualquier movimiento
+# cuya metadata liste más de un id (cheques de un depósito en lote,
+# cuotas/posdatados de una activación, etc.). Resolvemos los ids que ya
+# guarda la metadata contra su tabla y devolvemos líneas legibles.
+# =====================================================================
+
+# key en metadata → cómo resolver cada id a una línea. `{IN}` se
+# reemplaza por los placeholders %s (uno por id).
+_DETALLE_FUENTES = {
+    "ids_anticipos": {
+        "etiqueta": "Anticipo",
+        "sql": (
+            "SELECT id_dolares AS id, COALESCE(cta::text,'') AS ref, "
+            "COALESCE(concepto,'') AS concepto, importe, COALESCE(st,'') AS extra "
+            "FROM scintela.dolares WHERE id_dolares IN ({IN}) ORDER BY id_dolares"
+        ),
+    },
+    "ids_cheques": {
+        "etiqueta": "Cheque",
+        "sql": (
+            "SELECT id_cheque AS id, COALESCE(no_cheque::text,'') AS ref, "
+            "COALESCE(concepto,'') AS concepto, importe, '' AS extra "
+            "FROM scintela.cheque WHERE id_cheque IN ({IN}) ORDER BY id_cheque"
+        ),
+    },
+    "ids_posdat": {
+        "etiqueta": "Cuota",
+        "sql": (
+            "SELECT id_posdat AS id, COALESCE(num::text,'') AS ref, "
+            "COALESCE(concepto,'') AS concepto, importe, "
+            "COALESCE(to_char(fechad,'DD/MM/YYYY'),'') AS extra "
+            "FROM scintela.posdat WHERE id_posdat IN ({IN}) ORDER BY fechad, id_posdat"
+        ),
+    },
+}
+
+
+def detalle_consolidado(metadata) -> list[dict]:
+    """Devuelve las líneas individuales de un mov_doble que consolidó
+    VARIOS items (>=2). [] si no aplica (lo normal).
+
+    Cada línea: {etiqueta, ref, concepto, importe, extra}. Best-effort:
+    si una tabla no resuelve un id, igual lo listamos como "#id".
+    """
+    import json as _json
+
+    meta = metadata
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            return []
+    if not isinstance(meta, dict):
+        return []
+
+    items: list[dict] = []
+    for key, cfg in _DETALLE_FUENTES.items():
+        crudos = meta.get(key) or []
+        ids: list[int] = []
+        for x in crudos:
+            try:
+                ids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        ids = sorted(set(ids))
+        if len(ids) < 2:  # "más de uno"
+            continue
+        ph = ", ".join(["%s"] * len(ids))
+        try:
+            rows = db.fetch_all(cfg["sql"].replace("{IN}", ph), tuple(ids)) or []
+        except Exception:  # noqa: BLE001
+            rows = []
+        encontrados = set()
+        for r in rows:
+            encontrados.add(int(r["id"]))
+            items.append(
+                {
+                    "etiqueta": cfg["etiqueta"],
+                    "ref": (str(r.get("ref") or "").strip() or f"#{r['id']}"),
+                    "concepto": (r.get("concepto") or "").strip(),
+                    "importe": float(r["importe"]) if r.get("importe") is not None else None,
+                    "extra": (str(r.get("extra") or "").strip()),
+                }
+            )
+        for _id in ids:
+            if _id not in encontrados:
+                items.append(
+                    {
+                        "etiqueta": cfg["etiqueta"],
+                        "ref": f"#{_id}",
+                        "concepto": "(no encontrado)",
+                        "importe": None,
+                        "extra": "",
+                    }
+                )
+    return items

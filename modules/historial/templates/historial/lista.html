@@ -1,6 +1,33 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Historial de movimientos{% endblock %}
+
+{# TMT 2026-07-09 (dueña): fila desplegable que muestra UNO POR UNO los
+   items que consolidó un movimiento (p.ej. los 6 anticipos de una compra).
+   Estilos inline para no depender del tailwind.css congelado (JIT). #}
+{% macro detalle_expandible(r) %}
+  {% if r.detalle %}
+    <tr class="bg-slate-50/40 no-print">
+      <td colspan="8" style="padding:2px 8px 8px 34px;">
+        <details style="font-size:12px;">
+          <summary class="cursor-pointer text-sky-700 hover:underline" style="user-select:none;">
+            Ver los {{ r.detalle|length }} uno por uno
+          </summary>
+          <table style="border-collapse:collapse;margin-top:4px;">
+            {% for d in r.detalle %}
+              <tr>
+                <td class="text-slate-400" style="padding:2px 10px 2px 0;white-space:nowrap;text-align:right;">{{ loop.index }}.</td>
+                <td class="text-slate-700" style="padding:2px 12px 2px 0;white-space:nowrap;font-weight:500;">{{ d.etiqueta }} {{ d.ref }}</td>
+                <td class="tabular-nums font-mono" style="padding:2px 12px 2px 0;white-space:nowrap;text-align:right;">{% if d.importe is not none %}{{ d.importe | money_es }}{% else %}—{% endif %}</td>
+                <td class="text-slate-500" style="padding:2px 0;">{% if d.extra %}<span class="text-slate-400">{{ d.extra }}</span>&nbsp;{% endif %}{{ d.concepto }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </details>
+      </td>
+    </tr>
+  {% endif %}
+{% endmacro %}
 {% block breadcrumb %}<strong>Historial</strong>{% endblock %}
 
 {% block content %}
@@ -235,6 +262,7 @@
                   <span class="text-xs text-slate-300" title="Forma parte del batch — el reverso se hace desde la cabecera.">—</span>
                 </td>
               </tr>
+              {{ detalle_expandible(r) }}
             {% endfor %}
           </tbody>
         {% else %}
@@ -307,6 +335,7 @@
                 {% endif %}
               </td>
             </tr>
+            {{ detalle_expandible(r) }}
           </tbody>
         {% endif %}
       {% else %}
