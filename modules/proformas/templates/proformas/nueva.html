@@ -363,6 +363,14 @@
       if (t && selTipo.value.trim().toUpperCase() !== t.label.toUpperCase()) selTipo.value = t.label;
       onTipo();
     });
+    // Carry-over al ENFOCAR una fila vacía (clic o Enter): copia Tipo+Color de
+    // la fila de arriba. Cubre las filas 2/3 iniciales al hacer clic directo.
+    // TMT 2026-07-09 (dueña).
+    selTipo.addEventListener('focus', () => {
+      if (selTipo.value.trim()) return;
+      const prev = tr.previousElementSibling;
+      if (prev) prefillRow(prev, tr);
+    });
     inColor.addEventListener('input', () => { inColor.value = inColor.value.toUpperCase(); setClaseDesdeColor(); autoPrecio(); });
     inColor.addEventListener('change', () => {
       // Si tipeó un CÓDIGO (ej. NEG), lo expande al nombre (NEGRO) — como el dBase.
