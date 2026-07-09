@@ -140,16 +140,28 @@
         </tr>
       </thead>
       <tbody>
+        <tr>
+          <td>Hilo → Tela Cruda</td>
+          <td class="num">{{ (saldo_tc.issued or 0) | num_es(2) }}</td>
+          <td class="num">{{ (saldo_tc.fab or 0) | num_es(2) }}</td>
+          <td class="num {{ 'neg' if (saldo_tc.saldo or 0) < 0 }}">{{ (saldo_tc.saldo or 0) | num_es(2) }}</td>
+        </tr>
+        <tr>
+          <td>Tela Cruda → Terminada</td>
+          <td class="num">{{ (saldo_pt.issued or 0) | num_es(2) }}</td>
+          <td class="num">{{ (saldo_pt.fab or 0) | num_es(2) }}</td>
+          <td class="num {{ 'neg' if (saldo_pt.saldo or 0) < 0 }}">{{ (saldo_pt.saldo or 0) | num_es(2) }}</td>
+        </tr>
         <tr class="total-row">
-          <td>{{ cfg.material }}</td>
-          <td class="num">{{ (resumen.issued or 0) | num_es(2) }}</td>
-          <td class="num">{{ (resumen.fab or 0) | num_es(2) }}</td>
-          <td class="num {{ 'neg' if (resumen.saldo or 0) < 0 }}">{{ (resumen.saldo or 0) | num_es(2) }}</td>
+          <td>Total en proceso</td>
+          <td class="num">{{ ((saldo_tc.issued or 0) + (saldo_pt.issued or 0)) | num_es(2) }}</td>
+          <td class="num">{{ ((saldo_tc.fab or 0) + (saldo_pt.fab or 0)) | num_es(2) }}</td>
+          <td class="num">{{ ((saldo_tc.saldo or 0) + (saldo_pt.saldo or 0)) | num_es(2) }}</td>
         </tr>
       </tbody>
     </table>
     <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
-      Saldo = {{ cfg.material | lower }} despachado a órdenes abiertas − lo ya devuelto fabricado.
+      Saldo = material despachado a órdenes abiertas − lo ya devuelto fabricado.
     </p>
   </div>
 

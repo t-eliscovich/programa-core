@@ -41,7 +41,8 @@
   .dark .imp tbody tr:hover { background: rgb(30 58 95 / .5); }
   .imp td { padding: 9px 12px; border-bottom: 1px solid rgb(241 245 249); vertical-align: top; }
   .dark .imp td { border-color: rgb(51 65 85 / .6); color: rgb(226 232 240); }
-  .imp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .imp td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+  .imp td.acc-cell { white-space: nowrap; }
   .imp td.muted { color: rgb(148 163 184); }
 
   /* ── Chips / estados ────────────────────────────────────────── */
@@ -207,7 +208,7 @@
                los anticipos aparecían en dos lados con números distintos. #}
             <td class="num">
               {% if r.compra %}
-                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">$ {{ r.compra.importe_total | num_es(2) }}</a>
+                <a class="ok hover:underline" href="{{ url_for('compras.editar', id_compra=r.compra.first_id) }}">{{ r.compra.importe_total | num_es(2) }}</a>
                 {% if r.compra.n > 1 %}<span class="text-slate-400">({{ r.compra.n }})</span>{% endif %}
               {% elif r.codigo and not r.anticipo_total %}
                 <span class="no" title="Código {{ r.codigo }} sin compra ni anticipo en el programa">sin cargar</span>
@@ -222,8 +223,8 @@
             <td class="acc-cell text-right">
               {% if r.codigo and r.anticipo_total %}
                 {% set _movs = r.movimientos or [] %}
-                <b>$ {{ r.anticipo_total | num_es(2) }}</b>
-                {% if _movs %}<span class="acc-hint">· {{ _movs | length }} ant.</span>{% endif %}
+                <b>{{ r.anticipo_total | num_es(2) }}</b>
+                {% if _movs %}<span class="acc-hint">· {{ _movs | length }}</span>{% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
@@ -248,19 +249,16 @@
           {% set _movs = r.movimientos or [] %}
           {% if r.codigo and _movs %}
           <tr class="acc-detail-row" style="display:none;">
-            <td colspan="10" style="background:#f8fafc;padding:14px 18px;border-top:1px solid #e5e7eb;">
-              <div style="min-width:280px;">
-                <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:9px;">Anticipos cargados · {{ _movs|length }}</div>
-                <div style="display:flex;flex-direction:column;gap:7px;">
-                  {% for m in _movs %}
-                  <div style="display:flex;align-items:center;gap:10px;font-size:13px;">
-                    <span style="color:#94a3b8;font-size:11.5px;white-space:nowrap;">{{ m.fecha }}</span>
-                    <span style="font-family:ui-monospace,monospace;font-size:11px;font-weight:600;color:#475569;background:#eef2f6;border-radius:5px;padding:1px 7px;">{{ 'ANT' if m.tipo=='anticipo' else 'PAGO' }}</span>
-                    <span style="flex:1;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span>
-                    <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">$ {{ m.monto|num_es(2) }}</span>
-                  </div>
-                  {% endfor %}
+            <td colspan="10" style="background:#f8fafc;padding:7px 14px;border-top:1px solid #eef2f6;">
+              <div style="display:flex;flex-direction:column;gap:3px;">
+                {% for m in _movs %}
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
+                  <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ m.fecha }}</span>
+                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#64748b;">{{ 'ANT' if m.tipo=='anticipo' else 'PAGO' }}</span>
+                  <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span>
+                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ m.monto|num_es(2) }}</span>
                 </div>
+                {% endfor %}
               </div>
             </td>
           </tr>

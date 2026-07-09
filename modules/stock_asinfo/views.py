@@ -557,6 +557,8 @@ def _fabricacion_page(proceso: str):
         proceso=proceso,
         cfg=cfg,
         resumen=data.get("resumen", {}),
+        saldo_tc=saldo_tc,
+        saldo_pt=saldo_pt,
         totales_bodega=totales_bodega,
         cadena=cadena,
         total_kg=total_kg,
