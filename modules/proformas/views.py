@@ -2,36 +2,18 @@
 from flask import (
     Blueprint,
     abort,
-    flash,
-    g,
     jsonify,
-    redirect,
     render_template,
     request,
-    url_for,
 )
 
 from auth import requiere_login, requiere_permiso
-from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
-from parsers import parse_monto
 
 from . import queries
 
 proformas_bp = Blueprint("proformas", __name__, template_folder="templates")
-
-
-def _parse_fecha(s: str | None):
-    """DD/MM/AAAA (lo que tipea la contadora) → date. None si no parsea."""
-    from datetime import datetime
-    s = (s or "").strip()
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            continue
-    return None
 
 
 @proformas_bp.route("/proformas")
@@ -71,12 +53,14 @@ def lista():
     )
 
 
-@proformas_bp.route("/proformas/nueva", methods=["GET", "POST"])
+@proformas_bp.route("/proformas/nueva", methods=["GET"])
 @requiere_login
 @requiere_permiso("proformas.crear")
 def nueva():
     """Cotización nueva — flujo campo-a-campo del dBase (FACTURAR.PRG), pero
-    solo para cotizar (no factura, no stock, no contabilidad).
+    solo para COTIZAR e IMPRIMIR. NO se guarda (dueña 2026-07-09: "no las
+    guardes, solo botón para imprimir"). Por eso es GET-only y no hay POST:
+    el cálculo y la impresión son 100% client-side (nueva.html).
 
     Cada línea: Tipo (tela) + Clase de color → precio de lista sugerido
     (editable) → Kg → Importe = Kg×Precio. Al final descuento por volumen y
@@ -94,93 +78,15 @@ def nueva():
     except Exception:
         matriz = {"clases": [], "telas": [], "precios": {}}
 
-    if request.method == "GET":
-        form = {"fecha": today_ec().strftime("%d/%m/%Y")}
-        for k in ("codigo_cli", "fecha"):
-            if request.args.get(k):
-                form[k] = request.args.get(k)
-        return render_template(
-            "proformas/nueva.html",
-            form=form, errores=[], clientes_datalist=clientes_datalist,
-            matriz=matriz,
-        )
-
-    # POST — armar líneas desde los arrays paralelos del form.
-    errores: list[str] = []
-    codigo_cli = (request.form.get("codigo_cli") or "").strip().upper()
-    fecha = _parse_fecha(request.form.get("fecha")) or today_ec()
-
-    telas = request.form.getlist("linea_tela")
-    nombres = request.form.getlist("linea_nombre")
-    colores = request.form.getlist("linea_color")
-    clases = request.form.getlist("linea_clase")
-    kgs = request.form.getlist("linea_kg")
-    precios = request.form.getlist("linea_precio")
-
-    lineas: list[dict] = []
-    for i in range(len(telas)):
-        kg = parse_monto(kgs[i] if i < len(kgs) else "")
-        pu = parse_monto(precios[i] if i < len(precios) else "")
-        if (kg or 0) == 0 and (pu or 0) == 0:
-            continue
-        lineas.append({
-            "tela": telas[i],
-            "nombre_producto": nombres[i] if i < len(nombres) else "",
-            "color": colores[i] if i < len(colores) else "",
-            "clase": clases[i] if i < len(clases) else None,
-            "cantidad_kilos": kg or 0,
-            "precio_unitario": pu or 0,
-        })
-
-    pct_vol = parse_monto(request.form.get("descuento_volumen")) or 0
-    aplica_contado = bool(request.form.get("aplica_contado"))
-    pct_contado = parse_monto(request.form.get("descuento_contado"))
-    if pct_contado is None:
-        pct_contado = 5.0
-    observaciones = (request.form.get("observaciones") or "").strip()
-
-    if not codigo_cli:
-        errores.append("Elegí un cliente.")
-    elif not queries.cliente_defaults(codigo_cli):
-        errores.append(f"El cliente {codigo_cli} no existe.")
-    if not lineas:
-        errores.append("Agregá al menos una línea con Kg y precio.")
-
-    if errores:
-        form = {
-            "codigo_cli": codigo_cli,
-            "fecha": request.form.get("fecha") or today_ec().strftime("%d/%m/%Y"),
-            "observaciones": observaciones,
-        }
-        return render_template(
-            "proformas/nueva.html",
-            form=form, errores=errores, clientes_datalist=clientes_datalist,
-            matriz=matriz,
-        ), 400
-
-    try:
-        usuario = (g.user or {}).get("username", "web")
-        creada = queries.crear(
-            codigo_cli=codigo_cli, fecha=fecha, lineas=lineas,
-            pct_volumen=float(pct_vol), aplica_contado=aplica_contado,
-            pct_contado=float(pct_contado), observaciones=observaciones,
-            usuario=usuario,
-        )
-        flash(f"Cotización N° {creada['id_proforma']} creada.", "ok")
-        return redirect(url_for("proformas.detalle",
-                                id_proforma=creada["id_proforma"]))
-    except Exception as e:  # noqa: BLE001
-        flash_exc("No pude guardar la cotización", e)
-        form = {
-            "codigo_cli": codigo_cli,
-            "fecha": request.form.get("fecha"),
-            "observaciones": observaciones,
-        }
-        return render_template(
-            "proformas/nueva.html",
-            form=form, errores=[str(e)], clientes_datalist=clientes_datalist,
-            matriz=matriz,
-        ), 500
+    form = {"fecha": today_ec().strftime("%d/%m/%Y")}
+    for k in ("codigo_cli", "fecha"):
+        if request.args.get(k):
+            form[k] = request.args.get(k)
+    return render_template(
+        "proformas/nueva.html",
+        form=form, errores=[], clientes_datalist=clientes_datalist,
+        matriz=matriz,
+    )
 
 
 @proformas_bp.route("/proformas/cliente-defaults")

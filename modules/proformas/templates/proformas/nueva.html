@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Nueva cotización{% endblock %}
-{% block breadcrumb %}<a href="{{ url_for('proformas.lista') }}" class="hover:underline text-slate-500">Proformas</a> / <strong>Nueva</strong>{% endblock %}
+{% block breadcrumb %}<strong>Nueva cotización</strong>{% endblock %}
 
 {% block content %}
 {# TMT 2026-07-09 (dueña): recrear Proformas de Ingresos como el dBase
@@ -8,9 +8,8 @@
    no stock, no contabilidad. Precio de lista sale de la matriz de precios
    (clase de color × tela); descuentos por volumen y contado en cascada. #}
 <div class="page-shell page-shell--xl">
-  <header class="page-header flex items-center justify-between">
+  <header class="page-header">
     <h1 class="page-title">Nueva cotización</h1>
-    <a href="{{ url_for('proformas.lista') }}" class="text-sm text-slate-500 hover:text-slate-700 no-print">← Volver a Proformas</a>
   </header>
 
   {% if errores %}
@@ -20,8 +19,8 @@
     </div>
   {% endif %}
 
-  <form method="POST" action="{{ url_for('proformas.nueva') }}" class="page-card" id="prof-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {# TMT 2026-07-09 (dueña): NO se guarda — solo se imprime. El form no postea. #}
+  <form class="page-card" id="prof-form" onsubmit="return false">
 
     {# ── Cabecera: cliente + fecha ─────────────────────────────────── #}
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -110,8 +109,8 @@
     </div>
 
     <div class="flex items-center justify-between mt-6 pt-4 border-t no-print">
-      <a href="{{ url_for('proformas.lista') }}" class="text-slate-500 hover:text-slate-700">Cancelar</a>
-      <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">Guardar cotización</button>
+      <button type="button" id="btn-limpiar" class="text-slate-500 hover:text-slate-700">Limpiar</button>
+      <button type="button" id="btn-imprimir" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded shadow-sm">Imprimir cotización</button>
     </div>
   </form>
 </div>
@@ -294,6 +293,116 @@
         recalc();
       }).catch(() => {});
   };
+
+  // ── Imprimir (SIN guardar) ───────────────────────────────────────
+  // Abre una hoja limpia con membrete y manda a imprimir. No toca la DB.
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+  function imprimir() {
+    const codigo = (document.getElementById('codigo-cli-input').value || '').trim();
+    const nombre = (document.getElementById('cli-nombre').textContent || '').trim();
+    const fecha = (document.querySelector('input[name="fecha"]').value || '').trim();
+
+    const rows = [];
+    let subtotal = 0;
+    body.querySelectorAll('tr').forEach(tr => {
+      const sel = tr.querySelector('.js-tipo');
+      const tipo = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.trim() : '';
+      const color = tr.querySelector('.js-color').value.trim();
+      const kg = parseNum(tr.querySelector('.js-kg').value);
+      const pu = parseNum(tr.querySelector('.js-precio').value);
+      if (kg === 0 && pu === 0) return;
+      const imp = kg * pu;
+      subtotal += imp;
+      rows.push({tipo, color, kg, pu, imp});
+    });
+    if (rows.length === 0) {
+      const f = body.querySelector('.js-tipo'); if (f) f.focus();
+      return;
+    }
+
+    const pctVol = parseNum(document.getElementById('desc-vol').value);
+    const aplicaC = document.getElementById('aplica-contado').checked;
+    const pctCont = parseNum(document.getElementById('desc-cont').value);
+    const montoVol = subtotal * pctVol / 100;
+    const subDesc = subtotal - montoVol;
+    const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
+    const total = subDesc - montoCont;
+    const obs = (document.querySelector('textarea[name="observaciones"]').value || '').trim();
+
+    const filasHtml = rows.map(r =>
+      `<tr><td>${esc(r.tipo)}</td><td>${esc(r.color)}</td>` +
+      `<td class="r">${fmt(r.kg)}</td><td class="r">${fmt(r.pu)}</td>` +
+      `<td class="r">${fmt(r.imp)}</td></tr>`).join('');
+
+    let totHtml = `<div><span>Subtotal</span><span>${fmt(subtotal)}</span></div>`;
+    if (pctVol > 0) {
+      totHtml += `<div><span>Descuento por volumen (${fmt(pctVol)}%)</span><span>-${fmt(montoVol)}</span></div>`;
+      totHtml += `<div><span>Subtotal c/desc</span><span>${fmt(subDesc)}</span></div>`;
+    }
+    if (aplicaC && montoCont > 0) {
+      totHtml += `<div><span>Descuento por pronto pago (${fmt(pctCont)}%)</span><span>-${fmt(montoCont)}</span></div>`;
+    }
+    totHtml += `<div class="total"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
+
+    const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Cotización</title><style>
+  @page { size: A4; margin: 10mm; }
+  *{box-sizing:border-box} html,body{margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12px}
+  /* #sheet se escala a UNA sola hoja si hiciera falta (ver ajustar()). */
+  #sheet{width:190mm;transform-origin:top left}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #c0392b;padding-bottom:8px}
+  .brand{font-size:22px;font-weight:bold;color:#c0392b;letter-spacing:2px}
+  .brand small{display:block;font-size:9px;color:#666;font-weight:normal;letter-spacing:0}
+  h1{font-size:16px;margin:0} .muted{color:#666}
+  .cli{margin-top:12px} table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:12px}
+  th{text-align:left;background:#f3f4f6;text-transform:uppercase;font-size:10px;letter-spacing:.5px;color:#555}
+  td.r,th.r{text-align:right} .tot{margin-top:12px;width:300px;margin-left:auto}
+  .tot div{display:flex;justify-content:space-between;padding:2px 0;color:#444}
+  .tot .total{font-weight:bold;font-size:15px;color:#111;border-top:2px solid #111;margin-top:5px;padding-top:5px}
+  .obs{margin-top:14px;font-size:11px;color:#444;white-space:pre-wrap}
+  .pie{margin-top:22px;font-size:10px;color:#888}
+</style></head><body><div id="sheet">
+  <div class="head">
+    <div class="brand">INTELA<small>INDUSTRIA TEXTIL LATINOAMERICANA C. LTDA.</small></div>
+    <div style="text-align:right"><h1>COTIZACIÓN</h1><div class="muted">${esc(fecha)}</div></div>
+  </div>
+  <div class="cli"><strong>Cliente:</strong> ${esc(codigo)}${nombre ? ' — ' + esc(nombre) : ''}</div>
+  <table><thead><tr><th>Tipo</th><th>Color</th><th class="r">Kg</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>
+  <tbody>${filasHtml}</tbody></table>
+  <div class="tot">${totHtml}</div>
+  ${obs ? `<div class="obs"><strong>Observaciones:</strong> ${esc(obs)}</div>` : ''}
+  <div class="pie">Cotización referencial — precios sujetos a cambio. No constituye factura.</div>
+</div></body></html>`;
+
+    const win = window.open('', 'cotizacion', 'width=900,height=1100');
+    if (!win) { window.print(); return; }  // popup bloqueado → fallback
+    win.document.open();
+    win.document.write(doc);
+    win.document.close();
+    // Forzar UNA sola hoja: si el contenido excede el alto útil de A4
+    // (~1040px = 277mm a 96dpi), se escala hacia abajo (nunca agranda).
+    const ajustar = () => {
+      try {
+        const sheet = win.document.getElementById('sheet');
+        if (sheet) {
+          const avail = 1040;
+          const h = sheet.scrollHeight;
+          if (h > avail) sheet.style.transform = 'scale(' + (avail / h) + ')';
+        }
+      } catch (e) {}
+      win.focus();
+      win.print();
+    };
+    setTimeout(ajustar, 300);
+  }
+
+  document.getElementById('btn-imprimir').addEventListener('click', imprimir);
+  document.getElementById('btn-limpiar').addEventListener('click', () => location.reload());
 })();
 
 // ── Dropdown de clientes (réplica de Nueva factura) ────────────────
