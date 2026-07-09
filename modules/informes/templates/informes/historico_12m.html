@@ -301,7 +301,7 @@
               <th class="{% if c.es_delta %}h12-delta-col{% elif c.es_live %}bg-amber-50{% elif c.es_mes_actual %}bg-sky-50{% endif %}"
                   {% if c.es_mes_actual and c.fecha_crea %}title="Snapshot {{ c.fecha_crea|hora_ec('%d/%m %H:%M') }}{% if c.es_canonico_default %} · ACTUAL{% endif %}"{% endif %}>
                 {% if c.es_delta %}Δ
-                {% else %}{{ MES_ABRV[c.mes-1] }} <span class="yr">{{ '%02d' % (c.anio % 100) }}</span>
+                {% else %}{% if c.dia %}{{ c.dia }} {% endif %}{{ MES_ABRV[c.mes-1] }} <span class="yr">{{ '%02d' % (c.anio % 100) }}</span>
                   {# 2026-06-04 — distinguir las columnas del mes en curso (antes se veían "JUN 26 / JUN 26" idénticas). #}
                   {% if c.es_live %}<span class="col-badge badge-live">en vivo</span>
                   {% elif c.es_mes_actual and c.es_canonico_default %}<span class="col-badge badge-actual">actual</span>

@@ -6690,14 +6690,25 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
     snaps_pasados = _cargar_snapshots(meses_pasados)
 
     # Armar lista de columnas para el template.
+    from calendar import monthrange as _monthrange
+
     columnas: list[dict] = []
     for a_, m_ in meses_pasados:
         snap = snaps_pasados.get((a_, m_))
+        # 2026-07-09 (pedido dueña): mostrar el DÍA al que corresponde la
+        # columna. Un mes cerrado corresponde al último día del mes (31 may,
+        # 30 jun). Usamos la fecha del snapshot (= último día del mes) y, si
+        # falta el snapshot, el último día calendario del mes.
+        if snap and snap.get("fecha"):
+            _dia = snap["fecha"].day
+        else:
+            _dia = _monthrange(a_, m_)[1]
         columnas.append(
             {
                 "key": f"{a_:04d}-{m_:02d}",
                 "anio": a_,
                 "mes": m_,
+                "dia": _dia,
                 "label_corto": f"{m_:02d}/{a_ % 100:02d}",
                 "label_largo": f"{m_:02d}/{a_}",
                 "id_historia": int(snap["id_historia"]) if snap and snap.get("id_historia") else None,
@@ -6723,6 +6734,9 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 "key": f"{hoy.year:04d}-{hoy.month:02d}-{snap['id_historia']}",
                 "anio": hoy.year,
                 "mes": hoy.month,
+                # Día al que corresponde la foto (fecha del snapshot = el día
+                # en que se tomó, p.ej. "9 jul" para la previa de hoy).
+                "dia": snap["fecha"].day if snap.get("fecha") else hoy.day,
                 "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d}{sufijo}",
                 "label_largo": f"{hoy.month:02d}/{hoy.year}{sufijo}",
                 "id_historia": int(snap["id_historia"]),
@@ -6746,6 +6760,7 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
                 "key": f"{hoy.year:04d}-{hoy.month:02d}-live",
                 "anio": hoy.year,
                 "mes": hoy.month,
+                "dia": hoy.day,
                 "label_corto": f"{hoy.month:02d}/{hoy.year % 100:02d} · ahora",
                 "label_largo": f"{hoy.month:02d}/{hoy.year} · en vivo",
                 "id_historia": None,
@@ -6793,7 +6808,7 @@ def historico_5m_con_actual(max_actual: int = 3) -> dict:
         columnas.insert(_pos, {
             "key": "delta", "es_delta": True, "es_mes_actual": False,
             "es_canonico_default": False, "id_historia": None,
-            "fecha_crea": None, "anio": None, "mes": None,
+            "fecha_crea": None, "anio": None, "mes": None, "dia": None,
             "label_corto": "Δ", "label_largo": "Δ", "snap": None,
         })
 
