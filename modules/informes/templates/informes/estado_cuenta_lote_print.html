@@ -6,27 +6,48 @@
 {% endblock %}
 
 {% block content %}
+{# Cada cliente se imprime con el MISMO cuerpo que la pantalla individual
+   (_estado_cuenta_impreso.html) → "imprimir muchos" sale idéntico a "imprimir
+   uno". Copiamos la MISMA CSS de impresión densa de estado_cuenta.html. #}
 <style>
+  .cli-block .print-head { display: none; }
   @media print {
     .no-print { display: none !important; }
+    /* Salto de página entre clientes. */
     .cli-block { page-break-before: always; }
     .cli-block:first-of-type { page-break-before: avoid; }
-    .cli-block table td, .cli-block table th { padding: 1pt 4pt !important; font-size: 8pt !important; }
     tr { page-break-inside: avoid !important; }
-    .cli-nombre { font-size: 11pt !important; }
+    /* Header por cliente (1 línea: nombre + saldo), como el print-header del individual. */
+    .cli-block .print-head { display: block !important; border-bottom: 1.5pt solid #9ca3af !important;
+                             padding: 0 0 3pt 0 !important; margin: 4pt 0 5pt 0 !important; }
+    .cli-block .ph-nombre { font-size: 11pt !important; font-weight: bold !important; }
+    .cli-block .ph-saldo  { font-size: 9pt !important; font-weight: 600 !important; }
+    /* Tabla densa — mismas reglas que estado_cuenta.html. */
+    .max-w-6xl table { font-size: 7.5pt !important; line-height: 1.1 !important; border-collapse: collapse !important; }
+    .max-w-6xl table th, .max-w-6xl table td { padding: 0.5pt 3pt !important; font-size: 7.5pt !important; line-height: 1.1 !important; }
+    .max-w-6xl table td { border-bottom: 0.3pt solid #ccc !important; }
+    .max-w-6xl * { border-color: #d1d5db !important; }
+    .max-w-6xl table thead th { border-bottom: 0.8pt solid #9ca3af !important; font-size: 6.5pt !important; }
+    .max-w-6xl table tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; font-weight: 700 !important; }
+    .max-w-6xl h2 { font-size: 9pt !important; margin: 5pt 0 1pt 0 !important; page-break-after: avoid !important; }
+    .max-w-6xl table td span, .max-w-6xl table td div { padding: 0 !important; background: none !important;
+                                                        border: none !important; font-size: inherit !important; line-height: inherit !important; }
   }
   @media screen {
-    .cli-block { border-top: 3px solid #e2e8f0; margin-top: 1.5rem; padding-top: 1rem; }
+    .cli-block { border-top: 3px solid #e2e8f0; margin-top: 2rem; padding-top: 1.25rem; }
     .cli-block:first-of-type { border-top: 0; margin-top: 0; }
+    .cli-block .print-head { display: block; margin-bottom: .5rem; }
+    .cli-block .ph-nombre { font-size: 1.1rem; font-weight: 700; }
+    .cli-block .ph-saldo { font-size: .9rem; color: #64748b; }
   }
 </style>
 
-<div class="max-w-4xl">
+<div class="max-w-6xl">
   {# Barra de acción — no va en papel. #}
   <div class="no-print mb-5 flex items-center justify-between gap-4 flex-wrap">
     <div>
       <h1 class="text-xl font-semibold">Imprimir estados de cuenta</h1>
-      <p class="text-sm text-slate-500">{{ titulo }} · {{ n }} cliente(s), estado completo de cada uno.</p>
+      <p class="text-sm text-slate-500">{{ titulo }} · {{ n }} cliente(s) · estado completo de cada uno (idéntico al individual).</p>
     </div>
     <div class="flex gap-2">
       <a href="{{ request.referrer or url_for('informes.estado_cuenta_landing') }}"
@@ -41,59 +62,15 @@
   {% endif %}
 
   {% for c in clientes %}
-    {% set cli = c.cliente %}
+    {% set data = c %}
     {% set t = c.totales %}
-    {% set saldo = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
+    {% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
     <section class="cli-block">
-      <div class="flex items-baseline justify-between gap-4 flex-wrap mb-1">
-        <div class="cli-nombre text-lg font-bold">{{ cli.nombre }}
-          <span class="text-sm font-normal text-slate-500">({{ cli.codigo_cli }})</span>
-        </div>
-        <div class="text-sm">
-          Saldo: <span class="font-bold tabular-nums">{{ saldo | money_es }}</span>
-          {% if t.saldo_vencido %}<span class="text-red-600 dark:text-red-400">· vencido {{ t.saldo_vencido | money_es }}</span>{% endif %}
-          {% if t.cheques_cartera %}<span class="text-slate-500">· cheques cartera {{ t.cheques_cartera | money_es }}</span>{% endif %}
-        </div>
+      <div class="print-head">
+        <span class="ph-nombre">{{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})</span>
+        · <span class="ph-saldo">Saldo: {{ _saldo_neto | money_es }}</span>
       </div>
-      {% if cli.provincia or cli.canton %}
-        <div class="text-xs text-slate-500 mb-2">{{ cli.canton }}{% if cli.canton and cli.provincia %}, {% endif %}{{ cli.provincia }}</div>
-      {% endif %}
-
-      {% if c.facturas %}
-      <table class="w-full text-sm border-collapse">
-        <thead>
-          <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
-            <th class="text-left py-1 px-2">Nº</th>
-            <th class="text-left py-1 px-2">Fecha</th>
-            <th class="text-right py-1 px-2">Importe</th>
-            <th class="text-right py-1 px-2">Abonado</th>
-            <th class="text-right py-1 px-2">Saldo</th>
-            <th class="text-center py-1 px-2">St</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in c.facturas %}
-            <tr class="border-b border-slate-100 dark:border-slate-800/60">
-              <td class="py-1 px-2 font-mono text-xs">{{ f.numf_completo or f.numf or '—' }}</td>
-              <td class="py-1 px-2 text-xs whitespace-nowrap">{{ f.fecha | fecha_es if f.fecha else '—' }}</td>
-              <td class="py-1 px-2 text-right tabular-nums">{{ f.importe | money_es }}</td>
-              <td class="py-1 px-2 text-right tabular-nums text-slate-500">{{ f.abono | money_es }}</td>
-              <td class="py-1 px-2 text-right tabular-nums font-medium">{{ f.saldo | money_es }}</td>
-              <td class="py-1 px-2 text-center text-xs text-slate-500">{{ f.stat or '' }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-        <tfoot>
-          <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
-            <td class="py-1 px-2" colspan="4">SALDO</td>
-            <td class="py-1 px-2 text-right tabular-nums">{{ saldo | money_es }}</td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>
-      {% else %}
-        <p class="text-xs text-slate-400">Sin facturas vivas.</p>
-      {% endif %}
+      {% include "informes/_estado_cuenta_impreso.html" %}
     </section>
   {% endfor %}
 </div>
