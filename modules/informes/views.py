@@ -1358,6 +1358,13 @@ def flujo_grafico():
         for r in posdat_egresos
     ]
 
+    # Posdatados (banc=0) ordenados por fecha de vencimiento para la caja
+    # inferior del gráfico "Posdatados contabilizados" (dueña 2026-07-09).
+    posdat_filas = sorted(
+        (e for e in egresos_lista if e.get("banc") == 0),
+        key=lambda e: (e.get("fechad") or e.get("fecha_efectiva") or ""),
+    )
+
     # Plazos PLAZ.COBR / PLAZ.DEUDA — calculados server-side con la fórmula
     # de dBase (plazo otorgado ponderado por importe). El JS antes los
     # calculaba sobre la ventana del gráfico con `fecha-hoy`, lo cual no
@@ -1369,6 +1376,7 @@ def flujo_grafico():
         "informes/flujo_grafico.html",
         datos=datos,
         egresos_lista=egresos_lista,
+        posdat_filas=posdat_filas,
         hoy=today_ec().isoformat(),
         ventana_dias=ventana,
         ignorar_cheques=ignorar_cheques,

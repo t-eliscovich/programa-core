@@ -683,8 +683,8 @@
          entiendo de dónde sale cada número"). banc=0 = deuda real; de acá sale
          cada BAJADA del gráfico, a su vencimiento. Read-only; se editan en
          /posdat. Fechas DD/MM/AAAA (slicing del ISO, sin type=date gringo). #}
-      {% set _pd_filas = [] %}
-      {% for e in egresos_lista if e.banc == 0 %}{% set _ = _pd_filas.append(e) %}{% endfor %}
+      {# Ordenados por fecha de vencimiento (dueña 2026-07-09). #}
+      {% set _pd_filas = posdat_filas or [] %}
       {% set _total_pd0 = 0 %}
       {% for e in _pd_filas %}{% set _total_pd0 = _total_pd0 + e.importe %}{% endfor %}
       <section class="panel gf-panel gf-full" style="margin-bottom:16px;">
