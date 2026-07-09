@@ -2040,7 +2040,8 @@ def stock_inicial_capturar():
 
 @informes_bp.route("/estado-cuenta", methods=["GET"])
 @requiere_login
-@requiere_permiso("clientes.ver")
+# TMT 2026-07-09 (dueña "todos los usuarios tienen acceso a estado de cuenta"):
+# sin gate de permiso — cualquier usuario logueado puede ver estados de cuenta.
 def estado_cuenta_landing():
     """Landing/lookup page para estado de cuenta de cliente.
 
@@ -2071,7 +2072,7 @@ def estado_cuenta_landing():
 
 @informes_bp.route("/estado-cuenta/grupos", methods=["GET"])
 @requiere_login
-@requiere_permiso("clientes.ver")
+# TMT 2026-07-09 (dueña): estado de cuenta abierto a todos los usuarios logueados.
 def estado_cuenta_grupos():
     """Estado de cuenta de TODOS los clientes con saldo, AGRUPADO para imprimir.
 
@@ -2082,10 +2083,11 @@ def estado_cuenta_grupos():
     por = (request.args.get("por") or "vendedor").strip().lower()
     if por not in ("vendedor", "grupo", "provincia"):
         por = "vendedor"
+    sel = (request.args.get("sel") or "").strip()
     filas, error = _safe(queries.estado_cuenta_clientes_saldos, [])
     filas = filas or []
 
-    def _clave(r):
+    def _keylabel(r):
         if por == "vendedor":
             return (r.get("vend") or "~", r.get("vendedor_nombre") or "(sin vendedor)")
         if por == "provincia":
@@ -2093,36 +2095,67 @@ def estado_cuenta_grupos():
             return (prov, prov)
         return (r.get("grupo_codigo") or "~", r.get("grupo_nombre") or "(sin grupo)")
 
-    grupos_map: dict = {}
-    for r in filas:
-        k, label = _clave(r)
-        grp = grupos_map.setdefault(
-            k, {"label": label, "clientes": [], "saldo": 0.0, "vencido": 0.0}
+    ctx = {"por": por, "error": error, "sel": sel}
+
+    # GRUPOS: mostrar SOLO grupos reales (2+ clientes); los que están solos no
+    # se muestran. Todos los grupos juntos, uno debajo del otro.
+    if por == "grupo":
+        gmap: dict = {}
+        for r in filas:
+            k, label = _keylabel(r)
+            grp = gmap.setdefault(k, {"label": label, "clientes": [], "saldo": 0.0})
+            grp["clientes"].append(r)
+            grp["saldo"] += float(r.get("saldo") or 0)
+        grupos = [g for g in gmap.values() if len(g["clientes"]) >= 2]
+        grupos.sort(key=lambda x: x["saldo"], reverse=True)
+        for grp in grupos:
+            grp["clientes"].sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
+        ctx.update(
+            mode="grupo",
+            grupos=grupos,
+            total=sum(g["saldo"] for g in grupos),
+            n_clientes=sum(len(g["clientes"]) for g in grupos),
         )
-        grp["clientes"].append(r)
-        grp["saldo"] += float(r.get("saldo") or 0)
-        grp["vencido"] += float(r.get("vencido") or 0)
+        return render_template("informes/estado_cuenta_grupos.html", **ctx)
 
-    grupos = sorted(grupos_map.values(), key=lambda x: x["saldo"], reverse=True)
-    for grp in grupos:
-        grp["clientes"].sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
-    total = sum(g["saldo"] for g in grupos)
-    total_venc = sum(g["vencido"] for g in grupos)
+    # VENDEDOR / PROVINCIA: elegir uno (sel) e imprimir SUS clientes. Sin sel,
+    # mostrar la lista de opciones para elegir.
+    if sel:
+        clientes = []
+        sel_label = sel
+        for r in filas:
+            k, label = _keylabel(r)
+            if str(k) == sel:
+                clientes.append(r)
+                sel_label = label
+        clientes.sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
+        ctx.update(
+            mode="list",
+            sel_label=sel_label,
+            clientes=clientes,
+            total=sum(float(r.get("saldo") or 0) for r in clientes),
+        )
+        return render_template("informes/estado_cuenta_grupos.html", **ctx)
 
-    return render_template(
-        "informes/estado_cuenta_grupos.html",
-        grupos=grupos,
-        por=por,
-        total=total,
-        total_venc=total_venc,
+    opt_map: dict = {}
+    for r in filas:
+        k, label = _keylabel(r)
+        o = opt_map.setdefault(k, {"sel": k, "label": label, "n": 0, "saldo": 0.0})
+        o["n"] += 1
+        o["saldo"] += float(r.get("saldo") or 0)
+    options = sorted(opt_map.values(), key=lambda x: x["saldo"], reverse=True)
+    ctx.update(
+        mode="picker",
+        options=options,
+        total=sum(o["saldo"] for o in options),
         n_clientes=len(filas),
-        error=error,
     )
+    return render_template("informes/estado_cuenta_grupos.html", **ctx)
 
 
 @informes_bp.route("/estado-cuenta/<codigo_cli>")
 @requiere_login
-@requiere_permiso("clientes.ver")
+# TMT 2026-07-09 (dueña): estado de cuenta abierto a todos los usuarios logueados.
 def estado_cuenta(codigo_cli):
     codigo_up = codigo_cli.upper()
     data, error = _safe(lambda: queries.estado_cuenta_cliente(codigo_up), {})

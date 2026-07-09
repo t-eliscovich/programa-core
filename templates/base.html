@@ -828,6 +828,8 @@
       <details class="sidebar-section" data-key="datos">
         <summary>Datos base</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
+        {# TMT 2026-07-09 (dueña): estado de cuenta visible para todos. #}
+        {{ nav_link('informes.estado_cuenta_landing', 'Estados de cuenta', 'receipt') }}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
         {{ nav_link('precios.lista', 'Lista de precios', 'money') }}
         {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La

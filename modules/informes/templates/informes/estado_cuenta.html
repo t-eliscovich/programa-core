@@ -121,7 +121,9 @@
       {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
          (réplica mejorada del dBase CUENTA.PRG rama 'Y'). El GET es solo la
          pantalla de confirmación; ahí se ve lo que va a quedar. #}
-      {% if data.facturas %}
+      {# TMT 2026-07-09: el estado de cuenta lo ven todos, pero TOTALIZAR
+         re-liquida (escribe) → solo con permiso clientes.ver. #}
+      {% if data.facturas and tiene_permiso('clientes.ver') %}
       <a href="{{ url_for('informes.estado_cuenta_totalizar', codigo_cli=data.cliente.codigo_cli) }}"
          class="text-sm px-3 py-1.5 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
          title="Re-liquidar la cuenta FIFO: junta todos los abonos y los redistribuye de la factura más vieja a la más nueva. Abre una pantalla de confirmación.">

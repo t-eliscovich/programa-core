@@ -1,20 +1,17 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_hero %}
-{% block title %}Estado de cuenta por grupos{% endblock %}
+{% block title %}Estados de cuenta — {{ por|capitalize }}{% endblock %}
 {% block breadcrumb %}
-  <a href="{{ url_for('informes.estado_cuenta_landing') }}" class="hover:underline">Estado de cuenta</a> /
-  <strong>Por grupos</strong>
+  <a href="{{ url_for('informes.estado_cuenta_landing') }}" class="hover:underline">Estados de cuenta</a> /
+  <strong>{{ por|capitalize }}</strong>
 {% endblock %}
 
 {% block content %}
 <style>
-  /* Impresión: encabezado prolijo, tabla densa. Las líneas ya salen grises
-     por base.html (fix 2026-07-09). Ocultamos los controles de UI. */
   .print-only { display: none; }
   @media print {
     .no-print { display: none !important; }
     .print-only { display: block !important; }
-    .ec-grp thead th { font-size: 7pt !important; }
     .ec-grp td, .ec-grp th { padding: 1pt 4pt !important; font-size: 8pt !important; }
     .ec-grp .grp-head td { font-weight: 700 !important; font-size: 8.5pt !important;
                            border-top: 0.8pt solid #9ca3af !important; }
@@ -24,13 +21,34 @@
 </style>
 
 <div class="max-w-4xl">
-  <div class="flex items-start justify-between mb-4 gap-4 flex-wrap">
-    {{ page_hero('Estado de cuenta por grupos',
-                 descripcion='Saldo de todos los clientes con deuda, agrupado para imprimir.') }}
-    <button onclick="window.print()"
-            class="no-print rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
-      Imprimir
-    </button>
+  <div class="flex items-start justify-between mb-3 gap-4 flex-wrap">
+    {{ page_hero('Estados de cuenta', descripcion='Saldo de clientes con deuda — por cliente, vendedor, provincia o grupo.') }}
+    {% if mode in ('list', 'grupo') %}
+      <button onclick="window.print()"
+              class="no-print rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+        Imprimir
+      </button>
+    {% endif %}
+  </div>
+
+  {# ── Tabs ─────────────────────────────────────────────────────────────── #}
+  <div class="no-print mb-4 flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 flex-wrap">
+    {% set tabs = [('cliente','Por cliente'), ('vendedor','Vendedor'), ('provincia','Provincia'), ('grupo','Grupos')] %}
+    {% for key, label in tabs %}
+      {% if key == 'cliente' %}
+        {% set href = url_for('informes.estado_cuenta_landing') %}
+        {% set active = false %}
+      {% else %}
+        {% set href = url_for('informes.estado_cuenta_grupos', por=key) %}
+        {% set active = (por == key) %}
+      {% endif %}
+      <a href="{{ href }}"
+         class="px-4 py-2 text-sm font-medium -mb-px border-b-2
+                {% if active %}border-sky-600 text-sky-700 dark:text-sky-400
+                {% else %}border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200{% endif %}">
+        {{ label }}
+      </a>
+    {% endfor %}
   </div>
 
   {% if error %}
@@ -39,61 +57,73 @@
     </div>
   {% endif %}
 
-  {# Selector de agrupación — no va en papel. #}
-  <div class="no-print mb-4 flex items-center gap-2 flex-wrap">
-    <span class="text-xs font-medium text-slate-500 uppercase tracking-wide mr-1">Agrupar por</span>
-    {% for key, label in [('vendedor','Vendedor'), ('grupo','Grupo de clientes'), ('provincia','Provincia')] %}
-      <a href="{{ url_for('informes.estado_cuenta_grupos', por=key) }}"
-         class="px-3 py-1.5 rounded text-sm border
-                {% if por == key %}bg-sky-600 text-white border-sky-600
-                {% else %}border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
-        {{ label }}
-      </a>
-    {% endfor %}
-  </div>
-
-  {# Encabezado de impresión. #}
-  <div class="print-only mb-2">
-    <div style="font-size:11pt;font-weight:bold;">
-      Estado de cuenta por
-      {% if por == 'vendedor' %}vendedor{% elif por == 'provincia' %}provincia{% else %}grupo de clientes{% endif %}
-    </div>
-    <div style="font-size:8pt;">Impreso {{ g.now | fecha_es }} · {{ n_clientes }} clientes · total {{ total | money_es }}</div>
-  </div>
-
-  {# Total general (pantalla). #}
-  <div class="no-print mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-4 flex flex-wrap gap-6 items-baseline">
-    <div>
-      <div class="text-xs uppercase tracking-wide text-slate-500">Total cartera</div>
-      <div class="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">{{ total | money_es }}</div>
-    </div>
-    <div>
-      <div class="text-xs uppercase tracking-wide text-slate-500">Clientes / grupos</div>
-      <div class="text-lg font-semibold tabular-nums">{{ n_clientes }} / {{ grupos | length }}</div>
-    </div>
-  </div>
-
-  {% if not grupos %}
-    <p class="text-slate-500 text-sm">No hay clientes con saldo.</p>
-  {% else %}
-  <table class="ec-grp w-full text-sm border-collapse">
-    <thead>
-      <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
-        <th class="text-left py-2 px-2">Código</th>
-        <th class="text-left py-2 px-2">Cliente</th>
-        <th class="text-right py-2 px-2">Saldo</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for grp in grupos %}
-        <tr class="grp-head bg-slate-100 dark:bg-slate-800/60 border-t border-slate-300 dark:border-slate-700">
-          <td class="py-1.5 px-2 font-semibold" colspan="2">
-            {{ grp.label }}
-            <span class="text-xs font-normal text-slate-500">· {{ grp.clientes | length }} cliente(s)</span>
-          </td>
-          <td class="py-1.5 px-2 text-right font-bold tabular-nums">{{ grp.saldo | money_es }}</td>
+  {# ═══════════════════ MODE: PICKER (elegir vendedor/provincia) ═══════════ #}
+  {% if mode == 'picker' %}
+    <p class="text-sm text-slate-500 mb-3">
+      Elegí un {{ 'vendedor' if por == 'vendedor' else 'una provincia' }} para ver e imprimir todos sus clientes.
+    </p>
+    {% if not options %}
+      <p class="text-slate-500 text-sm">No hay clientes con saldo.</p>
+    {% else %}
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
+          <th class="text-left py-2 px-2">{{ 'Vendedor' if por == 'vendedor' else 'Provincia' }}</th>
+          <th class="text-right py-2 px-2">Clientes</th>
+          <th class="text-right py-2 px-2">Saldo</th>
         </tr>
-        {% for c in grp.clientes %}
+      </thead>
+      <tbody>
+        {% for o in options %}
+          <tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="py-2 px-2">
+              <a href="{{ url_for('informes.estado_cuenta_grupos', por=por, sel=o.sel) }}"
+                 class="font-medium text-sky-700 dark:text-sky-400 hover:underline">{{ o.label }}</a>
+            </td>
+            <td class="py-2 px-2 text-right tabular-nums text-slate-500">{{ o.n }}</td>
+            <td class="py-2 px-2 text-right tabular-nums font-semibold">{{ o.saldo | money_es }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
+          <td class="py-2 px-2">TOTAL</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ n_clientes }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% endif %}
+
+  {# ═══════════════════ MODE: LIST (clientes de un vendedor/provincia) ═════ #}
+  {% elif mode == 'list' %}
+    <a href="{{ url_for('informes.estado_cuenta_grupos', por=por) }}"
+       class="no-print inline-block mb-3 text-sm text-sky-700 dark:text-sky-400 hover:underline">← Volver a la lista</a>
+
+    <div class="mb-3">
+      <div class="print-only" style="font-size:11pt;font-weight:bold;">
+        Estado de cuenta — {{ 'Vendedor' if por == 'vendedor' else 'Provincia' }}: {{ sel_label }}
+      </div>
+      <div class="print-only" style="font-size:8pt;">Impreso {{ g.now | fecha_es }} · {{ clientes|length }} clientes · total {{ total | money_es }}</div>
+      <h2 class="no-print text-lg font-semibold">
+        {{ 'Vendedor' if por == 'vendedor' else 'Provincia' }}: <span class="text-sky-700 dark:text-sky-400">{{ sel_label }}</span>
+        <span class="text-sm font-normal text-slate-500">· {{ clientes|length }} clientes · {{ total | money_es }}</span>
+      </h2>
+    </div>
+
+    {% if not clientes %}
+      <p class="text-slate-500 text-sm">No hay clientes con saldo para esta selección.</p>
+    {% else %}
+    <table class="ec-grp w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
+          <th class="text-left py-2 px-2">Código</th>
+          <th class="text-left py-2 px-2">Cliente</th>
+          <th class="text-right py-2 px-2">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clientes %}
           <tr class="border-b border-slate-100 dark:border-slate-800/60">
             <td class="py-1 px-2 font-mono text-xs">
               <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
@@ -103,15 +133,66 @@
             <td class="py-1 px-2 text-right tabular-nums">{{ c.saldo | money_es }}</td>
           </tr>
         {% endfor %}
-      {% endfor %}
-    </tbody>
-    <tfoot>
-      <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
-        <td class="py-2 px-2" colspan="2">TOTAL</td>
-        <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
-      </tr>
-    </tfoot>
-  </table>
+      </tbody>
+      <tfoot>
+        <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
+          <td class="py-2 px-2" colspan="2">TOTAL</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% endif %}
+
+  {# ═══════════════════ MODE: GRUPO (solo grupos reales, 2+) ═══════════════ #}
+  {% elif mode == 'grupo' %}
+    <p class="no-print text-sm text-slate-500 mb-3">
+      Solo grupos con 2 o más clientes (los clientes sin grupo no se muestran acá).
+    </p>
+    <div class="print-only mb-2">
+      <div style="font-size:11pt;font-weight:bold;">Estado de cuenta por grupo de clientes</div>
+      <div style="font-size:8pt;">Impreso {{ g.now | fecha_es }} · {{ grupos|length }} grupos · {{ n_clientes }} clientes · total {{ total | money_es }}</div>
+    </div>
+
+    {% if not grupos %}
+      <p class="text-slate-500 text-sm">No hay grupos con 2 o más clientes con saldo.</p>
+    {% else %}
+    <table class="ec-grp w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-xs uppercase tracking-wide text-slate-500 border-b border-slate-300 dark:border-slate-700">
+          <th class="text-left py-2 px-2">Código</th>
+          <th class="text-left py-2 px-2">Cliente</th>
+          <th class="text-right py-2 px-2">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for grp in grupos %}
+          <tr class="grp-head bg-slate-100 dark:bg-slate-800/60 border-t border-slate-300 dark:border-slate-700">
+            <td class="py-1.5 px-2 font-semibold" colspan="2">
+              {{ grp.label }}
+              <span class="text-xs font-normal text-slate-500">· {{ grp.clientes | length }} clientes</span>
+            </td>
+            <td class="py-1.5 px-2 text-right font-bold tabular-nums">{{ grp.saldo | money_es }}</td>
+          </tr>
+          {% for c in grp.clientes %}
+            <tr class="border-b border-slate-100 dark:border-slate-800/60">
+              <td class="py-1 px-2 font-mono text-xs">
+                <a href="{{ url_for('informes.estado_cuenta', codigo_cli=c.codigo_cli) }}"
+                   class="hover:underline text-sky-700 dark:text-sky-400">{{ c.codigo_cli }}</a>
+              </td>
+              <td class="py-1 px-2">{{ c.nombre }}</td>
+              <td class="py-1 px-2 text-right tabular-nums">{{ c.saldo | money_es }}</td>
+            </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
+          <td class="py-2 px-2" colspan="2">TOTAL</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% endif %}
   {% endif %}
 </div>
 {% endblock %}
