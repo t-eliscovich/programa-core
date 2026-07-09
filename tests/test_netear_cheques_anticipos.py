@@ -26,6 +26,12 @@ class _DBStub:
 
     def fetch_all(self, sql, params=None, conn=None):
         s = " ".join(sql.split()).lower()
+        # El lookup de facturas aplicadas (chequesxfact) es de SOLO LECTURA — no
+        # lleva (ni puede, por el DISTINCT) FOR UPDATE. Devolvemos "sin
+        # aplicaciones" para que el neteo siga directo al anular.
+        if "chequesxfact" in s:
+            return []
+        # Los SELECT de cheque/anticipo SÍ deben lockear las filas (FOR UPDATE).
         assert "for update" in s
         # el 2do fetch selecciona no_banco (anticipos); el 1ro no.
         if "no_banco" in s:
