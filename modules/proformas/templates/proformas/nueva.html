@@ -108,9 +108,9 @@
 
       <div class="ml-auto w-full max-w-sm text-sm space-y-1 self-start">
         <div class="flex justify-between"><span class="text-slate-500">Subtotal</span><span class="font-mono" id="t-subtotal">0,00</span></div>
-        <div class="flex justify-between text-slate-500"><span>Descuento por volumen</span><span class="font-mono" id="t-descvol">0,00</span></div>
-        <div class="flex justify-between"><span class="text-slate-500">Subtotal c/desc</span><span class="font-mono" id="t-subdesc">0,00</span></div>
         <div class="flex justify-between text-slate-500" id="row-cont"><span>Descuento por contado (5%)</span><span class="font-mono" id="t-desccont">0,00</span></div>
+        <div class="flex justify-between"><span class="text-slate-500">Subtotal c/desc</span><span class="font-mono" id="t-subdesc">0,00</span></div>
+        <div class="flex justify-between text-slate-500"><span>Descuento por volumen</span><span class="font-mono" id="t-descvol">0,00</span></div>
         {% if es_pedido %}
         <div class="flex justify-between text-slate-500" id="row-flete"><span>Flete</span><span class="font-mono" id="t-flete">0,00</span></div>
         {% endif %}
@@ -390,17 +390,31 @@
           if (campos[idx + 1].select) campos[idx + 1].select();
         } else {
           const filas = body.querySelectorAll('tr');
-          if (tr === filas[filas.length - 1]) {
-            agregarFila().querySelector('.js-tipo').focus();
-          } else {
-            const next = tr.nextElementSibling;
-            if (next) next.querySelector('.js-tipo').focus();
+          const next = (tr === filas[filas.length - 1]) ? agregarFila() : tr.nextElementSibling;
+          if (next) {
+            prefillRow(tr, next);
+            next.querySelector('.js-tipo').focus();
           }
         }
       });
     });
 
     return tr;
+  }
+
+  // Carry-over: al pasar a la fila siguiente (si está vacía) copia Tipo y Color
+  // de la fila anterior; son editables. TMT 2026-07-09 (dueña).
+  function prefillRow(fromTr, toTr) {
+    if (!fromTr || !toTr) return;
+    const tTipo = toTr.querySelector('.js-tipo');
+    if (!tTipo || tTipo.value.trim()) return;   // el destino ya tiene datos → no pisar
+    const fTipo = fromTr.querySelector('.js-tipo');
+    const fColor = fromTr.querySelector('.js-color');
+    const tColor = toTr.querySelector('.js-color');
+    if (fTipo) tTipo.value = fTipo.value;
+    if (tColor && fColor) tColor.value = fColor.value;
+    tTipo.dispatchEvent(new Event('change'));                 // deriva precio
+    if (tColor) tColor.dispatchEvent(new Event('change'));    // deriva clase + precio
   }
 
   function agregarFila() {
@@ -427,15 +441,15 @@
     const fleteEl = document.getElementById('flete');
     const flete = (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0;
 
-    const montoVol = subtotal * pctVol / 100;
-    const subDesc = subtotal - montoVol;
-    const montoCont = subDesc * pctCont / 100;
-    const total = subDesc - montoCont + flete;
+    const montoCont = subtotal * pctCont / 100;
+    const subCont = subtotal - montoCont;
+    const montoVol = subCont * pctVol / 100;
+    const total = subCont - montoVol + flete;
 
     document.getElementById('t-subtotal').textContent = fmt(subtotal);
-    document.getElementById('t-descvol').textContent = '-' + fmt(montoVol);
-    document.getElementById('t-subdesc').textContent = fmt(subDesc);
     document.getElementById('t-desccont').textContent = '-' + fmt(montoCont);
+    document.getElementById('t-subdesc').textContent = fmt(subCont);
+    document.getElementById('t-descvol').textContent = '-' + fmt(montoVol);
     const tFlete = document.getElementById('t-flete');
     if (tFlete) tFlete.textContent = fmt(flete);
     document.getElementById('t-total').textContent = fmt(total);
@@ -444,7 +458,10 @@
   document.getElementById('desc-vol').addEventListener('input', recalc);
   { const _f = document.getElementById('flete'); if (_f) _f.addEventListener('input', recalc); }
   document.getElementById('add-linea').addEventListener('click', () => {
-    agregarFila().querySelector('.js-tipo').focus();
+    const prev = body.lastElementChild;
+    const tr = agregarFila();
+    prefillRow(prev, tr);
+    tr.querySelector('.js-tipo').focus();
   });
 
   // Arrancar con 3 filas y foco en la primera.
@@ -501,10 +518,10 @@
     const pctCont = 5;
     const fleteEl = document.getElementById('flete');
     const flete = (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0;
-    const montoVol = subtotal * pctVol / 100;
-    const subDesc = subtotal - montoVol;
-    const montoCont = subDesc * pctCont / 100;
-    const total = subDesc - montoCont + flete;
+    const montoCont = subtotal * pctCont / 100;
+    const subCont = subtotal - montoCont;
+    const montoVol = subCont * pctVol / 100;
+    const total = subCont - montoVol + flete;
     const obs = (document.querySelector('textarea[name="observaciones"]').value || '').trim();
 
     const filasHtml = rows.map(r =>
@@ -520,12 +537,12 @@
       : 'Cotización referencial — precios sujetos a cambio. No constituye factura.';
 
     let totHtml = `<div><span>Subtotal</span><span>${fmt(subtotal)}</span></div>`;
-    if (pctVol > 0) {
-      totHtml += `<div><span>Descuento por volumen (${fmt(pctVol)}%)</span><span>-${fmt(montoVol)}</span></div>`;
-      totHtml += `<div><span>Subtotal c/desc</span><span>${fmt(subDesc)}</span></div>`;
-    }
     if (montoCont > 0) {
       totHtml += `<div><span>Descuento por pronto pago (5%)</span><span>-${fmt(montoCont)}</span></div>`;
+      totHtml += `<div><span>Subtotal c/desc</span><span>${fmt(subCont)}</span></div>`;
+    }
+    if (pctVol > 0) {
+      totHtml += `<div><span>Descuento por volumen (${fmt(pctVol)}%)</span><span>-${fmt(montoVol)}</span></div>`;
     }
     if (flete > 0) {
       totHtml += `<div><span>Flete</span><span>${fmt(flete)}</span></div>`;
