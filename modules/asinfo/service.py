@@ -1430,46 +1430,69 @@ def hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> float:
     return total
 
 
-def ingreso_fabricacion_mes(id_bodega: int, yy: int, mm: int) -> float:
-    """Kg PRODUCIDOS/ingresados a una bodega (52 Tela Cruda / 53 Terminado) en
-    el mes (yy, mm), vía el kardex de fabricación de Asinfo.
+def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
+    """Consumo y producción de una bodega (52 Tejeduría → Tela Cruda /
+    53 Tintorería → Terminado) para las órdenes CERRADAS en el mes.
 
-    Es "cuánto ingresó a esa bodega" como producto del proceso: los
-    movimientos de inventario ligados a una orden de fabricación con destino a
-    la bodega, sumando `detalle_movimiento_inventario.cantidad` con
-    `movimiento_inventario.fecha` dentro del mes. (Misma fuente que el debug
-    `?v=ing` de debug_fabricacion_wip.)
+    Devuelve `{"issued": kg_material_consumido, "fab": kg_producidos}`:
+      · fab    = SUM(cantidad_fabricada) = kg que INGRESARON a la bodega
+                 (tela cruda / terminado producido).
+      · issued = SUM(cantidad_despachada) del material de entrada = kg que
+                 se CONSUMIERON (hilo para tejer / crudo para tinturar).
+      · issued − fab = DESPERDICIO (merma) del proceso.
 
-    Se usa para mostrar el ingreso REAL de tela cruda / terminado (en vez de
-    derivarlo del balance) y así exponer el desperdicio = egreso del proceso
-    anterior − ingreso al siguiente. Fail-soft: 0.0 si Asinfo no responde.
+    Se filtra por `fecha_cierre` (cuándo la orden terminó de producir = cuándo
+    ingresó a la bodega), NO por `fecha` (creación de la orden). Sólo órdenes
+    HOJA (no padres). Fail-soft: {"issued":0,"fab":0}.
+
+    (Verificado en vivo 2026-07-09: b52 issued 46.540 / fab 46.126 → merma
+    ~0,9%; b53 issued 88.212 / fab 83.943 → merma ~4,8%.)
     """
+    zero = {"issued": 0.0, "fab": 0.0}
     try:
         yy = int(yy)
         mm = int(mm)
     except (TypeError, ValueError):
-        return 0.0
+        return dict(zero)
     d1 = f"{yy:04d}-{mm:02d}-01"
     ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
     d2 = f"{ny:04d}-{nm:02d}-01"
-    # cantidad_fabricada de las órdenes de fabricación de la bodega cuya fecha
-    # cae en el mes = kg producidos (ingresados) a esa bodega. (El kardex
-    # movimiento_inventario está vacío en Asinfo; esta es la fuente que tiene
-    # datos — ver debug_fabricacion_wip ?desde=YYYY-MM-DD.)
-    # Sólo órdenes HOJA (no padres) para no doble-contar la cantidad_fabricada
-    # — mismo criterio que fabricacion_proceso()/stock_en_proceso().
+    mat = _MATERIAL_PROCESO.get(int(id_bodega), "")
+    cat_filter = (
+        f" AND prm.nombre_categoria_producto = '{mat}'" if mat else ""
+    )
     sql = f"""
-        SELECT SUM(ISNULL(cantidad_fabricada, 0)) AS kg
-          FROM orden_fabricacion
-         WHERE id_bodega = {int(id_bodega)}
-           AND fecha >= '{d1}'
-           AND fecha <  '{d2}'
-           AND id_orden_fabricacion NOT IN (
-                 SELECT id_orden_fabricacion_padre FROM orden_fabricacion
-                  WHERE id_orden_fabricacion_padre IS NOT NULL)
+        WITH ofs AS (
+            SELECT id_orden_fabricacion, ISNULL(cantidad_fabricada, 0) AS fab
+              FROM orden_fabricacion
+             WHERE id_bodega = {int(id_bodega)}
+               AND fecha_cierre >= '{d1}' AND fecha_cierre < '{d2}'
+               AND id_orden_fabricacion NOT IN (
+                     SELECT id_orden_fabricacion_padre FROM orden_fabricacion
+                      WHERE id_orden_fabricacion_padre IS NOT NULL)
+        ),
+        iss AS (
+            SELECT j.id_orden_fabricacion,
+                   SUM(ISNULL(d.cantidad_despachada, 0)) AS issued
+              FROM detalle_orden_salida_material_orden_fabricacion j
+              JOIN detalle_orden_salida_material d
+                ON d.id_detalle_orden_salida_material = j.id_detalle_orden_salida_material
+              JOIN producto prm ON prm.id_producto = d.id_producto
+             WHERE j.id_orden_fabricacion IN (SELECT id_orden_fabricacion FROM ofs)
+                   {cat_filter}
+             GROUP BY j.id_orden_fabricacion
+        )
+        SELECT SUM(o.fab)                    AS fab,
+               SUM(ISNULL(i.issued, 0))      AS issued
+          FROM ofs o
+          LEFT JOIN iss i ON i.id_orden_fabricacion = o.id_orden_fabricacion
     """
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=10)
-        return float((rows or [{}])[0].get("kg") or 0.0)
+        r = (rows or [{}])[0]
+        return {
+            "issued": float(r.get("issued") or 0.0),
+            "fab": float(r.get("fab") or 0.0),
+        }
     except Exception:  # noqa: BLE001 -- fail-soft
-        return 0.0
+        return dict(zero)

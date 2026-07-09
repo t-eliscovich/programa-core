@@ -138,60 +138,53 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
             compras = float(_asvc.hilado_recibido_mes(int(anio), int(mes)) or 0.0)
         except Exception:  # noqa: BLE001 -- fail-soft
             compras = 0.0
-    # W (lo tejido) = hilo CONSUMIDO por tejeduría = balance de hilo de Asinfo
-    # (inic + compras − actual). 100% Asinfo y ADEMÁS hace cerrar el hilado.
-    W = max(hi0 + compras - hi1, 0.0)
-    # INGRESOS REALES a cada bodega desde Asinfo (kardex de fabricación), en vez
-    # de derivarlos del balance. Dueña 2026-07-09: "para tela cruda ingreso y
-    # producto terminado ingreso, sumá desde Asinfo cuánto ingresó a cada
-    # bodega desde el 1° del mes; la diferencia entre lo que egresó del proceso
-    # anterior y lo que ingresó al siguiente es el DESPERDICIO".
-    ci_crudo = ci_term = 0.0
+    # FLUJO DE FABRICACIÓN REAL de Asinfo (dueña 2026-07-09). Por bodega, de las
+    # órdenes CERRADAS en el mes (fecha_cierre): material consumido (issued) y
+    # producto fabricado (fab). El desperdicio (merma) = issued − fab.
+    #   · Tejeduría (b52): hilo consumido − tela cruda producida.
+    #   · Tintura   (b53): crudo consumido − producto terminado producido.
+    b52 = {"issued": 0.0, "fab": 0.0}
+    b53 = {"issued": 0.0, "fab": 0.0}
     if anio and mes:
         try:
             from modules.asinfo import service as _asvc2
-            ci_crudo = float(_asvc2.ingreso_fabricacion_mes(52, int(anio), int(mes)) or 0.0)
-            ci_term = float(_asvc2.ingreso_fabricacion_mes(53, int(anio), int(mes)) or 0.0)
+            b52 = _asvc2.fabricacion_flujo_mes(52, int(anio), int(mes)) or b52
+            b53 = _asvc2.fabricacion_flujo_mes(53, int(anio), int(mes)) or b53
         except Exception:  # noqa: BLE001 -- fail-soft
-            ci_crudo = ci_term = 0.0
-    # Egresos derivados para que cada bodega CIERRE con su ingreso real + saldo
-    # Asinfo (el maq cancela: inic + ingreso + en_máq − egreso = act_total).
-    crudo_egreso = max(tc0 + ci_crudo - tc1, 0.0)   # crudo consumido a tintura
-    ventas = max(pf0 + ci_term - pf1, 0.0)          # ventas (cierra terminado)
-    # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente.
-    desp_crudo = W - ci_crudo            # tejeduría: hilo consumido − cruda producida
-    desp_term = crudo_egreso - ci_term   # tintura: crudo consumido − PT producido
+            pass
+    hilo_consumido = float(b52.get("issued") or 0.0)   # HILADO egreso (a tejer)
+    ci_crudo = float(b52.get("fab") or 0.0)            # CRUDO ingreso (producido)
+    crudo_consumido = float(b53.get("issued") or 0.0)  # CRUDO egreso (a tinturar)
+    ci_term = float(b53.get("fab") or 0.0)             # TERM ingreso (producido)
+    ventas = max(pf0 + ci_term - pf1, 0.0)             # TERM egreso (cierra term)
+    # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente (= merma).
+    desp_crudo = hilo_consumido - ci_crudo   # tejeduría: hilo − cruda
+    desp_term = crudo_consumido - ci_term    # tintura: crudo − PT
 
-    # HILADO — inicial/actual de Asinfo; ingreso=compras, egreso=W (lo tejido).
-    # $/kg: mismos que el dBase (stock_inic_ukg, ingresos_ukg, egresos_ukg=um_act).
+    # HILADO — ingreso=compras (importaciones), egreso=hilo consumido a tejer.
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_us"] = hi0 * _f(hl, "stock_inic_ukg")
     hl["ingresos_kg"] = compras
     hl["ingresos_us"] = compras * _f(hl, "ingresos_ukg")
-    hl["egresos_kg"] = W
-    hl["egresos_us"] = W * _f(hl, "egresos_ukg")
-    # Stock act. INCLUYE lo que está en máquinas (WIP) → es el stock TOTAL y
-    # coincide con el inventario live (dueña 2026-07-09: "stock total incluye el
-    # de máquina, no pongas otra fila"). La derivación (W, D) sigue usando la
-    # bodega pura (hi1/tc1); solo el saldo mostrado suma el WIP. Cierra:
-    # inic + ingresos + en_máquinas − egresos = stock total.
+    hl["egresos_kg"] = hilo_consumido
+    hl["egresos_us"] = hilo_consumido * _f(hl, "egresos_ukg")
     hl["stock_act_kg"] = hi1 + maq_hilado
     hl["stock_act_us"] = (hi1 + maq_hilado) * _f(hl, "stock_act_ukg")
 
-    # CRUDO — ingreso REAL de Asinfo (bodega 52), egreso derivado. Sólo kg.
-    # El % es el rendimiento: cruda producida / hilo consumido (<100% = merma).
+    # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
+    # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
     tj["stock_inic_kg"] = tc0
     tj["ingresos_kg"] = ci_crudo
-    tj["egresos_kg"] = crudo_egreso
-    tj["ingresos_pct"] = (ci_crudo / W * 100.0) if W else 0.0
+    tj["egresos_kg"] = crudo_consumido
+    tj["ingresos_pct"] = (ci_crudo / hilo_consumido * 100.0) if hilo_consumido else 0.0
     tj["stock_act_kg"] = tc1 + maq_crudo
 
-    # TERMINADO — ingreso REAL de Asinfo (bodega 53), egreso=ventas. Sólo kg.
-    # El % es el rendimiento: PT producido / crudo consumido (>100% = gana peso).
+    # TERMINADO — ingreso = PT producido (real), egreso = ventas. El % =
+    # rendimiento: PT producido / crudo consumido (<100% = merma de tintura).
     te["stock_inic_kg"] = pf0
     te["ingresos_kg"] = ci_term
     te["egresos_kg"] = ventas
-    te["ingresos_pct"] = (ci_term / crudo_egreso * 100.0) if crudo_egreso else 0.0
+    te["ingresos_pct"] = (ci_term / crudo_consumido * 100.0) if crudo_consumido else 0.0
     te["stock_act_kg"] = pf1
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
