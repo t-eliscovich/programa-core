@@ -260,55 +260,85 @@
       {# ─── STOCK DE QUÍMICOS — modelo programa vs formulas (dueña 2026-07-09) ─── #}
       {% set qm = mov_asinfo.quimicos_modelo %}
       {% if qm %}
-      <div class="mt-4 max-w-md" data-no-sort-table>
-        <div class="rounded-xl border border-violet-200 dark:border-violet-900/50 overflow-hidden shadow-sm">
-          <div class="bg-violet-600 text-white px-4 py-2.5 flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider">Stock de químicos · {{ '%02d/%d' % (mes, anio) }}</span>
-            <span class="text-[10px] text-violet-200 uppercase tracking-wide">Programa vs Formulas</span>
+      {% set fp = qm.final_prog or 0 %}
+      {% set ff = qm.final_form %}
+      {% set mx = ([fp, (ff or 0)] | max) or 1 %}
+      {% set libro_w = (fp / mx * 100) if fp > 0 else 0 %}
+      {% set fis_w = ((ff or 0) / mx * 100) if (ff and ff > 0) else 0 %}
+      <div class="fp-quim mt-5 max-w-lg" data-no-sort-table>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+
+          {# header #}
+          <div class="px-5 pt-4 pb-3 flex items-start justify-between">
+            <div>
+              <h3 class="text-[15px] font-semibold text-slate-900 dark:text-white tracking-tight leading-none">Stock de químicos</h3>
+              <p class="text-[11px] text-slate-400 mt-1">Libro del programa vs. físico de formulas · {{ '%02d/%d' % (mes, anio) }}</p>
+            </div>
+            <span class="shrink-0 text-[10px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 rounded-full tracking-wider">USD</span>
           </div>
-          <div class="bg-white dark:bg-slate-900 px-4 py-3 text-sm">
-            <table class="w-full text-sm tabular-nums" data-no-sort-table>
-              <tbody>
-                <tr>
-                  <td class="py-1 text-slate-600 dark:text-slate-300">Inicial <span class="text-[10px] text-slate-400">(programa · del dBase)</span></td>
-                  <td class="py-1 text-right font-semibold text-slate-800 dark:text-slate-100">$ {{ qm.inicial | num_es(0) }}</td>
-                </tr>
-                <tr>
-                  <td class="py-1 text-emerald-700 dark:text-emerald-400">+ Compras del mes <span class="text-[10px] text-slate-400">(programa · tipo Q{% if qm.compras_n %} · {{ qm.compras_n }} compra{{ 's' if qm.compras_n != 1 else '' }}{% endif %})</span></td>
-                  <td class="py-1 text-right font-semibold text-emerald-700 dark:text-emerald-400">$ {{ qm.compras | num_es(0) }}</td>
-                </tr>
-                <tr>
-                  <td class="py-1 text-rose-700 dark:text-rose-400">− Egresos <span class="text-[10px] text-slate-400">(formulas · consumo de órdenes)</span></td>
-                  <td class="py-1 text-right font-semibold text-rose-700 dark:text-rose-400">{% if qm.egresos is not none %}$ {{ qm.egresos | num_es(0) }}{% else %}<span class="text-slate-400">s/d</span>{% endif %}</td>
-                </tr>
-                <tr class="border-t-2 border-slate-300 dark:border-slate-600">
-                  <td class="py-1.5 font-bold text-slate-900 dark:text-white">= Final programa <span class="text-[10px] font-normal text-slate-400">(computado)</span></td>
-                  <td class="py-1.5 text-right font-bold text-slate-900 dark:text-white">$ {{ qm.final_prog | num_es(0) }}</td>
-                </tr>
-                {% if qm.final_form is not none %}
-                <tr>
-                  <td class="pt-2 text-slate-600 dark:text-slate-300">Final formulas <span class="text-[10px] text-slate-400">(stock real hoy)</span></td>
-                  <td class="pt-2 text-right font-semibold text-slate-800 dark:text-slate-100">$ {{ qm.final_form | num_es(0) }}</td>
-                </tr>
-                {% set aj = qm.ajuste %}
-                {% set aj_abs = (aj if aj >= 0 else -aj) %}
-                {% set aj_grande = (aj_abs > (qm.final_form * 0.15 if qm.final_form else 0)) %}
-                <tr>
-                  <td class="py-1 {{ 'text-amber-700 dark:text-amber-500' if aj_grande else 'text-slate-500' }}">
-                    Ajuste <span class="text-[10px] text-slate-400">(formulas − programa)</span>
-                  </td>
-                  <td class="py-1 text-right font-bold {{ 'text-amber-700 dark:text-amber-500' if aj_grande else 'text-slate-600 dark:text-slate-300' }}">
-                    {% if aj >= 0 %}+{% else %}−{% endif %}$ {{ aj_abs | num_es(0) }}
-                  </td>
-                </tr>
-                {% endif %}
-              </tbody>
-            </table>
+
+          {# ledger — construcción del libro #}
+          <div class="px-5">
+            <dl class="text-sm tabular-nums">
+              <div class="flex items-baseline justify-between py-1.5">
+                <dt class="text-slate-500 dark:text-slate-400">Inicial <span class="text-[10px] text-slate-400/80 ml-0.5">semilla dBase</span></dt>
+                <dd class="font-medium text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</dd>
+              </div>
+              <div class="flex items-baseline justify-between py-1.5 border-t border-slate-100 dark:border-slate-800/60">
+                <dt class="text-slate-500 dark:text-slate-400">Compras del mes <span class="text-[10px] text-slate-400/80 ml-0.5">programa · tipo Q{% if qm.compras_n %} · {{ qm.compras_n }}{% endif %}</span></dt>
+                <dd class="font-medium text-emerald-600 dark:text-emerald-400">+ {{ qm.compras | num_es(0) }}</dd>
+              </div>
+              <div class="flex items-baseline justify-between py-1.5 border-t border-slate-100 dark:border-slate-800/60">
+                <dt class="text-slate-500 dark:text-slate-400">Egresos <span class="text-[10px] text-slate-400/80 ml-0.5">consumo formulas</span></dt>
+                <dd class="font-medium text-rose-500 dark:text-rose-400">{% if qm.egresos is not none %}− {{ qm.egresos | num_es(0) }}{% else %}<span class="text-slate-300">s/d</span>{% endif %}</dd>
+              </div>
+              <div class="flex items-baseline justify-between pt-2.5 pb-3.5 mt-1 border-t-2 border-slate-200 dark:border-slate-700">
+                <dt class="font-semibold text-slate-900 dark:text-white">Final del programa</dt>
+                <dd class="text-lg font-semibold text-slate-900 dark:text-white tracking-tight">{{ qm.final_prog | num_es(0) }}</dd>
+              </div>
+            </dl>
           </div>
-          <div class="bg-slate-50 dark:bg-slate-800/40 px-4 py-2 text-[10px] text-slate-500 leading-relaxed border-t border-slate-100 dark:border-slate-800">
-            El programa arrastra el libro: <b>inicial</b> (semilla del dBase) <b>+ compras</b> (las que carga
-            «Cargar químicos») <b>− egresos</b> (consumo de formulas) = <b>final programa</b>. El
-            <b>ajuste</b> es la varianza contra el stock físico vivo de formulas — se muestra, no se postea.
+
+          {% if ff is not none %}
+          {% set aj = qm.ajuste %}
+          {% set aj_abs = (aj if aj >= 0 else -aj) %}
+          {# comparación visual — libro vs físico #}
+          <div class="px-5 py-4 bg-slate-50/70 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800">
+            <div class="flex items-center justify-between text-[11px] mb-1.5">
+              <span class="text-slate-500 dark:text-slate-400">Libro <span class="text-slate-400/70">programa</span></span>
+              <span class="tabular-nums font-medium text-slate-600 dark:text-slate-300">{{ qm.final_prog | num_es(0) }}</span>
+            </div>
+            <div class="h-2 rounded-full bg-slate-200/70 dark:bg-slate-700/60 overflow-hidden">
+              <div class="h-full rounded-full bg-slate-400 dark:bg-slate-500 transition-all" style="width: {{ '%.1f' % libro_w }}%"></div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] mb-1.5 mt-3">
+              <span class="text-slate-500 dark:text-slate-400">Físico <span class="text-slate-400/70">formulas · hoy</span></span>
+              <span class="tabular-nums font-medium text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</span>
+            </div>
+            <div class="h-2 rounded-full bg-violet-100 dark:bg-violet-950/50 overflow-hidden">
+              <div class="h-full rounded-full bg-violet-500 transition-all" style="width: {{ '%.1f' % fis_w }}%"></div>
+            </div>
+
+            {# ajuste — el gap entre las dos barras #}
+            <div class="mt-4 flex items-center justify-between rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 px-3.5 py-2.5">
+              <div class="leading-tight">
+                <div class="text-[12px] font-semibold text-amber-800 dark:text-amber-300">Ajuste · físico − libro</div>
+                <div class="text-[10px] text-amber-700/70 dark:text-amber-400/70 mt-0.5">
+                  {% if aj >= 0 %}químico presente que aún no se cargó al programa{% else %}el libro quedó por encima del físico{% endif %}
+                </div>
+              </div>
+              <div class="tabular-nums text-base font-semibold text-amber-700 dark:text-amber-400 pl-3">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</div>
+            </div>
+          </div>
+          {% endif %}
+
+          {# caption #}
+          <div class="px-5 py-2.5 text-[10px] text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800">
+            <b class="text-slate-500 dark:text-slate-400">inicial</b> (semilla dBase)
+            <b class="text-emerald-600/90 dark:text-emerald-400/90">+ compras</b> (botón «Cargar químicos»)
+            <b class="text-rose-500/90 dark:text-rose-400/90">− egresos</b> (formulas)
+            = <b class="text-slate-600 dark:text-slate-300">final del programa</b>.
+            El ajuste es la varianza contra el físico — se muestra, no se postea.
           </div>
         </div>
       </div>
