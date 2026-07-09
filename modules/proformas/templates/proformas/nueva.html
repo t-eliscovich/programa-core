@@ -80,15 +80,17 @@
     {# ── Descuentos + totales (cascada FACTURO) ────────────────────── #}
     <div class="grid md:grid-cols-2 gap-4 mt-6 pt-4 border-t border-slate-200 dark:border-slate-800">
       <div class="space-y-3">
+        {# TMT 2026-07-09 (dueña): el contado 5% va SIEMPRE (sin checkbox) y
+           va arriba; el descuento por volumen (editable) va debajo. #}
+        <div class="text-sm text-slate-700 dark:text-slate-300">
+          Descuento por contado: <strong>5%</strong>
+          <span class="text-xs text-slate-400">(siempre aplicado)</span>
+        </div>
         <label class="flex flex-col max-w-xs">
           <span class="text-xs text-slate-600">Descuento por volumen (%)</span>
           <input name="descuento_volumen" id="desc-vol" type="text" inputmode="decimal"
                  value="{{ form.descuento_volumen or '0' }}" placeholder="0"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
-        </label>
-        <label class="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="aplica_contado" id="aplica-contado" value="1" checked>
-          <span>Descuento por contado (5%)</span>
         </label>
         {% if es_pedido %}
         <label class="flex flex-col max-w-xs">
@@ -421,14 +423,13 @@
       subtotal += imp;
     });
     const pctVol = parseNum(document.getElementById('desc-vol').value);
-    const aplicaC = document.getElementById('aplica-contado').checked;
     const pctCont = 5;  // fijo (dueña): contado siempre 5%
     const fleteEl = document.getElementById('flete');
     const flete = (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0;
 
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
-    const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
+    const montoCont = subDesc * pctCont / 100;
     const total = subDesc - montoCont + flete;
 
     document.getElementById('t-subtotal').textContent = fmt(subtotal);
@@ -438,11 +439,9 @@
     const tFlete = document.getElementById('t-flete');
     if (tFlete) tFlete.textContent = fmt(flete);
     document.getElementById('t-total').textContent = fmt(total);
-    document.getElementById('row-cont').style.display = aplicaC ? '' : 'none';
   }
 
   document.getElementById('desc-vol').addEventListener('input', recalc);
-  document.getElementById('aplica-contado').addEventListener('change', recalc);
   { const _f = document.getElementById('flete'); if (_f) _f.addEventListener('input', recalc); }
   document.getElementById('add-linea').addEventListener('click', () => {
     agregarFila().querySelector('.js-tipo').focus();
@@ -499,13 +498,12 @@
     }
 
     const pctVol = parseNum(document.getElementById('desc-vol').value);
-    const aplicaC = document.getElementById('aplica-contado').checked;
     const pctCont = 5;
     const fleteEl = document.getElementById('flete');
     const flete = (ES_PEDIDO && fleteEl) ? parseNum(fleteEl.value) : 0;
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
-    const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
+    const montoCont = subDesc * pctCont / 100;
     const total = subDesc - montoCont + flete;
     const obs = (document.querySelector('textarea[name="observaciones"]').value || '').trim();
 
@@ -526,7 +524,7 @@
       totHtml += `<div><span>Descuento por volumen (${fmt(pctVol)}%)</span><span>-${fmt(montoVol)}</span></div>`;
       totHtml += `<div><span>Subtotal c/desc</span><span>${fmt(subDesc)}</span></div>`;
     }
-    if (aplicaC && montoCont > 0) {
+    if (montoCont > 0) {
       totHtml += `<div><span>Descuento por pronto pago (5%)</span><span>-${fmt(montoCont)}</span></div>`;
     }
     if (flete > 0) {
