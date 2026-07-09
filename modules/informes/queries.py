@@ -5943,6 +5943,55 @@ def buscar_clientes(q: str, limite: int = 25) -> list[dict]:
     )
 
 
+def estado_cuenta_clientes_saldos() -> list[dict]:
+    """Saldo vivo por cliente + sus dimensiones de agrupación (vendedor, grupo,
+    provincia), para el reporte "imprimir estado de cuenta por grupos".
+
+    Un renglón por cliente con saldo <> 0. Criterio de saldo IDÉNTICO al del
+    estado de cuenta / cartera (saldo <> 0, stat vivo, sin asinfo-backfill) para
+    no divergir. `vencido` = saldo de facturas cuya `vencimiento` ya pasó.
+
+    Trae las TRES claves de agrupación en cada fila; la vista agrupa por la que
+    pida el usuario (vendedor / grupo / provincia). Reemplaza la PROCEDURE
+    GRUPOS del dBase pero para el estado de cuenta.
+    """
+    return db.fetch_all(
+        """
+        WITH saldos AS (
+            SELECT f.codigo_cli,
+                   COALESCE(SUM(f.saldo), 0) AS saldo,
+                   COALESCE(SUM(CASE WHEN f.vencimiento IS NOT NULL
+                                      AND f.vencimiento < CURRENT_DATE
+                                     THEN f.saldo ELSE 0 END), 0) AS vencido
+            FROM scintela.factura f
+            WHERE COALESCE(f.saldo, 0) <> 0
+              AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+              AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+            GROUP BY f.codigo_cli
+        )
+        SELECT c.codigo_cli,
+               COALESCE(c.nombre, c.codigo_cli)                       AS nombre,
+               COALESCE(NULLIF(TRIM(c.vend), ''), '')                 AS vend,
+               COALESCE(NULLIF(TRIM(v.nombre), ''),
+                        NULLIF(TRIM(c.vend), ''),
+                        '(sin vendedor)')                             AS vendedor_nombre,
+               COALESCE(NULLIF(TRIM(c.provincia), ''), '(sin provincia)') AS provincia,
+               COALESCE(gp.codigo_padre, c.codigo_cli)                AS grupo_codigo,
+               COALESCE(NULLIF(TRIM(cpad.nombre), ''),
+                        gp.codigo_padre,
+                        COALESCE(c.nombre, c.codigo_cli))             AS grupo_nombre,
+               s.saldo,
+               s.vencido
+        FROM saldos s
+        JOIN scintela.cliente c ON c.codigo_cli = s.codigo_cli
+        LEFT JOIN scintela.vendedor v ON v.codigo = c.vend
+        LEFT JOIN scintela.grupo_cliente gp ON gp.codigo_hijo = c.codigo_cli
+        LEFT JOIN scintela.cliente cpad ON cpad.codigo_cli = gp.codigo_padre
+        ORDER BY c.nombre
+        """
+    ) or []
+
+
 def estado_cuenta_cliente(codigo_cli: str) -> dict:
     """Facturas + cheques aplicados de un cliente, con totales para el resumen.
 

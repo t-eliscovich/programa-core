@@ -2069,6 +2069,57 @@ def estado_cuenta_landing():
     )
 
 
+@informes_bp.route("/estado-cuenta/grupos", methods=["GET"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def estado_cuenta_grupos():
+    """Estado de cuenta de TODOS los clientes con saldo, AGRUPADO para imprimir.
+
+    Dimensión elegible por ?por= : vendedor (quién atiende), grupo (grupo de
+    clientes) o provincia. Pedido dueña 2026-07-09 ("imprimir por grupos: por
+    vendedor, grupo clientes y por provincia"). Reemplaza la PROCEDURE GRUPOS.
+    """
+    por = (request.args.get("por") or "vendedor").strip().lower()
+    if por not in ("vendedor", "grupo", "provincia"):
+        por = "vendedor"
+    filas, error = _safe(queries.estado_cuenta_clientes_saldos, [])
+    filas = filas or []
+
+    def _clave(r):
+        if por == "vendedor":
+            return (r.get("vend") or "~", r.get("vendedor_nombre") or "(sin vendedor)")
+        if por == "provincia":
+            prov = r.get("provincia") or "(sin provincia)"
+            return (prov, prov)
+        return (r.get("grupo_codigo") or "~", r.get("grupo_nombre") or "(sin grupo)")
+
+    grupos_map: dict = {}
+    for r in filas:
+        k, label = _clave(r)
+        grp = grupos_map.setdefault(
+            k, {"label": label, "clientes": [], "saldo": 0.0, "vencido": 0.0}
+        )
+        grp["clientes"].append(r)
+        grp["saldo"] += float(r.get("saldo") or 0)
+        grp["vencido"] += float(r.get("vencido") or 0)
+
+    grupos = sorted(grupos_map.values(), key=lambda x: x["saldo"], reverse=True)
+    for grp in grupos:
+        grp["clientes"].sort(key=lambda r: float(r.get("saldo") or 0), reverse=True)
+    total = sum(g["saldo"] for g in grupos)
+    total_venc = sum(g["vencido"] for g in grupos)
+
+    return render_template(
+        "informes/estado_cuenta_grupos.html",
+        grupos=grupos,
+        por=por,
+        total=total,
+        total_venc=total_venc,
+        n_clientes=len(filas),
+        error=error,
+    )
+
+
 @informes_bp.route("/estado-cuenta/<codigo_cli>")
 @requiere_login
 @requiere_permiso("clientes.ver")

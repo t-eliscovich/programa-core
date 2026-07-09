@@ -8,6 +8,10 @@
 <div class="max-w-5xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Estado de cuenta de cliente', descripcion='Buscá por código o nombre, o elegí entre los mayores deudores.') }}
+    <a href="{{ url_for('informes.estado_cuenta_grupos', por='grupo') }}"
+       class="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+      Imprimir por grupos →
+    </a>
   </div>
 
   {% if error %}
