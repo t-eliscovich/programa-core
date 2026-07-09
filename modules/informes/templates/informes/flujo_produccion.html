@@ -99,7 +99,7 @@
   <div class="blk mb-2">
     <div class="blk-title">Inventario Asinfo (live)</div>
     {% if inv_asinfo and inv_asinfo.disponible %}
-      <table>
+      <table data-no-sort-table>
         <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
         <thead>
           <tr><th class="lbl">Etapa</th><th>Kg</th></tr>
@@ -159,7 +159,7 @@
       {% set atj = mov_asinfo.get('tejido', {}) %}
       {% set ate = mov_asinfo.get('terminado', {}) %}
       {% set aco = mov_asinfo.get('colorantes', {}) %}
-      <table class="mov-table">
+      <table class="mov-table" data-no-sort-table>
         <colgroup>
           <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
         </colgroup>
@@ -246,11 +246,16 @@
         <br><em>Ojo:</em> si las facturas de hoy todavía no se sincronizaron de Asinfo, scintela.factura queda corto y por eso puede no coincidir.
       </p>
       <p class="mt-1 text-[10px] text-slate-500">
-        {% if mov_asinfo.cmp.color_inic is not none %}
-        <strong>COLORANTES (formulas_app, familias POLI+ALG, sin auxiliares):</strong>
-        inicial (1° del mes) <b>$ {{ mov_asinfo.cmp.color_inic | num_es(0) }}</b>
-        − consumo <b>$ {{ mov_asinfo.cmp.color_egreso | num_es(0) }}</b>
-        = final (hoy) <b>$ {{ mov_asinfo.cmp.color_final | num_es(0) }}</b>.
+        {% if mov_asinfo.cmp.color_consumo is not none %}
+        <strong>COLORANTES (formulas_app, POLI+ALG, sin auxiliares):</strong>
+        inicial <b>$ {{ mov_asinfo.cmp.color_inic_der | num_es(0) }}</b>
+        + compras <b>$ {{ mov_asinfo.cmp.color_compras | num_es(0) }}</b>
+        − consumo <b>$ {{ mov_asinfo.cmp.color_consumo | num_es(0) }}</b>
+        (de <b>{{ mov_asinfo.cmp.color_ordenes }}</b> órdenes)
+        = stock hoy <b>$ {{ mov_asinfo.cmp.color_stock | num_es(0) }}</b>.
+        <span class="text-slate-400">(dBase: consumo $ {{ mov_asinfo.cmp.color_programa | num_es(0) }})</span>
+        {% else %}
+        <strong>COLORANTES formulas_app:</strong> sin datos (formulas_db no respondió).
         {% endif %}
         {% if mov_asinfo.cmp.color_familias %}
         <br>Químicos por familia (stock hoy): {% for fam, val in mov_asinfo.cmp.color_familias %}{{ fam }} $ {{ val | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %} — POLI/ALG = colorantes, AUX = auxiliares.
@@ -279,7 +284,7 @@
       <div class="blk-title">Movimientos del mes</div>
       {# TMT 2026-05-19 v8 — replica TINT.BAT: HILADO con KG+$/KG+$,
          CRUDO y TERM sólo KG (con % en ingresos), COLOR sólo $. #}
-      <table class="mov-table">
+      <table class="mov-table" data-no-sort-table>
         <colgroup>
           <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
         </colgroup>
@@ -352,7 +357,7 @@
          es el separador y aloja el PROV de producción. Federico 2026-06-30 #}
     <div class="blk mb-2">
       <div class="hil-titles"><span class="blk-title">Compras hilado</span><span class="blk-title">Producción tejido</span></div>
-      <table class="hil-table">
+      <table class="hil-table" data-no-sort-table>
         <colgroup>
           <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
         </colgroup>
@@ -416,7 +421,7 @@
   {% if _show_historial %}
     <div class="blk">
       <div class="blk-title">COSTOS DE TINTORERÍA · {{ tintoreria_mensual.anio }}</div>
-      <table>
+      <table data-no-sort-table>
         <colgroup>
           <col style="width: 13%">
           <col style="width: 17%">

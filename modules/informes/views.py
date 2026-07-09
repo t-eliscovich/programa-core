@@ -203,43 +203,77 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         color_formulas = None
     _fam_top = sorted(color_familias.items(), key=lambda kv: kv[1], reverse=True)[:10]
 
-    # MOVIMIENTO de colorantes desde el INVENTARIO de formulas_app (dueña:
-    # "fijate el inventario, es más fácil"): valor de colorantes al 1° del mes
-    # (inicial) y hoy (final); egreso = inicial − final (consumo neto). Solo las
-    # familias de COLORANTES (POLI = poliéster, ALG = algodón); los AUXILIARES
-    # (AUX) quedan afuera porque casi no se mueven.
+    # MOVIMIENTO de colorantes desde formulas_app, con criterio (dueña "un poco
+    # creativo", "fijate compras y cuántas órdenes"): el inventario tiene lecturas
+    # muy espaciadas → no sirve para el movimiento del mes. Lo REAL está en:
+    #   · CONSUMO del mes = colorante (familias POLI+ALG) usado en las órdenes de
+    #     tintura TERMINADAS del mes (orden_lineas × precio). = egreso.
+    #   · COMPRAS del mes = colorante comprado en el mes (compras × precio). = ingreso.
+    #   · STOCK actual = valor de colorantes hoy (última lectura POLI+ALG).
+    #   · STOCK inicial = actual + consumo − compras (para que cierre, como el dBase).
+    # Todo de formulas_app vía formulas_db (fail-soft).
     _COLOR_FAMS = ("POLI", "ALG")
-    color_inic = color_final = None
-    try:
-        from datetime import date as _date
-        from modules.tintura import service as _tsvc2
+    color_consumo = color_compras = color_stock = None
+    color_ordenes = None
+    if anio and mes:
+        try:
+            import calendar as _cal2
+            from datetime import date as _date2
 
-        def _valor_color(rows):
-            # LECTURA cruda de inventario (la foto física a esa fecha), NO el
-            # stock_al_dia (que suma compras/ajustes y resta consumo-desde-lectura
-            # → inflaba). inicial vs final = movimiento real entre conteos.
-            return sum(
-                float(getattr(x, "lectura_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
-                for x in (rows or [])
-                if (getattr(x, "familia", "") or "").strip().upper() in _COLOR_FAMS
-            )
-        if anio and mes:
-            color_inic = _valor_color(_tsvc2.stock_quimicos_al_dia(_date(int(anio), int(mes), 1)))
-        color_final = _valor_color(_tsvc2.stock_quimicos_al_dia())
-    except Exception:  # noqa: BLE001 -- fail-soft
-        color_inic = color_final = None
+            from modules._lib import formulas_db as _fdb
+            _d1 = _date2(int(anio), int(mes), 1).isoformat()
+            _d2 = _date2(int(anio), int(mes), _cal2.monthrange(int(anio), int(mes))[1]).isoformat()
+            _cons = _fdb.fetch_one(
+                """
+                SELECT COALESCE(SUM(ol.cantidad_kg
+                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)), 0) AS us,
+                       COUNT(DISTINCT o.id) AS n_ordenes
+                  FROM orden_lineas ol
+                  JOIN ordenes o   ON o.id  = ol.orden_id
+                  JOIN productos p ON p.num = ol.producto_num
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
+                   AND o.fecha_terminado IS NOT NULL
+                   AND o.fecha_terminado >= %(d1)s
+                   AND o.fecha_terminado <= %(d2)s
+                """,
+                {"d1": _d1, "d2": _d2},
+            ) or {}
+            color_consumo = float(_cons.get("us") or 0)
+            color_ordenes = int(_cons.get("n_ordenes") or 0)
+            _comp = _fdb.fetch_one(
+                """
+                SELECT COALESCE(SUM(c.cantidad
+                         * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)), 0) AS us
+                  FROM compras c
+                  JOIN productos p ON p.num = c.producto_num
+                 WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
+                   AND c.fecha >= %(d1)s AND c.fecha <= %(d2)s
+                """,
+                {"d1": _d1, "d2": _d2},
+            ) or {}
+            color_compras = float(_comp.get("us") or 0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            color_consumo = color_compras = None
+    # Stock actual de colorantes (POLI+ALG) = suma del stock foto de hoy.
+    try:
+        color_stock = sum(v for k, v in color_familias.items() if k in _COLOR_FAMS)
+    except Exception:  # noqa: BLE001
+        color_stock = None
+    color_inic_der = None
+    if color_stock is not None and color_consumo is not None and color_compras is not None:
+        color_inic_der = color_stock + color_consumo - color_compras
 
     cmp = {
         "ventas_derivada": ventas,
         "ventas_real": ventas_real,
         "en_proceso": ventas_real - ventas,   # "el restante" si se usan ventas reales
         "color_programa": _f(co, "stock_act_us"),
-        "color_formulas": color_formulas,
         "color_familias": _fam_top,
-        "color_inic": color_inic,
-        "color_final": color_final,
-        "color_egreso": (color_inic - color_final)
-        if (color_inic is not None and color_final is not None) else None,
+        "color_consumo": color_consumo,
+        "color_compras": color_compras,
+        "color_stock": color_stock,
+        "color_inic_der": color_inic_der,
+        "color_ordenes": color_ordenes,
     }
     return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co, "cmp": cmp}
 
