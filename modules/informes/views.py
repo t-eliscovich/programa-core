@@ -96,6 +96,15 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     tc1 = _f(inv_act, "tela_cruda")
     pf1 = _f(inv_act, "terminada")
 
+    # ── EN MÁQUINAS (WIP live) — fila "En máquinas" (dueña 2026-07-09): lo que
+    # está en proceso HOY, para que bodega (Stock act.) + máquinas coincida con
+    # el "INVENTARIO ASINFO (LIVE)" de arriba (hilo_total / cruda_total).
+    #   · Hilado: en_proceso_tc = hilo en telares (hilo → tela cruda).
+    #   · Crudo:  en_proceso_pt = cruda en tintorería (tela cruda → terminada).
+    #   · Terminado: no tiene WIP después. El inicial as-of no reconstruye WIP.
+    maq_hilado = _f(inv_act, "en_proceso_tc")
+    maq_crudo = _f(inv_act, "en_proceso_pt")
+
     # ── Cadena de balance de masa (misma lógica que el dBase/TINT.BAT, pero
     # con datos de Asinfo). El dBase hace:
     #   hilado_act = hilado_ini + compras − ktej   (ktej = lo TEJIDO del mes)
@@ -351,6 +360,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     return {
         "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
         "cmp": cmp, "quimicos_modelo": quimicos_modelo,
+        "maquinas": {"hilado": maq_hilado, "crudo": maq_crudo},
     }
 
 

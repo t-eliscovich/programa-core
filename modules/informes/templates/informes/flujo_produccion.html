@@ -234,32 +234,31 @@
             <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
           </tr>
+          {% set _maq = mov_asinfo.get('maquinas', {}) %}
+          {% if _maq.get('hilado') or _maq.get('crudo') %}
+          <tr>
+            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso</span></td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+          </tr>
+          <tr class="total">
+            <td class="lbl">Total (con máq.)</td>
+            <td class="num">{{ ((ahl.get('stock_act_kg') or 0) + (_maq.get('hilado') or 0)) | num_es(0) }}</td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td></td>
+            <td class="num">{{ ((atj.get('stock_act_kg') or 0) + (_maq.get('crudo') or 0)) | num_es(0) }}</td>
+            <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
+            <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
+          </tr>
+          {% endif %}
         </tbody>
       </table>
-      <p class="mt-2 text-[10px] text-slate-500">
-        <strong>Todo de Asinfo, lógica del dBase:</strong> los saldos
-        <strong>inicial</strong> (al 1° del mes) y <strong>actual</strong> (hoy)
-        salen de Asinfo, igual que el ingreso de hilo (importaciones recibidas).
-        Como Asinfo no tiene foto del <em>en proceso</em> al 1° del mes, los flujos
-        del medio se <strong>derivan de los saldos de Asinfo</strong> (la cuenta
-        para que cierre): lo tejido = hilo consumido (inic + compras − actual); lo
-        tinturado y las ventas cierran el crudo y el terminado. Nada sale del
-        dBase — el dBase (tabla de abajo) queda solo para comparar. Los $/kg se
-        mantienen del programa (Asinfo no tiene dólares confiables).
-        <em>Colorantes</em> (COLOR $) es el <strong>libro del programa</strong>: inicial (dBase)
-        + compras (programa, tipo Q) − consumo (formulas) − ajuste (físico − libro) = stock
-        físico de formulas. El detalle está en el panel de abajo.
-      </p>
-      {% if mov_asinfo.cmp %}
-      <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-500">
-        <strong>VENTAS del mes (mostrando ambas hasta decidir):</strong>
-        <b>derivada {{ mov_asinfo.cmp.ventas_derivada | num_es(0) }}</b> kg
-        (= sale del balance de stock de Asinfo: term.inic + tinturado − term.actual; cierra exacto)
-        vs <b>real {{ mov_asinfo.cmp.ventas_real | num_es(0) }}</b> kg
-        (= scintela.factura del mes). El restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
-        <br><em>Ojo:</em> si las facturas de hoy todavía no se sincronizaron de Asinfo, scintela.factura queda corto y por eso puede no coincidir.
-      </p>
-      {% endif %}
 
       {# ─── STOCK DE QUÍMICOS — modelo programa vs formulas (dueña 2026-07-09) ─── #}
       {% set qm = mov_asinfo.quimicos_modelo %}
