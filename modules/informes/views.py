@@ -1282,7 +1282,7 @@ def flujo_grafico():
     """
     # Default 70d para matchear el rango del chart dBase (May 11 → Jul 20).
     # El MIN del flujo cae a los 68-70 días.
-    ventana = request.args.get("ventana", default=70, type=int)
+    ventana = request.args.get("ventana", default=90, type=int)
     ventana = max(7, min(ventana, 365))  # clamp
 
     # Fuente del flujo:

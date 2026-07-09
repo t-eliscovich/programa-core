@@ -355,35 +355,11 @@
         <select name="ventana"
                 class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm"
                 onchange="this.form.submit()">
-          {% for d in [30, 60, 70, 90, 180, 365] %}
+          {% for d in [30, 60, 90, 120, 180, 365] %}
             <option value="{{ d }}" {% if d == ventana_dias %}selected{% endif %}>{{ d }} días</option>
           {% endfor %}
         </select>
-        {# Toggle "peor caso": ignora cheques en cartera. Útil si se sospecha
-           que hay cheques con stat=Z stale (cobrados sin marcar). #}
-        <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer"
-               title="Asume que ningún cheque en cartera se cobra. Sólo saldo inicial menos posdat.">
-          <input type="checkbox" name="ignorar_cheques" value="1"
-                 {% if ignorar_cheques %}checked{% endif %}
-                 onchange="this.form.submit()"
-                 class="accent-rose-600">
-          <span>Ignorar cheques (peor caso)</span>
-        </label>
       </form>
-      {# TMT 2026-07-06 (dueña): acceso directo a la tabla diaria — es lo
-         primero que muestra la opción 6 del dBase (el gráfico viene después). #}
-      <a href="{{ url_for('informes.flujo_fondos') }}"
-         class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
-        Tabla diaria (dBase)
-      </a>
-      <a href="{{ url_for('informes.flujo_cargar') }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-        Cargar datos
-      </a>
-      <button onclick="window.print()"
-              class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-        Imprimir
-      </button>
     </div>
   </div>
 
