@@ -159,6 +159,7 @@
       {% set atj = mov_asinfo.get('tejido', {}) %}
       {% set ate = mov_asinfo.get('terminado', {}) %}
       {% set aco = mov_asinfo.get('colorantes', {}) %}
+      {% set _maq = mov_asinfo.get('maquinas', {}) %}
       <table class="mov-table" data-no-sort-table>
         <colgroup>
           <col style="width:11%"><col style="width:14%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:14%">
@@ -202,6 +203,18 @@
             </td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
+          {% if _maq.get('hilado') or _maq.get('crudo') %}
+          <tr>
+            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso</span></td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+          </tr>
+          {% endif %}
           <tr>
             <td class="lbl">Egresos</td>
             <td class="num">{{ ahl.get('egresos_kg') | num_es(0) if ahl.get('egresos_kg') else '—' }}</td>
@@ -234,18 +247,7 @@
             <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
           </tr>
-          {% set _maq = mov_asinfo.get('maquinas', {}) %}
           {% if _maq.get('hilado') or _maq.get('crudo') %}
-          <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso</span></td>
-            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-            <td></td>
-            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-          </tr>
           <tr class="total">
             <td class="lbl">Total (con máq.)</td>
             <td class="num">{{ ((ahl.get('stock_act_kg') or 0) + (_maq.get('hilado') or 0)) | num_es(0) }}</td>
