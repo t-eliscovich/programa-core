@@ -260,63 +260,47 @@
       {# ─── STOCK DE QUÍMICOS — modelo programa vs formulas (dueña 2026-07-09) ─── #}
       {% set qm = mov_asinfo.quimicos_modelo %}
       {% if qm %}
-      {% set fp = qm.final_prog or 0 %}
       {% set ff = qm.final_form %}
-      {% set mx = ([fp, (ff or 0)] | max) or 1 %}
-      {% set libro_w = (fp / mx * 100) if fp > 0 else 0 %}
-      {% set fis_w = ((ff or 0) / mx * 100) if (ff and ff > 0) else 0 %}
-      <div class="fp-quim mt-3" style="max-width:290px" data-no-sort-table title="inicial (dBase) + compras (botón Cargar químicos) − egresos (formulas) = final del programa. El ajuste es la varianza contra el físico — se muestra, no se postea.">
+      <div class="fp-quim mt-4" data-no-sort-table title="inicial (dBase) + compras (botón Cargar químicos) − egresos (formulas) = final del programa. El ajuste es la varianza contra el físico — se muestra, no se postea.">
         <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
 
-          {# header #}
-          <div class="px-3.5 py-2 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
-            <h3 class="text-[12px] font-semibold text-slate-900 dark:text-white tracking-tight">Stock de químicos <span class="text-[10px] font-normal text-slate-400 ml-0.5">{{ '%02d/%d' % (mes, anio) }}</span></h3>
-            <span class="text-[9px] font-semibold text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/40 px-1.5 py-0.5 rounded-full tracking-wide">USD</span>
+          {# header full-width #}
+          <div class="px-4 py-2 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+            <h3 class="text-[12px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Stock de químicos · {{ '%02d/%d' % (mes, anio) }}</h3>
+            <span class="text-[10px] text-slate-400">Libro del programa vs. físico de formulas · USD</span>
           </div>
 
-          {# ledger — construcción del libro #}
-          <div class="px-3.5 py-1.5">
-            <dl class="text-[12px] tabular-nums">
-              <div class="flex items-baseline justify-between py-0.5">
-                <dt class="text-slate-500 dark:text-slate-400">Inicial <span class="text-[9px] text-slate-400/70">dBase</span></dt>
-                <dd class="font-medium text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</dd>
-              </div>
-              <div class="flex items-baseline justify-between py-0.5">
-                <dt class="text-slate-500 dark:text-slate-400">Compras <span class="text-[9px] text-slate-400/70">tipo Q{% if qm.compras_n %}·{{ qm.compras_n }}{% endif %}</span></dt>
-                <dd class="font-medium text-emerald-600 dark:text-emerald-400">+ {{ qm.compras | num_es(0) }}</dd>
-              </div>
-              <div class="flex items-baseline justify-between py-0.5">
-                <dt class="text-slate-500 dark:text-slate-400">Egresos <span class="text-[9px] text-slate-400/70">formulas</span></dt>
-                <dd class="font-medium text-rose-500 dark:text-rose-400">{% if qm.egresos is not none %}− {{ qm.egresos | num_es(0) }}{% else %}<span class="text-slate-300">s/d</span>{% endif %}</dd>
-              </div>
-              <div class="flex items-baseline justify-between pt-1 mt-0.5 border-t border-slate-200 dark:border-slate-700">
-                <dt class="font-semibold text-slate-900 dark:text-white">Final programa</dt>
-                <dd class="text-[15px] font-semibold text-slate-900 dark:text-white">{{ qm.final_prog | num_es(0) }}</dd>
-              </div>
-            </dl>
+          {# franja horizontal — una fila de celdas KPI (al ancho del resto) #}
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-slate-100 dark:divide-slate-800">
+            <div class="px-4 py-2.5">
+              <div class="text-[10px] uppercase tracking-wide text-slate-400">Inicial <span class="normal-case text-slate-300 dark:text-slate-500">· dBase</span></div>
+              <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-700 dark:text-slate-200">{{ qm.inicial | num_es(0) }}</div>
+            </div>
+            <div class="px-4 py-2.5">
+              <div class="text-[10px] uppercase tracking-wide text-slate-400">+ Compras <span class="normal-case text-slate-300 dark:text-slate-500">· tipo Q{% if qm.compras_n %} ({{ qm.compras_n }}){% endif %}</span></div>
+              <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{{ qm.compras | num_es(0) }}</div>
+            </div>
+            <div class="px-4 py-2.5">
+              <div class="text-[10px] uppercase tracking-wide text-slate-400">− Egresos <span class="normal-case text-slate-300 dark:text-slate-500">· formulas</span></div>
+              <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-rose-500 dark:text-rose-400">{% if qm.egresos is not none %}{{ qm.egresos | num_es(0) }}{% else %}<span class="text-slate-300 text-sm">s/d</span>{% endif %}</div>
+            </div>
+            <div class="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50">
+              <div class="text-[10px] uppercase tracking-wide font-semibold text-slate-500 dark:text-slate-300">= Final programa</div>
+              <div class="mt-0.5 text-base font-bold tabular-nums text-slate-900 dark:text-white">{{ qm.final_prog | num_es(0) }}</div>
+            </div>
+            {% if ff is not none %}
+            {% set aj = qm.ajuste %}
+            {% set aj_abs = (aj if aj >= 0 else -aj) %}
+            <div class="px-4 py-2.5">
+              <div class="text-[10px] uppercase tracking-wide text-slate-400">Físico <span class="normal-case text-slate-300 dark:text-slate-500">· formulas hoy</span></div>
+              <div class="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</div>
+            </div>
+            <div class="px-4 py-2.5 bg-amber-50/60 dark:bg-amber-950/20">
+              <div class="text-[10px] uppercase tracking-wide text-amber-600/90 dark:text-amber-500/90">Ajuste <span class="normal-case">· físico − libro</span></div>
+              <div class="mt-0.5 text-[15px] font-bold tabular-nums text-amber-700 dark:text-amber-400">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</div>
+            </div>
+            {% endif %}
           </div>
-
-          {% if ff is not none %}
-          {% set aj = qm.ajuste %}
-          {% set aj_abs = (aj if aj >= 0 else -aj) %}
-          {# comparación compacta — libro vs físico (una línea c/u) #}
-          <div class="px-3.5 pb-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-            <div class="flex items-center gap-2 text-[10px] mb-1">
-              <span class="w-9 shrink-0 text-slate-400">Libro</span>
-              <div class="flex-1 h-1.5 rounded-full bg-slate-200/70 dark:bg-slate-700/60 overflow-hidden"><div class="h-full rounded-full bg-slate-400 dark:bg-slate-500" style="width: {{ '%.1f' % libro_w }}%"></div></div>
-              <span class="w-14 text-right tabular-nums text-slate-600 dark:text-slate-300">{{ qm.final_prog | num_es(0) }}</span>
-            </div>
-            <div class="flex items-center gap-2 text-[10px]">
-              <span class="w-9 shrink-0 text-slate-400">Físico</span>
-              <div class="flex-1 h-1.5 rounded-full bg-violet-100 dark:bg-violet-950/50 overflow-hidden"><div class="h-full rounded-full bg-violet-500" style="width: {{ '%.1f' % fis_w }}%"></div></div>
-              <span class="w-14 text-right tabular-nums text-slate-700 dark:text-slate-200">{{ ff | num_es(0) }}</span>
-            </div>
-            <div class="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800 text-[11px]">
-              <span class="font-medium text-amber-700 dark:text-amber-500">Ajuste <span class="text-[9px] font-normal text-slate-400">físico − libro</span></span>
-              <span class="tabular-nums font-semibold text-amber-700 dark:text-amber-500">{% if aj >= 0 %}+{% else %}−{% endif %}{{ aj_abs | num_es(0) }}</span>
-            </div>
-          </div>
-          {% endif %}
         </div>
       </div>
       {% endif %}
