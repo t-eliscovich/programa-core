@@ -757,6 +757,10 @@
       <details class="sidebar-section" data-key="ingreso" open>
         <summary>Ingresos</summary>
         {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
+        {# TMT 2026-07-09 (dueña): Proformas (cotizaciones) recreadas del dBase
+           (FACTURAR.PRG). Solo para cotizar — no factura, no stock, no contabilidad. #}
+        {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.nueva', 'Nueva cotización', 'file') }}{% endif %}
+        {% if tiene_permiso('proformas.ver') %}{{ nav_link('proformas.lista', 'Proformas', 'file') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="modificar" open>
