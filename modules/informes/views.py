@@ -285,7 +285,64 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         "color_inic_der": color_inic_der,
         "color_ordenes": color_ordenes,
     }
-    return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co, "cmp": cmp}
+
+    # ── MODELO DE STOCK DE QUÍMICOS (programa vs formulas) ──────────────────
+    # TMT 2026-07-09 (dueña): "necesito mi inicial de químicos (programa) +
+    # compras químicos programa − egresos formulas = final programa, y luego
+    # ajuste contra final formulas". El ajuste NO se postea, se MUESTRA.
+    #   · inicial (programa) = iniciales.vq del mes anterior (semilla dBase).
+    #     Es el mismo VQ0 que usa el balance (VQX = VQ0 + VQQ − ITIN).
+    #   · compras (programa) = compras tipo 'Q' del mes (scintela.compra),
+    #     las que carga el botón "Cargar químicos". Mismo filtro que VQQ.
+    #   · egresos (formulas) = consumo de químicos de las órdenes del mes
+    #     (color_consumo, POLI+ALG+AUX de orden_lineas).
+    #   · final (programa) = inicial + compras − egresos (computado).
+    #   · final (formulas) = stock físico vivo hoy (color_stock, foto).
+    #   · ajuste = final formulas − final programa (la varianza, se muestra).
+    quimicos_modelo = None
+    if anio and mes:
+        try:
+            q_inicial = float(
+                queries.tarifa_iniciales_mes_anterior(int(mes), int(anio), "vq")
+            )
+            _qc = db.fetch_one(
+                """
+                SELECT COALESCE(SUM(importe), 0) AS importe,
+                       COUNT(*)                  AS n
+                  FROM scintela.compra
+                 WHERE EXTRACT(YEAR  FROM fecha) = %s
+                   AND EXTRACT(MONTH FROM fecha) = %s
+                   AND UPPER(COALESCE(tipo, '')) = 'Q'
+                   AND COALESCE(stat, '') NOT IN ('X', 'Y')
+                   AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+                """,
+                (int(anio), int(mes)),
+            ) or {}
+            q_compras = float(_qc.get("importe") or 0)
+            q_compras_n = int(_qc.get("n") or 0)
+            q_egresos = color_consumo  # formulas (puede ser None)
+            q_final_form = color_stock  # formulas foto (puede ser None)
+            q_final_prog = q_inicial + q_compras - float(q_egresos or 0)
+            q_ajuste = (
+                (q_final_form - q_final_prog)
+                if q_final_form is not None else None
+            )
+            quimicos_modelo = {
+                "inicial": q_inicial,
+                "compras": q_compras,
+                "compras_n": q_compras_n,
+                "egresos": q_egresos,
+                "final_prog": q_final_prog,
+                "final_form": q_final_form,
+                "ajuste": q_ajuste,
+            }
+        except Exception:  # noqa: BLE001 -- fail-soft, no rompe la vista
+            quimicos_modelo = None
+
+    return {
+        "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
+        "cmp": cmp, "quimicos_modelo": quimicos_modelo,
+    }
 
 
 def _asof_dia_overrides(comp: dict, as_of) -> None:
