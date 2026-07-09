@@ -761,15 +761,14 @@
       <details class="sidebar-section" data-key="ingreso" open>
         <summary>Ingresos</summary>
         {% if tiene_permiso('cheques.crear') %}{{ nav_link('cheques.nuevo', 'Cobranza', 'check') }}{% endif %}
-        {# TMT 2026-07-09 (dueña): Pedido = igual que cotización pero se ingresan
-           los kilos EXACTOS (sin multiplicar), porque ya sale el pedido. #}
-        {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Factura Proforma', 'file') }}{% endif %}
       </details>
 
       <details class="sidebar-section" data-key="modificar" open>
         <summary>Modificar</summary>
         {% if tiene_permiso('cheques.ver') %}{{ nav_link('cheques.lista', 'Cheques de clientes', 'check') }}{% endif %}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('facturas.lista', 'Facturas', 'file') }}{% endif %}
+        {# TMT 2026-07-09 (dueña): Factura Proforma (ex "Nuevo pedido") movida a Modificar, debajo de Facturas. #}
+        {% if tiene_permiso('proformas.crear') %}{{ nav_link('proformas.pedido_nuevo', 'Factura Proforma', 'file') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.lista', 'Compras', 'shopping') }}{% endif %}
         {% if tiene_permiso('compras.ver') %}{{ nav_link('compras.produccion_tejeduria', 'Producción Tejeduría', 'shopping') }}{% endif %}
         {% if tiene_permiso('posdat.ver') %}{{ nav_link('posdat.lista', 'Posdatados', 'receipt') }}{% endif %}
