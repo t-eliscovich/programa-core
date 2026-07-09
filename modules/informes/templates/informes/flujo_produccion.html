@@ -247,18 +247,6 @@
             <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
           </tr>
-          {% if _maq.get('hilado') or _maq.get('crudo') %}
-          <tr class="total">
-            <td class="lbl">Total (con máq.)</td>
-            <td class="num">{{ ((ahl.get('stock_act_kg') or 0) + (_maq.get('hilado') or 0)) | num_es(0) }}</td>
-            <td class="num"></td>
-            <td class="num"></td>
-            <td></td>
-            <td class="num">{{ ((atj.get('stock_act_kg') or 0) + (_maq.get('crudo') or 0)) | num_es(0) }}</td>
-            <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
-            <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
-          </tr>
-          {% endif %}
         </tbody>
       </table>
 

@@ -153,15 +153,20 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     hl["ingresos_us"] = compras * _f(hl, "ingresos_ukg")
     hl["egresos_kg"] = W
     hl["egresos_us"] = W * _f(hl, "egresos_ukg")
-    hl["stock_act_kg"] = hi1
-    hl["stock_act_us"] = hi1 * _f(hl, "stock_act_ukg")
+    # Stock act. INCLUYE lo que está en máquinas (WIP) → es el stock TOTAL y
+    # coincide con el inventario live (dueña 2026-07-09: "stock total incluye el
+    # de máquina, no pongas otra fila"). La derivación (W, D) sigue usando la
+    # bodega pura (hi1/tc1); solo el saldo mostrado suma el WIP. Cierra:
+    # inic + ingresos + en_máquinas − egresos = stock total.
+    hl["stock_act_kg"] = hi1 + maq_hilado
+    hl["stock_act_us"] = (hi1 + maq_hilado) * _f(hl, "stock_act_ukg")
 
     # CRUDO — ingreso=W (lo tejido), egreso=D (lo tinturado). Sólo kg.
     tj["stock_inic_kg"] = tc0
     tj["ingresos_kg"] = W
     tj["egresos_kg"] = D
     tj["ingresos_pct"] = (D / W * 100.0) if W else 0.0
-    tj["stock_act_kg"] = tc1
+    tj["stock_act_kg"] = tc1 + maq_crudo
 
     # TERMINADO — ingreso=D (lo tinturado), egreso=ventas. Sólo kg.
     te["stock_inic_kg"] = pf0
