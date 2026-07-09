@@ -421,6 +421,7 @@
         <div class="zoom">
           <span>Agrupación</span>
           <button type="button" data-q="1" class="on">1 día</button>
+          <button type="button" data-q="2">2 días</button>
           <button type="button" data-q="3">3 días</button>
           <button type="button" data-q="5">5 días</button>
           <button type="button" data-q="7">1 semana</button>
@@ -986,30 +987,20 @@ function buildChart(q) {
     data: {
       labels,
       datasets: [{
+        type: 'bar',
         label: 'Saldo proyectado (USD)',
         data: series,
-        fill: 'origin',
-        backgroundColor: (ctx2) => buildGradient(ctx2.chart),
-        borderColor: rows.map(r => r.saldo >= 0 ? goodCol : badCol),
-        segment: {
-          borderColor: ctx2 => {
-            const v0 = ctx2.p0.parsed.y, v1 = ctx2.p1.parsed.y;
-            // Coloreo el segmento según si AMBOS extremos son positivos/negativos.
-            // Cruces los pinto en gradiente neutro (gris) para no mentir.
-            if (v0 >= 0 && v1 >= 0) return goodCol;
-            if (v0 < 0 && v1 < 0)   return badCol;
-            return toRgba(warnCol, 0.9);
-          },
-        },
-        borderWidth: 2.5,
-        tension: 0.35,
-        pointRadius: rows.map(r => r === minRow ? 6 : 0),
-        pointBackgroundColor: rows.map(r => r === minRow ? warnCol : 'transparent'),
-        pointBorderColor: rows.map(r => r === minRow ? panelCol : 'transparent'),
-        pointBorderWidth: 2,
-        pointHoverRadius: 6,
-        pointHoverBackgroundColor: textCol,
-        pointHoverBorderColor: panelCol,
+        // TMT 2026-07-09 (dueña): grafico de BARRAS en vez de linea/area.
+        // Una barra por periodo: verde si el saldo es positivo, roja si es
+        // negativo, ambar en el dia del minimo. Barras finas (maxBarThickness).
+        backgroundColor: rows.map(r => r === minRow ? warnCol : (r.saldo >= 0 ? goodCol : badCol)),
+        borderColor:     rows.map(r => r === minRow ? warnCol : (r.saldo >= 0 ? goodCol : badCol)),
+        borderWidth: 1,
+        borderRadius: 2,
+        borderSkipped: false,
+        maxBarThickness: 7,
+        barPercentage: 0.5,
+        categoryPercentage: 0.9,
         order: 2,
       }, {
         type: 'line',
