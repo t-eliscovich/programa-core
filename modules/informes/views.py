@@ -259,28 +259,27 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         color_stock = sum(v for k, v in color_familias.items() if k in _COLOR_FAMS)
     except Exception:  # noqa: BLE001
         color_stock = None
-    # EGRESO (consumo) de colorantes = costo colorante+AUXILIARES del tinturado
-    # del mes (~56k; dueña 2026-07-09 "56 que iguala más a dbase" + "auxiliares
-    # entran"). Es el mismo número que el dBase — hoy viene del tinturado
-    # (scintela.tinto; será formulas_app cuando se apague el dBase). El STOCK y
-    # las COMPRAS salen de formulas_app (inventario POLI+ALG real); el inicial
-    # deriva para que cierre (inic + compras − egreso = stock).
-    _color_egreso = _f(co, "egresos_us")   # colorante+aux del dBase/tinturado (~56.481)
+    # COLORANTES 100% de formulas_app "como viene" (dueña 2026-07-09, confirmado
+    # por el equipo: "se usa formulas app como viene, está ok"). Colorante puro
+    # POLI+ALG, sin auxiliares, sin dBase:
+    #   egreso  = consumo de colorante en las órdenes de tintura del mes.
+    #   compras = colorante comprado en el mes.
+    #   stock   = inventario físico de colorante hoy.
+    #   inicial = stock + consumo − compras (deriva para que cierre).
     color_inic_der = None
-    if color_stock is not None and color_compras is not None:
-        color_inic_der = color_stock + _color_egreso - color_compras
+    if color_stock is not None and color_consumo is not None and color_compras is not None:
+        color_inic_der = color_stock + color_consumo - color_compras
         co["stock_inic_us"] = color_inic_der
         co["ingresos_us"] = color_compras
-        co["egresos_us"] = _color_egreso
+        co["egresos_us"] = color_consumo
         co["stock_act_us"] = color_stock
 
     cmp = {
         "ventas_derivada": ventas,
         "ventas_real": ventas_real,
         "en_proceso": ventas_real - ventas,   # "el restante" si se usan ventas reales
-        "color_egreso": _color_egreso,
+        "color_consumo": color_consumo,
         "color_familias": _fam_top,
-        "color_consumo_colorante": color_consumo,   # solo colorante (POLI+ALG), sin aux
         "color_compras": color_compras,
         "color_stock": color_stock,
         "color_inic_der": color_inic_der,

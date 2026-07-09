@@ -248,10 +248,11 @@
       </p>
       {% if mov_asinfo.cmp.color_stock is not none %}
       <p class="mt-1 text-[10px] text-slate-500">
-        <strong>COLOR $:</strong> egreso (consumo) = costo colorante+auxiliares del tinturado del mes
-        <b>$ {{ mov_asinfo.cmp.color_egreso | num_es(0) }}</b> (hoy del tinturado / scintela.tinto → formulas cuando se apague el dBase).
-        Stock hoy <b>$ {{ mov_asinfo.cmp.color_stock | num_es(0) }}</b> y compras <b>$ {{ mov_asinfo.cmp.color_compras | num_es(0) }}</b> de formulas_app; inicial deriva.
-        <span class="text-slate-400">(solo colorante POLI+ALG de las {{ mov_asinfo.cmp.color_ordenes }} órdenes = $ {{ mov_asinfo.cmp.color_consumo_colorante | num_es(0) }}, sin auxiliares)</span>
+        <strong>COLOR $ (100% formulas_app, colorante POLI+ALG):</strong>
+        consumo <b>$ {{ mov_asinfo.cmp.color_consumo | num_es(0) }}</b> (de {{ mov_asinfo.cmp.color_ordenes }} órdenes del mes)
+        · compras <b>$ {{ mov_asinfo.cmp.color_compras | num_es(0) }}</b>
+        · stock hoy <b>$ {{ mov_asinfo.cmp.color_stock | num_es(0) }}</b>
+        · inicial (deriva) <b>$ {{ mov_asinfo.cmp.color_inic_der | num_es(0) }}</b>.
       </p>
       {% endif %}
       {% endif %}
