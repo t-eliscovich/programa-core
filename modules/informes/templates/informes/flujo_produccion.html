@@ -143,11 +143,11 @@
             <td></td>
             <td class="num">
               {{ atj.get('ingresos_kg') | num_es(0) if atj.get('ingresos_kg') else '—' }}
-              {% if atj.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % atj.ingresos_pct }}%</span>{% endif %}
+              {% if atj.get('ingresos_pct') %}<span class="pct">{{ '%.1f' % atj.ingresos_pct }}%</span>{% endif %}
             </td>
             <td class="num">
               {{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}
-              {% if ate.get('ingresos_pct') %}<span class="pct">{{ '%.2f' % ate.ingresos_pct }}%</span>{% endif %}
+              {% if ate.get('ingresos_pct') %}<span class="pct">{{ '%.1f' % ate.ingresos_pct }}%</span>{% endif %}
             </td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>

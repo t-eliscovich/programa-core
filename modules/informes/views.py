@@ -176,7 +176,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     tj["stock_inic_kg"] = tc0
     tj["ingresos_kg"] = ci_crudo
     tj["egresos_kg"] = crudo_consumido
-    tj["ingresos_pct"] = (ci_crudo / hilo_consumido * 100.0) if hilo_consumido else 0.0
+    tj["ingresos_pct"] = (desp_crudo / hilo_consumido * 100.0) if hilo_consumido else 0.0
     tj["stock_act_kg"] = tc1 + maq_crudo
 
     # TERMINADO — ingreso = PT producido (real), egreso = ventas. El % =
@@ -184,7 +184,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     te["stock_inic_kg"] = pf0
     te["ingresos_kg"] = ci_term
     te["egresos_kg"] = ventas
-    te["ingresos_pct"] = (ci_term / crudo_consumido * 100.0) if crudo_consumido else 0.0
+    te["ingresos_pct"] = (desp_term / crudo_consumido * 100.0) if crudo_consumido else 0.0
     te["stock_act_kg"] = pf1
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
