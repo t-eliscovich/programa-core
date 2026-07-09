@@ -540,9 +540,6 @@
 
     const DOCNOM = ES_PEDIDO ? 'Factura Proforma' : 'COTIZACIÓN';
     const thCant = ES_PEDIDO ? '' : '<th class="r">Cantidad</th>';
-    const pie = ES_PEDIDO
-      ? 'Pedido de producción — cantidades en kg.'
-      : 'Cotización referencial — precios sujetos a cambio. No constituye factura.';
 
     let totHtml = `<div><span>Subtotal</span><span>${fmt(subtotal)}</span></div>`;
     if (montoCont > 0) {
@@ -585,7 +582,6 @@
   <tbody>${filasHtml}</tbody></table>
   <div class="tot">${totHtml}</div>
   ${obs ? `<div class="obs"><strong>Observaciones:</strong> ${esc(obs)}</div>` : ''}
-  <div class="pie">${pie}</div>
 </div></body></html>`;
 
     const win = window.open('', 'cotizacion', 'width=900,height=1100');
