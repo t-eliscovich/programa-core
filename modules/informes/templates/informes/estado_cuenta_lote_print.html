@@ -13,9 +13,14 @@
   .cli-block .print-head { display: none; }
   @media print {
     .no-print { display: none !important; }
-    /* Salto de página entre clientes. */
-    .cli-block { page-break-before: always; }
-    .cli-block:first-of-type { page-break-before: avoid; }
+    /* NO forzar página nueva por cliente. Si el estado no llena la hoja, dejamos
+       un espacio y seguimos con el próximo en la misma hoja; el salto de página
+       ocurre solo cuando naturalmente no entra. TMT 2026-07-09 (dueña). */
+    .cli-block { margin-top: 16pt !important; padding-top: 8pt !important;
+                 border-top: 0.8pt solid #cbd5e1 !important; }
+    .cli-block:first-of-type { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+    /* No dejar el header colgado al pie sin su tabla. */
+    .cli-block .print-head { page-break-after: avoid !important; }
     tr { page-break-inside: avoid !important; }
     /* Header por cliente (1 línea: nombre + saldo), como el print-header del individual. */
     .cli-block .print-head { display: block !important; border-bottom: 1.5pt solid #9ca3af !important;
