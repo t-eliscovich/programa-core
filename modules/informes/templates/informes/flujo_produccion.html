@@ -173,6 +173,22 @@
             <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
           </tr>
+          {% if ate.get('facturado_kg') %}
+          <tr>
+            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">Facturado <span class="pct" style="color:rgb(148 163 184);">Asinfo directo</span></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num">—</td>
+            <td class="num" style="color:rgb(100 116 139);">
+              {{ ate.facturado_kg | num_es(0) }}
+              {% set _fd = ate.get('facturado_diff') or 0 %}
+              <span class="pct">Δ {% if _fd >= 0 %}{% else %}−{% endif %}{{ (_fd if _fd >= 0 else -_fd) | num_es(0) }}</span>
+            </td>
+            <td class="num">—</td>
+          </tr>
+          {% endif %}
           {% set _desp = mov_asinfo.get('desperdicio', {}) %}
           {% if _desp %}
           <tr>

@@ -279,6 +279,30 @@ def facturas_totales_por_tipo(desde, hasta) -> dict:
     return out
 
 
+def ventas_facturado_kg(yy: int, mm: int) -> float:
+    """Kg NETOS facturados (vendidos) en Asinfo dentro del mes (yy, mm).
+
+    Directo de Asinfo (facturas_periodo vía Metabase), NO de scintela.factura.
+    Suma los kg de todas las facturas del mes; las devoluciones y notas de
+    crédito (DEVOLUCION/NCNT) ya vienen negadas en `kg`, así que la suma es la
+    venta neta. Fail-soft: 0.0 si Asinfo no responde.
+    """
+    import calendar as _cal
+    from datetime import date as _date
+    try:
+        yy = int(yy)
+        mm = int(mm)
+    except (TypeError, ValueError):
+        return 0.0
+    d1 = _date(yy, mm, 1)
+    d2 = _date(yy, mm, _cal.monthrange(yy, mm)[1])
+    try:
+        tot = facturas_totales_por_tipo(d1, d2) or {}
+        return round(sum(float(s.get("kg") or 0) for s in tot.values()), 3)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return 0.0
+
+
 # ---------------------------------------------------------------------------
 # Disponibilidad
 # ---------------------------------------------------------------------------

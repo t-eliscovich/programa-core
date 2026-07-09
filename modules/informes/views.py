@@ -179,13 +179,25 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     tj["ingresos_pct"] = (desp_crudo / hilo_consumido * 100.0) if hilo_consumido else 0.0
     tj["stock_act_kg"] = tc1 + maq_crudo
 
-    # TERMINADO — ingreso = PT producido (real), egreso = ventas. El % =
-    # rendimiento: PT producido / crudo consumido (<100% = merma de tintura).
+    # TERMINADO — ingreso = PT producido (real), egreso = ventas DERIVADA
+    # (sale de bodega = inic + producido − actual). El % = merma de tintura.
     te["stock_inic_kg"] = pf0
     te["ingresos_kg"] = ci_term
     te["egresos_kg"] = ventas
     te["ingresos_pct"] = (desp_term / crudo_consumido * 100.0) if crudo_consumido else 0.0
     te["stock_act_kg"] = pf1
+    # Dueña 2026-07-09: mostrar AMBAS ventas — la derivada (arriba) y lo
+    # FACTURADO directo de Asinfo — y la diferencia. El facturado no cierra la
+    # columna; el gap es el desfase stock↔facturación.
+    ventas_facturado = 0.0
+    if anio and mes:
+        try:
+            from modules.asinfo import service as _asvc3
+            ventas_facturado = float(_asvc3.ventas_facturado_kg(int(anio), int(mes)) or 0.0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            ventas_facturado = 0.0
+    te["facturado_kg"] = ventas_facturado
+    te["facturado_diff"] = ventas - ventas_facturado
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
 
