@@ -240,12 +240,18 @@
       <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-500">
         <strong>Para elegir (dueña):</strong>
         Ventas del mes — derivada <b>{{ mov_asinfo.cmp.ventas_derivada | num_es(0) }}</b> kg
-        vs real de scintela.factura <b>{{ mov_asinfo.cmp.ventas_real | num_es(0) }}</b> kg.
-        {% if mov_asinfo.cmp.color_formulas is not none %}
-        · Colorantes — programa <b>$ {{ mov_asinfo.cmp.color_programa | num_es(0) }}</b>
-        vs formulas_app (stock químicos) <b>$ {{ mov_asinfo.cmp.color_formulas | num_es(0) }}</b>.
-        {% endif %}
+        vs real (scintela.factura) <b>{{ mov_asinfo.cmp.ventas_real | num_es(0) }}</b> kg;
+        el restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
       </p>
+      {% if mov_asinfo.cmp.color_familias %}
+      <p class="mt-1 text-[10px] text-slate-500">
+        <strong>Químicos formulas_app por familia (stock actual, para separar colorantes de auxiliares):</strong>
+        {% for fam, val in mov_asinfo.cmp.color_familias %}
+          {{ fam }} <b>$ {{ val | num_es(0) }}</b>{% if not loop.last %} · {% endif %}
+        {% endfor %}
+        <br><em>Ojo:</em> esto es el stock actual (foto), no el inicial−consumo−final del mes; con la familia de colorantes correcta armo el movimiento.
+      </p>
+      {% endif %}
       {% endif %}
     {% else %}
       <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>

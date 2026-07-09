@@ -185,22 +185,31 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
             ventas_real = float((_vr or {}).get("kg") or 0)
         except Exception:  # noqa: BLE001 -- fail-soft
             ventas_real = 0.0
+    # DESCUBRIMIENTO: valor de stock de químicos de formulas_app POR FAMILIA,
+    # para ver cuál es "colorante" (los auxiliares casi no se mueven — dueña).
+    # OJO: esto es el stock ACTUAL (foto), no el movimiento inic/consumo/act del
+    # mes; el número final de colorantes se arma con la familia correcta + el
+    # inicial/consumo (siguiente iteración). Dueña 2026-07-09.
     color_formulas = None
+    color_familias: dict = {}
     try:
         from modules.tintura import service as _tsvc
-        _q = _tsvc.stock_quimicos() or []
-        color_formulas = sum(
-            float(getattr(x, "stock_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
-            for x in _q
-        )
+        for x in (_tsvc.stock_quimicos() or []):
+            _fam = (getattr(x, "familia", "") or "?").strip().upper()
+            _val = float(getattr(x, "stock_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
+            color_familias[_fam] = color_familias.get(_fam, 0.0) + _val
+        color_formulas = sum(color_familias.values()) if color_familias else None
     except Exception:  # noqa: BLE001 -- fail-soft
         color_formulas = None
+    _fam_top = sorted(color_familias.items(), key=lambda kv: kv[1], reverse=True)[:10]
 
     cmp = {
         "ventas_derivada": ventas,
         "ventas_real": ventas_real,
+        "en_proceso": ventas_real - ventas,   # "el restante" si se usan ventas reales
         "color_programa": _f(co, "stock_act_us"),
         "color_formulas": color_formulas,
+        "color_familias": _fam_top,
     }
     return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co, "cmp": cmp}
 
