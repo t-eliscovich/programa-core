@@ -1017,6 +1017,9 @@ def buscar(
                c.comprobante, c.numero, c.kg, c.importe, c.concepto,
                c.clave, c.no_banco, c.stat, c.observacion, c.cuenta_pagada,
                COALESCE(p.nombre, '') AS proveedor,
+               p.plazo                AS plazo,
+               (c.fecha + (COALESCE(p.plazo, 0) * INTERVAL '1 day'))::date
+                                      AS fecha_vencimiento,
                COALESCE(b.nombre, '') AS banco,
                (UPPER(COALESCE(c.tipo, '')) = 'K'
                 AND COALESCE(c.kg, 0) > 0.01)               AS es_produccion
