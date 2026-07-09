@@ -898,28 +898,41 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     # Los flujos vivos son del mes en curso; para meses PASADOS se cae al
     # comportamiento previo (derivado de _ktint / snapshot) para no romper la
     # foto histórica. Igual criterio que el guard de iniciales del balance.
+    # El dBase MOVIMIENTOS lee TINTO.DBF del MES COMPLETO. scintela.tinto es la
+    # réplica de TINTO.DBF y también tiene el mes completo (skill tintura: "solo
+    # el mes actual, 146 filas todas de julio"). El CORTE_TINTURA (07/07) que usa
+    # el resto del informe es para el COSTEO ($/kg, puente a formulas_app), NO
+    # para el balance de masa en kg — acá cortaba el 07/07 (37.344 kg) y
+    # subcontaba (48.851 vs 88.046 del dBase). Para la CADENA leemos scintela.tinto
+    # del mes entero, sin corte, = lo que ve el dBase. TMT 2026-07-09 (dueña
+    # "perseguí el 88.046").
     _es_mes_actual = (yy == hoy.year and mm == hoy.month)
     if _es_mes_actual:
-        try:
-            _tin_res = tinto_mes_corriente_resultado()
-            _ktint_gross = float(_tin_res.get("ktint") or 0)
-            _kr_neto = float(_tin_res.get("kr") or 0)
-        except Exception:  # noqa: BLE001 -- fail-soft
-            _ktint_gross, _kr_neto = _ktint, _ktint
-        try:
-            _kt_ext = float(compras_tipo_t_externos_mes().get("kg") or 0)
-        except Exception:  # noqa: BLE001 -- fail-soft
-            _kt_ext = 0.0
-        try:
-            _ksti = float(tinto_kg_servicios_mes() or 0)
-        except Exception:  # noqa: BLE001 -- fail-soft
-            _ksti = 0.0
+        _tin_full = db.fetch_one(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN UPPER(TRIM(color)) NOT LIKE 'LAV%%'
+                                THEN kg  ELSE 0 END), 0)                    AS ktint,
+              COALESCE(SUM(CASE WHEN UPPER(TRIM(color)) NOT LIKE 'LAV%%'
+                                 AND COALESCE(kg, 0) > 0
+                                THEN kgn ELSE 0 END), 0)                    AS kr
+            FROM scintela.tinto
+            WHERE EXTRACT(YEAR FROM fecha)  = %(yy)s
+              AND EXTRACT(MONTH FROM fecha) = %(mm)s
+            """,
+            {"yy": yy, "mm": mm},
+        ) or {}
+        _ktint_full = float(_tin_full.get("ktint") or 0)
+        _kr_full = float(_tin_full.get("kr") or 0)
         try:
             _kvent_fis = float(ventas_mes_corriente_kg_fisico() or 0)
         except Exception:  # noqa: BLE001 -- fail-soft
             _kvent_fis = kvent
-        _crudo_egreso = max(_kt_ext + _ktint_gross - _ksti, 0.0)
-        _term_ingreso = _kr_neto
+        # CRUDO egreso = kg que ENTRAN a tintura = KTINT bruto (excl. lavados).
+        # TERM ingreso = KR neto (con la merma de tintura ~5%). TERM egreso =
+        # ventas físicas del mes.
+        _crudo_egreso = _ktint_full or _ktint
+        _term_ingreso = _kr_full or _ktint
         _term_egreso = _kvent_fis
     else:
         # Meses pasados: comportamiento previo (cadena cerrada con _ktint).
