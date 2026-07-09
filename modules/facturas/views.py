@@ -1354,8 +1354,29 @@ def cargar_desde_asinfo_bulk():
         except Exception as e:
             errs.append(f"{r.get('numero','?')}: {e}")
 
+    # TMT 2026-07-09 (dueña): al cargar, aplicar de una las retenciones de
+    # Asinfo que ya existan de esas facturas (registra + baja saldo). El resto
+    # las agarra el cron diario cuando lleguen. Idempotente y fail-soft.
+    ret_msg = ""
     if ok:
-        msg = f"Cargadas {ok} facturas desde Asinfo."
+        try:
+            from modules.retenciones import queries as _ret_q
+            _fechas = [
+                _parse_date(r.get("fecha") or "") for r in rows
+                if _parse_date(r.get("fecha") or "")
+            ]
+            if _fechas:
+                _rr = _ret_q.aplicar_retenciones_asinfo(
+                    min(_fechas), max(_fechas), usuario=usuario)
+                if _rr.get("n_aplicadas"):
+                    ret_msg = (
+                        f" Retenciones aplicadas: {_rr['n_aplicadas']} "
+                        f"({_rr['total_aplicado']:,.2f}).")
+        except Exception:
+            pass
+
+    if ok:
+        msg = f"Cargadas {ok} facturas desde Asinfo." + ret_msg
         if flipped:
             msg += f" ({flipped} estaban ocultas como backfill — ahora CUENTAN)"
         flash(msg, "ok")

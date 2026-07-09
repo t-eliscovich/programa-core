@@ -50,7 +50,7 @@
         <span class="font-semibold text-emerald-800 dark:text-emerald-300">Retenciones de Asinfo</span>
         <span class="text-slate-600 dark:text-slate-300">— {{ ret_n }} factura{{ '' if ret_n == 1 else 's' }} con retención (IVA+Fuente) por
           <span class="text-mono font-semibold">{{ ret_total | money_es }}</span> en el período.</span>
-        <div class="text-xs text-slate-500 mt-1">Aplicar registra la retención y baja el saldo de cada factura (abono). Es idempotente (no la aplica dos veces) y reversible.</div>
+        <div class="text-xs text-slate-500 mt-1">Se aplican solas todos los días (cron, últimos 60 días) y al cargar facturas: registran la retención y bajan el saldo (abono), idempotente y reversible. Este botón es para forzarlo ahora en el período elegido.</div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <form method="POST" action="{{ url_for('facturas.aplicar_retenciones_asinfo') }}" class="inline"

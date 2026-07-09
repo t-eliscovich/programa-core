@@ -650,10 +650,37 @@ def health_all():
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
     data4 = json.loads(resp4.get_data(as_text=True))
+    # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
+    # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
+    # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
+    # pase diario idempotente es lo que las agarra sin que nadie apriete nada.
+    # Mismo patrón que snapshot_diario (que también escribe en este cron).
+    data5 = _aplicar_retenciones_asinfo_cron(dias=60)
     return jsonify({
         "ok": data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"],
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
         "snapshot_diario": data4,
+        "retenciones_asinfo": data5,
     })
+
+
+def _aplicar_retenciones_asinfo_cron(dias: int = 60) -> dict:
+    """Aplica (idempotente) las retenciones de Asinfo de los últimos `dias`.
+
+    Para el cron diario (/admin/health/all). Fail-soft: cualquier excepción se
+    devuelve como {ok:False, error:...} sin romper el health check.
+    """
+    try:
+        from datetime import timedelta
+
+        from filters import today_ec
+        from modules.retenciones import queries as ret_q
+        hoy = today_ec()
+        r = ret_q.aplicar_retenciones_asinfo(
+            hoy - timedelta(days=dias), hoy, usuario="cron-retenciones")
+        r["ok"] = True
+        return r
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}

@@ -225,3 +225,25 @@ def test_desaplicar_una_sin_aplicacion(monkeypatch):
     stub = _DBStub(_fac(), mov=None)
     _patch(monkeypatch, stub)
     assert q._desaplicar_una_por_numero("X", "t") == "sin_aplicacion"
+
+
+# ───────────────────────── cron helper (health/all) ────────────────────────
+
+def test_cron_helper_ok(monkeypatch):
+    from modules.admin_dbase import health_audit_view as hv
+    from modules.retenciones import queries as q
+    monkeypatch.setattr(q, "aplicar_retenciones_asinfo",
+                        lambda d, h, usuario="cron": {"n_aplicadas": 3, "total_aplicado": 90.0})
+    r = hv._aplicar_retenciones_asinfo_cron(dias=60)
+    assert r["ok"] is True and r["n_aplicadas"] == 3
+
+
+def test_cron_helper_failsoft(monkeypatch):
+    from modules.admin_dbase import health_audit_view as hv
+    from modules.retenciones import queries as q
+
+    def _boom(*a, **k):
+        raise RuntimeError("metabase down")
+    monkeypatch.setattr(q, "aplicar_retenciones_asinfo", _boom)
+    r = hv._aplicar_retenciones_asinfo_cron()
+    assert r["ok"] is False and "metabase down" in r["error"]
