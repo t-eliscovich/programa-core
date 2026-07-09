@@ -124,9 +124,12 @@
   const COLORES = JSON.parse(document.getElementById('colores-data').textContent) || [];
   const body = document.getElementById('lineas-body');
 
-  // Mapa color(UPPER) → {clase, clase_desc, categoria}
+  // Mapa por NOMBRE y por CÓDIGO (UPPER) → {cod, color, clase, clase_desc}
   const COLORES_MAP = {};
-  COLORES.forEach(c => { COLORES_MAP[(c.color || '').toUpperCase()] = c; });
+  COLORES.forEach(c => {
+    if (c.color) COLORES_MAP[c.color.toUpperCase()] = c;
+    if (c.cod && !COLORES_MAP[c.cod.toUpperCase()]) COLORES_MAP[c.cod.toUpperCase()] = c;
+  });
 
   // Datalist de colores para el autocompletado de la columna Color.
   (function () {
@@ -277,7 +280,13 @@
 
     selTipo.addEventListener('change', onTipo);
     inColor.addEventListener('input', () => { inColor.value = inColor.value.toUpperCase(); setClaseDesdeColor(); autoPrecio(); });
-    inColor.addEventListener('change', () => { setClaseDesdeColor(); autoPrecio(); });
+    inColor.addEventListener('change', () => {
+      // Si tipeó un CÓDIGO (ej. NEG), lo expande al nombre (NEGRO) — como el dBase.
+      const v = (inColor.value || '').trim().toUpperCase();
+      const info = COLORES_MAP[v];
+      if (info && info.color && v !== info.color.toUpperCase()) inColor.value = info.color;
+      setClaseDesdeColor(); autoPrecio();
+    });
     inCant.addEventListener('input', recalc);
     inPrecio.addEventListener('input', () => { inPrecio.dataset.touched = '1'; recalc(); });
 
