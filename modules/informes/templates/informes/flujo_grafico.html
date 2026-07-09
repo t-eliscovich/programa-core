@@ -509,7 +509,7 @@
                          value="{{ _gfd_es }}"
                          class="gf-edit-fechad"
                          data-orig="{{ _gfd_es }}"
-                         style="font-family:ui-monospace,monospace;font-size:11px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:100px;">
+                         style="font-family:ui-monospace,monospace;font-size:12px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:100px;">
                 </td>
                 <td style="padding:4px 10px;">
                   <input type="text" maxlength="5"
@@ -518,7 +518,7 @@
                          data-orig="{{ e.prov or '' }}"
                          oninput="this.value=this.value.toUpperCase()"
                          placeholder="—"
-                         style="font-family:ui-monospace,monospace;font-size:11px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:60px;color:var(--text);">
+                         style="font-family:ui-monospace,monospace;font-size:12px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:60px;color:var(--text);">
                 </td>
                 <td style="padding:4px 10px;">
                   <input type="text" maxlength="100"
@@ -526,14 +526,14 @@
                          class="gf-edit-concepto"
                          data-orig="{{ e.concepto or '' }}"
                          placeholder="—"
-                         style="font-size:11px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:100%;color:var(--text);">
+                         style="font-size:12px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;width:100%;color:var(--text);">
                 </td>
                 <td style="padding:4px 10px;text-align:right;">
                   <input type="number" step="0.01" min="0.01"
                          value="{{ '%.2f' % (e.importe or 0) }}"
                          class="gf-edit-importe"
                          data-orig="{{ '%.2f' % (e.importe or 0) }}"
-                         style="font-family:ui-monospace,monospace;font-weight:600;font-size:11px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;text-align:right;width:110px;">
+                         style="font-family:ui-monospace,monospace;font-weight:400;font-size:12px;border:1px solid transparent;background:transparent;padding:2px 4px;border-radius:3px;text-align:right;width:110px;">
                 </td>
                 <td style="padding:4px 6px;text-align:center;">
                   <button type="button" class="gf-del-btn"
@@ -735,10 +735,10 @@
               {% for e in _pd_filas %}
               {% set _fd = e.fechad or (e.fecha_efectiva[:10] if e.fecha_efectiva else '') %}
               <tr style="border-bottom:1px dotted var(--grid);">
-                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:11px;white-space:nowrap;">{% if _fd %}{{ _fd[8:10] }}/{{ _fd[5:7] }}/{{ _fd[0:4] }}{% else %}—{% endif %}</td>
-                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:11px;">{{ e.prov or '—' }}</td>
-                <td style="padding:5px 10px;font-size:11px;color:var(--text);">{{ e.concepto or '—' }}</td>
-                <td style="padding:5px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:600;font-size:11px;">$ {{ e.importe | num_es(2) }}</td>
+                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap;">{% if _fd %}{{ _fd[8:10] }}/{{ _fd[5:7] }}/{{ _fd[0:4] }}{% else %}—{% endif %}</td>
+                <td style="padding:5px 10px;font-family:ui-monospace,monospace;font-size:12px;">{{ e.prov or '—' }}</td>
+                <td style="padding:5px 10px;font-size:12px;color:var(--text);">{{ e.concepto or '—' }}</td>
+                <td style="padding:5px 10px;text-align:right;font-family:ui-monospace,monospace;font-weight:400;font-size:12px;">$ {{ e.importe | num_es(2) }}</td>
               </tr>
               {% else %}
               <tr><td colspan="4" style="text-align:center;padding:18px;color:var(--muted);font-style:italic;">Sin posdatados a proveedor en la proyección.</td></tr>
