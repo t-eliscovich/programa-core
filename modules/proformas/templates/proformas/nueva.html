@@ -472,10 +472,10 @@
     tr.querySelector('.js-tipo').focus();
   });
 
-  // Arrancar con 3 filas y foco en la primera.
+  // Arrancar con 3 filas; el foco inicial va en Cliente (dueña 2026-07-09).
   agregarFila(); agregarFila(); agregarFila();
   recalc();
-  const first = body.querySelector('.js-tipo'); if (first) first.focus();
+  const _cli = document.getElementById('codigo-cli-input'); if (_cli) _cli.focus();
 
   // ── Prefill de descuentos al elegir cliente ──────────────────────
   window.__profPrefillCliente = function (codigo) {
