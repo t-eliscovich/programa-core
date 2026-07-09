@@ -246,10 +246,12 @@
         (= scintela.factura del mes). El restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
         <br><em>Ojo:</em> si las facturas de hoy todavía no se sincronizaron de Asinfo, scintela.factura queda corto y por eso puede no coincidir.
       </p>
-      {% if mov_asinfo.cmp.color_consumo is not none %}
+      {% if mov_asinfo.cmp.color_stock is not none %}
       <p class="mt-1 text-[10px] text-slate-500">
-        COLOR $ = colorante POLI+ALG de formulas_app (auxiliares afuera);
-        el consumo <b>$ {{ mov_asinfo.cmp.color_consumo | num_es(0) }}</b> es de <b>{{ mov_asinfo.cmp.color_ordenes }}</b> órdenes de tintura del mes.
+        <strong>COLOR $:</strong> egreso (consumo) = costo colorante+auxiliares del tinturado del mes
+        <b>$ {{ mov_asinfo.cmp.color_egreso | num_es(0) }}</b> (hoy del tinturado / scintela.tinto → formulas cuando se apague el dBase).
+        Stock hoy <b>$ {{ mov_asinfo.cmp.color_stock | num_es(0) }}</b> y compras <b>$ {{ mov_asinfo.cmp.color_compras | num_es(0) }}</b> de formulas_app; inicial deriva.
+        <span class="text-slate-400">(solo colorante POLI+ALG de las {{ mov_asinfo.cmp.color_ordenes }} órdenes = $ {{ mov_asinfo.cmp.color_consumo_colorante | num_es(0) }}, sin auxiliares)</span>
       </p>
       {% endif %}
       {% endif %}
