@@ -181,26 +181,6 @@
             </td>
             <td class="bord-t">{{ promedio.t_imp | num_es(0) }}</td>
           </tr>
-          <tr class="total">
-            <td class="lbl">TOTAL</td>
-            <td class="bord-b">{{ '%.1f' % total.b_pct }}%</td>
-            <td>{{ total.b_kg | num_es(0) }}</td>
-            <td>
-              {% if total.b_ukg is not none %}{{ total.b_ukg | num_es(4) }}{% else %}—{% endif %}
-            </td>
-            <td>{{ total.b_imp | num_es(0) }}</td>
-            <td class="bord-f">{{ '%.1f' % total.f_pct }}%</td>
-            <td>{{ total.f_kg | num_es(0) }}</td>
-            <td>
-              {% if total.f_ukg is not none %}{{ total.f_ukg | num_es(4) }}{% else %}—{% endif %}
-            </td>
-            <td>{{ total.f_imp | num_es(0) }}</td>
-            <td class="bord-t">{{ total.t_kg | num_es(0) }}</td>
-            <td class="bord-t">
-              {% if total.t_ukg is not none %}{{ total.t_ukg | num_es(4) }}{% else %}—{% endif %}
-            </td>
-            <td class="bord-t">{{ total.t_imp | num_es(0) }}</td>
-          </tr>
         {% endif %}
       </tbody>
     </table>
@@ -211,7 +191,6 @@
     según <code>importe/kg</code>. El % es sobre kg del mes. <code>$/kg</code> de cada
     grupo y total es ponderado (Σ$ / Σkg). PROMEDIO = suma de los {{ filas | length }}
     meses dividido por {{ filas | length }} (promedio por mes, no del año total).
-    TOTAL = suma de los meses del rango.
   </p>
 </div>
 {% endblock %}
