@@ -80,15 +80,11 @@
                  value="{{ form.descuento_volumen or '0' }}" placeholder="0"
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
         </label>
+        {# TMT 2026-07-09 (dueña): el descuento de contado es SIEMPRE 5% (fijo,
+           sin campo para tipear). El check decide si se aplica o no. #}
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" name="aplica_contado" id="aplica-contado" value="1">
-          <span>Descuento por contado</span>
-        </label>
-        <label class="flex flex-col max-w-xs">
-          <span class="text-xs text-slate-600">Descuento por contado (%)</span>
-          <input name="descuento_contado" id="desc-cont" type="text" inputmode="decimal"
-                 value="{{ form.descuento_contado or '5' }}" placeholder="5"
-                 class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
+          <span>Descuento por contado (5%)</span>
         </label>
         <label class="flex flex-col">
           <span class="text-xs text-slate-600">Observaciones</span>
@@ -101,7 +97,7 @@
         <div class="flex justify-between"><span class="text-slate-500">Subtotal</span><span class="font-mono" id="t-subtotal">0,00</span></div>
         <div class="flex justify-between text-slate-500"><span>Descuento por volumen</span><span class="font-mono" id="t-descvol">0,00</span></div>
         <div class="flex justify-between"><span class="text-slate-500">Subtotal c/desc</span><span class="font-mono" id="t-subdesc">0,00</span></div>
-        <div class="flex justify-between text-slate-500" id="row-cont"><span>Descuento por contado</span><span class="font-mono" id="t-desccont">0,00</span></div>
+        <div class="flex justify-between text-slate-500" id="row-cont"><span>Descuento por contado (5%)</span><span class="font-mono" id="t-desccont">0,00</span></div>
         <div class="flex justify-between text-lg font-semibold border-t border-slate-200 dark:border-slate-800 pt-2 mt-2">
           <span>Total</span><span class="font-mono" id="t-total">0,00</span>
         </div>
@@ -252,7 +248,7 @@
     });
     const pctVol = parseNum(document.getElementById('desc-vol').value);
     const aplicaC = document.getElementById('aplica-contado').checked;
-    const pctCont = parseNum(document.getElementById('desc-cont').value);
+    const pctCont = 5;  // fijo (dueña): contado siempre 5%
 
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
@@ -268,7 +264,6 @@
   }
 
   document.getElementById('desc-vol').addEventListener('input', recalc);
-  document.getElementById('desc-cont').addEventListener('input', recalc);
   document.getElementById('aplica-contado').addEventListener('change', recalc);
   document.getElementById('add-linea').addEventListener('click', () => {
     agregarFila().querySelector('.js-tipo').focus();
@@ -325,7 +320,7 @@
 
     const pctVol = parseNum(document.getElementById('desc-vol').value);
     const aplicaC = document.getElementById('aplica-contado').checked;
-    const pctCont = parseNum(document.getElementById('desc-cont').value);
+    const pctCont = 5;  // fijo (dueña): contado siempre 5%
     const montoVol = subtotal * pctVol / 100;
     const subDesc = subtotal - montoVol;
     const montoCont = aplicaC ? subDesc * pctCont / 100 : 0;
@@ -343,7 +338,7 @@
       totHtml += `<div><span>Subtotal c/desc</span><span>${fmt(subDesc)}</span></div>`;
     }
     if (aplicaC && montoCont > 0) {
-      totHtml += `<div><span>Descuento por pronto pago (${fmt(pctCont)}%)</span><span>-${fmt(montoCont)}</span></div>`;
+      totHtml += `<div><span>Descuento por pronto pago (5%)</span><span>-${fmt(montoCont)}</span></div>`;
     }
     totHtml += `<div class="total"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
 
