@@ -87,7 +87,7 @@
                  class="border rounded px-2 py-1 mt-0.5 font-mono text-sm text-right">
         </label>
         <label class="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="aplica_contado" id="aplica-contado" value="1">
+          <input type="checkbox" name="aplica_contado" id="aplica-contado" value="1" checked>
           <span>Descuento por contado (5%)</span>
         </label>
         <label class="flex flex-col">
@@ -361,8 +361,8 @@
         if (!d || !d.ok) return;
         document.getElementById('cli-nombre').textContent = d.nombre || '';
         if (d.descuento_volumen != null) document.getElementById('desc-vol').value = fmt(d.descuento_volumen).replace(',00','');
-        const chk = document.getElementById('aplica-contado');
-        chk.checked = !!d.aplica_contado;
+        // El descuento por contado (5%) queda SIEMPRE pre-tildado (dueña);
+        // el prefill del cliente ya no lo destilda — se destilda a mano si hace falta.
         recalc();
       }).catch(() => {});
   };
