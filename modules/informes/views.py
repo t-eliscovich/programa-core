@@ -203,6 +203,29 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         color_formulas = None
     _fam_top = sorted(color_familias.items(), key=lambda kv: kv[1], reverse=True)[:10]
 
+    # MOVIMIENTO de colorantes desde el INVENTARIO de formulas_app (dueña:
+    # "fijate el inventario, es más fácil"): valor de colorantes al 1° del mes
+    # (inicial) y hoy (final); egreso = inicial − final (consumo neto). Solo las
+    # familias de COLORANTES (POLI = poliéster, ALG = algodón); los AUXILIARES
+    # (AUX) quedan afuera porque casi no se mueven.
+    _COLOR_FAMS = ("POLI", "ALG")
+    color_inic = color_final = None
+    try:
+        from datetime import date as _date
+        from modules.tintura import service as _tsvc2
+
+        def _valor_color(rows):
+            return sum(
+                float(getattr(x, "stock_al_dia_kg", 0) or 0) * float(getattr(x, "precio_us", 0) or 0)
+                for x in (rows or [])
+                if (getattr(x, "familia", "") or "").strip().upper() in _COLOR_FAMS
+            )
+        if anio and mes:
+            color_inic = _valor_color(_tsvc2.stock_quimicos_al_dia(_date(int(anio), int(mes), 1)))
+        color_final = _valor_color(_tsvc2.stock_quimicos_al_dia())
+    except Exception:  # noqa: BLE001 -- fail-soft
+        color_inic = color_final = None
+
     cmp = {
         "ventas_derivada": ventas,
         "ventas_real": ventas_real,
@@ -210,6 +233,10 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         "color_programa": _f(co, "stock_act_us"),
         "color_formulas": color_formulas,
         "color_familias": _fam_top,
+        "color_inic": color_inic,
+        "color_final": color_final,
+        "color_egreso": (color_inic - color_final)
+        if (color_inic is not None and color_final is not None) else None,
     }
     return {"hilado": hl, "tejido": tj, "terminado": te, "colorantes": co, "cmp": cmp}
 

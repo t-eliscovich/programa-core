@@ -238,20 +238,24 @@
       </p>
       {% if mov_asinfo.cmp %}
       <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-500">
-        <strong>Para elegir (dueña):</strong>
-        Ventas del mes — derivada <b>{{ mov_asinfo.cmp.ventas_derivada | num_es(0) }}</b> kg
-        vs real (scintela.factura) <b>{{ mov_asinfo.cmp.ventas_real | num_es(0) }}</b> kg;
-        el restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
+        <strong>VENTAS del mes (mostrando ambas hasta decidir):</strong>
+        <b>derivada {{ mov_asinfo.cmp.ventas_derivada | num_es(0) }}</b> kg
+        (= sale del balance de stock de Asinfo: term.inic + tinturado − term.actual; cierra exacto)
+        vs <b>real {{ mov_asinfo.cmp.ventas_real | num_es(0) }}</b> kg
+        (= scintela.factura del mes). El restante <b>{{ mov_asinfo.cmp.en_proceso | num_es(0) }}</b> kg iría a "en proceso".
+        <br><em>Ojo:</em> si las facturas de hoy todavía no se sincronizaron de Asinfo, scintela.factura queda corto y por eso puede no coincidir.
       </p>
-      {% if mov_asinfo.cmp.color_familias %}
       <p class="mt-1 text-[10px] text-slate-500">
-        <strong>Químicos formulas_app por familia (stock actual, para separar colorantes de auxiliares):</strong>
-        {% for fam, val in mov_asinfo.cmp.color_familias %}
-          {{ fam }} <b>$ {{ val | num_es(0) }}</b>{% if not loop.last %} · {% endif %}
-        {% endfor %}
-        <br><em>Ojo:</em> esto es el stock actual (foto), no el inicial−consumo−final del mes; con la familia de colorantes correcta armo el movimiento.
+        {% if mov_asinfo.cmp.color_inic is not none %}
+        <strong>COLORANTES (formulas_app, familias POLI+ALG, sin auxiliares):</strong>
+        inicial (1° del mes) <b>$ {{ mov_asinfo.cmp.color_inic | num_es(0) }}</b>
+        − consumo <b>$ {{ mov_asinfo.cmp.color_egreso | num_es(0) }}</b>
+        = final (hoy) <b>$ {{ mov_asinfo.cmp.color_final | num_es(0) }}</b>.
+        {% endif %}
+        {% if mov_asinfo.cmp.color_familias %}
+        <br>Químicos por familia (stock hoy): {% for fam, val in mov_asinfo.cmp.color_familias %}{{ fam }} $ {{ val | num_es(0) }}{% if not loop.last %} · {% endif %}{% endfor %} — POLI/ALG = colorantes, AUX = auxiliares.
+        {% endif %}
       </p>
-      {% endif %}
       {% endif %}
     {% else %}
       <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>
