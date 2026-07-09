@@ -100,6 +100,7 @@ def nueva():
 def _debug_tinto():
     """TEMPORAL: estado de scintela.tinto_costos.clase."""
     from flask import jsonify
+
     import db as _db
     out = {}
     try:
