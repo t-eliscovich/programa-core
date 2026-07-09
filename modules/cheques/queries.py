@@ -1983,7 +1983,10 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
         },
     ],
     # D = Daniela.
+    # TMT 2026-07-09 (dueña): agregar →B (depositar) — TRANSICIONES_VALIDAS['D']
+    # ya lo permite; faltaba en el dropdown (Daniela trajo el cheque, se deposita).
     "D": [
+        {"stat_destino": "B", "label": "Depositar en Pichincha (hoy)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             "stat_destino": "P",
             "label": "Postergar fecha",
@@ -1992,7 +1995,12 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
         },
     ],
     # P = postergado. Daniela, re-postergar, o marcar devuelto (dueña 2026-06-16).
+    # TMT 2026-07-09 (dueña): "no me deja depositar cheques desde la pantalla".
+    # Faltaba →B en el dropdown de P (postdatado que llegó su fecha → depositar
+    # en Pichincha hoy). El backend (TRANSICIONES_VALIDAS['P']) ya lo permitía;
+    # solo faltaba ofrecerlo en la UI. Va primero, con confirmación (como Z).
     "P": [
+        {"stat_destino": "B", "label": "Depositar en Pichincha (hoy)", "kind": "POST", "endpoint": "cheques.transicionar"},
         {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
         {
             "stat_destino": "P",
