@@ -92,59 +92,7 @@
     </div>
   {% endif %}
 
-  {# ─── TABLA 1: INVENTARIO ASINFO (LIVE) — kg por etapa ────────────
-       TMT 2026-07-08 (dueña): kg live de Asinfo por etapa del flujo, con
-       los saldos EN PROCESO entre pasos. Fail-soft: si el bridge Asinfo
-       está caído, se muestra un aviso apagado en vez de la tabla. #}
-  <div class="blk mb-2">
-    <div class="blk-title">Inventario Asinfo (live)</div>
-    {% if inv_asinfo and inv_asinfo.disponible %}
-      <table data-no-sort-table>
-        <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
-        <thead>
-          <tr><th class="lbl">Etapa</th><th>Kg</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="lbl">Hilo</td>
-            <td class="num">{{ inv_asinfo.hilo | num_es(0) }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">En proceso (Hilo → Tela Cruda)</td>
-            <td class="num">{{ inv_asinfo.en_proceso_tc | num_es(0) }}</td>
-          </tr>
-          <tr class="total">
-            <td class="lbl">Hilo total</td>
-            <td class="num">{{ inv_asinfo.hilo_total | num_es(0) }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Tela Cruda</td>
-            <td class="num">{{ inv_asinfo.tela_cruda | num_es(0) }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">En proceso (Tela Cruda → Terminada)</td>
-            <td class="num">{{ inv_asinfo.en_proceso_pt | num_es(0) }}</td>
-          </tr>
-          <tr class="total">
-            <td class="lbl">Cruda total</td>
-            <td class="num">{{ inv_asinfo.cruda_total | num_es(0) }}</td>
-          </tr>
-          <tr>
-            <td class="lbl">Terminada / PT</td>
-            <td class="num">{{ inv_asinfo.terminada | num_es(0) }}</td>
-          </tr>
-          <tr class="total">
-            <td class="lbl">Total inventario</td>
-            <td class="num">{{ inv_asinfo.total | num_es(0) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    {% else %}
-      <p class="nd" style="font-size: 10.5px;">Asinfo no disponible</p>
-    {% endif %}
-  </div>
-
-  {# ─── TABLA 2: MOVIMIENTOS DEL MES (inicial Asinfo) ───────────────
+  {# ─── TABLA: MOVIMIENTOS DEL MES (inicial Asinfo) ───────────────
        TMT 2026-07-08 (dueña): clon de MOVIMIENTOS DEL MES (abajo) pero con el
        Stock inicial (kg) tomado del snapshot de Asinfo a la fecha de inicio del
        mes seleccionado (as-of por bodega 51/52/53), no de las iniciales del
