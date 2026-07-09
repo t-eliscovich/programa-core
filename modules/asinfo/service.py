@@ -1456,12 +1456,17 @@ def ingreso_fabricacion_mes(id_bodega: int, yy: int, mm: int) -> float:
     # cae en el mes = kg producidos (ingresados) a esa bodega. (El kardex
     # movimiento_inventario está vacío en Asinfo; esta es la fuente que tiene
     # datos — ver debug_fabricacion_wip ?desde=YYYY-MM-DD.)
+    # Sólo órdenes HOJA (no padres) para no doble-contar la cantidad_fabricada
+    # — mismo criterio que fabricacion_proceso()/stock_en_proceso().
     sql = f"""
         SELECT SUM(ISNULL(cantidad_fabricada, 0)) AS kg
           FROM orden_fabricacion
          WHERE id_bodega = {int(id_bodega)}
            AND fecha >= '{d1}'
            AND fecha <  '{d2}'
+           AND id_orden_fabricacion NOT IN (
+                 SELECT id_orden_fabricacion_padre FROM orden_fabricacion
+                  WHERE id_orden_fabricacion_padre IS NOT NULL)
     """
     try:
         rows = metabase_client.fetch_dataset(2, sql, max_results=10)
