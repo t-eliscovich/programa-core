@@ -243,6 +243,10 @@
     </div>
   </div>
 
+  {# TMT 2026-07-09 (dueña): en la vista individual el cuerpo es INTERACTIVO
+     — lapicito por factura para cambiar A↔T. El lote de impresión incluye el
+     mismo partial SIN interactivo → sale igual que antes. #}
+  {% set interactivo = true %}
   {% include "informes/_estado_cuenta_impreso.html" %}
 
   {# TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
@@ -290,84 +294,6 @@
     <div class="no-print px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500">
       El saldo a favor se aplica automáticamente a futuras facturas y ya está descontado del “Saldo cliente” de arriba.
     </div>
-  </div>
-  {% endif %}
-
-  {# ===================================================================== #}
-  {# TMT 2026-07-09 (dueña): PANEL cambiar estado de facturas A↔T.         #}
-  {# Cerrar (A/Z→T) marca la factura pagada (saldo 0, sale de la lista);   #}
-  {# Reabrir (T→A) la vuelve viva con su saldo restaurado. Reversible.     #}
-  {# Solo con permiso clientes.ver (mismo que TOTALIZAR).                  #}
-  {# ===================================================================== #}
-  {% if tiene_permiso('clientes.ver') %}
-  {% set _vivas = data.facturas | selectattr('importe', 'gt', 0) | list %}
-  <div class="no-print mt-10">
-    <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-      <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800">
-        Cambiar estado de facturas (A ↔ T)
-        <span class="ml-2 font-normal text-slate-500">— cerrar una factura como pagada (→T) o reabrirla (→A)</span>
-      </summary>
-      <div class="p-4 grid md:grid-cols-2 gap-6">
-        {# Vivas → cerrar (T) #}
-        <div>
-          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Vivas (Z/A) — cerrar como pagada</div>
-          {% if _vivas %}
-          <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded">
-            {% for f in _vivas %}
-            <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span class="font-mono text-xs">
-                {{ f.numf_completo or f.numf }}
-                <span class="text-slate-400">· {{ f.fecha | fecha_es }}</span>
-                <span class="ml-1">saldo {{ f.saldo | money_es }}</span>
-                <span class="ml-1 text-slate-400">[{{ f.stat or 'Z' }}]</span>
-              </span>
-              <form method="POST"
-                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
-                    onsubmit="return confirm('Cerrar factura {{ f.numf }} (→T)? Queda pagada y sale de la lista viva. Es reversible (Reabrir).');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit"
-                        class="text-xs px-2.5 py-1 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
-                  Cerrar → T
-                </button>
-              </form>
-            </div>
-            {% endfor %}
-          </div>
-          {% else %}
-          <div class="text-sm text-slate-400 px-1">Sin facturas vivas positivas.</div>
-          {% endif %}
-        </div>
-        {# Totalizadas → reabrir (A) #}
-        <div>
-          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Totalizadas (T) — reabrir</div>
-          {% if facturas_totalizadas %}
-          <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded max-h-80 overflow-auto">
-            {% for f in facturas_totalizadas %}
-            <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span class="font-mono text-xs">
-                {{ f.numf_completo or f.numf }}
-                <span class="text-slate-400">· {{ f.fecha | fecha_es }}</span>
-                <span class="ml-1">importe {{ f.importe | money_es }}</span>
-                <span class="ml-1 text-slate-400">abon. {{ f.abono | money_es }}</span>
-              </span>
-              <form method="POST"
-                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
-                    onsubmit="return confirm('Reabrir factura {{ f.numf }} (→A)? Vuelve a la lista viva con su saldo.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit"
-                        class="text-xs px-2.5 py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20">
-                  Reabrir → A
-                </button>
-              </form>
-            </div>
-            {% endfor %}
-          </div>
-          {% else %}
-          <div class="text-sm text-slate-400 px-1">Sin facturas totalizadas.</div>
-          {% endif %}
-        </div>
-      </div>
-    </details>
   </div>
   {% endif %}
 

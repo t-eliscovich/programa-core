@@ -7,7 +7,18 @@
 {% set _saldo_neto = t.saldo_neto if t.saldo_neto is not none else t.saldo %}
 
   {# Facturas #}
-  <h2 class="text-lg font-semibold mb-2">Facturas</h2>
+  {# TMT 2026-07-09 (dueña): en modo interactivo, botón para ver las
+     totalizadas (T) y poder reabrirlas con el lapicito. #}
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-lg font-semibold">Facturas</h2>
+    {% if interactivo|default(false) and facturas_totalizadas|default(none) %}
+    <button type="button" data-on="0"
+            class="no-print text-xs px-2 py-1 rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            onclick="var on=this.dataset.on==='1';document.querySelectorAll('.ec-trow').forEach(function(r){r.style.display=on?'none':'table-row';});this.dataset.on=on?'0':'1';this.textContent=on?'Ver totalizadas ({{ facturas_totalizadas|length }})':'Ocultar totalizadas';">
+      Ver totalizadas ({{ facturas_totalizadas|length }})
+    </button>
+    {% endif %}
+  </div>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-8">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
@@ -41,11 +52,52 @@
           <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s > 0 else 'text-slate-500' }}">{{ acum.s | money_es }}</td>
-          <td class="px-4 py-2 font-mono text-xs text-slate-500">{{ f.stat }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
+            {{ f.stat }}
+            {# TMT 2026-07-09 (dueña): lapicito para CERRAR la factura (A/Z→T),
+               reversible. Solo interactivo + con permiso + importe positivo. #}
+            {% if interactivo|default(false) and tiene_permiso('clientes.ver') and (f.importe or 0) > 0 %}
+            <form method="POST" class="inline no-print"
+                  action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
+                  onsubmit="return confirm('Cerrar factura {{ f.numf }} como pagada (→T)? Sale de la lista viva. Es reversible (Ver totalizadas → Reabrir).');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" title="Cerrar como pagada (A/Z → T)"
+                      class="ml-1 align-middle text-slate-400 hover:text-amber-600 dark:hover:text-amber-400">✎</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
         {{ empty_row(8, 'Sin facturas para este cliente.') }}
         {% endfor %}
+        {# TMT 2026-07-09 (dueña): filas de facturas TOTALIZADAS (T), ocultas
+           por defecto; el botón "Ver totalizadas" las muestra. Lapicito →
+           REABRIR (T→A). no-print (no salen en la impresión). #}
+        {% if interactivo|default(false) and facturas_totalizadas|default(none) %}
+          {% for f in facturas_totalizadas %}
+          <tr class="ec-trow no-print border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 text-slate-400" style="display:none;">
+            <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
+            <td class="px-4 py-2 text-xs whitespace-nowrap">Totalizada</td>
+            <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+            <td class="px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
+            <td class="px-4 py-2 text-right text-mono">{{ f.abono | money_es }}</td>
+            <td class="px-4 py-2 text-right text-mono">0,00</td>
+            <td class="px-4 py-2 text-right text-mono">—</td>
+            <td class="px-4 py-2 font-mono text-xs whitespace-nowrap">
+              T
+              {% if tiene_permiso('clientes.ver') %}
+              <form method="POST" class="inline no-print"
+                    action="{{ url_for('informes.estado_cuenta_factura_toggle', codigo_cli=data.cliente.codigo_cli, id_factura=f.id_factura) }}"
+                    onsubmit="return confirm('Reabrir factura {{ f.numf }} (→A)? Vuelve a la lista viva con su saldo.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" title="Reabrir (T → A)"
+                        class="ml-1 align-middle text-slate-400 hover:text-sky-600 dark:hover:text-sky-400">✎</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% endif %}
       </tbody>
       {% if data.facturas %}
       <tfoot class="bg-slate-50 dark:bg-slate-800/50 border-t-2 border-slate-300 dark:border-slate-700">
