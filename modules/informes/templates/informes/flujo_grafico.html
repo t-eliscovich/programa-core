@@ -420,9 +420,8 @@
 
         <div class="zoom">
           <span>Agrupación</span>
-          <button type="button" data-q="1" class="on">1 día</button>
-          <button type="button" data-q="2">2 días</button>
-          <button type="button" data-q="3">3 días</button>
+          <button type="button" data-q="1">1 día</button>
+          <button type="button" data-q="3" class="on">3 días</button>
           <button type="button" data-q="5">5 días</button>
           <button type="button" data-q="7">1 semana</button>
           <button type="button" data-q="14">2 semanas</button>
@@ -1501,9 +1500,9 @@ async function gfOfrecerImportarLocalStorage() {
 })();
 
 try {
-  buildChart(1);
+  buildChart(3);
 } catch (e) {
-  console.error('[flujo_grafico] buildChart(1) falló:', e);
+  console.error('[flujo_grafico] buildChart(3) falló:', e);
   const wrap = document.querySelector('.flujo-wrap .chart-wrap');
   if (wrap) {
     wrap.innerHTML = (
