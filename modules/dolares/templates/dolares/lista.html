@@ -457,11 +457,8 @@
               <a href="{{ url_for('dolares.lista', cta=d.cta) }}" class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">{{ d.cta }}</a>
             </td>
             <td class="px-4 py-1.5">{{ d.concepto | cleanstr }}</td>
-            <td class="px-4 py-1.5" style="white-space: nowrap;">
-              {{ d.fecha_recepcion_im | fecha_es if d.fecha_recepcion_im else '—' }}
-              {% if d.kg_im is not none and d.kg_im %}
-              <div class="text-[10px] text-slate-400">{{ d.kg_im | num_es(0) }} kg</div>
-              {% endif %}
+            <td class="px-4 py-1.5 text-xs text-slate-500 dark:text-slate-400" style="white-space: nowrap;">
+              {% if d.fecha_recepcion_im %}{{ d.fecha_recepcion_im[8:10] }}/{{ d.fecha_recepcion_im[5:7] }}/{{ d.fecha_recepcion_im[2:4] }}{% if d.kg_im %}<span class="text-slate-400 dark:text-slate-500"> · {{ d.kg_im | num_es(0) }} kg</span>{% endif %}{% else %}<span class="text-slate-300 dark:text-slate-600">—</span>{% endif %}
             </td>
             <td class="px-4 py-1.5 text-right num-cell {% if vivo %}font-medium text-slate-700 dark:text-slate-200{% endif %}">{{ d.importe | num_es(2) }}</td>
             <td class="px-4 py-1.5 text-right num-cell text-slate-600 dark:text-slate-400">{{ d.saldo_acumulado | num_es(2) if d.saldo_acumulado is not none else '' }}</td>
