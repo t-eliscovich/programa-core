@@ -345,8 +345,7 @@
   {% for _ep, _lbl in [
         ('balance', 'Resultados'),
         ('historico_12m', 'Historial'),
-        ('gastos', 'Gastos del mes'),
-        ('flujo_produccion', 'Flujo producción')] %}
+        ('gastos', 'Gastos del mes')] %}
     {% if _ep == actual %}
       <span class="inline-flex items-center justify-center text-sm px-4 py-1.5 rounded border border-sky-500 bg-sky-500 text-white"
             style="min-width: 11rem; text-align: center;">{{ _lbl }}</span>

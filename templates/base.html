@@ -735,6 +735,9 @@
       <details class="sidebar-section" data-key="informes" open>
         <summary>Informes</summary>
         {{ nav_link('informes.balance', 'Resultados', 'report') }}
+        {# TMT 2026-07-09 (dueña): acceso a Flujo de producción en el menú, entre
+           Resultados y Flujo de fondos (se sacó de la barra nav de Resultados). #}
+        {{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}
         {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
         {# TMT 2026-05-20 PASADA 6 (Federico #9): "Check totales" sacado
            del menú principal. Accesible vía URL /informes/check-totales y
