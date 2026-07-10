@@ -12,7 +12,7 @@ from flask import (
 )
 
 import db
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from parsers import parse_int
@@ -80,7 +80,8 @@ def nuevo():
         )
 
     form = _form_from_request()
-    cupo = parse_int(form["cupo"])
+    # Solo Andrés / accionistas setean el cupo (perm cupos.editar). TMT 2026-07-09.
+    cupo = parse_int(form["cupo"]) if tiene_permiso("cupos.editar") else None
     # POST también puede traer `next` como hidden — preferir ese sobre el
     # query string porque sobrevive al re-render con errores.
     next_url = _safe_next_url(request.form.get("next") or request.args.get("next"))
@@ -178,7 +179,9 @@ def editar(codigo_cli: str):
         return render_template("clientes/form.html", form=form, errores=errores, modo="editar", next_url=next_url)
 
     form = _form_from_request()
-    cupo = parse_int(form["cupo"])
+    # Solo Andrés / accionistas editan el cupo (perm cupos.editar); el resto
+    # conserva el cupo actual del cliente. TMT 2026-07-09.
+    cupo = parse_int(form["cupo"]) if tiene_permiso("cupos.editar") else cli.get("cupo")
 
     if not form["nombre"]:
         errores.append("Nombre requerido.")

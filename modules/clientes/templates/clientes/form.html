@@ -105,7 +105,8 @@
       <label class="flex flex-col">
         <span class="text-sm text-slate-600">Cupo</span>
         <input type="number" name="cupo" value="{{ form.cupo or '' }}"
-               class="border rounded px-2 py-1 mt-1 text-right" min="0">
+               class="border rounded px-2 py-1 mt-1 text-right{{ ' bg-slate-100 text-slate-500 cursor-not-allowed' if not tiene_permiso('cupos.editar') }}" min="0"
+               {% if not tiene_permiso('cupos.editar') %}readonly title="Solo accionistas / Andrés pueden editar el cupo"{% endif %}>
       </label>
 
       <label class="flex flex-col">
