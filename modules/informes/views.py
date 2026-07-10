@@ -225,28 +225,11 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     hl["egresos_kg"] = hilo_consumido
     hl["egresos_ukg"] = _avg_ukg
     hl["egresos_us"] = hilo_consumido * _avg_ukg
-    # STOCK ACTUAL = bodega + EN MÁQUINAS (dueña 2026-07-10: "lo de máquinas hay
-    # que sumar también, es stock nuestro"). La bodega se valúa al PROMEDIO y el
-    # WIP (en máquinas) al $/kg de apertura.
-    _maq_us = maq_hilado * _open_ukg
     hl["stock_act_kg"] = hi1 + maq_hilado
-    hl["stock_act_us"] = hi1 * _avg_ukg + _maq_us
+    hl["stock_act_us"] = hl["stock_inic_us"] + compras_us - hl["egresos_us"]
     hl["stock_act_ukg"] = (
         hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
     )
-    # EGRESO POR AJUSTE (varianza de bodega, físico − libro): el PLUG para que la
-    # columna CIERRE exacto en kg y en $:
-    #   inicial + ingresos + en máquinas − egresos − ajuste = stock actual
-    # Absorbe el desfase entre el saldo físico de Asinfo (hi1) y el derivado del
-    # flujo (hi0 + compras − consumo). El término de "en máquinas" se cancela
-    # (entra igual en los dos lados), así el ajuste es solo la varianza de bodega.
-    hl["ajuste_kg"] = (
-        hi0 + compras + maq_hilado - hilo_consumido
-    ) - hl["stock_act_kg"]
-    hl["ajuste_us"] = (
-        hl["stock_inic_us"] + compras_us + _maq_us - hl["egresos_us"]
-    ) - hl["stock_act_us"]
-    hl["ajuste_ukg"] = _avg_ukg
 
     # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
     # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
