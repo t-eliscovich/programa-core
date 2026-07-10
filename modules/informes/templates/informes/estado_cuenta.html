@@ -156,10 +156,14 @@
 
   {# TMT 2026-06-07: tabs cuenta del cliente — clásica (activa) + timeline.
      Unifica las dos vistas que antes eran páginas separadas. #}
-  <div class="flex gap-1 border-b border-slate-200 dark:border-slate-800 mb-5 no-print">
+  {# TMT 2026-07-09 (dueña): sacada la pestaña "Cuenta corriente" (no se usa).
+     Botón "Editar cliente" → ficha editable (datos + cupo) en /clientes/editar. #}
+  <div class="flex gap-1 items-center border-b border-slate-200 dark:border-slate-800 mb-5 no-print">
     <span class="px-4 py-2 text-sm font-medium border-b-2 border-sky-600 text-sky-700">Estado de cuenta</span>
-    <a href="{{ url_for('clientes.cuenta', codigo_cli=data.cliente.codigo_cli) }}"
-       class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cuenta corriente</a>
+    {% if tiene_permiso('clientes.editar') %}
+    <a href="{{ url_for('clientes.editar', codigo_cli=data.cliente.codigo_cli) }}"
+       class="ml-auto mb-1 px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800">Editar cliente</a>
+    {% endif %}
   </div>
 
   {# TMT 2026-05-17: tile principal — saldo del cliente.
