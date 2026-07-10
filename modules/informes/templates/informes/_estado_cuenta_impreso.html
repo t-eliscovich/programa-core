@@ -31,6 +31,7 @@
           <th class="px-4 py-3 text-right font-medium">Saldo</th>
           <th class="px-4 py-3 text-right font-medium" title="Saldo acumulado leído de arriba hacia abajo (sumando esta factura y todas las anteriores en la lista).">Acum.</th>
           <th class="px-4 py-3 text-left font-medium">Stat</th>
+          <th class="px-4 py-3 text-right font-medium" title="Días entre hoy y la fecha de emisión de la factura">Días</th>
         </tr>
       </thead>
       <tbody>
@@ -66,9 +67,10 @@
             </form>
             {% endif %}
           </td>
+          <td class="px-4 py-2 text-right text-mono text-slate-500" title="Días desde la emisión">{{ f.fecha | dias_desde }}</td>
         </tr>
         {% else %}
-        {{ empty_row(8, 'Sin facturas para este cliente.') }}
+        {{ empty_row(9, 'Sin facturas para este cliente.') }}
         {% endfor %}
         {# TMT 2026-07-09 (dueña): filas de facturas TOTALIZADAS (T), ocultas
            por defecto; el botón "Ver totalizadas" las muestra. Lapicito →
@@ -95,6 +97,7 @@
               </form>
               {% endif %}
             </td>
+            <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.fecha | dias_desde }}</td>
           </tr>
           {% endfor %}
         {% endif %}

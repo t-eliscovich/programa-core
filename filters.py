@@ -76,6 +76,22 @@ def fecha_es(value) -> str:
     return str(value)
 
 
+def dias_desde(value) -> str:
+    """Días transcurridos entre HOY (fecha de negocio EC) y `value` (fecha de
+    emisión). Devuelve '' si no hay fecha. TMT 2026-07-09 (dueña): columna
+    DÍAS del estado de cuenta."""
+    if value is None or value == "":
+        return ""
+    if isinstance(value, datetime):
+        value = value.date()
+    if not isinstance(value, date):
+        try:
+            value = date.fromisoformat(str(value)[:10])
+        except (ValueError, TypeError):
+            return ""
+    return str((today_ec() - value).days)
+
+
 def fecha_hora_es(value) -> str:
     """Render datetime as dd/mm/yyyy HH:MM:SS.
 
@@ -180,6 +196,7 @@ def register(app):
     app.jinja_env.filters["kg_es"] = kg_es
     app.jinja_env.filters["money_es"] = money_es
     app.jinja_env.filters["fecha_es"] = fecha_es
+    app.jinja_env.filters["dias_desde"] = dias_desde
     app.jinja_env.filters["fecha_hora_es"] = fecha_hora_es
     app.jinja_env.filters["fecha_hora_ec"] = fecha_hora_ec
     app.jinja_env.filters["hora_ec"] = hora_ec
