@@ -36,8 +36,8 @@ def _numeros_de(code: dict) -> list[int]:
     return [n]
 
 
-def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
-    """{(codigo_prov, ref_num): fila de compra} para las refs pedidas.
+def _buscar_compras(refs: set[tuple[str, int]]) -> list[dict]:
+    """Filas CRUDAS de compra (con `fecha`) para las refs pedidas.
 
     El número de la Nota de Asinfo (ej. "AC 98") NO es `scintela.compra.numero`
     (ese campo va vacío en estas compras de importación) sino el **`concepto`**
@@ -46,10 +46,15 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
     cruzamos por `(codigo_prov, concepto-numérico)`. Verificado contra
     /compras en vivo 2026-06-09.
 
-    Una sola query a scintela.compra. Fail-soft: {} si no hay refs o la DB falla.
+    Devuelve la LISTA de filas (no agregadas): cada una con codigo_prov, ref_num,
+    importe y `fecha`. La atribución a cada importación (por año / fecha más
+    cercana) la hace `importaciones_con_cruce`, porque el nº de concepto se reusa
+    entre años y no se puede sumar por (prov, nº) a secas.
+
+    Una sola query a scintela.compra. Fail-soft: [] si no hay refs o la DB falla.
     """
     if not refs:
-        return {}
+        return []
     provs = sorted({p for p, _ in refs})
     numeros = sorted({n for _, n in refs})
     try:
@@ -70,34 +75,31 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
         )
     except Exception as e:  # noqa: BLE001
         _LOG.warning("buscar_compras falló: %s", e)
-        return {}
-    out: dict[tuple[str, int], dict] = {}
-    for r in rows:
-        if r.get("ref_num") is None or r.get("codigo_prov") is None:
-            continue
-        key = (str(r["codigo_prov"]).strip().upper(), int(r["ref_num"]))
-        # Si dos compras comparten (prov, concepto) — ej. importación partida —
-        # acumulamos el importe en vez de pisar.
-        if key in out:
-            out[key] = {**out[key], "importe": float(out[key].get("importe") or 0) + float(r.get("importe") or 0)}
-        else:
-            out[key] = r
-    return out
+        return []
+    return [
+        r for r in rows
+        if r.get("ref_num") is not None and r.get("codigo_prov") is not None
+    ]
 
 
-def _buscar_anticipos(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]:
-    """{(cta, ref_num): {importe, n}} de anticipos USD en scintela.dolares.
+def _buscar_anticipos(refs: set[tuple[str, int]]) -> list[dict]:
+    """Filas CRUDAS de anticipos USD (con `fecha`) desde scintela.dolares.
 
     Muchas importaciones se pagan como ANTICIPO USD (crédito/adelanto) y viven
     en `scintela.dolares` (cuenta = código de proveedor, concepto = nº de
     importación + tags CAE/SALDO/MAPFRE/INI). Recién se vuelven compra al
-    "Convertir a compra". Acá sumamos todas las partidas por (cuenta, nº) para
-    dar el USD del anticipo. Verificado contra /dolares en vivo 2026-06-09.
+    "Convertir a compra".
 
-    Fail-soft: {} si no hay refs o la DB falla.
+    NO agregamos por (cuenta, nº): el nº de concepto se REUSA cada año (hay un
+    "AC 31" en 2024 y otro en 2026), así que sumar a secas mezcla importaciones
+    de años distintos. Devolvemos cada partida con su `fecha` y la atribución a
+    la importación correcta (por fecha más cercana) la hace
+    `importaciones_con_cruce`. Verificado contra /dolares en vivo 2026-06-09.
+
+    Fail-soft: [] si no hay refs o la DB falla.
     """
     if not refs:
-        return {}
+        return []
     provs = sorted({p for p, _ in refs})
     numeros = sorted({n for _, n in refs})
     try:
@@ -105,25 +107,65 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> dict[tuple[str, int], dict]
             r"""
             WITH d AS (
                 SELECT UPPER(cta) AS cta, importe,
+                       TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha,
                        NULLIF(substring(concepto FROM '^\s*(\d{1,6})'), '')::int AS ref_num
                   FROM scintela.dolares
                  WHERE UPPER(cta) = ANY(%s)
             )
-            SELECT cta, ref_num, SUM(importe) AS importe, COUNT(*) AS n
+            SELECT cta, ref_num, importe, fecha
               FROM d
              WHERE ref_num IS NOT NULL AND ref_num = ANY(%s)
-             GROUP BY cta, ref_num
             """,
             (provs, numeros),
         )
     except Exception as e:  # noqa: BLE001
         _LOG.warning("buscar_anticipos falló: %s", e)
-        return {}
-    return {
-        (str(r["cta"]).strip().upper(), int(r["ref_num"])): r
-        for r in rows
+        return []
+    return [
+        r for r in rows
         if r.get("ref_num") is not None and r.get("cta") is not None
-    }
+    ]
+
+
+def _to_date(s):
+    """'YYYY-MM-DD…' → date | None (fail-soft)."""
+    from datetime import date
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+_ATRIB_MAX_DIAS = 300  # ventana movimiento↔importación (< 365 = separa años)
+
+
+def _nearest_import(cands: list[dict], fecha_row) -> dict | None:
+    """De las importaciones que comparten (prov, nº), la de fecha más cercana a
+    la del movimiento (anticipo/compra), SOLO si cae dentro de la ventana.
+
+    Desambigua el nº de concepto reusado entre años: cada anticipo/compra se
+    atribuye a SU importación (la del mismo año/fecha), no a todas las que
+    comparten ese número. La ventana (`_ATRIB_MAX_DIAS` < 365) evita que un
+    movimiento de un año se pegue a la importación de otro año cuando la
+    importación de su propio año no vino en el set (ej. `limite` corto) →
+    devuelve None (no se atribuye) en vez de contaminar. Sin fecha en el
+    movimiento, solo se atribuye si hay una única candidata.
+    """
+    fr = _to_date(fecha_row)
+    if fr is None:
+        return cands[0] if len(cands) == 1 else None
+    best = None
+    best_d = None
+    for c in cands:
+        fi = _to_date(c.get("fecha"))
+        if fi is None:
+            continue
+        d = abs((fi - fr).days)
+        if best_d is None or d < best_d:
+            best, best_d = c, d
+    if best is None:  # ninguna candidata tenía fecha
+        return cands[0] if len(cands) == 1 else None
+    return best if best_d <= _ATRIB_MAX_DIAS else None
 
 
 def importaciones_con_cruce(limite: int = 400) -> list[dict]:
@@ -160,8 +202,44 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             for n in _numeros_de(code):
                 refs.add((r["prov"], n))
 
+    # Índice (prov, nº) → importaciones que usan ese código, para atribuir cada
+    # anticipo/compra a SU importación por fecha (el nº se reusa entre años).
+    imports_by_ref: dict[tuple[str, int], list[dict]] = {}
+    for r in rows:
+        if r.get("prov") and r.get("numero") is not None:
+            for n in _numeros_de(r):
+                imports_by_ref.setdefault(
+                    (str(r["prov"]).strip().upper(), n), []
+                ).append(r)
+
     compras = _buscar_compras(refs)
     anticipos = _buscar_anticipos(refs)
+
+    # Atribución: cada fila cruda (compra/anticipo) va a la importación de fecha
+    # más cercana entre las que comparten su (prov, nº). Acumulamos por im_numero.
+    comp_por_im: dict[str, list[dict]] = {}
+    for c in compras:
+        cands = imports_by_ref.get(
+            (str(c.get("codigo_prov")).strip().upper(), int(c["ref_num"]))
+        )
+        if not cands:
+            continue
+        im = _nearest_import(cands, c.get("fecha"))
+        if im is None:  # fuera de la ventana → no es de ninguna de estas IM
+            continue
+        comp_por_im.setdefault(im["im_numero"], []).append(c)
+
+    ant_por_im: dict[str, list[dict]] = {}
+    for a in anticipos:
+        cands = imports_by_ref.get(
+            (str(a.get("cta")).strip().upper(), int(a["ref_num"]))
+        )
+        if not cands:
+            continue
+        im = _nearest_import(cands, a.get("fecha"))
+        if im is None:  # fuera de la ventana → no es de ninguna de estas IM
+            continue
+        ant_por_im.setdefault(im["im_numero"], []).append(a)
 
     for r in rows:
         r["compra"] = None
@@ -170,14 +248,14 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         r["importe_programa"] = None
         if not (r.get("prov") and r.get("numero") is not None):
             continue
-        keys = [(r["prov"], n) for n in _numeros_de(r)]
+        im = str(r.get("im_numero") or "").strip()
 
-        hits = [compras[k] for k in keys if k in compras]
+        hits = comp_por_im.get(im, [])
         if hits:
             r["compra"] = {
                 "ids": [h["id_compra"] for h in hits],
                 "first_id": hits[0]["id_compra"],
-                "importe_total": sum(float(h["importe"] or 0) for h in hits),
+                "importe_total": sum(float(h.get("importe") or 0) for h in hits),
                 "n": len(hits),
                 "tipo": (hits[0].get("tipo") or "").strip(),
             }
@@ -185,11 +263,11 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             r["importe_programa"] = r["compra"]["importe_total"]
             continue
 
-        ahits = [anticipos[k] for k in keys if k in anticipos]
+        ahits = ant_por_im.get(im, [])
         if ahits:
             r["anticipo"] = {
-                "importe_total": sum(float(h["importe"] or 0) for h in ahits),
-                "n": sum(int(h["n"] or 0) for h in ahits),
+                "importe_total": sum(float(h.get("importe") or 0) for h in ahits),
+                "n": len(ahits),
             }
             r["fuente"] = "anticipo"
             r["importe_programa"] = r["anticipo"]["importe_total"]
@@ -238,3 +316,47 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
                 sum(float(m.get("monto") or 0) for m in movs), 2
             )
     return rows
+
+
+def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
+    """Costo-a-la-fecha en USD del hilado RECIBIDO en el mes (yy, mm), tomado de
+    NUESTRA base: anticipos (`scintela.dolares`) + compras (`scintela.compra`),
+    cruzados por código+concepto y ATRIBUIDOS por año (fecha más cercana) para no
+    arrastrar el mismo nº de concepto de otro año.
+
+    Mismo universo de importaciones que `asinfo_service.hilado_recibido_mes`
+    (recibidas por fecha de recepción). El $ se cuenta UNA sola vez por
+    (prov, nº, año): las importaciones partidas (---1/---2) comparten el costo.
+    Es "costo-a-la-fecha": crece solo a medida que cargan CAE/saldo/etc.
+
+    Returns:
+        {"us": float, "kg": float, "usd_kg": float | None}. Fail-soft: ceros.
+    """
+    try:
+        rows = importaciones_con_cruce(limite=limite)
+    except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista
+        return {"us": 0.0, "kg": 0.0, "usd_kg": None}
+    pref = f"{int(yy):04d}-{int(mm):02d}-"
+    total_us = 0.0
+    total_kg = 0.0
+    vistos: set[tuple] = set()
+    for r in rows or []:
+        if not r.get("recibida"):
+            continue
+        if not str(r.get("fecha_recepcion") or "").startswith(pref):
+            continue
+        total_kg += float(r.get("kg") or 0.0)
+        imp = r.get("importe_programa")
+        if not imp:
+            continue
+        clave = (
+            str(r.get("prov") or "").strip().upper(),
+            r.get("numero"),
+            str(r.get("fecha") or "")[:4],
+        )
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        total_us += float(imp)
+    usd_kg = round(total_us / total_kg, 4) if total_kg else None
+    return {"us": round(total_us, 2), "kg": round(total_kg, 2), "usd_kg": usd_kg}

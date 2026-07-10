@@ -132,12 +132,24 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     #
     # HILADO ingreso = importaciones RECIBIDAS en Asinfo (por fecha de recepción).
     compras = 0.0
+    compras_us = 0.0
     if anio and mes:
         try:
             from modules.asinfo import service as _asvc
             compras = float(_asvc.hilado_recibido_mes(int(anio), int(mes)) or 0.0)
         except Exception:  # noqa: BLE001 -- fail-soft
             compras = 0.0
+        # $ del hilado que entró = costo-a-la-fecha de NUESTRA base (anticipos +
+        # compras de la importación, atribuido por año). El dBase no da $/kg de
+        # ingreso (por eso la columna estaba en "—"). Dueña 2026-07-10.
+        try:
+            from modules.importaciones import service as _impsvc
+            compras_us = float(
+                (_impsvc.costo_hilado_recibido_mes(int(anio), int(mes)) or {}).get("us")
+                or 0.0
+            )
+        except Exception:  # noqa: BLE001 -- fail-soft
+            compras_us = 0.0
     # FLUJO DE FABRICACIÓN REAL de Asinfo (dueña 2026-07-09). Por bodega, de las
     # órdenes CERRADAS en el mes (fecha_cierre): material consumido (issued) y
     # producto fabricado (fab). El desperdicio (merma) = issued − fab.
@@ -187,7 +199,9 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_us"] = hi0 * _f(hl, "stock_inic_ukg")
     hl["ingresos_kg"] = compras
-    hl["ingresos_us"] = compras * _f(hl, "ingresos_ukg")
+    # Costo real del hilado ingresado (nuestra base), no el $/kg del dBase.
+    hl["ingresos_us"] = compras_us
+    hl["ingresos_ukg"] = (compras_us / compras) if compras else 0.0
     hl["egresos_kg"] = hilo_consumido
     hl["egresos_us"] = hilo_consumido * _f(hl, "egresos_ukg")
     hl["stock_act_kg"] = hi1 + maq_hilado

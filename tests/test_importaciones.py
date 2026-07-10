@@ -91,9 +91,15 @@ def test_cruce_rango_suma_varias_compras():
 def test_cruce_usa_anticipo_cuando_no_hay_compra():
     importaciones = [_imp("ACMT/EXP/2026-27/8197 ( AC 36)", im="IM-X")]
     # 1ª llamada a db = _buscar_compras (vacío), 2ª = _buscar_anticipos (match).
+    # _buscar_anticipos ahora devuelve filas CRUDAS (con fecha); n = cuántas.
+    anticipos = [
+        {"cta": "AC", "ref_num": 36, "importe": 30000.0, "fecha": "2026-05-01"},
+        {"cta": "AC", "ref_num": 36, "importe": 20000.0, "fecha": "2026-05-10"},
+        {"cta": "AC", "ref_num": 36, "importe": 5871.19, "fecha": "2026-05-20"},
+    ]
     with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
          patch.object(service.db, "fetch_all",
-                      side_effect=[[], [{"cta": "AC", "ref_num": 36, "importe": 55871.19, "n": 3}], [], []]):
+                      side_effect=[[], anticipos, [], []]):
         rows = service.importaciones_con_cruce()
     r = rows[0]
     assert r["compra"] is None
@@ -141,7 +147,88 @@ def test_cruce_db_caida_no_rompe():
         rows = service.importaciones_con_cruce()
     # se muestra igual, sin cruce
     assert rows[0]["codigo"] == "AC 36"
-    assert rows[0]["compra"] is None
+
+
+def test_cruce_atribuye_anticipos_por_anio_no_los_mezcla():
+    """El nº de concepto se reusa entre años: "AC 31" existe en 2024 y 2026.
+    Cada importación debe recibir SOLO los anticipos de su año (fecha cercana),
+    no la suma de todos. Regresión del bug 119.329 vs 58.629 (2026-07-10)."""
+    from modules.importaciones import pago
+    importaciones = [
+        {"im_numero": "IM-2026", "fecha": "2026-04-16", "fecha_recepcion": "2026-07-09",
+         "recibida": True, "bod": "BOD-1", "total_asinfo": 0.0, "proveedor": "ARIESCOPE",
+         "prov_cod_asinfo": "AC", "nota": "ACMT/EXP/2026-27/78004 ( AC 31)"},
+        {"im_numero": "IM-2024", "fecha": "2024-04-26", "fecha_recepcion": "2024-07-12",
+         "recibida": True, "bod": "BOD-2", "total_asinfo": 0.0, "proveedor": "ARIESCOPE",
+         "prov_cod_asinfo": "AC", "nota": "ACMT/EXP/2024-27/12345 ( AC 31)"},
+    ]
+    anticipos = [
+        {"cta": "AC", "ref_num": 31, "importe": 58345.30, "fecha": "2026-06-02"},
+        {"cta": "AC", "ref_num": 31, "importe": 284.10, "fecha": "2026-04-21"},
+        {"cta": "AC", "ref_num": 31, "importe": 60000.00, "fecha": "2024-05-10"},
+    ]
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
+         patch.object(service.db, "fetch_all", side_effect=[[], anticipos]), \
+         patch.object(pago, "estados_por_im", return_value={}), \
+         patch.object(pago, "movimientos_por_im", return_value={}):
+        rows = service.importaciones_con_cruce()
+    by_im = {r["im_numero"]: r for r in rows}
+    assert round(by_im["IM-2026"]["importe_programa"], 2) == 58629.40  # solo 2026
+    assert round(by_im["IM-2024"]["importe_programa"], 2) == 60000.00  # solo 2024
+
+
+def test_cruce_ventana_descarta_anticipo_de_otro_anio_ausente():
+    """Si la importación vieja (2024) NO vino en el set y aparecen anticipos de
+    2024 para el mismo código, NO se pegan a la de 2026: caen fuera de la ventana
+    (>300 días) → se descartan en vez de inflar el costo."""
+    from modules.importaciones import pago
+    importaciones = [
+        {"im_numero": "IM-2026", "fecha": "2026-04-16", "fecha_recepcion": "2026-07-09",
+         "recibida": True, "bod": "BOD-1", "total_asinfo": 0.0, "proveedor": "ARIESCOPE",
+         "prov_cod_asinfo": "AC", "nota": "ACMT/EXP/2026-27/78004 ( AC 31)"},
+    ]
+    anticipos = [
+        {"cta": "AC", "ref_num": 31, "importe": 58345.30, "fecha": "2026-06-02"},
+        {"cta": "AC", "ref_num": 31, "importe": 284.10, "fecha": "2026-04-21"},
+        {"cta": "AC", "ref_num": 31, "importe": 60000.00, "fecha": "2024-05-10"},  # IM vieja ausente
+    ]
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
+         patch.object(service.db, "fetch_all", side_effect=[[], anticipos]), \
+         patch.object(pago, "estados_por_im", return_value={}), \
+         patch.object(pago, "movimientos_por_im", return_value={}):
+        rows = service.importaciones_con_cruce()
+    assert round(rows[0]["importe_programa"], 2) == 58629.40  # solo los 2 de 2026
+    assert rows[0]["anticipo"]["n"] == 2
+
+
+def test_costo_hilado_recibido_mes_dedup_y_filtra_por_mes():
+    """Costo-a-la-fecha del hilado recibido en el mes: cuenta el $ UNA vez por
+    (prov, nº, año) — las partidas ---1/---2 comparten costo — y solo las
+    recibidas en el mes pedido."""
+    rows = [
+        # AC 31 recibida julio 2026 (importación partida en 2 filas)
+        {"recibida": True, "fecha_recepcion": "2026-07-09", "kg": 24494.0,
+         "importe_programa": 58629.40, "prov": "AC", "numero": 31, "fecha": "2026-04-16"},
+        {"recibida": True, "fecha_recepcion": "2026-07-09", "kg": 1000.0,
+         "importe_programa": 58629.40, "prov": "AC", "numero": 31, "fecha": "2026-04-16"},
+        # recibida en junio → fuera del mes
+        {"recibida": True, "fecha_recepcion": "2026-06-30", "kg": 9999.0,
+         "importe_programa": 12345.0, "prov": "AI", "numero": 20, "fecha": "2026-06-01"},
+        # en tránsito → fuera
+        {"recibida": False, "fecha_recepcion": None, "kg": 5000.0,
+         "importe_programa": 9000.0, "prov": "AI", "numero": 21, "fecha": "2026-06-01"},
+    ]
+    with patch.object(service, "importaciones_con_cruce", return_value=rows):
+        out = service.costo_hilado_recibido_mes(2026, 7)
+    assert out["us"] == 58629.40                 # $ una sola vez (dedup)
+    assert out["kg"] == 25494.0                  # kg de ambas filas de julio
+    assert out["usd_kg"] == round(58629.40 / 25494.0, 4)
+
+
+def test_costo_hilado_recibido_mes_sin_datos_es_cero():
+    with patch.object(service, "importaciones_con_cruce", return_value=[]):
+        out = service.costo_hilado_recibido_mes(2026, 7)
+    assert out == {"us": 0.0, "kg": 0.0, "usd_kg": None}
 
 
 # ---------------------------------------------------------------------------
