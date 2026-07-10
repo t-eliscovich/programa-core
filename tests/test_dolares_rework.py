@@ -188,3 +188,20 @@ def test_lista_renderiza_columna_y_convertir(app, fake_db):
     assert 'name="codigo"' in html       # filtro por código en un campo
     assert 'name="recibido_mes"' in html  # filtro por mes de recibido
     assert "Convertir a compra" in html  # acción sobre la selección
+
+
+def test_promedio_hilado_usd_kg_dedup_y_solo_recibidas():
+    rows = [
+        {"recibida": True, "kg": 100.0, "importe_programa": 300.0,
+         "prov": "AC", "numero": 31, "fecha": "2026-04-16"},
+        {"recibida": True, "kg": 100.0, "importe_programa": 300.0,  # partida ---2, mismo $
+         "prov": "AC", "numero": 31, "fecha": "2026-04-16"},
+        {"recibida": True, "kg": 50.0, "importe_programa": 200.0,
+         "prov": "AI", "numero": 20, "fecha": "2026-05-01"},
+        {"recibida": False, "kg": 999.0, "importe_programa": 999.0,  # en transito -> fuera
+         "prov": "AI", "numero": 21, "fecha": "2026-05-01"},
+    ]
+    with patch.object(isvc, "importaciones_con_cruce", return_value=rows):
+        avg = isvc.promedio_hilado_usd_kg()
+    # $ deduped por (prov,no,ano): AC31 300 (una vez) + AI20 200 = 500; kg 100+100+50 = 250
+    assert avg == 2.0

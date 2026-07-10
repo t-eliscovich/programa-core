@@ -365,6 +365,39 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     return {"us": round(total_us, 2), "kg": round(total_kg, 2), "usd_kg": usd_kg}
 
 
+def promedio_hilado_usd_kg(limite: int = 1000) -> float | None:
+    """$/kg promedio ponderado del hilado importado, TODO de Programa Core:
+    Σ(costo real = importe_programa: anticipos+compras) ÷ Σ(kg) de las
+    importaciones RECIBIDAS y cruzadas. Es el costo con que se valúa la apertura
+    del stock en el Flujo producción, sin depender del dBase.
+
+    El $ se cuenta UNA vez por (prov, nº, año) — importaciones partidas comparten
+    costo; los kg se suman de todas las filas recibidas. Fail-soft: None si Asinfo
+    cae o no hay datos.
+    """
+    try:
+        rows = importaciones_con_cruce(limite=limite)
+    except Exception:  # noqa: BLE001
+        return None
+    total_us = 0.0
+    total_kg = 0.0
+    vistos: set[tuple] = set()
+    for r in rows or []:
+        if not r.get("recibida"):
+            continue
+        kg = float(r.get("kg") or 0.0)
+        imp = r.get("importe_programa")
+        if not kg or not imp:
+            continue
+        total_kg += kg
+        clave = (str(r.get("prov") or "").upper(), r.get("numero"),
+                 str(r.get("fecha") or "")[:4])
+        if clave not in vistos:
+            vistos.add(clave)
+            total_us += float(imp)
+    return round(total_us / total_kg, 4) if total_kg else None
+
+
 def _index_importaciones_por_codigo(limite: int = 400) -> dict[tuple[str, int], list[dict]]:
     """{(prov_upper, numero) -> [importación rows]} desde Asinfo, con kg colgado.
 

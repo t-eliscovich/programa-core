@@ -160,10 +160,10 @@
           {% endif %}
           {% if _maq.get('hilado') or _maq.get('crudo') %}
           <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso</span></td>
+            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso · al $/kg de apertura</span></td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
+            <td class="num" style="color:rgb(100 116 139);">{{ '%.3f' % (_maq.get('hilado_ukg') or 0) if _maq.get('hilado_us') else '—' }}</td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado_us') | num_es(0) if _maq.get('hilado_us') else '—' }}</td>
             <td></td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('crudo') | num_es(0) if _maq.get('crudo') else '—' }}</td>
             <td class="num">—</td>

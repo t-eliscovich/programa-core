@@ -196,16 +196,40 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     desp_term = crudo_consumido - ci_term    # tintura: crudo − PT
 
     # HILADO — ingreso=compras (importaciones), egreso=hilo consumido a tejer.
+    # COSTEO POR PROMEDIO PONDERADO (dueña 2026-07-10), TODO de Programa Core:
+    #   · Apertura: $/kg = promedio de las compras/importaciones de PC (Σ costo ÷
+    #     Σ kg), NO el $/kg del dBase. Fail-soft al $/kg histórico si Asinfo cae.
+    #   · Ingreso: al costo REAL de la importación (anticipos+compras de PC).
+    #   · Egreso y stock: al PROMEDIO = (apertura $ + ingreso $) / (kg apert + kg ing).
+    #   · En máquinas (WIP): valuado al $/kg de apertura.
+    #   · Stock act $ = apertura $ + ingreso $ − egreso $  → la columna CIERRA, y el
+    #     ingreso barato BAJA el $/kg (antes el egreso/act tomaban el $/kg del dBase
+    #     y por eso no daba la cuenta).
+    _open_ukg = None
+    try:
+        from modules.importaciones import service as _impsvc2
+        _open_ukg = _impsvc2.promedio_hilado_usd_kg()
+    except Exception:  # noqa: BLE001 -- fail-soft
+        _open_ukg = None
+    if not _open_ukg:
+        _open_ukg = _f(hl, "stock_inic_ukg")   # semilla: último $/kg conocido
     hl["stock_inic_kg"] = hi0
-    hl["stock_inic_us"] = hi0 * _f(hl, "stock_inic_ukg")
+    hl["stock_inic_ukg"] = _open_ukg
+    hl["stock_inic_us"] = hi0 * _open_ukg
     hl["ingresos_kg"] = compras
-    # Costo real del hilado ingresado (nuestra base), no el $/kg del dBase.
     hl["ingresos_us"] = compras_us
     hl["ingresos_ukg"] = (compras_us / compras) if compras else 0.0
+    _kg_disp = hi0 + compras                      # kg disponibles tras el ingreso
+    _us_disp = hl["stock_inic_us"] + compras_us
+    _avg_ukg = (_us_disp / _kg_disp) if _kg_disp else _open_ukg
     hl["egresos_kg"] = hilo_consumido
-    hl["egresos_us"] = hilo_consumido * _f(hl, "egresos_ukg")
+    hl["egresos_ukg"] = _avg_ukg
+    hl["egresos_us"] = hilo_consumido * _avg_ukg
     hl["stock_act_kg"] = hi1 + maq_hilado
-    hl["stock_act_us"] = (hi1 + maq_hilado) * _f(hl, "stock_act_ukg")
+    hl["stock_act_us"] = hl["stock_inic_us"] + compras_us - hl["egresos_us"]
+    hl["stock_act_ukg"] = (
+        hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
+    )
 
     # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
     # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
@@ -430,7 +454,11 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     return {
         "hilado": hl, "tejido": tj, "terminado": te, "colorantes": co,
         "cmp": cmp, "quimicos_modelo": quimicos_modelo,
-        "maquinas": {"hilado": maq_hilado, "crudo": maq_crudo},
+        "maquinas": {
+            "hilado": maq_hilado, "crudo": maq_crudo,
+            "hilado_ukg": hl.get("stock_inic_ukg") or 0,          # WIP al $/kg de apertura
+            "hilado_us": maq_hilado * (hl.get("stock_inic_ukg") or 0),
+        },
         "desperdicio": {"crudo": desp_crudo, "term": desp_term},
     }
 
