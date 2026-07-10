@@ -145,20 +145,6 @@
             <td class="num">{{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
-          {# Referencia: el ingreso de la columna es el MOVIMIENTO REAL de bodega;
-             acá se muestra de eso cuánto es importación (hilado) / producción (crudo). #}
-          {% if ahl.get('ref_import_kg') or atj.get('ref_prod_kg') %}
-          <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(148 163 184);">· de eso: importación / producción <span class="pct" style="color:rgb(148 163 184);">ref.</span></td>
-            <td class="num" style="color:rgb(148 163 184);">{{ ahl.get('ref_import_kg') | num_es(0) if ahl.get('ref_import_kg') else '—' }}</td>
-            <td class="num" style="color:rgb(148 163 184);">{{ '%.3f' % (ahl.get('ref_import_ukg') or 0) if ahl.get('ref_import_ukg') else '—' }}</td>
-            <td class="num" style="color:rgb(148 163 184);">{{ ahl.get('ref_import_us') | num_es(0) if ahl.get('ref_import_us') else '—' }}</td>
-            <td></td>
-            <td class="num" style="color:rgb(148 163 184);">{{ atj.get('ref_prod_kg') | num_es(0) if atj.get('ref_prod_kg') else '—' }}</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-          </tr>
-          {% endif %}
           {% set _desp = mov_asinfo.get('desperdicio', {}) %}
           {% if _desp %}
           <tr>
@@ -174,7 +160,7 @@
           {% endif %}
           {% if _maq.get('hilado') or _maq.get('crudo') %}
           <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso · al $/kg de apertura</span></td>
+            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas</td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ '%.3f' % (_maq.get('hilado_ukg') or 0) if _maq.get('hilado_us') else '—' }}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado_us') | num_es(0) if _maq.get('hilado_us') else '—' }}</td>
@@ -194,20 +180,6 @@
             <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
           </tr>
-          {# Referencia: de lo que salió de bodega, cuánto se fue a tejer (hilado)
-             / a tinturar (crudo). El resto son otras salidas (ajustes, transferencias). #}
-          {% if ahl.get('ref_tejer_kg') or atj.get('ref_tinturar_kg') %}
-          <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(148 163 184);">· de eso: a tejer / a tinturar <span class="pct" style="color:rgb(148 163 184);">ref.</span></td>
-            <td class="num" style="color:rgb(148 163 184);">{{ ahl.get('ref_tejer_kg') | num_es(0) if ahl.get('ref_tejer_kg') else '—' }}</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-            <td></td>
-            <td class="num" style="color:rgb(148 163 184);">{{ atj.get('ref_tinturar_kg') | num_es(0) if atj.get('ref_tinturar_kg') else '—' }}</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-          </tr>
-          {% endif %}
           {% if aco.get('ajuste_us') is not none %}
           <tr>
             <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Egreso por ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro</span></td>
