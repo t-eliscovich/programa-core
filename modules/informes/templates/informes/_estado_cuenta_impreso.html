@@ -23,9 +23,9 @@
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
-          <th class="px-4 py-3 text-left font-medium">N°</th>
-          <th class="px-4 py-3 text-left font-medium">Tipo</th>
           <th class="px-4 py-3 text-left font-medium">Fecha</th>
+          <th class="px-4 py-3 text-left font-medium">Número</th>
+          <th class="px-4 py-3 text-left font-medium no-print">Tipo</th>
           <th class="px-4 py-3 text-right font-medium">Importe</th>
           <th class="px-4 py-3 text-right font-medium">Abonado</th>
           <th class="px-4 py-3 text-right font-medium">Saldo</th>
@@ -43,12 +43,11 @@
         {% for f in data.facturas %}
         {% set acum.s = acum.s + (f.saldo or 0) %}
         <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
-          {# Tipo por SIGNO del importe — f.tipo de la tabla es inconsistente
-             ('FA'/'F') y no marca la devolución. Negativo = Devolución (crédito
-             a favor / la "ND" de la dueña); positivo = Factura. #}
-          <td class="px-4 py-2 text-xs whitespace-nowrap {{ 'text-amber-700 font-medium' if (f.importe or 0) < 0 }}">{{ 'Devolución' if (f.importe or 0) < 0 else 'Factura' }}</td>
           <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+          <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
+          {# Tipo por SIGNO del importe — negativo = Devolución. TMT 2026-07-09
+             (dueña): no-print (en la impresión la columna Tipo no va). #}
+          <td class="px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-amber-700 font-medium' if (f.importe or 0) < 0 }}">{{ 'Devolución' if (f.importe or 0) < 0 else 'Factura' }}</td>
           <td class="px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
           <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
@@ -78,9 +77,9 @@
         {% if interactivo|default(false) and facturas_totalizadas|default(none) %}
           {% for f in facturas_totalizadas %}
           <tr class="ec-trow no-print border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 text-slate-400" style="display:none;">
-            <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
-            <td class="px-4 py-2 text-xs whitespace-nowrap">Totalizada</td>
             <td class="px-4 py-2" style="white-space: nowrap;">{{ f.fecha | fecha_es }}</td>
+            <td class="px-4 py-2 font-mono text-xs" style="white-space: nowrap;">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}</td>
+            <td class="px-4 py-2 text-xs whitespace-nowrap no-print">Totalizada</td>
             <td class="px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
             <td class="px-4 py-2 text-right text-mono">{{ f.abono | money_es }}</td>
             <td class="px-4 py-2 text-right text-mono">0,00</td>
