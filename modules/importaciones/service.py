@@ -17,6 +17,7 @@ las importaciones igual se muestran sin el cruce.
 from __future__ import annotations
 
 import logging
+import re
 
 import db
 from concepto_parser import parse_nota_importacion
@@ -360,3 +361,97 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
         total_us += float(imp)
     usd_kg = round(total_us / total_kg, 4) if total_kg else None
     return {"us": round(total_us, 2), "kg": round(total_kg, 2), "usd_kg": usd_kg}
+
+
+def _index_importaciones_por_codigo(limite: int = 400) -> dict[tuple[str, int], list[dict]]:
+    """{(prov_upper, numero) -> [importación rows]} desde Asinfo, con kg colgado.
+
+    Cada importación trae im_numero, fecha, fecha_recepcion, recibida, kg. Se usa
+    para atribuir por (código, fecha más cercana). Fail-soft: {} si Asinfo cae.
+    """
+    try:
+        rows = asinfo_service.importaciones_asinfo(limite=limite)
+        kg_map = asinfo_service.importaciones_kg(limite=limite)
+    except Exception:  # noqa: BLE001 -- Asinfo/Metabase caído
+        return {}
+    index: dict[tuple[str, int], list[dict]] = {}
+    for r in rows or []:
+        code = parse_nota_importacion(r.get("nota"))
+        prov, numero = code.get("prov"), code.get("numero")
+        if not prov or numero is None:
+            continue
+        r["kg"] = kg_map.get(str(r.get("im_numero") or "").strip())
+        for n in _numeros_de(code):  # soporta rangos "MH 64-65"
+            index.setdefault((str(prov).strip().upper(), n), []).append(r)
+    return index
+
+
+def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
+    """Muta cada fila de anticipo (scintela.dolares) agregando la RECEPCIÓN de su
+    importación de Asinfo: `im_numero`, `fecha_recepcion_im`, `kg_im`.
+
+    Match por (cta, concepto-numérico) + importación de fecha más cercana (misma
+    ventana de 300 días que importaciones_con_cruce, así el "31" de 2024 no se
+    pega a la importación de 2026). El concepto del anticipo es tipo "31 SALDO":
+    el prefijo numérico es el código. Fail-soft: si Asinfo cae, deja los campos en
+    None y NUNCA rompe /dolares.
+    """
+    for a in anticipos or []:  # init siempre → columna estable aunque Asinfo caiga
+        a["im_numero"] = None
+        a["fecha_recepcion_im"] = None
+        a["kg_im"] = None
+        _mref = re.match(r"^\s*(\d{1,6})", a.get("concepto") or "")
+        a["ref"] = int(_mref.group(1)) if _mref else None  # nº del concepto ("31 SALDO"→31)
+    if not anticipos:
+        return
+    index = _index_importaciones_por_codigo(limite=limite)
+    if not index:
+        return
+    for a in anticipos:
+        cta = (a.get("cta") or "").strip().upper()
+        m = re.match(r"^\s*(\d{1,6})", a.get("concepto") or "")
+        if not cta or not m:
+            continue
+        cands = index.get((cta, int(m.group(1))))
+        if not cands:
+            continue
+        im = _nearest_import(cands, a.get("fecha"))  # ventana 300 días
+        if im is None:
+            continue
+        a["im_numero"] = im.get("im_numero")
+        a["fecha_recepcion_im"] = im.get("fecha_recepcion")
+        a["kg_im"] = im.get("kg")
+
+
+def kg_stock_por_compra(compras: list[dict], limite: int = 400) -> dict[str, float]:
+    """{prov_upper -> kg total de Asinfo} para compras de importación.
+
+    Cada compra trae `prov`, `ref` (nº del concepto) y `fecha`. El kg pertenece
+    al STOCK (la importación de Asinfo), NO a la compra: muchas compras
+    (SALDO/CAE/seguro) mapean a un solo stock, así que el kg se cuenta UNA vez
+    por importación (dedup por im_numero) y se suma por proveedor. Atribución por
+    fecha más cercana (ventana 300 días). Fail-soft: {} si Asinfo cae.
+    """
+    index = _index_importaciones_por_codigo(limite=limite)
+    if not index:
+        return {}
+    por_prov: dict[str, float] = {}
+    vistos: dict[str, set] = {}
+    for c in compras or []:
+        prov = str(c.get("prov") or "").strip().upper()
+        ref = c.get("ref")
+        if not prov or ref is None:
+            continue
+        cands = index.get((prov, int(ref)))
+        if not cands:
+            continue
+        im = _nearest_import(cands, c.get("fecha"))
+        if im is None:
+            continue
+        imn = im.get("im_numero")
+        seen = vistos.setdefault(prov, set())
+        if imn in seen:  # muchas compras → un stock: el kg una sola vez
+            continue
+        seen.add(imn)
+        por_prov[prov] = por_prov.get(prov, 0.0) + float(im.get("kg") or 0.0)
+    return por_prov

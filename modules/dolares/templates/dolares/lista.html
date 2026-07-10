@@ -120,6 +120,20 @@
     background: rgb(30 41 59);
     color: rgb(148 163 184);
   }
+
+  /* Barra de acción + modal (convertir selección) en dark */
+  .dark #sel-actionbar {
+    background: rgb(15 23 42) !important;
+    border-color: rgb(51 65 85) !important;
+  }
+  .dark #sel-actionbar strong,
+  .dark #sel-actionbar > div > div { color: rgb(241 245 249) !important; }
+  .dark #sel-modal > div:last-child { background: rgb(15 23 42) !important; border-color: rgb(51 65 85) !important; }
+  .dark #sel-modal h3 { color: rgb(241 245 249) !important; }
+  .dark #sel-modal #sel-modal-msg { color: rgb(203 213 225) !important; }
+  .dark #sel-modal > div:last-child > div:last-child {
+    background: rgb(30 41 59) !important; border-top-color: rgb(51 65 85) !important;
+  }
 </style>
 {% endblock %}
 
@@ -357,6 +371,13 @@
 
     <form class="no-print flex flex-wrap items-end gap-3 p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
       <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Código</label>
+        {# TMT 2026-07-10 — filtro por código (cuenta + concepto = una importación). #}
+        <input type="text" name="codigo" value="{{ codigo or '' }}" placeholder="AC 31"
+               class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm uppercase font-mono">
+        <div class="text-[10px] text-slate-400 mt-0.5">cuenta + concepto</div>
+      </div>
+      <div>
         <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Cuenta</label>
         <input type="text" name="cta" value="{{ cta or '' }}" placeholder="ej: WE"
                maxlength="3" class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm uppercase font-mono">
@@ -376,6 +397,11 @@
         <input type="date" name="hasta" value="{{ hasta or '' }}"
                class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
       </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1 font-medium">Recibido (mes)</label>
+        <input type="month" name="recibido_mes" value="{{ recibido_mes or '' }}"
+               class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm">
+      </div>
       <label class="flex items-center gap-2 text-sm pt-5">
         <input type="checkbox" name="solo_vivos" value="1" {% if solo_vivos %}checked{% endif %}
                class="rounded border-slate-300 dark:border-slate-600">
@@ -383,7 +409,7 @@
       </label>
       <div class="pt-5">
         <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white">Filtrar</button>
-        {% if cta or desde or hasta or q or not solo_vivos %}
+        {% if cta or desde or hasta or q or codigo or recibido_mes or not solo_vivos %}
         <a href="{{ url_for('dolares.lista') }}" class="ml-2 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Limpiar</a>
         {% endif %}
       </div>
@@ -393,9 +419,15 @@
       <table class="w-full text-sm">
         <thead class="bg-slate-50 dark:bg-slate-800/40 text-[11px] uppercase tracking-wider text-slate-500">
           <tr>
+            {% if tiene_permiso('compras.crear') %}
+            <th class="px-4 py-2 text-center font-medium no-print" style="width:1%;white-space:nowrap;">
+              <input type="checkbox" id="sel-all" class="rounded border-slate-300 dark:border-slate-600" title="Seleccionar todos los vivos">
+            </th>
+            {% endif %}
             <th class="px-4 py-2 text-left font-medium" style="white-space: nowrap;">Fecha</th>
             <th class="px-4 py-2 text-left font-medium">Cuenta</th>
             <th class="px-4 py-2 text-left font-medium">Concepto</th>
+            <th class="px-4 py-2 text-left font-medium">Recibido</th>
             <th class="px-4 py-2 text-right font-medium">Importe</th>
             <th class="px-4 py-2 text-right font-medium" title="Saldo corrido de la cuenta hasta este movimiento">Saldo cta.</th>
             <th class="px-4 py-2 text-left font-medium">Estado</th>
@@ -407,11 +439,30 @@
           {% for d in filas %}
           {% set vivo = (d.st in (none, '', ' ')) %}
           <tr class="border-t border-slate-100 dark:border-slate-800/60 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 {% if not vivo %}text-slate-400 dark:text-slate-500{% endif %}">
+            {% if tiene_permiso('compras.crear') %}
+            <td class="px-4 py-1.5 text-center no-print">
+              {% if vivo %}
+              <input type="checkbox" class="sel-ant rounded border-slate-300 dark:border-slate-600"
+                     value="{{ d.id_dolares }}"
+                     data-cta="{{ d.cta }}"
+                     data-ref="{{ d.ref if d.ref is not none else '' }}"
+                     data-importe="{{ d.importe }}"
+                     data-im="{{ d.im_numero or '' }}"
+                     data-kg="{{ d.kg_im if d.kg_im is not none else '' }}">
+              {% endif %}
+            </td>
+            {% endif %}
             <td class="px-4 py-1.5" style="white-space: nowrap;">{{ d.fecha | fecha_es }}</td>
             <td class="px-4 py-1.5">
               <a href="{{ url_for('dolares.lista', cta=d.cta) }}" class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">{{ d.cta }}</a>
             </td>
             <td class="px-4 py-1.5">{{ d.concepto | cleanstr }}</td>
+            <td class="px-4 py-1.5" style="white-space: nowrap;">
+              {{ d.fecha_recepcion_im | fecha_es if d.fecha_recepcion_im else '—' }}
+              {% if d.kg_im is not none and d.kg_im %}
+              <div class="text-[10px] text-slate-400">{{ d.kg_im | num_es(0) }} kg</div>
+              {% endif %}
+            </td>
             <td class="px-4 py-1.5 text-right num-cell {% if vivo %}font-medium text-slate-700 dark:text-slate-200{% endif %}">{{ d.importe | num_es(2) }}</td>
             <td class="px-4 py-1.5 text-right num-cell text-slate-600 dark:text-slate-400">{{ d.saldo_acumulado | num_es(2) if d.saldo_acumulado is not none else '' }}</td>
             <td class="px-4 py-1.5">
@@ -437,12 +488,72 @@
             {% endif %}
           </tr>
           {% else %}
-          {{ empty_row(8 if tiene_permiso('facturas.crear') else 7, 'Sin anticipos para el filtro.', 'Probá quitar "Solo vivos" o ampliar el rango de fechas.') }}
+          {# colspan: 7 base + Recibido(1) + checkbox(compras.crear) + acción(facturas.crear) #}
+          {% set _cols = 8 + (1 if tiene_permiso('compras.crear') else 0) + (1 if tiene_permiso('facturas.crear') else 0) %}
+          {{ empty_row(_cols, 'Sin anticipos para el filtro.', 'Probá quitar "Solo vivos" o ampliar el rango de fechas.') }}
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
+
+  {# ----- Barra de acción + modal de confirmación (convertir selección) -----
+     TMT 2026-07-10 — seleccionar anticipos de UNA importación y convertirlos a
+     compra. Sin confirm()/alert() nativos (regla del proyecto): modal in-page. #}
+  {% if tiene_permiso('compras.crear') %}
+  {% set _preselect = (codigo or recibido_mes) %}
+  <div id="sel-actionbar" data-preselect="{{ '1' if _preselect else '0' }}"
+       class="no-print"
+       style="display:none;position:sticky;bottom:0;z-index:30;margin-top:.75rem;
+              border:1px solid rgb(226 232 240);border-radius:8px;
+              background:rgb(255 255 255);
+              box-shadow:0 -1px 6px rgb(15 23 42 / 0.08);
+              padding:10px 14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+      <div style="font-size:14px;color:rgb(15 23 42);">
+        <strong id="sel-count">0</strong> seleccionados
+        · <span style="font-variant-numeric:tabular-nums;">$ <span id="sel-suma">0</span></span>
+        <span id="sel-warn" class="pill" style="display:none;margin-left:.5rem;background:rgb(254 226 226);color:rgb(153 27 27);">
+          Seleccioná anticipos de una sola importación (mismo código)
+        </span>
+      </div>
+      <button type="button" id="sel-convertir"
+              class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        Convertir a compra
+      </button>
+    </div>
+  </div>
+
+  {# Modal de confirmación (toggle por classList — sin confirm nativo). #}
+  <div id="sel-modal" class="no-print" style="display:none;position:fixed;inset:0;z-index:60;">
+    <div style="position:absolute;inset:0;background:rgb(15 23 42 / 0.45);" id="sel-modal-backdrop"></div>
+    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+                width:min(92vw,440px);border-radius:10px;overflow:hidden;
+                border:1px solid rgb(226 232 240);background:rgb(255 255 255);
+                box-shadow:0 10px 30px rgb(15 23 42 / 0.25);">
+      <div style="padding:16px 18px;">
+        <h3 style="font-size:15px;font-weight:600;color:rgb(15 23 42);margin-bottom:8px;">Convertir a compra</h3>
+        <p id="sel-modal-msg" style="font-size:14px;color:rgb(51 65 85);line-height:1.5;"></p>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 18px;
+                  background:rgb(248 250 252);border-top:1px solid rgb(226 232 240);">
+        <button type="button" id="sel-cancelar"
+                class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100">Cancelar</button>
+        <button type="button" id="sel-confirmar"
+                class="text-sm px-4 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  {# Form oculto que se puebla en JS y se postea al confirmar. #}
+  <form id="sel-form" method="post" action="{{ url_for('dolares.convertir_seleccion') }}" style="display:none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="codigo_prov" id="sel-form-cta" value="">
+    <input type="hidden" name="concepto" id="sel-form-ref" value="">
+    <div id="sel-form-ids"></div>
+  </form>
+  {% endif %}
 </div>
 
 {# TMT 2026-07-06 (dueña): cancelar anticipo con confirmación en 2 clics —
@@ -507,6 +618,109 @@ document.addEventListener('click', function (ev) {
   ['input', 'change', 'blur'].forEach(ev => cta.addEventListener(ev, () => {
     clearTimeout(timer); timer = setTimeout(cargar, 450);
   }));
+})();
+</script>
+
+{# TMT 2026-07-10 — selección de anticipos → convertir a compra (modal in-page). #}
+<script>
+(function () {
+  const bar = document.getElementById('sel-actionbar');
+  if (!bar) return; // sin permiso compras.crear
+  const selAll   = document.getElementById('sel-all');
+  const modal    = document.getElementById('sel-modal');
+  const form     = document.getElementById('sel-form');
+  const elCount  = document.getElementById('sel-count');
+  const elSuma   = document.getElementById('sel-suma');
+  const elWarn   = document.getElementById('sel-warn');
+  const elMsg    = document.getElementById('sel-modal-msg');
+  const btnConv  = document.getElementById('sel-convertir');
+  const btnOk    = document.getElementById('sel-confirmar');
+  const btnCanc  = document.getElementById('sel-cancelar');
+  const backdrop = document.getElementById('sel-modal-backdrop');
+
+  function boxes() { return Array.prototype.slice.call(document.querySelectorAll('.sel-ant')); }
+  function checked() { return boxes().filter(b => b.checked); }
+  function fmt(n) {
+    return Number(n || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  function refresh() {
+    const sel = checked();
+    const suma = sel.reduce((a, b) => a + (parseFloat(b.dataset.importe) || 0), 0);
+    elCount.textContent = sel.length;
+    elSuma.textContent = fmt(suma);
+    bar.style.display = sel.length ? '' : 'none';
+    // ¿misma importación? (misma cta + mismo ref)
+    if (sel.length) {
+      const ctas = new Set(sel.map(b => b.dataset.cta));
+      const refs = new Set(sel.map(b => b.dataset.ref));
+      elWarn.style.display = (ctas.size > 1 || refs.size > 1) ? '' : 'none';
+    } else {
+      elWarn.style.display = 'none';
+    }
+    // estado del select-all
+    if (selAll) {
+      const all = boxes();
+      selAll.checked = all.length > 0 && sel.length === all.length;
+      selAll.indeterminate = sel.length > 0 && sel.length < all.length;
+    }
+  }
+
+  boxes().forEach(b => b.addEventListener('change', refresh));
+  if (selAll) selAll.addEventListener('change', function () {
+    boxes().forEach(b => { b.checked = selAll.checked; });
+    refresh();
+  });
+
+  // Pre-selección: si se filtró por código o mes recibido, marcar todos.
+  if (bar.dataset.preselect === '1') {
+    boxes().forEach(b => { b.checked = true; });
+  }
+  refresh();
+
+  function openModal() { modal.style.display = 'block'; }
+  function closeModal() { modal.style.display = 'none'; }
+
+  btnConv.addEventListener('click', function () {
+    const sel = checked();
+    if (!sel.length) return;
+    const ctas = new Set(sel.map(b => b.dataset.cta));
+    const refs = new Set(sel.map(b => b.dataset.ref));
+    if (ctas.size > 1 || refs.size > 1) { elWarn.style.display = ''; return; }
+    elWarn.style.display = 'none';
+    const cta = sel[0].dataset.cta;
+    const ref = sel[0].dataset.ref;
+    const suma = sel.reduce((a, b) => a + (parseFloat(b.dataset.importe) || 0), 0);
+    // kg / im opcional del primer seleccionado con dato
+    let kgTxt = '';
+    const conKg = sel.find(b => b.dataset.kg);
+    if (conKg) {
+      kgTxt = ' · ' + Number(conKg.dataset.kg).toLocaleString('es-EC') + ' kg';
+    }
+    elMsg.textContent = 'Estos ' + sel.length + ' anticipos (US$ ' + fmt(suma)
+      + ') pasan a compra de la importación Asinfo ' + cta + ' ' + ref + kgTxt + '. ¿Confirmar?';
+    openModal();
+  });
+
+  btnCanc.addEventListener('click', closeModal);
+  if (backdrop) backdrop.addEventListener('click', closeModal);
+
+  btnOk.addEventListener('click', function () {
+    const sel = checked();
+    if (!sel.length) { closeModal(); return; }
+    document.getElementById('sel-form-cta').value = sel[0].dataset.cta;
+    document.getElementById('sel-form-ref').value = sel[0].dataset.ref;
+    const box = document.getElementById('sel-form-ids');
+    box.innerHTML = '';
+    sel.forEach(b => {
+      const inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'id_dolares';
+      inp.value = b.value;
+      box.appendChild(inp);
+    });
+    form.submit();
+  });
 })();
 </script>
 {% endblock %}

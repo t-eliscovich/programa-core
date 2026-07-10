@@ -751,6 +751,38 @@ def movimientos_mes_dbase(anio: int | None = None, mes: int | None = None) -> di
     for r in compras_hilado:
         r["ukg"] = _safe_div(r.get("importe"), r.get("kg"))
 
+    # KG del STOCK (Asinfo), no de la compra — dueña 2026-07-10: muchas compras
+    # (SALDO/CAE/seguro) mapean a un solo stock, así que el kg NO vive en la
+    # compra (las BAP quedan en 0). Lo traemos de Asinfo por importación (una vez
+    # por importación) y recalculamos $/kg. Fail-soft: si Asinfo cae o no matchea,
+    # queda el kg propio de la compra.
+    try:
+        _ch_rows = db.fetch_all(
+            f"""
+            SELECT codigo_prov AS prov,
+                   NULLIF(regexp_replace(COALESCE(concepto,''),'[^0-9]','','g'),'')::int AS ref,
+                   fecha
+              FROM scintela.compra
+             WHERE UPPER(COALESCE(tipo, '')) = 'H'
+               AND COALESCE(stat, '') <> 'Y'
+               AND EXTRACT(YEAR FROM fecha)  = %s
+               AND EXTRACT(MONTH FROM fecha) = %s
+               AND COALESCE(codigo_prov, '') <> ''
+               AND UPPER(COALESCE(codigo_prov, '')) <> 'XX'
+               AND {NO_BACKFILL_WHERE}
+            """,
+            (yy, mm),
+        ) or []
+        from modules.importaciones import service as _imp_svc
+        _kg_prov = _imp_svc.kg_stock_por_compra(_ch_rows)
+        for r in compras_hilado:
+            _k = str(r.get("prov") or "").strip().upper()
+            if _kg_prov.get(_k):
+                r["kg"] = _kg_prov[_k]
+                r["ukg"] = _safe_div(r.get("importe"), r["kg"])
+    except Exception:  # noqa: BLE001 -- Asinfo caído → queda el kg de la compra
+        pass
+
     produc_tejido = (
         db.fetch_all(
             f"""

@@ -62,12 +62,37 @@ def lista():
     cta   = (request.args.get("cta") or "").strip() or None
     q     = (request.args.get("q") or "").strip() or None
     solo_vivos = request.args.get("solo_vivos", "1") != "0"
+    # Filtro por código en UN solo campo: "AC 31" → cuenta AC + concepto 31.
+    # Si viene `codigo`, pisa cuenta/concepto (atajo de la dueña 2026-07-10).
+    codigo = (request.args.get("codigo") or "").strip()
+    if codigo:
+        import re as _re_cod
+        mcod = _re_cod.match(r"^\s*([A-Za-z]{2,3})\s*0*(\d{1,6})?", codigo)
+        if mcod:
+            cta = mcod.group(1).upper()
+            q = mcod.group(2) if mcod.group(2) else q
+    # Mes de recibido (la fecha de recepción se cuelga de Asinfo, se filtra en
+    # Python porque no vive en scintela.dolares).
+    recibido_mes = (request.args.get("recibido_mes") or "").strip() or None
     filas, error = _safe(
         lambda: queries.lista(
             desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos, q=q,
         ),
         [],
     )
+    # Colgar a cada anticipo la RECEPCIÓN de su importación Asinfo (im_numero,
+    # fecha_recepcion_im, kg_im). Fail-soft e independiente del _safe de arriba:
+    # si Asinfo cae, la lista igual se muestra (las columnas quedan en blanco).
+    try:
+        from modules.importaciones import service as _import_service
+        _import_service.adjuntar_recepcion_asinfo(filas)
+    except Exception:  # noqa: BLE001
+        pass
+    if recibido_mes:
+        filas = [
+            f for f in filas
+            if str(f.get("fecha_recepcion_im") or "").startswith(recibido_mes)
+        ]
     cuentas, _ = _safe(lambda: queries.por_cuenta(solo_vivos=True), [])
     res, _ = _safe(queries.resumen, {})
 
@@ -83,6 +108,8 @@ def lista():
                 ("fecha", "Fecha"), ("cta", "Cuenta"),
                 ("concepto", "Concepto"), ("importe", "Importe"),
                 ("st", "Estado"), ("clave", "Clave"),
+                ("fecha_recepcion_im", "Recibido"),
+                ("kg_im", "Kg importación"), ("im_numero", "Importación"),
             ],
             filename="anticipos.csv",
         )
@@ -90,9 +117,57 @@ def lista():
         "dolares/lista.html",
         filas=filas, cuentas=cuentas, resumen=res,
         desde=desde, hasta=hasta, cta=cta, q=q,
+        codigo=codigo or None, recibido_mes=recibido_mes,
         solo_vivos=solo_vivos, error=error,
         hoy=today_ec().isoformat(),
     )
+
+
+@dolares_bp.route("/dolares/convertir-seleccion", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.crear")
+def convertir_seleccion():
+    """Convierte los anticipos TILDADOS en la lista principal a una compra (BAP),
+    en un paso con confirmación en el frente.
+
+    Modelo (dueña 2026-07-10): el kg vive en el STOCK (la importación de Asinfo),
+    NO en la compra — muchas compras (SALDO/CAE/seguro) pueden mapear a un solo
+    stock, así que el kg NO se escribe en la compra (kg=None); el importe (USD)
+    de los anticipos ACUMULA contra ese stock. Concepto = nº de la importación
+    (para que la compra matchee con ella); tipo H (hilado).
+    """
+    codigo_prov = (request.form.get("codigo_prov") or "").strip().upper()
+    ids_raw = request.form.getlist("id_dolares")
+    try:
+        ids = [int(x) for x in ids_raw if x and str(x).strip()]
+    except ValueError:
+        flash("IDs de anticipos inválidos.", "warn")
+        return redirect(url_for("dolares.lista"))
+    concepto = (request.form.get("concepto") or "").strip()
+    motivo = (request.form.get("motivo") or "").strip()
+    if not codigo_prov or not ids:
+        flash("Seleccioná anticipos de una sola importación para convertir.", "warn")
+        return redirect(request.referrer or url_for("dolares.lista"))
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.convertir_a_compra(
+            codigo_prov=codigo_prov, ids_anticipos=ids,
+            concepto=concepto, tipo_compra="H", kg=None,
+            motivo=motivo, usuario=usuario,
+        )
+        flash(
+            f"BAP: {r['n_anticipos']} anticipo(s) de {codigo_prov} → compra "
+            f"N° {r['numero_compra']} ({r['comprobante']}) por $ {r['importe_total']:.2f}. "
+            f"Los kg quedan en el stock de la importación.",
+            "ok",
+        )
+        return redirect(url_for("compras.lista", q=codigo_prov))
+    except ValueError as e:
+        flash(str(e), "warn")
+        return redirect(request.referrer or url_for("dolares.lista"))
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude convertir los anticipos", e)
+        return redirect(request.referrer or url_for("dolares.lista"))
 
 
 # ---------------------------------------------------------------------------
