@@ -175,6 +175,26 @@ def test_fabricacion_service_totales_incluyen_negativos(monkeypatch):
     assert abs(tej["Fleece"]["por_producir"] - (-10.0)) < 0.01
 
 
+def test_fabricacion_saldo_produciendo_excluye_staged_sin_producir(monkeypatch):
+    """saldo_produciendo (= "en máquinas" real) cuenta SOLO órdenes con fab>0. El
+    material despachado a órdenes que no arrancaron (fab=0) suma al 'saldo' total
+    pero NO al 'en máquinas' (dueña 2026-07-10: coincidir con la planilla de fábrica,
+    que da 36.293 vs 48.166 nuestro — la diferencia son las OFTs con fab=0)."""
+    from modules.asinfo import service as svc
+
+    rows = [
+        {"oft": "OFT-1", "producto": "A", "prod_codigo": "A1", "tejido": "Jersey",
+         "planif": 100.0, "fab": 40.0, "issued": 90.0},   # produciendo: saldo 50
+        {"oft": "OFT-2", "producto": "B", "prod_codigo": "B1", "tejido": "Fleece",
+         "planif": 200.0, "fab": 0.0, "issued": 30.0},     # staged sin producir: 30
+    ]
+    monkeypatch.setattr(svc.metabase_client, "fetch_dataset", lambda *a, **k: rows)
+    svc._FABRICACION_CACHE.clear()
+    res = svc.fabricacion_proceso(52)["resumen"]
+    assert abs(res["saldo"] - 80.0) < 0.01              # 50 + 30 (todas)
+    assert abs(res["saldo_produciendo"] - 50.0) < 0.01  # solo la que ya produce
+
+
 def test_fabricacion_service_split_iniciadas(monkeypatch):
     from modules.asinfo import service as svc
 

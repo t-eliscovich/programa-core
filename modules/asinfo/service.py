@@ -867,7 +867,14 @@ def fabricacion_proceso(id_bodega: int) -> dict:
     resumen = {"issued": 0.0, "fab": 0.0, "saldo": 0.0,
                "planif": 0.0, "por_producir": 0.0, "n_ofts": 0,
                "planif_inic": 0.0, "fab_inic": 0.0, "por_producir_inic": 0.0,
-               "n_inic": 0, "planif_sin": 0.0, "n_sin": 0}
+               "n_inic": 0, "planif_sin": 0.0, "n_sin": 0,
+               # saldo_produciendo = en proceso SOLO de órdenes que ya arrancaron
+               # a producir (fab>0). El material despachado a órdenes que todavía
+               # NO produjeron (staged al pie de máquina) NO cuenta como "en
+               # máquinas" — así lo ve la fábrica (dueña 2026-07-10: su planilla
+               # da 36.293 vs 48.166 nuestro; la diferencia son justo esas OFTs
+               # con material despachado y fab=0).
+               "saldo_produciendo": 0.0}
     por_tejido: dict[str, dict] = {}
     ofts = []
     for r in rows:
@@ -884,6 +891,8 @@ def fabricacion_proceso(id_bodega: int) -> dict:
         resumen["issued"] += issued
         resumen["fab"] += fab
         resumen["saldo"] += saldo
+        if fab > 0.005:                       # solo órdenes YA produciendo
+            resumen["saldo_produciendo"] += saldo
         resumen["planif"] += planif
         resumen["por_producir"] += por_producir
         resumen["n_ofts"] += 1
@@ -977,9 +986,12 @@ def inventario_por_etapa() -> dict:
         totales = stock_asinfo_lote_totales() or []
         por_bodega = {int(r.get("id_bodega")): float(r.get("total_kg") or 0)
                       for r in totales}
-        # WIP entre pasos: saldo = material despachado − producido.
-        wip_tc = float((fabricacion_proceso(52).get("resumen") or {}).get("saldo") or 0)
-        wip_pt = float((fabricacion_proceso(53).get("resumen") or {}).get("saldo") or 0)
+        # WIP entre pasos = "en máquinas" = material despachado − producido, PERO
+        # solo de órdenes que ya arrancaron a producir (saldo_produciendo, fab>0).
+        # El material despachado a órdenes sin producir todavía no está "en la
+        # máquina" (dueña 2026-07-10, para coincidir con la planilla de fábrica).
+        wip_tc = float((fabricacion_proceso(52).get("resumen") or {}).get("saldo_produciendo") or 0)
+        wip_pt = float((fabricacion_proceso(53).get("resumen") or {}).get("saldo_produciendo") or 0)
     except Exception:  # noqa: BLE001
         return vacio
 
