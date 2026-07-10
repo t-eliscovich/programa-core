@@ -747,6 +747,8 @@
            PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
            menú — su contenido se mergea con /posdat (decisión Tamara). #}
         {{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}
+        {# TMT 2026-07-09 (dueña): Costos mensuales colorantes movido a Informes (última posición) desde Tintorería. #}
+        {% if tiene_permiso('tintura.ver') %}{{ nav_link('comparativa_tintoreria.tintoreria_detalle', 'Costos mensuales colorantes', 'report') }}{% endif %}
         {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
            (pedido dueña: "para retiros tenemos demasiadas pantallas.
            Este borralo: /capital"). Los dividendos se ven desde
@@ -812,6 +814,8 @@
            "Ingreso de hilado" (pantalla de solo lectura). #}
         {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box') }}
         {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
+        {# TMT 2026-07-09 (dueña): Stock químicos movido a Stock (última posición) desde Tintorería. #}
+        {% if tiene_permiso('tintura.ver') %}{{ nav_link('stock_asinfo.quimicos', 'Stock químicos', 'shopping') }}{% endif %}
       </details>
       {% endif %}
 
@@ -822,8 +826,6 @@
       <details class="sidebar-section" data-key="tintoreria" open>
         <summary>Tintorería</summary>
         {{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Comparativa PC vs Form', 'trend') }}
-        {{ nav_link('comparativa_tintoreria.tintoreria_detalle', 'Costos mensuales colorantes', 'report') }}
-        {{ nav_link('stock_asinfo.quimicos', 'Stock químicos', 'shopping') }}
       </details>
       {% endif %}
 
