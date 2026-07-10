@@ -53,6 +53,8 @@
         <div class="text-xs text-slate-500 mt-1">Se aplican solas todos los días (cron, últimos 60 días) y al cargar facturas: registran la retención y bajan el saldo (abono), idempotente y reversible. Este botón es para forzarlo ahora en el período elegido.</div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
+        <a href="{{ url_for('facturas.preview_retenciones_asinfo', desde=desde, hasta=hasta) }}"
+           class="text-sm px-3 py-1.5 rounded border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20">Ver retenciones a aplicar</a>
         <form method="POST" action="{{ url_for('facturas.aplicar_retenciones_asinfo') }}" class="inline"
               onsubmit="return confirm('Aplicar las retenciones de Asinfo del período a las facturas de PC? Registra la retención y baja el saldo de cada una.');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -380,3 +380,109 @@ def desaplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
         else:
             res["n_sin"] += 1
     return res
+
+
+def preview_retenciones_asinfo(desde, hasta) -> dict:
+    """Read-only: por cada retención de Asinfo del período, dice A QUÉ factura de
+    PC iría y QUÉ pasaría, SIN mutar nada. Espeja la clasificación de
+    `_aplicar_una_por_numero` pero en batch (una query por cosa).
+
+    Devuelve {"filas": [...], "resumen": {...}}. Cada fila:
+      numero, ret_fuente, ret_iva, ret_total, estado, codigo_cli, cliente,
+      numf, importe, saldo_actual, saldo_nuevo, stat_nuevo.
+    estado ∈ {se_aplica, ya, sin_factura, rete_gt_importe, rete_0}.
+    """
+    from modules.asinfo import service as asinfo_service
+    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
+    resumen = {
+        "n_total": len(ret_map), "se_aplica": 0, "ya": 0, "sin_factura": 0,
+        "rete_gt_importe": 0, "rete_0": 0, "total_a_aplicar": 0.0,
+        "total_periodo": round(
+            sum(float((v or {}).get("ret_total") or 0) for v in ret_map.values()), 2),
+    }
+    if not ret_map:
+        return {"filas": [], "resumen": resumen}
+
+    numeros = list(ret_map.keys())
+    # Facturas vivas de PC por numf_completo (mismo filtro que _factura_por_numero:
+    # no backfill, no anulada 'X'). ORDER BY id_factura → nos quedamos con la 1ra.
+    fac_rows = db.fetch_all(
+        """
+        SELECT id_factura, codigo_cli, numf, numf_completo, importe, abono, saldo, stat
+          FROM scintela.factura
+         WHERE numf_completo = ANY(%s)
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+           AND COALESCE(stat, '') <> 'X'
+         ORDER BY id_factura
+        """,
+        (numeros,),
+    )
+    fac_by_num: dict = {}
+    for f in fac_rows:
+        fac_by_num.setdefault(f["numf_completo"], f)
+
+    # Retenciones ya registradas para esas facturas (set de pares codigo_cli|numf).
+    codigos = list({f["codigo_cli"] for f in fac_by_num.values()})
+    numfs = list({f["numf"] for f in fac_by_num.values()})
+    ya_set: set = set()
+    nombres: dict = {}
+    if codigos:
+        for rr in db.fetch_all(
+            "SELECT codigo_cli, numf FROM scintela.retencion "
+            "WHERE codigo_cli = ANY(%s) AND numf = ANY(%s)",
+            (codigos, numfs or [0]),
+        ):
+            ya_set.add(f"{rr['codigo_cli']}|{rr['numf']}")
+        for cr in db.fetch_all(
+            "SELECT codigo_cli, COALESCE(nombre, '') AS nombre "
+            "FROM scintela.cliente WHERE codigo_cli = ANY(%s)",
+            (codigos,),
+        ):
+            nombres[cr["codigo_cli"]] = cr["nombre"]
+
+    filas: list = []
+    for numero, r in ret_map.items():
+        rf = float((r or {}).get("ret_fuente") or 0)
+        ri = float((r or {}).get("ret_iva") or 0)
+        rete = round(float((r or {}).get("ret_total") or 0), 2)
+        fila = {
+            "numero": numero, "ret_fuente": rf, "ret_iva": ri, "ret_total": rete,
+            "codigo_cli": None, "cliente": None, "numf": None,
+            "importe": None, "saldo_actual": None, "saldo_nuevo": None,
+            "stat_nuevo": None, "estado": None,
+        }
+        f = fac_by_num.get(numero)
+        if rete <= 0.005:
+            fila["estado"] = "rete_0"
+            resumen["rete_0"] += 1
+        elif not f:
+            fila["estado"] = "sin_factura"
+            resumen["sin_factura"] += 1
+        else:
+            importe = round(float(f["importe"] or 0), 2)
+            abono = round(float(f["abono"] or 0), 2)
+            saldo = round(float(f["saldo"] or 0), 2)
+            fila.update({
+                "codigo_cli": f["codigo_cli"],
+                "cliente": nombres.get(f["codigo_cli"], ""),
+                "numf": f["numf"], "importe": importe, "saldo_actual": saldo,
+            })
+            if rete > importe + 0.01:
+                fila["estado"] = "rete_gt_importe"
+                resumen["rete_gt_importe"] += 1
+            elif f"{f['codigo_cli']}|{f['numf']}" in ya_set:
+                fila["estado"] = "ya"
+                resumen["ya"] += 1
+            else:
+                saldo_new = round(importe - round(abono + rete, 2), 2)
+                fila["saldo_nuevo"] = saldo_new
+                fila["stat_nuevo"] = "T" if saldo_new <= 0.005 else "A"
+                fila["estado"] = "se_aplica"
+                resumen["se_aplica"] += 1
+                resumen["total_a_aplicar"] = round(resumen["total_a_aplicar"] + rete, 2)
+        filas.append(fila)
+
+    # Orden: primero lo que se aplica, después ya, después los que no entran.
+    orden = {"se_aplica": 0, "ya": 1, "rete_gt_importe": 2, "sin_factura": 3, "rete_0": 4}
+    filas.sort(key=lambda x: (orden.get(x["estado"], 9), -(x["ret_total"] or 0)))
+    return {"filas": filas, "resumen": resumen}

@@ -1464,6 +1464,34 @@ def _rango_retenciones():
     return desde, hasta
 
 
+@facturas_bp.route("/facturas/retenciones-asinfo", methods=["GET"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def preview_retenciones_asinfo():
+    """Muestra el DETALLE de las retenciones de Asinfo del período: a qué factura
+    de PC iría cada una y qué pasaría (se aplica / ya estaba / sin factura / no
+    entra), sin mutar nada. Read-only; los botones Aplicar/Deshacer siguen en la
+    pantalla de origen."""
+    from datetime import date as _date
+    from modules.retenciones import queries as ret_q
+    hoy = today_ec()
+    desde = _parse_date(request.args.get("desde") or "") or hoy.replace(day=1)
+    hasta = _parse_date(request.args.get("hasta") or "") or hoy
+    if desde < _date(2026, 6, 1):
+        desde = _date(2026, 6, 1)
+    try:
+        data = ret_q.preview_retenciones_asinfo(desde, hasta)
+        error = None
+    except Exception as e:
+        data = {"filas": [], "resumen": {}}
+        error = str(e)
+    return render_template(
+        "facturas/retenciones_asinfo.html",
+        desde=desde.isoformat(), hasta=hasta.isoformat(),
+        filas=data["filas"], resumen=data["resumen"], error=error,
+    )
+
+
 @facturas_bp.route("/facturas/aplicar-retenciones-asinfo", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.crear")
