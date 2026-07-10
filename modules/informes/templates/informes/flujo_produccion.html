@@ -160,7 +160,7 @@
           {% endif %}
           {% if _maq.get('hilado') or _maq.get('crudo') %}
           <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso · al $/kg de apertura</span></td>
+            <td class="lbl" style="font-size:11px;color:rgb(100 116 139);">En máquinas <span class="pct" style="color:rgb(148 163 184);">en proceso, suma al stock · al $/kg de apertura</span></td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado') | num_es(0) if _maq.get('hilado') else '—' }}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ '%.3f' % (_maq.get('hilado_ukg') or 0) if _maq.get('hilado_us') else '—' }}</td>
             <td class="num" style="color:rgb(100 116 139);">{{ _maq.get('hilado_us') | num_es(0) if _maq.get('hilado_us') else '—' }}</td>
@@ -180,16 +180,19 @@
             <td class="num">{{ ate.get('egresos_kg') | num_es(0) if ate.get('egresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('egresos_us') | num_es(0) if aco.get('egresos_us') else '—' }}</td>
           </tr>
-          {% if aco.get('ajuste_us') is not none %}
+          {% set _ajh = ahl.get('ajuste_us') or 0 %}
+          {% set _ajh_kg = ahl.get('ajuste_kg') or 0 %}
+          {% set _hay_ajh = (_ajh | abs) > 0.5 or (_ajh_kg | abs) > 0.5 %}
+          {% if aco.get('ajuste_us') is not none or _hay_ajh %}
           <tr>
-            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Egreso por ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro</span></td>
-            <td class="num">—</td>
-            <td class="num">—</td>
-            <td class="num">—</td>
+            <td class="lbl" style="font-size:11px;color:rgb(180 83 9);">Egreso por ajuste <span class="pct" style="color:rgb(148 163 184);">físico − libro (varianza de bodega)</span></td>
+            <td class="num" style="color:rgb(180 83 9);">{% if _hay_ajh %}{% if _ajh_kg >= 0 %}+{% else %}−{% endif %}{{ (_ajh_kg if _ajh_kg >= 0 else -_ajh_kg) | num_es(0) }}{% else %}—{% endif %}</td>
+            <td class="num" style="color:rgb(180 83 9);">{% if _hay_ajh %}{{ '%.3f' % (ahl.get('ajuste_ukg') or 0) }}{% else %}—{% endif %}</td>
+            <td class="num" style="color:rgb(180 83 9);">{% if _hay_ajh %}{% if _ajh >= 0 %}+{% else %}−{% endif %}{{ (_ajh if _ajh >= 0 else -_ajh) | num_es(0) }}{% else %}—{% endif %}</td>
             <td></td>
             <td class="num">—</td>
             <td class="num">—</td>
-            <td class="num" style="color:rgb(180 83 9);">{% set _aj = aco.get('ajuste_us') %}{% if _aj >= 0 %}+{% else %}−{% endif %}{{ (_aj if _aj >= 0 else -_aj) | num_es(0) }}</td>
+            <td class="num" style="color:rgb(180 83 9);">{% if aco.get('ajuste_us') is not none %}{% set _aj = aco.get('ajuste_us') %}{% if _aj >= 0 %}+{% else %}−{% endif %}{{ (_aj if _aj >= 0 else -_aj) | num_es(0) }}{% else %}—{% endif %}</td>
           </tr>
           {% endif %}
           <tr class="total">
