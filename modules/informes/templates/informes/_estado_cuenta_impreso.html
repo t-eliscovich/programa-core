@@ -30,7 +30,7 @@
           <th class="px-4 py-3 text-right font-medium">Abonado</th>
           <th class="px-4 py-3 text-right font-medium">Saldo</th>
           <th class="px-4 py-3 text-right font-medium" title="Saldo acumulado leído de arriba hacia abajo (sumando esta factura y todas las anteriores en la lista).">Acum.</th>
-          <th class="px-4 py-3 text-left font-medium">Stat</th>
+          <th class="px-4 py-3 text-left font-medium no-print" title="En pantalla; no se imprime (en la impresión queda Días)">Stat</th>
           <th class="px-4 py-3 text-right font-medium" title="Días entre hoy y la fecha de emisión de la factura">Días</th>
         </tr>
       </thead>
@@ -53,7 +53,7 @@
           <td class="px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>
           <td class="px-4 py-2 text-right">{{ saldo_pill(f.saldo) }}</td>
           <td class="px-4 py-2 text-right text-mono {{ 'text-red-700 font-semibold' if acum.s > 0 else 'text-slate-500' }}">{{ acum.s | money_es }}</td>
-          <td class="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
+          <td class="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap no-print">
             {{ f.stat }}
             {# TMT 2026-07-09 (dueña): lapicito para CERRAR la factura (A/Z→T),
                reversible. Solo interactivo + con permiso + importe positivo. #}
