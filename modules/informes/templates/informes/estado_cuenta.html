@@ -179,13 +179,13 @@
        NB=98). Antes el espejo de anticipo quedaba escondido entre los cheques y
        el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
     {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
-    <div class="md:col-span-2 bg-white dark:bg-slate-900 border-2 {{ 'border-red-300 dark:border-red-700' if _saldo_neto > 0 else 'border-emerald-300 dark:border-emerald-700' }} rounded p-3">
+    <div class="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo cliente</div>
-      <div class="mt-0.5 text-2xl font-semibold text-mono {{ 'text-red-600 dark:text-red-400' if _saldo_neto > 0 else 'text-emerald-600 dark:text-emerald-400' }}">
+      <div class="mt-0.5 text-lg font-semibold text-mono">
         {{ _saldo_neto | money_es }}
       </div>
       {% if (t.saldo_a_favor or 0) > 0.005 %}
-        <div class="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
+        <div class="mt-1 text-xs text-slate-500">
           Saldo facturas {{ t.saldo | money_es }} − saldo a favor {{ t.saldo_a_favor | money_es }}
         </div>
       {% endif %}
@@ -195,7 +195,7 @@
         </div>
       {% endif %}
       {% if t.saldo_vencido > 0 %}
-        <div class="mt-1 text-xs text-red-600 dark:text-red-400">
+        <div class="mt-1 text-xs text-slate-500">
           {{ t.saldo_vencido | money_es }} vencido ({{ t.n_vencidas }} factura{{ '' if t.n_vencidas == 1 else 's' }})
         </div>
       {% else %}
