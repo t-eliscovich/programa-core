@@ -2589,10 +2589,17 @@ def estado_cuenta(codigo_cli):
         )
     except Exception:
         pass
+    # Lista de clientes para el cargador "Nuevo estado de cuenta" (autocomplete).
+    try:
+        from modules.autocomplete.queries import clientes_para_datalist
+        _clientes_dl = clientes_para_datalist()
+    except Exception:  # noqa: BLE001
+        _clientes_dl = []
     return render_template(
         "informes/estado_cuenta.html",
         data=data,
         error=error,
+        clientes_datalist=_clientes_dl,
         # TMT 2026-07-09 (dueña): facturas totalizadas (T), para poder
         # REABRIRLAS desde el panel A↔T. Solo en la vista individual.
         facturas_totalizadas=(_safe(

@@ -107,6 +107,25 @@
             class="shrink-0 text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Imprimir resultado</button>
   </div>
   {% endif %}
+  {# TMT 2026-07-09 (dueña): cargar el estado de cuenta de OTRO cliente sin
+     volver a la cartera. Escribí el código (o elegí del listado) → Enter/Ver. #}
+  <form class="no-print flex items-end gap-2 mb-4"
+        onsubmit="event.preventDefault(); var c=(document.getElementById('ec-nuevo').value||'').trim().toUpperCase(); if(c){ window.location.href='{{ url_for('informes.estado_cuenta', codigo_cli='XCODEX') }}'.replace('XCODEX', encodeURIComponent(c)); }">
+    <label class="flex flex-col">
+      <span class="text-[11px] uppercase tracking-wider text-slate-500">Nuevo estado de cuenta</span>
+      <input id="ec-nuevo" type="text" list="ec-clientes-dl" autocomplete="off"
+             placeholder="Código del cliente (ej. BED)"
+             class="border border-slate-300 dark:border-slate-700 rounded px-2 py-1 mt-0.5 text-sm font-mono uppercase w-64 bg-white dark:bg-slate-950"
+             oninput="this.value=this.value.toUpperCase()">
+    </label>
+    <button type="submit" class="text-sm px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-700 text-white">Ver</button>
+    {% if clientes_datalist %}
+    <datalist id="ec-clientes-dl">
+      {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>{% endfor %}
+    </datalist>
+    {% endif %}
+  </form>
+
   {# no-print: en papel lo reemplaza el .print-header de arriba. #}
   <div class="no-print flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero(data.cliente.nombre, descripcion_safe=_desc) }}
@@ -188,35 +207,16 @@
       <div class="mt-0.5 text-lg font-semibold text-mono">
         {{ _saldo_neto | money_es }}
       </div>
-      {% if (t.saldo_a_favor or 0) > 0.005 %}
-        <div class="mt-1 text-xs text-slate-500">
-          Saldo facturas {{ t.saldo | money_es }} − saldo a favor {{ t.saldo_a_favor | money_es }}
-        </div>
-      {% endif %}
-      {% if _sobrepagos > 0.005 %}
-        <div class="mt-1 text-xs text-slate-500">
-          Facturas vivas {{ t.saldo_vivo | money_es }} − sobrepagos {{ _sobrepagos | money_es }}
-        </div>
-      {% endif %}
-      {% if t.saldo_vencido > 0 %}
-        <div class="mt-1 text-xs text-slate-500">
-          {{ t.saldo_vencido | money_es }} vencido ({{ t.n_vencidas }} factura{{ '' if t.n_vencidas == 1 else 's' }})
-        </div>
-      {% else %}
-        <div class="mt-1 text-xs text-slate-500">Sin facturas vencidas.</div>
-      {% endif %}
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Cheques en cartera</div>
       <div class="mt-0.5 text-lg font-semibold text-mono">{{ t.cheques_cartera | money_es }}</div>
-      <div class="mt-1 text-xs text-slate-500">posfechados / sin depositar</div>
     </div>
     {# TMT 2026-07-09 (dueña): total = saldo cliente + cheques en cartera. #}
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Total (facturas + cheques)</div>
       {% set _total_fc = (_saldo_neto or 0) + (t.cheques_cartera or 0) %}
       <div class="mt-0.5 text-lg font-semibold text-mono">{{ _total_fc | money_es }}</div>
-      <div class="mt-1 text-xs text-slate-500">saldo + cheques en cartera</div>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Cupo</div>
