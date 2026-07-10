@@ -152,6 +152,9 @@ def editar(codigo_cli: str):
     if not cli:
         abort(404)
     errores: list[str] = []
+    # `?next=/url` (o hidden en el POST): adónde volver tras guardar. Ej: el
+    # botón "Editar cliente" del estado de cuenta manda de vuelta ahí. TMT 2026-07-09.
+    next_url = _safe_next_url(request.form.get("next") or request.args.get("next"))
 
     if request.method == "GET":
         form = {
@@ -172,7 +175,7 @@ def editar(codigo_cli: str):
             "stop": cli.get("stop") or "N",
             "activo": cli.get("activo", True),
         }
-        return render_template("clientes/form.html", form=form, errores=errores, modo="editar")
+        return render_template("clientes/form.html", form=form, errores=errores, modo="editar", next_url=next_url)
 
     form = _form_from_request()
     cupo = parse_int(form["cupo"])
@@ -181,7 +184,7 @@ def editar(codigo_cli: str):
         errores.append("Nombre requerido.")
     if errores:
         form["codigo_cli"] = cli["codigo_cli"]
-        return render_template("clientes/form.html", form=form, errores=errores, modo="editar"), 400
+        return render_template("clientes/form.html", form=form, errores=errores, modo="editar", next_url=next_url), 400
 
     try:
         usuario = (g.user or {}).get("username", "web")
@@ -203,10 +206,12 @@ def editar(codigo_cli: str):
             usuario=usuario,
         )
         flash(f"Cliente {cli['codigo_cli']} actualizado.", "ok")
+        if next_url:
+            return redirect(next_url)
         return redirect(url_for("clientes.lista"))
     except Exception as e:
         errores.append(f"No pude actualizar: {e}")
-        return render_template("clientes/form.html", form=form, errores=errores, modo="editar"), 500
+        return render_template("clientes/form.html", form=form, errores=errores, modo="editar", next_url=next_url), 500
 
 
 @clientes_bp.route("/clientes/<codigo_cli>/stop", methods=["POST"])
