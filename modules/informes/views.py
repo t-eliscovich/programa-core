@@ -177,6 +177,15 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     # + egreso=despacho que corre ~7% arriba del saldo por timing). Con todo del
     # mismo saldo cierra exacto. El facturado/despacho (venta) se muestran al
     # lado como referencia; corren un poco arriba del egreso de bodega (desfase).
+    # MOVIMIENTO REAL de bodega por etapa (deltas del saldo por lote DESDE el 1°
+    # del mes, MISMA fuente/corte que el stock) → hilado (51), crudo (52),
+    # terminado (53) cierran TODOS por telescopía: inicial + ingreso − egreso =
+    # saldo final. Dueña 2026-07-10: el hilado/crudo mostraban "lo que se fue a
+    # tejer/producción" (subcuenta el movimiento real de bodega → no cerraba);
+    # verificado en Asinfo que el egreso real de bodega 51 fue 88.178 vs 46.540
+    # de "a tejer". "Importaciones" y "a tejer/producción" quedan de referencia.
+    mov51 = {"ingreso": 0.0, "egreso": 0.0}
+    mov52 = {"ingreso": 0.0, "egreso": 0.0}
     mov53 = {"ingreso": 0.0, "egreso": 0.0}
     despacho = 0.0
     if anio and mes:
@@ -185,10 +194,16 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
 
             from modules.asinfo import service as _asvcd
             _corte = _date_mov(int(anio), int(mes), 1)  # mismo corte que el inicial
+            mov51 = _asvcd.movimiento_bodega_mes(51, _corte) or mov51
+            mov52 = _asvcd.movimiento_bodega_mes(52, _corte) or mov52
             mov53 = _asvcd.movimiento_bodega_mes(53, _corte) or mov53
             despacho = float(_asvcd.despacho_fisico_mes(int(anio), int(mes)) or 0.0)
         except Exception:  # noqa: BLE001 -- fail-soft
             pass
+    ing_hilo = float(mov51.get("ingreso") or 0.0)   # HILADO ingreso (real bodega 51)
+    egr_hilo = float(mov51.get("egreso") or 0.0)    # HILADO egreso (real bodega 51)
+    ing_crudo = float(mov52.get("ingreso") or 0.0)  # CRUDO ingreso (real bodega 52)
+    egr_crudo = float(mov52.get("egreso") or 0.0)   # CRUDO egreso (real bodega 52)
     ing_term = float(mov53.get("ingreso") or 0.0)   # TERM ingreso (real bodega)
     egr_term = float(mov53.get("egreso") or 0.0)    # TERM egreso (real bodega)
     # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente (= merma).
@@ -213,29 +228,52 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         _open_ukg = None
     if not _open_ukg:
         _open_ukg = _f(hl, "stock_inic_ukg")   # semilla: último $/kg conocido
+    # KG: ingreso/egreso = MOVIMIENTO REAL de bodega 51 → cierra por telescopía
+    #   inicial + ingreso + en máquinas − egreso = stock actual (kg).
+    # El ingreso real de bodega (ing_hilo) = importaciones (compras) + reingresos
+    # de lote; el egreso real (egr_hilo) = a tejer + otras salidas (ajustes).
+    # $: promedio ponderado — la apertura y las IMPORTACIONES son los únicos
+    # eventos de costo externo; los reingresos entran al promedio (neutros) y el
+    # egreso/stock se valúan al promedio → la compra barata BAJA el $/kg y la
+    # columna $ TAMBIÉN cierra: inic + ingreso − egreso + máquinas = stock act.
+    _avg_ukg = (
+        (hi0 * _open_ukg + compras_us) / (hi0 + compras)
+        if (hi0 + compras) else _open_ukg
+    )
     hl["stock_inic_kg"] = hi0
     hl["stock_inic_ukg"] = _open_ukg
     hl["stock_inic_us"] = hi0 * _open_ukg
-    hl["ingresos_kg"] = compras
-    hl["ingresos_us"] = compras_us
-    hl["ingresos_ukg"] = (compras_us / compras) if compras else 0.0
-    _kg_disp = hi0 + compras                      # kg disponibles tras el ingreso
-    _us_disp = hl["stock_inic_us"] + compras_us
-    _avg_ukg = (_us_disp / _kg_disp) if _kg_disp else _open_ukg
-    hl["egresos_kg"] = hilo_consumido
+    hl["ingresos_kg"] = ing_hilo
+    # $ del ingreso = costo real de las importaciones + reingresos al promedio.
+    hl["ingresos_us"] = compras_us + (ing_hilo - compras) * _avg_ukg
+    hl["ingresos_ukg"] = (hl["ingresos_us"] / ing_hilo) if ing_hilo else 0.0
+    # Referencias (parte del ingreso/egreso real, se muestran al lado):
+    hl["ref_import_kg"] = compras          # importaciones recibidas del mes
+    hl["ref_import_us"] = compras_us       # lo que pagamos por ellas
+    hl["ref_import_ukg"] = (compras_us / compras) if compras else 0.0
+    hl["ref_tejer_kg"] = hilo_consumido    # lo que se fue a tejer (órdenes)
+    hl["egresos_kg"] = egr_hilo
     hl["egresos_ukg"] = _avg_ukg
-    hl["egresos_us"] = hilo_consumido * _avg_ukg
+    hl["egresos_us"] = egr_hilo * _avg_ukg
+    # En máquinas (WIP) al $/kg de apertura; suma al stock actual (es stock nuestro).
+    _maq_us = maq_hilado * _open_ukg
     hl["stock_act_kg"] = hi1 + maq_hilado
-    hl["stock_act_us"] = hl["stock_inic_us"] + compras_us - hl["egresos_us"]
+    hl["stock_act_us"] = hi1 * _avg_ukg + _maq_us
     hl["stock_act_ukg"] = (
         hl["stock_act_us"] / hl["stock_act_kg"] if hl["stock_act_kg"] else _avg_ukg
     )
 
     # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
     # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
+    # CRUDO — ingreso/egreso = MOVIMIENTO REAL de bodega 52 (deltas del saldo) →
+    # cierra por telescopía igual que hilado/terminado: inicial + ingreso + en
+    # máquinas − egreso = stock actual. "Cruda producida" (ci_crudo) y "a tinturar"
+    # (crudo_consumido) quedan de referencia; el % de merma sigue con la producción.
     tj["stock_inic_kg"] = tc0
-    tj["ingresos_kg"] = ci_crudo
-    tj["egresos_kg"] = crudo_consumido
+    tj["ingresos_kg"] = ing_crudo
+    tj["egresos_kg"] = egr_crudo
+    tj["ref_prod_kg"] = ci_crudo            # cruda producida (órdenes)
+    tj["ref_tinturar_kg"] = crudo_consumido  # crudo consumido a tintura
     tj["ingresos_pct"] = (desp_crudo / hilo_consumido * 100.0) if hilo_consumido else 0.0
     tj["stock_act_kg"] = tc1 + maq_crudo
 
