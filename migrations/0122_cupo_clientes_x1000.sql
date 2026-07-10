@@ -8,6 +8,9 @@
 --
 -- Multiplica ×1000 todos los cupos no nulos / no cero. Corre UNA sola vez
 -- (versionado de migraciones); no re-multiplica.
+-- EXCEPTO BED: la dueña ya le cargó el cupo real (×1000) a mano desde la
+-- ficha, así que se excluye para no multiplicarlo dos veces. TMT 2026-07-09.
 UPDATE scintela.cliente
    SET cupo = cupo * 1000
- WHERE COALESCE(cupo, 0) <> 0;
+ WHERE COALESCE(cupo, 0) <> 0
+   AND UPPER(TRIM(codigo_cli)) <> 'BED';
