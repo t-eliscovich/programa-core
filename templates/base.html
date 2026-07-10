@@ -783,6 +783,8 @@
         {# TMT 2026-05-20 — Comisiones mudado de Informes a Modificar
            (pedido dueña: "no debe estar colgada de informes"). #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('comisiones.lista', 'Comisiones', 'money') }}{% endif %}
+        {# TMT 2026-07-09 (dueña): Lista de precios movida a Modificar (última posición), desde Datos base. #}
+        {{ nav_link('precios.lista', 'Lista de precios', 'money') }}
       </details>
 
       <details class="sidebar-section" data-key="bancos" open>
@@ -827,12 +829,11 @@
 
 
       <details class="sidebar-section" data-key="datos">
-        <summary>Datos base</summary>
+        <summary>Clientes y proveedores</summary>
         {% if tiene_permiso('clientes.ver') %}{{ nav_link('clientes.lista', 'Clientes', 'users') }}{% endif %}
         {# TMT 2026-07-09 (dueña): estado de cuenta visible para todos. #}
         {{ nav_link('informes.estado_cuenta_landing', 'Estados de cuenta', 'receipt') }}
         {% if tiene_permiso('proveedores.ver') %}{{ nav_link('proveedores.lista', 'Proveedores', 'truck') }}{% endif %}
-        {{ nav_link('precios.lista', 'Lista de precios', 'money') }}
         {# TMT 2026-05-20 — "Provisiones" sale del menú principal. La
            cuota mensual se edita inline desde /posdat (columna nueva
            "Cuota mensual"). La pantalla /provisiones sigue accesible por
