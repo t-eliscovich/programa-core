@@ -42,6 +42,21 @@ def test_adjuntar_recepcion_cuelga_fecha_kg_ref():
     assert anticipos[3]["ref"] is None and anticipos[3]["fecha_recepcion_im"] is None
 
 
+def test_adjuntar_recepcion_concepto_con_codigo_adelante():
+    """Concepto 'AC 95' (código adelante, no número adelante) también saca el nº
+    (95) y cruza — antes solo leía el número al principio."""
+    anticipos = [{"cta": "AC", "concepto": "AC 95", "fecha": date(2026, 7, 8)}]
+    imps = [{"im_numero": "IM-600", "fecha": "2026-05-01",
+             "fecha_recepcion": "2026-06-24", "recibida": True,
+             "nota": "ACMT/EXP/2026-27/9001 ( AC 95)"}]
+    with patch.object(isvc.asinfo_service, "importaciones_asinfo", return_value=imps), \
+         patch.object(isvc.asinfo_service, "importaciones_kg", return_value={"IM-600": 22129.0}):
+        isvc.adjuntar_recepcion_asinfo(anticipos)
+    assert anticipos[0]["ref"] == 95
+    assert anticipos[0]["fecha_recepcion_im"] == "2026-06-24"
+    assert anticipos[0]["kg_im"] == 22129.0
+
+
 def test_adjuntar_recepcion_fail_soft_sin_asinfo():
     anticipos = [{"cta": "AC", "concepto": "31 SALDO", "fecha": None}]
     with patch.object(isvc.asinfo_service, "importaciones_asinfo",

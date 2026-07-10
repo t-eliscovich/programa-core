@@ -109,7 +109,9 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> list[dict]:
             WITH d AS (
                 SELECT UPPER(cta) AS cta, importe,
                        TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha,
-                       NULLIF(substring(concepto FROM '^\s*(\d{1,6})'), '')::int AS ref_num
+                       -- nº del concepto como PALABRA: "31 SALDO"→31 y "AC 95"→95
+                       -- (antes anclado al inicio: se perdían los que llevan el código adelante)
+                       NULLIF(substring(concepto FROM '\y(\d{1,6})\y'), '')::int AS ref_num
                   FROM scintela.dolares
                  WHERE UPPER(cta) = ANY(%s)
             )
@@ -400,8 +402,8 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
         a["im_numero"] = None
         a["fecha_recepcion_im"] = None
         a["kg_im"] = None
-        _mref = re.match(r"^\s*(\d{1,6})", a.get("concepto") or "")
-        a["ref"] = int(_mref.group(1)) if _mref else None  # nº del concepto ("31 SALDO"→31)
+        _mref = re.search(r"\b(\d{1,6})\b", a.get("concepto") or "")  # "31 SALDO"→31, "AC 95"→95
+        a["ref"] = int(_mref.group(1)) if _mref else None
     if not anticipos:
         return
     index = _index_importaciones_por_codigo(limite=limite)
@@ -409,7 +411,7 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
         return
     for a in anticipos:
         cta = (a.get("cta") or "").strip().upper()
-        m = re.match(r"^\s*(\d{1,6})", a.get("concepto") or "")
+        m = re.search(r"\b(\d{1,6})\b", a.get("concepto") or "")  # nº aunque el código vaya adelante
         if not cta or not m:
             continue
         cands = index.get((cta, int(m.group(1))))
