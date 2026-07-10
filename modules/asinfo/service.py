@@ -1520,3 +1520,97 @@ def fabricacion_flujo_mes(id_bodega: int, yy: int, mm: int) -> dict:
         }
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(zero)
+
+
+def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
+    """Kg FÍSICOS despachados a cliente en el mes (yy, mm) desde una bodega.
+
+    Fuente = `despacho_cliente` + `detalle_despacho_cliente` de Asinfo: el
+    despacho REAL que salió por la puerta al cliente (con lote y liberación de
+    calidad), NO el saldo por lote (foto derivada) ni la factura (documento).
+    Por defecto bodega 53 = Producto Terminado. Excluye despachos anulados.
+
+    Este es el EGRESO físico real del terminado. Verificado en vivo 2026-07-10:
+    julio 107.026 kg = FACTURA 97.528 + NTEN 9.520 (dif 22 kg); 6 meses
+    1.758.611 = FACTURA+NTEN 1.757.915 (dif 696 kg, 0,04%). O sea el despacho
+    físico coincide con lo facturado (FACTURA+NTEN) casi al kilo — la NTEN es
+    justo el pedazo despachado cuya factura va aparte. Fail-soft: 0.0.
+    """
+    try:
+        yy = int(yy)
+        mm = int(mm)
+    except (TypeError, ValueError):
+        return 0.0
+    d1 = f"{yy:04d}-{mm:02d}-01"
+    ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
+    d2 = f"{ny:04d}-{nm:02d}-01"
+    sql = f"""
+        SELECT SUM(ISNULL(dd.cantidad, 0)) AS kg
+          FROM despacho_cliente dc
+          JOIN detalle_despacho_cliente dd
+            ON dd.id_despacho_cliente = dc.id_despacho_cliente
+         WHERE dc.fecha >= '{d1}' AND dc.fecha < '{d2}'
+           AND dc.fecha_anulacion IS NULL
+           AND dd.id_bodega = {int(id_bodega)}
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=10)
+        r = (rows or [{}])[0]
+        return round(float(r.get("kg") or 0.0), 3)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return 0.0
+
+
+def movimiento_bodega_mes(id_bodega: int, corte) -> dict:
+    """Ingreso/egreso FÍSICO de una bodega DESDE `corte` (exclusivo) hasta hoy,
+    medido de los deltas del saldo por lote (`saldo_producto_lote`).
+
+    CIERRA POR CONSTRUCCIÓN con el stock: para cada lote la suma de deltas =
+    saldo_hoy − saldo_as_of(corte) (identidad telescópica), así que
+        stock_as_of(corte) + ingreso − egreso = stock_hoy
+    exactamente, siempre que `corte` sea el MISMO que usa el stock inicial.
+
+    · ingreso = Σ subidas de saldo (+ altas de lote nuevas post-corte).
+    · egreso  = Σ bajas de saldo.
+
+    Es el movimiento REAL de la bodega (producción + devoluciones/reingresos del
+    lado de ingreso; despachos/salidas del lado de egreso), NO la producción
+    declarada (que subcuenta el ingreso) ni el despacho documento (que corre por
+    encima del saldo por timing). Fail-soft: {"ingreso":0.0,"egreso":0.0}.
+    """
+    zero = {"ingreso": 0.0, "egreso": 0.0}
+    if hasattr(corte, "isoformat"):
+        corte = corte.isoformat()[:10]
+    corte = str(corte)[:10]
+    import re as _re
+    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", corte):
+        return dict(zero)
+    sql = f"""
+        WITH d AS (
+            SELECT saldo,
+                   LAG(saldo) OVER (
+                       PARTITION BY id_producto, id_lote
+                       ORDER BY fecha, id_saldo_producto_lote
+                   ) AS prev,
+                   fecha
+              FROM saldo_producto_lote
+             WHERE id_bodega = {int(id_bodega)}
+        )
+        SELECT
+            SUM(CASE WHEN prev IS NULL AND saldo > 0 THEN saldo
+                     WHEN prev IS NOT NULL AND saldo - prev > 0 THEN saldo - prev
+                     ELSE 0 END) AS ingreso,
+            SUM(CASE WHEN prev IS NOT NULL AND saldo - prev < 0 THEN prev - saldo
+                     ELSE 0 END) AS egreso
+          FROM d
+         WHERE fecha > '{corte}'
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=10)
+        r = (rows or [{}])[0]
+        return {
+            "ingreso": round(float(r.get("ingreso") or 0.0), 3),
+            "egreso": round(float(r.get("egreso") or 0.0), 3),
+        }
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return dict(zero)

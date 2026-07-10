@@ -156,7 +156,29 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     ci_crudo = float(b52.get("fab") or 0.0)            # CRUDO ingreso (producido)
     crudo_consumido = float(b53.get("issued") or 0.0)  # CRUDO egreso (a tinturar)
     ci_term = float(b53.get("fab") or 0.0)             # TERM ingreso (producido)
-    ventas = max(pf0 + ci_term - pf1, 0.0)             # TERM egreso (cierra term)
+    ventas = max(pf0 + ci_term - pf1, 0.0)             # venta DERIVADA (comparación)
+    # TERM ingreso/egreso = MOVIMIENTO REAL de la bodega 53 (deltas del saldo por
+    # lote DESDE el 1° del mes exclusivo), la MISMA fuente que el stock. Cierra
+    # por construcción: pf0 + ingreso − egreso = pf1 (identidad telescópica).
+    # Dueña 2026-07-10 "no podemos tener residuo de 12k": el residuo venía de
+    # mezclar fuentes (inicial de foto vieja + ingreso=producción que subcuenta
+    # + egreso=despacho que corre ~7% arriba del saldo por timing). Con todo del
+    # mismo saldo cierra exacto. El facturado/despacho (venta) se muestran al
+    # lado como referencia; corren un poco arriba del egreso de bodega (desfase).
+    mov53 = {"ingreso": 0.0, "egreso": 0.0}
+    despacho = 0.0
+    if anio and mes:
+        try:
+            from datetime import date as _date_mov
+
+            from modules.asinfo import service as _asvcd
+            _corte = _date_mov(int(anio), int(mes), 1)  # mismo corte que el inicial
+            mov53 = _asvcd.movimiento_bodega_mes(53, _corte) or mov53
+            despacho = float(_asvcd.despacho_fisico_mes(int(anio), int(mes)) or 0.0)
+        except Exception:  # noqa: BLE001 -- fail-soft
+            pass
+    ing_term = float(mov53.get("ingreso") or 0.0)   # TERM ingreso (real bodega)
+    egr_term = float(mov53.get("egreso") or 0.0)    # TERM egreso (real bodega)
     # DESPERDICIO = egreso del proceso anterior − ingreso al siguiente (= merma).
     desp_crudo = hilo_consumido - ci_crudo   # tejeduría: hilo − cruda
     desp_term = crudo_consumido - ci_term    # tintura: crudo − PT
@@ -179,11 +201,12 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
     tj["ingresos_pct"] = (desp_crudo / hilo_consumido * 100.0) if hilo_consumido else 0.0
     tj["stock_act_kg"] = tc1 + maq_crudo
 
-    # TERMINADO — ingreso = PT producido (real), egreso = ventas DERIVADA
-    # (sale de bodega = inic + producido − actual). El % = merma de tintura.
+    # TERMINADO — ingreso/egreso = MOVIMIENTO REAL de la bodega (mismo saldo que
+    # el stock) → la columna CIERRA exacto (pf0 + ingreso − egreso = pf1). El %
+    # sigue siendo la merma de tintura (crudo consumido − PT producido).
     te["stock_inic_kg"] = pf0
-    te["ingresos_kg"] = ci_term
-    te["egresos_kg"] = ventas
+    te["ingresos_kg"] = ing_term
+    te["egresos_kg"] = egr_term
     te["ingresos_pct"] = (desp_term / crudo_consumido * 100.0) if crudo_consumido else 0.0
     te["stock_act_kg"] = pf1
     # Dueña 2026-07-09: mostrar AMBAS ventas — la derivada (arriba) y lo
@@ -197,7 +220,11 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None) -> dict | No
         except Exception:  # noqa: BLE001 -- fail-soft
             ventas_facturado = 0.0
     te["facturado_kg"] = ventas_facturado
-    te["facturado_diff"] = ventas - ventas_facturado
+    # Δ = egreso de bodega (movimiento real) − facturado. El facturado corre un
+    # poco arriba del egreso de bodega por el desfase de facturación (se factura
+    # algo que salió antes / NTEN). El despacho físico (documento) va aparte.
+    te["facturado_diff"] = egr_term - ventas_facturado
+    te["despacho_kg"] = despacho
 
     # COLORANTES — sin stock en Asinfo: se deja tal cual (valor PC).
 
