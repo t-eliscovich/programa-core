@@ -183,7 +183,7 @@
        NB=98). Antes el espejo de anticipo quedaba escondido entre los cheques y
        el saldo no bajaba. _saldo_neto = saldo facturas − saldo a favor. #}
     {% set _sobrepagos = (t.saldo_vivo or 0) - t.saldo %}
-    <div class="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Saldo cliente</div>
       <div class="mt-0.5 text-lg font-semibold text-mono">
         {{ _saldo_neto | money_es }}
@@ -210,6 +210,13 @@
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Cheques en cartera</div>
       <div class="mt-0.5 text-lg font-semibold text-mono">{{ t.cheques_cartera | money_es }}</div>
       <div class="mt-1 text-xs text-slate-500">posfechados / sin depositar</div>
+    </div>
+    {# TMT 2026-07-09 (dueña): total = saldo cliente + cheques en cartera. #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
+      <div class="text-[11px] uppercase tracking-wider text-slate-500">Total (facturas + cheques)</div>
+      {% set _total_fc = (_saldo_neto or 0) + (t.cheques_cartera or 0) %}
+      <div class="mt-0.5 text-lg font-semibold text-mono">{{ _total_fc | money_es }}</div>
+      <div class="mt-1 text-xs text-slate-500">saldo + cheques en cartera</div>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Cupo</div>
