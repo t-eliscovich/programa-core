@@ -455,3 +455,33 @@ def kg_stock_por_compra(compras: list[dict], limite: int = 400) -> dict[str, flo
         seen.add(imn)
         por_prov[prov] = por_prov.get(prov, 0.0) + float(im.get("kg") or 0.0)
     return por_prov
+
+
+def adjuntar_kg_asinfo_a_compras(compras: list[dict], limite: int = 400) -> None:
+    """Muta cada compra agregando `kg_asinfo`: el kg de su importación de Asinfo
+    (match por codigo_prov + concepto-numérico + fecha más cercana).
+
+    Para las compras de importación (BAP) que quedan con kg 0 — el kg vive en el
+    STOCK, acá se MUESTRA por referencia (dueña: "cuando se convierte a compra
+    quiero ver los kg"). No escribe nada en la compra. Fail-soft: kg_asinfo=None
+    si Asinfo cae o el concepto no matchea una importación.
+    """
+    for c in compras or []:
+        c["kg_asinfo"] = None
+    if not compras:
+        return
+    index = _index_importaciones_por_codigo(limite=limite)
+    if not index:
+        return
+    for c in compras:
+        prov = (c.get("codigo_prov") or "").strip().upper()
+        m = re.search(r"\b(\d{1,6})\b", c.get("concepto") or "")
+        if not prov or not m:
+            continue
+        cands = index.get((prov, int(m.group(1))))
+        if not cands:
+            continue
+        im = _nearest_import(cands, c.get("fecha"))
+        if im is None:
+            continue
+        c["kg_asinfo"] = im.get("kg")

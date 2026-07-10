@@ -147,6 +147,22 @@ def test_kg_stock_por_compra_dedup_por_importacion():
     assert out == {"AC": 24494.0}  # kg del stock, contado una sola vez
 
 
+# ── adjuntar_kg_asinfo_a_compras: mostrar kg del stock en /compras ───────────
+def test_adjuntar_kg_asinfo_a_compras():
+    compras = [
+        {"codigo_prov": "AC", "concepto": "31", "fecha": date(2026, 7, 10), "kg": None},
+        {"codigo_prov": "AQ", "concepto": "55 19", "fecha": date(2026, 6, 19), "kg": 0},  # químico
+    ]
+    imps = [{"im_numero": "IM-553", "fecha": "2026-04-16",
+             "fecha_recepcion": "2026-07-09", "recibida": True,
+             "nota": "ACMT/EXP/2026-27/78004 ( AC 31)"}]
+    with patch.object(isvc.asinfo_service, "importaciones_asinfo", return_value=imps), \
+         patch.object(isvc.asinfo_service, "importaciones_kg", return_value={"IM-553": 24494.0}):
+        isvc.adjuntar_kg_asinfo_a_compras(compras)
+    assert compras[0]["kg_asinfo"] == 24494.0  # AC 31 → su importación
+    assert compras[1]["kg_asinfo"] is None      # AQ 55 no es importación
+
+
 # ── el template renderiza con las piezas nuevas ──────────────────────────────
 def test_lista_renderiza_columna_y_convertir(app, fake_db):
     c = _login(app, fake_db, ["informes.ver", "compras.crear"])

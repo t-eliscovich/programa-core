@@ -416,6 +416,14 @@ def _pantalla_compras(vista, titulo, endpoint_actual):
     except Exception as e:
         filas, error = [], str(e)
 
+    # Colgar el kg del STOCK (Asinfo) a las compras de importación que quedan con
+    # kg 0 (BAP): el kg vive en el stock, acá se muestra por referencia. Fail-soft.
+    try:
+        from modules.importaciones import service as _imp_svc
+        _imp_svc.adjuntar_kg_asinfo_a_compras(filas)
+    except Exception:  # noqa: BLE001
+        pass
+
     if request.args.get("export") == "csv":
         return csv_response(
             filas,
