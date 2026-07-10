@@ -213,8 +213,10 @@
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
       <div class="text-[11px] uppercase tracking-wider text-slate-500">Cupo</div>
-      <div class="mt-0.5 text-lg font-semibold text-mono">{{ data.cliente.cupo | money_es }}</div>
-      {% set cupo = (data.cliente.cupo or 0) | float %}
+      {# TMT 2026-07-09 (dueña): el cupo se carga en miles; mostrarlo ×1000 como $
+         (ej. 20 → $ 20.000). Solo display — el dato en la base NO cambia. #}
+      {% set cupo = ((data.cliente.cupo or 0) | float) * 1000 %}
+      <div class="mt-0.5 text-lg font-semibold text-mono">$ {{ cupo | num_es(0) }}</div>
       {% if cupo > 0 %}
         {% set pct = (t.saldo_vivo / cupo * 100) %}
         <div class="mt-1 text-xs {{ 'text-red-600' if pct >= 100 else ('text-amber-600' if pct >= 80 else 'text-slate-500') }}">
