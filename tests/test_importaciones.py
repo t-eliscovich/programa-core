@@ -275,3 +275,93 @@ def test_vista_importaciones_csv(app, fake_db):
     assert r.status_code == 200
     assert "text/csv" in r.headers["Content-Type"]
     assert b"AC 36" in r.data
+
+
+# ---------------------------------------------------------------------------
+# No duplicar el anticipo (dueña 2026-07-10: "no puede estar duplicada")
+# ---------------------------------------------------------------------------
+
+
+def _row_anticipo(**kw):
+    """Fila de importación pagada por ANTICIPO (no compra), con desglose."""
+    base = _row(
+        im_numero="IM-562", codigo="AC 15", prov="AC", numero=15,
+        nota="ACMT/EXP/2026-27/8068 ( AC 15)",
+        compra=None, fuente="anticipo", importe_programa=86771.30,
+        anticipo={
+            "importe_total": 86771.30, "n": 4,
+            "items": [
+                {"fecha": "2026-07-08", "importe": 18000.0},
+                {"fecha": "2026-07-08", "importe": 15000.0},
+                {"fecha": "2026-06-02", "importe": 53509.80},
+                {"fecha": "2026-05-01", "importe": 261.50},
+            ],
+        },
+        # el anticipo de 15.000 cargado por esta pantalla YA está en /dolares
+        # (pago.py le crea la fila viva) → está dentro de los 86.771,30.
+        anticipo_aplicado=15000.0,
+        movimientos=[{"fecha": "2026-07-08", "tipo": "anticipo",
+                      "monto": 15000.0, "nota": "cae", "id_transaccion": 1}],
+    )
+    base.update(kw)
+    return base
+
+
+def test_vista_no_duplica_anticipo_mirror_de_movimiento(app, fake_db):
+    """El anticipo cargado por importaciones crea su fila viva en /dolares → ya
+    está en el cruce; NO se vuelve a sumar como movimiento. 101.771 era
+    86.771 (/dolares) + 15.000 (mov). El total correcto es 86.771,30."""
+    c = _login_informes(app, fake_db)
+    with patch.object(service, "importaciones_con_cruce", return_value=[_row_anticipo()]):
+        r = c.get("/importaciones")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "86.771,30" in html          # el total real (cruce de /dolares)
+    assert "101.771,30" not in html     # ya NO duplica el 15.000
+
+
+def test_vista_pago_parcial_si_suma(app, fake_db):
+    """Un movimiento 'pago' (parcial contra stock) NO va a /dolares → sí se suma
+    encima del cruce. 80.000 (/dolares) + 5.000 (pago) = 85.000."""
+    row = _row_anticipo(
+        anticipo={"importe_total": 80000.0, "n": 1,
+                  "items": [{"fecha": "2026-07-08", "importe": 80000.0}]},
+        importe_programa=80000.0, anticipo_aplicado=5000.0,
+        movimientos=[{"fecha": "2026-07-09", "tipo": "pago",
+                      "monto": 5000.0, "nota": "parcial", "id_transaccion": 2}],
+    )
+    c = _login_informes(app, fake_db)
+    with patch.object(service, "importaciones_con_cruce", return_value=[row]):
+        r = c.get("/importaciones")
+    html = r.get_data(as_text=True)
+    assert "85.000,00" in html          # total = 80.000 (/dolares) + 5.000 (pago)
+
+
+def test_buscar_anticipos_sql_filtra_solo_vivos():
+    """_buscar_anticipos solo cuenta anticipos VIVOS (st vacío): al convertir a
+    compra pasan a st='B' y deben salir del cruce, igual que salen de /dolares."""
+    cap = {}
+    with patch.object(service.db, "fetch_all",
+                      side_effect=lambda sql, params: cap.update(sql=sql) or []):
+        service._buscar_anticipos({("AC", 15)})
+    assert "coalesce(st" in cap["sql"].lower()
+
+
+def test_cruce_anticipo_incluye_items_desglose():
+    """El cruce adjunta el desglose (items) de los anticipos de /dolares para
+    que el "Ver" muestre las N partidas (antes solo los movimientos de la pantalla)."""
+    from modules.importaciones import pago
+    importaciones = [_imp("ACMT/EXP/2026-27/8197 ( AC 36)", im="IM-X")]
+    anticipos = [
+        {"cta": "AC", "ref_num": 36, "importe": 30000.0, "fecha": "2026-05-01"},
+        {"cta": "AC", "ref_num": 36, "importe": 20000.0, "fecha": "2026-05-10"},
+    ]
+    with patch.object(service.asinfo_service, "importaciones_asinfo", return_value=importaciones), \
+         patch.object(service.db, "fetch_all", side_effect=[[], anticipos]), \
+         patch.object(pago, "estados_por_im", return_value={}), \
+         patch.object(pago, "movimientos_por_im", return_value={}):
+        rows = service.importaciones_con_cruce()
+    items = rows[0]["anticipo"]["items"]
+    assert len(items) == 2
+    assert items[0]["fecha"] == "2026-05-10"          # más nuevo arriba
+    assert round(sum(i["importe"] for i in items), 2) == 50000.0

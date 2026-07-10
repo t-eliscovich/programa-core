@@ -102,7 +102,19 @@ def lista():
     _usd_contados: set = set()
     for r in rows:
         _usd = float((r.get("anticipo") or {}).get("importe_total") or 0)
-        _movs = float(r.get("anticipo_aplicado") or 0)
+        # NO volver a sumar los movimientos tipo 'anticipo': al cargarlos por esta
+        # pantalla, pago.py TAMBIÉN inserta su fila viva en scintela.dolares (para
+        # que cuenten en /dolares), así que YA están dentro de `_usd` (el cruce).
+        # Sumarlos de nuevo duplicaba el anticipo (p.ej. 101.771 = 86.771 + 15.000).
+        # Solo se agregan los 'pago' (parciales contra stock), que NO van a /dolares.
+        _movs = round(
+            sum(
+                float(m.get("monto") or 0)
+                for m in (r.get("movimientos") or [])
+                if (m.get("tipo") or "").strip() != "anticipo"
+            ),
+            2,
+        )
         _k = ((r.get("prov") or "").strip().upper(), r.get("numero"))
         r["codigo_compartido"] = bool(
             r.get("numero") is not None and _vistos_codigo.get(_k, 0) > 1

@@ -222,9 +222,11 @@
                total ya cuenta el anticipo compartido una sola vez). #}
             <td class="acc-cell text-right">
               {% if r.codigo and r.anticipo_total %}
-                {% set _movs = r.movimientos or [] %}
+                {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
+                {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
+                {% set _ndet = (_items | length) + (_pagos | length) %}
                 <b>{{ r.anticipo_total | num_es(2) }}</b>
-                {% if _movs %}<span class="acc-hint">· {{ _movs | length }}</span>{% endif %}
+                {% if _ndet %}<span class="acc-hint">· {{ _ndet }}</span>{% endif %}
               {% else %}
                 <span class="text-slate-300">—</span>
               {% endif %}
@@ -232,10 +234,12 @@
             {# TMT 2026-07-08 (dueña): solo lectura — sin "+ Anticipo" ni "+ Compra".
                Queda un "Ver" que abre el detalle de anticipos (sin formularios). #}
             <td class="text-center" style="white-space:nowrap;">
-              {% if r.codigo and (r.movimientos or []) %}
+              {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
+              {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
+              {% if r.codigo and (_items or _pagos) %}
                 <button type="button" class="btn-cargar-ant text-[11px] px-1.5 py-0.5 rounded"
                         style="border:1px solid #cbd5e1;background:#f8fafc;color:#475569;"
-                        title="Ver los anticipos cargados a esta importación">Ver</button>
+                        title="Ver los anticipos de esta importación">Ver</button>
               {% else %}<span class="text-slate-300">—</span>{% endif %}
             </td>
           </tr>
@@ -246,15 +250,29 @@
           {# TMT 2026-07-08 (dueña): SOLO LECTURA. Se muestra el detalle de los
              anticipos cargados (sin formulario de alta ni ✕ de borrado). El alta
              de anticipos/compras vive en /dolares y /compras. #}
-          {% set _movs = r.movimientos or [] %}
-          {% if r.codigo and _movs %}
+          {# El desglose son los anticipos de /dólares que forman el total
+             (los que se ven en /dolares filtrando por el código), más los
+             'pago' parciales cargados por esta pantalla. Los movimientos tipo
+             'anticipo' NO se listan aparte: ya están entre los de /dólares
+             (pago.py les crea la fila viva) y se contaban/mostraban doble. #}
+          {% set _items = (r.anticipo['items'] if r.anticipo else []) or [] %}
+          {% set _pagos = (r.movimientos or []) | rejectattr('tipo','equalto','anticipo') | list %}
+          {% if r.codigo and (_items or _pagos) %}
           <tr class="acc-detail-row" style="display:none;">
             <td colspan="10" style="background:#f8fafc;padding:7px 14px;border-top:1px solid #eef2f6;">
               <div style="display:flex;flex-direction:column;gap:3px;">
-                {% for m in _movs %}
+                {% for it in _items %}
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
+                  <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ it.fecha }}</span>
+                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#64748b;">ANT</span>
+                  <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">anticipo · /dólares</span>
+                  <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ it.importe|num_es(2) }}</span>
+                </div>
+                {% endfor %}
+                {% for m in _pagos %}
                 <div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;">
                   <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">{{ m.fecha }}</span>
-                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#64748b;">{{ 'ANT' if m.tipo=='anticipo' else 'PAGO' }}</span>
+                  <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#64748b;">PAGO</span>
                   <span style="flex:1;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.nota or ('ND #' ~ m.id_transaccion if m.id_transaccion else '—') }}</span>
                   <span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">{{ m.monto|num_es(2) }}</span>
                 </div>

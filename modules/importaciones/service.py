@@ -113,7 +113,12 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> list[dict]:
                        -- (antes anclado al inicio: se perdían los que llevan el código adelante)
                        NULLIF(substring(concepto FROM '\y(\d{1,6})\y'), '')::int AS ref_num
                   FROM scintela.dolares
+                 -- SOLO anticipos VIVOS (mismo criterio que /dolares "solo vivos").
+                 -- Al convertir a compra el anticipo pasa a st='B' (y 'X' si se
+                 -- cancela) → deja de contar acá, igual que sale de /dolares. Así
+                 -- el cruce coincide con /dolares y no infla el valor del stock.
                  WHERE UPPER(cta) = ANY(%s)
+                   AND COALESCE(st, '') IN ('', ' ')
             )
             SELECT cta, ref_num, importe, fecha
               FROM d
@@ -271,6 +276,16 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
             r["anticipo"] = {
                 "importe_total": sum(float(h.get("importe") or 0) for h in ahits),
                 "n": len(ahits),
+                # Desglose de los anticipos de /dólares que forman este total —
+                # para que el "Ver" muestre las N partidas (antes mostraba solo
+                # los movimientos cargados por esta pantalla). Más nuevo arriba.
+                "items": [
+                    {"fecha": h.get("fecha"),
+                     "importe": float(h.get("importe") or 0)}
+                    for h in sorted(
+                        ahits, key=lambda x: str(x.get("fecha") or ""), reverse=True
+                    )
+                ],
             }
             r["fuente"] = "anticipo"
             r["importe_programa"] = r["anticipo"]["importe_total"]
