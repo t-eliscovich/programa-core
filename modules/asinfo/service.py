@@ -986,12 +986,16 @@ def inventario_por_etapa() -> dict:
         totales = stock_asinfo_lote_totales() or []
         por_bodega = {int(r.get("id_bodega")): float(r.get("total_kg") or 0)
                       for r in totales}
-        # WIP entre pasos = "en máquinas" = material despachado − producido, PERO
-        # solo de órdenes que ya arrancaron a producir (saldo_produciendo, fab>0).
-        # El material despachado a órdenes sin producir todavía no está "en la
-        # máquina" (dueña 2026-07-10, para coincidir con la planilla de fábrica).
+        # WIP entre pasos = "en máquinas" = material despachado − producido.
+        # HILO en máquinas (bodega 52, tejeduría): SOLO órdenes que ya arrancaron
+        # a producir (saldo_produciendo, fab>0) — el hilo staged a órdenes sin
+        # arrancar no está "en la máquina" (dueña 2026-07-10: 48k→36k, coincide
+        # con la planilla de fábrica).
+        # CRUDA en máquinas (bodega 53, tintorería): TODAS las órdenes (saldo) —
+        # ya coincidía con la fábrica (~31.6k ≈ 32.446); el criterio fab>0 la
+        # dejaba en ~0 de más (dueña 2026-07-10: "hilo perfecto, corregí crudo").
         wip_tc = float((fabricacion_proceso(52).get("resumen") or {}).get("saldo_produciendo") or 0)
-        wip_pt = float((fabricacion_proceso(53).get("resumen") or {}).get("saldo_produciendo") or 0)
+        wip_pt = float((fabricacion_proceso(53).get("resumen") or {}).get("saldo") or 0)
     except Exception:  # noqa: BLE001
         return vacio
 
