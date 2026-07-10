@@ -65,10 +65,36 @@
 
   {# ───── Tabla de detalle ───── #}
   {% if filas %}
+  {% set n_aplicables = filas | selectattr('estado', 'equalto', 'se_aplica') | list | length %}
+  <form id="form-sel" method="POST" action="{{ url_for('facturas.aplicar_retenciones_asinfo_seleccion') }}"
+        onsubmit="return confirmarSeleccion();">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="desde" value="{{ desde }}">
+    <input type="hidden" name="hasta" value="{{ hasta }}">
+
+    {% if n_aplicables and tiene_permiso('facturas.crear') %}
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-2">
+      <div class="text-sm text-slate-600 dark:text-slate-300">
+        Tildá las retenciones que querés aplicar y apretá el botón. Solo se pueden
+        tildar las que dicen <span class="font-semibold text-emerald-700 dark:text-emerald-300">Se aplica</span>.
+      </div>
+      <button type="submit"
+              class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+        Aplicar seleccionadas (<span id="sel-count">0</span>)
+      </button>
+    </div>
+    {% endif %}
+
   <div class="overflow-x-auto rounded border border-slate-200 dark:border-slate-800">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs uppercase">
         <tr>
+          <th class="text-center px-3 py-2 w-8">
+            {% if n_aplicables %}
+            <input type="checkbox" id="check-all" title="Seleccionar todas las que se aplican"
+                   onclick="toggleTodas(this)">
+            {% endif %}
+          </th>
           <th class="text-left px-3 py-2">Estado</th>
           <th class="text-left px-3 py-2">Factura (SRI)</th>
           <th class="text-left px-3 py-2">Cliente</th>
@@ -82,6 +108,11 @@
       <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
         {% for f in filas %}
         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+          <td class="px-3 py-2 text-center">
+            {% if f.estado == 'se_aplica' %}
+              <input type="checkbox" class="chk-ret" name="numeros" value="{{ f.numero }}" onclick="actualizarConteo()">
+            {% endif %}
+          </td>
           <td class="px-3 py-2">
             {% if f.estado == 'se_aplica' %}
               <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">Se aplica</span>
@@ -128,8 +159,31 @@
     </table>
   </div>
   <div class="text-xs text-slate-400 mt-2">
-    Las que dicen “Se aplica” son las que el botón <strong>Aplicar retenciones</strong> va a registrar: por cada una se crea la retención y se baja el saldo (abono). Las demás quedan igual.
+    Las que dicen “Se aplica” son las únicas que se pueden aplicar: por cada tildada se crea la retención y se baja el saldo (abono). Las demás quedan igual.
   </div>
+  </form>
+
+  <script>
+    function actualizarConteo() {
+      var chks = document.querySelectorAll('.chk-ret');
+      var n = 0;
+      chks.forEach(function (c) { if (c.checked) n++; });
+      var span = document.getElementById('sel-count');
+      if (span) span.textContent = n;
+      var all = document.getElementById('check-all');
+      if (all) all.checked = (n > 0 && n === chks.length);
+    }
+    function toggleTodas(src) {
+      document.querySelectorAll('.chk-ret').forEach(function (c) { c.checked = src.checked; });
+      actualizarConteo();
+    }
+    function confirmarSeleccion() {
+      var n = document.querySelectorAll('.chk-ret:checked').length;
+      if (n === 0) { alert('No tildaste ninguna retención.'); return false; }
+      return confirm('Aplicar ' + n + ' retención(es) seleccionada(s)? Registra la retención y baja el saldo de cada factura.');
+    }
+    document.addEventListener('DOMContentLoaded', actualizarConteo);
+  </script>
   {% elif not error %}
   <div class="text-sm text-slate-500 py-8 text-center">No hay retenciones de Asinfo en el período elegido.</div>
   {% endif %}

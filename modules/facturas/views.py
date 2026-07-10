@@ -1517,6 +1517,37 @@ def aplicar_retenciones_asinfo():
         "facturas.desde_asinfo", desde=desde.isoformat(), hasta=hasta.isoformat()))
 
 
+@facturas_bp.route("/facturas/aplicar-retenciones-asinfo-seleccion", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def aplicar_retenciones_asinfo_seleccion():
+    """Aplica SOLO las retenciones tildadas en la pantalla de detalle. Form:
+    numeros[] (facturas SRI) + desde/hasta. Vuelve a la pantalla de detalle."""
+    from modules.retenciones import queries as ret_q
+    desde, hasta = _rango_retenciones()
+    numeros = request.form.getlist("numeros")
+    usuario = (
+        getattr(g, "user", {}).get("username")
+        if hasattr(g, "user") and isinstance(g.user, dict) else "asinfo")
+    if not numeros:
+        flash("No tildaste ninguna retención para aplicar.", "warn")
+    else:
+        try:
+            r = ret_q.aplicar_retenciones_asinfo_seleccion(
+                desde, hasta, numeros, usuario=usuario)
+            flash(
+                f"Retenciones Asinfo (selección): {r['n_aplicadas']} aplicadas "
+                f"({r['total_aplicado']:,.2f}), {r['n_ya']} ya estaban, "
+                f"{r['n_sin_factura']} sin factura en PC"
+                + (f", {r['n_error']} con error" if r.get("n_error") else "")
+                + f". (de {r['n_retenciones_asinfo']} tildadas).", "ok")
+        except Exception as e:
+            flash_exc("No pude aplicar las retenciones seleccionadas", e)
+    return redirect(url_for(
+        "facturas.preview_retenciones_asinfo",
+        desde=desde.isoformat(), hasta=hasta.isoformat()))
+
+
 @facturas_bp.route("/facturas/deshacer-retenciones-asinfo", methods=["POST"])
 @requiere_login
 @requiere_permiso("facturas.crear")

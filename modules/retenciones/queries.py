@@ -296,6 +296,47 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web") -> dict:
     return res
 
 
+def aplicar_retenciones_asinfo_seleccion(
+    desde, hasta, numeros, usuario: str = "web",
+) -> dict:
+    """Como aplicar_retenciones_asinfo pero SOLO para los `numeros` (facturas SRI)
+    elegidos por el usuario. Los importes salen igual de Asinfo (fuente de verdad),
+    no del form. Idempotente. Devuelve el mismo shape que aplicar_retenciones_asinfo.
+    """
+    from modules.asinfo import service as asinfo_service
+    seleccion = {str(n).strip() for n in (numeros or []) if str(n).strip()}
+    ret_map = asinfo_service.retenciones_periodo(desde, hasta) or {}
+    res = {
+        "n_aplicadas": 0, "n_ya": 0, "n_sin_factura": 0, "n_error": 0,
+        "total_aplicado": 0.0, "n_retenciones_asinfo": len(seleccion),
+    }
+    if not seleccion:
+        return res
+    batch_id = None
+    for numero in seleccion:
+        r = ret_map.get(numero)
+        if r is None:
+            # El número elegido ya no está en Asinfo para el período → lo ignoramos.
+            res["n_error"] += 1
+            continue
+        rete = round(float((r or {}).get("ret_total") or 0), 2)
+        try:
+            estado = _aplicar_una_por_numero(numero, rete, usuario, batch_id)
+        except Exception:
+            res["n_error"] += 1
+            continue
+        if estado == "aplicada":
+            res["n_aplicadas"] += 1
+            res["total_aplicado"] = round(res["total_aplicado"] + rete, 2)
+        elif estado == "ya":
+            res["n_ya"] += 1
+        elif estado == "sin_factura":
+            res["n_sin_factura"] += 1
+        elif estado in ("rete_0", "rete_gt_importe"):
+            res["n_error"] += 1
+    return res
+
+
 def _desaplicar_una_por_numero(numero: str, usuario: str) -> str:
     """Revierte la retención Asinfo aplicada a la factura `numero`: restaura
     saldo/abono/stat del snapshot, borra la scintela.retencion y marca el
