@@ -406,6 +406,88 @@ def _row_md(id_mov_doble: int) -> dict | None:
     )
 
 
+@historial_bp.route("/historial/<int:id_mov_doble>/reverso-preview", methods=["GET"])
+@requiere_login
+def reverso_preview(id_mov_doble: int):
+    """Contenido de la confirmación de reverso en JSON, para el modal in-page.
+
+    Texto corto + lista ADAPTATIVA de movimientos afectados. Reemplaza al
+    `confirm()` nativo y a la página-wizard: el frente abre un cartel, y al
+    aceptar postea a `accion_url` volviendo a la misma página. TMT 2026-07-11.
+    """
+    from flask import jsonify
+    r = _row_md(id_mov_doble)
+    if not r or id_mov_doble <= 0:
+        return jsonify({"ok": False, "error": "Movimiento no encontrado."}), 404
+    if r["estado"] in ("reverso", "reversado"):
+        return jsonify({"ok": False, "error": f"Ya está {r['estado']}."}), 409
+
+    tipo = r.get("tipo") or ""
+    importe = float(r.get("importe") or 0)
+    concepto = (r.get("concepto") or "").strip()
+    label = concepto or tipo.replace("_", " ")
+
+    detalle = {"Importe": f"$ {importe:,.2f}"}
+    if concepto:
+        detalle["Concepto"] = concepto
+
+    titulo = f"Reversar — {label[:60]}"
+    mensaje = ("Se crea el movimiento opuesto que lo compensa; "
+               "el original queda en la historia.")
+
+    # Lista adaptativa: para cheques, las facturas que cubría. Además el título/
+    # mensaje distingue REBOTE (cheque depositado → marca al cliente) de UNDO
+    # administrativo (cheque en cartera → no toca al cliente). NO son lo mismo.
+    movimientos: list[dict] = []
+    titulo_movs = None
+    if r.get("origen_table") == "cheque" and r.get("origen_id"):
+        from modules.cheques.queries import STATS_REBOTE_REAL
+        ch = db.fetch_one(
+            "SELECT stat, no_cheque FROM scintela.cheque WHERE id_cheque = %s",
+            (r["origen_id"],),
+        ) or {}
+        no_ch = ch.get("no_cheque") or f"#{r['origen_id']}"
+        es_rebote = (ch.get("stat") or "").strip() in STATS_REBOTE_REAL
+        apps = db.fetch_all(
+            "SELECT id_fact, importe, fechaing FROM scintela.chequesxfact "
+            "WHERE id_cheque = %s ORDER BY id_fact",
+            (r["origen_id"],),
+        ) or []
+        movimientos = [
+            {
+                "texto": f"Factura #{a.get('id_fact')}",
+                "importe": float(a.get("importe") or 0),
+                "detalle": (a["fechaing"].strftime("%d/%m/%Y") if a.get("fechaing") else ""),
+            }
+            for a in apps
+        ]
+        if movimientos:
+            titulo_movs = "Facturas que cubría (vuelven a cartera)"
+        if es_rebote:
+            titulo = f"Marcar SIN FONDOS — cheque {no_ch}"
+            mensaje = ("El cheque REBOTÓ (sin fondos). Las facturas vuelven a "
+                       "cartera y se le anota [REBOTE] al cliente.")
+        else:
+            titulo = f"Reversar cheque {no_ch} — me confundí"
+            mensaje = ("Undo administrativo: se saca la aplicación y las facturas "
+                       "vuelven a cartera. NO se toca al cliente.")
+
+    # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto
+    # y, para los complejos, redirige al wizard de siempre (fallback graceful).
+    accion_url = url_for("historial.reversar_mov_inline", id_mov_doble=id_mov_doble)
+
+    return jsonify({
+        "ok": True,
+        "titulo": titulo,
+        "mensaje": mensaje,
+        "detalle": detalle,
+        "movimientos": movimientos,
+        "titulo_movimientos": titulo_movs,
+        "accion_url": accion_url,
+        "confirm_label": "Reversar",
+    })
+
+
 # Mapeo tipo → (endpoint_de_confirmacion, kwargs builder).
 # El builder recibe la fila mov_doble y devuelve dict de kwargs para url_for.
 #

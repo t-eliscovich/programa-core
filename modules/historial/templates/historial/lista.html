@@ -308,28 +308,16 @@
                    "reversar" cuando hay un mov_doble real (id positivo). Los depósitos
                    legacy se reversan desde la ficha del cheque o "reversar todo el batch". #}
                 {% if r.estado == 'activo' and r.id_mov_doble and r.id_mov_doble > 0 %}
-                  {% if r.tipo in tipos_inline %}
-                    {# TMT 2026-07-01 (dueña): reverso INLINE — POST directo, sin
-                       ir a otra pantalla. Confirmación con confirm() y vuelve acá. #}
-                    <form method="POST"
-                          action="{{ url_for('historial.reversar_mov_inline', id_mov_doble=r.id_mov_doble) }}"
-                          class="inline"
-                          onsubmit="return confirm('¿Reversar este movimiento?\n\n{{ (r.concepto or '')|replace("'", "") }}');">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="next" value="{{ request.full_path }}">
-                      <button type="submit"
-                              class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
-                              title="Reversar acá mismo (no te lleva a otra pantalla)">
-                        ↺ reversar
-                      </button>
-                    </form>
-                  {% else %}
-                    <a href="{{ url_for('historial.reversar_mov', id_mov_doble=r.id_mov_doble) }}"
-                       class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
-                       title="Reversar este movimiento (te lleva al wizard correspondiente con motivo)">
-                      ↺ reversar
-                    </a>
-                  {% endif %}
+                  {# Reverso con MODAL in-page (TMT 2026-07-11, dueña): un cartel
+                     muestra el detalle + la lista de movimientos afectados;
+                     aceptar postea y volvés acá. Reemplaza el confirm() nativo
+                     y la página-wizard aparte. #}
+                  <button type="button"
+                          class="js-reverso text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                          data-reverso-id="{{ r.id_mov_doble }}"
+                          title="Reversar este movimiento">
+                    ↺ reversar
+                  </button>
                 {% else %}
                   <span class="text-xs text-slate-300">—</span>
                 {% endif %}
@@ -368,6 +356,87 @@
       const url = tr.getAttribute('data-row-url');
       if (url) window.location.href = url;
     });
+  });
+})();
+</script>
+
+{# ── Modal de reverso in-page (TMT 2026-07-11, dueña) ───────────────────── #}
+<div id="reverso-modal" class="no-print" style="display:none;position:fixed;inset:0;z-index:60;">
+  <div id="reverso-backdrop" style="position:absolute;inset:0;background:rgb(15 23 42 / 0.45);"></div>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+       style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+              width:min(94vw,480px);max-height:88vh;overflow:auto;border-radius:12px;
+              box-shadow:0 12px 40px rgb(15 23 42 / 0.3);">
+    <div class="flex items-center gap-2 px-5 py-3 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/30">
+      <span class="text-rose-600 dark:text-rose-400">↺</span>
+      <h3 id="reverso-titulo" class="text-sm font-semibold text-rose-800 dark:text-rose-200">Reversar</h3>
+    </div>
+    <div class="px-5 py-4">
+      <p id="reverso-mensaje" class="text-sm text-slate-600 dark:text-slate-300 mb-3">Cargando…</p>
+      <dl id="reverso-detalle" class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm mb-3 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 rounded"></dl>
+      <div id="reverso-movs-wrap" class="mb-3" style="display:none;">
+        <div id="reverso-movs-titulo" class="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5"></div>
+        <ul id="reverso-movs" class="border border-slate-200 dark:border-slate-800 rounded text-sm overflow-auto" style="max-height:200px;"></ul>
+      </div>
+      <form id="reverso-form" method="POST" action="">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path }}">
+        <label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">Motivo <span class="normal-case text-slate-400">(opcional)</span></label>
+        <input type="text" name="motivo" maxlength="200" placeholder="p.ej. error de carga"
+               class="w-full px-3 py-2 text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-950">
+        <div class="flex items-center justify-end gap-2 mt-4">
+          <button type="button" id="reverso-cancelar"
+                  class="text-sm px-4 py-2 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+          <button type="submit" id="reverso-confirmar"
+                  class="text-sm px-4 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white font-medium disabled:opacity-50">Reversar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var modal = document.getElementById('reverso-modal');
+  if (!modal) return;
+  var form = document.getElementById('reverso-form');
+  var elT = document.getElementById('reverso-titulo');
+  var elM = document.getElementById('reverso-mensaje');
+  var elD = document.getElementById('reverso-detalle');
+  var wrap = document.getElementById('reverso-movs-wrap');
+  var mT = document.getElementById('reverso-movs-titulo');
+  var mUl = document.getElementById('reverso-movs');
+  var btn = document.getElementById('reverso-confirmar');
+  function openM(){ modal.style.display='block'; }
+  function closeM(){ modal.style.display='none'; }
+  function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':s); return d.innerHTML; }
+  function fmt(n){ return Number(n||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('.js-reverso');
+    if (b){
+      e.preventDefault();
+      var id = b.getAttribute('data-reverso-id');
+      elM.textContent='Cargando…'; elD.innerHTML=''; mUl.innerHTML=''; wrap.style.display='none'; btn.disabled=true;
+      openM();
+      fetch('/historial/'+id+'/reverso-preview',{headers:{'Accept':'application/json'}})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(!d.ok){ elM.textContent=d.error||'No se puede reversar.'; return; }
+          elT.textContent=d.titulo||'Reversar';
+          elM.textContent=d.mensaje||'';
+          var dl=''; Object.keys(d.detalle||{}).forEach(function(k){ dl+='<dt class="text-slate-500">'+esc(k)+'</dt><dd class="text-slate-800 dark:text-slate-200 font-medium">'+esc(d.detalle[k])+'</dd>'; });
+          elD.innerHTML=dl;
+          if(d.movimientos&&d.movimientos.length){
+            mT.textContent=(d.titulo_movimientos||'Movimientos afectados')+' · '+d.movimientos.length;
+            mUl.innerHTML=d.movimientos.map(function(m){ return '<li class="flex items-center justify-between gap-3 px-3 py-1.5 border-t border-slate-100 dark:border-slate-800 first:border-t-0"><span class="text-slate-700 dark:text-slate-200">'+esc(m.texto)+(m.detalle?' <span class="text-xs text-slate-400">· '+esc(m.detalle)+'</span>':'')+'</span>'+(m.importe!=null?'<span class="font-mono text-slate-500 whitespace-nowrap">$ '+fmt(m.importe)+'</span>':'')+'</li>'; }).join('');
+            wrap.style.display='';
+          }
+          form.action=d.accion_url; btn.textContent=d.confirm_label||'Reversar'; btn.disabled=false;
+        })
+        .catch(function(){ elM.textContent='Error cargando la confirmación.'; });
+      return;
+    }
+    if(e.target.id==='reverso-cancelar'||e.target.id==='reverso-backdrop'){ closeM(); }
   });
 })();
 </script>
