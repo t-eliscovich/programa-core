@@ -25,7 +25,6 @@ from modules.conciliacion.matcher_banco import (
 )
 from modules.conciliacion.parser_banco import MovBanco
 
-
 # ── Helpers de fixture ────────────────────────────────────────────────
 
 
@@ -388,8 +387,9 @@ def test_dedupe_preserva_iva_cost_misma_documento(monkeypatch):
 
     # 3 filas con MISMO documento, distintos codigo + monto (escenario real
     # mostrado en el extracto de la dueña: cheque devuelto + IVA + costo).
-    from modules.conciliacion.parser_banco import MovBanco as _MB
     from decimal import Decimal
+
+    from modules.conciliacion.parser_banco import MovBanco as _MB
     movs = [
         _MB(fecha=date(2026, 5, 27), concepto="CHEQUE DEVUELTO", documento="106",
             monto=Decimal("5000.00"), saldo=Decimal("0"), codigo="001314",

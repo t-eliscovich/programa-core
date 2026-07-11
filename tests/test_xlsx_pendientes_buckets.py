@@ -16,6 +16,7 @@ Ahora AMBOS buckets (manual_banco + impuestos) se fusionan en la lista
 muestra como un solo número. Los impuestos NO van a una sección aparte.
 """
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 

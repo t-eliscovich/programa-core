@@ -65,9 +65,9 @@ class _DBStub:
 @pytest.fixture
 def env(monkeypatch):
     def _mk(espejo_95=None):
-        from modules.cheques import queries as cq
-        import mov_doble
         import bank_helpers
+        import mov_doble
+        from modules.cheques import queries as cq
 
         stub = _DBStub(espejo_95=espejo_95)
         monkeypatch.setattr(cq, "db", stub)
@@ -213,8 +213,10 @@ class _DBStubEdit(_DBStub):
 
 
 def _env_edit(monkeypatch, ch_row, **kw):
+    import bank_helpers
+    import caja_helpers
+    import mov_doble
     from modules.cheques import queries as cq
-    import mov_doble, bank_helpers, caja_helpers
 
     stub = _DBStubEdit(ch_row, **kw)
     monkeypatch.setattr(cq, "db", stub)

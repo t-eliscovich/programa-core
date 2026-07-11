@@ -11,7 +11,6 @@ Estrategia:
   3. Comparar con el saldo grabado.
   4. Reportar discrepancias.
 """
-import os
 import sys
 
 sys.path.insert(0, r"C:\programa-core")

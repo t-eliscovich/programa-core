@@ -699,10 +699,16 @@ def reporte(dias_banco: int = 30):
                    "los movimientos posteriores en PC son esperables")
     yield line()
 
-    from modules.admin_dbase.facturas_reconcile_view import (
-        _saldo_za, reconciliar_facturas_plan, _leer_pc as _leer_fact_pc, _map_factura_real,
-    )
     import dbfread
+
+    from modules.admin_dbase.facturas_reconcile_view import (
+        _leer_pc as _leer_fact_pc,
+    )
+    from modules.admin_dbase.facturas_reconcile_view import (
+        _map_factura_real,
+        _saldo_za,
+        reconciliar_facturas_plan,
+    )
     mapper = _map_factura_real()
     fact_dbf = []
     fpath = EXTRACT_DIR / "FACTURAS.DBF"

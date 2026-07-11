@@ -612,10 +612,6 @@ def balance():
     # domingo. Si falla, no rompe el balance — la migración de la tabla
     # sistema_meta puede no haber corrido todavía (decorador defensivo).
     #
-    # ?forzar_provisiones=1 → corre UNA aplicación extra incluso si ya
-    # se corrió hoy. Útil para emparejar contra dBase cuando estábamos
-    # atrasados N días: cargar la URL con ese param N veces. NO usar
-    # sin saber lo que hacés (cada click duplica los montos).
     # Persistir acumulación YY/RT en el importe guardado (dBase REPLACE DAILY).
     # Idempotente (baseline=hoy → no-op). Sin esto el Pasivos YY queda congelado
     # bajo el dBase. TMT 2026-06-05.
@@ -631,9 +627,13 @@ def balance():
             "persistir_acumulacion_yy FALLÓ — Pasivos YY van a driftear vs dBase"
         )
 
-    forzar = request.args.get("forzar_provisiones") in ("1", "true", "yes")
+    # Provisiones diarias: SOLO automáticas (catch-up de días hábiles pendientes).
+    # El bypass GET ?forzar_provisiones=1 se removió — un GET no debe mutar estado
+    # financiero (un refresh/prefetch/favorito lo disparaba). El forzado manual
+    # sigue disponible para scripts vía correr_provisiones_diarias(forzar=True).
+    # TMT 2026-07-11.
     try:
-        prov_result = queries.correr_provisiones_diarias(forzar=forzar)
+        prov_result = queries.correr_provisiones_diarias()
     except Exception as e:  # noqa: BLE001
         prov_result = {"aplicado": False, "error": str(e)}
 

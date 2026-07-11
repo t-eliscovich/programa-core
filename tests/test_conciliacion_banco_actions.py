@@ -15,7 +15,6 @@ import pytest
 from modules.conciliacion import matcher_banco
 from modules.conciliacion.parser_banco import MovBanco
 
-
 # ─── Helpers de stub ─────────────────────────────────────────────────────
 
 

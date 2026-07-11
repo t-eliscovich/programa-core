@@ -1098,14 +1098,14 @@ def nuevo():
                 # del anticipo moría en el cheque, en cartera. Resto < $1 =
                 # centavos → sin espejo (mismo umbral de siempre).
                 _es_ant_ids: set[int] = set()
-                for _chin, _chcr in zip(cheques_in, cheques_creados):
+                for _chin, _chcr in zip(cheques_in, cheques_creados, strict=False):
                     if (isinstance(_chcr, dict) and _chcr.get("id_cheque")
                             and (_chin.get("es_anticipo") or es_anticipo)):
                         _es_ant_ids.add(int(_chcr["id_cheque"]))
                 if _es_ant_ids:
                     _chin_por_id = {
                         int(_chcr["id_cheque"]): _chin
-                        for _chin, _chcr in zip(cheques_in, cheques_creados)
+                        for _chin, _chcr in zip(cheques_in, cheques_creados, strict=False)
                         if isinstance(_chcr, dict) and _chcr.get("id_cheque")
                     }
                     for c in cheques_restantes:
@@ -1153,8 +1153,9 @@ def nuevo():
                     # TMT 2026-06-15: < $1 = centavos -> absorber (no anticipo);
                     # >= $1 -> espejo (anticipo del cliente).
                     if _sobrante >= 1.00:
-                        import mov_doble as _md_esp
                         from datetime import timedelta as _td_esp
+
+                        import mov_doble as _md_esp
                         _chp = cheques_creados[0]
                         _esp = db.execute_returning(
                             """

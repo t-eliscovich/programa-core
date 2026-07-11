@@ -19,9 +19,9 @@ Cómo correrlo:
 """
 from __future__ import annotations
 
-from datetime import date
-import sys
 import os
+import sys
+from datetime import date
 
 # Asegurar import del root del proyecto
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -123,9 +123,9 @@ def main() -> None:
     banner("6. Simulación stock_total_us live")
     try:
         from modules.informes.queries import (
+            historia_ultimo_mes,
             informe_balance,
             iniciales_mes_actual,
-            historia_ultimo_mes,
             kg_facturas_pc_no_sincronizadas,
         )
         hist = historia_ultimo_mes() or {}

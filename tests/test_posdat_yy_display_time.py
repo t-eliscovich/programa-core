@@ -28,7 +28,6 @@ if _REPO_ROOT not in sys.path:
 
 from modules.posdat import queries as q  # noqa: E402
 
-
 # ── _dias_habiles_entre ─────────────────────────────────────────────────
 
 class TestDiasHabilesEntre:

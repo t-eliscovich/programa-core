@@ -3,7 +3,9 @@
 ignorando cliente. Si Asinfo tiene la fila con OTRO cliente_codigo o kg diferente,
 ahi esta el problema."""
 from __future__ import annotations
-import os, sys
+
+import os
+import sys
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -125,12 +127,12 @@ def main():
             except: pass
         if cercanos:
             scored = sorted(cercanos, key=lambda r: abs(float(r.get("usd") or 0) - pci))[:5]
-            print(f"  [F3] sin filas en fecha exacta. Top 5 cercanos en +/-2 dias:")
+            print("  [F3] sin filas en fecha exacta. Top 5 cercanos en +/-2 dias:")
             for c in scored:
                 d = float(c.get("usd") or 0) - pci
                 print(f"     -> num={c.get('numero')} cli={c.get('cliente_codigo')} fecha={str(c.get('fecha'))[:10]} usd={c.get('usd')} kg={c.get('kg')} diff_usd={d:.2f}")
             continue
-        print(f"  >>> NADA encontrado ni con fecha+/-2 dias <<<")
+        print("  >>> NADA encontrado ni con fecha+/-2 dias <<<")
 
 
 if __name__ == "__main__":

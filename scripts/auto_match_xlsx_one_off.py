@@ -37,10 +37,9 @@ try:
 except ImportError:
     pass
 
+import openpyxl
 import psycopg2
 from psycopg2.extras import RealDictCursor
-
-import openpyxl
 
 DOCS_CRED = ("DE", "TR", "XX", "NC", "IN", "AC")
 DOCS_DEB = ("CH", "ND", "DB", "GS", "PA")
@@ -72,7 +71,7 @@ def parse_xlsx(path: str) -> list[dict]:
     return movs
 
 
-def parse_fecha(s) -> "datetime.date|None":
+def parse_fecha(s) -> datetime.date|None:
     if not s:
         return None
     if hasattr(s, "date"):
@@ -216,7 +215,7 @@ def main() -> int:
     else:
         conn.rollback()
 
-    print(f"\n=== RESUMEN ===")
+    print("\n=== RESUMEN ===")
     print(f"  conciliados:      {n_matched}")
     print(f"  ya conciliados:   {n_dup}")
     print(f"  multi-match skip: {n_multi}")

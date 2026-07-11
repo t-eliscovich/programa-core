@@ -132,7 +132,6 @@ def run():
 
 
 def _run(aplicar: bool):
-    import db
 
     def line(m=""):
         return m.rstrip("\n") + "\n"

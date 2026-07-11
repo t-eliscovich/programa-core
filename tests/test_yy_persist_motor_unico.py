@@ -16,7 +16,6 @@ import pytest
 
 from modules.posdat import queries as pq
 
-
 # ─── 1. el SQL del persist no referencia la columna fantasma ───────────────
 
 def test_persist_no_usa_columna_fantasma():

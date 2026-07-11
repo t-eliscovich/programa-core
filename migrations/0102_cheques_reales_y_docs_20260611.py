@@ -78,7 +78,7 @@ def run(conn):
         if len(ids) != len(specs):
             print(f"  [A] {cli} {imp:,.2f}: {len(ids)} candidatos vs {len(specs)} esperados -> SKIP")
             continue
-        for id_cheque, (_, _, nb, banco_txt, f_cheque, f_dep) in zip(ids, specs):
+        for id_cheque, (_, _, nb, banco_txt, f_cheque, f_dep) in zip(ids, specs, strict=False):
             cur.execute(
                 "SELECT id_caja FROM scintela.caja "
                 "WHERE id_cheque = %s AND tipo = 'E' AND ABS(importe - %s) < 0.01 "

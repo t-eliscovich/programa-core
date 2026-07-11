@@ -6,7 +6,9 @@ Esto nos dice si la factura existe en Asinfo con OTRO cli/fecha/kg que el
 matcher por compound key no encuentra.
 """
 from __future__ import annotations
-import os, sys
+
+import os
+import sys
 from collections import defaultdict
 from datetime import date
 
@@ -23,11 +25,11 @@ for _env in (".env.prod", ".env"):
         break
 
 import db
+
 db.init_pool()
 
-from modules.asinfo import service as asinfo_service
 from modules._lib import metabase_client
-from modules.facturas import queries as fact_q
+from modules.asinfo import service as asinfo_service
 
 
 def _norm(s): return (s or "").strip().upper()

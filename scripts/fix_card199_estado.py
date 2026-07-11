@@ -5,7 +5,10 @@ Antes valida que estado=15 sea efectivamente anulada (no la incluimos),
 después hace el PUT vía Metabase API y verifica.
 """
 from __future__ import annotations
-import os, sys, json, re
+
+import os
+import re
+import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -17,8 +20,9 @@ for _env in (".env.prod", ".env"):
         except ImportError: pass
         break
 
-from modules._lib import metabase_client as mc
 import requests
+
+from modules._lib import metabase_client as mc
 
 
 def main():

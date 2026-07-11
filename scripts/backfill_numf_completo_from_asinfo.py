@@ -57,9 +57,8 @@ for _env in (".env.prod", ".env"):
 
 
 import db
-from modules.asinfo import service as asinfo_service
 from modules.asinfo import aliases as cli_aliases
-
+from modules.asinfo import service as asinfo_service
 
 ASINFO_CUTOFF = date(2025, 1, 1)
 
