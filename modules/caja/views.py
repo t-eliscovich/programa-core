@@ -269,8 +269,21 @@ def lista():
     q = request.args.get("q", "").strip()
     desde = request.args.get("desde") or None
     hasta = request.args.get("hasta") or None
+    # TMT 2026-07-11 (dueña): flechita para avanzar. 500/página; pedimos
+    # limite+1 para saber si hay página siguiente sin un COUNT extra.
+    POR_PAGINA = 500
     try:
-        filas = queries.movimientos(desde, hasta, q)
+        pagina = max(1, int(request.args.get("pagina") or "1"))
+    except (TypeError, ValueError):
+        pagina = 1
+    es_export = request.args.get("export") == "csv"
+    limite = 100000 if es_export else POR_PAGINA
+    offset = 0 if es_export else (pagina - 1) * POR_PAGINA
+    try:
+        filas = queries.movimientos(desde, hasta, q, limite=limite + 1, offset=offset)
+        hay_mas = (not es_export) and len(filas) > limite
+        if hay_mas:
+            filas = filas[:limite]
         resumen = queries.resumen()
         # Egresos del mes sin clasificar como gasto V1..V9 — pasamos sólo
         # el SET de ids; el botón "Clasificar" aparece inline en la fila
@@ -286,6 +299,7 @@ def lista():
     except Exception as e:
         filas, resumen, error = [], {}, str(e)
         egresos_sin_clasif, ids_sin_clasif = [], set()
+        hay_mas = False
 
     if request.args.get("export") == "csv":
         return csv_response(
@@ -313,6 +327,8 @@ def lista():
         error=error,
         ids_sin_clasif=ids_sin_clasif,
         n_sin_clasif=len(ids_sin_clasif),
+        pagina=pagina,
+        hay_mas=hay_mas,
     )
 
 
