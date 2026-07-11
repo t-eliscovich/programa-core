@@ -4,6 +4,7 @@ from flask import (
     Blueprint,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -154,23 +155,12 @@ def nuevo():
         return render_template("caja/nuevo.html", form=form, errores=errores), 500
 
 
-@caja_bp.route("/caja/<int:id_caja>/confirmar-reverso", methods=["GET"])
-@requiere_login
-@requiere_permiso("caja.crear")
-def confirmar_reverso(id_caja: int):
-    """Paso 1 del wizard: resumen + motivo antes de reversar caja.
-
-    El reverso de caja puede arrastrar side-effects (banco, retiro,
-    USD, compra). Pedirle el motivo a la dueña por escrito antes de
-    ejecutar es la convención canónica del programa (mismo patrón
-    que confirmar_anulacion / confirmar_reverso de cheques).
-    TMT 2026-05-13.
-    """
-    from flask import abort
-
+def _reverso_preview_caja(id_caja: int) -> dict | None:
+    """Preview del reverso de un movimiento de caja (compartido por la página
+    HTML y el modal in-page). None si no existe. TMT 2026-07-11 (dueña)."""
     m = queries.por_id(id_caja)
     if not m:
-        abort(404)
+        return None
     tipo_legible = {"E": "Entrada", "S": "Salida"}.get((m.get("tipo") or "").upper(), m.get("tipo") or "—")
     detalle = {
         "ID caja": m.get("id_caja"),
@@ -179,22 +169,55 @@ def confirmar_reverso(id_caja: int):
         "Importe": f"$ {m.get('importe') or 0:,.2f}",
         "Concepto": m.get("concepto") or "—",
     }
-    return render_template(
-        "_confirmar_accion.html",
-        titulo=f"Reversar movimiento de caja id={id_caja}",
-        mensaje=(
+    return {
+        "titulo": f"Reversar movimiento de caja id={id_caja}",
+        "mensaje": (
             f"Vas a reversar el movimiento de caja id={id_caja} "
             f"({tipo_legible} $ {m.get('importe') or 0:,.2f}). "
             "Se crea un movimiento opuesto que compensa este — el original "
             "queda intacto en la historia."
         ),
-        detalle_registro=detalle,
+        "detalle": detalle,
+        "confirm_label": "Confirmar reverso",
+    }
+
+
+@caja_bp.route("/caja/<int:id_caja>/reverso-preview", methods=["GET"])
+@requiere_login
+@requiere_permiso("caja.crear")
+def reverso_preview(id_caja: int):
+    """JSON para el modal in-page de reverso (mismo shape que historial)."""
+    data = _reverso_preview_caja(id_caja)
+    if not data:
+        return jsonify({"ok": False, "error": "El movimiento de caja no existe."})
+    data["ok"] = True
+    data["accion_url"] = url_for("caja.reversar", id_caja=id_caja)
+    return jsonify(data)
+
+
+@caja_bp.route("/caja/<int:id_caja>/confirmar-reverso", methods=["GET"])
+@requiere_login
+@requiere_permiso("caja.crear")
+def confirmar_reverso(id_caja: int):
+    """Fallback HTML del reverso (links directos / no-JS). El flujo normal
+    desde la lista usa el modal in-page (ver reverso_preview). TMT 2026-05-13.
+    """
+    from flask import abort
+
+    data = _reverso_preview_caja(id_caja)
+    if not data:
+        abort(404)
+    return render_template(
+        "_confirmar_accion.html",
+        titulo=data["titulo"],
+        mensaje=data["mensaje"],
+        detalle_registro=data["detalle"],
         accion_url=url_for("caja.reversar", id_caja=id_caja),
         volver_url=url_for("caja.lista"),
         motivo_requerido=True,
         # TMT 2026-07-08 dueña: motivo de reverso NO obligatorio ("se hace largo").
         motivo_obligatorio=False,
-        confirm_label="Confirmar reverso",
+        confirm_label=data["confirm_label"],
     )
 
 
@@ -232,6 +255,10 @@ def reversar(id_caja: int):
         flash(str(e), "warn")
     except Exception as e:
         flash(f"No pude reversar: {e}", "warn")
+    # TMT 2026-07-11 (dueña): volver a la pantalla anterior con filtros (`next`).
+    nxt = (request.form.get("next") or "").strip()
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
     return redirect(url_for("caja.lista"))
 
 

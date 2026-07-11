@@ -178,11 +178,13 @@
                 </a>
               {% endif %}
               {% if tiene_permiso('caja.crear') and not (m.concepto and m.concepto.startswith('REVERSO id ')) %}
-                <a href="{{ url_for('caja.confirmar_reverso', id_caja=m.id_caja) }}"
-                   class="text-xs px-2 py-0.5 rounded border border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                {# TMT 2026-07-11 (dueña): reverso in-page (modal), vuelve con filtros. #}
+                <button type="button"
+                   class="js-reverso text-xs px-2 py-0.5 rounded border border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                   data-reverso-preview="{{ url_for('caja.reverso_preview', id_caja=m.id_caja) }}"
                    title="Crea un movimiento opuesto que compensa este (te pide motivo).">
                   ↺ Reversar
-                </a>
+                </button>
               {% endif %}
             </div>
           </td>
@@ -194,4 +196,7 @@
     </table>
   </div>
 </div>
+
+{# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
+{% include "_reverso_modal.html" %}
 {% endblock %}

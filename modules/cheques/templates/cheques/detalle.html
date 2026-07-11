@@ -126,11 +126,13 @@
          "me confundí". Para "Sin fondos" en cheques B/A/1/2, la opción
          vive como estado dentro del dropdown "Cambiar estado" abajo. #}
       {% if puede_reversar and ch.stat in ('Z', 'D', 'P', 'V') %}
-        <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=ch.id_cheque) }}"
-           class="text-sm px-2.5 py-1 rounded text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
+        {# TMT 2026-07-11 (dueña): reverso in-page (modal), no otra página. #}
+        <button type="button"
+           class="js-reverso text-sm px-2.5 py-1 rounded text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
+           data-reverso-preview="{{ url_for('cheques.reverso_preview', id_cheque=ch.id_cheque) }}"
            title="Me confundí — undo administrativo sin afectar al cliente.">
           ↺ Reversar
-        </a>
+        </button>
       {% endif %}
 
       {% if hay_transiciones %}
@@ -198,10 +200,12 @@
              el banco (B/A/1/2). Para cheques en cartera (Z/D/P/V) NO se
              muestra acá — usá el botón primario "↺ Reversar" arriba. #}
           {% if puede_reversar and ch.stat in ('B', 'A', '1', '2') %}
-            <a href="{{ url_for('cheques.confirmar_reverso', id_cheque=ch.id_cheque) }}"
-               class="block px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300 border-b border-slate-100 dark:border-slate-800">
+            {# TMT 2026-07-11 (dueña): marcar SIN FONDOS con modal in-page. #}
+            <button type="button"
+               class="js-reverso block w-full text-left px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300 border-b border-slate-100 dark:border-slate-800"
+               data-reverso-preview="{{ url_for('cheques.reverso_preview', id_cheque=ch.id_cheque) }}">
               ⚠ Sin fondos{% if ch.stat in ('1', '2') %} (2° rebote){% endif %}…
-            </a>
+            </button>
           {% endif %}
           {# TMT 2026-06-16 dueña: marcar DEVUELTO desde cartera/postergado/Daniela
              (simple — solo cambia el estado). Para B/A/1/2 usar "Sin fondos". #}
@@ -473,4 +477,7 @@
     </table>
   </div>
 </div>
+
+{# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
+{% include "_reverso_modal.html" %}
 {% endblock %}

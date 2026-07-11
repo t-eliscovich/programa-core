@@ -361,11 +361,13 @@
             </td>
             <td class="px-3 py-2 no-print text-right">
               {% if doc == 'CH' and tiene_permiso('bancos.conciliar') %}
-                <a href="{{ url_for('bancos.reversar_cheque_emitido', id_transaccion=m.id_transaccion) }}"
-                   class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                {# TMT 2026-07-11 (dueña): reverso in-page (modal), vuelve con filtros. #}
+                <button type="button"
+                   class="js-reverso text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                   data-reverso-preview="{{ url_for('bancos.reverso_preview_cheque_emitido', id_transaccion=m.id_transaccion) }}"
                    title="Reversar este cheque emitido y deshacer su side effect">
                   ↺ reversar
-                </a>
+                </button>
                 {# TMT 2026-07-07 dueña: "cheque en letras" removido — no se usa. #}
               {# TMT 2026-06-26: eliminar movimientos cargados en PC (no del
                  dBase), sin conciliar. El route revalida todos los guards. #}
@@ -594,4 +596,7 @@
     La columna "Saldo" es el valor histórico almacenado (a veces desconfiable — ver pantalla principal para saldo derivado).
   </p>
 </div>
+
+{# ── Modal de reverso in-page — partial compartido (TMT 2026-07-11) ─────── #}
+{% include "_reverso_modal.html" %}
 {% endblock %}

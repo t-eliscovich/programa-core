@@ -1,6 +1,6 @@
 """Bancos — lista, movimientos y emisión de cheques propios (chequera)."""
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
 from auth import requiere_login, requiere_permiso
 from error_messages import flash_exc
@@ -503,18 +503,10 @@ def emitir_cheque():
     )
 
 
-@bancos_bp.route("/bancos/cheque-emitido/<int:id_transaccion>/reversar", methods=["GET", "POST"])
-@requiere_login
-@requiere_permiso("bancos.conciliar")
-def reversar_cheque_emitido(id_transaccion: int):
-    """Wizard de 2 pasos para reversar un cheque emitido.
-
-    GET: muestra detalles + input de motivo.
-    POST: ejecuta queries.reversar_cheque_emitido (atómico, registra mov_doble).
-    """
+def _tx_cheque_emitido(id_transaccion: int) -> dict | None:
     import db as _db
 
-    tx = _db.fetch_one(
+    return _db.fetch_one(
         """
         SELECT t.id_transaccion, t.fecha, t.no_banco, t.documento,
                t.importe, t.concepto, t.prov, t.numreferencia,
@@ -527,6 +519,51 @@ def reversar_cheque_emitido(id_transaccion: int):
         """,
         (id_transaccion,),
     )
+
+
+@bancos_bp.route("/bancos/cheque-emitido/<int:id_transaccion>/reverso-preview", methods=["GET"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def reverso_preview_cheque_emitido(id_transaccion: int):
+    """JSON para el modal in-page de reverso (mismo shape que historial).
+    TMT 2026-07-11 (dueña): reversar cheque emitido sin salir de la pantalla."""
+    tx = _tx_cheque_emitido(id_transaccion)
+    if not tx:
+        return jsonify({"ok": False, "error": "La transacción no existe."})
+    if (tx.get("documento") or "").strip().upper() != "CH":
+        return jsonify({"ok": False, "error": "La transacción no es un cheque emitido."})
+    importe = float(tx.get("importe") or 0)
+    detalle = {
+        "Banco": (tx.get("banco_nombre") or "").title() or f"#{tx.get('no_banco')}",
+        "Fecha": (tx.get("fecha").strftime("%d/%m/%Y") if tx.get("fecha") else "—"),
+        "Proveedor": (tx.get("prov_nombre") or tx.get("prov") or "—"),
+        "Referencia": (tx.get("numreferencia") or "—"),
+        "Importe": f"$ {importe:,.2f}",
+        "Concepto": tx.get("concepto") or "—",
+    }
+    return jsonify({
+        "ok": True,
+        "titulo": "Reversar cheque emitido",
+        "mensaje": (
+            f"Vas a reversar este cheque emitido por $ {importe:,.2f}. Se crea una "
+            "nota de débito compensatoria y se deshace su side effect asociado."
+        ),
+        "detalle": detalle,
+        "accion_url": url_for("bancos.reversar_cheque_emitido", id_transaccion=id_transaccion),
+        "confirm_label": "Confirmar reverso",
+    })
+
+
+@bancos_bp.route("/bancos/cheque-emitido/<int:id_transaccion>/reversar", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("bancos.conciliar")
+def reversar_cheque_emitido(id_transaccion: int):
+    """Wizard de 2 pasos para reversar un cheque emitido.
+
+    GET: muestra detalles + input de motivo.
+    POST: ejecuta queries.reversar_cheque_emitido (atómico, registra mov_doble).
+    """
+    tx = _tx_cheque_emitido(id_transaccion)
     if not tx:
         abort(404)
     if (tx.get("documento") or "").strip().upper() != "CH":
@@ -560,6 +597,11 @@ def reversar_cheque_emitido(id_transaccion: int):
                 se = r["side_effect_revertido"]
                 msg += f" Side effect revertido: {se.get('tipo')}."
             flash(msg, "ok")
+            # TMT 2026-07-11 (dueña): si vino del modal in-page, volver a la
+            # pantalla anterior con filtros (`next`), sino a movimientos.
+            nxt = (request.form.get("next") or "").strip()
+            if nxt.startswith("/") and not nxt.startswith("//"):
+                return redirect(nxt)
             return redirect(url_for("bancos.movimientos", no_banco=tx["no_banco"]))
         except ValueError as e:
             flash(str(e), "warn")
